@@ -2,8 +2,8 @@ import type { SpawnOptions } from '@anthropic-ai/claude-agent-sdk';
 import { spawn as nativeSpawn } from 'child_process';
 import spawn from 'cross-spawn';
 
+import * as env from '@/core/process/env';
 import { createCustomSpawnFunction } from '@/providers/claude/runtime/customSpawn';
-import * as env from '@/utils/env';
 
 jest.mock('cross-spawn', () => jest.fn());
 jest.mock('child_process', () => ({

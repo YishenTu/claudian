@@ -1,15 +1,15 @@
 import { type App, Notice, Setting } from 'obsidian';
 
-import { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSettingsWriter';
-
-import { normalizeHiddenCommandList } from '../../core/providers/commands/hiddenCommands';
 import {
   AGENT_SKILLS_ROOT,
   AgentSkillRepository,
   CLAUDE_SKILLS_ROOT,
-} from '../../core/skills/AgentSkillRepository';
-import { ClaudeCommandRepository } from '../../core/skills/ClaudeCommandRepository';
-import { ClaudeSkillSync } from '../../core/skills/ClaudeSkillSync';
+} from '@/features/settings/skills/AgentSkillRepository';
+import { ClaudeCommandRepository } from '@/features/settings/skills/ClaudeCommandRepository';
+import { ClaudeSkillSync } from '@/features/settings/skills/ClaudeSkillSync';
+import { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSettingsWriter';
+
+import { normalizeHiddenCommandList } from '../../core/providers/commands/hiddenCommands';
 import type { FolderLinkState, VaultFileAdapter } from '../../core/storage/VaultFileAdapter';
 import type { ClaudianSettings } from '../../core/types/settings';
 import { t } from '../../i18n/i18n';

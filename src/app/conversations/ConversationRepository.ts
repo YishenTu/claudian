@@ -1,3 +1,5 @@
+import { extractUserDisplayContent } from '@/core/prompt/promptContext';
+
 import type { ProviderSessionSnapshot } from '../../core/execution';
 import {
   assertLinkedContentPath,
@@ -21,7 +23,6 @@ import {
   type ConversationSummary,
   type SessionMetadata,
 } from '../../core/types';
-import { extractUserDisplayContent } from '../../utils/context';
 import { rewriteVaultPathAfterRename } from '../../utils/path';
 import type { ConversationPersistence } from '../storage/ConversationPersistenceStore';
 import type {

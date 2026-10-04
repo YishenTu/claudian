@@ -1,6 +1,6 @@
 import { type App, Modal } from 'obsidian';
 
-import { commandNameFromPath } from '../../core/skills/ClaudeCommandRepository';
+import { commandNameFromPath } from '@/features/settings/skills/ClaudeCommandRepository';
 import {
   type ClaudeSkillSync,
   type SkillSyncBlockingReason,
@@ -8,7 +8,8 @@ import {
   type SkillSyncPlan,
   type SkillSyncResolution,
   type SkillSyncResult,
-} from '../../core/skills/ClaudeSkillSync';
+} from '@/features/settings/skills/ClaudeSkillSync';
+
 import { t } from '../../i18n/i18n';
 
 type ItemChoice = 'apply' | 'replace' | 'skip';

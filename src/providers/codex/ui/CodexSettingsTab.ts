@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import { Setting } from 'obsidian';
 
+import { normalizeConfiguredCLIPath, stripSurroundingQuotes } from '@/core/process/cliPath';
 import type { ProviderCLIResolver } from '@/core/providers/types';
 import { OPENAI_PROVIDER_ICON } from '@/shared/icons';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
@@ -16,7 +17,6 @@ import {
   renderProviderModelEnablementWarning,
 } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
-import { normalizeConfiguredCLIPath, stripSurroundingQuotes } from '../../../utils/path';
 import { getCodexModelOptions } from '../modelOptions';
 import { isWindowsStyleCLIReference } from '../runtime/CodexBinaryLocator';
 import { inspectCodexInstallation } from '../runtime/CodexCLIInstallation';

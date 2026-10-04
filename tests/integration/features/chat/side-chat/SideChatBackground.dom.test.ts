@@ -88,7 +88,7 @@ it('settles an async subagent from a session notification after the requested tu
   });
   native.emitOutput({
     type: 'tool_completed', toolCallId: 'task-1', toolScope: { kind: 'main' }, content: 'Launched',
-    toolUseResult: { isAsync: true, status: 'async_launched', agentId: 'agent-1' },
+    providerPayload: { rawOutput: { isAsync: true, status: 'async_launched', agentId: 'agent-1' } },
   });
   native.complete();
   await started;
@@ -147,7 +147,7 @@ it('shows live progress on a background subagent card after the requested turn',
   });
   native.emitOutput({
     type: 'tool_completed', toolCallId: 'task-1', toolScope: { kind: 'main' }, content: 'Launched',
-    toolUseResult: { isAsync: true, status: 'async_launched', agentId: 'agent-1' },
+    providerPayload: { rawOutput: { isAsync: true, status: 'async_launched', agentId: 'agent-1' } },
   });
   native.complete();
   await started;

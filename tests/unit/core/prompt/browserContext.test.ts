@@ -1,7 +1,7 @@
 import {
   appendBrowserContext,
   type BrowserSelectionContext,
-} from '../../../src/utils/browser';
+} from '@/core/prompt/browserContext';
 
 describe('appendBrowserContext', () => {
   it('escapes XML attribute quotes', () => {

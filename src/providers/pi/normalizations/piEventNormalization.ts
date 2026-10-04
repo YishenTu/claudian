@@ -5,7 +5,7 @@ import {
   getPiToolId,
   getPiToolName,
   normalizePiToolInput,
-  normalizePiToolUseResult,
+  normalizePiToolResultDetails,
 } from './piToolNormalization';
 
 export interface PiEventNormalizationState {
@@ -175,9 +175,9 @@ function normalizeToolOutput(
 
   const content = getToolOutputDelta(id, event.partialResult ?? event.output ?? event.result ?? event.content, state);
   // Script tools report the calls they make as they run.
-  const toolUseResult = normalizePiToolUseResult(getPiToolName(event), event.partialResult, state.nestedToolArguments.get(id));
-  return content || toolUseResult
-    ? [{ type: 'tool_output', id, content, ...(toolUseResult ? { toolUseResult } : {}) }]
+  const resultDetails = normalizePiToolResultDetails(getPiToolName(event), event.partialResult, state.nestedToolArguments.get(id));
+  return content || resultDetails
+    ? [{ type: 'tool_output', id, content, ...(resultDetails ? { resultDetails } : {}) }]
     : [];
 }
 
@@ -218,14 +218,14 @@ function normalizeToolResult(
     || '';
   state.toolOutputs.delete(id);
   state.divergedToolOutputIds.delete(id);
-  const toolUseResult = normalizePiToolUseResult(getPiToolName(event), event.result, state.nestedToolArguments.get(id));
+  const resultDetails = normalizePiToolResultDetails(getPiToolName(event), event.result, state.nestedToolArguments.get(id));
   state.nestedToolArguments.delete(id);
   return [{
     type: 'tool_result',
     content,
     id,
     isError: event.isError === true || event.error === true || event.success === false,
-    ...(toolUseResult ? { toolUseResult } : {}),
+    ...(resultDetails ? { resultDetails } : {}),
   }];
 }
 

@@ -1,10 +1,11 @@
+import { parseEnvironmentVariables } from '@/core/process/env';
+
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type {
   ProviderHistoryPathContext,
   ProviderSubagentHistoryRequest,
   ProviderSubagentHistoryService,
 } from '../../../core/providers/types';
-import { parseEnvironmentVariables } from '../../../utils/env';
 import {
   loadSubagentFinalResult,
   loadSubagentToolCalls,

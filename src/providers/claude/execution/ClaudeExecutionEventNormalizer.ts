@@ -17,6 +17,7 @@ import type {
 import type { TurnStats, UsageInfo } from '../../../core/types';
 import { createTurnStats } from '../../../core/types';
 import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
+import { normalizeClaudeToolResultDetails } from '../normalization/claudeToolResultDetails';
 import type {
   ClaudeAsyncSubagentCompletionEvent,
   ClaudeOutputChunk,
@@ -29,6 +30,7 @@ import {
   transformSDKMessage,
   withReportedContextWindow,
 } from '../stream/transformClaudeMessage';
+import { claudeSubagentAdapter } from '../subagentAdapter';
 
 type WithoutScope<T> = T extends unknown ? Omit<T, 'scope'> : never;
 
@@ -96,6 +98,8 @@ interface NormalizationState {
   readonly taskToolNormalizer: ClaudeTaskToolNormalizer;
   readonly usageState: ReturnType<typeof createTransformUsageState>;
   readonly toolScopes: Map<string, ToolIdentity>;
+  /** Shared tool name of each started tool call. */
+  readonly toolNames: Map<string, string>;
   readonly blockedToolIds: Set<string>;
   lastUsage: UsageInfo | null;
   assistantStarted: boolean;
@@ -202,6 +206,7 @@ export class ClaudeExecutionEventNormalizer {
     state.taskToolNormalizer.reset();
     state.usageState.clear();
     state.toolScopes.clear();
+    state.toolNames.clear();
     state.blockedToolIds.clear();
     state.lastUsage = null;
     state.assistantStarted = false;
@@ -277,6 +282,7 @@ function createNormalizationState(): NormalizationState {
     taskToolNormalizer: new ClaudeTaskToolNormalizer(),
     usageState: createTransformUsageState(),
     toolScopes: new Map(),
+    toolNames: new Map(),
     blockedToolIds: new Set(),
     lastUsage: null,
     assistantStarted: false,
@@ -384,6 +390,7 @@ function normalizeToolStarted(
       toolScope: { kind: 'main' },
     };
   state.toolScopes.set(chunk.id, identity);
+  state.toolNames.set(chunk.id, chunk.name);
   return {
     type: 'tool_started',
     toolCallId: chunk.id,
@@ -414,6 +421,11 @@ function normalizeToolCompleted(
       }
       : { toolScope: { kind: 'main' as const } }
   );
+  const resultDetails = normalizeClaudeToolResultDetails(chunk.toolUseResult);
+  const providerPayload = chunk.providerPayload
+    ?? (chunk.toolUseResult !== undefined && carriesTaskResult(state.toolNames.get(chunk.id))
+      ? { rawOutput: chunk.toolUseResult }
+      : undefined);
   return {
     type: 'tool_completed',
     toolCallId: chunk.id,
@@ -421,9 +433,17 @@ function normalizeToolCompleted(
     content: chunk.content,
     isError: chunk.isError,
     isBlocked: state.blockedToolIds.has(chunk.id),
-    toolUseResult: chunk.toolUseResult,
-    ...(chunk.providerPayload ? { providerPayload: chunk.providerPayload } : {}),
+    ...(resultDetails ? { resultDetails } : {}),
+    ...(providerPayload ? { providerPayload } : {}),
   };
+}
+
+/**
+ * Subagent launch/output results keep their native payload for the task-result interpreter.
+ * A result whose call this normalizer never saw keeps it too, since its tool is unknown.
+ */
+function carriesTaskResult(name: string | undefined): boolean {
+  return name === undefined || claudeSubagentAdapter.isSpawnTool(name) || claudeSubagentAdapter.isOutputTool(name);
 }
 
 function isAssistantOutputChunk(chunk: ClaudeOutputChunk): boolean {

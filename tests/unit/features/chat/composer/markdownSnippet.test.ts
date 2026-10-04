@@ -1,4 +1,4 @@
-import { appendMarkdownSnippet } from '@/utils/markdown';
+import { appendMarkdownSnippet } from '@/features/chat/composer/markdownSnippet';
 
 describe('appendMarkdownSnippet', () => {
   it('returns existing prompt when snippet is empty', () => {

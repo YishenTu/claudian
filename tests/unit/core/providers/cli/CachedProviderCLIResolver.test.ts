@@ -1,13 +1,13 @@
 import {
+  findCLIBinaryPath,
+  resolveConfiguredCLIPath,
+} from '@/core/process/cliBinaryLocator';
+import {
   CachedProviderCLIResolver,
   type ProviderCLISettingsProjection,
 } from '@/core/providers/cli/CachedProviderCLIResolver';
-import {
-  findCLIBinaryPath,
-  resolveConfiguredCLIPath,
-} from '@/utils/cliBinaryLocator';
 
-jest.mock('@/utils/cliBinaryLocator', () => ({
+jest.mock('@/core/process/cliBinaryLocator', () => ({
   findCLIBinaryPath: jest.fn(),
   resolveConfiguredCLIPath: jest.fn(),
 }));

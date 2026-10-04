@@ -15,10 +15,6 @@ export function normalizeToolProviderPayload(value: unknown): ToolProviderPayloa
   };
 }
 
-export function extractToolProviderPayload(value: unknown): ToolProviderPayload | null {
-  return isRecord(value) ? normalizeToolProviderPayload(value.providerPayload) : null;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

@@ -9,7 +9,7 @@ import { isRecord, OpencodeHTTPError, type OpencodeHTTPEvent, pollOpencodeUntil 
 import { projectOpencodeFormQuestions } from '../http/OpencodeHTTPForms';
 import type { OpencodeServerLease, OpencodeServerService } from '../http/OpencodeServerService';
 import { OpencodeShellOutput } from '../http/OpencodeShellOutput';
-import { normalizeOpencodeToolInput, normalizeOpencodeToolName, normalizeOpencodeToolResult, normalizeOpencodeToolUseResult } from '../normalization/opencodeToolNormalization';
+import { normalizeOpencodeToolInput, normalizeOpencodeToolName, normalizeOpencodeToolResult, normalizeOpencodeToolResultDetails } from '../normalization/opencodeToolNormalization';
 import { AUX_AGENT_IDS, buildOpencodeSystemPrompt, getSystemPromptSettings, OPENCODE_BUILD_AGENT_ID } from '../runtime/OpencodeExecutionAgents';
 import {
   type OpencodeKernelConnectOptions,
@@ -388,7 +388,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         tool?.shell?.stop();
         const content = Array.isArray(data.content) ? data.content.filter(isRecord).flatMap(item => typeof item.text === 'string' ? [item.text] : []).join('\n') : '';
         const result = normalizeOpencodeToolResult(tool?.name, content || (data.error ? errorText(data.error) : ''), { metadata: data.metadata });
-        this.emit({ type: 'tool_completed', ...identity, content: result.content, isError: event.type.endsWith('.failed') || result.isError, providerPayload: { rawName: tool?.name, rawInput: tool?.input, rawOutput: { ...data, metadata: data.metadata } }, toolUseResult: tool ? normalizeOpencodeToolUseResult(tool.name, tool.input, { output: content, metadata: data.metadata }) : undefined }, child?.outputSessionId);
+        this.emit({ type: 'tool_completed', ...identity, content: result.content, isError: event.type.endsWith('.failed') || result.isError, providerPayload: { rawName: tool?.name, rawInput: tool?.input, rawOutput: { ...data, metadata: data.metadata } }, resultDetails: tool ? normalizeOpencodeToolResultDetails(tool.name, tool.input, { output: content, metadata: data.metadata }) : undefined }, child?.outputSessionId);
         this.tools.delete(key);
         break;
       }

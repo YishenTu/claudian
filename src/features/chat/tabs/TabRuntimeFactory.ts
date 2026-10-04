@@ -14,6 +14,7 @@ import type {
 } from './runtime/TabRuntimeConstruction';
 import { buildTabRuntimeControllers } from './runtime/TabRuntimeControllers';
 import { buildTabRuntimeInputBindings } from './runtime/TabRuntimeInputBindings';
+import { buildTabRuntimePorts } from './runtime/TabRuntimePorts';
 import { buildTabRuntimeServices } from './runtime/TabRuntimeServices';
 import { buildTabRuntimeShell } from './runtime/TabRuntimeShell';
 import { buildTabRuntimeUI } from './runtime/TabRuntimeUI';
@@ -162,8 +163,10 @@ function composeTabRuntime(
   controllerBundle: TabRuntimeControllerBundle,
   inputBindings: TabInputBindings,
   resourceOwner: TabRuntimeResourceOwner,
+  plugin: ChatFeatureHost,
 ): AssembledTabRuntime {
-  return {
+  const ports = buildTabRuntimePorts(shell.dom, ui, controllerBundle, plugin, () => runtime);
+  const runtime: AssembledTabRuntime = {
     session: shell.session,
     get id() {
       return shell.id;
@@ -201,7 +204,9 @@ function composeTabRuntime(
         return resourceOwner.isDisposed;
       },
     },
+    ...ports,
   };
+  return runtime;
 }
 
 function assembleTabRuntime(
@@ -232,6 +237,7 @@ function assembleTabRuntime(
     controllerBundle,
     inputBindings,
     options.resourceOwner,
+    options.plugin,
   );
   registerTabRuntimeResourceOwner(runtime, options.resourceOwner);
   runtimeRef.publish(runtime);

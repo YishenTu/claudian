@@ -1,6 +1,7 @@
 import * as path from 'path';
 
-import type { UsageInfo } from '@/core/types';
+import { normalizeWebSearchResults } from '@/core/tools/toolResultDetails';
+import type { ToolResultDetails, UsageInfo } from '@/core/types';
 import {
   CODEX_WEB_SEARCH_RESULT,
   isCodexFailedToolStatus,
@@ -337,12 +338,13 @@ export function hasWebSearchRequest(input: Record<string, unknown>): boolean {
 }
 
 export function projectWebSearchToolResult(item: WebSearchItem): CodexToolResultProjection & {
-  toolUseResult?: { webSearchResults: unknown[] };
+  resultDetails?: ToolResultDetails;
 } {
+  const webSearchResults = normalizeWebSearchResults(item.results);
   return {
     content: CODEX_WEB_SEARCH_RESULT,
     isError: isCodexFailedToolStatus(item.status),
-    ...(Array.isArray(item.results) ? { toolUseResult: { webSearchResults: item.results } } : {}),
+    ...(webSearchResults ? { resultDetails: { webSearchResults } } : {}),
   };
 }
 

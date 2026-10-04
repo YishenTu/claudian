@@ -3,13 +3,13 @@ import type {
   AgentSkillInput,
   AgentSkillListResult,
   AgentSkillRepairDraft,
-} from '../../core/skills/AgentSkill';
-import type { AgentSkillRepository, SkillFrontmatterPolicy } from '../../core/skills/AgentSkillRepository';
+} from '@/features/settings/skills/AgentSkill';
+import type { AgentSkillRepository, SkillFrontmatterPolicy } from '@/features/settings/skills/AgentSkillRepository';
 import type {
   ClaudeCommandDocument,
   ClaudeCommandListResult,
   ClaudeCommandRepository,
-} from '../../core/skills/ClaudeCommandRepository';
+} from '@/features/settings/skills/ClaudeCommandRepository';
 
 export interface AgentSkillMutationResult<T> {
   value: T;

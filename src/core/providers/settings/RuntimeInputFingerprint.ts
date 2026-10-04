@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { parseEnvironmentVariables } from '../../../utils/env';
+import { parseEnvironmentVariables } from '@/core/process/env';
 
 export const RUNTIME_INPUT_FINGERPRINT_VERSION = 1;
 

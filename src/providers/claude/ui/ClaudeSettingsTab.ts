@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import { Setting } from 'obsidian';
 
+import { normalizeConfiguredCLIPath } from '@/core/process/cliPath';
 import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
 import type { ProviderCLIResolver } from '@/core/providers/types';
@@ -15,7 +16,6 @@ import { renderEnvironmentSettingsSection } from '../../../shared/settings/Envir
 import type { ProviderEnablementSettingOptions } from '../../../shared/settings/ProviderEnablementSetting';
 import { renderLastEnabledProviderWarning, renderProviderModelEnablementWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
-import { normalizeConfiguredCLIPath } from '../../../utils/path';
 import {
   getClaudeModelOptions,
 } from '../modelOptions';

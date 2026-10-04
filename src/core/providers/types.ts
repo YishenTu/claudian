@@ -1,4 +1,5 @@
-import type { CursorContext } from '../../utils/editor';
+import type { CursorContext } from '@/core/prompt/editorContext';
+
 import type {
   ProviderExecutionBackend,
   ProviderExecutionTransitionScope,
@@ -12,6 +13,7 @@ import type {
   SubagentInfo,
   SubagentProgress,
   ToolCallInfo,
+  ToolProviderPayload,
 } from '../types';
 import type { ProviderId } from '../types/provider';
 import type { ProviderCommandCatalog } from './commands/ProviderCommandCatalog';
@@ -120,12 +122,6 @@ export interface ProviderSettingsReconciler {
 // ---------------------------------------------------------------------------
 // App-level service interfaces
 // ---------------------------------------------------------------------------
-
-/**
- * Chat tab state is not a provider contract; its owner is `core/bootstrap/tabManagerState`.
- * Retained only until chat imports it from that owner.
- */
-export type { AppTabManagerState } from '../bootstrap/tabManagerState';
 
 /** Provider-neutral session metadata storage. */
 export interface SessionMetadataListOptions {
@@ -564,13 +560,21 @@ export interface ProviderTaskResultContext {
   agentId?: string;
 }
 
-/** Native task formats and output recovery stay behind this provider boundary. */
+/**
+ * Native task formats and output recovery stay behind this provider boundary. `providerPayload`
+ * is the payload the same provider attached to the task tool's result; only its owner reads it.
+ */
 export interface ProviderTaskResultInterpreter {
   describeTask(input: Readonly<Record<string, unknown>>): ProviderTaskDescription;
-  interpretLaunch(result: unknown, isError: boolean, toolUseResult?: unknown): ProviderTaskLaunch;
+  interpretLaunch(result: unknown, isError: boolean, providerPayload?: ToolProviderPayload): ProviderTaskLaunch;
   /** Correlate native input/output without recovering result files. */
   getOutputTaskId(input: Readonly<Record<string, unknown>> | undefined, result?: unknown): string | null;
-  interpretResult(result: unknown, isError: boolean, context: ProviderTaskResultContext, toolUseResult?: unknown): ProviderTaskResult;
+  interpretResult(
+    result: unknown,
+    isError: boolean,
+    context: ProviderTaskResultContext,
+    providerPayload?: ToolProviderPayload,
+  ): ProviderTaskResult;
 }
 
 export interface ProviderSubagentLaunchResult {

@@ -47,7 +47,7 @@ export function adaptCodexStreamChunk(chunk: StreamChunk): RequestedRunEvent | n
         ...(chunk.isError !== undefined ? { isError: chunk.isError } : {}),
         ...(chunk.isBlocked !== undefined ? { isBlocked: chunk.isBlocked } : {}),
         ...(chunk.providerPayload ? { providerPayload: chunk.providerPayload } : {}),
-        ...(chunk.toolUseResult ? { toolUseResult: chunk.toolUseResult } : {}),
+        ...(chunk.resultDetails ? { resultDetails: chunk.resultDetails } : {}),
       };
     case 'usage':
       return {
@@ -80,7 +80,7 @@ export function adaptCodexStreamChunk(chunk: StreamChunk): RequestedRunEvent | n
         ...(chunk.isError !== undefined ? { isError: chunk.isError } : {}),
         ...(chunk.isBlocked !== undefined ? { isBlocked: chunk.isBlocked } : {}),
         ...(chunk.providerPayload ? { providerPayload: chunk.providerPayload } : {}),
-        ...(chunk.toolUseResult ? { toolUseResult: chunk.toolUseResult } : {}),
+        ...(chunk.resultDetails ? { resultDetails: chunk.resultDetails } : {}),
       };
     case 'error':
     case 'done':

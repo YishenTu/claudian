@@ -1,3 +1,10 @@
+import { resolveToolDiffData } from '@/core/tools/toolDiff';
+import {
+  cancelScheduledAnimationFrame,
+  scheduleAnimationFrame,
+  type ScheduledAnimationFrame,
+} from '@/features/chat/utils/animationFrame';
+
 import type {
   ProviderBackgroundOutputEvent,
   ProviderExecutionEvent,
@@ -8,7 +15,7 @@ import {
   type ProviderSubagentAdapter,
   type ProviderSubagentLifecycleAdapter,
 } from '../../../core/providers/types';
-import { extractResolvedAnswers, extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
+import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
 import {
   isEditTool,
   isWriteEditTool,
@@ -16,18 +23,9 @@ import {
   TOOL_ASK_USER_QUESTION,
   TOOL_SUBAGENT,
 } from '../../../core/tools/toolNames';
-import {
-  extractToolProviderPayload,
-  normalizeToolProviderPayload,
-} from '../../../core/tools/toolProviderPayload';
-import {
-  extractResultImages,
-  extractScriptToolCalls,
-  extractToolResultContent,
-  extractToolResultFormat,
-  extractWebSearchResults,
-  extractWebSearchSummary,
-} from '../../../core/tools/toolResultContent';
+import { normalizeToolProviderPayload } from '../../../core/tools/toolProviderPayload';
+import { extractToolResultContent } from '../../../core/tools/toolResultContent';
+import { applyToolResultPresentation } from '../../../core/tools/toolResultDetails';
 import type {
   ChatMessage,
   StreamChunk,
@@ -35,13 +33,7 @@ import type {
   SubagentProgress,
   ToolCallInfo,
 } from '../../../core/types';
-import {
-  cancelScheduledAnimationFrame,
-  scheduleAnimationFrame,
-  type ScheduledAnimationFrame,
-} from '../../../utils/animationFrame';
 import { formatDurationMmSs } from '../../../utils/date';
-import { extractDiffData } from '../../../utils/diff';
 import { hasStreamingMathDelimiters } from '../../../utils/markdownMath';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
 import { FLAVOR_TEXTS } from '../constants';
@@ -569,7 +561,7 @@ export class StreamController {
     }
 
     if (chunk.content) existingToolCall.result = (existingToolCall.result ?? '') + chunk.content;
-    const scriptToolCalls = extractScriptToolCalls(chunk.toolUseResult);
+    const scriptToolCalls = chunk.resultDetails?.scriptToolCalls;
     if (scriptToolCalls) {
       notifyScriptFileChanges(this.deps.plugin.app, existingToolCall.scriptToolCalls, scriptToolCalls);
       existingToolCall.scriptToolCalls = scriptToolCalls;
@@ -727,14 +719,9 @@ export class StreamController {
     const { state, subagentManager } = this.deps;
     const normalizedContent = this.#normalizeToolResultContent(chunk.content);
 
-    const lifecycleToolCall = msg.toolCalls?.find(toolCall => toolCall.id === chunk.id);
-    if (lifecycleToolCall) mergeToolProviderPayload(lifecycleToolCall, chunk.providerPayload);
-    const lifecycleAdapter = lifecycleToolCall
-      ? this.getSubagentAdapter(lifecycleToolCall.name)
-      : null;
-    if (lifecycleToolCall && lifecycleAdapter?.protocol === 'lifecycle') {
-      mergeToolProviderPayload(lifecycleToolCall, chunk.toolUseResult?.providerPayload);
-    }
+    // The payload belongs to the tool even when a subagent path below consumes its result.
+    const resultToolCall = msg.toolCalls?.find(toolCall => toolCall.id === chunk.id);
+    if (resultToolCall) mergeToolProviderPayload(resultToolCall, chunk.providerPayload);
 
     // Resolve pending Task before processing result.
     if (subagentManager.hasPendingTask(chunk.id)) {
@@ -778,13 +765,6 @@ export class StreamController {
 
     if (existingToolCall) {
       mergeToolProviderPayload(existingToolCall, chunk.providerPayload);
-      const providerPayload = extractToolProviderPayload(chunk.toolUseResult);
-      if (providerPayload) {
-        existingToolCall.providerPayload = {
-          ...existingToolCall.providerPayload,
-          ...providerPayload,
-        };
-      }
       if (isBlocked) {
         existingToolCall.status = 'blocked';
       } else if (chunk.isError) {
@@ -793,16 +773,12 @@ export class StreamController {
         existingToolCall.status = 'completed';
       }
       existingToolCall.result = normalizedContent;
-      existingToolCall.resultFormat = extractToolResultFormat(chunk.toolUseResult) ?? existingToolCall.resultFormat;
-      existingToolCall.webSearchResults = extractWebSearchResults(chunk.toolUseResult) ?? existingToolCall.webSearchResults;
-      existingToolCall.webSearchSummary = extractWebSearchSummary(chunk.toolUseResult) ?? existingToolCall.webSearchSummary;
-      existingToolCall.resultImages = extractResultImages(chunk.toolUseResult) ?? existingToolCall.resultImages;
       const previousScriptToolCalls = existingToolCall.scriptToolCalls;
-      existingToolCall.scriptToolCalls = extractScriptToolCalls(chunk.toolUseResult) ?? previousScriptToolCalls;
+      applyToolResultPresentation(existingToolCall, chunk.resultDetails);
 
       if (existingToolCall.name === TOOL_ASK_USER_QUESTION) {
         const answers =
-          extractResolvedAnswers(chunk.toolUseResult) ??
+          chunk.resultDetails?.resolvedAnswers ??
           extractResolvedAnswersFromResultText(normalizedContent);
         if (answers) existingToolCall.resolvedAnswers = answers;
         this.deps.onQuestionToolChanged?.(existingToolCall);
@@ -811,7 +787,7 @@ export class StreamController {
       const writeEditState = state.writeEditStates.get(chunk.id);
       if (writeEditState && isWriteEditTool(existingToolCall.name)) {
         if (!chunk.isError && !isBlocked) {
-          const diffData = extractDiffData(chunk.toolUseResult, existingToolCall);
+          const diffData = resolveToolDiffData(chunk.resultDetails?.diff, existingToolCall);
           if (diffData) {
             existingToolCall.diffData = diffData;
             updateWriteEditWithDiff(writeEditState, diffData);
@@ -1039,7 +1015,7 @@ export class StreamController {
 
   /** Resolves a pending Agent tool call when its own tool_result arrives. */
   #renderPendingTaskFromTaskResultViaManager(
-    chunk: { id: string; content: string; isError?: boolean; toolUseResult?: unknown },
+    chunk: Extract<StreamChunk, { type: 'tool_result' }>,
     msg: ChatMessage
   ): void {
     const result = this.deps.subagentManager.renderPendingTaskFromTaskResult(
@@ -1047,7 +1023,7 @@ export class StreamController {
       chunk.content,
       chunk.isError || false,
       this.#getMessageContentEl(msg),
-      chunk.toolUseResult
+      chunk.providerPayload
     );
     if (!result) return;
 
@@ -1144,14 +1120,9 @@ export class StreamController {
             ? 'blocked'
             : (chunk.isError ? 'error' : 'completed');
           toolCall.result = normalizedContent;
-          toolCall.resultFormat = extractToolResultFormat(chunk.toolUseResult) ?? toolCall.resultFormat;
-          mergeToolProviderPayload(toolCall, chunk.toolUseResult?.providerPayload);
           mergeToolProviderPayload(toolCall, chunk.providerPayload);
-          toolCall.diffData = extractDiffData(chunk.toolUseResult, toolCall) ?? toolCall.diffData;
-          toolCall.webSearchResults = extractWebSearchResults(chunk.toolUseResult) ?? toolCall.webSearchResults;
-          toolCall.webSearchSummary = extractWebSearchSummary(chunk.toolUseResult) ?? toolCall.webSearchSummary;
-          toolCall.resultImages = extractResultImages(chunk.toolUseResult) ?? toolCall.resultImages;
-          toolCall.scriptToolCalls = extractScriptToolCalls(chunk.toolUseResult) ?? toolCall.scriptToolCalls;
+          toolCall.diffData = resolveToolDiffData(chunk.resultDetails?.diff, toolCall) ?? toolCall.diffData;
+          applyToolResultPresentation(toolCall, chunk.resultDetails);
           subagentManager.updateSyncToolResult(parentToolUseId, chunk.id, toolCall);
         }
         break;
@@ -1164,14 +1135,14 @@ export class StreamController {
 
   /** Finalizes a sync subagent when its Agent tool_result is received. */
   #finalizeSubagent(
-    chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean; toolUseResult?: unknown },
+    chunk: Extract<StreamChunk, { type: 'tool_result' }>,
     msg: ChatMessage
   ): void {
     const isError = chunk.isError || false;
     const normalizedContent = this.#normalizeToolResultContent(chunk.content);
     const taskToolCall = this.#ensureTaskToolCall(msg, chunk.id);
     const finalized = this.deps.subagentManager.finalizeSyncSubagent(
-      chunk.id, chunk.content, isError, chunk.toolUseResult, taskToolCall.subagent,
+      chunk.id, chunk.content, isError, chunk.providerPayload, taskToolCall.subagent,
     );
 
     const extractedResult = finalized?.result ?? normalizedContent;
@@ -1221,7 +1192,7 @@ export class StreamController {
   }
 
   async #handleAsyncTaskToolResult(
-    chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean; toolUseResult?: unknown },
+    chunk: Extract<StreamChunk, { type: 'tool_result' }>,
     msg: ChatMessage,
   ): Promise<boolean> {
     const { subagentManager } = this.deps;
@@ -1232,7 +1203,7 @@ export class StreamController {
       return false;
     }
 
-    subagentManager.handleTaskToolResult(chunk.id, chunk.content, chunk.isError, chunk.toolUseResult);
+    subagentManager.handleTaskToolResult(chunk.id, chunk.content, chunk.isError, chunk.providerPayload);
     await this.deps.asyncSubagentHistoryRecovery?.recover(
       subagentManager.getByTaskId(chunk.id),
     );
@@ -1242,7 +1213,7 @@ export class StreamController {
 
   /** Handles TaskOutput result to finalize async subagent. */
   private async handleAgentOutputToolResult(
-    chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean; toolUseResult?: unknown }
+    chunk: Extract<StreamChunk, { type: 'tool_result' }>
   ): Promise<boolean> {
     const { subagentManager } = this.deps;
     const isLinked = subagentManager.isLinkedAgentOutputTool(chunk.id);
@@ -1251,7 +1222,7 @@ export class StreamController {
       chunk.id,
       chunk.content,
       chunk.isError || false,
-      chunk.toolUseResult
+      chunk.providerPayload
     );
 
     await this.deps.asyncSubagentHistoryRecovery?.recover(handled);
@@ -1654,7 +1625,7 @@ export function providerOutputEventToStreamChunk(
           content: event.content,
           id: event.toolCallId,
           type: 'tool_output',
-          ...(event.toolUseResult ? { toolUseResult: event.toolUseResult } : {}),
+          ...(event.resultDetails ? { resultDetails: event.resultDetails } : {}),
         };
     case 'tool_completed':
       return event.toolScope.kind === 'subagent'
@@ -1665,7 +1636,7 @@ export function providerOutputEventToStreamChunk(
           ...(event.isBlocked !== undefined ? { isBlocked: event.isBlocked } : {}),
           subagentId: event.toolScope.subagentId,
           ...(event.providerPayload ? { providerPayload: event.providerPayload } : {}),
-          ...(event.toolUseResult ? { toolUseResult: event.toolUseResult } : {}),
+          ...(event.resultDetails ? { resultDetails: event.resultDetails } : {}),
           type: 'subagent_tool_result',
         }
         : {
@@ -1674,7 +1645,7 @@ export function providerOutputEventToStreamChunk(
           ...(event.isError !== undefined ? { isError: event.isError } : {}),
           ...(event.isBlocked !== undefined ? { isBlocked: event.isBlocked } : {}),
           ...(event.providerPayload ? { providerPayload: event.providerPayload } : {}),
-          ...(event.toolUseResult ? { toolUseResult: event.toolUseResult } : {}),
+          ...(event.resultDetails ? { resultDetails: event.resultDetails } : {}),
           type: 'tool_result',
         };
     case 'usage_updated':

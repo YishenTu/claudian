@@ -3,7 +3,7 @@
 import {
   escapePromptXMLAttribute,
   formatPromptXMLCdata,
-} from '../../../src/utils/promptXML';
+} from '@/core/prompt/promptXML';
 
 describe('prompt XML utilities', () => {
   it('escapes attribute delimiters and normalizes control whitespace', () => {

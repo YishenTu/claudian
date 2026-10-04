@@ -256,7 +256,7 @@ describe('SubagentManager', () => {
         'task-structured',
         'Task launched',
         false,
-        { data: { agent_id: 'agent-structured-1' } }
+        { rawOutput: { data: { agent_id: 'agent-structured-1' } } }
       );
 
       const running = manager.getByTaskId('task-structured');
@@ -703,7 +703,7 @@ describe('SubagentManager', () => {
         'out-1',
         '{}',
         false,
-        toolUseResult
+        { rawOutput: toolUseResult }
       );
       expect(result?.asyncStatus).toBe('error');
       expect(result?.result).toBe('Error: Agent process crashed');
@@ -721,7 +721,7 @@ describe('SubagentManager', () => {
         'out-1',
         '{}',
         false,
-        toolUseResult
+        { rawOutput: toolUseResult }
       );
       expect(result?.asyncStatus).toBe('error');
       expect(result?.result).toBe('Error: Task retrieval failed');
@@ -834,7 +834,7 @@ ${outputLines}
         'out-1',
         '{"retrieval_status":"success"}',
         false,
-        structuredToolUseResult
+        { rawOutput: structuredToolUseResult }
       );
       expect(result?.result).toBe('Final summary from structured result.');
     });
@@ -860,7 +860,7 @@ ${outputLines}
         'out-1',
         '{}',
         false,
-        sdkToolUseResult
+        { rawOutput: sdkToolUseResult }
       );
       expect(result?.result).toBe(fullResult);
     });
@@ -882,7 +882,7 @@ ${outputLines}
         'out-1',
         '{}',
         false,
-        sdkToolUseResult
+        { rawOutput: sdkToolUseResult }
       );
       // The structured report carries no model-directed trailer; every text block is the answer.
       expect(result?.result).toBe('Main result text here.\nSecond report block.');
@@ -1332,11 +1332,11 @@ Only this is the final result.
         'Launching task...',
         false,
         parentEl,
-        {
+        { rawOutput: {
           isAsync: true,
           status: 'async_launched',
           agentId: 'agent-xyz',
-        }
+        } }
       );
 
       expect(result).not.toBeNull();
@@ -1353,14 +1353,14 @@ Only this is the final result.
         '{}',
         false,
         parentEl,
-        {
+        { rawOutput: {
           status: 'completed',
           agentId: 'agent-sync',
           content: [
             { type: 'text', text: 'Full sync result.' },
             { type: 'text', text: 'agentId: agent-sync' },
           ],
-        }
+        } }
       );
 
       expect(result).not.toBeNull();
@@ -1383,7 +1383,7 @@ Only this is the final result.
         JSON.stringify(completedToolUseResult, null, 2),
         false,
         parentEl,
-        completedToolUseResult,
+        { rawOutput: completedToolUseResult },
       );
 
       expect(result).not.toBeNull();
@@ -1410,7 +1410,7 @@ Only this is the final result.
         'Full sync result.\nagentId: agent-sync\n<usage>total_tokens: 500</usage>',
         false,
         parentEl,
-        completedToolUseResult,
+        { rawOutput: completedToolUseResult },
       );
 
       expect(result).not.toBeNull();
@@ -1511,7 +1511,7 @@ Only this is the final result.
         agentId: 'agent-sync',
       };
 
-      const info = manager.finalizeSyncSubagent('task-sdk', '{}', false, sdkToolUseResult);
+      const info = manager.finalizeSyncSubagent('task-sdk', '{}', false, { rawOutput: sdkToolUseResult });
 
       expect(info).not.toBeNull();
       // Verify the extracted result (structured report) was passed to the renderer
@@ -1565,7 +1565,7 @@ Only this is the final result.
 
       manager.handleAgentOutputToolResult(
         'output-1', 'result text', true,
-        { status: 'completed', content: [{ type: 'text', text: 'Done' }] }
+        { rawOutput: { status: 'completed', content: [{ type: 'text', text: 'Done' }] } }
       );
 
       const final = updates[updates.length - 1];
@@ -1579,7 +1579,7 @@ Only this is the final result.
 
       manager.handleAgentOutputToolResult(
         'output-1', 'result text', true,
-        { retrieval_status: 'success', result: 'All good' }
+        { rawOutput: { retrieval_status: 'success', result: 'All good' } }
       );
 
       const final = updates[updates.length - 1];
@@ -1592,7 +1592,7 @@ Only this is the final result.
 
       manager.handleAgentOutputToolResult(
         'output-1', 'result text', false,
-        { retrieval_status: 'error', error: 'Agent crashed' }
+        { rawOutput: { retrieval_status: 'error', error: 'Agent crashed' } }
       );
 
       const final = updates[updates.length - 1];
@@ -1603,7 +1603,7 @@ Only this is the final result.
       const { manager, updates } = createManager();
       setupRunningSubagent(manager);
 
-      manager.handleAgentOutputToolResult('output-1', 'result text', true, { foo: 'bar' });
+      manager.handleAgentOutputToolResult('output-1', 'result text', true, { rawOutput: { foo: 'bar' } });
 
       const final = updates[updates.length - 1];
       expect(final.asyncStatus).toBe('error');

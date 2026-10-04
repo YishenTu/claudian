@@ -5,11 +5,11 @@ import { axe } from 'jest-axe';
 import type { App } from 'obsidian';
 import { Notice } from 'obsidian';
 
-import { AgentSkillRepository, CLAUDE_COMMANDS_ROOT, CLAUDE_SKILLS_ROOT, type SkillFrontmatterPolicy } from '@/core/skills/AgentSkillRepository';
-import { ClaudeCommandRepository } from '@/core/skills/ClaudeCommandRepository';
 import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { AgentSkillManagementCoordinator } from '@/features/settings/AgentSkillManagementCoordinator';
 import { AgentSkillSettings } from '@/features/settings/AgentSkillSettings';
+import { AgentSkillRepository, CLAUDE_COMMANDS_ROOT, CLAUDE_SKILLS_ROOT, type SkillFrontmatterPolicy } from '@/features/settings/skills/AgentSkillRepository';
+import { ClaudeCommandRepository } from '@/features/settings/skills/ClaudeCommandRepository';
 import { t } from '@/i18n/i18n';
 
 jest.mock('obsidian', () => ({

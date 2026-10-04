@@ -1,6 +1,9 @@
 import type { App, Component } from 'obsidian';
 import { MarkdownRenderer, Menu, Notice, setIcon } from 'obsidian';
 
+import { extractUserDisplayContent } from '@/core/prompt/promptContext';
+import { escapeRawHTMLTags } from '@/features/chat/rendering/markdownHTML';
+
 import type { ChatRewindMode } from '../../../core/execution';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
@@ -22,10 +25,8 @@ import type {
 } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { enhanceRenderedCodeFence } from '../../../shared/components/CopyableCodeFence';
-import { extractUserDisplayContent } from '../../../utils/context';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
 import { replaceImageEmbedsWithHTML } from '../../../utils/imageEmbed';
-import { escapeRawHTMLTags } from '../../../utils/markdownHTML';
 import {
   escapeMathDelimitersForStreaming,
   normalizeLatexMathDelimiters,

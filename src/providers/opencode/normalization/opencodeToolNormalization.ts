@@ -1,3 +1,5 @@
+import { diffFromUnifiedText } from '@/core/tools/toolDiff';
+
 import {
   TOOL_APPLY_PATCH,
   TOOL_ASK_USER_QUESTION,
@@ -14,8 +16,13 @@ import {
   TOOL_WEB_SEARCH,
   TOOL_WRITE,
 } from '../../../core/tools/toolNames';
-import type { AskUserAnswers, AskUserQuestionItem, WebSearchResultItem } from '../../../core/types';
-import type { SDKToolUseResult } from '../../../core/types/diff';
+import { normalizeToolResultDetails } from '../../../core/tools/toolResultDetails';
+import type {
+  AskUserAnswers,
+  AskUserQuestionItem,
+  ToolResultDetails,
+  WebSearchResultItem,
+} from '../../../core/types';
 import {
   type ACPResolvedToolRawName,
   ACPToolStreamAdapter,
@@ -418,29 +425,25 @@ function parseWebSearchResults(text: string): WebSearchResultItem[] {
   });
 }
 
-export function normalizeOpencodeToolUseResult(
+/** Decodes a native OpenCode `{ output, metadata }` result into the neutral result fields. */
+export function normalizeOpencodeToolResultDetails(
   rawName: string | undefined,
   input: Record<string, unknown>,
   rawOutput: unknown,
-): SDKToolUseResult | undefined {
+): ToolResultDetails | undefined {
   const knownName = toKnownToolName(rawName);
   const metadata = extractToolMetadata(rawOutput);
-  const normalized: SDKToolUseResult = {};
+  const normalized: ToolResultDetails = {};
 
   if (knownName === 'read') {
     normalized.resultFormat = 'plain';
   }
 
-  if (
-    (knownName === 'write' || knownName === 'edit')
-    && firstString(input.file_path, input.filePath, input.path, metadata?.filepath, metadata?.filePath)
-  ) {
-    normalized.filePath = firstString(input.file_path, input.filePath, input.path, metadata?.filepath, metadata?.filePath);
-  }
-
   if (knownName === 'edit') {
     const files = Array.isArray(metadata?.files) ? metadata.files.filter(isPlainObject) : [];
-    const diff = firstTrimmedString(files[0]?.patch);
+    const patch = firstTrimmedString(files[0]?.patch);
+    const filePath = firstString(input.file_path, input.filePath, input.path, metadata?.filepath, metadata?.filePath);
+    const diff = patch ? diffFromUnifiedText(patch, filePath) : undefined;
     if (diff) {
       normalized.diff = diff;
     }
@@ -460,11 +463,11 @@ export function normalizeOpencodeToolUseResult(
       : [];
     const answers = normalizeQuestionAnswers(metadata?.answers, questions);
     if (answers) {
-      normalized.answers = answers;
+      normalized.resolvedAnswers = answers;
     }
   }
 
-  return Object.keys(normalized).length > 0 ? normalized : undefined;
+  return normalizeToolResultDetails(normalized);
 }
 
 /** Native outcomes that OpenCode reports as successful tool completions. */
@@ -510,7 +513,7 @@ export function createOpencodeToolStreamAdapter(): ACPToolStreamAdapter {
   return new ACPToolStreamAdapter({
     normalizeToolInput: normalizeOpencodeToolInput,
     normalizeToolName: normalizeOpencodeToolName,
-    normalizeToolUseResult: normalizeOpencodeToolUseResult,
+    normalizeToolResultDetails: normalizeOpencodeToolResultDetails,
     resolveRawToolName: resolveOpencodeRawToolName,
   });
 }

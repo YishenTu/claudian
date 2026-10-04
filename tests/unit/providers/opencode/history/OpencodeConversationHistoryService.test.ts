@@ -4,13 +4,13 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import type * as environmentModule from '@/core/process/env';
 import type { Conversation } from '@/core/types';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
-import type * as environmentModule from '@/utils/env';
 
 // Exercise real SQLite subprocesses without discovering the runner's other Node installations.
-jest.mock('@/utils/env', () => ({
-  ...jest.requireActual<typeof environmentModule>('@/utils/env'),
+jest.mock('@/core/process/env', () => ({
+  ...jest.requireActual<typeof environmentModule>('@/core/process/env'),
   findNodeExecutables: () => [process.execPath],
 }));
 

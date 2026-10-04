@@ -4,7 +4,7 @@ import {
   cancelScheduledAnimationFrame,
   scheduleAnimationFrame,
   type ScheduledAnimationFrame,
-} from '../../../utils/animationFrame';
+} from '@/features/chat/utils/animationFrame';
 
 /** Per-turn context only; Linked content lives in the composer info row. */
 export type ComposerContextSlot =

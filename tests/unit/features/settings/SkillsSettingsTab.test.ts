@@ -5,9 +5,9 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import type { App } from 'obsidian';
 
-import { AGENT_SKILLS_ROOT, CLAUDE_COMMANDS_ROOT, CLAUDE_SKILLS_ROOT } from '@/core/skills/AgentSkillRepository';
-import { ClaudeSkillSync } from '@/core/skills/ClaudeSkillSync';
 import type { ClaudianSettings } from '@/core/types';
+import { AGENT_SKILLS_ROOT, CLAUDE_COMMANDS_ROOT, CLAUDE_SKILLS_ROOT } from '@/features/settings/skills/AgentSkillRepository';
+import { ClaudeSkillSync } from '@/features/settings/skills/ClaudeSkillSync';
 import { SkillsSettingsTab } from '@/features/settings/SkillsSettingsTab';
 import { t } from '@/i18n/i18n';
 

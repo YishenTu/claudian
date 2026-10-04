@@ -2,7 +2,7 @@ import {
   cancelScheduledAnimationFrame,
   scheduleAnimationFrame,
   type ScheduledAnimationFrame,
-} from '../../../utils/animationFrame';
+} from '@/features/chat/utils/animationFrame';
 
 const STACKED_CLASS = 'claudian-zen-composer--stacked';
 // Room kept between the typed text and the controls before they move to their own row.

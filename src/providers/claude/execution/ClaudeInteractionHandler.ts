@@ -121,7 +121,6 @@ export class ClaudeInteractionHandler {
         decisionOptions: options.suggestions?.length
           ? PERSISTABLE_DECISION_OPTIONS
           : ONE_TIME_DECISION_OPTIONS,
-        additionalPermissions: options.suggestions,
       }, options.signal);
       this.#assertCurrentResponse(pending, response.interactionId);
       dismissReason = 'resolved';

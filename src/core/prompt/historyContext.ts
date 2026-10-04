@@ -1,23 +1,12 @@
 /**
- * Claudian - Session Utilities
+ * Claudian - History Context
  *
- * Session recovery and history reconstruction.
+ * Rebuilds prompt context from conversation history for session recovery.
  */
 
-import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../core/types';
-import { appendLinkedContent, appendLinkedContentBody, appendSelectionContexts, appendSessionReferences, extractUserQuery, formatLinkedContent } from './context';
+import type { ChatMessage, ImageAttachment, ToolCallInfo } from '@/core/types';
 
-export function getMissingSessionId(error: unknown): string | null {
-  const message = error instanceof Error ? error.message : '';
-  const match = message.match(/no conversation found with session id:\s*([a-z0-9_-]+)/i);
-  return match?.[1] ?? null;
-}
-
-export function isSessionMissingError(error: unknown, expectedSessionId?: string): boolean {
-  const missingSessionId = getMissingSessionId(error);
-  return !!missingSessionId
-    && (!expectedSessionId || missingSessionId.toLowerCase() === expectedSessionId.toLowerCase());
-}
+import { appendLinkedContent, appendLinkedContentBody, appendSelectionContexts, appendSessionReferences, extractUserQuery, formatLinkedContent } from './promptContext';
 
 // ============================================
 // History Reconstruction

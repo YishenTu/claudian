@@ -53,7 +53,7 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
       getConversationList: jest.fn().mockReturnValue([]),
       updateConversation: jest.fn().mockResolvedValue(undefined),
       renameConversation: jest.fn().mockResolvedValue(undefined),
-      deleteConversation: jest.fn().mockResolvedValue(undefined),
+      conversationLifecycle: { delete: jest.fn().mockResolvedValue(undefined) },
       agentService: {
         getSessionId: jest.fn().mockResolvedValue(null),
         setSessionId: jest.fn(),
@@ -95,8 +95,6 @@ function createBrowser(deps: ReturnType<typeof createMockDeps>): SessionBrowser 
   return new SessionBrowser({
     plugin: deps.plugin,
     getCurrentConversationId: () => deps.state.currentConversationId,
-    isStreaming: () => deps.state.isStreaming,
-    reloadActiveConversation: () => new ConversationController(deps).loadActive(),
     getTitleGenerationService: () => deps.getTitleGenerationService(),
     onListChanged: () => undefined,
   });
@@ -195,8 +193,9 @@ describe('SessionBrowser', () => {
         expect(loadingEl).toBeTruthy();
       });
 
-      it('should not delete while streaming', async () => {
+      it('leaves the running guard to the conversation lifecycle while the active tab streams', async () => {
         holdResponse(deps.session.turns);
+        deps.state.currentConversationId = 'conv-active';
 
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
           { id: 'conv-1', title: 'Test', createdAt: 1000, lastActivityAt: 1000 },
@@ -213,7 +212,7 @@ describe('SessionBrowser', () => {
         expect(clickHandlers).toBeDefined();
         await clickHandlers![0]({ stopPropagation: jest.fn() });
 
-        expect(deps.plugin.deleteConversation).not.toHaveBeenCalled();
+        expect(deps.plugin.conversationLifecycle.delete).toHaveBeenCalledWith(['conv-1']);
       });
     });
 
@@ -921,7 +920,7 @@ describe('SessionBrowser', () => {
         await Promise.resolve();
         await Promise.resolve();
 
-        expect(deps.plugin.deleteConversation).toHaveBeenCalledWith('conv-1');
+        expect(deps.plugin.conversationLifecycle.delete).toHaveBeenCalledWith(['conv-1']);
         expect(onRerender).toHaveBeenCalledTimes(1);
       });
 
@@ -2449,31 +2448,7 @@ describe('SessionBrowser', () => {
       expect(deps.plugin.renameConversation).not.toHaveBeenCalled();
     });
 
-    it('should delete conversation and reload active when deleting current conversation', async () => {
-      deps.state.currentConversationId = 'conv-1';
-
-      (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
-        { id: 'conv-1', title: 'Current', createdAt: 1000, lastActivityAt: 1000 },
-      ]);
-
-      renderDropdown(controller, deps);
-
-      const list = dropdown.children[1];
-      const item = list.children[0];
-      const deleteBtn = item.querySelector('.claudian-delete-btn');
-      expect(deleteBtn).toBeTruthy();
-
-      const clickHandlers = deleteBtn!._eventListeners?.get('click');
-      expect(clickHandlers).toBeDefined();
-
-      await clickHandlers![0]({ stopPropagation: jest.fn() });
-
-      expect(deps.plugin.deleteConversation).toHaveBeenCalledWith('conv-1');
-      expect(deps.plugin.getConversationById).toHaveBeenCalledTimes(1);
-      expect(deps.plugin.getConversationById).toHaveBeenCalledWith('conv-1');
-    });
-
-    it('should delete non-current conversation without calling loadActive', async () => {
+    it('emits a delete intent for the clicked session without reloading the active tab', async () => {
       deps.state.currentConversationId = 'conv-1';
 
       (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
@@ -2490,8 +2465,9 @@ describe('SessionBrowser', () => {
 
       await clickHandlers![0]({ stopPropagation: jest.fn() });
 
-      expect(deps.plugin.deleteConversation).toHaveBeenCalledWith('conv-2');
+      expect(deps.plugin.conversationLifecycle.delete).toHaveBeenCalledWith(['conv-2']);
       expect(deps.plugin.getConversationById).not.toHaveBeenCalled();
+      expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
     });
   });
 

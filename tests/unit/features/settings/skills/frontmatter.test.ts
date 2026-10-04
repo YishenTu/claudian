@@ -5,7 +5,7 @@ import {
   extractString,
   extractStringArray,
   parseFrontmatter,
-} from '@/utils/frontmatter';
+} from '@/features/settings/skills/frontmatter';
 
 describe('parseFrontmatter', () => {
   it('parses valid frontmatter with body', () => {

@@ -29,7 +29,7 @@ import { ChatState } from '@/features/chat/state/ChatState';
 import * as markdownMath from '@/utils/markdownMath';
 
 jest.mock('@/core/tools/toolInput', () => ({
-  extractResolvedAnswers: jest.fn().mockReturnValue(undefined),
+  ...jest.requireActual('@/core/tools/toolInput'),
   extractResolvedAnswersFromResultText: jest.fn().mockReturnValue(undefined),
 }));
 
@@ -948,7 +948,7 @@ describe('StreamController - Text Content', () => {
       );
       await controller.handleStreamChunk({
         type: 'tool_result', id: 'script-refresh', content: 'Script error', isError: true,
-        toolUseResult: { scriptToolCalls: [
+        resultDetails: { scriptToolCalls: [
           { name: 'Write', input: { file_path: 'notes/new.md', content: 'hi' }, status: 'completed' },
           { name: TOOL_APPLY_PATCH, input: { patch: '*** Begin Patch\n*** Add File: drafts/plan.md\n+x\n*** End Patch' }, status: 'completed' },
           { name: 'Edit', input: { file_path: 'failed/edit.md' }, status: 'error' },
@@ -972,15 +972,15 @@ describe('StreamController - Text Content', () => {
 
       await controller.handleStreamChunk({ type: 'tool_use', id: 'script-progress', name: 'exec', input: { code: '' } }, msg);
       await controller.handleStreamChunk({ type: 'tool_output', id: 'script-progress', content: '',
-        toolUseResult: { scriptToolCalls: [{ ...write, status: 'running' }] } }, msg);
+        resultDetails: { scriptToolCalls: [{ ...write, status: 'running' }] } }, msg);
       await controller.handleStreamChunk({ type: 'tool_output', id: 'script-progress', content: '',
-        toolUseResult: { scriptToolCalls: [{ ...write, status: 'completed' }, { ...edit, status: 'running' }] } }, msg);
+        resultDetails: { scriptToolCalls: [{ ...write, status: 'completed' }, { ...edit, status: 'running' }] } }, msg);
       await jest.advanceTimersByTimeAsync(200);
       expect(refreshedDirs()).toEqual(['notes']);
       expect(msg.toolCalls?.[0].scriptToolCalls?.map(call => call.status)).toEqual(['completed', 'running']);
 
       await controller.handleStreamChunk({ type: 'tool_result', id: 'script-progress', content: 'done',
-        toolUseResult: { scriptToolCalls: [{ ...write, status: 'completed' }, { ...edit, status: 'completed' }] } }, msg);
+        resultDetails: { scriptToolCalls: [{ ...write, status: 'completed' }, { ...edit, status: 'completed' }] } }, msg);
       await jest.advanceTimersByTimeAsync(200);
       expect(refreshedDirs()).toEqual(['notes', 'drafts']);
     });
@@ -2245,7 +2245,7 @@ describe('StreamController - Text Content', () => {
       );
     });
 
-    it('should pass task toolUseResult into pending Task resolver', async () => {
+    it('should pass the task provider payload into pending Task resolver', async () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -2254,12 +2254,12 @@ describe('StreamController - Text Content', () => {
         msg
       );
 
-      const toolUseResult = { isAsync: true, status: 'async_launched', agentId: 'agent-1' };
+      const providerPayload = { rawOutput: { isAsync: true, status: 'async_launched', agentId: 'agent-1' } };
       (deps.subagentManager.hasPendingTask as jest.Mock).mockReturnValueOnce(true);
       (deps.subagentManager.renderPendingTaskFromTaskResult as jest.Mock).mockReturnValueOnce(null);
 
       await controller.handleStreamChunk(
-        { type: 'tool_result', id: 'task-1', content: 'Launching...', toolUseResult } as any,
+        { type: 'tool_result', id: 'task-1', content: 'Launching...', providerPayload },
         msg
       );
 
@@ -2268,7 +2268,7 @@ describe('StreamController - Text Content', () => {
         'Launching...',
         false,
         deps.state.currentContentEl,
-        toolUseResult
+        providerPayload
       );
     });
   });
@@ -2369,7 +2369,7 @@ describe('StreamController - Text Content', () => {
       (deps.subagentManager.handleAgentOutputToolResult as jest.Mock).mockReturnValueOnce({});
 
       await controller.handleStreamChunk(
-        { type: 'tool_result', id: 'agent-out-1', content: 'agent result', toolUseResult: { foo: 'bar' } as any },
+        { type: 'tool_result', id: 'agent-out-1', content: 'agent result', providerPayload: { rawOutput: { foo: 'bar' } } },
         msg
       );
 
@@ -2377,7 +2377,7 @@ describe('StreamController - Text Content', () => {
         'agent-out-1',
         'agent result',
         false,
-        { foo: 'bar' }
+        { rawOutput: { foo: 'bar' } }
       );
       expect(updateToolCallResult).not.toHaveBeenCalled();
     });
@@ -2663,15 +2663,15 @@ describe('StreamController - Text Content', () => {
       await controller.handleStreamChunk({
         content: 'updated file',
         id: 'migrated-edit',
-        toolUseResult: {
-          filePath: 'notes/test.md',
-          structuredPatch: [{
-            lines: ['-old', '+new'],
-            newLines: 1,
-            newStart: 1,
-            oldLines: 1,
-            oldStart: 1,
-          }],
+        resultDetails: {
+          diff: {
+            filePath: 'notes/test.md',
+            diffLines: [
+              { type: 'delete', text: 'old', oldLineNum: 1 },
+              { type: 'insert', text: 'new', newLineNum: 1 },
+            ],
+            stats: { added: 1, removed: 1 },
+          },
         },
         type: 'tool_result',
       }, msg);
@@ -2937,7 +2937,6 @@ describe('StreamController - Text Content', () => {
     });
 
     it('rebuilds a rendered generic tool as AskUserQuestion without duplicating result handling', async () => {
-      const coreTools = jest.requireMock('@/core/tools/toolInput');
       const { renderToolCall, updateToolCallResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       renderToolCall.mockReset();
       const parentEl = createMockEl();
@@ -2952,7 +2951,6 @@ describe('StreamController - Text Content', () => {
           return element;
         });
       }
-      coreTools.extractResolvedAnswers.mockReturnValueOnce({ color: 'Blue' });
       const msg = createTestMessage();
 
       await controller.handleStreamChunk(
@@ -2969,7 +2967,7 @@ describe('StreamController - Text Content', () => {
       await controller.handleStreamChunk({
         content: 'answered',
         id: 'ask-migration',
-        toolUseResult: { answers: { color: 'Blue' } },
+        resultDetails: { resolvedAnswers: { color: 'Blue' } },
         type: 'tool_result',
       }, msg);
 
@@ -2981,7 +2979,6 @@ describe('StreamController - Text Content', () => {
         result: 'answered',
         status: 'completed',
       });
-      expect(coreTools.extractResolvedAnswers).toHaveBeenCalledTimes(1);
       expect(initialEl.remove).toHaveBeenCalledTimes(1);
       expect(deps.state.toolCallElements.get('ask-migration')).toBe(askEl);
       expect(updateToolCallResult).toHaveBeenCalledTimes(1);
@@ -3409,12 +3406,10 @@ describe('StreamController - Text Content', () => {
         type: 'tool_result',
         id: 'late-output',
         content: 'Inspection complete.',
-        toolUseResult: {
-          providerPayload: {
-            rawName: 'get_command_or_subagent_output',
-            rawOutput: {
-              Result: [{ output: 'Inspection complete.', status: 'completed', task_id: 'task-late' }],
-            },
+        providerPayload: {
+          rawName: 'get_command_or_subagent_output',
+          rawOutput: {
+            Result: [{ output: 'Inspection complete.', status: 'completed', task_id: 'task-late' }],
           },
         },
       }, msg);
@@ -3682,16 +3677,14 @@ describe('StreamController - Text Content', () => {
         type: 'tool_result',
         id: 'early-wait',
         content: 'Inspection complete.',
-        toolUseResult: {
-          providerPayload: {
-            rawName: 'get_command_or_subagent_output',
-            rawOutput: {
-              Result: [{
-                output: 'Inspection complete.',
-                status: 'completed',
-                task_id: 'task-late-binding',
-              }],
-            },
+        providerPayload: {
+          rawName: 'get_command_or_subagent_output',
+          rawOutput: {
+            Result: [{
+              output: 'Inspection complete.',
+              status: 'completed',
+              task_id: 'task-late-binding',
+            }],
           },
         },
       }, msg);
@@ -3789,16 +3782,14 @@ describe('StreamController - Text Content', () => {
         type: 'tool_result',
         id: 'terminal-output',
         content: 'Inspection complete.',
-        toolUseResult: {
-          providerPayload: {
-            rawName: 'get_command_or_subagent_output',
-            rawOutput: {
-              Result: [{
-                output: 'Inspection complete.',
-                status: 'completed',
-                task_id: 'task-terminal-output',
-              }],
-            },
+        providerPayload: {
+          rawName: 'get_command_or_subagent_output',
+          rawOutput: {
+            Result: [{
+              output: 'Inspection complete.',
+              status: 'completed',
+              task_id: 'task-terminal-output',
+            }],
           },
         },
       }, msg);
@@ -3965,15 +3956,13 @@ describe('StreamController - Text Content', () => {
         type: 'tool_result',
         id: 'mixed-output',
         content: 'Subagent and command finished.',
-        toolUseResult: {
-          providerPayload: {
-            rawName: 'get_command_or_subagent_output',
-            rawOutput: {
-              Result: [
-                { output: 'Inspection complete.', status: 'completed', task_id: 'task-mixed' },
-                { output: 'Command complete.', status: 'completed', task_id: 'command-mixed' },
-              ],
-            },
+        providerPayload: {
+          rawName: 'get_command_or_subagent_output',
+          rawOutput: {
+            Result: [
+              { output: 'Inspection complete.', status: 'completed', task_id: 'task-mixed' },
+              { output: 'Command complete.', status: 'completed', task_id: 'command-mixed' },
+            ],
           },
         },
       }, msg);
@@ -4031,12 +4020,10 @@ describe('StreamController - Text Content', () => {
         type: 'tool_result',
         id: 'spawn-1',
         content: 'Spawned task-7',
-        toolUseResult: {
-          providerPayload: {
-            rawInput: { run_in_background: true, task_id: 'task-7' },
-            rawName: 'spawn_subagent',
-            rawOutput: { text: 'Spawned task-7', type: 'text' },
-          },
+        providerPayload: {
+          rawInput: { run_in_background: true, task_id: 'task-7' },
+          rawName: 'spawn_subagent',
+          rawOutput: { text: 'Spawned task-7', type: 'text' },
         },
       }, msg);
       await controller.handleStreamChunk({
@@ -4049,13 +4036,11 @@ describe('StreamController - Text Content', () => {
         type: 'tool_result',
         id: 'output-1',
         content: 'Renderer mappings verified.',
-        toolUseResult: {
-          providerPayload: {
-            rawName: 'get_command_or_subagent_output',
-            rawOutput: {
-              Result: [{ output: 'Renderer mappings verified.', status: 'completed', task_id: 'task-7' }],
-              type: 'task_output',
-            },
+        providerPayload: {
+          rawName: 'get_command_or_subagent_output',
+          rawOutput: {
+            Result: [{ output: 'Renderer mappings verified.', status: 'completed', task_id: 'task-7' }],
+            type: 'task_output',
           },
         },
       }, msg);
@@ -4094,11 +4079,9 @@ describe('StreamController - Text Content', () => {
         type: 'tool_result',
         id: 'spawn-2',
         content: 'No material findings.',
-        toolUseResult: {
-          providerPayload: {
-            rawName: 'spawn_subagent',
-            rawOutput: { text: 'No material findings.', type: 'text' },
-          },
+        providerPayload: {
+          rawName: 'spawn_subagent',
+          rawOutput: { text: 'No material findings.', type: 'text' },
         },
       }, msg);
 
@@ -4185,14 +4168,14 @@ describe('StreamController - Text Content', () => {
       expect(msg.toolCalls).toEqual([]);
     });
 
-    it('passes structured toolUseResult through to async Task result handler', async () => {
+    it('passes the provider payload through to async Task result handler', async () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
       (deps.subagentManager.isPendingAsyncTask as jest.Mock).mockReturnValueOnce(true);
 
-      const structured = { data: { agent_id: 'agent-from-structured' } };
+      const structured = { rawOutput: { data: { agent_id: 'agent-from-structured' } } };
       await controller.handleStreamChunk(
-        { type: 'tool_result', id: 'task-1', content: 'Task started', toolUseResult: structured } as any,
+        { type: 'tool_result', id: 'task-1', content: 'Task started', providerPayload: structured },
         msg
       );
 
@@ -4400,12 +4383,10 @@ describe('StreamController - Tool completion', () => {
       await controller.handleStreamChunk({
         content: 'Concise result',
         id: 'future-1',
-        toolUseResult: {
-          providerPayload: {
-            rawInput,
-            rawName: 'future_tool',
-            rawOutput,
-          },
+        providerPayload: {
+          rawInput,
+          rawName: 'future_tool',
+          rawOutput,
         },
         type: 'tool_result',
       }, msg);
@@ -4427,7 +4408,6 @@ describe('StreamController - Tool completion', () => {
 
     it('should hydrate AskUserQuestion resolvedAnswers from result text fallback', async () => {
       const coreTools = jest.requireMock('@/core/tools/toolInput');
-      (coreTools.extractResolvedAnswers as jest.Mock).mockReturnValueOnce(undefined);
       (coreTools.extractResolvedAnswersFromResultText as jest.Mock).mockReturnValueOnce({
         'Color?': 'Blue',
       });

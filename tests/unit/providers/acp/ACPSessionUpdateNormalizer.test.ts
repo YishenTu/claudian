@@ -117,22 +117,19 @@ describe('ACPSessionUpdateNormalizer', () => {
       toolCallId: 'tool-write',
     });
 
-    expect(completed).toMatchObject({
-      streamChunks: [{
-        toolUseResult: {
-          filePath: 'src/write.ts',
-          newText: 'new text',
-          oldText: 'old text',
-        },
-        type: 'tool_result',
-      }],
-      toolState: {
-        toolUseResult: {
-          filePath: 'src/write.ts',
-          newText: 'new text',
-          oldText: 'old text',
-        },
+    const resultDetails = {
+      diff: {
+        filePath: 'src/write.ts',
+        diffLines: [
+          { type: 'delete', text: 'old text', oldLineNum: 1 },
+          { type: 'insert', text: 'new text', newLineNum: 1 },
+        ],
+        stats: { added: 1, removed: 1 },
       },
+    };
+    expect(completed).toMatchObject({
+      streamChunks: [{ resultDetails, type: 'tool_result' }],
+      toolState: { resultDetails },
     });
   });
 

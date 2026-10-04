@@ -3,8 +3,8 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { findCLIBinaryPath } from '@/utils/cliBinaryLocator';
-import { getEnhancedPath } from '@/utils/env';
+import { findCLIBinaryPath } from '@/core/process/cliBinaryLocator';
+import { getEnhancedPath } from '@/core/process/env';
 
 describe('enhanced CLI discovery and subprocess PATH', () => {
   const originalEnv = process.env;

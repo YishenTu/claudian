@@ -1,4 +1,5 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { parseEnvironmentVariables } from '@/core/process/env';
 
 import {
   type CLIPathFingerprintInputs,
@@ -9,7 +10,6 @@ import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvir
 import { createRuntimeInputFingerprint } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
-import { parseEnvironmentVariables } from '../../../utils/env';
 import {
   getOpencodeProviderSettings,
   updateOpencodeProviderSettings

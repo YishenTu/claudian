@@ -1,6 +1,9 @@
 import type { EditorView } from '@codemirror/view';
 
 import type { ProviderSelectionSnapshot, ProviderSessionReference } from '@/core/execution/ProviderExecutionRequest';
+import type { BrowserSelectionContext } from '@/core/prompt/browserContext';
+import type { CanvasSelectionContext } from '@/core/prompt/canvasContext';
+import type { EditorSelectionContext } from '@/core/prompt/editorContext';
 
 import type {
   ChatMessage,
@@ -9,9 +12,6 @@ import type {
   ToolCallInfo,
   UsageInfo,
 } from '../../../core/types';
-import type { BrowserSelectionContext } from '../../../utils/browser';
-import type { CanvasSelectionContext } from '../../../utils/canvas';
-import type { EditorSelectionContext } from '../../../utils/editor';
 import type { ThinkingBlockState } from '../rendering/ThinkingBlockRenderer';
 import type { WriteEditState } from '../rendering/WriteEditRenderer';
 

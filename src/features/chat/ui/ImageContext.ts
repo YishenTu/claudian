@@ -1,10 +1,10 @@
 import { Notice } from 'obsidian';
 import * as path from 'path';
 
+import { normalizeImageMediaType } from '@/core/execution/imageAttachment';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 import type { ImageAttachment, ImageMediaType } from '../../../core/types';
-import { normalizeImageMediaType } from '../../../utils/imageAttachment';
 import { ComposerContextTray } from './ComposerContextTray';
 import { ImagePreviewModal } from './ImagePreviewModal';
 

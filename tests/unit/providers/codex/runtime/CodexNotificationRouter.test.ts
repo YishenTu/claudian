@@ -3855,7 +3855,7 @@ describe('CodexNotificationRouter', () => {
 
       const results = chunks.filter(chunk => chunk.type === 'tool_result');
       expect(new Set(results.map(chunk => chunk.id))).toEqual(new Set(['call-web']));
-      expect(results.at(-1)).toMatchObject({ toolUseResult: { webSearchResults: [expect.objectContaining({ title: 'Source' })] } });
+      expect(results.at(-1)).toMatchObject({ resultDetails: { webSearchResults: [expect.objectContaining({ title: 'Source' })] } });
     });
 
     it.each([false, true])('keeps all raw web actions when a same-id native event summarizes one (native first: %s)', nativeFirst => {

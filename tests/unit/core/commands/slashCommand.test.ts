@@ -1,4 +1,4 @@
-import { extractFirstParagraph } from '@/utils/slashCommand';
+import { extractFirstParagraph } from '@/core/commands/slashCommand';
 
 describe('extractFirstParagraph', () => {
   it('returns the first paragraph from multi-paragraph content', () => {

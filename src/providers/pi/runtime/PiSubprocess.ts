@@ -2,12 +2,12 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 
-import { ManagedStdioProcess } from '@/core/process/ManagedStdioProcess';
 import {
   cliPathRequiresNode,
   findNodeExecutable,
   getEnhancedPath,
-} from '@/utils/env';
+} from '@/core/process/env';
+import { ManagedStdioProcess } from '@/core/process/ManagedStdioProcess';
 
 const STDERR_BUFFER_LIMIT = 8_000;
 const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';

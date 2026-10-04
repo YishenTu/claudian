@@ -6,6 +6,7 @@ import type {
   SubagentProgress,
   ToolCallInfo,
 } from '../../../core/types';
+import type { ToolProviderPayload } from '../../../core/types/tools';
 import {
   type AsyncSubagentState,
   createAsyncSubagentBlock,
@@ -219,7 +220,7 @@ export class SubagentManager {
     taskResult: unknown,
     isError: boolean,
     parentElOverride?: HTMLElement | null,
-    taskToolUseResult?: unknown
+    providerPayload?: ToolProviderPayload
   ): RenderPendingResult | null {
     const pending = this.pendingTasks.get(toolId);
     if (!pending) return null;
@@ -229,7 +230,7 @@ export class SubagentManager {
     if (!targetEl) return null;
 
     const inferredMode = this.taskResultInterpreter.describeTask(input).mode
-      ?? this.taskResultInterpreter.interpretLaunch(taskResult, isError, taskToolUseResult).mode;
+      ?? this.taskResultInterpreter.interpretLaunch(taskResult, isError, providerPayload).mode;
 
     this.pendingTasks.delete(toolId);
 
@@ -297,18 +298,18 @@ export class SubagentManager {
     toolId: string,
     result: unknown,
     isError: boolean,
-    toolUseResult?: unknown,
+    providerPayload?: ToolProviderPayload,
     fallbackInfo?: SubagentInfo,
   ): SubagentInfo | null {
     const record = this.syncSubagents.get(toolId);
     const view = record?.view;
     const info = record?.info ?? fallbackInfo;
     if (!info) return null;
-    const outcome = this.taskResultInterpreter.interpretResult(result, isError, { mode: 'sync' }, toolUseResult);
+    const outcome = this.taskResultInterpreter.interpretResult(result, isError, { mode: 'sync' }, providerPayload);
     info.status = outcome.status;
     info.result = outcome.result;
     // A reusable native agent identity links this run to its later follow-ups.
-    info.agentId ??= this.taskResultInterpreter.interpretLaunch(result, isError, toolUseResult).agentId ?? undefined;
+    info.agentId ??= this.taskResultInterpreter.interpretLaunch(result, isError, providerPayload).agentId ?? undefined;
     if (view) updateSubagentBlock(view, info);
     this.syncSubagents.delete(toolId);
     return info;
@@ -329,11 +330,11 @@ export class SubagentManager {
     taskToolId: string,
     result: unknown,
     isError?: boolean,
-    toolUseResult?: unknown
+    providerPayload?: ToolProviderPayload
   ): void {
     const record = this.asyncSubagents.get(taskToolId);
     if (!record) return;
-    const launch = this.taskResultInterpreter.interpretLaunch(result, isError === true, toolUseResult);
+    const launch = this.taskResultInterpreter.interpretLaunch(result, isError === true, providerPayload);
     const resultText = launch.result;
 
     if (isError) {
@@ -382,7 +383,7 @@ export class SubagentManager {
     toolId: string,
     result: unknown,
     isError: boolean,
-    toolUseResult?: unknown
+    providerPayload?: ToolProviderPayload
   ): SubagentInfo | undefined {
     const taskToolUseId = this.outputToolToTaskToolUseId.get(toolId);
     let record = taskToolUseId ? this.asyncSubagents.get(taskToolUseId) : undefined;
@@ -412,7 +413,7 @@ export class SubagentManager {
       return undefined;
     }
 
-    const output = this.taskResultInterpreter.interpretResult(result, isError, { mode: 'async', agentId }, toolUseResult);
+    const output = this.taskResultInterpreter.interpretResult(result, isError, { mode: 'async', agentId }, providerPayload);
     if (output.status === 'running') {
       this.outputToolToTaskToolUseId.delete(toolId);
       return subagent;

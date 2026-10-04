@@ -1,5 +1,6 @@
 import { Platform, setIcon } from 'obsidian';
 
+import { parseApplyPatchDiffs, parseFileUpdateChangeDiffs } from '@/core/tools/toolDiff';
 import { stringifyUnknown } from '@/utils/stringify';
 
 import type { TodoItem } from '../../../core/tools/todo';
@@ -41,7 +42,6 @@ import type {
 } from '../../../core/types';
 import type { DiffStats } from '../../../core/types/diff';
 import { appendMCPIcon } from '../../../shared/icons';
-import { parseApplyPatchDiffs, parseFileUpdateChangeDiffs } from '../../../utils/diff';
 import { setupCollapsible } from './collapsible';
 import { renderDiffContent, renderDiffStats } from './DiffRenderer';
 import { renderTodoItems } from './todoUtils';

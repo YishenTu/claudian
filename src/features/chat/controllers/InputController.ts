@@ -1,5 +1,9 @@
 import { Notice, setIcon } from 'obsidian';
 
+import type { BrowserSelectionContext } from '@/core/prompt/browserContext';
+import type { CanvasSelectionContext } from '@/core/prompt/canvasContext';
+import type { EditorSelectionContext } from '@/core/prompt/editorContext';
+import { captureSelectionSnapshots } from '@/core/prompt/promptContext';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 import {
@@ -25,10 +29,6 @@ import {
   type ToolCallInfo,
 } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
-import type { BrowserSelectionContext } from '../../../utils/browser';
-import type { CanvasSelectionContext } from '../../../utils/canvas';
-import { captureSelectionSnapshots } from '../../../utils/context';
-import type { EditorSelectionContext } from '../../../utils/editor';
 import { toError } from '../../../utils/error';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
 import type { ChatSettings } from '../ChatSettings';

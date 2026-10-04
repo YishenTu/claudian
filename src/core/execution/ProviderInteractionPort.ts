@@ -27,7 +27,6 @@ export interface ProviderApprovalInteractionRequest
   readonly decisionReason?: string;
   readonly blockedPath?: string;
   readonly decisionOptions?: readonly ProviderApprovalDecisionOption[];
-  readonly additionalPermissions?: unknown;
 }
 
 export interface ProviderApprovalInteractionResponse {

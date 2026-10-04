@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import { Setting } from 'obsidian';
 
+import { normalizeConfiguredCLIPath } from '@/core/process/cliPath';
 import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
 import type { ProviderCLIResolver } from '@/core/providers/types';
@@ -20,7 +21,6 @@ import {
   renderProviderModelEnablementWarning,
 } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
-import { normalizeConfiguredCLIPath } from '../../../utils/path';
 import type { OpencodeMetadataService } from '../metadata/OpencodeMetadataService';
 import {
   getOpencodeProviderSettings,

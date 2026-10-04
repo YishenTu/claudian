@@ -1,6 +1,7 @@
-import { appendContextFiles } from '../../utils/context';
+import { formatEditorContext } from '@/core/prompt/editorContext';
+import { appendContextFiles } from '@/core/prompt/promptContext';
+
 import { getTodayDate } from '../../utils/date';
-import { formatEditorContext } from '../../utils/editor';
 import type {
   InlineEditCursorRequest,
   InlineEditRequest,

@@ -3,7 +3,7 @@
 import { within } from '@testing-library/dom';
 import { configureAxe } from 'jest-axe';
 
-import { chooseForkTarget } from '@/shared/modals/ForkTargetModal';
+import { chooseForkTarget } from '@/features/chat/tabs/ForkTargetModal';
 
 let lastModalInstance: any;
 const checkAccessibility = configureAxe({

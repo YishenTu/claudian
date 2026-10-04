@@ -295,7 +295,7 @@ test('persisted settings changes use the coordinator boundary', () => {
   assert.deepEqual(matches, []);
 });
 
-test('runtime command discovery cannot import shared skill management', () => {
+test('runtime command discovery cannot import Vault skill management', () => {
   const roots = [
     path.join(sourceRoot, 'features', 'chat'),
     path.join(sourceRoot, 'shared', 'components'),
@@ -304,8 +304,14 @@ test('runtime command discovery cannot import shared skill management', () => {
       path.join(sourceRoot, 'providers', provider, 'commands'),
     ]).filter(fs.existsSync),
   ];
-  const pattern = /from\s+['"][^'"]*(?:core\/skills|AgentSkillSettings)/;
-  assert.deepEqual(findMatches(roots, pattern), []);
+  const skillManagement = [
+    path.join(featuresRoot, 'settings', 'skills'),
+    path.join(featuresRoot, 'settings', 'AgentSkillSettings'),
+  ];
+  assert.deepEqual(findResolvedImportViolations(
+    roots,
+    target => skillManagement.some(root => isPathWithin(normalizeModuleTarget(target), root)),
+  ), []);
 });
 
 test('renderer source does not import AsyncLocalStorage', () => {
@@ -572,10 +578,18 @@ test('production bundle policy rejects plugin artifact filename references', () 
   );
 });
 
-test('shared and utility modules do not depend on application or feature orchestration', () => {
+test('shared modules do not depend on application or feature orchestration', () => {
   assert.deepEqual(findResolvedImportViolations(
-    [path.join(sourceRoot, 'shared'), path.join(sourceRoot, 'utils')],
+    [path.join(sourceRoot, 'shared')],
     target => isPathWithin(target, appRoot) || isPathWithin(target, featuresRoot),
+  ), []);
+});
+
+test('utility modules are leaves that import only other utilities', () => {
+  const utilsRoot = path.join(sourceRoot, 'utils');
+  assert.deepEqual(findResolvedImportViolations(
+    [utilsRoot],
+    target => !isPathWithin(target, utilsRoot),
   ), []);
 });
 

@@ -1,8 +1,9 @@
 import type { App, EventRef, WorkspaceLeaf } from 'obsidian';
 import { Platform } from 'obsidian';
 
+import { scheduleAnimationFrame } from '@/features/chat/utils/animationFrame';
+
 import { VIEW_TYPE_CLAUDIAN } from '../../../core/types';
-import { scheduleAnimationFrame } from '../../../utils/animationFrame';
 import type { AssembledTabRuntime } from '../tabs/types';
 import type { ZenModeSource } from './types';
 import {

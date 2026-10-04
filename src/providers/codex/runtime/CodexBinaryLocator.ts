@@ -2,8 +2,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { findBinaryInDirectories, findCLIBinaryPath, isExistingFile, parseCLIPathEntries } from '@/utils/cliBinaryLocator';
-import { expandHomePath, stripSurroundingQuotes } from '@/utils/path';
+import { findBinaryInDirectories, findCLIBinaryPath, isExistingFile, parseCLIPathEntries } from '@/core/process/cliBinaryLocator';
+import { stripSurroundingQuotes } from '@/core/process/cliPath';
+import { expandHomePath } from '@/utils/path';
 
 export function isWindowsStyleCLIReference(value: string | null | undefined): boolean {
   const trimmed = (value ?? '').trim();

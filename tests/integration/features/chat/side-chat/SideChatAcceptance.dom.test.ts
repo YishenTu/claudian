@@ -11,6 +11,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/dom';
 
 import { ClaudianView } from '@/features/chat/ClaudianView';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { buildTabRuntimePorts } from '@/features/chat/tabs/runtime/TabRuntimePorts';
 
 afterEach(releaseSideChatHarnesses);
 
@@ -169,11 +170,13 @@ it('refreshes side completion timestamps when the view timestamp setting changes
   const settings = { showMessageTimestamps: false };
   const harness = createHarness({ settings });
   const mainRenderer = new MessageRenderer(harness.plugin, {} as never, document.createElement('div'));
-  const tab = {
-    ...harness.tab,
-    controllers: { ...harness.tab.controllers, sideChatController: harness.controller },
-    renderer: mainRenderer,
-  };
+  const tab = buildTabRuntimePorts(
+    {} as never,
+    {} as never,
+    { controllers: { ...harness.tab.controllers, sideChatController: harness.controller }, renderer: mainRenderer },
+    harness.plugin,
+    () => { throw new Error('Timestamp refresh must not read the runtime'); },
+  );
   const view = Object.assign(Object.create(ClaudianView.prototype), {
     tabManager: { getAllTabs: () => [tab] },
   }) as ClaudianView;

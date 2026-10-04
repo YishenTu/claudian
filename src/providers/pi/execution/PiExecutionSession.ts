@@ -2,6 +2,18 @@ import { randomUUID } from 'node:crypto';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 
+import { parseEnvironmentVariables } from '@/core/process/env';
+import {
+  buildContextFromHistory,
+  buildPromptWithHistoryContext,
+  getHistoryImages,
+} from '@/core/prompt/historyContext';
+import {
+  appendLinkedContent,
+  appendSelectionContexts,
+  appendSessionReferences,
+} from '@/core/prompt/promptContext';
+
 import {
   type ConversationBranchRecoveryRequest,
   type ConversationBranchRequest,
@@ -35,17 +47,6 @@ import type {
   StreamChunk,
   TurnStats,
 } from '../../../core/types';
-import {
-  appendLinkedContent,
-  appendSelectionContexts,
-  appendSessionReferences,
-} from '../../../utils/context';
-import { parseEnvironmentVariables } from '../../../utils/env';
-import {
-  buildContextFromHistory,
-  buildPromptWithHistoryContext,
-  getHistoryImages,
-} from '../../../utils/session';
 import type { PiWorkspaceServices } from '../app/PiWorkspaceServices';
 import { PiConversationHistoryService } from '../history/PiConversationHistoryService';
 import {
@@ -1013,7 +1014,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
           content: chunk.content,
           toolCallId: chunk.id,
           toolScope: { kind: 'main' },
-          ...(chunk.toolUseResult ? { toolUseResult: chunk.toolUseResult } : {}),
+          ...(chunk.resultDetails ? { resultDetails: chunk.resultDetails } : {}),
           type: 'tool_output',
         });
         break;
@@ -1025,7 +1026,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
           isBlocked: chunk.isBlocked,
           toolCallId: chunk.id,
           toolScope: { kind: 'main' },
-          toolUseResult: chunk.toolUseResult,
+          ...(chunk.resultDetails ? { resultDetails: chunk.resultDetails } : {}),
           type: 'tool_completed',
         });
         break;

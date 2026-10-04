@@ -1,25 +1,26 @@
 import { type App, Modal, Notice, setIcon, Setting } from 'obsidian';
 
-import type { AgentSkillDiagnostic, AgentSkillDocument, AgentSkillInput } from '../../core/skills/AgentSkill';
-import { extraFrontmatterKeys } from '../../core/skills/AgentSkillCodec';
+import { extractFirstParagraph } from '@/core/commands/slashCommand';
+import type { AgentSkillDiagnostic, AgentSkillDocument, AgentSkillInput } from '@/features/settings/skills/AgentSkill';
+import { extraFrontmatterKeys } from '@/features/settings/skills/AgentSkillCodec';
 import {
   AgentSkillCollisionError,
   AgentSkillRepositoryError,
   AgentSkillRevisionConflictError,
-} from '../../core/skills/AgentSkillRepository';
+} from '@/features/settings/skills/AgentSkillRepository';
 import {
   ClaudeCommandCollisionError,
   type ClaudeCommandDocument,
   ClaudeCommandRevisionConflictError,
   commandSkillName,
-} from '../../core/skills/ClaudeCommandRepository';
-import { AgentSkillValidationError } from '../../core/skills/validateAgentSkill';
+} from '@/features/settings/skills/ClaudeCommandRepository';
+import { AgentSkillValidationError } from '@/features/settings/skills/validateAgentSkill';
+
 import {
   ManagedResourcePathError,
   ManagedResourceRelocationError,
 } from '../../core/storage/VaultFileAdapter';
 import { t } from '../../i18n/i18n';
-import { extractFirstParagraph } from '../../utils/slashCommand';
 import type {
   AgentSkillManagementCoordinator,
   AgentSkillMutationResult,

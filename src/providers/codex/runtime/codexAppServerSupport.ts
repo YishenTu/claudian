@@ -1,9 +1,10 @@
+import { getEnhancedPath, parseEnvironmentVariables } from '@/core/process/env';
+
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type {
   ProviderId,
   ProviderTransitionOwnerContext,
 } from '../../../core/providers/types';
-import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import type { InitializeResult } from './codexAppServerTypes';
 import { resolveCodexExecutionTargetAsync } from './CodexExecutionTargetResolver';

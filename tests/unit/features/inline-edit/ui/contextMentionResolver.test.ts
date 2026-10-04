@@ -3,7 +3,7 @@ import {
   isMentionStart,
   normalizeForPlatformLookup,
   normalizeMentionPath,
-} from '@/utils/contextMentionResolver';
+} from '@/features/inline-edit/ui/contextMentionResolver';
 
 describe('contextMentionResolver', () => {
   describe('isMentionStart', () => {

@@ -1,9 +1,9 @@
 import * as fs from 'node:fs';
 
+import { normalizeConfiguredCLIPath } from '@/core/process/cliPath';
+import { cliPathRequiresNode, findNodeExecutable, getEnhancedPath } from '@/core/process/env';
 import type { ManagedStdioProcessOptions } from '@/core/process/ManagedStdioProcess';
 import { runProcessProbe } from '@/core/process/ProcessProbe';
-import { cliPathRequiresNode, findNodeExecutable, getEnhancedPath } from '@/utils/env';
-import { normalizeConfiguredCLIPath } from '@/utils/path';
 
 export interface CLIInstallation {
   path: string | null;

@@ -1,7 +1,7 @@
 import {
   normalizeGrokToolCall,
   normalizeGrokToolName,
-  normalizeGrokToolUseResult,
+  normalizeGrokToolResultDetails,
   resolveGrokRawToolName,
 } from '@/providers/grok/normalization/grokToolNormalization';
 
@@ -175,27 +175,20 @@ describe('grokToolNormalization', () => {
       type: 'UserAnswered',
     };
 
-    expect(normalizeGrokToolUseResult(
+    expect(normalizeGrokToolResultDetails(
       'ask_user_question',
       input,
       rawOutput,
-      input,
     )).toEqual({
-      answers: { 'How should we continue?': 'Use the durable implementation.' },
-      providerPayload: {
-        rawInput: input,
-        rawName: 'ask_user_question',
-        rawOutput,
-      },
+      resolvedAnswers: { 'How should we continue?': 'Use the durable implementation.' },
     });
 
     const jsonAnswer = '{"preference":"keep this as the answer"}';
-    expect(normalizeGrokToolUseResult(
+    expect(normalizeGrokToolResultDetails(
       'ask_user_question',
       input,
       { UserAnswered: { message: jsonAnswer } },
-      input,
-    ).answers).toEqual({
+    )?.resolvedAnswers).toEqual({
       'How should we continue?': jsonAnswer,
     });
   });

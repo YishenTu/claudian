@@ -2,7 +2,7 @@ import {
   AgentSkillCodecError,
   parseAgentSkillMarkdown,
   serializeAgentSkillMarkdown,
-} from '@/core/skills/AgentSkillCodec';
+} from '@/features/settings/skills/AgentSkillCodec';
 
 describe('AgentSkillCodec', () => {
   const valid = [

@@ -1,21 +1,21 @@
 import * as fs from 'node:fs';
 
-import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
-import { isWriteEditTool, TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
-import { extractToolResultFormat, extractWebSearchResults } from '../../../core/tools/toolResultContent';
-import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo } from '../../../core/types';
-import { extractUserQuery } from '../../../utils/context';
-import { extractDiffData } from '../../../utils/diff';
 import {
   buildImageAttachmentFromBase64,
   parseImageDataUri,
-} from '../../../utils/imageAttachment';
+} from '@/core/execution/imageAttachment';
+import { extractUserQuery } from '@/core/prompt/promptContext';
+import { resolveToolDiffData } from '@/core/tools/toolDiff';
+
+import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
+import { isWriteEditTool, TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
+import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo } from '../../../core/types';
 import { encodeOpencodeModelId } from '../models';
 import {
   normalizeOpencodeToolInput,
   normalizeOpencodeToolName,
   normalizeOpencodeToolResult,
-  normalizeOpencodeToolUseResult,
+  normalizeOpencodeToolResultDetails,
 } from '../normalization/opencodeToolNormalization';
 import { resolveExistingOpencodeDatabasePath } from '../runtime/OpencodePaths';
 import type { OpencodeProviderState } from '../types';
@@ -421,7 +421,7 @@ function buildAssistantToolCalls(parts: StoredRow[], nativeVersion: 1 | 2): Tool
       ...(nativeResult ? { output: nativeResult } : {}),
       ...(getObject(state?.metadata) ? { metadata: getObject(state?.metadata) } : {}),
     };
-    const toolUseResult = normalizeOpencodeToolUseResult(rawName, input, rawOutput);
+    const details = normalizeOpencodeToolResultDetails(rawName, input, rawOutput);
     const normalizedResult = nativeResult === undefined || nativeStatus === 'running'
       ? undefined
       : normalizeOpencodeToolResult(rawName, nativeResult, rawOutput);
@@ -433,7 +433,7 @@ function buildAssistantToolCalls(parts: StoredRow[], nativeVersion: 1 | 2): Tool
       input,
       name,
       result,
-      resultFormat: extractToolResultFormat(toolUseResult),
+      resultFormat: details?.resultFormat,
       status,
       ...(nativeVersion === 2 ? { providerPayload: {
         rawInput: state?.input,
@@ -442,18 +442,17 @@ function buildAssistantToolCalls(parts: StoredRow[], nativeVersion: 1 | 2): Tool
       } } : {}),
     };
 
-    const webSearchResults = extractWebSearchResults(toolUseResult);
-    if (webSearchResults) {
-      toolCall.webSearchResults = webSearchResults;
+    if (details?.webSearchResults) {
+      toolCall.webSearchResults = details.webSearchResults;
     }
 
     if (name === TOOL_ASK_USER_QUESTION) {
-      toolCall.resolvedAnswers = toolUseResult?.answers as ToolCallInfo['resolvedAnswers']
+      toolCall.resolvedAnswers = details?.resolvedAnswers
         ?? extractResolvedAnswersFromResultText(result);
     }
 
     if (status === 'completed' && isWriteEditTool(name)) {
-      const diffData = extractDiffData(toolUseResult, toolCall);
+      const diffData = resolveToolDiffData(details?.diff, toolCall);
       if (diffData) {
         toolCall.diffData = diffData;
       }

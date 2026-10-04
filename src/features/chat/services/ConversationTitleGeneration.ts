@@ -1,11 +1,11 @@
 import { Notice } from 'obsidian';
 
+import { extractUserDisplayContent } from '@/core/prompt/promptContext';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { TitleGenerationService } from '@/core/providers/types';
 import type { ChatMessage } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { t } from '@/i18n/i18n';
-import { extractUserDisplayContent } from '@/utils/context';
 
 export interface ConversationTitleGenerationDeps {
   host: Pick<ChatFeatureHost, 'settings' | 'getConversationById' | 'renameConversation' | 'updateConversation'>;

@@ -296,10 +296,10 @@ it('normalizes a completed synchronous answer containing not-ready prose', () =>
   const answer = 'Deployment is not ready.';
   const metadata = 'agentId: agent-sync\n<usage>total_tokens: 500</usage>';
 
-  expect(manager.finalizeSyncSubagent('sync', `${answer}\n${metadata}`, false, {
+  expect(manager.finalizeSyncSubagent('sync', `${answer}\n${metadata}`, false, { rawOutput: {
     status: 'completed', agentId: 'agent-sync',
     content: [{ type: 'text', text: answer }],
-  })).toMatchObject({ status: 'completed', result: answer });
+  } })).toMatchObject({ status: 'completed', result: answer });
   fireEvent.click(screen.getByRole('button', { name: /Subagent task: Deployment check - Status: completed/ }));
   fireEvent.click(screen.getByRole('button', { name: /^Result/ }));
   expect(screen.getByText(answer)).toBeDefined();

@@ -1,6 +1,13 @@
-import type { SDKToolUseResult } from '../../core/types/diff';
+import { diffFromReplacements } from '@/core/tools/toolDiff';
 
-export function extractACPDiffToolUseResult(content: unknown): SDKToolUseResult | undefined {
+import { normalizeToolResultDetails } from '../../core/tools/toolResultDetails';
+import type { ToolResultDetails } from '../../core/types';
+
+/**
+ * Decodes the first ACP `diff` content entry. A diff without `oldText` describes a new file;
+ * consumers then derive its presentation from the tool input.
+ */
+export function extractACPDiffResultDetails(content: unknown): ToolResultDetails | undefined {
   if (!Array.isArray(content)) return undefined;
 
   for (const entry of content) {
@@ -15,11 +22,10 @@ export function extractACPDiffToolUseResult(content: unknown): SDKToolUseResult 
       continue;
     }
 
-    return {
-      filePath: diff.path,
-      newText: diff.newText,
-      ...(typeof diff.oldText === 'string' ? { oldText: diff.oldText } : {}),
-    };
+    const resultDiff = typeof diff.oldText === 'string'
+      ? diffFromReplacements([{ oldText: diff.oldText, newText: diff.newText }], diff.path)
+      : undefined;
+    return resultDiff ? normalizeToolResultDetails({ diff: resultDiff }) : undefined;
   }
 
   return undefined;

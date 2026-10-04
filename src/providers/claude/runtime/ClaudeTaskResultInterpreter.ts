@@ -11,6 +11,7 @@ import type {
   ProviderTaskTerminalStatus,
 } from '../../../core/providers/types';
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
+import type { ToolProviderPayload } from '../../../core/types';
 import {
   extractAgentIdFromToolUseResult,
   hasAgentOutputReport,
@@ -97,7 +98,9 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
     };
   }
 
-  interpretLaunch(result: unknown, isError: boolean, toolUseResult?: unknown): ProviderTaskLaunch {
+  /** `providerPayload.rawOutput` is the native `tool_use_result` the event normalizer attached. */
+  interpretLaunch(result: unknown, isError: boolean, providerPayload?: ToolProviderPayload): ProviderTaskLaunch {
+    const toolUseResult = providerPayload?.rawOutput;
     const text = extractToolResultContent(result, { fallbackIndent: 2 });
     return {
       mode: this.#inferModeFromTaskResult(text, isError, toolUseResult),
@@ -111,7 +114,13 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
       ?? this.#inferAgentIdFromResult(extractToolResultContent(result, { fallbackIndent: 2 }));
   }
 
-  interpretResult(result: unknown, isError: boolean, context: ProviderTaskResultContext, toolUseResult?: unknown): ProviderTaskResult {
+  interpretResult(
+    result: unknown,
+    isError: boolean,
+    context: ProviderTaskResultContext,
+    providerPayload?: ToolProviderPayload,
+  ): ProviderTaskResult {
+    const toolUseResult = providerPayload?.rawOutput;
     const text = extractToolResultContent(result, { fallbackIndent: 2 });
     if (context.mode === 'sync') {
       // Sync reports are answer text. Only the complete native hand-back frame

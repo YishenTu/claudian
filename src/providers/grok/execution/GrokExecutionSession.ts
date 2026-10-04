@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
 import {
+  buildContextFromHistory,
+  buildPromptWithHistoryContext,
+} from '@/core/prompt/historyContext';
+import { appendLinkedContent, appendSelectionContexts, appendSessionReferences } from '@/core/prompt/promptContext';
+
+import {
   type ChatRewindMode,
   type ChatRewindPreview,
   type ChatRewindResult,
@@ -20,11 +26,6 @@ import {
 import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { ChatMessage } from '../../../core/types';
-import { appendLinkedContent, appendSelectionContexts, appendSessionReferences } from '../../../utils/context';
-import {
-  buildContextFromHistory,
-  buildPromptWithHistoryContext,
-} from '../../../utils/session';
 import {
   type ACPContentBlock,
   ACPInteractionController,
@@ -53,10 +54,11 @@ import {
   normalizeGrokDiscoveredModels,
 } from '../models';
 import {
+  buildGrokToolProviderPayload,
   normalizeGrokToolInput,
   normalizeGrokToolName,
+  normalizeGrokToolResultDetails,
   normalizeGrokToolUpdate,
-  normalizeGrokToolUseResult,
   resolveGrokRawToolName,
 } from '../normalization/grokToolNormalization';
 import { parseGrokPromptUsage, parseGrokUsage } from '../normalization/grokUsage';
@@ -1194,13 +1196,11 @@ function createGrokToolStreamAdapter(): ACPToolStreamAdapter {
     normalizeToolName(rawName, rawInput, rawOutput) {
       return normalizeGrokToolName(rawName ?? 'tool', rawInput, rawOutput);
     },
-    normalizeToolUseResult(rawName, _input, rawOutput, rawInput) {
-      return normalizeGrokToolUseResult(
-        rawName ?? 'tool',
-        _input,
-        rawOutput,
-        rawInput,
-      );
+    normalizeToolResultDetails(rawName, input, rawOutput) {
+      return normalizeGrokToolResultDetails(rawName ?? 'tool', input, rawOutput);
+    },
+    buildToolProviderPayload(rawName, rawInput, rawOutput) {
+      return buildGrokToolProviderPayload({ rawInput, rawName: rawName ?? 'tool', rawOutput });
     },
     resolveRawToolName(currentRawName, update) {
       return resolveGrokRawToolName(currentRawName, update);

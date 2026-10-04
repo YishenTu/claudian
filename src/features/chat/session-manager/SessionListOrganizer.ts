@@ -185,3 +185,156 @@ export function organizeSessionList(
     compareSections(left, right, options.sort)
   ));
 }
+
+export interface SessionListModelOptions {
+  organization: SessionManagerOrganization;
+  sort: SessionManagerSort;
+  language: string;
+  scope?: 'active' | 'archived';
+  searchQuery?: string;
+  /** Partitions pinned sessions and pinned Linked content into their own section. */
+  showPinnedSection?: boolean;
+  pinnedLinkedContentPaths?: ReadonlySet<string>;
+  collapsedGroupKeys?: ReadonlySet<string>;
+  contentExists?: (contentPath: string) => boolean;
+  contentIsNote?: (contentPath: string) => boolean;
+  /** Divides an unpinned flat list into recency groups relative to `now`. */
+  groupByRecency?: { now: number };
+}
+
+/** What a session list shows, derived from the conversation list without any DOM. */
+export interface SessionListModel {
+  readonly hasSearchTerms: boolean;
+  /** No session or pinned Linked content group matches the scope and search. */
+  readonly isEmpty: boolean;
+  readonly pinnedContentSections: readonly SessionListSection[];
+  /** Pinned sessions outside pinned Linked content groups, in list order. */
+  readonly pinnedConversations: readonly ConversationMeta[];
+  readonly sections: readonly SessionListSection[];
+  /** Group keys in display order for Linked content organization; null for flat lists. */
+  readonly groupKeys: readonly string[] | null;
+  /** Every in-scope session per Linked content path, ignoring search, for group actions. */
+  readonly conversationsByLinkedContent: ReadonlyMap<string, readonly ConversationMeta[]>;
+  /** Sessions shown when every expanded group is fully paged in. */
+  readonly visibleConversationTotal: number;
+}
+
+function getSearchTerms(searchQuery: string | undefined): string[] {
+  return (searchQuery ?? '').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/** Scopes, searches, partitions, and organizes sessions for one list render. */
+export function deriveSessionListModel(
+  conversations: readonly ConversationMeta[],
+  options: SessionListModelOptions,
+): SessionListModel {
+  const { organization, sort, language } = options;
+  const scopedConversations = options.scope === 'archived'
+    ? conversations.filter(conversation => conversation.isArchived)
+    : options.scope === 'active'
+      ? conversations.filter(conversation => !conversation.isArchived)
+      : conversations;
+  const searchTerms = getSearchTerms(options.searchQuery);
+  const filteredConversations = searchTerms.length === 0
+    ? scopedConversations
+    : scopedConversations.filter((conversation) => {
+        const searchableText = [conversation.title, conversation.linkedContentPath ?? '']
+          .join('\n')
+          .toLocaleLowerCase();
+        return searchTerms.every(term => searchableText.includes(term));
+      });
+  const conversationsByLinkedContent = new Map<string, ConversationMeta[]>();
+  for (const conversation of scopedConversations) {
+    if (!conversation.linkedContentPath) continue;
+    const contentConversations = conversationsByLinkedContent.get(conversation.linkedContentPath) ?? [];
+    contentConversations.push(conversation);
+    conversationsByLinkedContent.set(conversation.linkedContentPath, contentConversations);
+  }
+  const pinnedLinkedContentPaths = organization === 'linked-content'
+    && options.showPinnedSection
+    && options.scope !== 'archived'
+    ? options.pinnedLinkedContentPaths ?? new Set<string>()
+    : new Set<string>();
+  const isInPinnedContentGroup = (conversation: ConversationMeta): boolean => (
+    !!conversation.linkedContentPath
+    && pinnedLinkedContentPaths.has(conversation.linkedContentPath)
+  );
+  const pinnedContentConversations = filteredConversations.filter(isInPinnedContentGroup);
+  const pinnedConversations = options.showPinnedSection
+    ? filteredConversations.filter(conversation => (
+        conversation.isPinned && !isInPinnedContentGroup(conversation)
+      ))
+    : [];
+  const sessionConversations = options.showPinnedSection
+    ? filteredConversations.filter(conversation => (
+        !conversation.isPinned && !isInPinnedContentGroup(conversation)
+      ))
+    : filteredConversations;
+  const pinnedPathsWithMatchingSessions = new Set(
+    pinnedContentConversations.flatMap(conversation => (
+      conversation.linkedContentPath ? [conversation.linkedContentPath] : []
+    )),
+  );
+  const visiblePinnedContentPaths = [...pinnedLinkedContentPaths].filter(contentPath => (
+    searchTerms.length === 0
+    || pinnedPathsWithMatchingSessions.has(contentPath)
+    || searchTerms.every(term => contentPath.toLocaleLowerCase().includes(term))
+  ));
+  const pinnedContentSections = organizeSessionList(pinnedContentConversations, {
+    organization: 'linked-content',
+    sort,
+    language,
+    includeContentPaths: visiblePinnedContentPaths,
+    contentExists: options.contentExists,
+    contentIsNote: options.contentIsNote,
+  }).filter(section => section.contentPath !== undefined);
+  const isEmpty = filteredConversations.length === 0 && pinnedContentSections.length === 0;
+  if (isEmpty) {
+    return {
+      hasSearchTerms: searchTerms.length > 0,
+      isEmpty,
+      pinnedContentSections,
+      pinnedConversations: [],
+      sections: [],
+      groupKeys: organization === 'linked-content' ? [] : null,
+      conversationsByLinkedContent,
+      visibleConversationTotal: 0,
+    };
+  }
+
+  const sortedPinnedConversations = organizeSessionList(pinnedConversations, {
+    organization: 'list',
+    sort,
+    language,
+  })[0]?.conversations ?? [];
+  const sections = organizeSessionList(sessionConversations, {
+    organization,
+    sort,
+    language,
+    contentExists: options.contentExists,
+    contentIsNote: options.contentIsNote,
+    groupByRecency: options.groupByRecency,
+  });
+  const countExpanded = (groupSections: readonly SessionListSection[]): number => (
+    groupSections.reduce((total, section) => (
+      options.collapsedGroupKeys?.has(section.key) ? total : total + section.conversations.length
+    ), 0)
+  );
+  const visibleSessionConversationTotal = organization === 'linked-content'
+    ? countExpanded(sections)
+    : sessionConversations.length;
+  return {
+    hasSearchTerms: searchTerms.length > 0,
+    isEmpty,
+    pinnedContentSections,
+    pinnedConversations: sortedPinnedConversations,
+    sections,
+    groupKeys: organization === 'linked-content'
+      ? [...pinnedContentSections.map(({ key }) => key), ...sections.map(({ key }) => key)]
+      : null,
+    conversationsByLinkedContent,
+    visibleConversationTotal: countExpanded(pinnedContentSections)
+      + sortedPinnedConversations.length
+      + visibleSessionConversationTotal,
+  };
+}

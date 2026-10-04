@@ -1,4 +1,4 @@
-import { appendCanvasContext, type CanvasSelectionContext } from '../../../src/utils/canvas';
+import { appendCanvasContext, type CanvasSelectionContext } from '@/core/prompt/canvasContext';
 
 describe('canvas utilities', () => {
   it('formats multiple node selection as comma-separated list', () => {

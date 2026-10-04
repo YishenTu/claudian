@@ -8,7 +8,7 @@ import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceReg
 import { InlineEditSessionOwner } from '@/features/inline-edit/InlineEditSessionOwner';
 import { type InlineEditContext, InlineEditModal } from '@/features/inline-edit/ui/InlineEditModal';
 import { VaultFolderCache } from '@/shared/mention/VaultMentionCache';
-import * as editorUtils from '@/utils/editor';
+import * as obsidianCompat from '@/utils/obsidianCompat';
 
 function createDeferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;
@@ -68,7 +68,7 @@ describe('InlineEditModal - openAndWait', () => {
     };
 
     const getEditorViewSpy = jest
-      .spyOn(editorUtils, 'getEditorView')
+      .spyOn(obsidianCompat, 'getEditorView')
       .mockReturnValueOnce(undefined)
       .mockReturnValueOnce(undefined);
 
@@ -112,7 +112,7 @@ describe('InlineEditModal - openAndWait', () => {
       },
     };
 
-    jest.spyOn(editorUtils, 'getEditorView').mockReturnValue({ dispatch: jest.fn() } as any);
+    jest.spyOn(obsidianCompat, 'getEditorView').mockReturnValue({ dispatch: jest.fn() } as any);
     jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
       .mockRejectedValue(new Error('stop after provider resolution'));
 
@@ -163,7 +163,7 @@ describe('InlineEditModal - openAndWait', () => {
       },
     };
 
-    jest.spyOn(editorUtils, 'getEditorView').mockReturnValue({ dispatch: jest.fn() } as any);
+    jest.spyOn(obsidianCompat, 'getEditorView').mockReturnValue({ dispatch: jest.fn() } as any);
     jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
       .mockRejectedValue(new Error('stop after provider resolution'));
 
@@ -238,7 +238,7 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
 
       const getEditorViewSpy = jest
-        .spyOn(editorUtils, 'getEditorView')
+        .spyOn(obsidianCompat, 'getEditorView')
         .mockReturnValue(editorView);
       const getFoldersSpy = jest
         .spyOn(VaultFolderCache.prototype, 'getFolders')
@@ -372,7 +372,7 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
 
       const getEditorViewSpy = jest
-        .spyOn(editorUtils, 'getEditorView')
+        .spyOn(obsidianCompat, 'getEditorView')
         .mockReturnValue(editorView);
 
       const editContext: InlineEditContext = {
@@ -489,7 +489,7 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
 
       const getEditorViewSpy = jest
-        .spyOn(editorUtils, 'getEditorView')
+        .spyOn(obsidianCompat, 'getEditorView')
         .mockReturnValue(editorView);
 
       const editContext: InlineEditContext = {
@@ -584,7 +584,7 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
 
       const getEditorViewSpy = jest
-        .spyOn(editorUtils, 'getEditorView')
+        .spyOn(obsidianCompat, 'getEditorView')
         .mockReturnValue(editorView);
 
       const editContext: InlineEditContext = {
@@ -690,7 +690,7 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
 
       const getEditorViewSpy = jest
-        .spyOn(editorUtils, 'getEditorView')
+        .spyOn(obsidianCompat, 'getEditorView')
         .mockReturnValue(editorView);
 
       const editContext: InlineEditContext = {
@@ -794,7 +794,7 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
 
       const getEditorViewSpy = jest
-        .spyOn(editorUtils, 'getEditorView')
+        .spyOn(obsidianCompat, 'getEditorView')
         .mockReturnValue(editorView);
 
       const firstRender = createDeferred();
@@ -919,7 +919,7 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
 
       const getEditorViewSpy = jest
-        .spyOn(editorUtils, 'getEditorView')
+        .spyOn(obsidianCompat, 'getEditorView')
         .mockReturnValue(editorView);
 
       const editContext: InlineEditContext = {
@@ -1134,7 +1134,7 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
 
       const getEditorViewSpy = jest
-        .spyOn(editorUtils, 'getEditorView')
+        .spyOn(obsidianCompat, 'getEditorView')
         .mockReturnValue(editorView);
 
       const editContext: InlineEditContext = {

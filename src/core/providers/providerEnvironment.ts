@@ -1,4 +1,5 @@
-import { parseEnvironmentVariables } from '../../utils/env';
+import { parseEnvironmentVariables } from '@/core/process/env';
+
 import { getProviderConfig, setProviderConfig } from './providerConfig';
 import { ProviderRegistry } from './ProviderRegistry';
 import type { ProviderId } from './types';

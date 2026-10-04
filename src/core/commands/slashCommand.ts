@@ -1,4 +1,4 @@
-import type { SlashCommand } from '../core/types';
+import type { SlashCommand } from '@/core/types';
 
 export function extractFirstParagraph(content: string): string | undefined {
   const paragraph = content.split(/\n\s*\n/).find(p => p.trim());

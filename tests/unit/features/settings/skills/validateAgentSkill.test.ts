@@ -2,7 +2,7 @@ import {
   AgentSkillValidationError,
   validateAgentSkillInput,
   validateAgentSkillName,
-} from '@/core/skills/validateAgentSkill';
+} from '@/features/settings/skills/validateAgentSkill';
 
 describe('validateAgentSkill', () => {
   it.each(['skill', 'skill-2', 'a', 'a'.repeat(64)])('accepts portable name %s', name => {

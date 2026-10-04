@@ -33,18 +33,27 @@ export interface ClaudeErrorChunk {
   content: string;
 }
 
+type WithNativeToolUseResult<Chunk> = Chunk extends unknown
+  ? Omit<Chunk, 'resultDetails'> & { toolUseResult?: unknown }
+  : never;
+
+/** Tool results keep the native `tool_use_result` until the event normalizer decodes it. */
+export type ClaudeToolResultChunk = WithNativeToolUseResult<
+  Extract<StreamChunk, { type: 'tool_result' | 'subagent_tool_result' }>
+>;
+
 /** The subset of shared stream chunks the Claude transform actually emits. */
-export type ClaudeOutputChunk = Extract<StreamChunk, {
-  type:
-    | 'text'
-    | 'thinking'
-    | 'tool_use'
-    | 'subagent_tool_use'
-    | 'tool_result'
-    | 'subagent_tool_result'
-    | 'usage'
-    | 'context_compacted';
-}>;
+export type ClaudeOutputChunk =
+  | Extract<StreamChunk, {
+    type:
+      | 'text'
+      | 'thinking'
+      | 'tool_use'
+      | 'subagent_tool_use'
+      | 'usage'
+      | 'context_compacted';
+  }>
+  | ClaudeToolResultChunk;
 
 export type ClaudeStreamChunk = ClaudeOutputChunk | ClaudeErrorChunk;
 

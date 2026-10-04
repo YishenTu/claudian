@@ -3,14 +3,14 @@ import { readdir } from 'node:fs/promises';
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { clearWriteFaults, failWritesUnder } from '@test/helpers/core/fsWriteFaults';
 
-import { AGENT_SKILLS_ROOT, CLAUDE_COMMANDS_ROOT, CLAUDE_SKILLS_ROOT } from '@/core/skills/AgentSkillRepository';
+import { AGENT_SKILLS_ROOT, CLAUDE_COMMANDS_ROOT, CLAUDE_SKILLS_ROOT } from '@/features/settings/skills/AgentSkillRepository';
 import {
   ClaudeSkillSync,
   SkillSyncBlockedError,
   type SkillSyncItem,
   type SkillSyncResolution,
   SkillSyncStaleError,
-} from '@/core/skills/ClaudeSkillSync';
+} from '@/features/settings/skills/ClaudeSkillSync';
 
 // Obsidian's parseYaml rejects invalid YAML; the shared mock does not.
 jest.mock('obsidian', () => ({

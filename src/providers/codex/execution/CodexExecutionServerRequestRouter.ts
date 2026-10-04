@@ -159,9 +159,6 @@ export class CodexExecutionServerRequestRouter {
         input,
         description: describeCommandApproval(params),
         ...(params.reason ? { decisionReason: params.reason } : {}),
-        ...(params.additionalPermissions
-          ? { additionalPermissions: params.additionalPermissions }
-          : {}),
         decisionOptions: buildCommandApprovalDecisionOptions(params),
         nativeContext: {
           requestId,

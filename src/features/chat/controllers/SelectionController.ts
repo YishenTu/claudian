@@ -1,8 +1,10 @@
 import type { App, WorkspaceLeaf } from 'obsidian';
 import { MarkdownView } from 'obsidian';
 
+import type { EditorSelectionContext } from '@/core/prompt/editorContext';
+import { getEditorView } from '@/utils/obsidianCompat';
+
 import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
-import { type EditorSelectionContext, getEditorView } from '../../../utils/editor';
 import type { StoredSelection } from '../state/types';
 import type { ComposerContextTray } from '../ui/ComposerContextTray';
 

@@ -2,9 +2,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { findBinaryInDirectories, isExistingFile } from '@/utils/cliBinaryLocator';
-import { getEnhancedPath } from '@/utils/env';
-import { parsePathEntries } from '@/utils/path';
+import { findBinaryInDirectories, isExistingFile } from '@/core/process/cliBinaryLocator';
+import { parsePathEntries } from '@/core/process/cliPath';
+import { getEnhancedPath } from '@/core/process/env';
 
 const CLAUDE_CODE_PACKAGE_SEGMENTS = ['node_modules', '@anthropic-ai', 'claude-code'];
 const CLAUDE_CODE_NODE_ENTRYPOINTS = ['cli-wrapper.cjs', 'cli.js'];

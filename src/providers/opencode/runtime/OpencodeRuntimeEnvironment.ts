@@ -1,5 +1,6 @@
+import { getEnhancedPath, parseEnvironmentVariables } from '@/core/process/env';
+
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
-import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 
 export function buildOpencodeRuntimeEnv(
   settings: Record<string, unknown>,

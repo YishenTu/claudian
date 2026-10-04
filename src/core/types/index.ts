@@ -50,7 +50,6 @@ export {
 export {
   type DiffLine,
   type DiffStats,
-  type SDKToolUseResult,
   type StructuredPatchHunk,
 } from './diff';
 
@@ -67,6 +66,8 @@ export {
   type ToolCallInfo,
   type ToolDiffData,
   type ToolProviderPayload,
+  type ToolResultDetails,
+  type ToolResultDiff,
   type ToolResultImage,
   type WebSearchResultItem,
 } from './tools';

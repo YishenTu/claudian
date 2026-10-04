@@ -3,7 +3,7 @@ import {
   buildCursorContext,
   type EditorSelectionContext,
   formatEditorContext,
-} from '@/utils/editor';
+} from '@/core/prompt/editorContext';
 
 function makeGetLine(lines: string[]): (line: number) => string {
   return (line: number) => lines[line] ?? '';

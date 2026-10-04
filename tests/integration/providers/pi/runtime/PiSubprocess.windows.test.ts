@@ -2,8 +2,8 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { findNodeExecutable, getEnhancedPath } from '@/core/process/env';
 import { PiSubprocess } from '@/providers/pi/runtime/PiSubprocess';
-import { findNodeExecutable, getEnhancedPath } from '@/utils/env';
 
 const describeOnWindows = process.platform === 'win32' ? describe : describe.skip;
 

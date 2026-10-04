@@ -1,5 +1,7 @@
 import { Notice } from 'obsidian';
 
+import { extractUserDisplayContent } from '@/core/prompt/promptContext';
+
 import type {
   ChatRewindConflict,
   ChatRewindMode,
@@ -13,7 +15,6 @@ import type {
 } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { confirm } from '../../../shared/modals/ConfirmModal';
-import { extractUserDisplayContent } from '../../../utils/context';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
 import type { ComposerDraft, ComposerDraftController } from '../composer/ComposerDraftController';
 import type { ChatExecutionCoordinator } from '../execution/ChatExecutionCoordinator';

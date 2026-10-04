@@ -1,30 +1,14 @@
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { testDate } from '@test/helpers/testClock';
 
-import type { ChatMessage, ToolCallInfo } from '@/core/types';
 import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
   formatToolCallForContext,
-  isSessionMissingError,
-} from '@/utils/session';
+} from '@/core/prompt/historyContext';
+import type { ChatMessage, ToolCallInfo } from '@/core/types';
 
-describe('session utilities', () => {
-  describe('isSessionMissingError', () => {
-
-    it('returns true for the Claude missing-conversation error', () => {
-      const error = new Error('No conversation found with session ID: session-123');
-      expect(isSessionMissingError(error)).toBe(true);
-      expect(isSessionMissingError(error, 'session-123')).toBe(true);
-      expect(isSessionMissingError(error, 'different-session')).toBe(false);
-    });
-
-    it('does not classify generic not-found wording as confirmed provider deletion', () => {
-      expect(isSessionMissingError(new Error('Session not found'))).toBe(false);
-      expect(isSessionMissingError(new Error('No conversation found'))).toBe(false);
-    });
-  });
-
+describe('history context', () => {
   describe('formatToolCallForContext', () => {
     it('formats successful tool call with input but without result', () => {
       const toolCall: ToolCallInfo = {

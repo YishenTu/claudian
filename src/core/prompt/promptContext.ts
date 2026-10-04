@@ -4,10 +4,11 @@
  * Note and context file formatting for prompts.
  */
 
-import type { ProviderExecutionContext, ProviderSelectionSnapshot, ProviderSessionReference } from '../core/execution/ProviderExecutionRequest';
-import { appendBrowserContext } from './browser';
-import { appendCanvasContext } from './canvas';
-import { appendEditorContext } from './editor';
+import type { ProviderExecutionContext, ProviderSelectionSnapshot, ProviderSessionReference } from '@/core/execution/ProviderExecutionRequest';
+
+import { appendBrowserContext } from './browserContext';
+import { appendCanvasContext } from './canvasContext';
+import { appendEditorContext } from './editorContext';
 import { escapePromptXMLAttribute, formatPromptXMLCdata } from './promptXML';
 
 const LINKED_CONTENT_TAG = 'linked_content';

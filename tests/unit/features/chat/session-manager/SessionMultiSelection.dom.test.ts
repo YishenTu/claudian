@@ -60,8 +60,6 @@ function renderList(options: {
   const controller = new SessionBrowser({
     plugin: { getConversationList: () => conversations, settings: {} },
     getCurrentConversationId: () => null,
-    isStreaming: () => false,
-    reloadActiveConversation: async () => undefined,
     getTitleGenerationService: () => null,
     onListChanged: () => undefined,
   } as unknown as SessionBrowserDeps);
@@ -212,8 +210,6 @@ describe('SessionBrowser multi-select archive', () => {
     const controller = new SessionBrowser({
       plugin: { getConversationList: () => conversations, settings: {} },
       getCurrentConversationId: () => null,
-      isStreaming: () => false,
-      reloadActiveConversation: async () => undefined,
       getTitleGenerationService: () => null,
       onListChanged: () => undefined,
     } as unknown as SessionBrowserDeps);
@@ -287,8 +283,6 @@ describe('SessionBrowser recency dividers', () => {
     const controller = new SessionBrowser({
       plugin: { getConversationList: () => items, settings: {} },
       getCurrentConversationId: () => null,
-      isStreaming: () => false,
-      reloadActiveConversation: async () => undefined,
       getTitleGenerationService: () => null,
       onListChanged: () => undefined,
     } as unknown as SessionBrowserDeps);
@@ -390,10 +384,8 @@ describe('SessionBrowser archived multi-select', () => {
     ];
     const deleteConversation = jest.fn().mockResolvedValue(undefined);
     const controller = new SessionBrowser({
-      plugin: { app: {}, getConversationList: () => archived, settings: {}, deleteConversation },
+      plugin: { app: {}, getConversationList: () => archived, settings: {}, conversationLifecycle: { delete: deleteConversation } },
       getCurrentConversationId: () => null,
-      isStreaming: () => false,
-      reloadActiveConversation: async () => undefined,
       getTitleGenerationService: () => null,
       onListChanged: () => undefined,
     } as unknown as SessionBrowserDeps);
@@ -445,7 +437,7 @@ describe('SessionBrowser archived multi-select', () => {
     await new Promise(resolve => setTimeout(resolve, 0));
 
     expect(confirmDelete).toHaveBeenCalledWith(expect.anything(), 'Permanently delete 2 sessions?');
-    expect(deleteConversation.mock.calls).toEqual(confirmed ? [['one'], ['two']] : []);
+    expect(deleteConversation.mock.calls).toEqual(confirmed ? [[['one', 'two']]] : []);
     expect(onRerender.mock.calls.length > 0).toBe(confirmed);
   });
 
@@ -458,10 +450,8 @@ describe('SessionBrowser archived multi-select', () => {
     const deleteConversation = jest.fn().mockResolvedValue(undefined);
     jest.mocked(confirmDelete).mockResolvedValue(true);
     const controller = new SessionBrowser({
-      plugin: { app: {}, getConversationList: () => archived, settings: {}, deleteConversation },
+      plugin: { app: {}, getConversationList: () => archived, settings: {}, conversationLifecycle: { delete: deleteConversation } },
       getCurrentConversationId: () => null,
-      isStreaming: () => false,
-      reloadActiveConversation: async () => undefined,
       getTitleGenerationService: () => null,
       onListChanged: () => undefined,
     } as unknown as SessionBrowserDeps);
@@ -494,7 +484,7 @@ describe('SessionBrowser archived multi-select', () => {
     await new Promise(resolve => setTimeout(resolve, 0));
 
     expect(confirmDelete).toHaveBeenCalledWith(expect.anything(), 'Permanently delete 2 sessions?');
-    expect(deleteConversation.mock.calls).toEqual([['plan-a'], ['plan-b']]);
+    expect(deleteConversation.mock.calls).toEqual([[['plan-a', 'plan-b']]]);
   });
 
   it('offers restoring or deleting every archived session under a date divider', async () => {
@@ -506,10 +496,8 @@ describe('SessionBrowser archived multi-select', () => {
     const deleteConversation = jest.fn().mockResolvedValue(undefined);
     jest.mocked(confirmDelete).mockResolvedValue(true);
     const controller = new SessionBrowser({
-      plugin: { app: {}, getConversationList: () => archived, settings: {}, deleteConversation },
+      plugin: { app: {}, getConversationList: () => archived, settings: {}, conversationLifecycle: { delete: deleteConversation } },
       getCurrentConversationId: () => null,
-      isStreaming: () => false,
-      reloadActiveConversation: async () => undefined,
       getTitleGenerationService: () => null,
       onListChanged: () => undefined,
     } as unknown as SessionBrowserDeps);
@@ -535,6 +523,6 @@ describe('SessionBrowser archived multi-select', () => {
     menu.items[1].clickHandler?.();
     await new Promise(resolve => setTimeout(resolve, 0));
 
-    expect(deleteConversation.mock.calls).toEqual([['stale'], ['ancient']]);
+    expect(deleteConversation.mock.calls).toEqual([[['stale', 'ancient']]]);
   });
 });

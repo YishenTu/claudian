@@ -7,7 +7,7 @@ import { axe } from 'jest-axe';
 import { Component } from 'obsidian';
 
 import { getToolIcon } from '@/core/tools/toolIcons';
-import { extractWebSearchResults } from '@/core/tools/toolResultContent';
+import { applyToolResultPresentation } from '@/core/tools/toolResultDetails';
 import type { StreamChunk, ToolCallInfo } from '@/core/types';
 import { AsyncQuestionPrompts } from '@/features/chat/rendering/AsyncQuestionPrompts';
 import type { QuestionAnswerHandler } from '@/features/chat/rendering/InlineAskUserQuestion';
@@ -91,11 +91,8 @@ function collectStreamedTools(chunks: StreamChunk[]): ToolCallInfo[] {
     } else if (chunk.type === 'tool_result') {
       const tool = tools.get(chunk.id);
       expect(tool).toBeDefined();
-      Object.assign(tool!, {
-        result: chunk.content,
-        status: chunk.isError ? 'error' : 'completed',
-        webSearchResults: extractWebSearchResults(chunk.toolUseResult) ?? tool!.webSearchResults,
-      });
+      Object.assign(tool!, { result: chunk.content, status: chunk.isError ? 'error' : 'completed' });
+      applyToolResultPresentation(tool!, chunk.resultDetails);
     }
   }
   return [...tools.values()];

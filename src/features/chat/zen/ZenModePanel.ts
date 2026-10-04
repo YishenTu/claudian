@@ -1,12 +1,13 @@
 import { type Keymap, Scope } from 'obsidian';
 
-import type { ProviderId } from '../../../core/providers/types';
-import { t } from '../../../i18n/i18n';
 import {
   cancelScheduledAnimationFrame,
   scheduleAnimationFrame,
   type ScheduledAnimationFrame,
-} from '../../../utils/animationFrame';
+} from '@/features/chat/utils/animationFrame';
+
+import type { ProviderId } from '../../../core/providers/types';
+import { t } from '../../../i18n/i18n';
 import { setToolIcon } from '../rendering/ToolCallRenderer';
 import type { AssembledTabRuntime } from '../tabs/types';
 import { formatActivityPreview, type ZenActivityTone } from './activityPreview';

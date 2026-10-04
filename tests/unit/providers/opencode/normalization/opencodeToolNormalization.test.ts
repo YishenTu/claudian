@@ -205,7 +205,7 @@ describe('createOpencodeToolStreamAdapter', () => {
         content: 'read ok',
         id: 'tool-1',
         isError: false,
-        toolUseResult: { resultFormat: 'plain' },
+        resultDetails: { resultFormat: 'plain' },
         type: 'tool_result',
       },
     ]);
@@ -254,8 +254,8 @@ describe('createOpencodeToolStreamAdapter', () => {
       content: 'User has answered your questions.',
       id: 'tool-2',
       isError: false,
-      toolUseResult: {
-        answers: {
+      resultDetails: {
+        resolvedAnswers: {
           deploy: 'Yes',
           'Deploy now?': 'Yes',
         },

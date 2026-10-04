@@ -8,11 +8,16 @@ import * as os from 'os';
 import * as path from 'path';
 
 import {
+  buildImageAttachmentFromBase64,
+  parseImageDataUri,
+} from '@/core/execution/imageAttachment';
+import { extractUserDisplayContent } from '@/core/prompt/promptContext';
+import {
   extractCodexUserVisibleText,
   joinCodexUserTextParts,
 } from '@/providers/codex/normalization/codexUserText';
 
-import { extractWebSearchResults } from '../../../core/tools/toolResultContent';
+import { normalizeWebSearchResults } from '../../../core/tools/toolResultDetails';
 import type {
   ChatMessage,
   CitationGroup,
@@ -22,11 +27,6 @@ import type {
   ToolCallInfo,
 } from '../../../core/types';
 import { createTurnStats, isTokenCount } from '../../../core/types';
-import { extractUserDisplayContent } from '../../../utils/context';
-import {
-  buildImageAttachmentFromBase64,
-  parseImageDataUri,
-} from '../../../utils/imageAttachment';
 import {
   normalizeCodexMemoryCitation,
   stripCodexMemoryCitationMarkup,
@@ -807,7 +807,7 @@ function applyPersistedNativeExecItem(item: NonNullable<PersistedEventPayload['i
   if (item.type === 'Extension' && item.kind === 'web.search') {
     const input = normalizeCodexWebSearchInput({ query: item.query, action: item.action });
     const toolCall = claimPersistedExecCall('WebSearch', [input], ctx);
-    const webSearchResults = extractWebSearchResults({ webSearchResults: item.results });
+    const webSearchResults = normalizeWebSearchResults(item.results);
     if (toolCall && webSearchResults) toolCall.webSearchResults = webSearchResults;
     return;
   }

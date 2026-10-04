@@ -1,3 +1,5 @@
+import { diffFromUnifiedText } from '@/core/tools/toolDiff';
+
 import {
   TOOL_BASH,
   TOOL_EDIT,
@@ -10,7 +12,13 @@ import {
   TOOL_WEB_SEARCH,
   TOOL_WRITE,
 } from '../../../core/tools/toolNames';
-import type { ScriptToolCallItem, ToolResultImage, WebSearchResultItem } from '../../../core/types';
+import { normalizeToolResultDetails } from '../../../core/tools/toolResultDetails';
+import type {
+  ScriptToolCallItem,
+  ToolResultDetails,
+  ToolResultImage,
+  WebSearchResultItem,
+} from '../../../core/types';
 
 const PI_BUILT_IN_TOOL_NAMES: Record<string, string> = {
   bash: TOOL_BASH,
@@ -102,11 +110,11 @@ export function normalizePiToolInput(value: unknown, toolName?: string): Record<
  * renderers read. Edit `details.diff` is Pi's numbered TUI diff, so the
  * unified `details.patch` is the only diff source.
  */
-export function normalizePiToolUseResult(
+export function normalizePiToolResultDetails(
   toolName: string,
   result: unknown,
   nestedArguments?: ReadonlyMap<string, unknown>,
-): Record<string, unknown> | undefined {
+): ToolResultDetails | undefined {
   const details = normalizePiToolDetails(toolName, result, nestedArguments);
   const content = Array.isArray(result) ? result : isPlainObject(result) ? result.content : undefined;
   const resultImages = Array.isArray(content) ? content.flatMap((part): ToolResultImage[] => {
@@ -117,21 +125,22 @@ export function normalizePiToolUseResult(
     ) return [];
     return [{ kind: 'data', data: part.data, mediaType: part.mimeType }];
   }) : [];
-  return resultImages.length > 0 ? { ...details, resultImages } : details;
+  return normalizeToolResultDetails(resultImages.length > 0 ? { ...details, resultImages } : details ?? {});
 }
 
 function normalizePiToolDetails(
   toolName: string,
   result: unknown,
   nestedArguments?: ReadonlyMap<string, unknown>,
-): Record<string, unknown> | undefined {
+): ToolResultDetails | undefined {
   const details = isPlainObject(result) && isPlainObject(result.details) ? result.details : null;
   switch (normalizePiToolName(toolName)) {
     case TOOL_READ:
       return { resultFormat: 'plain' };
     case TOOL_EDIT: {
       const patch = typeof details?.patch === 'string' && details.patch.trim() ? details.patch : undefined;
-      return patch ? { diff: patch } : undefined;
+      const diff = patch ? diffFromUnifiedText(patch) : undefined;
+      return diff ? { diff } : undefined;
     }
     case TOOL_WEB_SEARCH: {
       const webSearchResults = Array.isArray(details?.results)

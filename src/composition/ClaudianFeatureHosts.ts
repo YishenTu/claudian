@@ -26,6 +26,7 @@ import type {
   TabWorkspaceStateDeliveryRegistration,
 } from '@/features/chat/ChatFeatureHost';
 import type { ClaudianView } from '@/features/chat/ClaudianView';
+import type { ConversationLifecycle } from '@/features/chat/workspace/ConversationLifecycle';
 import type { ZenModeSource } from '@/features/chat/zen/types';
 import type { ZenModeController } from '@/features/chat/zen/ZenModeController';
 import type { FeatureHost } from '@/features/FeatureHost';
@@ -51,6 +52,7 @@ export interface ChatFeatureHostDomains extends FeatureHostDomains {
   readonly chatModelSelection: ChatModelSelectionCoordinator;
   readonly sessionSnapshots: SessionSnapshotStore;
   readonly tabWorkspaceMigration: TabWorkspaceMigrationCoordinator;
+  readonly conversationLifecycle: ConversationLifecycle;
   readonly zenMode: Pick<ZenModeController, 'register'>;
 }
 
@@ -113,11 +115,13 @@ export class ClaudianFeatureHost implements FeatureHost {
 export class ClaudianChatFeatureHost extends ClaudianFeatureHost implements ChatFeatureHost {
   readonly chatModelSelection: ChatModelSelectionCoordinator;
   readonly executionPersistence: ConversationRepository;
+  readonly conversationLifecycle: ConversationLifecycle;
 
   constructor(protected readonly domains: ChatFeatureHostDomains) {
     super(domains);
     this.chatModelSelection = domains.chatModelSelection;
     this.executionPersistence = domains.executionPersistence;
+    this.conversationLifecycle = domains.conversationLifecycle;
   }
 
   writeSessionSnapshot(conversationId: string, markdown: string): Promise<string> {
@@ -160,35 +164,12 @@ export class ClaudianChatFeatureHost extends ClaudianFeatureHost implements Chat
     return this.domains.conversations.renameConversation(id, title);
   }
 
-  setConversationPinned(id: string, isPinned: boolean): Promise<void> {
-    return this.domains.conversations.setConversationPinned(id, isPinned);
-  }
-
-  setConversationsPinned(ids: readonly string[], isPinned: boolean): Promise<void> {
-    return this.domains.conversations.setConversationsPinned(ids, isPinned);
-  }
-
   setLinkedContentPinned(contentPath: string, isPinned: boolean): Promise<void> {
     return this.domains.conversations.setLinkedContentPinned(contentPath, isPinned);
   }
 
   rewriteLinkedContentPaths(oldPath: string, newPath: string, includeDescendants: boolean): Promise<void> {
     return this.domains.conversations.rewriteLinkedContentPaths(oldPath, newPath, includeDescendants);
-  }
-
-  setConversationArchived(id: string, isArchived: boolean): Promise<void> {
-    return this.domains.conversations.setConversationArchived(id, isArchived);
-  }
-
-  restoreConversations(ids: readonly string[]): Promise<void> {
-    return this.domains.conversations.restoreConversations(ids);
-  }
-
-  archiveConversationsIf(
-    ids: readonly string[],
-    shouldArchive: (conversation: Readonly<Conversation>) => boolean,
-  ): Promise<number> {
-    return this.domains.conversations.archiveConversationsIf(ids, shouldArchive);
   }
 
   getWorkspaceConversationIds(): ReadonlySet<string> {

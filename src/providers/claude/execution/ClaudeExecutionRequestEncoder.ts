@@ -4,6 +4,17 @@ import type {
   PermissionMode as SDKPermissionMode,
 } from '@anthropic-ai/claude-agent-sdk';
 
+import {
+  buildContextFromHistory,
+  buildPromptWithHistoryContext,
+} from '@/core/prompt/historyContext';
+import {
+  appendLinkedContent,
+  appendLinkedContentBody,
+  appendSelectionContexts,
+  appendSessionReferences,
+} from '@/core/prompt/promptContext';
+
 import type {
   ProviderExecutionRequest,
   ProviderSessionConfig,
@@ -18,16 +29,6 @@ import {
 } from '../../../core/tools/toolNames';
 import type { ImageAttachment } from '../../../core/types';
 import type { ClaudianSettings } from '../../../core/types/settings';
-import {
-  appendLinkedContent,
-  appendLinkedContentBody,
-  appendSelectionContexts,
-  appendSessionReferences,
-} from '../../../utils/context';
-import {
-  buildContextFromHistory,
-  buildPromptWithHistoryContext,
-} from '../../../utils/session';
 import { findEnabledClaudeModelOption } from '../modelOptions';
 import { toClaudeRuntimeModelId } from '../modelSelection';
 import { isClaudePermissionMode, toClaudeSDKPermissionMode } from '../permissionModes';

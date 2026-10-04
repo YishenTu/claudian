@@ -1,3 +1,5 @@
+import { isSkill } from '@/core/commands/slashCommand';
+
 import type {
   ProviderCommandCatalog,
   ProviderCommandDropdownConfig,
@@ -5,7 +7,6 @@ import type {
 } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
 import type { SlashCommand } from '../../../core/types';
-import { isSkill } from '../../../utils/slashCommand';
 
 function slashCommandToEntry(cmd: SlashCommand): ProviderCommandEntry {
   const skill = isSkill(cmd);

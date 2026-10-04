@@ -204,9 +204,8 @@ export class ACPExecutionEventNormalizer {
                 scope: this.#nextScope(),
                 toolCallId: chunk.id,
                 toolScope,
-                ...(chunk.toolUseResult ? {
-                  toolUseResult: chunk.toolUseResult,
-                } : {}),
+                ...(chunk.resultDetails ? { resultDetails: chunk.resultDetails } : {}),
+                ...(chunk.providerPayload ? { providerPayload: chunk.providerPayload } : {}),
                 type: 'tool_completed' as const,
               }];
             default:

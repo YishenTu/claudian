@@ -1093,7 +1093,6 @@ describe('OpencodeExecutionBackend', () => {
         content: expect.stringContaining('Updated file'),
         isError: false,
         toolCallId: 'tool-edit',
-        toolUseResult: { filePath: '/vault/notes/today.md' },
         type: 'tool_completed',
       }),
     ]));

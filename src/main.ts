@@ -8,10 +8,8 @@ import './providers';
 
 StartupProfiler.finishModuleEvaluation();
 
-import type { TAbstractFile } from 'obsidian';
-import { Notice, Plugin, TFolder } from 'obsidian';
+import { Notice, Plugin } from 'obsidian';
 
-import type { ConversationService } from './app/conversations/ConversationService';
 import type { NativeSessionArchiveSync } from './app/conversations/NativeSessionArchiveSync';
 import type { SessionMetadataLoader } from './app/conversations/SessionMetadataLoader';
 import { createDefaultClaudianSettings } from './app/settings/defaultSettings';
@@ -34,6 +32,10 @@ import { VIEW_TYPE_CLAUDIAN } from './core/types';
 import { ClaudianView } from './features/chat/ClaudianView';
 import { registerFileMenu } from './features/chat/fileMenu';
 import { InactiveSessionArchiver } from './features/chat/session-manager/InactiveSessionArchiver';
+import { createChatTabCommands } from './features/chat/workspace/ChatTabCommands';
+import { ChatViewPublisher } from './features/chat/workspace/ChatViewPublisher';
+import { ConversationLifecycle } from './features/chat/workspace/ConversationLifecycle';
+import { VaultContentEvents } from './features/chat/workspace/VaultContentEvents';
 import { ZenModeController } from './features/chat/zen/ZenModeController';
 import { createInlineEditCommand } from './features/inline-edit/inlineEditCommand';
 import { InlineEditSessionOwner } from './features/inline-edit/InlineEditSessionOwner';
@@ -48,11 +50,12 @@ export default class ClaudianPlugin extends Plugin {
   /** Live committed settings, following Obsidian's plugin convention. */
   settings!: Readonly<ClaudianSettings>;
   private storage!: SharedStorageService;
-  private conversations!: ConversationService;
   private sessionMetadata!: SessionMetadataLoader;
   private nativeSessionArchives!: NativeSessionArchiveSync;
   private providerChatOptions!: ProviderChatOptionsReconciler;
   private inactiveSessionArchiver!: InactiveSessionArchiver;
+  private conversationLifecycle!: ConversationLifecycle;
+  private vaultContentEvents!: VaultContentEvents;
   private settingsTab: ClaudianSettingTab | null = null;
   private readonly views = new ClaudianViews(
     this.app.workspace,
@@ -65,9 +68,14 @@ export default class ClaudianPlugin extends Plugin {
     app: this.app,
     isEnabled: () => this.settings.enableZenMode,
   });
+  private readonly chatViews = new ChatViewPublisher({
+    views: this.views,
+    zenMode: this.zenMode,
+    inactiveSessions: { request: () => this.inactiveSessionArchiver.request() },
+    hasLoadedAllSessionMetadata: () => this.sessionMetadata.hasLoadedAll,
+  });
   private readonly startupMaintenanceAbort = new AbortController();
   private isUnloading = false;
-  private vaultRefreshTimer: number | undefined;
   private applicationShutdownPromise: Promise<void> | null = null;
   private modelMetadataMigration: Promise<void> | null = null;
   private sessionSnapshotCleanup: Promise<void> | null = null;
@@ -91,22 +99,7 @@ export default class ClaudianPlugin extends Plugin {
         getView: () => this.views.getView(),
         registerEvent: eventRef => this.registerEvent(eventRef),
       });
-      this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
-        void this.handleLinkedContentRename(file, oldPath).catch(() => {
-          new Notice('Failed to update linked content paths');
-        });
-      }));
-      this.registerEvent(this.app.vault.on('delete', (file) => {
-        void this.handlePinnedLinkedContentDeleted(file).catch(() => {
-          new Notice('Failed to update pinned linked content');
-        });
-      }));
-      this.registerEvent(this.app.vault.on('create', (file) => {
-        for (const view of this.views.getAllViews()) {
-          view.handleLinkedContentCreated(file.path);
-        }
-        this.scheduleVaultRefresh();
-      }));
+      this.vaultContentEvents.register(eventRef => this.registerEvent(eventRef));
 
       this.addRibbonIcon('bot', 'Open Claudian', () => {
         void this.views.activateView();
@@ -126,62 +119,9 @@ export default class ClaudianPlugin extends Plugin {
         sessions: this.inlineEditSessions,
       }));
 
-      this.addCommand({
-        id: 'new-tab',
-        name: 'New',
-        checkCallback: (checking: boolean) => {
-          if (!this.canCreateNewTab()) return false;
-
-          if (!checking) {
-            void this.openNewTab();
-          }
-          return true;
-        },
-      });
-
-      this.addCommand({
-        id: 'new-session',
-        name: 'Replace current conversation',
-        checkCallback: (checking: boolean) => {
-          const view = this.views.getView();
-          if (!view) return false;
-          if (view.isDualPaneMode()) return false;
-
-          const tabManager = view.getTabManager();
-          if (!tabManager) return false;
-
-          const activeTab = tabManager.getActiveTab();
-          if (!activeTab) return false;
-
-          if (activeTab.state.isStreaming) return false;
-
-          if (!checking) {
-            void tabManager.createNewConversation();
-          }
-          return true;
-        },
-      });
-
-      this.addCommand({
-        id: 'close-current-tab',
-        name: 'Close current tab',
-        checkCallback: (checking: boolean) => {
-          const view = this.views.getView();
-          if (!view) return false;
-          if (view.isDualPaneMode()) return false;
-
-          const tabManager = view.getTabManager();
-          if (!tabManager) return false;
-
-          if (!checking) {
-            const activeTabId = tabManager.getActiveTabId();
-            if (activeTabId) {
-              void tabManager.closeTab(activeTabId);
-            }
-          }
-          return true;
-        },
-      });
+      for (const command of createChatTabCommands({ workspace: this.app.workspace, views: this.views })) {
+        this.addCommand(command);
+      }
 
       this.addCommand({
         id: 'copy-startup-diagnostics',
@@ -219,8 +159,8 @@ export default class ClaudianPlugin extends Plugin {
     this.isUnloading = true;
     // Return any zen presentation to its view before asynchronous shutdown.
     this.zenMode.dispose();
-    window.clearTimeout(this.vaultRefreshTimer);
-    this.vaultRefreshTimer = undefined;
+    this.vaultContentEvents?.dispose();
+    this.inactiveSessionArchiver?.dispose();
     this.startupMaintenanceAbort.abort();
     if (this.sessionInputCleanupTimer !== null) {
       window.clearTimeout(this.sessionInputCleanupTimer);
@@ -242,10 +182,11 @@ export default class ClaudianPlugin extends Plugin {
       deferNonRestoredSessionMetadata: true,
       isChatView: isClaudianView,
       isUnloading: () => this.isUnloading,
-      publishCommittedSettings: (settings, previous) => this.publishCommittedSettings(settings, previous),
-      onConversationDeleted: conversationId => this.resetDeletedConversationTabs(conversationId),
-      onConversationListChanged: () => this.notifyConversationViewsChanged(),
-      onAllMetadataLoaded: () => this.archiveInactiveSessions(),
+      publishCommittedSettings: async (settings, previous) => this.chatViews.publishSettings(settings, previous),
+      // No chat view can hold tabs before loading completes and assigns the lifecycle.
+      onConversationDeleted: conversationId => this.conversationLifecycle.resetDeletedConversationTabs(conversationId),
+      onConversationListChanged: () => this.chatViews.notifyConversationListChanged(),
+      onAllMetadataLoaded: () => this.inactiveSessionArchiver.request(),
       ensureProviderWorkspace: providerId => (
         ProviderWorkspaceRegistry.ensureInitialized(this.providerHost, providerId, 'history')
       ),
@@ -254,7 +195,6 @@ export default class ClaudianPlugin extends Plugin {
     const settings = domains.settings;
     this.settings = settings.getCommittedSettings();
     this.storage = domains.storage;
-    this.conversations = domains.conversations;
     this.sessionMetadata = domains.sessionMetadata;
     this.nativeSessionArchives = domains.nativeSessionArchives;
 
@@ -264,12 +204,8 @@ export default class ClaudianPlugin extends Plugin {
       providerSettings: ProviderSettingsCoordinator,
       reconcileConversationModels: providerId => domains.conversationRepository.reconcileSelectedModels(providerId),
       onSettingsReconciled: () => this.settingsTab?.refreshModelOptions(),
-      onConversationsChanged: () => this.notifyConversationViewsChanged(),
-      onReconciled: (providerId) => {
-        for (const view of this.views.getAllViews()) {
-          view.refreshModelSelector(providerId);
-        }
-      },
+      onConversationsChanged: () => this.chatViews.notifyConversationListChanged(),
+      onReconciled: providerId => this.chatViews.refreshModelSelector(providerId),
     });
     const notifyProviderChatOptionsChanged = (providerId: ProviderId): Promise<void> => (
       this.providerChatOptions.notifyChanged(providerId)
@@ -281,9 +217,7 @@ export default class ClaudianPlugin extends Plugin {
       providers: ProviderRegistry,
       providerSettings: ProviderSettingsCoordinator,
       onEnvironmentApplied: async (providerIds) => {
-        for (const view of this.views.getAllViews()) {
-          view.invalidateProviderCommandCaches(providerIds);
-        }
+        this.chatViews.invalidateProviderCommandCaches(providerIds);
         await Promise.all(providerIds.map(notifyProviderChatOptionsChanged));
       },
     });
@@ -308,8 +242,19 @@ export default class ClaudianPlugin extends Plugin {
       notifyProviderChatOptionsChanged,
     };
     this.featureHost = new ClaudianFeatureHost(featureDomains);
+    this.conversationLifecycle = new ConversationLifecycle({
+      conversations: domains.conversations,
+      views: this.views,
+    });
+    this.vaultContentEvents = new VaultContentEvents({
+      vault: this.app.vault,
+      views: this.views,
+      conversations: domains.conversations,
+      notifyConversationListChanged: () => this.chatViews.notifyConversationListChanged(),
+    });
     this.chatHost = new ClaudianChatFeatureHost({
       ...featureDomains,
+      conversationLifecycle: this.conversationLifecycle,
       executionPersistence: domains.conversationRepository,
       chatModelSelection: domains.chatModelSelection,
       sessionSnapshots: this.sessionSnapshots,
@@ -339,132 +284,5 @@ export default class ClaudianPlugin extends Plugin {
       // Obsidian teardown has no error channel; workspace cleanup is best effort.
     }
     await this.modelMetadataMigration;
-  }
-
-  private canCreateNewTab(): boolean {
-    const hasClaudianLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN).length > 0;
-    const view = this.views.getView();
-    const tabManager = view?.getTabManager();
-
-    if (tabManager) {
-      return true;
-    }
-
-    if (hasClaudianLeaf) {
-      return false;
-    }
-
-    return true;
-  }
-
-  private async openNewTab(): Promise<void> {
-    const existingView = this.views.getView();
-    if (existingView) {
-      if (await existingView.handleNewConversationCommand()) {
-        return;
-      }
-      await existingView.createNewTab();
-      return;
-    }
-
-    await this.views.activateView();
-    this.views.getView()?.focusActiveInput();
-  }
-
-  private async publishCommittedSettings(settings: Readonly<ClaudianSettings>, previous: Readonly<ClaudianSettings>): Promise<void> {
-    const errors: unknown[] = [];
-    const publish = (refresh: () => void): void => {
-      try { refresh(); } catch (error) { errors.push(error); }
-    };
-    const timestampsChanged = settings.showMessageTimestamps !== previous.showMessageTimestamps;
-    const layoutChanged = settings.enableDualPane !== previous.enableDualPane || settings.dualPaneSide !== previous.dualPaneSide;
-    const commandsChanged = JSON.stringify(settings.hiddenCommands) !== JSON.stringify(previous.hiddenCommands);
-    const contextChanged = JSON.stringify(settings.customContextLimits) !== JSON.stringify(previous.customContextLimits);
-    if (timestampsChanged || layoutChanged || commandsChanged || contextChanged) {
-      for (const view of this.views.getAllViews()) {
-        if (timestampsChanged) publish(() => view.refreshMessageTimestamps());
-        if (layoutChanged) publish(() => view.refreshDualPaneLayout());
-        if (commandsChanged) publish(() => view.updateHiddenCommands());
-        if (contextChanged) publish(() => view.refreshModelSelector());
-      }
-    }
-    if (settings.enableZenMode !== previous.enableZenMode) publish(() => this.zenMode.reconcile());
-    if (
-      settings.sessionAutoArchiveAfter !== previous.sessionAutoArchiveAfter
-      && this.sessionMetadata.hasLoadedAll
-    ) {
-      this.archiveInactiveSessions();
-    }
-    if (errors.length > 0) throw new AggregateError(errors, 'Settings view publication failed.');
-  }
-
-  private async resetDeletedConversationTabs(id: string): Promise<void> {
-    const errors: unknown[] = [];
-    for (const view of this.views.getAllViews()) {
-      const tabManager = view.getTabManager();
-      if (!tabManager) continue;
-
-      try {
-        await tabManager.resetConversationTabs(id);
-      } catch (error) {
-        errors.push(error);
-      }
-    }
-    if (errors.length > 0) {
-      const first = errors[0];
-      throw first instanceof Error ? first : new Error(String(first));
-    }
-  }
-
-  private archiveInactiveSessions(): void {
-    if (this.isUnloading) return;
-    void this.inactiveSessionArchiver.run().catch(() => {
-      new Notice('Failed to auto-archive inactive sessions');
-    });
-  }
-
-  private async handleLinkedContentRename(
-    file: TAbstractFile,
-    oldPath: string,
-  ): Promise<void> {
-    const includeDescendants = file instanceof TFolder;
-    for (const view of this.views.getAllViews()) {
-      view.handleLinkedContentRenamed(oldPath, file.path, includeDescendants);
-    }
-    try {
-      await this.conversations.applyVaultRename(oldPath, file.path, includeDescendants);
-    } finally {
-      this.scheduleVaultRefresh();
-    }
-  }
-
-  private async handlePinnedLinkedContentDeleted(file: TAbstractFile): Promise<void> {
-    const includeDescendants = file instanceof TFolder;
-    for (const view of this.views.getAllViews()) {
-      view.handleLinkedContentDeleted(file.path, includeDescendants);
-    }
-    try {
-      await this.conversations.applyVaultDeletion(file.path, includeDescendants);
-    } finally {
-      this.scheduleVaultRefresh();
-    }
-  }
-
-  private scheduleVaultRefresh(): void {
-    if (this.isUnloading || this.vaultRefreshTimer !== undefined) return;
-    this.vaultRefreshTimer = window.setTimeout(() => {
-      this.vaultRefreshTimer = undefined;
-      if (!this.isUnloading) this.notifyConversationViewsChanged();
-    }, 50);
-  }
-
-  private notifyConversationViewsChanged(): void {
-    for (const view of this.views.getAllViews()) {
-      try {
-        view.notifyConversationListChanged();
-      } catch {
-        // UI projection failures must not roll back a committed repository mutation.
-      }
-    }
   }
 }

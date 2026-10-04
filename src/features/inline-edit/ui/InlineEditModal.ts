@@ -4,7 +4,15 @@ import { Decoration, EditorView, WidgetType } from '@codemirror/view';
 import type { App, Component, Editor, MarkdownView } from 'obsidian';
 import { Notice } from 'obsidian';
 
+import type { CursorContext } from '@/core/prompt/editorContext';
+import {
+  findBestMentionLookupMatch,
+  isMentionStart,
+  normalizeForPlatformLookup,
+  normalizeMentionPath,
+} from '@/features/inline-edit/ui/contextMentionResolver';
 import { normalizeInsertionText } from '@/features/inline-edit/ui/normalizeInsertionText';
+import { getEditorView } from '@/utils/obsidianCompat';
 
 import { createCatalogCommandDiscoveryStore } from '../../../core/providers/commands/catalogCommandDiscovery';
 import { getHiddenCommandSet } from '../../../core/providers/commands/hiddenCommands';
@@ -18,13 +26,6 @@ import {
   SlashCommandSource,
 } from '../../../shared/composer-dropdown';
 import { VaultMentionDataProvider } from '../../../shared/mention/VaultMentionDataProvider';
-import {
-  findBestMentionLookupMatch,
-  isMentionStart,
-  normalizeForPlatformLookup,
-  normalizeMentionPath,
-} from '../../../utils/contextMentionResolver';
-import { type CursorContext, getEditorView } from '../../../utils/editor';
 import type { FeatureHost } from '../../FeatureHost';
 import type { InlineEditSessionOwner } from '../InlineEditSessionOwner';
 import { onInlineEditEditorDestroyed } from './InlineEditEditorLifetime';

@@ -32,7 +32,6 @@ export function createInteractionPromptPort(
         ...(request.decisionReason ? { decisionReason: request.decisionReason } : {}),
         ...(request.blockedPath ? { blockedPath: request.blockedPath } : {}),
         ...(request.decisionOptions ? { decisionOptions: request.decisionOptions.map(option => ({ ...option })) } : {}),
-        ...(request.additionalPermissions !== undefined ? { additionalPermissions: request.additionalPermissions } : {}),
       }, signal),
     })),
     askUserQuestion: (request, signal) => track(request.interactionId, async prompts => ({

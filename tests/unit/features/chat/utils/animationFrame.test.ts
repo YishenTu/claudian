@@ -1,7 +1,7 @@
 import {
   cancelScheduledAnimationFrame,
   scheduleAnimationFrame,
-} from '@/utils/animationFrame';
+} from '@/features/chat/utils/animationFrame';
 
 describe('animationFrame scheduling', () => {
   afterEach(() => {

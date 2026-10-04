@@ -10,6 +10,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 
 import { ClaudianView } from '@/features/chat/ClaudianView';
+import { createTabPlacementPort } from '@/features/chat/tabs/runtime/TabRuntimePorts';
 
 afterEach(releaseSideChatHarnesses);
 
@@ -209,7 +210,7 @@ it('places the collapsed active chip before navigation in single pane and restor
     isWideSessionLayout: false,
     requestedWideSessionLayout: false,
     activeSidebarSurface: 'sessions',
-    tabManager: { getActiveTab: () => ({ controllers: { sideChatController: activeController } }) },
+    tabManager: { getActiveTab: () => chipTabFor(activeController) },
   }) as ClaudianView;
   view.refreshDualPaneLayout();
   const { started } = await startSideChat(harness);
@@ -270,7 +271,7 @@ it('uses the navigation row for a single-tab chip and moves it above navigation 
     requestedWideSessionLayout: false,
     activeSidebarSurface: 'sessions',
     tabManager: {
-      getActiveTab: () => ({ controllers: { sideChatController: harness.controller } }),
+      getActiveTab: () => chipTabFor(harness.controller),
       getTabCount: () => tabCount,
       canCreateTab: () => true,
     },
@@ -298,3 +299,15 @@ it('uses the navigation row for a single-tab chip and moves it above navigation 
   expect(harness.composerEl.contains(screen.getByRole('heading', { name: 'Side chat' }))).toBe(true);
   expect(host.childElementCount).toBe(0);
 });
+
+const chipTabs = new WeakMap<object, { placement: ReturnType<typeof createTabPlacementPort> }>();
+
+/** A stable tab per side chat controller whose placement routes the chip like an assembled tab. */
+function chipTabFor(controller: { setCollapsedHost(host: HTMLElement | null): void }) {
+  let tab = chipTabs.get(controller);
+  if (!tab) {
+    tab = { placement: createTabPlacementPort({} as never, host => controller.setCollapsedHost(host)) };
+    chipTabs.set(controller, tab);
+  }
+  return tab;
+}

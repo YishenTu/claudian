@@ -1,4 +1,5 @@
-import { appendContextFiles } from '../../utils/context';
+import { appendContextFiles } from '@/core/prompt/promptContext';
+
 import {
   buildInlineEditPrompt,
   getInlineEditSystemPrompt,

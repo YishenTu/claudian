@@ -127,10 +127,10 @@ describe('ACPExecutionEventNormalizer', () => {
         file_path: input.file_path ?? input.target_file,
       }),
       normalizeToolName: () => 'Read',
-      normalizeToolUseResult: (_rawName, input, rawOutput) => ({
-        filePath: String(input.file_path),
-        providerPayload: { rawOutput },
+      normalizeToolResultDetails: (_rawName, input) => ({
+        webSearchSummary: `Read ${String(input.file_path)}`,
       }),
+      buildToolProviderPayload: (_rawName, _rawInput, rawOutput) => ({ rawOutput }),
       resolveRawToolName: (current, update) => current ?? ({
         provenance: 'title',
         rawName: update.title ?? 'tool',
@@ -169,10 +169,8 @@ describe('ACPExecutionEventNormalizer', () => {
       type: 'tool_started',
     }));
     expect(completed.events).toContainEqual(expect.objectContaining({
-      toolUseResult: expect.objectContaining({
-        filePath: 'README.md',
-        providerPayload: { rawOutput: { bytes: 12 } },
-      }),
+      resultDetails: { webSearchSummary: 'Read README.md' },
+      providerPayload: { rawOutput: { bytes: 12 } },
       type: 'tool_completed',
     }));
   });

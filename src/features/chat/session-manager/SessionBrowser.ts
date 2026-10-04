@@ -6,17 +6,13 @@ import type {
   SessionManagerOrganization,
   SessionManagerSort,
 } from '../../../core/types';
-import { createProviderIconSvg } from '../../../shared/icons';
 import { confirmDelete } from '../../../shared/modals/ConfirmModal';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
 import { ConversationTitleGeneration } from '../services/ConversationTitleGeneration';
 import type { TabAttention } from '../state/types';
-import {
-  getLinkedContentTitle,
-  isLegacyProvisionalLinkedContent,
-  organizeSessionList,
-  type SessionListSection,
-} from './SessionListOrganizer';
+import { deriveSessionListModel, type SessionListSection } from './SessionListOrganizer';
+import { SessionMetadataPopover } from './SessionMetadataPopover';
+import { SessionMultiSelection } from './SessionMultiSelection';
 
 function runConversationAction(action: () => Promise<void>, failureMessage: string): void {
   void action().catch(() => {
@@ -99,8 +95,6 @@ type HistoryScrollAnchor = {
 export interface SessionBrowserDeps {
   plugin: ChatFeatureHost;
   getCurrentConversationId: () => string | null;
-  isStreaming: () => boolean;
-  reloadActiveConversation: () => Promise<void>;
   getTitleGenerationService: () => TitleGenerationService | null;
   onListChanged: () => void;
 }
@@ -110,24 +104,8 @@ export class SessionBrowser {
     cancel: () => void;
     input: HTMLInputElement;
   } | null = null;
-  private metadataPopoverCleanup: (() => void) | null = null;
-  private metadataPopoverCloseTimer: number | null = null;
-  private metadataPopoverEl: HTMLElement | null = null;
-  private metadataPopoverTarget: HTMLElement | null = null;
-  private metadataPopoverSequence = 0;
-  readonly #selectedConversationIds = new Set<string>();
-  #selectionSearchQuery = '';
-  #selectionContainer: HTMLElement | null = null;
-  #selectionDismissCleanup: (() => void) | null = null;
-  private metadataPopoverView: {
-    el: HTMLElement;
-    linkedContent: HTMLElement;
-    provider: HTMLElement;
-    created: HTMLElement;
-    lastActive: HTMLElement;
-    providerIcon: SVGElement | null;
-    providerIconKey: string;
-  } | null = null;
+  private readonly metadataPopover = new SessionMetadataPopover();
+  private readonly selection = new SessionMultiSelection();
 
   private readonly titles: ConversationTitleGeneration;
 
@@ -140,10 +118,9 @@ export class SessionBrowser {
   }
 
   dispose(): void {
-    this.#clearHistorySelection();
+    this.selection.clear();
     this.cancelInlineRename();
-    this.#closeSessionMetadataPopover();
-    this.metadataPopoverView = null;
+    this.metadataPopover.dispose();
   }
 
   cancelInlineRename(): boolean {
@@ -166,18 +143,10 @@ export class SessionBrowser {
     const { plugin } = this.deps;
     if (options.signal?.aborted) return;
     if (options.showMetadataPopover) {
-      this.#closeSessionMetadataPopover();
+      this.metadataPopover.close();
     }
     const searchQuery = options.searchQuery ?? '';
-    if (
-      !this.#canMultiSelect(options)
-      || searchQuery !== this.#selectionSearchQuery
-      || (this.#selectionContainer !== null && this.#selectionContainer !== container)
-    ) {
-      this.#clearHistorySelection();
-      this.#selectionSearchQuery = searchQuery;
-    }
-    this.#selectionContainer = container;
+    this.selection.beginRender(container, searchQuery, this.#canMultiSelect(options));
 
     const previousList = options.preserveListState
       ? container.querySelector<HTMLElement>('.claudian-history-list')
@@ -211,70 +180,20 @@ export class SessionBrowser {
     }
     container.empty();
 
-    const allConversations = plugin.getConversationList();
-    const scopedConversations = options.sessionScope === 'archived'
-      ? allConversations.filter(conversation => conversation.isArchived)
-      : options.sessionScope === 'active'
-        ? allConversations.filter(conversation => !conversation.isArchived)
-        : allConversations;
-    const searchTerms = (options.searchQuery ?? '')
-      .trim()
-      .toLocaleLowerCase()
-      .split(/\s+/)
-      .filter(Boolean);
-    const filteredConversations = searchTerms.length === 0
-      ? scopedConversations
-      : scopedConversations.filter((conversation) => {
-          const searchableText = [conversation.title, conversation.linkedContentPath ?? '']
-            .join('\n')
-            .toLocaleLowerCase();
-          return searchTerms.every(term => searchableText.includes(term));
-        });
-    const conversationsByLinkedContent = new Map<string, ConversationMeta[]>();
-    for (const conversation of scopedConversations) {
-      if (!conversation.linkedContentPath) continue;
-      const noteConversations = conversationsByLinkedContent.get(conversation.linkedContentPath) ?? [];
-      noteConversations.push(conversation);
-      conversationsByLinkedContent.set(conversation.linkedContentPath, noteConversations);
-    }
-    const pinnedLinkedContentPaths = organization === 'linked-content'
-      && options.showPinnedSection
-      && options.sessionScope !== 'archived'
-      ? options.pinnedLinkedContentPaths ?? new Set<string>()
-      : new Set<string>();
-    const isInPinnedContentGroup = (conversation: ConversationMeta): boolean => (
-      !!conversation.linkedContentPath
-      && pinnedLinkedContentPaths.has(conversation.linkedContentPath)
-    );
-    const pinnedContentConversations = filteredConversations.filter(isInPinnedContentGroup);
-    const pinnedConversations = options.showPinnedSection
-      ? filteredConversations.filter(conversation => (
-          conversation.isPinned && !isInPinnedContentGroup(conversation)
-        ))
-      : [];
-    const sessionConversations = options.showPinnedSection
-      ? filteredConversations.filter(conversation => (
-          !conversation.isPinned && !isInPinnedContentGroup(conversation)
-        ))
-      : filteredConversations;
-    const pinnedPathsWithMatchingSessions = new Set(
-      pinnedContentConversations.flatMap(conversation => (
-        conversation.linkedContentPath ? [conversation.linkedContentPath] : []
-      )),
-    );
-    const visiblePinnedContentPaths = [...pinnedLinkedContentPaths].filter((contentPath) => (
-      searchTerms.length === 0
-      || pinnedPathsWithMatchingSessions.has(contentPath)
-      || searchTerms.every(term => contentPath.toLocaleLowerCase().includes(term))
-    ));
-    const pinnedContentSections = organizeSessionList(pinnedContentConversations, {
-      organization: 'linked-content',
+    const model = deriveSessionListModel(plugin.getConversationList(), {
+      organization,
       sort: options.sort ?? 'last-updated',
       language: options.language ?? 'en',
-      includeContentPaths: visiblePinnedContentPaths,
+      scope: options.sessionScope,
+      searchQuery: options.searchQuery,
+      showPinnedSection: options.showPinnedSection,
+      pinnedLinkedContentPaths: options.pinnedLinkedContentPaths,
+      collapsedGroupKeys: options.collapsedGroupKeys,
       contentExists: options.contentExists,
       contentIsNote: options.contentIsNote,
-    }).filter(section => section.contentPath !== undefined);
+      groupByRecency: options.groupByRecency ? { now: Date.now() } : undefined,
+    });
+    const { conversationsByLinkedContent, pinnedContentSections, sections } = model;
     const showSessionSections = options.showPinnedSection || options.showArchivedSection;
 
     let list: HTMLElement;
@@ -282,7 +201,7 @@ export class SessionBrowser {
     let pinnedList: HTMLElement | null = null;
     if (showSessionSections) {
       list = container.createDiv({ cls: 'claudian-history-list' });
-      if (pinnedConversations.length > 0 || pinnedContentSections.length > 0) {
+      if (model.pinnedConversations.length > 0 || pinnedContentSections.length > 0) {
         const pinnedSection = list.createDiv({
           cls: 'claudian-history-section claudian-history-section--pinned',
         });
@@ -334,13 +253,11 @@ export class SessionBrowser {
     );
     list.dataset.visibleCount = String(visibleCount);
 
-    if (filteredConversations.length === 0 && pinnedContentSections.length === 0) {
-      if (organization === 'linked-content') {
-        options.onGroupKeysChange?.([]);
-      }
+    if (model.groupKeys) options.onGroupKeysChange?.(model.groupKeys);
+    if (model.isEmpty) {
       sessionList.createDiv({
         cls: 'claudian-history-empty',
-        text: searchTerms.length > 0 ? 'No matching sessions' : 'No conversations',
+        text: model.hasSearchTerms ? 'No matching sessions' : 'No conversations',
       });
       options.onBeforeRestoreListState?.(container);
       if (pinnedList) pinnedList.scrollTop = previousPinnedScrollTop;
@@ -352,40 +269,7 @@ export class SessionBrowser {
       return;
     }
 
-    const sortedPinnedConversations = organizeSessionList(pinnedConversations, {
-      organization: 'list',
-      sort: options.sort ?? 'last-updated',
-      language: options.language ?? 'en',
-    })[0]?.conversations ?? [];
-    const sections = organizeSessionList(sessionConversations, {
-      organization,
-      sort: options.sort ?? 'last-updated',
-      language: options.language ?? 'en',
-      contentExists: options.contentExists,
-      contentIsNote: options.contentIsNote,
-      groupByRecency: options.groupByRecency ? { now: Date.now() } : undefined,
-    });
-    if (organization === 'linked-content') {
-      options.onGroupKeysChange?.([
-        ...pinnedContentSections.map(({ key }) => key),
-        ...sections.map(({ key }) => key),
-      ]);
-    }
-    const visiblePinnedContentConversationTotal = pinnedContentSections.reduce((total, section) => (
-      options.collapsedGroupKeys?.has(section.key)
-        ? total
-        : total + section.conversations.length
-    ), 0);
-    const visibleSessionConversationTotal = organization === 'linked-content'
-      ? sections.reduce((total, section) => (
-          options.collapsedGroupKeys?.has(section.key)
-            ? total
-            : total + section.conversations.length
-        ), 0)
-      : sessionConversations.length;
-    const visibleConversationTotal = visiblePinnedContentConversationTotal
-      + pinnedConversations.length
-      + visibleSessionConversationTotal;
+    const { visibleConversationTotal } = model;
     let renderedConversationCount = 0;
 
     if (pinnedList) {
@@ -408,7 +292,7 @@ export class SessionBrowser {
         renderedConversationCount += visibleConversations.length;
       }
 
-      const visiblePinnedConversations = sortedPinnedConversations.slice(
+      const visiblePinnedConversations = model.pinnedConversations.slice(
         0,
         Math.max(0, visibleCount - renderedConversationCount),
       );
@@ -783,7 +667,7 @@ export class SessionBrowser {
       if (isSelectable) {
         focusTarget.setAttribute('role', 'button');
       }
-      this.#attachSessionMetadataPopover(item, focusTarget, conversation, options);
+      this.metadataPopover.attach(item, focusTarget, conversation, options);
     } else {
       content.createDiv({
         cls: 'claudian-history-item-date',
@@ -850,17 +734,17 @@ export class SessionBrowser {
     }
 
     if (this.#canMultiSelect(options)) {
-      this.#attachHistorySelection(item, conversation.id);
+      this.selection.attach(item, conversation.id);
     }
 
     item.addEventListener('contextmenu', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (this.#selectedConversationIds.has(conversation.id) && this.#selectedConversationIds.size > 1) {
+      if (this.selection.isPartOfMultiple(conversation.id)) {
         this.#showSelectionContextMenu(options, event);
         return;
       }
-      this.#clearHistorySelection();
+      this.selection.clear();
       this.#showHistoryContextMenu(
         item,
         conversation,
@@ -1112,237 +996,6 @@ export class SessionBrowser {
     );
   }
 
-  #attachSessionMetadataPopover(
-    item: HTMLElement,
-    focusTarget: HTMLElement,
-    conversation: ConversationMeta,
-    options: HistoryRenderOptions,
-  ): void {
-    item.addEventListener('mouseenter', () => {
-      this.#showSessionMetadataPopover(item, focusTarget, conversation, options);
-    });
-    item.addEventListener('mouseleave', () => {
-      this.#scheduleSessionMetadataPopoverClose(item);
-    });
-    focusTarget.addEventListener('focusin', () => {
-      this.#showSessionMetadataPopover(item, focusTarget, conversation, options);
-    });
-    focusTarget.addEventListener('focusout', () => {
-      queueMicrotask(() => {
-        const activeElement = item.ownerDocument.activeElement;
-        if (activeElement && focusTarget.contains(activeElement)) return;
-        if (typeof item.matches === 'function' && item.matches(':hover')) return;
-        if (this.metadataPopoverTarget === item) {
-          this.#scheduleSessionMetadataPopoverClose(item);
-        }
-      });
-    });
-    focusTarget.addEventListener('keydown', (event) => {
-      if (event.key !== 'Escape' || this.metadataPopoverTarget !== item) return;
-      event.stopPropagation();
-      this.#closeSessionMetadataPopover();
-    });
-  }
-
-  #showSessionMetadataPopover(
-    item: HTMLElement,
-    descriptionTarget: HTMLElement,
-    conversation: ConversationMeta,
-    options: HistoryRenderOptions,
-  ): void {
-    if (this.metadataPopoverEl && this.metadataPopoverTarget === item) {
-      this.#cancelSessionMetadataPopoverClose();
-      return;
-    }
-    // Measure the anchor before removing/inserting popover DOM.
-    const targetRect = item.getBoundingClientRect();
-    this.#closeSessionMetadataPopover();
-
-    const document = item.ownerDocument;
-    if (!document.body) return;
-    const view = this.#getSessionMetadataPopoverView(document);
-    const hoverEl = view.el;
-    this.metadataPopoverEl = hoverEl;
-    this.metadataPopoverTarget = item;
-
-    const popoverId = `claudian-session-metadata-${++this.metadataPopoverSequence}`;
-    hoverEl.setAttribute('id', popoverId);
-    descriptionTarget.setAttribute('aria-describedby', popoverId);
-
-    const language = options.language ?? 'en';
-    const linkedContentPath = conversation.linkedContentPath;
-    const hasLinkedContent = !!linkedContentPath
-      && !isLegacyProvisionalLinkedContent(linkedContentPath, {
-        contentExists: options.contentExists,
-        contentIsNote: options.contentIsNote,
-        language,
-      });
-    view.linkedContent.parentElement!.classList.toggle('claudian-hidden', !hasLinkedContent);
-    view.linkedContent.textContent = hasLinkedContent ? getLinkedContentTitle(linkedContentPath) : '';
-    view.linkedContent.title = hasLinkedContent ? linkedContentPath : '';
-    view.provider.textContent = options.getModelLabel?.(conversation) ?? conversation.selectedModel ?? '';
-    view.created.textContent = this.formatMetadataDate(conversation.createdAt);
-    view.lastActive.textContent = this.formatMetadataDateTime(conversation.lastActivityAt);
-
-    const icon = options.getProviderIcon?.(conversation);
-    const iconKey = JSON.stringify([conversation.providerId, icon ?? null]);
-    if (view.providerIconKey !== iconKey) {
-      view.providerIcon?.remove();
-      const row = view.provider.parentElement!;
-      row.classList.toggle('claudian-session-metadata-row--provider-no-icon', !icon);
-      view.providerIcon = icon ? createProviderIconSvg(icon, {
-        className: 'claudian-session-metadata-provider-icon', dataProvider: conversation.providerId,
-        height: 14, width: 14, parent: row,
-      }) : null;
-      if (view.providerIcon) row.prepend(view.providerIcon);
-      view.providerIconKey = iconKey;
-    }
-    hoverEl.removeClass('claudian-hidden');
-    document.body.appendChild(hoverEl);
-    this.#positionSessionMetadataPopover(targetRect, hoverEl);
-    const cancelClose = (): void => this.#cancelSessionMetadataPopoverClose();
-    const scheduleClose = (): void => this.#scheduleSessionMetadataPopoverClose(item);
-    const closeForViewportChange = (): void => {
-      if (this.metadataPopoverEl === hoverEl) this.#closeSessionMetadataPopover();
-    };
-    const closeForExternalScroll = (event: Event): void => {
-      if (event.composedPath().includes(hoverEl)) return;
-      closeForViewportChange();
-    };
-    hoverEl.addEventListener('mouseenter', cancelClose);
-    hoverEl.addEventListener('mouseleave', scheduleClose);
-    document.addEventListener('scroll', closeForExternalScroll, true);
-    document.defaultView?.addEventListener('resize', closeForViewportChange);
-
-    const signal = options.signal;
-    const closeOnAbort = (): void => {
-      if (this.metadataPopoverEl === hoverEl) {
-        this.#closeSessionMetadataPopover();
-      }
-    };
-    signal?.addEventListener('abort', closeOnAbort, { once: true });
-    this.metadataPopoverCleanup = () => {
-      hoverEl.removeEventListener('mouseenter', cancelClose);
-      hoverEl.removeEventListener('mouseleave', scheduleClose);
-      document.removeEventListener('scroll', closeForExternalScroll, true);
-      document.defaultView?.removeEventListener('resize', closeForViewportChange);
-      signal?.removeEventListener('abort', closeOnAbort);
-      if (descriptionTarget.getAttribute('aria-describedby') === popoverId) {
-        descriptionTarget.removeAttribute('aria-describedby');
-      }
-    };
-  }
-
-  #positionSessionMetadataPopover(targetRect: DOMRect, popover: HTMLElement): void {
-    const document = popover.ownerDocument;
-    const popoverRect = popover.getBoundingClientRect();
-    const viewportWidth = document.defaultView?.innerWidth
-      ?? document.documentElement?.clientWidth
-      ?? 1024;
-    const viewportHeight = document.defaultView?.innerHeight
-      ?? document.documentElement?.clientHeight
-      ?? 768;
-    const gap = 8;
-    const viewportMargin = 8;
-
-    let left = targetRect.right + gap;
-    if (left + popoverRect.width > viewportWidth - viewportMargin) {
-      left = targetRect.left - popoverRect.width - gap;
-    }
-    left = Math.min(
-      Math.max(viewportMargin, left),
-      Math.max(viewportMargin, viewportWidth - popoverRect.width - viewportMargin),
-    );
-
-    const top = Math.min(
-      Math.max(viewportMargin, targetRect.top),
-      Math.max(viewportMargin, viewportHeight - popoverRect.height - viewportMargin),
-    );
-    popover.style.left = `${Math.round(left)}px`;
-    popover.style.top = `${Math.round(top)}px`;
-  }
-
-  #scheduleSessionMetadataPopoverClose(target: HTMLElement): void {
-    if (this.metadataPopoverTarget !== target) return;
-    this.#cancelSessionMetadataPopoverClose();
-    const window = target.ownerDocument.defaultView;
-    if (!window) {
-      this.#closeSessionMetadataPopover();
-      return;
-    }
-    this.metadataPopoverCloseTimer = window.setTimeout(() => {
-      if (this.metadataPopoverTarget === target) {
-        this.#closeSessionMetadataPopover();
-      }
-    }, 120);
-  }
-
-  #cancelSessionMetadataPopoverClose(): void {
-    if (this.metadataPopoverCloseTimer === null) return;
-    this.metadataPopoverTarget?.ownerDocument.defaultView?.clearTimeout(
-      this.metadataPopoverCloseTimer,
-    );
-    this.metadataPopoverCloseTimer = null;
-  }
-
-  #renderSessionMetadataRow(
-    parent: HTMLElement,
-    icon: string,
-    label: string | null,
-    value: string,
-    options: { className?: string; title?: string } = {},
-  ): HTMLElement {
-    const row = parent.createDiv({
-      cls: [
-        'claudian-session-metadata-row',
-        label ? '' : 'claudian-session-metadata-row--unlabeled',
-      ].filter(Boolean).join(' '),
-    });
-    const iconEl = row.createSpan({ cls: 'claudian-session-metadata-icon' });
-    setIcon(iconEl, icon);
-    if (label) {
-      row.createSpan({ cls: 'claudian-session-metadata-label', text: label });
-    }
-    const valueEl = row.createSpan({
-      cls: [
-        'claudian-session-metadata-value',
-        options.className ?? '',
-      ].filter(Boolean).join(' '),
-      text: value,
-    });
-    if (options.title) valueEl.setAttribute('title', options.title);
-    return valueEl;
-  }
-
-  #getSessionMetadataPopoverView(document: Document) {
-    if (this.metadataPopoverView?.el.ownerDocument === document) return this.metadataPopoverView;
-    const el = document.body.createDiv({ cls: 'claudian-session-metadata-popover' });
-    el.setAttribute('role', 'tooltip');
-    const linkedContent = this.#renderSessionMetadataRow(el, 'file-text', null, '', {
-      className: 'claudian-session-metadata-value--content',
-    });
-    const providerRow = el.createDiv({ cls: 'claudian-session-metadata-row claudian-session-metadata-row--provider' });
-    const provider = providerRow.createSpan({ cls: 'claudian-session-metadata-value claudian-session-metadata-value--provider' });
-    this.metadataPopoverView = {
-      el, linkedContent, provider,
-      created: this.#renderSessionMetadataRow(el, 'calendar-days', 'Created', ''),
-      lastActive: this.#renderSessionMetadataRow(el, 'clock-3', 'Last active', ''),
-      providerIcon: null, providerIconKey: '',
-    };
-    return this.metadataPopoverView;
-  }
-
-  #closeSessionMetadataPopover(): void {
-    this.#cancelSessionMetadataPopoverClose();
-    const popover = this.metadataPopoverEl;
-    this.metadataPopoverCleanup?.();
-    this.metadataPopoverCleanup = null;
-    this.metadataPopoverEl = null;
-    this.metadataPopoverTarget = null;
-    popover?.addClass('claudian-hidden');
-    popover?.remove();
-  }
-
   #getHistoryItemTimestamp(
     conversation: ConversationMeta,
     options: HistoryRenderOptions,
@@ -1520,89 +1173,6 @@ export class SessionBrowser {
       : options.sessionActionMode === 'active' && !!options.onSetConversationsArchived;
   }
 
-  /**
-   * Option/Alt+click or Option/Alt+Enter toggles selection. Any other click, Escape, or
-   * pointer/focus moving outside the selected sessions clears it.
-   */
-  #attachHistorySelection(item: HTMLElement, conversationId: string): void {
-    if (this.#selectedConversationIds.has(conversationId)) {
-      this.#setHistoryItemSelected(item, true);
-    }
-    const toggle = (event: Event): void => {
-      event.preventDefault();
-      event.stopPropagation();
-      const selected = !this.#selectedConversationIds.has(conversationId);
-      if (selected) {
-        this.#selectedConversationIds.add(conversationId);
-        this.#watchSelectionDismissal();
-      } else {
-        this.#selectedConversationIds.delete(conversationId);
-      }
-      this.#setHistoryItemSelected(item, selected);
-    };
-    // Capture phase runs before the item's open/new-tab handlers.
-    item.addEventListener('click', (event) => {
-      if (event.altKey) {
-        toggle(event);
-      } else {
-        this.#clearHistorySelection();
-      }
-    }, { capture: true });
-    item.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' && event.altKey) {
-        toggle(event);
-      } else if (event.key === 'Escape') {
-        this.#clearHistorySelection();
-      }
-    }, { capture: true });
-  }
-
-  #watchSelectionDismissal(): void {
-    const container = this.#selectionContainer;
-    if (this.#selectionDismissCleanup || !container) return;
-    // Popout windows have their own Element constructor.
-    const ElementConstructor = container.ownerDocument.defaultView?.Element ?? Element;
-    const isInsideSession = (target: EventTarget | null): boolean => (
-      target instanceof ElementConstructor
-      && container.contains(target)
-      && target.closest('.claudian-history-item') !== null
-    );
-    const onPointerDown = (event: PointerEvent): void => {
-      if (!isInsideSession(event.target)) this.#clearHistorySelection();
-    };
-    const onFocusIn = (event: FocusEvent): void => {
-      if (!isInsideSession(event.target)) this.#clearHistorySelection();
-    };
-    const doc = container.ownerDocument;
-    doc.addEventListener('pointerdown', onPointerDown, true);
-    doc.addEventListener('focusin', onFocusIn, true);
-    this.#selectionDismissCleanup = () => {
-      doc.removeEventListener('pointerdown', onPointerDown, true);
-      doc.removeEventListener('focusin', onFocusIn, true);
-    };
-  }
-
-  #setHistoryItemSelected(item: HTMLElement, selected: boolean): void {
-    item.classList.toggle('claudian-history-item--selected', selected);
-    const label = item.querySelector('.claudian-history-item-selected-label');
-    if (!selected) {
-      label?.remove();
-    } else if (!label) {
-      item.querySelector<HTMLElement>('.claudian-history-item-content')
-        ?.createSpan({ cls: 'claudian-history-item-selected-label', text: 'Selected' });
-    }
-  }
-
-  #clearHistorySelection(): void {
-    this.#selectionDismissCleanup?.();
-    this.#selectionDismissCleanup = null;
-    if (this.#selectedConversationIds.size === 0) return;
-    this.#selectedConversationIds.clear();
-    this.#selectionContainer
-      ?.querySelectorAll<HTMLElement>('.claudian-history-item--selected')
-      .forEach(selectedItem => this.#setHistoryItemSelected(selectedItem, false));
-  }
-
   #showSelectionContextMenu(
     options: HistoryRenderOptions,
     event: MouseEvent,
@@ -1611,7 +1181,7 @@ export class SessionBrowser {
     const isArchivedView = options.sessionActionMode === 'archived';
     const selected = this.deps.plugin.getConversationList()
       .filter(conversation => (
-        this.#selectedConversationIds.has(conversation.id)
+        this.selection.has(conversation.id)
         && (conversation.isArchived === true) === isArchivedView
       ));
     const sessionCount = (count: number): string => `${count} ${count === 1 ? 'session' : 'sessions'}`;
@@ -1623,14 +1193,14 @@ export class SessionBrowser {
         menu.addItem(menuItem => menuItem
           .setTitle(`Restore ${sessionCount(ids.length)}`)
           .onClick(() => {
-            this.#clearHistorySelection();
+            this.selection.clear();
             runConversationAction(() => onRestoreConversations(ids), 'Failed to restore sessions');
           }));
       }
       menu.addItem(menuItem => menuItem
         .setTitle(`Delete ${sessionCount(ids.length)}`)
         .onClick(() => {
-          this.#clearHistorySelection();
+          this.selection.clear();
           runConversationAction(
             () => this.#deleteHistoryConversations(ids, options),
             'Failed to delete sessions',
@@ -1649,7 +1219,7 @@ export class SessionBrowser {
       menu.addItem(menuItem => menuItem
         .setTitle(`${isPinning ? 'Pin' : 'Unpin'} ${sessionCount(pinIds.length)}`)
         .onClick(() => {
-          this.#clearHistorySelection();
+          this.selection.clear();
           runConversationAction(
             () => onSetConversationsPinned(pinIds, isPinning),
             isPinning ? 'Failed to pin sessions' : 'Failed to unpin sessions',
@@ -1666,7 +1236,7 @@ export class SessionBrowser {
         .setDisabled(archivableIds.length === 0);
       if (archivableIds.length > 0 && onSetConversationsArchived) {
         menuItem.onClick(() => {
-          this.#clearHistorySelection();
+          this.selection.clear();
           runConversationAction(
             () => onSetConversationsArchived(archivableIds),
             'Failed to archive sessions',
@@ -1811,7 +1381,7 @@ export class SessionBrowser {
     menu.showAtMouseEvent(event);
   }
 
-  /** Deletes archived sessions after one confirmation, refreshing the list once. */
+  /** Deletes sessions after one confirmation; the conversation lifecycle owns the running guard. */
   async #deleteHistoryConversations(
     conversationIds: readonly string[],
     options: HistoryRenderOptions,
@@ -1825,15 +1395,9 @@ export class SessionBrowser {
     if (!confirmed) return;
 
     try {
-      for (const conversationId of conversationIds) {
-        await plugin.deleteConversation(conversationId);
-      }
+      await plugin.conversationLifecycle.delete(conversationIds);
     } finally {
       options.onRerender();
-    }
-    const currentConversationId = this.deps.getCurrentConversationId();
-    if (currentConversationId && conversationIds.includes(currentConversationId)) {
-      await this.deps.reloadActiveConversation();
     }
   }
 
@@ -1841,15 +1405,8 @@ export class SessionBrowser {
     conversationId: string,
     options: HistoryRenderOptions,
   ): Promise<void> {
-    const { plugin } = this.deps;
-    if (this.deps.isStreaming() && options.sessionActionMode !== 'archived') return;
-
-    await plugin.deleteConversation(conversationId);
+    await this.deps.plugin.conversationLifecycle.delete([conversationId]);
     options.onRerender();
-
-    if (conversationId === this.deps.getCurrentConversationId()) {
-      await this.deps.reloadActiveConversation();
-    }
   }
 
   #showRenameEditor(
@@ -1949,24 +1506,6 @@ export class SessionBrowser {
       return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
     }
     return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  }
-
-  formatMetadataDate(timestamp: number): string {
-    return new Date(timestamp).toLocaleDateString(undefined, {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-  }
-
-  formatMetadataDateTime(timestamp: number): string {
-    return new Date(timestamp).toLocaleString(undefined, {
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
   }
 
   // ============================================

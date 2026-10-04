@@ -7,6 +7,10 @@ import { setIcon } from 'obsidian';
 
 import type { ConversationMeta } from '@/core/types';
 import { SessionBrowser, type SessionBrowserDeps } from '@/features/chat/session-manager/SessionBrowser';
+import {
+  formatSessionCreatedDate,
+  formatSessionLastActive,
+} from '@/features/chat/session-manager/SessionMetadataPopover';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { OPENAI_PROVIDER_ICON } from '@/shared/icons';
 
@@ -33,8 +37,6 @@ function createController(conversations?: ConversationMeta[]): SessionBrowser {
       settings: {},
     },
     getCurrentConversationId: () => state.currentConversationId,
-    isStreaming: () => false,
-    reloadActiveConversation: async () => undefined,
     onListChanged: () => undefined,
     renderer: {},
     subagentManager: {},
@@ -62,13 +64,12 @@ describe('SessionBrowser session metadata popover', () => {
     [undefined, null],
     ['Projects/Untitled', 'Untitled'],
   ])('shows current metadata and accessible controls for linked content %s', (linkedContentPath, title) => {
+    const createdAt = testDate({ days: -1 }).getTime();
+    const lastActivityAt = testDate().getTime();
     const controller = createController([{
       id: 'session-1', providerId: 'codex', selectedModel: 'gpt-5.1-codex', title: 'Review architecture',
-      createdAt: testDate({ days: -1 }).getTime(), lastActivityAt: testDate().getTime(),
-      linkedContentPath, messageCount: 1, preview: '',
+      createdAt, lastActivityAt, linkedContentPath, messageCount: 1, preview: '',
     }]);
-    jest.spyOn(controller, 'formatMetadataDate').mockReturnValue('Created date');
-    jest.spyOn(controller, 'formatMetadataDateTime').mockReturnValue('Last active date and time');
     const container = document.createElement('div');
     document.body.append(container);
     controller.renderHistoryDropdown(container, {
@@ -91,7 +92,12 @@ describe('SessionBrowser session metadata popover', () => {
       .toEqual(['Created', 'Last active']);
     const visibleRows = [...tooltip.children].filter(row => !row.classList.contains('claudian-hidden'));
     expect(visibleRows.map(row => row.querySelector('.claudian-session-metadata-value')?.textContent))
-      .toEqual([...(title ? [title] : []), 'GPT-5.1 Codex', 'Created date', 'Last active date and time']);
+      .toEqual([
+        ...(title ? [title] : []),
+        'GPT-5.1 Codex',
+        formatSessionCreatedDate(createdAt),
+        formatSessionLastActive(lastActivityAt),
+      ]);
     expect(tooltip.querySelector('.claudian-session-metadata-provider-icon')).not.toBeNull();
     expect(tooltip.style.top).toBe('120px');
     expect(tooltip.querySelector('.claudian-session-metadata-value--content')?.getAttribute('title'))

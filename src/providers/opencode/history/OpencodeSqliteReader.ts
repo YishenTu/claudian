@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn as defaultSpawn, type SpawnOptions } from 'node:child_process';
 
-import { findNodeExecutables } from '../../../utils/env';
+import { findNodeExecutables } from '@/core/process/env';
 
 export type StoredRow = Record<string, unknown>;
 

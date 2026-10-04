@@ -29,7 +29,7 @@ test('presentation changes do not trigger native checks through main composition
 });
 
 test('shared dependencies retain affected native consumers', () => {
-  const result = select(['src/utils/env.ts'], [prompt, native]);
+  const result = select(['src/core/process/env.ts'], [prompt, native]);
   assert.deepEqual(result.testFiles, [prompt, native]);
   assert.deepEqual(result.crossPlatformTests, [native]);
 });
@@ -38,9 +38,9 @@ test('real subprocess consumers run on native platforms when affected', () => {
   for (const consumer of [
     'tests/integration/core/process/ProcessProbe.test.ts',
     'tests/integration/core/process/ManagedStdioProcess.test.ts',
-    'tests/integration/utils/cliBinaryLocator.test.ts',
+    'tests/integration/core/process/cliBinaryLocator.test.ts',
   ]) {
-    const result = select(['src/utils/path.ts'], [consumer]);
+    const result = select(['src/core/process/cliPath.ts'], [consumer]);
     assert.deepEqual(result.crossPlatformTests, [consumer]);
     assert.equal(result.crossPlatform, true);
     assert.deepEqual(select([consumer]).crossPlatformTests, [consumer]);
@@ -49,7 +49,7 @@ test('real subprocess consumers run on native platforms when affected', () => {
 
 test('mocked process policies remain in the ordinary suite without native jobs', () => {
   const unitTests = [
-    'tests/unit/utils/windowsCmdShim.test.ts',
+    'tests/unit/core/process/windowsCmdShim.test.ts',
     'tests/unit/core/process/ManagedStdioProcess.test.ts',
   ];
   const result = select(unitTests);
@@ -60,14 +60,14 @@ test('mocked process policies remain in the ordinary suite without native jobs',
 
 test('real dependency discovery retains native launch checks for shared process changes', () => {
   const result = selectRelatedCiTests({
-    changes: [{ status: 'M', path: 'src/utils/windowsCmdShim.ts' }],
+    changes: [{ status: 'M', path: 'src/core/process/windowsCmdShim.ts' }],
   });
   assert.deepEqual(result.crossPlatformTests.sort(), [
     'tests/integration/core/process/ManagedStdioProcess.test.ts',
     'tests/integration/core/process/ProcessProbe.test.ts',
   ]);
   assert.equal(result.piWindows, true);
-  assert.ok(result.testFiles.includes('tests/unit/utils/windowsCmdShim.test.ts'));
+  assert.ok(result.testFiles.includes('tests/unit/core/process/windowsCmdShim.test.ts'));
   assert.ok(result.testFiles.includes('tests/unit/core/process/ManagedStdioProcess.test.ts'));
 });
 

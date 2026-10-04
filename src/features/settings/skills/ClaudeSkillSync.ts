@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 
-import type { FolderLinkState, VaultFileAdapter } from '../storage/VaultFileAdapter';
+import type { FolderLinkState, VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
+
 import type { AgentSkillInput } from './AgentSkill';
 import {
   AgentSkillCodecError,

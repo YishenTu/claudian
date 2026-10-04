@@ -3176,9 +3176,9 @@ describe('ClaudianPlugin', () => {
       await chatHostOf(plugin).renameConversation(conversation.id, 'Renamed');
       // Batch mutations refresh once regardless of how many sessions they change.
       const batch = [conversation.id, other.id];
-      await chatHostOf(plugin).setConversationsPinned(batch, true);
-      await expect(chatHostOf(plugin).archiveConversationsIf(batch, () => true)).resolves.toBe(2);
-      await chatHostOf(plugin).restoreConversations(batch);
+      await chatHostOf(plugin).conversationLifecycle.setPinned(batch, true);
+      await expect(chatHostOf(plugin).conversationLifecycle.archiveIf(batch, () => true)).resolves.toBe(2);
+      await chatHostOf(plugin).conversationLifecycle.restore(batch);
       await chatHostOf(plugin).deleteConversation(conversation.id);
 
       expect(chatHostOf(plugin).getConversationList().find(({ id }) => id === other.id)).toMatchObject({ isArchived: false });
@@ -3223,9 +3223,9 @@ describe('ClaudianPlugin', () => {
       ProviderWorkspaceRegistry.setServices('codex', { sessionArchive: { setSessionsArchived } });
       const conversation = await chatHostOf(plugin).createConversation({ providerId: 'codex', sessionId: 'thread-1' });
 
-      await chatHostOf(plugin).setConversationArchived(conversation.id, true);
-      await chatHostOf(plugin).setConversationArchived(conversation.id, true);
-      await chatHostOf(plugin).setConversationArchived(conversation.id, false);
+      await chatHostOf(plugin).conversationLifecycle.setArchived(conversation.id, true);
+      await chatHostOf(plugin).conversationLifecycle.setArchived(conversation.id, true);
+      await chatHostOf(plugin).conversationLifecycle.setArchived(conversation.id, false);
 
       expect(setSessionsArchived.mock.calls).toEqual([
         [[{ conversation: expect.objectContaining({ sessionId: 'thread-1' }), isArchived: true }]],
@@ -3240,8 +3240,8 @@ describe('ClaudianPlugin', () => {
       const first = await chatHostOf(plugin).createConversation({ providerId: 'codex', sessionId: 'thread-1' });
       const second = await chatHostOf(plugin).createConversation({ providerId: 'codex', sessionId: 'thread-2' });
 
-      await expect(chatHostOf(plugin).archiveConversationsIf([first.id, second.id], () => true)).resolves.toBe(2);
-      await chatHostOf(plugin).restoreConversations([first.id, second.id]);
+      await expect(chatHostOf(plugin).conversationLifecycle.archiveIf([first.id, second.id], () => true)).resolves.toBe(2);
+      await chatHostOf(plugin).conversationLifecycle.restore([first.id, second.id]);
 
       expect(archivedFlags(setSessionsArchived)).toEqual([[true, true], [false, false]]);
     });
@@ -3255,9 +3255,9 @@ describe('ClaudianPlugin', () => {
       ProviderWorkspaceRegistry.setServices('codex', { sessionArchive: { setSessionsArchived } });
       const conversation = await chatHostOf(plugin).createConversation({ providerId: 'codex', sessionId: 'thread-1' });
 
-      const archive = chatHostOf(plugin).setConversationArchived(conversation.id, true);
+      const archive = chatHostOf(plugin).conversationLifecycle.setArchived(conversation.id, true);
       await waitForCondition(() => setSessionsArchived.mock.calls.length === 1);
-      const restore = chatHostOf(plugin).setConversationArchived(conversation.id, false);
+      const restore = chatHostOf(plugin).conversationLifecycle.setArchived(conversation.id, false);
       await waitForCondition(() => chatHostOf(plugin).getConversationSync(conversation.id)?.isArchived === false);
       await new Promise(resolve => setTimeout(resolve, 0));
 
@@ -3274,7 +3274,7 @@ describe('ClaudianPlugin', () => {
       ProviderWorkspaceRegistry.setServices('codex', { sessionArchive: { setSessionsArchived } });
       const disposeWorkspaces = jest.spyOn(ProviderWorkspaceRegistry, 'disposeInitialized');
       const conversation = await chatHostOf(plugin).createConversation({ providerId: 'codex', sessionId: 'thread-1' });
-      const archive = chatHostOf(plugin).setConversationArchived(conversation.id, true);
+      const archive = chatHostOf(plugin).conversationLifecycle.setArchived(conversation.id, true);
       await waitForCondition(() => setSessionsArchived.mock.calls.length === 1);
 
       plugin.onunload();
@@ -3294,7 +3294,7 @@ describe('ClaudianPlugin', () => {
       });
       const conversation = await chatHostOf(plugin).createConversation({ providerId: 'codex', sessionId: 'thread-1' });
 
-      await chatHostOf(plugin).setConversationArchived(conversation.id, true);
+      await chatHostOf(plugin).conversationLifecycle.setArchived(conversation.id, true);
 
       expect(chatHostOf(plugin).getConversationSync(conversation.id)?.isArchived).toBe(true);
       expect(Notice).toHaveBeenCalledWith('Codex CLI could not archive or restore its sessions: codex unavailable');
@@ -3306,7 +3306,7 @@ describe('ClaudianPlugin', () => {
       const conversation = await chatHostOf(plugin).createConversation({ providerId: 'claude', sessionId: 'session-1' });
       ensureInitialized.mockClear();
 
-      await chatHostOf(plugin).setConversationArchived(conversation.id, true);
+      await chatHostOf(plugin).conversationLifecycle.setArchived(conversation.id, true);
 
       expect(chatHostOf(plugin).getConversationSync(conversation.id)?.isArchived).toBe(true);
       expect(ensureInitialized).not.toHaveBeenCalled();
@@ -3347,11 +3347,11 @@ describe('ClaudianPlugin', () => {
       await chatHostOf(plugin).setLinkedContentPinned('Notes/Old.md', true);
       await chatHostOf(plugin).setLinkedContentPinned('Projects/Old/Plan.md', true);
 
-      await (plugin as any).handleLinkedContentRename(
+      await (plugin as any).vaultContentEvents.handleRename(
         new (TFile as any)('Notes/New.md'),
         'Notes/Old.md',
       );
-      await (plugin as any).handleLinkedContentRename(
+      await (plugin as any).vaultContentEvents.handleRename(
         new (TFolder as any)('Projects/New'),
         'Projects/Old',
       );
@@ -3376,10 +3376,10 @@ describe('ClaudianPlugin', () => {
       await chatHostOf(plugin).setLinkedContentPinned('Projects/Archive/One.md', true);
       await chatHostOf(plugin).setLinkedContentPinned('Projects/Archive/Two.md', true);
 
-      await (plugin as any).handlePinnedLinkedContentDeleted(
+      await (plugin as any).vaultContentEvents.handleDelete(
         new (TFile as any)('Notes/Plan.md'),
       );
-      await (plugin as any).handlePinnedLinkedContentDeleted(
+      await (plugin as any).vaultContentEvents.handleDelete(
         new (TFolder as any)('Projects/Archive'),
       );
 
@@ -3395,7 +3395,7 @@ describe('ClaudianPlugin', () => {
       };
       jest.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([view as any]);
 
-      await (plugin as any).handlePinnedLinkedContentDeleted(
+      await (plugin as any).vaultContentEvents.handleDelete(
         new (TFile as any)('Notes/Unpinned.md'),
       );
 
@@ -3424,7 +3424,7 @@ describe('ClaudianPlugin', () => {
       jest.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([view as any]);
       jest.spyOn(PinnedLinkedContentPathCoordinator.prototype, 'rewritePaths')
         .mockRejectedValueOnce(new Error('settings unavailable'));
-      await expect((plugin as any).handleLinkedContentRename(new (TFile as any)('Notes/New.md'), 'Notes/Old.md'))
+      await expect((plugin as any).vaultContentEvents.handleRename(new (TFile as any)('Notes/New.md'), 'Notes/Old.md'))
         .rejects.toThrow('settings unavailable');
       expect(chatHostOf(plugin).getConversationSync(conversation.id)?.linkedContentPath).toBe('Notes/New.md');
       await new Promise(resolve => window.setTimeout(resolve, 75));
@@ -3441,7 +3441,7 @@ describe('ClaudianPlugin', () => {
       jest.spyOn(PinnedLinkedContentPathCoordinator.prototype, 'removePaths')
         .mockRejectedValueOnce(new Error('settings unavailable'));
 
-      await expect((plugin as any).handlePinnedLinkedContentDeleted(
+      await expect((plugin as any).vaultContentEvents.handleDelete(
         new (TFile as any)('Notes/Unpinned.md'),
       )).rejects.toThrow('settings unavailable');
 
@@ -3654,7 +3654,7 @@ describe('ClaudianPlugin', () => {
         return write(path, content);
       });
 
-      const pin = chatHostOf(plugin).setConversationPinned('stale-session', true);
+      const pin = chatHostOf(plugin).conversationLifecycle.setPinned(['stale-session'], true);
       await chatHostOf(plugin).mutateSettings((settings) => { settings.sessionAutoArchiveAfter = '7d'; });
       await new Promise(resolve => setImmediate(resolve));
       releasePinWrite();

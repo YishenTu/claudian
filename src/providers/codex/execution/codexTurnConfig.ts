@@ -1,5 +1,12 @@
 import type { ProviderExecutionRequest } from '@/core/execution';
+import { buildContextFromHistory, buildPromptWithHistoryContext } from '@/core/prompt/historyContext';
 import { buildSystemPrompt, type SystemPromptSettings } from '@/core/prompt/mainAgent';
+import {
+  appendLinkedContent,
+  appendLinkedContentBody,
+  appendSelectionContexts,
+  appendSessionReferences,
+} from '@/core/prompt/promptContext';
 import type { ChatMessage } from '@/core/types';
 import { getCodexModelOptions } from '@/providers/codex/modelOptions';
 import {
@@ -11,13 +18,6 @@ import {
 import { toCodexRuntimeModelId } from '@/providers/codex/modelSelection';
 import type { ConfigReadResult, SandboxPolicy } from '@/providers/codex/runtime/codexAppServerTypes';
 import { type CodexSafeMode, getCodexProviderSettings } from '@/providers/codex/settings';
-import {
-  appendLinkedContent,
-  appendLinkedContentBody,
-  appendSelectionContexts,
-  appendSessionReferences,
-} from '@/utils/context';
-import { buildContextFromHistory, buildPromptWithHistoryContext } from '@/utils/session';
 
 /** Resolves a turn's native configuration: model, effort, approval and sandbox policy, and prompt. */
 

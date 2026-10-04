@@ -190,14 +190,14 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
       activeInputTabId: null,
       containerEl: viewContainerEl,
       isWideSessionLayout: false,
-      viewLifecycleRevision: 1,
-      initializedTabWorkspaceLifecycleRevision: ready ? 1 : -1,
       tabManager: {
         getActiveTab: () => tab,
         getTab: (id: string) => id === tab.id ? tab : null,
         getTabCount: () => 1,
       },
     });
+    view.tabWorkspace = view.createTabWorkspace();
+    Object.assign(view.tabWorkspace, { lifecycleRevision: 1, initializedRevision: ready ? 1 : -1 });
     leaf.view = view;
     layout.leaves.push(leaf);
     view.updateInputLocation();
@@ -296,7 +296,7 @@ it('waits for ordinary restoration before presenting an already collapsed sideba
   expect(zenPanel()).toBeNull();
   expect(fixture.sessions).toHaveLength(0);
 
-  fixture.view.initializedTabWorkspaceLifecycleRevision = 1;
+  fixture.view.tabWorkspace.initializedRevision = 1;
   fixture.view.notifyZenPresentationChanged();
 
   expect(zenPanel()!.contains(fixture.tab.dom.inputComposerEl)).toBe(true);

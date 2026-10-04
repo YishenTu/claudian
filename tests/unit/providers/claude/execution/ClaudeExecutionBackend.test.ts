@@ -23,6 +23,7 @@ import { ProviderModelUnavailableError } from '@/core/providers/models/ProviderM
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ClaudianSettings } from '@/core/types';
 type MutableTestHost = ProviderHost & { settings: ClaudianSettings };
+import * as env from '@/core/process/env';
 import type { Conversation } from '@/core/types';
 import { createClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
@@ -32,7 +33,6 @@ import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
 import { assertClaudeModelAvailable } from '@/providers/claude/runtime/ClaudeModelAvailability';
 import { buildClaudeSDKUserMessage } from '@/providers/claude/runtime/ClaudeUserMessageFactory';
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
-import * as env from '@/utils/env';
 
 jest.mock('@/providers/claude/runtime/ClaudeUserMessageFactory', () => {
   const actual = jest.requireActual('@/providers/claude/runtime/ClaudeUserMessageFactory');

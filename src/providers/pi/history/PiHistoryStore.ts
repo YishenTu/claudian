@@ -4,19 +4,19 @@ import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { buildImageAttachmentFromBase64 } from '@/core/execution/imageAttachment';
+import { extractUserQuery } from '@/core/prompt/promptContext';
+import { resolveToolDiffData } from '@/core/tools/toolDiff';
+
 import { isWriteEditTool } from '../../../core/tools/toolNames';
-import { extractResultImages, extractScriptToolCalls, extractToolResultFormat, extractWebSearchResults } from '../../../core/tools/toolResultContent';
 import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo, TurnStats } from '../../../core/types';
 import { createTurnStats, isTokenCount } from '../../../core/types';
-import { extractUserQuery } from '../../../utils/context';
-import { extractDiffData } from '../../../utils/diff';
-import { buildImageAttachmentFromBase64 } from '../../../utils/imageAttachment';
 import { encodePiModelId } from '../models';
 import {
   extractPiToolResultText,
   normalizePiToolInput,
   normalizePiToolName,
-  normalizePiToolUseResult,
+  normalizePiToolResultDetails,
 } from '../normalizations/piToolNormalization';
 import type { PiTreeCursor } from '../types';
 import { decodePiRecoveryPrompt } from './PiRecoveryPromptCodec';
@@ -910,20 +910,17 @@ function applyToolResult(messages: ChatMessage[], entry: PiSessionEntry): void {
     const resultMessage = entry.message ?? entry.raw;
     toolCall.status = resultMessage.error === true || resultMessage.isError === true ? 'error' : 'completed';
     toolCall.result = extractPiToolResultText(toolCall.name, resultMessage.result ?? resultMessage.content ?? resultMessage.output);
-    const toolUseResult = normalizePiToolUseResult(toolCall.name, resultMessage, getNestedCallArguments(resultMessage));
-    toolCall.resultFormat = extractToolResultFormat(toolUseResult);
-    const resultImages = extractResultImages(toolUseResult);
-    if (resultImages) toolCall.resultImages = resultImages;
-    const webSearchResults = extractWebSearchResults(toolUseResult);
-    if (webSearchResults) {
-      toolCall.webSearchResults = webSearchResults;
+    const details = normalizePiToolResultDetails(toolCall.name, resultMessage, getNestedCallArguments(resultMessage));
+    toolCall.resultFormat = details?.resultFormat;
+    if (details?.resultImages) toolCall.resultImages = details.resultImages;
+    if (details?.webSearchResults) {
+      toolCall.webSearchResults = details.webSearchResults;
     }
-    const scriptToolCalls = extractScriptToolCalls(toolUseResult);
-    if (scriptToolCalls) {
-      toolCall.scriptToolCalls = scriptToolCalls;
+    if (details?.scriptToolCalls) {
+      toolCall.scriptToolCalls = details.scriptToolCalls;
     }
     if (toolCall.status === 'completed' && isWriteEditTool(toolCall.name)) {
-      const diffData = extractDiffData(toolUseResult, toolCall);
+      const diffData = resolveToolDiffData(details?.diff, toolCall);
       if (diffData) {
         toolCall.diffData = diffData;
       }

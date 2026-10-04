@@ -1,4 +1,4 @@
-import type { ImageAttachment, ImageMediaType } from '../core/types';
+import type { ImageAttachment, ImageMediaType } from '@/core/types';
 
 const IMAGE_MEDIA_TYPES: Record<string, ImageMediaType> = {
   'image/gif': 'image/gif',

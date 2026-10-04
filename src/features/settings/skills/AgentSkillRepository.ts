@@ -1,13 +1,13 @@
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 
-import { mapWithConcurrency } from '@/utils/concurrency';
-
 import {
   ManagedResourceCollisionError,
   ManagedResourceRelocationError,
   type VaultFileAdapter,
-} from '../storage/VaultFileAdapter';
+} from '@/core/storage/VaultFileAdapter';
+import { mapWithConcurrency } from '@/utils/concurrency';
+
 import type {
   AgentSkillDocument,
   AgentSkillInput,

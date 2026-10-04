@@ -1,6 +1,6 @@
-import type { SlashCommand, StreamChunk } from '../../core/types';
-import type { SDKToolUseResult } from '../../core/types/diff';
-import { extractACPDiffToolUseResult } from './ACPToolResultNormalization';
+import { mergeToolResultDetails } from '../../core/tools/toolResultDetails';
+import type { SlashCommand, StreamChunk, ToolResultDetails } from '../../core/types';
+import { extractACPDiffResultDetails } from './ACPToolResultNormalization';
 import type {
   ACPAvailableCommand,
   ACPContentBlock,
@@ -72,7 +72,7 @@ export interface ACPToolCallSnapshot {
   rawInput?: unknown;
   rawOutput?: unknown;
   status?: ACPToolCallStatus | null;
-  toolUseResult?: SDKToolUseResult;
+  resultDetails?: ToolResultDetails;
 }
 
 type MessageRole = 'assistant' | 'thinking' | 'user';
@@ -169,7 +169,7 @@ export class ACPSessionUpdateNormalizer {
   }
 
   private normalizeToolCall(toolCall: ACPToolCall): Extract<ACPNormalizedUpdate, { type: 'tool_call' }> {
-    const toolUseResult = extractACPDiffToolUseResult(toolCall.content);
+    const resultDetails = extractACPDiffResultDetails(toolCall.content);
     const toolState: ACPToolCallSnapshot = {
       input: normalizeToolInput(toolCall.rawInput),
       name: normalizeToolName(toolCall.title, toolCall.kind),
@@ -177,7 +177,7 @@ export class ACPSessionUpdateNormalizer {
       rawInput: toolCall.rawInput,
       rawOutput: toolCall.rawOutput,
       status: toolCall.status,
-      ...(toolUseResult ? { toolUseResult } : {}),
+      ...(resultDetails ? { resultDetails } : {}),
     };
     this.toolCalls.set(toolCall.toolCallId, toolState);
 
@@ -193,7 +193,7 @@ export class ACPSessionUpdateNormalizer {
         content: toolState.output || defaultToolResultText(toolState.status),
         id: toolCall.toolCallId,
         isError: toolState.status === 'failed',
-        ...(toolState.toolUseResult ? { toolUseResult: toolState.toolUseResult } : {}),
+        ...(toolState.resultDetails ? { resultDetails: toolState.resultDetails } : {}),
         type: 'tool_result',
       });
     }
@@ -224,12 +224,9 @@ export class ACPSessionUpdateNormalizer {
     if (toolCallUpdate.rawOutput !== undefined) {
       current.rawOutput = toolCallUpdate.rawOutput;
     }
-    const toolUseResult = extractACPDiffToolUseResult(toolCallUpdate.content);
-    if (toolUseResult) {
-      current.toolUseResult = {
-        ...current.toolUseResult,
-        ...toolUseResult,
-      };
+    const resultDetails = extractACPDiffResultDetails(toolCallUpdate.content);
+    if (resultDetails) {
+      current.resultDetails = mergeToolResultDetails(current.resultDetails, resultDetails);
     }
 
     const nextOutput = renderToolPayload(toolCallUpdate.content ?? undefined, toolCallUpdate.rawOutput)
@@ -255,7 +252,7 @@ export class ACPSessionUpdateNormalizer {
         content: current.output || defaultToolResultText(current.status),
         id: toolCallUpdate.toolCallId,
         isError: current.status === 'failed',
-        ...(current.toolUseResult ? { toolUseResult: current.toolUseResult } : {}),
+        ...(current.resultDetails ? { resultDetails: current.resultDetails } : {}),
         type: 'tool_result',
       });
     }

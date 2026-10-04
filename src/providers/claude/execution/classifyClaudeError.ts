@@ -1,9 +1,5 @@
 import type { ProviderSessionInvalidation } from '../../../core/execution';
 import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
-import {
-  getMissingSessionId,
-  isSessionMissingError,
-} from '../../../utils/session';
 
 export type ClaudeErrorCategory =
   | 'provider-session-missing'
@@ -61,6 +57,18 @@ export function classifyClaudeError(
     message,
     recoverable: true,
   };
+}
+
+function getMissingSessionId(error: unknown): string | null {
+  const message = error instanceof Error ? error.message : '';
+  const match = message.match(/no conversation found with session id:\s*([a-z0-9_-]+)/i);
+  return match?.[1] ?? null;
+}
+
+function isSessionMissingError(error: unknown, expectedSessionId?: string): boolean {
+  const missingSessionId = getMissingSessionId(error);
+  return !!missingSessionId
+    && (!expectedSessionId || missingSessionId.toLowerCase() === expectedSessionId.toLowerCase());
 }
 
 function classifyErrorText(normalized: string): ClaudeErrorCategory {

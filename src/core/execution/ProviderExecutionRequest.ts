@@ -1,6 +1,7 @@
-import type { BrowserSelectionContext } from '../../utils/browser';
-import type { CanvasSelectionContext } from '../../utils/canvas';
-import type { EditorSelectionContext } from '../../utils/editor';
+import type { BrowserSelectionContext } from '@/core/prompt/browserContext';
+import type { CanvasSelectionContext } from '@/core/prompt/canvasContext';
+import type { EditorSelectionContext } from '@/core/prompt/editorContext';
+
 import type { ChatMessage, ImageAttachment } from '../types';
 
 export type ProviderExecutionInputBlock =

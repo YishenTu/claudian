@@ -65,7 +65,7 @@ export interface TabManagerInterface {
   switchToTab(tabId: TabId): Promise<void>;
 
   /** Gets all tabs. */
-  getAllTabs(): AssembledTabRuntime[];
+  getAllTabs(): ChatTab[];
   getTabIdentities(): readonly TabProviderCatalogContext[];
 
   /** Reports aggregate user-visible work for a runtime tab. */
@@ -191,7 +191,79 @@ export interface TabRuntimeResourceOwner extends TabRuntimeResourceState {
   dispose(): Promise<readonly TabRuntimeCleanupFailure[]>;
 }
 
-export interface AssembledTabRuntime {
+/** Linked content operations a host view forwards to a tab. */
+export type TabLinkedContentPort = Pick<
+  LinkedContentController,
+  | 'selectExplicit'
+  | 'handleActiveFileChanged'
+  | 'handleActiveFileMetadataChanged'
+  | 'handleRenamed'
+  | 'handleDeleted'
+  | 'handleCreated'
+>;
+
+/** Composer operations a host view drives without reaching into the composer's DOM or controls. */
+export interface TabComposerPort {
+  focus(): void;
+  /** Appends text without sending it, as if typed at the end; false when there is nothing to add. */
+  appendText(text: string): boolean;
+  /** Closes an open toolbar menu; true when one was open. */
+  closeOpenMenu(): boolean;
+  /** Hides the composer dropdown unless `target` is inside it or is the input. */
+  dismissDropdownFor(target: EventTarget | null): void;
+  setHiddenCommands(commands: ReadonlySet<string>): void;
+  /** Mention caches the host invalidates on Vault structure and content changes. */
+  readonly mentionCaches: Pick<FileContextManager, 'markFileCacheDirty' | 'markFolderCacheDirty'>;
+  /** Invalidates session mentions after the conversation list changes. */
+  invalidateSessionMentions(): void;
+}
+
+/** Restores a transcript moved by `TabPlacementPort.placeTranscript`. */
+export interface TabTranscriptPlacement {
+  isPlacedIn(hostEl: HTMLElement | null): boolean;
+  restore(): void;
+}
+
+/**
+ * Moves a tab's existing composer, transcript, and collapsed side-chat chip between host
+ * slots. The host view remains the placement authority; nothing is rebuilt or cloned.
+ */
+export interface TabPlacementPort {
+  /** Moves the composer into `slotEl`, restoring focus when the composer already held it. */
+  placeComposer(slotEl: HTMLElement): void;
+  isComposerPlacedIn(slotEl: HTMLElement): boolean;
+  /** Returns the composer to the tab's own content. */
+  restoreComposer(): void;
+  /** Moves the transcript into `hostEl`, leaving an anchor that the returned handle restores. */
+  placeTranscript(hostEl: HTMLElement): TabTranscriptPlacement;
+  setSideChatChipHost(hostEl: HTMLElement | null): void;
+}
+
+/**
+ * The surface a host view uses: identity, activity, presentation reads, and tab-level
+ * operations. Controllers, UI components, DOM, and the renderer stay with the tab modules.
+ */
+export interface ChatTab {
+  readonly id: TabId;
+  readonly conversationId: string | null;
+  readonly providerId: ProviderId | null;
+  readonly lifecycleState: TabLifecycleState;
+  readonly draftModel: string | null;
+  /** Authoritative identity and activity owner for the tab. */
+  readonly session: TabSession;
+  readonly hydrationState: TabHydrationState;
+  /** Presentation reads; mutation stays with the tab's controllers. */
+  readonly state: Readonly<Pick<ChatState, 'attention' | 'isStreaming' | 'messages'>>;
+  readonly services: Pick<TabServices, 'titleGenerationService'>;
+  readonly composer: TabComposerPort;
+  readonly linkedContent: TabLinkedContentPort;
+  readonly placement: TabPlacementPort;
+  /** Re-renders model, mode, effort, permission, service-tier, and context-usage controls. */
+  refreshProviderControls(): void;
+  refreshMessageTimestamps(): void;
+}
+
+export interface AssembledTabRuntime extends ChatTab {
   /** Authoritative identity and runtime owner for the tab. */
   readonly session: TabSession;
   /** Unique tab identifier. */

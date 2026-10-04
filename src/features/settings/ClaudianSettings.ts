@@ -1,6 +1,8 @@
 import type { App, Plugin, SettingDefinitionItem } from 'obsidian';
 import { Notice, PluginSettingTab, Setting } from 'obsidian';
 
+import { parseEnvironmentVariables } from '@/core/process/env';
+import { formatContextLimit, parseContextLimit } from '@/shared/settings/contextLimit';
 import { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSettingsWriter';
 import { frameSettingsGroups } from '@/shared/settings/SettingsGroups';
 
@@ -17,7 +19,6 @@ import type {
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n/i18n';
 import type { Locale } from '../../i18n/types';
 import { renderEnvironmentSettingsSection } from '../../shared/settings/EnvironmentSettingsSection';
-import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import type { FeatureHost } from '../FeatureHost';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 import { SkillsSettingsTab } from './SkillsSettingsTab';

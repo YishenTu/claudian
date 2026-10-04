@@ -22,7 +22,6 @@ export interface InlineApprovalOptions {
   blockedPath?: string;
   agentID?: string;
   decisionOptions?: InlineApprovalDecisionOption[];
-  additionalPermissions?: unknown;
 }
 
 const DEFAULT_APPROVAL_DECISION_OPTIONS: InlineApprovalDecisionOption[] =

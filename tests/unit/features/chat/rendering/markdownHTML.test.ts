@@ -1,5 +1,5 @@
+import { escapeRawHTMLTags } from '@/features/chat/rendering/markdownHTML';
 import { escapeHTML } from '@/utils/html';
-import { escapeRawHTMLTags } from '@/utils/markdownHTML';
 
 describe('markdownHtml', () => {
   describe('escapeRawHTMLTags', () => {

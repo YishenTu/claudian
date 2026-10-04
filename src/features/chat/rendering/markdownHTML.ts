@@ -1,5 +1,5 @@
-import { escapeHTML } from './html';
-import { transformMarkdownSegments } from './markdownSegments';
+import { escapeHTML } from '@/utils/html';
+import { transformMarkdownSegments } from '@/utils/markdownSegments';
 
 /**
  * Escapes message-authored raw HTML before Obsidian's MarkdownRenderer sees it.

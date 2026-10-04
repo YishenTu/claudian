@@ -225,11 +225,12 @@ export async function loadSDKSessionMessages(
       if (!isClaudeSubagentToolName(toolCall.name) || toolCall.input.run_in_background === true
         || toolCall.result === undefined) continue;
       const metadata = toolUseResults.get(toolCall.id);
+      const payload = metadata === undefined ? undefined : { rawOutput: metadata };
       const mode = taskResults.describeTask(toolCall.input).mode
-        ?? taskResults.interpretLaunch(toolCall.result, toolCall.status === 'error', metadata).mode;
+        ?? taskResults.interpretLaunch(toolCall.result, toolCall.status === 'error', payload).mode;
       if (mode === 'async') continue;
       const result = taskResults.interpretResult(toolCall.result, toolCall.status === 'error',
-        { mode: 'sync' }, metadata);
+        { mode: 'sync' }, payload);
       toolCall.result = result.result;
     }
   }

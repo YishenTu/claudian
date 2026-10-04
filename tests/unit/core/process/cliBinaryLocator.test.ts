@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { findCLIBinaryPath, resolveConfiguredCLIPath } from '@/utils/cliBinaryLocator';
+import { findCLIBinaryPath, resolveConfiguredCLIPath } from '@/core/process/cliBinaryLocator';
 
 describe('cliBinaryLocator', () => {
   let tempDir: string;

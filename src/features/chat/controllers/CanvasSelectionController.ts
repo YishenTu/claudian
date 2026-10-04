@@ -1,6 +1,7 @@
 import type { App, ItemView } from 'obsidian';
 
-import type { CanvasSelectionContext } from '../../../utils/canvas';
+import type { CanvasSelectionContext } from '@/core/prompt/canvasContext';
+
 import type { ComposerContextTray } from '../ui/ComposerContextTray';
 
 const CANVAS_POLL_INTERVAL = 250;

@@ -10,7 +10,7 @@ import {
   resolveWindowsCmdShimSpawnSpec,
   terminateSpawnedProcess,
   type WindowsCmdShimSpawnSpec,
-} from '@/utils/windowsCmdShim';
+} from '@/core/process/windowsCmdShim';
 
 const DEFAULT_SIGKILL_TIMEOUT_MS = 3_000;
 const DEFAULT_FINAL_SHUTDOWN_TIMEOUT_MS = 3_000;

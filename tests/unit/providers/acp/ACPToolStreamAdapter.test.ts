@@ -1,4 +1,5 @@
-import type { SDKToolUseResult } from '@/core/types/diff';
+import { diffFromReplacements } from '@/core/tools/toolDiff';
+import type { ToolResultDetails } from '@/core/types';
 import { ACPToolStreamAdapter, type ACPToolStreamPresentationAdapter } from '@/providers/acp/ACPToolStreamAdapter';
 
 function createAdapter(
@@ -9,13 +10,14 @@ function createAdapter(
     normalizeToolName: rawName => rawName === 'read_file'
       ? 'Read'
       : rawName === 'tool' ? 'Tool' : rawName ?? 'Tool',
-    normalizeToolUseResult(rawName, _input, rawOutput, rawInput): SDKToolUseResult {
+    normalizeToolResultDetails(rawName): ToolResultDetails | undefined {
+      return rawName === 'write' ? { resultFormat: 'plain' } : undefined;
+    },
+    buildToolProviderPayload(rawName, rawInput, rawOutput) {
       return {
-        providerPayload: {
-          ...(rawInput !== undefined ? { rawInput } : {}),
-          rawName,
-          ...(rawOutput !== undefined ? { rawOutput } : {}),
-        },
+        ...(rawInput !== undefined ? { rawInput } : {}),
+        rawName,
+        ...(rawOutput !== undefined ? { rawOutput } : {}),
       };
     },
     resolveRawToolName: (current, update) => {
@@ -88,15 +90,14 @@ describe('ACPToolStreamAdapter', () => {
     }, [{ content: 'Concise', id: 'tool-1', type: 'tool_result' }])).toEqual([{
       content: 'Concise',
       id: 'tool-1',
-      toolUseResult: {
-        providerPayload: { rawInput, rawName: 'read_file', rawOutput },
-      },
+      providerPayload: { rawInput, rawName: 'read_file', rawOutput },
       type: 'tool_result',
     }]);
   });
 
   it('merges native ACP diff data with provider-owned result metadata', () => {
     const adapter = createAdapter();
+    const diff = diffFromReplacements([{ oldText: 'old text', newText: 'new text' }], 'src/write.ts');
     adapter.normalizeToolCall({
       rawInput: { content: 'new text', file_path: 'src/write.ts' },
       title: 'write',
@@ -109,23 +110,15 @@ describe('ACPToolStreamAdapter', () => {
     }, [{
       content: 'Diff: src/write.ts',
       id: 'tool-write',
-      toolUseResult: {
-        filePath: 'src/write.ts',
-        newText: 'new text',
-        oldText: 'old text',
-      },
+      resultDetails: { diff },
       type: 'tool_result',
     }])).toEqual([{
       content: 'Diff: src/write.ts',
       id: 'tool-write',
-      toolUseResult: {
-        filePath: 'src/write.ts',
-        newText: 'new text',
-        oldText: 'old text',
-        providerPayload: {
-          rawInput: { content: 'new text', file_path: 'src/write.ts' },
-          rawName: 'write',
-        },
+      resultDetails: { diff, resultFormat: 'plain' },
+      providerPayload: {
+        rawInput: { content: 'new text', file_path: 'src/write.ts' },
+        rawName: 'write',
       },
       type: 'tool_result',
     }]);

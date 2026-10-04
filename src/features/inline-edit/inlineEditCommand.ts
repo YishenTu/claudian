@@ -1,8 +1,8 @@
 import type { Command, Component, Editor, MarkdownFileInfo } from 'obsidian';
 import { MarkdownView, Notice } from 'obsidian';
 
+import { buildCursorContext } from '@/core/prompt/editorContext';
 import type { FeatureHost } from '@/features/FeatureHost';
-import { buildCursorContext } from '@/utils/editor';
 
 import type { InlineEditSessionOwner } from './InlineEditSessionOwner';
 import { type InlineEditContext, InlineEditModal } from './ui/InlineEditModal';

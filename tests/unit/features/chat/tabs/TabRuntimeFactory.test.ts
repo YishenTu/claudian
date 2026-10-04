@@ -226,10 +226,8 @@ function createTabManager(
 
 function expectTabManagerMetadataReleased(manager: TabManager, tabId: string): void {
   const internals = manager as any;
-  expect(internals.providerRuntimeCommandLoads.has(tabId)).toBe(false);
-  expect(internals.providerRuntimeCommandCache.has(tabId)).toBe(false);
-  expect(internals.providerCommandDiscoveryStores.has(tabId)).toBe(false);
-  expect(internals.tabCommandContextRevisions.has(tabId)).toBe(false);
+  // Discovery state can outlive membership, so a released tab must leave no tracked entry.
+  expect(internals.commandDiscovery.getTrackedTabIds()).not.toContain(tabId);
   expect(internals.tabActivationRevisions.has(tabId)).toBe(false);
 }
 
@@ -453,6 +451,27 @@ describe('Tab provider execution ownership', () => {
 
     expect(onWorkChanged).toHaveBeenCalledTimes(4);
     expect(onWorkChanged).toHaveBeenCalledWith(tab);
+  });
+
+  it('refreshes every provider control without starting command discovery', async () => {
+    const getProviderCatalogConfig = jest.fn().mockReturnValue(null);
+    const tab = await createTestTab(
+      { plugin: createPlugin(), containerEl: createMockEl() as any },
+      { getProviderCatalogConfig },
+    );
+    const controls = [
+      tab.ui.modelSelector, tab.ui.modeSelector, tab.ui.effortSelector,
+      tab.ui.permissionToggle, tab.ui.serviceTierToggle,
+    ];
+    const updates = controls.map((control: any) => jest.spyOn(control, 'updateDisplay'));
+    const optionRenders = [tab.ui.modelSelector, tab.ui.modeSelector]
+      .map((control: any) => jest.spyOn(control, 'renderOptions'));
+    getProviderCatalogConfig.mockClear();
+
+    tab.refreshProviderControls();
+
+    for (const spy of [...updates, ...optionRenders]) expect(spy).toHaveBeenCalled();
+    expect(getProviderCatalogConfig).not.toHaveBeenCalled();
   });
 
   it('counts detached async subagent work as tab work outside the foreground turn', async () => {

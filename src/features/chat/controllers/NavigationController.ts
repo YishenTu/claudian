@@ -1,11 +1,11 @@
-import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
-
-import type { KeyboardNavigationSettings } from '../../../core/types';
 import {
   cancelScheduledAnimationFrame,
   scheduleAnimationFrame,
   type ScheduledAnimationFrame,
-} from '../../../utils/animationFrame';
+} from '@/features/chat/utils/animationFrame';
+import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
+
+import type { KeyboardNavigationSettings } from '../../../core/types';
 
 /** Scroll speed in pixels per frame (~60fps = 480px/sec). */
 const SCROLL_SPEED = 8;

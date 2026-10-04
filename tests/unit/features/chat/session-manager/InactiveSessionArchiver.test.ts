@@ -24,7 +24,7 @@ describe('InactiveSessionArchiver', () => {
       settings: { sessionAutoArchiveAfter: after },
       getConversationList: () => conversations,
       getWorkspaceConversationIds: () => new Set(['open-old']),
-      archiveConversationsIf: archiveConversations,
+      conversationLifecycle: { archiveIf: archiveConversations },
     };
     return { archiver: new InactiveSessionArchiver(host as never, clock), archiveConversations };
   }

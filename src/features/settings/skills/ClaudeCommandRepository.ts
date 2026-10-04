@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 
-import { parseFrontmatter } from '../../utils/frontmatter';
-import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
+import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
+
 import type { AgentSkillDiagnostic, AgentSkillInput } from './AgentSkill';
 import { serializeMarkdownWithFrontmatter } from './AgentSkillCodec';
 import {
@@ -10,6 +10,7 @@ import {
   CLAUDE_COMMANDS_ROOT,
   type SkillFrontmatterPolicy,
 } from './AgentSkillRepository';
+import { parseFrontmatter } from './frontmatter';
 import { AgentSkillValidationError, validateAgentSkillName } from './validateAgentSkill';
 
 const COMMAND_EXTENSION = '.md';

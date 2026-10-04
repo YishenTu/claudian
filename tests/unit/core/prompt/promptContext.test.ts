@@ -10,7 +10,7 @@ import {
   extractUserDisplayContent,
   extractUserQuery,
   formatLinkedContent,
-} from '../../../src/utils/context';
+} from '@/core/prompt/promptContext';
 
 describe('formatLinkedContent', () => {
   it('formats a content path as a canonical XML attribute', () => {

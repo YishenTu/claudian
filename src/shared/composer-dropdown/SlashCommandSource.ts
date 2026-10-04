@@ -1,9 +1,9 @@
 import { getBuiltInCommandsForDropdown } from '@/core/commands/builtInCommands';
+import { normalizeArgumentHint } from '@/core/commands/slashCommand';
 import type { ProviderCommandDropdownConfig } from '@/core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandDiscoverySource } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry, ProviderCommandKind } from '@/core/providers/commands/ProviderCommandEntry';
 import type { ProviderId } from '@/core/providers/types';
-import { normalizeArgumentHint } from '@/utils/slashCommand';
 
 import type {
   ComposerDropdownItem,

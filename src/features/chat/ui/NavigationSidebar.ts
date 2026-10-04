@@ -4,7 +4,8 @@ import {
   cancelScheduledAnimationFrame,
   scheduleAnimationFrame,
   type ScheduledAnimationFrame,
-} from '../../../utils/animationFrame';
+} from '@/features/chat/utils/animationFrame';
+
 import { formatConversationDirectoryTitle } from '../utils/conversationDirectoryTitle';
 
 type NavigationScrollIntent = 'away' | 'bottom';

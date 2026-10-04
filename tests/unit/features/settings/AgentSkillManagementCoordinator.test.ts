@@ -2,16 +2,16 @@ import { chmod } from 'node:fs/promises';
 
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 
-import type { AgentSkillDocument, AgentSkillInput } from '@/core/skills/AgentSkill';
-import type { AgentSkillRepository } from '@/core/skills/AgentSkillRepository';
+import { AgentSkillManagementCoordinator } from '@/features/settings/AgentSkillManagementCoordinator';
+import type { AgentSkillDocument, AgentSkillInput } from '@/features/settings/skills/AgentSkill';
+import type { AgentSkillRepository } from '@/features/settings/skills/AgentSkillRepository';
 import {
   AgentSkillRepository as VaultAgentSkillRepository,
   AgentSkillRevisionConflictError,
   CLAUDE_COMMANDS_ROOT,
   CLAUDE_SKILLS_ROOT,
-} from '@/core/skills/AgentSkillRepository';
-import { ClaudeCommandRepository, ClaudeCommandRevisionConflictError } from '@/core/skills/ClaudeCommandRepository';
-import { AgentSkillManagementCoordinator } from '@/features/settings/AgentSkillManagementCoordinator';
+} from '@/features/settings/skills/AgentSkillRepository';
+import { ClaudeCommandRepository, ClaudeCommandRevisionConflictError } from '@/features/settings/skills/ClaudeCommandRepository';
 
 function makeSkill(name = 'shared-skill', revision = 'revision-1'): AgentSkillDocument {
   return {

@@ -1,9 +1,9 @@
 import * as path from 'node:path';
 
+import { stripSurroundingQuotes } from '@/core/process/cliPath';
 import { runProcessProbe } from '@/core/process/ProcessProbe';
 import { type CLIInstallation, parseCLIVersion, probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
-import { stripSurroundingQuotes } from '@/utils/path';
 
 import { getCodexProviderSettings } from '../settings';
 import { buildCodexAppServerEnvironment, getCodexAppServerWorkingDirectory } from './codexAppServerSupport';

@@ -1,6 +1,7 @@
 import type { App, ItemView } from 'obsidian';
 
-import type { BrowserSelectionContext } from '../../../utils/browser';
+import type { BrowserSelectionContext } from '@/core/prompt/browserContext';
+
 import type { ComposerContextTray } from '../ui/ComposerContextTray';
 
 const BROWSER_SELECTION_POLL_INTERVAL = 250;

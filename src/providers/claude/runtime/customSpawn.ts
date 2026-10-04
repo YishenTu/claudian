@@ -2,12 +2,12 @@ import type { SpawnedProcess, SpawnOptions } from '@anthropic-ai/claude-agent-sd
 import { type ChildProcess, spawn as nodeSpawn } from 'child_process';
 import crossSpawn from 'cross-spawn';
 
-import { cliPathRequiresNode, findNodeExecutable } from '../../../utils/env';
+import { cliPathRequiresNode, findNodeExecutable } from '@/core/process/env';
 import {
   resolveWindowsCmdShimSpawnSpec,
   terminateSpawnedProcess,
   type WindowsCmdShimSpawnSpec,
-} from '../../../utils/windowsCmdShim';
+} from '@/core/process/windowsCmdShim';
 
 const spawn = crossSpawn as typeof nodeSpawn;
 

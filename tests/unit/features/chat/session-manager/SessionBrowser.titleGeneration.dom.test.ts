@@ -36,7 +36,6 @@ function setup(status?: Conversation['titleGenerationStatus'], enabled = true) {
       getConversationById: async () => conversation, renameConversation, updateConversation,
     },
     getCurrentConversationId: () => null,
-    isStreaming: () => false,
     getTitleGenerationService: () => ({ generateTitle, cancel: jest.fn() }),
     onListChanged: () => browser.renderHistoryDropdown(container, { onSelectConversation }),
   } as unknown as SessionBrowserDeps);

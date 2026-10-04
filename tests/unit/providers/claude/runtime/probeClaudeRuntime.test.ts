@@ -6,8 +6,8 @@ import { buildClaudeLaunchOptions, probeClaudeRuntime } from '@/providers/claude
 const mockQuery = jest.fn();
 jest.mock('@/providers/claude/loadClaudeAgentSDK', () => ({ loadClaudeAgentQuery: async () => mockQuery }));
 jest.mock('@/utils/path', () => ({ ...jest.requireActual('@/utils/path'), getVaultPath: () => '/vault' }));
-jest.mock('@/utils/env', () => ({
-  ...jest.requireActual('@/utils/env'), getEnhancedPath: () => '/enhanced/bin',
+jest.mock('@/core/process/env', () => ({
+  ...jest.requireActual('@/core/process/env'), getEnhancedPath: () => '/enhanced/bin',
 }));
 
 const initialization = {

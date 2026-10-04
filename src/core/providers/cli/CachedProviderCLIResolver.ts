@@ -1,7 +1,7 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { findCLIBinaryPath, resolveConfiguredCLIPath } from '@/core/process/cliBinaryLocator';
+import { parseEnvironmentVariables } from '@/core/process/env';
 
-import { findCLIBinaryPath, resolveConfiguredCLIPath } from '../../../utils/cliBinaryLocator';
-import { parseEnvironmentVariables } from '../../../utils/env';
 import { createRuntimeInputFingerprint } from '../settings/RuntimeInputFingerprint';
 import { createCLIPathFingerprintInputs } from './CLIPathFingerprintInputs';
 

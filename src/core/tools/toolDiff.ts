@@ -1,12 +1,12 @@
-import type { DiffLine, DiffStats, StructuredPatchHunk } from '../core/types/diff';
-import type { ToolCallInfo, ToolDiffData } from '../core/types/tools';
+import type { DiffLine, DiffStats, StructuredPatchHunk } from '@/core/types/diff';
+import type { ToolCallInfo, ToolDiffData, ToolResultDiff } from '@/core/types/tools';
 
 export interface ApplyPatchFileDiff extends ToolDiffData {
   operation: 'add' | 'update' | 'delete';
   movedTo?: string;
 }
 
-function structuredPatchToDiffLines(hunks: StructuredPatchHunk[]): DiffLine[] {
+function structuredPatchToDiffLines(hunks: readonly StructuredPatchHunk[]): DiffLine[] {
   const result: DiffLine[] = [];
 
   for (const hunk of hunks) {
@@ -128,43 +128,39 @@ export function parseFileUpdateChangeDiffs(changes: unknown): ApplyPatchFileDiff
     .filter((diff): diff is ApplyPatchFileDiff => diff !== null);
 }
 
-export function extractDiffData(toolUseResult: unknown, toolCall: ToolCallInfo): ToolDiffData | undefined {
+/** Decodes unified-diff hunks; returns undefined when there are none. */
+export function diffFromStructuredPatch(hunks: readonly StructuredPatchHunk[], filePath?: string): ToolResultDiff | undefined {
+  return hunks.length > 0 ? toResultDiff(structuredPatchToDiffLines(hunks), filePath) : undefined;
+}
+
+/** Decodes unified diff text, with or without hunk headers; returns undefined when it holds no lines. */
+export function diffFromUnifiedText(diffText: string, filePath?: string): ToolResultDiff | undefined {
+  const diffLines = diffText.trim() ? parseUnifiedDiffLines(diffText) : [];
+  return diffLines.length > 0 ? toResultDiff(diffLines, filePath) : undefined;
+}
+
+/** Shows each replacement as its removed lines followed by its inserted lines. */
+export function diffFromReplacements(pairs: readonly ReplacementPair[], filePath?: string): ToolResultDiff | undefined {
+  return pairs.length > 0 ? toResultDiff(buildReplacementDiffLines(pairs), filePath) : undefined;
+}
+
+/**
+ * Resolves the diff shown for a tool call: the provider-decoded result diff when present,
+ * otherwise one derived from the shared Edit/Write input. A diff without its own path
+ * uses the input's path.
+ */
+export function resolveToolDiffData(diff: ToolResultDiff | undefined, toolCall: ToolCallInfo): ToolDiffData | undefined {
   const filePath = getNonEmptyStringValue(toolCall.input.file_path)
     ?? getNonEmptyStringValue(toolCall.input.path)
     ?? 'file';
-
-  if (toolUseResult && typeof toolUseResult === 'object') {
-    const result = toolUseResult as Record<string, unknown>;
-    if (Array.isArray(result.structuredPatch) && result.structuredPatch.length > 0) {
-      const resultFilePath = (typeof result.filePath === 'string' ? result.filePath : null) || filePath;
-      const hunks = result.structuredPatch as StructuredPatchHunk[];
-      const diffLines = structuredPatchToDiffLines(hunks);
-      const stats = countLineChanges(diffLines);
-      return { filePath: resultFilePath, diffLines, stats };
-    }
-
-    const unifiedDiff = getUnifiedDiffText(result);
-    if (unifiedDiff) {
-      const diffLines = parseUnifiedDiffLines(unifiedDiff);
-      if (diffLines.length > 0) {
-        const resultFilePath = (typeof result.filePath === 'string' ? result.filePath : null)
-          || (typeof result.path === 'string' ? result.path : null)
-          || filePath;
-        return { filePath: resultFilePath, diffLines, stats: countLineChanges(diffLines) };
-      }
-    }
-
-    const replacements = getEditPairs(result);
-    if (replacements.length > 0) {
-      const resultFilePath = (typeof result.filePath === 'string' ? result.filePath : null)
-        || (typeof result.path === 'string' ? result.path : null)
-        || filePath;
-      const diffLines = buildReplacementDiffLines(replacements);
-      return { filePath: resultFilePath, diffLines, stats: countLineChanges(diffLines) };
-    }
+  if (diff) {
+    return { filePath: diff.filePath || filePath, diffLines: diff.diffLines, stats: diff.stats };
   }
-
   return diffFromToolInput(toolCall, filePath);
+}
+
+function toResultDiff(diffLines: DiffLine[], filePath: string | undefined): ToolResultDiff {
+  return { ...(filePath ? { filePath } : {}), diffLines, stats: countLineChanges(diffLines) };
 }
 
 function diffFromToolInput(toolCall: ToolCallInfo, filePath: string): ToolDiffData | undefined {
@@ -199,23 +195,7 @@ function diffFromToolInput(toolCall: ToolCallInfo, filePath: string): ToolDiffDa
   return undefined;
 }
 
-function getUnifiedDiffText(result: Record<string, unknown>): string | null {
-  if (typeof result.diff === 'string' && result.diff.trim()) {
-    return result.diff;
-  }
-
-  const details = result.details;
-  if (details && typeof details === 'object' && !Array.isArray(details)) {
-    const diff = (details as Record<string, unknown>).diff;
-    if (typeof diff === 'string' && diff.trim()) {
-      return diff;
-    }
-  }
-
-  return null;
-}
-
-interface ReplacementPair {
+export interface ReplacementPair {
   oldText: string;
   newText: string;
 }
@@ -255,7 +235,7 @@ function getNonEmptyStringValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
-function buildReplacementDiffLines(pairs: ReplacementPair[]): DiffLine[] {
+function buildReplacementDiffLines(pairs: readonly ReplacementPair[]): DiffLine[] {
   const diffLines: DiffLine[] = [];
   let oldLineNum = 1;
   let newLineNum = 1;

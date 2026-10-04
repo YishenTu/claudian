@@ -3,17 +3,17 @@ import { MemoryDataAdapter } from '@test/helpers/MemoryDataAdapter';
 import type { App } from 'obsidian';
 
 import {
+  ManagedResourceCollisionError,
+  VaultFileAdapter,
+} from '@/core/storage/VaultFileAdapter';
+import {
   AGENT_SKILLS_ROOT,
   AgentSkillCollisionError,
   AgentSkillRepository,
   AgentSkillRevisionConflictError,
   CLAUDE_SKILLS_ROOT,
-} from '@/core/skills/AgentSkillRepository';
-import { AgentSkillValidationError } from '@/core/skills/validateAgentSkill';
-import {
-  ManagedResourceCollisionError,
-  VaultFileAdapter,
-} from '@/core/storage/VaultFileAdapter';
+} from '@/features/settings/skills/AgentSkillRepository';
+import { AgentSkillValidationError } from '@/features/settings/skills/validateAgentSkill';
 
 function markdown(name: string, description = 'Description', instructions = 'Instructions'): string {
   return [

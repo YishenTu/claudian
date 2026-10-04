@@ -4,9 +4,10 @@ import type {
   SDKControlInitializeResponse,
 } from '@anthropic-ai/claude-agent-sdk';
 
+import { getEnhancedPath, parseEnvironmentVariables } from '@/core/process/env';
+
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { throwIfAborted, toAbortError } from '../../../utils/abort';
-import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
 import { loadClaudeAgentQuery } from '../loadClaudeAgentSDK';
 import { getClaudeProviderSettings, resolveClaudeSettingSources } from '../settings';

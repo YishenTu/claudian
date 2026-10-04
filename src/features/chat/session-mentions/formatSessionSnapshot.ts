@@ -1,5 +1,5 @@
+import { extractUserDisplayContent } from '@/core/prompt/promptContext';
 import { type ChatMessage, type Conversation, isCanonicalUserMessage } from '@/core/types';
-import { extractUserDisplayContent } from '@/utils/context';
 
 import { getFinalResponseText } from '../rendering/ResponseLayout';
 

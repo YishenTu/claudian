@@ -1,8 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { expandHomePath } from '@/utils/path';
+
+import { normalizeConfiguredCLIPath, parsePathEntries, stripSurroundingQuotes } from './cliPath';
 import { getEnhancedPath } from './env';
-import { expandHomePath, normalizeConfiguredCLIPath, parsePathEntries, stripSurroundingQuotes } from './path';
 
 export function isExistingFile(filePath: string): boolean {
   try {

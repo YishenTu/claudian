@@ -1,14 +1,14 @@
 import { MemoryDataAdapter } from '@test/helpers/MemoryDataAdapter';
 import type { App } from 'obsidian';
 
-import { CLAUDE_COMMANDS_ROOT } from '@/core/skills/AgentSkillRepository';
+import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
+import { CLAUDE_COMMANDS_ROOT } from '@/features/settings/skills/AgentSkillRepository';
 import {
   ClaudeCommandCollisionError,
   ClaudeCommandRepository,
   ClaudeCommandRevisionConflictError,
-} from '@/core/skills/ClaudeCommandRepository';
-import { AgentSkillValidationError } from '@/core/skills/validateAgentSkill';
-import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
+} from '@/features/settings/skills/ClaudeCommandRepository';
+import { AgentSkillValidationError } from '@/features/settings/skills/validateAgentSkill';
 
 const REVIEW_COMMAND = [
   '---',

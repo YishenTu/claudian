@@ -1,4 +1,12 @@
-import { extractResolvedAnswers, extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
+import {
+  buildImageAttachmentFromBase64,
+  parseImageDataUri,
+} from '@/core/execution/imageAttachment';
+import { extractUserDisplayContent } from '@/core/prompt/promptContext';
+import { resolveToolDiffData } from '@/core/tools/toolDiff';
+import { isCompactionCanceledStderr, isInterruptSignalText } from '@/providers/claude/history/interrupt';
+
+import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
 import { TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import type {
@@ -7,15 +15,9 @@ import type {
   ImageAttachment,
   ToolCallInfo,
 } from '../../../core/types';
-import { extractUserDisplayContent } from '../../../utils/context';
-import { extractDiffData } from '../../../utils/diff';
-import {
-  buildImageAttachmentFromBase64,
-  parseImageDataUri,
-} from '../../../utils/imageAttachment';
-import { isCompactionCanceledStderr, isInterruptSignalText } from '../../../utils/interrupt';
 import { extractXMLTag, parseClaudeTaskNotification } from '../normalization/claudeTaskNotification';
 import { extractClaudeTextContent, isClaudeNoContentPlaceholder } from '../normalization/claudeTextContent';
+import { normalizeClaudeToolResultDetails } from '../normalization/claudeToolResultDetails';
 import type {
   AsyncSubagentResult,
   SDKNativeContentBlock,
@@ -381,12 +383,13 @@ export function hydrateStructuredToolResults(messages: ChatMessage[], toolUseRes
 
     for (const toolCall of msg.toolCalls) {
       const toolUseResult = toolUseResults.get(toolCall.id);
+      const details = normalizeClaudeToolResultDetails(toolUseResult);
       if (toolUseResult && !toolCall.diffData) {
-        toolCall.diffData = extractDiffData(toolUseResult, toolCall);
+        toolCall.diffData = resolveToolDiffData(details?.diff, toolCall);
       }
 
       if (toolCall.name === TOOL_ASK_USER_QUESTION && !toolCall.resolvedAnswers) {
-        const answers = extractResolvedAnswers(toolUseResult)
+        const answers = details?.resolvedAnswers
           ?? extractResolvedAnswersFromResultText(toolCall.result);
         if (answers) {
           toolCall.resolvedAnswers = answers;

@@ -9,7 +9,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
-import type { SDKToolUseResult, UsageInfo } from '../../../core/types';
+import type { UsageInfo } from '../../../core/types';
 import {
   CLAUDE_MODEL_TIER_PATTERN,
   type ClaudeModelTier,
@@ -35,7 +35,7 @@ type ToolResultFields = {
   content: string;
   isError?: boolean;
   isBlocked?: boolean;
-  toolUseResult?: SDKToolUseResult;
+  toolUseResult?: unknown;
 };
 
 export { createTransformStreamState };
@@ -583,7 +583,7 @@ export function* transformSDKMessage(
       const toolResultBlocks = Array.isArray(content)
         ? content.filter(block => block.type === 'tool_result')
         : [];
-      const toolUseResult = (message.tool_use_result ?? undefined) as SDKToolUseResult | undefined;
+      const toolUseResult: unknown = message.tool_use_result ?? undefined;
       // A subagent frame's structured output belongs to its own tool_result block; only a frame
       // without one reports that output against the spawning tool call.
       if (toolResultBlocks.length === 0 && message.tool_use_result !== undefined && parentToolUseId) {

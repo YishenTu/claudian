@@ -1,10 +1,10 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { parseEnvironmentVariables } from '@/core/process/env';
 
 import { createCLIPathFingerprintInputs } from '../../../core/providers/cli/CLIPathFingerprintInputs';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import { createRuntimeInputFingerprint } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
-import { parseEnvironmentVariables } from '../../../utils/env';
 import {
   decodeGrokModelId,
   encodeGrokModelId,

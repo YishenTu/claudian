@@ -1,6 +1,6 @@
 import type { ChatMessage } from '@/core/types';
+import { appendMarkdownSnippet } from '@/features/chat/composer/markdownSnippet';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
-import { appendMarkdownSnippet } from '@/utils/markdown';
 
 import type { ImageContextManager } from '../ui/ImageContext';
 

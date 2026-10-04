@@ -1752,13 +1752,11 @@ describe('GrokExecutionBackend', () => {
     }));
     expect(events).toContainEqual(expect.objectContaining({
       toolCallId: 'tool-read',
-      toolUseResult: expect.objectContaining({
-        providerPayload: {
-          rawInput,
-          rawName: 'read_file',
-          rawOutput,
-        },
-      }),
+      providerPayload: {
+        rawInput,
+        rawName: 'read_file',
+        rawOutput,
+      },
       type: 'tool_completed',
     }));
   });
@@ -1797,15 +1795,20 @@ describe('GrokExecutionBackend', () => {
 
     expect(events).toContainEqual(expect.objectContaining({
       toolCallId: 'tool-write',
-      toolUseResult: {
-        filePath: 'src/write.ts',
-        newText: 'new text',
-        oldText: 'old text',
-        providerPayload: {
-          rawInput,
-          rawName: 'write',
-          rawOutput,
+      resultDetails: {
+        diff: {
+          filePath: 'src/write.ts',
+          diffLines: [
+            { type: 'delete', text: 'old text', oldLineNum: 1 },
+            { type: 'insert', text: 'new text', newLineNum: 1 },
+          ],
+          stats: { added: 1, removed: 1 },
         },
+      },
+      providerPayload: {
+        rawInput,
+        rawName: 'write',
+        rawOutput,
       },
       type: 'tool_completed',
     }));

@@ -3,9 +3,9 @@ import * as os from 'os';
 import * as path from 'path';
 
 import type { ProviderExecutionRequest } from '@/core/execution';
+import { appendSelectionContexts, appendSessionReferences } from '@/core/prompt/promptContext';
 import type { ImageAttachment } from '@/core/types';
 import type { UserInput } from '@/providers/codex/runtime/codexAppServerTypes';
-import { appendSelectionContexts, appendSessionReferences } from '@/utils/context';
 
 export interface CodexInputBundle {
   readonly input: UserInput[];

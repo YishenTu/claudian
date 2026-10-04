@@ -1,32 +1,19 @@
 import type { EventRef, ViewStateResult, WorkspaceLeaf } from 'obsidian';
 import { ItemView, Menu, Notice, Scope, setIcon, TFile } from 'obsidian';
 
-import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
-
 import {
-  decodeTabWorkspaceViewState,
-  resolveTabRestorePlan,
-  TAB_WORKSPACE_VIEW_STATE_KEY,
-  TAB_WORKSPACE_VIEW_STATE_VERSION,
-  type TabWorkspaceViewState,
-} from '../../core/bootstrap/tabManagerState';
+  cancelScheduledAnimationFrame,
+  scheduleAnimationFrame,
+  type ScheduledAnimationFrame,
+} from '@/features/chat/utils/animationFrame';
+
 import { StartupProfiler } from '../../core/performance/StartupProfiler';
 import { getHiddenCommandSet } from '../../core/providers/commands/hiddenCommands';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/types';
 import { type ConversationMeta, VIEW_TYPE_CLAUDIAN } from '../../core/types';
-import {
-  cancelScheduledAnimationFrame,
-  scheduleAnimationFrame,
-  type ScheduledAnimationFrame,
-} from '../../utils/animationFrame';
-import type {
-  ChatFeatureHost,
-  ChatTabManagerHost,
-  TabWorkspaceStateDeliveryRegistration,
-} from './ChatFeatureHost';
+import type { ChatFeatureHost } from './ChatFeatureHost';
 import { MentionCacheCoordinator } from './services/MentionCacheCoordinator';
-import { TabStatePersistenceCoordinator } from './services/TabStatePersistenceCoordinator';
 import { getObsidianLanguage } from './session-manager/ProvisionalNoteNames';
 import { type HistoryConversationStatus, SessionBrowser } from './session-manager/SessionBrowser';
 import { renderSessionGroupToggleIcon } from './session-manager/SessionManagerIcons';
@@ -36,11 +23,10 @@ import {
   cancelSelectedDestinationTurn,
   sendTabInputMessageFromExplicitEnterShortcut,
 } from './tabs/TabInputEvents';
-import { commitProvisionalTab } from './tabs/TabLifecycle';
 import { TabManager } from './tabs/TabManager';
-import { refreshTabContextUsage } from './tabs/TabProviderState';
+import { TabWorkspaceLifecycle } from './tabs/TabWorkspaceLifecycle';
 import type { TabProviderCatalogContext } from './tabs/types';
-import type { AssembledTabRuntime, TabId } from './tabs/types';
+import type { AssembledTabRuntime, ChatTab, TabId, TabTranscriptPlacement } from './tabs/types';
 import type { ZenModeSlots, ZenModeSource } from './zen/types';
 
 type LoadableView = {
@@ -72,14 +58,14 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   private navRowContent: HTMLElement | null = null;
   private inputFooterEl: HTMLElement | null = null;
   private sideChatChipHostEl: HTMLElement | null = null;
-  private sideChatChipController: AssembledTabRuntime['controllers']['sideChatController'] | null = null;
+  private sideChatChipTab: ChatTab | null = null;
   private inputNavRowHostEl: HTMLElement | null = null;
   private activeInputSlotEl: HTMLElement | null = null;
   private activeInputTabId: TabId | null = null;
 
   // Zen mode presentation; this view remains the placement authority.
   private zenSlots: ZenModeSlots | null = null;
-  private zenTranscript: { tab: AssembledTabRuntime; anchorEl: Comment } | null = null;
+  private zenTranscript: { tab: ChatTab; placement: TabTranscriptPlacement } | null = null;
   private zenPresentationListeners = new Set<() => void>();
   private zenSourceRegistration: (() => void) | null = null;
 
@@ -106,7 +92,8 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   private isWideSessionLayout = false;
   private requestedWideSessionLayout = false;
   private sessionLayoutRequestRevision = 0;
-  private pendingProvisionalTabCleanup: Promise<void> | null = null;
+  /** The latest request to leave the wide layout; only it reports a failed preview cleanup. */
+  private compactLayoutRequestRevision = 0;
   private pendingSessionLayoutTransition: Promise<void> | null = null;
   private isArchiveSessionView = false;
   private isSessionSearchActive = false;
@@ -122,33 +109,16 @@ export class ClaudianView extends ItemView implements ZenModeSource {
 
   // Debouncing for tab bar updates
   private pendingTabBarUpdate: ScheduledAnimationFrame | null = null;
-  private tabStatePersistence: TabStatePersistenceCoordinator | null = null;
-  private hasTabWorkspaceViewState = false;
-  private tabWorkspaceDeliveryRevision = 0;
-  private pendingTabWorkspaceState: AppTabManagerState | null = null;
-  private finalizedTabWorkspaceState: AppTabManagerState | null = null;
-  private tabWorkspaceStateDelivery: TabWorkspaceStateDeliveryRegistration | null = null;
-  private initializedTabWorkspaceLifecycleRevision = -1;
-  private admittedTabWorkspaceLifecycleRevision = -1;
-  private tabWorkspaceInitialization: {
-    lifecycleRevision: number;
-    promise: Promise<void>;
-  } | null = null;
-  private shutdownSnapshotPromise: Promise<void> | null = null;
-  private viewLifecycleRevision = 0;
-  private viewShutdownStarted = false;
+  private readonly tabWorkspace: TabWorkspaceLifecycle;
   private sessionBrowser: SessionBrowser;
 
   constructor(leaf: WorkspaceLeaf, plugin: ChatFeatureHost) {
     super(leaf);
     this.plugin = plugin;
+    this.tabWorkspace = this.createTabWorkspace();
     this.sessionBrowser = new SessionBrowser({
       plugin,
-      getCurrentConversationId: () => this.tabManager?.getActiveTab()?.state.currentConversationId ?? null,
-      isStreaming: () => this.tabManager?.getActiveTab()?.state.isStreaming ?? false,
-      reloadActiveConversation: async () => {
-        await this.tabManager?.getActiveTab()?.controllers.conversationController.loadActive();
-      },
+      getCurrentConversationId: () => this.tabManager?.getActiveTab()?.conversationId ?? null,
       getTitleGenerationService: () => this.tabManager?.getActiveTab()?.services.titleGenerationService ?? null,
       onListChanged: () => this.updateHistoryDropdown(),
     });
@@ -189,55 +159,29 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   }
 
   getState(): Record<string, unknown> {
-    const state = this.pendingTabWorkspaceState
-      ?? this.captureTabWorkspaceState(this.tabManager)
-      ?? this.finalizedTabWorkspaceState;
-    if (!state) return {};
-
-    const tabWorkspace: TabWorkspaceViewState = {
-      version: TAB_WORKSPACE_VIEW_STATE_VERSION,
-      ...state,
-    };
-    return { [TAB_WORKSPACE_VIEW_STATE_KEY]: tabWorkspace };
+    return this.tabWorkspace.getState();
   }
 
   async setState(state: unknown, _result: ViewStateResult): Promise<void> {
-    const record = state && typeof state === 'object' && !Array.isArray(state)
-      ? state as Record<string, unknown>
-      : null;
-    const hasTabWorkspaceViewState = record !== null
-      && TAB_WORKSPACE_VIEW_STATE_KEY in record;
-    this.hasTabWorkspaceViewState = hasTabWorkspaceViewState;
-    const registration = this.plugin.registerTabWorkspaceStateDelivery(
-      this,
-      this.hasTabWorkspaceViewState,
-    );
-    this.tabWorkspaceStateDelivery = registration;
-    const lifecycleRevision = this.viewLifecycleRevision ?? 0;
+    await this.tabWorkspace.setState(state);
+  }
 
-    // Once shells are admitted, live membership owns this view lifecycle.
-    if (
-      this.initializedTabWorkspaceLifecycleRevision === lifecycleRevision
-      || this.admittedTabWorkspaceLifecycleRevision === lifecycleRevision
-    ) return;
-
-    this.tabWorkspaceDeliveryRevision = (this.tabWorkspaceDeliveryRevision ?? 0) + 1;
-    this.pendingTabWorkspaceState = null;
-
-    if (hasTabWorkspaceViewState && record) {
-      this.pendingTabWorkspaceState = decodeTabWorkspaceViewState(
-        record[TAB_WORKSPACE_VIEW_STATE_KEY],
-      );
-    }
-
-    if (registration.declarationsReady) {
-      await this.initializeTabWorkspace(lifecycleRevision);
-      return;
-    }
-
-    void registration.waitUntilDeclarationsReady
-      .then(() => this.initializeTabWorkspace(lifecycleRevision))
-      .catch(() => undefined);
+  private createTabWorkspace(): TabWorkspaceLifecycle {
+    return new TabWorkspaceLifecycle({
+      getPlugin: () => this.plugin,
+      view: this,
+      getTabManager: () => this.tabManager,
+      getTabBar: () => this.tabBar,
+      isWideLayout: () => this.isWideSessionLayout,
+      onInitialized: () => {
+        this.syncProviderBrandColor();
+        this.updateInputLocation();
+        this.updateTabBar();
+        this.notifyConversationNavigationChanged();
+        this.startSessionSidebarLayoutObserver();
+        this.notifyZenPresentationChanged();
+      },
+    });
   }
 
   /** Refreshes model-dependent UI across all tabs (used after settings/env changes). */
@@ -252,15 +196,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       ) {
         continue;
       }
-      refreshTabContextUsage(tab, this.plugin);
-
-      tab.ui.modelSelector.updateDisplay();
-      tab.ui.modelSelector.renderOptions();
-      tab.ui.modeSelector.updateDisplay();
-      tab.ui.modeSelector.renderOptions();
-      tab.ui.effortSelector.updateDisplay();
-      tab.ui.permissionToggle.updateDisplay();
-      tab.ui.serviceTierToggle.updateDisplay();
+      tab.refreshProviderControls();
     }
   }
 
@@ -276,7 +212,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   updateHiddenCommands(): void {
     const hiddenCommands = getHiddenCommandSet(this.plugin.settings);
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      tab.ui.composerDropdown.setHiddenCommands(hiddenCommands);
+      tab.composer.setHiddenCommands(hiddenCommands);
     }
   }
 
@@ -290,16 +226,8 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   }
 
   private async onOpenImpl() {
-    const previousLifecycleWasClosing = this.viewShutdownStarted === true;
-    const shutdownSnapshotPromise = previousLifecycleWasClosing
-      ? this.shutdownSnapshotPromise
-      : null;
-    this.viewShutdownStarted = false;
-    if (!previousLifecycleWasClosing) {
-      this.finalizedTabWorkspaceState = null;
-    }
-    const lifecycleRevision = (this.viewLifecycleRevision ?? 0) + 1;
-    this.viewLifecycleRevision = lifecycleRevision;
+    const opening = this.tabWorkspace.beginOpen();
+    const lifecycleRevision = opening.revision;
 
     // Guard: Hover Editor and similar plugins may call onOpen before DOM is ready.
     // containerEl must exist before we can access contentEl or create elements.
@@ -328,36 +256,11 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     this.navRowContent = this.buildNavRowContent();
     this.attachNavRowContentToInputFooter();
 
-    let tabStatePersistence = this.tabStatePersistence;
-    if (!previousLifecycleWasClosing || !tabStatePersistence) {
-      if (!previousLifecycleWasClosing) {
-        tabStatePersistence?.dispose();
-      }
-      tabStatePersistence = new TabStatePersistenceCoordinator(
-        async () => {
-          this.plugin.app.workspace.requestSaveLayout();
-          const save = this.plugin.app.workspace.requestSaveLayout.run();
-          if (save) await save;
-        },
-      );
-    }
-    this.tabStatePersistence = tabStatePersistence;
-    try {
-      if (shutdownSnapshotPromise) {
-        await shutdownSnapshotPromise;
-      }
-      await tabStatePersistence.flush();
-    } catch {
-      // Persistence failures are reported at the storage boundary; reopening must continue.
-    }
-    if (
-      !this.isViewLifecycleCurrent(lifecycleRevision)
-      || this.tabStatePersistence !== tabStatePersistence
-    ) return;
+    const tabStatePersistence = await this.tabWorkspace.preparePersistence(opening);
+    if (!tabStatePersistence) return;
 
-    const isTabWorkspaceInitialized = (): boolean => (
-      this.initializedTabWorkspaceLifecycleRevision === lifecycleRevision
-    );
+    const isTabWorkspaceInitialized = (): boolean => this.tabWorkspace.isInitialized(lifecycleRevision);
+    const persist = (): void => this.tabWorkspace.persist(tabManager, tabStatePersistence);
     const refreshActiveTabPresentationIfInitialized = (): void => {
       if (!isTabWorkspaceInitialized()) return;
       this.updateTabBar();
@@ -373,13 +276,13 @@ export class ClaudianView extends ItemView implements ZenModeSource {
         shouldForkToNewTab: () => this.isWideSessionLayout,
         onTabCreated: () => {
           refreshActiveTabPresentationIfInitialized();
-          this.persistTabWorkspaceState(tabManager, tabStatePersistence);
+          persist();
         },
         onActiveTabChanged: () => {
           refreshActiveTabPresentationIfInitialized();
         },
         onActiveTabCommitted: () => {
-          this.persistTabWorkspaceState(tabManager, tabStatePersistence);
+          persist();
         },
         onTabSwitched: refreshActiveTabPresentationIfInitialized,
         onTabClosed: () => {
@@ -389,7 +292,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
             this.updateInputLocation();
             this.notifyZenPresentationChanged();
           }
-          this.persistTabWorkspaceState(tabManager, tabStatePersistence);
+          persist();
         },
         onTabStreamingChanged: () => {
           if (isTabWorkspaceInitialized()) {
@@ -418,17 +321,17 @@ export class ClaudianView extends ItemView implements ZenModeSource {
         onTabConversationChanged: () => {
           if (
             this.tabManager === tabManager
-            && this.isViewLifecycleCurrent(lifecycleRevision)
+            && this.tabWorkspace.isCurrent(lifecycleRevision)
             && isTabWorkspaceInitialized()
           ) {
             this.updateTabBar();
             this.notifyConversationNavigationChanged();
             this.syncProviderBrandColor();
           }
-          this.persistTabWorkspaceState(tabManager, tabStatePersistence);
+          persist();
         },
         onTabDraftChanged: () => {
-          this.persistTabWorkspaceState(tabManager, tabStatePersistence);
+          persist();
         },
         onTabProviderChanged: () => {
           if (isTabWorkspaceInitialized()) {
@@ -441,43 +344,25 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     this.tabManager = tabManager;
     this.mentionCacheCoordinator = new MentionCacheCoordinator(
       () => tabManager.getAllTabs().map(tab => ({
-        fileContextManager: tab.ui.fileContextManager,
+        fileContextManager: tab.composer.mentionCaches,
       })),
     );
 
     this.wireEventHandlers();
     this.startZenModeSource();
-    const reopeningState = previousLifecycleWasClosing
-      ? this.finalizedTabWorkspaceState
-      : null;
-    if (reopeningState) {
-      await this.initializeTabWorkspace(lifecycleRevision, reopeningState);
-      return;
-    }
-
-    const stateDelivery = this.tabWorkspaceStateDelivery;
-    if (!stateDelivery) return;
-    if (stateDelivery.declarationsReady) {
-      await this.initializeTabWorkspace(lifecycleRevision);
-      return;
-    }
-    void stateDelivery.waitUntilDeclarationsReady
-      .then(() => this.initializeTabWorkspace(lifecycleRevision))
-      .catch(() => undefined);
+    await this.tabWorkspace.completeOpen(opening);
   }
 
   async onClose() {
-    this.viewShutdownStarted = true;
+    const lifecycleRevision = this.tabWorkspace.beginClose();
     // Zen presentation returns synchronously before asynchronous shutdown proceeds.
     this.stopZenModeSource();
     this.sessionBrowser.dispose();
-    const lifecycleRevision = (this.viewLifecycleRevision ?? 0) + 1;
-    this.viewLifecycleRevision = lifecycleRevision;
     const tabManager = this.tabManager;
     const mentionCacheCoordinator = this.mentionCacheCoordinator;
     const tabBar = this.tabBar;
     const scope = this.scope;
-    const tabStatePersistence = this.tabStatePersistence;
+    const tabStatePersistence = this.tabWorkspace.currentPersistence;
     tabManager?.beginShutdown();
     this.sessionLayoutRequestRevision += 1;
     this.clearSessionSearchDismissHandlers();
@@ -496,21 +381,14 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     this.eventRefs = [];
     this.restoreActiveInputToTabContent();
 
-    const shutdownSnapshotPromise = this.ensureShutdownSnapshot(
+    const shutdownSnapshot = this.tabWorkspace.snapshotForShutdown(
       tabManager,
       tabStatePersistence,
       tabBar,
     );
     try {
-      await shutdownSnapshotPromise;
-      const ownsCloseLifecycle = this.viewShutdownStarted === true
-        && this.viewLifecycleRevision === lifecycleRevision;
-      if (ownsCloseLifecycle) {
-        tabStatePersistence?.dispose();
-        if (this.tabStatePersistence === tabStatePersistence) {
-          this.tabStatePersistence = null;
-        }
-      }
+      await shutdownSnapshot;
+      this.tabWorkspace.releaseClosedPersistence(lifecycleRevision, tabStatePersistence);
       if (this.tabManager === tabManager) this.tabManager = null;
       try {
         await tabManager?.destroy();
@@ -524,52 +402,12 @@ export class ClaudianView extends ItemView implements ZenModeSource {
         if (this.scope === scope) this.scope = null;
       }
     } finally {
-      if (this.shutdownSnapshotPromise === shutdownSnapshotPromise) {
-        this.shutdownSnapshotPromise = null;
-      }
+      this.tabWorkspace.settleShutdownSnapshot(shutdownSnapshot);
     }
   }
 
-  async prepareForPluginUnload(): Promise<void> {
-    const tabManager = this.tabManager;
-    tabManager?.beginShutdown();
-    await this.ensureShutdownSnapshot(tabManager, this.tabStatePersistence);
-  }
-
-  private ensureShutdownSnapshot(
-    tabManager: TabManager | null,
-    tabStatePersistence: TabStatePersistenceCoordinator | null,
-    tabBar: Pick<TabBar, 'getExpandedTitleTabIds'> | null = this.tabBar,
-  ): Promise<void> {
-    if (this.shutdownSnapshotPromise) return this.shutdownSnapshotPromise;
-    const shutdownSnapshotPromise = this.captureShutdownSnapshot(
-      tabManager,
-      tabStatePersistence,
-      tabBar,
-    );
-    this.shutdownSnapshotPromise = shutdownSnapshotPromise;
-    return shutdownSnapshotPromise;
-  }
-
-  private async captureShutdownSnapshot(
-    tabManager: TabManager | null,
-    tabStatePersistence: TabStatePersistenceCoordinator | null,
-    tabBar: Pick<TabBar, 'getExpandedTitleTabIds'> | null = this.tabBar,
-  ): Promise<void> {
-    try {
-      await tabManager?.drainForShutdownSnapshot();
-    } catch {
-      // Teardown reports drain failures; identity persistence must still be attempted.
-    }
-    try {
-      await this.flushTabWorkspaceState(tabManager, tabStatePersistence);
-    } catch {
-      // The storage boundary reports persistence failures. Teardown must still complete.
-    } finally {
-      this.finalizedTabWorkspaceState = this.pendingTabWorkspaceState
-        ?? this.captureTabWorkspaceState(tabManager, tabBar);
-      tabManager?.sealShutdownSnapshot();
-    }
+  prepareForPluginUnload(): Promise<void> {
+    return this.tabWorkspace.prepareForPluginUnload();
   }
 
   // ============================================
@@ -620,7 +458,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       onTabClose: (tabId) => {
         void this.handleTabClose(tabId);
       },
-      onTitleExpansionChanged: () => this.persistTabWorkspaceState(),
+      onTitleExpansionChanged: () => this.tabWorkspace.persist(),
     });
 
     const navActionsEl = wrapper.createDiv({ cls: 'claudian-input-nav-actions' });
@@ -683,14 +521,14 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   private async activateOrCreateDraftTab(): Promise<void> {
     const activeTab = this.tabManager?.getActiveTab();
     if (activeTab?.conversationId === null) {
-      activeTab.dom.inputEl.focus();
+      activeTab.composer.focus();
       return;
     }
 
     const draftTab = this.findMostRecentUnboundTab();
     if (draftTab) {
       await this.tabManager?.switchToTab(draftTab.id);
-      this.tabManager?.getTab(draftTab.id)?.dom.inputEl.focus();
+      this.tabManager?.getTab(draftTab.id)?.composer.focus();
       return;
     }
 
@@ -709,8 +547,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
 
   refreshMessageTimestamps(): void {
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      tab.renderer.refreshMessageTimestamps();
-      tab.controllers.sideChatController.runtime?.renderer.refreshMessageTimestamps();
+      tab.refreshMessageTimestamps();
     }
   }
 
@@ -766,62 +603,40 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     }
 
     if (this.activeInputTabId && this.activeInputTabId !== activeTab.id) {
-      const previousTab = this.tabManager?.getTab(this.activeInputTabId);
-      if (previousTab) {
-        previousTab.dom.contentEl.appendChild(previousTab.dom.inputComposerEl);
-      }
+      this.tabManager?.getTab(this.activeInputTabId)?.placement.restoreComposer();
     }
 
     if (this.activeInputTabId === activeTab.id) {
-      if (activeTab.dom.inputComposerEl.parentElement !== inputSlotEl) {
-        this.moveComposerRetainingFocus(activeTab, inputSlotEl);
+      if (!activeTab.placement.isComposerPlacedIn(inputSlotEl)) {
+        activeTab.placement.placeComposer(inputSlotEl);
       }
       return;
     }
 
     inputSlotEl.empty();
-    this.moveComposerRetainingFocus(activeTab, inputSlotEl);
+    activeTab.placement.placeComposer(inputSlotEl);
     this.activeInputTabId = activeTab.id;
   }
 
-  private moveComposerRetainingFocus(tab: AssembledTabRuntime, slotEl: HTMLElement): void {
-    const composerEl = tab.dom.inputComposerEl;
-    const ownerDocument = composerEl.ownerDocument;
-    const hadFocus = ownerDocument ? composerEl.contains(ownerDocument.activeElement) : false;
-    slotEl.appendChild(composerEl);
-    // Reparenting drops focus; restore it only when the composer already owned it.
-    if (hadFocus && !composerEl.contains(ownerDocument.activeElement)) tab.dom.inputEl.focus();
-  }
-
   /** Moves the active transcript into zen history, restoring any other placement first. */
-  private updateZenTranscriptLocation(activeTab: AssembledTabRuntime | null): void {
+  private updateZenTranscriptLocation(activeTab: ChatTab | null): void {
     const historyEl = this.zenSlots?.historyEl ?? null;
     const placed = this.zenTranscript;
-    if (placed && (
-      placed.tab !== activeTab
-      || placed.tab.dom.messagesWrapperEl.parentElement !== historyEl
-    )) {
-      placed.anchorEl.replaceWith(placed.tab.dom.messagesWrapperEl);
+    if (placed && (placed.tab !== activeTab || !placed.placement.isPlacedIn(historyEl))) {
+      placed.placement.restore();
       this.zenTranscript = null;
     }
     if (!historyEl || !activeTab || this.zenTranscript) return;
 
-    const wrapperEl = activeTab.dom.messagesWrapperEl;
-    const anchorEl = wrapperEl.ownerDocument.createComment('claudian-zen-transcript');
-    wrapperEl.replaceWith(anchorEl);
-    historyEl.appendChild(wrapperEl);
-    this.zenTranscript = { tab: activeTab, anchorEl };
+    this.zenTranscript = { tab: activeTab, placement: activeTab.placement.placeTranscript(historyEl) };
   }
 
   private restoreActiveInputToTabContent(): void {
-    this.sideChatChipController?.setCollapsedHost(null);
-    this.sideChatChipController = null;
+    this.sideChatChipTab?.placement.setSideChatChipHost(null);
+    this.sideChatChipTab = null;
     if (!this.activeInputTabId) return;
 
-    const activeInputTab = this.tabManager?.getTab(this.activeInputTabId);
-    if (activeInputTab) {
-      activeInputTab.dom.contentEl.appendChild(activeInputTab.dom.inputComposerEl);
-    }
+    this.tabManager?.getTab(this.activeInputTabId)?.placement.restoreComposer();
     this.activeInputSlotEl?.empty();
     this.activeInputTabId = null;
   }
@@ -858,7 +673,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     const tab = await this.tabManager?.createTab();
     if (!tab) return null;
     this.updateTabBarVisibility();
-    tab.dom.inputEl.focus();
+    tab.composer.focus();
     return tab;
   }
 
@@ -1021,6 +836,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     navigationMode: 'history' | 'sessions' = 'history',
   ): void {
     const isArchiveView = this.isArchiveSessionView;
+    const lifecycle = () => this.plugin.conversationLifecycle;
     this.sessionBrowser.renderHistoryDropdown(container, {
       onSelectConversation: (id) => navigationMode === 'sessions'
         ? this.openSessionConversation(id)
@@ -1065,19 +881,11 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       sessionActionMode: isArchiveView ? 'archived' : 'active',
       historyHeaderLabel: isArchiveView ? 'Archived' : 'Sessions',
       allowConversationSelection: !isArchiveView,
-      onSetConversationPinned: (id: string, isPinned: boolean) => (
-        this.setConversationPinned(id, isPinned)
-      ),
-      onSetConversationArchived: (id: string, isArchived: boolean) => (
-        this.setConversationArchived(id, isArchived)
-      ),
-      onSetConversationsArchived: (ids: readonly string[]) => (
-        this.archiveConversations(ids)
-      ),
-      onSetConversationsPinned: (ids: readonly string[], isPinned: boolean) => (
-        this.setConversationsPinned(ids, isPinned)
-      ),
-      onRestoreConversations: (ids: readonly string[]) => this.plugin.restoreConversations(ids),
+      onSetConversationPinned: (id: string, isPinned: boolean) => lifecycle().setPinned([id], isPinned),
+      onSetConversationArchived: (id: string, isArchived: boolean) => lifecycle().setArchived(id, isArchived),
+      onSetConversationsArchived: (ids: readonly string[]) => lifecycle().archive(ids),
+      onSetConversationsPinned: (ids: readonly string[], isPinned: boolean) => lifecycle().setPinned(ids, isPinned),
+      onRestoreConversations: (ids: readonly string[]) => lifecycle().restore(ids),
       onAssignConversationToDevice: async (id: string) => {
         await this.plugin.assignConversationToCurrentDevice(id);
       },
@@ -1300,11 +1108,11 @@ export class ClaudianView extends ItemView implements ZenModeSource {
         parent.insertBefore(this.sideChatChipHostEl, useNavRow ? parent.firstChild : this.inputNavRowHostEl);
       }
     }
-    const controller = this.tabManager?.getActiveTab()?.controllers?.sideChatController ?? null;
-    if (this.sideChatChipController !== controller) this.sideChatChipController?.setCollapsedHost(null);
-    this.sideChatChipController = controller;
+    const chipTab = this.tabManager?.getActiveTab() ?? null;
+    if (this.sideChatChipTab !== chipTab) this.sideChatChipTab?.placement.setSideChatChipHost(null);
+    this.sideChatChipTab = chipTab;
     // Zen provides its own chip slot; the wide layout keeps the chip inside the composer.
-    controller?.setCollapsedHost(
+    chipTab?.placement.setSideChatChipHost(
       this.zenSlots?.sideChatChipEl ?? (this.isWideSessionLayout ? null : this.sideChatChipHostEl),
     );
   }
@@ -1345,10 +1153,10 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       if (!this.contentExists(contentPath)) {
         throw new Error('Linked content is no longer available');
       }
-      tab.ui.linkedContentController.selectExplicit(contentPath);
+      tab.linkedContent.selectExplicit(contentPath);
       this.updateTabBarVisibility();
       if (this.tabManager.getActiveTabId() === tab.id) {
-        tab.dom.inputEl.focus();
+        tab.composer.focus();
       }
     } catch (error) {
       await this.tabManager.closeTab(tab.id).catch(() => false);
@@ -1357,13 +1165,11 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   }
 
   private handleWorkspaceFileOpen(file: TFile | null): void {
-    this.tabManager?.getActiveTab()?.ui.linkedContentController
-      .handleActiveFileChanged(file, true);
+    this.tabManager?.getActiveTab()?.linkedContent.handleActiveFileChanged(file, true);
   }
 
   private handleLinkedContentMetadataChanged(file: TFile | null): void {
-    this.tabManager?.getActiveTab()?.ui.linkedContentController
-      .handleActiveFileMetadataChanged(file);
+    this.tabManager?.getActiveTab()?.linkedContent.handleActiveFileMetadataChanged(file);
   }
 
   handleLinkedContentRenamed(
@@ -1372,23 +1178,19 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     includeDescendants: boolean,
   ): void {
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      tab.ui.linkedContentController.handleRenamed(
-        oldPath,
-        newPath,
-        includeDescendants,
-      );
+      tab.linkedContent.handleRenamed(oldPath, newPath, includeDescendants);
     }
   }
 
   handleLinkedContentDeleted(path: string, includeDescendants: boolean): void {
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      tab.ui.linkedContentController.handleDeleted(path, includeDescendants);
+      tab.linkedContent.handleDeleted(path, includeDescendants);
     }
   }
 
   handleLinkedContentCreated(path: string): void {
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      tab.ui.linkedContentController.handleCreated(path);
+      tab.linkedContent.handleCreated(path);
     }
   }
 
@@ -1580,31 +1382,6 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     list.insertBefore(control, list.firstChild);
   }
 
-  private async setConversationPinned(
-    conversationId: string,
-    isPinned: boolean,
-  ): Promise<void> {
-    await this.plugin.setConversationPinned(conversationId, isPinned);
-    if (isPinned) this.retainProvisionalTabs([conversationId]);
-  }
-
-  private async setConversationsPinned(
-    conversationIds: readonly string[],
-    isPinned: boolean,
-  ): Promise<void> {
-    await this.plugin.setConversationsPinned(conversationIds, isPinned);
-    if (isPinned) this.retainProvisionalTabs(conversationIds);
-  }
-
-  private retainProvisionalTabs(conversationIds: readonly string[]): void {
-    const ids = new Set(conversationIds);
-    for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      if (tab.conversationId && ids.has(tab.conversationId)) {
-        commitProvisionalTab(tab);
-      }
-    }
-  }
-
   private async setLinkedContentPinned(
     contentPath: string,
     isPinned: boolean,
@@ -1629,90 +1406,20 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     }
   }
 
-  private async setConversationArchived(
-    conversationId: string,
-    isArchived: boolean,
-  ): Promise<void> {
-    if (!isArchived) {
-      await this.plugin.setConversationArchived(conversationId, false);
-      return;
-    }
-
-    if (!await this.closeTabsBeforeArchive(conversationId)) {
-      new Notice('Running sessions cannot be archived');
-      return;
-    }
-    await this.plugin.setConversationArchived(conversationId, true);
-  }
-
-  private async archiveConversations(conversationIds: readonly string[]): Promise<void> {
-    const closedIds: string[] = [];
-    for (const conversationId of conversationIds) {
-      if (await this.closeTabsBeforeArchive(conversationId)) closedIds.push(conversationId);
-    }
-    // A session can be reopened while later tabs close; recheck at each archive write.
-    const archivedCount = closedIds.length === 0
-      ? 0
-      : await this.plugin.archiveConversationsIf(
-          closedIds,
-          conversation => this.getOpenConversationTabs(conversation.id).length === 0,
-        );
-    const skippedCount = conversationIds.length - archivedCount;
-    if (skippedCount > 0) {
-      new Notice(`Skipped ${skippedCount} ${skippedCount === 1 ? 'session that is' : 'sessions that are'} open or running`);
-    }
-  }
-
-  /** Closes every tab showing the session; returns false without closing anything when it is running. */
-  private async closeTabsBeforeArchive(conversationId: string): Promise<boolean> {
-    const openTabs = this.getOpenConversationTabs(conversationId);
-    // Closing would interrupt foreground turns, background work, async subagents, and side chats.
-    if (openTabs.some(({ manager, tab }) => manager.isTabWorking(tab.id))) {
-      return false;
-    }
-
-    for (const { manager, tab } of openTabs) {
-      const didClose = await manager.closeTab(tab.id);
-      if (!didClose) {
-        throw new Error('Failed to close the session before archiving');
-      }
-    }
-    return true;
-  }
-
-  private getOpenConversationTabs(conversationId: string): Array<{
-    manager: ChatTabManagerHost;
-    tab: TabProviderCatalogContext;
-  }> {
-    const managers = new Set(
-      this.plugin.getAllViews()
-        .map(view => view.getTabManager())
-        .filter((manager): manager is NonNullable<typeof manager> => manager !== null),
-    );
-    if (this.tabManager) {
-      managers.add(this.tabManager);
-    }
-
-    const openTabs: Array<{ manager: ChatTabManagerHost; tab: TabProviderCatalogContext }> = [];
-    for (const manager of managers) {
-      for (const tab of manager.getTabIdentities()) {
-        if (tab.conversationId === conversationId) {
-          openTabs.push({ manager, tab });
-        }
-      }
-    }
-    return openTabs;
-  }
-
   private retainPinnedProvisionalTabs(): void {
-    for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      if (
-        tab.conversationId
-        && this.plugin.getConversationSummary(tab.conversationId)?.isPinned
-      ) {
-        commitProvisionalTab(tab);
-      }
-    }
+    this.retainTabsWhere(conversationId => (
+      this.plugin.getConversationSummary(conversationId)?.isPinned === true
+    ));
+  }
+
+  /** Retains, through the tab manager, every tab bound to a session matching `predicate`. */
+  private retainTabsWhere(predicate: (conversationId: string) => boolean): void {
+    const tabManager = this.tabManager;
+    if (!tabManager) return;
+    const tabIds = tabManager.getTabIdentities()
+      .filter(tab => tab.conversationId !== null && predicate(tab.conversationId))
+      .map(tab => tab.id);
+    if (tabIds.length > 0) tabManager.retainTabs(tabIds);
   }
 
   private createSessionHeaderAction(
@@ -2032,8 +1739,8 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     this.stopSessionSidebarResize();
     this.cancelSessionSidebarRendering();
     this.retainPinnedProvisionalTabs();
-    const cleanup = this.getProvisionalTabCleanup();
-    const transition = this.completeSingleLayoutTransition(cleanup, requestRevision);
+    this.compactLayoutRequestRevision = requestRevision;
+    const transition = this.completeSingleLayoutTransition(requestRevision);
     this.pendingSessionLayoutTransition = transition;
     void transition.finally(() => {
       if (this.pendingSessionLayoutTransition === transition) {
@@ -2042,29 +1749,16 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     });
   }
 
-  private getProvisionalTabCleanup(): Promise<void> {
-    if (this.pendingProvisionalTabCleanup) {
-      return this.pendingProvisionalTabCleanup;
-    }
-
-    const cleanup = (this.tabManager?.discardProvisionalTabs() ?? Promise.resolve())
-      .catch(() => {
+  private async completeSingleLayoutTransition(requestRevision: number): Promise<void> {
+    // The tab manager owns preview cleanup and joins overlapping requests to one run.
+    try {
+      await this.tabManager?.discardProvisionalTabs();
+    } catch {
+      // Overlapping requests share one cleanup, so only the latest one reports its failure.
+      if (requestRevision === this.compactLayoutRequestRevision) {
         new Notice('Failed to close the provisional session preview');
-      });
-    this.pendingProvisionalTabCleanup = cleanup;
-    void cleanup.finally(() => {
-      if (this.pendingProvisionalTabCleanup === cleanup) {
-        this.pendingProvisionalTabCleanup = null;
       }
-    });
-    return cleanup;
-  }
-
-  private async completeSingleLayoutTransition(
-    cleanup: Promise<void>,
-    requestRevision: number,
-  ): Promise<void> {
-    await cleanup;
+    }
     if (
       requestRevision !== this.sessionLayoutRequestRevision
       || this.requestedWideSessionLayout
@@ -2120,12 +1814,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
 
   private retainPinnedConversationTab(conversationId: string): void {
     if (!this.plugin.getConversationSummary(conversationId)?.isPinned) return;
-
-    for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      if (tab.conversationId === conversationId) {
-        commitProvisionalTab(tab);
-      }
-    }
+    this.retainTabsWhere(id => id === conversationId);
   }
 
   private cancelHistoryRendering(): void {
@@ -2218,7 +1907,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
         return false;
       }
       // Menus also consume Escape in the capture phase; this covers a keymap that sees it first.
-      if (activeTab?.ui.toolbarMenus.closeOpenMenu()) return false;
+      if (activeTab?.composer.closeOpenMenu()) return false;
       if (!e.defaultPrevented && activeTab) {
         cancelSelectedDestinationTurn(activeTab);
       }
@@ -2264,182 +1953,8 @@ export class ClaudianView extends ItemView implements ZenModeSource {
 
     // Click outside to close the unified composer dropdown.
     this.registerDomEvent(activeDocument, 'click', (e) => {
-      const activeTab = this.tabManager?.getActiveTab();
-      if (activeTab) {
-        const dropdown = activeTab.ui.composerDropdown;
-        if (!dropdown.containsElement(e.target as Node) && e.target !== activeTab.dom.inputEl) {
-          dropdown.hide();
-        }
-      }
+      this.tabManager?.getActiveTab()?.composer.dismissDropdownFor(e.target);
     });
-  }
-
-  // ============================================
-  // Current tab persistence
-  // ============================================
-
-  private isViewLifecycleCurrent(revision: number): boolean {
-    return this.viewShutdownStarted !== true
-      && (this.viewLifecycleRevision ?? 0) === revision;
-  }
-
-  private async initializeTabWorkspace(
-    lifecycleRevision: number,
-    reopeningState?: AppTabManagerState,
-  ): Promise<void> {
-    if (
-      !this.isViewLifecycleCurrent(lifecycleRevision)
-      || !this.tabManager
-      || this.initializedTabWorkspaceLifecycleRevision === lifecycleRevision
-    ) return;
-
-    const currentInitialization = this.tabWorkspaceInitialization;
-    if (currentInitialization?.lifecycleRevision === lifecycleRevision) {
-      await currentInitialization.promise;
-      return;
-    }
-
-    const promise = (async () => {
-      let deliveryRevision: number;
-      do {
-        deliveryRevision = this.tabWorkspaceDeliveryRevision ?? 0;
-        await this.restoreTabWorkspace(lifecycleRevision, reopeningState);
-        if (!this.isViewLifecycleCurrent(lifecycleRevision)) return;
-      } while (deliveryRevision !== (this.tabWorkspaceDeliveryRevision ?? 0));
-
-      this.initializedTabWorkspaceLifecycleRevision = lifecycleRevision;
-      this.syncProviderBrandColor();
-      this.updateInputLocation();
-      this.updateTabBar();
-      this.notifyConversationNavigationChanged();
-      this.startSessionSidebarLayoutObserver();
-      this.notifyZenPresentationChanged();
-    })();
-    this.tabWorkspaceInitialization = { lifecycleRevision, promise };
-
-    try {
-      await promise;
-    } finally {
-      if (this.tabWorkspaceInitialization?.promise === promise) {
-        this.tabWorkspaceInitialization = null;
-      }
-    }
-  }
-
-  private async restoreTabWorkspace(
-    lifecycleRevision = this.viewLifecycleRevision ?? 0,
-    reopeningState?: AppTabManagerState,
-  ): Promise<void> {
-    const tabManager = this.tabManager;
-    if (!tabManager) return;
-
-    const deliveryRevision = this.tabWorkspaceDeliveryRevision ?? 0;
-    let usedLegacyState = false;
-    let persistedState = reopeningState
-      ?? (this.hasTabWorkspaceViewState ? this.pendingTabWorkspaceState : null);
-    if (reopeningState === undefined && !this.hasTabWorkspaceViewState) {
-      persistedState = await this.plugin.claimLegacyTabManagerState();
-      usedLegacyState = persistedState !== null;
-    }
-    if (
-      !this.isViewLifecycleCurrent(lifecycleRevision)
-      || this.tabManager !== tabManager
-      || deliveryRevision !== (this.tabWorkspaceDeliveryRevision ?? 0)
-    ) return;
-
-    const restorePlan = resolveTabRestorePlan(persistedState, {
-      restoreTabsOnStartup: reopeningState === undefined
-        ? this.plugin.settings.restoreTabsOnStartup
-        : true,
-      isDualPane: this.isWideSessionLayout,
-    });
-    this.pendingTabWorkspaceState = restorePlan;
-    const conversationIds = Array.from(new Set(
-      restorePlan.openTabs
-        .map(({ conversationId }) => conversationId)
-        .filter((id): id is string => id !== null),
-    ));
-    if (conversationIds.length > 0) {
-      await this.plugin.ensureConversationMetadataLoaded(conversationIds);
-    }
-    if (
-      !this.isViewLifecycleCurrent(lifecycleRevision)
-      || this.tabManager !== tabManager
-      || deliveryRevision !== (this.tabWorkspaceDeliveryRevision ?? 0)
-    ) return;
-
-    // restoreState admits the complete shell set synchronously before activation awaits.
-    // From this handoff onward live membership, not later Obsidian deliveries, owns it.
-    this.admittedTabWorkspaceLifecycleRevision = lifecycleRevision;
-    try {
-      await tabManager.restoreState(restorePlan);
-    } catch (error) {
-      if (this.isViewLifecycleCurrent(lifecycleRevision)) {
-        this.admittedTabWorkspaceLifecycleRevision = -1;
-      }
-      throw error;
-    }
-    if (
-      !this.isViewLifecycleCurrent(lifecycleRevision)
-      || this.tabManager !== tabManager
-      || deliveryRevision !== (this.tabWorkspaceDeliveryRevision ?? 0)
-    ) return;
-
-    this.tabBar?.setExpandedTitleTabIds(restorePlan.expandedTitleTabIds ?? []);
-    this.pendingTabWorkspaceState = null;
-
-    if (usedLegacyState) {
-      try {
-        await this.flushTabWorkspaceState(tabManager, this.tabStatePersistence);
-        await this.plugin.completeLegacyTabManagerStateMigration();
-      } catch {
-        // Keep the legacy snapshot available when view-state persistence fails.
-      }
-    } else {
-      this.persistTabWorkspaceState(tabManager, this.tabStatePersistence);
-    }
-  }
-
-  private persistTabWorkspaceState(
-    tabManager: Pick<TabManager, 'getPersistedState'> | null = this.tabManager,
-    persistence: Pick<TabStatePersistenceCoordinator, 'update'> | null = this.tabStatePersistence,
-  ): void {
-    if (!persistence || this.pendingTabWorkspaceState) return;
-    const state = this.captureTabWorkspaceState(tabManager);
-    if (!state) return;
-    persistence.update(state);
-  }
-
-  private captureTabWorkspaceState(
-    tabManager: Pick<TabManager, 'getPersistedState'> | null,
-    tabBar: Pick<TabBar, 'getExpandedTitleTabIds'> | null = this.tabBar,
-  ): AppTabManagerState | null {
-    const state = tabManager?.getPersistedState();
-    if (!state) return null;
-    if (state.openTabs.length > 0 && state.activeTabId === null) return null;
-
-    const openTabIds = new Set(state.openTabs.map(tab => tab.tabId));
-    const expandedTitleTabIds = (tabBar?.getExpandedTitleTabIds() ?? [])
-      .filter(tabId => openTabIds.has(tabId));
-    return {
-      ...state,
-      ...(expandedTitleTabIds.length > 0 ? { expandedTitleTabIds } : {}),
-    };
-  }
-
-  /** Flushes the open working set before view or plugin shutdown. */
-  async flushTabWorkspaceState(
-    tabManager: Pick<TabManager, 'getPersistedState'> | null = this.tabManager,
-    persistence: Pick<TabStatePersistenceCoordinator, 'flush' | 'update'> | null = (
-      this.tabStatePersistence
-    ),
-  ): Promise<void> {
-    if (!persistence) return;
-    const state = this.pendingTabWorkspaceState
-      ?? this.captureTabWorkspaceState(tabManager);
-    if (!state) return;
-    persistence.update(state);
-    await persistence.flush();
   }
 
   // ============================================
@@ -2447,40 +1962,26 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   // ============================================
 
   /** Gets the currently active tab. */
-  getActiveTab(): AssembledTabRuntime | null {
+  getActiveTab(): ChatTab | null {
     return this.tabManager?.getActiveTab() ?? null;
   }
 
   /** Focuses the active tab's composer. */
   focusActiveInput(): void {
-    this.tabManager?.getActiveTab()?.dom.inputEl.focus();
+    this.tabManager?.getActiveTab()?.composer.focus();
   }
 
   /** Appends text to the active composer without sending it. */
   appendToActiveInput(text: string): boolean {
     const activeTab = this.tabManager?.getActiveTab();
-    const inputEl = activeTab?.dom.inputEl;
-    if (!inputEl || !text) return false;
-
-    commitProvisionalTab(activeTab);
-
-    const currentValue = inputEl.value;
-    const separator = currentValue && !/\s$/.test(currentValue) ? ' ' : '';
-    if (inputEl.replaceText) inputEl.replaceText(currentValue.length, currentValue.length, `${separator}${text}`);
-    else inputEl.value = `${currentValue}${separator}${text}`;
-
-    const cursorPosition = inputEl.value.length;
-    inputEl.selectionStart = cursorPosition;
-    inputEl.selectionEnd = cursorPosition;
-
-    const EventConstructor = inputEl.ownerDocument.defaultView?.Event ?? Event;
-    inputEl.dispatchEvent(new EventConstructor('input', { bubbles: true }));
-    inputEl.focus();
-    return true;
+    if (!activeTab || !text) return false;
+    // Typing into a preview retains it, so appending does too.
+    this.tabManager?.retainTabs([activeTab.id]);
+    return activeTab.composer.appendText(text);
   }
 
   notifyConversationListChanged(): void {
-    for (const tab of this.tabManager?.getAllTabs() ?? []) tab.ui.fileContextManager.getMentionSource().invalidate();
+    for (const tab of this.tabManager?.getAllTabs() ?? []) tab.composer.invalidateSessionMentions();
     this.updateHistoryDropdown();
   }
 
@@ -2498,10 +1999,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   // ============================================
 
   getZenRuntime(): AssembledTabRuntime | null {
-    if (
-      this.viewShutdownStarted === true
-      || this.initializedTabWorkspaceLifecycleRevision !== (this.viewLifecycleRevision ?? 0)
-    ) return null;
+    if (!this.tabWorkspace.isReady) return null;
     return this.tabManager?.getActiveTab() ?? null;
   }
 

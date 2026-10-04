@@ -1,8 +1,15 @@
 import type { DiffLine, DiffStats } from './diff';
 
-/** Diff data for Write/Edit tool operations (pre-computed from SDK structuredPatch). */
+/** Diff data for Write/Edit tool operations. */
 export interface ToolDiffData {
   filePath: string;
+  diffLines: DiffLine[];
+  stats: DiffStats;
+}
+
+/** A file diff decoded from a provider's native result; consumers resolve a missing path from the tool input. */
+export interface ToolResultDiff {
+  filePath?: string;
   diffLines: DiffLine[];
   stats: DiffStats;
 }
@@ -59,6 +66,21 @@ export interface ToolProviderPayload {
   rawInput?: unknown;
   rawName?: string;
   rawOutput?: unknown;
+}
+
+/**
+ * Structured result data a provider decodes from its native payload at the core boundary.
+ * Each provider fills only what its native result carries; renderers fall back to the
+ * result text otherwise. Field meanings match the same-named `ToolCallInfo` fields.
+ */
+export interface ToolResultDetails {
+  resultFormat?: 'plain';
+  diff?: ToolResultDiff;
+  webSearchResults?: WebSearchResultItem[];
+  webSearchSummary?: string;
+  resultImages?: ToolResultImage[];
+  scriptToolCalls?: ScriptToolCallItem[];
+  resolvedAnswers?: AskUserAnswers;
 }
 
 /** Tool call tracking with status and result. */

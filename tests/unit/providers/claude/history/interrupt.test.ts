@@ -1,7 +1,7 @@
 import {
   isCompactionCanceledStderr,
   isInterruptSignalText,
-} from '@/utils/interrupt';
+} from '@/providers/claude/history/interrupt';
 
 describe('interrupt utils', () => {
   describe('isCompactionCanceledStderr', () => {

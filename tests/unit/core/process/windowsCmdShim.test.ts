@@ -1,6 +1,6 @@
 import {
   resolveWindowsCmdShimSpawnSpec,
-} from '@/utils/windowsCmdShim';
+} from '@/core/process/windowsCmdShim';
 
 describe('windowsCmdShim', () => {
   const originalPlatform = process.platform;

@@ -1,19 +1,25 @@
+import {
+  diffFromReplacements,
+  diffFromStructuredPatch,
+  diffFromUnifiedText,
+  parseApplyPatchDiffs,
+  resolveToolDiffData,
+} from '@/core/tools/toolDiff';
 import type { DiffLine, StructuredPatchHunk } from '@/core/types/diff';
 import type { ToolCallInfo } from '@/core/types/tools';
-import { extractDiffData, parseApplyPatchDiffs } from '@/utils/diff';
 
 /** Helper to create a ToolCallInfo for testing. */
 function makeToolCall(name: string, input: Record<string, unknown>): ToolCallInfo {
   return { id: 'test-id', name, input, status: 'completed', isExpanded: false };
 }
 
-describe('extractDiffData', () => {
+describe('resolveToolDiffData with decoded result diffs', () => {
   it('should convert a simple insertion hunk', () => {
     const hunks: StructuredPatchHunk[] = [{
       oldStart: 1, oldLines: 2, newStart: 1, newLines: 3,
       lines: [' line1', '+inserted', ' line2'],
     }];
-    const extracted = extractDiffData({ structuredPatch: hunks }, makeToolCall('Edit', { file_path: 'test.ts' }));
+    const extracted = resolveToolDiffData(diffFromStructuredPatch(hunks), makeToolCall('Edit', { file_path: 'test.ts' }));
     const result = extracted!.diffLines;
     expect(extracted!.stats).toEqual({ added: 1, removed: 0 });
 
@@ -28,7 +34,7 @@ describe('extractDiffData', () => {
       oldStart: 1, oldLines: 3, newStart: 1, newLines: 2,
       lines: [' line1', '-deleted', ' line2'],
     }];
-    const extracted = extractDiffData({ structuredPatch: hunks }, makeToolCall('Edit', { file_path: 'test.ts' }));
+    const extracted = resolveToolDiffData(diffFromStructuredPatch(hunks), makeToolCall('Edit', { file_path: 'test.ts' }));
     const result = extracted!.diffLines;
     expect(extracted!.stats).toEqual({ added: 0, removed: 1 });
 
@@ -43,7 +49,7 @@ describe('extractDiffData', () => {
       oldStart: 1, oldLines: 3, newStart: 1, newLines: 3,
       lines: [' line1', '-old', '+new', ' line3'],
     }];
-    const extracted = extractDiffData({ structuredPatch: hunks }, makeToolCall('Edit', { file_path: 'test.ts' }));
+    const extracted = resolveToolDiffData(diffFromStructuredPatch(hunks), makeToolCall('Edit', { file_path: 'test.ts' }));
     const result = extracted!.diffLines;
     expect(extracted!.stats).toEqual({ added: 1, removed: 1 });
 
@@ -65,7 +71,7 @@ describe('extractDiffData', () => {
         lines: [' ctx2', '-old2', '+new2'],
       },
     ];
-    const extracted = extractDiffData({ structuredPatch: hunks }, makeToolCall('Edit', { file_path: 'test.ts' }));
+    const extracted = resolveToolDiffData(diffFromStructuredPatch(hunks), makeToolCall('Edit', { file_path: 'test.ts' }));
     const result = extracted!.diffLines;
     expect(extracted!.stats).toEqual({ added: 2, removed: 2 });
 
@@ -85,7 +91,7 @@ describe('extractDiffData', () => {
       oldStart: 0, oldLines: 0, newStart: 1, newLines: 3,
       lines: ['+line1', '+line2', '+line3'],
     }];
-    const extracted = extractDiffData({ structuredPatch: hunks }, makeToolCall('Edit', { file_path: 'test.ts' }));
+    const extracted = resolveToolDiffData(diffFromStructuredPatch(hunks), makeToolCall('Edit', { file_path: 'test.ts' }));
     const result = extracted!.diffLines;
     expect(extracted!.stats).toEqual({ added: 3, removed: 0 });
 
@@ -101,7 +107,7 @@ describe('extractDiffData', () => {
       oldStart: 1, oldLines: 1, newStart: 1, newLines: 1,
       lines: ['-return "bar";', '+return `bar`;'],
     }];
-    const extracted = extractDiffData({ structuredPatch: hunks }, makeToolCall('Edit', { file_path: 'test.ts' }));
+    const extracted = resolveToolDiffData(diffFromStructuredPatch(hunks), makeToolCall('Edit', { file_path: 'test.ts' }));
     const result = extracted!.diffLines;
     expect(extracted!.stats).toEqual({ added: 1, removed: 1 });
 
@@ -114,7 +120,7 @@ describe('extractDiffData', () => {
       oldStart: 1, oldLines: 1, newStart: 1, newLines: 1,
       lines: ['-こんにちは', '+さようなら'],
     }];
-    const extracted = extractDiffData({ structuredPatch: hunks }, makeToolCall('Edit', { file_path: 'test.ts' }));
+    const extracted = resolveToolDiffData(diffFromStructuredPatch(hunks), makeToolCall('Edit', { file_path: 'test.ts' }));
     const result = extracted!.diffLines;
     expect(extracted!.stats).toEqual({ added: 1, removed: 1 });
 
@@ -127,7 +133,7 @@ describe('extractDiffData', () => {
       oldStart: 5, oldLines: 4, newStart: 5, newLines: 5,
       lines: [' ctx', '-del1', '-del2', '+ins1', '+ins2', '+ins3', ' ctx2'],
     }];
-    const extracted = extractDiffData({ structuredPatch: hunks }, makeToolCall('Edit', { file_path: 'test.ts' }));
+    const extracted = resolveToolDiffData(diffFromStructuredPatch(hunks), makeToolCall('Edit', { file_path: 'test.ts' }));
     const result = extracted!.diffLines;
     expect(extracted!.stats).toEqual({ added: 3, removed: 2 });
 
@@ -151,22 +157,20 @@ describe('extractDiffData', () => {
       { type: 'equal', text: 'line2', oldLineNum: 2, newLineNum: 2 },
     ]],
   ])('returns zero changes for %s', (_name, lines, expected) => {
-    expect(extractDiffData({ structuredPatch: [{
+    expect(resolveToolDiffData(diffFromStructuredPatch([{
       oldStart: 1, oldLines: lines.length, newStart: 1, newLines: lines.length, lines,
-    }] }, makeToolCall('Edit', { file_path: 'test.ts' }))).toEqual({
+    }]), makeToolCall('Edit', { file_path: 'test.ts' }))).toEqual({
       filePath: 'test.ts', diffLines: expected, stats: { added: 0, removed: 0 },
     });
   });
 
-  it('returns ToolDiffData from valid toolUseResult with structuredPatch', () => {
+  it('takes a path-less result diff path from the tool input', () => {
     const toolCall = makeToolCall('Edit', { file_path: 'src/foo.ts' });
-    const toolUseResult = {
-      structuredPatch: [
-        { oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-old', '+new'] },
-      ],
-    };
+    const diff = diffFromStructuredPatch([
+      { oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-old', '+new'] },
+    ]);
 
-    const result = extractDiffData(toolUseResult, toolCall);
+    const result = resolveToolDiffData(diff, toolCall);
 
     expect(result).toBeDefined();
     expect(result!.filePath).toBe('src/foo.ts');
@@ -176,23 +180,18 @@ describe('extractDiffData', () => {
     expect(result!.stats).toEqual({ added: 1, removed: 1 });
   });
 
-  it('returns ToolDiffData from Pi result details.diff', () => {
+  it('decodes unified diff text with file headers', () => {
     const toolCall = makeToolCall('Edit', { file_path: 'src/pi.ts' });
-    const toolUseResult = {
-      content: [{ text: 'Edited src/pi.ts', type: 'text' }],
-      details: {
-        diff: [
-          '--- a/src/pi.ts',
-          '+++ b/src/pi.ts',
-          '@@ -2,2 +2,2 @@',
-          ' keep',
-          '-old',
-          '+new',
-        ].join('\n'),
-      },
-    };
+    const diff = diffFromUnifiedText([
+      '--- a/src/pi.ts',
+      '+++ b/src/pi.ts',
+      '@@ -2,2 +2,2 @@',
+      ' keep',
+      '-old',
+      '+new',
+    ].join('\n'));
 
-    const result = extractDiffData(toolUseResult, toolCall);
+    const result = resolveToolDiffData(diff, toolCall);
 
     expect(result).toBeDefined();
     expect(result!.filePath).toBe('src/pi.ts');
@@ -219,7 +218,7 @@ describe('extractDiffData', () => {
       '',
     ].join('\n');
 
-    const result = extractDiffData({ diff }, toolCall);
+    const result = resolveToolDiffData(diffFromUnifiedText(diff), toolCall);
 
     expect(result!.diffLines).toEqual([
       { type: 'delete', text: '-- old comment', oldLineNum: 1 },
@@ -235,11 +234,10 @@ describe('extractDiffData', () => {
       file_path: 'src/acp.ts',
     });
 
-    const result = extractDiffData({
-      filePath: 'src/acp.ts',
+    const result = resolveToolDiffData(diffFromReplacements([{
       newText: 'new first\nnew second',
       oldText: 'old first\nold second',
-    }, toolCall);
+    }], 'src/acp.ts'), toolCall);
 
     expect(result).toMatchObject({
       filePath: 'src/acp.ts',
@@ -263,16 +261,14 @@ describe('extractDiffData', () => {
       file_path: 'src/cleared.ts',
     });
 
-    const created = extractDiffData({
-      filePath: 'src/created.ts',
+    const created = resolveToolDiffData(diffFromReplacements([{
       newText: 'created',
       oldText: '',
-    }, createCall);
-    const cleared = extractDiffData({
-      filePath: 'src/cleared.ts',
+    }], 'src/created.ts'), createCall);
+    const cleared = resolveToolDiffData(diffFromReplacements([{
       newText: '',
       oldText: 'removed',
-    }, deleteCall);
+    }], 'src/cleared.ts'), deleteCall);
 
     expect(created?.stats).toEqual({ added: 1, removed: 0 });
     expect(created?.diffLines).toEqual([
@@ -284,64 +280,47 @@ describe('extractDiffData', () => {
     ]);
   });
 
-  it('uses SDK filePath when present in toolUseResult', () => {
+  it('prefers the result diff path over the tool input path', () => {
     const toolCall = makeToolCall('Write', { file_path: 'input/path.ts' });
-    const toolUseResult = {
-      filePath: 'sdk/override.ts',
-      structuredPatch: [
-        { oldStart: 1, oldLines: 0, newStart: 1, newLines: 1, lines: ['+hello'] },
-      ],
-    };
+    const diff = diffFromStructuredPatch([
+      { oldStart: 1, oldLines: 0, newStart: 1, newLines: 1, lines: ['+hello'] },
+    ], 'sdk/override.ts');
 
-    const result = extractDiffData(toolUseResult, toolCall);
+    const result = resolveToolDiffData(diff, toolCall);
 
     expect(result).toBeDefined();
     expect(result!.filePath).toBe('sdk/override.ts');
   });
 
-  it('falls back to diffFromToolInput when toolUseResult is empty object', () => {
+  it('falls back to the tool input when the result has no diff', () => {
     const toolCall = makeToolCall('Write', {
       file_path: 'src/new.ts',
       content: 'line1\nline2',
     });
 
-    const result = extractDiffData({}, toolCall);
+    const result = resolveToolDiffData(undefined, toolCall);
 
-    // {} has no structuredPatch → falls back to diffFromToolInput for Write
     expect(result).toBeDefined();
     expect(result!.diffLines).toHaveLength(2);
     expect(result!.stats).toEqual({ added: 2, removed: 0 });
   });
 
-  it('falls back to diffFromToolInput when structuredPatch is empty array', () => {
+  it('falls back to the tool input when the structured patch has no hunks', () => {
     const toolCall = makeToolCall('Edit', {
       file_path: 'src/x.ts',
       old_string: 'old',
       new_string: 'new',
     });
 
-    const result = extractDiffData({ structuredPatch: [] }, toolCall);
+    const result = resolveToolDiffData(diffFromStructuredPatch([]), toolCall);
 
     expect(result).toBeDefined();
     expect(result!.filePath).toBe('src/x.ts');
     expect(result!.diffLines).toHaveLength(2);
   });
-
-  it('falls back to diffFromToolInput when toolUseResult is a string', () => {
-    const toolCall = makeToolCall('Edit', {
-      file_path: 'src/y.ts',
-      old_string: 'foo',
-      new_string: 'bar',
-    });
-
-    const result = extractDiffData('some string result', toolCall);
-
-    expect(result).toBeDefined();
-    expect(result!.filePath).toBe('src/y.ts');
-  });
 });
 
-describe('extractDiffData input fallback', () => {
+describe('resolveToolDiffData input fallback', () => {
   it('returns delete + insert lines for Edit with valid old_string/new_string', () => {
     const toolCall = makeToolCall('Edit', {
       file_path: 'src/a.ts',
@@ -349,7 +328,7 @@ describe('extractDiffData input fallback', () => {
       new_string: 'newline1\nnewline2\nnewline3',
     });
 
-    const result = extractDiffData(undefined, toolCall);
+    const result = resolveToolDiffData(undefined, toolCall);
 
     expect(result).toBeDefined();
     expect(result!.filePath).toBe('src/a.ts');
@@ -369,7 +348,7 @@ describe('extractDiffData input fallback', () => {
       ],
     });
 
-    const result = extractDiffData(undefined, toolCall);
+    const result = resolveToolDiffData(undefined, toolCall);
 
     expect(result).toBeDefined();
     expect(result!.filePath).toBe('src/pi.ts');
@@ -384,7 +363,7 @@ describe('extractDiffData input fallback', () => {
       content: 'created',
     });
 
-    const result = extractDiffData(undefined, toolCall);
+    const result = resolveToolDiffData(undefined, toolCall);
 
     expect(result).toBeDefined();
     expect(result!.filePath).toBe('src/pi-new.ts');
@@ -397,7 +376,7 @@ describe('extractDiffData input fallback', () => {
       content: 'created',
     });
 
-    const result = extractDiffData(undefined, toolCall);
+    const result = resolveToolDiffData(undefined, toolCall);
 
     expect(result).toBeDefined();
     expect(result!.filePath).toBe('src/pi-new.ts');
@@ -409,7 +388,7 @@ describe('extractDiffData input fallback', () => {
       content: 'a\nb\nc',
     });
 
-    const result = extractDiffData(undefined, toolCall);
+    const result = resolveToolDiffData(undefined, toolCall);
 
     expect(result).toBeDefined();
     expect(result!.diffLines).toHaveLength(3);
@@ -424,7 +403,7 @@ describe('extractDiffData input fallback', () => {
       new_string: null,
     });
 
-    const result = extractDiffData(undefined, toolCall);
+    const result = resolveToolDiffData(undefined, toolCall);
 
     expect(result).toBeUndefined();
   });
@@ -435,7 +414,7 @@ describe('extractDiffData input fallback', () => {
       content: { data: 'not a string' },
     });
 
-    const result = extractDiffData(undefined, toolCall);
+    const result = resolveToolDiffData(undefined, toolCall);
 
     expect(result).toBeUndefined();
   });
@@ -443,7 +422,7 @@ describe('extractDiffData input fallback', () => {
   it('returns undefined for unknown tool name', () => {
     const toolCall = makeToolCall('Bash', { command: 'ls' });
 
-    const result = extractDiffData(undefined, toolCall);
+    const result = resolveToolDiffData(undefined, toolCall);
 
     expect(result).toBeUndefined();
   });

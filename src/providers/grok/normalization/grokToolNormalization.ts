@@ -1,3 +1,4 @@
+import { diffFromStructuredPatch } from '@/core/tools/toolDiff';
 import { stringifyUnknown } from '@/utils/stringify';
 
 import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
@@ -25,8 +26,14 @@ import {
   TOOL_WORKFLOW,
   TOOL_WRITE,
 } from '../../../core/tools/toolNames';
-import type { AskUserAnswers, ToolResultImage, WebSearchResultItem } from '../../../core/types';
-import type { SDKToolUseResult, StructuredPatchHunk } from '../../../core/types/diff';
+import { normalizeToolResultDetails } from '../../../core/tools/toolResultDetails';
+import type {
+  AskUserAnswers,
+  ToolResultDetails,
+  ToolResultImage,
+  WebSearchResultItem,
+} from '../../../core/types';
+import type { StructuredPatchHunk } from '../../../core/types/diff';
 import type { ACPToolRawNameProvenance } from '../../acp/ACPToolStreamAdapter';
 import { GROK_SUBAGENT_LIFECYCLE_TOOL_NAMES } from './grokLifecycleToolNames';
 
@@ -73,11 +80,6 @@ export interface GrokToolProviderPayload {
   rawInput?: unknown;
   rawName: string;
   rawOutput?: unknown;
-}
-
-export interface GrokNormalizedToolUseResult extends SDKToolUseResult {
-  answers?: AskUserAnswers;
-  providerPayload: GrokToolProviderPayload;
 }
 
 export interface GrokRawToolNameResolution {
@@ -162,40 +164,35 @@ export function buildGrokToolProviderPayload(value: {
   };
 }
 
-export function normalizeGrokToolUseResult(
+/** Decodes a native Grok result into the neutral result fields. */
+export function normalizeGrokToolResultDetails(
   rawName: string,
   input: Record<string, unknown>,
   rawOutput: unknown,
-  rawInput?: unknown,
-): GrokNormalizedToolUseResult {
-  const providerPayload = buildGrokToolProviderPayload({
-    rawInput,
-    rawName,
-    rawOutput,
-  });
-  const answers = normalizeGrokQuestionAnswers(rawName, input, rawOutput);
+): ToolResultDetails | undefined {
+  const resolvedAnswers = normalizeGrokQuestionAnswers(rawName, input, rawOutput);
   const output = isRecord(rawOutput) ? rawOutput : null;
   const edits = output?.type === 'SearchReplace' && isRecord(output.EditsApplied)
     ? output.EditsApplied
     : null;
   const structuredPatch = edits ? buildEditPatch(edits) : undefined;
+  const diff = structuredPatch && typeof edits?.absolute_path === 'string'
+    ? diffFromStructuredPatch(structuredPatch, edits.absolute_path)
+    : undefined;
   const webSearch = output?.type === 'WebSearch' ? output : null;
   const webSearchResults = webSearch ? buildCitationResults(webSearch.citations) : undefined;
   const webSearchSummary = webSearch && typeof webSearch.content === 'string' && webSearch.content.trim()
     ? webSearch.content
     : undefined;
   const resultImages = output ? readResultImages(output) : undefined;
-  return {
-    ...(answers ? { answers } : {}),
+  return normalizeToolResultDetails({
+    ...(resolvedAnswers ? { resolvedAnswers } : {}),
     ...(output?.type === 'ReadFile' && isRecord(output.FileContent) ? { resultFormat: 'plain' } : {}),
-    ...(structuredPatch && typeof edits?.absolute_path === 'string'
-      ? { filePath: edits.absolute_path, structuredPatch }
-      : {}),
+    ...(diff ? { diff } : {}),
     ...(webSearchResults ? { webSearchResults } : {}),
     ...(webSearchResults && webSearchSummary ? { webSearchSummary } : {}),
     ...(resultImages ? { resultImages } : {}),
-    providerPayload,
-  };
+  });
 }
 
 interface GrokToolUpdateFields {

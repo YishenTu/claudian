@@ -6,9 +6,7 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 describe('NOOP_TASK_RESULT_INTERPRETER', () => {
   it('preserves fallback status and does not interpret provider task payloads', () => {
     const payload = {
-      agentId: 'provider-owned-agent',
-      isAsync: true,
-      result: 'provider-owned-result',
+      rawOutput: { agentId: 'provider-owned-agent', isAsync: true, result: 'provider-owned-result' },
     };
 
     expect(NOOP_TASK_RESULT_INTERPRETER.interpretLaunch('Original output', false, payload))

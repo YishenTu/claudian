@@ -3,6 +3,7 @@ import * as path from 'node:path';
 
 import { Setting } from 'obsidian';
 
+import { normalizeConfiguredCLIPath } from '@/core/process/cliPath';
 import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
 import { GROK_PROVIDER_ICON } from '@/shared/icons';
@@ -22,7 +23,6 @@ import {
   renderProviderModelEnablementWarning,
 } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
-import { normalizeConfiguredCLIPath } from '../../../utils/path';
 import type { GrokWorkspaceServices } from '../app/GrokWorkspaceServices';
 import {
   getGrokProviderSettings,

@@ -138,6 +138,63 @@ describe('ClaudeExecutionEventNormalizer task tools', () => {
   });
 });
 
+describe('ClaudeExecutionEventNormalizer tool results', () => {
+  function completeTool(name: string, input: Record<string, unknown>, toolUseResult: unknown, content = 'done') {
+    const normalizer = new ClaudeExecutionEventNormalizer();
+    normalizer.normalize(msg({
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', id: 'tool-1', name, input }] },
+    }), 'requested');
+    const events = normalizer.normalize(msg({
+      type: 'user',
+      tool_use_result: toolUseResult,
+      message: { content: [{ type: 'tool_result', tool_use_id: 'tool-1', content }] },
+    }), 'requested');
+    const completed = events.find(event => event.type === 'output' && event.event.type === 'tool_completed');
+    if (completed?.type !== 'output' || completed.event.type !== 'tool_completed') throw new Error('Missing completion');
+    return completed.event;
+  }
+
+  it('decodes a native structured patch into the neutral result diff', () => {
+    const completed = completeTool('Edit', { file_path: 'notes/a.md', old_string: 'old', new_string: 'new' }, {
+      filePath: '/vault/notes/a.md',
+      oldString: 'old',
+      newString: 'new',
+      structuredPatch: [{ oldStart: 3, oldLines: 2, newStart: 3, newLines: 2, lines: [' keep', '-old', '+new'] }],
+    });
+
+    expect(completed.resultDetails).toEqual({
+      diff: {
+        filePath: '/vault/notes/a.md',
+        diffLines: [
+          { type: 'equal', text: 'keep', oldLineNum: 3, newLineNum: 3 },
+          { type: 'delete', text: 'old', oldLineNum: 4 },
+          { type: 'insert', text: 'new', newLineNum: 4 },
+        ],
+        stats: { added: 1, removed: 1 },
+      },
+    });
+    expect(completed.providerPayload).toBeUndefined();
+  });
+
+  it('decodes native question answers', () => {
+    const completed = completeTool('AskUserQuestion', { questions: [{ question: 'Color?' }] }, {
+      questions: [{ question: 'Color?' }],
+      answers: { 'Color?': 'Blue' },
+    });
+
+    expect(completed.resultDetails).toEqual({ resolvedAnswers: { 'Color?': 'Blue' } });
+  });
+
+  it('keeps a subagent result native for the task-result interpreter', () => {
+    const launch = { isAsync: true, status: 'async_launched', agentId: 'agent-1' };
+    const completed = completeTool('Agent', { description: 'Research', run_in_background: true }, launch, 'Launched');
+
+    expect(completed.providerPayload).toEqual({ rawOutput: launch });
+    expect(completed.resultDetails).toBeUndefined();
+  });
+});
+
 describe('ClaudeExecutionEventNormalizer api error messages', () => {
   const RESET_TEXT = "You've hit your session limit · resets 4:10pm (Europe/Berlin)";
 

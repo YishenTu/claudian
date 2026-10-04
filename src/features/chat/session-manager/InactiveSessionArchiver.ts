@@ -13,17 +13,33 @@ const AUTO_ARCHIVE_AFTER_DAYS: Record<SessionAutoArchiveAfter, number | null> = 
 
 type InactiveSessionArchiverHost = Pick<
   ChatFeatureHost,
-  'settings' | 'getConversationList' | 'getWorkspaceConversationIds' | 'archiveConversationsIf'
->;
+  'settings' | 'getConversationList' | 'getWorkspaceConversationIds'
+> & {
+  readonly conversationLifecycle: Pick<ChatFeatureHost['conversationLifecycle'], 'archiveIf'>;
+};
 
 /** Archives unpinned sessions that have been inactive past the configured threshold. */
 export class InactiveSessionArchiver {
   private tail: Promise<void> = Promise.resolve();
+  private disposed = false;
 
   constructor(
     private readonly host: InactiveSessionArchiverHost,
     private readonly now: () => Date = () => new Date(),
   ) {}
+
+  /** Starts a run from a trigger that cannot await it; failures surface as a notice. */
+  request(): void {
+    if (this.disposed) return;
+    void this.run().catch(() => {
+      new Notice('Failed to auto-archive inactive sessions');
+    });
+  }
+
+  /** Stops accepting triggers; a run already admitted finishes on its own. */
+  dispose(): void {
+    this.disposed = true;
+  }
 
   /** Serialized so overlapping triggers never archive from a stale list. */
   run(): Promise<void> {
@@ -53,7 +69,7 @@ export class InactiveSessionArchiver {
     if (candidateIds.length === 0) return;
 
     // Eligibility is rechecked at each write so pending pins or newly opened tabs win.
-    const archivedCount = await this.host.archiveConversationsIf(
+    const archivedCount = await this.host.conversationLifecycle.archiveIf(
       candidateIds,
       conversation => isEligible(conversation, this.host.getWorkspaceConversationIds()),
     );

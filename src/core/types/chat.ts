@@ -1,8 +1,7 @@
 import type { ProviderSelectionSnapshot, ProviderSessionReference } from '../execution/ProviderExecutionRequest';
 import type { ProviderCapabilities } from '../providers/types';
-import type { SDKToolUseResult } from './diff';
 import type { ProviderId } from './provider';
-import type { SubagentMode, ToolCallInfo, ToolProviderPayload } from './tools';
+import type { SubagentMode, ToolCallInfo, ToolProviderPayload, ToolResultDetails } from './tools';
 
 /** Fork origin reference: identifies the source session and checkpoint. */
 export interface ForkSource {
@@ -280,7 +279,7 @@ export type StreamChunk =
       content: string;
       isError?: boolean;
       isBlocked?: boolean;
-      toolUseResult?: SDKToolUseResult;
+      resultDetails?: ToolResultDetails;
       providerPayload?: ToolProviderPayload;
     }
   | {
@@ -289,7 +288,7 @@ export type StreamChunk =
       /** Text to append to the tool's result. */
       content: string;
       /** Latest structured snapshot of a running tool, replacing earlier ones. */
-      toolUseResult?: SDKToolUseResult;
+      resultDetails?: ToolResultDetails;
     }
   | {
       type: 'error';
@@ -311,7 +310,7 @@ export type StreamChunk =
       content: string;
       isError?: boolean;
       isBlocked?: boolean;
-      toolUseResult?: SDKToolUseResult;
+      resultDetails?: ToolResultDetails;
       providerPayload?: ToolProviderPayload;
     };
 

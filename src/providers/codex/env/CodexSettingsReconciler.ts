@@ -1,4 +1,5 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { parseEnvironmentVariables } from '@/core/process/env';
 
 import {
   createCLIPathFingerprintInputs,
@@ -11,7 +12,6 @@ import {
 } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
-import { parseEnvironmentVariables } from '../../../utils/env';
 import { codexModelPolicy } from '../CodexModelPolicy';
 import { resolveCodexModelSelection } from '../modelOptions';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '../settings';

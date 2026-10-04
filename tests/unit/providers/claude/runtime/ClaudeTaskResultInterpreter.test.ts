@@ -41,7 +41,7 @@ describe('ClaudeTaskResultInterpreter', () => {
     expect(interpreter.getOutputTaskId(undefined, running)).toBe('agent-1');
     expect(interpreter.interpretResult(running, false, { mode: 'async' }))
       .toMatchObject({ status: 'running' });
-    expect(interpreter.interpretResult('Unreliable error flag', true, { mode: 'async', agentId: 'agent-1' }, { status: 'completed', task: { result: 'Native answer' } }))
+    expect(interpreter.interpretResult('Unreliable error flag', true, { mode: 'async', agentId: 'agent-1' }, { rawOutput: { status: 'completed', task: { result: 'Native answer' } } }))
       .toEqual({ status: 'completed', result: 'Native answer' });
   });
 
@@ -85,7 +85,7 @@ describe('ClaudeTaskResultInterpreter', () => {
     // The SDK documents the structured report as free of the model-directed agentId/usage trailer.
     const report = ['Agent bookkeeping looks like this:', 'agentId: agent-1\n<usage>total_tokens: 5</usage>'];
     const result = new ClaudeTaskResultInterpreter().interpretResult(
-      'Model-facing text', false, { mode, agentId: 'agent-1' }, completedAgentOutput('agent-1', report));
+      'Model-facing text', false, { mode, agentId: 'agent-1' }, { rawOutput: completedAgentOutput('agent-1', report) });
 
     expect(result).toEqual({ status: 'completed', result: report.join('\n') });
   });
@@ -101,24 +101,24 @@ describe('ClaudeTaskResultInterpreter', () => {
     it('does not treat completed sync metadata with agentId as an async launch', () => {
       const interpreter = new ClaudeTaskResultInterpreter();
 
-      expect(interpreter.interpretLaunch('', false, {
+      expect(interpreter.interpretLaunch('', false, { rawOutput: {
         status: 'completed',
         agentId: 'agent-sync',
         content: [
           { type: 'text', text: 'Final sync result.' },
           { type: 'text', text: 'agentId: agent-sync' },
         ],
-      }).mode).toBe('sync');
+      } }).mode).toBe('sync');
     });
 
     it('treats explicit async launch markers as async', () => {
       const interpreter = new ClaudeTaskResultInterpreter();
 
-      expect(interpreter.interpretLaunch('', false, {
+      expect(interpreter.interpretLaunch('', false, { rawOutput: {
         isAsync: true,
         status: 'async_launched',
         agentId: 'agent-async',
-      }).mode).toBe('async');
+      } }).mode).toBe('async');
     });
   });
 });

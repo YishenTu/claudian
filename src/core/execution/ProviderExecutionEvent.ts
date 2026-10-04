@@ -1,9 +1,9 @@
 import type {
   CitationGroup,
-  SDKToolUseResult,
   SubagentInfo,
   SubagentProgress,
   ToolProviderPayload,
+  ToolResultDetails,
   TurnStats,
   UsageInfo,
 } from '../types';
@@ -142,7 +142,8 @@ export type ProviderToolOutputEvent = ProviderEventBase<
   ProviderToolIdentity & {
     readonly content: string;
     readonly isError?: boolean;
-    readonly toolUseResult?: SDKToolUseResult;
+    /** Latest structured snapshot of the running tool, replacing earlier ones. */
+    readonly resultDetails?: ToolResultDetails;
     readonly providerPayload?: ToolProviderPayload;
   };
 
@@ -155,7 +156,8 @@ export type ProviderToolCompletedEvent = ProviderEventBase<
     readonly isError?: boolean;
     /** Authoritative provider outcome; never infer this from result content. */
     readonly isBlocked?: boolean;
-    readonly toolUseResult?: SDKToolUseResult;
+    /** Structured result data the provider decoded from its native payload. */
+    readonly resultDetails?: ToolResultDetails;
     readonly providerPayload?: ToolProviderPayload;
   };
 
