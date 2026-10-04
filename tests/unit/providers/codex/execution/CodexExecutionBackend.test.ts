@@ -2532,6 +2532,7 @@ describe('CodexExecutionBackend', () => {
 
     expect(mockTransportRequest.mock.calls.map(call => call[0])).toEqual([
       'initialize',
+      'plugin/installed',
       'thread/fork',
       'thread/resume',
       'thread/rollback',

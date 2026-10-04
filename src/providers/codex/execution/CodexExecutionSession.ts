@@ -79,6 +79,7 @@ import { CodexDynamicToolRegistry } from '../runtime/CodexDynamicToolRegistry';
 import type { CodexLaunchSpec } from '../runtime/codexLaunchTypes';
 import { assertCodexModelAvailable } from '../runtime/CodexModelAvailability';
 import { CodexNotificationRouter } from '../runtime/CodexNotificationRouter';
+import { waitForCodexPluginReadiness } from '../runtime/CodexPluginReadiness';
 import {
   CodexRPCResponseError,
   CodexRPCTransport,
@@ -250,6 +251,7 @@ export class CodexExecutionSession
 
   private process: CodexAppServerProcess | null = null;
   private transport: CodexRPCTransport | null = null;
+  private pluginReadinessController: AbortController | null = null;
   private launchSpec: CodexLaunchSpec | null = null;
   private runtimeContext: CodexRuntimeContext | null = null;
   private dynamicToolRegistry = new CodexDynamicToolRegistry();
@@ -649,11 +651,14 @@ export class CodexExecutionSession
       }
       const transport = new CodexRPCTransport(process);
       this.transport = transport;
+      const readinessController = new AbortController();
+      this.pluginReadinessController = readinessController;
       transport.start();
       if (this.disposed || generation !== this.lifecycleGeneration) {
         throw new Error('Codex CLI execution session has been disposed.');
       }
       const initializeResult = await initializeCodexAppServerTransport(transport);
+      await waitForCodexPluginReadiness(transport, launchSpec.targetCwd, readinessController.signal);
       if (this.disposed || generation !== this.lifecycleGeneration) {
         throw new Error('Codex CLI execution session has been disposed.');
       }
@@ -1643,6 +1648,9 @@ export class CodexExecutionSession
 
   #disposeOwnedProcess(): Promise<void> {
     if (this.processDisposalPromise) return this.processDisposalPromise;
+
+    this.pluginReadinessController?.abort();
+    this.pluginReadinessController = null;
 
     const transport = this.transport;
     this.transport = null;

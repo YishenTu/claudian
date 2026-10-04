@@ -317,6 +317,7 @@ export interface SkillInterface {
 
 export interface SkillMetadata {
   name: string;
+  pluginId?: string | null;
   description: string;
   shortDescription?: string;
   interface?: SkillInterface;

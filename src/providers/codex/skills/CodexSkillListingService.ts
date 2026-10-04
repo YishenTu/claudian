@@ -10,6 +10,7 @@ import type {
   SkillScope,
   SkillsListResult,
 } from '../runtime/codexAppServerTypes';
+import { waitForCodexPluginReadiness } from '../runtime/CodexPluginReadiness';
 import { CodexRPCTransport } from '../runtime/CodexRPCTransport';
 import { createCodexRuntimeContext } from '../runtime/CodexRuntimeContext';
 
@@ -198,7 +199,7 @@ export class CodexSkillListingService implements CodexSkillListProvider {
 
   private async fetchSkills(
     forceReload: boolean,
-    signal?: AbortSignal,
+    signal: AbortSignal,
   ): Promise<SkillMetadata[]> {
     signal?.throwIfAborted();
     const launchSpec = await resolveCodexAppServerLaunchSpec(this.plugin, 'codex');
@@ -215,6 +216,8 @@ export class CodexSkillListingService implements CodexSkillListProvider {
       const initializeResult = await initializeCodexAppServerTransport(transport);
       signal?.throwIfAborted();
       createCodexRuntimeContext(launchSpec, initializeResult);
+      await waitForCodexPluginReadiness(transport, launchSpec.targetCwd, signal);
+      signal?.throwIfAborted();
       const result = await transport.request<SkillsListResult>('skills/list', {
         cwds: [launchSpec.targetCwd],
         ...(forceReload ? { forceReload: true } : {}),
