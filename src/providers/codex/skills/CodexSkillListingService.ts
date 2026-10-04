@@ -14,16 +14,6 @@ export interface CodexSkillListProvider {
   invalidate(): void;
 }
 
-interface CodexSkillListingServiceOptions {
-  transitionGate?: CodexMetadataTransitionGate;
-}
-
-interface ActiveSkillFetch {
-  readonly completion: Promise<void>;
-  readonly controller: AbortController;
-  resolveCompletion(): void;
-}
-
 const SKILL_SCOPE_PRIORITY: Record<SkillScope, number> = {
   repo: 0,
   user: 1,
@@ -58,20 +48,15 @@ export function getCodexSkillDescription(
 }
 
 export class CodexSkillListingService implements CodexSkillListProvider {
-  private pending: { generation: number; promise: Promise<SkillMetadata[]> } | null = null;
-  private readonly activeFetches = new Set<ActiveSkillFetch>();
-  private generation = 0;
+  private pending: Promise<SkillMetadata[]> | null = null;
+  private readonly activeFetches = new Map<AbortController, Promise<SkillMetadata[]>>();
   private readonly unsubscribe: () => void;
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
-  private readonly transitionGate: CodexMetadataTransitionGate;
+  private readonly transitionGate = new CodexMetadataTransitionGate();
 
-  constructor(
-    private readonly runtime: CodexAppServerRuntime,
-    options: CodexSkillListingServiceOptions = {},
-  ) {
+  constructor(private readonly runtime: CodexAppServerRuntime) {
     this.unsubscribe = runtime.onSkillsChanged(() => this.invalidate());
-    this.transitionGate = options.transitionGate ?? new CodexMetadataTransitionGate();
   }
 
   async listSkills(options?: {
@@ -87,58 +72,42 @@ export class CodexSkillListingService implements CodexSkillListProvider {
     if (this.disposed) return [];
     options?.signal?.throwIfAborted();
     if (options?.forceReload) {
-      const generation = ++this.generation;
-      return this.#startFetch(true, generation, options.signal);
+      this.invalidate();
+      return this.#startFetch(true, options.signal);
     }
 
     if (options?.signal) {
       // A caller may abort its own query without cancelling another consumer.
-      return this.#startFetch(false, this.generation, options.signal);
+      return this.#startFetch(false, options.signal);
     }
 
-    if (this.pending?.generation === this.generation) {
-      return this.pending.promise;
-    }
-
-    return this.#startFetch(false, this.generation);
+    return this.pending ?? this.#startFetch(false);
   }
 
   #startFetch(
     forceReload: boolean,
-    generation: number,
     signal?: AbortSignal,
   ): Promise<SkillMetadata[]> {
     const controller = new AbortController();
     const onAbort = (): void => controller.abort(signal?.reason);
     signal?.addEventListener('abort', onAbort, { once: true });
     if (signal?.aborted) onAbort();
-    let resolveCompletion!: () => void;
-    const entry: ActiveSkillFetch = {
-      completion: new Promise<void>((resolve) => {
-        resolveCompletion = resolve;
-      }),
-      controller,
-      resolveCompletion: () => resolveCompletion(),
-    };
-    this.activeFetches.add(entry);
-    const fetch = this.fetchSkills(forceReload, controller.signal);
-    const promise = fetch
+    const promise = this.fetchSkills(forceReload, controller.signal)
       .finally(() => {
         signal?.removeEventListener('abort', onAbort);
-        this.activeFetches.delete(entry);
-        entry.resolveCompletion();
-        if (this.pending?.promise === promise) {
+        this.activeFetches.delete(controller);
+        if (this.pending === promise) {
           this.pending = null;
         }
       });
+    this.activeFetches.set(controller, promise);
     if (!signal) {
-      this.pending = { generation, promise };
+      this.pending = promise;
     }
     return promise;
   }
 
   invalidate(): void {
-    this.generation++;
     this.pending = null;
   }
 
@@ -153,8 +122,8 @@ export class CodexSkillListingService implements CodexSkillListProvider {
   async quiesceForEnvironmentChange(): Promise<void> {
     this.invalidate();
     const active = [...this.activeFetches];
-    for (const entry of active) entry.controller.abort();
-    await Promise.all(active.map(entry => entry.completion));
+    for (const [controller] of active) controller.abort();
+    await Promise.allSettled(active.map(([, promise]) => promise));
   }
 
   dispose(): Promise<void> {

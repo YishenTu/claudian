@@ -73,14 +73,8 @@ import { CodexDynamicToolRegistry } from '../runtime/CodexDynamicToolRegistry';
 import type { CodexLaunchSpec } from '../runtime/codexLaunchTypes';
 import { assertCodexModelAvailable } from '../runtime/CodexModelAvailability';
 import { CodexNotificationRouter } from '../runtime/CodexNotificationRouter';
-import type {
-  CodexRPCTransport} from '../runtime/CodexRPCTransport';
-import {
-  CodexRPCResponseError
-} from '../runtime/CodexRPCTransport';
-import {
-  type CodexRuntimeContext,
-} from '../runtime/CodexRuntimeContext';
+import { CodexRPCResponseError, type CodexRPCTransport } from '../runtime/CodexRPCTransport';
+import type { CodexRuntimeContext } from '../runtime/CodexRuntimeContext';
 import type { CodexThreadScope } from '../runtime/CodexThreadScope';
 import {
   CODEX_WORKSPACE_DEPENDENCY_TOOL_NAME,
@@ -677,10 +671,6 @@ export class CodexExecutionSession
     this.detachConnectionListeners = () => { offExit(); offRetire(); };
   }
 
-  #claimThread(threadId: string): void {
-    this.threadScope?.claim(threadId);
-  }
-
   #releaseRetiredConnection(): void {
     if (this.connection?.isRetired() && !this.activeRun && !this.threadScope?.hasWork) {
       void this.#releaseConnection().catch(() => undefined);
@@ -1061,7 +1051,7 @@ export class CodexExecutionSession
     generation: number,
   ): Promise<CodexEnsuredThread> {
     this.currentRunToolPolicy = request.toolPolicy;
-    if (this.threadId) this.#claimThread(this.threadId);
+    if (this.threadId) this.threadScope!.claim(this.threadId);
     if (
       this.pendingFork
       && (this.pendingForkTarget !== undefined || !this.threadId)
@@ -1112,7 +1102,6 @@ export class CodexExecutionSession
       );
       this.#recordApprovalReviewer(result, policy.approvalsReviewer);
       this.subagents.seed(result.thread);
-      this.#claimThread(result.thread.id);
       this.loadedThreadId = result.thread.id;
       this.#setLoadedThreadSandbox(sandboxModeOf(result.sandbox));
       this.loadedThreadBaseInstructions = baseInstructions;
@@ -1159,7 +1148,6 @@ export class CodexExecutionSession
       },
     );
     this.#recordApprovalReviewer(result, policy.approvalsReviewer);
-    this.#claimThread(result.thread.id);
     this.loadedThreadId = result.thread.id;
     this.#setLoadedThreadSandbox(sandboxModeOf(result.sandbox));
     this.loadedThreadBaseInstructions = baseInstructions;
@@ -1365,7 +1353,6 @@ export class CodexExecutionSession
     run: CodexExecutionRun,
     target: CodexPendingForkTarget,
   ): void {
-    this.#claimThread(target.threadId);
     this.pendingForkTarget = target;
     this.threadId = target.threadId;
     this.sessionFilePath = target.sessionFilePath ?? null;

@@ -66,18 +66,20 @@ describe('CodexSkillListingService', () => {
     expect(fetchSkills).toHaveBeenCalledTimes(2);
   });
 
-  it('aborts and awaits held listings during environment changes', async () => {
+  it.each(['success', 'failure'])('aborts and awaits held listings that settle with %s during environment changes', async outcome => {
     const { service, fetchSkills } = createService();
     const staleSkills = [makeSkill('stale')];
     let resolveStale!: (skills: SkillMetadata[]) => void;
+    let rejectStale!: (error: Error) => void;
     let ownedSignal: AbortSignal | undefined;
     fetchSkills
       .mockImplementationOnce((_forceReload, signal) => {
         ownedSignal = signal;
-        return new Promise(resolve => { resolveStale = resolve; });
+        return new Promise((resolve, reject) => { resolveStale = resolve; rejectStale = reject; });
       })
       .mockResolvedValueOnce([makeSkill('fresh')]);
     const staleListing = service.listSkills();
+    const staleOutcome = staleListing.catch((error: unknown) => error);
     await waitForCondition(() => ownedSignal !== undefined);
 
     const quiesce = service.quiesceForEnvironmentChange();
@@ -89,8 +91,12 @@ describe('CodexSkillListingService', () => {
     expect(ownedSignal!.aborted).toBe(true);
     expect(quiesceSettled).toBe(false);
 
-    resolveStale(staleSkills);
-    await expect(staleListing).resolves.toEqual(staleSkills);
+    if (outcome === 'failure') {
+      rejectStale(new Error('Listing aborted'));
+    } else {
+      resolveStale(staleSkills);
+    }
+    await expect(staleOutcome).resolves.toEqual(outcome === 'failure' ? new Error('Listing aborted') : staleSkills);
     await quiesce;
 
     await expect(service.listSkills()).resolves.toEqual([makeSkill('fresh')]);
