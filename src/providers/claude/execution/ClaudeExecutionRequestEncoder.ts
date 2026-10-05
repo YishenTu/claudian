@@ -191,6 +191,11 @@ export class ClaudeExecutionRequestEncoder {
     } else if (sessionConfig.nativePersistence === 'enabled') {
       options.persistSession = true;
     }
+    if (resume.fork && options.persistSession === false) {
+      // An ephemeral fork runs beside its live parent. Without this marker Claude Code treats
+      // the parent's running background work as orphaned and tells the child it ended.
+      options.env = { ...options.env, CLAUDE_CODE_RESUME_SOURCE_ALIVE: '1' };
+    }
     if (request.configuration.reasoning === null) {
       delete options.thinking;
     }

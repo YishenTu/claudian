@@ -123,6 +123,9 @@ describe('Claude side-chat native child', () => {
     expect(native.launches.at(-1)).toMatchObject({ forkSession: true, resume: 'claude-source', resumeSessionAt: 'claude-assistant-1' });
     expect(native.prompts.at(-1)).toMatchObject({ context: ['claude-assistant-1'], sessionId: 'claude-child' });
     expect(native.launches.at(-1)?.persistSession).toBe(false);
+    // The parent process is still live, so the child must not report its background tasks as orphaned.
+    expect(native.launches.at(-1)?.env?.CLAUDE_CODE_RESUME_SOURCE_ALIVE).toBe('1');
+    expect(native.launches[0].env?.CLAUDE_CODE_RESUME_SOURCE_ALIVE).toBeUndefined();
 
     const second = await child!.send('Use A and B');
     expect(second.accepted).toBe(true);
