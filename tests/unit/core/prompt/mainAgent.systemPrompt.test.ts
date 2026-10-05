@@ -2,19 +2,6 @@ import { buildSystemPrompt } from '@/core/prompt/mainAgent';
 
 describe('systemPrompt', () => {
   describe('buildSystemPrompt', () => {
-    it('should produce identical output when dynamic sections are omitted or empty', () => {
-      const settings = {
-        mediaFolder: 'attachments',
-        customPrompt: 'Always be concise.',
-        vaultPath: '/vault',
-        userName: 'Alice',
-      };
-
-      expect(buildSystemPrompt(settings)).toBe(
-        buildSystemPrompt(settings, { dynamicSections: [] }),
-      );
-    });
-
     it('should retain the complete Claudian context with custom instructions', () => {
       const prompt = buildSystemPrompt(
         {

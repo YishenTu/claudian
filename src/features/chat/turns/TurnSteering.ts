@@ -2,8 +2,6 @@ import { Notice } from 'obsidian';
 
 import type { ProviderCapabilities } from '@/core/providers/types';
 import type { ChatMessage } from '@/core/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import { buildChatSystemInstructions, resolveChatDynamicSections } from '@/features/chat/execution/chatExecutionConfiguration';
 import type {
   ChatExecutionCoordinator,
   ChatTurnSubmission,
@@ -21,7 +19,6 @@ export interface PendingProviderUserMessage {
 }
 
 type PendingSteerProviderDisposition =
-  | 'preparing'
   | 'awaiting-result'
   | 'definitely-unsent'
   | 'accepted-awaiting-correlation'
@@ -49,7 +46,6 @@ export interface ProviderEchoClaim {
 }
 
 export interface TurnSteeringDeps {
-  plugin: ChatFeatureHost;
   state: ChatState;
   turns: Pick<TurnCoordinator, 'isResponding'>;
   getExecutionCoordinator: () => ChatExecutionCoordinator | null;
@@ -110,7 +106,7 @@ export class TurnSteering {
       },
       submissionId: submission.submissionId,
       message: queuedMessage,
-      providerDisposition: 'preparing',
+      providerDisposition: 'awaiting-result',
       retryState: 'blocked',
       uiState: 'visible',
     };
@@ -118,22 +114,12 @@ export class TurnSteering {
     this.deps.onVisibleSteerChanged();
 
     try {
-      const dynamicSections = await resolveChatDynamicSections(this.deps.plugin);
-      if (signal?.aborted || state.currentConversationId !== conversationId
-        || this.deps.getExecutionCoordinator() !== coordinator
-        || !this.#isRegistered(pending) || this.deps.canStartTurn?.() === false
+      if (signal?.aborted || this.deps.canStartTurn?.() === false
         || state.cancelRequested || state.isSwitchingConversation || state.isResettingToNewChat || state.isRewinding) {
         pending.providerDisposition = 'definitely-unsent';
         return pending;
       }
-      pending.providerDisposition = 'awaiting-result';
-      const outcome = await coordinator.steer({
-        ...submission,
-        configuration: {
-          ...submission.configuration,
-          systemInstructions: buildChatSystemInstructions(dynamicSections),
-        },
-      }, signal);
+      const outcome = await coordinator.steer(submission, signal);
       if (outcome.delivery === 'accepted') {
         pending.message.onDelivery?.(true);
         pending.providerDisposition = 'accepted-awaiting-correlation';
@@ -144,7 +130,7 @@ export class TurnSteering {
         return pending;
       }
       // A provider event can confirm acceptance while the RPC is awaiting its result.
-      if ((pending.providerDisposition as PendingSteerProviderDisposition) === 'accepted-awaiting-correlation') {
+      if ((pending.providerDisposition) === 'accepted-awaiting-correlation') {
         return pending;
       }
       if (outcome.delivery === 'not-sent') {
@@ -236,8 +222,7 @@ export class TurnSteering {
   }
 
   async claimProviderEcho(nativeUserMessageId: string | undefined): Promise<ProviderEchoClaim> {
-    const current = this.current;
-    const pending = current?.providerDisposition === 'preparing' ? null : current;
+    const pending = this.current;
     const settle = () => {
       if (pending?.correlationState === 'settled') this.release(pending);
     };

@@ -993,7 +993,7 @@ describe('GrokExecutionBackend', () => {
     ]);
   });
 
-  it('keeps the full Grok prompt replacement when adding provider-default dynamic sections', async () => {
+  it('sends the full Grok prompt replacement for provider-default instructions', async () => {
     const native = new FakeNativeConnection();
     const host = {
       ...createGrokHost(),
@@ -1012,10 +1012,7 @@ describe('GrokExecutionBackend', () => {
       ...base,
       configuration: {
         ...base.configuration,
-        systemInstructions: {
-          dynamicSections: ['## Additional context\nRuntime guidance.'],
-          kind: 'provider-default',
-        },
+        systemInstructions: { kind: 'provider-default' },
       },
     };
 
@@ -1028,8 +1025,6 @@ describe('GrokExecutionBackend', () => {
     expect(systemPrompt).toContain('Use `bash: date`');
     expect(systemPrompt).toContain('## Vault Media');
     expect(systemPrompt).toContain('Keep the shared instruction.');
-    expect(systemPrompt).toContain('## Additional context\nRuntime guidance.');
-    expect(systemPrompt.match(/## Additional context/g)).toHaveLength(1);
   });
 
   it('bootstraps canonical history only when creating a new native session', async () => {
@@ -2189,10 +2184,7 @@ describe('GrokExecutionBackend', () => {
       ...base,
       configuration: {
         ...base.configuration,
-        systemInstructions: {
-          dynamicSections: ['## Additional context\nFork runtime guidance.'],
-          kind: 'provider-default',
-        },
+        systemInstructions: { kind: 'provider-default' },
       },
     };
     const events = await collect(session.execute(request).events);
@@ -2206,9 +2198,7 @@ describe('GrokExecutionBackend', () => {
     expect(native.loadRequests).toEqual([
       expect.objectContaining({
         _meta: expect.objectContaining({
-          systemPromptOverride: expect.stringContaining(
-            '## Additional context\nFork runtime guidance.',
-          ),
+          systemPromptOverride: expect.stringContaining('## Runtime Context'),
         }),
         sessionId: 'session-forked',
       }),

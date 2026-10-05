@@ -15,17 +15,6 @@ import { buildTabRuntimePorts } from '@/features/chat/tabs/runtime/TabRuntimePor
 
 afterEach(releaseSideChatHarnesses);
 
-it('passes global dynamic instructions to side chat execution', async () => {
-  const dynamicSections = ['Use the active workspace context.'];
-  const harness = createHarness({ getMainAgentDynamicSystemPromptSections: async () => dynamicSections });
-  const { started } = await startSideChat(harness);
-  expect(harness.backend.latest.requests[0].configuration.systemInstructions).toEqual({
-    kind: 'provider-default', dynamicSections,
-  });
-  harness.backend.latest.complete();
-  await started;
-});
-
 it('delivers an admitted prompt to the child even when the panel collapses during preparation', async () => {
   const harness = createHarness();
   const started = harness.controller.handleCommandSubmission('Explore B', []);

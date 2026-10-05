@@ -157,7 +157,7 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
       finalizeCurrentThinkingBlock: jest.fn(),
       handleStreamChunk: jest.fn(),
       subagents: { releaseManaged: jest.fn() },
-      thinkingIndicator: { hide: jest.fn(), show: jest.fn(), resume: jest.fn() },
+      thinkingIndicator: { hide: jest.fn(), show: jest.fn() },
     },
     selections: new ComposerSelections(selectionSources),
     getInputEl: () => input,
@@ -192,11 +192,6 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
       inlinePrompts: new InlineInteractionPrompts({
         getPromptParentEl: () => getInputContainerEl().parentElement,
         getSuppressedEl: getInputContainerEl,
-        onBeforeShow: () => {
-          const generation = state.streamGeneration;
-          deps.streamController.thinkingIndicator.hide();
-          return () => deps.streamController.thinkingIndicator.resume(generation);
-        },
       }),
     });
   }

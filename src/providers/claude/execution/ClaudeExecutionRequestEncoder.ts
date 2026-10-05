@@ -130,10 +130,6 @@ export class ClaudeExecutionRequestEncoder {
         customPrompt: settings.systemPrompt,
         vaultPath: sessionConfig.vaultWorkingDirectory,
         userName: settings.userName,
-      }, {
-        dynamicSections: request.configuration.systemInstructions.dynamicSections
-          ? [...request.configuration.systemInstructions.dynamicSections]
-          : undefined,
       });
     const promptSuggestions = Boolean(
       request.configuration.promptSuggestions && claudeSettings.promptSuggestions,

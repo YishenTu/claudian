@@ -1,7 +1,8 @@
 import type { ProviderTurnEventScope } from '@/core/execution';
 import type { ChatMessage, StreamChunk } from '@/core/types';
-import { isStandaloneTaskNotification, type MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { getNotificationPredecessor, recordResponseContinuation } from '@/features/chat/rendering/NotificationBoundaries';
+import { isStandaloneTaskNotification } from '@/features/chat/rendering/ResponseLayout';
 import type { ChatState } from '@/features/chat/state/ChatState';
 import type { StreamController } from '@/features/chat/turns/StreamController';
 

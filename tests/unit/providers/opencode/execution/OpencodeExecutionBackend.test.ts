@@ -854,10 +854,10 @@ describe('OpencodeExecutionBackend', () => {
     ]);
   });
 
-  it('reconnects when provider-default dynamic system sections change', async () => {
+  it('reconnects when explicit system instructions change', async () => {
     const harness = createHarness();
     const execute = async (
-      dynamicSections: readonly string[],
+      instructions: string,
       expectedKernelCount: number,
       expectedPromptCount: number,
     ): Promise<void> => {
@@ -865,10 +865,7 @@ describe('OpencodeExecutionBackend', () => {
       const run = harness.session.execute(createRequest({
         configuration: {
           ...base.configuration,
-          systemInstructions: {
-            dynamicSections,
-            kind: 'provider-default',
-          },
+          systemInstructions: { kind: 'explicit', instructions },
         },
       }));
       await waitForCondition(() => harness.kernels.length === expectedKernelCount);
@@ -878,22 +875,16 @@ describe('OpencodeExecutionBackend', () => {
       await collect(run.events);
     };
 
-    await execute(['dynamic-a'], 1, 1);
-    await execute(['dynamic-a'], 1, 2);
-    await execute(['dynamic-b'], 2, 1);
+    await execute('instructions-a', 1, 1);
+    await execute('instructions-a', 1, 2);
+    await execute('instructions-b', 2, 1);
 
     expect(harness.kernels.map(kernel => kernel.connectCalls[0])).toEqual([
       expect.objectContaining({
-        systemInstructions: {
-          dynamicSections: ['dynamic-a'],
-          kind: 'provider-default',
-        },
+        systemInstructions: { kind: 'explicit', instructions: 'instructions-a' },
       }),
       expect.objectContaining({
-        systemInstructions: {
-          dynamicSections: ['dynamic-b'],
-          kind: 'provider-default',
-        },
+        systemInstructions: { kind: 'explicit', instructions: 'instructions-b' },
       }),
     ]);
   });

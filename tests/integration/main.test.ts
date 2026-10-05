@@ -240,11 +240,7 @@ describe('ClaudianPlugin', () => {
 
   it('publishes committed presentation settings to every view after persistence', async () => {
     await plugin.onload();
-    const views = [0, 1].map(() => ({
-      refreshMessageTimestamps: jest.fn(), refreshDualPaneLayout: jest.fn(),
-      updateHiddenCommands: jest.fn(), refreshModelSelector: jest.fn(),
-      notifyConversationListChanged: jest.fn(),
-    }));
+    const views = createPublishedViews();
     const viewsSpy = jest.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue(views as never);
     const zenReconcile = jest.spyOn(ZenModeController.prototype, 'reconcile');
     let finish!: () => void;
@@ -259,8 +255,6 @@ describe('ClaudianPlugin', () => {
         settings.showMessageTimestamps = !settings.showMessageTimestamps;
         settings.enableDualPane = !settings.enableDualPane;
         settings.hiddenCommands = ['test-command'];
-        settings.sessionManagerOrganization = 'linked-content';
-        settings.sessionManagerSort = 'created';
         settings.customContextLimits = { test: 1000 };
         settings.enableZenMode = !settings.enableZenMode;
       });
@@ -272,7 +266,9 @@ describe('ClaudianPlugin', () => {
       finish();
       await change;
       for (const view of views) {
-        for (const refresh of Object.values(view)) expect(refresh).toHaveBeenCalledTimes(1);
+        const { notifyConversationListChanged, ...presentationRefreshes } = view;
+        for (const refresh of Object.values(presentationRefreshes)) expect(refresh).toHaveBeenCalledTimes(1);
+        expect(notifyConversationListChanged).not.toHaveBeenCalled();
       }
       expect(zenReconcile).toHaveBeenCalledTimes(1);
       persist.mockRejectedValueOnce(new Error('disk unavailable'));
@@ -289,6 +285,35 @@ describe('ClaudianPlugin', () => {
     } finally {
       viewsSpy.mockRestore();
       zenReconcile.mockRestore();
+      persist.mockRestore();
+    }
+  });
+
+  function createPublishedViews() {
+    return [0, 1].map(() => ({
+      refreshMessageTimestamps: jest.fn(), refreshDualPaneLayout: jest.fn(),
+      updateHiddenCommands: jest.fn(), refreshModelSelector: jest.fn(),
+      notifyConversationListChanged: jest.fn(),
+    }));
+  }
+
+  it.each([
+    ['organization', (settings: ClaudianSettings) => { settings.sessionManagerOrganization = 'linked-content'; }],
+    ['sort', (settings: ClaudianSettings) => { settings.sessionManagerSort = 'created'; }],
+  ])('refreshes every view\'s session list when only session %s changes', async (_name, mutation) => {
+    await plugin.onload();
+    const views = createPublishedViews();
+    const viewsSpy = jest.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue(views as never);
+    const persist = jest.spyOn(storageOf(plugin), 'saveClaudianSettings').mockResolvedValueOnce(undefined);
+    try {
+      await chatHostOf(plugin).mutateSettings(mutation);
+      for (const view of views) {
+        const { notifyConversationListChanged, ...presentationRefreshes } = view;
+        expect(notifyConversationListChanged).toHaveBeenCalledTimes(1);
+        for (const refresh of Object.values(presentationRefreshes)) expect(refresh).not.toHaveBeenCalled();
+      }
+    } finally {
+      viewsSpy.mockRestore();
       persist.mockRestore();
     }
   });

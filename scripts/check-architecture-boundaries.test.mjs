@@ -284,7 +284,7 @@ test('the shared FeatureHost contract does not depend on chat', () => {
   const contract = fs.readFileSync(featureHostFile, 'utf8');
   assert.doesNotMatch(
     contract,
-    /\b(?:getView|getAllViews|chatModelSelection|getMainAgentDynamicSystemPromptSections)\b/,
+    /\b(?:getView|getAllViews|chatModelSelection)\b/,
   );
 });
 

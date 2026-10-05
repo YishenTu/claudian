@@ -10,7 +10,7 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderId, TitleGenerationService } from '@/core/providers/types';
 import type { AskUserAnswers, ChatMessage, ImageAttachment, ToolCallInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import { buildChatExecutionConfiguration, resolveChatDynamicSections } from '@/features/chat/execution/chatExecutionConfiguration';
+import { buildChatExecutionConfiguration } from '@/features/chat/execution/chatExecutionConfiguration';
 import { deliverAsyncQuestion } from '@/features/chat/interactions/asyncQuestionDelivery';
 import { AsyncQuestionPrompts } from '@/features/chat/interactions/AsyncQuestionPrompts';
 import { InlineInteractionPrompts } from '@/features/chat/interactions/InlineInteractionPrompts';
@@ -370,15 +370,11 @@ export class SideChatRuntime {
     let failed = false;
     let completed = false;
     try {
-      const dynamicSections = await resolveChatDynamicSections(this.deps.plugin);
-      if (this.#disposed || this.state.cancelRequested) return;
       this.#activeDelivery = submission.onDelivery;
       const result = await this.#session.execute({
         assertBeforeHandoff: submission.assertBeforeHandoff,
         ...(submission.context ? { context: submission.context } : {}),
-        configuration: buildChatExecutionConfiguration(
-          this.#settings, this.deps.plugin.getSessionSnapshotDirectory(), dynamicSections,
-        ),
+        configuration: buildChatExecutionConfiguration(this.#settings, this.deps.plugin.getSessionSnapshotDirectory()),
         conversationHistory: [
           ...this.deps.source.messages,
           ...this.state.messages.slice(0, -2),

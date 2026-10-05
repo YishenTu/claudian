@@ -9,7 +9,7 @@ import type { ChatSettings } from '@/features/chat/ChatSettings';
 import type { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
 import type { ConversationController } from '@/features/chat/conversation/ConversationController';
 import type { FirstTurnAdmission } from '@/features/chat/conversation/FirstTurnAdmission';
-import { buildChatExecutionConfiguration, resolveChatDynamicSections } from '@/features/chat/execution/chatExecutionConfiguration';
+import { buildChatExecutionConfiguration } from '@/features/chat/execution/chatExecutionConfiguration';
 import {
   type ChatExecutionCoordinator,
   ChatExecutionPreHandoffError,
@@ -231,9 +231,6 @@ export class MainTurnExecution {
       return;
     }
 
-    const dynamicSystemPromptSections = await resolveChatDynamicSections(this.deps.plugin);
-    if (this.#retainUnsentTurnOnClose(signal, assistantMsg.id) || restoreCancelledInput()) return;
-
     try {
       userMsg.content = admittedTurnRequest.text;
       userMsg.linkedContentPath = admittedTurnRequest.linkedContentPath;
@@ -243,7 +240,6 @@ export class MainTurnExecution {
         admittedTurnRequest,
         userMsg,
         assistantMsg,
-        dynamicSystemPromptSections,
       );
       if (turn.assertBeforeHandoff) submission.assertBeforeHandoff = turn.assertBeforeHandoff;
       const result = await coordinator.execute(submission, signal);
@@ -386,7 +382,6 @@ export class MainTurnExecution {
     request: ChatTurnRequest,
     user?: ChatMessage,
     assistant?: ChatMessage,
-    dynamicSystemPromptSections: readonly string[] = [],
   ): ChatTurnSubmission {
     const settings = this.deps.getSettings();
     const images = [...(request.images ?? [])];
@@ -394,9 +389,7 @@ export class MainTurnExecution {
     return {
       canonicalText: request.text,
       configuration: {
-        ...buildChatExecutionConfiguration(
-          settings, this.deps.plugin.getSessionSnapshotDirectory(), dynamicSystemPromptSections,
-        ),
+        ...buildChatExecutionConfiguration(settings, this.deps.plugin.getSessionSnapshotDirectory()),
         promptSuggestions: true,
       },
       context: {

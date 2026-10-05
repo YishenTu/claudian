@@ -253,6 +253,23 @@ describe('SideChatSession', () => {
     await harness.session.dispose();
   });
 
+  it('withdraws a request whose handoff guard fails while fork preparation is pending', async () => {
+    const preparation = deferred<Record<string, unknown>>();
+    const preparing = jest.fn(() => preparation.promise);
+    const harness = createSession({ buildChildResumeState: preparing });
+    let expired = false;
+    const running = harness.session.execute({
+      ...turn('Expired answer'),
+      assertBeforeHandoff: () => { if (expired) throw new Error('The answer was not sent. Please try again.'); },
+    });
+    await waitFor(() => preparing.mock.calls.length === 1);
+    expired = true;
+    preparation.resolve({ forkSource: { resumeAt: 'checkpoint-1', sessionId: 'main-session' } });
+    await expect(running).rejects.toThrow('not sent');
+    expect(harness.backend.sessions.flatMap(session => session.requests)).toEqual([]);
+    await harness.session.dispose();
+  });
+
   it('surfaces missing child history as an error without falling back to the parent session', async () => {
     const harness = createSession();
     const running = harness.session.execute(turn('Explore B'));

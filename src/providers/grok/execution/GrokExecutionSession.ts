@@ -648,9 +648,7 @@ RewindableExecutionSession {
     return buildSessionMeta(
       request,
       request?.configuration.systemInstructions.kind === 'provider-default'
-        ? buildGrokSystemPrompt(this.#getSystemPromptSettings(), {
-            dynamicSections: request.configuration.systemInstructions.dynamicSections,
-          })
+        ? buildGrokSystemPrompt(this.#getSystemPromptSettings())
         : undefined,
     );
   }

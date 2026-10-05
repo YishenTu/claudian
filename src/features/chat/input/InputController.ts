@@ -111,7 +111,6 @@ export class InputController {
     this.deps = deps;
     this.turns = deps.session.turns;
     this.steering = new TurnSteering({
-      plugin: deps.plugin,
       state: deps.state,
       turns: this.turns,
       getExecutionCoordinator: () => this.deps.getExecutionCoordinator(),

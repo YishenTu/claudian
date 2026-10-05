@@ -1053,7 +1053,7 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
-  it('includes provider-default dynamic sections in base instructions', async () => {
+  it('sends the provider-default prompt as base instructions', async () => {
     mockTransportRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
@@ -1075,10 +1075,7 @@ describe('CodexExecutionBackend', () => {
 
     await collectEvents(session.execute(createRequest(undefined, {
       configuration: {
-        systemInstructions: {
-          dynamicSections: ['## Additional context\nRuntime guidance.'],
-          kind: 'provider-default',
-        },
+        systemInstructions: { kind: 'provider-default' },
         model: TEST_CODEX_MODEL,
         permissionMode: 'normal',
         reasoning: 'high',
@@ -1090,12 +1087,10 @@ describe('CodexExecutionBackend', () => {
       ([method]) => method === 'thread/start',
     )?.[1] as { baseInstructions?: string } | undefined;
     expect(threadStart?.baseInstructions).toContain('## Runtime Context');
-    expect(threadStart?.baseInstructions).toContain('## Additional context\nRuntime guidance.');
-    expect(threadStart?.baseInstructions?.match(/## Additional context/g)).toHaveLength(1);
     await session.dispose();
   });
 
-  it('reapplies changed provider-default dynamic sections to a loaded thread', async () => {
+  it('reapplies changed system instructions to a loaded thread', async () => {
     let turnIndex = 0;
     mockTransportRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
@@ -1118,12 +1113,9 @@ describe('CodexExecutionBackend', () => {
     });
     const session = createBackend(createPlugin())
       .createSession(createSessionConfig());
-    const requestWithDynamicSection = (dynamicSection: string) => createRequest(undefined, {
+    const requestWithInstructions = (instructions: string) => createRequest(undefined, {
       configuration: {
-        systemInstructions: {
-          dynamicSections: [dynamicSection],
-          kind: 'provider-default',
-        },
+        systemInstructions: { kind: 'explicit', instructions },
         model: TEST_CODEX_MODEL,
         permissionMode: 'normal',
         reasoning: 'high',
@@ -1131,8 +1123,8 @@ describe('CodexExecutionBackend', () => {
       },
     });
 
-    await collectEvents(session.execute(requestWithDynamicSection('Runtime endpoint A.')).events);
-    await collectEvents(session.execute(requestWithDynamicSection('Runtime endpoint B.')).events);
+    await collectEvents(session.execute(requestWithInstructions('Runtime endpoint A.')).events);
+    await collectEvents(session.execute(requestWithInstructions('Runtime endpoint B.')).events);
 
     const resumeCalls = mockTransportRequest.mock.calls.filter(
       ([method]) => method === 'thread/resume',

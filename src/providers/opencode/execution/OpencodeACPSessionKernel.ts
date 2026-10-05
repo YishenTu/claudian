@@ -150,9 +150,7 @@ export class DefaultOpencodeACPSessionKernel
             systemPromptKey: options.systemInstructions.instructions,
             systemPromptText: options.systemInstructions.instructions,
           }
-          : {
-            dynamicSystemPromptSections: options.systemInstructions.dynamicSections,
-          }),
+          : {}),
         workspaceRoot: this.options.config.vaultWorkingDirectory,
       });
       this.#assertNotDisposed();

@@ -1861,16 +1861,13 @@ describe('PiExecutionBackend', () => {
     expect(harness.kernels[0].launchSpec.args).not.toContain('--tools');
   });
 
-  it('includes provider-default dynamic sections in the complete system prompt', async () => {
+  it('sends the provider-default prompt as the complete system prompt', async () => {
     const harness = createHarness();
     const run = harness.session.execute(createRequest({
       configuration: {
         model: 'pi:anthropic/claude-sonnet-4',
         reasoning: 'high',
-        systemInstructions: {
-          dynamicSections: ['## Additional context\nRuntime guidance.'],
-          kind: 'provider-default',
-        },
+        systemInstructions: { kind: 'provider-default' },
       },
     }));
     const eventsPromise = collect(run.events);
@@ -1884,8 +1881,6 @@ describe('PiExecutionBackend', () => {
     expect(systemPrompt).toContain('## Runtime Context');
     expect(systemPrompt).toContain('Use `bash: date`');
     expect(systemPrompt).toContain('## Vault Media');
-    expect(systemPrompt).toContain('## Additional context\nRuntime guidance.');
-    expect(systemPrompt.match(/## Additional context/g)).toHaveLength(1);
   });
 
   it('maps an explicit allow-list exactly and falls back to provider model settings', async () => {

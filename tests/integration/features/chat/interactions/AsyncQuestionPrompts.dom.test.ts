@@ -85,7 +85,7 @@ it.each(['asking', 'later'] as const)('keeps an unanswered question usable after
   }
 });
 
-it.each(['configuration', 'authority', 'cancel-and-replace'] as const)('fences an expired answer through real execution preparation (%s)', async phase => {
+it.each(['authority', 'cancel-and-replace'] as const)('fences an expired answer through real execution preparation (%s)', async phase => {
   const host = document.body.createDiv();
   const composer = host.createDiv();
   const execution = createExecutionHarness({ onRequestedEvent: event => fixture.controller.handleExecutionEvent(event) });
@@ -101,14 +101,9 @@ it.each(['configuration', 'authority', 'cancel-and-replace'] as const)('fences a
   const native = backend.sessions[0];
   const run = native.runs[0];
   run.events.push({ type: 'turn_started', accepted: true, scope: requestedScope(native, run, 1) });
-  const preparing = deferred<readonly string[]>();
   const authority = deferred<void>();
   const entered = jest.fn();
-  if (phase === 'configuration') {
-    Object.assign(fixture.plugin, { getMainAgentDynamicSystemPromptSections: () => { entered(); return preparing.promise; } });
-  } else {
-    execution.repository.assertConversationExecutionAuthority.mockImplementationOnce(() => { entered(); return authority.promise; });
-  }
+  execution.repository.assertConversationExecutionAuthority.mockImplementationOnce(() => { entered(); return authority.promise; });
   const tool: ToolCallInfo = { id: 'ask', name: 'AskUserQuestion', status: 'completed', input: {
     replyMode: 'user-message', questions: [{ id: '0', question: 'Which check?', options: [{ label: 'History' }] }],
   } };
@@ -130,7 +125,6 @@ it.each(['configuration', 'authority', 'cancel-and-replace'] as const)('fences a
     fixture.controller.updateAsyncQuestion(tool);
   }
   await waitFor(() => expect(native.runs).toHaveLength(phase === 'cancel-and-replace' ? 2 : 1));
-  preparing.resolve([]);
   authority.resolve();
   await answered;
   expect(native.steerRequests).toHaveLength(0);
@@ -143,7 +137,7 @@ it.each(['configuration', 'authority', 'cancel-and-replace'] as const)('fences a
   await execution.coordinator.dispose();
 });
 
-it.each(['configuration', 'authority', 'cancelled-configuration', 'failed-initialization'] as const)('keeps idle answer preparation out of the composer (%s)', async phase => {
+it.each(['initialization', 'authority', 'cancelled-initialization', 'failed-initialization'] as const)('keeps idle answer preparation out of the composer (%s)', async phase => {
   const host = document.body.createDiv();
   const composer = host.createDiv();
   const execution = createExecutionHarness({ onRequestedEvent: event => fixture.controller.handleExecutionEvent(event) });
@@ -167,14 +161,11 @@ it.each(['configuration', 'authority', 'cancelled-configuration', 'failed-initia
   run.events.end();
   await running;
   fixture.input.value = 'Keep this draft';
-  const preparing = deferred<readonly string[]>();
   const authority = deferred<void>();
   const initialization = deferred<boolean>();
   const entered = jest.fn();
-  if (phase === 'failed-initialization') {
+  if (phase !== 'authority') {
     fixture.deps.ensureExecutionInitialized = () => { entered(); return initialization.promise; };
-  } else if (phase === 'configuration' || phase === 'cancelled-configuration') {
-    Object.assign(fixture.plugin, { getMainAgentDynamicSystemPromptSections: () => { entered(); return preparing.promise; } });
   } else {
     execution.repository.assertConversationExecutionAuthority.mockImplementationOnce(() => { entered(); return authority.promise; });
   }
@@ -190,14 +181,13 @@ it.each(['configuration', 'authority', 'cancelled-configuration', 'failed-initia
   fireEvent.click(within(host).getByRole('button', { name: 'History' }));
   fireEvent.click(within(host).getByRole('button', { name: 'Submit answers' }));
   await waitFor(() => expect(entered).toHaveBeenCalledTimes(1));
-  if (phase === 'cancelled-configuration') fixture.controller.cancelStreaming();
+  if (phase === 'cancelled-initialization') fixture.controller.cancelStreaming();
   else if (phase !== 'failed-initialization') {
     tool.questionStatus = 'expired';
     fixture.controller.updateAsyncQuestion(tool);
   }
-  preparing.resolve([]);
   authority.resolve();
-  initialization.resolve(false);
+  initialization.resolve(phase !== 'failed-initialization');
   await send.mock.results[0].value;
   expect(native.requests).toHaveLength(1);
   expect(fixture.input.value).toBe('Keep this draft');
@@ -208,7 +198,7 @@ it.each(['configuration', 'authority', 'cancelled-configuration', 'failed-initia
   await execution.coordinator.dispose();
 });
 
-it.each(['preparation', 'handoff'] as const)('does not restart main chat when an answer outlives cancellation during %s', async phase => {
+it('does not restart main chat when an answer outlives cancellation during handoff', async () => {
   const host = document.body.createDiv();
   const composer = host.createDiv();
   const fixture = createFixture({ getTabProviderId: () => 'codex', getInputContainerEl: () => composer });
@@ -217,11 +207,8 @@ it.each(['preparation', 'handoff'] as const)('does not restart main chat when an
   fixture.coordinator.execute.mockReturnValueOnce(execution.promise);
   const running = fixture.controller.sendMessage({ content: 'Start work' });
   await waitFor(() => expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1));
-  const preparing = deferred<string[]>();
   const handoff = deferred<ChatSteerOutcome>();
-  const prepare = jest.fn(() => preparing.promise);
-  if (phase === 'preparation') Object.assign(fixture.plugin, { getMainAgentDynamicSystemPromptSections: prepare });
-  else fixture.coordinator.steer.mockReturnValueOnce(handoff.promise);
+  fixture.coordinator.steer.mockReturnValueOnce(handoff.promise);
   const tool: ToolCallInfo = { id: 'ask', name: 'AskUserQuestion', status: 'completed', input: {
     replyMode: 'user-message', questions: [{ id: '0', question: 'Which check?', options: [{ label: 'History' }] }],
   } };
@@ -230,12 +217,11 @@ it.each(['preparation', 'handoff'] as const)('does not restart main chat when an
   const question = within(host).getByRole('region', { name: 'Question' });
   fireEvent.click(within(question).getByRole('button', { name: 'History' }));
   fireEvent.click(within(question).getByRole('button', { name: 'Submit answers' }));
-  await waitFor(() => expect(phase === 'preparation' ? prepare : fixture.coordinator.steer).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1));
   fixture.controller.cancelStreaming();
   execution.resolve({ accepted: true, status: 'interrupted' });
   await running;
   expect(fixture.state.cancelRequested).toBe(false);
-  preparing.resolve([]);
   handoff.resolve({ delivery: 'not-sent' });
   await waitFor(() => expect(within(host).queryByRole('region', { name: 'Question' })).toBeNull());
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -304,11 +290,6 @@ function createSurface() {
     inlinePrompts: new InlineInteractionPrompts({
       getPromptParentEl: () => composerHost,
       getSuppressedEl: () => composer,
-      onBeforeShow: () => {
-        const generation = state.streamGeneration;
-        stream.thinkingIndicator.hide();
-        return () => stream.thinkingIndicator.resume(generation);
-      },
     }),
   } as unknown as InputControllerDeps);
   const delivery = jest.spyOn(input, 'answerQuestion').mockResolvedValue(undefined);

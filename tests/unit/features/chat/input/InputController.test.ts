@@ -3,6 +3,7 @@ import { Notice } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ToolCallInfo } from '@/core/types';
+import type { ChatSteerOutcome } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { ChatExecutionPreHandoffError } from '@/features/chat/execution/ChatExecutionCoordinator';
 
 jest.mock('@/core/providers/ProviderRegistry', () => ({
@@ -235,18 +236,18 @@ describe('async question answer submission', () => {
     expect(Notice).toHaveBeenCalledWith(expect.stringContaining('could not be confirmed'));
   });
 
-  it('does not send or queue an answer into a conversation selected during preparation', async () => {
-    const preparing = deferred<string[]>();
+  it('does not send or queue an answer into a conversation selected during handoff', async () => {
+    const handoff = deferred<ChatSteerOutcome>();
     const fixture = createFixture();
-    Object.assign(fixture.plugin, { getMainAgentDynamicSystemPromptSections: () => preparing.promise });
+    fixture.coordinator.steer.mockReturnValueOnce(handoff.promise);
     const tool = createQuestion();
     fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
     fixture.holdResponse();
     const answering = fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
+    expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1);
     fixture.state.currentConversationId = 'conversation-2';
-    preparing.resolve([]);
+    handoff.resolve({ delivery: 'not-sent' });
     await expect(answering).rejects.toThrow('different conversation');
-    expect(fixture.coordinator.steer).not.toHaveBeenCalled();
     expect(fixture.coordinator.execute).not.toHaveBeenCalled();
     expect(fixture.state.queuedMessage).toBeNull();
   });

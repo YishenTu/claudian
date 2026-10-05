@@ -578,7 +578,6 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     const workspaceRoot = this.options.config.vaultWorkingDirectory;
     return buildOpencodeSystemPrompt(profile, {
       settings: getSystemPromptSettings(this.options.plugin, workspaceRoot),
-      dynamicSections: systemInstructions.dynamicSections,
       titleLocale: resolveTitleGenerationLocale(this.options.plugin.settings),
       workspaceRoot,
     });

@@ -18,7 +18,6 @@ function createHarness() {
   const returnUnsent = jest.fn();
   const reportFailure = jest.fn();
   const steering = new TurnSteering({
-    plugin: {} as never,
     state,
     turns: { isResponding: true },
     getExecutionCoordinator: () => coordinator as unknown as ChatExecutionCoordinator,

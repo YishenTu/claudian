@@ -21,7 +21,6 @@ import { renderStoredAsyncSubagent, renderStoredSubagent } from '@/features/chat
 import { ImagePreviewModal } from '@/shared/modals/ImagePreviewModal';
 import { registerFileLinkHandler } from '@/utils/fileLink';
 
-export { isStandaloneTaskNotification } from '@/features/chat/rendering/ResponseLayout';
 
 /**
  * Renders a tab's transcript: live and replayed messages, assistant content

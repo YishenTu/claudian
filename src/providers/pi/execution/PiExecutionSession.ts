@@ -1648,11 +1648,7 @@ function resolveSystemPrompt(
     mediaFolder: getString(settings.mediaFolder) ?? undefined,
     userName: getString(settings.userName) ?? undefined,
     vaultPath,
-  } satisfies SystemPromptSettings, {
-    dynamicSections: request.configuration.systemInstructions.dynamicSections
-      ? [...request.configuration.systemInstructions.dynamicSections]
-      : undefined,
-  });
+  } satisfies SystemPromptSettings);
 }
 
 function encodePrompt(

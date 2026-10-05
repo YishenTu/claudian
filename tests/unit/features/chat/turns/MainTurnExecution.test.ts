@@ -79,38 +79,14 @@ describe('MainTurnExecution', () => {
     expect(fixture.deps.streamController.beginResponse).toHaveBeenCalledTimes(2);
   });
 
-  it('adds app guidance to provider-default system instructions without changing input', async () => {
-    const fixture = createFixture();
-    const getDynamicSections = jest.fn().mockResolvedValue(['## Additional context\nRuntime guidance.']);
-    Object.assign(fixture.plugin, {
-      getMainAgentDynamicSystemPromptSections: getDynamicSections,
-    });
-
-    await fixture.controller.sendMessage({ content: 'list my projects' });
-
-    const submission = fixture.coordinator.execute.mock.calls[0][0] as ChatTurnSubmission;
-    expect(getDynamicSections).toHaveBeenCalledTimes(1);
-    expect(submission).toMatchObject({
-      canonicalText: 'list my projects',
-      configuration: {
-        systemInstructions: {
-          dynamicSections: ['## Additional context\nRuntime guidance.'],
-          kind: 'provider-default',
-        },
-      },
-      rawDisplayText: 'list my projects',
-    });
-    expect(fixture.state.messages[0]?.content).toBe('list my projects');
-  });
-
-  it('does not launch execution when close overlaps dynamic configuration', async () => {
+  it('does not launch execution when close overlaps execution initialization', async () => {
     let closing = false;
-    const fixture = createFixture({ isClosing: () => closing });
-    Object.assign(fixture.plugin, {
-      getMainAgentDynamicSystemPromptSections: async () => {
+    const fixture = createFixture({
+      isClosing: () => closing,
+      ensureExecutionInitialized: async () => {
         closing = true;
         fixture.session.cancelTurn('shutdown');
-        return [];
+        return true;
       },
     });
     await fixture.controller.sendMessage({ content: 'Keep the admitted input' });
@@ -120,37 +96,18 @@ describe('MainTurnExecution', () => {
     ]);
   });
 
-  it('continues without dynamic sections when app guidance is unavailable', async () => {
+  it('submits provider-default system instructions without changing input', async () => {
     const fixture = createFixture();
-    Object.assign(fixture.plugin, {
-      getMainAgentDynamicSystemPromptSections: jest.fn()
-        .mockRejectedValue(new Error('synthetic runtime failure')),
-    });
 
-    await fixture.controller.sendMessage({ content: 'ordinary request' });
+    await fixture.controller.sendMessage({ content: 'list my projects' });
 
     const submission = fixture.coordinator.execute.mock.calls[0][0] as ChatTurnSubmission;
-    expect(submission.configuration.systemInstructions).toEqual({
-      kind: 'provider-default',
+    expect(submission).toMatchObject({
+      canonicalText: 'list my projects',
+      configuration: { systemInstructions: { kind: 'provider-default' } },
+      rawDisplayText: 'list my projects',
     });
-    expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
-  });
-
-  it('keeps stable dynamic system sections for provider slash-command execution', async () => {
-    const fixture = createFixture();
-    const getDynamicSections = jest.fn().mockResolvedValue(['stable guidance']);
-    Object.assign(fixture.plugin, {
-      getMainAgentDynamicSystemPromptSections: getDynamicSections,
-    });
-
-    await fixture.controller.sendMessage({ content: '/compact' });
-
-    const submission = fixture.coordinator.execute.mock.calls[0][0] as ChatTurnSubmission;
-    expect(getDynamicSections).toHaveBeenCalledTimes(1);
-    expect(submission.configuration.systemInstructions).toEqual({
-      dynamicSections: ['stable guidance'],
-      kind: 'provider-default',
-    });
+    expect(fixture.state.messages[0]?.content).toBe('list my projects');
   });
 
   it('numbers canonical submissions without counting interrupt markers', async () => {

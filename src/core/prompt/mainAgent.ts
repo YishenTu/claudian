@@ -5,10 +5,6 @@ export interface SystemPromptSettings {
   userName?: string;
 }
 
-export interface SystemPromptBuildOptions {
-  dynamicSections?: string[];
-}
-
 function getRuntimeContext(
   vaultPath: string | undefined,
   userName: string | undefined,
@@ -89,31 +85,12 @@ function getVaultMediaContext(mediaFolder: string): string {
 - Resolve embedded media through this folder and use its absolute path for file operations.`;
 }
 
-function getDynamicSections(dynamicSections?: string[]): string {
-  if (!dynamicSections || dynamicSections.length === 0) {
-    return '';
-  }
-
-  const sections = dynamicSections
-    .map((section) => section.trim())
-    .filter(Boolean);
-
-  if (sections.length === 0) {
-    return '';
-  }
-
-  return sections.join('\n\n');
-}
-
 function getCustomInstructions(customPrompt: string | undefined): string {
   const instructions = customPrompt?.trim();
   return instructions ? `## Custom Instructions\n\n${instructions}` : '';
 }
 
-export function buildSystemPrompt(
-  settings: SystemPromptSettings = {},
-  options: SystemPromptBuildOptions = {},
-): string {
+export function buildSystemPrompt(settings: SystemPromptSettings = {}): string {
   return [
     getRuntimeContext(settings.vaultPath, settings.userName),
     getUserMessageContext(),
@@ -121,7 +98,6 @@ export function buildSystemPrompt(
     getFileOperations(),
     getReferenceConventions(),
     getVaultMediaContext(settings.mediaFolder || ''),
-    getDynamicSections(options.dynamicSections),
     getCustomInstructions(settings.customPrompt),
   ].filter(Boolean).join('\n\n');
 }

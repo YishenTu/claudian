@@ -662,6 +662,63 @@ describe('Tab provider execution ownership', () => {
     expect(tab.state.autoScrollEnabled).toBe(false);
   });
 
+  describe('waiting indicator around an earlier turn question', () => {
+    const question = {
+      id: 'ask',
+      name: 'AskUserQuestion',
+      status: 'completed',
+      input: { replyMode: 'user-message', questions: [{ question: 'Which check?', options: [{ label: 'History' }] }] },
+    } as any;
+
+    /** Opens a question in one turn and starts the next turn while it is still pending. */
+    async function startLaterTurnUnderQuestion() {
+      const tab = await createTestTab({ plugin: createPlugin(), containerEl: createMockEl() as any });
+      tab.state.currentContentEl = createMockEl();
+      tab.dom.inputContainerEl.parentElement = createMockEl();
+      const finishAsking = holdResponse(tab.session.turns);
+      tab.controllers.inputController.updateAsyncQuestion(question);
+      await finishAsking();
+      const finishLater = holdResponse(tab.session.turns);
+      tab.controllers.streamController.thinkingIndicator.show();
+      await jest.advanceTimersByTimeAsync(500);
+      expect(tab.state.requiresAction).toBe(true);
+      expect(tab.state.thinkingEl).toBeNull();
+      const settleQuestion = async () => {
+        tab.controllers.inputController.updateAsyncQuestion({ ...question, resolvedAnswers: { '0': 'History' } });
+        await jest.advanceTimersByTimeAsync(0);
+        expect(tab.state.requiresAction).toBe(false);
+      };
+      return { tab, finishLater, settleQuestion };
+    }
+
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    it('shows the later turn indicator once the earlier turn question settles', async () => {
+      const { tab, finishLater, settleQuestion } = await startLaterTurnUnderQuestion();
+
+      await settleQuestion();
+      await jest.advanceTimersByTimeAsync(500);
+
+      expect(tab.state.thinkingEl).not.toBeNull();
+      await finishLater();
+    });
+
+    it('does not resurrect the indicator when the earlier question settles after the later turn produced output', async () => {
+      const { tab, finishLater, settleQuestion } = await startLaterTurnUnderQuestion();
+      await tab.controllers.streamController.handleStreamChunk(
+        { type: 'text', content: 'Working on it' },
+        { content: '', role: 'assistant' },
+      );
+
+      await settleQuestion();
+      await jest.advanceTimersByTimeAsync(500);
+
+      expect(tab.state.thinkingEl).toBeNull();
+      await finishLater();
+    });
+  });
+
   it('keeps auto-scroll disabled when bottom navigation is used with the setting off', async () => {
     const plugin = createPlugin();
     plugin.settings.enableAutoScroll = false;

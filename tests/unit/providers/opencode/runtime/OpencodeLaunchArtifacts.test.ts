@@ -277,7 +277,7 @@ describe('prepareOpencodeLaunchArtifacts', () => {
     expect(first.launchKey).toBe(second.launchKey);
   });
 
-  it('includes provider-default dynamic sections in the managed prompt and launch key', async () => {
+  it('includes the custom instructions in the managed prompt and launch key', async () => {
     const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-opencode-artifacts-'));
     const baseParams = {
       runtimeEnv: { HOME: tmpRoot } as NodeJS.ProcessEnv,
@@ -290,17 +290,16 @@ describe('prepareOpencodeLaunchArtifacts', () => {
       workspaceRoot: tmpRoot,
     };
 
-    const withoutAppendix = await prepareOpencodeLaunchArtifacts(baseParams);
-    const withAppendix = await prepareOpencodeLaunchArtifacts({
+    const withoutCustom = await prepareOpencodeLaunchArtifacts(baseParams);
+    const withCustom = await prepareOpencodeLaunchArtifacts({
       ...baseParams,
-      dynamicSystemPromptSections: ['## Additional context\nRuntime guidance.'],
+      settings: { ...baseParams.settings, customPrompt: 'Runtime guidance.' },
     });
-    const prompt = await fs.readFile(withAppendix.systemPromptPath, 'utf8');
+    const prompt = await fs.readFile(withCustom.systemPromptPath, 'utf8');
 
     expect(prompt).toContain('## Runtime Context');
-    expect(prompt).toContain('## Additional context\nRuntime guidance.');
-    expect(prompt.match(/## Additional context/g)).toHaveLength(1);
-    expect(withAppendix.launchKey).not.toBe(withoutAppendix.launchKey);
+    expect(prompt).toContain('## Custom Instructions\n\nRuntime guidance.');
+    expect(withCustom.launchKey).not.toBe(withoutCustom.launchKey);
   });
 
   it('creates the resolved OpenCode database directory before launch', async () => {

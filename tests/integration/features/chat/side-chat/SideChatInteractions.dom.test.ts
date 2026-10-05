@@ -151,6 +151,46 @@ it.each(['asking', 'later'] as const)('keeps an unanswered side question usable 
   native.complete();
 });
 
+/** Starts a later side turn while the first turn's question is still open. */
+async function startLaterTurnUnderQuestion() {
+  const result = await showAsyncQuestion();
+  const { harness, native, started } = result;
+  const steer = jest.fn(async (_request: ProviderExecutionRequest) => true);
+  Object.assign(native, { steer });
+  native.complete();
+  await started;
+  const later = harness.controller.runtime!.submit({ content: 'Later work' });
+  await waitFor(() => expect(native.requests).toHaveLength(2));
+  return { ...result, later };
+}
+
+const waitingIndicator = () => document.querySelector('.claudian-side-chat-messages .claudian-thinking');
+
+it('shows the later side turn waiting indicator once the earlier turn question settles', async () => {
+  const { native, later } = await startLaterTurnUnderQuestion();
+  await new Promise(resolve => setTimeout(resolve, 500));
+  expect(screen.getByRole('region', { name: 'Question' })).toBeTruthy();
+  expect(waitingIndicator()).toBeNull();
+  submitAnswer();
+  await waitFor(() => expect(screen.queryByRole('region', { name: 'Question' })).toBeNull());
+  await waitFor(() => expect(waitingIndicator()).not.toBeNull());
+  native.complete();
+  await later;
+});
+
+it('does not resurrect the waiting indicator when the earlier question settles after the later turn started streaming', async () => {
+  const { harness, native, later } = await startLaterTurnUnderQuestion();
+  await new Promise(resolve => setTimeout(resolve, 500));
+  native.emitText('Working on it');
+  await waitFor(() => expect(harness.controller.runtime!.state.currentTextContent).toContain('Working on it'));
+  submitAnswer();
+  await waitFor(() => expect(screen.queryByRole('region', { name: 'Question' })).toBeNull());
+  await new Promise(resolve => setTimeout(resolve, 600));
+  expect(waitingIndicator()).toBeNull();
+  native.complete();
+  await later;
+});
+
 it('submits an async answer to the active side turn while preserving queued work and the composer draft', async () => {
   const { harness, native, started } = await showAsyncQuestion();
   const steer = jest.fn(async (_request: ProviderExecutionRequest) => true);
@@ -210,33 +250,6 @@ it.each(['completed', 'cancelled'] as const)('handles a side turn that is %s bef
   if (outcome === 'completed') native.complete();
 });
 
-it('withdraws an idle side answer that expires during configuration', async () => {
-  const { harness, native, started } = await showAsyncQuestion();
-  native.complete();
-  await started;
-  const runtime = harness.controller.runtime!;
-  const tool = runtime.state.messages.flatMap(message => message.toolCalls ?? []).find(tool => tool.id === 'ask')!;
-  const preparing = deferred<string[]>();
-  const prepare = jest.fn(() => preparing.promise);
-  Object.assign(harness.plugin, { getMainAgentDynamicSystemPromptSections: prepare });
-  const execute = native.execute.bind(native);
-  jest.spyOn(native, 'execute').mockImplementation(request => {
-    const run = execute(request);
-    native.complete();
-    return run;
-  });
-  const submit = jest.spyOn(runtime, 'submit');
-  harness.inputEl.value = 'Keep this draft';
-  submitAnswer();
-  await waitFor(() => expect(prepare).toHaveBeenCalledTimes(1));
-  tool.questionStatus = 'expired';
-  preparing.resolve([]);
-  await submit.mock.results[0].value;
-  expect(native.requests).toHaveLength(1);
-  expect(harness.inputEl.value).toBe('Keep this draft');
-  expect(runtime.queuedCount).toBe(0);
-});
-
 it('discards a locally queued reply on cancellation without leaving Sending or delivering it later', async () => {
   const { harness, native, started } = await queueQuestionReply();
   harness.controller.cancelSide();
@@ -277,7 +290,7 @@ it('keeps a pending main question out of the side destination and restores its a
   });
   const main = new InputController({
     state, session, inlinePrompts: prompts,
-    streamController: { thinkingIndicator: { hide: jest.fn(), resume: jest.fn() } },
+    streamController: { thinkingIndicator: { hide: jest.fn() } },
     renderer: { updateQuestionTool: jest.fn() },
   } as unknown as InputControllerDeps);
   try {

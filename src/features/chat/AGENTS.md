@@ -16,5 +16,4 @@
 
 - Model selection alone must not change displayed context usage. Retain the previous complete report until the new model reports a usable window; never combine one model’s token count with another model’s window.
 - Render and submit model/reasoning from the same destination-owned settings. Submission cannot rederive them from provider-wide defaults.
-- Dynamic Main Agent sections are best-effort system configuration; failures must not block Chat.
 - One composer serves every destination, and its target is derived from presentation state rather than a separately mutable selection. User-originated sends and cancels resolve the target when they run; internally queued main work keeps the owner it was admitted with and must never read the current target at dispatch.

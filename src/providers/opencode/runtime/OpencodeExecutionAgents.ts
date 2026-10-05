@@ -58,7 +58,6 @@ export function buildAgentConfig(
 
 export interface OpencodeSystemPromptParams {
   settings?: SystemPromptSettings;
-  dynamicSections?: readonly string[];
   titleLocale?: string;
   workspaceRoot: string;
 }
@@ -67,9 +66,7 @@ export interface OpencodeSystemPromptParams {
 export function buildOpencodeSystemPrompt(profile: OpencodeExecutionProfile, params: OpencodeSystemPromptParams): string {
   if (profile === 'readonly') return getInlineEditSystemPrompt(params.workspaceRoot);
   if (profile === 'passive') return buildTitleGenerationSystemPrompt(params.titleLocale);
-  return buildSystemPrompt(params.settings ?? {}, {
-    dynamicSections: params.dynamicSections ? [...params.dynamicSections] : undefined,
-  });
+  return buildSystemPrompt(params.settings ?? {});
 }
 
 export function getSystemPromptSettings(

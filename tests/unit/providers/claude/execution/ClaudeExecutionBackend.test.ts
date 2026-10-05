@@ -848,7 +848,7 @@ describe('ClaudeExecutionBackend', () => {
     expect(sdkMock.getLastOptions()?.mcpServers).toBeUndefined();
   });
 
-  it('passes provider-default dynamic sections through a non-snapshotted custom system prompt', async () => {
+  it('sends the provider-default prompt as a non-snapshotted custom system prompt', async () => {
     sdkMock.setMockMessages([
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
@@ -856,25 +856,14 @@ describe('ClaudeExecutionBackend', () => {
       .createSession(createConfig({ lifecycle: 'ephemeral' }));
 
     await collectEvents(session.execute(createRequest({
-      configuration: {
-        systemInstructions: {
-          dynamicSections: ['## Additional context\nRuntime guidance.'],
-          kind: 'provider-default',
-        },
-      },
+      configuration: { systemInstructions: { kind: 'provider-default' } },
     })).events);
 
-    const systemPrompt = sdkMock.getLastOptions()?.systemPrompt;
-    expect(systemPrompt).toEqual({
+    expect(sdkMock.getLastOptions()?.systemPrompt).toEqual({
       type: 'custom',
       prompt: expect.stringContaining('## Runtime Context'),
       snapshot: false,
     });
-    expect((systemPrompt as { prompt: string }).prompt).toContain(
-      '## Additional context\nRuntime guidance.',
-    );
-    expect((systemPrompt as { prompt: string }).prompt.match(/## Additional context/g))
-      .toHaveLength(1);
   });
 
   it('encodes structured context with escaped XML paths and bodies', async () => {

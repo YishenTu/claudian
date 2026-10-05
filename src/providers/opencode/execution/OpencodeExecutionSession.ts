@@ -794,7 +794,7 @@ function buildKernelConfigurationKey(
     instructions.kind,
     instructions.kind === 'explicit'
       ? instructions.instructions
-      : instructions.dynamicSections ?? null,
+      : null,
   ]);
 }
 

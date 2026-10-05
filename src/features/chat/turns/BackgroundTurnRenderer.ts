@@ -1,10 +1,10 @@
 import type { ProviderBackgroundEventScope, ProviderBackgroundOutputEvent, ProviderRequestedEventScope } from '@/core/execution';
 import { TOOL_AGENT_OUTPUT } from '@/core/tools/toolNames';
 import type { ChatMessage, StreamChunk } from '@/core/types';
-import { isStandaloneTaskNotification, type MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { recordNotificationPredecessors, recordResponseContinuation } from '@/features/chat/rendering/NotificationBoundaries';
 import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/providerOutputChunks';
-import { getAutomaticNotificationPredecessor } from '@/features/chat/rendering/ResponseLayout';
+import { getAutomaticNotificationPredecessor, isStandaloneTaskNotification } from '@/features/chat/rendering/ResponseLayout';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { continueResponseAfterNotification } from '@/features/chat/turns/ResponseContinuation';
 import type { StreamController } from '@/features/chat/turns/StreamController';

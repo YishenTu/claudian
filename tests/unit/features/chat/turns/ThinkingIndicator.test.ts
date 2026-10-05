@@ -112,6 +112,46 @@ describe('ThinkingIndicator', () => {
     await finishNext();
   });
 
+  describe('a prompt from an earlier response settling while the current indicator is withheld', () => {
+    async function withholdCurrentIndicator() {
+      const finishEarlier = holdResponse(turns);
+      const earlier = state.streamGeneration;
+      await finishEarlier();
+      const finishCurrent = holdResponse(turns);
+      state.beginActionRequired('prompt');
+      indicator.show();
+      jest.advanceTimersByTime(500);
+      expect(state.thinkingEl).toBeNull();
+      state.endActionRequired('prompt');
+      return { earlier, finishCurrent };
+    }
+
+    it('shows the current response indicator', async () => {
+      const { earlier, finishCurrent } = await withholdCurrentIndicator();
+      indicator.resume(earlier);
+      jest.advanceTimersByTime(500);
+      expect(state.thinkingEl).not.toBeNull();
+      await finishCurrent();
+    });
+
+    it('stays hidden once the current response produced output', async () => {
+      const { earlier, finishCurrent } = await withholdCurrentIndicator();
+      indicator.hide();
+      indicator.resume(earlier);
+      jest.advanceTimersByTime(500);
+      expect(state.thinkingEl).toBeNull();
+      await finishCurrent();
+    });
+
+    it('stays hidden after the current response finished', async () => {
+      const { earlier, finishCurrent } = await withholdCurrentIndicator();
+      await finishCurrent();
+      indicator.resume(earlier);
+      jest.advanceTimersByTime(500);
+      expect(state.thinkingEl).toBeNull();
+    });
+  });
+
   it('should clear timer interval when hiding thinking indicator', () => {
     state.responseStartTime = performance.now();
 

@@ -37,7 +37,6 @@ export interface PrepareOpencodeLaunchArtifactsParams {
   nativeVersion?: 1 | 2;
   runtimeEnv: NodeJS.ProcessEnv;
   settings?: SystemPromptSettings;
-  dynamicSystemPromptSections?: readonly string[];
   systemPromptKey?: string;
   systemPromptText?: string;
   /** Only create missing prompt files, for launches whose sessions supply their own instructions. */
@@ -60,7 +59,6 @@ export async function prepareOpencodeLaunchArtifacts(
   const configPath = path.join(artifactsDir, 'config.json');
   const promptParams = {
     settings: params.settings,
-    dynamicSections: params.dynamicSystemPromptSections,
     titleLocale: params.titleLocale,
     workspaceRoot: params.workspaceRoot,
   };

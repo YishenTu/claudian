@@ -65,7 +65,6 @@ export interface ChatViewHost extends ChatViewRefreshHost, TabManagerViewHost {
 
 /** Application capabilities chat needs on top of the feature-neutral `FeatureHost`. */
 export interface ChatFeatureHost extends FeatureHost {
-  getMainAgentDynamicSystemPromptSections?(): Promise<readonly string[]>;
   writeSessionSnapshot(conversationId: string, markdown: string): Promise<string>;
   getSessionSnapshotDirectory(): string;
   readonly chatModelSelection: ChatModelSelectionPort;

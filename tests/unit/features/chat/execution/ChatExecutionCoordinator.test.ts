@@ -352,10 +352,7 @@ describe('ChatExecutionCoordinator', () => {
     };
     const submission = createSubmission({
       configuration: {
-        systemInstructions: {
-          dynamicSections: ['## Additional context\nRuntime guidance.'],
-          kind: 'provider-default',
-        },
+        systemInstructions: { kind: 'explicit', instructions: 'Answer tersely.' },
       },
       images: [image],
       messages: { user: userMessage, assistant: assistantMessage },

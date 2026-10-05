@@ -25,6 +25,8 @@ export class ThinkingIndicator {
   #explicit: { contentEl: HTMLElement; text: string; cls?: string } | null = null;
   /** Stream generation that owns the current indicator; a superseded turn's indicator is discarded. */
   #generation: number | null = null;
+  /** Generation whose due indicator an open prompt withheld; the prompt's settlement owes it a show. */
+  #blockedGeneration: number | null = null;
 
   constructor(private readonly deps: ThinkingIndicatorDeps) {}
 
@@ -42,9 +44,15 @@ export class ThinkingIndicator {
     if (this.deps.state.isStreaming) this.#schedule(TEXT_PAUSE_DELAY_MS);
   }
 
-  /** Brings the indicator back while the turn continues without visible output. */
+  /**
+   * Brings the indicator back after a prompt settles, while the turn continues without visible output.
+   * A prompt resumes the response it interrupted, or the current response whose own indicator it withheld;
+   * it never starts one in a response that neither it nor the open prompt touched.
+   */
   resume(generation: number): void {
-    if (this.deps.state.streamGeneration === generation && this.deps.state.isStreaming) this.show();
+    const { state } = this.deps;
+    if (!state.isStreaming) return;
+    if (state.streamGeneration === generation || this.#blockedGeneration === state.streamGeneration) this.show();
   }
 
   /** Hides the indicator and cancels any pending show. */
@@ -64,6 +72,7 @@ export class ThinkingIndicator {
       state.thinkingEl = null;
     }
     state.waitingStatus = null;
+    this.#blockedGeneration = null;
   }
 
   /** Ends an explicit status; later waiting in the same response shows ordinary flavor text. */
@@ -116,10 +125,13 @@ export class ThinkingIndicator {
       state.setThinkingIndicatorTimeout(null, null);
       // A pending user interaction takes the place of the indicator until it settles,
       // and a superseded stream (new chat, teardown) no longer owns the indicator.
-      if (
-        !state.currentContentEl || state.thinkingEl || state.currentThinkingState || state.requiresAction
-        || state.streamGeneration !== generation
-      ) return;
+      if (state.streamGeneration !== generation) return;
+      if (state.requiresAction) {
+        this.#blockedGeneration = generation;
+        return;
+      }
+      if (!state.currentContentEl || state.thinkingEl || state.currentThinkingState) return;
+      this.#blockedGeneration = null;
 
       const cls = overrideCls
         ? `claudian-thinking ${overrideCls}`
