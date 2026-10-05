@@ -77,4 +77,3 @@ export function onProviderAvailabilityChanged(tab: AssembledTabRuntime, plugin: 
   applyProviderUIGating(tab, plugin);
   return changed;
 }
-

@@ -29,4 +29,3 @@ export type ForkSourceUnavailableReason =
 export type ForkSourceCapture =
   | { readonly ok: true; readonly context: ForkContext }
   | { readonly ok: false; readonly reason: ForkSourceUnavailableReason };
-
