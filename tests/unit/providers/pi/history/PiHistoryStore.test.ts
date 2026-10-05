@@ -56,6 +56,30 @@ describe('PiHistoryStore', () => {
     expect(correlatePiUserMessages(live, native)).toEqual({ u1: 'u1', accepted: 'u2' });
   });
 
+  it('replays extension custom messages as the notifications live output renders', () => {
+    const content = [
+      { type: 'message', id: 'u1', parentId: null, message: { role: 'user', content: 'Delegate' } },
+      { type: 'custom_message', id: 'c1', parentId: 'u1', customType: 'peeps-result', display: true, content: 'Steered result' },
+      { type: 'message', id: 'a1', parentId: 'c1', message: { role: 'assistant', content: 'Folded in', stopReason: 'stop' } },
+      { type: 'custom_message', id: 'c2', parentId: 'a1', customType: 'peeps-result', display: true, content: [{ type: 'text', text: 'Idle result' }] },
+      { type: 'message', id: 'a2', parentId: 'c2', message: { role: 'assistant', content: 'Woke up', stopReason: 'stop' } },
+      { type: 'custom_message', id: 'c3', parentId: 'a2', customType: 'context', display: false, content: 'Hidden' },
+    ].map(entry => JSON.stringify(entry)).join('\n');
+
+    const messages = parsePiSessionContent(content);
+    expect(messages.map(message => ({
+      automatic: message.isAutomaticResponse === true,
+      blocks: message.contentBlocks?.map(block => block.type === 'text' || block.type === 'task_notification'
+        ? `${block.type}:${block.content}` : block.type),
+      role: message.role,
+    }))).toEqual([
+      { automatic: false, blocks: undefined, role: 'user' },
+      { automatic: false, blocks: ['task_notification:Steered result', 'text:Folded in'], role: 'assistant' },
+      { automatic: true, blocks: ['task_notification:Idle result', 'text:Woke up'], role: 'assistant' },
+    ]);
+    expect(messages[2].content).toBe('Woke up');
+  });
+
   it('parses linear user and assistant messages', () => {
     const content = [
       JSON.stringify({ type: 'session', id: 's1' }),
@@ -650,10 +674,10 @@ describe('PiHistoryStore', () => {
       JSON.stringify({ type: 'custom_message', content: 'Trailing notice' }),
     ].join('\n');
 
-    expect(parsePiSessionContent(content).map(message => message.content)).toEqual([
+    expect(parsePiSessionContent(content).map(message => message.content || message.contentBlocks?.[0])).toEqual([
       'First',
       'Done',
-      'Trailing notice',
+      { content: 'Trailing notice', type: 'task_notification' },
     ]);
     expect(parsePiSessionContent(content, { leafEntryId: 'a1' }).map(message => message.content)).toEqual([
       'First',

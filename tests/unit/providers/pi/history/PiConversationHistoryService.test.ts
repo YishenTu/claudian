@@ -271,9 +271,9 @@ describe('PiConversationHistoryService', () => {
       { environment: { HOME: home } },
     ));
 
-    expect(conversation.messages.map(message => message.content)).toEqual([
-      'Previous notice',
-      'Active notice',
+    expect(conversation.messages.map(message => message.contentBlocks)).toEqual([
+      [{ content: 'Previous notice', type: 'task_notification' }],
+      [{ content: 'Active notice', type: 'task_notification' }],
     ]);
   });
 

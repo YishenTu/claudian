@@ -19,6 +19,8 @@ import {
   type ConversationBranchRequest,
   type ConversationBranchResult,
   type ConversationBranchState,
+  type ProviderBackgroundEventScope,
+  type ProviderBackgroundOutputEvent,
   type ProviderExecutionErrorCategory,
   type ProviderExecutionRequest,
   type ProviderExecutionRun,
@@ -137,12 +139,33 @@ interface ActiveRun {
   turnStats?: TurnStats;
   nativeUserMessageId?: string;
   pendingTerminalError: Error | null;
-  /** Pi before 1.0 answers prompts without a disposition and never sends agent_settled. */
-  settlesOnAgentEnd: boolean;
   endedWithoutRetry: boolean;
   runStarted: boolean;
+  /** Native settlement was observed; a later agent_start belongs to someone else. */
+  settled: boolean;
   terminalSignal: Deferred<void>;
 }
+
+/** A native Pi run nobody requested, such as an extension's `sendMessage({ triggerTurn })`. */
+interface BackgroundTurn {
+  readonly turnId: string;
+  readonly normalization: PiEventNormalizationState;
+  /** Resolves once completion is published. */
+  readonly completed: Deferred<void>;
+  sequence: number;
+  assistantStarted: boolean;
+  nativeAssistantId?: string;
+  pendingTerminalError: string | null;
+  cancelTimer: number | null;
+  cancelling: boolean;
+}
+
+type TurnTarget = ActiveRun | BackgroundTurn;
+
+/** How the current Pi process ends a native run; null until the process reveals it. */
+type PiSettlementSignal = 'agent_settled' | 'agent_end';
+
+const BACKGROUND_ABORT_GRACE_MS = 10_000;
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -167,6 +190,13 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   readonly sessionInstanceId = randomUUID();
 
   private activeRun: ActiveRun | null = null;
+  #backgroundTurn: BackgroundTurn | null = null;
+  #backgroundCounter = 0;
+  /** Settled background turns still syncing native state before they publish completion. */
+  readonly #settlingBackgroundTurns = new Set<BackgroundTurn>();
+  /** Pi before 1.0 answers prompts without a disposition and never sends agent_settled. */
+  #kernelSettlement: PiSettlementSignal | null = null;
+  #kernelModel: string | null = null;
   // A recreated session can recover its cursor, but cannot attest a prior caller's move.
   private branchMutationConfirmed = false;
   private disposalPromise: Promise<void> | null = null;
@@ -281,7 +311,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   }
 
   async #runBranchOperation(request: ConversationBranchRequest | ConversationBranchRecoveryRequest): Promise<ConversationBranchResult> {
-    if (this.disposed || this.activeRun || this.lifecycleError || request.signal?.aborted || this.#shouldDisableNativePersistence()) {
+    if (this.disposed || this.activeRun || this.#hasBackgroundWork() || this.lifecycleError || request.signal?.aborted || this.#shouldDisableNativePersistence()) {
       throw new Error('Pi conversation is unavailable for branching.');
     }
     if ('userMessageId' in request) this.branchMutationConfirmed = false;
@@ -306,7 +336,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       void tracked.catch(() => undefined);
       active.run.close();
       if (this.activeRun === active) this.activeRun = null;
-      if (!this.disposed) this.state.setStatus('idle');
+      if (!this.disposed) this.state.setStatus(this.#hasBackgroundWork() ? 'executing' : 'idle');
     }
   }
 
@@ -380,8 +410,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     return { status: 'committed', messages: history.messages ?? [], usage };
   }
 
-  async #treeRequest(payload: Record<string, unknown>, signal: AbortSignal): Promise<{ cancelled: boolean; leafId: string | null }> {
-    if (!this.kernel || signal.aborted) throw new Error('Pi navigation is unavailable.');
+  async #treeRequest(payload: Record<string, unknown>, signal?: AbortSignal): Promise<{ cancelled: boolean; leafId: string | null }> {
+    if (!this.kernel || signal?.aborted) throw new Error('Pi navigation is unavailable.');
     const state = getPiState(this.state.providerState);
     const result = await this.kernel.request<Record<string, unknown>>('claudian_tree', {
       ...payload, sessionFile: state.sessionFile, sessionId: state.sessionId,
@@ -426,7 +456,10 @@ implements ProviderExecutionSession, SteerableExecutionSession {
 
   cancel(): void {
     const active = this.activeRun;
-    if (!active || active.run.isTerminal) return;
+    if (!active || active.run.isTerminal) {
+      this.#cancelBackgroundTurn();
+      return;
+    }
     this.state.setStatus('cancelling');
     this.#emitRequestedState(active);
     active.abortController.abort();
@@ -497,6 +530,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       } catch (error) {
         lifecycleError ??= toError(error);
       }
+      await Promise.allSettled([...this.#settlingBackgroundTurns].map(background => background.completed.promise));
       this.state.setStatus('disposed');
       this.#emitSession({
         snapshot: this.getSnapshot(),
@@ -522,9 +556,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       assistantStarted: false,
       nativeRequestDispatched: false,
       pendingTerminalError: null,
-      settlesOnAgentEnd: false,
       endedWithoutRetry: false,
       runStarted: false,
+      settled: false,
       terminalSignal: createDeferred<void>(),
     };
     return active;
@@ -537,6 +571,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     try {
       assertPiModelAvailable(this.host.settings, request.configuration.model);
       const encoded = await this.#encodeRequest(active, request);
+      if (!this.isActive(active)) return;
+      // A stopped background run may still be unwinding; input sent now could be queued behind the abort.
+      await this.#awaitBackgroundCancellation(active);
       if (!this.isActive(active)) return;
       await this.#ensureKernel(encoded.launchSpec, active);
       if (!this.isActive(active) || !this.kernel) return;
@@ -568,6 +605,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
           {
             ...(encoded.images.length > 0 ? { images: encoded.images } : {}),
             message: encoded.prompt,
+            // An extension can start a run at any time; Pi rejects unqueued prompts while it streams.
+            streamingBehavior: 'followUp',
           },
           undefined,
           active.abortController.signal,
@@ -576,8 +615,10 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         // Extension commands and input handlers can consume input without starting a run.
         promptHandled = response?.disposition === 'handled';
         if (typeof response?.disposition !== 'string') {
-          active.settlesOnAgentEnd = true;
+          this.#kernelSettlement = 'agent_end';
           if (active.endedWithoutRetry) this.#settleRun(active);
+        } else {
+          this.#kernelSettlement = 'agent_settled';
         }
         if (!promptHandled) await active.terminalSignal.promise;
       }
@@ -605,7 +646,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
           usage,
         });
       }
-      this.state.setStatus('idle');
+      this.state.setStatus(this.#hasBackgroundWork() ? 'executing' : 'idle');
       this.#emitRequestedState(active);
       this.#finishRequested(active, {
         nativeUserMessageId: active.nativeUserMessageId,
@@ -811,6 +852,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       return;
     }
     this.kernel = kernel;
+    this.#kernelSettlement = null;
+    this.#kernelModel = null;
     this.processKey = launchSpec.processKey;
     this.kernelResumeValidationTarget = launchSpec.sessionTarget;
     this.#replaceKernelSessionTargets(launchSpec.sessionTarget);
@@ -887,6 +930,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       throw new PiConfigurationError('The selected Pi model is invalid.');
     }
     await this.kernel.request('set_model', modelPayload, undefined, signal);
+    this.#kernelModel = encoded.model;
     if (encoded.thinkingLevel) {
       await this.kernel.request(
         'set_thinking_level',
@@ -903,9 +947,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     event: PiRPCRecord,
   ): void {
     if (!this.#isCurrentKernel(kernel, generation)) return;
-    const active = this.activeRun;
-    if (!active || active.run.isTerminal) return;
     if (event.type === 'extension_ui_request') {
+      // A dialog nobody can answer would block Pi, whether or not a run is requested.
       const id = getString(event.id);
       if (id) {
         kernel.send({
@@ -916,6 +959,16 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       }
       return;
     }
+    if (event.type === 'agent_settled') this.#kernelSettlement = 'agent_settled';
+    const active = this.#requestedOutputTarget();
+    if (active) {
+      this.#handleRequestedRpcEvent(active, event);
+    } else {
+      this.#handleBackgroundRpcEvent(event);
+    }
+  }
+
+  #handleRequestedRpcEvent(active: ActiveRun, event: PiRPCRecord): void {
     if (event.type === 'agent_start') {
       // Overflow recovery can start a new run even when agent_end.willRetry was false.
       active.pendingTerminalError = null;
@@ -930,7 +983,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         return;
       }
       active.endedWithoutRetry = true;
-      if (active.settlesOnAgentEnd) this.#settleRun(active);
+      if (this.#kernelSettlement === 'agent_end') this.#settleRun(active);
       return;
     }
     if (event.type === 'agent_settled') {
@@ -952,9 +1005,63 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     }
 
     const chunks = normalizePiRPCEvent(event, this.normalizationState);
-    if (chunks.length > 0) this.#ensureAccepted(active);
     for (const chunk of chunks) {
-      this.handleStreamChunk(kernel, generation, chunk);
+      this.#handleRequestedChunk(active, chunk);
+    }
+  }
+
+  #handleBackgroundRpcEvent(event: PiRPCRecord): void {
+    const background = this.#backgroundTurn;
+    if (event.type === 'agent_start') {
+      if (background) {
+        background.pendingTerminalError = null;
+      } else if (this.kernelResumeValidationTarget === null) {
+        // Output of an unproven native session cannot be attributed to this conversation.
+        this.#openBackgroundTurn();
+      }
+      return;
+    }
+    if (!background) return;
+    if (event.type === 'agent_end') {
+      if (event.willRetry === true) {
+        background.pendingTerminalError = null;
+      } else if (this.#kernelSettlement !== 'agent_settled') {
+        // Without proof that agent_settled follows, the final agent_end is the only end signal.
+        this.#settleBackgroundTurn(background);
+      }
+      return;
+    }
+    if (event.type === 'agent_settled') {
+      this.#settleBackgroundTurn(background);
+      return;
+    }
+    if (event.type === 'error') {
+      background.pendingTerminalError = getString(event.error) ?? 'Pi runtime error.';
+      this.#settleBackgroundTurn(background);
+      return;
+    }
+    const terminalError = getPiTerminalErrorMessage(event);
+    if (terminalError) {
+      background.pendingTerminalError = terminalError;
+      return;
+    }
+    const active = this.activeRun;
+    if (
+      event.type === 'message_start'
+      && getRecord(event.message).role === 'user'
+      && active
+      && this.isActive(active)
+      && active.nativeRequestDispatched
+      && !active.settled
+    ) {
+      // Pi delivers queued input at a message boundary; the requested turn owns what follows.
+      this.#settleBackgroundTurn(background);
+      active.runStarted = true;
+      this.#ensureAccepted(active);
+      return;
+    }
+    for (const chunk of normalizePiRPCEvent(event, background.normalization)) {
+      this.#handleBackgroundChunk(background, chunk);
     }
   }
 
@@ -964,52 +1071,79 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     chunk: StreamChunk,
   ): void {
     if (!this.#isCurrentKernel(kernel, generation)) return;
+    const active = this.#requestedOutputTarget();
+    if (active) {
+      this.#handleRequestedChunk(active, chunk);
+    } else if (this.#backgroundTurn) {
+      this.#handleBackgroundChunk(this.#backgroundTurn, chunk);
+    }
+  }
+
+  /** The requested run owns native output until it settles, unless a background run is still streaming ahead of it. */
+  #requestedOutputTarget(): ActiveRun | null {
     const active = this.activeRun;
-    if (!active || active.run.isTerminal) return;
+    if (!active || active.run.isTerminal || active.settled || this.#backgroundTurn) return null;
+    return active;
+  }
+
+  #handleRequestedChunk(active: ActiveRun, chunk: StreamChunk): void {
     if (chunk.type === 'done') return;
     if (chunk.type === 'error') {
       active.terminalSignal.reject(new Error(chunk.content));
       return;
     }
     this.#ensureAccepted(active);
-    if (isAssistantChunk(chunk) && !active.assistantStarted) {
-      active.assistantStarted = true;
-      this.#emitRequested(active, { type: 'assistant_message_started' });
+    this.#emitChunk(active, chunk);
+  }
+
+  #handleBackgroundChunk(background: BackgroundTurn, chunk: StreamChunk): void {
+    if (chunk.type === 'done') return;
+    if (chunk.type === 'error') {
+      background.pendingTerminalError = chunk.content;
+      return;
+    }
+    this.#emitChunk(background, chunk);
+  }
+
+  #emitChunk(target: TurnTarget, chunk: StreamChunk): void {
+    if (isAssistantChunk(chunk) && !target.assistantStarted) {
+      target.assistantStarted = true;
+      this.#emitTurn(target, { type: 'assistant_message_started' });
     }
     switch (chunk.type) {
       case 'user_message_start':
-        this.#emitRequested(active, {
+        this.#emitTurn(target, {
           content: chunk.content,
           nativeUserMessageId: chunk.itemId,
           type: 'user_message_started',
         });
         break;
       case 'assistant_message_start':
-        active.assistantStarted = true;
-        active.nativeAssistantId = chunk.itemId;
-        this.#emitRequested(active, {
+        target.assistantStarted = true;
+        target.nativeAssistantId = chunk.itemId;
+        this.#emitTurn(target, {
           nativeAssistantId: chunk.itemId,
           type: 'assistant_message_started',
         });
         break;
       case 'text':
-        this.#emitRequested(active, { text: chunk.content, type: 'text_delta' });
+        this.#emitTurn(target, { text: chunk.content, type: 'text_delta' });
         break;
       case 'thinking':
-        this.#emitRequested(active, {
+        this.#emitTurn(target, {
           text: chunk.content,
           type: 'thinking_delta',
         });
         break;
       case 'citations':
-        this.#emitRequested(active, {
+        this.#emitTurn(target, {
           citations: chunk.citations,
           type: 'citations',
         });
         break;
       case 'tool_use':
       case 'subagent_tool_use':
-        this.#emitRequested(active, {
+        this.#emitTurn(target, {
           input: chunk.input,
           name: chunk.name,
           toolCallId: chunk.id,
@@ -1018,7 +1152,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         });
         break;
       case 'tool_output':
-        this.#emitRequested(active, {
+        this.#emitTurn(target, {
           content: chunk.content,
           toolCallId: chunk.id,
           toolScope: { kind: 'main' },
@@ -1028,7 +1162,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         break;
       case 'tool_result':
       case 'subagent_tool_result':
-        this.#emitRequested(active, {
+        this.#emitTurn(target, {
           content: chunk.content,
           isError: chunk.isError,
           isBlocked: chunk.isBlocked,
@@ -1039,16 +1173,19 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         });
         break;
       case 'usage':
-        this.#emitRequested(active, {
+        this.#emitTurn(target, {
           type: 'usage_updated',
           usage: chunk.usage,
         });
         break;
       case 'context_compacted':
-        this.#emitRequested(active, { type: 'context_compacted' });
+        this.#emitTurn(target, { type: 'context_compacted' });
+        break;
+      case 'task_notification':
+        this.#emitTurn(target, { content: chunk.content, type: 'task_notification' });
         break;
       case 'notice':
-        this.#emitRequested(active, {
+        this.#emitTurn(target, {
           level: chunk.level,
           message: chunk.content,
           type: 'notice',
@@ -1057,12 +1194,152 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     }
   }
 
+  #emitTurn(target: TurnTarget, event: WithoutEventScope<ProviderBackgroundOutputEvent>): void {
+    if ('run' in target) {
+      this.#emitRequested(target, event);
+    } else {
+      this.#emitBackground(target, event);
+    }
+  }
+
+  #openBackgroundTurn(): void {
+    const background: BackgroundTurn = {
+      assistantStarted: false,
+      cancelTimer: null,
+      cancelling: false,
+      completed: createDeferred<void>(),
+      normalization: createPiEventNormalizationState(),
+      pendingTerminalError: null,
+      sequence: 0,
+      turnId: `pi-background-${++this.#backgroundCounter}`,
+    };
+    this.#backgroundTurn = background;
+    this.state.setStatus('executing');
+    this.#emitBackground(background, {
+      providerSessionId: this.providerSessionId ?? undefined,
+      snapshotRevision: this.state.revision,
+      type: 'background_turn_started',
+    });
+    this.#emitBackgroundState(background);
+  }
+
+  /** The native run ended; publish completion once the persisted leaf it appended is known. */
+  #settleBackgroundTurn(background: BackgroundTurn): void {
+    if (this.#backgroundTurn !== background) return;
+    this.#backgroundTurn = null;
+    this.#settlingBackgroundTurns.add(background);
+    const kernel = this.kernel;
+    const generation = this.kernelGeneration;
+    void this.#syncSettledBackgroundTurn(background, kernel, generation);
+  }
+
+  async #syncSettledBackgroundTurn(
+    background: BackgroundTurn,
+    kernel: PiExecutionKernel | null,
+    generation: number,
+  ): Promise<void> {
+    const isCurrent = () => kernel !== null && this.#isCurrentKernel(kernel, generation);
+    try {
+      if (isCurrent() && !this.#shouldDisableNativePersistence()) {
+        const path = await this.#syncNativeLeaf(undefined, isCurrent);
+        background.nativeAssistantId = (path && findLastRoleId(path, 'assistant')) ?? background.nativeAssistantId;
+      }
+    } catch {
+      // History reload still reads the native file; completion must not wait on a failed sync.
+    }
+    const model = this.#kernelModel;
+    const usage = isCurrent() && model
+      ? await this.#fetchUsage(model).catch(() => null)
+      : null;
+    if (usage && this.#settlingBackgroundTurns.has(background)) {
+      this.#emitBackground(background, { type: 'usage_updated', usage });
+    }
+    this.#completeBackgroundTurn(background, background.cancelling ? 'provider-ended' : 'completed');
+  }
+
+  #completeBackgroundTurn(
+    background: BackgroundTurn,
+    reason: 'completed' | 'provider-ended',
+  ): void {
+    if (this.#backgroundTurn === background) {
+      this.#backgroundTurn = null;
+    } else if (!this.#settlingBackgroundTurns.delete(background)) {
+      return;
+    }
+    if (background.cancelTimer) window.clearTimeout(background.cancelTimer);
+    background.cancelTimer = null;
+    if (background.pendingTerminalError) {
+      this.#emitBackground(background, {
+        level: 'warning',
+        message: background.pendingTerminalError,
+        type: 'notice',
+      });
+    }
+    if (!this.disposed && this.state.status !== 'invalidated') {
+      const requested = this.activeRun !== null && !this.activeRun.run.isTerminal;
+      this.state.setStatus(requested || this.#hasBackgroundWork() ? 'executing' : 'idle');
+    }
+    this.#emitBackgroundState(background);
+    this.#emitBackground(background, {
+      nativeAssistantId: background.nativeAssistantId,
+      providerSessionId: this.providerSessionId ?? undefined,
+      reason,
+      snapshotRevision: this.state.revision,
+      type: 'background_turn_completed',
+    });
+    background.completed.resolve();
+  }
+
+  /** The process that ran the background turn is gone; nothing more will arrive for it. */
+  #abandonBackgroundTurn(): void {
+    const background = this.#backgroundTurn;
+    if (background) this.#completeBackgroundTurn(background, 'provider-ended');
+  }
+
+  #cancelBackgroundTurn(): void {
+    const background = this.#backgroundTurn;
+    const kernel = this.kernel;
+    if (!background || background.cancelling) return;
+    if (!kernel) {
+      this.#abandonBackgroundTurn();
+      return;
+    }
+    background.cancelling = true;
+    this.state.setStatus('cancelling');
+    this.#emitBackgroundState(background);
+    // Pi keeps the process (and extension state such as running subagents) across an abort.
+    kernel.send({ type: 'abort' });
+    const generation = this.kernelGeneration;
+    background.cancelTimer = window.setTimeout(() => {
+      background.cancelTimer = null;
+      if (this.#backgroundTurn === background && this.#isCurrentKernel(kernel, generation)) {
+        void this.#shutdownKernel().catch(() => undefined);
+      }
+    }, BACKGROUND_ABORT_GRACE_MS);
+  }
+
+  async #awaitBackgroundCancellation(active: ActiveRun): Promise<void> {
+    const background = this.#backgroundTurn;
+    if (!background?.cancelling) return;
+    const signal = active.abortController.signal;
+    await new Promise<void>((resolve) => {
+      if (signal.aborted) return resolve();
+      signal.addEventListener('abort', () => resolve(), { once: true });
+      void background.completed.promise.then(() => resolve());
+    });
+  }
+
+  #hasBackgroundWork(): boolean {
+    return this.#backgroundTurn !== null || this.#settlingBackgroundTurns.size > 0;
+  }
+
   #handleKernelClose(
     kernel: PiExecutionKernel,
     generation: number,
     error?: Error,
   ): void {
     if (!this.#isCurrentKernel(kernel, generation) || this.disposed) return;
+    this.#abandonBackgroundTurn();
     const missingProviderSessionId = getPiMissingSessionTarget(
       kernel.launchSpec,
       kernel.getStderrSnapshot(),
@@ -1180,25 +1457,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     active: ActiveRun,
     previousLeafId: string | null,
   ): Promise<void> {
-    const sessionFile = getPiState(this.state.providerState).sessionFile;
-    if (!sessionFile) return;
     try {
-      // Live completion follows the appended native branch, not the saved resume leaf.
-      const treeState = getPiState(this.state.providerState);
-      const treeResult = treeState.treeCursor
-        ? await this.#treeRequest({ operation: 'inspect' }, active.abortController.signal) : null;
-      if (!this.isActive(active)) return;
-      if (treeResult?.cancelled) throw new Error('Pi branch inspection was cancelled.');
-      if (treeResult && treeResult.leafId !== null) {
-        this.#setProviderStateValue('treeCursor', { targetId: treeResult.leafId, leafId: treeResult.leafId, appendId: treeResult.leafId });
-        this.#setOptionalProviderStateValue('leafEntryId', treeResult.leafId);
-      }
-      const content = await fsp.readFile(sessionFile, 'utf8');
-      const parsed = parsePiSessionEntries(content);
-      if (!this.isActive(active)) return;
-      const path = treeResult?.leafId === null ? [] : resolvePiActivePath(parsed.entries, treeResult?.leafId);
-      const leafEntryId = [...path].reverse().find(entry => entry.id)?.id;
-      if (leafEntryId) this.#setOptionalProviderStateValue('leafEntryId', leafEntryId);
+      const path = await this.#syncNativeLeaf(active.abortController.signal, () => this.isActive(active));
+      if (!path) return;
       const previousIndex = previousLeafId
         ? path.findIndex(entry => entry.id === previousLeafId)
         : -1;
@@ -1213,7 +1474,36 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     }
   }
 
-  async #fetchUsage(model: string, signal: AbortSignal) {
+  /**
+   * Follows the native branch a run appended to, so resume and reload include it.
+   * Returns that branch, or null when there is no native file or the caller became stale.
+   */
+  async #syncNativeLeaf(
+    signal: AbortSignal | undefined,
+    isCurrent: () => boolean,
+  ): Promise<ReturnType<typeof resolvePiActivePath> | null> {
+    const sessionFile = getPiState(this.state.providerState).sessionFile;
+    if (!sessionFile) return null;
+    // Live completion follows the appended native branch, not the saved resume leaf.
+    const treeState = getPiState(this.state.providerState);
+    const treeResult = treeState.treeCursor
+      ? await this.#treeRequest({ operation: 'inspect' }, signal) : null;
+    if (!isCurrent()) return null;
+    if (treeResult?.cancelled) throw new Error('Pi branch inspection was cancelled.');
+    if (treeResult && treeResult.leafId !== null) {
+      this.#setProviderStateValue('treeCursor', { targetId: treeResult.leafId, leafId: treeResult.leafId, appendId: treeResult.leafId });
+      this.#setOptionalProviderStateValue('leafEntryId', treeResult.leafId);
+    }
+    const content = await fsp.readFile(sessionFile, 'utf8');
+    const parsed = parsePiSessionEntries(content);
+    if (!isCurrent()) return null;
+    const path = treeResult?.leafId === null ? [] : resolvePiActivePath(parsed.entries, treeResult?.leafId);
+    const leafEntryId = [...path].reverse().find(entry => entry.id)?.id;
+    if (leafEntryId) this.#setOptionalProviderStateValue('leafEntryId', leafEntryId);
+    return path;
+  }
+
+  async #fetchUsage(model: string, signal?: AbortSignal) {
     if (!this.kernel) return null;
     const settings = getPiProviderSettings(this.host.settings);
     const contextWindow = findPiModel(settings, model)?.contextWindow;
@@ -1363,7 +1653,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       this.kernel?.getStderrSnapshot(),
     );
     if (details.category === 'configuration') {
-      this.state.setStatus('idle');
+      this.state.setStatus(this.#hasBackgroundWork() ? 'executing' : 'idle');
     } else {
       this.state.invalidate({
         message: details.message,
@@ -1413,6 +1703,26 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     });
   }
 
+  #emitBackground(
+    background: BackgroundTurn,
+    event: WithoutEventScope<ProviderSessionEvent>,
+  ): void {
+    const scope: ProviderBackgroundEventScope = {
+      kind: 'background',
+      sequence: ++background.sequence,
+      sessionInstanceId: this.sessionInstanceId,
+      turnId: background.turnId,
+    };
+    this.state.notify({ ...event, scope } as ProviderSessionEvent);
+  }
+
+  #emitBackgroundState(background: BackgroundTurn): void {
+    this.#emitBackground(background, {
+      snapshot: this.getSnapshot(),
+      type: 'session_state_changed',
+    });
+  }
+
   #emitSession(event: WithoutEventScope<ProviderSessionEvent>): void {
     this.state.emit(event);
   }
@@ -1433,6 +1743,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   }
 
   #settleRun(active: ActiveRun): void {
+    active.settled = true;
     this.#ensureAccepted(active);
     const pendingTerminalError = active.pendingTerminalError;
     active.pendingTerminalError = null;
@@ -1460,6 +1771,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   }
 
   #shutdownKernel(): Promise<void> {
+    this.#abandonBackgroundTurn();
     if (this.shutdownPromise) return this.shutdownPromise;
     const kernel = this.kernel;
     this.kernel = null;

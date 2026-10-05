@@ -227,6 +227,29 @@ describe('Pi event normalization', () => {
     }]);
   });
 
+  it('maps displayable extension custom messages to notifications as history does', () => {
+    const state = createPiEventNormalizationState();
+    const custom = (message: Record<string, unknown>) => normalizePiRPCEvent({
+      message: { customType: 'peeps-result', role: 'custom', ...message },
+      type: 'message_start',
+    }, state);
+    expect(custom({ content: 'Child answer', display: true })).toEqual([{ content: 'Child answer', type: 'task_notification' }]);
+    expect(custom({
+      content: [{ text: 'Part one, ', type: 'text' }, { data: 'x', mimeType: 'image/png', type: 'image' }, { text: 'part two', type: 'text' }],
+    })).toEqual([{ content: 'Part one, part two', type: 'task_notification' }]);
+    expect(custom({ content: 'Hidden context', display: false })).toEqual([]);
+    expect(custom({ content: '' })).toEqual([]);
+    expect(normalizePiRPCEvent({
+      message: { content: 'Prompt', role: 'user' },
+      type: 'message_start',
+    }, state)).toEqual([]);
+    // The paired message_end must not render the same message twice.
+    expect(normalizePiRPCEvent({
+      message: { content: 'Child answer', customType: 'peeps-result', display: true, role: 'custom' },
+      type: 'message_end',
+    }, state)).toEqual([]);
+  });
+
   it('surfaces terminal Pi stop-reason errors', () => {
     const state = createPiEventNormalizationState();
 

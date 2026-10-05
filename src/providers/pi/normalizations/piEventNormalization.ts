@@ -46,6 +46,8 @@ export function normalizePiRPCEvent(
       return typeof event.parentToolCallId === 'string'
         ? recordNestedToolCall(event, event.parentToolCallId, state)
         : normalizeToolExecution(event, state);
+    case 'message_start':
+      return normalizeCustomMessage(event);
     case 'message_end':
     case 'turn_end':
       return normalizeTerminalError(event);
@@ -89,6 +91,28 @@ function normalizeToolExecution(
     default:
       return normalizeToolResult(event, state);
   }
+}
+
+/**
+ * Extension messages (`pi.sendMessage`) enter the conversation as role `custom`; displayable
+ * ones render as notifications, matching the replayed `custom_message` entry.
+ */
+function normalizeCustomMessage(event: Record<string, unknown>): StreamChunk[] {
+  const message = getNestedRecord(event, 'message');
+  if (message?.role !== 'custom' || message.display === false) return [];
+  const content = getPiCustomMessageText(message.content);
+  return content ? [{ type: 'task_notification', content }] : [];
+}
+
+/** Text of a custom message's string or block content, joined as session history joins it. */
+function getPiCustomMessageText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map(block => block !== null && typeof block === 'object' && (block as Record<string, unknown>).type === 'text'
+      ? getString((block as Record<string, unknown>).text) ?? ''
+      : '')
+    .join('');
 }
 
 export function getPiTerminalErrorMessage(event: Record<string, unknown>): string | null {

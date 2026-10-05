@@ -12,6 +12,7 @@ import type {
   ProviderExecutionRun,
   ProviderInteractionPort,
   ProviderSessionConfig,
+  ProviderSessionEvent,
 } from '@/core/execution';
 import {
   isSteerableExecutionSession,
@@ -675,6 +676,7 @@ describe('PiExecutionBackend', () => {
       payload: {
         images: [{ data: 'base64-data', mimeType: 'image/png', type: 'image' }],
         message: 'Hello Pi',
+        streamingBehavior: 'followUp',
       },
       type: 'prompt',
     });
@@ -1089,7 +1091,7 @@ describe('PiExecutionBackend', () => {
 
     expect(harness.kernels[0].launchSpec.args).toContain(sessionFile);
     expect(harness.kernels[0].requests).toContainEqual({
-      payload: { message: 'Hello Pi' },
+      payload: { message: 'Hello Pi', streamingBehavior: 'followUp' },
       type: 'prompt',
     });
     const requestTypes = harness.kernels[0].requests.map(request => request.type);
@@ -2772,5 +2774,221 @@ describe('PiExecutionBackend', () => {
       'Pi execution session is disposed',
     );
     expect(harness.kernels).toHaveLength(0);
+  });
+
+  describe('extension-initiated turns', () => {
+    const peepsResult = {
+      content: '[Peeps automated result — run-1 — answer]\nChild answer',
+      customType: 'peeps-result',
+      details: { runId: 'run-1', status: 'answer' },
+      display: true,
+      role: 'custom',
+    };
+
+    async function startIdleSession(harness: ReturnType<typeof createHarness>) {
+      const run = harness.session.execute(createRequest());
+      const requested = collect(run.events);
+      await waitFor(() => harness.kernels[0]?.requests.some(request => request.type === 'prompt') ?? false);
+      completeTurn(harness.kernels[0]);
+      await requested;
+      const events: ProviderSessionEvent[] = [];
+      harness.session.onEvent(event => events.push(event));
+      return { events, kernel: harness.kernels[0] };
+    }
+
+    function emitWake(kernel: FakeKernel): void {
+      kernel.emit({ type: 'entry_appended' });
+      kernel.emit({ type: 'agent_start' });
+      kernel.emit({ type: 'turn_start' });
+      kernel.emit({ message: peepsResult, type: 'message_start' });
+      kernel.emit({ message: peepsResult, type: 'message_end' });
+      kernel.emit({ message: { role: 'assistant' }, type: 'message_start' });
+      kernel.emit({ assistantMessageEvent: { delta: 'Parent reply', type: 'text_delta' }, type: 'message_update' });
+    }
+
+    function backgroundEvents(events: ProviderSessionEvent[]) {
+      return events.filter(event => event.scope.kind === 'background');
+    }
+
+    it('surfaces an idle extension-triggered run as one background turn and follows its native leaf', async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-background-'));
+      const sessionFile = path.join(dir, 'session.jsonl');
+      const lines = [
+        { type: 'session', id: 'pi-session-1' },
+        { type: 'message', id: 'u1', parentId: null, message: { role: 'user', content: 'Hello Pi' } },
+        { type: 'message', id: 'a1', parentId: 'u1', message: { role: 'assistant', content: 'Hi', stopReason: 'stop' } },
+      ];
+      await fs.writeFile(sessionFile, lines.map(line => JSON.stringify(line)).join('\n'));
+      const harness = createHarness();
+      harness.responses.set('get_state', { sessionFile, sessionId: 'pi-session-1' });
+      try {
+        const { events, kernel } = await startIdleSession(harness);
+        expect(harness.session.getSnapshot().providerState?.leafEntryId).toBe('a1');
+
+        emitWake(kernel);
+        kernel.emit({ toolCall: { arguments: { path: 'note.md' }, id: 'tool-bg', name: 'read' }, type: 'tool_execution_start' });
+        kernel.emit({ id: 'tool-bg', result: { content: 'note' }, type: 'tool_execution_end' });
+        expect(harness.session.getStatus()).toBe('executing');
+        await fs.appendFile(sessionFile, `\n${[
+          { type: 'custom_message', id: 'c1', parentId: 'a1', customType: 'peeps-result', display: true, content: 'Child answer' },
+          { type: 'message', id: 'a2', parentId: 'c1', message: { role: 'assistant', content: 'Parent reply', stopReason: 'stop' } },
+        ].map(line => JSON.stringify(line)).join('\n')}`);
+        kernel.emit({ messages: [], type: 'agent_end' });
+        kernel.emit({ type: 'entry_appended' });
+        kernel.emit({ type: 'agent_settled' });
+        await waitFor(() => events.some(event => event.type === 'background_turn_completed'));
+
+        const background = backgroundEvents(events);
+        expect(background.map(event => event.type)).toEqual([
+          'background_turn_started',
+          'session_state_changed',
+          'task_notification',
+          'assistant_message_started',
+          'text_delta',
+          'tool_started',
+          'tool_completed',
+          'usage_updated',
+          'session_state_changed',
+          'background_turn_completed',
+        ]);
+        expect(background).toContainEqual(expect.objectContaining({ content: peepsResult.content, type: 'task_notification' }));
+        expect(background).toContainEqual(expect.objectContaining({ text: 'Parent reply', type: 'text_delta' }));
+        expect(background.at(-1)).toMatchObject({ reason: 'completed', providerSessionId: 'pi-session-1' });
+        expect(new Set(background.map(event => event.scope.kind === 'background' && event.scope.turnId)).size).toBe(1);
+        expect(background.map(event => event.scope.sequence)).toEqual(background.map((_, index) => index + 1));
+        // Reload follows the persisted leaf; a stale leaf would truncate the background turn.
+        expect(harness.session.getSnapshot()).toMatchObject({ providerState: { leafEntryId: 'a2' }, status: 'idle' });
+      } finally {
+        await harness.session.dispose();
+        await fs.rm(dir, { force: true, recursive: true });
+      }
+    });
+
+    it('settles a pre-1.0 extension-triggered run on its final agent_end', async () => {
+      const harness = createHarness();
+      harness.responses.set('prompt', {});
+      const run = harness.session.execute(createRequest());
+      const requested = collect(run.events);
+      await waitFor(() => harness.kernels[0]?.requests.some(request => request.type === 'prompt') ?? false);
+      harness.kernels[0].emit({ type: 'agent_start' });
+      harness.kernels[0].emit({ type: 'agent_end', willRetry: false });
+      await requested;
+      const events: ProviderSessionEvent[] = [];
+      harness.session.onEvent(event => events.push(event));
+
+      emitWake(harness.kernels[0]);
+      harness.kernels[0].emit({ type: 'agent_end', willRetry: true });
+      harness.kernels[0].emit({ type: 'agent_start' });
+      await flush();
+      expect(events.some(event => event.type === 'background_turn_completed')).toBe(false);
+      harness.kernels[0].emit({ type: 'agent_end', willRetry: false });
+      await waitFor(() => events.some(event => event.type === 'background_turn_completed'));
+      expect(backgroundEvents(events).filter(event => event.type === 'background_turn_started')).toHaveLength(1);
+      expect(harness.session.getStatus()).toBe('idle');
+      await harness.session.dispose();
+    });
+
+    it('renders a custom message steered into a requested run in that run', async () => {
+      const harness = createHarness();
+      const run = harness.session.execute(createRequest());
+      const eventsPromise = collect(run.events);
+      await waitFor(() => harness.kernels[0]?.requests.some(request => request.type === 'prompt') ?? false);
+      const kernel = harness.kernels[0];
+      kernel.emit({ type: 'agent_start' });
+      kernel.emit({ assistantMessageEvent: { delta: 'Waiting', type: 'text_delta' }, type: 'message_update' });
+      kernel.emit({ message: peepsResult, type: 'message_start' });
+      kernel.emit({ message: peepsResult, type: 'message_end' });
+      kernel.emit({ message: { ...peepsResult, content: 'Context only', display: false }, type: 'message_start' });
+      kernel.emit({ assistantMessageEvent: { delta: 'Folded in', type: 'text_delta' }, type: 'message_update' });
+      kernel.emit({ type: 'agent_end' });
+      kernel.emit({ type: 'agent_settled' });
+
+      const events = await eventsPromise;
+      const output = events.filter(event => ['task_notification', 'text_delta'].includes(event.type));
+      expect(output).toEqual([
+        expect.objectContaining({ text: 'Waiting', type: 'text_delta' }),
+        expect.objectContaining({ content: peepsResult.content, type: 'task_notification' }),
+        expect.objectContaining({ text: 'Folded in', type: 'text_delta' }),
+      ]);
+      expect(events.at(-1)?.type).toBe('turn_completed');
+      await harness.session.dispose();
+    });
+
+    it('answers an extension dialog that arrives while no run is requested', async () => {
+      const harness = createHarness();
+      const { kernel } = await startIdleSession(harness);
+      kernel.emit({ id: 'dialog-1', method: 'confirm', type: 'extension_ui_request' });
+      expect(kernel.sent).toContainEqual({ cancelled: true, id: 'dialog-1', type: 'extension_ui_response' });
+      expect(kernel.emitExtensionRequest({ id: 'dialog-2', method: 'select', type: 'extension_ui_request' })).toBe(false);
+      await harness.session.dispose();
+    });
+
+    it('hands a prompt sent during a background turn to its requested run at the native user boundary', async () => {
+      const harness = createHarness();
+      const { events, kernel } = await startIdleSession(harness);
+      emitWake(kernel);
+
+      harness.responses.set('prompt', { disposition: 'queued' });
+      const run = harness.session.execute(createRequest({ input: [{ text: 'Follow up', type: 'text' }] }));
+      const requestedPromise = collect(run.events);
+      await waitFor(() => kernel.requests.filter(request => request.type === 'prompt').length === 2);
+      // Pi rejects unqueued prompts while an extension run streams.
+      expect(kernel.requests.filter(request => request.type === 'prompt').at(-1)?.payload).toMatchObject({
+        message: 'Follow up',
+        streamingBehavior: 'followUp',
+      });
+      kernel.emit({ assistantMessageEvent: { delta: ' continues', type: 'text_delta' }, type: 'message_update' });
+      kernel.emit({ message: { content: 'Follow up', role: 'user' }, type: 'message_start' });
+      await waitFor(() => events.some(event => event.type === 'background_turn_completed'));
+      kernel.emit({ assistantMessageEvent: { delta: 'Requested answer', type: 'text_delta' }, type: 'message_update' });
+      kernel.emit({ type: 'agent_end' });
+      kernel.emit({ type: 'agent_settled' });
+      const requested = await requestedPromise;
+
+      const backgroundText = backgroundEvents(events).flatMap(event => event.type === 'text_delta' ? [event.text] : []);
+      const requestedText = requested.flatMap(event => event.type === 'text_delta' ? [event.text] : []);
+      expect(backgroundText).toEqual(['Parent reply', ' continues']);
+      expect(requestedText).toEqual(['Requested answer']);
+      expect(requested.at(-1)?.type).toBe('turn_completed');
+      expect(harness.session.getStatus()).toBe('idle');
+      await harness.session.dispose();
+    });
+
+    it('aborts a background turn on Stop and completes it when Pi settles without restarting Pi', async () => {
+      const harness = createHarness();
+      const { events, kernel } = await startIdleSession(harness);
+      emitWake(kernel);
+
+      harness.session.cancel();
+      expect(kernel.sent).toContainEqual({ type: 'abort' });
+      expect(harness.session.getStatus()).toBe('cancelling');
+      kernel.emit({ type: 'agent_end' });
+      kernel.emit({ type: 'agent_settled' });
+      await waitFor(() => events.some(event => event.type === 'background_turn_completed'));
+
+      expect(backgroundEvents(events).at(-1)).toMatchObject({ reason: 'provider-ended', type: 'background_turn_completed' });
+      expect(harness.session.getStatus()).toBe('idle');
+      expect(kernel.shutdown).not.toHaveBeenCalled();
+      await harness.session.dispose();
+    });
+
+    it.each([
+      ['process exit', 'invalidated', 'session_error'],
+      ['dispose', 'disposed', 'session_state_changed'],
+    ] as const)('completes an open background turn on %s', async (teardown, status, lastEvent) => {
+      const harness = createHarness();
+      const { events, kernel } = await startIdleSession(harness);
+      emitWake(kernel);
+
+      if (teardown === 'dispose') await harness.session.dispose();
+      else kernel.close(new Error('exit code 1'));
+
+      const background = backgroundEvents(events);
+      expect(background.at(-1)).toMatchObject({ reason: 'provider-ended', type: 'background_turn_completed' });
+      expect(background).toContainEqual(expect.objectContaining({ text: 'Parent reply', type: 'text_delta' }));
+      expect(harness.session.getStatus()).toBe(status);
+      expect(events.at(-1)).toMatchObject({ scope: { kind: 'session' }, type: lastEvent });
+      await harness.session.dispose();
+    });
   });
 });
