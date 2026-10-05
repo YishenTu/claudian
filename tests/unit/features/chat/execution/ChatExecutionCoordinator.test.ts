@@ -704,13 +704,13 @@ describe('ChatExecutionCoordinator', () => {
 
     await expect(harness.coordinator.steer(
       createSubmission({ submissionId: 'steer-1' }),
-    )).resolves.toBe(true);
+    )).resolves.toEqual({ delivery: 'accepted' });
     expect(session.steerRequests).toHaveLength(1);
 
     session.steerResult = false;
     await expect(harness.coordinator.steer(
       createSubmission({ submissionId: 'steer-2' }),
-    )).resolves.toBe(false);
+    )).resolves.toEqual({ delivery: 'not-sent' });
 
     run.events.push({
       type: 'turn_completed',
@@ -729,9 +729,9 @@ describe('ChatExecutionCoordinator', () => {
 
     await expect(harness.coordinator.steer(createSubmission({
       submissionId: 'unstaged-steer',
-    }))).rejects.toMatchObject({
-      cause,
-      name: 'ChatExecutionPreHandoffError',
+    }))).resolves.toMatchObject({
+      delivery: 'not-sent',
+      error: { cause, name: 'ChatExecutionPreHandoffError' },
     });
 
     expect(session.steerRequests).toHaveLength(0);
@@ -770,7 +770,7 @@ describe('ChatExecutionCoordinator', () => {
 
     nativeSteer.resolve(false);
 
-    await expect(steerResult).resolves.toBe(false);
+    await expect(steerResult).resolves.toEqual({ delivery: 'not-sent' });
     await expect(resultPromise).resolves.toMatchObject({ status: 'invalidated' });
   });
 
@@ -799,7 +799,7 @@ describe('ChatExecutionCoordinator', () => {
 
     nativeSteer.resolve(true);
 
-    await expect(steerResult).resolves.toBe(true);
+    await expect(steerResult).resolves.toEqual({ delivery: 'accepted' });
     await expect(resultPromise).resolves.toMatchObject({ status: 'invalidated' });
   });
 
@@ -823,7 +823,7 @@ describe('ChatExecutionCoordinator', () => {
     )).resolves.toBe(true);
     nativeSteer.resolve(false);
 
-    await expect(steerResult).resolves.toBe(true);
+    await expect(steerResult).resolves.toEqual({ delivery: 'accepted' });
 
     await harness.coordinator.bindConversation(null);
     await expect(resultPromise).resolves.toMatchObject({ status: 'invalidated' });
@@ -848,7 +848,7 @@ describe('ChatExecutionCoordinator', () => {
     )).resolves.toBe(true);
     nativeSteer.resolve(true);
 
-    await expect(steerResult).resolves.toBe(true);
+    await expect(steerResult).resolves.toEqual({ delivery: 'accepted' });
     await expect(harness.coordinator.acceptSteerFromProviderEvent(
       'event-before-true',
       'native-event-first',
@@ -865,7 +865,7 @@ describe('ChatExecutionCoordinator', () => {
 
     await expect(harness.coordinator.steer(createSubmission({
       submissionId: 'ack-before-event',
-    }))).resolves.toBe(true);
+    }))).resolves.toEqual({ delivery: 'accepted' });
 
     await expect(harness.coordinator.acceptSteerFromProviderEvent(
       'ack-before-event',
@@ -894,7 +894,7 @@ describe('ChatExecutionCoordinator', () => {
 
       await expect(harness.coordinator.steer(createSubmission({
         submissionId: `accepted-before-${boundary}`,
-      }))).resolves.toBe(true);
+      }))).resolves.toEqual({ delivery: 'accepted' });
       if (boundary === 'bind') {
         await harness.coordinator.bindConversation({
           conversationId: 'conversation-2',
@@ -921,7 +921,7 @@ describe('ChatExecutionCoordinator', () => {
 
     await expect(harness.coordinator.steer(createSubmission({
       submissionId: 'accepted-without-event',
-    }))).resolves.toBe(true);
+    }))).resolves.toEqual({ delivery: 'accepted' });
     harness.coordinator.releaseSteerCorrelation('accepted-without-event');
 
     await expect(harness.coordinator.acceptSteerFromProviderEvent(
@@ -959,7 +959,7 @@ describe('ChatExecutionCoordinator', () => {
     });
     nativeSteer.reject(new Error('late transport failure'));
 
-    await expect(steerResult).resolves.toBe(true);
+    await expect(steerResult).resolves.toEqual({ delivery: 'accepted' });
     await expect(resultPromise).resolves.toMatchObject({ status: 'invalidated' });
   });
 
@@ -1007,7 +1007,7 @@ describe('ChatExecutionCoordinator', () => {
 
     await expect(harness.coordinator.steer(createSubmission({
       submissionId: 'event-after-error',
-    }))).rejects.toBe(steerError);
+    }))).resolves.toEqual({ delivery: 'uncertain', error: steerError });
 
     await expect(harness.coordinator.acceptSteerFromProviderEvent(
       'event-after-error',
@@ -1033,7 +1033,7 @@ describe('ChatExecutionCoordinator', () => {
 
     await expect(harness.coordinator.steer(createSubmission({
       submissionId: 'delegated-ambiguous',
-    }))).rejects.toThrow('acknowledgement lost');
+    }))).resolves.toMatchObject({ delivery: 'uncertain', error: new Error('acknowledgement lost') });
     harness.coordinator.releaseSteerCorrelation('delegated-ambiguous');
 
     await expect(harness.coordinator.acceptSteerFromProviderEvent(
@@ -1061,7 +1061,7 @@ describe('ChatExecutionCoordinator', () => {
 
     void harness.coordinator.steer(createSubmission({
       submissionId: 'accept-save-failure',
-    })).catch(() => {});
+    }));
     for (let attempt = 0; attempt < 20 && steer.mock.calls.length === 0; attempt++) {
       await Promise.resolve();
     }

@@ -5,7 +5,8 @@ import path from 'node:path';
 
 import { fireEvent, within } from '@testing-library/dom';
 
-import { createInputToolbar, type ToolbarCallbacks } from '@/features/chat/ui/InputToolbar';
+import { createInputToolbar } from '@/features/chat/composer/toolbar/InputToolbar';
+import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
 
 beforeAll(() => {
   Object.assign(HTMLElement.prototype, {

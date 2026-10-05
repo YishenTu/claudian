@@ -4,12 +4,11 @@ import { Decoration, type DecorationSet, EditorView, keymap, placeholder, Widget
 import { type App, type Component, MarkdownRenderer, setIcon } from 'obsidian';
 
 import type { ProviderCommandKind } from '@/core/providers/commands/ProviderCommandEntry';
+import { type ComposerSessionMention, findComposerSessionMentions } from '@/features/chat/composer/composerSessionMentions';
+import { filterComposerTextTokens, findComposerWikilinks } from '@/features/chat/composer/composerWikilinks';
 import { t } from '@/i18n/i18n';
 import type { ComposerCommandResolver, ComposerInputElement } from '@/shared/composer-dropdown/types';
 import { registerFileLinkHandler } from '@/utils/fileLink';
-
-import { type ComposerSessionMention, findComposerSessionMentions } from './composerSessionMentions';
-import { filterComposerTextTokens, findComposerWikilinks } from './composerWikilinks';
 
 const refreshLinks = StateEffect.define<null>();
 const programmatic = Annotation.define<boolean>();

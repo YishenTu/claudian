@@ -2,7 +2,7 @@
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 
-import { InlineAskUserQuestion } from '@/features/chat/rendering/InlineAskUserQuestion';
+import { InlineAskUserQuestion } from '@/features/chat/interactions/InlineAskUserQuestion';
 import { projectOpencodeFormQuestions } from '@/providers/opencode/http/OpencodeHTTPForms';
 
 beforeAll(() => {

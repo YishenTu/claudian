@@ -1,4 +1,4 @@
-import { collapseElement, setupCollapsible } from './collapsible';
+import { collapseElement, setupCollapsible } from '@/features/chat/rendering/collapsible';
 
 export type RenderContentFn = (el: HTMLElement, markdown: string) => Promise<void>;
 
@@ -16,22 +16,28 @@ export interface ThinkingBlockOptions {
   onToggle?: (isExpanded: boolean) => void;
 }
 
+interface ThinkingBlockElements {
+  wrapperEl: HTMLElement;
+  headerEl: HTMLElement;
+  labelEl: HTMLElement;
+  contentEl: HTMLElement;
+}
+
+function createThinkingBlockElements(parentEl: HTMLElement, label: string, content = ''): ThinkingBlockElements {
+  const wrapperEl = parentEl.createDiv({ cls: 'claudian-thinking-block' });
+  const headerEl = wrapperEl.createDiv({ cls: 'claudian-thinking-header' });
+  const labelEl = headerEl.createSpan({ cls: 'claudian-thinking-label' });
+  labelEl.setText(label);
+  const contentEl = wrapperEl.createDiv({ cls: 'claudian-thinking-content', text: content });
+  return { wrapperEl, headerEl, labelEl, contentEl };
+}
+
 export function createThinkingBlock(
   parentEl: HTMLElement,
   options: ThinkingBlockOptions = {},
 ): ThinkingBlockState {
-  const wrapperEl = parentEl.createDiv({ cls: 'claudian-thinking-block' });
-
-  // Header (clickable to expand/collapse)
-  const header = wrapperEl.createDiv({ cls: 'claudian-thinking-header' });
-  header.setAttribute('tabindex', '0');
-  header.setAttribute('role', 'button');
-  header.setAttribute('aria-expanded', 'false');
-
-  // Label with timer
-  const labelEl = header.createSpan({ cls: 'claudian-thinking-label' });
+  const { wrapperEl, headerEl, labelEl, contentEl } = createThinkingBlockElements(parentEl, 'Thinking 0s...');
   const startTime = Date.now();
-  labelEl.setText('Thinking 0s...');
 
   // Start timer interval to update label every second
   const timerInterval = window.setInterval(() => {
@@ -39,10 +45,6 @@ export function createThinkingBlock(
     labelEl.setText(`Thinking ${elapsed}s...`);
   }, 1000);
 
-  // Collapsible content (collapsed by default)
-  const contentEl = wrapperEl.createDiv({ cls: 'claudian-thinking-content' });
-
-  // Create state object first so toggle can reference it
   const state: ThinkingBlockState = {
     wrapperEl,
     contentEl,
@@ -53,7 +55,7 @@ export function createThinkingBlock(
     isExpanded: false,
   };
 
-  setupCollapsible(wrapperEl, header, contentEl, state, {
+  setupCollapsible(wrapperEl, headerEl, contentEl, state, {
     onToggle: options.onToggle,
   });
 
@@ -94,26 +96,10 @@ export function renderStoredThinkingBlock(
   durationSeconds: number | undefined,
   renderContent: RenderContentFn
 ): HTMLElement {
-  const wrapperEl = parentEl.createDiv({ cls: 'claudian-thinking-block' });
-
-  // Header (clickable to expand/collapse)
-  const header = wrapperEl.createDiv({ cls: 'claudian-thinking-header' });
-  header.setAttribute('tabindex', '0');
-  header.setAttribute('role', 'button');
-
-  // Label with duration
-  const labelEl = header.createSpan({ cls: 'claudian-thinking-label' });
-  const labelText = durationSeconds !== undefined ? `Thought for ${durationSeconds}s` : 'Thought';
-  labelEl.setText(labelText);
-
-  // Collapsible content
-  const contentEl = wrapperEl.createDiv({ cls: 'claudian-thinking-content', text: content });
-  let rendered = false;
-  const state = { isExpanded: false };
-  setupCollapsible(wrapperEl, header, contentEl, state, {
-    onToggle: expanded => {
-      if (!expanded || rendered) return;
-      rendered = true;
+  const label = durationSeconds !== undefined ? `Thought for ${durationSeconds}s` : 'Thought';
+  const { wrapperEl, headerEl, contentEl } = createThinkingBlockElements(parentEl, label, content);
+  setupCollapsible(wrapperEl, headerEl, contentEl, { isExpanded: false }, {
+    onFirstExpand: () => {
       void renderContent(contentEl, content).catch(() => { contentEl.setText(content); });
     },
   });

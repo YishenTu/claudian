@@ -1,9 +1,9 @@
 import { createMockEl, type MockElement } from '@test/helpers/MockElement';
 import { FileView, Notice, TFile, TFolder } from 'obsidian';
 
+import { ComposerInfoRow } from '@/features/chat/composer/ComposerInfoRow';
 import { LinkedContentController } from '@/features/chat/linked-content/LinkedContentController';
 import { createWelcomeElement, renderWelcomeContent } from '@/features/chat/rendering/WelcomeRenderer';
-import { ComposerInfoRow } from '@/features/chat/ui/ComposerInfoRow';
 
 jest.mock('obsidian', () => {
   const actual = jest.requireActual('obsidian');

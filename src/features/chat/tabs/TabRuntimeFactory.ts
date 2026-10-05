@@ -2,45 +2,38 @@ import type { Component } from 'obsidian';
 
 import type { ProviderId } from '@/core/providers/types';
 import type { Conversation } from '@/core/types';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { ForkContext } from '@/features/chat/conversation/forkSourceTypes';
 import type { TabAttention, TabReviewOutcome } from '@/features/chat/state/types';
-
-import type { ChatFeatureHost } from '../ChatFeatureHost';
+import type { TabId, TabProviderCatalogContext } from '@/features/chat/tabs/ChatTab';
 import type {
   PublishedTabRuntimeRef,
   TabRuntimeCleanup,
   TabRuntimeConstructionContext,
   TabRuntimeControllerBundle,
   TabRuntimeShellBundle,
-} from './runtime/TabRuntimeConstruction';
-import { buildTabRuntimeControllers } from './runtime/TabRuntimeControllers';
-import { buildTabRuntimeInputBindings } from './runtime/TabRuntimeInputBindings';
-import { buildTabRuntimePorts } from './runtime/TabRuntimePorts';
-import { buildTabRuntimeServices } from './runtime/TabRuntimeServices';
-import { buildTabRuntimeShell } from './runtime/TabRuntimeShell';
-import { buildTabRuntimeUI } from './runtime/TabRuntimeUI';
-import type { ForkContext } from './TabForking';
-import { registerTabRuntimeResourceOwner } from './TabLifecycle';
+} from '@/features/chat/tabs/runtime/TabRuntimeConstruction';
+import { buildTabRuntimeControllers } from '@/features/chat/tabs/runtime/TabRuntimeControllers';
+import { buildTabRuntimeInputBindings } from '@/features/chat/tabs/runtime/TabRuntimeInputBindings';
+import { buildTabRuntimePorts } from '@/features/chat/tabs/runtime/TabRuntimePorts';
+import { buildTabRuntimeServices } from '@/features/chat/tabs/runtime/TabRuntimeServices';
+import { buildTabRuntimeShell } from '@/features/chat/tabs/runtime/TabRuntimeShell';
+import { buildTabRuntimeUI } from '@/features/chat/tabs/runtime/TabRuntimeUI';
 import {
-  applyProviderUIGating,
-  refreshTabProviderUI,
-} from './TabProviderState';
-import type { TabSessionState } from './TabSession';
-import type {
-  AssembledTabRuntime,
-  ProviderCatalogInfo,
-  TabId,
-  TabInputBindings,
-  TabProviderCatalogContext,
-  TabRuntimeCleanupFailure,
-  TabRuntimeResourceOwner,
-  TabServices,
-  TabUIComponents,
-} from './types';
+  registerTabRuntimeResourceOwner,
+  type TabRuntimeCleanupFailure,
+  type TabRuntimeResourceOwner,
+} from '@/features/chat/tabs/TabLifecycle';
+import { applyProviderUIGating, refreshTabProviderUI } from '@/features/chat/tabs/tabProviderUI';
+import type { TabSessionState } from '@/features/chat/tabs/TabSession';
+import type { AssembledTabRuntime, ProviderCatalogInfo, TabInputBindings, TabServices, TabUIComponents } from '@/features/chat/tabs/types';
+import type { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 export interface TabRuntimeFactoryOptions {
   plugin: ChatFeatureHost;
   containerEl: HTMLElement;
   component: Component;
+  mentionDataProvider: VaultMentionDataProvider;
   conversation?: Conversation;
   tabId?: TabId;
   initialState?: Readonly<TabSessionState>;

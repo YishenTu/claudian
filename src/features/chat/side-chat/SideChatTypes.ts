@@ -1,5 +1,6 @@
-import type { ProviderId } from '../../../core/providers/types';
-import type { ChatMessage } from '../../../core/types';
+import type { ProviderId } from '@/core/providers/types';
+import type { ChatMessage } from '@/core/types';
+import type { ForkSourceCapture } from '@/features/chat/conversation/forkSourceTypes';
 
 /** Composer destination derived from side panel expansion; never separately mutable. */
 export type SideChatDestination = 'main' | 'side';
@@ -32,4 +33,14 @@ export interface SideChatSettingsProjection {
   permissionMode?: string;
   reasoning?: string | null;
   serviceTier?: string;
+}
+
+/** Read-only parent binding and tab-owned fork capture; no runtime internals escape. */
+export interface SideChatParent {
+  readonly conversationId: string | null;
+  readonly providerId: ProviderId | null;
+  readonly isLive: boolean;
+  readonly isStreaming: boolean;
+  readonly lastMessageId: string | undefined;
+  captureForkSource(): Promise<ForkSourceCapture>;
 }

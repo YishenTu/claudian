@@ -1,26 +1,19 @@
 import type { Component } from 'obsidian';
 
-import type { ProviderId } from '../../../../core/providers/types';
-import type { Conversation } from '../../../../core/types';
-import type { ChatFeatureHost } from '../../ChatFeatureHost';
-import type { ChatExecutionCoordinator } from '../../execution/ChatExecutionCoordinator';
-import type { MessageRenderer } from '../../rendering/MessageRenderer';
-import type { ChatState } from '../../state/ChatState';
-import type { TabAttention, TabReviewOutcome } from '../../state/types';
-import type { ForkContext } from '../TabForking';
-import type { TabSessionState } from '../TabSession';
-import type { TabSession } from '../TabSession';
-import type {
-  AssembledTabRuntime,
-  ProviderCatalogInfo,
-  ProviderCatalogResolver,
-  TabControllers,
-  TabDOMElements,
-  TabId,
-  TabProviderCatalogContext,
-  TabProviderContext,
-  TabRuntimeResourceOwner,
-} from '../types';
+import type { ProviderId } from '@/core/providers/types';
+import type { Conversation } from '@/core/types';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { ForkContext } from '@/features/chat/conversation/forkSourceTypes';
+import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
+import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import type { ChatState } from '@/features/chat/state/ChatState';
+import type { TabAttention, TabReviewOutcome } from '@/features/chat/state/types';
+import type { TabId, TabProviderCatalogContext } from '@/features/chat/tabs/ChatTab';
+import type { TabRuntimeResourceOwner } from '@/features/chat/tabs/TabLifecycle';
+import type { TabSessionState } from '@/features/chat/tabs/TabSession';
+import type { TabSession } from '@/features/chat/tabs/TabSession';
+import type { AssembledTabRuntime, ProviderCatalogInfo, ProviderCatalogResolver, TabControllers, TabDOMElements, TabProviderContext } from '@/features/chat/tabs/types';
+import type { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 export type TabRuntimeCleanup = () => void | Promise<void>;
 
@@ -28,6 +21,7 @@ export interface TabRuntimeConstructionContext {
   plugin: ChatFeatureHost;
   containerEl: HTMLElement;
   component: Component;
+  mentionDataProvider: VaultMentionDataProvider;
   conversation?: Conversation;
   tabId?: TabId;
   initialState?: Readonly<TabSessionState>;

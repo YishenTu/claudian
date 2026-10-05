@@ -1,7 +1,7 @@
 import { Platform } from 'obsidian';
 
-import type { ClaudianSettings } from '../../../core/types';
-import type { AssembledTabRuntime } from './types';
+import type { ClaudianSettings } from '@/core/types';
+import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
 function isEnterWithoutShiftOrComposition(event: KeyboardEvent): boolean {
   return event.key === 'Enter' && !event.shiftKey && !event.isComposing;

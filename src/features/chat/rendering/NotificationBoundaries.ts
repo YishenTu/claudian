@@ -1,5 +1,5 @@
-import type { ProviderBackgroundEventScope, ProviderRequestedEventScope, ProviderTurnEventScope } from '../../../core/execution';
-import type { ChatMessage } from '../../../core/types';
+import type { ProviderBackgroundEventScope, ProviderRequestedEventScope, ProviderTurnEventScope } from '@/core/execution';
+import type { ChatMessage } from '@/core/types';
 
 const predecessors = new WeakMap<ChatMessage, {
   requested?: ProviderRequestedEventScope;

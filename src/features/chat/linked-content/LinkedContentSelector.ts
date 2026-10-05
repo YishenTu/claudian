@@ -1,6 +1,6 @@
 import { setIcon } from 'obsidian';
 
-import type { LinkedContentPickerItem } from './LinkedContentPickerSource';
+import type { LinkedContentPickerItem } from '@/features/chat/linked-content/LinkedContentPickerSource';
 
 export interface LinkedContentSelectorState {
   readonly mode: 'auto-draft' | 'explicit-draft' | 'submitting' | 'locked';

@@ -1,7 +1,7 @@
 import { setIcon } from 'obsidian';
 
-import { t } from '../../../i18n/i18n';
-import type { SideChatStatus } from './SideChatTypes';
+import type { SideChatStatus } from '@/features/chat/side-chat/SideChatTypes';
+import { t } from '@/i18n/i18n';
 
 export interface SideChatPanelCallbacks {
   onExpand(): void;

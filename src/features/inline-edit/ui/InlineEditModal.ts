@@ -5,31 +5,30 @@ import type { App, Component, Editor, MarkdownView } from 'obsidian';
 import { Notice } from 'obsidian';
 
 import type { CursorContext } from '@/core/prompt/editorContext';
+import { createCatalogCommandDiscoveryStore } from '@/core/providers/commands/catalogCommandDiscovery';
+import { getHiddenCommandSet } from '@/core/providers/commands/hiddenCommands';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import { type InlineEditMode, type InlineEditService, type ProviderId } from '@/core/providers/types';
+import type { FeatureHost } from '@/features/FeatureHost';
+import type { InlineEditSessionOwner } from '@/features/inline-edit/InlineEditSessionOwner';
 import {
   findBestMentionLookupMatch,
   isMentionStart,
   normalizeForPlatformLookup,
   normalizeMentionPath,
 } from '@/features/inline-edit/ui/contextMentionResolver';
+import { onInlineEditEditorDestroyed } from '@/features/inline-edit/ui/InlineEditEditorLifetime';
+import { renderInlineEditMarkdownPreview } from '@/features/inline-edit/ui/inlineEditMarkdownPreview';
 import { normalizeInsertionText } from '@/features/inline-edit/ui/normalizeInsertionText';
-import { getEditorView } from '@/utils/obsidianCompat';
-
-import { createCatalogCommandDiscoveryStore } from '../../../core/providers/commands/catalogCommandDiscovery';
-import { getHiddenCommandSet } from '../../../core/providers/commands/hiddenCommands';
-import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
-import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
-import { type InlineEditMode, type InlineEditService, type ProviderId } from '../../../core/providers/types';
-import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
+import { hideSelectionHighlight, showSelectionHighlight } from '@/shared/components/SelectionHighlight';
 import {
   ComposerDropdownController,
   MentionSource,
   SlashCommandSource,
-} from '../../../shared/composer-dropdown';
-import { VaultMentionDataProvider } from '../../../shared/mention/VaultMentionDataProvider';
-import type { FeatureHost } from '../../FeatureHost';
-import type { InlineEditSessionOwner } from '../InlineEditSessionOwner';
-import { onInlineEditEditorDestroyed } from './InlineEditEditorLifetime';
-import { renderInlineEditMarkdownPreview } from './inlineEditMarkdownPreview';
+} from '@/shared/composer-dropdown';
+import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
+import { getEditorView } from '@/utils/obsidianCompat';
 
 export type InlineEditContext =
   | { mode: 'selection'; selectedText: string }

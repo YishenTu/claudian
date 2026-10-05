@@ -1,7 +1,6 @@
 import type { ProviderId } from '@/core/providers/types';
 import type { ClaudianSettings } from '@/core/types';
-
-import type { ChatViewHost } from '../ChatFeatureHost';
+import type { ChatViewHost } from '@/features/chat/ChatFeatureHost';
 
 export interface ChatViewPublisherDeps {
   readonly views: { getAllViews(): readonly ChatViewHost[] };
@@ -27,12 +26,15 @@ export class ChatViewPublisher {
     const layoutChanged = settings.enableDualPane !== previous.enableDualPane || settings.dualPaneSide !== previous.dualPaneSide;
     const commandsChanged = JSON.stringify(settings.hiddenCommands) !== JSON.stringify(previous.hiddenCommands);
     const contextChanged = JSON.stringify(settings.customContextLimits) !== JSON.stringify(previous.customContextLimits);
-    if (timestampsChanged || layoutChanged || commandsChanged || contextChanged) {
+    const sessionsChanged = settings.sessionManagerOrganization !== previous.sessionManagerOrganization
+      || settings.sessionManagerSort !== previous.sessionManagerSort;
+    if (timestampsChanged || layoutChanged || commandsChanged || contextChanged || sessionsChanged) {
       for (const view of this.deps.views.getAllViews()) {
         if (timestampsChanged) publish(() => view.refreshMessageTimestamps());
         if (layoutChanged) publish(() => view.refreshDualPaneLayout());
         if (commandsChanged) publish(() => view.updateHiddenCommands());
         if (contextChanged) publish(() => view.refreshModelSelector());
+        if (sessionsChanged) publish(() => view.notifyConversationListChanged());
       }
     }
     if (settings.enableZenMode !== previous.enableZenMode) publish(() => this.deps.zenMode.reconcile());

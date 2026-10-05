@@ -30,7 +30,7 @@ const fileConsumers = [
   [/^src\/style\//, [
     ...styleSuites,
     'tests/unit/features/chat/tabs/TabAttentionStyles.test.ts',
-    'tests/unit/features/chat/ui/NavigationSidebar.dom.test.ts',
+    'tests/unit/features/chat/navigation/NavigationSidebar.dom.test.ts',
   ]],
   [/^tests\/fixtures\/providers\/grok\/history\//, [
     'tests/unit/providers/grok/history/GrokConversationHistoryService.test.ts',

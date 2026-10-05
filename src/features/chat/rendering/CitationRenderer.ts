@@ -1,5 +1,6 @@
-import type { CitationGroup } from '../../../core/types';
-import { setupCollapsible } from './collapsible';
+import type { CitationGroup } from '@/core/types';
+import { setupCollapsible } from '@/features/chat/rendering/collapsible';
+import { markResponseElement } from '@/features/chat/rendering/ResponseLayout';
 
 function formatCitationLocation(
   entry: CitationGroup['entries'][number],
@@ -14,10 +15,8 @@ export function renderCitationGroup(
   parentEl: HTMLElement,
   citations: CitationGroup,
 ): HTMLElement {
-  const wrapperEl = parentEl.createDiv({ cls: 'claudian-citations' });
+  const wrapperEl = markResponseElement(parentEl.createDiv({ cls: 'claudian-citations' }), 'citations');
   const headerEl = wrapperEl.createDiv({ cls: 'claudian-citations-header' });
-  headerEl.setAttribute('tabindex', '0');
-  headerEl.setAttribute('role', 'button');
 
   headerEl.createSpan({ cls: 'claudian-citations-chevron', text: '\u203a' });
   headerEl.createSpan({ cls: 'claudian-citations-label', text: 'Memory used' });

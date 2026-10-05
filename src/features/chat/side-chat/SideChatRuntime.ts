@@ -5,33 +5,33 @@ import type {
   ProviderExecutionContext,
   ProviderExecutionLifecycleRegistry,
   ProviderSessionEvent,
-} from '../../../core/execution';
-import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
-import type { ProviderCapabilities, ProviderId, TitleGenerationService } from '../../../core/providers/types';
-import type { AskUserAnswers, ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
-import type { ChatFeatureHost } from '../ChatFeatureHost';
-import {
-  StreamController,
-} from '../controllers/StreamController';
-import { TurnCoordinator } from '../controllers/TurnCoordinator';
-import { buildChatExecutionConfiguration, resolveChatDynamicSections } from '../execution/chatExecutionConfiguration';
-import { AsyncQuestionPrompts } from '../rendering/AsyncQuestionPrompts';
-import { BackgroundResponses } from '../rendering/BackgroundResponses';
-import { renderSessionTaskNotification } from '../rendering/BackgroundTurnRenderer';
-import { InlineInteractionPrompts } from '../rendering/InlineInteractionPrompts';
-import { createInteractionPromptPort } from '../rendering/interactionPromptPort';
-import { MessageRenderer } from '../rendering/MessageRenderer';
-import { ResponseStream } from '../rendering/ResponseStream';
-import { deliverAsyncQuestion } from '../services/asyncQuestionDelivery';
-import { SubagentManager } from '../services/SubagentManager';
-import { ChatState } from '../state/ChatState';
-import { SideChatCommandSubmission } from './SideChatCommandSubmission';
-import { SideChatSession } from './SideChatSession';
+} from '@/core/execution';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import type { ProviderCapabilities, ProviderId, TitleGenerationService } from '@/core/providers/types';
+import type { AskUserAnswers, ChatMessage, ImageAttachment, ToolCallInfo } from '@/core/types';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { buildChatExecutionConfiguration, resolveChatDynamicSections } from '@/features/chat/execution/chatExecutionConfiguration';
+import { deliverAsyncQuestion } from '@/features/chat/interactions/asyncQuestionDelivery';
+import { AsyncQuestionPrompts } from '@/features/chat/interactions/AsyncQuestionPrompts';
+import { InlineInteractionPrompts } from '@/features/chat/interactions/InlineInteractionPrompts';
+import { createInteractionPromptPort } from '@/features/chat/interactions/interactionPromptPort';
+import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SideChatCommandSubmission } from '@/features/chat/side-chat/SideChatCommandSubmission';
+import { SideChatSession } from '@/features/chat/side-chat/SideChatSession';
 import type {
   SideChatSettingsProjection,
   SideChatSource,
   SideChatStatus,
-} from './SideChatTypes';
+} from '@/features/chat/side-chat/SideChatTypes';
+import { ChatState } from '@/features/chat/state/ChatState';
+import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
+import { BackgroundResponses } from '@/features/chat/turns/BackgroundResponses';
+import { renderSessionTaskNotification } from '@/features/chat/turns/BackgroundTurnRenderer';
+import { ResponseStream } from '@/features/chat/turns/ResponseStream';
+import {
+  StreamController,
+} from '@/features/chat/turns/StreamController';
+import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 
 export interface SideChatRuntimeDeps {
   readonly plugin: ChatFeatureHost;
@@ -109,8 +109,11 @@ export class SideChatRuntime {
     this.#subagents = new SubagentManager(() => undefined);
     this.#prompts = new InlineInteractionPrompts({
       getPromptParentEl: () => deps.getPromptParentEl(),
-      onBeforeShow: () => this.#stream.hideThinkingIndicator(),
-      onAfterSettle: () => this.#stream.resumeThinkingIndicator(),
+      onBeforeShow: () => {
+        const generation = this.state.streamGeneration;
+        this.#stream.thinkingIndicator.hide();
+        return () => this.#stream.thinkingIndicator.resume(generation);
+      },
     });
     this.#asyncQuestions = new AsyncQuestionPrompts({
       prompts: this.#prompts,
@@ -122,7 +125,6 @@ export class SideChatRuntime {
       onQuestionToolChanged: tool => this.#asyncQuestions.update(tool),
       getMessagesEl: () => deps.messagesEl,
       getProviderId: () => deps.source.providerId,
-      getProviderSessionId: () => this.#session.providerSessionId ?? null,
       plugin: deps.plugin,
       renderer: this.renderer,
       state: this.state,
@@ -356,10 +358,11 @@ export class SideChatRuntime {
       void this.#generateTitle(userMessage);
     }
 
-    const assistantMessage = this.#responseStream.start();
     this.#turns.beginResponse();
+    this.#stream.beginResponse();
+    const assistantMessage = this.#responseStream.start();
     this.state.autoScrollEnabled = true;
-    this.#stream.showThinkingIndicator();
+    this.#stream.thinkingIndicator.show();
     this.state.responseStartTime = performance.now();
     this.#refreshStatus();
 
@@ -490,11 +493,11 @@ export class SideChatRuntime {
     if (this.#disposed || !isCurrent()) return Promise.resolve();
     // Display-only progress must reach running cards before the requested turn settles.
     if (event.type === 'subagent_updated') {
-      this.#stream.handleSubagentUpdate(event.subagent);
+      this.#stream.subagents.handleSubagentUpdate(event.subagent);
       return Promise.resolve();
     }
     if (event.type === 'subagent_progress') {
-      this.#stream.handleSubagentProgress(event.progress);
+      this.#stream.subagents.handleSubagentProgress(event.progress);
       return Promise.resolve();
     }
     if (event.type === 'background_turn_started') {
@@ -525,7 +528,7 @@ export class SideChatRuntime {
     }
     if (event.type === 'async_subagent_completed') {
       const providerSessionId = event.providerSessionId ?? this.#session.providerSessionId;
-      if (providerSessionId) await this.#stream.handleAsyncSubagentCompletion({
+      if (providerSessionId) await this.#stream.subagents.handleAsyncSubagentCompletion({
         type: 'async_subagent_completion', providerSessionId,
         taskId: event.subagentId, status: event.status,
         ...(event.result !== undefined ? { result: event.result } : {}),

@@ -1,7 +1,7 @@
-import type { ProviderId } from '../../../core/providers/types';
-import { type TurnCancelReason, TurnCoordinator } from '../controllers/TurnCoordinator';
-import type { ChatExecutionCoordinator } from '../execution/ChatExecutionCoordinator';
-import type { TabLifecycleState } from './types';
+import type { ProviderId } from '@/core/providers/types';
+import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
+import type { TabLifecycleState } from '@/features/chat/tabs/ChatTab';
+import { type TurnCancelReason, TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 
 export interface TabSessionState {
   conversationId: string | null;

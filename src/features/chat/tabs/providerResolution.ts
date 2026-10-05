@@ -1,8 +1,8 @@
-import type { ProviderId } from '../../../core/providers/types';
-import type { Conversation } from '../../../core/types';
-import { t } from '../../../i18n/i18n';
-import type { ChatFeatureHost } from '../ChatFeatureHost';
-import type { TabProviderContext } from './types';
+import type { ProviderId } from '@/core/providers/types';
+import type { Conversation } from '@/core/types';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { TabProviderContext } from '@/features/chat/tabs/types';
+import { t } from '@/i18n/i18n';
 
 function getStoredConversationProviderId(
   tab: TabProviderContext,

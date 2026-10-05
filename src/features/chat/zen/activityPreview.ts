@@ -1,8 +1,8 @@
-import type { ChatMessage, ToolCallInfo } from '../../../core/types';
-import { t } from '../../../i18n/i18n';
-import { formatWorkDuration, getFinalResponseText } from '../rendering/ResponseLayout';
-import type { ChatState } from '../state/ChatState';
-import type { ChatActivity } from '../state/types';
+import type { ChatMessage, ToolCallInfo } from '@/core/types';
+import { formatWorkDuration, getFinalResponseText } from '@/features/chat/rendering/ResponseLayout';
+import type { ChatState } from '@/features/chat/state/ChatState';
+import type { ChatActivity } from '@/features/chat/state/types';
+import { t } from '@/i18n/i18n';
 
 export type ZenActivityTone = 'idle' | 'working' | 'action-required' | 'error';
 

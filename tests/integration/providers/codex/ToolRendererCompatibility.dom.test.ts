@@ -9,11 +9,11 @@ import { Component } from 'obsidian';
 import { getToolIcon } from '@/core/tools/toolIcons';
 import { applyToolResultPresentation } from '@/core/tools/toolResultDetails';
 import type { StreamChunk, ToolCallInfo } from '@/core/types';
-import { AsyncQuestionPrompts } from '@/features/chat/rendering/AsyncQuestionPrompts';
-import type { QuestionAnswerHandler } from '@/features/chat/rendering/InlineAskUserQuestion';
-import { InlineInteractionPrompts } from '@/features/chat/rendering/InlineInteractionPrompts';
+import { AsyncQuestionPrompts } from '@/features/chat/interactions/AsyncQuestionPrompts';
+import type { QuestionAnswerHandler } from '@/features/chat/interactions/InlineAskUserQuestion';
+import { InlineInteractionPrompts } from '@/features/chat/interactions/InlineInteractionPrompts';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
-import { renderStoredToolCall, renderToolCall, updateToolCallResult } from '@/features/chat/rendering/ToolCallRenderer';
+import { renderStoredToolCall, renderToolCall, updateToolCallResult } from '@/features/chat/rendering/tools/ToolCallRenderer';
 import { parseCodexSessionContent } from '@/providers/codex/history/CodexHistoryStore';
 import { formatCodexQuestionReply } from '@/providers/codex/normalization/codexQuestionNormalization';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
@@ -336,10 +336,10 @@ it('shows async question options while live and the actual answer when resolved'
   const tool = restoreTool('live', 'request_user_input_async', {
     questions: [{ title: 'Which check?', options: ['Rendering', 'History'] }],
   }, '{"accepted":true}');
-  const elements = new Map<string, HTMLElement>();
-  const block = renderToolCall(document.body.createDiv(), { ...tool, status: 'running', result: undefined }, elements, { initiallyExpanded: true });
+
+  const block = renderToolCall(document.body.createDiv(), { ...tool, status: 'running', result: undefined }, { initiallyExpanded: true });
   expect(within(block).getByText('Rendering')).toBeDefined();
-  updateToolCallResult(tool.id, { ...tool, result: '{"answers":{"Which check?":"History"}}' }, elements);
+  updateToolCallResult(block, { ...tool, result: '{"answers":{"Which check?":"History"}}' });
   expect(within(block).getByText('History')).toBeDefined();
   expect(within(block).queryByText('Rendering')).toBeNull();
 });
@@ -350,16 +350,16 @@ function showQuestion(tool: ToolCallInfo, onAnswer: QuestionAnswerHandler) {
   const input = composer.createEl('textarea');
   input.value = 'Keep my draft';
   const panelHost = document.body.createDiv();
-  const elements = new Map<string, HTMLElement>();
-  const block = renderToolCall(document.body.createDiv(), tool, elements, { initiallyExpanded: true });
+
+  const block = renderToolCall(document.body.createDiv(), tool, { initiallyExpanded: true });
   const prompts = new AsyncQuestionPrompts({
     prompts: new InlineInteractionPrompts({ getPromptParentEl: () => panelHost, getSuppressedEl: () => composer }),
     answer: (_tool, answers) => onAnswer(answers),
-    onChange: current => updateToolCallResult(current.id, current, elements),
+    onChange: current => updateToolCallResult(block, current),
     onPendingChange: () => undefined,
   });
   prompts.update(tool);
-  return { composer, input, panelHost, elements, block, prompts };
+  return { composer, input, panelHost, block, prompts };
 }
 
 it('submits a selected option and a free-text answer once, then restores both answers from native history', async () => {
@@ -371,13 +371,13 @@ it('submits a selected option and a free-text answer once, then restores both an
     reply = formatCodexQuestionReply(tool, answers)!.content;
     await new Promise<void>(resolve => { finish = resolve; });
   });
-  const { block, panelHost, elements, composer, input: draft, prompts } = showQuestion(tool, onAnswer);
+  const { block, panelHost, composer, input: draft, prompts } = showQuestion(tool, onAnswer);
   expect(composer.classList.contains('claudian-hidden')).toBe(true);
   expect(within(block).queryByRole('region', { name: 'Question' })).toBeNull();
   fireEvent.click(within(panelHost).getByRole('button', { name: 'History' }));
   fireEvent.input(within(panelHost).getByRole('textbox', { name: 'Any details?' }), { target: { value: 'Preserve my notes.' } });
   // Acknowledgement must not erase a selection made before it arrives.
-  updateToolCallResult(tool.id, tool, elements);
+  updateToolCallResult(block, tool);
   prompts.update(tool);
   const panel = within(panelHost).getByRole('region', { name: 'Question' });
   fireEvent.click(within(panel).getByRole('button', { name: 'Submit' }));
@@ -459,12 +459,12 @@ it('restores native async question items without a raw function call and dedupli
 
 it('shows js source before output arrives and preserves it after a live failure', () => {
   const tool: ToolCallInfo = { id: 'js-live', name: 'js', status: 'running', input: { code: 'await app.getState();' } };
-  const elements = new Map<string, HTMLElement>();
-  const block = renderToolCall(document.body.createDiv(), tool, elements, { initiallyExpanded: true });
+
+  const block = renderToolCall(document.body.createDiv(), tool, { initiallyExpanded: true });
   expect(within(block).getByRole('button', { name: /^Script: await app\.getState\(\);/ })).toBeDefined();
   expect(block.querySelector('code')?.textContent).toBe('await app.getState();');
   expect(block.textContent).toContain('Running...');
-  updateToolCallResult(tool.id, { ...tool, status: 'error', result: 'ReferenceError: app is not defined' }, elements);
+  updateToolCallResult(block, { ...tool, status: 'error', result: 'ReferenceError: app is not defined' });
   expect(block.querySelector('code')?.textContent).toBe('await app.getState();');
   expect(block.querySelector('.claudian-tool-script-output')?.textContent).toBe('ReferenceError: app is not defined');
 });

@@ -15,6 +15,8 @@ describe('detectSideChatCommand', () => {
     ['/side explore an append-only log', 'explore an append-only log'],
     ['/btw   spaced argument  ', 'spaced argument'],
     ['/side line one\nline two', 'line one\nline two'],
+    ['/side\nquestion', 'question'],
+    ['/btw\r\nquestion\nsecond line', 'question\nsecond line'],
     ['  /side leading whitespace', 'leading whitespace'],
   ])('recognizes %j with argument %j', (input, argument) => {
     expect(detectSideChatCommand(input)).toEqual({
@@ -43,10 +45,10 @@ describe('detectSideChatCommand', () => {
     expect(isSideChatCommandSupported(forkCapable)).toBe(true);
   });
 
-  it('keeps the built-in matcher single-line so existing commands are unaffected', () => {
+  it.each(['\n', '\r', '\u2028', '\u2029'])('keeps the built-in matcher single-line for %j', separator => {
     expect(detectBuiltInCommand('/side explore', forkCapable))
       .toMatchObject({ args: 'explore', command: { action: 'side' } });
     expect(detectBuiltInCommand('/side line one\nline two', forkCapable)).toBeNull();
-    expect(detectBuiltInCommand('/clear line one\nline two', forkCapable)).toBeNull();
+    expect(detectBuiltInCommand(`/clear line one${separator}line two`, forkCapable)).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 import { holdResponse } from '@test/helpers/ConversationPorts';
 
-import { TurnCoordinator } from '@/features/chat/controllers/TurnCoordinator';
 import { ChatState } from '@/features/chat/state/ChatState';
+import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 
 describe('ChatState', () => {
   const originalWindow = (globalThis as { window?: Window }).window;
@@ -91,13 +91,15 @@ describe('ChatState', () => {
   });
 
   describe('queued message', () => {
-    it('stores and retrieves queued message', () => {
+    it('stores the queued message written by its single claimed owner', () => {
       const chatState = new ChatState();
-      const queued = { content: 'queued', editorContext: null, canvasContext: null };
+      const queued = { content: 'queued', turnRequest: { text: 'queued' } };
 
-      chatState.queuedMessage = queued;
+      const write = chatState.claimQueuedMessageWriter();
+      write(queued);
 
       expect(chatState.queuedMessage).toBe(queued);
+      expect(() => chatState.claimQueuedMessageWriter()).toThrow('The queued message already has an owner.');
     });
   });
 

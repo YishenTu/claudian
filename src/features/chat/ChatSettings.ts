@@ -1,6 +1,6 @@
-import { getProviderSettingsSnapshotWithModel } from '../../core/providers/conversationModel';
-import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
-import type { ProviderId } from '../../core/providers/types';
+import { getProviderSettingsSnapshotWithModel } from '@/core/providers/conversationModel';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import type { ProviderId } from '@/core/providers/types';
 
 /** The model and reasoning selection displayed by a chat and submitted with its turns. */
 export interface ChatSettings {

@@ -95,7 +95,7 @@ test('filesystem-read documentation, styles, and captured fixtures retain their 
   for (const consumer of [
     'tests/unit/style/components/zen-mode.test.ts',
     'tests/unit/style/settings/base.test.ts',
-    'tests/unit/features/chat/ui/NavigationSidebar.dom.test.ts',
+    'tests/unit/features/chat/navigation/NavigationSidebar.dom.test.ts',
   ]) {
     assert.ok(select(['src/style/components/zen-mode.css']).testFiles.includes(consumer), consumer);
   }

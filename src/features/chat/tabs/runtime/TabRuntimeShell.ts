@@ -1,28 +1,28 @@
 import { Notice } from 'obsidian';
 
-import { ProviderRegistry } from '../../../../core/providers/ProviderRegistry';
-import { getVaultPath } from '../../../../utils/path';
-import { ComposerEditor } from '../../composer/ComposerEditor';
-import { TurnCoordinator } from '../../controllers/TurnCoordinator';
-import { ChatExecutionCoordinator } from '../../execution/ChatExecutionCoordinator';
-import { createInteractionPromptPort } from '../../rendering/interactionPromptPort';
-import { cleanupThinkingBlock } from '../../rendering/ThinkingBlockRenderer';
-import { createWelcomeElement } from '../../rendering/WelcomeRenderer';
-import { ChatState } from '../../state/ChatState';
-import { createTabSessionState } from '../TabIdentity';
-import { refreshTabContextUsage } from '../TabProviderState';
-import { TabSession } from '../TabSession';
-import {
-  createTabMessageId,
-  enqueueTabSessionEvent,
-} from '../TabSessionEvents';
-import type { TabDOMElements, TabProviderCatalogContext } from '../types';
-import { generateTabId } from '../types';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ComposerEditor } from '@/features/chat/composer/ComposerEditor';
+import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
+import { createInteractionPromptPort } from '@/features/chat/interactions/interactionPromptPort';
+import { cleanupThinkingBlock } from '@/features/chat/rendering/ThinkingBlockRenderer';
+import { createWelcomeElement } from '@/features/chat/rendering/WelcomeRenderer';
+import { ChatState } from '@/features/chat/state/ChatState';
+import type { TabProviderCatalogContext } from '@/features/chat/tabs/ChatTab';
 import type {
   PublishedTabRuntimeRef,
   TabRuntimeConstructionContext,
   TabRuntimeShellBundle,
-} from './TabRuntimeConstruction';
+} from '@/features/chat/tabs/runtime/TabRuntimeConstruction';
+import { createTabSessionState, generateTabId } from '@/features/chat/tabs/TabIdentity';
+import { refreshTabContextUsage } from '@/features/chat/tabs/tabProviderUI';
+import { TabSession } from '@/features/chat/tabs/TabSession';
+import {
+  createTabMessageId,
+  enqueueTabSessionEvent,
+} from '@/features/chat/tabs/TabSessionEvents';
+import type { TabDOMElements } from '@/features/chat/tabs/types';
+import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
+import { getVaultPath } from '@/utils/path';
 
 export function buildTabRuntimeShell(
   options: TabRuntimeConstructionContext,
@@ -189,14 +189,10 @@ function createTabExecutionCoordinator(
   runtimeRef: PublishedTabRuntimeRef,
 ): ChatExecutionCoordinator {
   const { plugin } = options;
-  const interactionPort = createInteractionPromptPort(state, () => {
-    const input = runtimeRef.requirePublished().controllers.inputController;
-    return {
-      requestApproval: (...args) => input.handleApprovalRequest(...args),
-      askUserQuestion: (id, request, signal) => input.handleAskUserQuestion(id, request, signal),
-      dismiss: id => input.dismissProviderInteraction(id),
-    };
-  });
+  const interactionPort = createInteractionPromptPort(
+    state,
+    () => runtimeRef.requirePublished().controllers.inlinePrompts,
+  );
   return new ChatExecutionCoordinator({
     lifecycleRegistry: plugin.providerHost.executionLifecycleRegistry,
     resolveBackend: providerId => ProviderRegistry.createExecutionBackend(

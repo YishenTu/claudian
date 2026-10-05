@@ -243,6 +243,7 @@ describe('ClaudianPlugin', () => {
     const views = [0, 1].map(() => ({
       refreshMessageTimestamps: jest.fn(), refreshDualPaneLayout: jest.fn(),
       updateHiddenCommands: jest.fn(), refreshModelSelector: jest.fn(),
+      notifyConversationListChanged: jest.fn(),
     }));
     const viewsSpy = jest.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue(views as never);
     const zenReconcile = jest.spyOn(ZenModeController.prototype, 'reconcile');
@@ -258,6 +259,8 @@ describe('ClaudianPlugin', () => {
         settings.showMessageTimestamps = !settings.showMessageTimestamps;
         settings.enableDualPane = !settings.enableDualPane;
         settings.hiddenCommands = ['test-command'];
+        settings.sessionManagerOrganization = 'linked-content';
+        settings.sessionManagerSort = 'created';
         settings.customContextLimits = { test: 1000 };
         settings.enableZenMode = !settings.enableZenMode;
       });

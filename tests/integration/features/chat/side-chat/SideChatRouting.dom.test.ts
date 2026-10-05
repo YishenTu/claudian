@@ -15,9 +15,13 @@ import { waitFor } from '@testing-library/dom';
 import type { ProviderExecutionContext } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage, ImageAttachment } from '@/core/types';
-import { ConversationController } from '@/features/chat/controllers/ConversationController';
-import { InputController, type InputControllerDeps } from '@/features/chat/controllers/InputController';
+import { ConversationController } from '@/features/chat/conversation/ConversationController';
 import { ChatExecutionPreHandoffError } from '@/features/chat/execution/ChatExecutionCoordinator';
+import { ComposerSelections } from '@/features/chat/input/ComposerSelections';
+import { InputController, type InputControllerDeps } from '@/features/chat/input/InputController';
+import { InlineInteractionPrompts } from '@/features/chat/interactions/InlineInteractionPrompts';
+import { ChatState } from '@/features/chat/state/ChatState';
+import { createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
 import { cancelSelectedDestinationTurn } from '@/features/chat/tabs/TabInputEvents';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
@@ -27,34 +31,33 @@ function createRouting(
   harness: SideChatDOMHarness,
   context: ProviderExecutionContext = {},
   failAt?: 'initialization' | 'missing-coordinator' | 'handoff',
+  configure?: (deps: InputControllerDeps) => void,
 ) {
+  Object.assign(harness.plugin, { renameConversation: jest.fn().mockResolvedValue(undefined) });
   const mainExecutions: string[] = [];
   const mainMessages: ChatMessage[] = [];
   const session = createTestTabSession({ coordinator: { cancel: () => deps.getExecutionCoordinator()?.cancel() } });
-  const state = {
-    acknowledgeReview: () => undefined,
-    addMessage: (message: ChatMessage) => { mainMessages.push(message); },
-    isResettingToNewChat: false,
-    isRewinding: false,
-    get cancelRequested() { return session.turns.cancelRequested; },
-    clearFlavorTimerInterval: () => undefined,
-    currentContentEl: null,
-    currentConversationId: 'conversation-1',
-    writeEditStates: new Map(),
-    hasPendingConversationSave: false,
-    get isStreaming() { return session.turns.isInFlight; },
-    isSwitchingConversation: false,
-    messages: [] as ChatMessage[],
-    responseStartTime: null,
-    get streamGeneration() { return session.turns.streamGeneration; },
-    queuedMessage: null as unknown,
-    queueIndicatorEl: null,
-  };
+  const state = new ChatState({}, undefined, session.turns);
+  state.currentConversationId = 'conversation-1';
+  state.addMessage = (message: ChatMessage) => { mainMessages.push(message); };
+
   const deps = {
+    canStartTurn: () => true,
+    isClosing: () => false,
+    getTitleGenerationService: () => null,
+    builtInCommands: { execute: jest.fn() },
+    selections: new ComposerSelections({
+      editor: { getContext: () => context.editorSelection ?? null, poll() {}, start() {}, stop() {} },
+      browser: { getContext: () => context.browserSelection ?? null, poll: async () => undefined, clear() {} },
+      canvas: { getContext: () => context.canvasSelection ?? null, poll() {}, clear() {} },
+    }),
+    inlinePrompts: new InlineInteractionPrompts({
+      getPromptParentEl: () => harness.composerEl,
+      getSuppressedEl: () => harness.inputContainerEl,
+      onBeforeShow: () => () => undefined,
+    }),
     drafts: harness.drafts,
     getSettings: () => ({ model: 'claude-model', reasoning: 'high', permissionMode: 'normal', serviceTier: 'default' }),
-    canvasSelectionController: { getContext: () => context.canvasSelection ?? null },
-    browserSelectionController: { getContext: () => context.browserSelection ?? null },
     conversationController: { save: async () => undefined, commitBranchDraft: async () => true, cancelBranchDraft: () => undefined },
     ensureExecutionInitialized: async () => failAt !== 'initialization',
     getExecutionCoordinator: () => failAt === 'missing-coordinator' ? null : ({
@@ -77,10 +80,6 @@ function createRouting(
       getSnapshot: () => ({ path: null }),
       rollbackSubmission: () => undefined,
     }),
-    getSubagentManager: () => ({
-      resetSpawnedCount: () => undefined,
-      resetStreamingState: () => undefined,
-    }),
     getWelcomeEl: () => null,
     plugin: harness.plugin,
     renderer: {
@@ -88,18 +87,18 @@ function createRouting(
       finalizeResponse: () => undefined,
       refreshActionButtons: () => undefined,
     },
-    selectionController: { getContext: () => context.editorSelection ?? null },
     session,
     state,
     streamController: {
-      resetSubagentStreamingState: () => undefined,
+      beginResponse: () => undefined,
+      subagents: { reset: () => undefined, releaseManaged: () => undefined },
+      thinkingIndicator: { hide: () => undefined, show: () => undefined },
       appendText: async () => undefined,
       finalizeCurrentTextBlock: async () => undefined,
       finalizeCurrentThinkingBlock: async () => undefined,
-      hideThinkingIndicator: () => undefined,
-      showThinkingIndicator: () => undefined,
     },
   } as unknown as InputControllerDeps;
+  configure?.(deps);
   const controller = new InputController(deps);
 
   const tab = {
@@ -109,10 +108,10 @@ function createRouting(
   return { controller, deps, mainExecutions, mainMessages, session, state, tab };
 }
 
-it('starts a side chat from a submitted command instead of sending it to main', async () => {
+it.each(['/side ', '/side\n', '/btw\r\n'])('starts a side chat with %j instead of sending it to main', async prefix => {
   const harness = createHarness();
   const routing = createRouting(harness);
-  harness.inputEl.value = '/side Explore an append-only log';
+  harness.inputEl.value = `${prefix}Explore an append-only log`;
 
   const sent = routing.controller.sendMessage();
   await waitFor(() => expect(harness.backend.sessions).toHaveLength(1));
@@ -199,14 +198,14 @@ it('preserves a queued main message while the side chat runs', async () => {
   harness.backend.latest.complete();
   await started;
 
-  routing.state.queuedMessage = { content: 'queued main text', images: undefined };
+  routing.controller.queue.enqueue(createQueuedMessage('queued main text', { text: 'queued main text', images: undefined }));
   harness.inputEl.value = 'side turn while main has a queue';
   const sideSend = routing.controller.sendMessage();
   await waitFor(() => expect(harness.backend.latest.requests).toHaveLength(2));
   harness.backend.latest.complete();
   await sideSend;
 
-  expect(routing.state.queuedMessage).toEqual({ content: 'queued main text', images: undefined });
+  expect(routing.state.queuedMessage).toEqual(createQueuedMessage('queued main text', { text: 'queued main text' }));
   expect(routing.mainExecutions).toEqual([]);
 });
 
@@ -222,7 +221,7 @@ it.each([false, true])('dispatches queued main input to main with side working=%
     ? harness.controller.submitToSide('Independent side work', [])
     : null;
   await waitFor(() => expect(harness.backend.latest.requests).toHaveLength(sideWorking ? 2 : 1));
-  routing.state.queuedMessage = { content: 'Queued main work', images: undefined };
+  routing.controller.queue.enqueue(createQueuedMessage('Queued main work', { text: 'Queued main work', images: undefined }));
   harness.inputEl.value = 'Unsent side draft';
   routing.controller.resumeQueuedTurnAfterIntentAdmission();
 
@@ -272,7 +271,7 @@ it('keeps unsent side attachments out of a text-only queued main message', async
   await started;
   const sideImage = { id: 'side-image', name: 'side.png', mediaType: 'image/png', data: 'c2lkZQ==' };
   harness.imageContextManager.setImages([sideImage]);
-  routing.state.queuedMessage = { content: 'Text-only main work', images: undefined };
+  routing.controller.queue.enqueue(createQueuedMessage('Text-only main work', { text: 'Text-only main work', images: undefined }));
   routing.controller.resumeQueuedTurnAfterIntentAdmission();
   await waitFor(() => expect(routing.mainExecutions).toEqual(['Text-only main work']));
   expect(routing.mainMessages.find(message => message.role === 'user')?.images).toBeUndefined();
@@ -289,7 +288,7 @@ it.each(['initialization', 'handoff'] as const)('restores a failed main queue to
   harness.inputEl.value = 'Unsent side draft';
   const sideImage = { id: 'side-image', name: 'side.png', mediaType: 'image/png', data: 'c2lkZQ==' };
   harness.imageContextManager.setImages([sideImage]);
-  routing.state.queuedMessage = { content: 'Retry this in main', images: undefined };
+  routing.controller.queue.enqueue(createQueuedMessage('Retry this in main', { text: 'Retry this in main', images: undefined }));
   routing.controller.resumeQueuedTurnAfterIntentAdmission();
   await waitFor(() => expect(routing.mainMessages.length).toBeGreaterThan(0));
   await waitFor(() => expect(routing.state.isStreaming).toBe(false));
@@ -316,9 +315,9 @@ it.each(['initialization', 'missing-coordinator', 'handoff'] as const)(
     harness.controller.expand();
     harness.inputEl.value = 'Unsent side draft';
     const sideImage = { id: 'side-image', name: 'side.png', mediaType: 'image/png', data: 'c2lkZQ==' };
-    const queuedImage = { id: 'queued-image', name: 'queued.png', mediaType: 'image/png', data: 'cXVldWVk' };
+    const queuedImage = { id: 'queued-image', name: 'queued.png', mediaType: 'image/png' as const, data: 'cXVldWVk', size: 6, source: 'paste' as const };
     harness.imageContextManager.setImages([sideImage]);
-    routing.state.queuedMessage = { content: 'Retry main work', images: [queuedImage] };
+    routing.controller.queue.enqueue(createQueuedMessage('Retry main work', { text: 'Retry main work', images: [queuedImage] }));
     routing.controller.resumeQueuedTurnAfterIntentAdmission();
     await waitFor(() => expect(routing.mainMessages.length).toBeGreaterThan(0));
     await waitFor(() => expect(routing.state.isStreaming).toBe(false));
@@ -527,7 +526,17 @@ it('protects parked main drafts and cancels branch previews when switching to si
 
 it.each([false, true])('keeps side drafts separate while a branch submission settles (cancelled: %s)', async cancelled => {
   const harness = createHarness();
-  const routing = createRouting(harness);
+  const navigation = deferred<{ status: string; messages: ChatMessage[] }>();
+  const coordinator = { navigateConversationBranch: jest.fn().mockReturnValue(navigation.promise) };
+  let conversation!: ConversationController;
+  const routing = createRouting(harness, {}, undefined, deps => {
+    conversation = new ConversationController({
+      ...deps, plugin: { settings: {}, updateConversation: jest.fn() },
+      renderer: { renderMessages: jest.fn(), refreshBranchButtonState: jest.fn() },
+      setWelcomeEl: jest.fn(), getExecutionCoordinator: () => coordinator,
+    } as any);
+    deps.conversationController = conversation;
+  });
   const { started } = await startSideChat(harness);
   harness.backend.latest.establishChild('child-session');
   harness.backend.latest.complete();
@@ -541,14 +550,6 @@ it.each([false, true])('keeps side drafts separate while a branch submission set
   const prompt: ChatMessage = { id: 'second', role: 'user', content: 'Original', images: [mainImage], timestamp: Date.now(), userMessageId: 'native-second' };
   routing.state.messages = [first, prompt];
   routing.state.addMessage = message => { routing.mainMessages.push(message); routing.state.messages.push(message); };
-  const navigation = deferred<{ status: string; messages: ChatMessage[] }>();
-  const coordinator = { navigateConversationBranch: jest.fn().mockReturnValue(navigation.promise) };
-  const conversation = new ConversationController({
-    ...routing.deps, session: routing.session, plugin: { settings: {}, updateConversation: jest.fn() },
-    renderer: { renderMessages: jest.fn(), refreshBranchButtonState: jest.fn() },
-    setWelcomeEl: jest.fn(), getExecutionCoordinator: () => coordinator,
-  } as any);
-  routing.deps.conversationController = conversation;
   await conversation.navigateBranch('second');
   harness.inputEl.value = 'Edited main';
   const sending = routing.controller.sendMessage();

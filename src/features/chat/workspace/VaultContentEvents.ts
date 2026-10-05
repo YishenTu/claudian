@@ -1,7 +1,7 @@
 import type { EventRef, TAbstractFile, Vault } from 'obsidian';
 import { Notice, TFolder } from 'obsidian';
 
-import type { ChatViewHost } from '../ChatFeatureHost';
+import type { ChatViewHost } from '@/features/chat/ChatFeatureHost';
 
 const VAULT_REFRESH_DELAY_MS = 50;
 

@@ -3,9 +3,8 @@ import { MarkdownView, Notice } from 'obsidian';
 
 import { buildCursorContext } from '@/core/prompt/editorContext';
 import type { FeatureHost } from '@/features/FeatureHost';
-
-import type { InlineEditSessionOwner } from './InlineEditSessionOwner';
-import { type InlineEditContext, InlineEditModal } from './ui/InlineEditModal';
+import type { InlineEditSessionOwner } from '@/features/inline-edit/InlineEditSessionOwner';
+import { type InlineEditContext, InlineEditModal } from '@/features/inline-edit/ui/InlineEditModal';
 
 export interface InlineEditCommandDeps {
   readonly host: FeatureHost;

@@ -282,11 +282,11 @@ test('the shared FeatureHost contract does not depend on chat', () => {
     .map(sourceImport => `${sourceImport.line}: ${sourceImport.specifier}`);
   assert.deepEqual(violations, []);
   const contract = fs.readFileSync(featureHostFile, 'utf8');
-  assert.doesNotMatch(contract, /\b(?:getView|getAllViews|chatModelSelection)\b/);
-
+  assert.doesNotMatch(
+    contract,
+    /\b(?:getView|getAllViews|chatModelSelection|getMainAgentDynamicSystemPromptSections)\b/,
+  );
 });
-
-
 
 test('persisted settings changes use the coordinator boundary', () => {
   const matches = findMatches([sourceRoot], /\.saveSettings\(\)/).filter(file => ![
@@ -304,10 +304,7 @@ test('runtime command discovery cannot import Vault skill management', () => {
       path.join(sourceRoot, 'providers', provider, 'commands'),
     ]).filter(fs.existsSync),
   ];
-  const skillManagement = [
-    path.join(featuresRoot, 'settings', 'skills'),
-    path.join(featuresRoot, 'settings', 'AgentSkillSettings'),
-  ];
+  const skillManagement = [path.join(featuresRoot, 'agent-skills')];
   assert.deepEqual(findResolvedImportViolations(
     roots,
     target => skillManagement.some(root => isPathWithin(normalizeModuleTarget(target), root)),

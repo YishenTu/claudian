@@ -9,6 +9,7 @@ import type { Conversation } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
+import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 const originalResizeObserver = globalThis.ResizeObserver;
 beforeEach(() => {
@@ -54,6 +55,7 @@ it('refreshes destination settings when the side panel collapses, expands, and i
     plugin,
     component: Object.assign(new Component(), { registerDomEvent: () => undefined, registerEvent: () => undefined }) as never,
     containerEl: document.body.appendChild(document.createElement('div')),
+    mentionDataProvider: new VaultMentionDataProvider(plugin.app),
     conversation,
     getProviderCatalogConfig: () => null,
     isRuntimeLive: () => true,

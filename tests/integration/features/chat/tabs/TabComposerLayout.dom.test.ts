@@ -13,6 +13,7 @@ import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
+import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 const originalResizeObserver = globalThis.ResizeObserver;
 beforeEach(() => {
@@ -63,6 +64,7 @@ async function createTab(linkedContentPath?: string): Promise<AssembledTabRuntim
     conversation,
     getProviderCatalogConfig: () => null,
     isRuntimeLive: () => true,
+    mentionDataProvider: new VaultMentionDataProvider(app),
   });
   tab.state.messages = conversation.messages;
   return tab;
@@ -90,10 +92,9 @@ it('attaches a queued follow-up to the top of the input box, under the tab bar',
       ...ProviderRegistry.getCapabilities('claude'), supportsTurnSteer: true,
     });
     const releaseTurn = holdResponse(tab.session.turns);
-    tab.state.queuedMessage = {
-      content: 'also add a created date', images: undefined, editorContext: null, canvasContext: null,
-    };
-    tab.controllers.inputController.updateQueueIndicator();
+    tab.controllers.inputController.queue.enqueue({
+      content: 'also add a created date', turnRequest: { text: 'also add a created date' },
+    });
 
     const strip = tab.dom.queueIndicatorEl;
     expect(strip.parentElement).toBe(tab.dom.inputWrapper);

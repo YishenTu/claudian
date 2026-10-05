@@ -85,3 +85,57 @@ describe('VaultMentionDataProvider', () => {
     expect(onFileLoadError).toHaveBeenCalledTimes(1);
   });
 });
+
+/** The view owns one subscription shared by every tab's mention source. */
+describe('VaultMentionDataProvider vault events', () => {
+  function fixture() {
+    const listeners = new Map<string, () => void>();
+    const vault = {
+      getFiles: jest.fn(() => [createFile('notes/a.md')]),
+      getAllLoadedFiles: jest.fn(() => [createFolder('notes')]),
+      on: jest.fn((name: string, callback: () => void) => {
+        listeners.set(name, callback);
+        return { name };
+      }),
+      offref: jest.fn((ref: { name: string }) => listeners.delete(ref.name)),
+    };
+    const provider = new VaultMentionDataProvider({ vault } as never);
+    const unsubscribe = provider.register(vault as never);
+    provider.getCachedVaultFiles();
+    provider.getCachedVaultFolders();
+    return { provider, vault, listeners, unsubscribe };
+  }
+
+  it.each(['create', 'delete', 'rename'])('reloads both caches after %s', event => {
+    const { provider, vault, listeners } = fixture();
+    listeners.get(event)!();
+    provider.getCachedVaultFiles();
+    provider.getCachedVaultFolders();
+    expect(vault.getFiles).toHaveBeenCalledTimes(2);
+    expect(vault.getAllLoadedFiles).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves cached folders when only file content changed', () => {
+    const { provider, vault, listeners } = fixture();
+    listeners.get('modify')!();
+    provider.getCachedVaultFiles();
+    provider.getCachedVaultFolders();
+    expect(vault.getFiles).toHaveBeenCalledTimes(2);
+    expect(vault.getAllLoadedFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases each listener once and refreshes stale caches after reopening', () => {
+    const { provider, vault, listeners, unsubscribe } = fixture();
+    unsubscribe();
+    unsubscribe();
+    expect(vault.offref).toHaveBeenCalledTimes(4);
+    expect(listeners.size).toBe(0);
+    provider.getCachedVaultFiles();
+    expect(vault.getFiles).toHaveBeenCalledTimes(1);
+    provider.register(vault as never);
+    provider.getCachedVaultFiles();
+    provider.getCachedVaultFolders();
+    expect(vault.getFiles).toHaveBeenCalledTimes(2);
+    expect(vault.getAllLoadedFiles).toHaveBeenCalledTimes(2);
+  });
+});

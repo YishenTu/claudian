@@ -1,9 +1,9 @@
 import type { App, Component } from 'obsidian';
 import { MarkdownRenderer } from 'obsidian';
 
-import { processFileLinks } from '../../../utils/fileLink';
-import { replaceImageEmbedsWithHTML } from '../../../utils/imageEmbed';
-import { normalizeLatexMathDelimiters } from '../../../utils/markdownMath';
+import { processFileLinks } from '@/utils/fileLink';
+import { replaceImageEmbedsWithHTML } from '@/utils/imageEmbed';
+import { normalizeLatexMathDelimiters } from '@/utils/markdownMath';
 
 interface RenderInlineEditMarkdownPreviewOptions {
   app: App;

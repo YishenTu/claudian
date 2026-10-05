@@ -7,28 +7,11 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { ProviderId } from '@/core/providers/types';
 import type { Conversation, SlashCommand } from '@/core/types';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { TabId, TabProviderCatalogContext } from '@/features/chat/tabs/ChatTab';
+import { getTabProviderId } from '@/features/chat/tabs/providerResolution';
+import type { AssembledTabRuntime, ProviderCatalogInfo, TabMembershipView } from '@/features/chat/tabs/types';
 import { throwIfAborted, toAbortError } from '@/utils/abort';
-
-import type { ChatFeatureHost } from '../ChatFeatureHost';
-import { getTabProviderId } from './providerResolution';
-import type { TabSessionState } from './TabSession';
-import type {
-  AssembledTabRuntime,
-  ProviderCatalogInfo,
-  TabId,
-  TabProviderCatalogContext,
-} from './types';
-
-/** Manager-owned tab membership and liveness that discovery revalidates across every await. */
-export interface TabCommandDiscoveryHost {
-  readonly plugin: ChatFeatureHost;
-  getActiveTabId(): TabId | null;
-  getAllTabs(): AssembledTabRuntime[];
-  getTab(tabId: TabId): AssembledTabRuntime | null;
-  isDestroyed(): boolean;
-  isTabAlive(tab: TabSessionState): boolean;
-  isTabStateMutable(tab: TabSessionState): boolean;
-}
 
 type ProviderRuntimeCommandCacheEntry = {
   result: ProviderCommandDiscoveryResult<SlashCommand>;
@@ -79,11 +62,11 @@ export class TabCommandDiscovery {
   private readonly providerResourceGenerations = new Map<ProviderId, number>();
   private readonly tabCommandContextRevisions = new Map<TabId, number>();
 
-  constructor(private readonly host: TabCommandDiscoveryHost) {}
-
-  private get plugin(): ChatFeatureHost {
-    return this.host.plugin;
-  }
+  /** Membership and liveness are revalidated through `membership` across every await. */
+  constructor(
+    private readonly plugin: ChatFeatureHost,
+    private readonly membership: TabMembershipView,
+  ) {}
 
   /** Starts per-tab discovery metadata for a newly assembled runtime. */
   registerTab(tabId: TabId): void {
@@ -101,8 +84,8 @@ export class TabCommandDiscovery {
     const filter = providerIds
       ? new Set(Array.isArray(providerIds) ? providerIds : [providerIds])
       : null;
-    for (const tab of this.host.getAllTabs()) {
-      if (!this.host.isTabAlive(tab)) continue;
+    for (const tab of this.membership.getAllTabs()) {
+      if (!this.membership.isTabAlive(tab)) continue;
       const providerId = getTabProviderId(tab, this.plugin);
       if (!providerId || (filter && !filter.has(providerId))) continue;
       this.invalidateTab(tab.id);
@@ -123,7 +106,7 @@ export class TabCommandDiscovery {
     }
 
     const filter = new Set(ids);
-    for (const tab of this.host.getAllTabs()) {
+    for (const tab of this.membership.getAllTabs()) {
       const providerId = getTabProviderId(tab, this.plugin);
       if (!providerId || !filter.has(providerId)) continue;
       this.invalidateTab(tab.id);
@@ -132,7 +115,7 @@ export class TabCommandDiscovery {
 
   /** Resolves the command dropdown config and discovery source for a live tab. */
   getProviderCatalogConfig(tab: TabProviderCatalogContext): ProviderCatalogInfo {
-    if (this.host.isDestroyed() || tab.lifecycleState === 'closing') return null;
+    if (this.membership.isDestroyed() || tab.lifecycleState === 'closing') return null;
 
     const providerId = getTabProviderId(tab, this.plugin);
     if (!providerId) return null;
@@ -145,22 +128,13 @@ export class TabCommandDiscovery {
     };
   }
 
-  /**
-   * Gets provider-scoped SDK supported commands for a tab.
-   * @returns Array of SDK commands, or empty array if no service is ready.
-   */
-  async getSdkCommands(tabId?: TabId): Promise<SlashCommand[]> {
-    const { result } = await this.#getSdkCommandDiscovery(tabId);
-    return result.status === 'ready' ? [...result.items] : [];
-  }
-
-  async getProviderCommandDiscovery(
-    tabId?: TabId,
-    signal?: AbortSignal,
+  async #getProviderCommandDiscovery(
+    tabId: TabId,
+    signal: AbortSignal,
   ): Promise<ProviderCommandDiscoveryResult<ProviderCommandEntry>> {
     throwIfAborted(signal, ABORT_MESSAGE);
-    const targetTab = this.#resolveTargetTab(tabId);
-    if (!targetTab || !this.host.isTabAlive(targetTab)) return { status: 'empty' };
+    const targetTab = this.membership.getTab(tabId);
+    if (!targetTab || !this.membership.isTabAlive(targetTab)) return { status: 'empty' };
 
     const providerId = getTabProviderId(targetTab, this.plugin);
     if (!providerId) return { status: 'empty' };
@@ -176,7 +150,7 @@ export class TabCommandDiscovery {
     if (!catalog) return { status: 'empty' };
     const entries = await catalog.listDropdownEntries({
       includeBuiltIns: false,
-      ...(signal ? { signal } : {}),
+      signal,
       allowCachedCommandSnapshot: discovery.commandSnapshot !== undefined,
       ...(discovery.commandSnapshot !== undefined
         ? { commandSnapshot: discovery.commandSnapshot }
@@ -224,23 +198,17 @@ export class TabCommandDiscovery {
     this.tabCommandContextRevisions.clear();
   }
 
-  #resolveTargetTab(tabId?: TabId): AssembledTabRuntime | null {
-    if (tabId) return this.host.getTab(tabId);
-    const activeTabId = this.host.getActiveTabId();
-    return activeTabId ? this.host.getTab(activeTabId) : null;
-  }
-
   #isTabProviderCurrent(tab: AssembledTabRuntime, providerId: ProviderId): boolean {
-    return this.host.isTabAlive(tab) && getTabProviderId(tab, this.plugin) === providerId;
+    return this.membership.isTabAlive(tab) && getTabProviderId(tab, this.plugin) === providerId;
   }
 
   async #getSdkCommandDiscovery(
-    tabId?: TabId,
-    signal?: AbortSignal,
+    tabId: TabId,
+    signal: AbortSignal,
   ): Promise<SDKCommandDiscovery> {
     throwIfAborted(signal, ABORT_MESSAGE);
-    const targetTab = this.#resolveTargetTab(tabId);
-    if (!targetTab || !this.host.isTabAlive(targetTab)) {
+    const targetTab = this.membership.getTab(tabId);
+    if (!targetTab || !this.membership.isTabAlive(targetTab)) {
       return { result: { status: 'empty' } };
     }
 
@@ -276,7 +244,7 @@ export class TabCommandDiscovery {
     if (
       targetTab.conversationId === null
       && commandLoader
-      && targetTab.id !== this.host.getActiveTabId()
+      && targetTab.id !== this.membership.getActiveTabId()
     ) {
       return { result: { status: 'empty' }, commandSnapshot: [] };
     }
@@ -295,7 +263,7 @@ export class TabCommandDiscovery {
     if (
       catalog
       && hasCommandSnapshot
-      && targetTab.id === this.host.getActiveTabId()
+      && targetTab.id === this.membership.getActiveTabId()
       && this.#isContextCurrent(targetTab, providerId, commandContext)
       && (result.status === 'ready' || result.status === 'empty')
     ) {
@@ -313,11 +281,11 @@ export class TabCommandDiscovery {
     tab: AssembledTabRuntime,
     providerId: ProviderId,
     lookup: ProviderCommandLookup,
-    signal?: AbortSignal,
+    signal: AbortSignal,
   ): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {
     throwIfAborted(signal, ABORT_MESSAGE);
     if (
-      !this.host.isTabAlive(tab)
+      !this.membership.isTabAlive(tab)
       || !this.#isCommandLoaderAvailable(providerId)
     ) {
       return { status: 'empty' };
@@ -397,8 +365,8 @@ export class TabCommandDiscovery {
   }
 
   #advanceCommandContextRevision(tabId: TabId): boolean {
-    const tab = this.host.getTab(tabId);
-    if (!tab || !this.host.isTabStateMutable(tab)) return false;
+    const tab = this.membership.getTab(tabId);
+    if (!tab || !this.membership.isTabStateMutable(tab)) return false;
 
     this.tabCommandContextRevisions.set(
       tabId,
@@ -420,11 +388,8 @@ export class TabCommandDiscovery {
 
   async #awaitLoad(
     load: ProviderCommandLoadEntry,
-    signal?: AbortSignal,
+    signal: AbortSignal,
   ): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {
-    if (!signal) {
-      return await load.promise;
-    }
     if (signal.aborted) {
       load.abortController.abort();
       throwIfAborted(signal, ABORT_MESSAGE);
@@ -473,7 +438,7 @@ export class TabCommandDiscovery {
       .getProviderGeneration(providerId);
     const resourceGeneration = this.#getProviderResourceGeneration(providerId);
     // Isolated metadata processes start only for the tab whose picker asked.
-    const allowIsolatedMetadataCreation = tab.id === this.host.getActiveTabId();
+    const allowIsolatedMetadataCreation = tab.id === this.membership.getActiveTabId();
 
     return {
       ...lookup,
@@ -534,14 +499,14 @@ export class TabCommandDiscovery {
     }
 
     const discovery = new ProviderCommandDiscoveryStore(
-      signal => this.getProviderCommandDiscovery(tabId, signal),
+      signal => this.#getProviderCommandDiscovery(tabId, signal),
       {
         onBeforeRetry: () => {
           this.#advanceCommandContextRevision(tabId);
         },
         resolveTimeoutMs: () => {
-          const tab = this.host.getTab(tabId);
-          if (!tab || !this.host.isTabAlive(tab)) return undefined;
+          const tab = this.membership.getTab(tabId);
+          if (!tab || !this.membership.isTabAlive(tab)) return undefined;
           const providerId = getTabProviderId(tab, this.plugin);
           if (!providerId) return undefined;
           const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);

@@ -18,7 +18,7 @@ import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { ChatMessage, Conversation, ProviderId } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
-import { handleForkRequest } from '@/features/chat/tabs/TabForking';
+import { handleForkRequest } from '@/features/chat/tabs/forking/ForkSource';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 import { updateCurrentGrokCatalog } from '@/providers/grok/settings';
 

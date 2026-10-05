@@ -6,7 +6,6 @@ import { testDate } from '@test/helpers/testClock';
 import { Notice } from 'obsidian';
 
 import type { ToolCallInfo } from '@/core/types';
-import { ConversationController } from '@/features/chat/controllers/ConversationController';
 import { cancelSelectedDestinationTurn } from '@/features/chat/tabs/TabInputEvents';
 import { drainTabForShutdownSnapshot } from '@/features/chat/tabs/TabLifecycle';
 
@@ -144,11 +143,11 @@ it('preserves submission order when a busy-main mention hydrates more slowly tha
     const first = fixture.controller.sendMessage();
     await waitForCall(fixture.plugin.getConversationById);
     const capturedSelection = { mode: 'selection' as const, notePath: 'captured.md', selectedText: 'captured text' };
-    fixture.deps.selectionController.getContext = () => capturedSelection;
+    fixture.selectionSources.editor.getContext.mockReturnValue(capturedSelection);
     fixture.input.value = 'later plain follow-up';
     const second = fixture.controller.sendMessage();
     capturedSelection.selectedText = 'changed after capture';
-    fixture.deps.selectionController.getContext = () => ({ mode: 'selection', notePath: 'later.md', selectedText: 'later text' });
+    fixture.selectionSources.editor.getContext.mockReturnValue({ mode: 'selection', notePath: 'later.md', selectedText: 'later text' });
     gate.resolve(source);
     await Promise.all([first, second]);
     expect(fixture.state.queuedMessage?.turnRequest?.selections).toEqual([{ kind: 'editor', selection: { mode: 'selection', notePath: 'captured.md', selectedText: 'captured text' } }]);
@@ -197,7 +196,7 @@ it('withdraws an expired async answer waiting behind busy-main reference prepara
     expect(native.requests[1].input)
       .toEqual([{ type: 'text', text: '@"Current title"' }]);
   } finally {
-    fixture.controller.clearQueuedMessage();
+    fixture.controller.queue.clear();
     fixture.controller.cancelStreaming();
     native.runs.forEach(run => run.cancel());
     await active;
@@ -236,16 +235,9 @@ it.each([false, true])('restores prepared drafts when rewind begins during hydra
   const initialization = deferred<boolean>();
   const source = await fixture.plugin.getConversationById(id);
   fixture.plugin.getConversationById.mockClear().mockReturnValue(hydration.promise);
-  const session = fixture.session;
   const initialize = jest.fn().mockReturnValue(initialization.promise);
-  const conversation = new ConversationController({
-    ...fixture.deps,
-    session,
-    subagentManager: fixture.deps.getSubagentManager(),
-    setWelcomeEl: jest.fn(),
-    clearQueuedMessage: jest.fn(),
-    ensureExecutionInitialized: initialize,
-  });
+  fixture.deps.ensureExecutionInitialized = initialize;
+  const conversation = fixture.deps.conversationController;
   fixture.state.messages = [
     { id: 'previous-user', role: 'user', content: 'previous prompt', userMessageId: 'native-user', timestamp: time },
     { id: 'previous-assistant', role: 'assistant', content: 'previous answer', assistantMessageId: 'native-assistant', timestamp: time },
@@ -368,7 +360,7 @@ it.each([false, true])('releases preparation ordering at admission while the nex
     expect(session.requests[1].input).toEqual([{ type: 'text', text: fails ? 'later plain follow-up' : '@"Current title"' }]);
     const queued = fails ? 'last follow-up' : 'later plain follow-up\n\nlast follow-up';
     await until(() => fixture.state.queuedMessage?.content === queued);
-    fixture.controller.withdrawQueuedMessageToComposer();
+    fixture.controller.queue.withdrawToComposer();
     expect(fixture.input.value).toContain(queued);
     expect(fixture.input.value.includes(token)).toBe(fails);
     finishNativeTurn(session, 1);
@@ -393,7 +385,7 @@ it.each(['withdraw', 'cancel', 'initialization'])('restores token text and refre
     if (recovery !== 'initialization') {
       fixture.input.value = 'plain follow-up';
       await fixture.controller.sendMessage();
-      if (recovery === 'withdraw') fixture.controller.withdrawQueuedMessageToComposer();
+      if (recovery === 'withdraw') fixture.controller.queue.withdrawToComposer();
       else fixture.controller.cancelStreaming();
     }
     const suffix = recovery === 'initialization' ? '' : '\n\nplain follow-up';
@@ -434,14 +426,14 @@ it.each([false, true])('retains queued priority and captured selections through 
     { kind: 'browser', selection: { ...value.browser } },
     { kind: 'canvas', selection: { ...value.canvas, nodeIds: [...value.canvas.nodeIds] } },
   ]);
-  fixture.deps.selectionController.getContext = () => older.editor;
-  fixture.deps.browserSelectionController!.getContext = () => older.browser;
-  fixture.deps.canvasSelectionController.getContext = () => older.canvas;
+  fixture.selectionSources.editor.getContext.mockReturnValue(older.editor);
+  fixture.selectionSources.browser.getContext.mockReturnValue(older.browser);
+  fixture.selectionSources.canvas.getContext.mockReturnValue(older.canvas);
   fixture.input.value = 'older plain follow-up';
   await fixture.controller.sendMessage();
-  fixture.deps.selectionController.getContext = () => different ? newer.editor : null;
-  fixture.deps.browserSelectionController!.getContext = () => different ? newer.browser : null;
-  fixture.deps.canvasSelectionController.getContext = () => different ? newer.canvas : null;
+  fixture.selectionSources.editor.getContext.mockReturnValue(different ? newer.editor : null);
+  fixture.selectionSources.browser.getContext.mockReturnValue(different ? newer.browser : null);
+  fixture.selectionSources.canvas.getContext.mockReturnValue(different ? newer.canvas : null);
   fixture.input.value = token;
   const mention = fixture.controller.sendMessage();
   await waitForCall(fixture.write);
@@ -468,7 +460,7 @@ it.each([false, true])('retains queued priority and captured selections through 
     await jest.advanceTimersByTimeAsync(0);
   } finally {
     fixture.controller.cancelStreaming();
-    fixture.controller.clearQueuedMessage();
+    fixture.controller.queue.clear();
     writing.resolve('/tmp/claudian-sessions/snapshot.md');
     session.runs.forEach(run => run.cancel());
     await Promise.allSettled([active, mention]);
@@ -492,8 +484,8 @@ it.each(['cancel', 'withdraw', 'discard', 'pause', 'shutdown', 'replacement'] as
       fixture.controller.resumeQueuedTurnAfterIntentAdmission();
       switch (action) {
         case 'cancel': fixture.controller.cancelStreaming(); break;
-        case 'withdraw': fixture.controller.withdrawQueuedMessageToComposer(); break;
-        case 'discard': fixture.controller.clearQueuedMessage(); break;
+        case 'withdraw': fixture.controller.queue.withdrawToComposer(); break;
+        case 'discard': fixture.controller.queue.clear(); break;
         case 'pause': session.pauseIntentAdmission(); break;
         case 'replacement': fixture.state.currentConversationId = 'replacement'; break;
         case 'shutdown': await drainTabForShutdownSnapshot({ session, state: fixture.state,
@@ -510,7 +502,7 @@ it.each(['cancel', 'withdraw', 'discard', 'pause', 'shutdown', 'replacement'] as
       expect(fixture.native.backends.get('claude')!.sessions.flatMap(value => value.requests)
         .map(request => request.context?.sessionReferences?.[0].id)).toEqual(action === 'pause' ? [id] : []);
     } finally {
-      fixture.controller.clearQueuedMessage();
+      fixture.controller.queue.clear();
       await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose();
       jest.useRealTimers();
     }

@@ -2,7 +2,7 @@ import {
   getToolLabel,
   getToolName,
   getToolSummary,
-} from '@/features/chat/rendering/ToolCallRenderer';
+} from '@/features/chat/rendering/tools/toolPresentation';
 import { normalizeGrokToolCall } from '@/providers/grok/normalization/grokToolNormalization';
 
 describe('Grok tool renderer compatibility', () => {

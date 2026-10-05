@@ -1,4 +1,4 @@
-import { AGENT_SKILLS_ROOT } from '@/features/settings/skills/AgentSkillRepository';
+import { AGENT_SKILLS_ROOT } from '@/features/agent-skills/AgentSkillRepository';
 
 type Node = { type: 'file'; content: string } | { type: 'folder' };
 

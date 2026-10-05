@@ -5,16 +5,15 @@ import {
   assertLinkedContentPath,
   normalizeLinkedContentPath,
 } from '@/core/path/LinkedContentPath';
-import type { ComposerInfoRow } from '@/features/chat/ui/ComposerInfoRow';
-import { revealWorkspaceLeaf } from '@/utils/obsidianCompat';
-
-import { LinkedContentChip } from './LinkedContentChip';
-import { LinkedContentPickerSource } from './LinkedContentPickerSource';
+import type { ComposerInfoRow } from '@/features/chat/composer/ComposerInfoRow';
+import { LinkedContentChip } from '@/features/chat/linked-content/LinkedContentChip';
+import { LinkedContentPickerSource } from '@/features/chat/linked-content/LinkedContentPickerSource';
 import {
   deriveLinkedContentPresentation,
   type LinkedContentPresentation,
-} from './LinkedContentPresentation';
-import { LinkedContentSelector } from './LinkedContentSelector';
+} from '@/features/chat/linked-content/LinkedContentPresentation';
+import { LinkedContentSelector } from '@/features/chat/linked-content/LinkedContentSelector';
+import { revealWorkspaceLeaf } from '@/utils/obsidianCompat';
 
 export type LinkedContentMode = 'auto-draft' | 'explicit-draft' | 'submitting' | 'locked';
 

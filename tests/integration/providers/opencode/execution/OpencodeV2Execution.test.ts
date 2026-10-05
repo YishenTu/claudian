@@ -7,8 +7,8 @@ import { createForkTestEnvironment } from '@test/helpers/features/chat/ProviderF
 import { isSteerableExecutionSession, type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderSessionEvent } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage } from '@/core/types';
-import { providerOutputEventToStreamChunk } from '@/features/chat/controllers/StreamController';
-import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
+import { ChatExecutionCoordinator, type ChatSteerOutcome } from '@/features/chat/execution/ChatExecutionCoordinator';
+import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/providerOutputChunks';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 
@@ -495,7 +495,7 @@ describe('native steering', () => {
     const backend = new OpencodeExecutionBackend(env.host, { serverService });
     const conversation = await env.repository.create({ providerId: 'opencode' });
     const events: ProviderExecutionEvent[] = [];
-    let steered: Promise<boolean> | undefined;
+    let steered: Promise<ChatSteerOutcome> | undefined;
     let ids = 0;
     const turn = (submissionId: string, body: string, messages?: { user: ChatMessage; assistant: ChatMessage }) => ({
       submissionId, timestamp: 1, rawDisplayText: body, canonicalText: body, images: [],
@@ -517,7 +517,7 @@ describe('native steering', () => {
       await coordinator.bindConversation({ conversationId: conversation.id, providerId: 'opencode' });
       const result = await coordinator.execute(turn('user-main', text, { user, assistant }));
       expect(result.status).toBe('completed');
-      await expect(steered).resolves.toBe(true);
+      await expect(steered).resolves.toEqual({ delivery: 'accepted' });
       const [prompt, steer] = events.filter(event => event.type === 'user_message_started');
       expect(steer).toMatchObject({ content: 'Also check tests' });
       expect(user.userMessageId).toBe(prompt.nativeUserMessageId);

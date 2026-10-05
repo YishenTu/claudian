@@ -3,6 +3,7 @@ import '@/providers';
 
 import { deserialize, serialize } from 'node:v8';
 
+import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
 import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { FakeSideSession } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { modelCatalogCases } from '@test/helpers/providerModelCatalogs';
@@ -18,14 +19,14 @@ import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceReg
 import { getToolIcon } from '@/core/tools/toolIcons';
 import type { ClaudianSettings, Conversation, StreamChunk } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import { ClaudianView } from '@/features/chat/ClaudianView';
-import { FLAVOR_TEXTS } from '@/features/chat/constants';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
+import { FLAVOR_TEXTS } from '@/features/chat/turns/flavorTexts';
 import { ZenModeController } from '@/features/chat/zen/ZenModeController';
 import { adaptCodexStreamChunk } from '@/providers/codex/execution/CodexExecutionEventAdapter';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
+import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 const originalResizeObserver = globalThis.ResizeObserver;
 const originalStructuredClone = globalThis.structuredClone;
@@ -169,38 +170,39 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
     conversations.push(conversation);
     const split = placement === 'left' ? layout.leftSplit : placement === 'right' ? layout.rightSplit : null;
     const viewContainerEl = (split?.containerEl ?? layout.rootEl).createDiv({ cls: 'claudian-container' });
-    const tabContentEl = viewContainerEl.createDiv({ cls: 'claudian-tab-content-container' });
-    const inputFooterEl = viewContainerEl.createDiv({ cls: 'claudian-input-footer' });
-    const sideChatChipHostEl = inputFooterEl.createDiv({ cls: 'claudian-side-chat-chip-slot' });
-    const activeInputSlotEl = inputFooterEl.createDiv({ cls: 'claudian-active-input-slot' });
+    const leaf: Leaf = { getRoot: () => split ?? layout.rootSplit, view: null };
+    const view = createClaudianView({
+      host: plugin,
+      app,
+      leaf,
+      containerEl: viewContainerEl,
+      contentEl: viewContainerEl,
+    });
+    // The view-owned footer and tab container that onOpen builds.
+    view.viewContainerEl = viewContainerEl;
+    view.buildViewLayout(viewContainerEl);
+    const activeInputSlotEl = viewContainerEl.querySelector<HTMLElement>('.claudian-active-input-slot')!;
+    const sideChatChipHostEl = viewContainerEl.querySelector<HTMLElement>('.claudian-side-chat-chip-slot')!;
     const tab: AssembledTabRuntime = await createTabRuntime({
       plugin,
       component: Object.assign(new Component(), { registerDomEvent: () => undefined, registerEvent: () => undefined }) as never,
-      containerEl: tabContentEl,
+      containerEl: view.tabContentEl,
+      mentionDataProvider: new VaultMentionDataProvider(plugin.app),
       conversation, getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
     });
     tab.state.currentConversationId = conversation.id;
     tab.dom.contentEl.removeClass('claudian-hidden');
     cleanups.push(() => destroyTab(tab));
+    view.tabManager = {
+      getActiveTab: () => tab,
+      getTab: (id: string) => id === tab.id ? tab : null,
+      getTabCount: () => 1,
+    };
 
-    const leaf: Leaf = { getRoot: () => split ?? layout.rootSplit, view: null };
-    const view = Object.create(ClaudianView.prototype) as any;
-    Object.assign(view, {
-      plugin, app, leaf, viewContainerEl, tabContentEl, inputFooterEl, sideChatChipHostEl, activeInputSlotEl,
-      activeInputTabId: null,
-      containerEl: viewContainerEl,
-      isWideSessionLayout: false,
-      tabManager: {
-        getActiveTab: () => tab,
-        getTab: (id: string) => id === tab.id ? tab : null,
-        getTabCount: () => 1,
-      },
-    });
-    view.tabWorkspace = view.createTabWorkspace();
     Object.assign(view.tabWorkspace, { lifecycleRevision: 1, initializedRevision: ready ? 1 : -1 });
     leaf.view = view;
     layout.leaves.push(leaf);
-    view.updateInputLocation();
+    view.presentation.update();
     view.startZenModeSource();
     cleanups.push(() => view.stopZenModeSource());
     return { view, tab, leaf, activeInputSlotEl, sideChatChipHostEl };

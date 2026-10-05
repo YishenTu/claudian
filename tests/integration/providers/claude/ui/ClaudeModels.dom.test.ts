@@ -12,7 +12,8 @@ import { ProviderModelCatalogController } from '@/core/providers/models/Provider
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ProviderSettingsTabRendererContext } from '@/core/providers/types';
 import type { ClaudianSettings } from '@/core/types';
-import { ModelSelector, type ToolbarCallbacks } from '@/features/chat/ui/InputToolbar';
+import { ModelSelector } from '@/features/chat/composer/toolbar/ModelSelector';
+import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
 import type { ClaudeModelDiscovery } from '@/providers/claude/runtime/ClaudeModels';
 import { createClaudeModels } from '@/providers/claude/runtime/ClaudeModels';
 import { getClaudeProviderSettings } from '@/providers/claude/settings';

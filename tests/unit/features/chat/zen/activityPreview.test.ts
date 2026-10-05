@@ -1,8 +1,8 @@
 import { holdResponse } from '@test/helpers/ConversationPorts';
 
 import type { ChatMessage, ToolCallInfo } from '@/core/types';
-import { TurnCoordinator } from '@/features/chat/controllers/TurnCoordinator';
 import { ChatState } from '@/features/chat/state/ChatState';
+import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import { formatActivityPreview } from '@/features/chat/zen/activityPreview';
 
 function tool(status: ToolCallInfo['status']): ToolCallInfo {

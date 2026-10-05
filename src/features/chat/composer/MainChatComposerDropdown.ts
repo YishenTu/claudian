@@ -2,13 +2,12 @@ import type { ProviderCommandDropdownConfig } from '@/core/providers/commands/Pr
 import type { ProviderCommandDiscoverySource } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
 import type { ProviderId } from '@/core/providers/types';
+import type { FileContextManager } from '@/features/chat/composer/FileContextManager';
 import {
   ComposerDropdownController,
   SlashCommandSource,
 } from '@/shared/composer-dropdown';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
-
-import type { FileContextManager } from '../ui/FileContext';
 
 export interface MainChatComposerDropdownOptions {
   readonly hiddenCommands?: ReadonlySet<string>;

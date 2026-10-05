@@ -12,11 +12,12 @@ import { Component } from 'obsidian';
 
 import { getToolIcon } from '@/core/tools/toolIcons';
 import type { ChatMessage, ToolCallInfo } from '@/core/types';
-import { providerOutputEventToStreamChunk, StreamController } from '@/features/chat/controllers/StreamController';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
-import { renderStoredToolCall } from '@/features/chat/rendering/ToolCallRenderer';
-import { SubagentManager } from '@/features/chat/services/SubagentManager';
+import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/providerOutputChunks';
+import { renderStoredToolCall } from '@/features/chat/rendering/tools/ToolCallRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
+import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
+import { StreamController } from '@/features/chat/turns/StreamController';
 import { PiExecutionBackend } from '@/providers/pi/execution/PiExecutionBackend';
 import { PiRPCSessionKernel } from '@/providers/pi/execution/PiExecutionKernel';
 import { parsePiSessionContent } from '@/providers/pi/history/PiHistoryStore';

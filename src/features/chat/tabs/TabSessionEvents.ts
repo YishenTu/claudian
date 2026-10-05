@@ -2,14 +2,14 @@ import { Notice } from 'obsidian';
 
 import type {
   ProviderSessionEvent,
-} from '../../../core/execution';
-import type { ChatMessage, SubagentInfo } from '../../../core/types';
-import type { ChatFeatureHost } from '../ChatFeatureHost';
-import type { ChatExecutionEventContext } from '../execution/ChatExecutionCoordinator';
-import { BackgroundResponses } from '../rendering/BackgroundResponses';
-import { renderSessionTaskNotification } from '../rendering/BackgroundTurnRenderer';
-import { updateTabPermissionMode } from './TabProviderState';
-import type { AssembledTabRuntime } from './types';
+} from '@/core/execution';
+import type { ChatMessage, SubagentInfo } from '@/core/types';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { ChatExecutionEventContext } from '@/features/chat/execution/ChatExecutionCoordinator';
+import { updateTabPermissionMode } from '@/features/chat/tabs/tabProviderUI';
+import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
+import { BackgroundResponses } from '@/features/chat/turns/BackgroundResponses';
+import { renderSessionTaskNotification } from '@/features/chat/turns/BackgroundTurnRenderer';
 
 const backgroundResponses = new WeakMap<AssembledTabRuntime, BackgroundResponses>();
 
@@ -53,7 +53,7 @@ async function handleTabSessionEvent(
     const providerSessionId = event.providerSessionId
       ?? tab.executionCoordinator.snapshot?.providerSessionId;
     if (!providerSessionId) return;
-    const applied = await tab.controllers.streamController.handleAsyncSubagentCompletion({
+    const applied = await tab.controllers.streamController.subagents.handleAsyncSubagentCompletion({
       type: 'async_subagent_completion',
       providerSessionId,
       taskId: event.subagentId,
@@ -116,7 +116,7 @@ export function enqueueTabSessionEvent(
   // Display-only progress must not wait behind queued background rendering.
   if (event.type === 'subagent_updated') {
     const previousStatus = findSubagentStatus(tab.state.messages, event.subagent.id);
-    if (!tab.controllers.streamController.handleSubagentUpdate(event.subagent)) return undefined;
+    if (!tab.controllers.streamController.subagents.handleSubagentUpdate(event.subagent)) return undefined;
     // Lifecycle transitions persist in order below; same-status progress shares one trailing save.
     if (previousStatus === event.subagent.status) {
       return tab.controllers.conversationController.scheduleProgressSave(() => enqueueTabBackgroundWork(tab, async () => {
@@ -126,7 +126,7 @@ export function enqueueTabSessionEvent(
     }
   }
   if (event.type === 'subagent_progress') {
-    tab.controllers.streamController.handleSubagentProgress(event.progress);
+    tab.controllers.streamController.subagents.handleSubagentProgress(event.progress);
     return undefined;
   }
   if (event.type === 'background_turn_started') {

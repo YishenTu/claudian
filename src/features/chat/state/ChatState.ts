@@ -1,5 +1,5 @@
-import type { UsageInfo } from '../../../core/types';
-import type { TurnActivity } from '../controllers/TurnCoordinator';
+import type { UsageInfo } from '@/core/types';
+import { cleanupThinkingBlock } from '@/features/chat/rendering/ThinkingBlockRenderer';
 import type {
   ChatActivity,
   ChatMessage,
@@ -11,7 +11,9 @@ import type {
   TabReviewOutcome,
   ThinkingBlockState,
   WriteEditState,
-} from './types';
+} from '@/features/chat/state/types';
+import { mergeReportedUsage } from '@/features/chat/state/usageInfo';
+import type { TurnActivity } from '@/features/chat/turns/TurnCoordinator';
 
 /** Presentation without a foreground turn owner, such as replayed background output. */
 const NO_TURN_ACTIVITY: TurnActivity = Object.freeze({
@@ -41,7 +43,6 @@ function createInitialState(): ChatStateData {
     writeEditStates: new Map(),
     pendingTools: new Map(),
     usage: null,
-    ignoreUsageUpdates: false,
     attention: null,
     autoScrollEnabled: true, // Default; controllers will override based on settings
     responseStartTime: null,
@@ -67,6 +68,8 @@ export class ChatState {
   private flavorTimerIntervalWindow: Window | null = null;
 
   #wasStreaming = false;
+  #queuedMessageClaimed = false;
+  #transitionWriterClaimed = false;
 
   constructor(
     callbacks: ChatStateCallbacks = {},
@@ -170,25 +173,22 @@ export class ChatState {
     return this.state.isResettingToNewChat;
   }
 
-  set isResettingToNewChat(value: boolean) {
-    this.state.isResettingToNewChat = value;
-  }
-
   get isSwitchingConversation(): boolean {
     return this.state.isSwitchingConversation;
-  }
-
-  set isSwitchingConversation(value: boolean) {
-    this.state.isSwitchingConversation = value;
   }
 
   get isRewinding(): boolean {
     return this.state.isRewinding;
   }
 
-  set isRewinding(value: boolean) {
-    this.state.isRewinding = value;
-    this._callbacks.onRewindingStateChanged?.(value);
+  /** ConversationController is the only writer of navigation transition state. */
+  claimTransitionWriter(): (key: 'isResettingToNewChat' | 'isSwitchingConversation' | 'isRewinding', value: boolean) => void {
+    if (this.#transitionWriterClaimed) throw new Error('Conversation transitions already have an owner.');
+    this.#transitionWriterClaimed = true;
+    return (key, value) => {
+      this.state[key] = value;
+      if (key === 'isRewinding') this._callbacks.onRewindingStateChanged?.(value);
+    };
   }
 
   get hasPendingConversationSave(): boolean {
@@ -221,8 +221,11 @@ export class ChatState {
     return this.state.queuedMessage;
   }
 
-  set queuedMessage(value: QueuedMessage | null) {
-    this.state.queuedMessage = value;
+  /** The tab's turn queue is the single writer; a second claim is a wiring error. */
+  claimQueuedMessageWriter(): (value: QueuedMessage | null) => void {
+    if (this.#queuedMessageClaimed) throw new Error('The queued message already has an owner.');
+    this.#queuedMessageClaimed = true;
+    return value => { this.state.queuedMessage = value; };
   }
 
   // ============================================
@@ -310,12 +313,8 @@ export class ChatState {
     this._callbacks.onUsageChanged?.(value);
   }
 
-  get ignoreUsageUpdates(): boolean {
-    return this.state.ignoreUsageUpdates;
-  }
-
-  set ignoreUsageUpdates(value: boolean) {
-    this.state.ignoreUsageUpdates = value;
+  reportUsage(next: UsageInfo): void {
+    this.usage = mergeReportedUsage(this.usage, next);
   }
 
   // ============================================
@@ -419,6 +418,15 @@ export class ChatState {
   // ============================================
   // Reset Methods
   // ============================================
+
+  resetStreamingPresentation(): void {
+    cleanupThinkingBlock(this.currentThinkingState);
+    this.currentContentEl = null;
+    this.currentTextEl = null;
+    this.currentTextContent = '';
+    this.currentThinkingState = null;
+    this.responseStartTime = null;
+  }
 
   setThinkingIndicatorTimeout(value: number | null, ownerWindow: Window | null): void {
     this.state.thinkingIndicatorTimeout = value;

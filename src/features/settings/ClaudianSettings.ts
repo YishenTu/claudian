@@ -2,26 +2,25 @@ import type { App, Plugin, SettingDefinitionItem } from 'obsidian';
 import { Notice, PluginSettingTab, Setting } from 'obsidian';
 
 import { parseEnvironmentVariables } from '@/core/process/env';
-import { formatContextLimit, parseContextLimit } from '@/shared/settings/contextLimit';
-import { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSettingsWriter';
-import { frameSettingsGroups } from '@/shared/settings/SettingsGroups';
-
-import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
-import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
-import { ProviderWorkspaceRegistry } from '../../core/providers/ProviderWorkspaceRegistry';
-import type { ProviderId, ProviderSettingsTabRenderHandle } from '../../core/providers/types';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import type { ProviderId, ProviderSettingsTabRenderHandle } from '@/core/providers/types';
 import type {
   ChatViewPlacement,
   ClaudianSettings,
   DualPaneSide,
   SessionAutoArchiveAfter,
-} from '../../core/types/settings';
-import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n/i18n';
-import type { Locale } from '../../i18n/types';
-import { renderEnvironmentSettingsSection } from '../../shared/settings/EnvironmentSettingsSection';
-import type { FeatureHost } from '../FeatureHost';
-import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
-import { SkillsSettingsTab } from './SkillsSettingsTab';
+} from '@/core/types/settings';
+import { SkillsSettingsTab } from '@/features/agent-skills/SkillsSettingsTab';
+import type { FeatureHost } from '@/features/FeatureHost';
+import { buildNavMappingText, parseNavMappings } from '@/features/settings/keyboardNavigation';
+import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '@/i18n/i18n';
+import type { Locale } from '@/i18n/types';
+import { formatContextLimit, parseContextLimit } from '@/shared/settings/contextLimit';
+import { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSettingsWriter';
+import { renderEnvironmentSettingsSection } from '@/shared/settings/EnvironmentSettingsSection';
+import { frameSettingsGroups } from '@/shared/settings/SettingsGroups';
 
 type SettingsTabId = 'general' | 'providers' | 'skills';
 

@@ -7,19 +7,20 @@ import { type App, type Component, MarkdownRenderer, Platform, TFile } from 'obs
 import { createCatalogCommandDiscoveryStore } from '@/core/providers/commands/catalogCommandDiscovery';
 import type { ProviderCommandDiscoveryResult } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
+import { ComposerContextTray } from '@/features/chat/composer/ComposerContextTray';
 import { ComposerEditor } from '@/features/chat/composer/ComposerEditor';
 import { ComposerPromptSuggestion } from '@/features/chat/composer/ComposerPromptSuggestion';
 import { formatComposerSessionMention } from '@/features/chat/composer/composerSessionMentions';
+import { FileContextManager } from '@/features/chat/composer/FileContextManager';
+import { ImageContextManager } from '@/features/chat/composer/ImageContextManager';
 import { MainChatComposerDropdown } from '@/features/chat/composer/MainChatComposerDropdown';
-import { CanvasSelectionController } from '@/features/chat/controllers/CanvasSelectionController';
+import { CanvasSelectionController } from '@/features/chat/input/CanvasSelectionController';
 import { sendTabInputMessageFromExplicitEnterShortcut } from '@/features/chat/tabs/TabInputEvents';
-import { ComposerContextTray } from '@/features/chat/ui/ComposerContextTray';
-import { FileContextManager } from '@/features/chat/ui/FileContext';
-import { ImageContextManager } from '@/features/chat/ui/ImageContext';
 import { CodexSkillCatalog } from '@/providers/codex/commands/CodexSkillCatalog';
 import type { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
 import { CodexSkillListingService } from '@/providers/codex/skills/CodexSkillListingService';
 import { ComposerDropdownController } from '@/shared/composer-dropdown/ComposerDropdownController';
+import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 const nativeLinks: Record<string, { target: string; label: string }> = {
   '[[Notes/A note.md]]': { target: 'Notes/A note.md', label: 'A note' },
@@ -95,7 +96,7 @@ it.each(['click', 'Enter', 'Tab'])('inserts and renders a picker wikilink using 
   const parent = document.body.createDiv();
   const app = createApp();
   const editor = new ComposerEditor(parent, app, {} as Component);
-  const files = new FileContextManager(app);
+  const files = new FileContextManager(new VaultMentionDataProvider(app));
   const dropdown = new ComposerDropdownController(parent, editor.element, [files.getMentionSource()]);
   try {
     editor.element.value = 'Read @A today';
@@ -378,7 +379,6 @@ it.each([
 });
 
 it('retains Canvas selection while typing into the composer', () => {
-  jest.useFakeTimers();
   const parent = document.body.createDiv();
   const editor = createEditor(parent);
   const canvas = { selection: new Set([{ id: 'node-1' }]) };
@@ -387,24 +387,22 @@ it('retains Canvas selection while typing into the composer', () => {
   const tray = new ComposerContextTray(parent.createDiv());
   const controller = new CanvasSelectionController(app as never, tray, editor.element);
   try {
-    controller.start();
-    jest.advanceTimersByTime(250);
+    controller.poll();
     expect(controller.getContext()).toEqual({ canvasPath: 'Board.canvas', nodeIds: ['node-1'] });
     editor.element.focus();
     expect(editor.element.contains(document.activeElement)).toBe(true);
     canvas.selection.clear();
-    jest.advanceTimersByTime(250);
+    controller.poll();
     expect(controller.getContext()).toEqual({ canvasPath: 'Board.canvas', nodeIds: ['node-1'] });
     const outside = parent.createEl('button', { text: 'Outside', attr: { type: 'button' } });
     outside.focus();
-    jest.advanceTimersByTime(250);
+    controller.poll();
     expect(controller.getContext()).toBeNull();
   } finally {
-    controller.stop();
+    controller.clear();
     tray.destroy();
     editor.destroy();
     parent.remove();
-    jest.useRealTimers();
   }
 });
 
@@ -474,7 +472,7 @@ it('renders known commands and skills as chips while unknown tokens stay text', 
   let snapshot: ProviderCommandDiscoveryResult<ProviderCommandEntry> = {
     status: 'ready', items: [entry('command', 'review', '/')],
   };
-  const files = new FileContextManager(createApp());
+  const files = new FileContextManager(new VaultMentionDataProvider(createApp()));
   const dropdown = new MainChatComposerDropdown(parent, editor.element, files, {
     providerId: 'codex',
     providerDiscovery: {
@@ -532,7 +530,7 @@ it('reloads Codex skills on reopening the picker and filters the current opening
     }),
   } as unknown as CodexAppServerRuntime);
   const catalog = new CodexSkillCatalog(skills);
-  const dropdown = new MainChatComposerDropdown(parent, editor.element, new FileContextManager(createApp()), {
+  const dropdown = new MainChatComposerDropdown(parent, editor.element, new FileContextManager(new VaultMentionDataProvider(createApp())), {
     providerId: 'codex', providerConfig: catalog.getDropdownConfig(),
     providerDiscovery: createCatalogCommandDiscoveryStore(catalog),
   });

@@ -32,15 +32,20 @@ import type {
   ImageAttachment,
   ProviderId,
 } from '@/core/types';
-import { throwIfAborted } from '@/utils/abort';
-import { toError } from '@/utils/error';
-
-import { consumeExecutionEvents, isExecutionTerminalEvent } from './consumeExecutionEvents';
-import { ExecutionInteractions } from './ExecutionInteractions';
+import { consumeExecutionEvents, isExecutionTerminalEvent } from '@/features/chat/execution/consumeExecutionEvents';
+import { ExecutionInteractions } from '@/features/chat/execution/ExecutionInteractions';
 import {
   ExecutionSessionSupervisor,
-} from './ExecutionSessionSupervisor';
-import { SessionEventStream } from './SessionEventStream';
+} from '@/features/chat/execution/ExecutionSessionSupervisor';
+import {
+  attachAcceptedSubmission,
+  attachRequestedTurnIdentity,
+  INITIAL_REQUESTED_TURN_IDENTITY,
+  reduceRequestedTurnIdentity,
+} from '@/features/chat/execution/RequestedTurnIdentity';
+import { SessionEventStream } from '@/features/chat/execution/SessionEventStream';
+import { throwIfAborted } from '@/utils/abort';
+import { toError } from '@/utils/error';
 
 export type ChatExecutionCoordinatorState =
   | 'absent'
@@ -152,6 +157,15 @@ export interface ChatExecutionResult {
   readonly error?: Extract<ProviderExecutionEvent, { type: 'execution_error' }>;
   readonly missingSessionResolution?: MissingProviderSessionResolution;
 }
+
+/**
+ * Whether a steer reached the provider. Only 'not-sent' may return the input for resend;
+ * `error` is the failure that stopped it before handoff.
+ */
+export type ChatSteerOutcome =
+  | { readonly delivery: 'accepted' }
+  | { readonly delivery: 'not-sent'; readonly error?: ChatExecutionPreHandoffError }
+  | { readonly delivery: 'uncertain'; readonly error: unknown };
 
 interface SessionBinding {
   readonly conversation: ChatExecutionConversationBinding;
@@ -439,7 +453,7 @@ export class ChatExecutionCoordinator {
     active.run.cancel();
   }
 
-  async steer(submission: ChatTurnSubmission, signal?: AbortSignal): Promise<boolean> {
+  async steer(submission: ChatTurnSubmission, signal?: AbortSignal): Promise<ChatSteerOutcome> {
     const controller = new AbortController();
     const sources = [signal, this.#requestController?.signal];
     const cancel = () => controller.abort();
@@ -448,7 +462,12 @@ export class ChatExecutionCoordinator {
       if (source?.aborted) cancel();
     }
     try {
-      return await this.#runProtectedOperation(() => this.#steerProtected(submission, controller.signal));
+      const accepted = await this.#runProtectedOperation(() => this.#steerProtected(submission, controller.signal));
+      return { delivery: accepted ? 'accepted' : 'not-sent' };
+    } catch (error) {
+      return error instanceof ChatExecutionPreHandoffError
+        ? { delivery: 'not-sent', error }
+        : { delivery: 'uncertain', error };
     } finally {
       for (const source of sources) source?.removeEventListener('abort', cancel);
     }
@@ -743,54 +762,27 @@ export class ChatExecutionCoordinator {
   async #consumeRequestedEvents(
     active: ActiveExecution,
   ): Promise<ChatExecutionResult> {
-    let accepted = false;
-    let nativeUserMessageId: string | undefined;
-    let nativeAssistantMessageId: string | undefined;
-    let nativeCheckpointId: string | undefined;
-    let sawSubmittedUserMessage = false;
-    // Messages after a steer boundary belong to the steered exchange, not this submission's pair.
-    let submittedMessages = active.submission.messages;
+    let identity = INITIAL_REQUESTED_TURN_IDENTITY;
     const sinkFailure: { value?: { error: unknown } } = {};
 
     const terminal = await consumeExecutionEvents(
       active.run, active.binding.session.sessionInstanceId, active.submission.configuration.model,
       () => this.#isActiveExecutionCurrent(active),
       async event => {
+        const next = reduceRequestedTurnIdentity(identity, event);
+        if (next !== identity) {
+          identity = next;
+          if (event.type === 'turn_started') {
+            attachAcceptedSubmission(active.submission, identity.nativeUserMessageId);
+          }
+          attachRequestedTurnIdentity(active.submission.messages, identity);
+        }
         if (event.type === 'turn_started' && event.accepted) {
-          accepted = true;
-          attachSubmittedContent(active.submission);
-          nativeUserMessageId = event.nativeUserMessageId ?? nativeUserMessageId;
-          attachUserMessageId(submittedMessages, nativeUserMessageId);
           await this.deps.persistence.recordConversationActivity(
             active.binding.conversation.conversationId, active.submission.timestamp,
           );
-        } else if (event.type === 'user_message_started' && accepted) {
-          if (sawSubmittedUserMessage) {
-            submittedMessages = undefined;
-          } else {
-            sawSubmittedUserMessage = true;
-            nativeUserMessageId = event.nativeUserMessageId ?? nativeUserMessageId;
-            attachUserMessageId(submittedMessages, nativeUserMessageId);
-          }
-        } else if (event.type === 'assistant_message_started') {
-          nativeAssistantMessageId =
-            event.nativeAssistantId ?? nativeAssistantMessageId;
-          attachAssistantMessageId(submittedMessages, nativeAssistantMessageId);
         } else if (event.type === 'session_state_changed' || event.type === 'permission_mode_changed') {
           await this.#persistSnapshot(active.binding, event.snapshot);
-        } else if (event.type === 'turn_completed') {
-          if (submittedMessages) {
-            nativeUserMessageId = event.nativeUserMessageId ?? nativeUserMessageId;
-            attachUserMessageId(submittedMessages, nativeUserMessageId);
-          }
-          nativeAssistantMessageId =
-            event.nativeAssistantId ?? nativeAssistantMessageId;
-          nativeCheckpointId =
-            event.nativeCheckpointId ?? nativeCheckpointId;
-          attachAssistantMessageId(
-            submittedMessages,
-            nativeAssistantMessageId ?? nativeCheckpointId,
-          );
         }
 
         try {
@@ -805,6 +797,7 @@ export class ChatExecutionCoordinator {
       },
     );
 
+    const { accepted, nativeUserMessageId, nativeAssistantMessageId, nativeCheckpointId } = identity;
     if (isDefinitePreHandoffRejection(terminal, accepted)) {
       throw new ChatExecutionPreHandoffError(
         sinkFailure.value?.error ?? terminal,
@@ -1056,8 +1049,7 @@ export class ChatExecutionCoordinator {
     attempt: PendingSteerAttempt,
     nativeUserMessageId?: string,
   ): Promise<void> {
-    attachSubmittedContent(attempt.submission);
-    attachUserMessageId(attempt.submission.messages, nativeUserMessageId);
+    attachAcceptedSubmission(attempt.submission, nativeUserMessageId);
     attempt.acceptancePromise ??= this.deps.persistence.recordConversationActivity(
       attempt.conversationId, attempt.submission.timestamp,
     );
@@ -1117,18 +1109,6 @@ export class ChatExecutionCoordinator {
   #fireAndReport(promise: Promise<unknown>): void {
     void promise.catch((error) => this.deps.onError?.(error));
   }
-}
-
-function attachSubmittedContent(submission: ChatTurnSubmission): void {
-  const user = submission.messages?.user;
-  if (!user) return;
-  user.displayContent = submission.rawDisplayText;
-  user.images = [...submission.images];
-  user.executionInput = {
-    schemaVersion: 1,
-    canonicalText: submission.canonicalText,
-    ...(submission.context ? { context: submission.context } : {}),
-  };
 }
 
 function createExecutionRequest(
@@ -1202,18 +1182,4 @@ function isUnacceptedMissingSession(
     && terminal?.type === 'execution_error'
     && terminal.category === 'provider-session-missing'
   );
-}
-
-function attachUserMessageId(
-  messages: ChatTurnMessageBinding | undefined,
-  nativeId: string | undefined,
-): void {
-  if (messages && nativeId) messages.user.userMessageId = nativeId;
-}
-
-function attachAssistantMessageId(
-  messages: ChatTurnMessageBinding | undefined,
-  nativeId: string | undefined,
-): void {
-  if (messages && nativeId) messages.assistant.assistantMessageId = nativeId;
 }

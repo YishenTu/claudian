@@ -1,6 +1,7 @@
 const COPY_FEEDBACK_DURATION_MS = 1_500;
 
-function bindCopyFeedback(
+/** Copies `text()` on click and shows copied feedback until the shared timeout elapses. */
+export function bindCopyFeedback(
   target: HTMLElement,
   text: () => string,
   renderCopied: () => void,

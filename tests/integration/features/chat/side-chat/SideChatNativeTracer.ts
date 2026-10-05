@@ -11,7 +11,7 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage, ImageAttachment, ProviderId } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { SideChatSession } from '@/features/chat/side-chat/SideChatSession';
-import { handleForkRequest } from '@/features/chat/tabs/TabForking';
+import { handleForkRequest } from '@/features/chat/tabs/forking/ForkSource';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
 export const capturedImage: ImageAttachment = {

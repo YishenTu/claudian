@@ -9,14 +9,14 @@ import { Component, MarkdownRenderer } from 'obsidian';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage, ConversationMutablePatch } from '@/core/types';
-import { ConversationController } from '@/features/chat/controllers/ConversationController';
-import { StreamController } from '@/features/chat/controllers/StreamController';
+import { ConversationController } from '@/features/chat/conversation/ConversationController';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
-import { SubagentManager } from '@/features/chat/services/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
+import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { TabSession } from '@/features/chat/tabs/TabSession';
 import { enqueueTabSessionEvent } from '@/features/chat/tabs/TabSessionEvents';
+import { StreamController } from '@/features/chat/turns/StreamController';
 import { CodexSubagentTracker } from '@/providers/codex/execution/CodexSubagentTracker';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 

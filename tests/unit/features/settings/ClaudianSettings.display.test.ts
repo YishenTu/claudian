@@ -159,7 +159,7 @@ jest.mock('obsidian', () => {
 });
 
 const mockSkillsSettingsTab = jest.fn();
-jest.mock('@/features/settings/SkillsSettingsTab', () => ({
+jest.mock('@/features/agent-skills/SkillsSettingsTab', () => ({
   SkillsSettingsTab: class MockSkillsSettingsTab {
     constructor(...args: unknown[]) { mockSkillsSettingsTab(...args); }
     flush(): void {}

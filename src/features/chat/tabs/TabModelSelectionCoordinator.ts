@@ -1,4 +1,4 @@
-import type { ProviderId } from '../../../core/providers/types';
+import type { ProviderId } from '@/core/providers/types';
 
 export interface TabModelSelectionDraft {
   providerId: ProviderId | null;

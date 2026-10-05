@@ -1,5 +1,5 @@
-import type { ChatMessage } from '../../../core/types';
-import { getResponseSegments } from './NotificationBoundaries';
+import type { ChatMessage } from '@/core/types';
+import { getResponseSegments } from '@/features/chat/rendering/NotificationBoundaries';
 
 /** Semantic roles survive streaming updates and DOM reparenting without depending on CSS. */
 type ResponseElementKind = 'text' | 'citations' | 'notification' | 'work';

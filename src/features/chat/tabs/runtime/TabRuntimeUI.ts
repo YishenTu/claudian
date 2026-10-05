@@ -1,60 +1,47 @@
 import { Notice } from 'obsidian';
 
-import { getHiddenCommandSet } from '../../../../core/providers/commands/hiddenCommands';
+import { getHiddenCommandSet } from '@/core/providers/commands/hiddenCommands';
 import {
   getProviderSettingsSnapshotWithModel,
   normalizeProviderModelSelection,
-} from '../../../../core/providers/conversationModel';
+} from '@/core/providers/conversationModel';
 import {
   getEnabledProviderForModel,
   getProviderForModel,
-} from '../../../../core/providers/modelRouting';
-import { ProviderRegistry } from '../../../../core/providers/ProviderRegistry';
+} from '@/core/providers/modelRouting';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type {
   ProviderChatUIConfig,
   ProviderId,
-} from '../../../../core/providers/types';
-import { getChatSettingsSnapshot } from '../../ChatSettings';
-import { ComposerPromptSuggestion } from '../../composer/ComposerPromptSuggestion';
-import { MainChatComposerDropdown } from '../../composer/MainChatComposerDropdown';
-import { LinkedContentController } from '../../linked-content';
-import type { SideChatController } from '../../side-chat/SideChatController';
-import { ComposerContextTray } from '../../ui/ComposerContextTray';
-import { ComposerInfoRow } from '../../ui/ComposerInfoRow';
-import { FileContextManager } from '../../ui/FileContext';
-import { ImageContextManager } from '../../ui/ImageContext';
-import { createInputToolbar } from '../../ui/InputToolbar';
-import { NavigationSidebar } from '../../ui/NavigationSidebar';
-import { installTextareaSizing } from '../../ui/textareaSizing';
-import { getTabProviderId } from '../providerResolution';
-import { commitProvisionalTab } from '../TabLifecycle';
-import { TabModelSelectionCoordinator } from '../TabModelSelectionCoordinator';
-import {
-  applyProviderUIGating,
-  getBlankTabModelOptions,
-  getTabCapabilities,
-  getTabChatUIConfig,
-  getTabSelectedModel,
-  getTabSettingsSnapshot,
-  refreshTabProviderUI,
-  syncComposerDropdownForProvider,
-  syncTabProviderServices,
-  type TabProviderSettings,
-  updateTabPermissionMode,
-  updateTabProviderSettings,
-  updateTabReasoning,
-  updateTabServiceTier,
-} from '../TabProviderState';
-import type {
-  ProviderCatalogInfo,
-  TabServices,
-  TabUIComponents,
-} from '../types';
+} from '@/core/providers/types';
+import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
+import { ComposerContextTray } from '@/features/chat/composer/ComposerContextTray';
+import { ComposerInfoRow } from '@/features/chat/composer/ComposerInfoRow';
+import { ComposerPromptSuggestion } from '@/features/chat/composer/ComposerPromptSuggestion';
+import { FileContextManager } from '@/features/chat/composer/FileContextManager';
+import { ImageContextManager } from '@/features/chat/composer/ImageContextManager';
+import { MainChatComposerDropdown } from '@/features/chat/composer/MainChatComposerDropdown';
+import { installTextareaSizing } from '@/features/chat/composer/textareaSizing';
+import { createInputToolbar } from '@/features/chat/composer/toolbar/InputToolbar';
+import { LinkedContentController } from '@/features/chat/linked-content';
+import { NavigationSidebar } from '@/features/chat/navigation/NavigationSidebar';
+import type { SideChatController } from '@/features/chat/side-chat/SideChatController';
+import { getTabProviderId } from '@/features/chat/tabs/providerResolution';
 import type {
   PublishedTabRuntimeRef,
   TabRuntimeConstructionContext,
   TabRuntimeShellBundle,
-} from './TabRuntimeConstruction';
+} from '@/features/chat/tabs/runtime/TabRuntimeConstruction';
+import { commitProvisionalTab } from '@/features/chat/tabs/TabLifecycle';
+import { TabModelSelectionCoordinator } from '@/features/chat/tabs/TabModelSelectionCoordinator';
+import { syncTabProviderServices } from '@/features/chat/tabs/tabProviderLifecycle';
+import { getBlankTabModelOptions, getTabCapabilities, getTabChatUIConfig, getTabSelectedModel, getTabSettingsSnapshot, type TabSettingsSnapshot, updateTabProviderSettings, updateTabReasoning } from '@/features/chat/tabs/tabProviderSettings';
+import { applyProviderUIGating, refreshTabProviderUI, syncComposerDropdownForProvider, updateTabPermissionMode, updateTabServiceTier } from '@/features/chat/tabs/tabProviderUI';
+import type {
+  ProviderCatalogInfo,
+  TabServices,
+  TabUIComponents,
+} from '@/features/chat/tabs/types';
 
 function buildContextManagers(
   options: TabRuntimeConstructionContext,
@@ -69,7 +56,7 @@ function buildContextManagers(
 > {
   const { dom } = shell;
   const { plugin } = options;
-  const fileContextManager = new FileContextManager(plugin.app, {
+  const fileContextManager = new FileContextManager(options.mentionDataProvider, {
     getConversationList: () => plugin.getConversationList(),
     getCurrentConversationId: () => runtimeRef.current()?.conversationId,
   });
@@ -305,7 +292,7 @@ function buildInputToolbar(
         plugin.settings,
         boundProvider,
         normalizedModel,
-      ) as TabProviderSettings;
+      ) as TabSettingsSnapshot;
 
       const isSelectionTargetCurrent = (): boolean => (
         options.isRuntimeLive(tab)

@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
+import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
 import {
   createHarness,
   releaseSideChatHarnesses,
@@ -9,7 +10,6 @@ import {
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, screen, waitFor } from '@testing-library/dom';
 
-import { ClaudianView } from '@/features/chat/ClaudianView';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { buildTabRuntimePorts } from '@/features/chat/tabs/runtime/TabRuntimePorts';
 
@@ -177,9 +177,7 @@ it('refreshes side completion timestamps when the view timestamp setting changes
     harness.plugin,
     () => { throw new Error('Timestamp refresh must not read the runtime'); },
   );
-  const view = Object.assign(Object.create(ClaudianView.prototype), {
-    tabManager: { getAllTabs: () => [tab] },
-  }) as ClaudianView;
+  const view = createClaudianView({ tabManager: { getAllTabs: () => [tab] } });
   const clock = jest.spyOn(Date, 'now').mockReturnValue(new Date('2026-09-20T10:00:00Z').getTime());
   try {
     const { started } = await startSideChat(harness);

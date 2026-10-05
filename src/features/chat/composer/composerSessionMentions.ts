@@ -1,4 +1,4 @@
-import { filterComposerTextTokens } from './composerWikilinks';
+import { filterComposerTextTokens } from '@/features/chat/composer/composerWikilinks';
 
 export interface ComposerSessionMention {
   index: number;

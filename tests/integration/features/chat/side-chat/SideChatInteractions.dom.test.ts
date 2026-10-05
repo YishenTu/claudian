@@ -10,7 +10,8 @@ import { Notice } from 'obsidian';
 
 import type { ProviderExecutionRequest } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import { InputController, type InputControllerDeps } from '@/features/chat/controllers/InputController';
+import { InputController, type InputControllerDeps } from '@/features/chat/input/InputController';
+import { InlineInteractionPrompts } from '@/features/chat/interactions/InlineInteractionPrompts';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { formatCodexQuestionReply } from '@/providers/codex/normalization/codexQuestionNormalization';
 
@@ -267,12 +268,16 @@ it('closes the panel on queue admission, delivers later, and keeps it closed aft
 
 
 it('keeps a pending main question out of the side destination and restores its answers on return', async () => {
-  const harness = createHarness({ onDestinationChanged: () => main.setPromptActive(harness.controller.destination === 'main') });
+  const harness = createHarness({ onDestinationChanged: () => prompts.setActive(harness.controller.destination === 'main') });
   const session = createTestTabSession();
   const state = new ChatState({}, undefined, session.turns);
+  const prompts = new InlineInteractionPrompts({
+    getPromptParentEl: () => harness.inputContainerEl.parentElement,
+    getSuppressedEl: () => harness.inputContainerEl,
+  });
   const main = new InputController({
-    state, session, getInputContainerEl: () => harness.inputContainerEl,
-    streamController: { hideThinkingIndicator: jest.fn(), resumeThinkingIndicator: jest.fn() },
+    state, session, inlinePrompts: prompts,
+    streamController: { thinkingIndicator: { hide: jest.fn(), resume: jest.fn() } },
     renderer: { updateQuestionTool: jest.fn() },
   } as unknown as InputControllerDeps);
   try {

@@ -9,8 +9,8 @@ import {
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 
-import { ClaudianView } from '@/features/chat/ClaudianView';
 import { createTabPlacementPort } from '@/features/chat/tabs/runtime/TabRuntimePorts';
+import { ChatPresentationPlacement } from '@/features/chat/view/ChatPresentationPlacement';
 
 afterEach(releaseSideChatHarnesses);
 
@@ -197,22 +197,18 @@ it('updates the collapsed chip as queued prompts begin and finish', async () => 
 
 it('places the collapsed active chip before navigation in single pane and restores it in dual pane', async () => {
   const harness = createHarness();
-  const footer = document.body.appendChild(document.createElement('div'));
-  const host = footer.appendChild(document.createElement('div'));
-  const nav = footer.appendChild(document.createElement('button'));
-  nav.textContent = 'Tab 1';
-  const slot = footer.appendChild(document.createElement('div'));
-  slot.appendChild(harness.composerEl);
   let activeController = harness.controller;
-  const view = Object.assign(Object.create(ClaudianView.prototype), {
-    viewContainerEl: document.body,
-    sideChatChipHostEl: host,
-    isWideSessionLayout: false,
-    requestedWideSessionLayout: false,
-    activeSidebarSurface: 'sessions',
-    tabManager: { getActiveTab: () => chipTabFor(activeController) },
-  }) as ClaudianView;
-  view.refreshDualPaneLayout();
+  let isWide = false;
+  const { placement, footer, navHost } = mountChipPlacement({
+    getActiveTab: () => chipTabFor(activeController),
+    isWide: () => isWide,
+    getTabCount: () => 1,
+  });
+  const host = footer.querySelector<HTMLElement>('.claudian-side-chat-chip-slot')!;
+  const nav = navHost.appendChild(document.createElement('button'));
+  nav.textContent = 'Tab 1';
+  footer.querySelector('.claudian-active-input-slot')!.appendChild(harness.composerEl);
+  placement.updateChip();
   const { started } = await startSideChat(harness);
   harness.backend.latest.establishChild('child-session');
   harness.backend.latest.complete();
@@ -222,11 +218,11 @@ it('places the collapsed active chip before navigation in single pane and restor
   expect(host.contains(chip)).toBe(true);
   expect(chip.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   activeController = createHarness().controller;
-  view.refreshDualPaneLayout();
+  placement.updateChip();
   expect(host.childElementCount).toBe(0);
   expect(harness.composerEl.contains(chip)).toBe(true);
   activeController = harness.controller;
-  view.refreshDualPaneLayout();
+  placement.updateChip();
   expect(host.contains(chip)).toBe(true);
   chip.focus();
   fireEvent.click(chip);
@@ -235,48 +231,31 @@ it('places the collapsed active chip before navigation in single pane and restor
   expect(host.childElementCount).toBe(0);
 
   fireEvent.click(screen.getByRole('button', { name: 'Collapse' }));
-  Object.assign(view, { isWideSessionLayout: true, requestedWideSessionLayout: true });
-  Object.defineProperty(document.body, 'getBoundingClientRect', {
-    configurable: true,
-    value: () => ({ width: 1400 }),
-  });
-  view.refreshDualPaneLayout();
+  isWide = true;
+  placement.updateChip();
   expect(harness.composerEl.contains(chip)).toBe(true);
   expect(host.childElementCount).toBe(0);
   await harness.controller.discard();
   expect(screen.queryByRole('button', { name: 'Side chat' })).toBeNull();
-  delete (document.body as Partial<HTMLElement>).getBoundingClientRect;
 });
 
 
 it('uses the navigation row for a single-tab chip and moves it above navigation when more tabs exist', async () => {
   const harness = createHarness();
-  const footer = document.body.appendChild(document.createElement('div'));
-  const host = footer.appendChild(document.createElement('div'));
-  const navHost = footer.appendChild(document.createElement('div'));
-  const navContent = navHost.appendChild(document.createElement('div'));
-  const tabBar = navContent.appendChild(document.createElement('div'));
+  let tabCount = 1;
+  const { placement, footer, navHost } = mountChipPlacement({
+    getActiveTab: () => chipTabFor(harness.controller),
+    isWide: () => false,
+    getTabCount: () => tabCount,
+  });
+  const host = footer.querySelector<HTMLElement>('.claudian-side-chat-chip-slot')!;
+  const navContent = document.createElement('div');
+  navContent.appendChild(document.createElement('div'));
   const newTab = navContent.appendChild(document.createElement('button'));
   newTab.textContent = 'New tab';
+  placement.attachNavRow(navContent);
   footer.appendChild(harness.composerEl);
-  let tabCount = 1;
-  const view = Object.assign(Object.create(ClaudianView.prototype), {
-    viewContainerEl: document.body,
-    inputFooterEl: footer,
-    inputNavRowHostEl: navHost,
-    navRowContent: navContent,
-    sideChatChipHostEl: host,
-    tabBarContainerEl: tabBar,
-    isWideSessionLayout: false,
-    requestedWideSessionLayout: false,
-    activeSidebarSurface: 'sessions',
-    tabManager: {
-      getActiveTab: () => chipTabFor(harness.controller),
-      getTabCount: () => tabCount,
-      canCreateTab: () => true,
-    },
-  }) as ClaudianView;
-  view.refreshDualPaneLayout();
+  placement.updateChip();
   const { started } = await startSideChat(harness);
   harness.backend.latest.establishChild('child-session');
   harness.backend.latest.complete();
@@ -287,18 +266,37 @@ it('uses the navigation row for a single-tab chip and moves it above navigation 
   expect(chip.compareDocumentPosition(newTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
   tabCount = 2;
-  view.refreshTabControls();
+  placement.updateChip();
   expect(host.parentElement).toBe(footer);
   expect(host.nextElementSibling).toBe(navHost);
   expect(host.contains(chip)).toBe(true);
 
   tabCount = 1;
-  view.refreshTabControls();
+  placement.updateChip();
   expect(navContent.contains(chip)).toBe(true);
   fireEvent.click(chip);
   expect(harness.composerEl.contains(screen.getByRole('heading', { name: 'Side chat' }))).toBe(true);
   expect(host.childElementCount).toBe(0);
 });
+
+/** Mounts the view footer placement over a fake active tab whose chip host is the real side chat. */
+function mountChipPlacement(context: {
+  getActiveTab(): { placement: ReturnType<typeof createTabPlacementPort> };
+  isWide(): boolean;
+  getTabCount(): number;
+}) {
+  const chatPanelEl = document.body.appendChild(document.createElement('div'));
+  const placement = new ChatPresentationPlacement({
+    getActiveTab: () => context.getActiveTab() as never,
+    getTab: () => null,
+    isWide: () => context.isWide(),
+    getTabCount: () => context.getTabCount(),
+  });
+  placement.mount(chatPanelEl);
+  const footer = chatPanelEl.querySelector<HTMLElement>('.claudian-input-footer')!;
+  const navHost = footer.querySelector<HTMLElement>('.claudian-view-input-nav-row')!;
+  return { placement, footer, navHost };
+}
 
 const chipTabs = new WeakMap<object, { placement: ReturnType<typeof createTabPlacementPort> }>();
 

@@ -1,8 +1,7 @@
 import type { Command, Workspace } from 'obsidian';
 
 import { VIEW_TYPE_CLAUDIAN } from '@/core/types';
-
-import type { ChatViewHost } from '../ChatFeatureHost';
+import type { ChatViewHost } from '@/features/chat/ChatFeatureHost';
 
 export interface ChatTabCommandsDeps {
   readonly workspace: Pick<Workspace, 'getLeavesOfType'>;

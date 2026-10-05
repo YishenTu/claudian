@@ -1,24 +1,16 @@
 import { type Keymap, Scope } from 'obsidian';
 
+import type { ProviderId } from '@/core/providers/types';
+import { setToolIcon } from '@/features/chat/rendering/tools/toolContentPrimitives';
 import {
   cancelScheduledAnimationFrame,
   scheduleAnimationFrame,
   type ScheduledAnimationFrame,
 } from '@/features/chat/utils/animationFrame';
-
-import type { ProviderId } from '../../../core/providers/types';
-import { t } from '../../../i18n/i18n';
-import { setToolIcon } from '../rendering/ToolCallRenderer';
-import type { AssembledTabRuntime } from '../tabs/types';
-import { formatActivityPreview, type ZenActivityTone } from './activityPreview';
-import type { ZenModeSlots } from './types';
-import { ZenComposerLayout } from './ZenComposerLayout';
-
-/** Reading intent captured before the transcript is relocated. */
-export interface ZenScrollSnapshot {
-  readonly top: number;
-  readonly follow: boolean;
-}
+import { formatActivityPreview, type ZenActivityTone } from '@/features/chat/zen/activityPreview';
+import type { ZenModeSlots, ZenPresentationPort } from '@/features/chat/zen/types';
+import { ZenComposerLayout } from '@/features/chat/zen/ZenComposerLayout';
+import { t } from '@/i18n/i18n';
 
 export interface ZenModePanelOptions {
   readonly keymap: Pick<Keymap, 'pushScope' | 'popScope'> | null;
@@ -32,23 +24,6 @@ const OWNED_OVERLAY_SELECTOR = '.menu, .modal-container, .suggestion-container';
 const RESERVED_HEIGHT_PROPERTY = '--claudian-zen-reserved-height';
 
 let panelSequence = 0;
-
-/** Reads the last visible position; a hidden transcript's own offset reads zero. */
-export function captureZenScrollIntent(runtime: AssembledTabRuntime): ZenScrollSnapshot {
-  return { top: runtime.state.readingScrollTop, follow: runtime.state.autoScrollEnabled };
-}
-
-/** Follows new output when the reader was following, otherwise keeps their position. */
-export function restoreZenScrollIntent(
-  runtime: AssembledTabRuntime,
-  snapshot: ZenScrollSnapshot = captureZenScrollIntent(runtime),
-): void {
-  const messagesEl = runtime.dom.messagesEl;
-  messagesEl.scrollTop = snapshot.follow ? messagesEl.scrollHeight : snapshot.top;
-  runtime.state.readingScrollTop = snapshot.top;
-  // Relocation can emit geometry-only scroll events; they must not replace the captured intent.
-  if (runtime.state.autoScrollEnabled !== snapshot.follow) runtime.state.autoScrollEnabled = snapshot.follow;
-}
 
 /**
  * Compact presentation for one attached runtime: a state-driven activity line,
@@ -70,7 +45,7 @@ export class ZenModePanel {
   // A parentless scope keeps the active note's hotkeys away from zen input while it has focus.
   readonly #keyScope = new Scope();
   #scopePushed = false;
-  #runtime: AssembledTabRuntime | null = null;
+  #runtime: ZenPresentationPort | null = null;
   #unsubscribeMain: (() => void) | null = null;
   #pendingFrame: ScheduledAnimationFrame | null = null;
   #historyExpanded: boolean;
@@ -144,11 +119,11 @@ export class ZenModePanel {
     this.#observeReservedHeight();
   }
 
-  get runtime(): AssembledTabRuntime | null {
+  get runtime(): ZenPresentationPort | null {
     return this.#runtime;
   }
 
-  bind(runtime: AssembledTabRuntime | null, providerId: ProviderId | null): void {
+  bind(runtime: ZenPresentationPort | null, providerId: ProviderId | null): void {
     if (this.#destroyed) return;
     if (providerId) this.#rootEl.dataset.provider = providerId;
     else delete this.#rootEl.dataset.provider;
@@ -161,8 +136,8 @@ export class ZenModePanel {
     this.#runtime = runtime;
     if (!runtime) return;
 
-    this.#unsubscribeMain = runtime.state.subscribeActivity(() => this.#scheduleRender());
-    if (this.#historyExpanded) restoreZenScrollIntent(runtime);
+    this.#unsubscribeMain = runtime.subscribeActivity(() => this.#scheduleRender());
+    if (this.#historyExpanded) runtime.restoreScroll();
     this.#render();
   }
 
@@ -170,7 +145,7 @@ export class ZenModePanel {
     if (this.#destroyed || expanded === this.#historyExpanded) return;
     this.#historyExpanded = expanded;
     this.#applyHistoryExpanded();
-    if (expanded && this.#runtime) restoreZenScrollIntent(this.#runtime);
+    if (expanded && this.#runtime) this.#runtime.restoreScroll();
     this.options.onHistoryExpandedChange(expanded);
   }
 
@@ -243,7 +218,7 @@ export class ZenModePanel {
     if (hasHistory !== this.#hasHistory) {
       this.#hasHistory = hasHistory;
       this.#applyHistoryExpanded();
-      if (hasHistory && this.#historyExpanded) restoreZenScrollIntent(runtime);
+      if (hasHistory && this.#historyExpanded) runtime.restoreScroll();
     }
 
     if (preview.tone !== this.#lastTone) {

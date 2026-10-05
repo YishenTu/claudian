@@ -1,10 +1,10 @@
 import { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
-import type { ConversationControllerDeps } from '@/features/chat/controllers/ConversationController';
-import type { TurnCoordinator } from '@/features/chat/controllers/TurnCoordinator';
+import type { ImageContextManager } from '@/features/chat/composer/ImageContextManager';
+import type { ConversationControllerDeps } from '@/features/chat/conversation/ConversationController';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import type { ChatState } from '@/features/chat/state/ChatState';
 import { TabSession, type TabSessionOptions } from '@/features/chat/tabs/TabSession';
-import type { ImageContextManager } from '@/features/chat/ui/ImageContext';
+import type { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 /**

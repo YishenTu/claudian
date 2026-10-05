@@ -7,25 +7,18 @@ export interface CollapsibleOptions {
   initiallyExpanded?: boolean;
   /** Callback when state changes */
   onToggle?: (isExpanded: boolean) => void;
+  /** Runs once, before the content is first shown (during setup when initially expanded). */
+  onFirstExpand?: () => void;
   /** Base label for aria-label (will append "click to expand/collapse") */
   baseAriaLabel?: string;
 }
 
 /**
- * Setup collapsible behavior on a header/content pair.
+ * Makes a non-native header a keyboard-operable disclosure for its content.
  *
- * Handles:
- * - Click to toggle
- * - Enter/Space keyboard navigation
- * - aria-expanded attribute
- * - CSS 'expanded' class on wrapper
- * - content display style
- *
- * @param wrapperEl - The wrapper element to add/remove 'expanded' class
- * @param headerEl - The clickable header element
- * @param contentEl - The content element to show/hide
- * @param state - State object to track isExpanded (mutated by this function)
- * @param options - Optional configuration
+ * Owns the header's button role and focusability, click and Enter/Space
+ * toggling, aria-expanded/aria-label, the wrapper's `expanded` class and the
+ * content's visibility. `state` is mutated to mirror the expanded state.
  */
 export function setupCollapsible(
   wrapperEl: HTMLElement,
@@ -35,47 +28,39 @@ export function setupCollapsible(
   options: CollapsibleOptions = {}
 ): void {
   const { initiallyExpanded = false, onToggle, baseAriaLabel } = options;
+  let onFirstExpand = options.onFirstExpand;
 
-  // Helper to update aria-label based on expanded state
-  const updateAriaLabel = (isExpanded: boolean) => {
+  headerEl.setAttribute('tabindex', '0');
+  headerEl.setAttribute('role', 'button');
+
+  const applyState = (isExpanded: boolean) => {
+    if (isExpanded) {
+      onFirstExpand?.();
+      onFirstExpand = undefined;
+    }
+    state.isExpanded = isExpanded;
+    if (isExpanded) {
+      wrapperEl.addClass('expanded');
+      contentEl.removeClass('claudian-hidden');
+    } else {
+      wrapperEl.removeClass('expanded');
+      contentEl.addClass('claudian-hidden');
+    }
+    headerEl.setAttribute('aria-expanded', String(isExpanded));
     if (baseAriaLabel) {
       const action = isExpanded ? 'click to collapse' : 'click to expand';
       headerEl.setAttribute('aria-label', `${baseAriaLabel} - ${action}`);
     }
   };
 
-  // Set initial state
-  state.isExpanded = initiallyExpanded;
-  if (initiallyExpanded) {
-    wrapperEl.addClass('expanded');
-    contentEl.removeClass('claudian-hidden');
-    headerEl.setAttribute('aria-expanded', 'true');
-  } else {
-    contentEl.addClass('claudian-hidden');
-    headerEl.setAttribute('aria-expanded', 'false');
-  }
-  updateAriaLabel(initiallyExpanded);
+  applyState(initiallyExpanded);
 
-  // Toggle handler
   const toggleExpand = () => {
-    state.isExpanded = !state.isExpanded;
-    if (state.isExpanded) {
-      wrapperEl.addClass('expanded');
-      contentEl.removeClass('claudian-hidden');
-      headerEl.setAttribute('aria-expanded', 'true');
-    } else {
-      wrapperEl.removeClass('expanded');
-      contentEl.addClass('claudian-hidden');
-      headerEl.setAttribute('aria-expanded', 'false');
-    }
-    updateAriaLabel(state.isExpanded);
+    applyState(!state.isExpanded);
     onToggle?.(state.isExpanded);
   };
 
-  // Click handler
   headerEl.addEventListener('click', toggleExpand);
-
-  // Keyboard handler (Enter/Space)
   headerEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -98,4 +83,33 @@ export function collapseElement(
   wrapperEl.removeClass('expanded');
   contentEl.addClass('claudian-hidden');
   headerEl.setAttribute('aria-expanded', 'false');
+}
+
+export interface DisclosureButtonOptions {
+  /** Runs once, before the body is first shown. */
+  onFirstExpand?: () => void;
+}
+
+/**
+ * Wires a native button to show and hide `body`, which starts hidden.
+ * The body's `id`, when set, becomes the button's aria-controls target.
+ */
+export function setupDisclosureButton(
+  button: HTMLButtonElement,
+  body: HTMLElement,
+  options: DisclosureButtonOptions = {},
+): void {
+  let onFirstExpand = options.onFirstExpand;
+  button.setAttribute('type', 'button');
+  button.setAttribute('aria-expanded', 'false');
+  if (body.id) button.setAttribute('aria-controls', body.id);
+  body.hidden = true;
+  button.addEventListener('click', () => {
+    if (body.hidden) {
+      onFirstExpand?.();
+      onFirstExpand = undefined;
+    }
+    body.hidden = !body.hidden;
+    button.setAttribute('aria-expanded', String(!body.hidden));
+  });
 }

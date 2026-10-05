@@ -1,6 +1,5 @@
-import type { ComposerInfoRow } from '@/features/chat/ui/ComposerInfoRow';
-
-import type { LinkedContentPresentation } from './LinkedContentPresentation';
+import type { ComposerInfoRow } from '@/features/chat/composer/ComposerInfoRow';
+import type { LinkedContentPresentation } from '@/features/chat/linked-content/LinkedContentPresentation';
 
 /** Presents Linked content in the composer info row, under the input box. */
 export class LinkedContentChip {

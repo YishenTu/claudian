@@ -2,10 +2,8 @@ import type {
   ConversationMeta,
   SessionManagerOrganization,
   SessionManagerSort,
-} from '../../../core/types';
-import { isProvisionalNotePath } from './ProvisionalNoteNames';
-
-export { isProvisionalNotePath } from './ProvisionalNoteNames';
+} from '@/core/types';
+import { isProvisionalNotePath } from '@/features/chat/session-manager/ProvisionalNoteNames';
 
 export type SessionListSectionKind = 'list' | 'recency' | 'content' | 'ungrouped' | 'missing';
 

@@ -6,14 +6,8 @@ import { axe } from 'jest-axe';
 import { Menu } from 'obsidian';
 
 import type { ConversationMeta } from '@/core/types';
-import {
-  type HistoryConversationStatus,
-  SessionBrowser,
-  type SessionBrowserDeps,
-} from '@/features/chat/session-manager/SessionBrowser';
-import { confirmDelete } from '@/shared/modals/ConfirmModal';
-
-jest.mock('@/shared/modals/ConfirmModal', () => ({ confirmDelete: jest.fn() }));
+import { SessionBrowser, type SessionBrowserDeps } from '@/features/chat/session-manager/SessionBrowser';
+import type { HistoryConversationStatus } from '@/features/chat/session-manager/SessionStatusPresentation';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
@@ -57,8 +51,12 @@ function renderList(options: {
   onSetConversationsArchived?: jest.Mock;
 } = {}) {
   const onSetConversationsPinned = jest.fn().mockResolvedValue(undefined);
+  const onSetConversationsArchived = options.onSetConversationsArchived
+    ?? jest.fn().mockResolvedValue(undefined);
   const controller = new SessionBrowser({
-    plugin: { getConversationList: () => conversations, settings: {} },
+    plugin: { getConversationList: () => conversations, settings: {}, conversationLifecycle: {
+      archive: onSetConversationsArchived, setPinned: onSetConversationsPinned,
+    } },
     getCurrentConversationId: () => null,
     getTitleGenerationService: () => null,
     onListChanged: () => undefined,
@@ -66,13 +64,11 @@ function renderList(options: {
   const container = document.createElement('div');
   document.body.append(container);
   const onSelectConversation = options.onSelectConversation ?? jest.fn().mockResolvedValue(undefined);
-  const onSetConversationsArchived = options.onSetConversationsArchived
-    ?? jest.fn().mockResolvedValue(undefined);
   const render = (): void => controller.renderHistoryDropdown(container, {
     onSelectConversation,
-    onSetConversationsArchived,
-    onSetConversationsPinned,
-    onSetConversationArchived: jest.fn().mockResolvedValue(undefined),
+
+
+
     onRerender: render,
     showMetadataPopover: true,
     sessionActionMode: 'active',
@@ -116,48 +112,6 @@ describe('SessionBrowser multi-select archive', () => {
 
     expect(onSetConversationsArchived).toHaveBeenCalledWith(['alpha', 'gamma']);
     expect(selectedCount(container)).toBe(0);
-  });
-
-  it('skips running sessions in the selection', () => {
-    const { button, onSetConversationsArchived } = renderList();
-
-    fireEvent.click(button('Alpha session'), { altKey: true });
-    fireEvent.click(button('Running session'), { altKey: true });
-    fireEvent.contextMenu(button('Alpha session'));
-    const menu = lastMenu();
-    expect(menu.items.map(menuItem => menuItem.title)).toEqual(['Pin 2 sessions', 'Archive 1 session']);
-    menu.items[1].clickHandler?.();
-
-    expect(onSetConversationsArchived).toHaveBeenCalledWith(['alpha']);
-  });
-
-  it('pins the unpinned sessions in a mixed selection', () => {
-    const { container, button, onSetConversationsPinned } = renderList();
-
-    fireEvent.click(button('Alpha session'), { altKey: true });
-    fireEvent.click(button('Pinned session'), { altKey: true });
-    fireEvent.click(button('Running session'), { altKey: true });
-    expect(selectedCount(container)).toBe(3);
-    fireEvent.contextMenu(button('Alpha session'));
-    const menu = lastMenu();
-    expect(menu.items[0].title).toBe('Pin 2 sessions');
-    menu.items[0].clickHandler?.();
-
-    expect(onSetConversationsPinned).toHaveBeenCalledWith(['alpha', 'running'], true);
-    expect(selectedCount(container)).toBe(0);
-  });
-
-  it('unpins the selection when every selected session is pinned', () => {
-    const { button, onSetConversationsPinned } = renderList();
-
-    fireEvent.click(button('Pinned session'), { altKey: true });
-    fireEvent.click(button('Second pinned session'), { altKey: true });
-    fireEvent.contextMenu(button('Pinned session'));
-    const menu = lastMenu();
-    expect(menu.items[0].title).toBe('Unpin 2 sessions');
-    menu.items[0].clickHandler?.();
-
-    expect(onSetConversationsPinned).toHaveBeenCalledWith(['pinned', 'pinned-too'], false);
   });
 
   it('keeps the selection while interacting with sessions and clears it when pointer or focus leaves them', () => {
@@ -217,7 +171,7 @@ describe('SessionBrowser multi-select archive', () => {
     popoutDocument.body.append(container);
     controller.renderHistoryDropdown(container, {
       onSelectConversation: jest.fn().mockResolvedValue(undefined),
-      onSetConversationsArchived: jest.fn().mockResolvedValue(undefined),
+
       showMetadataPopover: true,
       sessionActionMode: 'active',
     });
@@ -269,260 +223,5 @@ describe('SessionBrowser multi-select archive', () => {
 
     expect(onSelectConversation).toHaveBeenCalledWith('beta');
     expect(selectedCount(container)).toBe(0);
-  });
-});
-
-describe('SessionBrowser recency dividers', () => {
-  afterEach(() => { document.body.replaceChildren(); });
-
-  function render(
-    groupByRecency: boolean,
-    items: ConversationMeta[],
-    extra: Record<string, unknown> = {},
-  ): HTMLElement {
-    const controller = new SessionBrowser({
-      plugin: { getConversationList: () => items, settings: {} },
-      getCurrentConversationId: () => null,
-      getTitleGenerationService: () => null,
-      onListChanged: () => undefined,
-    } as unknown as SessionBrowserDeps);
-    const container = document.createElement('div');
-    document.body.append(container);
-    controller.renderHistoryDropdown(container, {
-      onSelectConversation: jest.fn().mockResolvedValue(undefined),
-      showMetadataPopover: true,
-      showPinnedSection: true,
-      groupByRecency,
-      ...extra,
-    });
-    return container;
-  }
-
-  /** Divider labels and session titles in document order. */
-  const visibleSequence = (container: HTMLElement): string[] => within(container)
-    .getAllByText(/^(Past week|Past 2 weeks|Past month|Older|.+ session)$/)
-    .map(element => element.textContent ?? '');
-
-  const recent = (id: string, days: number, extra: Partial<ConversationMeta> = {}): ConversationMeta => ({
-    ...session(id, `${id} session`, extra),
-    lastActivityAt: testDate({ days: -days }).getTime(),
-  });
-
-  it('labels the unpinned list by last activity without dividing pinned sessions', async () => {
-    const container = render(true, [
-      recent('fresh', 2), recent('week', 10), recent('month', 20), recent('stale', 60),
-      recent('pinned-stale', 60, { isPinned: true }),
-    ]);
-    expect(visibleSequence(container)).toEqual([
-      'pinned-stale session',
-      'Past week', 'fresh session', 'Past 2 weeks', 'week session',
-      'Past month', 'month session', 'Older', 'stale session',
-    ]);
-    expect(await axe(container)).toHaveNoViolations();
-  });
-
-  it('renders no dividers unless recency grouping is requested', () => {
-    const container = render(false, [recent('fresh', 2), recent('stale', 60)]);
-
-    expect(visibleSequence(container)).toEqual(['fresh session', 'stale session']);
-  });
-
-  it('opens a divider group menu from a focusable native button', async () => {
-    const onSetConversationsArchived = jest.fn().mockResolvedValue(undefined);
-    const container = render(true, [recent('fresh', 2), recent('stale', 60)], {
-      sessionActionMode: 'active',
-      onSetConversationsArchived,
-    });
-    const actions = within(container).getByRole('button', { name: 'Actions for Older' });
-
-    expect(actions.tagName).toBe('BUTTON');
-    expect(actions.getAttribute('type')).toBe('button');
-    actions.focus();
-    expect(actions.ownerDocument.activeElement).toBe(actions);
-    expect(await axe(container)).toHaveNoViolations();
-
-    fireEvent.click(actions);
-    const menu = lastMenu() as MockMenu & { showAtPosition: jest.Mock };
-    expect(menu.showAtPosition).toHaveBeenCalled();
-    expect(menu.items.map(item => item.title)).toEqual(['Archive all sessions']);
-    menu.items[0].clickHandler?.();
-    expect(onSetConversationsArchived).toHaveBeenCalledWith(['stale']);
-  });
-
-  it('archives every non-running session in a group from its divider menu', () => {
-    const onSetConversationsArchived = jest.fn().mockResolvedValue(undefined);
-    const container = render(true, [
-      recent('fresh', 2), recent('stale', 60), recent('stale-running', 70), recent('ancient', 400),
-    ], {
-      sessionActionMode: 'active',
-      onSetConversationsArchived,
-      getConversationStatus: (id: string): HistoryConversationStatus => ({
-        openState: 'closed', isRunning: id === 'stale-running',
-      }),
-    });
-    fireEvent.contextMenu(within(container).getByText('Older'));
-    const menu = lastMenu();
-    expect(menu.items.map(item => item.title)).toEqual(['Archive all sessions']);
-    menu.items[0].clickHandler?.();
-
-    expect(onSetConversationsArchived).toHaveBeenCalledWith(['stale', 'ancient']);
-  });
-});
-
-describe('SessionBrowser archived multi-select', () => {
-  afterEach(() => {
-    document.body.replaceChildren();
-    (Menu as unknown as { instances: MockMenu[] }).instances.length = 0;
-    jest.mocked(confirmDelete).mockReset();
-  });
-
-  function renderArchived() {
-    const archived = [
-      session('one', 'First archived', { isArchived: true }),
-      session('two', 'Second archived', { isArchived: true }),
-      session('three', 'Third archived', { isArchived: true }),
-    ];
-    const deleteConversation = jest.fn().mockResolvedValue(undefined);
-    const controller = new SessionBrowser({
-      plugin: { app: {}, getConversationList: () => archived, settings: {}, conversationLifecycle: { delete: deleteConversation } },
-      getCurrentConversationId: () => null,
-      getTitleGenerationService: () => null,
-      onListChanged: () => undefined,
-    } as unknown as SessionBrowserDeps);
-    const container = document.createElement('div');
-    document.body.append(container);
-    const onRestoreConversations = jest.fn().mockResolvedValue(undefined);
-    const onRerender = jest.fn();
-    controller.renderHistoryDropdown(container, {
-      onSelectConversation: jest.fn().mockResolvedValue(undefined),
-      onSetConversationArchived: jest.fn().mockResolvedValue(undefined),
-      onRestoreConversations,
-      onRerender,
-      showMetadataPopover: true,
-      showArchivedSection: true,
-      sessionScope: 'archived',
-      sessionActionMode: 'archived',
-      allowConversationSelection: false,
-    });
-    const item = (title: string): HTMLElement => within(container).getByText(title);
-    return { container, item, onRestoreConversations, onRerender, deleteConversation };
-  }
-
-  it('restores the Option-clicked archived sessions in one batch', async () => {
-    const { container, item, onRestoreConversations } = renderArchived();
-
-    fireEvent.click(item('First archived'), { altKey: true });
-    fireEvent.keyDown(item('Third archived'), { key: 'Enter', altKey: true });
-    expect(selectedCount(container)).toBe(2);
-    expect(await axe(container)).toHaveNoViolations();
-
-    fireEvent.contextMenu(item('Third archived'));
-    const menu = lastMenu();
-    expect(menu.items.map(menuItem => menuItem.title)).toEqual(['Restore 2 sessions', 'Delete 2 sessions']);
-    menu.items[0].clickHandler?.();
-
-    expect(onRestoreConversations).toHaveBeenCalledWith(['one', 'three']);
-    expect(selectedCount(container)).toBe(0);
-  });
-
-  it.each([true, false])('deletes the selected archived sessions only after confirmation (%s)', async (confirmed) => {
-    const { item, onRerender, deleteConversation } = renderArchived();
-    jest.mocked(confirmDelete).mockResolvedValue(confirmed);
-
-    fireEvent.click(item('First archived'), { altKey: true });
-    fireEvent.click(item('Second archived'), { altKey: true });
-    fireEvent.contextMenu(item('First archived'));
-    expect(lastMenu().items[1].title).toBe('Delete 2 sessions');
-    lastMenu().items[1].clickHandler?.();
-    await new Promise(resolve => setTimeout(resolve, 0));
-
-    expect(confirmDelete).toHaveBeenCalledWith(expect.anything(), 'Permanently delete 2 sessions?');
-    expect(deleteConversation.mock.calls).toEqual(confirmed ? [[['one', 'two']]] : []);
-    expect(onRerender.mock.calls.length > 0).toBe(confirmed);
-  });
-
-  it('offers restoring or deleting every archived session of a Linked content group', async () => {
-    const archived = [
-      session('plan-a', 'Plan draft', { isArchived: true, linkedContentPath: 'Projects/Plan.md' }),
-      session('plan-b', 'Plan review', { isArchived: true, linkedContentPath: 'Projects/Plan.md' }),
-      session('other', 'Other archived', { isArchived: true, linkedContentPath: 'Projects/Other.md' }),
-    ];
-    const deleteConversation = jest.fn().mockResolvedValue(undefined);
-    jest.mocked(confirmDelete).mockResolvedValue(true);
-    const controller = new SessionBrowser({
-      plugin: { app: {}, getConversationList: () => archived, settings: {}, conversationLifecycle: { delete: deleteConversation } },
-      getCurrentConversationId: () => null,
-      getTitleGenerationService: () => null,
-      onListChanged: () => undefined,
-    } as unknown as SessionBrowserDeps);
-    const container = document.createElement('div');
-    document.body.append(container);
-    const onRestoreConversations = jest.fn().mockResolvedValue(undefined);
-    controller.renderHistoryDropdown(container, {
-      onSelectConversation: jest.fn().mockResolvedValue(undefined),
-      onSetLinkedContentPinned: jest.fn().mockResolvedValue(undefined),
-      onStartLinkedContentConversation: jest.fn().mockResolvedValue(undefined),
-      onRestoreConversations,
-      onRerender: jest.fn(),
-      organization: 'linked-content',
-      contentExists: () => true,
-      contentIsNote: () => true,
-      showArchivedSection: true,
-      sessionScope: 'archived',
-      sessionActionMode: 'archived',
-      allowConversationSelection: false,
-      searchQuery: 'draft',
-    });
-
-    expect(within(container).queryByRole('button', { name: /^New chat for/ })).toBeNull();
-    fireEvent.contextMenu(within(container).getByText('Plan'));
-    const menu = lastMenu();
-    expect(menu.items.map(item => item.title)).toEqual(['Restore all sessions', 'Delete all sessions']);
-    menu.items[0].clickHandler?.();
-    expect(onRestoreConversations).toHaveBeenCalledWith(['plan-a', 'plan-b']);
-    menu.items[1].clickHandler?.();
-    await new Promise(resolve => setTimeout(resolve, 0));
-
-    expect(confirmDelete).toHaveBeenCalledWith(expect.anything(), 'Permanently delete 2 sessions?');
-    expect(deleteConversation.mock.calls).toEqual([[['plan-a', 'plan-b']]]);
-  });
-
-  it('offers restoring or deleting every archived session under a date divider', async () => {
-    const archived = [
-      { ...session('fresh', 'Fresh archived', { isArchived: true }), lastActivityAt: testDate({ days: -2 }).getTime() },
-      { ...session('stale', 'Stale archived', { isArchived: true }), lastActivityAt: testDate({ days: -60 }).getTime() },
-      { ...session('ancient', 'Ancient archived', { isArchived: true }), lastActivityAt: testDate({ days: -400 }).getTime() },
-    ];
-    const deleteConversation = jest.fn().mockResolvedValue(undefined);
-    jest.mocked(confirmDelete).mockResolvedValue(true);
-    const controller = new SessionBrowser({
-      plugin: { app: {}, getConversationList: () => archived, settings: {}, conversationLifecycle: { delete: deleteConversation } },
-      getCurrentConversationId: () => null,
-      getTitleGenerationService: () => null,
-      onListChanged: () => undefined,
-    } as unknown as SessionBrowserDeps);
-    const container = document.createElement('div');
-    document.body.append(container);
-    const onRestoreConversations = jest.fn().mockResolvedValue(undefined);
-    controller.renderHistoryDropdown(container, {
-      onSelectConversation: jest.fn().mockResolvedValue(undefined),
-      onRestoreConversations,
-      onRerender: jest.fn(),
-      groupByRecency: true,
-      showArchivedSection: true,
-      sessionScope: 'archived',
-      sessionActionMode: 'archived',
-      allowConversationSelection: false,
-    });
-
-    fireEvent.contextMenu(within(container).getByText('Older'));
-    const menu = lastMenu();
-    expect(menu.items.map(item => item.title)).toEqual(['Restore all sessions', 'Delete all sessions']);
-    menu.items[0].clickHandler?.();
-    expect(onRestoreConversations).toHaveBeenCalledWith(['stale', 'ancient']);
-    menu.items[1].clickHandler?.();
-    await new Promise(resolve => setTimeout(resolve, 0));
-
-    expect(deleteConversation.mock.calls).toEqual([[['stale', 'ancient']]]);
   });
 });

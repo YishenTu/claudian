@@ -1,31 +1,27 @@
 import type { Component } from 'obsidian';
 import { Notice } from 'obsidian';
 
-import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
-
-import { detectSideChatCommand } from '../../../core/commands/builtInCommands';
-import type { ProviderExecutionContext } from '../../../core/execution';
-import { getRuntimeEnvironmentVariables } from '../../../core/providers/providerEnvironment';
-import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
-import type { ImageAttachment } from '../../../core/types';
-import { t } from '../../../i18n/i18n';
-import { getVaultPath } from '../../../utils/path';
-import type { ChatFeatureHost } from '../ChatFeatureHost';
-import { getChatSettingsSnapshot } from '../ChatSettings';
-import type { ComposerDraftController } from '../composer/ComposerDraftController';
-import {
-  captureLatestCompletedForkSource,
-  type ForkSourceUnavailableReason,
-} from '../tabs/TabForking';
-import type { AssembledTabRuntime } from '../tabs/types';
-import { SideChatCommandSubmission } from './SideChatCommandSubmission';
-import { SideChatPanel } from './SideChatPanel';
-import { SideChatRuntime } from './SideChatRuntime';
+import { detectSideChatCommand } from '@/core/commands/builtInCommands';
+import type { ProviderExecutionContext } from '@/core/execution';
+import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import type { ImageAttachment } from '@/core/types';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
+import type { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
+import type { ForkSourceUnavailableReason } from '@/features/chat/conversation/forkSourceTypes';
+import { SideChatCommandSubmission } from '@/features/chat/side-chat/SideChatCommandSubmission';
+import { SideChatPanel } from '@/features/chat/side-chat/SideChatPanel';
+import { SideChatRuntime } from '@/features/chat/side-chat/SideChatRuntime';
 import {
   type SideChatDestination,
+  type SideChatParent,
   type SideChatSettingsProjection,
   type SideChatSource,
-} from './SideChatTypes';
+} from '@/features/chat/side-chat/SideChatTypes';
+import { t } from '@/i18n/i18n';
+import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
+import { getVaultPath } from '@/utils/path';
 
 export interface SideChatControllerDeps {
   readonly plugin: ChatFeatureHost;
@@ -35,8 +31,7 @@ export interface SideChatControllerDeps {
   readonly inputWrapperEl: HTMLElement;
   readonly getInputEl: () => ComposerInputElement;
   readonly drafts: ComposerDraftController;
-  readonly getTab: () => AssembledTabRuntime;
-  readonly isRuntimeLive: (tab: AssembledTabRuntime) => boolean;
+  readonly parent: SideChatParent;
   readonly onDestinationChanged: () => void;
   readonly onStatusChanged?: () => void;
 }
@@ -234,24 +229,20 @@ export class SideChatController {
   async #startSideChat(
     command: SideChatCommandSubmission,
   ): Promise<boolean> {
-    const tab = this.deps.getTab();
+    const parent = this.deps.parent;
     const sequence = ++this.#startSequence;
     this.#starting = true;
-    this.#boundConversationId = tab.conversationId;
+    this.#boundConversationId = parent.conversationId;
     let transferred = false;
     try {
-      const capture = await captureLatestCompletedForkSource(
-        tab,
-        this.deps.plugin,
-        this.deps.isRuntimeLive,
-      );
+      const capture = await parent.captureForkSource();
       if (sequence !== this.#startSequence || this.#disposed) return false;
       if (!capture.ok) {
         new Notice(describeUnavailable(capture.reason));
         return false;
       }
 
-      const providerId = capture.context.providerId ?? tab.providerId;
+      const providerId = capture.context.providerId ?? parent.providerId;
       if (!providerId) return false;
       const source: SideChatSource = {
         conversationId: capture.context.sourceConversationId,
@@ -285,11 +276,11 @@ export class SideChatController {
   }
 
   #assertForkSourceCurrent(source: SideChatSource): void {
-    const tab = this.deps.getTab();
+    const parent = this.deps.parent;
     const fullSession = ProviderRegistry.getCapabilities(source.providerId, source.providerState).forkMode === 'full-session';
-    if (!this.deps.isRuntimeLive(tab)
-      || tab.conversationId !== source.conversationId
-      || (fullSession && (tab.state.isStreaming || tab.state.messages.at(-1)?.id !== source.messages.at(-1)?.id))) {
+    if (!parent.isLive
+      || parent.conversationId !== source.conversationId
+      || (fullSession && (parent.isStreaming || parent.lastMessageId !== source.messages.at(-1)?.id))) {
       throw new Error('The source conversation changed. Discard this side chat and start a new one.');
     }
   }

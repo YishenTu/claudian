@@ -1,6 +1,6 @@
-import type { ChatFeatureHost } from '../ChatFeatureHost';
-import { resolveSessionMentions } from '../session-mentions/resolveSessionMentions';
-import type { SideChatSubmission } from './SideChatRuntime';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { resolveSessionMentions } from '@/features/chat/input/resolveSessionMentions';
+import type { SideChatSubmission } from '@/features/chat/side-chat/SideChatRuntime';
 
 /** A command reserves its queue position while its detached input is prepared. */
 export class SideChatCommandSubmission {

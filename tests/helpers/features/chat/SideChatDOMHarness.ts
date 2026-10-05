@@ -7,6 +7,7 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderConversationHistoryService, ProviderRegistration } from '@/core/providers/types';
 import { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
 import { SideChatController } from '@/features/chat/side-chat/SideChatController';
+import { captureLatestCompletedForkSource } from '@/features/chat/tabs/forking/ForkSource';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
 Object.assign(HTMLElement.prototype, {
@@ -137,9 +138,15 @@ export function createHarness(options: {
     composerEl,
     drafts,
     getInputEl: () => inputEl as never,
-    getTab: () => tab,
+    parent: {
+      get conversationId() { return tab.conversationId; },
+      get providerId() { return tab.providerId; },
+      get isLive() { return true; },
+      get isStreaming() { return tab.state.isStreaming; },
+      get lastMessageId() { return tab.state.messages.at(-1)?.id; },
+      captureForkSource: () => captureLatestCompletedForkSource(tab, plugin, () => true),
+    },
     inputWrapperEl,
-    isRuntimeLive: () => true,
     onDestinationChanged: () => { destinationChanges.push(controller.destination); options.onDestinationChanged?.(); },
     plugin,
   });

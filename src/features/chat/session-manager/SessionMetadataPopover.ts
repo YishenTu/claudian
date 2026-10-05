@@ -1,9 +1,9 @@
 import { setIcon } from 'obsidian';
 
-import type { ProviderIconSvg } from '../../../core/providers/types';
-import type { ConversationMeta } from '../../../core/types';
-import { createProviderIconSvg } from '../../../shared/icons';
-import { getLinkedContentTitle, isLegacyProvisionalLinkedContent } from './SessionListOrganizer';
+import type { ProviderIconSvg } from '@/core/providers/types';
+import type { ConversationMeta } from '@/core/types';
+import { getLinkedContentTitle, isLegacyProvisionalLinkedContent } from '@/features/chat/session-manager/SessionListOrganizer';
+import { createProviderIconSvg } from '@/shared/icons';
 
 /** Presentation inputs the popover reads from the current list render. */
 export interface SessionMetadataOptions {

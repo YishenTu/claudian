@@ -1,20 +1,16 @@
-import type { ChatFeatureHost } from '../../ChatFeatureHost';
-import { refreshTabContextUsage } from '../TabProviderState';
-import type {
-  AssembledTabRuntime,
-  TabComposerPort,
-  TabDOMElements,
-  TabLinkedContentPort,
-  TabPlacementPort,
-  TabTranscriptPlacement,
-  TabUIComponents,
-} from '../types';
-import type { TabRuntimeControllerBundle } from './TabRuntimeConstruction';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { ChatState } from '@/features/chat/state/ChatState';
+import type { TabComposerPort, TabLinkedContentPort, TabPlacementPort, TabTranscriptPlacement } from '@/features/chat/tabs/ChatTab';
+import type { TabRuntimeControllerBundle } from '@/features/chat/tabs/runtime/TabRuntimeConstruction';
+import { refreshTabContextUsage } from '@/features/chat/tabs/tabProviderUI';
+import type { AssembledTabRuntime, TabDOMElements, TabUIComponents } from '@/features/chat/tabs/types';
+import type { ZenPresentationPort } from '@/features/chat/zen/types';
 
 export interface TabRuntimePorts {
   readonly composer: TabComposerPort;
   readonly linkedContent: TabLinkedContentPort;
   readonly placement: TabPlacementPort;
+  readonly zenPresentation: ZenPresentationPort;
   refreshProviderControls(): void;
   refreshMessageTimestamps(): void;
 }
@@ -29,6 +25,7 @@ export function buildTabRuntimePorts(
 ): TabRuntimePorts {
   const { controllers, renderer } = controllerBundle;
   return {
+    zenPresentation: createTabZenPresentation(() => getRuntime().state, dom.messagesEl),
     composer: createTabComposerPort(dom.inputEl, ui),
     linkedContent: ui.linkedContentController,
     placement: createTabPlacementPort(
@@ -81,7 +78,6 @@ export function createTabComposerPort(
       if (!dropdown.containsElement(target as Node) && target !== inputEl) dropdown.hide();
     },
     setHiddenCommands: commands => ui.composerDropdown.setHiddenCommands(commands),
-    mentionCaches: ui.fileContextManager,
     invalidateSessionMentions: () => ui.fileContextManager.getMentionSource().invalidate(),
   };
 }
@@ -114,5 +110,26 @@ export function createTabPlacementPort(
       };
     },
     setSideChatChipHost,
+  };
+}
+
+/** Keeps scroll mutation with the tab while zen can relocate its transcript. */
+function createTabZenPresentation(
+  getState: () => ChatState,
+  messagesEl: HTMLElement,
+): ZenPresentationPort {
+  const captureScroll = () => ({ top: getState().readingScrollTop, follow: getState().autoScrollEnabled });
+  return {
+    get state() { return getState(); },
+    get window() { return messagesEl.ownerDocument.defaultView; },
+    subscribeActivity: listener => getState().subscribeActivity(listener),
+    captureScroll,
+    restoreScroll: (snapshot = captureScroll()) => {
+      const state = getState();
+      messagesEl.scrollTop = snapshot.follow ? messagesEl.scrollHeight : snapshot.top;
+      state.readingScrollTop = snapshot.top;
+      // Relocation can emit geometry-only events; retain the reader's captured intent.
+      if (state.autoScrollEnabled !== snapshot.follow) state.autoScrollEnabled = snapshot.follow;
+    },
   };
 }

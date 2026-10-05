@@ -1,11 +1,16 @@
 import { Notice } from 'obsidian';
 
-import type { ChatFeatureHost } from '../ChatFeatureHost';
-import type {
-  AssembledTabRuntime,
-  TabRuntimeCleanupFailure,
-  TabRuntimeResourceOwner,
-} from './types';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { AssembledTabRuntime, TabRuntimeResourceState } from '@/features/chat/tabs/types';
+
+export interface TabRuntimeCleanupFailure {
+  readonly resource: string;
+  readonly error: unknown;
+}
+
+export interface TabRuntimeResourceOwner extends TabRuntimeResourceState {
+  dispose(): Promise<readonly TabRuntimeCleanupFailure[]>;
+}
 
 const tabDestructionPromises = new WeakMap<AssembledTabRuntime, Promise<void>>();
 const tabShutdownDrainPromises = new WeakMap<
@@ -44,9 +49,7 @@ export function activateTab(tab: AssembledTabRuntime): void {
   tab.dom.contentEl.removeClass('claudian-hidden');
   tab.controllers.streamController.setTabActive(true);
   tab.controllers.sideChatController.setTabActive(true);
-  tab.controllers.selectionController.start();
-  tab.controllers.browserSelectionController.start();
-  tab.controllers.canvasSelectionController.start();
+  tab.controllers.composerSelections.start();
   tab.ui.navigationSidebar.updateVisibility();
 }
 
@@ -55,9 +58,7 @@ export function deactivateTab(tab: AssembledTabRuntime): void {
   tab.controllers.streamController.setTabActive(false);
   tab.controllers.sideChatController.setTabActive(false);
   tab.dom.contentEl.addClass('claudian-hidden');
-  tab.controllers.selectionController.stop();
-  tab.controllers.browserSelectionController.stop();
-  tab.controllers.canvasSelectionController.stop();
+  tab.controllers.composerSelections.stop();
 }
 
 export class TabRuntimeTeardownError extends Error {

@@ -1,95 +1,76 @@
-import { Menu, Notice, setIcon } from 'obsidian';
+import { setIcon } from 'obsidian';
 
-import type { ProviderIconSvg, TitleGenerationService } from '../../../core/providers/types';
+import type { TitleGenerationService } from '@/core/providers/types';
 import type {
   ConversationMeta,
   SessionManagerOrganization,
   SessionManagerSort,
-} from '../../../core/types';
-import { confirmDelete } from '../../../shared/modals/ConfirmModal';
-import type { ChatFeatureHost } from '../ChatFeatureHost';
-import { ConversationTitleGeneration } from '../services/ConversationTitleGeneration';
-import type { TabAttention } from '../state/types';
-import { deriveSessionListModel, type SessionListSection } from './SessionListOrganizer';
-import { SessionMetadataPopover } from './SessionMetadataPopover';
-import { SessionMultiSelection } from './SessionMultiSelection';
-
-function runConversationAction(action: () => Promise<void>, failureMessage: string): void {
-  void action().catch(() => {
-    new Notice(failureMessage);
-  });
-}
+} from '@/core/types';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { ConversationTitleGeneration } from '@/features/chat/conversation/ConversationTitleGeneration';
+import {
+  canMultiSelect,
+  runSessionAction,
+  type SessionActionOptions,
+  SessionActions,
+  type SessionRow,
+} from '@/features/chat/session-manager/SessionActions';
+import { SessionInlineRename } from '@/features/chat/session-manager/SessionInlineRename';
+import { deriveSessionListModel, type SessionListSection } from '@/features/chat/session-manager/SessionListOrganizer';
+import {
+  captureSessionListPosition,
+  INITIAL_SESSION_LIST_POSITION,
+  recordVisibleCount,
+  restoreSessionListPosition,
+} from '@/features/chat/session-manager/SessionListPosition';
+import { type SessionMetadataOptions, SessionMetadataPopover } from '@/features/chat/session-manager/SessionMetadataPopover';
+import { SessionMultiSelection } from '@/features/chat/session-manager/SessionMultiSelection';
+import {
+  canShowAttention,
+  groupIndicatorKind,
+  type HistoryConversationOpenState,
+  type HistoryConversationStatus,
+  indicatorPresentation,
+  isCompletedReview,
+  sessionIndicatorKind,
+  sessionItemIcon,
+  type SessionStatusDisplay,
+  type SessionStatusIndicatorKind,
+  sessionStatusText,
+} from '@/features/chat/session-manager/SessionStatusPresentation';
 
 const DEFAULT_HISTORY_PAGE_SIZE = 100;
-export type HistoryConversationOpenState = 'closed' | 'open' | 'current';
 
-export type HistoryConversationStatus = {
-  openState: HistoryConversationOpenState;
-  isRunning: boolean;
-  attention?: TabAttention;
-  location?: 'current-view' | 'other-view';
-  tabIndex?: number;
-};
-
-type SessionStatusIndicatorKind = 'action-required' | 'error' | 'running';
-
-type HistoryRenderOptions = {
-  onSelectConversation: (id: string) => Promise<void>;
-  onOpenConversationInNewTab?: (id: string, activate?: boolean) => Promise<void>;
+type HistoryRenderOptions = SessionActionOptions & SessionStatusDisplay & SessionMetadataOptions & {
   getConversationOpenState?: (id: string) => HistoryConversationOpenState;
   getConversationStatus?: (id: string) => HistoryConversationStatus;
-  getProviderIcon?: (conversation: ConversationMeta) => ProviderIconSvg | null | undefined;
-  getModelLabel?: (conversation: ConversationMeta) => string;
-  onRerender: () => void;
-  signal?: AbortSignal;
   pageSize?: number;
   visibleCount?: number;
-  showOpenStateActions?: boolean;
-  showOpenStateLabels?: boolean;
   showMetadataPopover?: boolean;
   organization?: SessionManagerOrganization;
   /** Divides an unpinned flat list into recency groups. */
   groupByRecency?: boolean;
   sort?: SessionManagerSort;
-  language?: string;
-  contentExists?: (contentPath: string) => boolean;
-  contentIsNote?: (contentPath: string) => boolean;
   collapsedGroupKeys?: ReadonlySet<string>;
   onGroupCollapseChange?: (groupKey: string, collapsed: boolean) => void;
   onGroupKeysChange?: (groupKeys: readonly string[]) => void;
-  onSetConversationsArchived?: (ids: readonly string[]) => Promise<void>;
-  onSetConversationsPinned?: (ids: readonly string[], isPinned: boolean) => Promise<void>;
-  onRestoreConversations?: (ids: readonly string[]) => Promise<void>;
-  onSetLinkedContentPinned?: (contentPath: string, isPinned: boolean) => Promise<void>;
   onStartLinkedContentConversation?: (contentPath: string) => Promise<void>;
   pinnedLinkedContentPaths?: ReadonlySet<string>;
   preserveListState?: boolean;
-  showAttentionState?: boolean;
   showPinnedSection?: boolean;
   showArchivedSection?: boolean;
-  sessionScope?: 'active' | 'archived';
-  sessionActionMode?: 'active' | 'archived';
   historyHeaderLabel?: string;
   allowConversationSelection?: boolean;
   searchQuery?: string;
-  onSetConversationPinned?: (id: string, isPinned: boolean) => Promise<void>;
-  onSetConversationArchived?: (id: string, isArchived: boolean) => Promise<void>;
-  onAssignConversationToDevice?: (id: string) => Promise<void>;
   onBeforeRestoreListState?: (container: HTMLElement) => void;
   onRequestInlineRename?: (request: {
     beginRename: (item: HTMLElement) => void;
     conversationId: string;
   }) => void;
-  showInlinePinAction?: boolean;
 };
 
 type HistorySurfaceRenderOptions = Omit<HistoryRenderOptions, 'onRerender'> & {
   onRerender?: () => void;
-};
-
-type HistoryScrollAnchor = {
-  conversationId: string;
-  viewportOffset: number;
 };
 
 export interface SessionBrowserDeps {
@@ -99,14 +80,15 @@ export interface SessionBrowserDeps {
   onListChanged: () => void;
 }
 
+function isNewTabModifierClick(event: MouseEvent): boolean {
+  return !event.altKey && !event.shiftKey && (event.metaKey || event.ctrlKey);
+}
+
 export class SessionBrowser {
-  private activeInlineRename: {
-    cancel: () => void;
-    input: HTMLInputElement;
-  } | null = null;
   private readonly metadataPopover = new SessionMetadataPopover();
   private readonly selection = new SessionMultiSelection();
-
+  private readonly inlineRename = new SessionInlineRename();
+  private readonly actions: SessionActions;
   private readonly titles: ConversationTitleGeneration;
 
   constructor(private readonly deps: SessionBrowserDeps) {
@@ -115,69 +97,48 @@ export class SessionBrowser {
       getService: () => deps.getTitleGenerationService(),
       onChanged: () => deps.onListChanged(),
     });
+    this.actions = new SessionActions({ plugin: deps.plugin, selection: this.selection });
   }
 
   dispose(): void {
     this.selection.clear();
-    this.cancelInlineRename();
+    this.inlineRename.cancel();
     this.metadataPopover.dispose();
   }
 
   cancelInlineRename(): boolean {
-    const activeInlineRename = this.activeInlineRename;
-    if (!activeInlineRename) return false;
-    if (activeInlineRename.input.isConnected === false) {
-      this.activeInlineRename = null;
-      return false;
-    }
+    return this.inlineRename.cancel();
+  }
 
-    this.activeInlineRename = null;
-    activeInlineRename.cancel();
-    return true;
+  /** Renders the session list into a surface-owned container. */
+  renderHistoryDropdown(
+    container: HTMLElement,
+    options: HistorySurfaceRenderOptions,
+  ): void {
+    this.#renderHistoryItems(container, {
+      ...options,
+      onRerender: options.onRerender
+        ?? (() => this.renderHistoryDropdown(container, options)),
+    });
   }
 
   #renderHistoryItems(
     container: HTMLElement,
-    options: HistoryRenderOptions
+    options: HistoryRenderOptions,
   ): void {
     const { plugin } = this.deps;
     if (options.signal?.aborted) return;
     if (options.showMetadataPopover) {
       this.metadataPopover.close();
     }
-    const searchQuery = options.searchQuery ?? '';
-    this.selection.beginRender(container, searchQuery, this.#canMultiSelect(options));
+    this.selection.beginRender(container, options.searchQuery ?? '', canMultiSelect(options));
 
-    const previousList = options.preserveListState
-      ? container.querySelector<HTMLElement>('.claudian-history-list')
-      : null;
-    const previousSessionList = previousList?.querySelector<HTMLElement>(
-      '.claudian-session-list-items',
-    ) ?? previousList;
-    const previousPinnedSection = previousList?.querySelector<HTMLElement>(
-      '.claudian-history-section--pinned',
-    );
-    const previousPinnedList = previousPinnedSection?.querySelector<HTMLElement>(
-      '.claudian-history-section-items',
-    );
-    const previousSessionScrollTop = previousSessionList?.scrollTop ?? 0;
-    const previousPinnedScrollTop = previousPinnedList?.scrollTop ?? 0;
-    const previousVisibleCountFromState = Number(previousList?.dataset.visibleCount);
-    const previousVisibleCount = Number.isFinite(previousVisibleCountFromState)
-      && previousVisibleCountFromState > 0
-      ? previousVisibleCountFromState
-      : previousList?.querySelectorAll('.claudian-history-item').length ?? 0;
-    const previousScrollAnchors = previousSessionList
-      ? this.#captureHistoryScrollAnchors(previousSessionList)
-      : [];
+    const previousPosition = options.preserveListState
+      ? captureSessionListPosition(container)
+      : INITIAL_SESSION_LIST_POSITION;
     const organization = options.organization ?? 'list';
 
-    if (
-      this.activeInlineRename
-      && container.contains(this.activeInlineRename.input)
-    ) {
-      this.activeInlineRename = null;
-    }
+    this.inlineRename.releaseWithin(container);
     container.empty();
 
     const model = deriveSessionListModel(plugin.getConversationList(), {
@@ -249,9 +210,13 @@ export class SessionBrowser {
     const pageSize = Math.max(1, options.pageSize ?? DEFAULT_HISTORY_PAGE_SIZE);
     const visibleCount = Math.max(
       pageSize,
-      options.visibleCount ?? previousVisibleCount,
+      options.visibleCount ?? previousPosition.visibleCount,
     );
-    list.dataset.visibleCount = String(visibleCount);
+    recordVisibleCount(list, visibleCount);
+    const restorePosition = (): void => {
+      options.onBeforeRestoreListState?.(container);
+      restoreSessionListPosition(previousPosition, sessionList, pinnedList);
+    };
 
     if (model.groupKeys) options.onGroupKeysChange?.(model.groupKeys);
     if (model.isEmpty) {
@@ -259,18 +224,17 @@ export class SessionBrowser {
         cls: 'claudian-history-empty',
         text: model.hasSearchTerms ? 'No matching sessions' : 'No conversations',
       });
-      options.onBeforeRestoreListState?.(container);
-      if (pinnedList) pinnedList.scrollTop = previousPinnedScrollTop;
-      this.restoreHistoryListPosition(
-        sessionList,
-        previousSessionScrollTop,
-        previousScrollAnchors,
-      );
+      restorePosition();
       return;
     }
 
     const { visibleConversationTotal } = model;
     let renderedConversationCount = 0;
+    const linkedContentConversations = (section: SessionListSection): readonly ConversationMeta[] => (
+      section.contentPath
+        ? conversationsByLinkedContent.get(section.contentPath) ?? []
+        : section.conversations
+    );
 
     if (pinnedList) {
       for (const section of pinnedContentSections) {
@@ -285,9 +249,7 @@ export class SessionBrowser {
           visibleConversations,
           isCollapsed,
           options,
-          section.contentPath
-            ? conversationsByLinkedContent.get(section.contentPath) ?? []
-            : section.conversations,
+          linkedContentConversations(section),
         );
         renderedConversationCount += visibleConversations.length;
       }
@@ -318,9 +280,7 @@ export class SessionBrowser {
           visibleConversations,
           isCollapsed,
           options,
-          section.contentPath
-            ? conversationsByLinkedContent.get(section.contentPath) ?? []
-            : section.conversations,
+          linkedContentConversations(section),
         );
       } else {
         if (section.kind === 'recency') {
@@ -342,7 +302,7 @@ export class SessionBrowser {
         if (options.signal?.aborted) return;
         const nextVisibleCount = visibleCount + pageSize;
         if (options.preserveListState) {
-          list.dataset.visibleCount = String(nextVisibleCount);
+          recordVisibleCount(list, nextVisibleCount);
           options.onRerender();
           return;
         }
@@ -353,13 +313,7 @@ export class SessionBrowser {
       });
     }
 
-    options.onBeforeRestoreListState?.(container);
-    if (pinnedList) pinnedList.scrollTop = previousPinnedScrollTop;
-    this.restoreHistoryListPosition(
-      sessionList,
-      previousSessionScrollTop,
-      previousScrollAnchors,
-    );
+    restorePosition();
   }
 
   #renderLinkedContentSection(
@@ -371,17 +325,11 @@ export class SessionBrowser {
     linkedContentConversations: readonly ConversationMeta[],
   ): void {
     const conversationStatuses = section.conversations.map(conversation => (
-      this.#getHistoryConversationStatusForMetadata(conversation, options)
+      this.#statusOf(conversation, options)
     ));
-    const groupStatusKind = this.#getGroupSessionStatusIndicatorKind(
-      conversationStatuses,
-      options,
-    );
-    const hasReviewConversation = options.showAttentionState === true
-      && options.sessionScope !== 'archived'
-      && conversationStatuses.some(({ attention }) => (
-        attention?.kind === 'review' && attention.outcome === 'completed'
-      ));
+    const groupStatusKind = groupIndicatorKind(conversationStatuses, options);
+    const hasReviewConversation = canShowAttention(options)
+      && conversationStatuses.some(({ attention }) => isCompletedReview(attention));
     const showGroupReviewState = groupStatusKind === null && hasReviewConversation;
     const groupHeader = list.createDiv({
       cls: [
@@ -446,7 +394,7 @@ export class SessionBrowser {
         `New chat for ${section.label ?? contentPath}`,
       );
       const startConversation = (): void => {
-        runConversationAction(
+        runSessionAction(
           () => startLinkedContentConversation(contentPath),
           'Failed to start a chat for this Linked content',
         );
@@ -497,110 +445,30 @@ export class SessionBrowser {
     });
 
     const contentPath = section.contentPath;
-    const onSetLinkedContentPinned = options.onSetLinkedContentPinned;
-    const onSetConversationsArchived = options.onSetConversationsArchived;
-    const isPinnedLinkedContent = contentPath
-      ? options.pinnedLinkedContentPaths?.has(contentPath) ?? false
-      : false;
-    const isArchivedView = options.sessionActionMode === 'archived';
-    const canToggleLinkedContentPin = !!(
-      contentPath
-      && onSetLinkedContentPinned
-      && !isArchivedView
-      && (section.kind === 'content' || section.kind === 'missing' || isPinnedLinkedContent)
-    );
-    const canArchiveLinkedContentSessions = !!(
-      contentPath
-      && onSetConversationsArchived
-      && options.sessionActionMode === 'active'
-    );
-    const canDeleteLinkedContentSessions = !!contentPath && isArchivedView;
-    if (
-      contentPath
-      && (canToggleLinkedContentPin || canArchiveLinkedContentSessions || canDeleteLinkedContentSessions)
-    ) {
+    const buildGroupMenu = contentPath
+      ? this.actions.groupMenu(
+          {
+            conversations: linkedContentConversations,
+            linkedContent: {
+              path: contentPath,
+              kind: section.kind,
+              isPinned: options.pinnedLinkedContentPaths?.has(contentPath) ?? false,
+            },
+          },
+          options,
+          conversation => this.#statusOf(conversation, options).isRunning,
+        )
+      : null;
+    if (buildGroupMenu) {
       groupHeader.addEventListener('contextmenu', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        const menu = new Menu().setUseNativeMenu(false);
-        if (canToggleLinkedContentPin && onSetLinkedContentPinned) {
-          menu.addItem(menuItem => menuItem
-            .setTitle(isPinnedLinkedContent ? 'Unpin Linked content' : 'Pin Linked content')
-            .onClick(() => {
-              runConversationAction(
-                () => onSetLinkedContentPinned(contentPath, !isPinnedLinkedContent),
-                isPinnedLinkedContent
-                  ? 'Failed to unpin Linked content'
-                  : 'Failed to pin Linked content',
-              );
-            }));
-        }
-        if (canArchiveLinkedContentSessions && onSetConversationsArchived) {
-          if (canToggleLinkedContentPin) menu.addSeparator();
-          this.#addArchiveAllMenuItem(
-            menu,
-            linkedContentConversations,
-            options,
-            onSetConversationsArchived,
-            'Failed to archive Linked content sessions',
-          );
-        }
-        if (canDeleteLinkedContentSessions) {
-          this.#addRestoreAndDeleteAllMenuItems(menu, linkedContentConversations, options);
-        }
-        menu.showAtMouseEvent(event);
+        buildGroupMenu().showAtMouseEvent(event);
       });
     }
 
     for (const conversation of visibleConversations) {
       this.#renderHistoryConversationItem(groupBody, conversation, options);
-    }
-  }
-
-  #captureHistoryScrollAnchors(list: HTMLElement): HistoryScrollAnchor[] {
-    const listRect = list.getBoundingClientRect();
-    if (listRect.height <= 0) return [];
-
-    return Array.from(list.querySelectorAll<HTMLElement>('.claudian-history-item'))
-      .map((item): HistoryScrollAnchor | null => {
-        const conversationId = item.getAttribute('data-conversation-id');
-        const itemRect = item.getBoundingClientRect();
-        if (
-          !conversationId
-          || itemRect.height <= 0
-          || itemRect.bottom <= listRect.top
-          || itemRect.top >= listRect.bottom
-        ) return null;
-        return {
-          conversationId,
-          viewportOffset: itemRect.top - listRect.top,
-        };
-      })
-      .filter((anchor): anchor is HistoryScrollAnchor => anchor !== null);
-  }
-
-  private restoreHistoryListPosition(
-    list: HTMLElement,
-    previousScrollTop: number,
-    anchors: readonly HistoryScrollAnchor[],
-  ): void {
-    list.scrollTop = previousScrollTop;
-    if (anchors.length === 0) return;
-
-    const items = Array.from(
-      list.querySelectorAll<HTMLElement>('.claudian-history-item'),
-    );
-    const listTop = list.getBoundingClientRect().top;
-    for (const anchor of anchors) {
-      const item = items.find(candidate => (
-        candidate.getAttribute('data-conversation-id') === anchor.conversationId
-      ));
-      if (!item) continue;
-
-      const itemRect = item.getBoundingClientRect();
-      if (itemRect.height <= 0) continue;
-      list.scrollTop += itemRect.top - listTop - anchor.viewportOffset;
-      return;
     }
   }
 
@@ -611,22 +479,13 @@ export class SessionBrowser {
   ): void {
     if (options.signal?.aborted) return;
 
-    const conversationStatus = this.#getHistoryConversationStatusForMetadata(
-      conversation,
-      options,
-    );
+    const conversationStatus = this.#statusOf(conversation, options);
     const { openState, isRunning } = conversationStatus;
-    const hasAttentionState = options.showAttentionState === true
-      && options.sessionScope !== 'archived'
+    const hasAttentionState = canShowAttention(options)
       && conversationStatus.attention !== null
       && conversationStatus.attention !== undefined;
-    const showReviewState = hasAttentionState
-      && conversationStatus.attention?.kind === 'review'
-      && conversationStatus.attention.outcome === 'completed';
-    const sessionStatusKind = this.#getSessionStatusIndicatorKind(
-      conversationStatus,
-      options,
-    );
+    const showReviewState = hasAttentionState && isCompletedReview(conversationStatus.attention);
+    const sessionStatusKind = sessionIndicatorKind(conversationStatus, options);
     const showRunningPresentation = isRunning
       && sessionStatusKind !== 'action-required';
     const isCurrent = openState === 'current';
@@ -653,7 +512,7 @@ export class SessionBrowser {
     }
 
     const iconEl = item.createDiv({ cls: 'claudian-history-item-icon' });
-    setIcon(iconEl, this.#getHistoryItemIcon(openState, showRunningPresentation));
+    setIcon(iconEl, sessionItemIcon(openState, showRunningPresentation));
 
     const content = item.createDiv({ cls: 'claudian-history-item-content' });
     const titleEl = content.createDiv({
@@ -671,275 +530,130 @@ export class SessionBrowser {
     } else {
       content.createDiv({
         cls: 'claudian-history-item-date',
-        text: this.#getHistoryItemStatusText(
+        text: sessionStatusText(
           conversationStatus,
-          this.#getHistoryItemTimestamp(conversation, options),
+          options.sort === 'created' ? conversation.createdAt : conversation.lastActivityAt,
           options.showOpenStateLabels ?? true,
         ),
       });
     }
 
     if (isSelectable) {
-      const selectConversation = (): void => {
-        runConversationAction(
-          () => this.#runHistoryAction(
-            () => options.onSelectConversation(conversation.id),
-            'Failed to load conversation',
-          ),
-          'Failed to load conversation',
-        );
-      };
-      if (options.showMetadataPopover) {
-        content.addEventListener('keydown', (event) => {
-          if (event.target !== content || (event.key !== 'Enter' && event.key !== ' ')) {
-            return;
-          }
-          event.preventDefault();
-          event.stopPropagation();
-          selectConversation();
-        });
-      }
-
-      content.addEventListener('click', (event) => {
-        event.stopPropagation();
-        if (this.#isHistoryNewTabModifierClick(event) && options.onOpenConversationInNewTab) {
-          event.preventDefault();
-          runConversationAction(
-            () => this.#runHistoryAction(
-              () => options.onOpenConversationInNewTab?.(conversation.id, true),
-              'Failed to load conversation',
-            ),
-            'Failed to load conversation',
-          );
-          return;
-        }
-
-        selectConversation();
-      });
-
-      if (options.onOpenConversationInNewTab) {
-        content.addEventListener('auxclick', (event) => {
-          if (event.button !== 1) return;
-          event.preventDefault();
-          event.stopPropagation();
-          runConversationAction(
-            () => this.#runHistoryAction(
-              () => options.onOpenConversationInNewTab?.(conversation.id, true),
-              'Failed to load conversation',
-            ),
-            'Failed to load conversation',
-          );
-        });
-      }
+      this.#attachConversationOpening(content, conversation.id, options);
     }
 
-    if (this.#canMultiSelect(options)) {
+    if (canMultiSelect(options)) {
       this.selection.attach(item, conversation.id);
     }
+
+    const row = (status: HistoryConversationStatus): SessionRow => ({
+      conversation,
+      status,
+      hasAttention: hasAttentionState,
+      beginRename: () => this.#beginRename(item, conversation, options),
+    });
 
     item.addEventListener('contextmenu', (event) => {
       event.preventDefault();
       event.stopPropagation();
       if (this.selection.isPartOfMultiple(conversation.id)) {
-        this.#showSelectionContextMenu(options, event);
+        this.actions.selectionMenu(
+          options,
+          candidate => this.#statusOf(candidate, options).isRunning,
+        ).showAtMouseEvent(event);
         return;
       }
       this.selection.clear();
-      this.#showHistoryContextMenu(
-        item,
-        conversation,
-        isCurrent,
-        options,
-        event,
-      );
+      // The menu reflects the session's status when it opens, not when the row rendered.
+      const menuStatus = this.#lookUpStatus(conversation.id, isCurrent ? 'current' : 'closed', options);
+      this.actions.rowMenu(row(menuStatus), options).showAtMouseEvent(event);
     });
 
-    const actions = item.createDiv({ cls: 'claudian-history-item-actions' });
-    if (conversation.titleGenerationStatus === 'pending') {
-      const loadingEl = actions.createSpan({
-        cls: 'claudian-action-btn claudian-action-loading',
-      });
-      setIcon(loadingEl, 'loader-2');
-      loadingEl.setAttribute('aria-label', 'Generating title...');
-    } else if (conversation.titleGenerationStatus === 'failed'
-      || (!conversation.titleGenerationStatus && this.deps.plugin.settings.enableAutoTitleGeneration)) {
-      const regenerateBtn = actions.createEl('button', { cls: 'claudian-action-btn', attr: { type: 'button' } });
-      setIcon(regenerateBtn, 'refresh-cw');
-      regenerateBtn.setAttribute('aria-label', conversation.titleGenerationStatus === 'failed'
-        ? 'Regenerate title' : 'Generate title');
-      regenerateBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        runConversationAction(
-          () => this.regenerateTitle(conversation.id),
-          'Failed to generate title',
-        );
-      });
-    }
-
-    if (openState === 'closed' && options.onOpenConversationInNewTab) {
-      const openInNewTabBtn = actions.createEl('button', {
-        cls: 'claudian-action-btn claudian-open-new-tab-btn',
-      });
-      setIcon(openInNewTabBtn, 'square-plus');
-      openInNewTabBtn.setAttribute('aria-label', 'Open in new tab');
-      openInNewTabBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        runConversationAction(
-          () => this.#runHistoryAction(
-            () => options.onOpenConversationInNewTab?.(conversation.id, true),
-            'Failed to load conversation',
-          ),
-          'Failed to load conversation',
-        );
-      });
-    }
-
-    const createDeleteButton = (): void => {
-      const deleteBtn = actions.createEl('button', {
-        cls: 'claudian-action-btn claudian-delete-btn',
-      });
-      setIcon(deleteBtn, 'trash-2');
-      deleteBtn.setAttribute('aria-label', 'Delete');
-      deleteBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        runConversationAction(
-          () => this.#runHistoryAction(
-            () => this.#deleteHistoryConversation(conversation.id, options),
-            'Failed to delete conversation',
-          ),
-          'Failed to delete conversation',
-        );
-      });
-    };
-
-    if (conversation.isLegacySession && options.onAssignConversationToDevice) {
-      const assignDeviceBtn = actions.createEl('button', {
-        cls: 'claudian-action-btn claudian-assign-device-btn',
-      });
-      setIcon(assignDeviceBtn, 'monitor-down');
-      assignDeviceBtn.setAttribute('aria-label', 'Assign to this device');
-      assignDeviceBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        runConversationAction(
-          () => this.#runHistoryAction(
-            () => options.onAssignConversationToDevice?.(conversation.id),
-            'Failed to assign session to this device',
-          ),
-          'Failed to assign session to this device',
-        );
-      });
-    }
-
-    if (options.sessionActionMode === 'active') {
-      if (!hasAttentionState) {
-        const isPinned = conversation.isPinned === true;
-        if (options.showInlinePinAction !== false) {
-          const pinBtn = actions.createEl('button', {
-            cls: 'claudian-action-btn claudian-pin-btn',
-          });
-          setIcon(pinBtn, isPinned ? 'pin-off' : 'pin');
-          pinBtn.setAttribute('aria-label', isPinned ? 'Unpin' : 'Pin');
-          pinBtn.addEventListener('click', (event) => {
-            event.stopPropagation();
-            runConversationAction(
-              () => this.#runHistoryAction(
-                () => options.onSetConversationPinned?.(conversation.id, !isPinned),
-                isPinned ? 'Failed to unpin session' : 'Failed to pin session',
-              ),
-              isPinned ? 'Failed to unpin session' : 'Failed to pin session',
-            );
-          });
-        }
-
-        const archiveBtn = actions.createEl('button', {
-          cls: 'claudian-action-btn claudian-archive-btn',
-        });
-        setIcon(archiveBtn, 'archive');
-        archiveBtn.setAttribute(
-          'aria-label',
-          isRunning ? 'Cannot archive a running session' : 'Archive',
-        );
-        if (isRunning) {
-          archiveBtn.setAttribute('disabled', '');
-        } else {
-          archiveBtn.addEventListener('click', (event) => {
-            event.stopPropagation();
-            runConversationAction(
-              () => this.#runHistoryAction(
-                () => options.onSetConversationArchived?.(conversation.id, true),
-                'Failed to archive session',
-              ),
-              'Failed to archive session',
-            );
-          });
-        }
-      }
-    } else if (options.sessionActionMode === 'archived') {
-      const restoreBtn = actions.createEl('button', {
-        cls: 'claudian-action-btn claudian-restore-btn',
-      });
-      setIcon(restoreBtn, 'undo-2');
-      restoreBtn.setAttribute('aria-label', 'Restore');
-      restoreBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        runConversationAction(
-          () => this.#runHistoryAction(
-            () => options.onSetConversationArchived?.(conversation.id, false),
-            'Failed to restore session',
-          ),
-          'Failed to restore session',
-        );
-      });
-      createDeleteButton();
-    } else {
-      const renameBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
-      setIcon(renameBtn, 'pencil');
-      renameBtn.setAttribute('aria-label', 'Rename');
-      renameBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        this.#showRenameEditor(item, conversation.id, conversation.title, options);
-      });
-      createDeleteButton();
-    }
+    const actionsEl = item.createDiv({ cls: 'claudian-history-item-actions' });
+    this.#renderTitleGenerationAction(actionsEl, conversation);
+    this.actions.renderRowButtons(actionsEl, row(conversationStatus), options);
 
     if (sessionStatusKind) {
       this.#createSessionStatusIndicator(item, sessionStatusKind);
     }
   }
 
-  #getSessionStatusIndicatorKind(
-    status: HistoryConversationStatus,
+  #attachConversationOpening(
+    content: HTMLElement,
+    conversationId: string,
     options: HistoryRenderOptions,
-  ): SessionStatusIndicatorKind | null {
-    if (options.showOpenStateLabels !== false) return null;
+  ): void {
+    const failureMessage = 'Failed to load conversation';
+    const selectConversation = (): void => {
+      runSessionAction(() => options.onSelectConversation(conversationId), failureMessage);
+    };
+    const openInNewTab = (): void => {
+      runSessionAction(
+        () => options.onOpenConversationInNewTab?.(conversationId, true),
+        failureMessage,
+      );
+    };
+    if (options.showMetadataPopover) {
+      content.addEventListener('keydown', (event) => {
+        if (event.target !== content || (event.key !== 'Enter' && event.key !== ' ')) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        selectConversation();
+      });
+    }
 
-    const canShowAttention = options.showAttentionState === true
-      && options.sessionScope !== 'archived';
-    if (canShowAttention && status.attention?.kind === 'action-required') {
-      return 'action-required';
+    content.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (isNewTabModifierClick(event) && options.onOpenConversationInNewTab) {
+        event.preventDefault();
+        openInNewTab();
+        return;
+      }
+
+      selectConversation();
+    });
+
+    if (options.onOpenConversationInNewTab) {
+      content.addEventListener('auxclick', (event) => {
+        if (event.button !== 1) return;
+        event.preventDefault();
+        event.stopPropagation();
+        openInNewTab();
+      });
     }
-    if (status.isRunning) return 'running';
-    if (
-      canShowAttention
-      && status.attention?.kind === 'review'
-      && status.attention.outcome === 'error'
-    ) {
-      return 'error';
-    }
-    return null;
   }
 
-  #getGroupSessionStatusIndicatorKind(
-    statuses: readonly HistoryConversationStatus[],
-    options: HistoryRenderOptions,
-  ): SessionStatusIndicatorKind | null {
-    const kinds = statuses.map(status => (
-      this.#getSessionStatusIndicatorKind(status, options)
-    ));
-    if (kinds.includes('action-required')) return 'action-required';
-    if (kinds.includes('running')) return 'running';
-    if (kinds.includes('error')) return 'error';
-    return null;
+  #renderTitleGenerationAction(actionsEl: HTMLElement, conversation: ConversationMeta): void {
+    if (conversation.titleGenerationStatus === 'pending') {
+      const loadingEl = actionsEl.createSpan({
+        cls: 'claudian-action-btn claudian-action-loading',
+      });
+      setIcon(loadingEl, 'loader-2');
+      loadingEl.setAttribute('aria-label', 'Generating title...');
+      return;
+    }
+    if (
+      conversation.titleGenerationStatus !== 'failed'
+      && (conversation.titleGenerationStatus || !this.deps.plugin.settings.enableAutoTitleGeneration)
+    ) {
+      return;
+    }
+    const regenerateBtn = actionsEl.createEl('button', {
+      cls: 'claudian-action-btn',
+      attr: { type: 'button' },
+    });
+    setIcon(regenerateBtn, 'refresh-cw');
+    regenerateBtn.setAttribute('aria-label', conversation.titleGenerationStatus === 'failed'
+      ? 'Regenerate title' : 'Generate title');
+    regenerateBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      runSessionAction(
+        () => this.titles.regenerate(conversation.id),
+        'Failed to generate title',
+      );
+    });
   }
 
   #createSessionStatusIndicator(
@@ -968,108 +682,32 @@ export class SessionBrowser {
               : '',
           ].filter(Boolean).join(' '),
     });
-    const icon = kind === 'action-required'
-      ? 'alert-circle'
-      : kind === 'error'
-        ? 'x-circle'
-        : 'loader-2';
-    const label = kind === 'action-required'
-      ? 'Needs your input'
-      : kind === 'error'
-        ? 'Stopped with an error'
-        : 'Running';
+    const { icon, label } = indicatorPresentation(kind);
     setIcon(indicator, icon);
     indicator.setAttribute('aria-label', label);
     return indicator;
   }
 
-  #getHistoryConversationStatusForMetadata(
+  #statusOf(
     conversation: ConversationMeta,
     options: HistoryRenderOptions,
   ): HistoryConversationStatus {
-    const fallbackOpenState: HistoryConversationOpenState =
-      conversation.id === this.deps.getCurrentConversationId() ? 'current' : 'closed';
-    return this.getHistoryConversationStatus(
+    return this.#lookUpStatus(
       conversation.id,
-      fallbackOpenState,
+      conversation.id === this.deps.getCurrentConversationId() ? 'current' : 'closed',
       options,
     );
   }
 
-  #getHistoryItemTimestamp(
-    conversation: ConversationMeta,
-    options: HistoryRenderOptions,
-  ): number {
-    if (options.sort === 'created') return conversation.createdAt;
-    return conversation.lastActivityAt;
-  }
-
-  private getHistoryConversationStatus(
+  #lookUpStatus(
     conversationId: string,
     fallbackOpenState: HistoryConversationOpenState,
     options: HistoryRenderOptions,
   ): HistoryConversationStatus {
-    const status = options.getConversationStatus?.(conversationId);
-    if (status) return status;
-
-    return {
+    return options.getConversationStatus?.(conversationId) ?? {
       openState: options.getConversationOpenState?.(conversationId) ?? fallbackOpenState,
       isRunning: false,
     };
-  }
-
-  #getHistoryItemStatusText(
-    status: HistoryConversationStatus,
-    timestamp: number,
-    showOpenStateLabels: boolean,
-  ): string {
-    const { openState, isRunning } = status;
-    const location = status.location ?? 'current-view';
-
-    if (!showOpenStateLabels) {
-      return this.formatDate(timestamp);
-    }
-
-    if (openState !== 'closed' && location === 'other-view') {
-      return isRunning ? 'Running in another pane' : 'Open in another pane';
-    }
-
-    if (isRunning) {
-      if (openState === 'closed') return 'Running';
-      return `Running in ${this.#getHistoryTabLabel(status)}`;
-    }
-
-    switch (openState) {
-      case 'current':
-        return typeof status.tabIndex === 'number'
-          ? `Current tab ${status.tabIndex}`
-          : 'Current session';
-      case 'open':
-        return `Open in ${this.#getHistoryTabLabel(status)}`;
-      case 'closed':
-        return this.formatDate(timestamp);
-    }
-  }
-
-  #getHistoryTabLabel(status: HistoryConversationStatus): string {
-    if (typeof status.tabIndex === 'number') {
-      return `tab ${status.tabIndex}`;
-    }
-
-    if (status.openState === 'current') {
-      return 'current tab';
-    }
-
-    return 'tab';
-  }
-
-  #getHistoryItemIcon(
-    openState: HistoryConversationOpenState,
-    isRunning: boolean,
-  ): string {
-    if (isRunning) return 'loader-2';
-    if (openState === 'current') return 'message-square-dot';
-    return 'message-square';
   }
 
   #renderRecencyDivider(
@@ -1079,25 +717,13 @@ export class SessionBrowser {
   ): void {
     const divider = list.createDiv({ cls: 'claudian-session-recency-divider' });
     divider.createSpan({ cls: 'claudian-session-recency-divider-label', text: section.label });
-    const onSetConversationsArchived = options.onSetConversationsArchived;
-    const isArchivedView = options.sessionActionMode === 'archived';
-    if (!isArchivedView && (options.sessionActionMode !== 'active' || !onSetConversationsArchived)) return;
+    const buildMenu = this.actions.groupMenu(
+      { conversations: section.conversations },
+      options,
+      conversation => this.#statusOf(conversation, options).isRunning,
+    );
+    if (!buildMenu) return;
 
-    const buildMenu = (): Menu => {
-      const menu = new Menu().setUseNativeMenu(false);
-      if (isArchivedView) {
-        this.#addRestoreAndDeleteAllMenuItems(menu, section.conversations, options);
-      } else if (onSetConversationsArchived) {
-        this.#addArchiveAllMenuItem(
-          menu,
-          section.conversations,
-          options,
-          onSetConversationsArchived,
-          'Failed to archive sessions',
-        );
-      }
-      return menu;
-    };
     // A native button keeps the group actions reachable by keyboard; right-click stays a shortcut.
     const actionsButton = divider.createEl('button', {
       cls: 'claudian-session-recency-divider-action',
@@ -1116,414 +742,26 @@ export class SessionBrowser {
     });
   }
 
-  /** Archive-pane group actions: restore or permanently delete every session in the group. */
-  #addRestoreAndDeleteAllMenuItems(
-    menu: Menu,
-    conversations: readonly ConversationMeta[],
-    options: HistoryRenderOptions,
-  ): void {
-    const ids = conversations.map(conversation => conversation.id);
-    const onRestoreConversations = options.onRestoreConversations;
-    if (onRestoreConversations) {
-      menu.addItem(menuItem => menuItem
-        .setTitle('Restore all sessions')
-        .setDisabled(ids.length === 0)
-        .onClick(() => {
-          runConversationAction(() => onRestoreConversations(ids), 'Failed to restore sessions');
-        }));
-    }
-    menu.addItem(menuItem => menuItem
-      .setTitle('Delete all sessions')
-      .setDisabled(ids.length === 0)
-      .onClick(() => {
-        runConversationAction(
-          () => this.#deleteHistoryConversations(ids, options),
-          'Failed to delete sessions',
-        );
-      }));
-  }
-
-  #addArchiveAllMenuItem(
-    menu: Menu,
-    conversations: readonly ConversationMeta[],
-    options: HistoryRenderOptions,
-    archive: (ids: readonly string[]) => Promise<void>,
-    failureMessage: string,
-  ): void {
-    const archivableIds = conversations
-      .filter(conversation => (
-        !this.#getHistoryConversationStatusForMetadata(conversation, options).isRunning
-      ))
-      .map(conversation => conversation.id);
-    menu.addItem((menuItem) => {
-      menuItem
-        .setTitle('Archive all sessions')
-        .setDisabled(archivableIds.length === 0);
-      if (archivableIds.length > 0) {
-        menuItem.onClick(() => {
-          runConversationAction(() => archive(archivableIds), failureMessage);
-        });
-      }
-    });
-  }
-
-  #canMultiSelect(options: HistoryRenderOptions): boolean {
-    return options.sessionActionMode === 'archived'
-      ? !!options.onRestoreConversations
-      : options.sessionActionMode === 'active' && !!options.onSetConversationsArchived;
-  }
-
-  #showSelectionContextMenu(
-    options: HistoryRenderOptions,
-    event: MouseEvent,
-  ): void {
-    const { onSetConversationsArchived, onSetConversationsPinned, onRestoreConversations } = options;
-    const isArchivedView = options.sessionActionMode === 'archived';
-    const selected = this.deps.plugin.getConversationList()
-      .filter(conversation => (
-        this.selection.has(conversation.id)
-        && (conversation.isArchived === true) === isArchivedView
-      ));
-    const sessionCount = (count: number): string => `${count} ${count === 1 ? 'session' : 'sessions'}`;
-    const menu = new Menu().setUseNativeMenu(false);
-
-    if (isArchivedView) {
-      const ids = selected.map(conversation => conversation.id);
-      if (onRestoreConversations) {
-        menu.addItem(menuItem => menuItem
-          .setTitle(`Restore ${sessionCount(ids.length)}`)
-          .onClick(() => {
-            this.selection.clear();
-            runConversationAction(() => onRestoreConversations(ids), 'Failed to restore sessions');
-          }));
-      }
-      menu.addItem(menuItem => menuItem
-        .setTitle(`Delete ${sessionCount(ids.length)}`)
-        .onClick(() => {
-          this.selection.clear();
-          runConversationAction(
-            () => this.#deleteHistoryConversations(ids, options),
-            'Failed to delete sessions',
-          );
-        }));
-      menu.showAtMouseEvent(event);
-      return;
-    }
-
-    if (onSetConversationsPinned) {
-      const unpinnedIds = selected
-        .filter(conversation => !conversation.isPinned)
-        .map(conversation => conversation.id);
-      const isPinning = unpinnedIds.length > 0;
-      const pinIds = isPinning ? unpinnedIds : selected.map(conversation => conversation.id);
-      menu.addItem(menuItem => menuItem
-        .setTitle(`${isPinning ? 'Pin' : 'Unpin'} ${sessionCount(pinIds.length)}`)
-        .onClick(() => {
-          this.selection.clear();
-          runConversationAction(
-            () => onSetConversationsPinned(pinIds, isPinning),
-            isPinning ? 'Failed to pin sessions' : 'Failed to unpin sessions',
-          );
-        }));
-    }
-
-    const archivableIds = selected
-      .filter(conversation => !this.#getHistoryConversationStatusForMetadata(conversation, options).isRunning)
-      .map(conversation => conversation.id);
-    menu.addItem((menuItem) => {
-      menuItem
-        .setTitle(`Archive ${sessionCount(archivableIds.length)}`)
-        .setDisabled(archivableIds.length === 0);
-      if (archivableIds.length > 0 && onSetConversationsArchived) {
-        menuItem.onClick(() => {
-          this.selection.clear();
-          runConversationAction(
-            () => onSetConversationsArchived(archivableIds),
-            'Failed to archive sessions',
-          );
-        });
-      }
-    });
-    menu.showAtMouseEvent(event);
-  }
-
-  #isHistoryNewTabModifierClick(event: MouseEvent): boolean {
-    return !event.altKey && !event.shiftKey && (event.metaKey || event.ctrlKey);
-  }
-
-  async #runHistoryAction(
-    action: () => Promise<void> | void,
-    errorMessage: string,
-  ): Promise<void> {
-    try {
-      await action();
-    } catch {
-      new Notice(errorMessage);
-    }
-  }
-
-  #showHistoryContextMenu(
+  #beginRename(
     item: HTMLElement,
     conversation: ConversationMeta,
-    isCurrent: boolean,
     options: HistoryRenderOptions,
-    event: MouseEvent,
   ): void {
-    const { id: conversationId, title } = conversation;
-    const menu = new Menu().setUseNativeMenu(false);
-    const fallbackOpenState: HistoryConversationOpenState = isCurrent ? 'current' : 'closed';
-    const { openState, isRunning } = this.getHistoryConversationStatus(
-      conversationId,
-      fallbackOpenState,
-      options,
-    );
-
-    if (options.showOpenStateActions !== false && openState !== 'current') {
-      if (openState === 'closed' && options.onOpenConversationInNewTab) {
-        menu.addItem((menuItem) => menuItem
-          .setTitle('Open in new tab')
-          .onClick(() => {
-            void this.#runHistoryAction(
-              () => options.onOpenConversationInNewTab?.(conversationId, true),
-              'Failed to load conversation',
-            );
-          }));
-        menu.addItem((menuItem) => menuItem
-          .setTitle('Open in background tab')
-          .onClick(() => {
-            void this.#runHistoryAction(
-              () => options.onOpenConversationInNewTab?.(conversationId, false),
-              'Failed to load conversation',
-            );
-          }));
-      } else if (openState === 'open') {
-        menu.addItem((menuItem) => menuItem
-          .setTitle('Switch to open session')
-          .onClick(() => {
-            void this.#runHistoryAction(
-              () => options.onSelectConversation(conversationId),
-              'Failed to load conversation',
-            );
-          }));
-      }
-    }
-
-    if (options.sessionActionMode === 'archived') {
-      menu.addItem((menuItem) => menuItem
-        .setTitle('Restore')
-        .onClick(() => {
-          void this.#runHistoryAction(
-            () => options.onSetConversationArchived?.(conversationId, false),
-            'Failed to restore session',
-          );
-        }));
-      menu.addItem((menuItem) => menuItem
-        .setTitle('Delete')
-        .onClick(() => {
-          void this.#runHistoryAction(
-            () => this.#deleteHistoryConversation(conversationId, options),
-            'Failed to delete conversation',
-          );
-        }));
-      menu.showAtMouseEvent(event);
-      return;
-    }
-
-    if (options.onSetConversationPinned) {
-      const isPinned = conversation.isPinned === true;
-      menu.addItem((menuItem) => menuItem
-        .setTitle(isPinned ? 'Unpin' : 'Pin')
-        .onClick(() => {
-          void this.#runHistoryAction(
-            () => options.onSetConversationPinned?.(conversationId, !isPinned),
-            isPinned ? 'Failed to unpin session' : 'Failed to pin session',
-          );
-        }));
-    }
-
-    if (options.sessionActionMode === 'active') {
-      menu.addItem((menuItem) => menuItem
-        .setTitle('Rename')
-        .onClick(() => {
-          this.#showRenameEditor(item, conversationId, title, options);
-        }));
-      menu.addItem((menuItem) => {
-        menuItem
-          .setTitle('Archive')
-          .setDisabled(isRunning);
-        if (!isRunning) {
-          menuItem.onClick(() => {
-            void this.#runHistoryAction(
-              () => options.onSetConversationArchived?.(conversationId, true),
-              'Failed to archive session',
-            );
-          });
-        }
+    const beginRename = (targetItem: HTMLElement): void => {
+      this.inlineRename.begin(targetItem, {
+        currentTitle: conversation.title,
+        rename: title => this.deps.plugin.renameConversation(conversation.id, title),
+        onFinished: () => options.onRerender(),
       });
-      menu.showAtMouseEvent(event);
-      return;
-    }
-
-    menu.addItem((menuItem) => menuItem
-      .setTitle('Rename')
-      .onClick(() => {
-        this.#showRenameEditor(item, conversationId, title, options);
-      }));
-    menu.addItem((menuItem) => menuItem
-      .setTitle('Delete')
-      .onClick(() => {
-        void this.#runHistoryAction(
-          () => this.#deleteHistoryConversation(conversationId, options),
-          'Failed to delete conversation',
-        );
-      }));
-
-    menu.showAtMouseEvent(event);
-  }
-
-  /** Deletes sessions after one confirmation; the conversation lifecycle owns the running guard. */
-  async #deleteHistoryConversations(
-    conversationIds: readonly string[],
-    options: HistoryRenderOptions,
-  ): Promise<void> {
-    const { plugin } = this.deps;
-    const count = conversationIds.length;
-    const confirmed = await confirmDelete(
-      plugin.app,
-      `Permanently delete ${count} ${count === 1 ? 'session' : 'sessions'}?`,
-    );
-    if (!confirmed) return;
-
-    try {
-      await plugin.conversationLifecycle.delete(conversationIds);
-    } finally {
-      options.onRerender();
-    }
-  }
-
-  async #deleteHistoryConversation(
-    conversationId: string,
-    options: HistoryRenderOptions,
-  ): Promise<void> {
-    await this.deps.plugin.conversationLifecycle.delete([conversationId]);
-    options.onRerender();
-  }
-
-  #showRenameEditor(
-    item: HTMLElement,
-    convId: string,
-    currentTitle: string,
-    options: HistoryRenderOptions,
-  ): void {
-    const beginRename = (targetItem: HTMLElement) => {
-      this.#showRenameInput(targetItem, convId, currentTitle, options);
     };
     if (options.onRequestInlineRename) {
       options.onRequestInlineRename({
         beginRename,
-        conversationId: convId,
+        conversationId: conversation.id,
       });
       return;
     }
 
     beginRename(item);
-  }
-
-  /** Shows inline rename input for a conversation. */
-  #showRenameInput(
-    item: HTMLElement,
-    convId: string,
-    currentTitle: string,
-    options: HistoryRenderOptions,
-  ): void {
-    const titleEl = item.querySelector('.claudian-history-item-title') as HTMLElement;
-    if (!titleEl) return;
-
-    const input = item.createEl('input', {
-      cls: 'claudian-rename-input',
-      attr: { type: 'text', value: currentTitle },
-    });
-
-    titleEl.replaceWith(input);
-    input.focus();
-    input.select();
-
-    let isFinishing = false;
-    const cancelRename = () => {
-      input.value = currentTitle;
-      input.blur();
-    };
-    this.activeInlineRename = { cancel: cancelRename, input };
-    const finishRename = async () => {
-      if (isFinishing) return;
-      isFinishing = true;
-      const newTitle = input.value.trim();
-      if (!newTitle || newTitle === currentTitle) {
-        isFinishing = false;
-        options.onRerender();
-        return;
-      }
-
-      try {
-        await this.deps.plugin.renameConversation(convId, newTitle);
-        options.onRerender();
-      } catch {
-        new Notice('Failed to rename conversation');
-      } finally {
-        isFinishing = false;
-      }
-    };
-
-    input.addEventListener('blur', () => {
-      if (this.activeInlineRename?.input === input) {
-        this.activeInlineRename = null;
-      }
-      runConversationAction(finishRename, 'Failed to rename conversation');
-    });
-    input.addEventListener('keydown', (e) => {
-      // Check !e.isComposing for IME support (Chinese, Japanese, Korean, etc.)
-      if (e.key === 'Enter' && !e.isComposing) {
-        input.blur();
-      } else if (e.key === 'Escape' && !e.isComposing) {
-        e.preventDefault();
-        e.stopPropagation();
-        cancelRename();
-      }
-    });
-  }
-
-  /** Regenerates AI title for a conversation. */
-  async regenerateTitle(conversationId: string): Promise<void> {
-    await this.titles.regenerate(conversationId);
-  }
-
-  /** Formats a timestamp for display. */
-  formatDate(timestamp: number): string {
-    const date = new Date(timestamp);
-    const now = new Date();
-
-    if (date.toDateString() === now.toDateString()) {
-      return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
-    }
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  }
-
-  // ============================================
-  // History Dropdown Rendering (for ClaudianView)
-  // ============================================
-
-  /**
-   * Renders the history dropdown content to a provided container.
-   * Used by ClaudianView to render the dropdown with custom selection callback.
-   */
-  renderHistoryDropdown(
-    container: HTMLElement,
-    options: HistorySurfaceRenderOptions,
-  ): void {
-    this.#renderHistoryItems(container, {
-      ...options,
-      onRerender: options.onRerender
-        ?? (() => this.renderHistoryDropdown(container, options)),
-    });
   }
 }

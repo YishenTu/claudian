@@ -4,16 +4,15 @@ import type { ProviderSelectionSnapshot, ProviderSessionReference } from '@/core
 import type { BrowserSelectionContext } from '@/core/prompt/browserContext';
 import type { CanvasSelectionContext } from '@/core/prompt/canvasContext';
 import type { EditorSelectionContext } from '@/core/prompt/editorContext';
-
 import type {
   ChatMessage,
   ImageAttachment,
   SubagentInfo,
   ToolCallInfo,
   UsageInfo,
-} from '../../../core/types';
-import type { ThinkingBlockState } from '../rendering/ThinkingBlockRenderer';
-import type { WriteEditState } from '../rendering/WriteEditRenderer';
+} from '@/core/types';
+import type { ThinkingBlockState } from '@/features/chat/rendering/ThinkingBlockRenderer';
+import type { WriteEditState } from '@/features/chat/rendering/tools/WriteEditRenderer';
 
 export interface ChatTurnRequest {
   selections?: readonly ProviderSelectionSnapshot[];
@@ -32,13 +31,10 @@ export interface ChatTurnRequest {
 export interface QueuedMessage {
   /** Transient delivery observer; queues never persist callbacks. */
   onDelivery?: (accepted: boolean) => void;
+  /** Display text; the turn request carries what is sent. */
   content: string;
-  images?: ImageAttachment[];
-  editorContext: EditorSelectionContext | null;
-  browserContext?: BrowserSelectionContext | null;
-  canvasContext: CanvasSelectionContext | null;
   /** Provider-neutral turn snapshot captured at enqueue time. */
-  turnRequest?: ChatTurnRequest;
+  turnRequest: ChatTurnRequest;
 }
 
 /** Pending tool call waiting to be rendered (buffered until input is complete). */
@@ -113,8 +109,6 @@ export interface ChatStateData {
 
   // Context window usage
   usage: UsageInfo | null;
-  // Flag to ignore usage updates (during session reset)
-  ignoreUsageUpdates: boolean;
 
   // Runtime-only attention state
   attention: TabAttention;

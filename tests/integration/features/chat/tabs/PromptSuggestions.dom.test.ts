@@ -13,6 +13,7 @@ import type { ClaudianSettings, Conversation } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { activateTab, deactivateTab, destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
+import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 const sdkMock = sdkModule as unknown as {
   resetMockMessages(): void;
@@ -92,6 +93,7 @@ async function createView(fakeBackend?: FakeSideBackend) {
   const tab = await createTabRuntime({
     plugin, conversation, component: new Component(),
     containerEl: document.body.createDiv(),
+    mentionDataProvider: new VaultMentionDataProvider(plugin.app),
     getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
   });
   tab.hydrationState = 'ready';
@@ -152,10 +154,10 @@ function returnToMainComposer(view: View): void {
 /** Composer activity that neither starts a main turn nor changes the main tab's model. */
 const retainingActivity = {
   'rewind in progress': async (view: View) => {
-    view.tab.state.isRewinding = true;
+    jest.spyOn(view.tab.state, 'isRewinding', 'get').mockReturnValue(true);
     view.tab.dom.inputEl.value = 'Retry later';
     await view.tab.controllers.inputController.sendMessage();
-    view.tab.state.isRewinding = false;
+    jest.spyOn(view.tab.state, 'isRewinding', 'get').mockReturnValue(false);
     expect(view.tab.dom.inputEl.value).toBe('Retry later');
   },
   'rejected side command': async (view: View) => {

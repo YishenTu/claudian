@@ -1,0 +1,346 @@
+import { Notice } from 'obsidian';
+import * as path from 'path';
+
+import { normalizeImageMediaType } from '@/core/execution/imageAttachment';
+import type { ImageAttachment, ImageMediaType } from '@/core/types';
+import { ComposerContextTray } from '@/features/chat/composer/ComposerContextTray';
+import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
+import { ImagePreviewModal } from '@/shared/modals/ImagePreviewModal';
+
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+
+const IMAGE_EXTENSIONS: Record<string, ImageMediaType> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+};
+
+export interface ImageContextCallbacks {
+  onUserImagesChanged?: () => void;
+}
+
+export class ImageContextManager {
+  private callbacks: ImageContextCallbacks;
+  private containerEl: HTMLElement;
+  private contextTray: ComposerContextTray;
+  private ownedContextTray: ComposerContextTray | null = null;
+  private inputEl: ComposerInputElement;
+  private dropOverlay: HTMLElement | null = null;
+  private dropZoneEl: HTMLElement | null = null;
+  private attachedImages: Map<string, ImageAttachment> = new Map();
+  private readonly imagePreviewModal = new ImagePreviewModal();
+  private destroyed = false;
+  private enabled = true;
+  private attachmentGeneration = 0;
+  private readonly dragEnterHandler = (event: DragEvent): void => this.handleDragEnter(event);
+  private readonly dragOverHandler = (event: DragEvent): void => this.handleDragOver(event);
+  private readonly dragLeaveHandler = (event: DragEvent): void => this.handleDragLeave(event);
+  private readonly dropHandler = (event: DragEvent): void => {
+    void this.handleDrop(event);
+  };
+  private readonly pasteHandler = (event: ClipboardEvent): void => {
+    void this.#handlePaste(event);
+  };
+
+  constructor(
+    containerEl: HTMLElement,
+    inputEl: ComposerInputElement,
+    callbacks: ImageContextCallbacks,
+    previewContainerEl?: HTMLElement,
+    contextTray?: ComposerContextTray,
+  ) {
+    this.containerEl = containerEl;
+    this.inputEl = inputEl;
+    this.callbacks = callbacks;
+    const ownedTrayContainer = contextTray
+      ? null
+      : (previewContainerEl ?? containerEl).createDiv({ cls: 'claudian-context-row' });
+    this.contextTray = contextTray ?? new ComposerContextTray(ownedTrayContainer!);
+    if (!contextTray) {
+      this.ownedContextTray = this.contextTray;
+    }
+
+    try {
+      this.#setupDragAndDrop();
+      this.#setupPasteHandler();
+    } catch (error) {
+      this.destroy();
+      throw error;
+    }
+  }
+
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    if (!enabled) {
+      this.clearImages();
+    }
+  }
+
+  getAttachedImages(): ImageAttachment[] {
+    return Array.from(this.attachedImages.values());
+  }
+
+  hasImages(): boolean {
+    return this.attachedImages.size > 0;
+  }
+
+  clearImages() {
+    this.attachmentGeneration += 1;
+    this.attachedImages.clear();
+    this.updateImagePreview();
+  }
+
+  /** Sets images directly (used for queued messages). */
+  setImages(images: ImageAttachment[]) {
+    this.attachmentGeneration += 1;
+    this.attachedImages.clear();
+    for (const image of images) {
+      this.attachedImages.set(image.id, image);
+    }
+    this.updateImagePreview();
+  }
+
+  destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.inputEl.removeEventListener('paste', this.pasteHandler, true);
+    if (this.dropZoneEl) {
+      this.dropZoneEl.removeEventListener('dragenter', this.dragEnterHandler);
+      this.dropZoneEl.removeEventListener('dragover', this.dragOverHandler);
+      this.dropZoneEl.removeEventListener('dragleave', this.dragLeaveHandler);
+      this.dropZoneEl.removeEventListener('drop', this.dropHandler);
+      this.dropZoneEl = null;
+    }
+    this.dropOverlay?.remove();
+    this.dropOverlay = null;
+    this.imagePreviewModal.close();
+    this.attachedImages.clear();
+    this.contextTray.clearItems('images');
+    this.ownedContextTray?.destroy();
+    this.ownedContextTray = null;
+  }
+
+  #setupDragAndDrop() {
+    const inputWrapper = this.containerEl.querySelector('.claudian-input-wrapper') as HTMLElement;
+    if (!inputWrapper) return;
+    this.dropZoneEl = inputWrapper;
+
+    this.dropOverlay = inputWrapper.createDiv({ cls: 'claudian-drop-overlay' });
+    const dropContent = this.dropOverlay.createDiv({ cls: 'claudian-drop-content' });
+    const svg = dropContent.createSvg('svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '32');
+    svg.setAttribute('height', '32');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    const pathEl = svg.createSvg('path');
+    pathEl.setAttribute('d', 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4');
+    const polyline = svg.createSvg('polyline');
+    polyline.setAttribute('points', '17 8 12 3 7 8');
+    const line = svg.createSvg('line');
+    line.setAttribute('x1', '12');
+    line.setAttribute('y1', '3');
+    line.setAttribute('x2', '12');
+    line.setAttribute('y2', '15');
+    dropContent.createSpan({ text: 'Drop image here' });
+
+    inputWrapper.addEventListener('dragenter', this.dragEnterHandler);
+    inputWrapper.addEventListener('dragover', this.dragOverHandler);
+    inputWrapper.addEventListener('dragleave', this.dragLeaveHandler);
+    inputWrapper.addEventListener('drop', this.dropHandler);
+  }
+
+  private handleDragEnter(e: DragEvent) {
+    if (this.destroyed) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (e.dataTransfer?.types.includes('Files')) {
+      this.dropOverlay?.addClass('visible');
+    }
+  }
+
+  private handleDragOver(e: DragEvent) {
+    if (this.destroyed) return;
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  private handleDragLeave(e: DragEvent) {
+    if (this.destroyed) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const inputWrapper = this.containerEl.querySelector('.claudian-input-wrapper');
+    if (!inputWrapper) {
+      this.dropOverlay?.removeClass('visible');
+      return;
+    }
+
+    const rect = inputWrapper.getBoundingClientRect();
+    if (
+      e.clientX <= rect.left ||
+      e.clientX >= rect.right ||
+      e.clientY <= rect.top ||
+      e.clientY >= rect.bottom
+    ) {
+      this.dropOverlay?.removeClass('visible');
+    }
+  }
+
+  private async handleDrop(e: DragEvent) {
+    if (this.destroyed) return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.dropOverlay?.removeClass('visible');
+
+    const files = e.dataTransfer?.files;
+    if (!files) return;
+
+    const generation = this.attachmentGeneration;
+    for (let i = 0; i < files.length; i++) {
+      if (this.destroyed || generation !== this.attachmentGeneration) return;
+      const file = files[i];
+      if (this.isImageFile(file)) {
+        await this.addImageFromFile(file, 'drop');
+      }
+    }
+  }
+
+  #setupPasteHandler() {
+    this.inputEl.addEventListener('paste', this.pasteHandler, true);
+  }
+
+  async #handlePaste(e: ClipboardEvent): Promise<void> {
+    if (this.destroyed) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          await this.addImageFromFile(file, 'paste');
+        }
+        return;
+      }
+    }
+  }
+
+  private isImageFile(file: File): boolean {
+    return file.type.startsWith('image/') && this.getMediaType(file.name) !== null;
+  }
+
+  private getMediaType(filename: string): ImageMediaType | null {
+    const ext = path.extname(filename).toLowerCase();
+    return IMAGE_EXTENSIONS[ext] || null;
+  }
+
+  private async addImageFromFile(file: File, source: 'paste' | 'drop'): Promise<boolean> {
+    if (this.destroyed) return false;
+    if (!this.enabled) {
+      new Notice('Image attachments are not supported by this provider.');
+      return false;
+    }
+
+    if (file.size > MAX_IMAGE_SIZE) {
+      this.notifyImageError(`Image exceeds ${this.formatSize(MAX_IMAGE_SIZE)} limit.`);
+      return false;
+    }
+
+    const mediaType = this.getMediaType(file.name) ?? normalizeImageMediaType(file.type);
+    if (!mediaType) {
+      this.notifyImageError('Unsupported image type.');
+      return false;
+    }
+
+    const generation = this.attachmentGeneration;
+    try {
+      const base64 = await this.fileToBase64(file);
+      if (this.destroyed || !this.enabled || generation !== this.attachmentGeneration) return false;
+
+      const attachment: ImageAttachment = {
+        id: this.generateId(),
+        name: file.name || `image-${Date.now()}.${mediaType.split('/')[1]}`,
+        mediaType,
+        data: base64,
+        size: file.size,
+        source,
+      };
+
+      this.attachedImages.set(attachment.id, attachment);
+      this.updateImagePreview();
+      this.callbacks.onUserImagesChanged?.();
+      return true;
+    } catch (error) {
+      if (this.destroyed || !this.enabled || generation !== this.attachmentGeneration) return false;
+      this.notifyImageError('Failed to attach image.', error);
+      return false;
+    }
+  }
+
+  private async fileToBase64(file: File): Promise<string> {
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    return buffer.toString('base64');
+  }
+
+  // ============================================
+  // Private: Image Preview
+  // ============================================
+
+  private updateImagePreview() {
+    if (this.attachedImages.size === 0) {
+      this.contextTray.clearItems('images');
+      return;
+    }
+
+    const images = Array.from(this.attachedImages);
+    this.contextTray.setItems('images', images.map(([id, image], index) => ({
+      id,
+      kind: 'image' as const,
+      label: images.length === 1 ? 'Image' : `Image ${index + 1}`,
+      ariaLabel: `Image attachment: ${image.name} · ${this.formatSize(image.size)}`,
+      onActivate: () => this.showFullImage(image),
+      onRemove: () => {
+        this.attachedImages.delete(id);
+        this.updateImagePreview();
+        this.callbacks.onUserImagesChanged?.();
+      },
+    })));
+  }
+
+  private showFullImage(image: ImageAttachment) {
+    if (this.destroyed) return;
+
+    const ownerDocument = this.containerEl.ownerDocument ?? window.document;
+    this.imagePreviewModal.open(ownerDocument, image);
+  }
+
+  private generateId(): string {
+    return `img-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  }
+
+  private formatSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  private notifyImageError(message: string, error?: unknown) {
+    let userMessage = message;
+    if (error instanceof Error) {
+      if (error.message.includes('ENOENT') || error.message.includes('no such file')) {
+        userMessage = `${message} (File not found)`;
+      } else if (error.message.includes('EACCES') || error.message.includes('permission denied')) {
+        userMessage = `${message} (Permission denied)`;
+      }
+    }
+    new Notice(userMessage);
+  }
+}

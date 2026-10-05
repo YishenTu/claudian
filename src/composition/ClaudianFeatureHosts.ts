@@ -26,7 +26,7 @@ import type {
   TabWorkspaceStateDeliveryRegistration,
 } from '@/features/chat/ChatFeatureHost';
 import type { ClaudianView } from '@/features/chat/ClaudianView';
-import type { ConversationLifecycle } from '@/features/chat/workspace/ConversationLifecycle';
+import type { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
 import type { ZenModeSource } from '@/features/chat/zen/types';
 import type { ZenModeController } from '@/features/chat/zen/ZenModeController';
 import type { FeatureHost } from '@/features/FeatureHost';

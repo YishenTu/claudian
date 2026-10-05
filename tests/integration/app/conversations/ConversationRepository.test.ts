@@ -14,7 +14,7 @@ import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCo
 import type { Conversation, SessionMetadata } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
-import { refreshTabContextUsage } from '@/features/chat/tabs/TabProviderState';
+import { refreshTabContextUsage } from '@/features/chat/tabs/tabProviderUI';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
 function fixture() {

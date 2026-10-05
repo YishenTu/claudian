@@ -15,12 +15,11 @@ import type {
 } from '@/core/execution';
 import { isSteerableExecutionSession } from '@/core/execution';
 import type { ChatMessage, ImageAttachment, ProviderId } from '@/core/types';
+import { consumeExecutionEvents } from '@/features/chat/execution/consumeExecutionEvents';
+import { ExecutionInteractions } from '@/features/chat/execution/ExecutionInteractions';
+import { ExecutionSessionSupervisor } from '@/features/chat/execution/ExecutionSessionSupervisor';
+import { SessionEventStream } from '@/features/chat/execution/SessionEventStream';
 import { toError } from '@/utils/error';
-
-import { consumeExecutionEvents } from '../execution/consumeExecutionEvents';
-import { ExecutionInteractions } from '../execution/ExecutionInteractions';
-import { ExecutionSessionSupervisor } from '../execution/ExecutionSessionSupervisor';
-import { SessionEventStream } from '../execution/SessionEventStream';
 
 export type SideChatTurnStatus =
   | 'completed'

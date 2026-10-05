@@ -2,9 +2,11 @@ import { createConversationPorts, createTestTabSession, holdResponse } from '@te
 import { createMockEl } from '@test/helpers/MockElement';
 
 import type { ProviderExecutionEvent } from '@/core/execution';
-import { BuiltInCommandController, type BuiltInCommandControllerDeps } from '@/features/chat/controllers/BuiltInCommandController';
-import { ConversationController } from '@/features/chat/controllers/ConversationController';
-import { InputController, type InputControllerDeps } from '@/features/chat/controllers/InputController';
+import { ConversationController } from '@/features/chat/conversation/ConversationController';
+import { BuiltInCommandController, type BuiltInCommandControllerDeps } from '@/features/chat/input/BuiltInCommandController';
+import { ComposerSelections } from '@/features/chat/input/ComposerSelections';
+import { InputController, type InputControllerDeps } from '@/features/chat/input/InputController';
+import { InlineInteractionPrompts } from '@/features/chat/interactions/InlineInteractionPrompts';
 import { ChatState } from '@/features/chat/state/ChatState';
 import type { TabSession } from '@/features/chat/tabs/TabSession';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
@@ -57,11 +59,28 @@ export function requestedUserMessageStarted(
   };
 }
 
+/** Selection sources whose captured context a test sets through `getContext`. */
+function createSelectionSources() {
+  const source = () => ({
+    clear: jest.fn(),
+    getContext: jest.fn().mockReturnValue(null),
+    poll: jest.fn(),
+    start: jest.fn(),
+    stop: jest.fn(),
+  });
+  return { browser: source(), canvas: source(), editor: source() };
+}
+
 export function createFixture(overrides: Record<string, unknown> = {}) {
   const {
     onReviewableSettlement,
+    getInputContainerEl: inputContainerOverride,
     ...dependencyOverrides
   } = overrides;
+  const defaultInputContainerEl = createMockEl() as unknown as HTMLElement;
+  const getInputContainerEl = (inputContainerOverride as (() => HTMLElement) | undefined)
+    ?? (() => defaultInputContainerEl);
+  const selectionSources = createSelectionSources();
   // The real turn owner, unless a test supplies the tab session it drains or closes.
   const session: TabSession = (dependencyOverrides.session as TabSession | undefined) ?? createTestTabSession({
     getState: () => state,
@@ -83,7 +102,7 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
     }),
     releaseSteerCorrelation: jest.fn(),
     state: 'idle',
-    steer: jest.fn().mockResolvedValue(true),
+    steer: jest.fn().mockResolvedValue({ delivery: 'accepted' }),
   };
   const plugin = {
     getSessionSnapshotDirectory: () => '/tmp/claudian-sessions',
@@ -131,27 +150,17 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
       removeMessage: jest.fn(),
     },
     streamController: {
-      resetSubagentStreamingState: jest.fn(),
+      beginResponse: jest.fn(),
       appendText: jest.fn(),
       appendError: jest.fn(),
       finalizeCurrentTextBlock: jest.fn(),
       finalizeCurrentThinkingBlock: jest.fn(),
       handleStreamChunk: jest.fn(),
-      hideThinkingIndicator: jest.fn(),
-      resumeThinkingIndicator: jest.fn(),
-      showThinkingIndicator: jest.fn(),
+      subagents: { releaseManaged: jest.fn() },
+      thinkingIndicator: { hide: jest.fn(), show: jest.fn(), resume: jest.fn() },
     },
-    selectionController: {
-      getContext: jest.fn().mockReturnValue(null),
-    },
-    browserSelectionController: {
-      getContext: jest.fn().mockReturnValue(null),
-    },
-    canvasSelectionController: {
-      getContext: jest.fn().mockReturnValue(null),
-    },
+    selections: new ComposerSelections(selectionSources),
     getInputEl: () => input,
-    getInputContainerEl: () => createMockEl() as any,
     getWelcomeEl: () => null,
     getMessagesEl: () => createMockEl() as any,
     getLinkedContentController: () => linkedContentController as any,
@@ -165,12 +174,10 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
     generateId: () => `id-${++id}`,
     getSettings: () => ({ model: 'claude-model', reasoning: 'high', permissionMode: 'normal', serviceTier: 'standard' }),
     getExecutionCoordinator: () => coordinator,
-    getSubagentManager: () => ({
-      resetSpawnedCount: jest.fn(),
-      resetStreamingState: jest.fn(),
-    }) as any,
     getTabProviderId: () => 'claude',
     ensureExecutionInitialized: jest.fn().mockResolvedValue(true),
+    canStartTurn: () => true,
+    isClosing: () => false,
     ...dependencyOverrides,
     ...(typeof onReviewableSettlement === 'function'
       ? {
@@ -180,6 +187,19 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
         }
       : {}),
   } as unknown as InputControllerDeps;
+  if (!('inlinePrompts' in dependencyOverrides)) {
+    Object.assign(deps, {
+      inlinePrompts: new InlineInteractionPrompts({
+        getPromptParentEl: () => getInputContainerEl().parentElement,
+        getSuppressedEl: getInputContainerEl,
+        onBeforeShow: () => {
+          const generation = state.streamGeneration;
+          deps.streamController.thinkingIndicator.hide();
+          return () => deps.streamController.thinkingIndicator.resume(generation);
+        },
+      }),
+    });
+  }
   const ports = createConversationPorts({ ...(deps as any), session });
   // Conversation creation stays real; persistence and reset are observed at their boundary.
   const conversationController = new ConversationController({
@@ -187,7 +207,8 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
     subagentManager: { orphanAllActive: jest.fn(), clear: jest.fn() } as any,
     getWelcomeEl: () => null, setWelcomeEl: () => undefined, getMessagesEl: deps.getMessagesEl,
     getLinkedContentController: () => deps.getLinkedContentController(),
-    clearQueuedMessage: () => controller.clearQueuedMessage(),
+    clearQueuedMessage: () => controller.queue.clear(),
+    ensureExecutionInitialized: () => deps.ensureExecutionInitialized(),
     getExecutionCoordinator: () => deps.getExecutionCoordinator(),
   });
   jest.spyOn(conversationController, 'save').mockResolvedValue(undefined);
@@ -203,7 +224,7 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
     get conversationController() { return deps.conversationController; },
     getLinkedContentController: () => deps.getLinkedContentController(),
     getCurrentConversationId: () => state.currentConversationId,
-    getInputContainerEl: () => deps.getInputContainerEl(),
+    getInputContainerEl,
     getInputEl: () => deps.getInputEl(),
     getSideChatController: () => deps.getSideChatController?.() ?? null,
     ...commandOverrides,
@@ -221,6 +242,7 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
     input,
     linkedContentController,
     plugin,
+    selectionSources,
     session,
     state,
   };

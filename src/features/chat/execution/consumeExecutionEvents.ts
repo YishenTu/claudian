@@ -1,6 +1,5 @@
 import type { ProviderExecutionEvent, ProviderExecutionRun } from '@/core/execution';
-
-import { withExecutionUsageModel } from './usageModel';
+import { withExecutionUsageModel } from '@/features/chat/execution/usageModel';
 
 type ExecutionTerminalEvent = Extract<ProviderExecutionEvent, { type: 'turn_completed' | 'cancelled' | 'execution_error' }>;
 

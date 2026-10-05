@@ -1,6 +1,5 @@
 import type { ProviderExecutionConfiguration, ProviderSystemInstructions } from '@/core/execution';
-
-import type { ChatFeatureHost } from '../ChatFeatureHost';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 
 export async function resolveChatDynamicSections(
   host: Pick<ChatFeatureHost, 'getMainAgentDynamicSystemPromptSections'>,

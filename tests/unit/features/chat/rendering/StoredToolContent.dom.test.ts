@@ -8,8 +8,10 @@ import {
   renderStoredToolCall,
   renderToolCall,
   updateToolCallResult,
-} from '@/features/chat/rendering/ToolCallRenderer';
-import { createWriteEditBlock, finalizeWriteEditBlock, renderStoredWriteEdit,updateWriteEditWithDiff } from '@/features/chat/rendering/WriteEditRenderer';
+} from '@/features/chat/rendering/tools/ToolCallRenderer';
+import { createWriteEditBlock, finalizeWriteEditBlock, renderStoredWriteEdit,updateWriteEditWithDiff } from '@/features/chat/rendering/tools/WriteEditRenderer';
+import { ChatState } from '@/features/chat/state/ChatState';
+import { ToolCallStream } from '@/features/chat/turns/ToolCallStream';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
@@ -147,11 +149,10 @@ it('keeps running stored tools and expanded live result updates eager', () => {
   });
   expect(runningEdit.querySelector('.claudian-write-edit-content')?.childElementCount).toBeGreaterThan(0);
 
-  const liveElements = new Map<string, HTMLElement>();
-  const live = renderToolCall(parent, tool, liveElements, { initiallyExpanded: true });
+  const live = renderToolCall(parent, tool, { initiallyExpanded: true });
   tool.status = 'completed';
   tool.result = 'finished output';
-  updateToolCallResult(tool.id, tool, liveElements);
+  updateToolCallResult(live, tool);
   expect(live.querySelector('.claudian-tool-content')?.textContent).toContain('finished output');
 });
 
@@ -199,24 +200,24 @@ it('keeps restored apply_patch statistics available before rendering its diff', 
 
 it('renders only the latest live output when expanded and keeps expanded updates current', async () => {
   const tool: ToolCallInfo = { id: 'live', name: 'Bash', input: { command: 'echo fixture' }, status: 'running' };
-  const elements = new Map<string, HTMLElement>();
-  const block = renderToolCall(document.body.createDiv(), tool, elements);
+
+  const block = renderToolCall(document.body.createDiv(), tool);
   const content = block.querySelector<HTMLElement>('.claudian-tool-content')!;
   const header = within(block).getByRole('button');
   for (let index = 0; index < 20; index++) {
     tool.result = `Output ${index}`;
-    updateToolCallResult(tool.id, tool, elements);
+    updateToolCallResult(block, tool);
   }
   expect(content.childElementCount).toBe(0);
   fireEvent.keyDown(header, { key: 'Enter' });
   expect(content.textContent).toContain('Output 19');
   tool.result = 'Latest output';
-  updateToolCallResult(tool.id, tool, elements);
+  updateToolCallResult(block, tool);
   expect(content.textContent).toContain('Latest output');
   fireEvent.click(header);
   const rendered = content.firstElementChild;
   const final = { ...tool, status: 'error' as const, result: 'Final failure' };
-  updateToolCallResult(tool.id, final, elements);
+  updateToolCallResult(block, final);
   expect(content.firstElementChild).toBe(rendered);
   fireEvent.keyDown(header, { key: ' ' });
   expect(content.textContent).toContain('Final failure');
@@ -263,13 +264,13 @@ it.each(['raw', 'value'])('renders stored exec %s source safely with a Script he
 it('shows live Script source before output, then preserves it through completion and failure', () => {
   const source = 'const values = [1, 2, 3]; text(values.map(n => n * 2));';
   const tool: ToolCallInfo = { id: 'script', name: 'exec', input: { raw: source }, status: 'running' };
-  const elements = new Map<string, HTMLElement>();
-  const block = renderToolCall(document.body.createDiv(), tool, elements, { initiallyExpanded: true });
+
+  const block = renderToolCall(document.body.createDiv(), tool, { initiallyExpanded: true });
   expect(block.querySelector('code')?.textContent).toBe(source);
   expect(within(block).getByText('Running...')).toBeDefined();
   for (const status of ['running', 'completed', 'error'] as const) {
     const updated = { ...tool, status, result: status === 'error' ? 'Script error: fixture failure' : '[2,4,6]' };
-    updateToolCallResult(tool.id, updated, elements);
+    updateToolCallResult(block, updated);
     expect(block.querySelector('code')?.textContent).toBe(source);
     expect(within(block).getByText(updated.result)).toBeDefined();
   }
@@ -277,16 +278,16 @@ it('shows live Script source before output, then preserves it through completion
 
 it('lists the tool calls a live Script made once its result arrives', async () => {
   const tool: ToolCallInfo = { id: 'script-calls', name: 'exec', input: { code: 'await tools.fetch({})' }, status: 'running' };
-  const elements = new Map<string, HTMLElement>();
-  const block = renderToolCall(document.body.createDiv(), tool, elements, { initiallyExpanded: true });
+
+  const block = renderToolCall(document.body.createDiv(), tool, { initiallyExpanded: true });
   expect(within(block).queryByRole('list', { name: 'Tool calls' })).toBeNull();
 
-  updateToolCallResult(tool.id, { ...tool, status: 'completed', result: 'ok', scriptToolCalls: [
+  updateToolCallResult(block, { ...tool, status: 'completed', result: 'ok', scriptToolCalls: [
     { name: 'Bash', input: { command: 'ls -la' }, status: 'completed', durationMs: 12 },
     { name: 'web_context', input: { query: 'release notes', max_urls: 5 }, status: 'completed' },
     { name: 'fetch', status: 'running' },
     { name: 'search', args: '{"q":"x"}', status: 'cancelled', durationMs: 999.6 },
-  ] }, elements);
+  ] });
   const calls = within(within(block).getByRole('list', { name: 'Tool calls' })).getAllByRole('listitem');
   // Known tools read like their own headers; other tools list their arguments.
   expect(calls.map(call => call.textContent)).toEqual([
@@ -295,4 +296,53 @@ it('lists the tool calls a live Script made once its result arrives', async () =
   expect(within(calls[2]).getByRole('img', { name: 'Status: running' })).toBeDefined();
   expect(within(calls[3]).getByRole('img', { name: 'Status: cancelled' })).toBeDefined();
   expect((await axe(block)).violations).toEqual([]);
+});
+
+
+describe('file tool card accessible labels', () => {
+  const filePath = 'project/src/deeply/nested/folder/with/a-long-name/file.ts';
+  const input = { file_path: filePath };
+
+  it.each(['Write', 'Edit'])('gives specialized and generic %s cards the same literal label', async (name) => {
+    const tool: ToolCallInfo = { id: `long-${name}`, name, status: 'running', input };
+    const parent = document.body.createDiv();
+    const specializedLive = createWriteEditBlock(parent, tool).wrapperEl;
+    const specializedStored = renderStoredWriteEdit(parent, { ...tool, status: 'completed' });
+    const genericLive = renderToolCall(parent, tool);
+    const genericStored = renderStoredToolCall(parent, { ...tool, status: 'completed' });
+
+    const expected = `${name}: .../a-long-name/file.ts`;
+    const labels = [specializedLive, specializedStored, genericLive, genericStored]
+      .map(card => within(card).getByRole('button').getAttribute('aria-label'));
+    expect(labels).toEqual([
+      `${expected} - click to expand`,
+      `${expected} - click to expand`,
+      `${expected} - click to expand`,
+      `${expected} - click to expand`,
+    ]);
+    expect(within(specializedStored).getByRole('button', { name: `${expected} - click to expand` })).toBeDefined();
+    expect(await axe(parent)).toHaveNoViolations();
+  });
+});
+
+it('omits silent write_stdin polling cards from the live response while preserving real input', () => {
+  const parent = document.body.createDiv();
+  const state = new ChatState();
+  state.currentContentEl = parent;
+  const stream = new ToolCallStream({
+    state, plugin: { app: {}, settings: {} } as any,
+    indicator: { show: () => undefined }, getMessagesEl: () => parent, scrollToBottom: () => undefined,
+  });
+  const message = { id: 'response', role: 'assistant' as const, content: '', timestamp: Date.now(), toolCalls: [] };
+  stream.use({ type: 'tool_use', id: 'refined-poll', name: 'unknown', input: {} }, message);
+  stream.flush();
+  expect(within(parent).getByRole('button', { name: /unknown/ })).toBeDefined();
+  stream.use({ type: 'tool_use', id: 'refined-poll', name: 'write_stdin', input: { session_id: 'session', chars: '' } }, message);
+  stream.use({ type: 'tool_use', id: 'poll', name: 'write_stdin', input: { session_id: 'session', chars: '' } }, message);
+  stream.complete({ type: 'tool_result', id: 'poll', content: 'Still running' }, message);
+  stream.use({ type: 'tool_use', id: 'input', name: 'write_stdin', input: { session_id: 'session', chars: 'y\n' } }, message);
+  stream.flush();
+  expect(within(parent).getByRole('button', { name: /write_stdin: #session y/ })).toBeDefined();
+  expect(within(parent).getAllByRole('button')).toHaveLength(1);
+  stream.cancelAll();
 });

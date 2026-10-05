@@ -21,11 +21,13 @@ import type { ClaudianSettings, Conversation } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
-import { refreshTabProviderUI, updateTabProviderSettings } from '@/features/chat/tabs/TabProviderState';
+import { updateTabProviderSettings } from '@/features/chat/tabs/tabProviderSettings';
+import { refreshTabProviderUI } from '@/features/chat/tabs/tabProviderUI';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '@/providers/codex/settings';
 import { updateCurrentGrokCatalog } from '@/providers/grok/settings';
+import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 const originalResizeObserver = globalThis.ResizeObserver;
 const originalStructuredClone = globalThis.structuredClone;
@@ -116,6 +118,7 @@ function createChatHarness(settings: ClaudianSettings, id: ProviderId, selected:
       plugin,
       component: Object.assign(new Component(), { registerDomEvent: () => undefined, registerEvent: () => undefined }) as never,
       containerEl: document.body.appendChild(document.createElement('div')),
+      mentionDataProvider: new VaultMentionDataProvider(plugin.app),
       conversation, getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
     });
     tab.state.currentConversationId = conversation.id;

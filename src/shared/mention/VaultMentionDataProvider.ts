@@ -1,4 +1,4 @@
-import type { App, TFile } from 'obsidian';
+import type { App, TFile, Vault } from 'obsidian';
 
 import { VaultFileCache, VaultFolderCache } from './VaultMentionCache';
 
@@ -23,6 +23,25 @@ export class VaultMentionDataProvider {
       },
     });
     this.folderCache = new VaultFolderCache(app);
+  }
+
+  /** Subscribes once for a shared view cache and releases all listeners on view close. */
+  register(vault: Pick<Vault, 'on' | 'offref'>): () => void {
+    this.markFilesDirty();
+    this.markFoldersDirty();
+    const structuralChange = (): void => {
+      this.markFilesDirty();
+      this.markFoldersDirty();
+    };
+    const refs = [
+      vault.on('create', structuralChange),
+      vault.on('delete', structuralChange),
+      vault.on('rename', structuralChange),
+      vault.on('modify', () => this.markFilesDirty()),
+    ];
+    return () => {
+      for (const ref of refs.splice(0)) vault.offref(ref);
+    };
   }
 
   initializeInBackground(): void {

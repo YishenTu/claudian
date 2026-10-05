@@ -1,7 +1,7 @@
 import { createMockEl } from '@test/helpers/MockElement';
 
+import type { TabBarItem } from '@/features/chat/tabs/ChatTab';
 import { TabBar, type TabBarCallbacks } from '@/features/chat/tabs/TabBar';
-import type { TabBarItem } from '@/features/chat/tabs/types';
 
 // Helper to create mock callbacks
 function createMockCallbacks(): TabBarCallbacks {

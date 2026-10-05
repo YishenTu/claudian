@@ -10,13 +10,11 @@ import { Component, MarkdownRenderer } from 'obsidian';
 
 import type { ProviderBackgroundEventScope, ProviderBackgroundOutputEvent } from '@/core/execution';
 import type { ChatMessage } from '@/core/types';
-import {
-  providerOutputEventToStreamChunk,
-  StreamController,
-} from '@/features/chat/controllers/StreamController';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
-import { SubagentManager } from '@/features/chat/services/SubagentManager';
+import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/providerOutputChunks';
 import { ChatState } from '@/features/chat/state/ChatState';
+import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
+import { StreamController } from '@/features/chat/turns/StreamController';
 import { ClaudeExecutionSession } from '@/providers/claude/execution/ClaudeExecutionSession';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
@@ -35,7 +33,7 @@ beforeEach(() => {
 });
 
 it.each([false, true])('renders a native notification and its follow-up through session and chat (consumption echo: %s)', async echoed => {
-  const { renderSessionTaskNotification, renderAutoTriggeredTurn } = await import('@/features/chat/rendering/BackgroundTurnRenderer');
+  const { renderSessionTaskNotification, renderAutoTriggeredTurn } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin,
@@ -165,7 +163,7 @@ it.each([false, true])('shows a session notification immediately with streaming=
 });
 
 it.each(['text', 'image', 'image-only'])('keeps preceding output before a %s prompt and isolates concurrent rendering', async kind => {
-  const { renderAutoTriggeredTurn, reserveBackgroundTurn } = await import('@/features/chat/rendering/BackgroundTurnRenderer');
+  const { renderAutoTriggeredTurn, reserveBackgroundTurn } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin,
@@ -216,7 +214,7 @@ it.each(['text', 'image', 'image-only'])('keeps preceding output before a %s pro
 
 
 it.each([false, true])('flushes an automatic tool card before stream disposal with result=%s', async completed => {
-  const { renderAutoTriggeredTurn } = await import('@/features/chat/rendering/BackgroundTurnRenderer');
+  const { renderAutoTriggeredTurn } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin,
@@ -244,7 +242,7 @@ it.each([false, true])('flushes an automatic tool card before stream disposal wi
 });
 
 it.each([false, true])('keeps automatic Agent results across requested settlement with pending=%s', async pendingAgent => {
-  const { renderAutoTriggeredTurn } = await import('@/features/chat/rendering/BackgroundTurnRenderer');
+  const { renderAutoTriggeredTurn } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin,
@@ -273,7 +271,7 @@ it.each([false, true])('keeps automatic Agent results across requested settlemen
   }, () => true);
   try {
     await rendering;
-    stream.resetSubagentStreamingState();
+    stream.subagents.releaseManaged();
     release();
     await pending;
     const worked = within(messagesEl).queryByRole('button', { name: /^Worked/ });
@@ -294,7 +292,7 @@ it.each([false, true])('keeps automatic Agent results across requested settlemen
 });
 
 it.each([false, true])('matches task-notification grouping before and after replay with intervening input=%s', async interveningInput => {
-  const { renderAutoTriggeredTurn, renderSessionTaskNotification } = await import('@/features/chat/rendering/BackgroundTurnRenderer');
+  const { renderAutoTriggeredTurn, renderSessionTaskNotification } = await import('@/features/chat/turns/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin,

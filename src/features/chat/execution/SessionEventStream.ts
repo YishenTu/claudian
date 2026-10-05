@@ -1,6 +1,5 @@
 import type { ProviderSessionEvent } from '@/core/execution';
-
-import { withExecutionUsageModel } from './usageModel';
+import { withExecutionUsageModel } from '@/features/chat/execution/usageModel';
 
 /** One native session's ordered event and background-turn identity, reset with that session. */
 export class SessionEventStream {

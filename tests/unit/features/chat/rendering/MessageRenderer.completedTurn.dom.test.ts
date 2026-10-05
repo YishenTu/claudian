@@ -10,7 +10,7 @@ import { Component, MarkdownRenderer } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage } from '@/core/types';
-import { ConversationController } from '@/features/chat/controllers/ConversationController';
+import { ConversationController } from '@/features/chat/conversation/ConversationController';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { createResponseTextBlock } from '@/features/chat/rendering/ResponseLayout';
 import { createThinkingBlock, finalizeThinkingBlock } from '@/features/chat/rendering/ThinkingBlockRenderer';
