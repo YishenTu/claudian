@@ -6,6 +6,20 @@ interface MermaidApi {
 
 let nextDiagramId = 0;
 
+/**
+ * Mermaid serializes with HTML rules, so HTML labels can contain void tags such as `<br>` and
+ * named entities that an SVG image document rejects as malformed XML. Re-serialize the markup
+ * as XML through an inert parsed document.
+ */
+function toXmlSvg(svg: string): string | null {
+  const root = new DOMParser().parseFromString(svg, 'text/html').body.firstElementChild;
+  if (root?.localName !== 'svg') return null;
+  // The HTML parser keeps label `xmlns` as plain attributes; some serializers then emit a
+  // duplicate declaration. The serializer derives declarations from element namespaces anyway.
+  for (const element of [root, ...Array.from(root.querySelectorAll('*'))]) element.removeAttribute('xmlns');
+  return new XMLSerializer().serializeToString(root);
+}
+
 /** Uses the bundled diagram API directly, never Markdown code-block processors. */
 export async function renderMermaidDiagrams(
   container: HTMLElement,
@@ -22,7 +36,9 @@ export async function renderMermaidDiagrams(
       staging = doc.body.createDiv({ cls: 'claudian-mermaid-staging' });
       const { svg } = await mermaid.render(`claudian-mermaid-${nextDiagramId++}`, code.textContent ?? '', staging);
       if (!isCurrent() || !container.contains(code) || typeof svg !== 'string') continue;
-      const parsed = new DOMParser().parseFromString(svg, 'image/svg+xml');
+      const markup = toXmlSvg(svg);
+      if (!markup) continue;
+      const parsed = new DOMParser().parseFromString(markup, 'image/svg+xml');
       if (parsed.documentElement.localName !== 'svg'
         || parsed.querySelector('parsererror, .error-icon, .error-text')
         || !parsed.documentElement.children.length) continue;
@@ -33,7 +49,7 @@ export async function renderMermaidDiagrams(
       const image = diagram.createEl('img');
       image.alt = 'Mermaid diagram';
       // An image document cannot execute SVG scripts or bind Mermaid click callbacks.
-      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
       const source = diagram.createDiv();
       source.hidden = true;
       const toggle = diagram.createEl('button', {

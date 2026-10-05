@@ -54,6 +54,24 @@ it.each(['mermaid', 'Mermaid', 'MERMAID'])('renders %s directly and retains acce
   expect(jest.mocked(MarkdownRenderer.render).mock.calls.at(-1)?.[1]).not.toMatch(/```mermaid/i);
 });
 
+it('renders HTML-serialized label markup as a well-formed SVG image', async () => {
+  // Mermaid serializes HTML labels with HTML rules: void `<br>` and named entities are not XML.
+  render.mockResolvedValue({
+    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><foreignObject width="100" height="50">'
+      + '<div xmlns="http://www.w3.org/1999/xhtml"><span class="nodeLabel"><p>First line<br>Second&nbsp;line</p>'
+      + '</span></div></foreignObject></svg>',
+  });
+  await renderer.renderContent(host, `\`\`\`mermaid\n${source}\`\`\``);
+  const src = within(host).getByRole('img', { name: 'Mermaid diagram' }).getAttribute('src')!;
+  const image = new DOMParser().parseFromString(
+    decodeURIComponent(src.slice(src.indexOf(',') + 1)), 'image/svg+xml');
+  expect(image.querySelector('parsererror')).toBeNull();
+  expect(image.documentElement.localName).toBe('svg');
+  const label = image.getElementsByTagNameNS('http://www.w3.org/1999/xhtml', 'p')[0];
+  expect(label.getElementsByTagNameNS('http://www.w3.org/1999/xhtml', 'br')).toHaveLength(1);
+  expect(label.textContent).toBe('First lineSecond\u00a0line');
+});
+
 it.each([undefined, '', '<svg><text>Syntax error</text><g class="error-icon"/></svg>'])('keeps source for invalid output %s', async output => {
   render.mockResolvedValue({ svg: output });
   await renderer.renderContent(host, `\`\`\`mermaid\n${source}\`\`\``);
