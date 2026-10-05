@@ -2851,7 +2851,7 @@ describe('PiExecutionBackend', () => {
           'session_state_changed',
           'background_turn_completed',
         ]);
-        expect(background).toContainEqual(expect.objectContaining({ content: peepsResult.content, type: 'task_notification' }));
+        expect(background).toContainEqual(expect.objectContaining({ content: 'Child answer', type: 'task_notification' }));
         expect(background).toContainEqual(expect.objectContaining({ text: 'Parent reply', type: 'text_delta' }));
         expect(background.at(-1)).toMatchObject({ reason: 'completed', providerSessionId: 'pi-session-1' });
         expect(new Set(background.map(event => event.scope.kind === 'background' && event.scope.turnId)).size).toBe(1);
@@ -2895,7 +2895,10 @@ describe('PiExecutionBackend', () => {
       await waitFor(() => harness.kernels[0]?.requests.some(request => request.type === 'prompt') ?? false);
       const kernel = harness.kernels[0];
       kernel.emit({ type: 'agent_start' });
+      kernel.emit({ message: { role: 'assistant' }, type: 'message_start' });
       kernel.emit({ assistantMessageEvent: { delta: 'Waiting', type: 'text_delta' }, type: 'message_update' });
+      // Mid-work: the response called a tool, so the result belongs to it.
+      kernel.emit({ message: { role: 'assistant', stopReason: 'toolUse' }, type: 'message_end' });
       kernel.emit({ message: peepsResult, type: 'message_start' });
       kernel.emit({ message: peepsResult, type: 'message_end' });
       kernel.emit({ message: { ...peepsResult, content: 'Context only', display: false }, type: 'message_start' });
@@ -2907,10 +2910,95 @@ describe('PiExecutionBackend', () => {
       const output = events.filter(event => ['task_notification', 'text_delta'].includes(event.type));
       expect(output).toEqual([
         expect.objectContaining({ text: 'Waiting', type: 'text_delta' }),
-        expect.objectContaining({ content: peepsResult.content, type: 'task_notification' }),
+        expect.objectContaining({ content: 'Child answer', type: 'task_notification' }),
         expect.objectContaining({ text: 'Folded in', type: 'text_delta' }),
       ]);
       expect(events.at(-1)?.type).toBe('turn_completed');
+      await harness.session.dispose();
+    });
+
+    it('ends a requested turn at its answer when a result steered after it continues the native run', async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-split-'));
+      const sessionFile = path.join(dir, 'session.jsonl');
+      const answeredAt = testTime({ minutes: -2 });
+      const repliedAt = testTime({ minutes: -1 });
+      await fs.writeFile(sessionFile, [
+        { type: 'session', id: 'pi-session-1' },
+        { type: 'message', id: 'u1', parentId: null, message: { role: 'user', content: 'Hello Pi' } },
+        { type: 'message', id: 'a1', parentId: 'u1', message: { role: 'assistant', content: 'Answer', stopReason: 'stop', timestamp: answeredAt } },
+        { type: 'custom_message', id: 'c1', parentId: 'a1', customType: 'peeps-result', display: true, content: peepsResult.content },
+        { type: 'message', id: 'a2', parentId: 'c1', message: { role: 'assistant', content: 'Reply', stopReason: 'stop', timestamp: repliedAt } },
+      ].map(line => JSON.stringify(line)).join('\n'));
+      const harness = createHarness();
+      harness.responses.set('get_state', { sessionFile, sessionId: 'pi-session-1' });
+      const sessionEvents: ProviderSessionEvent[] = [];
+      harness.session.onEvent(event => sessionEvents.push(event));
+      try {
+        const run = harness.session.execute(createRequest());
+        const eventsPromise = collect(run.events);
+        await waitFor(() => harness.kernels[0]?.requests.some(request => request.type === 'prompt') ?? false);
+        const kernel = harness.kernels[0];
+        kernel.emit({ type: 'agent_start' });
+        kernel.emit({ message: { role: 'assistant' }, type: 'message_start' });
+        kernel.emit({ assistantMessageEvent: { delta: 'Answer', type: 'text_delta' }, type: 'message_update' });
+        kernel.emit({ message: { role: 'assistant', stopReason: 'stop', timestamp: answeredAt }, type: 'message_end' });
+        // Pi drains steered messages after the final answer and continues the same native run.
+        kernel.emit({ message: peepsResult, type: 'message_start' });
+        kernel.emit({ message: peepsResult, type: 'message_end' });
+        kernel.emit({ message: { role: 'assistant' }, type: 'message_start' });
+        kernel.emit({ assistantMessageEvent: { delta: 'Reply', type: 'text_delta' }, type: 'message_update' });
+        const requested = await eventsPromise;
+
+        expect(requested.flatMap(event => event.type === 'text_delta' ? [event.text] : [])).toEqual(['Answer']);
+        expect(requested.some(event => event.type === 'task_notification')).toBe(false);
+        expect(requested.at(-1)).toMatchObject({
+          nativeAssistantId: 'a1',
+          nativeCheckpointId: 'a1',
+          type: 'turn_completed',
+        });
+        expect(harness.session.getStatus()).toBe('executing');
+
+        kernel.emit({ message: { role: 'assistant', stopReason: 'stop', timestamp: repliedAt }, type: 'message_end' });
+        kernel.emit({ type: 'agent_end' });
+        kernel.emit({ type: 'agent_settled' });
+        await waitFor(() => sessionEvents.some(event => event.type === 'background_turn_completed'));
+        const background = backgroundEvents(sessionEvents);
+        expect(background.filter(event => ['task_notification', 'text_delta'].includes(event.type))).toEqual([
+          expect.objectContaining({ content: 'Child answer', type: 'task_notification' }),
+          expect.objectContaining({ text: 'Reply', type: 'text_delta' }),
+        ]);
+        expect(background.at(-1)).toMatchObject({ nativeAssistantId: 'a2', reason: 'completed' });
+        expect(harness.session.getSnapshot()).toMatchObject({ providerState: { leafEntryId: 'a2' }, status: 'idle' });
+      } finally {
+        await harness.session.dispose();
+        await fs.rm(dir, { force: true, recursive: true });
+      }
+    });
+
+    it('starts a new background turn for each result that follows an answered background response', async () => {
+      const harness = createHarness();
+      const { events, kernel } = await startIdleSession(harness);
+      emitWake(kernel);
+      kernel.emit({ message: { role: 'assistant', stopReason: 'stop' }, type: 'message_end' });
+      kernel.emit({ message: { ...peepsResult, content: 'Second result' }, type: 'message_start' });
+      kernel.emit({ message: { role: 'assistant' }, type: 'message_start' });
+      kernel.emit({ assistantMessageEvent: { delta: 'Second reply', type: 'text_delta' }, type: 'message_update' });
+      kernel.emit({ message: { role: 'assistant', stopReason: 'stop' }, type: 'message_end' });
+      kernel.emit({ type: 'agent_end' });
+      kernel.emit({ type: 'agent_settled' });
+      await waitFor(() => events.filter(event => event.type === 'background_turn_completed').length === 2);
+
+      const turns = new Map<string, string[]>();
+      for (const event of backgroundEvents(events)) {
+        if (event.scope.kind !== 'background') continue;
+        const output = event.type === 'task_notification' ? event.content : event.type === 'text_delta' ? event.text : null;
+        if (output) turns.set(event.scope.turnId, [...turns.get(event.scope.turnId) ?? [], output]);
+      }
+      expect([...turns.values()]).toEqual([
+        ['Child answer', 'Parent reply'],
+        ['Second result', 'Second reply'],
+      ]);
+      expect(harness.session.getStatus()).toBe('idle');
       await harness.session.dispose();
     });
 

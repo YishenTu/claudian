@@ -1,4 +1,5 @@
 import type { StreamChunk } from '../../../core/types';
+import { getPiCustomMessageDisplayText } from './piCustomMessageNormalization';
 import {
   extractPiToolResultText,
   extractPiToolTextContent,
@@ -93,26 +94,17 @@ function normalizeToolExecution(
   }
 }
 
-/**
- * Extension messages (`pi.sendMessage`) enter the conversation as role `custom`; displayable
- * ones render as notifications, matching the replayed `custom_message` entry.
- */
+/** Extension messages (`pi.sendMessage`) enter the conversation as role `custom`. */
 function normalizeCustomMessage(event: Record<string, unknown>): StreamChunk[] {
   const message = getNestedRecord(event, 'message');
-  if (message?.role !== 'custom' || message.display === false) return [];
-  const content = getPiCustomMessageText(message.content);
+  if (message?.role !== 'custom') return [];
+  const content = getPiCustomMessageDisplayText(message);
   return content ? [{ type: 'task_notification', content }] : [];
 }
 
-/** Text of a custom message's string or block content, joined as session history joins it. */
-function getPiCustomMessageText(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
-  return content
-    .map(block => block !== null && typeof block === 'object' && (block as Record<string, unknown>).type === 'text'
-      ? getString((block as Record<string, unknown>).text) ?? ''
-      : '')
-    .join('');
+/** A custom message that renders, so it opens a notification boundary in the transcript. */
+export function isPiDisplayedCustomMessageStart(event: Record<string, unknown>): boolean {
+  return event.type === 'message_start' && normalizeCustomMessage(event).length > 0;
 }
 
 export function getPiTerminalErrorMessage(event: Record<string, unknown>): string | null {

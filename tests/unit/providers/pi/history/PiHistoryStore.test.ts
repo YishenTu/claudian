@@ -61,7 +61,7 @@ describe('PiHistoryStore', () => {
       { type: 'message', id: 'u1', parentId: null, message: { role: 'user', content: 'Delegate' } },
       { type: 'custom_message', id: 'c1', parentId: 'u1', customType: 'peeps-result', display: true, content: 'Steered result' },
       { type: 'message', id: 'a1', parentId: 'c1', message: { role: 'assistant', content: 'Folded in', stopReason: 'stop' } },
-      { type: 'custom_message', id: 'c2', parentId: 'a1', customType: 'peeps-result', display: true, content: [{ type: 'text', text: 'Idle result' }] },
+      { type: 'custom_message', id: 'c2', parentId: 'a1', customType: 'peeps-result', display: true, content: [{ type: 'text', text: '[Peeps automated result — run-2 — answer]\nIdle result' }] },
       { type: 'message', id: 'a2', parentId: 'c2', message: { role: 'assistant', content: 'Woke up', stopReason: 'stop' } },
       { type: 'custom_message', id: 'c3', parentId: 'a2', customType: 'context', display: false, content: 'Hidden' },
     ].map(entry => JSON.stringify(entry)).join('\n');
@@ -78,6 +78,28 @@ describe('PiHistoryStore', () => {
       { automatic: true, blocks: ['task_notification:Idle result', 'text:Woke up'], role: 'assistant' },
     ]);
     expect(messages[2].content).toBe('Woke up');
+  });
+
+  it('keeps a result steered after a tool call inside the prompted response', () => {
+    const content = [
+      { type: 'message', id: 'u1', parentId: null, message: { role: 'user', content: 'Delegate' } },
+      { type: 'message', id: 'a1', parentId: 'u1', message: { role: 'assistant', content: [{ type: 'toolCall', id: 't1', name: 'peeps_spawn', arguments: {} }], stopReason: 'toolUse' } },
+      { type: 'message', id: 'r1', parentId: 'a1', message: { role: 'toolResult', toolCallId: 't1', toolName: 'peeps_spawn', content: [{ type: 'text', text: 'Accepted' }] } },
+      { type: 'custom', id: 'm1', parentId: 'r1', customType: 'peeps/run', data: {} },
+      { type: 'custom_message', id: 'c1', parentId: 'm1', customType: 'peeps-result', display: true, content: 'Steered result' },
+      { type: 'message', id: 'a2', parentId: 'c1', message: { role: 'assistant', content: 'Done', stopReason: 'stop' } },
+    ].map(entry => JSON.stringify(entry)).join('\n');
+
+    const messages = parsePiSessionContent(content);
+    expect(messages.map(message => ({
+      automatic: message.isAutomaticResponse === true,
+      blocks: message.contentBlocks?.map(block => block.type === 'task_notification' ? `${block.type}:${block.content}` : block.type),
+      role: message.role,
+    }))).toEqual([
+      { automatic: false, blocks: undefined, role: 'user' },
+      { automatic: false, blocks: ['tool_use', 'task_notification:Steered result', 'text'], role: 'assistant' },
+    ]);
+    expect(messages[1].assistantMessageId).toBe('a2');
   });
 
   it('parses linear user and assistant messages', () => {
@@ -670,7 +692,7 @@ describe('PiHistoryStore', () => {
   it('keeps id-less trailing entries during normal linear hydration', () => {
     const content = [
       JSON.stringify({ id: 'u1', type: 'message', message: { role: 'user', content: 'First' } }),
-      JSON.stringify({ id: 'a1', type: 'message', message: { role: 'assistant', content: 'Done' } }),
+      JSON.stringify({ id: 'a1', type: 'message', message: { role: 'assistant', content: 'Done', stopReason: 'stop' } }),
       JSON.stringify({ type: 'custom_message', content: 'Trailing notice' }),
     ].join('\n');
 

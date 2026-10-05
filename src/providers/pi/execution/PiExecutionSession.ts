@@ -77,6 +77,7 @@ import {
 import {
   createPiEventNormalizationState,
   getPiTerminalErrorMessage,
+  isPiDisplayedCustomMessageStart,
   normalizePiRPCEvent,
   type PiEventNormalizationState,
 } from '../normalizations/piEventNormalization';
@@ -143,6 +144,13 @@ interface ActiveRun {
   runStarted: boolean;
   /** Native settlement was observed; a later agent_start belongs to someone else. */
   settled: boolean;
+  /** The latest assistant message ended without calling tools. */
+  answered: boolean;
+  /** Native timestamp of that message, which identifies its persisted entry. */
+  answerTimestamp?: unknown;
+  /** The turn ended at its answer while the native run continued in the background. */
+  endedAtAnswer: boolean;
+  nativeCheckpointId?: string;
   terminalSignal: Deferred<void>;
 }
 
@@ -154,6 +162,8 @@ interface BackgroundTurn {
   readonly completed: Deferred<void>;
   sequence: number;
   assistantStarted: boolean;
+  /** The latest assistant message ended without calling tools. */
+  answered: boolean;
   nativeAssistantId?: string;
   pendingTerminalError: string | null;
   cancelTimer: number | null;
@@ -456,7 +466,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
 
   cancel(): void {
     const active = this.activeRun;
-    if (!active || active.run.isTerminal) {
+    // A turn that ended at its answer is complete; Stop targets the native run continuing it.
+    if (!active || active.run.isTerminal || (active.endedAtAnswer && this.#backgroundTurn)) {
       this.#cancelBackgroundTurn();
       return;
     }
@@ -559,6 +570,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       endedWithoutRetry: false,
       runStarted: false,
       settled: false,
+      answered: false,
+      endedAtAnswer: false,
       terminalSignal: createDeferred<void>(),
     };
     return active;
@@ -651,7 +664,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       this.#finishRequested(active, {
         nativeUserMessageId: active.nativeUserMessageId,
         nativeAssistantId: active.nativeAssistantId,
-        ...(hasCheckpoint ? { nativeCheckpointId: getPiState(this.state.providerState).leafEntryId } : {}),
+        ...(hasCheckpoint ? { nativeCheckpointId: active.nativeCheckpointId ?? getPiState(this.state.providerState).leafEntryId } : {}),
         ...(active.turnStats ? { turnStats: active.turnStats } : {}),
         reason: 'completed',
         type: 'turn_completed',
@@ -960,12 +973,40 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       return;
     }
     if (event.type === 'agent_settled') this.#kernelSettlement = 'agent_settled';
+    const target = this.#requestedOutputTarget() ?? this.#backgroundTurn;
+    if (target) this.#trackAnswer(target, event);
+    if (target?.answered && isPiDisplayedCustomMessageStart(event)) {
+      // Pi drains steered messages after a final answer within the same native run. Session
+      // history ends the response at that answer, so the message starts an automatic response.
+      this.#continueAfterAnswer(target);
+    }
     const active = this.#requestedOutputTarget();
     if (active) {
       this.#handleRequestedRpcEvent(active, event);
     } else {
       this.#handleBackgroundRpcEvent(event);
     }
+  }
+
+  #trackAnswer(target: TurnTarget, event: PiRPCRecord): void {
+    if (event.type !== 'message_start' && event.type !== 'message_end') return;
+    const message = getRecord(event.message);
+    if (message.role === 'user' || (message.role === 'assistant' && event.type === 'message_start')) {
+      target.answered = false;
+    } else if (message.role === 'assistant') {
+      target.answered = typeof message.stopReason === 'string' && message.stopReason !== 'toolUse';
+      if ('run' in target) target.answerTimestamp = message.timestamp;
+    }
+  }
+
+  #continueAfterAnswer(target: TurnTarget): void {
+    if ('run' in target) {
+      target.endedAtAnswer = true;
+      this.#settleRun(target);
+    } else {
+      this.#settleBackgroundTurn(target);
+    }
+    this.#openBackgroundTurn();
   }
 
   #handleRequestedRpcEvent(active: ActiveRun, event: PiRPCRecord): void {
@@ -1204,6 +1245,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
 
   #openBackgroundTurn(): void {
     const background: BackgroundTurn = {
+      answered: false,
       assistantStarted: false,
       cancelTimer: null,
       cancelling: false,
@@ -1463,7 +1505,16 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       const previousIndex = previousLeafId
         ? path.findIndex(entry => entry.id === previousLeafId)
         : -1;
-      const entries = previousIndex >= 0 ? path.slice(previousIndex + 1) : path;
+      let entries = previousIndex >= 0 ? path.slice(previousIndex + 1) : path;
+      if (active.endedAtAnswer) {
+        // Entries after the answer belong to the background turn that continued the native run.
+        const answerIndex = entries.findIndex(entry => entry.message?.role === 'assistant'
+          && entry.message.timestamp === active.answerTimestamp);
+        if (answerIndex >= 0) {
+          entries = entries.slice(0, answerIndex + 1);
+          active.nativeCheckpointId = entries[answerIndex].id;
+        }
+      }
       active.nativeUserMessageId = findLastRoleId(entries, 'user') ?? undefined;
       active.nativeAssistantId =
         findLastRoleId(entries, 'assistant')

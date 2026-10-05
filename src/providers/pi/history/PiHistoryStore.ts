@@ -12,6 +12,7 @@ import { isWriteEditTool } from '../../../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo, TurnStats } from '../../../core/types';
 import { createTurnStats, isTokenCount } from '../../../core/types';
 import { encodePiModelId } from '../models';
+import { getPiCustomMessageDisplayText } from '../normalizations/piCustomMessageNormalization';
 import {
   extractPiToolResultText,
   normalizePiToolInput,
@@ -531,7 +532,10 @@ function mapPiSessionEntries(
     if (mapped) {
       if (entry.type === 'custom_message' && !promptedTurnOpen) mapped.isAutomaticResponse = true;
       const previous = messages[messages.length - 1];
-      if (isAssistantMessageEntry(entry) && canMergeAssistantContinuation(previous, mapped)) {
+      // Results steered into a prompted turn stay in its response, as live output renders them.
+      const continuesResponse = isAssistantMessageEntry(entry)
+        || (entry.type === 'custom_message' && promptedTurnOpen);
+      if (continuesResponse && canMergeAssistantContinuation(previous, mapped)) {
         mergeAssistantContinuation(previous, mapped);
       } else {
         messages.push(mapped);
@@ -726,9 +730,9 @@ function mapPiSessionEntry(
     };
   }
 
-  if (entry.type === 'custom_message' && entry.raw.display !== false) {
+  if (entry.type === 'custom_message') {
     // Extension messages render as notifications, as live output renders them.
-    const content = extractTextContent(entry.raw.content);
+    const content = getPiCustomMessageDisplayText(entry.raw);
     if (!content) return null;
     return {
       content: '',

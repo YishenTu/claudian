@@ -238,6 +238,15 @@ describe('Pi event normalization', () => {
       content: [{ text: 'Part one, ', type: 'text' }, { data: 'x', mimeType: 'image/png', type: 'image' }, { text: 'part two', type: 'text' }],
     })).toEqual([{ content: 'Part one, part two', type: 'task_notification' }]);
     expect(custom({ content: 'Hidden context', display: false })).toEqual([]);
+    // Peeps' model-facing header is not part of the result.
+    expect(custom({ content: '[Peeps automated result — run-1 — answer]\nLine one\nLine two' }))
+      .toEqual([{ content: 'Line one\nLine two', type: 'task_notification' }]);
+    expect(custom({ content: '[Peeps automated result — run-1 — no-answer]' }))
+      .toEqual([{ content: '[Peeps automated result — run-1 — no-answer]', type: 'task_notification' }]);
+    expect(custom({ content: 'Preface\n[Peeps automated result — run-1 — answer]\nBody' }))
+      .toEqual([{ content: 'Preface\n[Peeps automated result — run-1 — answer]\nBody', type: 'task_notification' }]);
+    expect(custom({ content: '[Peeps automated result — run-1 — answer]\nBody', customType: 'other' }))
+      .toEqual([{ content: '[Peeps automated result — run-1 — answer]\nBody', type: 'task_notification' }]);
     expect(custom({ content: '' })).toEqual([]);
     expect(normalizePiRPCEvent({
       message: { content: 'Prompt', role: 'user' },
