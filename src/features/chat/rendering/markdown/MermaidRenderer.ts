@@ -36,9 +36,11 @@ export async function renderMermaidDiagrams(
       staging = doc.body.createDiv({ cls: 'claudian-mermaid-staging' });
       const { svg } = await mermaid.render(`claudian-mermaid-${nextDiagramId++}`, code.textContent ?? '', staging);
       if (!isCurrent() || !container.contains(code) || typeof svg !== 'string') continue;
-      const markup = toXmlSvg(svg);
+      const direct = new DOMParser().parseFromString(svg, 'image/svg+xml');
+      // An HTML reparse is lossy for SVG content outside labels, so keep well-formed output as is.
+      const markup = direct.querySelector('parsererror') ? toXmlSvg(svg) : svg;
       if (!markup) continue;
-      const parsed = new DOMParser().parseFromString(markup, 'image/svg+xml');
+      const parsed = markup === svg ? direct : new DOMParser().parseFromString(markup, 'image/svg+xml');
       if (parsed.documentElement.localName !== 'svg'
         || parsed.querySelector('parsererror, .error-icon, .error-text')
         || !parsed.documentElement.children.length) continue;

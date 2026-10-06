@@ -72,6 +72,15 @@ it('renders HTML-serialized label markup as a well-formed SVG image', async () =
   expect(label.textContent).toBe('First lineSecond\u00a0line');
 });
 
+it('passes well-formed SVG output through unchanged', async () => {
+  // Valid XML that an HTML reparse would truncate: `<br/>` inside SVG `<text>` breaks out of `<svg>`.
+  const wellFormed = '<svg xmlns="http://www.w3.org/2000/svg"><g><text>a<br/>b</text><rect/></g></svg>';
+  render.mockResolvedValue({ svg: wellFormed });
+  await renderer.renderContent(host, `\`\`\`mermaid\n${source}\`\`\``);
+  const src = within(host).getByRole('img', { name: 'Mermaid diagram' }).getAttribute('src')!;
+  expect(decodeURIComponent(src.slice(src.indexOf(',') + 1))).toBe(wellFormed);
+});
+
 it.each([undefined, '', '<svg><text>Syntax error</text><g class="error-icon"/></svg>'])('keeps source for invalid output %s', async output => {
   render.mockResolvedValue({ svg: output });
   await renderer.renderContent(host, `\`\`\`mermaid\n${source}\`\`\``);
