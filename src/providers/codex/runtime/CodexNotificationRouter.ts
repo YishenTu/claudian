@@ -109,6 +109,7 @@ export class CodexNotificationRouter {
   handleNotification(method: string, params: unknown): void {
     switch (method) {
       case 'item/agentMessage/delta': {
+        this.#deferred.publishPending();
         const { itemId, delta } = params as { itemId: string; delta: string };
         this.#assistantText.appendDelta(itemId, delta);
         break;
@@ -121,9 +122,11 @@ export class CodexNotificationRouter {
         break;
       case 'item/reasoning/summaryTextDelta':
       case 'item/reasoning/textDelta':
+        this.#deferred.publishPending();
         this.#emit({ type: 'thinking', content: (params as { delta: string }).delta });
         break;
       case 'item/plan/delta':
+        this.#deferred.publishPending();
         this.#emit({ type: 'text', content: (params as { delta: string }).delta });
         break;
       case 'item/commandExecution/outputDelta':
@@ -182,7 +185,7 @@ export class CodexNotificationRouter {
 
   /** The single assistant-text boundary: a published tool card ends the current text segment. */
   #emitToolUse(chunk: CodexToolUseChunk): void {
-    this.#assistantText.endSegment();
+    if (!this.#deferred.aliasFor(chunk.id)) this.#assistantText.endSegment();
     this.#emit(chunk);
   }
 
@@ -191,6 +194,7 @@ export class CodexNotificationRouter {
     if (item.type === 'agentMessage' && this.#handleAsyncQuestion(item, false)) return;
     const itemId = getItemId(item);
     const deferredOwned = this.#claimDeferredItem(item, false);
+    if (isCanonicalToolItem(item)) this.#deferred.publishPending(true);
     if (item.type === 'commandExecution' && !deferredOwned && this.#commands.claimPendingRawCommand(item)) {
       this.#deferred.release(item.id);
       this.#commands.flushPendingOutput(item.id);
@@ -213,6 +217,7 @@ export class CodexNotificationRouter {
         break;
 
       case 'agentMessage':
+        this.#deferred.publishPending();
         this.#assistantText.startMessage(item.id);
         break;
 
@@ -285,6 +290,7 @@ export class CodexNotificationRouter {
       this.#ledger.inFlightRawCallIds.delete(itemId);
     }
     const deferredOwned = this.#claimDeferredItem(item, true);
+    if (isCanonicalToolItem(item)) this.#deferred.publishPending(true);
     if (itemId && deferredOwned) {
       this.#deferred.markCanonicalCompleted(itemId);
     }
@@ -317,6 +323,7 @@ export class CodexNotificationRouter {
         break;
 
       case 'agentMessage':
+        this.#deferred.publishPending();
         this.#assistantText.completeMessage(item);
         break;
 
@@ -326,7 +333,7 @@ export class CodexNotificationRouter {
 
       case 'fileChange':
         if (hadCanonicalToolUse) {
-          this.#emitFileChangeToolUse(item);
+          this.#emitFileChangeToolUse(item, true);
         }
         this.#emit({
           type: 'tool_result',
@@ -391,11 +398,13 @@ export class CodexNotificationRouter {
 
     switch (itemType) {
       case 'function_call':
+        this.#deferred.publishPending(true);
         this.#raw.handleFunctionCall(item);
         this.#raw.replayPendingOutput(item);
         break;
 
       case 'custom_tool_call':
+        this.#deferred.publishPending(true);
         this.#raw.handleCustomToolCall(item);
         this.#raw.replayPendingOutput(item);
         break;
@@ -409,6 +418,7 @@ export class CodexNotificationRouter {
       case 'agentMessage':
       case 'message':
         if (this.#handleAsyncQuestion(item as unknown as AgentMessageItem, true)) break;
+        this.#deferred.publishPending();
         this.#assistantText.completeRawMessage(item);
         break;
 
@@ -423,6 +433,7 @@ export class CodexNotificationRouter {
       return;
     }
 
+    this.#deferred.publishPending();
     this.#assistantText.completeTurnMessage(
       firstString(payload.text, payload.message),
       payload.memory_citation ?? payload.memoryCitation,
@@ -485,13 +496,15 @@ export class CodexNotificationRouter {
     return this.#ledger.rememberFileChangeInput(itemId, buildFileChangeInput(changes ?? []));
   }
 
-  #emitFileChangeToolUse(item: FileChangeItem): void {
-    this.#emitToolUse({
+  #emitFileChangeToolUse(item: FileChangeItem, refinement = false): void {
+    const chunk: CodexToolUseChunk = {
       type: 'tool_use',
       id: item.id,
       name: FILE_CHANGE_TOOL_NAME,
       input: this.#rememberFileChangeInput(item.id, item.changes),
-    });
+    };
+    if (refinement) this.#emit(chunk);
+    else this.#emitToolUse(chunk);
   }
 
   #onFileChangePatchUpdated(params: FileChangePatchUpdatedNotification): void {
@@ -502,8 +515,12 @@ export class CodexNotificationRouter {
 
     const input = this.#rememberFileChangeInput(itemId, params.changes);
     this.#deferred.claimItem({ itemId, name: 'apply_patch', input }, false);
+    this.#deferred.publishPending(true);
+    const refinement = this.#ledger.canonicalStartedIds.has(itemId);
     this.#ledger.canonicalStartedIds.add(itemId);
-    this.#emitToolUse({ type: 'tool_use', id: itemId, name: FILE_CHANGE_TOOL_NAME, input });
+    const chunk: CodexToolUseChunk = { type: 'tool_use', id: itemId, name: FILE_CHANGE_TOOL_NAME, input };
+    if (refinement) this.#emit(chunk);
+    else this.#emitToolUse(chunk);
     this.#commands.flushPendingOutput(itemId);
   }
 
@@ -595,6 +612,7 @@ export class CodexNotificationRouter {
     const syntheticId = `plan-update-${params.turnId ?? 'turn'}-${this.#planUpdateCounter}`;
     const { input, requestInput } = projectPlanUpdate(params);
     this.#deferred.claimPlanUpdate(syntheticId, requestInput);
+    this.#deferred.publishPending(true);
     this.#emitToolUse({ type: 'tool_use', id: syntheticId, name: 'TodoWrite', input });
     this.#emit({ type: 'tool_result', id: syntheticId, content: 'Plan updated', isError: false });
   }

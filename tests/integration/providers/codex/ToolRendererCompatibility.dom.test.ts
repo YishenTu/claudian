@@ -1,19 +1,22 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
-import { testTime } from '@test/helpers/testClock';
+import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
-import { Component } from 'obsidian';
+import { Component, MarkdownRenderer } from 'obsidian';
 
 import { getToolIcon } from '@/core/tools/toolIcons';
 import { applyToolResultPresentation } from '@/core/tools/toolResultDetails';
-import type { StreamChunk, ToolCallInfo } from '@/core/types';
+import type { ChatMessage, StreamChunk, ToolCallInfo } from '@/core/types';
 import { AsyncQuestionPrompts } from '@/features/chat/interactions/AsyncQuestionPrompts';
 import type { QuestionAnswerHandler } from '@/features/chat/interactions/InlineAskUserQuestion';
 import { InlineInteractionPrompts } from '@/features/chat/interactions/InlineInteractionPrompts';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { renderStoredToolCall, renderToolCall, updateToolCallResult } from '@/features/chat/rendering/tools/ToolCallRenderer';
+import { ChatState } from '@/features/chat/state/ChatState';
+import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
+import { StreamController } from '@/features/chat/turns/StreamController';
 import { parseCodexSessionContent } from '@/providers/codex/history/CodexHistoryStore';
 import { formatCodexQuestionReply } from '@/providers/codex/normalization/codexQuestionNormalization';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
@@ -507,4 +510,93 @@ it.each(['', 'Also check the web renderer.'])('retains native user boundaries wh
     type: 'message', role: 'user', content: [{ type: 'input_text', text }],
   } }));
   expect(history.find(message => message.role === 'user')?.displayContent).toBe(ordinary);
+});
+
+
+it.each(['add', 'delete', 'update'] as const)('renders native %s file contents literally and coalesces the raw patch', operation => {
+  const content = '# Investment framework\n\n---\n- evidence\n+ opportunity\n++ header\n-- header\n';
+  const patch = operation === 'add'
+    ? `*** Begin Patch\n*** Add File: note.md\n${content.trimEnd().split('\n').map(line => `+${line}`).join('\n')}\n*** End Patch`
+    : operation === 'delete'
+      ? '*** Begin Patch\n*** Delete File: note.md\n*** End Patch'
+      : '*** Begin Patch\n*** Update File: note.md\n@@\n-old\n+new\n*** End Patch';
+  const chunks: StreamChunk[] = [];
+  const router = new CodexNotificationRouter(chunk => chunks.push(chunk), '/workspace');
+  router.beginTurn();
+  router.handleNotification('rawResponseItem/completed', { item: {
+    type: 'custom_tool_call', name: 'exec', call_id: 'patch-script',
+    input: `text(await tools.apply_patch(${JSON.stringify(patch)}));`,
+  } });
+  const item = { type: 'fileChange', id: 'native-patch', changes: [{ path: '/workspace/note.md', kind: { type: operation }, diff: operation === 'update' ? '@@ -1,3 +1,3 @@\n before\n-old\n+new\n after' : content }] };
+  router.handleNotification('item/started', { item: { ...item, status: 'inProgress' } });
+  router.handleNotification('item/completed', { item: { ...item, status: 'completed' } });
+  router.handleNotification('rawResponseItem/completed', { item: { type: 'custom_tool_call_output', call_id: 'patch-script', output: 'Success.' } });
+  router.handleNotification('turn/completed', { turn: { id: 'turn', status: 'completed' } });
+  const tools = collectStreamedTools(chunks);
+  expect(tools).toHaveLength(1);
+  const block = renderStoredToolCall(document.body.createDiv(), tools[0], { initiallyExpanded: true });
+  expect(within(block).getByRole('button', { name: /^apply_patch: note.md/ })).toBeDefined();
+  expect(within(block).getByLabelText(operation === 'add' ? 'Changes: +7 -0' : operation === 'delete' ? 'Changes: +0 -7' : 'Changes: +1 -1')).toBeDefined();
+  for (const line of operation === 'update' ? ['old', 'new'] : ['# Investment framework', '- evidence', '+ opportunity', '++ header', '-- header']) {
+    expect(within(block).getByText(line)).toBeDefined();
+  }
+});
+
+it.each([false, true].flatMap(lateNative => ['text', 'thinking'].map(boundary => ({ lateNative, boundary }))))(
+  'keeps streamed raw-only patches before $boundary (late native item: $lateNative)', async ({ lateNative, boundary }) => {
+  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+    (el as HTMLElement).createEl('p', { text: markdown });
+  });
+  const messagesEl = document.body.createDiv();
+  const plugin = { app: { vault: { adapter: {} } }, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
+  const state = new ChatState();
+  const subagents = new SubagentManager(() => undefined);
+  const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
+    getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
+  const response: ChatMessage = { id: 'response', role: 'assistant', timestamp: testDate().getTime(), content: '', contentBlocks: [] };
+  let pending = Promise.resolve();
+  const router = new CodexNotificationRouter(chunk => {
+    pending = pending.then(() => stream.handleStreamChunk(chunk, response));
+  }, '/workspace');
+  const notify = async (method: string, params: unknown) => { router.handleNotification(method, params); await pending; };
+  try {
+    state.addMessage(response);
+    state.currentContentEl = renderer.addMessage(response).querySelector('.claudian-message-content');
+    router.beginTurn();
+    await notify('item/agentMessage/delta', { itemId: 'intro', delta: 'Creating the note.' });
+    for (const [index, wrapped] of [false, true].entries()) {
+      const patch = `*** Begin Patch\n*** Add File: note-${index}.md\n+hello\n*** End Patch`;
+      await notify('rawResponseItem/completed', { item: { type: 'custom_tool_call', name: wrapped ? 'exec' : 'apply_patch', call_id: `patch-${index}`,
+        input: wrapped ? `text(await tools.apply_patch(${JSON.stringify(patch)}));` : patch } });
+      await notify('rawResponseItem/completed', { item: { type: 'custom_tool_call_output', call_id: `patch-${index}`, output: 'Success.' } });
+      await notify(boundary === 'text' ? 'item/agentMessage/delta' : 'item/reasoning/summaryTextDelta', { itemId: `check-${index}`, delta: `Checking note ${index}.` });
+      await stream.finalizeCurrentThinkingBlock(response);
+      await stream.finalizeCurrentTextBlock(response);
+      expect(within(messagesEl).getAllByRole('button', { name: /^apply_patch: note-/ })).toHaveLength(index + 1);
+      if (lateNative) {
+        await notify('item/completed', { item: { type: 'fileChange', id: `native-${index}`, status: 'completed',
+          changes: [{ path: `/workspace/note-${index}.md`, kind: { type: 'add' }, diff: 'hello\n' }] } });
+      }
+      if (boundary === 'text') {
+        await notify('rawResponseItem/completed', { item: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: `Checking note ${index}.` }] } });
+        await stream.finalizeCurrentTextBlock(response);
+      }
+      expect(within(messagesEl).getAllByText(`Checking note ${index}.`)).toHaveLength(1);
+    }
+    await notify('item/agentMessage/delta', { itemId: 'final', delta: 'Notes are ready.' });
+    await notify('rawResponseItem/completed', { item: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Notes are ready.' }] } });
+    await notify('turn/completed', { turn: { id: 'turn', status: 'completed' } });
+    await stream.finalizeCurrentTextBlock(response);
+    const cards = within(messagesEl).getAllByRole('button', { name: /^apply_patch: note-/ });
+    expect(cards).toHaveLength(2);
+    const intro = within(messagesEl).getByText('Creating the note.');
+    const answer = within(messagesEl).getByText('Notes are ready.');
+    expect(intro.compareDocumentPosition(cards[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(cards[0].compareDocumentPosition(cards[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(cards[1].compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect((await axe(messagesEl)).violations).toEqual([]);
+  } finally {
+    stream.dispose(); subagents.clear(); renderer.dispose();
+  }
 });

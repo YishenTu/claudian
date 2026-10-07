@@ -110,7 +110,10 @@ export function buildCanonicalToolProjection(
       return { itemId: item.id, ...projectMCPToolUse(item) };
 
     case 'dynamicToolCall':
-      return { itemId: item.id, ...normalizeCodexToolCall(item.tool, asRecord(item.arguments) ?? {}) };
+      return { itemId: item.id, ...normalizeCodexToolCall(
+        item.namespace ? `${item.namespace}__${item.tool}` : item.tool,
+        asRecord(item.arguments) ?? {},
+      ) };
 
     default:
       return null;
@@ -190,7 +193,17 @@ export function normalizeRawToolOutput(
 export const FILE_CHANGE_TOOL_NAME = normalizeCodexToolName('file_change');
 
 export function buildFileChangeInput(changes: unknown): Record<string, unknown> {
-  return { changes: normalizeFileChanges(changes) };
+  // Native add/delete `diff` values are whole-file contents, including literal
+  // Markdown/diff prefixes. Convert once at the protocol boundary.
+  return { changes: normalizeFileChanges(changes).map(change => {
+    if ((change.kind !== 'add' && change.kind !== 'delete') || typeof change.diff !== 'string' || !change.diff) {
+      return change;
+    }
+    const prefix = change.kind === 'add' ? '+' : '-';
+    const lines = change.diff.replace(/\n$/, '').split('\n');
+    const hunk = change.kind === 'add' ? `@@ -0,0 +1,${lines.length} @@` : `@@ -1,${lines.length} +0,0 @@`;
+    return { ...change, diff: [hunk, ...lines.map(line => prefix + line)].join('\n') };
+  }) };
 }
 
 export function projectFileChangeToolResult(

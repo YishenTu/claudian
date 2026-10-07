@@ -1312,7 +1312,7 @@ describe('CodexNotificationRouter', () => {
           changes: [{
             path: '/workspace/note.md',
             type: 'add',
-            diff: '@@ -0,0 +1 @@\n+hello',
+            diff: 'hello\n',
           }],
           status: 'inProgress',
         },
@@ -1326,7 +1326,7 @@ describe('CodexNotificationRouter', () => {
           changes: [{
             path: '/workspace/note.md',
             type: 'add',
-            diff: '@@ -0,0 +1 @@\n+hello',
+            diff: 'hello\n',
           }],
           status: 'completed',
         },
@@ -1551,7 +1551,7 @@ describe('CodexNotificationRouter', () => {
             changes: [{
               path: '/workspace/same.md',
               type: 'add',
-              diff: '@@ -0,0 +1 @@\n+canonical',
+              diff: 'canonical\n',
             }],
             status: method === 'item/started' ? 'inProgress' : 'completed',
           },
@@ -3526,7 +3526,7 @@ describe('CodexNotificationRouter', () => {
       const changes = [{
         path: '/workspace/note.md',
         type: 'add',
-        diff: '@@ -0,0 +1 @@\n+hello',
+        diff: 'hello\n',
       }];
 
       router.handleNotification('rawResponseItem/completed', {
@@ -4648,6 +4648,24 @@ describe('CodexNotificationRouter', () => {
   });
 
   describe('dynamicToolCall', () => {
+    it('coalesces a namespaced script tool with its native dynamic lifecycle before the answer', () => {
+      router.handleNotification('rawResponseItem/completed', { item: {
+        type: 'custom_tool_call', name: 'exec', call_id: 'dependencies-script',
+        input: 'text(await tools.codex_app__load_workspace_dependencies({}));',
+      } });
+      const item = { type: 'dynamicToolCall', id: 'dependencies-native', namespace: 'codex_app',
+        tool: 'load_workspace_dependencies', arguments: {} };
+      router.handleNotification('item/started', { item: { ...item, status: 'inProgress' } });
+      router.handleNotification('item/completed', { item: { ...item, status: 'completed',
+        contentItems: [{ type: 'inputText', text: 'Available.' }], success: true } });
+      router.handleNotification('rawResponseItem/completed', { item: {
+        type: 'custom_tool_call_output', call_id: 'dependencies-script', output: 'Available.',
+      } });
+      router.handleNotification('item/agentMessage/delta', { itemId: 'answer', delta: 'Ready.' });
+      router.handleNotification('turn/completed', { turn: { id: 'turn', status: 'completed' } });
+      expect(chunks.map(chunk => chunk.type)).toEqual(['tool_use', 'tool_result', 'text', 'done']);
+    });
+
     it('maps canonical dynamic tool lifecycle events to tool chunks', () => {
       router.handleNotification('item/started', {
         item: {
