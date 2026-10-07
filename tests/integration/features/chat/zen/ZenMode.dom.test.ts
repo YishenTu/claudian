@@ -917,6 +917,7 @@ it('keeps the last visible reading position when collapsing the sidebar hides th
     setCollapsed(rightSplit, true);
     laidOut = true;
   };
+  fireEvent.wheel(messagesEl, { deltaY: -100 });
   messagesEl.scrollTop = 300;
   fireEvent.scroll(messagesEl);
   expect(tab.state.autoScrollEnabled).toBe(false);

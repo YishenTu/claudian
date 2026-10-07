@@ -199,7 +199,7 @@ export function buildTabRuntimeInputBindings(
 
     if (!isMessagesAtBottom()) {
       navigationScrollIntent = null;
-      state.autoScrollEnabled = false;
+      // Layout changes also emit scroll events; only user intent should pause following.
       return;
     }
 
