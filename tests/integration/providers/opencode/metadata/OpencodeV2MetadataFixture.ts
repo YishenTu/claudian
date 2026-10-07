@@ -11,7 +11,7 @@ if (process.argv.includes('--version')) {
 } else {
   if (!process.argv.includes('--stdio') || process.env.OPENCODE_DB !== process.env.EXPECTED_DATABASE) process.exit(2);
   const started = Date.now();
-  let reads = 0;
+  let reads = 0, commandReads = 0;
   let activated = !process.env.ACTIVATION_DELAY_MS, activation;
   const server = http.createServer(async (req, res) => {
     const auth = 'Basic ' + Buffer.from('opencode:' + process.env.OPENCODE_PASSWORD).toString('base64');
@@ -19,7 +19,7 @@ if (process.argv.includes('--version')) {
     if (req.headers.authorization !== auth || url.searchParams.get('location[directory]') !== process.cwd()) {
       res.writeHead(403); res.end(); return;
     }
-    if (req.method !== 'GET' || !['/api/model', '/api/command', '/api/integration'].includes(url.pathname)) {
+    if (req.method !== 'GET' || !['/api/model', '/api/command', '/api/skill', '/api/integration'].includes(url.pathname)) {
       res.writeHead(405); res.end(); return;
     }
     activation ??= new Promise(resolve => setTimeout(() => { activated = true; resolve(); }, Number(process.env.ACTIVATION_DELAY_MS || 0)));
@@ -42,9 +42,12 @@ if (process.argv.includes('--version')) {
     const catalog = JSON.parse(fs.readFileSync(process.env.CATALOG_FILE, 'utf8'))
       .filter(model => activated || model.providerID !== 'opencode-go')
       .filter(model => model.id !== 'slow-model' || Date.now() - started >= Number(process.env.DELAYED_CATALOG_MS || 0));
+    // A fresh native instance loads its command catalog after its first read.
     const data = url.pathname === '/api/model'
       ? (++reads === 1 && !process.env.ACTIVATION_DELAY_MS ? [] : catalog)
-      : [{ name: 'review', description: 'Review changes' }];
+      : url.pathname === '/api/skill'
+        ? [{ id: 'writing', name: 'writing', description: 'Writing guide', path: '/skills/writing/SKILL.md', content: '' }]
+        : (++commandReads === 1 ? [] : [{ name: 'review', description: 'Review changes' }]);
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ location: { directory: process.cwd() }, data }));
   });

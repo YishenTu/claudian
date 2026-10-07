@@ -40,6 +40,18 @@ it('includes account-backed models in the first discovery and keeps the saved se
   } finally { await service.dispose(); }
 });
 
+it('discovers native commands after catalog loading and lists skills', async () => {
+  const service = new OpencodeMetadataService(fixture.createPlugin());
+  try {
+    const result = await service.discoverCommands();
+    expect(result.loaded).toBe(true);
+    expect(result.commands.map(({ name, kind, description }) => ({ name, kind, description }))).toEqual([
+      { name: 'review', kind: 'command', description: 'Review changes' },
+      { name: 'writing', kind: 'skill', description: 'Writing guide' },
+    ]);
+  } finally { await service.dispose(); }
+});
+
 it.each(['404', '500'])('loads models when the optional readiness endpoint returns %s', async status => {
   fixture.environment.INTEGRATION_STATUS = status;
   const service = new OpencodeMetadataService(fixture.createPlugin());

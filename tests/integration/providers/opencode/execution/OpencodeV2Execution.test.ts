@@ -41,6 +41,7 @@ const server = http.createServer(async (req, res) => {
       : [{ id: 'builtin', providerID: 'opencode', name: 'Builtin', enabled: true, variants: [] }] })); return;
   }
   if (route === '/api/command') { res.end(JSON.stringify({ data: [{ name: 'review', description: 'Review' }] })); return; }
+  if (route === '/api/skill') { res.end(JSON.stringify({ data: [{ id: 'writing', name: 'writing', path: '/skills/writing/SKILL.md', content: '' }] })); return; }
   if (route === '/api/form') {
     const snapshot = [...ownedForms];
     if (settleInventory) {
@@ -285,11 +286,15 @@ function request(text = '/review changes'): ProviderExecutionRequest {
   };
 }
 
+const writingSkill = { skills: [{ id: 'writing', mention: { start: 0, end: 8, text: '/writing' } }] };
+
 it.each([
-  ['', 'prompt', ''],
-  ['Inspect these images', 'prompt', 'Inspect these images'],
-  ['/review these images', 'command', 'these images'],
-])('sends images through the native HTTP boundary for %j', async (text, route, nativeText) => {
+  ['', 'prompt', '', {}],
+  ['Inspect these images', 'prompt', 'Inspect these images', {}],
+  ['/review these images', 'command', 'these images', {}],
+  ['/writing these images', 'prompt', '/writing these images', writingSkill],
+  ['/unknown these images', 'prompt', '/unknown these images', {}],
+])('sends images through the native HTTP boundary for %j', async (text, route, nativeText, attachments) => {
   const f = createFixture(false, undefined, 'ECHO_PROMPT=1');
   try {
     const events: ProviderExecutionEvent[] = [];
@@ -316,6 +321,7 @@ it.each([
         ...(route === 'command' ? nativeIdentity.command : nativeIdentity.prompt),
         text: nativeText,
         files: [{ uri: 'data:image/png;base64,aGVsbG8=' }, { uri: 'data:image/webp;base64,d29ybGQ=' }],
+        ...attachments,
       },
     });
   } finally { await f.dispose(); }

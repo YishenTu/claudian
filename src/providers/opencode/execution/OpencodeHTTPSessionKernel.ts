@@ -153,9 +153,17 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     const compact = parseCompactCommand(text);
     if (compact?.instructions) throw new Error('/compact does not accept arguments');
     const match = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(text);
-    // Commands can change while this kernel keeps its native session and server.
-    const catalog = match && !compact ? await this.requireClient().request<{ data: Array<{ name: string }> }>('/api/command') : null;
+    // Commands and skills can change while this kernel keeps its native session and server.
+    const [catalog, skills] = match && !compact ? await Promise.all([
+      this.requireClient().request<{ data: Array<{ name: string }> }>('/api/command'),
+      this.requireClient().request<{ data: Array<{ id: string }> }>('/api/skill')
+        .catch((error: unknown) => { if (error instanceof OpencodeHTTPError && error.status === 404) return { data: [] }; throw error; }),
+    ]) : [null, null];
     const command = match && catalog?.data.some(command => command.name === match[1]) ? match : null;
+    // Native skill mentions attach the skill to an ordinary prompt.
+    const skill = match && !command && skills?.data.some(skill => skill.id === match[1])
+      ? [{ id: match[1], mention: { start: 0, end: match[1].length + 1, text: `/${match[1]}` } }]
+      : null;
     const kind = compact ? 'compact' : command ? 'command' : 'prompt';
     const previousMessage = command ? await this.latestMessage(request.sessionId) : undefined;
     let resolve!: PendingPrompt['resolve'];
@@ -168,7 +176,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     void completion.catch(() => undefined);
     try {
       const admission = this.requireClient().request<{ data?: { id?: string } }>(`/api/session/${encodeURIComponent(request.sessionId)}/${kind}`, {
-        method: 'POST', ...(command ? { timeoutMs: 0 } : {}), body: compact ? { id: pending.inputId } : { ...(command ? { name: command[1] } : { id: pending.inputId }), text: command ? command[2] ?? '' : text, ...(files.length ? { files } : {}) },
+        method: 'POST', ...(command ? { timeoutMs: 0 } : {}), body: compact ? { id: pending.inputId } : { ...(command ? { name: command[1] } : { id: pending.inputId }), text: command ? command[2] ?? '' : text, ...(files.length ? { files } : {}), ...(skill ? { skills: skill } : {}) },
       });
       if (compact) this.inboxInputs.set(pending.inputId!, {
         kind: 'compact', recall: null,

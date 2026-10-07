@@ -52,7 +52,7 @@ const server = http.createServer(async (req, res) => {
  if (route.startsWith('/api/experimental/session/') && route.endsWith('/wait')) return setTimeout(() => { res.writeHead(204).end(); }, 50);
  if (route === '/api/info') return reply({pid:process.pid});
  if (route === '/fixture/command-reads') return reply(commandReads);
- if (route === '/api/command') { commandReads++; return setTimeout(() => reply(fs.existsSync(process.env.PROCESS_LOG + '.commands') ? JSON.parse(fs.readFileSync(process.env.PROCESS_LOG + '.commands','utf8')) : []), 30); }
+ if (route === '/api/command') { commandReads++; return setTimeout(() => reply(fs.existsSync(process.env.PROCESS_LOG + '.commands') ? JSON.parse(fs.readFileSync(process.env.PROCESS_LOG + '.commands','utf8')) : [{ name: 'init' }]), 30); }
  if (route === '/api/agent') return reply(agents());
  if (route === '/fixture/sessions') return reply({ ids:[...sessions.keys()], held:held?.length ?? 0, deleted });
  if (route === '/fixture/hold-sessions') { held = []; res.writeHead(204).end(); return; }
