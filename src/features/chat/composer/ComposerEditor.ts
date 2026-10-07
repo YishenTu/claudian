@@ -89,6 +89,12 @@ interface ComposerCommandToken {
 
 type ComposerToken = ComposerSessionMention | ReturnType<typeof findComposerWikilinks>[number] | ComposerCommandToken;
 
+function isChipRange(decorations: DecorationSet, from: number, to: number): boolean {
+  let found = false;
+  decorations.between(from, to, (start, end) => { found ||= start === from && end === to; });
+  return found;
+}
+
 /**
  * A token becomes a chip once whitespace completes it, so the one being typed stays editable text.
  * An existing chip stays one when that whitespace is removed, until the token itself changes.
@@ -223,6 +229,7 @@ export class ComposerEditor {
       this.commandResolver = resolver;
       this.refreshLinks();
     };
+    this.element.isChipRange = (from, to) => isChipRange(this.state.field(decorations), from, to);
     host.setAttribute('data-placeholder', this.placeholderText);
     host.addEventListener('focusin', this.onFocusIn);
   }
@@ -299,11 +306,7 @@ export class ComposerEditor {
 
   private findTokens(text: string, previous: DecorationSet): ComposerToken[] {
     const tokens: ComposerToken[] = [];
-    const wasChip = (from: number, to: number) => {
-      let found = false;
-      previous.between(from, to, (start, end) => { found ||= start === from && end === to; });
-      return found;
-    };
+    const wasChip = (from: number, to: number) => isChipRange(previous, from, to);
     for (const token of [
       ...findComposerSessionMentions(text),
       ...findComposerWikilinks(text),

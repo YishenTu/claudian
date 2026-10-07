@@ -11,6 +11,8 @@ export interface ComposerInputElement extends HTMLElement {
   setGhostText?: (text: string | null) => void;
   /** Lets an input present completed command and skill tokens; setting it again re-resolves them. */
   setCommandResolver?: (resolver: ComposerCommandResolver | null) => void;
+  /** Completed chips are not editable completion queries. */
+  isChipRange?: (from: number, to: number) => boolean;
 }
 
 export type ComposerCommandResolver = (token: string, atInputStart: boolean) => ProviderCommandKind | null;

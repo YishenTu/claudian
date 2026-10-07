@@ -512,7 +512,7 @@ it('renders known commands and skills as chips while unknown tokens stay text', 
   } finally { dropdown.destroy(); editor.destroy(); parent.remove(); }
 });
 
-it('reloads Codex skills on reopening the picker and filters the current opening locally', async () => {
+it('reloads Codex skills for typed tokens while keeping completed chips atomic', async () => {
   const parent = document.body.createDiv();
   const editor = createEditor(parent);
   let name = 'first-skill';
@@ -534,6 +534,8 @@ it('reloads Codex skills on reopening the picker and filters the current opening
     providerId: 'codex', providerConfig: catalog.getDropdownConfig(),
     providerDiscovery: createCatalogCommandDiscoveryStore(catalog),
   });
+  const handleInput = jest.fn(() => dropdown.handleInputChange());
+  editor.element.addEventListener('input', handleInput);
   try {
     editor.element.value = '$';
     editor.element.selectionStart = editor.element.selectionEnd = 1;
@@ -553,7 +555,24 @@ it('reloads Codex skills on reopening the picker and filters the current opening
     expect(within(parent).queryByRole('option', { name: '$first-skill' })).toBeNull();
     expect(nativeRequest).toHaveBeenCalledTimes(2);
     expect((await axe(within(parent).getByRole('option', { name: '$second-skill' }))).violations).toEqual([]);
+
+    fireEvent.click(within(parent).getByRole('option', { name: '$second-skill' }));
+    expect(editor.element.value).toBe('$second-skill ');
+    expect((await axe(within(parent).getByRole('img', { name: 'Skill: second-skill' }))).violations).toEqual([]);
+    const textbox = within(parent).getByRole('textbox', { name: 'Message' });
+    fireEvent.keyDown(textbox, { key: 'Backspace', code: 'Backspace' });
+    await waitFor(() => expect(handleInput).toHaveBeenCalledTimes(1));
+    expect(editor.element.value).toBe('$second-skill');
+    expect(within(parent).getByRole('img', { name: 'Skill: second-skill' })).toBeTruthy();
+    expect(dropdown.isVisible()).toBe(false);
+    fireEvent.keyDown(textbox, { key: 'Backspace', code: 'Backspace' });
+    await waitFor(() => expect(handleInput).toHaveBeenCalledTimes(2));
+    expect(editor.element.value).toBe('');
+    expect(within(parent).queryByRole('img', { name: 'Skill: second-skill' })).toBeNull();
+    expect(dropdown.isVisible()).toBe(false);
+    expect(nativeRequest).toHaveBeenCalledTimes(2);
   } finally {
+    editor.element.removeEventListener('input', handleInput);
     dropdown.destroy();
     editor.destroy();
     parent.remove();
