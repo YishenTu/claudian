@@ -41,7 +41,7 @@ const server = http.createServer(async (req, res) => {
       : [{ id: 'builtin', providerID: 'opencode', name: 'Builtin', enabled: true, variants: [] }] })); return;
   }
   if (route === '/api/command') { res.end(JSON.stringify({ data: [{ name: 'review', description: 'Review' }] })); return; }
-  if (route === '/api/skill') { res.end(JSON.stringify({ data: [{ id: 'writing', name: 'writing', path: '/skills/writing/SKILL.md', content: '' }] })); return; }
+  if (route === '/api/skill') { res.end(JSON.stringify({ data: [{ id: 'writing', name: 'writing', path: '/skills/writing/SKILL.md', content: '' }, { id: 'writing.probe', name: 'writing.probe', path: '/skills/writing.probe/SKILL.md', content: '' }] })); return; }
   if (route === '/api/form') {
     const snapshot = [...ownedForms];
     if (settleInventory) {
@@ -295,6 +295,10 @@ it.each([
   ['/writing these images', 'prompt', '/writing these images', writingSkill],
   ['Use /writing on these images', 'prompt', 'Use /writing on these images', { skills: [{ id: 'writing', mention: { start: 4, end: 12, text: '/writing' } }] }],
   ['Use /writing/draft.md and /writingx', 'prompt', 'Use /writing/draft.md and /writingx', {}],
+  ['Use /writing.probe, then /writing.', 'prompt', 'Use /writing.probe, then /writing.', { skills: [
+    { id: 'writing.probe', mention: { start: 4, end: 18, text: '/writing.probe' } },
+    { id: 'writing', mention: { start: 25, end: 33, text: '/writing' } },
+  ] }],
   ['/unknown these images', 'prompt', '/unknown these images', {}],
 ])('sends images through the native HTTP boundary for %j', async (text, route, nativeText, attachments) => {
   const f = createFixture(false, undefined, 'ECHO_PROMPT=1');

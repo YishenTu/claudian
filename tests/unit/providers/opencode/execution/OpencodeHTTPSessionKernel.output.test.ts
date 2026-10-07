@@ -196,3 +196,23 @@ it('admits steers in submission order while a skill lookup is pending', async ()
   expect(steers.map(body => body.text)).toEqual([first, 'Then this']);
   expect(steers[0]).toMatchObject({ skills: [{ id: 'writing', mention: { start: 4, end: 12, text: '/writing' } }] });
 });
+
+it('keeps later steers behind an earlier pending lookup when a middle lookup fails', async () => {
+  const lookups: Array<{ resolve: (value: unknown) => void; reject: (error: Error) => void }> = [];
+  void kernel.prompt({ sessionId: 'ses_main', prompt: [{ type: 'text', text: 'work' }] }, { start: 0, end: 4 }).catch(() => undefined);
+  await jest.advanceTimersByTimeAsync(0);
+  skills = () => new Promise((resolve, reject) => { lookups.push({ resolve, reject }); });
+  const steer = (text: string, range = { start: 0, end: text.length }) =>
+    kernel.steer!({ sessionId: 'ses_main', prompt: [{ type: 'text', text }] }, range).catch(() => undefined);
+  void steer('First /writing');
+  void steer('Second /writing');
+  await jest.advanceTimersByTimeAsync(0);
+  lookups[1].reject(new Error('lookup failed'));
+  await jest.advanceTimersByTimeAsync(0);
+  void steer('Third');
+  await jest.advanceTimersByTimeAsync(0);
+  lookups[0].resolve({ data: [{ id: 'writing' }] });
+  await jest.advanceTimersByTimeAsync(0);
+  const steers = bodies.filter((body): body is { text: string } => (body as { delivery?: string }).delivery === 'steer');
+  expect(steers.map(body => body.text)).toEqual(['First /writing', 'Third']);
+});

@@ -218,7 +218,9 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     // Steers reach the native inbox in submission order, whatever their mention lookup costs.
     const previous = this.steerOrder;
     let release!: () => void;
-    this.steerOrder = new Promise(resolve => { release = resolve; });
+    const slot = new Promise<void>(resolve => { release = resolve; });
+    // A failed lookup releases its slot early, but successors still wait for its predecessors.
+    this.steerOrder = previous.then(() => slot);
     let admission: Promise<InboxAdmission>;
     const id = nativeMessageId();
     try {
@@ -247,11 +249,15 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     if (!typed.includes('/')) return [];
     const catalog = await this.requireClient().request<{ data: Array<{ id: string }> }>('/api/skill')
       .catch((error: unknown) => { if (error instanceof OpencodeHTTPError && error.status === 404) return { data: [] }; throw error; });
-    const ids = new Set(catalog.data.map(skill => skill.id));
-    return [...typed.matchAll(SKILL_MENTION)].flatMap(match => ids.has(match[1]) ? [{
-      id: match[1],
-      mention: { start: userText!.start + match.index, end: userText!.start + match.index + match[0].length, text: match[0] },
-    }] : []);
+    // Skill IDs may contain punctuation, so the longest catalog ID followed only by trailing punctuation wins.
+    const ids = catalog.data.map(skill => skill.id).filter(Boolean).sort((a, b) => b.length - a.length);
+    return [...typed.matchAll(SLASH_TOKEN)].flatMap(match => {
+      const token = match[1];
+      const id = ids.find(id => token.startsWith(id) && TRAILING_PUNCTUATION.test(token.slice(id.length)));
+      if (!id) return [];
+      const start = userText!.start + match.index;
+      return [{ id, mention: { start, end: start + id.length + 1, text: `/${id}` } }];
+    });
   }
 
   cancel(sessionId: string): void {
@@ -642,8 +648,9 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   }
 }
 
-// A whole `/name` token; paths and longer names are not mentions.
-const SKILL_MENTION = /(?<!\S)\/([\w-]+)(?=$|[\s.,;:!?)\]}"'])/g;
+// A whitespace-delimited `/token`; paths and longer names are not mentions of a shorter ID.
+const SLASH_TOKEN = /(?<!\S)\/(\S+)/g;
+const TRAILING_PUNCTUATION = /^[.,;:!?)\]}"']*$/;
 
 interface NativeSkillMention {
   id: string;
