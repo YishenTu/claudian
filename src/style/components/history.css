@@ -668,12 +668,6 @@ body.theme-dark .claudian-session-metadata-popover {
   display: block;
 }
 
-.claudian-nav-dropup-menu--surface.visible {
-  display: flex;
-  height: min(400px, 60vh);
-  flex-direction: column;
-}
-
 .claudian-history-header {
   padding: 8px 12px;
   font-size: 12px;

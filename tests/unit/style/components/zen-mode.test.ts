@@ -170,9 +170,13 @@ describe('Zen mode styles', () => {
     strip.classList.replace('claudian-hidden', 'claudian-visible-flex');
     const style = window.getComputedStyle(strip);
     expect(style.display).toBe('flex');
-    // The strip spans the pill edge to edge, over the wrapper's inline padding.
+    const wrapper = composer.querySelector<HTMLElement>('.claudian-input-wrapper')!;
+    const inset = window.getComputedStyle(wrapper).getPropertyValue('padding-inline');
+    expect(inset).not.toBe('');
+    // jsdom retains var() expressions. Both offsets must derive from the wrapper's inset
+    // so the strip stays edge to edge when that inset changes.
     expect({ basis: style.flexBasis, margin: style.getPropertyValue('margin-inline') })
-      .toEqual({ basis: 'calc(100% + 12px)', margin: '-6px' });
+      .toEqual({ basis: `calc(100% + 2 * ${inset})`, margin: `calc(-1 * ${inset})` });
   });
 
   it('drops the header line while expanded so the transcript meets the composer', () => {

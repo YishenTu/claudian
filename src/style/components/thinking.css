@@ -20,19 +20,7 @@
   margin: 8px 0;
 }
 
-.claudian-text-block+.claudian-thinking-block {
-  margin-top: 8px;
-}
-
 .claudian-thinking-block+.claudian-text-block {
-  margin-top: 8px;
-}
-
-.claudian-thinking-block+.claudian-tool-call {
-  margin-top: 8px;
-}
-
-.claudian-tool-call+.claudian-thinking-block {
   margin-top: 8px;
 }
 
@@ -71,10 +59,6 @@
 
 .claudian-thinking-content p:last-child {
   margin-bottom: 0;
-}
-
-.claudian-thinking-content .claudian-code-wrapper {
-  margin: 8px 0;
 }
 
 .claudian-thinking-content .claudian-code-wrapper pre {

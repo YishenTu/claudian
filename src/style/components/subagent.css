@@ -2,19 +2,7 @@
   margin: 8px 0;
 }
 
-.claudian-text-block+.claudian-subagent-list {
-  margin-top: 8px;
-}
-
 .claudian-subagent-list+.claudian-text-block {
-  margin-top: 8px;
-}
-
-.claudian-tool-call+.claudian-subagent-list {
-  margin-top: 8px;
-}
-
-.claudian-subagent-list+.claudian-tool-call {
   margin-top: 8px;
 }
 

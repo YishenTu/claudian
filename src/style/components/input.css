@@ -70,12 +70,17 @@
   margin-inline-start: auto;
 }
 
-.claudian-input-nav-btn {
+/* Retain button specificity to override Obsidian's native control chrome. */
+button.claudian-input-nav-btn {
+  appearance: none;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 24px;
   width: 24px;
+  min-width: 24px;
   height: 24px;
+  min-height: 24px;
   padding: 0;
   border: 0;
   border-radius: 4px;
@@ -84,39 +89,6 @@
   cursor: pointer;
   color: var(--text-muted);
   transition: color 0.15s ease;
-}
-
-.claudian-input-nav-btn:hover,
-.claudian-input-nav-btn:focus-visible,
-.claudian-input-nav-btn:active {
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  color: var(--text-normal);
-}
-
-.claudian-input-nav-btn:disabled,
-.claudian-input-nav-btn[aria-disabled='true'] {
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  color: var(--text-faint);
-  cursor: default;
-}
-
-/* Obsidian applies more specific native-button chrome than the shared nav class. */
-button.claudian-input-nav-btn {
-  appearance: none;
-  flex: 0 0 24px;
-  width: 24px;
-  min-width: 24px;
-  height: 24px;
-  min-height: 24px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  color: var(--text-muted);
 }
 
 button.claudian-input-nav-btn:hover,
@@ -147,38 +119,6 @@ button.claudian-input-nav-btn[aria-disabled='true'] {
 .claudian-new-tab-btn svg {
   width: 16.8px;
   height: 16.8px;
-}
-
-.claudian-input-wrapper textarea.claudian-input {
-  width: 100%;
-  flex: 1 1 auto;
-  field-sizing: content;
-  min-height: 60px;
-  max-height: var(--claudian-textarea-max-height, none);
-  resize: none;
-  padding: 8px 10px 10px 10px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-normal);
-  font-family: inherit;
-  font-size: 14px;
-  line-height: 1.4;
-  box-shadow: none;
-  overflow-y: auto;
-  unicode-bidi: plaintext; /* Proper BiDi text handling for mixed RTL/LTR */
-}
-
-.claudian-input-wrapper textarea.claudian-input:hover,
-.claudian-input-wrapper textarea.claudian-input:focus {
-  outline: none;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-}
-
-.claudian-input-wrapper textarea.claudian-input::placeholder {
-  color: var(--text-muted);
 }
 
 /* Queued follow-up strip, attached to the top of the input box while a message waits. */

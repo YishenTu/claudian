@@ -2,6 +2,11 @@
 .claudian-input-wrapper .claudian-composer-editor {
   --no-tooltip: true;
 
+  /* Shared by the pre-mount placeholder and CodeMirror's content and lines. */
+  --claudian-composer-padding-top: 12px;
+  --claudian-composer-padding-inline: 13px;
+  --claudian-composer-padding-bottom: 2px;
+
   width: 100%;
   min-width: 0;
 
@@ -28,7 +33,7 @@
 
 .claudian-composer-editor:empty::before {
   display: block;
-  padding: 12px 13px 2px;
+  padding: var(--claudian-composer-padding-top) var(--claudian-composer-padding-inline) var(--claudian-composer-padding-bottom);
   content: attr(data-placeholder);
   color: var(--text-muted);
 }
@@ -49,13 +54,13 @@
  * since the toolbar under it already adds space.
  */
 .claudian-composer-editor .cm-content {
-  padding: 12px 0 2px;
+  padding: var(--claudian-composer-padding-top) 0 var(--claudian-composer-padding-bottom);
   min-height: 48px;
   caret-color: var(--text-normal);
 }
 
 .claudian-composer-editor .cm-line {
-  padding: 0 13px;
+  padding: 0 var(--claudian-composer-padding-inline);
 }
 
 /*

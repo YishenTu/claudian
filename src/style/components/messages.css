@@ -276,9 +276,6 @@
 .claudian-linked-content-picker-empty {
   color: var(--text-muted);
   font-size: 11px;
-}
-
-.claudian-linked-content-picker-empty {
   padding: 8px;
   text-align: center;
 }
@@ -423,10 +420,6 @@ button.claudian-text-copy-btn.copied {
   color: var(--text-accent);
   font-size: 11px;
   font-family: var(--font-monospace);
-}
-
-.claudian-text-block+.claudian-tool-call {
-  margin-top: 8px;
 }
 
 .claudian-tool-call+.claudian-text-block {

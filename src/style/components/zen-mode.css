@@ -113,36 +113,27 @@
   color: var(--text-error);
 }
 
+/* The disclosure is the preview line itself. */
 .claudian-zen button.claudian-zen-disclosure,
 .claudian-zen button.claudian-zen-disclosure:hover,
 .claudian-zen button.claudian-zen-disclosure:focus,
 .claudian-zen button.claudian-zen-disclosure:active {
   display: flex;
-  flex-shrink: 0;
+  flex: 1 1 auto;
+  gap: 6px;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  min-width: 0;
   width: auto;
   height: auto;
-  padding: 4px;
+  padding: 4px 8px;
+  text-align: start;
   border: 0;
   border-radius: var(--radius-s);
   background: transparent;
   box-shadow: none;
   color: var(--text-muted);
   cursor: pointer;
-}
-
-/* The disclosure is the preview line itself. */
-.claudian-zen button.claudian-zen-disclosure,
-.claudian-zen button.claudian-zen-disclosure:hover,
-.claudian-zen button.claudian-zen-disclosure:focus,
-.claudian-zen button.claudian-zen-disclosure:active {
-  flex: 1 1 auto;
-  gap: 6px;
-  justify-content: flex-start;
-  min-width: 0;
-  padding: 4px 8px;
-  text-align: start;
 }
 
 .claudian-zen button.claudian-zen-disclosure:focus-visible {
@@ -182,12 +173,21 @@
   display: none;
 }
 
+/*
+ * The composer's own toolbar, narrowed to the model control (model, effort, fast mode),
+ * shares the input row. ZenComposerLayout stacks it below once typed text would reach it.
+ */
 .claudian-zen-composer .claudian-input-wrapper {
+  --claudian-input-wrapper-radius: var(--claudian-zen-composer-radius);
+  --claudian-zen-composer-inset: 6px;
+
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
   min-height: 0;
 
   /* Keeps text and chips clear of the rounder corners. */
-  padding-inline: 6px;
-  border-radius: var(--claudian-zen-composer-radius);
+  padding-inline: var(--claudian-zen-composer-inset);
   background: var(--background-primary);
 }
 
@@ -197,26 +197,10 @@
 }
 
 /* The pill's single line stays centred between its borders, beside the controls. */
-.claudian-zen-composer .claudian-composer-editor .cm-content {
-  padding: 8px 0 10px;
-}
-
-.claudian-zen-composer .claudian-composer-editor .cm-line {
-  padding: 0 10px;
-}
-
-.claudian-zen-composer .claudian-composer-editor:empty::before {
-  padding: 8px 10px 10px;
-}
-
-/*
- * The composer's own toolbar, narrowed to the model control (model, effort, fast mode),
- * shares the input row. ZenComposerLayout stacks it below once typed text would reach it.
- */
-.claudian-zen-composer .claudian-input-wrapper {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
+.claudian-zen-composer .claudian-composer-editor {
+  --claudian-composer-padding-top: 8px;
+  --claudian-composer-padding-inline: 10px;
+  --claudian-composer-padding-bottom: 10px;
 }
 
 /* Attachments share the controls row, left of the controls, below the input. */
@@ -244,13 +228,12 @@
 
 /* A queued follow-up caps the pill on its own row, edge to edge over the wrapper's inline padding. */
 .claudian-zen-composer .claudian-input-wrapper > .claudian-input-queue-strip {
-  flex-basis: calc(100% + 12px);
+  flex-basis: calc(100% + 2 * var(--claudian-zen-composer-inset));
   flex-grow: 0;
   flex-shrink: 0;
   box-sizing: border-box;
-  margin-inline: -6px;
+  margin-inline: calc(-1 * var(--claudian-zen-composer-inset));
   padding-inline: 16px 12px;
-  border-radius: calc(var(--claudian-zen-composer-radius) - 1px) calc(var(--claudian-zen-composer-radius) - 1px) 0 0;
 }
 
 .claudian-zen-composer .claudian-input-wrapper > .claudian-input-toolbar {
