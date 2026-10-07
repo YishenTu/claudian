@@ -3,6 +3,46 @@ import * as path from 'node:path';
 import { buildGrokRuntimeEnv } from '@/providers/grok/runtime/GrokRuntimeEnvironment';
 
 describe('buildGrokRuntimeEnv', () => {
+  describe('folder trust', () => {
+    beforeEach(() => {
+      jest.replaceProperty(process, 'env', { ...process.env });
+      delete process.env.GROK_FOLDER_TRUST;
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('allows native vault skill discovery without changing the host environment', () => {
+      const env = buildGrokRuntimeEnv({}, 'grok');
+
+      expect(env.GROK_FOLDER_TRUST).toBe('0');
+      expect(process.env.GROK_FOLDER_TRUST).toBeUndefined();
+    });
+
+    it.each([
+      { processValue: '1', sharedValue: undefined, providerValue: undefined, expected: '1' },
+      { processValue: undefined, sharedValue: '1', providerValue: undefined, expected: '1' },
+      { processValue: undefined, sharedValue: undefined, providerValue: '1', expected: '1' },
+      { processValue: '0', sharedValue: '1', providerValue: undefined, expected: '1' },
+      { processValue: '1', sharedValue: '1', providerValue: '0', expected: '0' },
+    ])('honors explicit overrides: %j', ({ processValue, sharedValue, providerValue, expected }) => {
+      if (processValue !== undefined) process.env.GROK_FOLDER_TRUST = processValue;
+
+      const env = buildGrokRuntimeEnv({
+        sharedEnvironmentVariables: sharedValue === undefined ? '' : `GROK_FOLDER_TRUST=${sharedValue}`,
+        providerConfigs: {
+          grok: {
+            environmentVariables: providerValue === undefined ? '' : `GROK_FOLDER_TRUST=${providerValue}`,
+          },
+        },
+      }, 'grok');
+
+      expect(env.GROK_FOLDER_TRUST).toBe(expected);
+      expect(process.env.GROK_FOLDER_TRUST).toBe(processValue);
+    });
+  });
+
   it('merges process, shared, and provider scope with an enhanced provider PATH', () => {
     process.env.GROK_P1_PROCESS_ONLY = 'from-process';
     const env = buildGrokRuntimeEnv({

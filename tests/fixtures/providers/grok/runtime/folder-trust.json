@@ -1,0 +1,34 @@
+{
+  "grokVersion": "1.0.46",
+  "evidence": "Real initialize followed by _x.ai/commands/list against grok agent --no-leader stdio, using a fresh Git workspace containing .agents/skills/probe-local-skill/SKILL.md and an isolated GROK_HOME. Each case used a new process and the same workspace and home. Paths sanitized; responses reduced to the fixture skill. The final case confirms disabling the gate did not persist a trust grant.",
+  "request": {
+    "method": "_x.ai/commands/list",
+    "params": { "cwd": "/fixture-vault" }
+  },
+  "cases": [
+    {
+      "environment": { "GROK_FOLDER_TRUST": "1" },
+      "fixtureCommands": []
+    },
+    {
+      "environment": { "GROK_FOLDER_TRUST": "0" },
+      "fixtureCommands": [
+        {
+          "name": "probe-local-skill",
+          "description": "Local discovery regression fixture.",
+          "input": null,
+          "_meta": {
+            "scope": "local",
+            "path": "/fixture-vault/.agents/skills/probe-local-skill/SKILL.md",
+            "bareName": "probe-local-skill",
+            "qualifiedName": "local:probe-local-skill"
+          }
+        }
+      ]
+    },
+    {
+      "environment": { "GROK_FOLDER_TRUST": "1" },
+      "fixtureCommands": []
+    }
+  ]
+}
