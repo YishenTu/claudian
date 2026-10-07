@@ -6,7 +6,7 @@ import type {
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
-import { CodexSkillCatalog } from '../commands/CodexSkillCatalog';
+import { CodexCommandCatalog } from '../commands/CodexCommandCatalog';
 import { CodexThreadArchiveService } from '../history/CodexThreadArchiveService';
 import { CodexAppServerRuntime } from '../runtime/CodexAppServerRuntime';
 import { CodexCLIResolver } from '../runtime/CodexCLIResolver';
@@ -42,7 +42,7 @@ export async function createCodexWorkspaceServices(
       plugin,
       new CodexModelDiscoveryService(plugin, runtime),
     );
-  const commandCatalog = new CodexSkillCatalog(skillListProvider);
+  const commandCatalog = new CodexCommandCatalog(skillListProvider);
   const modelCatalog = createCodexModels(plugin, modelCatalogCoordinator);
   const sessionArchive = new CodexThreadArchiveService(runtime);
   const unregisterTransitionHook = plugin.executionLifecycleRegistry

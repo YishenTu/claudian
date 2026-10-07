@@ -2,8 +2,8 @@ import '@/providers';
 
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
-import type { ClaudeDiscoveredModel } from '@/providers/claude/modelCatalog';
 import { getClaudeModelOptions } from '@/providers/claude/modelOptions';
+import type { ClaudeDiscoveredModel } from '@/providers/claude/models';
 import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { createClaudeModels, discoverClaudeModels } from '@/providers/claude/runtime/ClaudeModels';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';

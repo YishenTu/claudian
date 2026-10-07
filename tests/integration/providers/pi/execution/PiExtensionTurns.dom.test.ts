@@ -11,7 +11,7 @@ import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { activateTab, destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import { PiExecutionBackend, type PiExecutionKernel, type PiExecutionKernelCallbacks } from '@/providers/pi/execution';
-import type { PiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpec';
+import type { PiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpecBuilder';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 const MODEL = 'pi:anthropic/claude-sonnet-4';

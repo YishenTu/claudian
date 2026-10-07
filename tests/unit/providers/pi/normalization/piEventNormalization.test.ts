@@ -4,7 +4,7 @@ import {
   getPiTerminalErrorMessage,
   normalizePiRPCEvent,
   type PiEventNormalizationState,
-} from '@/providers/pi/normalizations/piEventNormalization';
+} from '@/providers/pi/normalization/piEventNormalization';
 
 describe('Pi event normalization', () => {
   it('normalizes text and thinking deltas', () => {

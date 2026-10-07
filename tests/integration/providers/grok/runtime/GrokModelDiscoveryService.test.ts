@@ -5,13 +5,13 @@ jest.mock('cross-spawn', () => jest.fn());
 import spawn from 'cross-spawn';
 
 import type { ProviderHost } from '@/core/providers/ProviderHost';
-import { GrokModelCatalogService } from '@/providers/grok/runtime/GrokModelCatalogService';
+import { GrokModelDiscoveryService } from '@/providers/grok/runtime/GrokModelDiscoveryService';
 
 const fixture = path.resolve('tests/fixtures/providers/grok/runtime/GrokModelCatalogProcess.mjs');
 let children: ChildProcess[];
 let onWaiting: (() => void) | undefined;
 
-function makeService(scenario = '', timeoutMs = 2_000): GrokModelCatalogService {
+function makeService(scenario = '', timeoutMs = 2_000): GrokModelDiscoveryService {
   const host = {
     app: { vault: { adapter: { basePath: process.cwd() } } },
     getResolvedProviderCliPath: async () => 'fixture-grok',
@@ -22,7 +22,7 @@ function makeService(scenario = '', timeoutMs = 2_000): GrokModelCatalogService 
       } },
     },
   } as unknown as ProviderHost;
-  return new GrokModelCatalogService(host, { modelCommandTimeoutMs: timeoutMs });
+  return new GrokModelDiscoveryService(host, { modelCommandTimeoutMs: timeoutMs });
 }
 
 beforeEach(() => {

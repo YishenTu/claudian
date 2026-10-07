@@ -50,7 +50,7 @@ import type {
 
 import type { CodexActiveRun } from './CodexActiveRun';
 import { CodexCompletionRecovery } from './CodexCompletionRecovery';
-import { adaptCodexStreamChunk } from './CodexExecutionEventAdapter';
+import { adaptCodexStreamChunk } from './CodexExecutionEventNormalizer';
 import { CodexExecutionServerRequestRouter } from './CodexExecutionServerRequestRouter';
 import { CodexInputBundles } from './CodexInputBundles';
 import { CodexSessionConnection } from './CodexSessionConnection';

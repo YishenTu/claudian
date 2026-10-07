@@ -29,7 +29,7 @@ import {
 import { computeGrokEnvironmentHash } from '@/providers/grok/env/GrokSettingsReconciler';
 import { GrokCLIResolver } from '@/providers/grok/runtime/GrokCLIResolver';
 import { GrokModelCatalogCoordinator } from '@/providers/grok/runtime/GrokModelCatalogCoordinator';
-import { GrokModelCatalogService } from '@/providers/grok/runtime/GrokModelCatalogService';
+import { GrokModelDiscoveryService } from '@/providers/grok/runtime/GrokModelDiscoveryService';
 import {
   getGrokProviderSettings,
   updateCurrentGrokCatalog,
@@ -1723,7 +1723,7 @@ describe('ClaudianPlugin', () => {
             }
         )),
       };
-      const service = new GrokModelCatalogService(plugin.providerHost, {
+      const service = new GrokModelDiscoveryService(plugin.providerHost, {
         runner,
         probe: { discover: async () => { throw new Error('Method not found'); } },
       });

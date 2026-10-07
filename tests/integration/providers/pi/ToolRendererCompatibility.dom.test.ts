@@ -21,7 +21,7 @@ import { StreamController } from '@/features/chat/turns/StreamController';
 import { PiExecutionBackend } from '@/providers/pi/execution/PiExecutionBackend';
 import { PiRPCSessionKernel } from '@/providers/pi/execution/PiExecutionKernel';
 import { parsePiSessionContent } from '@/providers/pi/history/PiHistoryStore';
-import { createPiEventNormalizationState, normalizePiRPCEvent } from '@/providers/pi/normalizations/piEventNormalization';
+import { createPiEventNormalizationState, normalizePiRPCEvent } from '@/providers/pi/normalization/piEventNormalization';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };

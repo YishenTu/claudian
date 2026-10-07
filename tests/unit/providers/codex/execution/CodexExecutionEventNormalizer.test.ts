@@ -1,6 +1,6 @@
-import { adaptCodexStreamChunk } from '@/providers/codex/execution/CodexExecutionEventAdapter';
+import { adaptCodexStreamChunk } from '@/providers/codex/execution/CodexExecutionEventNormalizer';
 
-describe('CodexExecutionEventAdapter', () => {
+describe('CodexExecutionEventNormalizer', () => {
   it('adapts citation chunks without provider-owned tracking IDs', () => {
     const citations = {
       kind: 'memory' as const,

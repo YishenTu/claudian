@@ -1,4 +1,4 @@
-import { CodexSkillCatalog } from '@/providers/codex/commands/CodexSkillCatalog';
+import { CodexCommandCatalog } from '@/providers/codex/commands/CodexCommandCatalog';
 import type { SkillMetadata } from '@/providers/codex/runtime/codexAppServerTypes';
 import type { CodexSkillListProvider } from '@/providers/codex/skills/CodexSkillListingService';
 
@@ -9,7 +9,7 @@ function createListProvider(skills: SkillMetadata[] = []): jest.Mocked<CodexSkil
   };
 }
 
-describe('CodexSkillCatalog', () => {
+describe('CodexCommandCatalog', () => {
   it('uses app-server metadata as its only runtime source', async () => {
     const listProvider = createListProvider([
       {
@@ -34,7 +34,7 @@ describe('CodexSkillCatalog', () => {
         enabled: true,
       },
     ]);
-    const catalog = new CodexSkillCatalog(listProvider);
+    const catalog = new CodexCommandCatalog(listProvider);
     const signal = new AbortController().signal;
 
     const entries = await catalog.listDropdownEntries({
@@ -77,7 +77,7 @@ describe('CodexSkillCatalog', () => {
         enabled: false,
       },
     ]);
-    const catalog = new CodexSkillCatalog(listProvider);
+    const catalog = new CodexCommandCatalog(listProvider);
 
     const entries = await catalog.listDropdownEntries({ includeBuiltIns: false });
 
@@ -85,7 +85,7 @@ describe('CodexSkillCatalog', () => {
   });
 
   it('includes the provider built-in only when requested', async () => {
-    const catalog = new CodexSkillCatalog(createListProvider());
+    const catalog = new CodexCommandCatalog(createListProvider());
 
     await expect(catalog.listDropdownEntries({ includeBuiltIns: true })).resolves.toEqual([
       expect.objectContaining({ name: 'compact', insertPrefix: '/' }),
@@ -95,7 +95,7 @@ describe('CodexSkillCatalog', () => {
 
   it('force-refreshes only through the app-server list provider', async () => {
     const listProvider = createListProvider();
-    const catalog = new CodexSkillCatalog(listProvider);
+    const catalog = new CodexCommandCatalog(listProvider);
 
     await catalog.refresh();
 

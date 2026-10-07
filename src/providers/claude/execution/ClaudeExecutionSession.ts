@@ -39,6 +39,7 @@ import { type ClaudeRuntimeCatalog, toClaudeRuntimeCatalog } from '../runtime/pr
 import { getClaudeProviderSettings } from '../settings';
 import { classifyClaudeError, getClaudeInvalidationReason } from './classifyClaudeError';
 import { ClaudeExecutionEventNormalizer } from './ClaudeExecutionEventNormalizer';
+import { ClaudeExecutionInteractionRouter } from './ClaudeExecutionInteractionRouter';
 import {
   type ClaudeEncodedExecutionRequest,
   ClaudeExecutionRequestEncoder,
@@ -50,7 +51,6 @@ import {
   type ClaudeExecutionStrategySink,
   ClaudePersistentExecutionStrategy,
 } from './ClaudeExecutionStrategies';
-import { ClaudeInteractionHandler } from './ClaudeInteractionHandler';
 import { ClaudeResponseOwnership } from './ClaudeResponseOwnership';
 import { ClaudeResumeState } from './ClaudeResumeState';
 import { ClaudeTaskNotificationQueue } from './ClaudeTaskNotificationQueue';
@@ -101,7 +101,7 @@ ClaudeExecutionStrategySink {
   private readonly encoder: ClaudeExecutionRequestEncoder;
   private readonly strategy: ClaudeExecutionStrategy;
   private readonly usesPersistentQuery: boolean;
-  private readonly interactionHandler: ClaudeInteractionHandler;
+  private readonly interactionHandler: ClaudeExecutionInteractionRouter;
   private readonly state: SessionSnapshotState;
   private readonly resume: ClaudeResumeState;
   private activeRun: ActiveRequestedRun | null = null;
@@ -160,7 +160,7 @@ ClaudeExecutionStrategySink {
     this.encoder = new ClaudeExecutionRequestEncoder({
       host,
     });
-    this.interactionHandler = new ClaudeInteractionHandler({
+    this.interactionHandler = new ClaudeExecutionInteractionRouter({
       interactionPort: config.interactionPort,
       sessionInstanceId: this.sessionInstanceId,
       getTurnId: toolId => this.#getInteractionTurnId(toolId),

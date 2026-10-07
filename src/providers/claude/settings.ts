@@ -7,7 +7,7 @@ import {
   readStoredString,
 } from '../../core/providers/settings/storedSettings';
 import type { HostnameCLIPaths } from '../../core/types/settings';
-import { type ClaudeDiscoveredModel, decodeClaudeModels } from './modelCatalog';
+import { type ClaudeDiscoveredModel, decodeClaudeModels } from './models';
 
 type ClaudeSettingSource = 'user' | 'project' | 'local';
 

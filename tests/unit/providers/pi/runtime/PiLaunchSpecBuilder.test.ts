@@ -1,4 +1,4 @@
-import { buildPiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpec';
+import { buildPiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpecBuilder';
 import type { PiProviderSettings } from '@/providers/pi/settings';
 
 const baseSettings: PiProviderSettings = {
@@ -13,7 +13,7 @@ const baseSettings: PiProviderSettings = {
   visibleModels: [],
 };
 
-describe('PiLaunchSpec', () => {
+describe('PiLaunchSpecBuilder', () => {
   it('builds main launch args with replacement system prompt and model flags', () => {
     expect(buildPiLaunchSpec({
       command: '/bin/pi',

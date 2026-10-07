@@ -35,7 +35,7 @@ const PERSISTABLE_DECISION_OPTIONS: readonly ProviderApprovalDecisionOption[] = 
   { label: 'Always allow', value: 'allow-always', decision: 'allow-always' },
 ];
 
-export class ClaudeInteractionHandler {
+export class ClaudeExecutionInteractionRouter {
   private readonly pending: PendingInteractionLedger;
 
   constructor(private readonly deps: ClaudeExecutionInteractionDeps) {

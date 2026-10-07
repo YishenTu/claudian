@@ -6,8 +6,8 @@ import { testDate, testTime } from '@test/helpers/testClock';
 
 import type { Conversation, ToolCallInfo } from '@/core/types';
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
+import type { SDKSessionLocation } from '@/providers/claude/history/ClaudeHistoryPathResolver';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
-import type { SDKSessionLocation } from '@/providers/claude/history/sdkSessionPaths';
 
 function createConversation(overrides: Partial<Conversation> = {}): Conversation {
   return {

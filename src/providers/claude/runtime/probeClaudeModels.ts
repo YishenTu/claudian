@@ -1,7 +1,7 @@
 import type { ModelInfo, SDKControlInitializeResponse } from '@anthropic-ai/claude-agent-sdk';
 
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
-import type { ClaudeDiscoveredModel } from '../modelCatalog';
+import type { ClaudeDiscoveredModel } from '../models';
 import { decodeOutputStyles } from '../settings';
 import { isEffortLevel } from '../types/models';
 import { probeClaudeRuntime } from './probeClaudeRuntime';

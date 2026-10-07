@@ -1,7 +1,7 @@
 const mockDiscoverCatalog = jest.fn();
 
-jest.mock('@/providers/grok/runtime/GrokModelCatalogService', () => ({
-  GrokModelCatalogService: jest.fn().mockImplementation(() => ({
+jest.mock('@/providers/grok/runtime/GrokModelDiscoveryService', () => ({
+  GrokModelDiscoveryService: jest.fn().mockImplementation(() => ({
     discoverCatalog: mockDiscoverCatalog,
   })),
 }));

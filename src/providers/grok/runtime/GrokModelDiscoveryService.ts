@@ -62,14 +62,14 @@ export type GrokModelCatalogDiscoveryResult =
     reason: 'provider-disabled';
   };
 
-export interface GrokModelCatalogServiceLike {
+export interface GrokModelDiscoveryServiceLike {
   discoverCatalog(
     signal?: AbortSignal,
     context?: ProviderTransitionOwnerContext,
   ): Promise<GrokModelCatalogDiscoveryResult>;
 }
 
-export interface GrokModelCatalogServiceOptions {
+export interface GrokModelDiscoveryServiceOptions {
   modelCommandTimeoutMs?: number;
   probe?: GrokModelCatalogProbeLike;
   runner?: GrokCatalogCommandRunner;
@@ -142,13 +142,13 @@ export function parseGrokModelsOutput(output: string): {
   };
 }
 
-export class GrokModelCatalogService implements GrokModelCatalogServiceLike {
+export class GrokModelDiscoveryService implements GrokModelDiscoveryServiceLike {
   private readonly runner: GrokCatalogCommandRunner;
   private readonly probe: GrokModelCatalogProbeLike;
 
   constructor(
     private readonly plugin: ProviderHost,
-    private readonly options: GrokModelCatalogServiceOptions = {},
+    private readonly options: GrokModelDiscoveryServiceOptions = {},
   ) {
     this.runner = options.runner ?? new SpawnGrokCatalogCommandRunner();
     this.probe = options.probe ?? new GrokModelCatalogProbe();

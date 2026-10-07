@@ -28,6 +28,7 @@ import {
   getClaudeConversationSessionIds,
   getClaudeState,
 } from '../types/providerState';
+import type { SDKSessionLocation } from './ClaudeHistoryPathResolver';
 import {
   encodeVaultPathForSDK,
   getSDKProjectsPath,
@@ -38,7 +39,6 @@ import {
   locateSDKSessions,
   recoverSDKSessionIdByTime,
 } from './ClaudeHistoryStore';
-import type { SDKSessionLocation } from './sdkSessionPaths';
 
 function chooseRicherResult(sdkResult?: string, cachedResult?: string): string | undefined {
   const sdkText = typeof sdkResult === 'string' ? sdkResult.trim() : '';

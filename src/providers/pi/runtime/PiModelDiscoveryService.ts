@@ -8,7 +8,7 @@ import {
   type PiDiscoveredModel,
 } from '../models';
 import { getPiProviderSettings } from '../settings';
-import { buildPiLaunchSpec } from './PiLaunchSpec';
+import { buildPiLaunchSpec } from './PiLaunchSpecBuilder';
 import { PiRPCTransport } from './PiRPCTransport';
 import { PiSubprocess } from './PiSubprocess';
 

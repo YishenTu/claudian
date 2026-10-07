@@ -16,7 +16,7 @@ import { ImageContextManager } from '@/features/chat/composer/ImageContextManage
 import { MainChatComposerDropdown } from '@/features/chat/composer/MainChatComposerDropdown';
 import { CanvasSelectionController } from '@/features/chat/input/CanvasSelectionController';
 import { sendTabInputMessageFromExplicitEnterShortcut } from '@/features/chat/tabs/TabInputEvents';
-import { CodexSkillCatalog } from '@/providers/codex/commands/CodexSkillCatalog';
+import { CodexCommandCatalog } from '@/providers/codex/commands/CodexCommandCatalog';
 import type { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
 import { CodexSkillListingService } from '@/providers/codex/skills/CodexSkillListingService';
 import { ComposerDropdownController } from '@/shared/composer-dropdown/ComposerDropdownController';
@@ -529,7 +529,7 @@ it('reloads Codex skills on reopening the picker and filters the current opening
       release: async () => undefined,
     }),
   } as unknown as CodexAppServerRuntime);
-  const catalog = new CodexSkillCatalog(skills);
+  const catalog = new CodexCommandCatalog(skills);
   const dropdown = new MainChatComposerDropdown(parent, editor.element, new FileContextManager(new VaultMentionDataProvider(createApp())), {
     providerId: 'codex', providerConfig: catalog.getDropdownConfig(),
     providerDiscovery: createCatalogCommandDiscoveryStore(catalog),

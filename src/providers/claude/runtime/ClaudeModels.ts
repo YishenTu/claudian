@@ -1,8 +1,8 @@
 import { ProviderModelCatalogController } from '../../../core/providers/models/ProviderModelCatalog';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { ProviderModelCatalogRefreshResult } from '../../../core/providers/types';
-import { type ClaudeDiscoveredModel, decodeClaudeModels } from '../modelCatalog';
 import { getClaudeModelCatalog, hasClaudeModelIdentity, resolveClaudeVisibleModels } from '../modelOptions';
+import { type ClaudeDiscoveredModel, decodeClaudeModels } from '../models';
 import { toClaudeRuntimeModelId } from '../modelSelection';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import { type ClaudeRuntimeCatalog, probeClaudeCatalog } from './probeClaudeModels';

@@ -6,7 +6,7 @@ import {
   encodeVaultPathForSDK,
   getSDKProjectsPath,
   isValidSessionId,
-} from './sdkSessionPaths';
+} from './ClaudeHistoryPathResolver';
 
 const TRANSCRIPT_CHUNK_SIZE = 64 * 1024;
 const TRANSCRIPT_SCAN_CONCURRENCY = 16;

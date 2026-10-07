@@ -17,8 +17,8 @@ import {
 } from '../settings';
 import type {
   GrokModelCatalogDiscoveryResult,
-  GrokModelCatalogServiceLike,
-} from './GrokModelCatalogService';
+  GrokModelDiscoveryServiceLike,
+} from './GrokModelDiscoveryService';
 
 export interface GrokCatalogResult {
   catalog: GrokCatalogSnapshot | null;
@@ -54,7 +54,7 @@ export class GrokModelCatalogCoordinator {
 
   constructor(
     private readonly plugin: ProviderHost,
-    private readonly service: GrokModelCatalogServiceLike,
+    private readonly service: GrokModelDiscoveryServiceLike,
   ) {}
 
   getCachedCatalog(): GrokCatalogSnapshot | null {

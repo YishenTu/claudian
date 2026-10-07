@@ -51,7 +51,7 @@ function listedSkillToProviderEntry(skill: SkillMetadata): ProviderCommandEntry 
   };
 }
 
-export class CodexSkillCatalog implements ProviderCommandCatalog {
+export class CodexCommandCatalog implements ProviderCommandCatalog {
   constructor(private listProvider: CodexSkillListProvider) {}
 
   setCommandSnapshot(_commands: SlashCommand[]): void {

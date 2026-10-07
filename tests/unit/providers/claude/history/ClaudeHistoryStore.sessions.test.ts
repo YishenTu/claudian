@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { extractToolResultContent } from '@/core/tools/toolResultContent';
+import { getSDKSessionPath, isValidSessionId, readSDKSession } from '@/providers/claude/history/ClaudeHistoryPathResolver';
 import {
   encodeVaultPathForSDK,
   getLastSDKSessionModel,
@@ -17,7 +18,6 @@ import { resolveToolUseResultStatus } from '@/providers/claude/history/sdkAsyncS
 import { filterActiveBranch } from '@/providers/claude/history/sdkBranchFilter';
 import type { SDKNativeMessage } from '@/providers/claude/history/sdkHistoryTypes';
 import { collectAsyncSubagentResults, parseSDKMessageToChat } from '@/providers/claude/history/sdkMessageParsing';
-import { getSDKSessionPath, isValidSessionId, readSDKSession } from '@/providers/claude/history/sdkSessionPaths';
 import { parseClaudeTaskNotification } from '@/providers/claude/normalization/claudeTaskNotification';
 
 // Mock fs, fs/promises, and os modules

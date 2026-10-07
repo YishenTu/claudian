@@ -12,13 +12,13 @@ import { isWriteEditTool } from '../../../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo, TurnStats } from '../../../core/types';
 import { createTurnStats, isTokenCount } from '../../../core/types';
 import { encodePiModelId } from '../models';
-import { getPiCustomMessageDisplayText } from '../normalizations/piCustomMessageNormalization';
+import { getPiCustomMessageDisplayText } from '../normalization/piCustomMessageNormalization';
 import {
   extractPiToolResultText,
   normalizePiToolInput,
   normalizePiToolName,
   normalizePiToolResultDetails,
-} from '../normalizations/piToolNormalization';
+} from '../normalization/piToolNormalization';
 import type { PiTreeCursor } from '../types';
 import { decodePiRecoveryPrompt } from './PiRecoveryPromptCodec';
 

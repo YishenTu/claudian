@@ -3,7 +3,7 @@ import {
   PiExtensionUIBridge,
   type PiExtensionUIRenderer,
 } from '../runtime/PiExtensionUIBridge';
-import type { PiLaunchSpec } from '../runtime/PiLaunchSpec';
+import type { PiLaunchSpec } from '../runtime/PiLaunchSpecBuilder';
 import {
   type PiRPCRecord,
   PiRPCTransport,

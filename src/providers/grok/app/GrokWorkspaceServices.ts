@@ -8,7 +8,7 @@ import type {
 import { GrokCommandCatalog } from '../commands/GrokCommandCatalog';
 import { GrokCLIResolver } from '../runtime/GrokCLIResolver';
 import { GrokModelCatalogCoordinator } from '../runtime/GrokModelCatalogCoordinator';
-import { GrokModelCatalogService } from '../runtime/GrokModelCatalogService';
+import { GrokModelDiscoveryService } from '../runtime/GrokModelDiscoveryService';
 import { createGrokModels } from '../runtime/GrokModels';
 import { grokSettingsTabRenderer } from '../ui/GrokSettingsTab';
 import { GrokCommandLoader } from './GrokCommandLoader';
@@ -29,7 +29,7 @@ export async function createGrokWorkspaceServices(
   plugin: ProviderHost,
   options: GrokWorkspaceServicesOptions = {},
 ): Promise<GrokWorkspaceServices> {
-  const modelCatalogService = new GrokModelCatalogService(plugin);
+  const modelCatalogService = new GrokModelDiscoveryService(plugin);
   const modelCatalogCoordinator = new GrokModelCatalogCoordinator(
     plugin,
     modelCatalogService,

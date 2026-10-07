@@ -3,10 +3,10 @@ import * as fs from 'node:fs/promises';
 import type { ProviderHistoryPathContext } from '@/core/providers/types';
 import { createTurnStats, isTokenCount, type TurnStats } from '@/core/types';
 
+import { getSDKSessionPath } from './ClaudeHistoryPathResolver';
 import { filterActiveBranch } from './sdkBranchFilter';
 import type { SDKNativeMessage } from './sdkHistoryTypes';
 import { isCanonicalSDKUserMessage, isSystemInjectedMessage } from './sdkMessageParsing';
-import { getSDKSessionPath } from './sdkSessionPaths';
 
 /** Finalized JSONL response IDs may occur in several content-block records. */
 export class ClaudeTurnStats {

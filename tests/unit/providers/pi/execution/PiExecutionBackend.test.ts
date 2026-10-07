@@ -27,7 +27,7 @@ import {
   type PiExecutionKernelCallbacks,
 } from '@/providers/pi/execution';
 import { PiConversationHistoryService } from '@/providers/pi/history/PiConversationHistoryService';
-import type { PiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpec';
+import type { PiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpecBuilder';
 
 class FakeKernel implements PiExecutionKernel {
   readonly requests: Array<{ payload: Record<string, unknown>; type: string }> = [];

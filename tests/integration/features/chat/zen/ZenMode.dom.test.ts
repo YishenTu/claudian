@@ -24,7 +24,7 @@ import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 import { FLAVOR_TEXTS } from '@/features/chat/turns/flavorTexts';
 import { ZenModeController } from '@/features/chat/zen/ZenModeController';
-import { adaptCodexStreamChunk } from '@/providers/codex/execution/CodexExecutionEventAdapter';
+import { adaptCodexStreamChunk } from '@/providers/codex/execution/CodexExecutionEventNormalizer';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 

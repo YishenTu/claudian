@@ -80,13 +80,13 @@ import {
   isPiDisplayedCustomMessageStart,
   normalizePiRPCEvent,
   type PiEventNormalizationState,
-} from '../normalizations/piEventNormalization';
+} from '../normalization/piEventNormalization';
 import { buildPiUsageInfo } from '../runtime/buildPiUsageInfo';
 import type { PiExtensionUIRenderer } from '../runtime/PiExtensionUIBridge';
 import {
   buildPiLaunchSpec,
   type PiLaunchSpec,
-} from '../runtime/PiLaunchSpec';
+} from '../runtime/PiLaunchSpecBuilder';
 import { assertPiModelAvailable } from '../runtime/PiModelAvailability';
 import { buildPiSetModelPayload } from '../runtime/PiRPCPayloads';
 import { type PiRPCRecord, PiRPCResponseError } from '../runtime/PiRPCTransport';

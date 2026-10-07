@@ -1,7 +1,7 @@
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk';
 
 import type { ProviderInteractionPort } from '@/core/execution';
-import { ClaudeInteractionHandler } from '@/providers/claude/execution/ClaudeInteractionHandler';
+import { ClaudeExecutionInteractionRouter } from '@/providers/claude/execution/ClaudeExecutionInteractionRouter';
 
 function createPort(): jest.Mocked<ProviderInteractionPort> {
   return {
@@ -21,7 +21,7 @@ function createHandler(
   port: jest.Mocked<ProviderInteractionPort>,
   onToolBlocked: jest.Mock = jest.fn(),
 ): CanUseTool {
-  return new ClaudeInteractionHandler({
+  return new ClaudeExecutionInteractionRouter({
     interactionPort: port,
     sessionInstanceId: 'session-local',
     getTurnId: () => 'turn-local',
@@ -36,7 +36,7 @@ const nativeOptions = {
   requestId: 'native-request-1',
 };
 
-describe('ClaudeInteractionHandler', () => {
+describe('ClaudeExecutionInteractionRouter', () => {
   it('allows only the current invocation for an allow-once decision', async () => {
     const port = createPort();
     port.requestApproval.mockImplementation(async (request) => ({
@@ -212,7 +212,7 @@ describe('ClaudeInteractionHandler', () => {
 
   it('fails closed for disallowed tools before opening an interaction', async () => {
     const port = createPort();
-    const handler = new ClaudeInteractionHandler({
+    const handler = new ClaudeExecutionInteractionRouter({
       interactionPort: port,
       sessionInstanceId: 'session-local',
       getTurnId: () => 'turn-local',
@@ -237,7 +237,7 @@ describe('ClaudeInteractionHandler', () => {
     port.requestApproval.mockReturnValue(new Promise((resolve) => {
       resolveApproval = resolve;
     }));
-    const handler = new ClaudeInteractionHandler({
+    const handler = new ClaudeExecutionInteractionRouter({
       interactionPort: port,
       sessionInstanceId: 'session-local',
       getTurnId: () => 'turn-local',

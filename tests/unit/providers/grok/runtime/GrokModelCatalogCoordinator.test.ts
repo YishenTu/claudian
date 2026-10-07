@@ -11,8 +11,8 @@ import {
 } from '@/providers/grok/runtime/GrokModelCatalogCoordinator';
 import type {
   GrokModelCatalogDiscoveryResult,
-  GrokModelCatalogServiceLike,
-} from '@/providers/grok/runtime/GrokModelCatalogService';
+  GrokModelDiscoveryServiceLike,
+} from '@/providers/grok/runtime/GrokModelDiscoveryService';
 import {
   DEFAULT_GROK_PROVIDER_SETTINGS,
   getCurrentGrokCatalog,
@@ -77,7 +77,7 @@ function makeHost(options: {
 
 function makeService(
   result: GrokModelCatalogDiscoveryResult,
-): GrokModelCatalogServiceLike {
+): GrokModelDiscoveryServiceLike {
   return {
     discoverCatalog: jest.fn(async () => result),
   };
@@ -180,7 +180,7 @@ describe('GrokModelCatalogCoordinator', () => {
     const pending = new Promise<GrokModelCatalogDiscoveryResult>((resolve) => {
       resolveDiscovery = resolve;
     });
-    const service: GrokModelCatalogServiceLike = {
+    const service: GrokModelDiscoveryServiceLike = {
       discoverCatalog: jest.fn(async () => pending),
     };
     const coordinator = new GrokModelCatalogCoordinator(makeHost(), service);
@@ -199,7 +199,7 @@ describe('GrokModelCatalogCoordinator', () => {
     const pending = new Promise<GrokModelCatalogDiscoveryResult>((resolve) => {
       resolveDiscovery = resolve;
     });
-    const service: GrokModelCatalogServiceLike = {
+    const service: GrokModelDiscoveryServiceLike = {
       discoverCatalog: jest.fn(async (signal) => {
         discoverySignal = signal;
         return pending;
@@ -255,7 +255,7 @@ describe('GrokModelCatalogCoordinator', () => {
     const ownerDiscovery = new Promise<GrokModelCatalogDiscoveryResult>(resolve => {
       resolveOwner = resolve;
     });
-    const service: GrokModelCatalogServiceLike = {
+    const service: GrokModelDiscoveryServiceLike = {
       discoverCatalog: jest.fn()
         .mockImplementationOnce(() => oldDiscovery)
         .mockImplementationOnce(() => ownerDiscovery),
@@ -296,7 +296,7 @@ describe('GrokModelCatalogCoordinator', () => {
     const ownerDiscovery = new Promise<GrokModelCatalogDiscoveryResult>(resolve => {
       resolveOwner = resolve;
     });
-    const service: GrokModelCatalogServiceLike = {
+    const service: GrokModelDiscoveryServiceLike = {
       discoverCatalog: jest.fn()
         .mockImplementationOnce(() => oldDiscovery)
         .mockImplementationOnce(() => ownerDiscovery),
@@ -491,7 +491,7 @@ describe('GrokModelCatalogCoordinator', () => {
     const discovery = new Promise<GrokModelCatalogDiscoveryResult>((resolve) => {
       resolveDiscovery = resolve;
     });
-    const service: GrokModelCatalogServiceLike = {
+    const service: GrokModelDiscoveryServiceLike = {
       discoverCatalog: jest.fn(async () => discovery),
     };
     const host = makeHost({
