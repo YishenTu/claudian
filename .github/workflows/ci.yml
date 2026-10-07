@@ -33,8 +33,16 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
       - name: Check Bun lockfile
         run: npm run check:lockfile
+
+      - name: Check npm lockfile
+        run: npm install --package-lock-only --ignore-scripts && git diff --exit-code package-lock.json
 
   quality:
     runs-on: ubuntu-latest
@@ -57,9 +65,8 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      # Temporarily disabled; uncomment this step to restore dependency audits.
-      # - name: Audit dependencies
-      #   run: npm audit --audit-level=moderate
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate
 
   diff-hygiene:
     if: github.event_name == 'pull_request'
