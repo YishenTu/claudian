@@ -5,10 +5,11 @@ import { type App, type Component, MarkdownRenderer, setIcon } from 'obsidian';
 
 import type { ProviderCommandKind } from '@/core/providers/commands/ProviderCommandEntry';
 import { type ComposerSessionMention, findComposerSessionMentions } from '@/features/chat/composer/composerSessionMentions';
-import { filterComposerTextTokens, findComposerWikilinks } from '@/features/chat/composer/composerWikilinks';
+import { findComposerWikilinks } from '@/features/chat/composer/composerWikilinks';
 import { t } from '@/i18n/i18n';
 import type { ComposerCommandResolver, ComposerInputElement } from '@/shared/composer-dropdown/types';
 import { registerFileLinkHandler } from '@/utils/fileLink';
+import { filterMarkdownTextTokens } from '@/utils/markdownTextTokens';
 
 const refreshLinks = StateEffect.define<null>();
 const programmatic = Annotation.define<boolean>();
@@ -103,7 +104,7 @@ function findComposerCommands(
     const kind = resolve(match[0], match.index === 0);
     return kind ? [{ index: match.index, fullMatch: match[0], kind }] : [];
   });
-  return tokens.length ? filterComposerTextTokens(text, tokens) : [];
+  return tokens.length ? filterMarkdownTextTokens(text, tokens) : [];
 }
 
 /** Owns the editable Markdown document; wikilink presentation is derived from its text. */

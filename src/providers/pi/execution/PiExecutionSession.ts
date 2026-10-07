@@ -2025,13 +2025,18 @@ function encodePrompt(
   images: PiPromptImage[];
   text: string;
 } {
-  let text = getInputText(request);
+  const inputText = getInputText(request);
+  let text = inputText;
   const context = request.context;
   if (context?.linkedContent?.path) {
     text = appendLinkedContent(text, context.linkedContent.path);
   }
   text = appendSelectionContexts(text, context);
   text = appendSessionReferences(text, context?.sessionReferences);
+  // Pi splits a leading skill name at a literal space, not the context's newline separator.
+  if (text !== inputText && /^\/skill:\S+$/.test(inputText)) {
+    text = `${inputText} ${text.slice(inputText.length)}`;
+  }
   if (replayConversationHistory && request.conversationHistory?.length) {
     const history = [...request.conversationHistory] as ChatMessage[];
     const historyContext = buildContextFromHistory(history, { preserveCapturedContext });

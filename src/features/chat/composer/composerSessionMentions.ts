@@ -1,4 +1,4 @@
-import { filterComposerTextTokens } from '@/features/chat/composer/composerWikilinks';
+import { filterMarkdownTextTokens } from '@/utils/markdownTextTokens';
 
 export interface ComposerSessionMention {
   index: number;
@@ -15,7 +15,7 @@ export function formatComposerSessionMention(title: string, conversationId: stri
 export function findComposerSessionMentions(text: string): ComposerSessionMention[] {
   if (!text.includes('@[')) return [];
   const pattern = /@\[((?:\\[\\\]]|[^\]\\\r\n])*)\]\(claudian-session:(conv-[0-9]+-[a-z0-9]+)\)/g;
-  return filterComposerTextTokens(text, [...text.matchAll(pattern)].map(match => ({
+  return filterMarkdownTextTokens(text, [...text.matchAll(pattern)].map(match => ({
     index: match.index,
     fullMatch: match[0],
     title: match[1].replace(/\\([\\\]])/g, '$1'),

@@ -295,6 +295,10 @@ it.each([
   ['/writing these images', 'prompt', '/writing these images', writingSkill],
   ['Use /writing on these images', 'prompt', 'Use /writing on these images', { skills: [{ id: 'writing', mention: { start: 4, end: 12, text: '/writing' } }] }],
   ['Use /writing/draft.md and /writingx', 'prompt', 'Use /writing/draft.md and /writingx', {}],
+  ['Explain this example:\n```\n/writing\n```', 'prompt', 'Explain this example:\n```\n/writing\n```', {}],
+  ['Example: `use /writing here`', 'prompt', 'Example: `use /writing here`', {}],
+  ['    /writing', 'prompt', '    /writing', {}],
+  ['Use /writing after `example /writing here`', 'prompt', 'Use /writing after `example /writing here`', { skills: [{ id: 'writing', mention: { start: 4, end: 12, text: '/writing' } }] }],
   ['Use /writing.probe, then /writing.', 'prompt', 'Use /writing.probe, then /writing.', { skills: [
     { id: 'writing.probe', mention: { start: 4, end: 18, text: '/writing.probe' } },
     { id: 'writing', mention: { start: 25, end: 33, text: '/writing' } },
@@ -557,20 +561,23 @@ describe('native steering', () => {
     } finally { await f.dispose(); }
   });
 
-  it('attaches a typed skill to steered input', async () => {
+  it.each([
+    ['Now apply /writing', { skills: [{ id: 'writing', mention: { start: 10, end: 18, text: '/writing' } }] }],
+    ['Explain this example:\n```\n/writing\n```', {}],
+  ])('attaches only prose skills to steered input: %s', async (text, attachments) => {
     const f = createFixture(false, undefined, 'ECHO_PROMPT=1');
     try {
       const events: ProviderExecutionEvent[] = [];
       let admission: Promise<boolean> | undefined;
       for await (const event of f.session.execute(request('steer')).events) {
         events.push(event);
-        if (event.type === 'text_delta' && event.text === 'Working') admission = steer(f, 'Now apply /writing');
+        if (event.type === 'text_delta' && event.text === 'Working') admission = steer(f, text);
       }
       expect(await admission).toBe(true);
       const echoed = events.flatMap(event => event.type === 'text_delta' && event.text !== 'Working' ? [event.text] : []).join('');
       expect(JSON.parse(echoed)).toEqual({
-        id: expect.any(String), delivery: 'steer', text: 'Now apply /writing',
-        skills: [{ id: 'writing', mention: { start: 10, end: 18, text: '/writing' } }],
+        id: expect.any(String), delivery: 'steer', text,
+        ...attachments,
       });
     } finally { await f.dispose(); }
   });

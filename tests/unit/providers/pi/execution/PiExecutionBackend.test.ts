@@ -1073,6 +1073,56 @@ describe('PiExecutionBackend', () => {
     }));
   });
 
+  it.each([
+    { text: '/skill:review', context: undefined, expected: '/skill:review' },
+    {
+      text: '/skill:review', context: { linkedContent: { path: 'note.md' } },
+      expected: '/skill:review \n\n<linked_content path="note.md" />',
+    },
+    {
+      text: '/skill:review', context: capturedSelections,
+      expected: '/skill:review \n\n' + capturedSelectionPrompt,
+    },
+    {
+      text: '/skill:review',
+      context: { sessionReferences: [{ id: 'ref', title: 'Review', providerId: 'pi', updatedAt: 'updated', snapshotPath: '/tmp/ref.md' }] },
+      expected: '/skill:review \n\n<context_sessions>\n<context_session title="Review" id="ref" provider="pi" updated="updated" path="/tmp/ref.md" />\n</context_sessions>',
+    },
+    {
+      text: '/skill:review task', context: { linkedContent: { path: 'note.md' } },
+      expected: '/skill:review task\n\n<linked_content path="note.md" />',
+    },
+    {
+      text: 'Please /skill:review', context: { linkedContent: { path: 'note.md' } },
+      expected: 'Please /skill:review\n\n<linked_content path="note.md" />',
+    },
+    {
+      text: '/skill:review\nuser arguments', context: { linkedContent: { path: 'note.md' } },
+      expected: '/skill:review\nuser arguments\n\n<linked_content path="note.md" />',
+    },
+  ])('preserves Pi skill syntax when attaching context to prompts and steers: $text', async ({ text, context, expected }) => {
+    const { session, kernels } = createHarness();
+    if (!isSteerableExecutionSession(session)) throw new Error('Pi must expose steering');
+    const request = createRequest({ input: [{ type: 'text', text }], context });
+    const run = session.execute(request);
+    const events = collect(run.events);
+    try {
+      await waitFor(() => kernels[0]?.requests.some(request => request.type === 'prompt') ?? false);
+      expect(await session.steer(request)).toBe(true);
+      completeTurn(kernels[0]);
+      await events;
+      expect(kernels[0].requests.filter(request => request.type === 'prompt' || request.type === 'steer')
+        .map(({ type, payload }) => ({ type, message: payload.message }))).toEqual([
+        { type: 'prompt', message: expected },
+        { type: 'steer', message: expected },
+      ]);
+    } finally {
+      run.cancel();
+      await events;
+      await session.dispose();
+    }
+  });
+
   it('encodes path-only Linked content without changing the Vault-root process CWD', async () => {
     const harness = createHarness();
     const run = harness.session.execute(createRequest({

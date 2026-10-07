@@ -4,6 +4,7 @@ import { parseCompactCommand } from '@/core/commands/compactCommand';
 import { PendingInteractionLedger } from '@/core/execution';
 import { resolveTitleGenerationLocale } from '@/core/prompt/titleGeneration';
 import type { ACPPromptRequest, ACPSessionConfigOption } from '@/providers/acp';
+import { filterMarkdownTextTokens } from '@/utils/markdownTextTokens';
 
 import { forkOpencodeHTTPSession } from '../history/OpencodeSessionFork';
 import { isRecord, OpencodeHTTPError, type OpencodeHTTPEvent, pollOpencodeUntil } from '../http/OpencodeHTTPClient';
@@ -251,11 +252,13 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       .catch((error: unknown) => { if (error instanceof OpencodeHTTPError && error.status === 404) return { data: [] }; throw error; });
     // Skill IDs may contain punctuation, so the longest catalog ID followed only by trailing punctuation wins.
     const ids = catalog.data.map(skill => skill.id).filter(Boolean).sort((a, b) => b.length - a.length);
-    return [...typed.matchAll(SLASH_TOKEN)].flatMap(match => {
-      const token = match[1];
-      const id = ids.find(id => token.startsWith(id) && TRAILING_PUNCTUATION.test(token.slice(id.length)));
+    const tokens = [...typed.matchAll(SLASH_TOKEN)].map(match => ({
+      index: match.index, fullMatch: match[0], name: match[1],
+    }));
+    return filterMarkdownTextTokens(typed, tokens).flatMap(token => {
+      const id = ids.find(id => token.name.startsWith(id) && TRAILING_PUNCTUATION.test(token.name.slice(id.length)));
       if (!id) return [];
-      const start = userText!.start + match.index;
+      const start = userText!.start + token.index;
       return [{ id, mention: { start, end: start + id.length + 1, text: `/${id}` } }];
     });
   }
