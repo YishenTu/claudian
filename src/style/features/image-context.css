@@ -1,10 +1,7 @@
 /* Drop overlay - inside input wrapper */
 .claudian-drop-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background: rgb(var(--claudian-brand-rgb), 0.08);
   border: 2px dashed var(--claudian-brand);
   border-radius: 6px;

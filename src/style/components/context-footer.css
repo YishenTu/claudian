@@ -7,7 +7,6 @@
 
   /* With the icon's 4px inset in its 24px gauge, 6px separates it from the number. */
   gap: 2px;
-  margin-inline-start: 0;
   cursor: default;
 }
 

@@ -46,15 +46,19 @@
   height: 14px;
 }
 
-.claudian-subagent-status.status-running {
+.claudian-subagent-status.status-running,
+.claudian-subagent-tool-status.status-running {
   color: var(--text-accent);
 }
 
-.claudian-subagent-status.status-completed {
+.claudian-subagent-status.status-completed,
+.claudian-subagent-tool-status.status-completed {
   color: var(--color-green);
 }
 
-.claudian-subagent-status.status-error {
+.claudian-subagent-status.status-error,
+.claudian-subagent-tool-status.status-error,
+.claudian-subagent-tool-status.status-blocked {
   color: var(--color-red);
 }
 
@@ -167,10 +171,6 @@
   gap: 4px;
 }
 
-.claudian-subagent-tool-item {
-  display: block;
-}
-
 .claudian-subagent-tool-header {
   display: flex;
   align-items: center;
@@ -226,19 +226,6 @@
   height: 12px;
 }
 
-.claudian-subagent-tool-status.status-running {
-  color: var(--text-accent);
-}
-
-.claudian-subagent-tool-status.status-completed {
-  color: var(--color-green);
-}
-
-.claudian-subagent-tool-status.status-error,
-.claudian-subagent-tool-status.status-blocked {
-  color: var(--color-red);
-}
-
 .claudian-subagent-tool-content {
   padding: 2px 0 2px 16px;
 }
@@ -257,14 +244,6 @@
   color: var(--text-muted);
   margin-inline-start: auto;
   padding-inline-start: 8px;
-}
-
-.claudian-subagent-list.async .claudian-subagent-icon {
-  color: var(--interactive-accent);
-}
-
-.claudian-subagent-list.async.pending .claudian-subagent-status-text {
-  color: var(--text-muted);
 }
 
 .claudian-subagent-list.async.running .claudian-subagent-status-text {

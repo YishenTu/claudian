@@ -104,6 +104,10 @@
   color: var(--color-orange);
 }
 
+.claudian-tool-status.status-cancelled {
+  color: var(--text-muted);
+}
+
 /* Tool call content - border style (like thinking block) */
 .claudian-tool-content {
   padding: 4px 0;
@@ -258,17 +262,11 @@
 
 .claudian-tool-result-item {
   display: block;
-  margin-bottom: 2px;
 }
 
 .claudian-tool-patch-section + .claudian-tool-patch-section {
   margin-top: 10px;
 }
-
-.claudian-tool-result-item:last-child {
-  margin-bottom: 0;
-}
-
 
 .claudian-tool-script-label {
   color: var(--text-faint);
@@ -321,7 +319,6 @@
   margin-right: 6px;
 }
 
-.claudian-tool-status.status-cancelled,
 .claudian-tool-script-call-detail {
   color: var(--text-muted);
 }

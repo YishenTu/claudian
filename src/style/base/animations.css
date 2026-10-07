@@ -20,12 +20,6 @@
   }
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @keyframes mcp-glow {
   0%,
   100% {

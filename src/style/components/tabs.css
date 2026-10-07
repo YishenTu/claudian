@@ -31,7 +31,6 @@
   justify-content: center;
   flex: 0 0 24px;
   width: 24px;
-  max-width: 24px;
   height: 24px;
   box-sizing: border-box;
   padding: 0;
@@ -52,7 +51,6 @@
   flex: 0 0 auto;
   justify-content: flex-start;
   width: auto;
-  max-width: none;
   padding: 0 8px;
 }
 
@@ -88,10 +86,6 @@ body.theme-dark .claudian-tab-badge-streaming {
 
 .claudian-tab-badge-action-required {
   border-color: var(--color-orange);
-}
-
-.claudian-tab-badge-idle {
-  border-color: var(--background-modifier-border);
 }
 
 .claudian-tab-content-container {

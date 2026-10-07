@@ -24,17 +24,13 @@
 .claudian-inline-input-container {
   display: flex;
   flex-direction: column;
-  gap: 0;
   padding: 2px 0;
-  background: transparent;
 }
 
 /* Input wrapper - contains input and spinner */
 .claudian-inline-input-wrap {
   flex: 1;
   position: relative;
-  background: transparent;
-  overflow: visible;
 }
 
 /* Input - fully transparent */
@@ -42,9 +38,7 @@
   width: 100%;
   padding: 4px 8px;
   padding-inline-end: 30px;
-  border-width: 1px;
-  border-style: solid;
-  border-color: var(--background-modifier-border);
+  border: 1px solid var(--background-modifier-border);
   border-radius: 8px;
   background: transparent;
   color: var(--text-normal);
@@ -85,10 +79,7 @@
 .claudian-inline-agent-reply {
   padding: 8px;
   margin-bottom: 4px;
-  background: transparent;
-  border-width: 1px;
-  border-style: solid;
-  border-color: var(--background-modifier-border);
+  border: 1px solid var(--background-modifier-border);
   border-radius: 8px;
   font-family: var(--font-interface, -apple-system, BlinkMacSystemFont, sans-serif);
   font-size: var(--font-ui-small, 13px);
@@ -99,12 +90,14 @@
 }
 
 .claudian-inline-agent-reply > :first-child,
-.claudian-inline-diff-preview-body > :first-child {
+.claudian-inline-diff-preview-body > :first-child,
+.claudian-diff-block > :first-child {
   margin-top: 0;
 }
 
 .claudian-inline-agent-reply > :last-child,
-.claudian-inline-diff-preview-body > :last-child {
+.claudian-inline-diff-preview-body > :last-child,
+.claudian-diff-block > :last-child {
   margin-bottom: 0;
 }
 
@@ -208,14 +201,6 @@
 
 .claudian-diff-block + .claudian-diff-block {
   margin-top: 2px;
-}
-
-.claudian-diff-block > :first-child {
-  margin-top: 0;
-}
-
-.claudian-diff-block > :last-child {
-  margin-bottom: 0;
 }
 
 .claudian-diff-del:not(.claudian-diff-block) {

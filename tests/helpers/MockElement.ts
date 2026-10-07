@@ -92,7 +92,6 @@ const CLASS_DISPLAY: Record<string, string> = {
 
 const DISPLAY_CLASSES = new Set([
   'claudian-hidden',
-  'claudian-visible-block',
   'claudian-visible-flex',
   ...Object.keys(CLASS_DISPLAY),
 ]);
@@ -113,7 +112,6 @@ export function createMockEl(tag = 'div'): any {
   const resolveDisplay = (): string | null => {
     if (classes.has('claudian-hidden')) return 'none';
     if (classes.has('claudian-visible-flex')) return 'flex';
-    if (classes.has('claudian-visible-block')) return 'block';
 
     for (const [cls, display] of Object.entries(CLASS_DISPLAY)) {
       if (classes.has(cls)) return display;

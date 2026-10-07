@@ -94,10 +94,6 @@
   height: 12px;
 }
 
-.claudian-toolbar-chip .claudian-model-provider-icon {
-  color: var(--claudian-brand);
-}
-
 .claudian-toolbar-chip-chevron svg {
   width: 12px;
   height: 12px;
@@ -137,9 +133,6 @@
 
   /* Secondary stays opaque when translucent themes clear the primary background. */
   background-color: var(--background-secondary);
-
-  /* The border alone separates the menu; a shadow would tint the area around it. */
-  box-shadow: none;
 }
 
 /* The model popover also keeps enough width for the reasoning slider to be usable. */
@@ -199,6 +192,7 @@
 }
 
 /* Every model's provider icon carries that provider's brand colour; names stay normal text. */
+.claudian-toolbar-chip .claudian-model-provider-icon,
 .claudian-model-option .claudian-model-provider-icon {
   color: var(--claudian-brand);
 }

@@ -182,8 +182,6 @@
   box-shadow: none;
   color: var(--text-normal);
   font: inherit;
-  font-size: inherit;
-  line-height: inherit;
 }
 
 .claudian-linked-content-picker-search:hover {
@@ -355,7 +353,6 @@ body.mod-windows .claudian-message-assistant {
 
 .claudian-text-block {
   position: relative;
-  margin: 0;
 }
 
 button.claudian-text-copy-btn {
@@ -427,7 +424,7 @@ button.claudian-text-copy-btn.copied {
 }
 
 .claudian-message-content p {
-  margin: 0 0 8px 0;
+  margin: 0 0 8px;
 }
 
 .claudian-message-content p:last-child {
@@ -482,16 +479,8 @@ button.claudian-text-copy-btn.copied {
   background: var(--background-modifier-border-hover);
 }
 
-/* Message timestamps and throughput share the toolbar's text size. */
-.claudian-message-timestamp,
-.claudian-response-throughput {
-  font-size: 11px;
-}
-
 .claudian-message-timestamp {
-  margin-top: 6px;
   color: var(--text-faint);
-  line-height: 1.2;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -502,7 +491,6 @@ button.claudian-text-copy-btn.copied {
 
 .claudian-message-images .claudian-message-timestamp {
   flex-basis: 100%;
-  margin-top: 0;
   text-align: end;
 }
 
@@ -567,16 +555,13 @@ button.claudian-work-header:disabled {
   align-items: center;
   gap: 12px;
   margin-top: 8px;
+  /* Keep the row in the message's hover area without shifting the conversation. */
+  opacity: 0;
+  pointer-events: none;
 }
 
 .claudian-message-user > .claudian-user-msg-actions {
   justify-content: flex-end;
-}
-
-/* Keep the row in the message's hover area without shifting the conversation. */
-.claudian-message-actions {
-  opacity: 0;
-  pointer-events: none;
 }
 
 /* Focus reveals the row only from its own buttons: collapsible headers elsewhere in
@@ -626,10 +611,6 @@ button.claudian-work-header:disabled {
 .claudian-message-user:hover .claudian-branch-marker,
 .claudian-message-user:focus-within .claudian-branch-marker {
   opacity: 0;
-}
-
-.claudian-message-actions .claudian-message-timestamp {
-  margin-top: 0;
 }
 
 /* Toolbar text sits in the same 16px box as the action icons. */

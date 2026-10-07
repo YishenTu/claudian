@@ -145,7 +145,7 @@ describe('Zen mode styles', () => {
       radius: 'var(--radius-l) var(--radius-l) 0 0',
     });
     // No gap, so the drawer's sides meet the composer's top border.
-    expect(window.getComputedStyle(panel).gap).toBe('0');
+    expect(['', 'normal', '0']).toContain(window.getComputedStyle(panel).gap);
     expect(window.getComputedStyle(panel.querySelector('.claudian-zen-history')!).borderStyle).toBe('');
   });
 

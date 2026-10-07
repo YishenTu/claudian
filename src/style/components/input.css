@@ -1,13 +1,13 @@
 /* Input area */
 .claudian-input-container {
   position: relative;
-  padding: 12px 0 0 0;
+  padding: 12px 0 0;
 }
 
 .claudian-input-footer {
   position: relative;
   flex-shrink: 0;
-  padding: 6px 0 0 0;
+  padding: 6px 0 0;
 }
 
 .claudian-active-input-slot > .claudian-input-composer > .claudian-input-container {
@@ -46,7 +46,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 0 6px 0;
+  padding: 0 0 6px;
   min-height: 0;
 }
 
@@ -142,16 +142,13 @@ button.claudian-input-nav-btn[aria-disabled='true'] {
   font-weight: 500;
 }
 
-.claudian-input-queue-strip .claudian-queue-indicator-text {
-  color: var(--text-normal);
-}
-
 .claudian-queue-indicator-text {
   min-width: 0;
   flex: 1 1 auto;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--text-normal);
 }
 
 .claudian-queue-indicator-actions {

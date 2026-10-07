@@ -19,11 +19,7 @@
 .claudian-image-modal-close:focus-visible,
 .claudian-cancel-btn:focus-visible,
 .claudian-save-btn:focus-visible,
-.claudian-code-lang-label:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-}
-
+.claudian-code-lang-label:focus-visible,
 .claudian-inline-preview-action:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 2px;

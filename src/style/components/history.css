@@ -80,7 +80,7 @@
   gap: 8px;
   flex-shrink: 0;
   margin: 1px 0;
-  padding: 8px 8px;
+  padding: 8px;
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 500;
@@ -107,7 +107,6 @@
   margin: 1px 0;
   padding: 6px 8px;
   border-radius: 6px;
-  background: transparent;
   color: var(--text-muted);
 }
 
@@ -318,7 +317,7 @@
 .claudian-session-running-indicator svg {
   width: 14px;
   height: 14px;
-  animation: spin 1s linear infinite;
+  animation: claudian-spin 1s linear infinite;
   stroke-width: 2.5;
 }
 
@@ -738,40 +737,25 @@ body.theme-dark .claudian-session-metadata-popover {
   border: 0;
 }
 
-.claudian-history-item.active {
-  background: var(--background-modifier-hover);
-  border-inline-start: 2px solid var(--interactive-accent);
-  padding-inline-start: 10px;
-}
-
-.claudian-history-item.active:hover {
-  background: var(--background-modifier-active-hover, var(--background-modifier-hover));
-}
-
-.claudian-history-item.active .claudian-history-item-icon {
-  color: var(--interactive-accent);
-}
-
-.claudian-history-item.active .claudian-history-item-content {
-  cursor: default;
-}
-
-.claudian-history-item.active .claudian-history-item-date {
-  color: var(--text-faint);
-}
-
+.claudian-history-item.active,
 .claudian-history-item.open {
   background: var(--background-modifier-hover);
   border-inline-start: 2px solid var(--interactive-accent);
   padding-inline-start: 10px;
 }
 
+.claudian-history-item.active:hover,
 .claudian-history-item.open:hover {
   background: var(--background-modifier-active-hover, var(--background-modifier-hover));
 }
 
+.claudian-history-item.active .claudian-history-item-icon,
 .claudian-history-item.open .claudian-history-item-icon {
   color: var(--interactive-accent);
+}
+
+.claudian-history-item.active .claudian-history-item-content {
+  cursor: default;
 }
 
 .claudian-history-item.open .claudian-history-item-date {
@@ -783,7 +767,7 @@ body.theme-dark .claudian-session-metadata-popover {
 }
 
 .claudian-history-item.running .claudian-history-item-icon svg {
-  animation: spin 1s linear infinite;
+  animation: claudian-spin 1s linear infinite;
 }
 
 .claudian-history-item.running .claudian-history-item-date {
@@ -820,10 +804,7 @@ body.theme-dark .claudian-session-metadata-popover {
   transition: opacity 0.15s ease;
 }
 
-.claudian-history-item:hover .claudian-history-item-actions {
-  opacity: 1;
-}
-
+.claudian-history-item:hover .claudian-history-item-actions,
 .claudian-history-item:focus-within .claudian-history-item-actions {
   opacity: 1;
 }
@@ -893,7 +874,7 @@ body.theme-dark .claudian-session-metadata-popover {
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: spin 1s linear infinite;
+  animation: claudian-spin 1s linear infinite;
   opacity: 0.6;
   cursor: default;
 }

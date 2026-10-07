@@ -23,7 +23,6 @@
 }
 
 .claudian-citations-label {
-  color: var(--text-muted);
   font-weight: 500;
 }
 
@@ -41,7 +40,6 @@
 }
 
 .claudian-citation-location {
-  color: var(--text-muted);
   font-family: var(--font-monospace);
   overflow-wrap: anywhere;
 }

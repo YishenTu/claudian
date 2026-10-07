@@ -53,14 +53,6 @@
   margin-inline-start: 7px;
 }
 
-.claudian-thinking-content p {
-  margin: 0 0 8px 0;
-}
-
-.claudian-thinking-content p:last-child {
-  margin-bottom: 0;
-}
-
 .claudian-thinking-content .claudian-code-wrapper pre {
   padding: 8px 10px;
   border-radius: 4px;

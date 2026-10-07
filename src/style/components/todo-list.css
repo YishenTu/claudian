@@ -27,23 +27,15 @@
   color: var(--text-normal);
 }
 
-.claudian-todo-list-container .claudian-todo-pending .claudian-todo-status-icon svg {
-  transform: scale(2);
-}
-
-.claudian-todo-list-container .claudian-todo-pending .claudian-todo-text {
-  color: var(--text-normal);
-}
-
 .claudian-todo-list-container .claudian-todo-in_progress .claudian-todo-status-icon {
   color: var(--interactive-accent);
 }
 
-.claudian-todo-list-container .claudian-todo-in_progress .claudian-todo-status-icon svg {
+.claudian-todo-list-container :is(.claudian-todo-pending, .claudian-todo-in_progress) .claudian-todo-status-icon svg {
   transform: scale(2);
 }
 
-.claudian-todo-list-container .claudian-todo-in_progress .claudian-todo-text {
+.claudian-todo-list-container :is(.claudian-todo-pending, .claudian-todo-in_progress) .claudian-todo-text {
   color: var(--text-normal);
 }
 

@@ -1,14 +1,10 @@
 /* Write/Edit Diff Block - Subagent style */
 .claudian-write-edit-block {
   margin: 4px 0;
-  background: transparent;
   overflow: hidden;
 }
 
-.claudian-text-block+.claudian-write-edit-block {
-  margin-top: 8px;
-}
-
+.claudian-text-block+.claudian-write-edit-block,
 .claudian-write-edit-block+.claudian-text-block {
   margin-top: 8px;
 }
@@ -20,7 +16,6 @@
   padding: 4px 0;
   cursor: pointer;
   user-select: none;
-  background: transparent;
   overflow: hidden;
 }
 
@@ -88,18 +83,11 @@
   height: 16px;
 }
 
-.claudian-write-edit-status.status-completed {
-  color: var(--color-green);
-}
-
-.claudian-write-edit-status.status-error,
-.claudian-write-edit-status.status-blocked {
+.claudian-write-edit-status.status-error {
   color: var(--color-red);
 }
 
 .claudian-write-edit-content {
-  padding: 0;
-  background: transparent;
   overflow: hidden;
 }
 
@@ -112,10 +100,8 @@
   font-family: var(--font-monospace);
   font-size: 12px;
   line-height: 1.5;
-  background: transparent;
   max-height: 300px;
-  overflow-y: auto;
-  overflow-x: auto;
+  overflow: auto;
 }
 
 .claudian-write-edit-loading,
