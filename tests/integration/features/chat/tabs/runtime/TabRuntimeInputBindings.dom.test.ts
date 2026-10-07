@@ -97,25 +97,31 @@ it.each([
   expect(tab.dom.messagesEl.scrollTop).toBe(1200 + growth);
 });
 
-it.each(['wheel', 'keydown', 'touchmove', 'pointerdown'] as const)(
-  'pauses following for %s and resumes when the reader returns to the bottom',
-  async (eventType) => {
+function pressContent(button: number): void {
+  // jsdom does not implement PointerEvent; the handler reads target, button, and clientX.
+  fireEvent(tab.dom.messagesEl.createDiv(), new MouseEvent('pointerdown', { button, bubbles: true }));
+}
+
+it.each([
+  ['wheel', () => fireEvent.wheel(tab.dom.messagesEl, { deltaY: -100 })],
+  ['keydown', () => fireEvent.keyDown(tab.dom.messagesEl, { key: 'PageUp' })],
+  ['touchmove', () => fireEvent.touchMove(tab.dom.messagesEl)],
+  ['scrollbar pointerdown', () => {
     const messagesEl = tab.dom.messagesEl;
-    if (eventType === 'pointerdown') {
-      Object.defineProperties(messagesEl, {
-        offsetWidth: { configurable: true, value: 510 },
-        clientWidth: { configurable: true, value: 500 },
-      });
-      jest.spyOn(messagesEl, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 510, 500));
-      // jsdom does not implement PointerEvent; the handler reads target and clientX.
-      fireEvent(messagesEl, new MouseEvent('pointerdown', { clientX: 505, bubbles: true }));
-    } else if (eventType === 'keydown') {
-      fireEvent.keyDown(messagesEl, { key: 'PageUp' });
-    } else if (eventType === 'wheel') {
-      fireEvent.wheel(messagesEl, { deltaY: -100 });
-    } else {
-      fireEvent.touchMove(messagesEl);
-    }
+    Object.defineProperties(messagesEl, {
+      offsetWidth: { configurable: true, value: 510 },
+      clientWidth: { configurable: true, value: 500 },
+    });
+    jest.spyOn(messagesEl, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 510, 500));
+    fireEvent(messagesEl, new MouseEvent('pointerdown', { clientX: 505, bubbles: true }));
+  }],
+  ['middle-button autoscroll', () => pressContent(1)],
+  ['held drag selection', () => pressContent(0)],
+] as const)(
+  'pauses following for %s and resumes when the reader returns to the bottom',
+  async (_name, startScroll) => {
+    const messagesEl = tab.dom.messagesEl;
+    startScroll();
     messagesEl.scrollTop = 250;
     fireEvent.scroll(messagesEl);
     setScrollHeight(1200);
@@ -133,3 +139,16 @@ it.each(['wheel', 'keydown', 'touchmove', 'pointerdown'] as const)(
     expect(messagesEl.scrollTop).toBe(1400);
   },
 );
+
+it.each(['pointerup', 'pointercancel'])('keeps following through layout scrolls after %s', async (release) => {
+  pressContent(0);
+  fireEvent(document, new MouseEvent(release, { bubbles: true }));
+  setScrollHeight(1036);
+  tab.dom.messagesEl.scrollTop += 1;
+  fireEvent.scroll(tab.dom.messagesEl);
+  await streamText();
+  jest.advanceTimersByTime(16);
+
+  expect(tab.state.autoScrollEnabled).toBe(true);
+  expect(tab.dom.messagesEl.scrollTop).toBe(1036);
+});
