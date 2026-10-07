@@ -1,20 +1,3 @@
-.claudian-subagent-list {
-  margin: 8px 0;
-}
-
-.claudian-subagent-list+.claudian-text-block {
-  margin-top: 8px;
-}
-
-.claudian-subagent-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  cursor: pointer;
-  overflow: hidden;
-}
-
 .claudian-subagent-icon {
   display: flex;
   align-items: center;
@@ -86,13 +69,6 @@
 .claudian-subagent-progress-meta {
   flex-shrink: 0;
   color: var(--text-faint);
-}
-
-.claudian-subagent-content {
-  padding: 4px 0;
-  padding-inline-start: 16px;
-  margin-inline-start: 7px;
-  border-inline-start: 1px solid var(--background-modifier-border);
 }
 
 .claudian-subagent-section {

@@ -10,13 +10,7 @@
 }
 
 .claudian-write-edit-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  cursor: pointer;
   user-select: none;
-  overflow: hidden;
 }
 
 .claudian-write-edit-icon {

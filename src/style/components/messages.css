@@ -279,9 +279,6 @@
 }
 
 .claudian-message {
-  padding: 10px 14px;
-  border-radius: 8px;
-  max-width: 95%;
   overflow-wrap: break-word;
 }
 
@@ -290,8 +287,8 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  padding: 0;
   align-self: flex-end;
+  max-width: 95%;
 }
 
 .claudian-message-user > .claudian-message-content {
@@ -322,11 +319,9 @@
   flex-shrink: 0;
   content-visibility: auto;
   contain-intrinsic-size: auto 23.5rem;
-  background: transparent;
   align-self: stretch;
   width: 100%;
-  max-width: 100%;
-  border-end-start-radius: 4px;
+  padding: 10px 14px;
   text-align: start;
 }
 
@@ -417,10 +412,6 @@ button.claudian-text-copy-btn.copied {
   color: var(--text-accent);
   font-size: 11px;
   font-family: var(--font-monospace);
-}
-
-.claudian-tool-call+.claudian-text-block {
-  margin-top: 8px;
 }
 
 .claudian-message-content p {

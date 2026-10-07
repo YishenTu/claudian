@@ -1,16 +1,3 @@
-.claudian-tool-call {
-  margin: 8px 0;
-}
-
-.claudian-tool-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  cursor: pointer;
-  overflow: hidden;
-}
-
 .claudian-tool-header:hover {
   opacity: 0.85;
 }
@@ -106,14 +93,6 @@
 
 .claudian-tool-status.status-cancelled {
   color: var(--text-muted);
-}
-
-/* Tool call content - border style (like thinking block) */
-.claudian-tool-content {
-  padding: 4px 0;
-  padding-inline-start: 16px;
-  margin-inline-start: 7px;
-  border-inline-start: 1px solid var(--background-modifier-border);
 }
 
 /* Tool content variants that render inline widgets instead of bordered results */

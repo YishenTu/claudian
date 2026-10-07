@@ -13,6 +13,7 @@
 @import url("./components/messages.css");
 @import url("./components/nav-sidebar.css");
 @import url("./components/code.css");
+@import url("./components/response-blocks.css");
 @import url("./components/thinking.css");
 @import url("./components/citations.css");
 @import url("./components/toolcalls.css");
