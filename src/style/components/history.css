@@ -651,17 +651,20 @@ body.theme-dark .claudian-session-metadata-popover {
   position: absolute;
   bottom: 100%;
   margin-bottom: 4px;
-  background: var(--background-secondary);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  /* Backdrop blur can corrupt translucent Obsidian windows on macOS. */
+  background-color: #fff;
+  background-image: linear-gradient(var(--background-secondary), var(--background-secondary));
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
-  box-shadow: 0 -4px 16px rgb(0 0 0 / 25%);
   z-index: 1000;
   max-height: 400px;
   overflow: hidden;
   inset-inline-start: 0;
   inset-inline-end: 0;
+}
+
+body.theme-dark .claudian-nav-dropup-menu {
+  background-color: #1e1e1e;
 }
 
 .claudian-nav-dropup-menu.visible {
