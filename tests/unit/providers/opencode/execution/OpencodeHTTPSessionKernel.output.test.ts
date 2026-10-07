@@ -8,6 +8,8 @@ let receive: (event: OpencodeHTTPEvent) => void;
 let output: Array<{ event: OpencodeNativeOutput; session?: string }>;
 let read: jest.Mock;
 let requests: string[];
+let bodies: unknown[];
+let skills: () => Promise<unknown>;
 const event = (type: string, data: Record<string, unknown> = {}) => receive({ type, data: {
   sessionID: 'ses_main', assistantMessageID: 'msg_main', id: 'tool_shell', ...data,
 } });
@@ -20,15 +22,18 @@ const previews = () => output.flatMap(({ event }) => event.type === 'tool_output
 
 beforeEach(async () => {
   jest.useFakeTimers();
-  output = []; requests = [];
+  output = []; requests = []; bodies = [];
+  skills = async () => ({ data: [] });
   read = jest.fn().mockResolvedValue({ data: { output: '', cursor: 0, size: 0, truncated: false } });
   const lease = {
     databasePath: null, isReusable: () => true, onRetired: () => {}, onSuperseded: () => {},
     subscribe: async (callback: typeof receive) => { receive = callback; },
     registerAgents: async () => ({}), waitForActivation: async () => {}, refreshGlobalForms: async () => {},
     dispose: async () => {},
-    request: async (route: string, options?: unknown) => {
+    request: async (route: string, options?: { body?: unknown }) => {
       requests.push(route);
+      if (options?.body !== undefined) bodies.push(options.body);
+      if (route === '/api/skill') return skills();
       if (route.startsWith('/api/shell/')) return read(route, options);
       if (route === '/api/model') return { data: [{ id: 'model', providerID: 'test', enabled: true }, { id: {}, providerID: 'test', enabled: true }] };
       if (route === '/api/command') return { data: [] };
@@ -173,4 +178,21 @@ it('ignores malformed native stream identities without losing valid text or tool
     { type: 'text_delta', text: 'text' },
     expect.objectContaining({ type: 'tool_started', toolCallId: 'tool_shell' }),
   ]);
+});
+
+it('admits steers in submission order while a skill lookup is pending', async () => {
+  let release!: () => void;
+  // Disposal settles the open run and undelivered steers.
+  void kernel.prompt({ sessionId: 'ses_main', prompt: [{ type: 'text', text: 'work' }] }, { start: 0, end: 4 }).catch(() => undefined);
+  await jest.advanceTimersByTimeAsync(0);
+  skills = () => new Promise(resolve => { release = () => resolve({ data: [{ id: 'writing' }] }); });
+  const first = 'Use /writing';
+  void kernel.steer!({ sessionId: 'ses_main', prompt: [{ type: 'text', text: first }] }, { start: 0, end: first.length }).catch(() => undefined);
+  void kernel.steer!({ sessionId: 'ses_main', prompt: [{ type: 'text', text: 'Then this' }] }, { start: 0, end: 9 }).catch(() => undefined);
+  await jest.advanceTimersByTimeAsync(0);
+  release();
+  await jest.advanceTimersByTimeAsync(0);
+  const steers = bodies.filter((body): body is { text: string } => (body as { delivery?: string }).delivery === 'steer');
+  expect(steers.map(body => body.text)).toEqual([first, 'Then this']);
+  expect(steers[0]).toMatchObject({ skills: [{ id: 'writing', mention: { start: 4, end: 12, text: '/writing' } }] });
 });

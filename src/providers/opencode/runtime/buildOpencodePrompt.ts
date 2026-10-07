@@ -25,10 +25,30 @@ export interface OpencodePromptRequest {
   canvasSelection?: CanvasSelectionContext | null;
 }
 
+/** The span of the composed prompt text that the user typed. */
+export interface OpencodeTextRange {
+  readonly start: number;
+  readonly end: number;
+}
+
+export interface OpencodePrompt {
+  readonly blocks: ACPContentBlock[];
+  /** Absent when replayed history already ends with this turn's query. */
+  readonly userText: OpencodeTextRange | null;
+}
+
 export function buildOpencodePromptText(
   request: OpencodePromptRequest,
   conversationHistory: ChatMessage[] = [],
 ): string {
+  return composeOpencodePromptText(request, conversationHistory).text;
+}
+
+function composeOpencodePromptText(
+  request: OpencodePromptRequest,
+  conversationHistory: ChatMessage[],
+): { text: string; userText: OpencodeTextRange | null } {
+  // Captured context always follows the typed text.
   let prompt = request.text;
 
   if (request.linkedContent) {
@@ -45,26 +65,31 @@ export function buildOpencodePromptText(
 
   prompt = appendSessionReferences(prompt, request.sessionReferences);
 
-  if (conversationHistory.length > 0) {
-    const historyContext = buildContextFromHistory(conversationHistory);
-    prompt = buildPromptWithHistoryContext(
-      historyContext,
-      prompt,
-      prompt,
-      conversationHistory,
-    );
+  if (conversationHistory.length === 0) {
+    return { text: prompt, userText: { start: 0, end: request.text.length } };
   }
-
-  return prompt;
+  const historyContext = buildContextFromHistory(conversationHistory);
+  const text = buildPromptWithHistoryContext(
+    historyContext,
+    prompt,
+    prompt,
+    conversationHistory,
+  );
+  const start = text.length - prompt.length;
+  return {
+    text,
+    userText: text === prompt || text.endsWith(`\n\nUser: ${prompt}`)
+      ? { start, end: start + request.text.length }
+      : null,
+  };
 }
 
-export function buildOpencodePromptBlocks(
+export function buildOpencodePrompt(
   request: OpencodePromptRequest,
   conversationHistory: ChatMessage[] = [],
-): ACPContentBlock[] {
-  const blocks: ACPContentBlock[] = [
-    { type: 'text', text: buildOpencodePromptText(request, conversationHistory) },
-  ];
+): OpencodePrompt {
+  const { text, userText } = composeOpencodePromptText(request, conversationHistory);
+  const blocks: ACPContentBlock[] = [{ type: 'text', text }];
 
   for (const image of request.images ?? []) {
     if (!image.data) {
@@ -78,5 +103,12 @@ export function buildOpencodePromptBlocks(
     });
   }
 
-  return blocks;
+  return { blocks, userText };
+}
+
+export function buildOpencodePromptBlocks(
+  request: OpencodePromptRequest,
+  conversationHistory: ChatMessage[] = [],
+): ACPContentBlock[] {
+  return buildOpencodePrompt(request, conversationHistory).blocks;
 }

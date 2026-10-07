@@ -32,7 +32,7 @@ import type { OpencodeServerService } from '../http/OpencodeServerService';
 import { projectOpencodeMetadata } from '../metadata/OpencodeMetadataProjection';
 import { decodeOpencodeModelId } from '../models';
 import { createOpencodeToolStreamAdapter } from '../normalization/opencodeToolNormalization';
-import { buildOpencodePromptBlocks } from '../runtime/buildOpencodePrompt';
+import { buildOpencodePrompt } from '../runtime/buildOpencodePrompt';
 import { AUX_AGENT_IDS, OPENCODE_BUILD_AGENT_ID } from '../runtime/OpencodeExecutionAgents';
 import { assertOpencodeModelAvailable } from '../runtime/OpencodeModelAvailability';
 import { getOpencodeState } from '../types';
@@ -196,10 +196,11 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       || !native
       || request.signal.aborted
     ) return false;
+    const prompt = buildPrompt(request, false);
     return kernel.steer({
-      prompt: buildPromptBlocks(request, false),
+      prompt: prompt.blocks,
       sessionId: native.sessionId,
-    });
+    }, prompt.userText);
   }
 
   getSnapshot(): ProviderSessionSnapshot {
@@ -395,12 +396,11 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       }
       turn.beginLiveOutput();
       const promptStartedAt = Date.now();
+      const prompt = compact ? null : buildPrompt(request, !this.nativeConversationContextEstablished);
       const response = await kernel.prompt({
-        prompt: compact
-          ? [{ type: 'text', text: text.trim() }]
-          : buildPromptBlocks(request, !this.nativeConversationContextEstablished),
+        prompt: prompt?.blocks ?? [{ type: 'text', text: text.trim() }],
         sessionId: native.sessionId,
-      });
+      }, prompt?.userText);
       this.#markNativeConversationContextEstablished(active);
       if (!this.#isRunCurrent(active, generation)) return;
       active.nativeCompleted = response.stopReason !== 'cancelled';
@@ -812,7 +812,7 @@ function getInputText(request: ProviderExecutionRequest): string {
     .join('\n');
 }
 
-function buildPromptBlocks(
+function buildPrompt(
   request: ProviderExecutionRequest,
   bootstrapHistory: boolean,
 ) {
@@ -821,7 +821,7 @@ function buildPromptBlocks(
       block.type === 'image'
     ))
     .map(({ image }) => image);
-  return buildOpencodePromptBlocks({
+  return buildOpencodePrompt({
     selections: request.context?.selections,
     browserSelection: request.context?.browserSelection,
     canvasSelection: request.context?.canvasSelection,

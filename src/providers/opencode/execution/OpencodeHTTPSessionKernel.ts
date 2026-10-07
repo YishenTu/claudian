@@ -11,6 +11,7 @@ import { projectOpencodeFormQuestions } from '../http/OpencodeHTTPForms';
 import type { OpencodeServerLease, OpencodeServerService } from '../http/OpencodeServerService';
 import { OpencodeShellOutput } from '../http/OpencodeShellOutput';
 import { normalizeOpencodeToolInput, normalizeOpencodeToolName, normalizeOpencodeToolResult, normalizeOpencodeToolResultDetails } from '../normalization/opencodeToolNormalization';
+import type { OpencodeTextRange } from '../runtime/buildOpencodePrompt';
 import { AUX_AGENT_IDS, buildOpencodeSystemPrompt, getSystemPromptSettings, OPENCODE_BUILD_AGENT_ID } from '../runtime/OpencodeExecutionAgents';
 import {
   type OpencodeKernelConnectOptions,
@@ -53,6 +54,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private pending: PendingPrompt | null = null;
   private readonly inboxInputs = new Map<string, PendingInboxInput>();
   private cancellation: Promise<unknown> | null = null;
+  private steerOrder: Promise<void> = Promise.resolve();
   private readonly idleWaiters = new Set<() => void>();
 
   private agents: Record<string, string> = {};
@@ -147,23 +149,19 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     this.autoApprove = this.profile === 'managed' && enabled;
   }
 
-  async prompt(request: ACPPromptRequest): Promise<{ stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }> {
+  async prompt(request: ACPPromptRequest, userText?: OpencodeTextRange | null): Promise<{ stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }> {
     if (this.pending) throw new Error('OpenCode already has an active request.');
     const { text, files } = toNativeInput(request);
     const compact = parseCompactCommand(text);
     if (compact?.instructions) throw new Error('/compact does not accept arguments');
     const match = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(text);
     // Commands and skills can change while this kernel keeps its native session and server.
-    const [catalog, skills] = match && !compact ? await Promise.all([
-      this.requireClient().request<{ data: Array<{ name: string }> }>('/api/command'),
-      this.requireClient().request<{ data: Array<{ id: string }> }>('/api/skill')
-        .catch((error: unknown) => { if (error instanceof OpencodeHTTPError && error.status === 404) return { data: [] }; throw error; }),
-    ]) : [null, null];
+    const [catalog, skills] = compact ? [null, []] : await Promise.all([
+      match ? this.requireClient().request<{ data: Array<{ name: string }> }>('/api/command') : null,
+      this.resolveSkillMentions(text, userText),
+    ]);
     const command = match && catalog?.data.some(command => command.name === match[1]) ? match : null;
-    // Native skill mentions attach the skill to an ordinary prompt.
-    const skill = match && !command && skills?.data.some(skill => skill.id === match[1])
-      ? [{ id: match[1], mention: { start: 0, end: match[1].length + 1, text: `/${match[1]}` } }]
-      : null;
+    const skill = !command && skills.length ? skills : null;
     const kind = compact ? 'compact' : command ? 'command' : 'prompt';
     const previousMessage = command ? await this.latestMessage(request.sessionId) : undefined;
     let resolve!: PendingPrompt['resolve'];
@@ -213,24 +211,47 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
    * steer is still recallable, and one left behind an interrupt would
    * otherwise leak into the next prompt.
    */
-  async steer(request: ACPPromptRequest): Promise<boolean> {
+  async steer(request: ACPPromptRequest, userText?: OpencodeTextRange | null): Promise<boolean> {
     const pending = this.pending;
     if (!pending?.steerable || pending.idle || this.cancellation || this.disposed || request.sessionId !== this.sessionId) return false;
     const { text, files } = toNativeInput(request);
+    // Steers reach the native inbox in submission order, whatever their mention lookup costs.
+    const previous = this.steerOrder;
+    let release!: () => void;
+    this.steerOrder = new Promise(resolve => { release = resolve; });
+    let admission: Promise<InboxAdmission>;
     const id = nativeMessageId();
-    // Register before admission: delivery can be announced before the HTTP response.
-    const admission = this.requireClient().request(`/api/session/${encodeURIComponent(request.sessionId)}/prompt`, {
-      method: 'POST', body: { id, text, ...(files.length ? { files } : {}), delivery: 'steer' },
-    }).then<InboxAdmission, InboxAdmission>(
-      () => 'admitted',
-      // A client error is a definite native refusal; anything else may have been admitted.
-      error => error instanceof OpencodeHTTPError && error.status >= 400 && error.status < 500 ? 'refused' : 'unknown',
-    );
+    try {
+      const skills = await this.resolveSkillMentions(text, userText);
+      await previous;
+      if (this.pending !== pending || pending.idle || this.cancellation || this.disposed) return false;
+      // Register before admission: delivery can be announced before the HTTP response.
+      admission = this.requireClient().request(`/api/session/${encodeURIComponent(request.sessionId)}/prompt`, {
+        method: 'POST', body: { id, text, ...(files.length ? { files } : {}), ...(skills.length ? { skills } : {}), delivery: 'steer' },
+      }).then<InboxAdmission, InboxAdmission>(
+        () => 'admitted',
+        // A client error is a definite native refusal; anything else may have been admitted.
+        error => error instanceof OpencodeHTTPError && error.status >= 400 && error.status < 500 ? 'refused' : 'unknown',
+      );
+    } finally { release(); }
     const delivery = new Promise<boolean>((resolve, reject) => { this.inboxInputs.set(id, { kind: 'steer', text, admission, resolve, reject, recall: null }); });
     const outcome = await admission;
     if (outcome === 'refused') this.settleInboxInput(id, false);
     else if (outcome === 'unknown' || this.pending !== pending) void this.recallInboxInputs();
     return delivery;
+  }
+
+  /** OpenCode attaches skills only from explicit mentions; it does not parse prompt text. */
+  private async resolveSkillMentions(text: string, userText?: OpencodeTextRange | null): Promise<NativeSkillMention[]> {
+    const typed = userText ? text.slice(userText.start, userText.end) : '';
+    if (!typed.includes('/')) return [];
+    const catalog = await this.requireClient().request<{ data: Array<{ id: string }> }>('/api/skill')
+      .catch((error: unknown) => { if (error instanceof OpencodeHTTPError && error.status === 404) return { data: [] }; throw error; });
+    const ids = new Set(catalog.data.map(skill => skill.id));
+    return [...typed.matchAll(SKILL_MENTION)].flatMap(match => ids.has(match[1]) ? [{
+      id: match[1],
+      mention: { start: userText!.start + match.index, end: userText!.start + match.index + match[0].length, text: match[0] },
+    }] : []);
   }
 
   cancel(sessionId: string): void {
@@ -619,6 +640,14 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       workspaceRoot,
     });
   }
+}
+
+// A whole `/name` token; paths and longer names are not mentions.
+const SKILL_MENTION = /(?<!\S)\/([\w-]+)(?=$|[\s.,;:!?)\]}"'])/g;
+
+interface NativeSkillMention {
+  id: string;
+  mention: { start: number; end: number; text: string };
 }
 
 function toNativeInput(request: ACPPromptRequest): { text: string; files: Array<{ uri: string }> } {

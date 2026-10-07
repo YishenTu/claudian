@@ -3,6 +3,8 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ForkSource, SubagentProgress } from '@/core/types';
 import type { ACPPromptRequest, ACPPromptResponse, ACPSessionConfigOption, ACPSessionModelState, ACPSessionNotification } from '@/providers/acp';
 
+import type { OpencodeTextRange } from '../runtime/buildOpencodePrompt';
+
 type WithoutScope<T> = T extends unknown ? Omit<T, 'scope'> : never;
 export type OpencodeNativeOutput = WithoutScope<ProviderBackgroundOutputEvent>;
 
@@ -54,7 +56,8 @@ export interface OpencodeSessionKernel {
   }>;
   /** Replies `once` to managed permission requests, like OpenCode's `--auto`; `deny` rules never ask. */
   setAutoApprove(enabled: boolean): void;
-  prompt(request: ACPPromptRequest): Promise<Pick<
+  /** `userText` locates typed input whose native mentions the kernel may resolve. */
+  prompt(request: ACPPromptRequest, userText?: OpencodeTextRange | null): Promise<Pick<
     ACPPromptResponse,
     'usage' | 'userMessageId'
   > & Partial<Pick<ACPPromptResponse, 'stopReason'>>>;
@@ -62,7 +65,7 @@ export interface OpencodeSessionKernel {
    * Hands input to the running requested prompt under the neutral steer
    * contract. Absent where the native protocol cannot steer a running turn.
    */
-  steer?(request: ACPPromptRequest): Promise<boolean>;
+  steer?(request: ACPPromptRequest, userText?: OpencodeTextRange | null): Promise<boolean>;
   cancel(sessionId: string): void;
   dispose(): Promise<void>;
 }
