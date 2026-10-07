@@ -3,6 +3,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import { testDate } from '@test/helpers/testClock';
+
 import type * as environmentModule from '@/core/process/env';
 import {
   loadOpencodeSessionMessages,
@@ -583,4 +585,37 @@ it('reconstructs throughput through the v1 SQLite projection without reading raw
     const messages = await loadOpencodeSessionMessages('session', { databasePath });
     expect(messages.at(-1)?.turnStats).toEqual({ outputTokens: 125, durationMs: 2500 });
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+
+describe('OpenCode compaction boundaries', () => {
+  const created = testDate().getTime();
+  it.each(['completed', 'running', 'failed'])('restores only completed V2 compaction (%s)', status => {
+    const messages = mapOpencodeV2NativeMessages([
+      { id: 'a1', type: 'assistant', time: { created }, content: [{ type: 'text', text: 'Before' }] },
+      { id: 'compact', type: 'compaction', time: { created: created + 1 }, status, summary: 'Internal summary', recent: 'Internal context' },
+      { id: 'a2', type: 'assistant', time: { created: created + 2 }, content: [{ type: 'text', text: 'After' }] },
+    ]);
+    expect(messages.map(message => message.id)).toEqual(status === 'completed' ? ['a1', 'compact', 'a2'] : ['a1', 'a2']);
+    expect(messages.filter(message => message.id === 'compact')).toMatchObject(status === 'completed'
+      ? [{ content: '', role: 'assistant', contentBlocks: [{ type: 'context_compacted' }], timestamp: created + 1 }] : []);
+    expect(JSON.stringify(messages)).not.toContain('Internal');
+  });
+
+  it.each(['completed', 'running', 'failed'])('restores only successful V1 summaries (%s)', status => {
+    const messages = mapOpencodeMessages([
+      { info: { id: 'a1', role: 'assistant', time: { created } }, parts: [{ type: 'text', text: 'Before' }] },
+      { info: { id: 'trigger', role: 'user', time: { created: created + 1 } }, parts: [{ type: 'compaction', auto: false }] },
+      { info: { id: 'compact', role: 'assistant', summary: true,
+        ...(status === 'failed' ? { error: { name: 'AbortedError' } } : {}),
+        time: { created: created + 2, ...(status !== 'running' ? { completed: created + 3 } : {}) },
+      }, parts: [{ type: 'text', text: 'Internal summary' }] },
+      { info: { id: 'u2', role: 'user', time: { created: created + 4 } }, parts: [{ type: 'text', text: 'Continue' }] },
+    ]);
+    expect(messages.flatMap(message => message.contentBlocks ?? []).filter(block => block.type === 'context_compacted')).toHaveLength(status === 'completed' ? 1 : 0);
+    expect(messages.some(message => message.id === 'trigger')).toBe(false);
+    expect(JSON.stringify(messages)).not.toContain('Internal summary');
+    expect(messages.filter(message => message.id === 'compact')).toMatchObject(status === 'completed'
+      ? [{ contentBlocks: [{ type: 'context_compacted' }], timestamp: created + 2 }] : []);
+  });
 });

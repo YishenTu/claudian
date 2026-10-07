@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 
+import compactCompleted from '@test/fixtures/providers/grok/runtime/compaction-completed.json';
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 
 const mockLoadGrokPromptIndexAfterAssistant = jest.fn();
@@ -421,6 +422,28 @@ describe('GrokExecutionBackend', () => {
       await session.dispose();
     }
   });
+
+  // Native SessionUpdate::AutoCompactCompleted is used by both manual and auto compaction.
+  // Wire fields follow xai-grok-shell/src/extensions/notification.rs and session/compaction.rs.
+  it.each(['auto_compact_completed', 'auto_compact_failed', 'auto_compact_cancelled'])(
+    'maps native %s to a success divider only when completed', async sessionUpdate => {
+      const native = new FakeNativeConnection();
+      native.promptImplementation = async () => {
+        const update = { ...compactCompleted.params.update, sessionUpdate };
+        native.emit(update, 'extension', compactCompleted.params._meta);
+        native.emit(update, 'standard', compactCompleted.params._meta);
+        return { stopReason: 'end_turn' };
+      };
+      const session = new GrokExecutionBackend(createGrokHost(), {
+        nativeFactory: { create: () => native },
+      }).createSession(sessionConfig);
+      try {
+        const events = await collect(session.execute(executionRequest('/compact')).events);
+        expect(events.filter(event => event.type === 'context_compacted')).toHaveLength(sessionUpdate === 'auto_compact_completed' ? 1 : 0);
+        expect(events.at(-1)?.type).toBe('turn_completed');
+      } finally { await session.dispose(); }
+    },
+  );
 
   it('preserves standard Grok message IDs across assistant messages', async () => {
     const native = new FakeNativeConnection();

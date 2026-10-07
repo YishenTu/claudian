@@ -2,7 +2,9 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
+import { testDate } from '@test/helpers/testClock';
 import spawn from 'cross-spawn';
 
 jest.mock('cross-spawn', () => jest.fn());
@@ -150,6 +152,74 @@ it.each([false, true])('discovers V1 model metadata while isolating a failed nat
   } finally {
     await models.dispose();
     await service.dispose();
+    await fs.rm(root, { recursive: true, force: true });
+    jest.mocked(spawn).mockReset();
+  }
+});
+
+
+it.each(['completed', 'failed', 'running', 'cancelled', 'unchanged'])('reports a new persisted V1 compact boundary only on success (%s)', async outcome => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-acp-compact-'));
+  const cliPath = path.join(root, 'opencode');
+  const databasePath = path.join(root, 'opencode.db');
+  await fs.writeFile(cliPath, '', { mode: 0o700 });
+  const db = new DatabaseSync(databasePath);
+  db.exec(`CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, data TEXT);
+    CREATE TABLE part(id TEXT, session_id TEXT, message_id TEXT, data TEXT);`);
+  const created = testDate().getTime();
+  const insert = (id: string, status: string, offset: number) => db.prepare('INSERT INTO message VALUES(?, ?, ?, ?)').run(
+    id, 'native-session', created + offset, JSON.stringify({ role: 'assistant', summary: true,
+      time: { created: created + offset, ...(status !== 'running' ? { completed: created + offset + 1 } : {}) },
+      ...(status === 'failed' ? { error: { name: 'APIError' } } : {}),
+    }),
+  );
+  insert('old-summary', 'completed', 0);
+  const prompts: unknown[] = [];
+  jest.mocked(spawn).mockImplementation((_command, args) => {
+    if (args?.includes('--version')) return createNativeVersionProcess('1.2.27');
+    return createNativeRPCProcess((method, params) => {
+      if (method === 'initialize') return { protocolVersion: 1, agentCapabilities: {} };
+      if (method === 'session/load') return { sessionId: 'native-session' };
+      if (method === 'session/set_config_option') return { configOptions: [] };
+      if (method === 'session/prompt') {
+        prompts.push(params.prompt);
+        if (outcome !== 'unchanged') insert('new-summary', outcome, 10);
+        return { stopReason: outcome === 'cancelled' ? 'cancelled' : 'end_turn' };
+      }
+      return {};
+    });
+  });
+  const host = {
+    settings: { model: 'opencode:test/model', providerConfigs: { opencode: { enabled: true,
+      visibleModels: ['test/model'], discoveredModels: [{ rawId: 'test/model', label: 'Test' }],
+      environmentVariables: `OPENCODE_DB=${databasePath}`,
+    } } },
+    getResolvedProviderCliPath: async () => cliPath,
+    mutateSettings: async () => undefined,
+    notifyProviderChatOptionsChanged: () => undefined,
+  } as unknown as ProviderHost;
+  const session = new OpencodeExecutionBackend(host, { serverService: new OpencodeServerService() }).createSession({
+    lifecycle: 'persistent', nativePersistence: 'enabled', vaultWorkingDirectory: root,
+    resumeSeed: { providerSessionId: 'native-session', providerState: { databasePath, nativeVersion: 1 } },
+    interactionPort: {
+      requestApproval: async request => ({ interactionId: request.interactionId, decision: 'deny' }),
+      askUserQuestion: async request => ({ interactionId: request.interactionId, answers: null }),
+      dismissInteraction() {},
+    },
+  });
+  try {
+    const events: ProviderExecutionEvent[] = [];
+    for await (const event of session.execute({
+      configuration: { permissionMode: 'normal', systemInstructions: { kind: 'provider-default' } },
+      input: [{ type: 'text', text: '/compact' }], toolPolicy: { kind: 'provider-default' },
+      signal: new AbortController().signal,
+    }).events) events.push(event);
+    expect(prompts).toEqual([[{ type: 'text', text: '/compact' }]]);
+    expect(events.at(-1)?.type).toBe(outcome === 'cancelled' ? 'cancelled' : 'turn_completed');
+    expect(events.filter(event => event.type === 'context_compacted')).toHaveLength(outcome === 'completed' ? 1 : 0);
+  } finally {
+    await session.dispose();
+    db.close();
     await fs.rm(root, { recursive: true, force: true });
     jest.mocked(spawn).mockReset();
   }

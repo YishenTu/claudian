@@ -69,6 +69,15 @@ export async function loadOpencodeSessionMessages(
   );
 }
 
+// V1 ACP does not publish compaction completion. Read the same successful
+// summary records used by history, without loading message parts.
+export async function loadOpencodeV1CompactionIds(databasePath: string, sessionId: string): Promise<Set<string>> {
+  const rows = await loadOpencodeSessionRows(databasePath, sessionId, { includeParts: false, nativeVersion: 1 });
+  return new Set(mapOpencodeMessages(hydrateStoredMessages(rows.messageRows, []))
+    .filter(message => message.contentBlocks?.some(block => block.type === 'context_compacted'))
+    .map(message => message.id));
+}
+
 export async function loadOpencodeSessionModel(
   sessionId: string,
   providerState?: OpencodeProviderState,
@@ -105,6 +114,12 @@ export function mapOpencodeMessages(
     try {
       const mappedMessage = mapStoredMessage(message, context);
       if (mappedMessage) {
+        if (mappedMessage.contentBlocks?.some(block => block.type === 'context_compacted')) {
+          stats.reset();
+          previousAssistant = undefined;
+          mappedMessages.push(mappedMessage);
+          continue;
+        }
         if (mappedMessage.role === 'user') previousAssistant = undefined;
         else {
           if (previousAssistant) previousAssistant.turnStats = undefined;
@@ -157,6 +172,7 @@ function hydrateStoredMessages(
       info: data
         ? { ...data, id, time_created: row.time_created }
         : {
+            summary: row.summary === 1 || row.summary === true,
             data_time_completed: row.data_time_completed,
             data_time_created: row.data_time_created,
             data_valid: row.data_valid,
@@ -198,6 +214,7 @@ function mapStoredMessage(
     ?? Date.now();
 
   if (role === 'user') {
+    if (message.parts.some(part => part.type === 'compaction')) return null;
     const promptText = extractUserQuery(getJoinedTextParts(message.parts));
     const images = buildUserImages(message.parts, id);
     return {
@@ -209,6 +226,11 @@ function mapStoredMessage(
       timestamp: createdAt,
       userMessageId: id,
     };
+  }
+
+  if (nativeVersion === 1 && message.info.summary === true) {
+    if (message.info.error || !getMessageCompletedAt(message.info)) return null;
+    return { id, role: 'assistant', content: '', timestamp: createdAt, contentBlocks: [{ type: 'context_compacted' }] };
   }
 
   const contentBlocks = buildAssistantContentBlocks(message.parts);
@@ -244,6 +266,8 @@ function mergeAdjacentAssistantMessages(messages: ChatMessage[]): ChatMessage[] 
       && previous?.role === 'assistant'
       && !message.isInterrupt
       && !previous.isInterrupt
+      && !message.contentBlocks?.some(block => block.type === 'context_compacted')
+      && !previous.contentBlocks?.some(block => block.type === 'context_compacted')
       && !isOpencodeHydrationDiagnosticMessage(message)
       && !isOpencodeHydrationDiagnosticMessage(previous)
     ) {
@@ -611,6 +635,13 @@ function mapV2Messages(
     }
     if (row.type !== 'user' && row.type !== 'assistant') {
       flush();
+      if (row.type === 'compaction' && data.status === 'completed' && typeof row.id === 'string') {
+        result.push({
+          id: row.id, role: 'assistant', content: '',
+          timestamp: getMessageCreatedAt({ ...data, time_created: row.time_created }) ?? Date.now(),
+          contentBlocks: [{ type: 'context_compacted' }],
+        });
+      }
       continue;
     }
     const parts = row.type === 'user'

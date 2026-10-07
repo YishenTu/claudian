@@ -26,6 +26,7 @@ import {
   resolveACPLoadSessionId,
 } from '@/providers/acp';
 
+import { loadOpencodeV1CompactionIds } from '../history/OpencodeHistoryStore';
 import { getSystemPromptSettings } from '../runtime/OpencodeExecutionAgents';
 import {
   prepareOpencodeLaunchArtifacts,
@@ -277,8 +278,27 @@ export class DefaultOpencodeACPSessionKernel
     this.autoApprove = this.profile === 'managed' && enabled;
   }
 
-  prompt(request: ACPPromptRequest): Promise<ACPPromptResponse> {
-    return this.#requireConnection().prompt(request);
+  async prompt(request: ACPPromptRequest): Promise<ACPPromptResponse> {
+    const connection = this.#requireConnection();
+    const turnId = this.options.getActiveTurnId();
+    const isCompact = request.prompt.some(block => block.type === 'text' && /^\/compact(?:\s|$)/u.test(block.text.trim()));
+    const readCompactions = () => this.databasePath && this.databasePath !== ':memory:'
+      ? loadOpencodeV1CompactionIds(this.databasePath, request.sessionId).catch(() => null)
+      : Promise.resolve(null);
+    const before = isCompact ? await readCompactions() : null;
+    this.#assertNotDisposed();
+    // Cancellation during the history read must not start native work afterward.
+    if (turnId !== this.options.getActiveTurnId()) return { stopReason: 'cancelled' };
+    const response = await connection.prompt(request);
+    if (before && response.stopReason === 'end_turn') {
+      const after = await readCompactions();
+      if (!this.disposed && turnId === this.options.getActiveTurnId()) {
+        for (const id of after ?? []) {
+          if (!before.has(id)) this.options.onNativeOutput?.({ type: 'context_compacted' });
+        }
+      }
+    }
+    return response;
   }
 
   cancel(sessionId: string): void {

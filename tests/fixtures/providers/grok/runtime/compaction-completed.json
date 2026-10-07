@@ -1,0 +1,17 @@
+{
+  "method": "x.ai/session/update",
+  "params": {
+    "sessionId": "session-existing",
+    "update": {
+      "sessionUpdate": "auto_compact_completed",
+      "tokens_before": 120000,
+      "tokens_after": 18000,
+      "elapsed_ms": 1200,
+      "summary_preview": null
+    },
+    "_meta": {
+      "eventId": "compact-event",
+      "promptId": "compact-prompt"
+    }
+  }
+}

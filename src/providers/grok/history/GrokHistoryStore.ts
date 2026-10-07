@@ -129,6 +129,25 @@ export function parseGrokHistoryContent(
     }
 
     const updateType = readString(update.sessionUpdate) ?? readString(update.type);
+    if (updateType === 'auto_compact_completed') {
+      if (pending) {
+        pending.blocks.push({ type: 'context_compacted' });
+      } else {
+        // Manual compaction has no native user turn. Keep it at the next prompt's
+        // rewind boundary without consuming that prompt index or creating a checkpoint.
+        const eventId = readString(readRecord(record.params._meta)?.eventId);
+        completedTurns.push({
+          messages: [{
+            id: eventId ?? `grok-${sanitizeId(sessionId)}-compact-${turnIndex}`,
+            role: 'assistant', content: '', timestamp: normalizeTimestamp(record.timestamp),
+            contentBlocks: [{ type: 'context_compacted' }],
+          }],
+          promptIndex: nextFallbackPromptIndex,
+        });
+        turnIndex += 1;
+      }
+      continue;
+    }
     if (updateType === 'rewind_marker') {
       const targetPromptIndex = readNonNegativeInteger(update.target_prompt_index)
         ?? readNonNegativeInteger(update.targetPromptIndex);

@@ -21,10 +21,13 @@ import {
 } from './OpencodeSessionContract';
 import type { OpencodeSessionPersistence } from './OpencodeSessionPersistence';
 
-type PendingPrompt = { resolve: (value: { stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }) => void; reject: (error: Error) => void; userMessageId?: string; inputId?: string; announced: boolean; started: boolean; steerable: boolean; idle: boolean };
-/** A steer admitted to the native inbox stays owned by the prompt until delivered or recalled. */
-interface PendingSteer { text: string; admission: Promise<SteerAdmission>; resolve: (delivered: boolean) => void; reject: (error: Error) => void; recall: Promise<void> | null }
-type SteerAdmission = 'admitted' | 'refused' | 'unknown';
+type PendingPrompt = { resolve: (value: { stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }) => void; reject: (error: Error) => void; kind: 'prompt' | 'command' | 'compact'; error?: Error; userMessageId?: string; inputId?: string; announced: boolean; started: boolean; steerable: boolean; idle: boolean };
+/** Admitted inputs stay owned until native delivery or recall, including compaction controls. */
+type PendingInboxInput = { admission: Promise<InboxAdmission>; recall: Promise<void> | null } & (
+  | { kind: 'steer'; text: string; resolve: (delivered: boolean) => void; reject: (error: Error) => void }
+  | { kind: 'compact' }
+);
+type InboxAdmission = 'admitted' | 'refused' | 'unknown';
 interface NativeModel { providerID: string; id: string; variant?: string }
 interface NativeChild { outputSessionId: string; toolCallId: string; turnId: string; interactionTurnId: string; background: boolean; text: Map<string, string>; progress: { startedAt: number; toolUses: number; totalTokens: number; lastToolName?: string } }
 interface NativeTool { name: string; input: Record<string, unknown>; sessionId: string; output: string | null; shell?: OpencodeShellOutput }
@@ -47,7 +50,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private readonly globalForms = new Map<string, { settled: boolean }>();
   private readonly interactions: PendingInteractionLedger;
   private pending: PendingPrompt | null = null;
-  private readonly steers = new Map<string, PendingSteer>();
+  private readonly inboxInputs = new Map<string, PendingInboxInput>();
   private cancellation: Promise<unknown> | null = null;
   private readonly idleWaiters = new Set<() => void>();
 
@@ -58,7 +61,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
 
   get hasNativeWork(): boolean {
     return !this.disposed && (!!this.pending || this.children.size > 0 || this.interactions.size > 0
-      || this.globalForms.size > 0 || this.steers.size > 0 || this.cancellation !== null);
+      || this.globalForms.size > 0 || this.inboxInputs.size > 0 || this.cancellation !== null);
   }
 
   whenIdle(): Promise<void> {
@@ -146,26 +149,38 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   async prompt(request: ACPPromptRequest): Promise<{ stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }> {
     if (this.pending) throw new Error('OpenCode already has an active request.');
     const { text, files } = toNativeInput(request);
+    const compact = /^\/compact(?:\s|$)/i.test(text);
+    if (compact && text.trim().toLowerCase() !== '/compact') throw new Error('/compact does not accept arguments');
     const match = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(text);
     // Commands can change while this kernel keeps its native session and server.
-    const catalog = match ? await this.requireClient().request<{ data: Array<{ name: string }> }>('/api/command') : null;
+    const catalog = match && !compact ? await this.requireClient().request<{ data: Array<{ name: string }> }>('/api/command') : null;
     const command = match && catalog?.data.some(command => command.name === match[1]) ? match : null;
+    const kind = compact ? 'compact' : command ? 'command' : 'prompt';
     const previousMessage = command ? await this.latestMessage(request.sessionId) : undefined;
     let resolve!: PendingPrompt['resolve'];
     let reject!: PendingPrompt['reject'];
     const completion = new Promise<{ stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }>((yes, no) => { resolve = yes; reject = no; });
-    const pending: PendingPrompt = { resolve, reject, ...(command ? {} : { inputId: nativeMessageId() }), announced: false, started: false, steerable: false, idle: false };
+    const pending: PendingPrompt = { resolve, reject, kind, ...(kind !== 'command' ? { inputId: nativeMessageId() } : {}), announced: false, started: false, steerable: false, idle: false };
     this.pending = pending;
     this.previewStops.delete(request.sessionId);
     // A native error may arrive before the admission request resolves.
     void completion.catch(() => undefined);
     try {
-      const admitted = await this.requireClient().request<{ data?: { id?: string } }>(`/api/session/${encodeURIComponent(request.sessionId)}/${command ? 'command' : 'prompt'}`, {
-        method: 'POST', ...(command ? { timeoutMs: 0 } : {}), body: { ...(command ? { name: command[1] } : { id: pending.inputId }), text: command ? command[2] ?? '' : text, ...(files.length ? { files } : {}) },
+      const admission = this.requireClient().request<{ data?: { id?: string } }>(`/api/session/${encodeURIComponent(request.sessionId)}/${kind}`, {
+        method: 'POST', ...(command ? { timeoutMs: 0 } : {}), body: compact ? { id: pending.inputId } : { ...(command ? { name: command[1] } : { id: pending.inputId }), text: command ? command[2] ?? '' : text, ...(files.length ? { files } : {}) },
       });
-      this.captureAdmission(admitted?.data?.id);
-      // Steers queue behind an admitted prompt; commands have no native inbox item to steer.
-      if (!command && this.pending === pending) pending.steerable = true;
+      if (compact) this.inboxInputs.set(pending.inputId!, {
+        kind: 'compact', recall: null,
+        admission: admission.then<InboxAdmission, InboxAdmission>(
+          () => 'admitted',
+          error => error instanceof OpencodeHTTPError && error.status >= 400 && error.status < 500 ? 'refused' : 'unknown',
+        ),
+      });
+      const admitted = await admission;
+      // Compaction admission identifies a control item, not a user message.
+      if (!compact) this.captureAdmission(admitted?.data?.id);
+      // Only ordinary prompts admit steers; commands and compaction own their native work.
+      if (kind === 'prompt' && this.pending === pending) pending.steerable = true;
       // A command can complete without starting an agent loop (for example a status command).
       if (command) {
         void this.requireClient().request(`/api/experimental/session/${encodeURIComponent(request.sessionId)}/wait`, { method: 'POST', timeoutMs: 0 })
@@ -197,15 +212,15 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     // Register before admission: delivery can be announced before the HTTP response.
     const admission = this.requireClient().request(`/api/session/${encodeURIComponent(request.sessionId)}/prompt`, {
       method: 'POST', body: { id, text, ...(files.length ? { files } : {}), delivery: 'steer' },
-    }).then<SteerAdmission, SteerAdmission>(
+    }).then<InboxAdmission, InboxAdmission>(
       () => 'admitted',
       // A client error is a definite native refusal; anything else may have been admitted.
       error => error instanceof OpencodeHTTPError && error.status >= 400 && error.status < 500 ? 'refused' : 'unknown',
     );
-    const delivery = new Promise<boolean>((resolve, reject) => { this.steers.set(id, { text, admission, resolve, reject, recall: null }); });
+    const delivery = new Promise<boolean>((resolve, reject) => { this.inboxInputs.set(id, { kind: 'steer', text, admission, resolve, reject, recall: null }); });
     const outcome = await admission;
-    if (outcome === 'refused') this.settleSteer(id, false);
-    else if (outcome === 'unknown' || this.pending !== pending) void this.recallSteers();
+    if (outcome === 'refused') this.settleInboxInput(id, false);
+    else if (outcome === 'unknown' || this.pending !== pending) void this.recallInboxInputs();
     return delivery;
   }
 
@@ -227,8 +242,8 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       ? [...new Set([...(this.sessionId ? [this.sessionId] : []), ...this.children.keys()])]
         .map(id => this.client!.request(`/api/session/${encodeURIComponent(id)}/interrupt?resume=false`, { method: 'POST' }).catch(() => undefined))
       : [];
-    // Interrupts leave undelivered steers queued in the persistent native inbox.
-    const recalls = this.client?.isReusable() ? this.recallSteers() : undefined;
+    // Interrupts leave undelivered inputs queued in the persistent native inbox.
+    const recalls = this.client?.isReusable() ? this.recallInboxInputs() : undefined;
     this.disposed = true;
     this.workChanged();
     this.stopTools();
@@ -238,7 +253,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     this.pending?.reject(new Error('OpenCode session disposed.'));
     this.pending = null;
     await Promise.all([this.cancellation, ...interruptions, recalls]);
-    for (const id of [...this.steers.keys()]) this.settleSteer(id, new Error('OpenCode session disposed before the steer was delivered.'));
+    for (const id of [...this.inboxInputs.keys()]) this.settleInboxInput(id, new Error('OpenCode session disposed before the steer was delivered.'));
     await this.persistence.settle();
     await this.client?.dispose();
   }
@@ -306,19 +321,21 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         this.announcePrompt();
         break;
       case 'session.execution.succeeded':
-        if (this.pending && this.steers.size > 0) this.pending.idle = true;
+        if (this.pending && this.inboxInputs.size > 0) this.pending.idle = true;
         else if (!this.pending || this.pending.started) this.finish();
         break;
       case 'session.inbox.delivered': {
         const id = String(data.inboxID);
-        const steer = this.steers.get(id);
+        const steer = this.inboxInputs.get(id);
         if (!steer) break;
-        this.announcePrompt();
-        this.emit({ type: 'user_message_started', content: steer.text, nativeUserMessageId: id });
-        this.settleSteer(id, true);
+        if (steer.kind === 'steer') {
+          this.announcePrompt();
+          this.emit({ type: 'user_message_started', content: steer.text, nativeUserMessageId: id });
+        }
+        this.settleInboxInput(id, true);
         break;
       }
-      case 'session.inbox.cancelled': this.settleSteer(String(data.inboxID), false); break;
+      case 'session.inbox.cancelled': this.settleInboxInput(String(data.inboxID), false); break;
       case 'session.execution.interrupted': if (!this.pending || this.pending.started) this.finish('cancelled'); break;
       case 'session.execution.failed': this.fail(new Error(errorText(data.error))); break;
       case 'permission.asked': void this.interact(data, false, child?.interactionTurnId).catch(error => this.fail(error)); break;
@@ -394,6 +411,13 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       }
       case 'session.step.ended': this.emitUsage(data.tokens); break;
       case 'session.compaction.ended': this.emit({ type: 'context_compacted' }); break;
+      case 'session.compaction.failed':
+        // Native compaction failures settle their barrier without failing the execution drain.
+        // A new drain also settles stale compactions left by a previous process.
+        if (this.pending?.kind === 'compact' && data.reason === 'manual' && data.inputID === this.pending.inputId) {
+          this.pending.error = new Error(errorText(data.error));
+        }
+        break;
     }
   }
 
@@ -509,35 +533,38 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   /** Consumers treat the first user boundary as the submitted prompt, so it must precede any steer's. */
   private announcePrompt(): void {
     const pending = this.pending;
-    if (!pending?.inputId || pending.announced) return;
+    if (!pending?.inputId || pending.kind !== 'prompt' || pending.announced) return;
     pending.announced = true;
     this.emit({ type: 'user_message_started', nativeUserMessageId: pending.inputId });
   }
-  private settleSteer(id: string, outcome: boolean | Error): void {
-    const steer = this.steers.get(id);
+  private settleInboxInput(id: string, outcome: boolean | Error): void {
+    const steer = this.inboxInputs.get(id);
     if (!steer) return;
-    this.steers.delete(id);
-    if (outcome instanceof Error) steer.reject(outcome);
-    else steer.resolve(outcome);
+    this.inboxInputs.delete(id);
+    if (steer.kind === 'steer') {
+      if (outcome instanceof Error) steer.reject(outcome);
+      else steer.resolve(outcome);
+    }
     // A steer admitted as the native execution ended runs as another native execution of this prompt.
-    if (this.pending?.idle && this.steers.size === 0) this.finish();
+    if (this.pending?.idle && this.inboxInputs.size === 0) this.finish();
     this.workChanged();
   }
-  private recallSteers(): Promise<unknown> {
+  private recallInboxInputs(): Promise<unknown> {
     const client = this.disposed ? null : this.client;
-    // Recall waits for admission so a DELETE cannot overtake the POST and leave the steer queued.
-    return Promise.all([...this.steers].map(([id, steer]) => steer.recall ??= steer.admission.then(outcome => {
-      if (outcome !== 'refused') return this.recallSteer(id, client);
+    // Recall waits for admission so a DELETE cannot overtake the POST and leave input queued.
+    return Promise.all([...this.inboxInputs].map(([id, steer]) => steer.recall ??= steer.admission.then(outcome => {
+      if (outcome !== 'refused') return this.recallInboxInput(id, client);
+      this.settleInboxInput(id, false);
     })));
   }
-  private async recallSteer(id: string, client: OpencodeServerLease | null): Promise<void> {
+  private async recallInboxInput(id: string, client: OpencodeServerLease | null): Promise<void> {
     try {
       if (!client) throw new Error('OpenCode HTTP session is not connected.');
       await client.request(`/api/session/${encodeURIComponent(this.sessionId!)}/inbox/${encodeURIComponent(id)}`, { method: 'DELETE' });
-      this.settleSteer(id, false);
+      this.settleInboxInput(id, false);
     } catch (error) {
       // A conflict means native delivery or cancellation won; its event settles the steer when observed.
-      this.settleSteer(id, new Error('OpenCode steer delivery could not be confirmed.', { cause: error }));
+      this.settleInboxInput(id, new Error('OpenCode steer delivery could not be confirmed.', { cause: error }));
     }
   }
   private stopTools(sessionId?: string): void {
@@ -550,9 +577,10 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
 
   private finish(stopReason: 'end_turn' | 'cancelled' = 'end_turn'): void {
     const pending = this.pending;
+    if (stopReason === 'end_turn' && pending?.error) { this.fail(pending.error); return; }
     this.pending = null;
     this.stopTools(this.sessionId ?? undefined);
-    void this.recallSteers();
+    void this.recallInboxInputs();
     pending?.resolve({ stopReason, userMessageId: pending.userMessageId });
     this.options.onNativeTurn?.('completed', undefined, !!pending);
     this.workChanged();
@@ -563,7 +591,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     const pending = this.pending;
     this.pending = null;
     this.stopTools(this.sessionId ?? undefined);
-    void this.recallSteers();
+    void this.recallInboxInputs();
     pending?.reject(error);
     this.options.onNativeTurn?.('completed', error.message, !!pending);
     if (!pending) this.options.onClosed(error);

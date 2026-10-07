@@ -744,6 +744,13 @@ RewindableExecutionSession {
       || notification.sessionId !== this.providerSessionId
       || !this.mirrorDeduplicator.shouldProcess(notification, source)
     ) return;
+    if ((notification.update as unknown as { sessionUpdate?: string }).sessionUpdate === 'auto_compact_completed') {
+      if (active.turn.acceptingLiveOutput) {
+        active.turn.accept();
+        active.run.emit({ type: 'context_compacted' });
+      }
+      return;
+    }
     if (isTurnCompleted(notification.update)) {
       if (active.turn.acceptingLiveOutput) {
         active.promptUsage = parseGrokUsage((notification.update as unknown as { usage?: unknown }).usage)

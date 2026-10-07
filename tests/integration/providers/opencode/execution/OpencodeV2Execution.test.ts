@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
 import { createForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
+import { testDate } from '@test/helpers/testClock';
 
 import { isSteerableExecutionSession, type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderSessionEvent } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
@@ -62,6 +63,9 @@ const server = http.createServer(async (req, res) => {
   }
   if (route.startsWith('/api/session/ses_test/inbox/') && req.method === 'DELETE') {
     const id = decodeURIComponent(route.slice('/api/session/ses_test/inbox/'.length));
+    if (process.env.COMPACT_QUEUED_FILE && require('node:fs').existsSync(process.env.COMPACT_QUEUED_FILE) && require('node:fs').readFileSync(process.env.COMPACT_QUEUED_FILE, 'utf8') === id) {
+      require('node:fs').unlinkSync(process.env.COMPACT_QUEUED_FILE); emit('session.inbox.cancelled', { inboxID: id }); res.writeHead(204).end(); return;
+    }
     if (!inbox.includes(id)) { res.writeHead(409).end(JSON.stringify({ _tag: 'ConflictError' })); return; }
     inbox = inbox.filter(item => item !== id);
     emit('session.inbox.cancelled', { inboxID: id }); res.writeHead(204).end(); return;
@@ -77,11 +81,41 @@ const server = http.createServer(async (req, res) => {
   if (route.endsWith('/form/frm_test/reply')) { form = body.answer; res.writeHead(204).end(); return; }
   if (route.endsWith('/message')) { res.end(JSON.stringify({ data: messages, cursor: {} })); return; }
   if (route.endsWith('/wait')) { if (idle) res.writeHead(204).end(); else waiter = res; return; }
+  if (route === '/api/session/ses_test/compact') {
+    if (req.method !== 'POST' || Object.keys(body).some(key => key !== 'id')) { res.writeHead(400).end(); return; }
+    if (process.env.COMPACT_OUTCOME === 'http-error') { res.writeHead(400).end(JSON.stringify({ message: 'Cannot compact this session' })); return; }
+    const compactId = body.id ?? 'msg_compact';
+    if (process.env.COMPACT_QUEUED_FILE) {
+      require('node:fs').writeFileSync(process.env.COMPACT_QUEUED_FILE, compactId);
+      await new Promise(resolve => setTimeout(resolve, Number(process.env.COMPACT_ADMISSION_DELAY || 0)));
+      res.end(JSON.stringify({ data: { id: compactId, type: 'compaction' } })); return;
+    }
+    idle = false;
+    const compact = () => {
+      emit('session.execution.started', {});
+      if (process.env.STALE_COMPACT_FAILURE === '1') emit('session.compaction.failed', { reason: 'manual', inputID: 'msg_old_compaction', error: { type: 'compaction.interrupted', message: 'Compaction was interrupted' } });
+      emit('session.inbox.delivered', { inboxID: compactId });
+      emit('session.compaction.started', { reason: 'manual', inputID: compactId });
+      if (process.env.COMPACT_STARTED_FILE) { require('node:fs').writeFileSync(process.env.COMPACT_STARTED_FILE, ''); return; }
+      if (process.env.COMPACT_OUTCOME === 'failed') emit('session.compaction.failed', { reason: 'manual', inputID: compactId, error: { message: 'Compaction model failed' } });
+      else emit('session.compaction.ended', { reason: 'manual', text: 'Internal summary' });
+      // A failed compaction settles its barrier, so the surrounding drain can still succeed.
+      emit('session.execution.succeeded', {}); idle = true;
+    };
+    if (process.env.COMPACT_BEFORE_RESPONSE === '1') compact();
+    res.end(JSON.stringify({ data: { id: compactId, type: 'compaction' } }));
+    if (process.env.COMPACT_BEFORE_RESPONSE !== '1') setTimeout(compact, 50);
+    return;
+  }
   if (route.endsWith('/prompt') || route.endsWith('/command')) {
     releaseModel?.();
     if (body.text.includes('Old local history')) { res.writeHead(400).end(); return; }
     const assistantMessageID = 'msg_assistant_' + (++turn);
     idle = false; res.end(JSON.stringify({ data: { id: body.id ?? 'msg_user' } }));
+    if (process.env.COMPACT_QUEUED_FILE && require('node:fs').existsSync(process.env.COMPACT_QUEUED_FILE)) {
+      require('node:fs').unlinkSync(process.env.COMPACT_QUEUED_FILE);
+      emit('session.compaction.ended', { reason: 'manual', text: 'Leaked compact' });
+    }
     if (process.env.LATE_CHILD_STAGE === 'prompt') lateChild?.();
     setTimeout(async () => {
       emit('session.execution.started', {});
@@ -285,6 +319,69 @@ it.each([
       },
     });
   } finally { await f.dispose(); }
+});
+
+it.each([
+  { beforeResponse: false, staleFailure: false },
+  { beforeResponse: true, staleFailure: false },
+  { beforeResponse: false, staleFailure: true },
+  { beforeResponse: true, staleFailure: true },
+])('compacts through the native endpoint (events before admission: $beforeResponse, stale failure: $staleFailure)', async ({ beforeResponse, staleFailure }) => {
+  const f = createFixture(true, undefined, `COMPACT_BEFORE_RESPONSE=${beforeResponse ? '1' : '0'}\nSTALE_COMPACT_FAILURE=${staleFailure ? '1' : '0'}`);
+  try {
+    const events: ProviderExecutionEvent[] = [];
+    for await (const event of f.session.execute(request('/compact')).events) events.push(event);
+    expect(events.filter(event => event.type === 'context_compacted')).toHaveLength(1);
+    expect(events.at(-1)?.type).toBe('turn_completed');
+    expect(events.some(event => event.type === 'text_delta' || event.type === 'user_message_started')).toBe(false);
+    expect(events.find(event => event.type === 'turn_started')).not.toHaveProperty('nativeUserMessageId');
+    expect(f.approvals).toEqual([]);
+    expect(f.questions).toEqual([]);
+  } finally { await f.dispose(); }
+});
+
+it.each([
+  ['http-error', 'Cannot compact this session'],
+  ['failed', 'Compaction model failed'],
+])('reports native compaction failure (%s)', async (outcome, message) => {
+  const f = createFixture(true, undefined, `COMPACT_OUTCOME=${outcome}`);
+  try {
+    const events: ProviderExecutionEvent[] = [];
+    for await (const event of f.session.execute(request('/compact')).events) events.push(event);
+    expect(events.at(-1)).toMatchObject({ type: 'execution_error', message: expect.stringContaining(message) });
+    expect(events.some(event => event.type === 'context_compacted' || event.type === 'turn_completed')).toBe(false);
+  } finally { await f.dispose(); }
+});
+
+it('rejects compact arguments unsupported by the native endpoint', async () => {
+  const f = createFixture(true);
+  try {
+    const events: ProviderExecutionEvent[] = [];
+    for await (const event of f.session.execute(request('/compact keep recent edits')).events) events.push(event);
+    expect(events.at(-1)).toMatchObject({ type: 'execution_error', message: expect.stringContaining('/compact does not accept arguments') });
+  } finally { await f.dispose(); }
+});
+
+it('cancels native compaction, declines steering, and can continue the session', async () => {
+  const started = path.join(realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-http-compact-'))), 'started');
+  const f = createFixture(true, undefined, `COMPACT_STARTED_FILE=${started}`);
+  try {
+    const run = f.session.execute(request('/compact'));
+    const events: ProviderExecutionEvent[] = [];
+    const consumed = (async () => { for await (const event of run.events) events.push(event); })();
+    const deadline = Date.now() + 3000;
+    while (!existsSync(started) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+    expect(existsSync(started)).toBe(true);
+    if (!isSteerableExecutionSession(f.session)) throw new Error('Missing steering');
+    await expect(f.session.steer(request('Also check tests'))).resolves.toBe(false);
+    run.cancel();
+    await consumed;
+    expect(events.at(-1)?.type).toBe('cancelled');
+    expect(events.some(event => event.type === 'context_compacted')).toBe(false);
+    const continued: ProviderExecutionEvent[] = [];
+    for await (const event of f.session.execute(request('continue')).events) continued.push(event);
+    expect(continued.at(-1)?.type).toBe('turn_completed');
+  } finally { await f.dispose(); rmSync(path.dirname(started), { recursive: true, force: true }); }
 });
 
 it('runs YOLO with automatic native approvals while still answering questions, then asks again', async () => {
@@ -798,4 +895,52 @@ it('sends hidden session reference paths through the HTTP v2 prompt boundary', a
     const received = JSON.parse(events.flatMap(event => event.type === 'text_delta' ? [event.text] : []).join(''));
     expect(received.body.text).toBe('ref @"Review"\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" path="/tmp/claudian-sessions/ref.md" />\n</context_sessions>');
   } finally { await f.dispose(); }
+});
+it('compacts with captured editor context', async () => {
+  const f = createFixture(true);
+  try {
+    const events: ProviderExecutionEvent[] = [];
+    for await (const event of f.session.execute({
+      ...request('/compact'),
+      context: { selections: [{ kind: 'editor', selection: { notePath: 'note.md', mode: 'selection', selectedText: 'selected note text' } }] },
+    }).events) events.push(event);
+    expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
+    expect(events.filter(event => event.type === 'context_compacted')).toHaveLength(1);
+  } finally { await f.dispose(); }
+});
+
+it('requires replaying recovered context before compacting a replacement native session', async () => {
+  const f = createFixture();
+  try {
+    const events: ProviderExecutionEvent[] = [];
+    for await (const event of f.session.execute({
+      ...request('/compact'),
+      conversationHistory: [{ id: 'old-user', role: 'user', content: 'Earlier conversation', timestamp: testDate().getTime() }],
+    }).events) events.push(event);
+    expect(events.at(-1)).toMatchObject({ type: 'execution_error', message: expect.stringContaining('normal message') });
+    expect(events.some(event => event.type === 'context_compacted')).toBe(false);
+  } finally { await f.dispose(); }
+});
+
+
+it.each([0, 150])('recalls a queued compact before continuing after cancellation (admission delay: %s)', async delay => {
+  const queued = path.join(realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-queued-compact-'))), 'queued');
+  const f = createFixture(true, undefined, `COMPACT_QUEUED_FILE=${queued}\nCOMPACT_ADMISSION_DELAY=${delay}`);
+  try {
+    const run = f.session.execute(request('/compact'));
+    const events: ProviderExecutionEvent[] = [];
+    const consumed = (async () => { for await (const event of run.events) events.push(event); })();
+    const deadline = Date.now() + 3000;
+    while (!existsSync(queued) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+    expect(existsSync(queued)).toBe(true);
+    // For the zero-delay case let the HTTP admission response arrive before cancelling.
+    if (!delay) await new Promise(resolve => setTimeout(resolve, 30));
+    run.cancel();
+    await consumed;
+    expect(events.at(-1)?.type).toBe('cancelled');
+    const continued: ProviderExecutionEvent[] = [];
+    for await (const event of f.session.execute(request('continue')).events) continued.push(event);
+    expect(continued.at(-1)?.type).toBe('turn_completed');
+    expect(continued.some(event => event.type === 'context_compacted')).toBe(false);
+  } finally { await f.dispose(); rmSync(path.dirname(queued), { recursive: true, force: true }); }
 });

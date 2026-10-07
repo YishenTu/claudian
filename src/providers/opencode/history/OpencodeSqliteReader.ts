@@ -70,7 +70,7 @@ export async function loadOpencodeSessionRows(
     dependencies.includeParts === false ? id => `SELECT 1 WHERE ${id} IS NULL` : buildOpencodePartRowsSQL);
   // Usage metadata is optional. Preserve the existing row shape where it is absent.
   for (const row of rows.messageRows) {
-    for (const key of ['parent_id', 'output_tokens', 'reasoning_tokens', 'finish', 'error']) {
+    for (const key of ['parent_id', 'output_tokens', 'reasoning_tokens', 'finish', 'error', 'summary']) {
       if (row[key] === null) delete row[key];
     }
   }
@@ -340,6 +340,7 @@ select
   time_created,
   data_valid,
   case when data_valid then json_extract(data, '$.role') end as role,
+  case when data_valid then json_extract(data, '$.summary') end as summary,
   case when data_valid then json_extract(data, '$.providerID') end as provider_id,
   case when data_valid then json_extract(data, '$.modelID') end as model_id,
   case when data_valid then json_extract(data, '$.time.created') end as data_time_created,

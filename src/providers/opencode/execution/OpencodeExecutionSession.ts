@@ -808,6 +808,12 @@ function buildPromptBlocks(
     ))
     .map(({ text: value }) => value)
     .join('\n');
+  if (/^\/compact(?:\s|$)/u.test(text.trim())) {
+    if (bootstrapHistory && request.conversationHistory?.length) {
+      throw new Error('Send a normal message to restore the native conversation before using /compact.');
+    }
+    return [{ type: 'text' as const, text: text.trim() }];
+  }
   const images = request.input
     .filter((block): block is Extract<typeof block, { type: 'image' }> => (
       block.type === 'image'

@@ -1,6 +1,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import compactCompleted from '@test/fixtures/providers/grok/runtime/compaction-completed.json';
+import { testDate } from '@test/helpers/testClock';
+
 import {
   parseGrokHistoryContent,
   resolveGrokPromptIndexAfterAssistant,
@@ -870,4 +873,47 @@ it('does not infer a fork checkpoint from synthetic legacy message ids', () => {
   const assistant = parseGrokHistoryContent(content, 'old').messages.find(message => message.role === 'assistant');
   expect(assistant?.assistantMessageId).toBeDefined();
   expect(resolveGrokPromptIndexAfterAssistant(content, 'old', assistant!.assistantMessageId!)).toBeNull();
+});
+
+
+describe('Grok compaction boundaries', () => {
+  const time = testDate().getTime();
+  const complete = compactCompleted.params.update;
+  const user = { sessionUpdate: 'user_message_chunk', messageId: 'u1', content: { type: 'text', text: 'Question' } };
+  const answer = { sessionUpdate: 'agent_message_chunk', messageId: 'a1', content: { type: 'text', text: 'Answer' } };
+  const end = { sessionUpdate: 'turn_completed', prompt_id: 'p1', stop_reason: 'end_turn' };
+  const history = (updates: Record<string, unknown>[]) => updates.map((update, index) => JSON.stringify({
+    method: 'x.ai/session/update', timestamp: time + index, params: { sessionId: 'session-existing', update },
+  })).join('\n');
+
+  it('restores a standalone manual compact without inventing a user turn or rewind checkpoint', () => {
+    const messages = parseGrokHistoryContent(history([user, answer, end, complete]), 'session-existing').messages;
+    expect(messages).toHaveLength(3);
+    expect(messages[2]).toMatchObject({ role: 'assistant', content: '', contentBlocks: [{ type: 'context_compacted' }], timestamp: time + 3 });
+    expect(messages[2].assistantMessageId).toBeUndefined();
+    expect(parseGrokHistoryContent(history([user, answer, end, complete]), 'session-existing', 'p1').messages).toHaveLength(2);
+  });
+
+  it('retains an automatic boundary between text blocks inside its turn', () => {
+    const messages = parseGrokHistoryContent(history([user, answer, complete, answer, end]), 'session-existing').messages;
+    expect(messages[1].contentBlocks).toEqual([
+      { type: 'text', content: 'Answer' }, { type: 'context_compacted' }, { type: 'text', content: 'Answer' },
+    ]);
+  });
+
+  it('drops a standalone boundary when rewinding before it without shifting prompt indexes', () => {
+    const content = history([user, answer, end, complete,
+      { sessionUpdate: 'rewind_marker', target_prompt_index: 1 },
+      { ...user, messageId: 'u2' }, { ...answer, messageId: 'a2' }, { ...end, prompt_id: 'p2' },
+    ]);
+    expect(parseGrokHistoryContent(content, 'session-existing').messages.map(message => message.id)).toEqual(['u1', 'a1', 'u2', 'a2']);
+    expect(resolveGrokPromptIndexAfterAssistant(content, 'session-existing', 'a2')).toBe(2);
+  });
+
+  it.each(['auto_compact_started', 'auto_compact_failed', 'auto_compact_cancelled'])(
+    'does not restore a success divider from %s', sessionUpdate => {
+      const messages = parseGrokHistoryContent(history([user, { sessionUpdate }, answer, end]), 'session-existing').messages;
+      expect(messages.flatMap(message => message.contentBlocks ?? []).some(block => block.type === 'context_compacted')).toBe(false);
+    },
+  );
 });
