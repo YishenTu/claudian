@@ -32,7 +32,7 @@ test('metadata lint checks manifest structure and disallowed dependencies', asyn
     ['manifest.json', '{ "name": "Claudian" }', 'obsidianmd/validate-manifest'],
     ['package.json', '{ "dependencies": { "left-pad": "1.3.0" } }', 'depend/ban-dependencies'],
   ]) {
-    assert.ok(packageJson.scripts['lint:ts'].includes(filePath));
+    assert.ok(packageJson.scripts.lint.includes(filePath));
     const [result] = await eslint.lintText(code, { filePath });
     assert.ok(result.messages.some(message => message.ruleId === rule), JSON.stringify(result.messages));
   }
