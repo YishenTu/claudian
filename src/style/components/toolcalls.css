@@ -1,3 +1,9 @@
+.claudian-tool-header,
+.claudian-write-edit-header {
+  /* Suppress Obsidian hover tooltips while preserving accessible labels. */
+  --no-tooltip: true;
+}
+
 .claudian-tool-header:hover {
   opacity: 0.85;
 }
