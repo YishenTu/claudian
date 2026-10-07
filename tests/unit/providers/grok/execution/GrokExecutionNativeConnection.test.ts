@@ -7,6 +7,7 @@ import { getInstallationKey as getHostnameKey } from '@/core/device/Installation
 jest.mock('cross-spawn', () => jest.fn());
 
 import fixture from '@test/fixtures/providers/grok/extensions/plan-mode-hook.json';
+import commandsList from '@test/fixtures/providers/grok/runtime/commands-list.json';
 import spawn from 'cross-spawn';
 
 import { isSteerableExecutionSession, type ProviderExecutionEvent, type ProviderExecutionRequest } from '@/core/execution';
@@ -56,6 +57,21 @@ describe('GrokExecutionNativeConnection', () => {
   afterEach(async () => {
     await connection.shutdown();
     native.dispose();
+  });
+
+  it('marks SKILL.md-backed commands as skills and keeps other commands as commands', async () => {
+    native.onRequest('_x.ai/commands/list', () => commandsList.result);
+    await connection.initialize();
+
+    const commands = await connection.listCommands('/vault');
+
+    expect(commands.map(({ name, kind }) => [name, kind])).toEqual([
+      ['compact', 'command'],
+      ['deep-research', 'command'],
+      ['commit', 'skill'],
+      ['user:docs', 'skill'],
+      ['release-notes', 'command'],
+    ]);
   });
 
   it.each(['x.ai/session/interjection', '_x.ai/session/interjection'])(

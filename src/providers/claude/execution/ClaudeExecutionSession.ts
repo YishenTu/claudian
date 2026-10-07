@@ -46,6 +46,7 @@ import {
   getRequestInputText,
 } from './ClaudeExecutionRequestEncoder';
 import {
+  type ClaudeCommandUpdate,
   ClaudeEphemeralExecutionStrategy,
   type ClaudeExecutionStrategy,
   type ClaudeExecutionStrategySink,
@@ -117,6 +118,7 @@ ClaudeExecutionStrategySink {
   private queryToken = 0;
   private commandPublication = 0;
   private commandSnapshot: SlashCommand[] | undefined;
+  private skillNames: readonly string[] = [];
   private disposed = false;
   private readonly suppressedPersistentQueryTokens = new Set<number>();
   private readonly suppressedEphemeralQueryTokens = new Set<number>();
@@ -722,8 +724,9 @@ ClaudeExecutionStrategySink {
     return this.commandSnapshot?.map(command => ({ ...command }));
   }
 
-  publishCommands(query: Query, commands?: Awaited<ReturnType<Query['supportedCommands']>>): void {
+  publishCommands(query: Query, { commands, skills }: ClaudeCommandUpdate): void {
     if (this.disposed || this.nativeQuery !== query) return;
+    if (skills !== undefined) this.skillNames = skills;
     const publication = ++this.commandPublication;
     const publish = (snapshot: Awaited<ReturnType<Query['supportedCommands']>>) => {
       if (
@@ -731,7 +734,7 @@ ClaudeExecutionStrategySink {
         || this.nativeQuery !== query
         || this.commandPublication !== publication
       ) return;
-      this.commandSnapshot = mapSDKCommands(snapshot);
+      this.commandSnapshot = mapSDKCommands(snapshot, this.skillNames);
       this.#emitSession({ type: 'commands_changed' });
     };
     if (commands !== undefined) {
@@ -763,6 +766,7 @@ ClaudeExecutionStrategySink {
     this.nativeQuery = query;
     this.taskNotifications.reset();
     this.commandSnapshot = undefined;
+    this.skillNames = [];
     this.knownContextWindow = null;
   }
 
@@ -772,6 +776,7 @@ ClaudeExecutionStrategySink {
     this.nativeQuery = null;
     this.taskNotifications.reset();
     this.commandSnapshot = undefined;
+    this.skillNames = [];
     this.#emitSession({ type: 'commands_changed' });
     this.knownContextWindow = null;
   }

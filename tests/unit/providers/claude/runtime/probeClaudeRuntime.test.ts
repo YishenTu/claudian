@@ -28,7 +28,7 @@ function host(config: Record<string, unknown> = {}, environment = ''): ProviderH
   } as unknown as ProviderHost;
 }
 
-const sessionInit = { type: 'system', subtype: 'init', session_id: 'probe-session' };
+const sessionInit = { type: 'system', subtype: 'init', session_id: 'probe-session', skills: ['commit'] };
 
 /** Mirrors the SDK Query: `supportedCommands()` tracks the latest `commands_changed` push. */
 function nativeQuery(
@@ -60,10 +60,10 @@ function lastLaunch(): { options: Options; prompt: unknown } {
 afterEach(() => { jest.clearAllMocks(); });
 
 describe('Claude runtime probe', () => {
-  it('reads the initialization answer once the session initializes, without a model or persisted session', async () => {
+  it('reads the initialization answer and session-init skills, without a model or persisted session', async () => {
     const conversation = nativeQuery();
 
-    expect(await probeClaudeRuntime(host())).toEqual(initialization);
+    expect(await probeClaudeRuntime(host())).toEqual({ ...initialization, skills: ['commit'] });
 
     const { options, prompt } = lastLaunch();
     expect(prompt).toBe('');

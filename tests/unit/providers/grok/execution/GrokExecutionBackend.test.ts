@@ -1748,6 +1748,10 @@ describe('GrokExecutionBackend', () => {
           description: 'Review changes',
           input: { hint: '[path]' },
           name: 'review',
+        }, {
+          _meta: { path: '/home/user/.grok/skills/commit/SKILL.md' },
+          description: 'Commit changes',
+          name: 'commit',
         }],
         sessionUpdate: 'available_commands_update',
       });
@@ -1765,7 +1769,8 @@ describe('GrokExecutionBackend', () => {
 
     expect(events.filter(event => event.type === 'text_delta')).toHaveLength(1);
     expect(setCommandSnapshot).toHaveBeenCalledWith([
-      expect.objectContaining({ name: 'review' }),
+      expect.objectContaining({ name: 'review', kind: 'command' }),
+      expect.objectContaining({ name: 'commit', kind: 'skill' }),
     ]);
   });
 

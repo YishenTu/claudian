@@ -2,8 +2,8 @@ import {
   ACPClientConnection,
   ACPJSONRPCTransport,
   ACPSubprocess,
-  normalizeACPAvailableCommands,
 } from '../../acp';
+import { normalizeGrokCommands } from '../normalization/grokCommandNormalization';
 import {
   requestGrokInterjection,
   requestGrokRewind,
@@ -178,7 +178,7 @@ implements GrokExecutionNativeConnection {
     if (!Array.isArray(response.commands)) {
       throw new Error('Grok Build returned malformed command metadata.');
     }
-    return normalizeACPAvailableCommands(response.commands);
+    return normalizeGrokCommands(response.commands);
   }
 
   newSession: GrokExecutionNativeConnection['newSession'] = request => (

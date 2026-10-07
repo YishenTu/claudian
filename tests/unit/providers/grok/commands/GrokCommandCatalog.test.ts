@@ -1,18 +1,20 @@
 import { GrokCommandCatalog } from '@/providers/grok/commands/GrokCommandCatalog';
 
 describe('GrokCommandCatalog', () => {
-  it('preserves provider-advertised names, order, and case exactly', async () => {
+  it('preserves provider-advertised names, order, case, and kind exactly', async () => {
     const catalog = new GrokCommandCatalog();
     catalog.setCommandSnapshot([
       { id: 'first', name: 'local:review', description: 'Review changes', content: '', source: 'sdk' },
       { id: 'duplicate', name: 'REVIEW', description: 'Duplicate', content: '', source: 'sdk' },
-      { id: 'help', name: 'help', argumentHint: '[topic]', content: '', source: 'sdk' },
+      { id: 'help', name: 'help', argumentHint: '[topic]', content: '', source: 'sdk', kind: 'command' },
+      { id: 'commit', name: 'commit', content: '', source: 'sdk', kind: 'skill' },
     ]);
 
     await expect(catalog.listDropdownEntries({ includeBuiltIns: true })).resolves.toEqual([
-      expect.objectContaining({ id: 'first', name: 'local:review' }),
+      expect.objectContaining({ id: 'first', name: 'local:review', kind: 'command' }),
       expect.objectContaining({ id: 'duplicate', name: 'REVIEW' }),
-      expect.objectContaining({ id: 'help', name: 'help', argumentHint: '[topic]' }),
+      expect.objectContaining({ id: 'help', name: 'help', argumentHint: '[topic]', kind: 'command' }),
+      expect.objectContaining({ id: 'commit', name: 'commit', kind: 'skill' }),
     ]);
   });
 

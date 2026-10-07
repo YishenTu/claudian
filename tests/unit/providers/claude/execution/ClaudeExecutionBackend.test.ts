@@ -496,6 +496,7 @@ describe('ClaudeExecutionBackend', () => {
   it('creates a persistent session that normalizes SDK output and publishes commands', async () => {
     sdkMock.setMockSupportedCommands([
       { name: 'review', description: 'Review changes', argumentHint: '[path]' },
+      { name: 'pdf', description: 'Work with PDFs', argumentHint: '' },
     ]);
     sdkMock.setMockMessages([
       {
@@ -503,6 +504,7 @@ describe('ClaudeExecutionBackend', () => {
         subtype: 'init',
         session_id: 'native-session',
         agents: ['Explore'],
+        skills: ['documents:pdf'],
       },
       {
         type: 'stream_event',
@@ -579,6 +581,16 @@ describe('ClaudeExecutionBackend', () => {
         argumentHint: '[path]',
         content: '',
         source: 'sdk',
+        kind: 'command',
+      },
+      {
+        id: 'sdk:pdf',
+        name: 'pdf',
+        description: 'Work with PDFs',
+        argumentHint: '',
+        content: '',
+        source: 'sdk',
+        kind: 'skill',
       },
     ]);
   });

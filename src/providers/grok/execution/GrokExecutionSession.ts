@@ -54,6 +54,7 @@ import {
   type GrokDiscoveredModel,
   normalizeGrokDiscoveredModels,
 } from '../models';
+import { normalizeGrokCommands } from '../normalization/grokCommandNormalization';
 import {
   buildGrokToolProviderPayload,
   normalizeGrokToolInput,
@@ -776,8 +777,8 @@ RewindableExecutionSession {
     // ACP session modes do not describe Grok's Safe/YOLO permissions, so
     // current_mode metadata is ignored.
     const metadata = active.turn.handleUpdate(update);
-    if (metadata?.type === 'commands') {
-      this.options.commandCatalog?.setCommandSnapshot([...metadata.commands]);
+    if (metadata?.type === 'commands' && update.sessionUpdate === 'available_commands_update') {
+      this.options.commandCatalog?.setCommandSnapshot(normalizeGrokCommands(update.availableCommands));
     } else if (metadata?.type === 'config_options') {
       const owner = this.nativeOwner;
       if (owner) void this.#publishModelsFromConfig(metadata.configOptions, owner);

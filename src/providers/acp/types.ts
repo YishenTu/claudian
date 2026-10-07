@@ -451,6 +451,7 @@ export interface ACPAvailableCommandInput {
 }
 
 export interface ACPAvailableCommand {
+  _meta?: ACPMetadata | null;
   description?: string | null;
   input?: ACPAvailableCommandInput | null;
   name: string;

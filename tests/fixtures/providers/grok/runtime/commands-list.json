@@ -1,0 +1,55 @@
+{
+  "grokVersion": "1.0.46",
+  "evidence": "Real `_x.ai/commands/list` response from `grok agent --no-leader stdio`, plus a temporary user `commands/*.md` file; subset of entries, home paths sanitized.",
+  "result": {
+    "commands": [
+      {
+        "name": "compact",
+        "description": "Compress conversation history to save context window",
+        "input": null
+      },
+      {
+        "name": "deep-research",
+        "description": "Research a question in depth",
+        "input": null,
+        "_meta": {
+          "workflowSource": "builtin",
+          "workflowPath": "/build/xai-grok-shell/src/session/workflows/deep_research.rhai"
+        }
+      },
+      {
+        "name": "commit",
+        "description": "Commit changes following the commit convention",
+        "input": null,
+        "_meta": {
+          "scope": "user",
+          "path": "/home/user/.agents/skills/commit/SKILL.md",
+          "bareName": "commit",
+          "qualifiedName": "user:commit"
+        }
+      },
+      {
+        "name": "user:docs",
+        "description": "Editable docs",
+        "input": null,
+        "_meta": {
+          "scope": "user",
+          "path": "/home/user/.claude/skills/docs/SKILL.md",
+          "bareName": "docs",
+          "qualifiedName": "user:docs"
+        }
+      },
+      {
+        "name": "release-notes",
+        "description": "legacy probe",
+        "input": null,
+        "_meta": {
+          "scope": "user",
+          "path": "/home/user/.grok/commands/release-notes.md",
+          "bareName": "release-notes",
+          "qualifiedName": "user:release-notes"
+        }
+      }
+    ]
+  }
+}

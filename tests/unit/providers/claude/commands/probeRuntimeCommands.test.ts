@@ -15,11 +15,11 @@ function createMockPlugin(cliPath: string | null = '/mock/claude'): ProviderHost
   } as unknown as ProviderHost;
 }
 
-function initializeWith(initializationResult: () => Promise<{ commands?: unknown }>) {
+function initializeWith(initializationResult: () => Promise<{ commands?: unknown }>, skills: string[] = []) {
   mockQuery.mockReturnValue({
     initializationResult,
     supportedCommands: async () => (await initializationResult()).commands,
-    next: jest.fn().mockResolvedValue({ done: false, value: { type: 'system', subtype: 'init' } }),
+    next: jest.fn().mockResolvedValue({ done: false, value: { type: 'system', subtype: 'init', skills } }),
     close: jest.fn(),
   });
 }
@@ -27,15 +27,19 @@ function initializeWith(initializationResult: () => Promise<{ commands?: unknown
 describe('probeRuntimeCommands', () => {
   afterEach(() => { jest.clearAllMocks(); });
 
-  it('maps initialization commands and keeps Claude Code built-ins distinguishable', async () => {
+  it('maps initialization commands and keeps Claude Code built-ins and skills distinguishable', async () => {
     initializeWith(async () => ({ commands: [
       { name: 'commit', description: 'Create a commit', argumentHint: '' },
       { name: 'compact', description: 'Compact context', argumentHint: '<focus>', builtin: true },
-    ] }));
+      { name: 'pdf', description: 'Work with PDFs', argumentHint: '' },
+      { name: 'review', description: 'Review changes', argumentHint: '', builtin: true },
+    ] }), ['commit', 'documents:pdf', 'review']);
 
     expect(await probeRuntimeCommands(createMockPlugin())).toEqual([
-      { id: 'sdk:commit', name: 'commit', description: 'Create a commit', argumentHint: '', content: '', source: 'sdk' },
-      { id: 'sdk:compact', name: 'compact', description: 'Compact context', argumentHint: '<focus>', content: '', source: 'builtin' },
+      { id: 'sdk:commit', name: 'commit', description: 'Create a commit', argumentHint: '', content: '', source: 'sdk', kind: 'skill' },
+      { id: 'sdk:compact', name: 'compact', description: 'Compact context', argumentHint: '<focus>', content: '', source: 'builtin', kind: 'command' },
+      { id: 'sdk:pdf', name: 'pdf', description: 'Work with PDFs', argumentHint: '', content: '', source: 'sdk', kind: 'skill' },
+      { id: 'sdk:review', name: 'review', description: 'Review changes', argumentHint: '', content: '', source: 'builtin', kind: 'skill' },
     ]);
   });
 

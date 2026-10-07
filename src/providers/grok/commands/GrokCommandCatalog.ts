@@ -6,7 +6,7 @@ function slashCommandToEntry(command: SlashCommand): ProviderCommandEntry {
   return {
     id: command.id,
     providerId: 'grok',
-    kind: 'command',
+    kind: command.kind ?? 'command',
     name: command.name,
     description: command.description,
     content: command.content,

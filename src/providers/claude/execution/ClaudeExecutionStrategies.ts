@@ -15,6 +15,11 @@ import {
 import type { ClaudeEncodedExecutionRequest } from './ClaudeExecutionRequestEncoder';
 import { ClaudeTurnInputs } from './ClaudeTurnInputs';
 
+export interface ClaudeCommandUpdate {
+  readonly commands?: SlashCommand[];
+  readonly skills?: readonly string[];
+}
+
 export interface ClaudeExecutionStrategySink {
   readonly sessionInstanceId: string;
   getProviderSessionId(): string | null;
@@ -27,7 +32,8 @@ export interface ClaudeExecutionStrategySink {
   releaseNativeTurnFence(queryToken: number): void;
   handleNativeQueryOpened(query: Query): void;
   handleNativeQueryClosed(query: Query): void;
-  publishCommands(query: Query, commands?: SlashCommand[]): void;
+  /** Init supplies skill names; `commands_changed` supplies commands. */
+  publishCommands(query: Query, update: ClaudeCommandUpdate): void;
   publishCatalog(query: Query): void;
 }
 
@@ -301,11 +307,11 @@ implements ClaudeExecutionStrategy {
           return;
         }
         if (message.type === 'system' && message.subtype === 'init') {
-          this.sink.publishCommands(query);
+          this.sink.publishCommands(query, { skills: message.skills });
           this.sink.publishCatalog(query);
         }
         if (message.type === 'system' && message.subtype === 'commands_changed') {
-          this.sink.publishCommands(query, message.commands);
+          this.sink.publishCommands(query, { commands: message.commands });
         }
         const nativeTurn = this.#getNativeTurn(query);
         nativeTurn?.inputs.observe(message);
@@ -432,11 +438,11 @@ implements ClaudeExecutionStrategy {
       for await (const message of query) {
         if (this.activeQuery !== query || this.disposed) break;
         if (message.type === 'system' && message.subtype === 'init') {
-          this.sink.publishCommands(query);
+          this.sink.publishCommands(query, { skills: message.skills });
           this.sink.publishCatalog(query);
         }
         if (message.type === 'system' && message.subtype === 'commands_changed') {
-          this.sink.publishCommands(query, message.commands);
+          this.sink.publishCommands(query, { commands: message.commands });
         }
         inputs.observe(message);
         await this.sink.handleNativeMessage(message, queryToken);
