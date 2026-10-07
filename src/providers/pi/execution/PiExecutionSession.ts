@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 
+import { parseCompactCommand } from '@/core/commands/compactCommand';
 import { parseEnvironmentVariables } from '@/core/process/env';
 import {
   buildContextFromHistory,
@@ -116,10 +117,11 @@ interface PiExecutionSessionOptions {
 type PiExecutionServices = Pick<PiWorkspaceServices, 'commandCatalog'>;
 
 interface EncodedPiRequest {
-  readonly images: PiPromptImage[];
+  readonly input:
+    | { readonly kind: 'compact'; readonly instructions: string }
+    | { readonly kind: 'prompt'; readonly text: string; readonly images: PiPromptImage[] };
   readonly launchSpec: PiLaunchSpec;
   readonly model: string;
-  readonly prompt: string;
   readonly thinkingLevel: string | null;
 }
 
@@ -599,13 +601,13 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       if (!this.isActive(active)) return;
       assertPiModelAvailable(this.host.settings, request.configuration.model);
       const previousLeafId = getPiState(this.state.providerState).leafEntryId ?? null;
-      const compactInstructions = getCompactInstructions(encoded.prompt);
+      const input = encoded.input;
       let promptHandled = false;
-      if (compactInstructions !== null) {
+      if (input.kind === 'compact') {
         active.nativeRequestDispatched = true;
         await this.kernel.request(
           'compact',
-          { customInstructions: compactInstructions },
+          { customInstructions: input.instructions },
           undefined,
           active.abortController.signal,
         );
@@ -616,8 +618,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         const response = await this.kernel.request<{ disposition?: string } | undefined>(
           'prompt',
           {
-            ...(encoded.images.length > 0 ? { images: encoded.images } : {}),
-            message: encoded.prompt,
+            ...(input.images.length > 0 ? { images: input.images } : {}),
+            message: input.text,
             // An extension can start a run at any time; Pi rejects unqueued prompts while it streams.
             streamingBehavior: 'followUp',
           },
@@ -754,16 +756,17 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     if (this.#shouldDisableNativePersistence() && this.nativeConversationContextEstablished && !hasAcceptedCompatibleLiveContext) {
       throw new PiConfigurationError('This non-persistent Pi session cannot be restored after its configuration or process changes. Start a new side chat.');
     }
-    const prompt = encodePrompt(
-      request,
-      !hasNativeSession && !hasAcceptedCompatibleLiveContext,
-      this.#shouldDisableNativePersistence(),
-    );
+    const replayConversationHistory = !hasNativeSession && !hasAcceptedCompatibleLiveContext;
+    const compact = parseCompactCommand(getInputText(request));
+    if (compact && replayConversationHistory && request.conversationHistory?.length) {
+      throw new PiConfigurationError('Send a normal message to restore the native conversation before using /compact.');
+    }
     return {
-      images: prompt.images,
+      input: compact
+        ? { kind: 'compact', instructions: compact.instructions }
+        : { kind: 'prompt', ...encodePrompt(request, replayConversationHistory, this.#shouldDisableNativePersistence()) },
       launchSpec,
       model,
-      prompt: prompt.text,
       thinkingLevel,
     };
   }
@@ -2066,11 +2069,6 @@ function getInputText(request: ProviderExecutionRequest): string {
       block.type === 'text')
     .map(block => block.text)
     .join('\n\n');
-}
-
-function getCompactInstructions(prompt: string): string | null {
-  if (!/^\/compact(?:\s|$)/i.test(prompt)) return null;
-  return prompt.trim().replace(/^\/compact(?:\s|$)/i, '').trim();
 }
 
 function isAssistantChunk(chunk: StreamChunk): boolean {

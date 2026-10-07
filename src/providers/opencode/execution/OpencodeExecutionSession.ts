@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { parseCompactCommand } from '@/core/commands/compactCommand';
 import {
   type ProviderBackgroundTurnCompletedEvent,
   type ProviderBackgroundTurnStartedEvent,
@@ -387,13 +388,17 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       if (!this.#isRunCurrent(active, generation)) return;
 
       assertOpencodeModelAvailable(this.plugin.settings, request.configuration.model);
+      const text = getInputText(request);
+      const compact = parseCompactCommand(text);
+      if (compact && !this.nativeConversationContextEstablished && request.conversationHistory?.length) {
+        throw new Error('Send a normal message to restore the native conversation before using /compact.');
+      }
       turn.beginLiveOutput();
       const promptStartedAt = Date.now();
       const response = await kernel.prompt({
-        prompt: buildPromptBlocks(
-          request,
-          !this.nativeConversationContextEstablished,
-        ),
+        prompt: compact
+          ? [{ type: 'text', text: text.trim() }]
+          : buildPromptBlocks(request, !this.nativeConversationContextEstablished),
         sessionId: native.sessionId,
       });
       this.#markNativeConversationContextEstablished(active);
@@ -798,22 +803,19 @@ function buildKernelConfigurationKey(
   ]);
 }
 
-function buildPromptBlocks(
-  request: ProviderExecutionRequest,
-  bootstrapHistory: boolean,
-) {
-  const text = request.input
+function getInputText(request: ProviderExecutionRequest): string {
+  return request.input
     .filter((block): block is Extract<typeof block, { type: 'text' }> => (
       block.type === 'text'
     ))
     .map(({ text: value }) => value)
     .join('\n');
-  if (/^\/compact(?:\s|$)/u.test(text.trim())) {
-    if (bootstrapHistory && request.conversationHistory?.length) {
-      throw new Error('Send a normal message to restore the native conversation before using /compact.');
-    }
-    return [{ type: 'text' as const, text: text.trim() }];
-  }
+}
+
+function buildPromptBlocks(
+  request: ProviderExecutionRequest,
+  bootstrapHistory: boolean,
+) {
   const images = request.input
     .filter((block): block is Extract<typeof block, { type: 'image' }> => (
       block.type === 'image'
@@ -827,7 +829,7 @@ function buildPromptBlocks(
     images,
     linkedContent: request.context?.linkedContent,
     sessionReferences: request.context?.sessionReferences,
-    text,
+    text: getInputText(request),
   }, bootstrapHistory
     ? [...(request.conversationHistory ?? [])] as ChatMessage[]
     : []);

@@ -6,6 +6,7 @@ import {
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
+import { parseCompactCommand } from '@/core/commands/compactCommand';
 import { getEnhancedPath } from '@/core/process/env';
 import { resolveTitleGenerationLocale } from '@/core/prompt/titleGeneration';
 import {
@@ -281,7 +282,7 @@ export class DefaultOpencodeACPSessionKernel
   async prompt(request: ACPPromptRequest): Promise<ACPPromptResponse> {
     const connection = this.#requireConnection();
     const turnId = this.options.getActiveTurnId();
-    const isCompact = request.prompt.some(block => block.type === 'text' && /^\/compact(?:\s|$)/u.test(block.text.trim()));
+    const isCompact = request.prompt.some(block => block.type === 'text' && parseCompactCommand(block.text) !== null);
     const readCompactions = () => this.databasePath && this.databasePath !== ':memory:'
       ? loadOpencodeV1CompactionIds(this.databasePath, request.sessionId).catch(() => null)
       : Promise.resolve(null);

@@ -3804,7 +3804,7 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
-  it('preserves native compact and derives its turn ID from turn/started', async () => {
+  it.each(['/compact', ' \t/CoMpAcT  '])('preserves native compact %j and derives its turn ID from turn/started', async text => {
     mockTransportRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
@@ -3840,7 +3840,10 @@ describe('CodexExecutionBackend', () => {
     );
     const events = await collectEvents(session.execute(createRequest(
       new AbortController().signal,
-      { input: [{ type: 'text', text: '/compact' }] },
+      { input: [{ type: 'text', text }, { type: 'image', image: {
+        id: 'capture', name: 'capture.png', data: 'aW1hZ2U=',
+        mediaType: 'image/png', size: 5, source: 'paste',
+      } }], context: capturedSelections },
     )).events);
 
     expect(mockTransportRequest).toHaveBeenCalledWith(
@@ -3858,6 +3861,25 @@ describe('CodexExecutionBackend', () => {
     }));
 
     await session.dispose();
+  });
+
+  it.each([
+    { texts: ['/compact keep recent edits'] },
+    { texts: ['/compact', 'keep recent edits'] },
+  ])('rejects explicit compact instructions across text blocks: $texts', async ({ texts }) => {
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') return { userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos' };
+      if (method === 'thread/start') return createThreadResult('thread-compact-args');
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = createBackend(createPlugin()).createSession(createSessionConfig());
+    try {
+      const events = await collectEvents(session.execute(createRequest(new AbortController().signal, {
+        input: texts.map(text => ({ type: 'text', text })),
+      })).events);
+      expect(events.at(-1)).toMatchObject({ type: 'execution_error', message: '/compact does not accept arguments' });
+      expect(mockTransportRequest.mock.calls.filter(([method]) => method === 'turn/start' || method === 'thread/compact/start')).toEqual([]);
+    } finally { await session.dispose(); }
   });
 
   it('rejects compact before handoff while canonical history still needs recovery', async () => {

@@ -127,7 +127,7 @@ const server = http.createServer(async (req, res) => {
           inbox = inbox.filter(item => item !== steer.id);
           emit('session.inbox.delivered', { inboxID: steer.id });
           emit('session.step.started', { assistantMessageID: 'msg_steered' });
-          emit('session.text.ended', { assistantMessageID: 'msg_steered', ordinal: 0, text: 'Saw ' + steer.text });
+          emit('session.text.ended', { assistantMessageID: 'msg_steered', ordinal: 0, text: process.env.ECHO_PROMPT === '1' ? JSON.stringify(steer) : 'Saw ' + steer.text });
           emit('session.execution.succeeded', {});
         };
         onSteer = steer => {
@@ -514,6 +514,37 @@ it('keeps a turn cancelled during configuration from changing the next turn appr
 }, 15000);
 
 describe('native steering', () => {
+  it.each(['/compact', '/COMPACT'])('preserves captures and images when steering literal %j text', async text => {
+    const f = createFixture(false, undefined, 'ECHO_PROMPT=1');
+    try {
+      const events: ProviderExecutionEvent[] = [];
+      let admission: Promise<boolean> | undefined;
+      for await (const event of f.session.execute(request('steer')).events) {
+        events.push(event);
+        if (event.type === 'text_delta' && event.text === 'Working') {
+          if (!isSteerableExecutionSession(f.session)) throw new Error('Missing steering');
+          admission = f.session.steer({
+            ...request(text),
+            input: [{ type: 'text', text }, { type: 'image', image: {
+              id: 'capture', name: 'capture.png', data: 'aW1hZ2U=',
+              mediaType: 'image/png', size: 5, source: 'paste',
+            } }],
+            context: { selections: [{ kind: 'editor', selection: { notePath: 'note.md', mode: 'selection', selectedText: 'captured note' } }] },
+          });
+        }
+      }
+      expect(await admission).toBe(true);
+      expect(events.at(-1)?.type).toBe('turn_completed');
+      const echoed = events.flatMap(event => event.type === 'text_delta' && event.text !== 'Working' ? [event.text] : []).join('');
+      expect(JSON.parse(echoed)).toEqual({
+        id: expect.any(String), delivery: 'steer',
+        text: `${text}\n\n<editor_selection path="note.md">\n<![CDATA[captured note]]>\n</editor_selection>`,
+        files: [{ uri: 'data:image/png;base64,aW1hZ2U=' }],
+      });
+      expect(events.some(event => event.type === 'context_compacted')).toBe(false);
+    } finally { await f.dispose(); }
+  });
+
   function steer(f: ReturnType<typeof createFixture>, text: string): Promise<boolean> {
     if (!isSteerableExecutionSession(f.session)) throw new Error('Missing steering');
     return f.session.steer(request(text));
@@ -896,12 +927,12 @@ it('sends hidden session reference paths through the HTTP v2 prompt boundary', a
     expect(received.body.text).toBe('ref @"Review"\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" path="/tmp/claudian-sessions/ref.md" />\n</context_sessions>');
   } finally { await f.dispose(); }
 });
-it('compacts with captured editor context', async () => {
+it.each(['/compact', ' \t/CoMpAcT  '])('compacts %j with captured editor context', async text => {
   const f = createFixture(true);
   try {
     const events: ProviderExecutionEvent[] = [];
     for await (const event of f.session.execute({
-      ...request('/compact'),
+      ...request(text),
       context: { selections: [{ kind: 'editor', selection: { notePath: 'note.md', mode: 'selection', selectedText: 'selected note text' } }] },
     }).events) events.push(event);
     expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });

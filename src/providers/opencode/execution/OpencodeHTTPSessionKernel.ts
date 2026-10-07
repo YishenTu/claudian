@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { parseCompactCommand } from '@/core/commands/compactCommand';
 import { PendingInteractionLedger } from '@/core/execution';
 import { resolveTitleGenerationLocale } from '@/core/prompt/titleGeneration';
 import type { ACPPromptRequest, ACPSessionConfigOption } from '@/providers/acp';
@@ -149,8 +150,8 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   async prompt(request: ACPPromptRequest): Promise<{ stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }> {
     if (this.pending) throw new Error('OpenCode already has an active request.');
     const { text, files } = toNativeInput(request);
-    const compact = /^\/compact(?:\s|$)/i.test(text);
-    if (compact && text.trim().toLowerCase() !== '/compact') throw new Error('/compact does not accept arguments');
+    const compact = parseCompactCommand(text);
+    if (compact?.instructions) throw new Error('/compact does not accept arguments');
     const match = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(text);
     // Commands can change while this kernel keeps its native session and server.
     const catalog = match && !compact ? await this.requireClient().request<{ data: Array<{ name: string }> }>('/api/command') : null;

@@ -4,7 +4,7 @@ import * as path from 'node:path';
 
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { createProviderRecoveryTestHarness } from '@test/helpers/features/chat/ProviderRecoveryTestHarness';
-import { testTime } from '@test/helpers/testClock';
+import { testDate, testTime } from '@test/helpers/testClock';
 
 import type {
   ProviderExecutionEvent,
@@ -279,6 +279,45 @@ function createHarness(
 }
 
 describe('PiExecutionBackend', () => {
+  it.each([
+    ['/compact', ''],
+    [' \t/CoMpAcT keep recent edits\nFocus on tests  ', 'keep recent edits\nFocus on tests'],
+  ])('compacts with only explicit instructions from %j', async (text, instructions) => {
+    const { session, kernels, responses } = createHarness();
+    responses.set('prompt', { disposition: 'handled' });
+    try {
+      const events = await collect(session.execute(createRequest({
+        input: [{ type: 'text', text }, { type: 'image', image: {
+          id: 'capture', name: 'capture.png', data: 'aW1hZ2U=',
+          mediaType: 'image/png', size: 5, source: 'paste',
+        } }],
+        context: { ...capturedSelections, linkedContent: { path: 'note.md' },
+          sessionReferences: [{ id: 'ref', title: 'Review', providerId: 'pi', updatedAt: 'updated', snapshotPath: '/tmp/ref.md' }],
+        },
+      })).events);
+      expect(kernels[0].requests.filter(request => request.type === 'compact' || request.type === 'prompt'))
+        .toEqual([{ type: 'compact', payload: { customInstructions: instructions } }]);
+      expect(events.filter(event => event.type === 'context_compacted')).toHaveLength(1);
+      expect(events.at(-1)?.type).toBe('turn_completed');
+    } finally { await session.dispose(); }
+  });
+
+  it('rejects compact without consuming history that still needs recovery', async () => {
+    const { session, kernels, responses } = createHarness();
+    responses.set('prompt', { disposition: 'handled' });
+    const conversationHistory = [{ id: 'prior', role: 'user' as const, content: 'Remember prior context', timestamp: testDate().getTime() }];
+    try {
+      const events = await collect(session.execute(createRequest({
+        input: [{ type: 'text', text: '/compact' }], conversationHistory,
+      })).events);
+      expect(events.at(-1)).toMatchObject({ type: 'execution_error', message: expect.stringContaining('normal message') });
+      expect(kernels.flatMap(kernel => kernel.requests).filter(request => request.type === 'compact' || request.type === 'prompt')).toEqual([]);
+      await collect(session.execute(createRequest({ conversationHistory })).events);
+      expect(getPromptMessages(kernels[0])[0]).toContain('Remember prior context');
+      expect(getPromptMessages(kernels[0])[0]).toContain('Hello Pi');
+    } finally { await session.dispose(); }
+  });
+
   it('rejects explicit High when the selected model does not advertise it', async () => {
     const { host, session, kernels } = createHarness();
     host.settings.providerConfigs.pi.discoveredModels[0].thinkingLevels = ['off', 'low'];

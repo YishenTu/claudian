@@ -4,6 +4,7 @@ import type {
   PermissionMode as SDKPermissionMode,
 } from '@anthropic-ai/claude-agent-sdk';
 
+import { parseCompactCommand } from '@/core/commands/compactCommand';
 import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
@@ -118,7 +119,13 @@ export class ClaudeExecutionRequestEncoder {
     const sdkPermissionMode = toClaudeSDKPermissionMode(
       isClaudePermissionMode(settings.permissionMode) ? settings.permissionMode : 'manual',
     );
-    const prompt = this.#encodePrompt(request, replayConversationHistory);
+    const compact = parseCompactCommand(getRequestInputText(request));
+    if (compact && replayConversationHistory && request.conversationHistory?.length) {
+      throw new Error('Send a normal message to restore the native conversation before using /compact.');
+    }
+    const prompt = compact
+      ? `/compact${compact.instructions ? ` ${compact.instructions}` : ''}`
+      : this.#encodePrompt(request, replayConversationHistory);
     const policy = resolveToolPolicy(request);
     const systemPrompt = request.configuration.systemInstructions.kind === 'explicit'
       ? [
@@ -202,7 +209,7 @@ export class ClaudeExecutionRequestEncoder {
 
     return {
       prompt,
-      images: encodeImages(request),
+      images: compact ? [] : encodeImages(request),
       options,
       model,
       effort,

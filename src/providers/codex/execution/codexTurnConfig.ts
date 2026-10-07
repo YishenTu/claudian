@@ -233,22 +233,6 @@ export function buildCodexTurnPrompt(
   return prompt;
 }
 
-export function isCompactRequest(request: ProviderExecutionRequest): boolean {
-  return readRequestText(request).toLowerCase() === '/compact';
-}
-
-export function startsWithCompactCommand(request: ProviderExecutionRequest): boolean {
-  return /^\/compact\s+/i.test(readRequestText(request));
-}
-
-function readRequestText(request: ProviderExecutionRequest): string {
-  return request.input
-    .filter(block => block.type === 'text')
-    .map(block => block.text)
-    .join('')
-    .trim();
-}
-
 function readProviderProjection(
   settings: Record<string, unknown>,
   key: string,

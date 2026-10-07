@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 
+import { parseCompactCommand } from '@/core/commands/compactCommand';
 import {
   type ProviderExecutionErrorCategory,
   type ProviderExecutionRequest,
@@ -59,7 +60,6 @@ import { CodexThreadBinder } from './CodexThreadBinder';
 import { CodexTurnBinding, extractNotificationScope } from './CodexTurnBinding';
 import {
   buildCodexTurnPrompt,
-  isCompactRequest,
   resolveCodexBaseInstructions,
   resolveCodexServiceTier,
   resolveCodexTurnModel,
@@ -67,7 +67,6 @@ import {
   resolveCodexTurnReasoningEffort,
   resolveCodexTurnSandboxPolicy,
   resolveCodexTurnSettings,
-  startsWithCompactCommand,
 } from './codexTurnConfig';
 
 const CODEX_SUPPORTS_EXACT_BUILT_IN_TOOL_ALLOW_LIST = false;
@@ -370,8 +369,9 @@ export class CodexExecutionSession
         return;
       }
 
+      const compact = parseCompactCommand(request.input.filter(block => block.type === 'text').map(block => block.text).join('\n\n'));
       if (
-        isCompactRequest(request)
+        compact && !compact.instructions
         && !this.nativeConversationContextEstablished
       ) {
         this.#finishError(
@@ -441,7 +441,7 @@ export class CodexExecutionSession
       ));
 
       assertCodexModelAvailable(this.plugin.settings, request.configuration.model);
-      if (isCompactRequest(request)) {
+      if (compact && !compact.instructions) {
         if (!await this.#allowRequestedTurn(active, generation)) return;
         active.nativeStartSubmitted = true;
         await this.connection.scope!.startTurn<ThreadCompactStartResult>(
@@ -450,7 +450,7 @@ export class CodexExecutionSession
         );
         return;
       }
-      if (startsWithCompactCommand(request)) {
+      if (compact) {
         this.#finishError(
           active,
           'configuration',

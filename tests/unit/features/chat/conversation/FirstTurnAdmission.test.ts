@@ -247,14 +247,14 @@ describe('FirstTurnAdmission', () => {
     });
   });
 
-  it('does not attach Linked content to compact commands', async () => {
+  it.each(['/compact', ' \t/CoMpAcT  '])('does not attach Linked content to compact command %j', async content => {
     const fixture = createFixture({
       getLinkedContentController: () => ({
         getSnapshot: () => ({ mode: 'locked', path: 'Projects/Plan.md' }),
       }),
     });
 
-    await fixture.controller.sendMessage({ content: '/compact' });
+    await fixture.controller.sendMessage({ content });
 
     const submission = fixture.coordinator.execute.mock.calls[0][0] as ChatTurnSubmission;
     expect(submission.context).not.toHaveProperty('linkedContent');

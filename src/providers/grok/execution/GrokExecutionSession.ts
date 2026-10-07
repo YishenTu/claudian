@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { parseCompactCommand } from '@/core/commands/compactCommand';
 import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
@@ -347,6 +348,11 @@ RewindableExecutionSession {
       await this.#applyConfiguration(native, sessionId, active.request, active);
       if (this.#isCancellationRequested(active)) return;
       assertGrokModelAvailable(this.plugin.settings, active.request.configuration.model);
+      // Interjections are literal turn input; only requested prompts resolve native commands.
+      const compact = parseCompactCommand(getInputText(active.request));
+      if (compact && !this.nativeConversationContextEstablished && active.request.conversationHistory?.length) {
+        throw new Error('Send a normal message to restore the native conversation before using /compact.');
+      }
       active.turn.beginLiveOutput();
       const closed = new Promise<never>((_resolve, reject) => {
         unsubscribeClose = native.onClose?.(error => {
@@ -354,10 +360,9 @@ RewindableExecutionSession {
         });
       });
       const response = await Promise.race([closed, native.prompt({
-        prompt: buildPromptBlocks(
-          active.request,
-          !this.nativeConversationContextEstablished,
-        ),
+        prompt: compact
+          ? [{ type: 'text', text: `/compact${compact.instructions ? ` ${compact.instructions}` : ''}` }]
+          : buildPromptBlocks(active.request, !this.nativeConversationContextEstablished),
         sessionId,
       })]);
       if (this.#isCancellationRequested(active)) return;
@@ -1213,15 +1218,19 @@ function createGrokToolStreamAdapter(): ACPToolStreamAdapter {
   });
 }
 
+function getInputText(request: ProviderExecutionRequest): string {
+  return request.input
+    .filter(block => block.type === 'text')
+    .map(block => block.text)
+    .join('\n');
+}
+
 function buildPromptBlocks(
   request: ProviderExecutionRequest,
   replayConversationHistory = false,
 ): ACPContentBlock[] {
   const blocks: ACPContentBlock[] = [];
-  let text = request.input
-    .filter(block => block.type === 'text')
-    .map(block => block.text)
-    .join('\n');
+  let text = getInputText(request);
   const context = request.context;
   if (context?.linkedContent) {
     text = appendLinkedContent(text, context.linkedContent.path);

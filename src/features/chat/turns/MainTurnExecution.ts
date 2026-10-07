@@ -1,5 +1,6 @@
 import { Notice } from 'obsidian';
 
+import { parseCompactCommand } from '@/core/commands/compactCommand';
 import type { ProviderExecutionEvent } from '@/core/execution';
 import { captureSelectionSnapshots } from '@/core/prompt/promptContext';
 import type { ProviderId } from '@/core/providers/types';
@@ -108,7 +109,7 @@ export class MainTurnExecution {
   async run(turn: MainTurn, signal: AbortSignal): Promise<void> {
     const { plugin, state, renderer, streamController, conversationController } = this.deps;
     const { displayContent, request: turnRequest, images: imagesForMessage } = turn;
-    const isCompact = /^\/compact(\s|$)/i.test(turnRequest.text);
+    const isCompact = parseCompactCommand(turnRequest.text) !== null;
     const restoreUnsentInput = (request: ChatTurnRequest, merge = true): void => {
       // Unadmitted interaction replies stay with their prompt; queued replies use normal draft recovery.
       if (turn.assertBeforeHandoff) return;

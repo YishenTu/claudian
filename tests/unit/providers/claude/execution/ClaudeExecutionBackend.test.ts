@@ -8,7 +8,7 @@ import * as sdkModule from '@anthropic-ai/claude-agent-sdk';
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { createProviderRecoveryTestHarness } from '@test/helpers/features/chat/ProviderRecoveryTestHarness';
-import { testTime } from '@test/helpers/testClock';
+import { testDate, testTime } from '@test/helpers/testClock';
 
 import {
   type ProviderExecutionEvent,
@@ -794,6 +794,41 @@ describe('ClaudeExecutionBackend', () => {
       }
     },
   );
+
+  it.each([
+    ['/compact', '/compact'],
+    [' \t/CoMpAcT keep recent edits\nFocus on tests  ', '/compact keep recent edits\nFocus on tests'],
+  ])('compacts with only explicit instructions from %j', async (text, command) => {
+    const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
+    try {
+      const events = await collectEvents(session.execute(createRequest({
+        input: [{ type: 'text', text }, { type: 'image', image: {
+          id: 'capture', name: 'capture.png', data: 'aW1hZ2U=',
+          mediaType: 'image/png', size: 5, source: 'paste',
+        } }],
+        context: { ...capturedSelections, linkedContent: { path: 'note.md' },
+          sessionReferences: [{ id: 'ref', title: 'Review', providerId: 'claude', updatedAt: 'updated', snapshotPath: '/tmp/ref.md' }],
+        },
+      })).events);
+      expect(mockBuildClaudeSDKUserMessage.mock.results[0]?.value.message.content).toBe(command);
+      expect(events.at(-1)?.type).toBe('turn_completed');
+    } finally { await session.dispose(); }
+  });
+
+  it('rejects compact without consuming history that still needs recovery', async () => {
+    const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
+    const conversationHistory = [{ id: 'prior', role: 'user' as const, content: 'Remember prior context', timestamp: testDate().getTime() }];
+    try {
+      const events = await collectEvents(session.execute(createRequest({
+        input: [{ type: 'text', text: '/compact' }], conversationHistory,
+      })).events);
+      expect(events.at(-1)).toMatchObject({ type: 'execution_error', message: expect.stringContaining('normal message') });
+      expect(getEncodedPrompts()).toEqual([]);
+      await collectEvents(session.execute(createRequest({ conversationHistory })).events);
+      expect(getEncodedPrompts()[0]).toContain('Remember prior context');
+      expect(getEncodedPrompts()[0]).toContain('Hello');
+    } finally { await session.dispose(); }
+  });
 
   it('maps images and structured context without injecting legacy MCP configuration', async () => {
     sdkMock.setMockMessages([
