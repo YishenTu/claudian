@@ -106,7 +106,7 @@ export class ZenModePanel {
     // Under the composer, shown on hover or keyboard focus, so the chat controls keep their own clicks.
     const gripEl = this.#rootEl.createEl('button', {
       cls: 'claudian-zen-grip',
-      attr: { type: 'button', 'aria-label': t('chat.zen.move') },
+      attr: { type: 'button', tabindex: '-1', 'aria-label': t('chat.zen.move') },
     });
 
     this.#statusEl = this.#rootEl.createDiv({ cls: 'claudian-zen-status', attr: { role: 'status' } });

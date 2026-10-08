@@ -2663,6 +2663,13 @@ describe('ClaudianPlugin', () => {
     });
   });
 
+  it('registers the zen input focus command for hotkey assignment', async () => {
+    await plugin.onload();
+    const command = getRegisteredCommand('focus-zen-mode-input');
+    expect(command.name).toBe('Focus zen mode input');
+    expect(command.checkCallback(true)).toBe(false);
+  });
+
   describe('new-tab command', () => {
     it('routes current-tab commands to the focused view when several leaves exist', async () => {
       await plugin.onload();

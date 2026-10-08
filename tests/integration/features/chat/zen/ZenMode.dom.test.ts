@@ -741,6 +741,33 @@ it('follows chat state while transcript rendering is suspended', async () => {
   await waitFor(() => expect(tab.state.isStreaming).toBe(false));
 });
 
+it('focuses only the attached zen composer through its hotkey command without changing the draft or execution', async () => {
+  const { zen, tab, sessions, rightSplit, setCollapsed, noteEditor, scopes, settingsCoordinator } = await createZenFixture();
+  const command = zen.createFocusInputCommand();
+  noteEditor.focus();
+  expect(command.checkCallback!(true)).toBe(false);
+  expect(command.checkCallback!(false)).toBe(false);
+  expect(document.activeElement).toBe(noteEditor);
+
+  setCollapsed(rightSplit, true);
+  tab.dom.inputEl.value = 'Unsent draft';
+  expect(command.checkCallback!(true)).toBe(true);
+  expect(document.activeElement).toBe(noteEditor);
+  expect(command.checkCallback!(false)).toBe(true);
+  const input = within(screen.getByRole('region', { name: 'Claudian chat' })).getByRole('textbox', { name: 'Message' });
+  expect(document.activeElement).toBe(input);
+  expect(scopes).toHaveLength(1);
+  expect(tab.dom.inputEl.value).toBe('Unsent draft');
+  expect(rightSplit.collapsed).toBe(true);
+  expect(sessions).toHaveLength(0);
+
+  noteEditor.focus();
+  await settingsCoordinator.mutate(settings => { settings.enableZenMode = false; });
+  expect(command.checkCallback!(false)).toBe(false);
+  expect(document.activeElement).toBe(noteEditor);
+  expect(scopes).toHaveLength(0);
+});
+
 it('sends with the existing keyboard rules and leaves note input alone', async () => {
   const { tab, sessions, rightSplit, setCollapsed, noteEditor, scopes } = await createZenFixture();
   setCollapsed(rightSplit, true);
@@ -913,6 +940,7 @@ it('moves the panel by its grip, docks it magnetically, and remembers where it w
   let panel = zenPanel()!;
   stubPanel(panel);
   const grip = within(panel).getByRole('button', { name: 'Move chat panel' });
+  expect(grip.tabIndex).toBe(-1);
   expect(await axe(grip)).toHaveNoViolations();
   expect(offset(panel)).toEqual(['0px', '0px']);
 

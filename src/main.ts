@@ -129,6 +129,7 @@ export default class ClaudianPlugin extends Plugin {
       for (const command of createChatTabCommands({ workspace: this.app.workspace, views: this.views })) {
         this.addCommand(command);
       }
+      this.addCommand(this.zenMode.createFocusInputCommand());
 
       this.addCommand({
         id: 'copy-startup-diagnostics',

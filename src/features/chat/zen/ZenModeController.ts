@@ -1,4 +1,4 @@
-import type { App, EventRef, WorkspaceLeaf } from 'obsidian';
+import type { App, Command, EventRef, WorkspaceLeaf } from 'obsidian';
 import { Platform } from 'obsidian';
 
 import { VIEW_TYPE_CLAUDIAN, type ZenModePosition } from '@/core/types';
@@ -52,6 +52,19 @@ export class ZenModeController {
   #disposed = false;
 
   constructor(private readonly deps: ZenModeControllerDeps) {}
+
+  createFocusInputCommand(): Command {
+    return {
+      id: 'focus-zen-mode-input',
+      name: 'Focus zen mode input',
+      checkCallback: (checking: boolean) => {
+        const attachment = this.#attachment;
+        if (!attachment) return false;
+        if (!checking) attachment.source.focusActiveInput();
+        return true;
+      },
+    };
+  }
 
   start(): void {
     if (this.#listening || this.#disposed) return;
