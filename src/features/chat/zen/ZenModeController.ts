@@ -20,6 +20,7 @@ interface ZenAttachment {
   readonly source: ZenModeSource;
   readonly panel: ZenModePanel;
   readonly release: () => void;
+  previousFocus: HTMLElement | null;
 }
 
 type CollapsibleSplit = { collapsed?: unknown };
@@ -60,10 +61,25 @@ export class ZenModeController {
       checkCallback: (checking: boolean) => {
         const attachment = this.#attachment;
         if (!attachment) return false;
-        if (!checking) attachment.source.focusActiveInput();
+        if (!checking) this.#toggleInputFocus(attachment);
         return true;
       },
     };
+  }
+
+  #toggleInputFocus(attachment: ZenAttachment): void {
+    const composerEl = attachment.panel.slots.composerEl;
+    const activeElement = composerEl.ownerDocument.activeElement as HTMLElement | null;
+    if (composerEl.contains(activeElement)) {
+      if (attachment.previousFocus?.isConnected) {
+        attachment.previousFocus.focus({ preventScroll: true });
+      } else {
+        attachment.source.focusActiveInput();
+      }
+      return;
+    }
+    attachment.previousFocus = activeElement;
+    attachment.source.focusActiveInput();
   }
 
   createToggleHistoryCommand(): Command {
@@ -229,7 +245,7 @@ export class ZenModeController {
       position: this.deps.getPosition(),
       onPositionChange: position => this.deps.savePosition(position),
     });
-    this.#attachment = { source, panel, release: source.attachZenPresentation(panel.slots) };
+    this.#attachment = { source, panel, release: source.attachZenPresentation(panel.slots), previousFocus: null };
     panel.bind(runtime, source.getZenProviderId());
   }
 

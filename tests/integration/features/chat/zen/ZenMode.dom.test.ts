@@ -741,10 +741,12 @@ it('follows chat state while transcript rendering is suspended', async () => {
   await waitFor(() => expect(tab.state.isStreaming).toBe(false));
 });
 
-it('focuses only the attached zen composer through its hotkey command without changing the draft or execution', async () => {
+it('toggles focus between the attached zen composer and the previous control without changing drafts or execution', async () => {
   const { zen, tab, sessions, rightSplit, setCollapsed, noteEditor, scopes, settingsCoordinator } = await createZenFixture();
   const command = zen.createFocusInputCommand();
+  noteEditor.value = 'A note selection';
   noteEditor.focus();
+  noteEditor.setSelectionRange(2, 6);
   expect(command.checkCallback!(true)).toBe(false);
   expect(command.checkCallback!(false)).toBe(false);
   expect(document.activeElement).toBe(noteEditor);
@@ -761,11 +763,49 @@ it('focuses only the attached zen composer through its hotkey command without ch
   expect(rightSplit.collapsed).toBe(true);
   expect(sessions).toHaveLength(0);
 
+  expect(command.checkCallback!(true)).toBe(true);
+  expect(document.activeElement).toBe(input);
+  expect(command.checkCallback!(false)).toBe(true);
+  expect(document.activeElement).toBe(noteEditor);
+  expect([noteEditor.selectionStart, noteEditor.selectionEnd]).toEqual([2, 6]);
+  expect(scopes).toHaveLength(0);
+  expect(command.checkCallback!(false)).toBe(true);
+  expect(document.activeElement).toBe(input);
+  expect(tab.dom.inputEl.value).toBe('Unsent draft');
+
+  const otherControl = noteEditor.parentElement!.createEl('button', { text: 'Another control', attr: { type: 'button' } });
+  otherControl.focus();
+  command.checkCallback!(false);
+  expect(document.activeElement).toBe(input);
+  command.checkCallback!(false);
+  expect(document.activeElement).toBe(otherControl);
+
   noteEditor.focus();
   await settingsCoordinator.mutate(settings => { settings.enableZenMode = false; });
   expect(command.checkCallback!(false)).toBe(false);
   expect(document.activeElement).toBe(noteEditor);
   expect(scopes).toHaveLength(0);
+});
+
+it('keeps focus in the composer when its return target was removed or its panel was replaced', async () => {
+  const { zen, rightSplit, setCollapsed, noteEditor } = await createZenFixture();
+  setCollapsed(rightSplit, true);
+  const command = zen.createFocusInputCommand();
+  noteEditor.focus();
+  command.checkCallback!(false);
+  const input = within(screen.getByRole('region', { name: 'Claudian chat' })).getByRole('textbox', { name: 'Message' });
+  noteEditor.remove();
+  command.checkCallback!(false);
+  expect(document.activeElement).toBe(input);
+
+  document.body.append(noteEditor);
+  noteEditor.focus();
+  command.checkCallback!(false);
+  setCollapsed(rightSplit, false);
+  setCollapsed(rightSplit, true);
+  input.focus();
+  command.checkCallback!(false);
+  expect(document.activeElement).toBe(input);
 });
 
 it('sends with the existing keyboard rules and leaves note input alone', async () => {
