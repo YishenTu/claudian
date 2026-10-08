@@ -8,6 +8,7 @@ const HINT_ACTIVE_CLASS = 'claudian-zen-dock-hint--active';
 const OPENS_BELOW_CLASS = 'claudian-zen--opens-below';
 const OFFSET_X_PROPERTY = '--claudian-zen-offset-x';
 const OFFSET_Y_PROPERTY = '--claudian-zen-offset-y';
+const BOTTOM_CLEARANCE_PROPERTY = '--claudian-zen-bottom-clearance';
 const INSET_PROPERTY = '--claudian-zen-inset';
 const PADDING_PROPERTY = '--claudian-zen-padding';
 const COMPOSER_RADIUS_PROPERTY = '--claudian-zen-composer-radius';
@@ -17,7 +18,7 @@ const DOCK_SNAP_DISTANCE = 32;
 const KEY_STEP = 16;
 const LARGE_KEY_STEP = 64;
 
-/** Bottom-center offset from the dock in pixels; y grows upward. */
+/** Bottom-center offset from the original inset in pixels; y grows upward. */
 interface Offset {
   readonly x: number;
   readonly y: number;
@@ -59,6 +60,7 @@ export class ZenPanelDock {
   // Marks the dock while a drag is in progress.
   #hintEl: HTMLElement | null = null;
   #resizeObserver: ResizeObserver | null = null;
+  #statusBarEl: HTMLElement | null = null;
   #destroyed = false;
   readonly #hostEl: HTMLElement;
   readonly #rootEl: HTMLElement;
@@ -80,9 +82,24 @@ export class ZenPanelDock {
     const ResizeObserverConstructor = hostEl.ownerDocument.defaultView?.ResizeObserver;
     if (typeof ResizeObserverConstructor === 'function') {
       // The host follows window and sidebar resizes; the panel grows with history and typed text.
-      this.#resizeObserver = new ResizeObserverConstructor(() => this.#apply());
+      this.#resizeObserver = new ResizeObserverConstructor(() => this.refresh());
       this.#resizeObserver.observe(hostEl);
       this.#resizeObserver.observe(rootEl);
+      // Surface sizes can trade space while the root stays at its maximum height.
+      this.#resizeObserver.observe(this.#drawerEl);
+      this.#resizeObserver.observe(this.#composerEl);
+    }
+    this.refresh();
+  }
+
+  /** Workspace layout/theme changes can replace the bar or change its positioning without a resize. */
+  refresh(): void {
+    if (this.#destroyed) return;
+    const statusBar = this.#hostEl.ownerDocument.querySelector<HTMLElement>('.status-bar');
+    if (statusBar !== this.#statusBarEl) {
+      if (this.#statusBarEl) this.#resizeObserver?.unobserve(this.#statusBarEl);
+      this.#statusBarEl = statusBar;
+      if (statusBar) this.#resizeObserver?.observe(statusBar);
     }
     this.#apply();
   }
@@ -93,6 +110,7 @@ export class ZenPanelDock {
     this.#endDrag();
     this.#resizeObserver?.disconnect();
     this.#resizeObserver = null;
+    this.#statusBarEl = null;
     this.#gripEl.removeEventListener('pointerdown', this.#handlePointerDown);
     this.#gripEl.removeEventListener('keydown', this.#handleKeyDown);
     this.#gripEl.removeEventListener('dblclick', this.#dock);
@@ -103,6 +121,7 @@ export class ZenPanelDock {
     // Mid-drag, streamed history can grow the panel; keep the dragged spot inside the host.
     if (this.#drag) {
       this.#render(this.#clamp(this.#rendered));
+      this.#updateHint(this.#dockOffset());
       return;
     }
     const { width, height } = this.#hostSize();
@@ -119,7 +138,8 @@ export class ZenPanelDock {
     const anchorRect = this.#composerEl.getBoundingClientRect();
     this.#rootEl.toggleClass(OPENS_BELOW_CLASS, hostRect.bottom - anchorRect.bottom > anchorRect.top - hostRect.top);
     if (this.#drag) {
-      const snapped = offset.x === 0 && offset.y === 0;
+      const dock = this.#dockOffset();
+      const snapped = offset.x === dock.x && offset.y === dock.y;
       this.#rootEl.toggleClass(SNAPPED_CLASS, snapped);
       this.#hintEl?.toggleClass(HINT_ACTIVE_CLASS, snapped);
     }
@@ -130,7 +150,8 @@ export class ZenPanelDock {
     const { width, height } = this.#hostSize();
     // A hidden host has no size to measure against; keep what was remembered.
     if (width <= 0 || height <= 0) return;
-    const position = offset.x === 0 && offset.y === 0
+    const dock = this.#dockOffset();
+    const position = offset.x === dock.x && offset.y === dock.y
       ? null
       : { x: roundFraction(offset.x / width), y: roundFraction(offset.y / height) };
     const previous = this.#position;
@@ -145,8 +166,35 @@ export class ZenPanelDock {
     const rect = this.#rootEl.getBoundingClientRect();
     const inset = this.#inset();
     const maxX = Math.max(0, (width - rect.width) / 2 - inset);
-    const maxY = Math.max(0, height - 2 * inset - rect.height);
-    return { x: clamp(offset.x, -maxX, maxX), y: clamp(offset.y, 0, maxY) };
+    const x = clamp(offset.x, -maxX, maxX);
+    const minY = this.#bottomClearance(x);
+    // Let history shrink before measuring the top bound in a short workspace.
+    this.#rootEl.style.setProperty(BOTTOM_CLEARANCE_PROPERTY, `${minY}px`);
+    const maxY = Math.max(minY, height - 2 * inset - this.#rootEl.getBoundingClientRect().height);
+    return { x, y: clamp(offset.y, minY, maxY) };
+  }
+
+  #dockOffset(): Offset {
+    return { x: 0, y: this.#bottomClearance(0) };
+  }
+
+  /** The fixed bar overlays the workspace only beneath the panel's proposed horizontal span. */
+  #bottomClearance(x: number): number {
+    const bar = this.#statusBarEl;
+    const view = this.#hostEl.ownerDocument.defaultView;
+    if (!bar || !view) return 0;
+    const style = view.getComputedStyle(bar);
+    if (style.position !== 'fixed' || style.display === 'none'
+      || style.visibility === 'hidden' || style.visibility === 'collapse' || style.opacity === '0') return 0;
+    const barRect = bar.getBoundingClientRect();
+    const hostRect = this.#hostEl.getBoundingClientRect();
+    if (barRect.width <= 0 || barRect.height <= 0 || barRect.top >= hostRect.bottom || barRect.bottom <= hostRect.top) return 0;
+    // A theme's top bar or full-height side strip is not a bottom inset.
+    if (barRect.top <= hostRect.top || barRect.bottom < hostRect.bottom - 1) return 0;
+    const halfWidth = this.#rootEl.getBoundingClientRect().width / 2;
+    const center = hostRect.left + this.#hostEl.clientWidth / 2 + x;
+    if (center + halfWidth <= barRect.left || center - halfWidth >= barRect.right) return 0;
+    return Math.min(hostRect.bottom - barRect.top, Math.max(0, this.#hostEl.clientHeight - 2 * this.#inset()));
   }
 
   #hostSize(): { width: number; height: number } {
@@ -158,7 +206,7 @@ export class ZenPanelDock {
   }
 
   readonly #dock = (): void => {
-    this.#commit(DOCKED);
+    this.#commit(this.#clamp(DOCKED));
   };
 
   readonly #handlePointerDown = (event: PointerEvent): void => {
@@ -168,6 +216,7 @@ export class ZenPanelDock {
     this.#drag = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, origin: this.#rendered };
     this.#rootEl.addClass(DRAGGING_CLASS);
     this.#hintEl = this.#createHint();
+    this.#updateHint(this.#dockOffset());
     this.#render(this.#rendered);
     const doc = this.#hostEl.ownerDocument;
     doc.addEventListener('pointermove', this.#handlePointerMove);
@@ -203,13 +252,27 @@ export class ZenPanelDock {
     doc.removeEventListener('pointercancel', this.#handlePointerUp);
   }
 
-  /** Sized like the panel at its dock, beneath it, tracing the panel's surfaces a gap outside them. */
   #createHint(): HTMLElement {
-    const rootRect = this.#rootEl.getBoundingClientRect();
     const hintEl = this.#hostEl.createDiv({ cls: HINT_CLASS, attr: { 'aria-hidden': 'true' } });
-    hintEl.style.width = `${Math.round(rootRect.width)}px`;
-    hintEl.style.height = `${Math.round(rootRect.height)}px`;
+    const doc = this.#hostEl.ownerDocument;
+    const svgEl = doc.createElementNS(SVG_NS, 'svg');
+    svgEl.setAttribute('class', 'claudian-zen-dock-hint-shape');
+    for (const cls of ['claudian-zen-dock-hint-glow', 'claudian-zen-dock-hint-outline']) {
+      const pathEl = doc.createElementNS(SVG_NS, 'path');
+      pathEl.setAttribute('class', cls);
+      svgEl.appendChild(pathEl);
+    }
+    hintEl.appendChild(svgEl);
+    return hintEl;
+  }
 
+  /** Measure the live surfaces with the height available at the dock, then restore the free layout. */
+  #updateHint(dock: Offset): void {
+    const hintEl = this.#hintEl;
+    if (!hintEl) return;
+    const clearance = this.#rootEl.style.getPropertyValue(BOTTOM_CLEARANCE_PROPERTY);
+    this.#rootEl.style.setProperty(BOTTOM_CLEARANCE_PROPERTY, `${dock.y}px`);
+    const rootRect = this.#rootEl.getBoundingClientRect();
     const view = this.#hostEl.ownerDocument.defaultView;
     const hostStyle = view?.getComputedStyle(this.#hostEl);
     const gap = pixels(hostStyle?.getPropertyValue(PADDING_PROPERTY)) / 2;
@@ -231,21 +294,16 @@ export class ZenPanelDock {
     // The drawer's open bottom stands on the composer's top edge.
     const d = dockOutlinePath(composer, drawer && { ...drawer, bottom: composer.top });
 
-    const doc = this.#hostEl.ownerDocument;
-    const svgEl = doc.createElementNS(SVG_NS, 'svg');
-    svgEl.setAttribute('class', 'claudian-zen-dock-hint-shape');
-    for (const cls of ['claudian-zen-dock-hint-glow', 'claudian-zen-dock-hint-outline']) {
-      const pathEl = doc.createElementNS(SVG_NS, 'path');
-      pathEl.setAttribute('class', cls);
-      pathEl.setAttribute('d', d);
-      svgEl.appendChild(pathEl);
-    }
-    hintEl.appendChild(svgEl);
-    return hintEl;
+    this.#rootEl.style.setProperty(BOTTOM_CLEARANCE_PROPERTY, clearance);
+    hintEl.style.bottom = `${this.#inset() + dock.y}px`;
+    hintEl.style.width = `${Math.round(rootRect.width)}px`;
+    hintEl.style.height = `${Math.round(rootRect.height)}px`;
+    for (const pathEl of hintEl.querySelectorAll('path')) pathEl.setAttribute('d', d);
   }
 
   #snap(offset: Offset): Offset {
-    return Math.hypot(offset.x, offset.y) <= DOCK_SNAP_DISTANCE ? DOCKED : offset;
+    const dock = this.#dockOffset();
+    return Math.hypot(offset.x - dock.x, offset.y - dock.y) <= DOCK_SNAP_DISTANCE ? this.#clamp(dock) : offset;
   }
 
   /** Keys move in steps without the magnet, which would hold the panel in its dock; Home docks it. */

@@ -867,13 +867,13 @@ it('moves the panel by its grip, docks it magnetically, and remembers where it w
     }
   } as unknown as typeof PointerEvent;
   cleanups.push(() => { window.PointerEvent = originalPointerEvent; });
-  const { rootEl, rightSplit, setCollapsed, settingsCoordinator, noteEditor } = await createZenFixture();
+  const { rootEl, rightSplit, setCollapsed, settingsCoordinator, noteEditor, workspace } = await createZenFixture();
   // jsdom has no layout: a 1000x800 central workspace holding a 600x100 panel, without zen styles.
   // A 584x60 composer sits 8px inside the panel's bottom, which follows the bottom offset; a
   // drawer, when shown, sits on it, 526px wide.
   Object.defineProperty(rootEl, 'clientWidth', { configurable: true, value: 1000 });
   Object.defineProperty(rootEl, 'clientHeight', { configurable: true, value: 800 });
-  jest.spyOn(rootEl, 'getBoundingClientRect').mockImplementation(() => ({ top: 0, bottom: 800 } as DOMRect));
+  jest.spyOn(rootEl, 'getBoundingClientRect').mockImplementation(() => ({ left: 0, right: 1000, width: 1000, top: 0, bottom: 800, height: 800 } as DOMRect));
   let panelHeight = 100;
   let drawerHeight = 0;
   const stubPanel = (panel: HTMLElement) => {
@@ -993,6 +993,7 @@ it('moves the panel by its grip, docks it magnetically, and remembers where it w
   expect(offset(panel)).toEqual(['0px', '700px']);
   panelHeight = 300;
   resize(panel);
+  expect(hint()!.style.height).toBe('300px');
   fireEvent.pointerUp(document, { pointerId: 1, clientX: 0, clientY: -500 });
   expect(offset(panel)).toEqual(['0px', '500px']);
   await waitFor(() => expect(savedPosition()).toEqual({ x: 0, y: 0.625 }));
@@ -1005,7 +1006,82 @@ it('moves the panel by its grip, docks it magnetically, and remembers where it w
   const points = outlinePoints();
   expect(Math.min(...points.map(([, y]) => y))).toBe(8);
   expect(points).toEqual(expect.arrayContaining([[37, 32], [563, 32], [8, 92], [592, 92]]));
+  // The drawer can grow while a shrinking composer keeps the root's total height unchanged.
+  drawerHeight = 32;
+  resize(panel.querySelector('.claudian-zen-drawer')!);
+  expect(Math.min(...outlinePoints().map(([, y]) => y))).toBe(0);
   fireEvent.pointerUp(document, { pointerId: 1, clientX: 0, clientY: 0 });
+
+  // Obsidian's fixed status bar overlays the workspace; all ways home must clear it.
+  const statusBar = document.body.createDiv({ cls: 'status-bar' });
+  cleanups.push(() => statusBar.remove());
+  statusBar.style.position = 'fixed';
+  let statusLeft = 750;
+  let statusHeight = 30;
+  let statusBottom = 800;
+  jest.spyOn(statusBar, 'getBoundingClientRect').mockImplementation(() => ({
+    left: statusLeft, right: 1000, width: 1000 - statusLeft,
+    top: statusBottom - statusHeight, bottom: statusBottom, height: statusHeight,
+  } as DOMRect));
+  workspace.trigger('layout-change');
+  fireEvent.keyDown(reopenedGrip, { key: 'Home' });
+  expect(offset(panel)).toEqual(['0px', '30px']);
+  expect(panel.style.getPropertyValue('--claudian-zen-bottom-clearance')).toBe('30px');
+  await waitFor(() => expect(savedPosition()).toBeNull());
+  fireEvent.keyDown(reopenedGrip, { key: 'ArrowDown', shiftKey: true });
+  expect(offset(panel)).toEqual(['0px', '30px']);
+  fireEvent.keyDown(reopenedGrip, { key: 'ArrowUp', shiftKey: true });
+  fireEvent.dblClick(reopenedGrip);
+  expect(offset(panel)).toEqual(['0px', '30px']);
+
+  fireEvent.pointerDown(reopenedGrip, { button: 0, pointerId: 2, clientX: 0, clientY: 0 });
+  fireEvent.pointerMove(document, { pointerId: 2, clientX: 100, clientY: -80 });
+  expect(hint()!.style.bottom).toBe('30px');
+  fireEvent.pointerMove(document, { pointerId: 2, clientX: 10, clientY: -10 });
+  expect(offset(panel)).toEqual(['0px', '30px']);
+  expect(hint()!.classList.contains('claudian-zen-dock-hint--active')).toBe(true);
+  fireEvent.pointerUp(document, { pointerId: 2 });
+  await waitFor(() => expect(savedPosition()).toBeNull());
+
+  statusHeight = 45;
+  resize(statusBar);
+  expect(offset(panel)).toEqual(['0px', '45px']);
+  // No overlap on the left: the old bottom edge is still available.
+  for (let index = 0; index < 4; index++) fireEvent.keyDown(reopenedGrip, { key: 'ArrowLeft', shiftKey: true });
+  fireEvent.keyDown(reopenedGrip, { key: 'ArrowDown', shiftKey: true });
+  expect(offset(panel)).toEqual(['-200px', '0px']);
+  await waitFor(() => expect(savedPosition()).toEqual({ x: -0.2, y: 0 }));
+  statusLeft = 550;
+  resize(statusBar);
+  expect(offset(panel)).toEqual(['-200px', '45px']);
+  expect(savedPosition()).toEqual({ x: -0.2, y: 0 });
+
+  // Hidden bars (even with a stale rect), normal-flow bars, and absent bars add no clearance.
+  for (const [property, value] of [['display', 'none'], ['visibility', 'hidden'], ['opacity', '0'], ['position', 'static']]) {
+    statusBar.style.setProperty(property, value);
+    workspace.trigger('css-change');
+    expect(offset(panel)).toEqual(['-200px', '0px']);
+    statusBar.style.removeProperty(property);
+    statusBar.style.position = 'fixed';
+    workspace.trigger('css-change');
+    expect(offset(panel)).toEqual(['-200px', '45px']);
+  }
+  // A theme can move the fixed bar to the top; it must not consume the bottom workspace.
+  statusBottom = statusHeight;
+  workspace.trigger('css-change');
+  expect(offset(panel)).toEqual(['-200px', '0px']);
+  expect(panel.style.getPropertyValue('--claudian-zen-bottom-clearance')).toBe('0px');
+  // A full-height side strip also must not collapse the panel's available height.
+  statusHeight = 800;
+  statusBottom = 800;
+  workspace.trigger('css-change');
+  expect(offset(panel)).toEqual(['-200px', '0px']);
+  expect(panel.style.getPropertyValue('--claudian-zen-bottom-clearance')).toBe('0px');
+  statusBar.remove();
+  workspace.trigger('layout-change');
+  expect(offset(panel)).toEqual(['-200px', '0px']);
+  expect(savedPosition()).toEqual({ x: -0.2, y: 0 });
+  expect(observers.every(observer => !observer.targets.has(statusBar))).toBe(true);
 });
 
 it('keeps the preview line on the main chat while a side chat is selected', async () => {

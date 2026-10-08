@@ -63,6 +63,7 @@ export class ZenModeController {
         // Sidebar collapse flips synchronously; resize follows the toggle animation.
         workspace.on('resize', () => this.reconcile()),
         workspace.on('layout-change', () => this.reconcile()),
+        workspace.on('css-change', () => this.reconcile()),
         workspace.on('active-leaf-change', (leaf) => this.#handleActiveLeafChange(leaf)),
       );
       this.reconcile();

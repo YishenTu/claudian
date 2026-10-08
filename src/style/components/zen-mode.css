@@ -26,8 +26,10 @@
   flex-direction: column;
   width: min(var(--claudian-zen-max-width), calc(100% - 2 * var(--claudian-zen-inset)));
   height: auto;
-  max-height: calc(100% - 2 * var(--claudian-zen-inset));
+  max-height: calc(100% - 2 * var(--claudian-zen-inset) - var(--claudian-zen-bottom-clearance, 0px));
   padding: var(--claudian-zen-padding);
+  /* Layout wrappers leave note content in the gaps interactive; only surfaces opt back in. */
+  pointer-events: none;
 
   /* The history and composer bound themselves; the root must not clip composer menus opening upward. */
   overflow: visible;
@@ -41,6 +43,7 @@
 .claudian-zen-drawer,
 .claudian-zen-composer > .claudian-input-composer,
 .claudian-zen-side-chat-chip-slot .claudian-side-chat-status {
+  pointer-events: auto;
   background-color: var(--background-secondary);
   background-image: linear-gradient(var(--background-primary), var(--background-primary));
   box-shadow: var(--shadow-s);
@@ -48,6 +51,14 @@
 
 .claudian-zen-composer > .claudian-input-composer {
   border-radius: var(--claudian-zen-composer-radius);
+}
+
+/* Transparent inner boxes follow the surface corners without clipping overflowing menus. */
+.claudian-zen-drawer > .claudian-zen-history,
+.claudian-zen-drawer > .claudian-zen-bar,
+.claudian-zen-composer > .claudian-input-composer > .claudian-input-container,
+.claudian-zen-side-chat-chip-slot .claudian-side-chat-status button.claudian-side-chat-status-toggle {
+  border-radius: inherit;
 }
 
 /* The grip sits in the panel's bottom padding and appears on hover, keyboard focus, or while dragging. */
@@ -72,6 +83,7 @@
   cursor: grab;
   opacity: 0;
   touch-action: none;
+  pointer-events: auto;
   transform: translateX(-50%);
   transition: opacity 120ms ease;
 }

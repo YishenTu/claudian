@@ -136,6 +136,7 @@ export class ZenModePanel {
 
   bind(runtime: ZenPresentationPort | null, providerId: ProviderId | null): void {
     if (this.#destroyed) return;
+    this.#dock.refresh();
     if (providerId) this.#rootEl.dataset.provider = providerId;
     else delete this.#rootEl.dataset.provider;
     if (runtime === this.#runtime) {
