@@ -59,6 +59,7 @@ export function createTabComposerPort(
   return {
     focus: () => inputEl.focus(),
     isFocused,
+    isVisible: () => inputEl.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }),
     toggleFocus: () => {
       if (isFocused()) {
         if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });

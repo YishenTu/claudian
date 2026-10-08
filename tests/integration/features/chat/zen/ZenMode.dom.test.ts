@@ -98,6 +98,7 @@ function createWorkspace() {
   };
   const setCollapsed = (split: Split, collapsed: boolean) => {
     split.collapsed = collapsed;
+    split.containerEl.hidden = collapsed;
     workspace.trigger('resize');
   };
   return { workspace, keymap, scopes, rootEl, rootSplit, leftSplit, rightSplit, noteEditor, leaves, setCollapsed };
@@ -198,6 +199,16 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
       conversation, getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
     });
     tab.state.currentConversationId = conversation.id;
+    // jsdom has no layout engine; model the native visibility query at the browser boundary.
+    tab.dom.inputEl.checkVisibility = () => {
+      if (!tab.dom.inputEl.isConnected) return false;
+      for (let el: HTMLElement | null = tab.dom.inputEl; el; el = el.parentElement) {
+        const style = el.ownerDocument.defaultView!.getComputedStyle(el);
+        if (el.hidden || style.display === 'none' || style.visibility === 'hidden'
+          || style.visibility === 'collapse' || style.opacity === '0') return false;
+      }
+      return true;
+    };
     tab.dom.contentEl.removeClass('claudian-hidden');
     cleanups.push(() => destroyTab(tab));
     view.tabManager = {
@@ -800,6 +811,26 @@ it('leaves focus alone when there is no existing composer or its sidebar is coll
   view.tabManager = null;
   expect(focusCommand.checkCallback!(true)).toBe(false);
   leaves.splice(0);
+  expect(focusCommand.checkCallback!(false)).toBe(false);
+  expect(document.activeElement).toBe(noteEditor);
+});
+
+it.each(['display', 'visibility', 'opacity', 'detached'])('skips a composer hidden by %s and rejects the command if none remain visible', async (reason) => {
+  const { focusCommand, addView, view, noteEditor, leftSplit, setCollapsed } = await createZenFixture({ enabled: false });
+  const other = await addView('left');
+  noteEditor.focus();
+  expect(focusCommand.checkCallback!(true)).toBe(true);
+  if (reason === 'display') view.viewContainerEl.style.display = 'none';
+  else if (reason === 'visibility') view.viewContainerEl.style.visibility = 'hidden';
+  else if (reason === 'opacity') view.viewContainerEl.style.opacity = '0';
+  else view.viewContainerEl.remove();
+
+  expect(focusCommand.checkCallback!(false)).toBe(true);
+  expect(document.activeElement).toBe(within(other.tab.dom.inputComposerEl).getByRole('textbox', { name: 'Message' }));
+  focusCommand.checkCallback!(false);
+  expect(document.activeElement).toBe(noteEditor);
+  setCollapsed(leftSplit, true);
+  expect(focusCommand.checkCallback!(true)).toBe(false);
   expect(focusCommand.checkCallback!(false)).toBe(false);
   expect(document.activeElement).toBe(noteEditor);
 });

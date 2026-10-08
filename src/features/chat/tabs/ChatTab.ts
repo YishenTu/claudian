@@ -68,6 +68,8 @@ export interface TabLinkedContentPort {
 export interface TabComposerPort {
   focus(): void;
   isFocused(): boolean;
+  /** Whether the mounted input is currently rendered and visible. */
+  isVisible(): boolean;
   /** Switches between this input and the control focused before the command entered it. */
   toggleFocus(): void;
   /** Appends text without sending it, as if typed at the end; false when there is nothing to add. */
