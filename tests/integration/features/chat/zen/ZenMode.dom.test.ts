@@ -869,11 +869,35 @@ it('moves the panel by its grip, docks it magnetically, and remembers where it w
   cleanups.push(() => { window.PointerEvent = originalPointerEvent; });
   const { rootEl, rightSplit, setCollapsed, settingsCoordinator, noteEditor } = await createZenFixture();
   // jsdom has no layout: a 1000x800 central workspace holding a 600x100 panel, without zen styles.
+  // A 584x60 composer sits 8px inside the panel's bottom, which follows the bottom offset; a
+  // drawer, when shown, sits on it, 526px wide.
   Object.defineProperty(rootEl, 'clientWidth', { configurable: true, value: 1000 });
   Object.defineProperty(rootEl, 'clientHeight', { configurable: true, value: 800 });
+  jest.spyOn(rootEl, 'getBoundingClientRect').mockImplementation(() => ({ top: 0, bottom: 800 } as DOMRect));
   let panelHeight = 100;
-  const stubPanel = (panel: HTMLElement) => jest.spyOn(panel, 'getBoundingClientRect')
-    .mockImplementation(() => ({ width: 600, height: panelHeight } as DOMRect));
+  let drawerHeight = 0;
+  const stubPanel = (panel: HTMLElement) => {
+    const composerBottom = () => 800 - Number.parseFloat(panel.style.getPropertyValue('--claudian-zen-offset-y') || '0');
+    jest.spyOn(panel, 'getBoundingClientRect').mockImplementation(() => ({
+      left: 200, right: 800, top: composerBottom() + 8 - panelHeight, bottom: composerBottom() + 8,
+      width: 600, height: panelHeight,
+    } as DOMRect));
+    jest.spyOn(panel.querySelector<HTMLElement>('.claudian-zen-composer')!, 'getBoundingClientRect')
+      .mockImplementation(() => ({ left: 208, right: 792, top: composerBottom() - 60, bottom: composerBottom() } as DOMRect));
+    jest.spyOn(panel.querySelector<HTMLElement>('.claudian-zen-drawer')!, 'getBoundingClientRect')
+      .mockImplementation(() => ({
+        left: 237, right: 763, top: composerBottom() - 60 - drawerHeight, bottom: composerBottom() - 60,
+        height: drawerHeight,
+      } as DOMRect));
+  };
+  // Corner points of the hint outline, relative to the panel box; zen styles add no gap or radii here.
+  const outlinePoints = () => {
+    const d = rootEl.querySelector('.claudian-zen-dock-hint-outline')?.getAttribute('d') ?? '';
+    return (d.match(/[MLA][^MLAZ]*/g) ?? []).map((command) => {
+      const values = command.slice(1).trim().split(/[\s,]+/).map(Number);
+      return values.slice(-2);
+    });
+  };
   const offset = (panel: HTMLElement) => [
     panel.style.getPropertyValue('--claudian-zen-offset-x'),
     panel.style.getPropertyValue('--claudian-zen-offset-y'),
@@ -929,6 +953,8 @@ it('moves the panel by its grip, docks it magnetically, and remembers where it w
   fireEvent.pointerMove(document, { pointerId: 1, clientX: 100, clientY: 300 });
   expect(hint()?.getAttribute('aria-hidden')).toBe('true');
   expect([hint()!.style.width, hint()!.style.height]).toEqual(['600px', '100px']);
+  // Without a drawer, the outline is the composer alone.
+  expect(Math.min(...outlinePoints().map(([, y]) => y))).toBe(32);
   expect(hint()!.classList.contains('claudian-zen-dock-hint--active')).toBe(false);
   expect(panel.classList.contains('claudian-zen--snapped')).toBe(false);
 
@@ -952,6 +978,34 @@ it('moves the panel by its grip, docks it magnetically, and remembers where it w
   fireEvent.keyDown(reopenedGrip, { key: 'Home' });
   expect(offset(panel)).toEqual(['0px', '0px']);
   await waitFor(() => expect(savedPosition()).toBeNull());
+
+  // Tall history lifts the panel's middle, but the composer stays low, so its menus keep opening upward.
+  panelHeight = 400;
+  drag(reopenedGrip, [0, 0], [0, -250]);
+  expect(offset(panel)).toEqual(['0px', '250px']);
+  expect(panel.classList.contains('claudian-zen--opens-below')).toBe(false);
+
+  // Growth during a drag is rechecked on release, so the panel never stays past the top edge.
+  panelHeight = 100;
+  resize(panel);
+  fireEvent.pointerDown(reopenedGrip, { button: 0, pointerId: 1, clientX: 0, clientY: 0 });
+  fireEvent.pointerMove(document, { pointerId: 1, clientX: 0, clientY: -500 });
+  expect(offset(panel)).toEqual(['0px', '700px']);
+  panelHeight = 300;
+  resize(panel);
+  fireEvent.pointerUp(document, { pointerId: 1, clientX: 0, clientY: -500 });
+  expect(offset(panel)).toEqual(['0px', '500px']);
+  await waitFor(() => expect(savedPosition()).toEqual({ x: 0, y: 0.625 }));
+
+  // With a drawer above the composer, the hint takes the panel's stepped outline.
+  panelHeight = 100;
+  drawerHeight = 24;
+  resize(panel);
+  fireEvent.pointerDown(reopenedGrip, { button: 0, pointerId: 1, clientX: 0, clientY: 0 });
+  const points = outlinePoints();
+  expect(Math.min(...points.map(([, y]) => y))).toBe(8);
+  expect(points).toEqual(expect.arrayContaining([[37, 32], [563, 32], [8, 92], [592, 92]]));
+  fireEvent.pointerUp(document, { pointerId: 1, clientX: 0, clientY: 0 });
 });
 
 it('keeps the preview line on the main chat while a side chat is selected', async () => {

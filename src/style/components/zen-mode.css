@@ -116,21 +116,39 @@
   transform: translateX(-50%);
 }
 
-/* Drawn around the panel's surfaces, inside its padding. */
-.claudian-zen-dock-hint::before {
-  content: "";
+/* ZenPanelDock traces the panel's surfaces, drawer included, a half padding outside them. */
+.claudian-zen-dock-hint-shape {
   position: absolute;
-  inset: calc(var(--claudian-zen-padding) / 2);
-  border: 1.5px dashed var(--background-modifier-border-hover);
-  border-radius: var(--claudian-zen-composer-radius);
-  background: color-mix(in srgb, var(--interactive-accent) 6%, transparent);
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
-.claudian-zen-dock-hint--active::before {
-  border-style: solid;
-  border-color: var(--interactive-accent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+.claudian-zen-dock-hint-outline {
+  fill: color-mix(in srgb, var(--interactive-accent) 6%, transparent);
+  stroke: var(--background-modifier-border-hover);
+  stroke-dasharray: 6 4;
+  stroke-width: 1.5px;
+  transition: stroke 120ms ease;
+}
+
+/* Centered on the outline; the snapped panel covers its inner half, leaving a ring outside. */
+.claudian-zen-dock-hint-glow {
+  fill: none;
+  stroke: color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+  stroke-width: 8px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.claudian-zen-dock-hint--active .claudian-zen-dock-hint-outline {
+  stroke: var(--interactive-accent);
+  stroke-dasharray: none;
+}
+
+.claudian-zen-dock-hint--active .claudian-zen-dock-hint-glow {
+  opacity: 1;
 }
 
 /* The grip follows the pointer while it drags. */

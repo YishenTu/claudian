@@ -124,7 +124,7 @@ export class ZenModePanel {
     this.slots = { historyEl: this.#historyEl, composerEl, sideChatChipEl };
     this.#composerLayout = new ZenComposerLayout(composerEl);
     this.#applyHistoryExpanded();
-    this.#dock = new ZenPanelDock(hostEl, this.#rootEl, gripEl, {
+    this.#dock = new ZenPanelDock({ hostEl, rootEl: this.#rootEl, gripEl, drawerEl, composerEl }, {
       position: options.position,
       onPositionChange: position => options.onPositionChange(position),
     });
