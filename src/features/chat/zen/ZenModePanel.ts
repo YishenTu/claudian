@@ -16,6 +16,7 @@ import { t } from '@/i18n/i18n';
 
 export interface ZenModePanelOptions {
   readonly keymap: Pick<Keymap, 'pushScope' | 'popScope'> | null;
+  readonly parentScope: Scope;
   readonly historyExpanded: boolean;
   onHistoryExpandedChange(expanded: boolean): void;
   readonly position: ZenModePosition | null;
@@ -45,8 +46,8 @@ export class ZenModePanel {
   readonly #previewIconEl: HTMLElement;
   #previewIconTool: string | null = null;
   readonly #statusEl: HTMLElement;
-  // A parentless scope keeps the active note's hotkeys away from zen input while it has focus.
-  readonly #keyScope = new Scope();
+  // Inherit global commands without inheriting the active note's view hotkeys.
+  readonly #keyScope: Scope;
   #scopePushed = false;
   #runtime: ZenPresentationPort | null = null;
   #unsubscribeMain: (() => void) | null = null;
@@ -62,6 +63,7 @@ export class ZenModePanel {
     private readonly hostEl: HTMLElement,
     private readonly options: ZenModePanelOptions,
   ) {
+    this.#keyScope = new Scope(options.parentScope);
     this.#historyExpanded = options.historyExpanded;
     const historyId = `claudian-zen-history-${++panelSequence}`;
     hostEl.addClass(HOST_CLASS);
@@ -90,7 +92,7 @@ export class ZenModePanel {
         'aria-label': t('chat.zen.showHistory'),
       },
     });
-    this.#disclosureEl.addEventListener('click', () => this.setHistoryExpanded(!this.#historyExpanded));
+    this.#disclosureEl.addEventListener('click', () => this.toggleHistoryExpanded());
 
     this.#previewIconEl = this.#disclosureEl.createSpan({
       cls: 'claudian-zen-preview-icon claudian-hidden',
@@ -153,6 +155,10 @@ export class ZenModePanel {
     this.#render();
   }
 
+  toggleHistoryExpanded(): void {
+    this.setHistoryExpanded(!this.#historyExpanded);
+  }
+
   setHistoryExpanded(expanded: boolean): void {
     if (this.#destroyed || expanded === this.#historyExpanded) return;
     this.#historyExpanded = expanded;
@@ -188,6 +194,9 @@ export class ZenModePanel {
     }
     this.#rootEl.toggleClass('claudian-zen--expanded', expanded);
     this.#disclosureEl.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    if (!expanded && this.#hasHistory && this.#historyEl.contains(this.hostEl.ownerDocument.activeElement)) {
+      this.#disclosureEl.focus({ preventScroll: true });
+    }
   }
 
   readonly #handleOutsidePointerDown = (event: PointerEvent): void => {

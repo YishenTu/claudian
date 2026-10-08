@@ -9,7 +9,7 @@ import { FakeSideSession } from '@test/helpers/features/chat/SideChatSessionHarn
 import { modelCatalogCases } from '@test/helpers/providerModelCatalogs';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
-import { App, Component, setIcon } from 'obsidian';
+import { App, Component, Scope, setIcon } from 'obsidian';
 
 import { ChatModelSelectionCoordinator } from '@/app/settings/ChatModelSelectionCoordinator';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
@@ -116,7 +116,7 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
   Object.assign(app.vault.adapter, { basePath: '/vault' });
   Object.assign(app.vault, { on: () => ({}), offref: () => undefined });
   const layout = createWorkspace();
-  Object.assign(app, { workspace: layout.workspace, keymap: layout.keymap });
+  Object.assign(app, { workspace: layout.workspace, keymap: layout.keymap, scope: new Scope() });
   const sessions: FakeSideSession[] = [];
   jest.spyOn(ProviderRegistry, 'createExecutionBackend').mockImplementation((_host, providerId = 'claude') => ({
     providerId,
@@ -769,7 +769,7 @@ it('focuses only the attached zen composer through its hotkey command without ch
 });
 
 it('sends with the existing keyboard rules and leaves note input alone', async () => {
-  const { tab, sessions, rightSplit, setCollapsed, noteEditor, scopes } = await createZenFixture();
+  const { app, tab, sessions, rightSplit, setCollapsed, noteEditor, scopes } = await createZenFixture();
   setCollapsed(rightSplit, true);
   const input = tab.dom.inputEl as unknown as HTMLElement;
 
@@ -782,6 +782,8 @@ it('sends with the existing keyboard rules and leaves note input alone', async (
 
   input.focus();
   expect(scopes).toHaveLength(1);
+  // Obsidian resolves global hotkeys through the active scope's parent chain.
+  expect(scopes[0]).toEqual(expect.objectContaining({ parent: app.scope }));
   tab.dom.inputEl.value = 'Line one';
   fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
   fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
@@ -794,6 +796,47 @@ it('sends with the existing keyboard rules and leaves note input alone', async (
   noteEditor.focus();
   expect(scopes).toHaveLength(0);
   sessions[0].complete();
+});
+
+it('toggles history through its hotkey command while preserving focus and the active conversation', async () => {
+  const { zen, tab, sessions, rightSplit, setCollapsed, noteEditor } = await createZenFixture();
+  const command = zen.createToggleHistoryCommand();
+  expect(command.checkCallback!(true)).toBe(false);
+  expect(command.checkCallback!(false)).toBe(false);
+  setCollapsed(rightSplit, true);
+  expect(command.checkCallback!(false)).toBe(false);
+  setCollapsed(rightSplit, false);
+  seedHistory(tab);
+  setCollapsed(rightSplit, true);
+  const panel = screen.getByRole('region', { name: 'Claudian chat' });
+  const show = within(panel).getByRole('button', { name: 'Show conversation' });
+  const history = document.getElementById(show.getAttribute('aria-controls')!)!;
+  tab.dom.inputEl.value = 'Unsent draft';
+  noteEditor.focus();
+  expect(command.checkCallback!(true)).toBe(true);
+  expect(show.getAttribute('aria-expanded')).toBe('false');
+  expect(command.checkCallback!(false)).toBe(true);
+  expect(history.classList.contains('claudian-hidden')).toBe(false);
+  expect(document.activeElement).toBe(noteEditor);
+
+  zen.createFocusInputCommand().checkCallback!(false);
+  const input = within(panel).getByRole('textbox', { name: 'Message' });
+  expect(command.checkCallback!(false)).toBe(true);
+  expect(history.classList.contains('claudian-hidden')).toBe(true);
+  expect(document.activeElement).toBe(input);
+  expect(command.checkCallback!(false)).toBe(true);
+  expect(history.classList.contains('claudian-hidden')).toBe(false);
+  history.focus();
+  expect(command.checkCallback!(false)).toBe(true);
+  expect(document.activeElement).toBe(show);
+  expect(show.getAttribute('aria-expanded')).toBe('false');
+  expect(tab.dom.inputEl.value).toBe('Unsent draft');
+  expect(tab.controllers.sideChatController.destination).toBe('main');
+  expect(rightSplit.collapsed).toBe(true);
+  expect(sessions).toHaveLength(0);
+
+  setCollapsed(rightSplit, false);
+  expect(command.checkCallback!(false)).toBe(false);
 });
 
 it('discloses the existing transcript accessibly and remembers the choice for the view lifetime', async () => {

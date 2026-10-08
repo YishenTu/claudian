@@ -130,6 +130,7 @@ export default class ClaudianPlugin extends Plugin {
         this.addCommand(command);
       }
       this.addCommand(this.zenMode.createFocusInputCommand());
+      this.addCommand(this.zenMode.createToggleHistoryCommand());
 
       this.addCommand({
         id: 'copy-startup-diagnostics',

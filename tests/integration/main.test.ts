@@ -2663,10 +2663,13 @@ describe('ClaudianPlugin', () => {
     });
   });
 
-  it('registers the zen input focus command for hotkey assignment', async () => {
+  it.each([
+    ['focus-zen-mode-input', 'Focus zen mode input'],
+    ['toggle-zen-mode-history', 'Toggle zen mode history'],
+  ])('registers %s for hotkey assignment', async (id, name) => {
     await plugin.onload();
-    const command = getRegisteredCommand('focus-zen-mode-input');
-    expect(command.name).toBe('Focus zen mode input');
+    const command = getRegisteredCommand(id);
+    expect(command.name).toBe(name);
     expect(command.checkCallback(true)).toBe(false);
   });
 

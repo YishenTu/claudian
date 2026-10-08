@@ -66,6 +66,19 @@ export class ZenModeController {
     };
   }
 
+  createToggleHistoryCommand(): Command {
+    return {
+      id: 'toggle-zen-mode-history',
+      name: 'Toggle zen mode history',
+      checkCallback: (checking: boolean) => {
+        const panel = this.#attachment?.panel;
+        if (!panel?.runtime?.state.messages.length) return false;
+        if (!checking) panel.toggleHistoryExpanded();
+        return true;
+      },
+    };
+  }
+
   start(): void {
     if (this.#listening || this.#disposed) return;
     const { workspace } = this.deps.app;
@@ -210,6 +223,7 @@ export class ZenModeController {
 
     const panel = new ZenModePanel(hostEl, {
       keymap: this.deps.app.keymap ?? null,
+      parentScope: this.deps.app.scope,
       historyExpanded: this.#historyExpanded.get(source) ?? false,
       onHistoryExpandedChange: expanded => this.#historyExpanded.set(source, expanded),
       position: this.deps.getPosition(),
