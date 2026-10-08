@@ -29,7 +29,7 @@ const ONE_TIME_DECISION_OPTIONS: readonly ProviderApprovalDecisionOption[] = [
 ];
 
 // Claude Code decides what an "Always allow" persists and where; offer it only
-// when the SDK suggested permission updates to apply.
+// when the SDK suggested permission updates and permits persistent approval.
 const PERSISTABLE_DECISION_OPTIONS: readonly ProviderApprovalDecisionOption[] = [
   ...ONE_TIME_DECISION_OPTIONS,
   { label: 'Always allow', value: 'allow-always', decision: 'allow-always' },
@@ -110,6 +110,7 @@ export class ClaudeExecutionInteractionRouter {
         };
       }
 
+      const canPersistApproval = !options.suppressAlwaysAllowRule && Boolean(options.suggestions?.length);
       const response = await this.deps.interactionPort.requestApproval({
         ...identity,
         kind: 'approval',
@@ -118,7 +119,7 @@ export class ClaudeExecutionInteractionRouter {
         description: getActionDescription(toolName, input),
         decisionReason: options.decisionReason,
         blockedPath: options.blockedPath,
-        decisionOptions: options.suggestions?.length
+        decisionOptions: canPersistApproval
           ? PERSISTABLE_DECISION_OPTIONS
           : ONE_TIME_DECISION_OPTIONS,
       }, options.signal);
@@ -132,7 +133,7 @@ export class ClaudeExecutionInteractionRouter {
           interrupt: true,
         };
       }
-      if (decision === 'allow') {
+      if (decision === 'allow' || (decision === 'allow-always' && !canPersistApproval)) {
         return {
           behavior: 'allow',
           updatedInput: input,
