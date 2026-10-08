@@ -1,6 +1,7 @@
 import { type Keymap, Scope } from 'obsidian';
 
 import type { ProviderId } from '@/core/providers/types';
+import type { ZenModePosition } from '@/core/types';
 import { setToolIcon } from '@/features/chat/rendering/tools/toolContentPrimitives';
 import {
   cancelScheduledAnimationFrame,
@@ -10,18 +11,20 @@ import {
 import { formatActivityPreview, type ZenActivityTone } from '@/features/chat/zen/activityPreview';
 import type { ZenModeSlots, ZenPresentationPort } from '@/features/chat/zen/types';
 import { ZenComposerLayout } from '@/features/chat/zen/ZenComposerLayout';
+import { ZenPanelDock } from '@/features/chat/zen/ZenPanelDock';
 import { t } from '@/i18n/i18n';
 
 export interface ZenModePanelOptions {
   readonly keymap: Pick<Keymap, 'pushScope' | 'popScope'> | null;
   readonly historyExpanded: boolean;
   onHistoryExpandedChange(expanded: boolean): void;
+  readonly position: ZenModePosition | null;
+  onPositionChange(position: ZenModePosition | null): void;
 }
 
 const HOST_CLASS = 'claudian-zen-host';
 // Body-level surfaces that zen controls open; interacting with them is not leaving zen.
 const OWNED_OVERLAY_SELECTOR = '.menu, .modal-container, .suggestion-container';
-const RESERVED_HEIGHT_PROPERTY = '--claudian-zen-reserved-height';
 
 let panelSequence = 0;
 
@@ -51,8 +54,8 @@ export class ZenModePanel {
   #historyExpanded: boolean;
   #hasHistory = false;
   #lastTone: ZenActivityTone | null = null;
-  #resizeObserver: ResizeObserver | null = null;
   readonly #composerLayout: ZenComposerLayout;
+  readonly #dock: ZenPanelDock;
   #destroyed = false;
 
   constructor(
@@ -100,6 +103,11 @@ export class ZenModePanel {
     const sideChatChipEl = this.#rootEl.createDiv({
       cls: 'claudian-zen-side-chat-chip-slot claudian-side-chat-chip-slot',
     });
+    // Under the composer, shown on hover or keyboard focus, so the chat controls keep their own clicks.
+    const gripEl = this.#rootEl.createEl('button', {
+      cls: 'claudian-zen-grip',
+      attr: { type: 'button', 'aria-label': t('chat.zen.move') },
+    });
 
     this.#statusEl = this.#rootEl.createDiv({ cls: 'claudian-zen-status', attr: { role: 'status' } });
 
@@ -116,7 +124,10 @@ export class ZenModePanel {
     this.slots = { historyEl: this.#historyEl, composerEl, sideChatChipEl };
     this.#composerLayout = new ZenComposerLayout(composerEl);
     this.#applyHistoryExpanded();
-    this.#observeReservedHeight();
+    this.#dock = new ZenPanelDock(hostEl, this.#rootEl, gripEl, {
+      position: options.position,
+      onPositionChange: position => options.onPositionChange(position),
+    });
   }
 
   get runtime(): ZenPresentationPort | null {
@@ -158,13 +169,11 @@ export class ZenModePanel {
     this.#unsubscribeMain = null;
     this.#runtime = null;
     this.#popKeyScope();
-    this.#resizeObserver?.disconnect();
-    this.#resizeObserver = null;
     this.#composerLayout.destroy();
+    this.#dock.destroy();
     this.hostEl.ownerDocument.removeEventListener('pointerdown', this.#handleOutsidePointerDown, true);
     this.#rootEl.remove();
     this.hostEl.removeClass(HOST_CLASS);
-    this.hostEl.style.removeProperty(RESERVED_HEIGHT_PROPERTY);
   }
 
   #applyHistoryExpanded(): void {
@@ -249,15 +258,5 @@ export class ZenModePanel {
     if (!this.#scopePushed) return;
     this.#scopePushed = false;
     this.options.keymap?.popScope(this.#keyScope);
-  }
-
-  #observeReservedHeight(): void {
-    const ResizeObserverConstructor = this.hostEl.ownerDocument.defaultView?.ResizeObserver;
-    if (typeof ResizeObserverConstructor !== 'function') return;
-    this.#resizeObserver = new ResizeObserverConstructor(() => {
-      const height = Math.ceil(this.#rootEl.getBoundingClientRect().height);
-      this.hostEl.style.setProperty(RESERVED_HEIGHT_PROPERTY, `${height}px`);
-    });
-    this.#resizeObserver.observe(this.#rootEl);
   }
 }

@@ -1,7 +1,7 @@
 import type { App, EventRef, WorkspaceLeaf } from 'obsidian';
 import { Platform } from 'obsidian';
 
-import { VIEW_TYPE_CLAUDIAN } from '@/core/types';
+import { VIEW_TYPE_CLAUDIAN, type ZenModePosition } from '@/core/types';
 import { scheduleAnimationFrame } from '@/features/chat/utils/animationFrame';
 import type { ZenModeSource, ZenPresentationPort, ZenScrollSnapshot } from '@/features/chat/zen/types';
 import { ZenModePanel } from '@/features/chat/zen/ZenModePanel';
@@ -10,6 +10,10 @@ export interface ZenModeControllerDeps {
   readonly app: App;
   /** Reads the committed setting. */
   isEnabled(): boolean;
+  /** Reads where the panel was left; null keeps it docked. */
+  getPosition(): ZenModePosition | null;
+  /** Remembers where the user moved the panel. */
+  savePosition(position: ZenModePosition | null): void;
 }
 
 interface ZenAttachment {
@@ -194,6 +198,8 @@ export class ZenModeController {
       keymap: this.deps.app.keymap ?? null,
       historyExpanded: this.#historyExpanded.get(source) ?? false,
       onHistoryExpandedChange: expanded => this.#historyExpanded.set(source, expanded),
+      position: this.deps.getPosition(),
+      onPositionChange: position => this.deps.savePosition(position),
     });
     this.#attachment = { source, panel, release: source.attachZenPresentation(panel.slots) };
     panel.bind(runtime, source.getZenProviderId());

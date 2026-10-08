@@ -331,13 +331,24 @@ describe('Zen mode styles', () => {
     }).toEqual({ backgroundColor: 'rgba(0, 0, 0, 0)', borderStyle: '', boxShadow: '' });
   });
 
-  // Nothing renders behind the panel, so translucent themes cannot show notes through it.
-  it('reserves the panel height below the central workspace content', () => {
+  it('floats over the central workspace content without reserving a strip below it', () => {
     const panel = renderPanel();
-    expect(window.getComputedStyle(panel.parentElement!).paddingBottom)
-      .toContain('var(--claudian-zen-reserved-height');
+    expect(window.getComputedStyle(panel.parentElement!).paddingBottom).toBe('');
     for (const selector of ['.cm-scroller', '.markdown-preview-view']) {
       expect(window.getComputedStyle(panel.parentElement!.querySelector(selector)!).paddingBottom).toBe('');
+    }
+  });
+
+  // Notes render behind the floating surfaces, so translucent themes must not show through them.
+  it('backs every floating surface with an opaque color', () => {
+    const panel = renderPanel();
+    for (const selector of [
+      '.claudian-zen-drawer',
+      '.claudian-zen-composer > .claudian-input-composer',
+      '.claudian-zen-side-chat-chip-slot .claudian-side-chat-status',
+    ]) {
+      expect(window.getComputedStyle(panel.querySelector(selector)!).backgroundColor)
+        .toBe('var(--background-secondary)');
     }
   });
 });

@@ -77,6 +77,7 @@
     "zen": {
       "regionLabel": "Claudian 聊天",
       "showHistory": "顯示對話",
+      "move": "移動聊天面板",
       "working": "處理中…",
       "thinking": "思考中…",
       "interrupted": "已中斷",

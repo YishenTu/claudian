@@ -77,6 +77,7 @@
     "zen": {
       "regionLabel": "Claudian-Chat",
       "showHistory": "Unterhaltung anzeigen",
+      "move": "Chat-Bereich verschieben",
       "working": "Arbeitet…",
       "thinking": "Denkt nach…",
       "interrupted": "Unterbrochen",

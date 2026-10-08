@@ -77,6 +77,7 @@
     "zen": {
       "regionLabel": "Claudian 채팅",
       "showHistory": "대화 표시",
+      "move": "채팅 패널 이동",
       "working": "작업 중…",
       "thinking": "생각 중…",
       "interrupted": "중단됨",

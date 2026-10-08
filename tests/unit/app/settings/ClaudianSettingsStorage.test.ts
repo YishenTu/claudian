@@ -349,6 +349,20 @@ describe('ClaudianSettingsStorage', () => {
       expect(JSON.parse(mockAdapter.write.mock.calls.at(-1)![1]).enableZenMode).toBe(true);
     });
 
+    it.each([
+      ['missing', {}, null],
+      ['docked', { zenModePosition: null }, null],
+      ['moved', { zenModePosition: { x: -0.2, y: 0.375 } }, { x: -0.2, y: 0.375 }],
+      ['malformed', { zenModePosition: { x: '1', y: 0.5 } }, null],
+    ])('loads a %s zen panel position', async (_label, stored, expected) => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify(stored));
+
+      const result = await storage.load();
+
+      expect(result.zenModePosition).toEqual(expected);
+    });
+
     it('normalizes claude provider CLI paths from loaded data', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({

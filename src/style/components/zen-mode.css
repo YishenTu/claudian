@@ -1,6 +1,6 @@
-/* Zen mode: the live chat presentation hosted at the bottom of the central workspace. */
+/* Zen mode: the live chat presentation floating over the bottom of the central workspace. */
 
-/* Host exception: the reservation is scoped to Obsidian's central split and removed on release. */
+/* Host exception: scoped to Obsidian's central split and removed on release; content keeps its full height. */
 .workspace-split.mod-root.claudian-zen-host {
   --claudian-zen-inset: 12px;
   --claudian-zen-max-width: 720px;
@@ -8,29 +8,151 @@
   /* Expanded transcript cap; it excludes the composer. */
   --claudian-zen-history-max-height: calc(100vh / 3);
   --claudian-zen-composer-radius: 18px;
+  --claudian-zen-padding: 8px;
 
   position: relative;
-  padding-bottom: calc(var(--claudian-zen-reserved-height, 0px) + var(--claudian-zen-inset));
 }
 
 .claudian-container.claudian-zen {
   /* Inherited by every control inside; Obsidian then skips its aria-label hover tooltips. */
   --no-tooltip: true;
 
+  /* ZenPanelDock sets the offsets from the docked bottom-center spot. */
   position: absolute;
-  left: 50%;
-  bottom: var(--claudian-zen-inset);
+  left: calc(50% + var(--claudian-zen-offset-x, 0px));
+  bottom: calc(var(--claudian-zen-inset) + var(--claudian-zen-offset-y, 0px));
   z-index: 2;
   display: flex;
   flex-direction: column;
   width: min(var(--claudian-zen-max-width), calc(100% - 2 * var(--claudian-zen-inset)));
   height: auto;
   max-height: calc(100% - 2 * var(--claudian-zen-inset));
-  padding: 8px;
+  padding: var(--claudian-zen-padding);
 
   /* The history and composer bound themselves; the root must not clip composer menus opening upward. */
   overflow: visible;
   transform: translateX(-50%);
+}
+
+/*
+ * Only these surfaces cover the content; the gaps around them stay see-through. Secondary stays
+ * opaque when translucent themes clear the primary background.
+ */
+.claudian-zen-drawer,
+.claudian-zen-composer > .claudian-input-composer,
+.claudian-zen-side-chat-chip-slot .claudian-side-chat-status {
+  background-color: var(--background-secondary);
+  background-image: linear-gradient(var(--background-primary), var(--background-primary));
+  box-shadow: var(--shadow-s);
+}
+
+.claudian-zen-composer > .claudian-input-composer {
+  border-radius: var(--claudian-zen-composer-radius);
+}
+
+/* The grip sits in the panel's bottom padding and appears on hover, keyboard focus, or while dragging. */
+.claudian-zen button.claudian-zen-grip,
+.claudian-zen button.claudian-zen-grip:hover,
+.claudian-zen button.claudian-zen-grip:focus,
+.claudian-zen button.claudian-zen-grip:active {
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  box-shadow: none;
+  cursor: grab;
+  opacity: 0;
+  touch-action: none;
+  transform: translateX(-50%);
+  transition: opacity 120ms ease;
+}
+
+.claudian-zen button.claudian-zen-grip::before {
+  content: "";
+  width: 32px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text-faint);
+}
+
+.claudian-zen:hover > button.claudian-zen-grip,
+.claudian-zen--dragging > button.claudian-zen-grip,
+.claudian-zen button.claudian-zen-grip:focus-visible {
+  opacity: 1;
+}
+
+.claudian-zen button.claudian-zen-grip:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+/* Snapping into the dock eases the last stretch; leaving it follows the pointer at once. */
+.claudian-zen.claudian-zen--snapped {
+  transition: left 160ms ease-out, bottom 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .claudian-zen.claudian-zen--snapped {
+    transition: none;
+  }
+}
+
+/* The dock outline, shown only while dragging, beneath the panel at its docked spot. */
+.claudian-zen-dock-hint {
+  position: absolute;
+  left: 50%;
+  bottom: var(--claudian-zen-inset);
+  z-index: 1;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+/* Drawn around the panel's surfaces, inside its padding. */
+.claudian-zen-dock-hint::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--claudian-zen-padding) / 2);
+  border: 1.5px dashed var(--background-modifier-border-hover);
+  border-radius: var(--claudian-zen-composer-radius);
+  background: color-mix(in srgb, var(--interactive-accent) 6%, transparent);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.claudian-zen-dock-hint--active::before {
+  border-style: solid;
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+}
+
+/* The grip follows the pointer while it drags. */
+.claudian-zen.claudian-zen--dragging {
+  user-select: none;
+}
+
+.claudian-zen.claudian-zen--dragging > button.claudian-zen-grip {
+  cursor: grabbing;
+}
+
+/* Moved into the upper half, the composer's menus open downward, where the room is. */
+.claudian-zen--opens-below .claudian-zen-composer .claudian-toolbar-popover {
+  top: calc(100% + 8px);
+  bottom: auto;
+}
+
+.claudian-zen--opens-below .claudian-zen-composer .claudian-composer-dropdown:not(.claudian-composer-dropdown--fixed) {
+  top: 100%;
+  bottom: auto;
+  margin-top: 4px;
+  margin-bottom: 0;
 }
 
 /* The collapsible preview line and transcript sit narrower than the composer. */
@@ -285,6 +407,7 @@
 
 .claudian-zen-side-chat-chip-slot .claudian-side-chat-status {
   margin: 0;
+  border-radius: var(--radius-m);
 }
 
 .claudian-zen-composer .claudian-side-chat-panel {

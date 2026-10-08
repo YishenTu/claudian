@@ -55,6 +55,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   expandFileEditsByDefault: false,
   chatViewPlacement: 'right-sidebar',
   enableZenMode: true,
+  zenModePosition: null,
   enableDualPane: true,
   dualPaneSide: 'right',
   restoreTabsOnStartup: true,

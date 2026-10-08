@@ -16,6 +16,7 @@ import { createDefaultClaudianSettings } from './app/settings/defaultSettings';
 import { EnvironmentSettingsService } from './app/settings/EnvironmentSettingsService';
 import { ProviderChatOptionsReconciler } from './app/settings/ProviderChatOptionsReconciler';
 import { migrateSelectedModelMetadata } from './app/settings/SelectedModelMetadataMigration';
+import type { SettingsCoordinator } from './app/settings/SettingsCoordinator';
 import { startApplication } from './app/startup/ApplicationStartup';
 import type { SharedStorageService } from './app/storage/SharedStorageService';
 import { AgentSkillResources } from './composition/AgentSkillResources';
@@ -49,6 +50,7 @@ export default class ClaudianPlugin extends Plugin {
   private chatHost!: ClaudianChatFeatureHost;
   /** Live committed settings, following Obsidian's plugin convention. */
   settings!: Readonly<ClaudianSettings>;
+  private settingsCoordinator!: SettingsCoordinator<ClaudianSettings>;
   private storage!: SharedStorageService;
   private sessionMetadata!: SessionMetadataLoader;
   private nativeSessionArchives!: NativeSessionArchiveSync;
@@ -67,6 +69,11 @@ export default class ClaudianPlugin extends Plugin {
   private readonly zenMode = new ZenModeController({
     app: this.app,
     isEnabled: () => this.settings.enableZenMode,
+    getPosition: () => this.settings.zenModePosition,
+    savePosition: (position) => {
+      // A failed write restores the committed position; the panel stays where it was dropped.
+      void this.settingsCoordinator.mutate((draft) => { draft.zenModePosition = position; }).catch(() => undefined);
+    },
   });
   private readonly chatViews = new ChatViewPublisher({
     views: this.views,
@@ -194,6 +201,7 @@ export default class ClaudianPlugin extends Plugin {
     });
     const settings = domains.settings;
     this.settings = settings.getCommittedSettings();
+    this.settingsCoordinator = settings;
     this.storage = domains.storage;
     this.sessionMetadata = domains.sessionMetadata;
     this.nativeSessionArchives = domains.nativeSessionArchives;

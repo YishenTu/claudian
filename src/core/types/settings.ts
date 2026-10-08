@@ -66,6 +66,15 @@ export const DUAL_PANE_SIDES = ['left', 'right'] as const;
 /** Side of the chat occupied by the session manager in dual-pane mode. */
 export type DualPaneSide = typeof DUAL_PANE_SIDES[number];
 
+/**
+ * Where the user left the floating zen panel: its bottom-center offset from the docked
+ * spot, as fractions of the central workspace width and height (y grows upward).
+ */
+export interface ZenModePosition {
+  readonly x: number;
+  readonly y: number;
+}
+
 export type SessionManagerOrganization = 'list' | 'linked-content';
 export type SessionManagerSort = 'last-updated' | 'created';
 export type SessionAutoArchiveAfter = 'off' | '7d' | '14d' | '30d';
@@ -163,6 +172,8 @@ export interface ClaudianSettings {
   expandFileEditsByDefault: boolean;
   chatViewPlacement: ChatViewPlacement;
   enableZenMode: boolean;
+  /** Null keeps the zen panel docked. */
+  zenModePosition: ZenModePosition | null;
   enableDualPane: boolean;
   dualPaneSide: DualPaneSide;
   restoreTabsOnStartup: boolean;

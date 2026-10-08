@@ -44,6 +44,7 @@ export {
   type SessionManagerSort,
   type SlashCommand,
   type StoredChatModelSelection,
+  type ZenModePosition,
 } from './settings';
 
 // Diff types

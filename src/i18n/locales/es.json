@@ -77,6 +77,7 @@
     "zen": {
       "regionLabel": "Chat de Claudian",
       "showHistory": "Mostrar conversación",
+      "move": "Mover el panel de chat",
       "working": "Trabajando…",
       "thinking": "Pensando…",
       "interrupted": "Interrumpido",
