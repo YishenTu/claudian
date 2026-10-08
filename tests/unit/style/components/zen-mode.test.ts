@@ -192,29 +192,6 @@ describe('Zen mode styles', () => {
     expect(window.getComputedStyle(bar).display).toBe('none');
   });
 
-  it('recedes while idle, but not while dragged or while a prompt waits on the user', () => {
-    // jsdom matches neither :hover nor :focus-within, so the pointer and keyboard restores
-    // are checked in Obsidian; this pins the idle state and the states that must stay solid.
-    const panel = renderPanel();
-    // Unset opacity computes to "" in jsdom, which renders at full strength.
-    const opacity = () => Number(window.getComputedStyle(panel).opacity || '1');
-    const transition = () => window.getComputedStyle(panel).transition;
-    expect(opacity()).toBeLessThan(1);
-
-    // A drag must keep the dock's snap easing, so the idle fade cannot replace its transition.
-    panel.classList.add('claudian-zen--dragging', 'claudian-zen--snapped');
-    expect(opacity()).toBe(1);
-    expect(transition()).toContain('left');
-    panel.classList.remove('claudian-zen--dragging', 'claudian-zen--snapped');
-    expect(opacity()).toBeLessThan(1);
-
-    panel.dataset.tone = 'action-required';
-    expect(opacity()).toBe(1);
-
-    panel.dataset.tone = 'working';
-    expect(opacity()).toBeLessThan(1);
-  });
-
   it('suppresses Obsidian hover tooltips across the panel except the context gauge', () => {
     renderPanel();
     // Obsidian skips aria-label tooltips when the hovered element computes --no-tooltip to "true";

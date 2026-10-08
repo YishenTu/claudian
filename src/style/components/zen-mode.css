@@ -258,23 +258,6 @@
   color: var(--text-error);
 }
 
-/*
- * Idle, the floating panel recedes so the note behind it reads through. The pointer or keyboard
- * focus anywhere inside brings it back, as do a drag and a prompt waiting on the user.
- * Only the fade-out eases: the panel returns at once when the user reaches for it, and the
- * dock's placement transition is never overridden while the panel is in use.
- */
-.claudian-container.claudian-zen:not(:hover, :focus-within, .claudian-zen--dragging, [data-tone="action-required"]) {
-  opacity: 0.5;
-  transition: opacity 150ms ease;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .claudian-container.claudian-zen:not(:hover, :focus-within, .claudian-zen--dragging, [data-tone="action-required"]) {
-    transition: none;
-  }
-}
-
 /* The disclosure is the preview line itself. */
 .claudian-zen button.claudian-zen-disclosure,
 .claudian-zen button.claudian-zen-disclosure:hover,
