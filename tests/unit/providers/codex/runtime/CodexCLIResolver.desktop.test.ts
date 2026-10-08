@@ -54,6 +54,7 @@ it.each(['removed', 'incomplete', 'retained'])('discovers an updated desktop run
   const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
   const originalLocal = process.env.LOCALAPPDATA;
   const originalInstall = process.env.CODEX_INSTALL_DIR;
+  const originalPath = process.env.PATH;
   const runtimeRoot = path.join(temp, 'OpenAI', 'Codex', 'bin');
   const createRuntime = (name: string) => {
     const dir = path.join(runtimeRoot, name);
@@ -65,6 +66,7 @@ it.each(['removed', 'incomplete', 'retained'])('discovers an updated desktop run
   try {
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
     process.env.LOCALAPPDATA = temp;
+    process.env.PATH = '';
     delete process.env.CODEX_INSTALL_DIR;
     const oldPath = createRuntime('old-hash');
     const resolver = new CodexCLIResolver();
@@ -85,6 +87,8 @@ it.each(['removed', 'incomplete', 'retained'])('discovers an updated desktop run
     else process.env.LOCALAPPDATA = originalLocal;
     if (originalInstall === undefined) delete process.env.CODEX_INSTALL_DIR;
     else process.env.CODEX_INSTALL_DIR = originalInstall;
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
     fs.rmSync(temp, { recursive: true, force: true });
   }
 });

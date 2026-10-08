@@ -32,6 +32,25 @@ export function findCodexBinaryPath(
     return explicitPathBinary;
   }
 
+  if (platform === 'win32') {
+    const configuredInstallDir = process.env.CODEX_INSTALL_DIR?.trim();
+    if (configuredInstallDir) {
+      const dir = expandHomePath(stripSurroundingQuotes(configuredInstallDir));
+      if (isCompleteWindowsCodexRuntimeDir(dir)) {
+        return path.join(dir, 'codex.exe');
+      }
+    }
+  }
+
+  // Honor the inherited PATH before adding automatically discovered installations.
+  const inheritedPathBinary = findBinaryInDirectories(
+    parseCLIPathEntries(process.env.PATH, platform),
+    binaryNames,
+  );
+  if (inheritedPathBinary) {
+    return inheritedPathBinary;
+  }
+
   const preferredBinary = findBinaryInDirectories(
     getPreferredCodexBinaryDirs(platform),
     binaryNames,
@@ -71,11 +90,6 @@ function getPreferredCodexBinaryDirs(platform: NodeJS.Platform): string[] {
 
 function getPreferredWindowsCodexBinaryDirs(): string[] {
   const preferredDirs: string[] = [];
-  const configuredInstallDir = process.env.CODEX_INSTALL_DIR?.trim();
-  if (configuredInstallDir) {
-    preferredDirs.push(expandHomePath(stripSurroundingQuotes(configuredInstallDir)));
-  }
-
   const localAppData = process.env.LOCALAPPDATA;
   if (localAppData) {
     preferredDirs.push(path.join(localAppData, 'Programs', 'OpenAI', 'Codex', 'bin'));
