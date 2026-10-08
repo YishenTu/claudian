@@ -18,8 +18,6 @@ export interface ZenModeSlots {
  */
 export interface ZenModeSource {
   readonly leaf: WorkspaceLeaf;
-  /** Focuses the existing composer without revealing the source's sidebar. */
-  focusActiveInput(): void;
   /** The committed active runtime, or null while the view is not ready. */
   getZenPresentation(): ZenPresentationPort | null;
   /** The provider whose brand color the view currently shows. */

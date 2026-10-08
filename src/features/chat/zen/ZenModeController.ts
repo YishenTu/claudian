@@ -20,7 +20,6 @@ interface ZenAttachment {
   readonly source: ZenModeSource;
   readonly panel: ZenModePanel;
   readonly release: () => void;
-  previousFocus: HTMLElement | null;
 }
 
 type CollapsibleSplit = { collapsed?: unknown };
@@ -54,32 +53,8 @@ export class ZenModeController {
 
   constructor(private readonly deps: ZenModeControllerDeps) {}
 
-  createFocusInputCommand(): Command {
-    return {
-      id: 'focus-zen-mode-input',
-      name: 'Focus zen mode input',
-      checkCallback: (checking: boolean) => {
-        const attachment = this.#attachment;
-        if (!attachment) return false;
-        if (!checking) this.#toggleInputFocus(attachment);
-        return true;
-      },
-    };
-  }
-
-  #toggleInputFocus(attachment: ZenAttachment): void {
-    const composerEl = attachment.panel.slots.composerEl;
-    const activeElement = composerEl.ownerDocument.activeElement as HTMLElement | null;
-    if (composerEl.contains(activeElement)) {
-      if (attachment.previousFocus?.isConnected) {
-        attachment.previousFocus.focus({ preventScroll: true });
-      } else {
-        attachment.source.focusActiveInput();
-      }
-      return;
-    }
-    attachment.previousFocus = activeElement;
-    attachment.source.focusActiveInput();
+  getActiveLeaf(): WorkspaceLeaf | null {
+    return this.#attachment?.source.leaf ?? null;
   }
 
   createToggleHistoryCommand(): Command {
@@ -245,7 +220,7 @@ export class ZenModeController {
       position: this.deps.getPosition(),
       onPositionChange: position => this.deps.savePosition(position),
     });
-    this.#attachment = { source, panel, release: source.attachZenPresentation(panel.slots), previousFocus: null };
+    this.#attachment = { source, panel, release: source.attachZenPresentation(panel.slots) };
     panel.bind(runtime, source.getZenProviderId());
   }
 

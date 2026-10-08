@@ -54,8 +54,20 @@ export function createTabComposerPort(
   inputEl: TabDOMElements['inputEl'],
   ui: Pick<TabUIComponents, 'toolbarMenus' | 'composerDropdown' | 'fileContextManager'>,
 ): TabComposerPort {
+  let previousFocus: HTMLElement | null = null;
+  const isFocused = () => inputEl.contains(inputEl.ownerDocument.activeElement);
   return {
     focus: () => inputEl.focus(),
+    isFocused,
+    toggleFocus: () => {
+      if (isFocused()) {
+        if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+        else inputEl.focus();
+        return;
+      }
+      previousFocus = inputEl.ownerDocument.activeElement as HTMLElement | null;
+      inputEl.focus();
+    },
     appendText: (text) => {
       if (!text) return false;
       const currentValue = inputEl.value;

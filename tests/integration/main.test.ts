@@ -2664,7 +2664,7 @@ describe('ClaudianPlugin', () => {
   });
 
   it.each([
-    ['focus-zen-mode-input', 'Focus zen mode input'],
+    ['focus-zen-mode-input', 'Toggle chat input focus'],
     ['toggle-zen-mode-history', 'Toggle zen mode history'],
   ])('registers %s for hotkey assignment', async (id, name) => {
     await plugin.onload();

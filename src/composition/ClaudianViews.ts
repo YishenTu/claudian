@@ -39,6 +39,23 @@ export class ClaudianViews {
     return leaves.map(leaf => leaf.view).filter(isClaudianView);
   }
 
+  /** Chooses an existing composer without opening a collapsed sidebar. */
+  getInputFocusView(zenLeaf: WorkspaceLeaf | null): ClaudianView | null {
+    const { leftSplit, rightSplit } = this.workspace;
+    const views = this.getAllViews().filter(view => {
+      if (!view.getActiveTab()) return false;
+      if (view.leaf === zenLeaf) return true;
+      const root = view.leaf.getRoot();
+      return (root !== leftSplit && root !== rightSplit) || (root as { collapsed?: boolean }).collapsed !== true;
+    });
+    const preferred = this.getView();
+    return views.find(view => view.getActiveTab()?.composer.isFocused())
+      ?? views.find(view => view.leaf === zenLeaf)
+      ?? views.find(view => view === preferred)
+      ?? views[0]
+      ?? null;
+  }
+
   findConversationAcrossViews(conversationId: string): { view: ClaudianView; tabId: string } | null {
     for (const view of this.getAllViews()) {
       const tabManager = view.getTabManager();

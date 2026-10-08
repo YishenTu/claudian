@@ -67,6 +67,9 @@ export interface TabLinkedContentPort {
 /** Composer operations a host view drives without reaching into the composer's DOM or controls. */
 export interface TabComposerPort {
   focus(): void;
+  isFocused(): boolean;
+  /** Switches between this input and the control focused before the command entered it. */
+  toggleFocus(): void;
   /** Appends text without sending it, as if typed at the end; false when there is nothing to add. */
   appendText(text: string): boolean;
   /** Closes an open toolbar menu; true when one was open. */
