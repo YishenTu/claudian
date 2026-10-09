@@ -313,7 +313,13 @@ export class MainTurnExecution {
         restoreUnsentInput(admittedTurnRequest);
         this.#rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
         didRollbackUnsentTurn = true;
-        if (!signal.aborted) new Notice('Message was not sent. Please try again.');
+        if (!signal.aborted) {
+          const cause = error.cause;
+          const message = cause && typeof cause === 'object' && 'type' in cause && cause.type === 'execution_error'
+            && 'category' in cause && cause.category === 'configuration' && 'message' in cause && typeof cause.message === 'string'
+            ? cause.message : 'Message was not sent. Please try again.';
+          new Notice(message);
+        }
         this.reportDeferredReview();
       } else {
         hadExecutionError = true;

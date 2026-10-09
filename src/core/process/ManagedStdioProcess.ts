@@ -87,6 +87,7 @@ export class ManagedStdioProcess {
         env: this.options.env,
         stdio: this.options.stdio ?? 'pipe',
         windowsHide: true,
+        ...(this.options.killProcessTree && process.platform !== 'win32' ? { detached: true } : {}),
         ...(this.options.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
       });
     } catch (error) {
@@ -165,6 +166,7 @@ export class ManagedStdioProcess {
 
     const proc = this.proc;
     if (!proc || !this.alive) {
+      if (proc) this.#killOwnedProcessGroup(proc, 'SIGKILL');
       this.shutdownPromise = Promise.resolve();
       return this.shutdownPromise;
     }
@@ -179,6 +181,8 @@ export class ManagedStdioProcess {
       const finish = (): void => {
         if (settled) return;
         settled = true;
+        // The root may exit before descendants that ignored its graceful signal.
+        this.#killOwnedProcessGroup(proc, 'SIGKILL');
         if (killTimer !== null) window.clearTimeout(killTimer);
         if (finalTimer !== null) window.clearTimeout(finalTimer);
         unsubscribeExit?.();
@@ -268,7 +272,20 @@ export class ManagedStdioProcess {
 
   #killProcess(proc: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): boolean {
     try {
+      if (this.options.killProcessTree && process.platform !== 'win32') {
+        return this.#killOwnedProcessGroup(proc, signal);
+      }
       return terminateSpawnedProcess(proc, signal, spawn, this.resolvedSpawnSpec);
+    } catch {
+      return false;
+    }
+  }
+
+  #killOwnedProcessGroup(proc: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): boolean {
+    if (!this.options.killProcessTree || process.platform === 'win32' || !proc.pid) return false;
+    try {
+      process.kill(-proc.pid, signal);
+      return true;
     } catch {
       return false;
     }

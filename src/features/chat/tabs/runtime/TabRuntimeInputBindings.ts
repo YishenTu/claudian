@@ -22,6 +22,7 @@ export function buildTabRuntimeInputBindings(
   const { plugin } = options;
 
   const keydownHandler = (event: KeyboardEvent) => {
+    if (event.key === 'Escape' && event.defaultPrevented) return;
     if ((event.target as HTMLElement | null)?.closest?.('button, a')) return;
     const tab = runtimeRef.requirePublished();
     if (sendTabInputMessageFromExplicitEnterShortcut(tab, event)) {

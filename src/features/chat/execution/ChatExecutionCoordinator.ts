@@ -264,6 +264,9 @@ export class ChatExecutionCoordinator {
       || (this.#sessionBinding?.session.hasBackgroundWork?.() ?? false);
   }
 
+  /** The same transition-published projection used by the working indicator. */
+  get publishedBackgroundWork(): boolean { return this.#publishedBackgroundWork; }
+
   /** Work observers recompute from current state, so only transitions are published. */
   #publishBackgroundWork(): void {
     const isWorking = this.hasBackgroundWork;
@@ -375,7 +378,7 @@ export class ChatExecutionCoordinator {
     if (this.#requestController) throw new Error('A chat execution is already active');
     const controller = new AbortController();
     this.#requestController = controller;
-    const cancel = () => this.cancel();
+    const cancel = () => this.cancel({ includeBackground: false });
     signal?.addEventListener('abort', cancel, { once: true });
     if (signal?.aborted) controller.abort();
     try {
@@ -439,12 +442,12 @@ export class ChatExecutionCoordinator {
     }
   }
 
-  cancel(): void {
+  cancel(options: { includeBackground?: boolean } = {}): void {
     if (this.#requestController?.signal.aborted) return;
     this.#requestController?.abort();
     const active = this.#activeExecution;
     if (!active) {
-      if (this.hasBackgroundWork) this.#sessionBinding?.session.cancel();
+      if (options.includeBackground !== false && this.hasBackgroundWork) this.#sessionBinding?.session.cancel();
       return;
     }
     active.terminationOverride = 'cancelled';
@@ -905,10 +908,7 @@ export class ChatExecutionCoordinator {
     if (!binding || !this.#isBindingCurrent(binding)) return;
     const admitted = binding.events.accept(event, binding.model);
     if (!admitted) return;
-    if (event.type === 'background_turn_started') {
-      this.#publishBackgroundWork();
-    }
-    if (event.type === 'subagent_updated') this.#publishBackgroundWork();
+    this.#publishBackgroundWork();
     const eventWork: Promise<unknown>[] = [];
     if (event.type === 'session_state_changed' || event.type === 'permission_mode_changed') {
       eventWork.push(this.#persistSnapshot(binding, event.snapshot));
@@ -925,7 +925,6 @@ export class ChatExecutionCoordinator {
     }
     this.#trackBindingWork(binding, Promise.all(eventWork));
     if (event.type === 'background_turn_completed') {
-      this.#publishBackgroundWork();
       this.#restartIdleTimer();
     }
   }

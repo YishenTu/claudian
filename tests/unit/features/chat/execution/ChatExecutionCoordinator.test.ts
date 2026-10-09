@@ -1145,7 +1145,7 @@ describe('ChatExecutionCoordinator', () => {
     );
   });
 
-  it('publishes background work only when running children and background turns change it', async () => {
+  it.each(['subagent_updated', 'session_state_changed'] as const)('publishes background work transitions from %s', async eventType => {
     const onBackgroundWorkChanged = jest.fn();
     const harness = createHarness({ onBackgroundWorkChanged });
     await harness.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'codex' });
@@ -1154,11 +1154,13 @@ describe('ChatExecutionCoordinator', () => {
     let childrenRunning = false;
     Object.assign(session, { hasBackgroundWork: () => childrenRunning });
     let sessionSequence = 0;
-    const subagentUpdate = (status: 'running' | 'completed') => session.emit({
-      type: 'subagent_updated',
-      scope: { kind: 'session', sessionInstanceId: session.sessionInstanceId, sequence: ++sessionSequence },
-      subagent: { id: 'spawn', description: 'Helper', status, isExpanded: false, toolCalls: [] },
-    });
+    const subagentUpdate = (status: 'running' | 'completed') => {
+      const scope = { kind: 'session' as const, sessionInstanceId: session.sessionInstanceId, sequence: ++sessionSequence };
+      session.emit(eventType === 'subagent_updated' ? {
+        type: 'subagent_updated', scope,
+        subagent: { id: 'spawn', description: 'Helper', status, isExpanded: false, toolCalls: [] },
+      } : { type: 'session_state_changed', scope, snapshot: session.getSnapshot() });
+    };
     const backgroundScope = (sequence: number) => ({
       kind: 'background' as const, sessionInstanceId: session.sessionInstanceId, turnId: 'background-1', sequence,
     });

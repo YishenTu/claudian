@@ -424,6 +424,8 @@ export function buildTabRuntimeControllers(
     shouldSkipEscapeHandling: () => {
       if (builtInCommandController.isResumeDropdownVisible()) return true;
       if (ui.composerDropdown.isVisible()) return true;
+      if (sideChatController.destination === 'side') return sideChatController.runtime?.isWorking ?? false;
+      if (shell.session.hasMainBackgroundWork) return true;
       return false;
     },
   });

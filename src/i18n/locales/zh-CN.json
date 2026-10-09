@@ -440,13 +440,24 @@
         "desc": "仅传递给 Grok Build 的环境变量。自定义模型的密钥保留在此提供商范围内，并在原生配置中通过 env_key 引用。"
       }
     },
+    "deepseek": {
+      "preset": "预设",
+      "codeMode": {
+        "name": "启用代码模式",
+        "desc": "在直接工具之外添加原生 run_code。仅适用于新对话；现有对话和分叉保留已保存的模式。"
+      },
+      "environment": {
+        "name": "DeepSeek Harness 环境变量",
+        "desc": "仅传递给 DeepSeek Harness 的环境变量。使用你现有的原生 Web 配置文件、凭据、模型和 MCP 服务器。需要 dsh 0.2.0-rc.2。暂不支持 Windows。"
+      }
+    },
     "skills": {
       "subTabs": {
         "claude": "Claude Code",
         "shared": "其他服务商"
       },
       "claudeHelp": ".claude/skills/ 中的 Claude Code 技能和 .claude/commands/ 中的命令。",
-      "sharedHelp": ".agents/skills/ 中供 Codex、OpenCode、Pi 和 Grok Build 使用的共享技能。",
+      "sharedHelp": ".agents/skills/ 中供 Codex、OpenCode、Pi、Grok Build 和 DeepSeek Harness 使用的共享技能。",
       "status": {
         "error": "无法读取技能文件夹:{message}"
       },

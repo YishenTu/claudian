@@ -169,7 +169,7 @@ describe('Toolbar popover styles', () => {
     }).toEqual({ buttonReasoning: 'var(--text-muted)', buttonFastMode: 'var(--text-normal)' });
   });
 
-  it.each(['claude', 'codex', 'opencode', 'pi', 'grok'])(
+  it.each(['claude', 'codex', 'opencode', 'pi', 'grok', 'deepseek'])(
     'gives a %s model row its own brand colour for its icon when providers share one list',
     (provider) => {
       renderToolbar();

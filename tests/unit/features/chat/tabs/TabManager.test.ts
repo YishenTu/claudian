@@ -180,7 +180,7 @@ describe('TabManager provider execution orchestration', () => {
 
   it.each([
     ['a foreground turn', (tab: any) => { void tab.session.turns.run(() => Promise.resolve()); }],
-    ['provider background work', (tab: any) => { tab.executionCoordinator.hasBackgroundWork = true; }],
+    ['provider background work', (tab: any) => { tab.executionCoordinator.publishedBackgroundWork = true; }],
   ])('projects %s as working in tab bar items', async (_source, makeWorking) => {
     const { manager } = createManager();
     const tab = await manager.createTab();
@@ -223,7 +223,7 @@ describe('TabManager provider execution orchestration', () => {
       }),
     ]);
 
-    Object.defineProperty(tab!.executionCoordinator, 'hasBackgroundWork', {
+    Object.defineProperty(tab!.executionCoordinator, 'publishedBackgroundWork', {
       configurable: true,
       value: true,
     });

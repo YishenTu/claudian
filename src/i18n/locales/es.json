@@ -440,13 +440,24 @@
         "desc": "Variables de entorno que se pasan solo a Grok Build. Los secretos de los modelos personalizados permanecen en el ámbito de este proveedor y se referencian desde la configuración nativa mediante env_key."
       }
     },
+    "deepseek": {
+      "preset": "Preset",
+      "codeMode": {
+        "name": "Activar modo código",
+        "desc": "Añade run_code nativo junto a las herramientas directas. Se aplica a conversaciones nuevas; las conversaciones y bifurcaciones existentes conservan su modo guardado."
+      },
+      "environment": {
+        "name": "Variables de entorno de DeepSeek Harness",
+        "desc": "Variables de entorno pasadas solo a DeepSeek Harness. Usa tu perfil web nativo, credenciales, modelos y servidores MCP existentes. Requiere dsh 0.2.0-rc.2. Windows aún no es compatible."
+      }
+    },
     "skills": {
       "subTabs": {
         "claude": "Claude Code",
         "shared": "Otros proveedores"
       },
       "claudeHelp": "Skills de Claude Code en .claude/skills/ y comandos en .claude/commands/.",
-      "sharedHelp": "Skills compartidos en .agents/skills/ para Codex, OpenCode, Pi y Grok Build.",
+      "sharedHelp": "Skills compartidos en .agents/skills/ para Codex, OpenCode, Pi, Grok Build y DeepSeek Harness.",
       "status": {
         "error": "No se pudieron leer las carpetas de skills: {message}"
       },

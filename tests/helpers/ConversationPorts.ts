@@ -17,7 +17,7 @@ export function createTestTabSession(options: {
 } & Pick<TabSessionOptions, 'dismissInteractions' | 'hasDetachedWork'> = {}): TabSession {
   const { getState, coordinator, ...sessionOptions } = options;
   const execution = {
-    cancel: () => coordinator?.cancel(),
+    cancel: (options?: Parameters<ChatExecutionCoordinator['cancel']>[0]) => coordinator?.cancel(options),
     get hasBackgroundWork() { return coordinator?.hasBackgroundWork ?? false; },
   };
   return new TabSession(

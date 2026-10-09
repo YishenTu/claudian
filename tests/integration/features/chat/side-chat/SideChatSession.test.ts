@@ -38,6 +38,19 @@ function turn(text: string) {
 }
 
 describe('SideChatSession', () => {
+  it('cancels provider-owned jobs when there is no requested or automatic turn', async () => {
+    const harness = createSession();
+    const running = harness.session.execute(turn('Start a job'));
+    await waitFor(() => harness.backend.sessions.length === 1);
+    const native = harness.backend.latest;
+    native.complete(); await running;
+    Object.assign(native, { hasBackgroundWork: () => true });
+    expect(harness.session.hasBackgroundWork).toBe(true);
+    harness.session.cancel();
+    expect(native.cancelCalls).toBe(1);
+    await harness.session.dispose();
+  });
+
   it('rejects duplicate, out-of-order, foreign, and completed background events before publishing them', async () => {
     const events: ProviderSessionEvent[] = [];
     const harness = createSession({ onSessionEvent: event => { events.push(event); } });

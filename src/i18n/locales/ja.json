@@ -440,13 +440,24 @@
         "desc": "Grok Build にのみ渡す環境変数。カスタムモデルのシークレットはこのプロバイダーのスコープ内に留まり、ネイティブ設定からは env_key で参照されます。"
       }
     },
+    "deepseek": {
+      "preset": "プリセット",
+      "codeMode": {
+        "name": "コードモードを有効化",
+        "desc": "直接ツールに加えてネイティブの run_code を追加します。新しい会話に適用され、既存の会話とフォークは保存済みのモードを維持します。"
+      },
+      "environment": {
+        "name": "DeepSeek Harness 環境変数",
+        "desc": "DeepSeek Harness にのみ渡される環境変数。既存のネイティブ Web プロファイル、認証情報、モデル、MCP サーバーを使用します。dsh 0.2.0-rc.2 が必要です。Windows はまだサポートされていません。"
+      }
+    },
     "skills": {
       "subTabs": {
         "claude": "Claude Code",
         "shared": "その他のプロバイダー"
       },
       "claudeHelp": ".claude/skills/ の Claude Code スキルと .claude/commands/ のコマンド。",
-      "sharedHelp": "Codex、OpenCode、Pi、Grok Build 用の .agents/skills/ にある共有スキル。",
+      "sharedHelp": "Codex、OpenCode、Pi、Grok Build、DeepSeek Harness 用の .agents/skills/ にある共有スキル。",
       "status": {
         "error": "スキルフォルダーを読み取れませんでした: {message}"
       },

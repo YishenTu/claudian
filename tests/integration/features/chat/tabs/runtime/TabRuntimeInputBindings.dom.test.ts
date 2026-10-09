@@ -3,7 +3,8 @@ import '@/providers';
 
 import { holdResponse } from '@test/helpers/ConversationPorts';
 import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
-import { fireEvent } from '@testing-library/dom';
+import { fireEvent, getByRole, waitFor } from '@testing-library/dom';
+import { axe } from 'jest-axe';
 import { App, Component } from 'obsidian';
 
 import type { ChatMessage, Conversation } from '@/core/types';
@@ -15,10 +16,13 @@ import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvi
 
 const originalResizeObserver = globalThis.ResizeObserver;
 let tab: AssembledTabRuntime;
+let plugin: ChatFeatureHost;
+let harness: ReturnType<typeof createHarness>;
+let releaseResponse: () => Promise<void>;
 
 beforeEach(async () => {
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
-  const harness = createHarness();
+  harness = createHarness();
   const app = new App();
   Object.assign(app.vault.adapter, { basePath: '/vault' });
   Object.assign(app.vault, { on: () => ({}), offref: () => undefined });
@@ -26,7 +30,7 @@ beforeEach(async () => {
     id: 'conversation-1', providerId: 'claude', selectedModel: 'claude-sonnet-4-5',
     sessionId: 'main-session', messages: [],
   } as unknown as Conversation;
-  const plugin = {
+  plugin = {
     ...(harness.plugin as ChatFeatureHost), app,
     getCommittedSettings: () => plugin.settings,
     settings: {
@@ -38,6 +42,11 @@ beforeEach(async () => {
     getConversationSummary: () => conversation,
     getConversationSync: () => conversation,
     getConversationList: () => [conversation],
+    executionPersistence: {
+      registerExecutionBinding: () => {}, releaseExecutionBinding: () => {},
+      persistExecutionSnapshot: async () => true, assertConversationExecutionAuthority: async () => {},
+      recordConversationActivity: async () => {},
+    },
   } as unknown as ChatFeatureHost;
   tab = await createTabRuntime({
     plugin, conversation, component: new Component(),
@@ -46,7 +55,7 @@ beforeEach(async () => {
     getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
   });
   jest.useFakeTimers();
-  holdResponse(tab.session.turns);
+  releaseResponse = holdResponse(tab.session.turns);
   Object.defineProperties(tab.dom.messagesEl, {
     clientHeight: { configurable: true, value: 500 },
     scrollHeight: { configurable: true, writable: true, value: 1000 },
@@ -71,6 +80,28 @@ async function streamText(): Promise<void> {
     { content: '', role: 'assistant' } as ChatMessage,
   );
 }
+
+it('routes Escape through the selected main session for published jobs-only work', async () => {
+  await releaseResponse();
+  await tab.executionCoordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+  await tab.executionCoordinator.prepare();
+  const native = harness.backend.latest;
+  let working = true;
+  Object.assign(native, { hasBackgroundWork: () => working });
+  native.emitSessionEvent({ type: 'session_state_changed', snapshot: native.getSnapshot() });
+  expect(tab.state.isStreaming).toBe(false);
+  expect(tab.session.isWorking).toBe(true);
+  expect(tab.session.hasMainBackgroundWork).toBe(true);
+  const input = getByRole(tab.dom.inputComposerEl, 'textbox');
+  expect(tab.controllers.sideChatController.destination).toBe('main');
+  expect(tab.ui.composerDropdown.isVisible()).toBe(false);
+  fireEvent.keyDown(input, { key: 'Escape' });
+  expect(native.cancelCalls).toBe(1);
+  working = false;
+  native.emitSessionEvent({ type: 'session_state_changed', snapshot: native.getSnapshot() });
+  fireEvent.keyDown(input, { key: 'Escape' });
+  expect(native.cancelCalls).toBe(1);
+});
 
 it.each([
   { name: 'tool block', growth: 36, movement: 1 },
@@ -151,4 +182,36 @@ it.each(['pointerup', 'pointercancel'])('keeps following through layout scrolls 
 
   expect(tab.state.autoScrollEnabled).toBe(true);
   expect(tab.dom.messagesEl.scrollTop).toBe(1036);
+});
+
+
+it('cancels reference preparation with Escape while leaving existing background work running', async () => {
+  await releaseResponse();
+  jest.useRealTimers();
+  await tab.executionCoordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+  await tab.executionCoordinator.prepare();
+  const native = harness.backend.latest;
+  Object.assign(native, { hasBackgroundWork: () => true });
+  native.emitSessionEvent({ type: 'session_state_changed', snapshot: native.getSnapshot() });
+  let resolveHistory!: (value: Conversation | null) => void;
+  const history = new Promise<Conversation | null>(resolve => { resolveHistory = resolve; });
+  const read = jest.fn(() => history);
+  Object.assign(plugin, { getConversationById: read });
+  const draft = '@[Source](claudian-session:conv-1-source)';
+  const input = getByRole(tab.dom.inputComposerEl, 'textbox');
+  tab.dom.inputEl.value = draft;
+  const sending = tab.controllers.inputController.sendMessage();
+  try {
+    await waitFor(() => expect(read).toHaveBeenCalled());
+    expect(tab.controllers.inputController.isPreparingMainTurn).toBe(true);
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(native.cancelCalls).toBe(0);
+    resolveHistory(null); await sending;
+    expect(tab.dom.inputEl.value).toBe(draft);
+    expect(tab.session.hasMainBackgroundWork).toBe(true);
+    expect((await axe(input)).violations).toEqual([]);
+    // Once preparation has ended, the same user action reaches background Stop.
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(native.cancelCalls).toBe(1);
+  } finally { resolveHistory(null); await sending; }
 });

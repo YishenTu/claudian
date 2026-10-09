@@ -9,6 +9,7 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
+import { getDeepSeekProviderSettings } from '@/providers/deepseek/settings';
 import { getGrokProviderSettings, updateCurrentGrokCatalog } from '@/providers/grok/settings';
 import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 import { getPiProviderSettings } from '@/providers/pi/settings';
@@ -41,10 +42,12 @@ it.each(cases)('$id keeps an unavailable saved selection unchanged', ({ id: prov
   populate(settings);
   const current = settings.providerConfigs[providerId]!;
   current.visibleModels = [...current.visibleModels as string[], 'missing-model'];
+  if (providerId === 'deepseek') current.visibleModels = ['deepseek:native/missing-model'];
   if (providerId === 'pi') current.visibleModels = ['pi:anthropic/missing-model'];
   if (providerId === 'grok') current.visibleModels = ['missing-model'];
   if (providerId === 'codex') current.visibleModels = ['missing-model'];
   const decoded = {
+    deepseek: getDeepSeekProviderSettings,
     claude: getClaudeProviderSettings,
     codex: getCodexProviderSettings,
     grok: getGrokProviderSettings,
@@ -76,7 +79,10 @@ it.each(cases)('$id does not restore removed models from an older selected snaps
   const unavailable = await storage.load();
   expect(unavailable.providerConfigs[id]!.visibleModels).toEqual(selected);
   expect(read(unavailable)).toEqual([]);
-  expect(ProviderRegistry.getChatUIConfig(id).getModelOptions(unavailable)).toEqual([]);
+  const options = ProviderRegistry.getChatUIConfig(id).getModelOptions(unavailable);
+  const unavailableOption = expect.objectContaining({ value: (selected as string[])[0], label: expect.stringContaining('unavailable') });
+  const expectedOptions = id === 'deepseek' ? [unavailableOption] : [];
+  expect(options).toEqual(expectedOptions);
 });
 
 it.each(cases)('$id keeps runtime catalog and selection intact when persistence fails', async ({ id, populate, read }) => {

@@ -73,7 +73,7 @@ export interface InputControllerDeps {
   canStartTurn: () => boolean;
   isClosing: () => boolean;
   /** The tab-owned turn activity and its single cancellation recipe. */
-  session: Pick<TabSession, 'turns' | 'cancelTurn'>;
+  session: Pick<TabSession, 'turns' | 'cancelTurn' | 'hasMainBackgroundWork'>;
   /** Destination seam for the shared composer; absent means main-only. */
   getSideChatController?: () => SideChatController | null;
 }
@@ -554,19 +554,21 @@ export class InputController {
   }
 
   cancelStreaming(): void {
+    const cancelledPreparation = this.preparations.isPreparing(this.deps.drafts.destination);
     this.preparations.abort(this.deps.drafts.destination);
     const sideChat = this.deps.getSideChatController?.() ?? null;
     if (sideChat?.destination === 'side') {
       sideChat.cancelSide();
       return;
     }
-    this.#cancelMainStreaming();
+    this.#cancelMainStreaming(!cancelledPreparation);
   }
 
-  #cancelMainStreaming(): void {
+  #cancelMainStreaming(includeBackground: boolean): void {
     this.asyncQuestions.cancelSubmissions();
     // Settlement already owns the response; only queued input can still be withdrawn.
     if (!this.turns.isInFlight) {
+      if (includeBackground && this.deps.session.hasMainBackgroundWork) this.deps.session.cancelTurn('user');
       this.queue.restoreToComposer();
       return;
     }

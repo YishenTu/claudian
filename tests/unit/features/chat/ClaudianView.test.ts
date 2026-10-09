@@ -1231,6 +1231,8 @@ describe('ClaudianView Escape handling', () => {
   function createEscapeHarness(options: {
     isStreaming: boolean;
     toolbarMenuOpen?: boolean;
+    backgroundWork?: boolean;
+    composerDropdownOpen?: boolean;
   }): {
     cancelStreaming: jest.Mock;
     closeOpenMenu: jest.Mock;
@@ -1248,8 +1250,11 @@ describe('ClaudianView Escape handling', () => {
       tabManager: {
         getActiveTab: jest.fn().mockReturnValue({
           state: { isStreaming: options.isStreaming },
+          session: { hasMainBackgroundWork: options.backgroundWork ?? false },
+          ui: { composerDropdown: { handleKeydown: () => options.composerDropdownOpen ?? false }, promptSuggestion: { handleKeydown: () => false } },
           controllers: {
             inputController: { cancelStreaming },
+            builtInCommandController: { handleResumeKeydown: () => false },
             sideChatController: { destination: 'main', runtime: null },
           },
           composer: { closeOpenMenu },
@@ -1335,6 +1340,15 @@ describe('ClaudianView Escape handling', () => {
 
     expect(escape()).toBe(false);
     expect(cancelStreaming).not.toHaveBeenCalled();
+  });
+
+  it('routes published background work through scoped Escape while preserving dropdown consumption', () => {
+    const active = createEscapeHarness({ isStreaming: false, backgroundWork: true });
+    active.escape();
+    expect(active.cancelStreaming).toHaveBeenCalledTimes(1);
+    const dropdown = createEscapeHarness({ isStreaming: false, backgroundWork: true, composerDropdownOpen: true });
+    dropdown.escape();
+    expect(dropdown.cancelStreaming).not.toHaveBeenCalled();
   });
 
   it('exits session inline rename before handling other scoped Escape actions', () => {

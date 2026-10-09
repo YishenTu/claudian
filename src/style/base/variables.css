@@ -13,6 +13,8 @@
   --claudian-brand-pi-rgb: 255, 255, 255;
   --claudian-brand-grok: #fff;
   --claudian-brand-grok-rgb: 255, 255, 255;
+  --claudian-brand-deepseek: #4D6BFE;
+  --claudian-brand-deepseek-rgb: 77, 107, 254;
   --claudian-error: #dc3545;
   --claudian-compact: #5bc0de;
 
@@ -64,4 +66,10 @@ body.theme-light .claudian-container {
 .claudian-container .claudian-model-option[data-provider="grok"] {
   --claudian-brand: var(--claudian-brand-grok);
   --claudian-brand-rgb: var(--claudian-brand-grok-rgb);
+}
+
+.claudian-container[data-provider="deepseek"],
+.claudian-container .claudian-model-option[data-provider="deepseek"] {
+  --claudian-brand: var(--claudian-brand-deepseek);
+  --claudian-brand-rgb: var(--claudian-brand-deepseek-rgb);
 }
