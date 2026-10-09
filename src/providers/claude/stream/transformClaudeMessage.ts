@@ -117,6 +117,21 @@ function describeAssistantError(error: SDKAssistantMessageError): string {
 }
 
 /**
+ * An inherited credential can make a separate CLI subscription fail only inside Claudian.
+ * The hint stays conditional: it does not read the environment or claim a subscription was detected.
+ */
+const AUTHENTICATION_CONFLICT_HINT =
+  'If the same CLI works with a subscription separately, an inherited ANTHROPIC_API_KEY or '
+  + 'ANTHROPIC_AUTH_TOKEN may be interfering. In Settings → Providers → Claude → Custom variables '
+  + '(Claude only), add an empty assignment only for the conflicting credential you intend to disable, '
+  + 'such as ANTHROPIC_API_KEY= or ANTHROPIC_AUTH_TOKEN=.';
+
+function withAuthenticationConflictHint(error: SDKAssistantMessageError, diagnostic: string): string {
+  if (error !== 'authentication_failed') return diagnostic;
+  return `${diagnostic}\n\n${AUTHENTICATION_CONFLICT_HINT}`;
+}
+
+/**
  * API failures arrive as a synthetic assistant message whose text is the CLI's error prose (for
  * example a usage-limit reset time). That text is error copy, not a reply. Errors on real model
  * messages (such as `max_output_tokens` after partial output) keep their prose as a reply.
@@ -437,7 +452,8 @@ function* transformAssistantMessage(
 
   if (message.error !== undefined) {
     const prose = errorCarrier ? extractClaudeTextContent(content).trim() : '';
-    yield { type: 'error', content: prose || describeAssistantError(message.error) };
+    const diagnostic = prose || describeAssistantError(message.error);
+    yield { type: 'error', content: withAuthenticationConflictHint(message.error, diagnostic) };
   }
 
   for (const block of content) {

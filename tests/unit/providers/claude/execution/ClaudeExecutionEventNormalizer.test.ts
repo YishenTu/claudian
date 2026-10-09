@@ -197,14 +197,33 @@ describe('ClaudeExecutionEventNormalizer tool results', () => {
 
 describe('ClaudeExecutionEventNormalizer api error messages', () => {
   const RESET_TEXT = "You've hit your session limit · resets 4:10pm (Europe/Berlin)";
+  const AUTH_FALLBACK = 'Claude authentication failed. Sign in again or check your API key.';
 
-  const apiErrorMessage = (content: unknown[]) => msg({
+  const apiErrorMessage = (content: unknown[], error = 'rate_limit') => msg({
     type: 'assistant',
-    error: 'rate_limit',
+    error,
     isApiErrorMessage: true,
-    apiErrorStatus: 429,
+    apiErrorStatus: error === 'rate_limit' ? 429 : 401,
     message: { model: '<synthetic>', content },
   });
+
+  function expectAuthenticationOverrideGuidance(message: string): void {
+    expect(message).toContain('If the same CLI works with a subscription separately');
+    expect(message).toContain('inherited ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN');
+    expect(message).toContain('Settings → Providers → Claude → Custom variables');
+    expect(message).toContain('Claude only');
+    expect(message).toContain('only for the conflicting credential you intend to disable');
+    expect(message).toContain('ANTHROPIC_API_KEY=');
+    expect(message).toContain('ANTHROPIC_AUTH_TOKEN=');
+    expect(message).not.toMatch(/subscription (?:was |has been )?detected/i);
+    expect(message).not.toMatch(/process\.env/);
+  }
+
+  function nativeError(events: ReturnType<ClaudeExecutionEventNormalizer['normalize']>): string {
+    const error = events.find(event => event.type === 'native_error');
+    if (error?.type !== 'native_error') throw new Error('Missing native error');
+    return error.message;
+  }
 
   it('uses the human-readable text of a synthetic API error message as the native error message', () => {
     const normalizer = new ClaudeExecutionEventNormalizer();
@@ -348,6 +367,71 @@ describe('ClaudeExecutionEventNormalizer api error messages', () => {
 
     expect(events).toContainEqual({ type: 'native_error', message: prose });
     expect(events.filter(event => event.type === 'output')).toEqual([]);
+  });
+
+  it('keeps native authentication prose and adds provider-only override guidance without assistant text', () => {
+    const prose = 'API Error: 401 Invalid authentication credentials';
+    const inheritedKey = 'sk-ant-test-inherited-key';
+    const inheritedToken = 'sk-ant-test-inherited-token';
+    const previousKey = process.env.ANTHROPIC_API_KEY;
+    const previousToken = process.env.ANTHROPIC_AUTH_TOKEN;
+    process.env.ANTHROPIC_API_KEY = inheritedKey;
+    process.env.ANTHROPIC_AUTH_TOKEN = inheritedToken;
+    try {
+      const events = new ClaudeExecutionEventNormalizer().normalize(
+        apiErrorMessage([{ type: 'text', text: prose }], 'authentication_failed'),
+        'requested',
+      );
+      const message = nativeError(events);
+
+      expect(message.startsWith(prose)).toBe(true);
+      expect(message).not.toBe(prose);
+      expectAuthenticationOverrideGuidance(message);
+      expect(message).not.toContain(inheritedKey);
+      expect(message).not.toContain(inheritedToken);
+      expect(events.filter(event => event.type === 'output')).toEqual([]);
+    } finally {
+      if (previousKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = previousKey;
+      if (previousToken === undefined) delete process.env.ANTHROPIC_AUTH_TOKEN;
+      else process.env.ANTHROPIC_AUTH_TOKEN = previousToken;
+    }
+  });
+
+  it.each([
+    ['empty', []],
+    ['whitespace', [{ type: 'text', text: '  \n\t ' }]],
+  ])('appends the override hint to the fallback when synthetic authentication content is %s', (_label, content) => {
+    const events = new ClaudeExecutionEventNormalizer().normalize(
+      apiErrorMessage(content, 'authentication_failed'),
+      'requested',
+    );
+    const message = nativeError(events);
+
+    expect(message.startsWith(AUTH_FALLBACK)).toBe(true);
+    expect(message).not.toContain('  \n\t ');
+    expectAuthenticationOverrideGuidance(message);
+    expect(events.filter(event => event.type === 'output')).toEqual([]);
+  });
+
+  it('keeps partial assistant text when a real model message fails authentication', () => {
+    const events = new ClaudeExecutionEventNormalizer().normalize(msg({
+      type: 'assistant',
+      error: 'authentication_failed',
+      message: {
+        model: 'claude-sonnet-4-5',
+        content: [{ type: 'text', text: 'Partial response' }],
+      },
+    }), 'requested');
+    const message = nativeError(events);
+
+    expect(message.startsWith(AUTH_FALLBACK)).toBe(true);
+    expect(message).not.toContain('Partial response');
+    expectAuthenticationOverrideGuidance(message);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'output',
+      event: expect.objectContaining({ type: 'text_delta', text: 'Partial response' }),
+    }));
   });
 
   it('leaves synthetic assistant messages without an error field unchanged', () => {

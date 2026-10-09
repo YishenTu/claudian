@@ -132,6 +132,30 @@ Either:
 1. Install the native binary (recommended).
 2. Add the Node.js path in Settings → Environment: `PATH=/path/to/node/bin`.
 
+### Authentication fails while the CLI subscription works
+
+Claude can report `authentication_failed` inside Obsidian while the selected CLI still works with a
+subscription in a terminal. An inherited `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` can take
+precedence over that sign-in. The chat error includes the same recovery steps.
+
+If the same CLI works with a subscription separately, an inherited `ANTHROPIC_API_KEY` or
+`ANTHROPIC_AUTH_TOKEN` may be interfering. In Settings → Providers → Claude → Custom variables
+(Claude only), add an empty assignment only for the conflicting credential you intend to disable,
+such as `ANTHROPIC_API_KEY=` or `ANTHROPIC_AUTH_TOKEN=`.
+
+The reporter-verified recovery is the API-key override. An inherited Windows user `ANTHROPIC_API_KEY`
+blocked subscription chat until Claude's Custom variables contained:
+
+```
+ANTHROPIC_API_KEY=
+```
+
+Check other credential overrides the same way only when that credential is the one you intend to
+disable, for example `ANTHROPIC_AUTH_TOKEN=`. Leave credentials you still use unchanged. Do not put
+these assignments in the shared environment or change other providers.
+
+When asking for help, share the variable names involved rather than their secret values.
+
 ### More help
 
 For provider-specific installation and configuration guidance, refer to the provider documentation linked in the [Requirements](#requirements) section. If you have a feature request or run into a bug, please [submit a GitHub issue](https://github.com/YishenTu/claudian/issues).
