@@ -25,9 +25,11 @@ export interface NativePeerLifecycle {
 /** Native wire peer. All adapter decoding and lifecycle logic runs in production code. */
 export class NativePeer {
   readonly calls: Array<{ method: string; args: Record<string, any> }> = [];
+  /** Methods whose HTTP request the client closed before a response, which native treats as cancellation. */
+  readonly abandoned: string[] = [];
   readonly streams = new Map<string, { socket: WebSocket; endpoint: string; args: Record<string, any> }>();
   onCall: (method: string, args: Record<string, any>) => unknown | Promise<unknown> = () => ({});
-  onOpen: (endpoint: string, args: Record<string, any>, send: (value: unknown) => void) => void = () => {};
+  onOpen: (endpoint: string, args: Record<string, any>, send: (value: unknown) => void, fail?: (error: { code: string; message: string }) => void) => void = () => {};
   private readonly server = createServer((request, response) => {
     if (request.url === '/?token=fixture') {
       response.writeHead(302, { 'Set-Cookie': 'session=fixture', Location: '/' }).end(); return;
@@ -39,6 +41,7 @@ export class NativePeer {
       const frame = JSON.parse(body);
       const args = frame.payload.args;
       this.calls.push({ method: frame.method, args });
+      response.on('close', () => { if (!response.writableEnded) this.abandoned.push(frame.method); });
       void Promise.resolve().then(() => this.onCall(frame.method, args)).then(
         value => response.end(JSON.stringify({ rpcId: frame.rpcId, result: { ok: true, value } })),
         error => response.end(JSON.stringify({ rpcId: frame.rpcId, result: { ok: false, error: { message: String(error), ...(error && typeof error.code === 'string' ? { code: error.code } : {}) } } })),
@@ -56,7 +59,7 @@ export class NativePeer {
       this.streams.set(frame.streamId, { socket, endpoint: frame.endpoint, args: frame.payload.args });
       const send = (value: unknown): void => { socket.send(JSON.stringify({ type: 'item', streamId: frame.streamId, value })); };
       if (frame.endpoint === '$events') send({ type: 'ready', clientId: 'fixture-client' });
-      else this.onOpen(frame.endpoint, frame.payload.args, send);
+      else this.onOpen(frame.endpoint, frame.payload.args, send, error => socket.send(JSON.stringify({ type: 'error', streamId: frame.streamId, error })));
     }));
     await new Promise<void>(resolve => this.server.listen(0, '127.0.0.1', resolve));
     this.client = await this.connect();

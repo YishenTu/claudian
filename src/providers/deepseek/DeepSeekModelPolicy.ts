@@ -34,7 +34,12 @@ export const deepseekModelPolicy: ProviderModelPolicy = {
       .map(effort => ({ value: effort.id, label: effort.name }));
   },
   getDefaultReasoningValue(model, settings) {
-    return getDeepSeekProviderSettings(settings).preferredReasoningByModel[model] ?? DEFAULT_REASONING_VALUE;
+    const current = getDeepSeekProviderSettings(settings);
+    const efforts = current.discoveredModels.find(row => row.encodedId === model)?.reasoning ?? [];
+    const preferred = current.preferredReasoningByModel[model];
+    if (preferred && efforts.some(effort => effort.id === preferred)) return preferred;
+    // Native rejects any other effort for a model advertising only Off (thinking disabled).
+    return efforts.length > 0 && efforts.every(effort => effort.id === 'off') ? 'off' : DEFAULT_REASONING_VALUE;
   },
   applyModelDefaults(model, settings) {
     if (!settings || typeof settings !== 'object') return;

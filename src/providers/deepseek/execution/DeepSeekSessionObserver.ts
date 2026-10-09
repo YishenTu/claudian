@@ -33,7 +33,8 @@ export class DeepSeekSessionObserver {
     private readonly client: DeepSeekRemoteClient,
     private readonly roster: DeepSeekRoster,
     readonly rootId: string,
-    private readonly onFollow: (sessionId: string, frame: Record<string, unknown>) => void,
+    /** Applies one follow frame; the returned promise settles once the subscriber has applied it. */
+    private readonly onFollow: (sessionId: string, frame: Record<string, unknown>) => Promise<void> | void,
     private readonly onError: (error: Error) => void,
   ) {}
 
@@ -145,6 +146,8 @@ export class DeepSeekSessionObserver {
         const descriptor: unknown = Array.isArray(catalog) ? catalog.find(item => isRecord(item) && item.id === id) : undefined;
         // The native catalog supplies the address discriminator. Never guess a mode or activate cold children.
         if (!isRecord(descriptor) || (descriptor.mode !== 'one-shot' && descriptor.mode !== 'continuable')) continue;
+        // rc.2 rejects following a child listed before its durable `subagent/descriptor` identity.
+        if (!isRecord(this.roster.projection(id)?.subagent)) continue;
         mode = descriptor.mode;
       }
       this.follow(id, mode, parent);
@@ -187,7 +190,9 @@ export class DeepSeekSessionObserver {
         if (event.type === 'tool/call' && typeof data.callId === 'string') state.tools.add(data.callId);
         if (event.type === 'tool/result' && isRecord(data.message) && typeof data.message.toolCallId === 'string') state.tools.delete(data.message.toolCallId);
       }
-      this.onFollow(id, frame); this.changed();
+      const applied = this.onFollow(id, frame);
+      // Subscribers apply frames asynchronously; listeners and waiters re-evaluate once this one is applied.
+      if (applied) void applied.then(() => { if (live()) this.changed(); }); else this.changed();
     }, fail);
     state.offJobs = followJobs();
   }

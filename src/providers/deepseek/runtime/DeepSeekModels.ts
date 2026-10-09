@@ -61,4 +61,3 @@ function decodeCatalog(value: unknown): DeepSeekModel[] {
   }
   return models;
 }
-

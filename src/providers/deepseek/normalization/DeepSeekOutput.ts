@@ -15,6 +15,8 @@ export class DeepSeekReplayError extends Error {
 }
 
 interface Block { kind: 'text' | 'reasoning'; text: string }
+/** A tool call as presented to Claudian: mapped name and normalized input. */
+export interface DeepSeekToolCall { readonly name: string; readonly input: Record<string, unknown> }
 interface Attempt {
   id: string;
   nextIndex: number;
@@ -27,7 +29,7 @@ interface Attempt {
 export class DeepSeekOutput {
   private readonly attempts = new Map<string, Attempt>();
   private readonly records = new Set<number>();
-  private readonly tools = new Set<string>();
+  private readonly calls = new Map<string, DeepSeekToolCall>();
   private readonly completedTools = new Set<string>();
   private readonly scriptCalls = new Map<string, Map<string, ScriptToolCallItem>>();
   private current?: Attempt;
@@ -104,6 +106,17 @@ export class DeepSeekOutput {
     }
   }
 
+  /** Details of a tool call observed in this turn, including code-mode dispatches. */
+  call(id: string): DeepSeekToolCall | undefined {
+    const call = this.calls.get(id);
+    if (call) return call;
+    for (const calls of this.scriptCalls.values()) {
+      const nested = calls.get(id);
+      if (nested) return { name: nested.name, input: nested.input ?? {} };
+    }
+    return undefined;
+  }
+
   private select(id: string, key: string, revision: number): Attempt {
     let attempt = this.attempts.get(key);
     if (attempt && attempt.id !== id) {
@@ -159,10 +172,11 @@ export class DeepSeekOutput {
 
   private toolStart(id: unknown, name: unknown, args: unknown, parent?: unknown): void {
     if (typeof id !== 'string' || typeof name !== 'string') throw new Error('Malformed DeepSeek tool call.');
-    if (this.tools.has(id)) return;
-    this.tools.add(id); this.begin();
-    const input = toolInput(name, args);
-    this.emit({ type: 'tool_started', toolCallId: id, name: TOOL_NAMES[name] ?? name, input,
+    if (this.calls.has(id)) return;
+    const call = { name: deepseekToolName(name), input: toolInput(name, args) };
+    this.calls.set(id, call); this.begin();
+    const input = { ...call.input };
+    this.emit({ type: 'tool_started', toolCallId: id, name: call.name, input,
       toolScope: { kind: 'main' }, ...(typeof parent === 'string' ? { parentToolCallId: parent } : {}),
       providerPayload: { rawName: name },
     });
@@ -193,7 +207,7 @@ export class DeepSeekOutput {
     const calls = this.scriptCalls.get(data.rootCallId) ?? new Map<string, ScriptToolCallItem>();
     const previous = calls.get(data.subCallId);
     if (previous && previous.status !== 'running' && !completed) return;
-    calls.set(data.subCallId, { name: TOOL_NAMES[data.name] ?? data.name, input: toolInput(data.name, data.arguments),
+    calls.set(data.subCallId, { name: deepseekToolName(data.name), input: toolInput(data.name, data.arguments),
       status: completed ? data.isError === true ? 'error' : 'completed' : 'running',
       ...(completed && data.isError === true ? { error: deepseekText(data.content) } : {}),
     });
@@ -214,6 +228,8 @@ export class DeepSeekOutput {
     } });
   }
 }
+
+export function deepseekToolName(name: string): string { return TOOL_NAMES[name] ?? name; }
 
 export function deepseekText(content: unknown): string {
   return Array.isArray(content) ? content.flatMap(block => isRecord(block) && block.type === 'text' && typeof block.text === 'string' ? [block.text] : []).join('\n') : '';

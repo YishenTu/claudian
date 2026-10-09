@@ -24,7 +24,7 @@ it('keeps status changes during roster loading and waits for descendant job base
   let childJobs!: (value: unknown) => void;
   peer.onCall = () => new Promise(resolve => { releaseRoster = resolve; });
   peer.onOpen = (endpoint, args, send) => {
-    if (endpoint === 'session/control') send({ type: 'baseline', value: { projections: { root: { values: { subagentCatalog: [{ id: 'child', mode: 'one-shot' }, { id: 'cold', mode: 'continuable' }] } } } } });
+    if (endpoint === 'session/control') send({ type: 'baseline', value: { projections: { root: { values: { subagentCatalog: [{ id: 'child', mode: 'one-shot' }, { id: 'cold', mode: 'continuable' }] } }, child: { values: { subagent: { mode: 'one-shot', seq: 1 } } } } } });
     if (endpoint === 'session/follow') send({ type: 'snapshot', cursor: 0, records: [], projections: { asOfSeq: 0, values: {} } });
     if (endpoint === 'job/list') {
       if (args.request.sessionId === 'child') childJobs = send;
@@ -54,6 +54,37 @@ it('keeps status changes during roster loading and waits for descendant job base
   childJobs({ type: 'rows', jobs: [] });
   await until(() => !observer!.hasWork());
   expect(observer.hasWork()).toBe(false);
+});
+
+it('follows a native child only after its durable identity, and keeps it busy until then', async () => {
+  const rejected: unknown[] = [];
+  const errors: Error[] = [];
+  peer.onCall = () => ({ items: [row('root'), row('child', { parentSessionId: 'root', origin: 'subagent', running: true })] });
+  peer.onOpen = (endpoint, args, send, fail) => {
+    if (endpoint === 'session/control') send({ type: 'baseline', value: { projections: { root: { values: { subagentCatalog: [{ id: 'child', mode: 'one-shot', label: 'task' }] } }, child: { values: { subagent: null } } } } });
+    if (endpoint === 'session/follow') {
+      // rc.2 validates the child's durable descriptor identity before following.
+      if (args.request.address.kind === 'subagent' && !(roster.projection('child')?.subagent)) {
+        rejected.push(args.request.address); fail!({ code: 'subagent/catalog-diagnostic', message: 'subagent descriptor is corrupt' }); return;
+      }
+      send({ type: 'snapshot', cursor: 0, records: [], projections: { asOfSeq: 0, values: {} } });
+    }
+    if (endpoint === 'job/list') send({ type: 'rows', jobs: [] });
+  };
+  await roster.start();
+  roster.claim('root', () => {});
+  observer = new DeepSeekSessionObserver(peer.client, roster, 'root', () => {}, error => errors.push(error));
+  const ready = observer.start();
+  await new Promise(resolve => setTimeout(resolve, 30));
+  expect(rejected).toEqual([]);
+  expect(errors).toEqual([]);
+  expect(observer.hasWork()).toBe(true);
+  peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { mode: 'one-shot', label: 'task', seq: 3 }, seq: 3 });
+  await ready;
+  expect([...peer.streams.values()].filter(s => s.endpoint === 'session/follow').map(s => s.args.request.address)).toContainEqual(
+    { kind: 'subagent', childSessionId: 'child', parentSessionId: 'root', mode: 'one-shot' });
+  expect(rejected).toEqual([]);
+  expect(errors).toEqual([]);
 });
 
 it('projects restored queues and makes disconnect unknown until all baselines return', async () => {

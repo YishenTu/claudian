@@ -50,7 +50,8 @@ export class DeepSeekRemoteClient {
     }
   }
 
-  async call(method: string, args: Record<string, unknown> = {}, options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<unknown> {
+  /** `timeoutMs: 'none'` removes the client deadline for native work that legitimately outlasts it; the signal still cancels. */
+  async call(method: string, args: Record<string, unknown> = {}, options: { signal?: AbortSignal; timeoutMs?: number | 'none' } = {}): Promise<unknown> {
     this.assertLive();
     if (!/^[A-Za-z0-9_$-]+\/[A-Za-z0-9_$-]+$/.test(method)) throw new DeepSeekRemoteError('Invalid DeepSeek RPC endpoint.');
     const rpcId = randomUUID();
@@ -185,7 +186,7 @@ function validateLaunchURL(value: string): URL {
 }
 
 async function requestHTTP(
-  url: URL, method: string, headers: Record<string, string>, body?: string, signal?: AbortSignal, timeoutMs = RPC_TIMEOUT_MS,
+  url: URL, method: string, headers: Record<string, string>, body?: string, signal?: AbortSignal, timeoutMs: number | 'none' = RPC_TIMEOUT_MS,
 ): Promise<{ status: number; headers: IncomingHttpHeaders; body: string }> {
   signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
@@ -200,7 +201,7 @@ async function requestHTTP(
       response.on('error', () => reject(new DeepSeekRemoteError('DeepSeek response was interrupted.')));
       response.on('end', () => resolve({ status: response.statusCode ?? 0, headers: response.headers, body: Buffer.concat(chunks).toString('utf8') }));
     });
-    const timer = window.setTimeout(() => request.destroy(new DeepSeekRemoteError('DeepSeek RPC timed out.')), timeoutMs);
+    const timer = timeoutMs === 'none' ? undefined : window.setTimeout(() => request.destroy(new DeepSeekRemoteError('DeepSeek RPC timed out.')), timeoutMs);
     request.on('error', error => reject(error instanceof DeepSeekRemoteError ? error : new DeepSeekRemoteError('DeepSeek HTTP transport failed.')));
     request.on('close', () => window.clearTimeout(timer));
     request.end(body);

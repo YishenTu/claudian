@@ -9,7 +9,7 @@ import type { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
 import { getDeepSeekHome } from '@/providers/deepseek/runtime/DeepSeekHostProcess';
 
 const time = testDate().getTime();
-const host = { settings: { providerConfigs: { deepseek: { enabled: true } } } } as unknown as ProviderHost;
+const host = { settings: { locale: 'en', providerConfigs: { deepseek: { enabled: true } } } } as unknown as ProviderHost;
 let peer: NativePeer;
 let deepseek: DeepSeekHost;
 let lifecycle: NativePeerLifecycle;

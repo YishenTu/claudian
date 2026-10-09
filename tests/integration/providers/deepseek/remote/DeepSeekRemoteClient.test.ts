@@ -10,9 +10,10 @@ let sockets: WebSocketServer;
 let client: DeepSeekRemoteClient | undefined;
 let url: string;
 const requests: Array<{ method: string; payload: unknown }> = [];
+const held: Array<() => void> = [];
 
 beforeEach(async () => {
-  requests.length = 0;
+  requests.length = 0; held.length = 0;
   server = createServer((req, res) => {
     if (req.url === '/?token=private-token') {
       res.writeHead(302, { 'Set-Cookie': 'dsh-session=private-cookie; HttpOnly', Location: '/' });
@@ -25,6 +26,10 @@ beforeEach(async () => {
       const frame = JSON.parse(body);
       requests.push(frame);
       if (frame.method === 'fixture/stall') return;
+      if (frame.method === 'fixture/held') {
+        held.push(() => res.end(JSON.stringify({ type: 'server-response', rpcId: frame.rpcId, result: { ok: true, value: 'released' } })));
+        return;
+      }
       if (frame.method === 'fixture/malformed') { res.end('{broken'); return; }
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ type: 'server-response', rpcId: frame.rpcId, result:
@@ -102,4 +107,29 @@ it('ends one stream, by cancellation or its own listener rejecting a frame, with
   expect(snapshot).toEqual({ type: 'snapshot', cursor: 12, records: [] });
   expect(disconnected).not.toHaveBeenCalled();
   expect(client.clientId).toBe('native-client');
+});
+
+it('keeps the ordinary RPC deadline but waits without one only when asked, still honoring abort', async () => {
+  client = await DeepSeekRemoteClient.open(url);
+  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  try {
+    const abort = new AbortController();
+    const settle = (promise: Promise<unknown>) => promise.then(value => ({ value }), (error: Error) => ({ error: error.message }));
+    const bounded = settle(client.call('fixture/held'));
+    const unbounded = settle(client.call('fixture/held', {}, { timeoutMs: 'none' }));
+    const cancelled = settle(client.call('fixture/held', {}, { signal: abort.signal, timeoutMs: 'none' }));
+    while (held.length < 3) await new Promise(resolve => setImmediate(resolve));
+    jest.advanceTimersByTime(31_000);
+    expect(await bounded).toEqual({ error: expect.stringMatching(/timed out/i) });
+    abort.abort();
+    expect(await cancelled).toEqual({ error: expect.any(String) });
+    let pending = true;
+    void unbounded.then(() => { pending = false; });
+    for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve));
+    expect(pending).toBe(true);
+    for (const release of held) release();
+    expect(await unbounded).toEqual({ value: 'released' });
+  } finally {
+    jest.useRealTimers();
+  }
 });
