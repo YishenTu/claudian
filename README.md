@@ -134,25 +134,15 @@ Either:
 
 ### Authentication fails while the CLI subscription works
 
-Claude can report `authentication_failed` inside Obsidian while the selected CLI still works with a
-subscription in a terminal. An inherited `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` can take
-precedence over that sign-in. The chat error includes the same recovery steps.
+Claude can report `authentication_failed` inside Obsidian while the selected CLI works with a subscription in a terminal. An `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` inherited from the system environment takes precedence over subscription sign-in, so pointing Claudian at another CLI path does not help. The chat error includes the same recovery steps.
 
-If the same CLI works with a subscription separately, an inherited `ANTHROPIC_API_KEY` or
-`ANTHROPIC_AUTH_TOKEN` may be interfering. In Settings → Providers → Claude → Custom variables
-(Claude only), add an empty assignment only for the conflicting credential you intend to disable,
-such as `ANTHROPIC_API_KEY=` or `ANTHROPIC_AUTH_TOKEN=`.
+In Settings → Providers → Claude → Custom variables, add an empty assignment for the conflicting credential so Claude falls back to the subscription:
 
-The reporter-verified recovery is the API-key override. An inherited Windows user `ANTHROPIC_API_KEY`
-blocked subscription chat until Claude's Custom variables contained:
-
-```
+```env
 ANTHROPIC_API_KEY=
 ```
 
-Check other credential overrides the same way only when that credential is the one you intend to
-disable, for example `ANTHROPIC_AUTH_TOKEN=`. Leave credentials you still use unchanged. Do not put
-these assignments in the shared environment or change other providers.
+Use `ANTHROPIC_AUTH_TOKEN=` instead when that is the inherited credential. Override only credentials you intend to disable, and keep these assignments out of the shared environment so other providers are unaffected.
 
 When asking for help, share the variable names involved rather than their secret values.
 
