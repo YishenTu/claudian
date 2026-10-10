@@ -136,6 +136,8 @@ export interface TabDOMElements {
 /** Proof that input/event wiring completed before the runtime was published. */
 export interface TabInputBindings {
   readonly installed: true;
+  resetPromptHistory(): void;
+  shouldHandlePromptHistoryEscape(): boolean;
 }
 
 export interface TabRuntimeResourceState {

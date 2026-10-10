@@ -74,7 +74,11 @@ export function buildTabRuntimeShell(
   );
   const session: TabSession = new TabSession(sessionState, executionCoordinator, {
     turns,
-    onIdentityChanged: () => runtimeRef.current()?.ui.promptSuggestion.discard(),
+    onIdentityChanged: () => {
+      const tab = runtimeRef.current();
+      tab?.ui.promptSuggestion.discard();
+      tab?.inputBindings.resetPromptHistory();
+    },
     onWorkChanged: () => {
       const tab = runtimeRef.requirePublished();
       tab.renderer.refreshBranchButtonState();

@@ -89,6 +89,7 @@ test('shared test helpers use their graph consumers', () => {
 });
 
 test('filesystem-read documentation, styles, and captured fixtures retain their consumers', () => {
+  assert.ok(select(['src/style/base/visibility.css']).testFiles.includes('tests/integration/features/chat/tabs/PromptHistoryNavigation.dom.test.ts'));
   assert.deepEqual(select(['README.md']).testFiles, [docs]);
   assert.deepEqual(select(['src/features/chat/AGENTS.md']).testFiles, [docs]);
   assert.ok(select(['src/style/components/code.css']).testFiles.includes('tests/unit/style/components/code.test.ts'));

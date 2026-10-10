@@ -345,6 +345,7 @@ export function buildTabRuntimeControllers(
     onDestinationChanged: () => {
       const tab = runtimeRef.current();
       if (!tab) return;
+      tab.inputBindings.resetPromptHistory();
       inlinePrompts.setActive(tab.controllers.sideChatController.destination === 'main');
       if (tab.controllers.sideChatController.destination === 'side') conversationController.cancelBranchDraft();
       ui.composerDropdown.setBuiltInsEnabled(
@@ -424,6 +425,7 @@ export function buildTabRuntimeControllers(
     shouldSkipEscapeHandling: () => {
       if (builtInCommandController.isResumeDropdownVisible()) return true;
       if (ui.composerDropdown.isVisible()) return true;
+      if (runtimeRef.current()?.inputBindings.shouldHandlePromptHistoryEscape()) return true;
       return false;
     },
   });

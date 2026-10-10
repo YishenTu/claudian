@@ -1,3 +1,4 @@
+import { PromptHistoryNavigation } from '@/features/chat/tabs/PromptHistoryNavigation';
 import type {
   PublishedTabRuntimeRef,
   TabRuntimeConstructionContext,
@@ -21,10 +22,24 @@ export function buildTabRuntimeInputBindings(
   const { dom, state } = shell;
   const { plugin } = options;
 
+  const handleComposerChange = () => {
+    const tab = runtimeRef.requirePublished();
+    commitProvisionalTab(tab);
+    controllers.sideChatController.handleComposerInput();
+    ui.composerDropdown.handleInputChange();
+    ui.promptSuggestion.refresh();
+  };
+  const promptHistory = new PromptHistoryNavigation({
+    getMessages: () => state.messages,
+    input: dom.inputEl,
+    onInputReplaced: handleComposerChange,
+  });
+
   const keydownHandler = (event: KeyboardEvent) => {
     if ((event.target as HTMLElement | null)?.closest?.('button, a')) return;
     const tab = runtimeRef.requirePublished();
     if (sendTabInputMessageFromExplicitEnterShortcut(tab, event)) {
+      promptHistory.reset();
       return;
     }
 
@@ -38,6 +53,12 @@ export function buildTabRuntimeInputBindings(
 
     if (ui.promptSuggestion.handleKeydown(event)) return;
 
+    if (controllers.sideChatController.destination === 'main') {
+      if (promptHistory.handleKeydown(event)) return;
+    } else {
+      promptHistory.reset();
+    }
+
     if (event.key === 'Escape' && !event.isComposing) {
       if (cancelSelectedDestinationTurn(tab)) {
         event.preventDefault();
@@ -46,6 +67,7 @@ export function buildTabRuntimeInputBindings(
     }
 
     if (sendTabInputMessageFromEnterKey(tab, plugin.settings, event)) {
+      promptHistory.reset();
       return;
     }
   };
@@ -56,16 +78,24 @@ export function buildTabRuntimeInputBindings(
   );
 
   const inputHandler = () => {
-    const tab = runtimeRef.requirePublished();
-    commitProvisionalTab(tab);
-    controllers.sideChatController.handleComposerInput();
-    ui.composerDropdown.handleInputChange();
+    promptHistory.reset();
+    handleComposerChange();
   };
   dom.inputEl.addEventListener('input', inputHandler);
   options.registerCleanup(
     'tab input change binding',
     () => dom.inputEl.removeEventListener('input', inputHandler),
   );
+
+  const compositionStart = () => promptHistory.handleCompositionStart();
+  const compositionEnd = () => promptHistory.handleCompositionEnd();
+  dom.inputEl.addEventListener('compositionstart', compositionStart);
+  dom.inputEl.addEventListener('compositionend', compositionEnd);
+  options.registerCleanup('tab prompt history composition bindings', () => {
+    dom.inputEl.removeEventListener('compositionstart', compositionStart);
+    dom.inputEl.removeEventListener('compositionend', compositionEnd);
+    promptHistory.reset();
+  });
 
   const composerFocusOut = (event: FocusEvent) => {
     const target = event.relatedTarget as Node | null;
@@ -235,5 +265,9 @@ export function buildTabRuntimeInputBindings(
   options.registerCleanup('tab message scroll binding', () => {
     dom.messagesEl.removeEventListener('scroll', scrollHandler);
   });
-  return { installed: true };
+  return {
+    installed: true,
+    resetPromptHistory: () => promptHistory.reset(),
+    shouldHandlePromptHistoryEscape: () => controllers.sideChatController.destination === 'main' && promptHistory.canRestoreDraft,
+  };
 }
