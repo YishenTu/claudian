@@ -271,6 +271,9 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
         if (policy ? nativePreset !== policy : nativePreset === 'claudian-passive' || nativePreset === 'claudian-read-only') throw new Error('DeepSeek native tool policy differs from the requested conversation policy.');
         this.binding = { ...this.binding, preset: nativePreset };
         this.permission = await readDeepSeekPermission(lease.client, existingId);
+        // Claudian archive state is authoritative: a native archive left by a failed restore or dsh web would gate every turn.
+        // A pending fork's source is another conversation, and its fork is an independent native root.
+        if (this.nativeId) await lease.client.call('workspace/unarchiveSession', { request: { sessionId: this.nativeId } });
         this.assertRequest(requested);
       }
       if (this.binding.pendingFork) {

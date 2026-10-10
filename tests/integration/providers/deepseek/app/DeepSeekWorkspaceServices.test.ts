@@ -2,7 +2,7 @@ import { NativePeer } from '@test/helpers/deepseek/NativePeer';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
-import { createDeepSeekWorkspaceServices, type DeepSeekWorkspaceServices } from '@/providers/deepseek/app/DeepSeekWorkspaceServices';
+import { createDeepSeekWorkspaceServices, deepseekWorkspaceRegistration, type DeepSeekWorkspaceServices } from '@/providers/deepseek/app/DeepSeekWorkspaceServices';
 import { deepseekModelPolicy } from '@/providers/deepseek/DeepSeekModelPolicy';
 import { encodeDeepSeekModelId } from '@/providers/deepseek/models';
 import { getDeepSeekHome } from '@/providers/deepseek/runtime/DeepSeekHostProcess';
@@ -142,5 +142,88 @@ it('stops the shared Host before a provider transition and restarts it lazily wi
     expect(await workspace.deepseek.read(async (reader, home) => ({ home, value: await reader.call('session/modelCatalog') })))
       .toEqual({ home: '/homes/after', value: 'session/modelCatalog answered' });
     expect(launches).toEqual([{ cliPath: '/bin/dsh-before', home: '/homes/before' }, { cliPath: '/bin/dsh-after', home: '/homes/after' }]);
+  } finally { await workspace?.dispose?.(); await registry.dispose(); await peer.close(); }
+});
+
+it('mirrors Claudian archive state onto native sessions in this Host store', async () => {
+  expect(deepseekWorkspaceRegistration.providesSessionArchive).toBe(true);
+  const peer = new NativePeer(); await peer.open();
+  const registry = new ProviderExecutionLifecycleRegistry();
+  const host = { settings: { providerConfigs: { deepseek: { enabled: true } } }, app: { vault: { adapter: { basePath: '/vault' } } }, executionLifecycleRegistry: registry,
+    getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: jest.fn(),
+  } as unknown as ProviderHost;
+  const start = jest.fn(async () => ({ client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {} }));
+  peer.onCall = (method, args) => {
+    if (method === 'session/list') return { items: [] };
+    if (args.request?.sessionId === 'gone') throw Object.assign(new Error('no such session'), { code: 'session/not-found' });
+    if (args.request?.sessionId === 'broken') throw new Error('disk full');
+    return { archivedSessionIds: [] };
+  };
+  const home = getDeepSeekHome(process.env);
+  const state = (extra: Record<string, unknown> = {}) => ({ schemaVersion: 1, home, profile: 'web', preset: 'claudian', ...extra });
+  const change = (sessionId: string | null, isArchived: boolean, providerState: Record<string, unknown> = state()) => ({ conversation: { sessionId, providerState, messages: [] }, isArchived });
+  let workspace: DeepSeekWorkspaceServices | undefined;
+  try {
+    workspace = createDeepSeekWorkspaceServices(host, start);
+    await workspace.sessionArchive!.setSessionsArchived([
+      change('chat', true),
+      // A pending fork has no native session of its own; never archive its source.
+      change(null, true, state({ pendingFork: { sessionId: 'source', atSeq: 3 } })),
+      // Another store's session id cannot name a session in this Host's store.
+      change('relocated', true, state({ home: `${home}-relocated` })),
+      change('gone', true),
+      change('restored', false),
+    ]);
+    const mutations = () => peer.calls.filter(call => call.method.startsWith('workspace/')).map(call => [call.method, call.args.request]);
+    expect(mutations()).toEqual([
+      // Claudian archives only closed sessions; leftover native work must not refuse the archive.
+      ['workspace/archiveSession', { sessionId: 'chat', stopActivity: true }],
+      ['workspace/archiveSession', { sessionId: 'gone', stopActivity: true }],
+      ['workspace/unarchiveSession', { sessionId: 'restored' }],
+    ]);
+    peer.calls.length = 0;
+    await expect(workspace.sessionArchive!.setSessionsArchived([change('broken', true), change('after', false)])).rejects.toThrow('disk full');
+    expect(mutations()).toEqual([
+      ['workspace/archiveSession', { sessionId: 'broken', stopActivity: true }],
+      ['workspace/unarchiveSession', { sessionId: 'after' }],
+    ]);
+    expect(start).toHaveBeenCalledTimes(1);
+  } finally { await workspace?.dispose?.(); await registry.dispose(); await peer.close(); }
+});
+
+it('lets an admitted archive finish before a provider transition stops the Host', async () => {
+  const peer = new NativePeer(); await peer.open();
+  const registry = new ProviderExecutionLifecycleRegistry();
+  const host = { settings: { providerConfigs: { deepseek: { enabled: true } } }, app: { vault: { adapter: { basePath: '/vault' } } }, executionLifecycleRegistry: registry,
+    getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: jest.fn(),
+  } as unknown as ProviderHost;
+  let disposed = 0;
+  const start = jest.fn(async () => {
+    const client = await peer.connect();
+    return { client, onExit: () => () => {}, dispose: async () => { client.dispose(); disposed++; }, writePrompt: async () => {} };
+  });
+  let answer!: () => void;
+  const archived = new Promise<void>(resolve => { answer = resolve; });
+  let reached!: () => void;
+  const inFlight = new Promise<void>(resolve => { reached = resolve; });
+  peer.onCall = async method => {
+    if (method === 'session/list') return { items: [] };
+    reached(); await archived;
+    return { archivedSessionIds: ['chat'] };
+  };
+  let workspace: DeepSeekWorkspaceServices | undefined;
+  try {
+    workspace = createDeepSeekWorkspaceServices(host, start);
+    const home = getDeepSeekHome(process.env);
+    const operation = workspace.sessionArchive!.setSessionsArchived([{ conversation: { sessionId: 'chat', providerState: { schemaVersion: 1, home, profile: 'web', preset: 'claudian' }, messages: [] }, isArchived: true }]);
+    await inFlight;
+    const transition = registry.runTransition(['deepseek'], async () => {});
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const disposedAtArchive = disposed;
+    answer();
+    await expect(operation).resolves.toBeUndefined();
+    await transition;
+    expect(disposedAtArchive).toBe(0);
+    expect(disposed).toBe(1);
   } finally { await workspace?.dispose?.(); await registry.dispose(); await peer.close(); }
 });

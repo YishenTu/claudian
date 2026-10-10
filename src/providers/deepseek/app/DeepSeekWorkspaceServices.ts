@@ -7,6 +7,7 @@ import type { ProviderWorkspaceRegistration, ProviderWorkspaceServices } from '@
 import { getVaultPath } from '@/utils/path';
 
 import { DeepSeekCommandCatalog } from '../commands/DeepSeekCommandCatalog';
+import { DeepSeekSessionArchiveService } from '../history/DeepSeekSessionArchiveService';
 import { DeepSeekCLIResolver } from '../runtime/DeepSeekCLIResolver';
 import { DeepSeekHost, type DeepSeekProcessFactory } from '../runtime/DeepSeekHost';
 import { DeepSeekHostProcess } from '../runtime/DeepSeekHostProcess';
@@ -30,21 +31,23 @@ export function createDeepSeekWorkspaceServices(host: ProviderHost, start: DeepS
     return { cliPath, environment, cwd: getVaultPath(host.app) ?? process.cwd() };
   }, start);
   const modelCatalog = createDeepSeekModels(host, signal => deepseek.read(client => client.call('session/modelCatalog'), signal));
+  const sessionArchive = new DeepSeekSessionArchiveService(deepseek);
   // Execution leases are released before these hooks run; the Host then restarts lazily with the new settings.
   const offTransition = host.executionLifecycleRegistry.registerTransitionHook('deepseek', {
-    beforeTransition: async () => { modelCatalog.beginTransition(); await deepseek.beginTransition(); await modelCatalog.quiesce(); },
-    afterTransition: async () => { cliResolver.reset(); deepseek.endTransition(); modelCatalog.endTransition(); },
+    beforeTransition: async () => { modelCatalog.beginTransition(); await sessionArchive.beginTransition(); await deepseek.beginTransition(); await modelCatalog.quiesce(); },
+    afterTransition: async () => { cliResolver.reset(); deepseek.endTransition(); modelCatalog.endTransition(); sessionArchive.endTransition(); },
   });
   return {
     startRuntime: () => deepseek.start(),
-    cliResolver, deepseek, modelCatalog, commandCatalog: new DeepSeekCommandCatalog(), commandLoader: createDeepSeekCommandLoader(deepseek), settingsTabRenderer: createDeepSeekSettingsTabRenderer({ cliResolver, modelCatalog }),
-    async dispose() { offTransition(); await Promise.all([modelCatalog.dispose(), deepseek.dispose()]); },
+    cliResolver, deepseek, modelCatalog, commandCatalog: new DeepSeekCommandCatalog(), commandLoader: createDeepSeekCommandLoader(deepseek), settingsTabRenderer: createDeepSeekSettingsTabRenderer({ cliResolver, modelCatalog }), sessionArchive,
+    async dispose() { offTransition(); await Promise.all([modelCatalog.dispose(), sessionArchive.dispose()]); await deepseek.dispose(); },
   };
 }
 
 
 export const deepseekWorkspaceRegistration: ProviderWorkspaceRegistration<DeepSeekWorkspaceServices> = {
   consumesAgentSkills: true,
+  providesSessionArchive: true,
   initialize: async ({ plugin }) => createDeepSeekWorkspaceServices(plugin),
 };
 

@@ -53,6 +53,7 @@ export function nativeDefaults(options: NativeDefaultsOptions): { call: (...args
       ] };
     }
     if (method === 'session/prompt') return { accepted: true };
+    if (method === 'workspace/unarchiveSession') return { archivedSessionIds: [] };
     if (method === '$events/result') return {};
     throw new Error(`Unexpected native call ${method}`);
   };

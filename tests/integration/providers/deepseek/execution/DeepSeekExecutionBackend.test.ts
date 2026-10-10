@@ -496,6 +496,10 @@ it('recovers the saved native preset before resuming an unbound conversation', a
   const run = session.execute(request()); const events: ProviderExecutionEvent[] = []; const done = collect(run.events, events);
   await until(() => peer.calls.some(c => c.method === 'session/prompt'));
   expect(peer.calls.find(c => c.method === 'session/create')?.args.request.agentPreset).toBe('claudian-code');
+  // Claudian archive state is authoritative: a resumed conversation is never left gated by a native archive.
+  const methods = peer.calls.map(c => c.method);
+  expect(peer.calls.filter(c => c.method === 'workspace/unarchiveSession')).toEqual([{ method: 'workspace/unarchiveSession', args: { request: { sessionId: 'root' } } }]);
+  expect(methods.indexOf('workspace/unarchiveSession')).toBeLessThan(methods.indexOf('session/prompt'));
   begin(run.executionId); answer('resumed'); await done;
   expect(session.getSnapshot().providerState).toMatchObject({ preset: 'claudian-code' });
 });
@@ -1078,6 +1082,8 @@ it('forks a saved checkpoint on first send and binds the fork without resuming i
   expect(events.at(-1)?.type).toBe('turn_completed');
   expect(peer.calls.filter(c => c.method === 'session/fork')).toEqual([{ method: 'session/fork', args: { request: { sessionId: 'root', atSeq: 2 } } }]);
   expect(peer.calls.some(c => c.method === 'session/create')).toBe(false);
+  // A fork is an independent native root; unarchiving its source would change another conversation.
+  expect(peer.calls.some(c => c.method === 'workspace/unarchiveSession')).toBe(false);
   expect(peer.calls.find(c => c.method === 'session/prompt')?.args.request.sessionId).toBe('fork');
   const snapshot = session.getSnapshot();
   expect(snapshot).toMatchObject({ providerSessionId: 'fork', providerState: { preset: 'claudian-code' } });
