@@ -115,7 +115,8 @@ function readLaunchURL(child: ManagedStdioProcess, signal: AbortSignal): Promise
     const abort = (): void => finish(new Error('DeepSeek startup cancelled or timed out.'));
     const data = (chunk: Buffer | string): void => {
       output = (output + chunk.toString()).slice(-16_384);
-      const url = output.match(/https?:\/\/[^\s"'<>]+\?token=[A-Za-z0-9_%.-]+/)?.[0];
+      // The token may arrive across chunks; accept it only once a delimiter ends it.
+      const url = output.match(/(https?:\/\/[^\s"'<>]+\?token=[A-Za-z0-9_%.-]+)[\s"'<>]/)?.[1];
       if (url) finish(undefined, url);
     };
     offError = child.onError(() => finish(new Error('DeepSeek process could not start. Check the configured CLI path.')));
