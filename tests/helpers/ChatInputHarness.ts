@@ -209,7 +209,7 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
   jest.spyOn(conversationController, 'save').mockResolvedValue(undefined);
   jest.spyOn(conversationController, 'createNew').mockResolvedValue(undefined);
   const commandOverrides = Object.fromEntries(
-    (['openConversation', 'handleNewConversationCommand', 'onForkAll', 'toggleFastMode'] as const)
+    (['openConversation', 'handleNewConversationCommand', 'toggleFastMode'] as const)
       .filter(key => key in dependencyOverrides)
       .map(key => [key, dependencyOverrides[key]]),
   ) as Partial<BuiltInCommandControllerDeps>;

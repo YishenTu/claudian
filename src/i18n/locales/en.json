@@ -44,9 +44,7 @@
       "unavailableNoUuid": "Cannot fork: missing message identifiers",
       "errorMessageNotFound": "Message not found",
       "errorNoSession": "No session ID available",
-      "errorNoActiveTab": "No active tab",
-      "commandNoMessages": "Cannot fork: no messages in conversation",
-      "commandNoAssistantUuid": "Cannot fork: no assistant response with identifiers"
+      "errorNoActiveTab": "No active tab"
     },
     "quote": {
       "buttonLabel": "Quote"

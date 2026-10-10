@@ -44,9 +44,7 @@
       "unavailableNoUuid": "Não é possível bifurcar: identificadores de mensagem ausentes",
       "errorMessageNotFound": "Mensagem não encontrada",
       "errorNoSession": "Nenhum ID de sessão disponível",
-      "errorNoActiveTab": "Nenhuma aba ativa",
-      "commandNoMessages": "Não é possível bifurcar: não há mensagens na conversa",
-      "commandNoAssistantUuid": "Não é possível bifurcar: não há resposta do assistente com identificadores"
+      "errorNoActiveTab": "Nenhuma aba ativa"
     },
     "quote": {
       "buttonLabel": "Citar"

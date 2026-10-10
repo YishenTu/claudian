@@ -21,7 +21,6 @@ export interface BuiltInCommandControllerDeps {
   openConversation?: (conversationId: string) => Promise<void>;
   /** Lets the active layout replace in-place clear with its own New action. */
   handleNewConversationCommand?: () => Promise<boolean>;
-  onForkAll?: () => Promise<void>;
   /** Toggles the active provider's fast service tier when available. */
   toggleFastMode?: () => Promise<boolean>;
 }
@@ -56,18 +55,6 @@ export class BuiltInCommandController {
       case 'resume':
         this.#showResumeDropdown();
         break;
-      case 'fork': {
-        if (!capabilities.supportsFork) {
-          new Notice('Fork is not supported by this provider.');
-          return;
-        }
-        if (!this.deps.onForkAll) {
-          new Notice('Fork not available.');
-          return;
-        }
-        await this.deps.onForkAll();
-        break;
-      }
       case 'fast': {
         try {
           const toggled = await this.deps.toggleFastMode?.() ?? false;

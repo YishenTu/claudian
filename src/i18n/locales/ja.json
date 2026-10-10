@@ -44,9 +44,7 @@
       "unavailableNoUuid": "分岐できません：メッセージ識別子がありません",
       "errorMessageNotFound": "メッセージが見つかりません",
       "errorNoSession": "セッション ID がありません",
-      "errorNoActiveTab": "アクティブなタブがありません",
-      "commandNoMessages": "フォークできません: 会話にメッセージがありません",
-      "commandNoAssistantUuid": "フォークできません: 識別子付きのアシスタント応答がありません"
+      "errorNoActiveTab": "アクティブなタブがありません"
     },
     "quote": {
       "buttonLabel": "引用"

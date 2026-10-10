@@ -44,9 +44,7 @@
       "unavailableNoUuid": "無法分叉：缺少訊息識別碼",
       "errorMessageNotFound": "找不到訊息",
       "errorNoSession": "沒有可用的工作階段 ID",
-      "errorNoActiveTab": "沒有使用中的分頁",
-      "commandNoMessages": "無法分叉：對話中沒有訊息",
-      "commandNoAssistantUuid": "無法分叉：沒有帶識別碼的助手回覆"
+      "errorNoActiveTab": "沒有使用中的分頁"
     },
     "quote": {
       "buttonLabel": "引用"

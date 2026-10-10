@@ -44,9 +44,7 @@
       "unavailableNoUuid": "Verzweigung nicht möglich: Nachrichtenkennungen fehlen",
       "errorMessageNotFound": "Nachricht nicht gefunden",
       "errorNoSession": "Keine Sitzungs-ID verfügbar",
-      "errorNoActiveTab": "Kein aktiver Tab",
-      "commandNoMessages": "Verzweigung nicht möglich: keine Nachrichten in der Konversation",
-      "commandNoAssistantUuid": "Verzweigung nicht möglich: keine Assistentenantwort mit Kennungen"
+      "errorNoActiveTab": "Kein aktiver Tab"
     },
     "quote": {
       "buttonLabel": "Zitieren"

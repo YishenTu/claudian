@@ -44,9 +44,7 @@
       "unavailableNoUuid": "Impossible de bifurquer : identifiants de message manquants",
       "errorMessageNotFound": "Message introuvable",
       "errorNoSession": "Aucun ID de session disponible",
-      "errorNoActiveTab": "Aucun onglet actif",
-      "commandNoMessages": "Impossible de bifurquer : aucun message dans la conversation",
-      "commandNoAssistantUuid": "Impossible de bifurquer : aucune réponse de l’assistant avec des identifiants"
+      "errorNoActiveTab": "Aucun onglet actif"
     },
     "quote": {
       "buttonLabel": "Citer"
