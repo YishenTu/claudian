@@ -61,15 +61,25 @@ it('defers native forks to first execution and reads only the selected source pr
   expect(result.messages?.at(-1)?.assistantMessageId).toBe('deepseek:seq:7');
   expect(peer.calls.filter(c => c.method === 'session/page').every(c => c.args.request.throughSeq === 7)).toBe(true);
   expect(peer.calls.some(c => c.method === 'session/fork')).toBe(false);
+  const pendingFork = { ...input, sessionId: null, providerState: fork };
+  expect(history.isPendingForkConversation(pendingFork)).toBe(true);
+  expect(history.isPendingForkConversation(input)).toBe(false);
+  expect(history.hasConversationModelRecoverySource(pendingFork)).toBe(true);
+  expect(history.hasConversationModelRecoverySource({ ...input, sessionId: null })).toBe(false);
+  const beyondSource = history.buildForkProviderState('root', 'deepseek:seq:9', state);
+  await expect(history.hydrateConversationHistory({ ...input, sessionId: null, providerState: beyondSource }, '/vault'))
+    .rejects.toThrow(/checkpoint is not present/i);
 });
 
 it('recovers the native next model and distinguishes relocated stores from missing history', async () => {
   await expect(history.recoverConversationModelSelection(input, '/vault')).resolves.toBe('deepseek:native/new-model');
+  await expect(history.getConversationSessionAvailability(input, '/vault')).resolves.toBe('available');
   await expect(history.getConversationSessionAvailability({ ...input, providerState: { ...state, home: '/another-machine/.dsh' } }, '/vault')).resolves.toBe('unknown');
   peer.onCall = () => null;
   await expect(history.getConversationSessionAvailability(input, '/vault')).resolves.toBe('missing');
   peer.onCall = () => { throw new Error('Native read failed'); };
   await expect(history.getConversationSessionAvailability(input, '/vault')).resolves.toBe('unknown');
+  await expect(history.recoverConversationModelSelection(input, '/vault')).resolves.toBeNull();
 });
 
 it('hydrates a committed retry without replaying failed attempt prefixes', async () => {
@@ -132,11 +142,26 @@ it.each([
   return expect(history.hydrateConversationHistory(input, '/vault')).rejects.toThrow(/image.*reference/i);
 });
 
-it('rejects an attachment response for a different native identity', async () => {
+it.each([
+  ['a different native identity', { attachmentId: 'other-image', mediaType: 'image/png' }, /image attachment/i],
+  ['an unsupported media type', { attachmentId: 'image', mediaType: 'image/svg+xml' }, /unsupported.*media type/i],
+])('rejects an attachment response for %s', async (_case, attachment, error) => {
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => method === 'session/attachment'
-    ? { attachment: { attachmentId: 'other-image', mediaType: 'image/png' }, data: 'aW1hZ2U=' } : ordinary(method, args);
-  await expect(history.hydrateConversationHistory(input, '/vault')).rejects.toThrow(/image attachment/i);
+    ? { attachment, data: 'aW1hZ2U=' } : ordinary(method, args);
+  await expect(history.hydrateConversationHistory(input, '/vault')).rejects.toThrow(error);
+});
+
+it.each([
+  ['an empty page that claims more history', () => ({ records: [], hasMore: true }), /made no progress/i],
+  ['a record beyond the fixed cut', () => ({ records: [wire(9, 'turn/start', { turn: 2 })], hasMore: false }), /invalid.*record/i],
+  ['a repeated record on a later page', (request: { beforeSeq?: number }) => request.beforeSeq === undefined
+    ? { records: [wire(5, 'turn/start', { turn: 1 })], hasMore: true }
+    : { records: [wire(5, 'turn/start', { turn: 1 })], hasMore: false }, /invalid.*record/i],
+])('rejects native history pages with %s', async (_case, page, error) => {
+  const ordinary = peer.onCall;
+  peer.onCall = (method, args) => method === 'session/page' ? page(args.request) : ordinary(method, args);
+  await expect(history.hydrateConversationHistory(input, '/vault')).rejects.toThrow(error);
 });
 
 
@@ -161,4 +186,22 @@ it('keeps notices with the requested reply when a native notice precedes user in
   expect(result.messages?.[1].isAutomaticResponse).toBeUndefined();
   expect(result.messages?.[1].contentBlocks).toEqual([{ type: 'task_notification', content: 'earlier job finished' }, { type: 'text', content: 'reply' }]);
   expect(result.messages?.[1].assistantMessageId).toBe('deepseek:seq:4');
+});
+
+it('restores each completed turn\'s work duration so it renders as its own "Worked for" response', async () => {
+  const at = (seq: number, ms: number, type: string, data: unknown) => ({ type: 'event', event: { seq, type, time: time + ms, data, surfaceOp: 'append' } });
+  records = [
+    at(1, 0, 'turn/start', { turn: 1 }),
+    at(2, 0, 'user/message', { source: { kind: 'user' }, content: [{ type: 'text', text: 'first' }] }),
+    at(3, 1_000, 'assistant/message', { turn: 1, step: 0, message: { content: [{ type: 'text', text: 'one' }] } }),
+    at(4, 125_900, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    at(5, 200_000, 'turn/start', { turn: 2 }),
+    at(6, 200_000, 'user/message', { source: { kind: 'user' }, content: [{ type: 'text', text: 'second' }] }),
+    at(7, 203_000, 'assistant/message', { turn: 2, step: 0, message: { content: [{ type: 'text', text: 'two' }] } }),
+    at(8, 207_000, 'turn/end', { turn: 2, reason: { kind: 'completed' } }),
+  ];
+
+  const result = await history.hydrateConversationHistory(input, '/vault');
+
+  expect(result.messages?.filter(message => message.role === 'assistant').map(message => message.durationSeconds)).toEqual([125, 7]);
 });

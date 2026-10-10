@@ -32,9 +32,6 @@ describe('DeepSeek saved configuration contracts', () => {
       enabled: false, codeMode: false, cliPath: '',
       cliPathsByHost: { other: '/native/dsh' }, visibleModels: ['deepseek:a/b'],
     });
-    expect(deepseekModelPolicy.permissionModes).toEqual({
-      values: ['normal', 'yolo'], defaultValue: 'normal', fallbackValue: 'normal',
-    });
   });
 
   it('preserves explicit full-list ordering, unavailable selections and reasoning across storage', () => {

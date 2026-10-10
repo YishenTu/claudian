@@ -2,10 +2,11 @@ import '@/providers';
 
 import { createHarness as createCoordinator } from '@test/helpers/ChatExecutionHarness';
 import { createFixture } from '@test/helpers/ChatInputHarness';
-import { NativePeer, type NativePeerHostOptions, type NativePeerLifecycle } from '@test/helpers/deepseek/NativePeer';
+import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
+import { jobsOf, NativePeer, type NativePeerHostOptions, type NativePeerLifecycle, rootFollow } from '@test/helpers/deepseek/NativePeer';
 import { testDate } from '@test/helpers/testClock';
 
-import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderExecutionSession, ProviderInteractionPort, ProviderSessionEvent } from '@/core/execution';
+import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderExecutionSession, ProviderInteractionPort, ProviderSessionConfig, ProviderSessionEvent } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ImageAttachment } from '@/core/types';
 import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSeekExecutionBackend';
@@ -21,6 +22,8 @@ let permission: string;
 let inbox: unknown[];
 let seq: number;
 let nativeTurn: number;
+/** The native root whose follow stream receives `event` frames. */
+let followed: string;
 let port: ProviderInteractionPort;
 const time = testDate().getTime();
 const host = { settings: { locale: 'en', providerConfigs: { deepseek: { enabled: true, visibleModels: ['deepseek:native/model'], discoveredModels: [{ encodedId: 'deepseek:native/model', provider: 'native', id: 'model', label: 'Model', reasoning: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }] }] } } } } as unknown as ProviderHost;
@@ -28,8 +31,9 @@ const host = { settings: { locale: 'en', providerConfigs: { deepseek: { enabled:
 function request(text = 'requested'): ProviderExecutionRequest {
   return { input: [{ type: 'text', text }], configuration: { systemInstructions: { kind: 'explicit', instructions: 'literal {prompt}' }, permissionMode: 'normal' }, toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal };
 }
+/** Appends one durable event to the claimed root's follow stream; subagent streams are driven separately. */
 function event(type: string, data: unknown): void {
-  peer.send('session/follow', { type: 'event', event: { type, seq: ++seq, time, data } });
+  peer.send('session/follow', { type: 'event', event: { type, seq: ++seq, time, data } }, rootFollow(followed));
 }
 function begin(rpcId?: string, source = 'tool-jobs'): void {
   nativeTurn++;
@@ -44,47 +48,55 @@ function answer(text: string, step = 0): void {
 async function collect(events: AsyncIterable<ProviderExecutionEvent>, into: ProviderExecutionEvent[]): Promise<void> { for await (const event of events) into.push(event); }
 
 beforeEach(async () => {
-  permission = 'workspace-write'; inbox = []; seq = 3; nativeTurn = 0; sessionEvents = [];
+  permission = 'workspace-write'; inbox = []; seq = 3; nativeTurn = 0; followed = 'root'; sessionEvents = [];
   port = { requestApproval: jest.fn(), askUserQuestion: jest.fn(), dismissInteraction: jest.fn() };
   peer = new NativePeer();
+  const native = nativeDefaults({
+    seq: () => seq, roster: () => ['root'], permission: () => permission, setPermission: (_id, value) => { permission = value; },
+    commands: [{ name: 'permission' }, { name: 'compact', description: 'Compact history' }, { name: 'goal' }],
+    skills: [{ name: 'review', description: 'Review changes', modelInvocable: true }],
+    projections: () => ({ inbox: { 'next-turn': inbox } }),
+  });
   peer.onCall = (method, args) => {
     if (method === 'session/create') return { sessionId: 'root', agentPreset: 'claudian' };
-    if (method === 'session/list') return { items: [{ sessionId: 'root', agentAvailable: true, running: false }] };
-    if (method === 'permissionPresets/catalog') return { options: [{ value: 'workspace-write' }, { value: 'danger-full-access' }] };
-    if (method === 'commands/list') return [{ name: 'permission' }, { name: 'compact', description: 'Compact history' }, { name: 'goal' }];
-    if (method === 'skills/list') return { skills: [{ name: 'review', description: 'Review changes', modelInvocable: true }] };
-    if (method === 'commands/execute') { permission = args.line.split(' ')[1]; return { result: { kind: 'success' } }; }
-    if (method === 'session/projections') return { asOfSeq: seq, values: { agentPreset: 'claudian', permissions: { currentValue: permission }, inbox: { 'next-turn': inbox } } };
-    if (method === 'session/page') return { hasMore: false, records: [
-      { type: 'event', event: { type: 'sandbox/mode', seq: 1, time, data: { mode: permission } } },
-      { type: 'event', event: { type: 'approval/policy', seq: 2, time, data: { policy: permission === 'workspace-write' ? 'ask' : 'never' } } },
-    ] };
-    if (method === 'session/prompt') return { accepted: true };
-    if (method === '$events/result') return {};
     if (method === 'session/updateQueue') {
       inbox = inbox.filter((item: any) => item.id !== args.request.itemId);
       peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'inbox', seq: ++seq, value: { 'next-turn': inbox } });
       return { removed: true };
     }
     if (method === 'session/cancel') { event('turn/end', { turn: nativeTurn, reason: { kind: 'cancelled' } }); return {}; }
-    throw new Error(`Unexpected native call ${method}`);
+    return native.call(method, args);
   };
-  peer.onOpen = (endpoint, _args, send) => {
-    if (endpoint === 'session/control') send({ type: 'baseline', value: { projections: { root: { asOfSeq: seq, values: { inbox: { 'next-turn': inbox } } } } } });
-    if (endpoint === 'session/follow') send({ type: 'snapshot', cursor: seq, records: [], header: { id: 'root', agentPreset: 'claudian' }, projections: { asOfSeq: seq, values: {} } });
-    if (endpoint === 'job/list') send({ type: 'rows', jobs: [] });
-  };
+  peer.onOpen = native.open;
   await peer.open();
   ({ deepseek, lifecycle } = peer.host());
 });
 afterEach(async () => { await session?.dispose(); await deepseek.dispose(); await peer.close(); });
 
-function create(resume = false): void {
+function savedState(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return { schemaVersion: 1, home: getDeepSeekHome(process.env), profile: 'web', preset: 'claudian', ...overrides };
+}
+function create(resume: boolean | NonNullable<ProviderSessionConfig['resumeSeed']> = false): void {
+  const resumeSeed = resume === true ? { providerSessionId: 'root', providerState: savedState() } : resume || undefined;
   session = new DeepSeekExecutionBackend(host, () => deepseek).createSession({
     lifecycle: 'persistent', nativePersistence: 'enabled', vaultWorkingDirectory: '/vault', interactionPort: port,
-    ...(resume ? { resumeSeed: { providerSessionId: 'root', providerState: { schemaVersion: 1, home: getDeepSeekHome(process.env), profile: 'web', preset: 'claudian' } } } : {}),
+    ...(resumeSeed ? { resumeSeed } : {}),
   });
   session.onEvent(event => sessionEvents.push(event));
+}
+/** Binds the session through one requested turn that native claims and completes. */
+async function completeRequest(text = 'requested'): Promise<void> {
+  const run = session.execute(request(text)); const events: ProviderExecutionEvent[] = [];
+  const done = collect(run.events, events);
+  await until(() => peer.calls.some(c => c.method === 'session/prompt' && c.args.request.requestId === run.executionId));
+  begin(run.executionId); answer(`${text} done`); await done;
+  expect(events.at(-1)?.type).toBe('turn_completed');
+}
+/** Announces a native subagent of root through the catalog, its descriptor and the roster. */
+function announceChild(mode: 'continuable' | 'one-shot', running: boolean): void {
+  peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'subagentCatalog', value: [{ id: 'child', mode, label: 'child task' }] });
+  peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { mode, label: 'child task', seq: 0 } });
+  peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: 'child', parentSessionId: 'root', origin: 'subagent', agentAvailable: true, running }] });
 }
 
 it.each(['tool-jobs', 'subagent-settled'])('attributes only the matched native user turn to the requested stream after %s', async source => {
@@ -177,7 +189,7 @@ it('stops owned jobs after a requested turn and drains their automatic wakeup', 
     if (method === 'job/kill') {
       begin();
       jobs = [{ id: 'job', owner: 'root', status: 'killed' }, { id: 'foreign', status: 'running' }];
-      peer.send('job/list', { type: 'rows', jobs });
+      peer.send('job/list', { type: 'rows', jobs }, jobsOf('root'));
       return { status: 'requested' };
     }
     return ordinaryCall(method, args);
@@ -187,7 +199,7 @@ it('stops owned jobs after a requested turn and drains their automatic wakeup', 
   await until(() => peer.calls.some(c => c.method === 'session/prompt'));
   begin(run.executionId);
   jobs = [{ id: 'job', owner: 'root', status: 'running' }, { id: 'foreign', status: 'running' }];
-  peer.send('job/list', { type: 'rows', jobs });
+  peer.send('job/list', { type: 'rows', jobs }, jobsOf('root'));
   answer('job started'); await done;
   expect(session.hasBackgroundWork?.()).toBe(true);
   session.cancel();
@@ -233,9 +245,7 @@ it('buffers an early child question until its native turn is observed while the 
   await until(() => peer.calls.some(c => c.method === 'session/prompt'));
   begin(run.executionId); answer('root done'); await done;
   peer.send('$events', { type: 'waterfall', eventId: 'child-question', event: 'user-questions/request', agentId: 'child', request: { questions: [{ id: 'q', question: 'Continue?', options: [{ label: 'Yes' }] }] } });
-  peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'subagentCatalog', value: [{ id: 'child', mode: 'continuable', label: 'child task' }] });
-  peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { mode: 'continuable', label: 'child task', seq: 0 } });
-  peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: 'child', parentSessionId: 'root', origin: 'subagent', agentAvailable: true, running: true }] });
+  announceChild('continuable', true);
   await until(() => !!childFollow);
   expect(port.askUserQuestion).not.toHaveBeenCalled();
   childFollow({ type: 'snapshot', cursor: 0, records: [{ type: 'event', event: { type: 'turn/start', seq: 0, time, data: { turn: 0 } } }] });
@@ -335,8 +345,9 @@ it('lets a request claimed during recovery run, then stops it on a later Stop', 
   const { run, events, done } = await queueBehindFailedAutomaticTurn();
   failAutomatic();
   await until(() => events.some(e => e.type === 'turn_started'));
-  // Give recovery time to observe the claim and yield.
-  await new Promise(resolve => setTimeout(resolve, 20));
+  // Recovery resumes on the applied claim frame; output from a later frame proves it yielded without ending the run.
+  event('assistant/message', { turn: nativeTurn, step: 0, message: { content: [{ type: 'text', text: 'claimed output' }] } });
+  await until(() => events.some(e => e.type === 'text_delta'));
   expect(events.some(e => e.type === 'execution_error' || e.type === 'cancelled')).toBe(false);
   expect(peer.calls.some(c => c.method === 'session/cancel')).toBe(false);
   run.cancel();
@@ -442,8 +453,8 @@ it('reads missed durable records beyond a reconnect snapshot without replaying i
   const done = collect(run.events, events);
   await until(() => peer.calls.some(c => c.method === 'session/prompt'));
   begin(run.executionId);
-  peer.send('session/follow', { type: 'assistant-stream', frame: { type: 'start', attemptId: 'attempt', revision: 1, turn: nativeTurn, step: 0 } });
-  peer.send('session/follow', { type: 'assistant-stream', frame: { type: 'chunk', attemptId: 'attempt', revision: 2, index: 0, chunk: { type: 'text-delta', index: 0, text: 'Hel' } } });
+  peer.send('session/follow', { type: 'assistant-stream', frame: { type: 'start', attemptId: 'attempt', revision: 1, turn: nativeTurn, step: 0 } }, rootFollow('root'));
+  peer.send('session/follow', { type: 'assistant-stream', frame: { type: 'chunk', attemptId: 'attempt', revision: 2, index: 0, chunk: { type: 'text-delta', index: 0, text: 'Hel' } } }, rootFollow('root'));
   await until(() => events.some(e => e.type === 'text_delta'));
   const commit = { type: 'event', event: { seq: 7, time, type: 'assistant/message', data: { turn: nativeTurn, step: 0, message: { content: [{ type: 'text', text: 'Hello' }] } } } };
   const end = { type: 'event', event: { seq: 8, time, type: 'turn/end', data: { turn: nativeTurn, reason: { kind: 'completed' } } } };
@@ -553,15 +564,13 @@ it('reports a failed shared Host startup as a request error and keeps the sessio
 });
 
 it('rejects an explicit model removed from the enabled selection', async () => {
-  const ordinary = peer.onCall;
-  peer.onCall = (method, args) => method === 'session/selectModel' ? { selected: { provider: 'native', model: 'removed' } } : ordinary(method, args);
   create(); const input = request(); const events: ProviderExecutionEvent[] = [];
   const run = session.execute({ ...input, configuration: { ...input.configuration, model: 'deepseek:native/removed', reasoning: null } });
   const done = collect(run.events, events);
   await until(() => events.some(e => e.type === 'execution_error'));
   await done;
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'configuration', message: expect.stringContaining('unavailable') });
-  expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(false);
+  expect(peer.calls.some(c => c.method === 'session/selectModel' || c.method === 'session/prompt')).toBe(false);
 });
 
 async function until(predicate: () => boolean): Promise<void> {
@@ -686,13 +695,13 @@ it('restores the draft after a definite model rejection and keeps the binding an
     chat.fixture.input.value = 'rejected model'; await chat.fixture.controller.sendMessage();
     expect(chat.fixture.input.value).toBe('rejected model');
     expect(chat.fixture.state.messages.filter(m => m.role === 'user')).toHaveLength(1);
-    // A failed binding would stop its owned work asynchronously; give that path time to surface.
-    await new Promise(resolve => setTimeout(resolve, 50));
-    expect(peer.calls.some(c => c.method === 'job/kill' || c.method === 'session/cancel')).toBe(false);
+    // A failed binding reports its session error before the rejected run ends; its asynchronous stop is checked after the retry.
     expect(chat.sessionEvents.some(e => e.type === 'session_error')).toBe(false);
     expect(chat.coordinator.hasBackgroundWork).toBe(true);
     reject = false;
     await chat.fixture.controller.sendMessage();
+    expect(chat.sessionEvents.some(e => e.type === 'session_error')).toBe(false);
+    expect(chat.coordinator.hasBackgroundWork).toBe(true);
     expect(chat.fixture.input.value).toBe('');
     expect(chat.fixture.state.messages.map(m => m.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
     expect(peer.calls.filter(c => c.method === 'session/create')).toHaveLength(1);
@@ -797,9 +806,7 @@ it.each(['root', 'child'])('closes %s background scope on process exit and waits
       begin();
       event('assistant/message', { turn: nativeTurn, step: 0, message: { content: [{ type: 'text', text: 'background work' }] } });
     } else {
-      peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'subagentCatalog', value: [{ id: 'child', mode: 'continuable', label: 'child task' }] });
-      peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { mode: 'continuable', label: 'child task', seq: 0 } });
-      peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: 'child', parentSessionId: 'root', origin: 'subagent', agentAvailable: true, running: true }] });
+      announceChild('continuable', true);
       await until(() => !!childFollow);
       childFollow({ type: 'snapshot', cursor: 0, records: [{ type: 'event', event: { type: 'turn/start', seq: 0, time, data: { turn: 0 } } }] });
       peer.send('$events', { type: 'waterfall', eventId: 'child-question', event: 'user-questions/request', agentId: 'child', request: { questions: [{ id: 'q', question: 'Continue?', options: [{ label: 'Yes' }] }] } });
@@ -809,8 +816,11 @@ it.each(['root', 'child'])('closes %s background scope on process exit and waits
     lifecycle.exit();
     await until(() => lifecycle.disposed === 1);
     expect(chat.sessionEvents.filter(e => e.type === 'background_turn_completed')).toMatchObject([{ reason: 'provider-ended' }]);
+    const attach = jest.spyOn(deepseek, 'attach');
     chat.fixture.input.value = 'after restart'; const retry = chat.fixture.controller.sendMessage();
-    await new Promise(resolve => setTimeout(resolve, 10));
+    // A replacement start follows an attachment request within microtasks unless the Host waits for teardown.
+    await until(() => attach.mock.calls.length > 0);
+    await new Promise(resolve => setImmediate(resolve));
     expect(chat.start).toHaveBeenCalledTimes(1);
     release(); await retry;
     expect(chat.start).toHaveBeenCalledTimes(2);
@@ -824,9 +834,12 @@ it.each(['root', 'child'])('closes %s background scope on process exit and waits
 it('stops owned work promptly when a follow failure races a pending child snapshot', async () => {
   const ordinaryOpen = peer.onOpen;
   let childFollow: ((value: unknown) => void) | undefined;
+  let childJobs: ((value: unknown) => void) | undefined;
   const rootJobs = [{ id: 'job', owner: 'root', status: 'running' }];
   peer.onOpen = (endpoint, args, send) => {
     if (endpoint === 'session/follow' && args.request.address.childSessionId === 'child') { childFollow = send; return; }
+    // Hold only the child's first jobs anchor; its turn-end rebaseline answers at once.
+    if (endpoint === 'job/list' && args.request.sessionId === 'child' && !childJobs) { childJobs = send; return; }
     if (endpoint === 'job/list') { send({ type: 'rows', jobs: args.request.sessionId === 'root' ? rootJobs : [] }); return; }
     ordinaryOpen(endpoint, args, send);
   };
@@ -834,21 +847,20 @@ it('stops owned work promptly when a follow failure races a pending child snapsh
   peer.onCall = (method, args) => {
     if (method === 'job/kill') {
       rootJobs.length = 0;
-      peer.send('job/list', { type: 'rows', jobs: rootJobs }, args => args.request.sessionId === 'root');
+      peer.send('job/list', { type: 'rows', jobs: rootJobs }, jobsOf('root'));
       return {};
     }
-    if (method === 'subagents/interruptByParent') return {};
+    if (method === 'subagents/interruptByParent') {
+      childFollow!({ type: 'event', event: { type: 'turn/end', seq: 1, time, data: { turn: 0, reason: { kind: 'cancelled' } } } });
+      return {};
+    }
     return ordinary(method, args);
   };
-  create(); const run = session.execute(request()); const events: ProviderExecutionEvent[] = [];
-  const done = collect(run.events, events);
-  await until(() => peer.calls.some(c => c.method === 'session/prompt'));
-  begin(run.executionId); answer('root done'); await done;
-  peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'subagentCatalog', value: [{ id: 'child', mode: 'continuable', label: 'child task' }] });
-  peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { mode: 'continuable', label: 'child task', seq: 0 } });
-  peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: 'child', parentSessionId: 'root', origin: 'subagent', agentAvailable: true, running: false }] });
-  await until(() => !!childFollow);
-  await new Promise(resolve => setTimeout(resolve, 30));
+  create(); await completeRequest();
+  announceChild('continuable', true);
+  await until(() => !!childFollow && !!childJobs);
+  // The child's jobs precede the failing root frames on the shared stream, so only its snapshot remains to make it ready.
+  childJobs!({ type: 'rows', jobs: [] });
   // Root frame processing fails (overlapping turns) while the child's snapshot is still in flight.
   nativeTurn++; event('turn/start', { turn: nativeTurn }); event('turn/start', { turn: nativeTurn + 1 });
   await until(() => session.getStatus() === 'invalidated');
@@ -856,6 +868,7 @@ it('stops owned work promptly when a follow failure races a pending child snapsh
   // Readiness waiters must wake on applied frames even while the failed queue is detaching.
   await until(() => peer.calls.some(c => c.method === 'job/kill'));
   expect(peer.calls.filter(c => c.method === 'job/kill')).toMatchObject([{ args: { request: { sessionId: 'root', jobId: 'job' } } }]);
+  expect(peer.calls.filter(c => c.method === 'subagents/interruptByParent')).toMatchObject([{ args: { childSessionId: 'child', parentSessionId: 'root', mode: 'continuable' } }]);
 });
 
 it('keeps reload guidance after transcript divergence instead of rebinding or resending', async () => {
@@ -863,8 +876,8 @@ it('keeps reload guidance after transcript divergence instead of rebinding or re
   const run = session.execute(request()); const done = collect(run.events, events);
   await until(() => peer.calls.some(c => c.method === 'session/prompt'));
   begin(run.executionId);
-  peer.send('session/follow', { type: 'assistant-stream', frame: { type: 'start', attemptId: 'attempt', revision: 1, turn: nativeTurn, step: 0 } });
-  peer.send('session/follow', { type: 'assistant-stream', frame: { type: 'chunk', attemptId: 'attempt', revision: 2, index: 0, chunk: { type: 'text-delta', index: 0, text: 'Partial answer' } } });
+  peer.send('session/follow', { type: 'assistant-stream', frame: { type: 'start', attemptId: 'attempt', revision: 1, turn: nativeTurn, step: 0 } }, rootFollow('root'));
+  peer.send('session/follow', { type: 'assistant-stream', frame: { type: 'chunk', attemptId: 'attempt', revision: 2, index: 0, chunk: { type: 'text-delta', index: 0, text: 'Partial answer' } } }, rootFollow('root'));
   event('assistant/message', { turn: nativeTurn, step: 0, message: { content: [{ type: 'text', text: 'Contradictory answer' }] } });
   await done;
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', message: expect.stringMatching(/reload.*reopen/i) });
@@ -906,8 +919,215 @@ it('verifies permission once per binding and after mode changes rather than read
   permission = 'workspace-write';
   event('sandbox/mode', { mode: permission }); event('approval/policy', { policy: 'ask' });
   const policySeq = seq;
-  await new Promise(resolve => setTimeout(resolve, 10));
+  // A later automatic turn on the same stream proves the policy events were applied before the next admission.
+  begin(); answer('policy observed');
+  await until(() => sessionEvents.some(e => e.type === 'background_turn_completed'));
   await execute('yolo');
   expect(peer.calls.filter(c => c.method === 'commands/execute')).toHaveLength(2);
   expect(peer.calls.filter(c => c.method === 'session/page').some(c => c.args.request.throughSeq >= policySeq)).toBe(true);
+});
+
+const nativeError = (code: string, message: string): Error => Object.assign(new Error(message), { code });
+/** Native sends that would start model work: requested prompts and compaction commands. */
+const nativeSends = (): number => peer.calls.filter(c => c.method === 'session/prompt' || (c.method === 'commands/execute' && c.args.line === '/compact')).length;
+
+interface AdmissionCase {
+  readonly name: string;
+  readonly resume?: NonNullable<ProviderSessionConfig['resumeSeed']>;
+  /** Native overrides; each receives the ordinary fixture handler. */
+  readonly native?: Record<string, (args: Record<string, any>, ordinary: () => unknown) => unknown>;
+  /** Runs on the created session before the rejected request. */
+  readonly prepare?: () => Promise<void>;
+  readonly input: (input: ProviderExecutionRequest) => ProviderExecutionRequest;
+  readonly error: Record<string, unknown>;
+  /** Native sends made by the rejected request itself. */
+  readonly sends: number;
+  readonly status: 'idle' | 'invalidated';
+}
+const withConfiguration = (configuration: Partial<ProviderExecutionRequest['configuration']>) => (input: ProviderExecutionRequest): ProviderExecutionRequest =>
+  ({ ...input, configuration: { ...input.configuration, ...configuration } });
+const resumedProjection = (values: Record<string, unknown>) => (_args: Record<string, any>, ordinary: () => unknown) =>
+  Promise.resolve(ordinary()).then((value: any) => ({ ...value, values: { ...value.values, ...values } }));
+
+it.each<AdmissionCase>([
+  { name: 'an arbitrary tool allow-list', input: input => ({ ...input, toolPolicy: { kind: 'allow-list', names: ['Read'] } }),
+    error: { category: 'configuration', message: expect.stringContaining('allow-lists') }, sends: 0, status: 'idle' },
+  { name: 'an unsupported permission mode', input: withConfiguration({ permissionMode: 'plan' }),
+    error: { category: 'configuration', message: expect.stringContaining('Unsupported DeepSeek permission mode') }, sends: 0, status: 'idle' },
+  { name: 'reasoning without a model', input: withConfiguration({ reasoning: 'high' }),
+    error: { category: 'configuration', message: expect.stringContaining('Select a DeepSeek model') }, sends: 0, status: 'idle' },
+  { name: 'a model selection native did not honor', input: withConfiguration({ model: 'deepseek:native/model', reasoning: 'high' }),
+    native: { 'session/selectModel': () => ({ selected: { provider: 'native', model: 'fallback', reasoningEffort: 'high' } }) },
+    error: { category: 'configuration', message: expect.stringContaining('could not honor') }, sends: 0, status: 'idle' },
+  { name: 'a tool policy change within the session', prepare: () => completeRequest(), input: input => ({ ...input, toolPolicy: { kind: 'read-only' } }),
+    error: { category: 'configuration', message: expect.stringContaining('cannot change within a session') }, sends: 0, status: 'idle' },
+  { name: 'compaction while a background turn runs', input: input => ({ ...input, input: [{ type: 'text', text: '/compact' }] }),
+    prepare: async () => {
+      await completeRequest();
+      begin(); event('assistant/message', { turn: nativeTurn, step: 0, message: { content: [{ type: 'text', text: 'automatic work' }] } });
+      await until(() => sessionEvents.some(e => e.type === 'background_turn_started'));
+    },
+    error: { category: 'configuration', message: expect.stringContaining('Use Stop before compacting') }, sends: 0, status: 'idle' },
+  { name: 'a compaction native reports as failed', input: input => ({ ...input, input: [{ type: 'text', text: '/compact' }] }),
+    native: { 'commands/execute': (args, ordinary) => args.line === '/compact' ? { result: { kind: 'error', text: 'Nothing to compact.' } } : ordinary() },
+    error: { category: 'provider', message: 'Nothing to compact.' }, sends: 1, status: 'idle' },
+  { name: 'a resume from a different native store', resume: { providerSessionId: 'root', providerState: savedState({ home: '/elsewhere/.deepseek' }) }, input: input => input,
+    error: { category: 'configuration', message: expect.stringContaining('different store') }, sends: 0, status: 'idle' },
+  { name: 'a resumed session without a native preset', resume: { providerSessionId: 'root', providerState: savedState() }, input: input => input,
+    native: { 'session/projections': resumedProjection({ agentPreset: undefined }) },
+    error: { category: 'configuration', message: expect.stringContaining('preset is missing') }, sends: 0, status: 'invalidated' },
+  { name: 'a native preset that differs from the saved binding', resume: { providerSessionId: 'root', providerState: savedState({ preset: 'claudian-code' }) }, input: input => input,
+    error: { category: 'configuration', message: expect.stringContaining('differs from the saved conversation binding') }, sends: 0, status: 'invalidated' },
+  { name: 'a native tool policy that differs from the request', resume: { providerSessionId: 'root', providerState: savedState({ preset: 'claudian-passive' }) }, input: input => input,
+    native: { 'session/projections': resumedProjection({ agentPreset: 'claudian-passive' }) },
+    error: { category: 'configuration', message: expect.stringContaining('tool policy differs') }, sends: 0, status: 'invalidated' },
+  { name: 'a resumed native session that no longer exists', resume: { providerSessionId: 'root', providerState: savedState() }, input: input => input,
+    native: { 'session/create': () => { throw nativeError('session/missing', 'Session root was not found.'); } },
+    error: { category: 'provider-session-missing', missingProviderSessionId: 'root' }, sends: 0, status: 'invalidated' },
+  { name: 'a prompt native did not acknowledge', input: input => input, native: { 'session/prompt': () => ({ accepted: false }) },
+    error: { category: 'transport', message: expect.stringContaining('did not acknowledge') }, sends: 1, status: 'invalidated' },
+])('rejects $name with its recoverable error and no unintended native send', async ({ resume, native = {}, prepare, input, error, sends, status }) => {
+  const ordinary = peer.onCall;
+  peer.onCall = (method, args) => {
+    const override = native[method];
+    if (override) return override(args, () => ordinary(method, args));
+    // A request that slips past its guard completes normally, so the fault surfaces as a wrong result rather than a hang.
+    if (method === 'session/prompt') { begin(args.request.requestId); answer('sent'); return { accepted: true }; }
+    return ordinary(method, args);
+  };
+  create(resume ?? false);
+  await prepare?.();
+  const before = nativeSends();
+  const events: ProviderExecutionEvent[] = [];
+  await collect(session.execute(input(request())).events, events);
+  expect(events.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true, ...error });
+  expect(nativeSends() - before).toBe(sends);
+  await until(() => session.getStatus() === status);
+});
+
+it('refuses a second requested execution while the first is admitting', async () => {
+  const ordinary = peer.onCall;
+  peer.onCall = (method, args) => {
+    if (method === 'session/prompt') { begin(args.request.requestId); answer('first only'); return { accepted: true }; }
+    return ordinary(method, args);
+  };
+  create();
+  const first = session.execute(request('first')); const events: ProviderExecutionEvent[] = [];
+  expect(() => session.execute(request('second'))).toThrow('DeepSeek already has a requested execution.');
+  await collect(first.events, events);
+  expect(events.at(-1)?.type).toBe('turn_completed');
+  expect(peer.calls.filter(c => c.method === 'session/prompt').map(c => c.args.request.requestId)).toEqual([first.executionId]);
+});
+
+it('rejects a send while background Stop is running and admits after Stop settles', async () => {
+  let jobs = [{ id: 'job', owner: 'root', status: 'running' }];
+  const ordinaryOpen = peer.onOpen;
+  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  let release!: () => void;
+  const killing = new Promise<void>(resolve => { release = resolve; });
+  const ordinary = peer.onCall;
+  peer.onCall = async (method, args) => {
+    if (method === 'job/kill') {
+      await killing;
+      jobs = [{ id: 'job', owner: 'root', status: 'killed' }];
+      peer.send('job/list', { type: 'rows', jobs }, jobsOf('root'));
+      return { status: 'requested' };
+    }
+    if (method === 'session/prompt') { begin(args.request.requestId); answer('sent'); return { accepted: true }; }
+    return ordinary(method, args);
+  };
+  create(); await completeRequest();
+  session.cancel();
+  await until(() => peer.calls.some(c => c.method === 'job/kill'));
+  const events: ProviderExecutionEvent[] = [];
+  await collect(session.execute(request('during stop')).events, events);
+  expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'configuration', recoverable: true, message: expect.stringContaining('Wait for Stop to finish') });
+  expect(peer.calls.filter(c => c.method === 'session/prompt')).toHaveLength(1);
+  release();
+  await until(() => !session.hasBackgroundWork?.());
+  await completeRequest('after stop');
+  expect(peer.calls.filter(c => c.method === 'session/prompt')).toHaveLength(2);
+});
+
+it('forks a saved checkpoint on first send and binds the fork without resuming its source', async () => {
+  const ordinary = peer.onCall;
+  peer.onCall = (method, args) => {
+    if (method === 'session/fork') return { sessionId: 'fork' };
+    if (method === 'session/projections') return resumedProjection({ agentPreset: 'claudian-code' })(args, () => ordinary(method, args));
+    if (method === 'session/list') return { items: [{ sessionId: 'root', agentAvailable: true, running: false }, { sessionId: 'fork', agentAvailable: true, running: false }] };
+    return ordinary(method, args);
+  };
+  create({ providerState: savedState({ preset: 'claudian-code', pendingFork: { sessionId: 'root', atSeq: 2 } }) });
+  followed = 'fork';
+  const run = session.execute(request()); const events: ProviderExecutionEvent[] = []; const done = collect(run.events, events);
+  await until(() => peer.calls.some(c => c.method === 'session/prompt'));
+  begin(run.executionId); answer('forked answer'); await done;
+  expect(events.at(-1)?.type).toBe('turn_completed');
+  expect(peer.calls.filter(c => c.method === 'session/fork')).toEqual([{ method: 'session/fork', args: { request: { sessionId: 'root', atSeq: 2 } } }]);
+  expect(peer.calls.some(c => c.method === 'session/create')).toBe(false);
+  expect(peer.calls.find(c => c.method === 'session/prompt')?.args.request.sessionId).toBe('fork');
+  const snapshot = session.getSnapshot();
+  expect(snapshot).toMatchObject({ providerSessionId: 'fork', providerState: { preset: 'claudian-code' } });
+  expect(snapshot.providerState).not.toHaveProperty('pendingFork');
+});
+
+it.each(['continuable', 'one-shot'] as const)('stops a running %s child through the native owner of its lifetime', async mode => {
+  let childFollow: ((value: unknown) => void) | undefined;
+  const ordinaryOpen = peer.onOpen;
+  peer.onOpen = (endpoint, args, send) => {
+    if (endpoint === 'session/follow' && args.request.address.childSessionId === 'child') { childFollow = send; return; }
+    ordinaryOpen(endpoint, args, send);
+  };
+  const endChild = (): void => childFollow!({ type: 'event', event: { type: 'turn/end', seq: 1, time, data: { turn: 0, reason: { kind: 'cancelled' } } } });
+  const ordinary = peer.onCall;
+  peer.onCall = (method, args) => {
+    if (method === 'subagents/interruptByParent') { endChild(); return {}; }
+    // Cancelling the parent turn also ends the one-shot children it is waiting on.
+    if (method === 'session/cancel') endChild();
+    return ordinary(method, args);
+  };
+  create(); await completeRequest();
+  // A one-shot child runs inside its parent's turn; a continuable child outlives it.
+  if (mode === 'one-shot') {
+    begin(); event('assistant/message', { turn: nativeTurn, step: 0, message: { content: [{ type: 'text', text: 'delegating' }] } });
+    await until(() => sessionEvents.some(e => e.type === 'background_turn_started'));
+  }
+  announceChild(mode, true);
+  await until(() => !!childFollow);
+  childFollow!({ type: 'snapshot', cursor: 0, records: [{ type: 'event', event: { type: 'turn/start', seq: 0, time, data: { turn: 0 } } }] });
+  session.cancel();
+  await until(() => !session.hasBackgroundWork?.());
+  expect(peer.calls.filter(c => c.method === 'subagents/interruptByParent')).toEqual(mode === 'continuable'
+    ? [{ method: 'subagents/interruptByParent', args: { childSessionId: 'child', parentSessionId: 'root', mode: 'continuable' } }] : []);
+  expect(peer.calls.filter(c => c.method === 'session/cancel')).toHaveLength(mode === 'one-shot' ? 1 : 0);
+  expect(session.getStatus()).toBe('idle');
+});
+
+it('fails the session recoverably when background Stop does not settle before its deadline', async () => {
+  let jobs = [{ id: 'job', owner: 'root', status: 'running' }];
+  const ordinaryOpen = peer.onOpen;
+  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  const ordinary = peer.onCall;
+  // Native accepts the kill but the job never reports an ending.
+  peer.onCall = (method, args) => method === 'job/kill' ? { status: 'requested' } : ordinary(method, args);
+  create(); await completeRequest();
+  expect(session.hasBackgroundWork?.()).toBe(true);
+  const flush = async (): Promise<void> => { for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve)); };
+  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  try {
+    session.cancel();
+    await flush();
+    jest.advanceTimersByTime(9_000); await flush();
+    expect(session.getStatus()).toBe('cancelling');
+    for (let i = 0; i < 40 && session.getStatus() !== 'invalidated'; i++) { jest.advanceTimersByTime(100); await flush(); }
+    expect(session.getStatus()).toBe('invalidated');
+    expect(sessionEvents.filter(e => e.type === 'session_error')).toMatchObject([{ category: 'transport', recoverable: true, message: expect.stringContaining('did not settle') }]);
+    // The job ends natively; the failed binding's own stop then settles and releases the Host.
+    jobs = [{ id: 'job', owner: 'root', status: 'killed' }];
+    peer.send('job/list', { type: 'rows', jobs }, jobsOf('root'));
+    for (let i = 0; i < 40 && session.hasBackgroundWork?.(); i++) { jest.advanceTimersByTime(100); await flush(); }
+    expect(session.hasBackgroundWork?.()).toBe(false);
+  } finally { jest.useRealTimers(); }
+  expect(peer.calls.filter(c => c.method === 'job/kill').length).toBeGreaterThanOrEqual(1);
+  expect(lifecycle.disposed).toBe(0);
 });

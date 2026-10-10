@@ -1,3 +1,4 @@
+import { createHarness as createExecutionHarness } from '@test/helpers/ChatExecutionHarness';
 import {
   commandCatalog,
   commandLoader,
@@ -16,6 +17,7 @@ import {
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { TabManager } from '@/features/chat/tabs/TabManager';
+import { TabSession } from '@/features/chat/tabs/TabSession';
 
 jest.mock('@/features/chat/tabs/TabLifecycle', () => (
   jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').tabLifecycleModuleMock()
@@ -178,18 +180,45 @@ describe('TabManager provider execution orchestration', () => {
     expect(manager.getPersistedState().activeTabId).toBe(target!.id);
   });
 
-  it.each([
-    ['a foreground turn', (tab: any) => { void tab.session.turns.run(() => Promise.resolve()); }],
-    ['provider background work', (tab: any) => { tab.executionCoordinator.publishedBackgroundWork = true; }],
-  ])('projects %s as working in tab bar items', async (_source, makeWorking) => {
+  it('projects a foreground turn as working in tab bar items', async () => {
     const { manager } = createManager();
     const tab = await manager.createTab();
 
-    makeWorking(tab);
+    void tab!.session.turns.run(() => Promise.resolve());
 
     expect(manager.getTabBarItems()).toEqual([
       expect.objectContaining({ id: tab!.id, isWorking: true }),
     ]);
+  });
+
+  it('projects provider background work as working only once the coordinator publishes it', async () => {
+    const { manager } = createManager();
+    const tab = (await manager.createTab())!;
+    const execution = createExecutionHarness();
+    let detachedWork = false;
+    // Swap the fixture's coordinator for the real projection owner.
+    Object.assign(tab, {
+      executionCoordinator: execution.coordinator,
+      session: new TabSession(tab, execution.coordinator, { hasDetachedWork: () => detachedWork }),
+    });
+    await execution.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+    await execution.coordinator.prepare();
+    const native = execution.backends.get('claude')!.sessions[0];
+    let nativeWork = true;
+    Object.assign(native, { hasBackgroundWork: () => nativeWork });
+    const isWorking = () => manager.getTabBarItems().find(item => item.id === tab.id)?.isWorking;
+
+    expect(execution.coordinator.hasBackgroundWork).toBe(true);
+    expect(isWorking()).toBe(false);
+
+    native.emit({ type: 'session_state_changed', scope: { kind: 'session', sessionInstanceId: native.sessionInstanceId, sequence: 1 }, snapshot: native.getSnapshot() });
+    expect(isWorking()).toBe(true);
+
+    nativeWork = false;
+    native.emit({ type: 'session_state_changed', scope: { kind: 'session', sessionInstanceId: native.sessionInstanceId, sequence: 2 }, snapshot: native.getSnapshot() });
+    expect(isWorking()).toBe(false);
+    detachedWork = true;
+    expect(isWorking()).toBe(true);
   });
 
   it('keeps branch navigation admitted without showing a session work spinner', async () => {

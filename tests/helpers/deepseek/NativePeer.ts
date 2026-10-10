@@ -22,6 +22,21 @@ export interface NativePeerLifecycle {
   exit(): void;
 }
 
+/** Selects one session-scoped stream by its open arguments. */
+export type NativeStreamTarget = (args: Record<string, any>) => boolean;
+/** The follow stream of a root session. */
+export const rootFollow = (sessionId: string): NativeStreamTarget => args =>
+  args.request?.address?.kind === 'session' && args.request.address.sessionId === sessionId;
+/** The follow stream of a subagent child session. */
+export const childFollow = (childSessionId: string): NativeStreamTarget => args =>
+  args.request?.address?.kind === 'subagent' && args.request.address.childSessionId === childSessionId;
+/** The job stream of a session. */
+export const jobsOf = (sessionId: string): NativeStreamTarget => args => args.request?.sessionId === sessionId;
+
+/** Process-global streams native broadcasts to every subscribed client. */
+export type NativeGlobalEndpoint = '$events' | 'session/control';
+const GLOBAL_ENDPOINTS: ReadonlySet<string> = new Set<NativeGlobalEndpoint>(['$events', 'session/control']);
+
 /** Native wire peer. All adapter decoding and lifecycle logic runs in production code. */
 export class NativePeer {
   readonly calls: Array<{ method: string; args: Record<string, any> }> = [];
@@ -66,7 +81,7 @@ export class NativePeer {
   }
 
   connect(): Promise<DeepSeekRemoteClient> {
-    return DeepSeekRemoteClient.open(`http://127.0.0.1:${(this.server.address() as AddressInfo).port}/?token=fixture`);
+    return DeepSeekRemoteClient.open(this.url);
   }
 
   /** A production shared Host whose process is this peer, recording only process lifecycle and prompt files. */
@@ -87,12 +102,25 @@ export class NativePeer {
     return { deepseek, lifecycle };
   }
 
-  send(endpoint: string, value: unknown, matches: (args: Record<string, any>) => boolean = () => true): void {
-    for (const [streamId, stream] of this.streams) {
-      if (stream.endpoint === endpoint && matches(stream.args) && stream.socket.readyState === WebSocket.OPEN) {
-        stream.socket.send(JSON.stringify({ type: 'item', streamId, value }));
-      }
-    }
+  /** Base launch URL a native process would print, with the fixture login token. */
+  get url(): string {
+    return `http://127.0.0.1:${(this.server.address() as AddressInfo).port}/?token=fixture`;
+  }
+
+  /**
+   * Broadcasts a process-global frame to every subscriber, or delivers a session-scoped frame to exactly one open
+   * stream chosen by `target`. A session-scoped send that matches no stream or several fails, so a frame can never
+   * reach a root and its children alike by accident.
+   */
+  send(endpoint: NativeGlobalEndpoint, value: unknown): void;
+  send(endpoint: string, value: unknown, target: NativeStreamTarget): void;
+  send(endpoint: string, value: unknown, target?: NativeStreamTarget): void {
+    const open = [...this.streams].filter(([, stream]) => stream.endpoint === endpoint && stream.socket.readyState === WebSocket.OPEN);
+    const global = GLOBAL_ENDPOINTS.has(endpoint);
+    if (!global && !target) throw new Error(`${endpoint} is session-scoped; name its target stream.`);
+    const matched = global ? open : open.filter(([, stream]) => target!(stream.args));
+    if (!global && matched.length !== 1) throw new Error(`Expected one open ${endpoint} stream for the target, found ${matched.length}.`);
+    for (const [streamId, stream] of matched) stream.socket.send(JSON.stringify({ type: 'item', streamId, value }));
   }
 
   async close(): Promise<void> {

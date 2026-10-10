@@ -36,7 +36,7 @@ function createRouting(
   Object.assign(harness.plugin, { renameConversation: jest.fn().mockResolvedValue(undefined) });
   const mainExecutions: string[] = [];
   const mainMessages: ChatMessage[] = [];
-  const session = createTestTabSession({ coordinator: { cancel: () => deps.getExecutionCoordinator()?.cancel() } });
+  const session = createTestTabSession({ coordinator: { cancel: options => deps.getExecutionCoordinator()?.cancel(options) } });
   const state = new ChatState({}, undefined, session.turns);
   state.currentConversationId = 'conversation-1';
   state.addMessage = (message: ChatMessage) => { mainMessages.push(message); };

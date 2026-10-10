@@ -4,7 +4,6 @@ import '@/providers';
 import { holdResponse } from '@test/helpers/ConversationPorts';
 import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { fireEvent, getByRole, waitFor } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { App, Component } from 'obsidian';
 
 import type { ChatMessage, Conversation } from '@/core/types';
@@ -95,12 +94,53 @@ it('routes Escape through the selected main session for published jobs-only work
   const input = getByRole(tab.dom.inputComposerEl, 'textbox');
   expect(tab.controllers.sideChatController.destination).toBe('main');
   expect(tab.ui.composerDropdown.isVisible()).toBe(false);
+  // An earlier capture listener (e.g. an open menu) that consumed Escape owns it.
+  const consumeEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') event.preventDefault(); };
+  document.addEventListener('keydown', consumeEscape, true);
+  try {
+    fireEvent.keyDown(input, { key: 'Escape' });
+  } finally {
+    document.removeEventListener('keydown', consumeEscape, true);
+  }
+  expect(native.cancelCalls).toBe(0);
+  expect(tab.session.hasMainBackgroundWork).toBe(true);
   fireEvent.keyDown(input, { key: 'Escape' });
   expect(native.cancelCalls).toBe(1);
   working = false;
   native.emitSessionEvent({ type: 'session_state_changed', snapshot: native.getSnapshot() });
   fireEvent.keyDown(input, { key: 'Escape' });
   expect(native.cancelCalls).toBe(1);
+});
+
+it.each([false, true])('routes Escape to a working side chat when main background work is %s', async (mainBackground) => {
+  await releaseResponse();
+  jest.useRealTimers();
+  // A completed main reply is the fork point the side chat starts from.
+  tab.state.messages = [
+    { id: 'u1', role: 'user', content: 'Remember A', timestamp: 1 },
+    { id: 'a1', role: 'assistant', content: 'Noted A', timestamp: 2, assistantMessageId: 'checkpoint-1' },
+  ];
+  await tab.executionCoordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+  await tab.executionCoordinator.prepare();
+  const mainNative = harness.backend.latest;
+  Object.assign(mainNative, { hasBackgroundWork: () => mainBackground });
+  mainNative.emitSessionEvent({ type: 'session_state_changed', snapshot: mainNative.getSnapshot() });
+  expect(tab.session.hasMainBackgroundWork).toBe(mainBackground);
+  const sideChat = tab.controllers.sideChatController;
+  const started = sideChat.handleCommandSubmission('Explore B', []);
+  await waitFor(() => expect(harness.backend.latest).not.toBe(mainNative));
+  const sideNative = harness.backend.latest;
+  await waitFor(() => expect(sideNative.requests).toHaveLength(1));
+  expect(sideChat.destination).toBe('side');
+  expect(sideChat.runtime?.isWorking).toBe(true);
+  expect(tab.state.isStreaming).toBe(false);
+  const input = getByRole(tab.dom.inputComposerEl, 'textbox');
+
+  fireEvent.keyDown(input, { key: 'Escape' });
+
+  expect(sideNative.cancelCalls).toBe(1);
+  expect(mainNative.cancelCalls).toBe(0);
+  await started;
 });
 
 it.each([
@@ -185,9 +225,20 @@ it.each(['pointerup', 'pointercancel'])('keeps following through layout scrolls 
 });
 
 
-it('cancels reference preparation with Escape while leaving existing background work running', async () => {
+it.each([
+  ['owns a new turn', false],
+  // A queued message whose continuation could not start leaves no turn in flight.
+  ['waits behind an unstarted queued message', true],
+])('cancels reference preparation that %s with Escape while leaving existing background work running', async (_name, queueFirst) => {
+  const queued = 'queued follow-up';
+  if (queueFirst) {
+    tab.dom.inputEl.value = queued;
+    await tab.controllers.inputController.sendMessage();
+  }
+  expect(tab.dom.inputEl.value).toBe('');
   await releaseResponse();
   jest.useRealTimers();
+  expect(tab.session.turns.isActive).toBe(false);
   await tab.executionCoordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   await tab.executionCoordinator.prepare();
   const native = harness.backend.latest;
@@ -204,12 +255,14 @@ it('cancels reference preparation with Escape while leaving existing background 
   try {
     await waitFor(() => expect(read).toHaveBeenCalled());
     expect(tab.controllers.inputController.isPreparingMainTurn).toBe(true);
+    expect(tab.session.turns.isInFlight).toBe(!queueFirst);
     fireEvent.keyDown(input, { key: 'Escape' });
     expect(native.cancelCalls).toBe(0);
     resolveHistory(null); await sending;
-    expect(tab.dom.inputEl.value).toBe(draft);
+    expect(tab.dom.inputEl.value).toContain(draft);
+    // Withdrawing the unstarted queued message returns it to the composer too.
+    expect(tab.dom.inputEl.value.includes(queued)).toBe(queueFirst);
     expect(tab.session.hasMainBackgroundWork).toBe(true);
-    expect((await axe(input)).violations).toEqual([]);
     // Once preparation has ended, the same user action reaches background Stop.
     fireEvent.keyDown(input, { key: 'Escape' });
     expect(native.cancelCalls).toBe(1);

@@ -1223,6 +1223,8 @@ describe('ClaudianView shutdown', () => {
   });
 });
 
+type EscapeConsumer = 'resume dropdown' | 'prompt suggestion' | 'composer dropdown';
+
 describe('ClaudianView Escape handling', () => {
   beforeEach(() => {
     MockScope.instances.length = 0;
@@ -1232,7 +1234,7 @@ describe('ClaudianView Escape handling', () => {
     isStreaming: boolean;
     toolbarMenuOpen?: boolean;
     backgroundWork?: boolean;
-    composerDropdownOpen?: boolean;
+    escapeConsumer?: EscapeConsumer;
   }): {
     cancelStreaming: jest.Mock;
     closeOpenMenu: jest.Mock;
@@ -1251,10 +1253,13 @@ describe('ClaudianView Escape handling', () => {
         getActiveTab: jest.fn().mockReturnValue({
           state: { isStreaming: options.isStreaming },
           session: { hasMainBackgroundWork: options.backgroundWork ?? false },
-          ui: { composerDropdown: { handleKeydown: () => options.composerDropdownOpen ?? false }, promptSuggestion: { handleKeydown: () => false } },
+          ui: {
+            composerDropdown: { handleKeydown: () => options.escapeConsumer === 'composer dropdown' },
+            promptSuggestion: { handleKeydown: () => options.escapeConsumer === 'prompt suggestion' },
+          },
           controllers: {
             inputController: { cancelStreaming },
-            builtInCommandController: { handleResumeKeydown: () => false },
+            builtInCommandController: { handleResumeKeydown: () => options.escapeConsumer === 'resume dropdown' },
             sideChatController: { destination: 'main', runtime: null },
           },
           composer: { closeOpenMenu },
@@ -1342,14 +1347,20 @@ describe('ClaudianView Escape handling', () => {
     expect(cancelStreaming).not.toHaveBeenCalled();
   });
 
-  it('routes published background work through scoped Escape while preserving dropdown consumption', () => {
-    const active = createEscapeHarness({ isStreaming: false, backgroundWork: true });
-    active.escape();
-    expect(active.cancelStreaming).toHaveBeenCalledTimes(1);
-    const dropdown = createEscapeHarness({ isStreaming: false, backgroundWork: true, composerDropdownOpen: true });
-    dropdown.escape();
-    expect(dropdown.cancelStreaming).not.toHaveBeenCalled();
+  it('routes published background work through scoped Escape', () => {
+    const { cancelStreaming, escape } = createEscapeHarness({ isStreaming: false, backgroundWork: true });
+    expect(escape()).toBe(false);
+    expect(cancelStreaming).toHaveBeenCalledTimes(1);
   });
+
+  it.each<EscapeConsumer>(['resume dropdown', 'prompt suggestion', 'composer dropdown'])(
+    'lets an open %s consume scoped Escape before background Stop',
+    (escapeConsumer) => {
+      const { cancelStreaming, escape } = createEscapeHarness({ isStreaming: false, backgroundWork: true, escapeConsumer });
+      expect(escape()).toBe(false);
+      expect(cancelStreaming).not.toHaveBeenCalled();
+    },
+  );
 
   it('exits session inline rename before handling other scoped Escape actions', () => {
     const cancelInlineRename = jest.spyOn(SessionBrowser.prototype, 'cancelInlineRename')

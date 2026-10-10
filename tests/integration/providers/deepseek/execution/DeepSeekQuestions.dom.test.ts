@@ -3,7 +3,8 @@
  * @jest-environment-options {"customExportConditions":["node","node-addons"]}
  */
 
-import { NativePeer } from '@test/helpers/deepseek/NativePeer';
+import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
+import { NativePeer, rootFollow } from '@test/helpers/deepseek/NativePeer';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor,within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
@@ -31,7 +32,7 @@ function request(text = 'requested'): ProviderExecutionRequest {
   return { input: [{ type: 'text', text }], configuration: { systemInstructions: { kind: 'explicit', instructions: 'literal {prompt}' }, permissionMode: 'normal' }, toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal };
 }
 function event(type: string, data: unknown): void {
-  peer.send('session/follow', { type: 'event', event: { type, seq: ++seq, time, data } });
+  peer.send('session/follow', { type: 'event', event: { type, seq: ++seq, time, data } }, rootFollow('root'));
 }
 function begin(rpcId: string): void {
   nativeTurn++;
@@ -48,26 +49,9 @@ beforeEach(async () => {
   seq = 3; nativeTurn = 0; settings.locale = 'en';
   port = { requestApproval: jest.fn(), askUserQuestion: jest.fn(), dismissInteraction: jest.fn() };
   peer = new NativePeer();
-  peer.onCall = method => {
-    if (method === 'session/create') return { sessionId: 'root', agentPreset: 'claudian' };
-    if (method === 'session/list') return { items: [{ sessionId: 'root', agentAvailable: true, running: false }] };
-    if (method === 'permissionPresets/catalog') return { options: [{ value: 'workspace-write' }, { value: 'danger-full-access' }] };
-    if (method === 'commands/list') return [{ name: 'permission' }, { name: 'compact', description: 'Compact history' }, { name: 'goal' }];
-    if (method === 'skills/list') return { skills: [{ name: 'review', description: 'Review changes', modelInvocable: true }] };
-    if (method === 'session/projections') return { asOfSeq: seq, values: { agentPreset: 'claudian', permissions: { currentValue: 'workspace-write' } } };
-    if (method === 'session/page') return { hasMore: false, records: [
-      { type: 'event', event: { type: 'sandbox/mode', seq: 1, time, data: { mode: 'workspace-write' } } },
-      { type: 'event', event: { type: 'approval/policy', seq: 2, time, data: { policy: 'ask' } } },
-    ] };
-    if (method === 'session/prompt') return { accepted: true };
-    if (method === '$events/result') return {};
-    throw new Error(`Unexpected native call ${method}`);
-  };
-  peer.onOpen = (endpoint, _args, send) => {
-    if (endpoint === 'session/control') send({ type: 'baseline', value: { projections: {} } });
-    if (endpoint === 'session/follow') send({ type: 'snapshot', cursor: seq, records: [], header: { id: 'root', agentPreset: 'claudian' }, projections: { asOfSeq: seq, values: {} } });
-    if (endpoint === 'job/list') send({ type: 'rows', jobs: [] });
-  };
+  const native = nativeDefaults({ seq: () => seq, roster: () => ['root'] });
+  peer.onCall = (method, args) => method === 'session/create' ? { sessionId: 'root', agentPreset: 'claudian' } : native.call(method, args);
+  peer.onOpen = native.open;
   await peer.open();
   ({ deepseek } = peer.host());
 });
@@ -89,7 +73,24 @@ HTMLElement.prototype.toggleClass = function (names, enabled) {
 HTMLElement.prototype.scrollIntoView = function () {};
 HTMLElement.prototype.setText = function (text) { this.textContent = String(text); };
 
-it('renders a native free-text question and sends its answer under the native ID', async () => {
+/** Resolves once the session published an event, which it does only after applying the native frame behind it. */
+async function published(events: ProviderExecutionEvent[], expected: Record<string, unknown>): Promise<void> {
+  await waitFor(() => expect(events).toContainEqual(expect.objectContaining(expected)));
+}
+const claimed = (events: ProviderExecutionEvent[]) => published(events, { type: 'turn_started', nativeTurnId: String(nativeTurn) });
+
+it.each([
+  {
+    name: 'a free-text answer', question: { id: 'native-name', question: 'Project name?' },
+    respond: async () => fireEvent.input(await within(document.body).findByRole('textbox', { name: 'Project name?' }), { target: { value: 'Atlas' } }),
+    sent: { id: 'native-name', selected: [], custom: 'Atlas' },
+  },
+  {
+    name: 'a selected option', question: { id: 'native-color', question: 'Which color?', options: [{ label: 'Red' }, { label: 'Blue' }] },
+    respond: async () => fireEvent.click(await within(document.body).findByRole('button', { name: 'Blue' })),
+    sent: { id: 'native-color', selected: ['Blue'] },
+  },
+])('renders a native question and sends $name under the native ID', async ({ question, respond, sent }) => {
   document.body.replaceChildren();
   port.askUserQuestion = input => new Promise(resolve => {
     const panel = new InlineAskUserQuestion(document.body.createDiv(), input.input,
@@ -98,16 +99,18 @@ it('renders a native free-text question and sends its answer under the native ID
   });
   create();
   const run = session.execute(request());
-  const done = collect(run.events, []);
+  const events: ProviderExecutionEvent[] = [];
+  const done = collect(run.events, events);
   await waitFor(() => expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(true));
   begin(run.executionId);
-  peer.send('$events', { type: 'waterfall', eventId: 'question', event: 'user-questions/request', agentId: 'root', request: { questions: [{ id: 'native-name', question: 'Project name?' }] } });
-  await waitFor(() => expect(within(document.body).getByRole('textbox', { name: 'Project name?' })).toBeTruthy());
+  await claimed(events);
+  peer.send('$events', { type: 'waterfall', eventId: 'question', event: 'user-questions/request', agentId: 'root', request: { questions: [question] } });
+  await within(document.body).findByRole('region', { name: 'Question' });
   expect((await axe(document.body)).violations).toEqual([]);
-  fireEvent.input(within(document.body).getByRole('textbox', { name: 'Project name?' }), { target: { value: 'Atlas' } });
+  await respond();
   fireEvent.click(within(document.body).getByRole('button', { name: 'Submit' }));
   fireEvent.click(within(document.body).getByRole('button', { name: 'Submit answers' }));
-  await waitFor(() => expect(peer.calls.find(c => c.method === '$events/result')?.args.outcome).toEqual({ kind: 'result', value: { answers: [{ id: 'native-name', selected: [], custom: 'Atlas' }] } }));
+  await waitFor(() => expect(peer.calls.find(c => c.method === '$events/result')?.args).toEqual({ clientId: expect.any(String), eventId: 'question', outcome: { kind: 'result', value: { answers: [sent] } } }));
   answer('saved');
   await done;
 });
@@ -138,46 +141,53 @@ async function startChild(): Promise<(value: unknown) => void> {
   peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'subagentCatalog', value: [{ id: 'child', mode: 'continuable', label: 'child task' }] });
   peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { mode: 'continuable', label: 'child task', seq: 0 } });
   peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: 'child', parentSessionId: 'root', origin: 'subagent', agentAvailable: true, running: true }] });
-  await waitFor(() => expect(childFollow).toBeDefined());
+  await waitFor(() => expect([...peer.streams.values()].map(stream => stream.args.request?.address?.childSessionId)).toContain('child'));
   childFollow!({ type: 'snapshot', cursor: 0, records: [{ type: 'event', event: { type: 'turn/start', seq: 0, time, data: { turn: 0 } } }] });
   return childFollow!;
 }
 
+const allow = { decide: () => fireEvent.click(within(document.body).getByRole('button', { name: 'Allow once' })), sent: 'allowed-once' };
 it.each([
-  { name: 'a direct call', locale: 'en', reason: nativeReason.displayReason.en, callId: 'bash-1', order: 'tool first' },
-  { name: 'a direct call whose tool frame arrives later', locale: 'zh-CN', reason: nativeReason.displayReason.zh, callId: 'bash-1', order: 'approval first' },
-  { name: 'a code-mode call', locale: 'fr', reason: nativeReason.displayReason.en, callId: 'code-1:ptc:1', order: 'tool first' },
+  { name: 'a direct call', locale: 'en', reason: nativeReason.displayReason.en, callId: 'bash-1', order: 'tool first', ...allow },
+  { name: 'a direct call whose tool frame arrives later', locale: 'zh-CN', reason: nativeReason.displayReason.zh, callId: 'bash-1', order: 'approval first', ...allow },
+  { name: 'a code-mode call', locale: 'fr', reason: nativeReason.displayReason.en, callId: 'code-1:ptc:1', order: 'tool first', ...allow },
   // Native `zh` is Simplified Chinese; Traditional Chinese falls back to English instead.
-  { name: 'a Traditional Chinese locale', locale: 'zh-TW', reason: nativeReason.displayReason.en, callId: 'bash-1', order: 'tool first' },
-])('renders the action and localized native reason for $name', async ({ locale, reason, callId, order }) => {
+  { name: 'a Traditional Chinese locale', locale: 'zh-TW', reason: nativeReason.displayReason.en, callId: 'bash-1', order: 'tool first', ...allow },
+  { name: 'a denied call', locale: 'en', reason: nativeReason.displayReason.en, callId: 'bash-1', order: 'tool first',
+    decide: () => fireEvent.click(within(document.body).getByRole('button', { name: 'Deny' })), sent: 'rejected' },
+  { name: 'a dismissed call', locale: 'en', reason: nativeReason.displayReason.en, callId: 'bash-1', order: 'tool first',
+    decide: () => fireEvent.keyDown(within(document.body).getByRole('button', { name: 'Allow once' }), { key: 'Escape' }), sent: 'cancelled' },
+])('renders the action and localized native reason for $name and sends the native decision', async ({ locale, reason, callId, order, decide, sent }) => {
   settings.locale = locale;
   renderApprovals(); create();
   const run = session.execute(request());
-  const done = collect(run.events, []);
+  const events: ProviderExecutionEvent[] = [];
+  const done = collect(run.events, events);
   try {
     await waitFor(() => expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(true));
     begin(run.executionId);
+    await claimed(events);
+    const ptc = callId.includes(':ptc:');
     const toolFrame = (): void => {
-      if (callId.includes(':ptc:')) {
+      if (ptc) {
         event('tool/call', { callId: 'code-1', name: 'run_code', arguments: JSON.stringify({ code: 'await bash({ command })' }) });
         event('tool/ptc-dispatch-start', { rootCallId: 'code-1', subCallId: callId, name: 'bash', arguments: { command } });
       } else event('tool/call', { callId, name: 'bash', arguments: JSON.stringify({ command }) });
     };
-    if (order === 'tool first') { toolFrame(); await new Promise(resolve => setTimeout(resolve, 20)); }
-    approve('root', callId);
-    let early: HTMLElement | null = null;
-    if (order === 'approval first') {
-      await new Promise(resolve => setTimeout(resolve, 50));
-      early = within(document.body).queryByRole('region', { name: /approval details/ });
+    if (order === 'tool first') {
       toolFrame();
+      // The session publishes the call (or its code-mode dispatch) once it applied the frame.
+      await published(events, { type: ptc ? 'tool_output' : 'tool_started' });
     }
-    expect(early).toBeNull();
-    const details = await waitFor(() => within(document.body).getByRole('region', { name: 'Bash approval details' }));
+    approve('root', callId);
+    // Native interactions are handled on receipt, ahead of follow frames sent after them.
+    if (order === 'approval first') toolFrame();
+    const details = await within(document.body).findByRole('region', { name: 'Bash approval details' });
     expect(details.textContent).toBe(`Run command: ${command}`);
     expect(within(document.body).getByText(reason)).toBeTruthy();
     expect((await axe(document.body)).violations).toEqual([]);
-    fireEvent.click(within(document.body).getByRole('button', { name: 'Allow once' }));
-    await waitFor(() => expect(peer.calls.find(c => c.method === '$events/result')?.args.outcome).toEqual({ kind: 'result', value: 'allowed-once' }));
+    decide();
+    await waitFor(() => expect(peer.calls.find(c => c.method === '$events/result')?.args).toEqual({ clientId: expect.any(String), eventId: 'approval', outcome: { kind: 'result', value: sent } }));
     expect(session.getStatus()).not.toBe('invalidated');
   } finally {
     answer('Done');
@@ -226,11 +236,12 @@ it('renders the native reason immediately for an approval without a call ID', as
 it('falls back to the native reason at the deadline when owned call details never arrive', async () => {
   renderApprovals(); create();
   const run = session.execute(request());
-  const done = collect(run.events, []);
+  const events: ProviderExecutionEvent[] = [];
+  const done = collect(run.events, events);
   try {
     await waitFor(() => expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(true));
     begin(run.executionId);
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await claimed(events);
     const realTimeout = setTimeout;
     // Only the interaction deadline, armed after this point, runs on the fake clock.
     jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask'] });

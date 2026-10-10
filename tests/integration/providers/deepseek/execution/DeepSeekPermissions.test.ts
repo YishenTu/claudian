@@ -31,18 +31,27 @@ it('validates effective permission facts across a pinned paginated log before ad
   expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(false);
 });
 
-it.each(['nested-error', 'redefined', 'missing-facts'])('rejects %s instead of trusting preset labels or RPC success', async mode => {
+const facts = (mode: string, policy: string) => [
+  { type: 'event', event: { type: 'sandbox/mode', seq: 2, time, data: { mode } } },
+  { type: 'event', event: { type: 'approval/policy', seq: 3, time, data: { policy } } },
+];
+const incompatible = /missing or incompatible with the canonical native presets/;
+
+it.each([
+  // Native read-back would confirm the preset, so only the command outcome rejects it.
+  { name: 'a nested command error', outcome: 'error', records: facts('workspace-write', 'ask'), message: /could not select permission preset workspace-write/ },
+  { name: 'facts redefined behind the preset label', outcome: 'success', records: facts('danger-full-access', 'never'), message: incompatible },
+  { name: 'missing facts', outcome: 'success', records: [], message: incompatible },
+])('rejects $name instead of trusting preset labels or RPC success', async ({ outcome, records, message }) => {
   peer.onCall = method => {
     if (method === 'permissionPresets/catalog') return { options: [{ value: 'workspace-write' }] };
     if (method === 'commands/list') return [{ name: 'permission' }];
-    if (method === 'commands/execute') return { result: { kind: mode === 'nested-error' ? 'error' : 'success' } };
+    if (method === 'commands/execute') return { result: { kind: outcome } };
     if (method === 'session/projections') return { asOfSeq: 5, values: { permissions: { currentValue: 'workspace-write' } } };
-    return { hasMore: false, records: mode === 'missing-facts' ? [] : [
-      { type: 'event', event: { type: 'sandbox/mode', seq: 2, time, data: { mode: 'danger-full-access' } } },
-      { type: 'event', event: { type: 'approval/policy', seq: 3, time, data: { policy: 'never' } } },
-    ] };
+    if (method === 'session/page') return { hasMore: false, records };
+    throw new Error(`Unexpected ${method}`);
   };
-  await expect(applyDeepSeekPermission(peer.client, 'root', 'normal', () => {})).rejects.toThrow(/permission/i);
+  await expect(applyDeepSeekPermission(peer.client, 'root', 'normal', () => {})).rejects.toThrow(message);
 });
 
 it('reports unavailable native sessions without using activating follow', async () => {

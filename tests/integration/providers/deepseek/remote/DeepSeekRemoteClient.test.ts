@@ -31,6 +31,10 @@ beforeEach(async () => {
         return;
       }
       if (frame.method === 'fixture/malformed') { res.end('{broken'); return; }
+      if (frame.method === 'fixture/foreign-rpc') {
+        res.end(JSON.stringify({ type: 'server-response', rpcId: 'another-request', result: { ok: true, value: 'foreign' } }));
+        return;
+      }
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ type: 'server-response', rpcId: frame.rpcId, result:
         frame.method === 'fixture/error'
@@ -46,6 +50,11 @@ beforeEach(async () => {
       const frame = JSON.parse(bytes.toString());
       if (frame.type === 'cancel') return;
       if (frame.type !== 'open') { ws.close(1008, 'invalid Remote stream request'); return; }
+      if (frame.endpoint === 'fixture/error-stream') {
+        ws.send(JSON.stringify({ type: 'error', streamId: frame.streamId, error: { code: 'session/missing', message: 'No such session' } }));
+        return;
+      }
+      if (frame.endpoint === 'fixture/unknown-frame') { ws.send(JSON.stringify({ type: 'surprise', streamId: frame.streamId })); return; }
       ws.send(JSON.stringify({ type: 'item', streamId: frame.streamId, value:
         frame.endpoint === '$events'
           ? { type: 'ready', clientId: 'native-client' }
@@ -73,6 +82,7 @@ it('authenticates unary calls and mux streams without exposing launch credential
   expect(requests[0]).toMatchObject({ type: 'client-request', method: 'session/list' });
   await expect(client.call('fixture/error')).rejects.toMatchObject({ code: 'session/writer-held' });
   await expect(client.call('fixture/malformed')).rejects.toThrow(/malformed/i);
+  await expect(client.call('fixture/foreign-rpc')).rejects.toThrow(/malformed.*result/i);
   await expect(client.call('fixture/stall', {}, { timeoutMs: 30 })).rejects.toThrow(/timed out/i);
 });
 
@@ -80,6 +90,8 @@ it('rejects untrusted launch origins before authenticating and fences disposed c
   for (const address of ['https://example.com/?token=private-token', 'http://127.0.0.1.evil/?token=private-token', 'http://user:pass@127.0.0.1/?token=private-token']) {
     await expect(DeepSeekRemoteClient.open(address)).rejects.toThrow(/loopback/i);
   }
+  await expect(DeepSeekRemoteClient.open(url.replace('private-token', 'stale-token'))).rejects.toThrow(/authentication failed \(HTTP 401\)/i);
+  expect(sockets.clients.size).toBe(0);
   client = await DeepSeekRemoteClient.open(url);
   const closed = new Promise<Error>(resolve => client!.onDisconnect(resolve));
   for (const ws of sockets.clients) ws.terminate();
@@ -107,6 +119,17 @@ it('ends one stream, by cancellation or its own listener rejecting a frame, with
   expect(snapshot).toEqual({ type: 'snapshot', cursor: 12, records: [] });
   expect(disconnected).not.toHaveBeenCalled();
   expect(client.clientId).toBe('native-client');
+  const remote = await new Promise<Error>(resolve => client!.subscribe('fixture/error-stream', {}, () => {}, resolve));
+  expect(remote).toMatchObject({ code: 'session/missing', message: 'No such session' });
+  expect(disconnected).not.toHaveBeenCalled();
+});
+
+it('closes the shared mux on an unknown stream frame instead of guessing its meaning', async () => {
+  client = await DeepSeekRemoteClient.open(url);
+  const disconnected = new Promise<Error>(resolve => client!.onDisconnect(resolve));
+  client.subscribe('fixture/unknown-frame', {}, () => {}, () => {});
+  expect((await disconnected).message).toMatch(/connection closed/i);
+  expect(client.clientId).toBe('');
 });
 
 it('keeps the ordinary RPC deadline but waits without one only when asked, still honoring abort', async () => {

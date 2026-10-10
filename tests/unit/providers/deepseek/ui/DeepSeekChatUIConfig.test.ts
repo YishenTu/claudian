@@ -1,17 +1,24 @@
-import { DEEPSEEK_PERMISSION_MODE_OPTIONS } from '@/providers/deepseek/permissionModes';
-import { deepseekProviderRegistration } from '@/providers/deepseek/registration';
-import { deepseekChatUIConfig } from '@/providers/deepseek/ui/DeepSeekChatUIConfig';
+import '@/providers';
+
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { DEEPSEEK_PROVIDER_ICON } from '@/shared/icons';
 
 describe('DeepSeekChatUIConfig', () => {
-  it('brands DeepSeek chat with its whale icon and offers its permission modes', () => {
-    expect(deepseekProviderRegistration.chatUIConfig).toBe(deepseekChatUIConfig);
-    expect(deepseekChatUIConfig.getProviderIcon?.()).toBe(DEEPSEEK_PROVIDER_ICON);
-    expect(deepseekChatUIConfig.getPermissionModeOptions?.({})).toBe(DEEPSEEK_PERMISSION_MODE_OPTIONS);
-    expect(DEEPSEEK_PERMISSION_MODE_OPTIONS.map(({ label, description }) => ({ label, description }))).toEqual([
-      { label: 'Workspace write', description: 'Ask before extra access.' },
-      { label: 'Full access', description: 'Unrestricted files and internet.' },
-    ]);
-    expect(deepseekChatUIConfig.getModeSelector?.({})).toBeNull();
+  it('offers exactly the saved permission modes, with only native full access bypassing approvals', () => {
+    const ui = ProviderRegistry.getChatUIConfig('deepseek');
+    const policy = ProviderRegistry.getModelPolicy('deepseek').permissionModes!;
+    const options = ui.getPermissionModeOptions?.({}) ?? [];
+
+    expect(options.map(option => option.value)).toEqual([...policy.values]);
+    expect(new Set(options.map(option => option.label)).size).toBe(options.length);
+    // `yolo` is the mode execution applies as native danger-full-access.
+    expect(options.filter(option => option.bypassesApprovals).map(option => option.value)).toEqual(['yolo']);
+    for (const safe of [policy.defaultValue, policy.fallbackValue]) {
+      const option = options.find(candidate => candidate.value === safe);
+      expect(option).toBeDefined();
+      expect(option!.bypassesApprovals).toBeFalsy();
+    }
+    expect(ui.getModeSelector?.({})).toBeNull();
+    expect(ui.getProviderIcon?.()).toBe(DEEPSEEK_PROVIDER_ICON);
   });
 });

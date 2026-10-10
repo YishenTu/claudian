@@ -1,4 +1,5 @@
-import { NativePeer } from '@test/helpers/deepseek/NativePeer';
+import { NativePeer, rootFollow } from '@test/helpers/deepseek/NativePeer';
+import { testDate } from '@test/helpers/testClock';
 
 import { DeepSeekSessionObserver } from '@/providers/deepseek/execution/DeepSeekSessionObserver';
 import { DeepSeekRoster } from '@/providers/deepseek/runtime/DeepSeekRoster';
@@ -53,7 +54,6 @@ it('keeps status changes during roster loading and waits for descendant job base
   expect([...peer.streams.values()].some(s => JSON.stringify(s.args).includes('cold'))).toBe(false);
   childJobs({ type: 'rows', jobs: [] });
   await until(() => !observer!.hasWork());
-  expect(observer.hasWork()).toBe(false);
 });
 
 it('follows a native child only after its durable identity, and keeps it busy until then', async () => {
@@ -75,7 +75,8 @@ it('follows a native child only after its durable identity, and keeps it busy un
   roster.claim('root', () => {});
   observer = new DeepSeekSessionObserver(peer.client, roster, 'root', () => {}, error => errors.push(error));
   const ready = observer.start();
-  await new Promise(resolve => setTimeout(resolve, 30));
+  // The first reconcile already ran; the peer has handled its opens and the client their replies.
+  await streamBarrier();
   expect(rejected).toEqual([]);
   expect(errors).toEqual([]);
   expect(observer.hasWork()).toBe(true);
@@ -85,6 +86,27 @@ it('follows a native child only after its durable identity, and keeps it busy un
     { kind: 'subagent', childSessionId: 'child', parentSessionId: 'root', mode: 'one-shot' });
   expect(rejected).toEqual([]);
   expect(errors).toEqual([]);
+});
+
+it('closes the permission boundary while a native tool call is unresolved', async () => {
+  peer.onCall = () => ({ items: [row('root')] });
+  peer.onOpen = (endpoint, _args, send) => {
+    if (endpoint === 'session/control') send({ type: 'baseline', value: { projections: {} } });
+    if (endpoint === 'session/follow') send({ type: 'snapshot', cursor: 0, records: [], projections: { asOfSeq: 0, values: {} } });
+    if (endpoint === 'job/list') send({ type: 'rows', jobs: [] });
+  };
+  await roster.start();
+  observer = observe('root');
+  await observer.start();
+  expect(observer.permissionBoundaryAvailable()).toBe(true);
+  const event = (type: string, data: unknown) => peer.send('session/follow', { type: 'event', event: { type, seq: 1, time: testDate().getTime(), data } }, rootFollow('root'));
+  // No turn boundary is followed, so only the unresolved call can hold the boundary.
+  event('tool/call', { callId: 'bash-1', name: 'bash', arguments: '{}' });
+  await until(() => observer!.hasWork());
+  expect(observer.permissionBoundaryAvailable()).toBe(false);
+  event('tool/result', { message: { toolCallId: 'bash-1' } });
+  await until(() => observer!.permissionBoundaryAvailable());
+  expect(observer.hasWork()).toBe(false);
 });
 
 it('projects restored queues and makes disconnect unknown until all baselines return', async () => {
@@ -103,6 +125,13 @@ it('projects restored queues and makes disconnect unknown until all baselines re
   expect(observer.permissionBoundaryAvailable()).toBe(false);
   expect(observer.hasWork()).toBe(true);
 });
+
+/** Resolves once the peer handled every stream the client opened before it, and the client received their replies. */
+async function streamBarrier(): Promise<void> {
+  let replied = false;
+  const off = peer.client.subscribe('job/list', { request: { sessionId: 'barrier' } }, () => { replied = true; }, () => { replied = true; });
+  try { await until(() => replied); } finally { off(); }
+}
 
 async function until(predicate: () => boolean): Promise<void> {
   const deadline = Date.now() + 2000;

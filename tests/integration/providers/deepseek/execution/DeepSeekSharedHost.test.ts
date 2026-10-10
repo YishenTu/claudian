@@ -1,4 +1,5 @@
-import { NativePeer, type NativePeerLifecycle } from '@test/helpers/deepseek/NativePeer';
+import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
+import { jobsOf, NativePeer, type NativePeerLifecycle, rootFollow } from '@test/helpers/deepseek/NativePeer';
 import { testDate } from '@test/helpers/testClock';
 
 import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderExecutionSession, ProviderInteractionPort, ProviderSessionConfig } from '@/core/execution';
@@ -9,6 +10,9 @@ import type { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
 import { getDeepSeekHome } from '@/providers/deepseek/runtime/DeepSeekHostProcess';
 
 const time = testDate().getTime();
+// Fixture polling keeps the real clock while tests drive native deadlines on the fake one.
+const realTimeout = setTimeout;
+const realNow = Date.now;
 const host = { settings: { locale: 'en', providerConfigs: { deepseek: { enabled: true } } } } as unknown as ProviderHost;
 let peer: NativePeer;
 let deepseek: DeepSeekHost;
@@ -23,6 +27,10 @@ let permissions: Record<string, string>;
 beforeEach(async () => {
   sessions = []; created = []; seq = 3; jobs = {}; createFailures = () => undefined; permissions = {};
   peer = new NativePeer();
+  const native = nativeDefaults({
+    seq: () => seq, roster: () => created, jobs: sessionId => jobs[sessionId] ?? [],
+    permission: sessionId => permissions[sessionId] ?? 'workspace-write', setPermission: (sessionId, value) => { permissions[sessionId] = value; },
+  });
   peer.onCall = (method, args) => {
     if (method === 'session/create') {
       const resumed = args.request.sessionId as string | undefined;
@@ -34,39 +42,20 @@ beforeEach(async () => {
       peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: id, agentAvailable: true, running: false }] });
       return { sessionId: id, agentPreset: args.request.agentPreset };
     }
-    if (method === 'session/list') return { items: created.map(sessionId => ({ sessionId, agentAvailable: true, running: false })) };
-    const permission = (sessionId: string) => permissions[sessionId] ?? 'workspace-write';
-    if (method === 'session/projections') return { asOfSeq: seq, values: { agentPreset: 'claudian', permissions: { currentValue: permission(args.request.sessionId) } } };
-    if (method === 'session/page') {
-      const mode = permission(args.request.address.sessionId);
-      return { hasMore: false, records: [
-        { type: 'event', event: { type: 'sandbox/mode', seq: 1, time, data: { mode } } },
-        { type: 'event', event: { type: 'approval/policy', seq: 2, time, data: { policy: mode === 'danger-full-access' ? 'never' : 'ask' } } },
-      ] };
-    }
-    if (method === 'permissionPresets/catalog') return { options: [{ value: 'workspace-write' }, { value: 'read-only' }, { value: 'danger-full-access' }] };
-    if (method === 'commands/execute') { permissions[args.agentId] = args.line.split(' ')[1]; return { result: { kind: 'success' } }; }
-    if (method === 'commands/list') return [{ name: 'permission' }];
-    if (method === 'skills/list') return { skills: [] };
-    if (method === 'session/prompt') return { accepted: true };
-    if (method === '$events/result') return {};
     if (method === 'job/kill') {
       const sessionId = args.request.sessionId as string;
       jobs[sessionId] = [];
-      peer.send('job/list', { type: 'rows', jobs: [] }, stream => stream.request.sessionId === sessionId);
+      peer.send('job/list', { type: 'rows', jobs: [] }, jobsOf(sessionId));
       return { status: 'requested' };
     }
-    throw new Error(`Unexpected native call ${method}`);
+    return native.call(method, args);
   };
-  peer.onOpen = (endpoint, args, send) => {
-    if (endpoint === 'session/control') send({ type: 'baseline', value: { projections: {} } });
-    if (endpoint === 'session/follow') send({ type: 'snapshot', cursor: seq, records: [] });
-    if (endpoint === 'job/list') send({ type: 'rows', jobs: jobs[args.request.sessionId] ?? [] });
-  };
+  peer.onOpen = native.open;
   await peer.open();
   ({ deepseek, lifecycle } = peer.host());
 });
 afterEach(async () => {
+  jest.useRealTimers();
   await Promise.all(sessions.map(session => session.dispose()));
   await deepseek.dispose(); await peer.close();
 });
@@ -90,7 +79,7 @@ function request(prompt: string, toolPolicy: ProviderExecutionRequest['toolPolic
 }
 
 function emit(sessionId: string, type: string, data: unknown): void {
-  peer.send('session/follow', { type: 'event', event: { type, seq: ++seq, time, data } }, stream => stream.request.address.sessionId === sessionId);
+  peer.send('session/follow', { type: 'event', event: { type, seq: ++seq, time, data } }, rootFollow(sessionId));
 }
 
 /** Native admits the prompt of one session and answers it on that session's stream only. */
@@ -163,6 +152,8 @@ it('refuses a second live view of the same native conversation', async () => {
 });
 
 it('waits for a reloaded Host to release the writer, then names the other process', async () => {
+  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  const backoff = elapseWaitsUpTo(1_000);
   const held = new DeepSeekRemoteError('session "alpha" is already owned by an active write handle', 'session/writer-held');
   let attempts = 0;
   createFailures = () => (++attempts <= 2 ? held : undefined);
@@ -173,10 +164,14 @@ it('waits for a reloaded Host to release the writer, then names the other proces
 
   createFailures = () => held;
   const blocked = open(port(), 'alpha');
+  const started = Date.now();
   const events = await run(blocked, request('Prompt'));
+  backoff();
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'configuration', recoverable: true, message: expect.stringContaining('another DeepSeek Harness process') });
+  // Backoff 100, 200, 400, 800, 1000, 1000, 1000 ms; the next 1000 ms wait would pass the 5 s handoff window.
+  expect(Date.now() - started).toBe(4_500);
   expect(blocked.getStatus()).not.toBe('invalidated');
-}, 15_000);
+});
 
 it('stops a closed conversation\'s native work while other conversations keep the process', async () => {
   const alpha = open(); const beta = open();
@@ -215,22 +210,24 @@ it.each([
   expect(lifecycle.starts).toBe(2);
 });
 
-it('voids unclassified interactions on reconnect instead of failing the conversation at their deadline', async () => {
+it.each([
+  { name: 'fails the conversation when an unclassified interaction reaches its deadline', reconnect: false, status: 'invalidated' },
+  { name: 'voids unclassified interactions on reconnect instead of failing the conversation at their deadline', reconnect: true, status: 'idle' },
+])('$name', async ({ reconnect, status }) => {
   const alpha = open();
   await run(alpha, request('Prompt'), 'ready');
-  const timers = jest.spyOn(window, 'setTimeout');
-  try {
-    // Routed by the roster, but no native turn is followed yet to own it.
-    peer.send('$events', { type: 'waterfall', eventId: 'early', event: 'approval/request', agentId: 'alpha', request: {} });
-    await until(() => timers.mock.calls.some(([, ms]) => ms === 10_000));
-    const deadline = timers.mock.calls.find(([, ms]) => ms === 10_000)![0] as () => void;
+  // The ownership deadline is the only timer armed on the fake clock.
+  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  // Routed by the roster, but no native turn is followed yet to own it.
+  peer.send('$events', { type: 'waterfall', eventId: 'early', event: 'approval/request', agentId: 'alpha', request: {} });
+  await until(() => jest.getTimerCount() === 1);
+  if (reconnect) {
     const reconnected = peer.calls.filter(c => c.method === 'session/list').length + 1;
     for (const stream of peer.streams.values()) stream.socket.terminate();
     await until(() => peer.calls.filter(c => c.method === 'session/list').length === reconnected);
-    deadline();
-    await new Promise(resolve => setTimeout(resolve, 20));
-    expect(alpha.getStatus()).toBe('idle');
-  } finally { timers.mockRestore(); }
+  }
+  jest.advanceTimersByTime(10_000);
+  expect(alpha.getStatus()).toBe(status);
 });
 
 it('stops the idle process after its last attachment and history read', async () => {
@@ -246,6 +243,23 @@ it('stops the idle process after its last attachment and history read', async ()
 });
 
 async function until(predicate: () => boolean): Promise<void> {
-  const deadline = Date.now() + 2500;
-  while (!predicate()) { if (Date.now() > deadline) throw new Error('Shared Host fixture timed out.'); await new Promise(resolve => setTimeout(resolve, 5)); }
+  const deadline = realNow() + 2500;
+  while (!predicate()) { if (realNow() > deadline) throw new Error('Shared Host fixture timed out.'); await new Promise(resolve => realTimeout(resolve, 5)); }
+}
+
+/** Advances the fake clock through each scheduled wait of at most `limit` ms, never through in-flight RPC deadlines. */
+function elapseWaitsUpTo(limit: number): () => void {
+  const timers = jest.spyOn(window, 'setTimeout');
+  let seen = 0;
+  let active = true;
+  void (async () => {
+    while (active) {
+      for (; seen < timers.mock.calls.length; seen++) {
+        const ms = timers.mock.calls[seen][1];
+        if (typeof ms === 'number' && ms <= limit) jest.advanceTimersByTime(ms);
+      }
+      await new Promise(resolve => realTimeout(resolve, 1));
+    }
+  })();
+  return () => { active = false; timers.mockRestore(); };
 }

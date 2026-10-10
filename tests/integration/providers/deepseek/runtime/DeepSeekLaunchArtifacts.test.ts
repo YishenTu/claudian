@@ -59,6 +59,29 @@ it('gives every preset a live prompt file and its tool policy while keeping prom
   }
 });
 
+it('applies concurrent prompt edits in call order and leaves an unchanged prompt file in place', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'deepseek prompts '));
+  const artifacts = await prepareDeepSeekLaunchArtifacts(root);
+  try {
+    const patch = JSON.parse(await readFile(artifacts.patchPath, 'utf8'));
+    const promptFile = patch.find((entry: { insert?: unknown }) => entry.insert).insert
+      .find((entry: any) => entry.config?.id === 'claudian').config.plugins[0].config.promptFile;
+    const edits = Array.from({ length: 12 }, (_, index) => `edit ${index}`);
+    await Promise.all(edits.map(text => artifacts.writePrompt('claudian', text)));
+    expect(await readFile(promptFile, 'utf8')).toBe(edits.at(-1));
+    const written = await stat(promptFile);
+    // Native re-reads the file at each assembly; an identical edit must not replace it.
+    await artifacts.writePrompt('claudian', edits.at(-1)!);
+    expect((await stat(promptFile)).ino).toBe(written.ino);
+    await artifacts.writePrompt('claudian', 'changed');
+    expect((await stat(promptFile)).ino).not.toBe(written.ino);
+    expect(await readFile(promptFile, 'utf8')).toBe('changed');
+  } finally {
+    await artifacts.dispose();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 // DeepSeek refuses to start on Windows, where a self-signalled child also reports an exit code instead of SIGTERM.
 (process.platform === 'win32' ? describe.skip : describe)('owner lifecycle tether', () => {
   it('ends the native process once its owner\'s end of stdin closes', async () => {
