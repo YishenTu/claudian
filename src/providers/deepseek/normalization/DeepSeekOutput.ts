@@ -1,6 +1,6 @@
 import type { ProviderBackgroundOutputEvent, WithoutEventScope } from '@/core/execution/ProviderExecutionEvent';
 import * as ToolNames from '@/core/tools/toolNames';
-import type { ScriptToolCallItem, ToolResultImage } from '@/core/types';
+import type { DiffLine, ScriptToolCallItem, ToolResultDiff, ToolResultImage } from '@/core/types';
 
 import { encodeDeepSeekModelId } from '../models';
 import { isRecord } from '../remote/DeepSeekRemoteClient';
@@ -98,7 +98,7 @@ export class DeepSeekOutput {
     } else if (value.type === 'tool/call') {
       this.toolStart(data.callId, data.name, data.arguments);
     } else if (value.type === 'tool/result' && isRecord(data.message)) {
-      this.toolEnd(data.message.toolCallId, data.message.content, data.message.isError);
+      this.toolEnd(data.message.toolCallId, data.message.content, data.message.isError, data.meta);
     } else if (value.type === 'tool/ptc-dispatch-start' || value.type === 'tool/ptc-dispatch') {
       this.scriptDispatch(data, value.type === 'tool/ptc-dispatch');
     } else if (value.type === 'compaction/end' && data.error === undefined) {
@@ -182,7 +182,7 @@ export class DeepSeekOutput {
     });
   }
 
-  private toolEnd(id: unknown, content: unknown, isError: unknown, parent?: unknown): void {
+  private toolEnd(id: unknown, content: unknown, isError: unknown, meta?: unknown, parent?: unknown): void {
     if (typeof id !== 'string') throw new Error('Malformed DeepSeek tool result.');
     if (this.completedTools.has(id)) return;
     this.completedTools.add(id);
@@ -190,9 +190,14 @@ export class DeepSeekOutput {
     const resultImages: ToolResultImage[] = Array.isArray(content) ? content.filter(isRecord)
       .filter(block => block.type === 'image' && typeof block.data === 'string' && typeof block.mediaType === 'string')
       .map(block => ({ kind: 'data', mediaType: block.mediaType as string, data: block.data as string, alt: typeof block.name === 'string' ? block.name : undefined })) : [];
-    this.emit({ type: 'tool_completed', toolCallId: id, content: deepseekText(content), isError: isError === true,
+    // Native result metadata carries the read window and applied hunks behind the model-facing text.
+    const name = isError === true ? undefined : this.calls.get(id)?.name;
+    const text = deepseekText(content);
+    const presented = name === ToolNames.TOOL_READ ? readWindow(meta) : name === ToolNames.TOOL_SKILL ? skillInstructions(text) : undefined;
+    const diff = name === ToolNames.TOOL_EDIT || name === ToolNames.TOOL_WRITE ? appliedDiff(meta) : undefined;
+    this.emit({ type: 'tool_completed', toolCallId: id, content: presented ?? text, isError: isError === true,
       toolScope: { kind: 'main' }, ...(typeof parent === 'string' ? { parentToolCallId: parent } : {}),
-      resultDetails: { resultFormat: 'plain', ...(resultImages.length ? { resultImages } : {}), ...(calls ? { scriptToolCalls: [...calls.values()] } : {}) },
+      resultDetails: { resultFormat: 'plain', ...(diff ? { diff } : {}), ...(resultImages.length ? { resultImages } : {}), ...(calls ? { scriptToolCalls: [...calls.values()] } : {}) },
     });
   }
 
@@ -201,7 +206,7 @@ export class DeepSeekOutput {
     // Spawn calls need ordinary tool identities so existing child cards can receive lifecycle updates.
     if (data.name === 'subagent' || data.name === 'subagent_fork') {
       this.toolStart(data.subCallId, data.name, data.arguments, data.rootCallId);
-      if (completed) this.toolEnd(data.subCallId, data.content, data.isError, data.rootCallId);
+      if (completed) this.toolEnd(data.subCallId, data.content, data.isError, undefined, data.rootCallId);
       return;
     }
     const calls = this.scriptCalls.get(data.rootCallId) ?? new Map<string, ScriptToolCallItem>();
@@ -280,7 +285,48 @@ function toolInput(name: string, value: unknown): Record<string, unknown> {
   if (['read', 'read_image', 'write', 'edit'].includes(name) && typeof input.path === 'string') {
     input.file_path = input.path; delete input.path;
   }
+  if (name === 'skill' && typeof input.name === 'string') { input.skill = input.name; delete input.name; }
+  if (name === 'send_message' && typeof input.agent_id === 'string') { input.target = input.agent_id; delete input.agent_id; }
   return input;
+}
+
+/** File text of a native read window, without the model-facing envelope and line-number gutters. */
+function readWindow(meta: unknown): string | undefined {
+  if (!isRecord(meta) || !Array.isArray(meta.lines)) return undefined;
+  const lines = meta.lines.filter(isRecord).map(line => line.text);
+  return lines.length === meta.lines.length && lines.every(text => typeof text === 'string') ? lines.join('\n') : undefined;
+}
+
+/** Instructions of a loaded native skill, without its model-facing `<skill_content>` wrapper and resource hint. */
+function skillInstructions(text: string): string | undefined {
+  return /^<skill_content name="[^"\n]*">\n<skill_resources>\n[\s\S]*?\n<\/skill_resources>\n\n<skill_instructions>\n([\s\S]*)\n<\/skill_instructions>\n<\/skill_content>$/.exec(text)?.[1];
+}
+
+/** Native applied hunks, each with surrounding context lines; a created file has none. */
+function appliedDiff(meta: unknown): ToolResultDiff | undefined {
+  if (!isRecord(meta) || !Array.isArray(meta.diffs)) return undefined;
+  const hunks = meta.diffs.filter(isRecord);
+  if (hunks.length === 0 || hunks.length !== meta.diffs.length) return undefined;
+  const diffLines: DiffLine[] = [];
+  for (const hunk of hunks) {
+    if (typeof hunk.newText !== 'string' || (hunk.oldText !== null && typeof hunk.oldText !== 'string')) return undefined;
+    const before = hunk.oldText ? hunk.oldText.split('\n') : [];
+    const after = hunk.newText ? hunk.newText.split('\n') : [];
+    let prefix = 0;
+    while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) prefix++;
+    let suffix = 0;
+    while (suffix < before.length - prefix && suffix < after.length - prefix && before.at(-1 - suffix) === after.at(-1 - suffix)) suffix++;
+    diffLines.push(
+      ...before.slice(0, prefix).map((text): DiffLine => ({ type: 'equal', text })),
+      ...before.slice(prefix, before.length - suffix).map((text): DiffLine => ({ type: 'delete', text })),
+      ...after.slice(prefix, after.length - suffix).map((text): DiffLine => ({ type: 'insert', text })),
+      ...after.slice(after.length - suffix).map((text): DiffLine => ({ type: 'equal', text })),
+    );
+  }
+  const filePath = typeof hunks[0].path === 'string' ? hunks[0].path : undefined;
+  return { ...(filePath ? { filePath } : {}), diffLines, stats: {
+    added: diffLines.filter(line => line.type === 'insert').length, removed: diffLines.filter(line => line.type === 'delete').length,
+  } };
 }
 
 const TOOL_NAMES: Readonly<Record<string, string>> = {

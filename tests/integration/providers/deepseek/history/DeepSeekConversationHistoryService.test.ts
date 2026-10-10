@@ -92,17 +92,35 @@ it.each(['direct', 'subagent', 'subagent_fork'])('hydrates %s child tools throug
   }
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => {
-    if (method === 'session/projections' && args.request.sessionId === 'child') return { asOfSeq: 3, values: {} };
+    if (method === 'session/projections' && args.request.sessionId === 'child') return { asOfSeq: 5, values: {} };
     if (method === 'session/page' && args.request.address.childSessionId === 'child') return { hasMore: false, records: [
       wire(0, 'turn/start', { turn: 0 }), wire(1, 'tool/call', { callId: 'read', name: 'read', arguments: '{"path":"note.md"}' }),
-      wire(2, 'tool/result', { message: { toolCallId: 'read', content: [{ type: 'text', text: 'note' }, { type: 'image', attachment: { attachmentId: 'child-image' } }] } }), wire(3, 'turn/end', { turn: 0, reason: { kind: 'completed' } }),
+      wire(2, 'tool/result', { message: { toolCallId: 'read', content: [{ type: 'text', text: 'note' }, { type: 'image', attachment: { attachmentId: 'child-image' } }] } }),
+      wire(3, 'tool/call', { callId: 'edit', name: 'edit', arguments: '{"file_path":"note.md","old_string":"b","new_string":"B"}' }),
+      wire(4, 'tool/result', { message: { toolCallId: 'edit', content: [{ type: 'text', text: 'updated' }] }, meta: { diffs: [{ path: 'note.md', oldText: 'a\nb', newText: 'a\nB' }] } }),
+      wire(5, 'turn/end', { turn: 0, reason: { kind: 'completed' } }),
     ] };
     return ordinary(method, args);
   };
   const result = await history.hydrateConversationHistory(input, '/vault');
-  expect(result.messages?.[0].toolCalls?.[0].subagent).toMatchObject({ id: 'spawn', agentId: 'child', status: 'completed', toolCalls: [{ id: 'read', result: 'note', resultImages: [{ kind: 'data', data: 'aW1hZ2U=', mediaType: 'image/png' }] }] });
+  expect(result.messages?.[0].toolCalls?.[0].subagent).toMatchObject({ id: 'spawn', agentId: 'child', status: 'completed', toolCalls: [{ id: 'read', result: 'note', resultImages: [{ kind: 'data', data: 'aW1hZ2U=', mediaType: 'image/png' }] },
+    { id: 'edit', diffData: { filePath: 'note.md', stats: { added: 1, removed: 1 }, diffLines: [{ type: 'equal', text: 'a' }, { type: 'delete', text: 'b' }, { type: 'insert', text: 'B' }] } }] });
   expect(peer.calls.find(c => c.method === 'session/attachment')?.args).toEqual({ request: { sessionId: 'child', attachmentId: 'child-image' } });
   expect(peer.calls.some(c => c.method === 'session/follow' || c.method === 'session/create')).toBe(false);
+});
+
+it('restores file-change diffs from native applied hunks, or from the written content for a created file', async () => {
+  records = [wire(0, 'turn/start', { turn: 0 }),
+    wire(1, 'tool/call', { callId: 'edit', name: 'edit', arguments: '{"file_path":"note.md","old_string":"b","new_string":"B"}' }),
+    wire(2, 'tool/result', { message: { toolCallId: 'edit', content: [{ type: 'text', text: 'updated' }] }, meta: { diffs: [{ path: 'note.md', oldText: 'a\nb\nc', newText: 'a\nB\nc' }] } }),
+    wire(3, 'tool/call', { callId: 'write', name: 'write', arguments: '{"file_path":"new.md","content":"x\\ny"}' }),
+    wire(4, 'tool/result', { message: { toolCallId: 'write', content: [{ type: 'text', text: 'Created file' }] }, meta: { operation: 'create', diffs: [] } }),
+    wire(5, 'turn/end', { turn: 0, reason: { kind: 'completed' } })];
+  const result = await history.hydrateConversationHistory(input, '/vault');
+  expect(result.messages?.[0].toolCalls).toMatchObject([
+    { name: 'Edit', diffData: { filePath: 'note.md', stats: { added: 1, removed: 1 }, diffLines: [{ type: 'equal', text: 'a' }, { type: 'delete', text: 'b' }, { type: 'insert', text: 'B' }, { type: 'equal', text: 'c' }] } },
+    { name: 'Write', diffData: { filePath: 'new.md', stats: { added: 2, removed: 0 }, diffLines: [{ type: 'insert', text: 'x' }, { type: 'insert', text: 'y' }] } },
+  ]);
 });
 
 it.each([

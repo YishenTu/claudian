@@ -1,3 +1,5 @@
+import { resolveToolDiffData } from '@/core/tools/toolDiff';
+import { isWriteEditTool } from '@/core/tools/toolNames';
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '@/core/types';
 
 import { DeepSeekOutput, type DeepSeekOutputEvent, deepseekText } from '../normalization/DeepSeekOutput';
@@ -57,7 +59,9 @@ export async function loadDeepSeekHistory(client: DeepSeekReader, sessionId: str
       if (assistant) {
         assistant.assistantMessageId = encodeDeepSeekCheckpoint(record.seq);
         assistant.completedAt = record.time;
-        assistant.turnStats = { outputTokens: output?.outputTokens ?? 0, durationMs: Math.max(0, record.time - turnStart) };
+        const durationMs = Math.max(0, record.time - turnStart);
+        assistant.durationSeconds = Math.floor(durationMs / 1000);
+        assistant.turnStats = { outputTokens: output?.outputTokens ?? 0, durationMs };
       }
       output = undefined; assistant = undefined;
       continue;
@@ -85,7 +89,10 @@ function applyOutput(message: ChatMessage, tools: Map<string, ToolCallInfo>, eve
   } else if (event.type === 'tool_completed' || event.type === 'tool_output') {
     const tool = tools.get(event.toolCallId);
     if (tool) {
-      if (event.type === 'tool_completed') { tool.status = event.isError ? 'error' : 'completed'; tool.result = event.content; }
+      if (event.type === 'tool_completed') {
+        tool.status = event.isError ? 'error' : 'completed'; tool.result = event.content;
+        if (isWriteEditTool(tool.name)) tool.diffData = resolveToolDiffData(event.resultDetails?.diff, tool);
+      }
       if (event.resultDetails?.scriptToolCalls) tool.scriptToolCalls = event.resultDetails.scriptToolCalls;
       if (event.resultDetails?.resultFormat) tool.resultFormat = event.resultDetails.resultFormat;
       if (event.resultDetails?.resultImages) tool.resultImages = event.resultDetails.resultImages;

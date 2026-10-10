@@ -1,5 +1,6 @@
 import type { ProviderSubagentLifecycleAdapter } from '@/core/providers/types';
-import { TOOL_SPAWN_AGENT } from '@/core/tools/toolNames';
+import { resolveToolDiffData } from '@/core/tools/toolDiff';
+import { isWriteEditTool, TOOL_SPAWN_AGENT } from '@/core/tools/toolNames';
 import type { SubagentInfo, ToolCallInfo } from '@/core/types';
 
 import { isRecord } from '../remote/DeepSeekRemoteClient';
@@ -82,8 +83,12 @@ export class DeepSeekSubagents {
     if (event.type === 'tool_completed' || event.type === 'tool_output') {
       const tool = child.info.toolCalls.find(tool => tool.id === event.toolCallId);
       if (tool) {
-        if (event.type === 'tool_completed') { tool.result = event.content; tool.status = event.isError ? 'error' : 'completed'; }
-        Object.assign(tool, event.resultDetails);
+        const { diff, ...details } = event.resultDetails ?? {};
+        if (event.type === 'tool_completed') {
+          tool.result = event.content; tool.status = event.isError ? 'error' : 'completed';
+          if (isWriteEditTool(tool.name)) tool.diffData = resolveToolDiffData(diff, tool);
+        }
+        Object.assign(tool, details);
       }
     }
     this.emit(id);

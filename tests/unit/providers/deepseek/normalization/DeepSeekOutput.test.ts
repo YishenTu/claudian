@@ -59,3 +59,32 @@ it('uses the native request capacity and disjoint cache counts for context usage
   output.record({ type: 'assistant/message', seq: 2, data: { turn: 0, step: 0, message: { content: [] }, usage: { inputTokens: 100, cacheReadTokens: 50, cacheWriteTokens: 25 } } });
   expect(events.find(event => event.type === 'usage_updated')).toMatchObject({ usage: { model: 'deepseek:native/model', contextWindow: 1000, contextTokens: 175, percentage: 17.5 } });
 });
+
+it('presents native tool inputs, read windows and applied hunks in the neutral tool contract', () => {
+  const call = (seq: number, callId: string, name: string, args: unknown) => output.record({ type: 'tool/call', seq, time: now, data: { callId, name, arguments: JSON.stringify(args) } });
+  const result = (seq: number, toolCallId: string, text: string, meta?: unknown) => output.record({ type: 'tool/result', seq, time: now, data: { message: { toolCallId, content: [{ type: 'text', text }], isError: false }, ...(meta ? { meta } : {}) } });
+  call(1, 'skill', 'skill', { name: 'obsidian-cli' });
+  result(1.5, 'skill', '<skill_content name="obsidian-cli">\n<skill_resources>\nBase directory for this skill: /vault/.agents/skills/obsidian-cli\n</skill_resources>\n\n<skill_instructions>\n# Obsidian CLI\n\nUse `<path>` tags verbatim.\n</skill_instructions>\n</skill_content>');
+  call(2, 'message', 'send_message', { agent_id: 'session-root', message: 'Findings' });
+  call(3, 'read', 'read', { file_path: '/vault/note.md', offset: 2, limit: 2 });
+  result(4, 'read', '<path>/vault/note.md</path>\n<type>file</type>\n<content>\n2: ---\n3: title: x\n\n(Showing lines 2-3 of 9. Use offset=4 to continue.)\n</content>',
+    { path: '/vault/note.md', offset: 2, lines: [{ number: 2, text: '---' }, { number: 3, text: 'title: x' }], totalLines: 9, lang: 'md' });
+  call(5, 'edit', 'edit', { file_path: '/vault/note.md', old_string: 'b', new_string: 'B' });
+  result(6, 'edit', 'The file /vault/note.md has been updated successfully.', { diffs: [{ path: '/vault/note.md', oldText: 'a\nb\nc', newText: 'a\nB\nc' }] });
+  call(7, 'write', 'write', { file_path: '/vault/new.md', content: 'x\n' });
+  result(8, 'write', '<path>/vault/new.md</path>\n<type>file</type>\n<content>\nCreated file\n</content>', { operation: 'create', diffs: [] });
+  expect(events.filter(e => e.type === 'tool_started')).toMatchObject([
+    { name: 'Skill', input: { skill: 'obsidian-cli' } },
+    { name: 'send_message', input: { target: 'session-root', message: 'Findings' } },
+    { name: 'Read' }, { name: 'Edit' }, { name: 'Write' },
+  ]);
+  const completed = events.filter(e => e.type === 'tool_completed');
+  expect(completed[0]).toMatchObject({ toolCallId: 'skill', content: '# Obsidian CLI\n\nUse `<path>` tags verbatim.' });
+  expect(completed[1]).toMatchObject({ toolCallId: 'read', content: '---\ntitle: x', resultDetails: { resultFormat: 'plain' } });
+  expect(completed[2]).toMatchObject({ toolCallId: 'edit', resultDetails: { diff: { filePath: '/vault/note.md', stats: { added: 1, removed: 1 }, diffLines: [
+    { type: 'equal', text: 'a' }, { type: 'delete', text: 'b' }, { type: 'insert', text: 'B' }, { type: 'equal', text: 'c' },
+  ] } } });
+  // A created file has no applied hunk; its diff comes from the written content.
+  expect(completed[3]).toMatchObject({ toolCallId: 'write' });
+  expect(completed[3]).not.toHaveProperty('resultDetails.diff');
+});
