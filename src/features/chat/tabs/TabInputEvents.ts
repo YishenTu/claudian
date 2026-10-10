@@ -36,7 +36,7 @@ function shouldSendMessageFromEnterKey(
 
 /**
  * Cancels only the composer's currently selected destination. Returns true when
- * a turn was actually cancelled.
+ * a turn was cancelled or a Stop of main background work started.
  */
 export function cancelSelectedDestinationTurn(tab: AssembledTabRuntime): boolean {
   const sideChat = tab.controllers.sideChatController;
@@ -45,7 +45,7 @@ export function cancelSelectedDestinationTurn(tab: AssembledTabRuntime): boolean
     sideChat.cancelSide();
     return true;
   }
-  if (!tab.state.isStreaming && !tab.controllers.inputController.isPreparingMainTurn) return false;
+  if (!tab.state.isStreaming && !tab.controllers.inputController.isPreparingMainTurn && !tab.session.hasMainBackgroundWork) return false;
   tab.controllers.inputController.cancelStreaming();
   return true;
 }

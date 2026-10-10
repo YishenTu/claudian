@@ -1223,6 +1223,8 @@ describe('ClaudianView shutdown', () => {
   });
 });
 
+type EscapeConsumer = 'resume dropdown' | 'prompt suggestion' | 'composer dropdown';
+
 describe('ClaudianView Escape handling', () => {
   beforeEach(() => {
     MockScope.instances.length = 0;
@@ -1231,6 +1233,8 @@ describe('ClaudianView Escape handling', () => {
   function createEscapeHarness(options: {
     isStreaming: boolean;
     toolbarMenuOpen?: boolean;
+    backgroundWork?: boolean;
+    escapeConsumer?: EscapeConsumer;
   }): {
     cancelStreaming: jest.Mock;
     closeOpenMenu: jest.Mock;
@@ -1248,8 +1252,14 @@ describe('ClaudianView Escape handling', () => {
       tabManager: {
         getActiveTab: jest.fn().mockReturnValue({
           state: { isStreaming: options.isStreaming },
+          session: { hasMainBackgroundWork: options.backgroundWork ?? false },
+          ui: {
+            composerDropdown: { handleKeydown: () => options.escapeConsumer === 'composer dropdown' },
+            promptSuggestion: { handleKeydown: () => options.escapeConsumer === 'prompt suggestion' },
+          },
           controllers: {
             inputController: { cancelStreaming },
+            builtInCommandController: { handleResumeKeydown: () => options.escapeConsumer === 'resume dropdown' },
             sideChatController: { destination: 'main', runtime: null },
           },
           composer: { closeOpenMenu },
@@ -1336,6 +1346,21 @@ describe('ClaudianView Escape handling', () => {
     expect(escape()).toBe(false);
     expect(cancelStreaming).not.toHaveBeenCalled();
   });
+
+  it('routes published background work through scoped Escape', () => {
+    const { cancelStreaming, escape } = createEscapeHarness({ isStreaming: false, backgroundWork: true });
+    expect(escape()).toBe(false);
+    expect(cancelStreaming).toHaveBeenCalledTimes(1);
+  });
+
+  it.each<EscapeConsumer>(['resume dropdown', 'prompt suggestion', 'composer dropdown'])(
+    'lets an open %s consume scoped Escape before background Stop',
+    (escapeConsumer) => {
+      const { cancelStreaming, escape } = createEscapeHarness({ isStreaming: false, backgroundWork: true, escapeConsumer });
+      expect(escape()).toBe(false);
+      expect(cancelStreaming).not.toHaveBeenCalled();
+    },
+  );
 
   it('exits session inline rename before handling other scoped Escape actions', () => {
     const cancelInlineRename = jest.spyOn(SessionBrowser.prototype, 'cancelInlineRename')

@@ -203,7 +203,6 @@ export class InlineAskUserQuestion {
       tab.disabled = this.submitting;
       tab.createSpan({ text: answered ? CHECK_GLYPH : '', cls: 'claudian-ask-tab-step', attr: { 'aria-hidden': 'true' } });
       tab.createSpan({ text: this.questions[idx].header, cls: 'claudian-ask-tab-label' });
-      tab.setAttribute('title', this.questions[idx].question);
 
       if (idx === this.activeTabIndex) tab.addClass('is-active');
       if (answered) tab.addClass('is-answered');

@@ -67,6 +67,7 @@ export function createMockTab(options: Record<string, any>): any {
     executionCoordinator: {
       getCommandSnapshot: () => undefined,
       hasBackgroundWork: false,
+      publishedBackgroundWork: false,
       prepare: jest.fn().mockResolvedValue(undefined),
       state: 'absent',
     },

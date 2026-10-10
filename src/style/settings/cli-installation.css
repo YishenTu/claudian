@@ -71,6 +71,10 @@
   color: var(--claudian-brand-claude);
 }
 
+.claudian-deepseek-installation .claudian-cli-installation-icon {
+  color: var(--claudian-brand-deepseek);
+}
+
 .claudian-cli-installation-dot {
   position: absolute;
   right: -2px;

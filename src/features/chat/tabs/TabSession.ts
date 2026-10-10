@@ -95,9 +95,12 @@ export class TabSession {
     return this.coordinator.hasBackgroundWork || (this.options.hasDetachedWork?.() ?? false);
   }
 
+  /** Main-destination work already published to the user, excluding detached side work. */
+  get hasMainBackgroundWork(): boolean { return this.coordinator.publishedBackgroundWork; }
+
   /** Any foreground or background work a user can see; closing the tab would interrupt it. */
   get isWorking(): boolean {
-    return this.hasActiveTurn || this.hasBackgroundWork;
+    return this.hasActiveTurn || this.hasMainBackgroundWork || (this.options.hasDetachedWork?.() ?? false);
   }
 
   /**
@@ -106,12 +109,13 @@ export class TabSession {
    */
   cancelTurn(reason: TurnCancelReason, options: TurnCancelOptions = {}): boolean {
     const cancelled = this.turns.cancel(reason);
+    const cancelBackground = !cancelled && reason === 'user' && this.hasMainBackgroundWork;
     try {
       if (options.dismissInteractions) this.options.dismissInteractions?.();
     } finally {
-      if (cancelled) this.coordinator.cancel();
+      if (cancelled || cancelBackground) this.coordinator.cancel({ includeBackground: cancelBackground });
     }
-    return cancelled;
+    return cancelled || cancelBackground;
   }
 
   /**

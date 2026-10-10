@@ -65,6 +65,7 @@ test('real dependency discovery retains native launch checks for shared process 
   assert.deepEqual(result.crossPlatformTests.sort(), [
     'tests/integration/core/process/ManagedStdioProcess.test.ts',
     'tests/integration/core/process/ProcessProbe.test.ts',
+    'tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts',
   ]);
   assert.equal(result.piWindows, true);
   assert.ok(result.testFiles.includes('tests/unit/core/process/windowsCmdShim.test.ts'));

@@ -438,13 +438,29 @@
         "desc": "Variables de entorno que se pasan solo a Grok Build. Los secretos de los modelos personalizados permanecen en el ámbito de este proveedor y se referencian desde la configuración nativa mediante env_key."
       }
     },
+    "deepseek": {
+      "preset": "Preset",
+      "codeMode": {
+        "name": "Activar modo código",
+        "desc": "Se aplica desde el siguiente turno de cada conversación, incluidas las existentes. Añade run_code nativo junto a las herramientas directas."
+      },
+      "presetPlugins": {
+        "name": "Plugins adicionales del preset",
+        "desc": "Avanzado. Una lista YAML (formato de dsh) de filas de plugins nativos de dsh que se añaden al preset de chat de Claudian, cada una con su propio \"id\" y \"name\". Las filas no pueden reemplazar las de Claudian. Guardar reinicia DeepSeek Harness, lo que detiene los turnos en curso. Los plugins sin interfaz en Claudian, como el modo plan, pueden no funcionar."
+      },
+      "presetPreview": "Vista previa del preset",
+      "environment": {
+        "name": "Variables de entorno de DeepSeek Harness",
+        "desc": "Variables de entorno pasadas solo a DeepSeek Harness. Usa tu perfil web nativo, credenciales, modelos y servidores MCP existentes. Requiere dsh 0.2.0-rc.2. Windows aún no es compatible."
+      }
+    },
     "skills": {
       "subTabs": {
         "claude": "Claude Code",
         "shared": "Otros proveedores"
       },
       "claudeHelp": "Skills de Claude Code en .claude/skills/ y comandos en .claude/commands/.",
-      "sharedHelp": "Skills compartidos en .agents/skills/ para Codex, OpenCode, Pi y Grok Build.",
+      "sharedHelp": "Skills compartidos en .agents/skills/ para Codex, OpenCode, Pi, Grok Build y DeepSeek Harness.",
       "status": {
         "error": "No se pudieron leer las carpetas de skills: {message}"
       },

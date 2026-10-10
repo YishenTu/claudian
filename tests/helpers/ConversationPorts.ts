@@ -13,12 +13,14 @@ import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
  */
 export function createTestTabSession(options: {
   getState?: () => ChatState;
-  coordinator?: Pick<ChatExecutionCoordinator, 'cancel'> & Partial<Pick<ChatExecutionCoordinator, 'hasBackgroundWork'>>;
+  coordinator?: Pick<ChatExecutionCoordinator, 'cancel'>
+    & Partial<Pick<ChatExecutionCoordinator, 'hasBackgroundWork' | 'publishedBackgroundWork'>>;
 } & Pick<TabSessionOptions, 'dismissInteractions' | 'hasDetachedWork'> = {}): TabSession {
   const { getState, coordinator, ...sessionOptions } = options;
   const execution = {
-    cancel: () => coordinator?.cancel(),
+    cancel: (options?: Parameters<ChatExecutionCoordinator['cancel']>[0]) => coordinator?.cancel(options),
     get hasBackgroundWork() { return coordinator?.hasBackgroundWork ?? false; },
+    get publishedBackgroundWork() { return coordinator?.publishedBackgroundWork ?? false; },
   };
   return new TabSession(
     { id: 'test', conversationId: null, providerId: 'pi', draftModel: null, lifecycleState: 'open' },

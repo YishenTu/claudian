@@ -246,6 +246,34 @@
   width: 100%;
 }
 
+/* DeepSeek additional preset rows: JSON source and the read-only preset they extend. */
+.claudian-settings .claudian-deepseek-preset-plugins textarea {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  resize: vertical;
+  max-height: 480px;
+}
+
+.claudian-settings .claudian-deepseek-preset-plugins-error {
+  margin-top: var(--size-4-1);
+  color: var(--text-error);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-settings .claudian-deepseek-preset-preview > summary {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+
+.claudian-settings .claudian-deepseek-preset-preview > pre {
+  max-height: 320px;
+  margin: var(--size-4-2) 0 0;
+  overflow: auto;
+  font-size: var(--font-ui-smaller);
+  user-select: text;
+}
+
 /* Pages without a heading still retain their existing visual boundaries. */
 .claudian-settings .claudian-settings-general > .setting-item {
   padding: var(--size-4-4);

@@ -52,6 +52,7 @@ function createSettings({ id, populate }: typeof modelCatalogCases[number], adve
   if (id === 'codex' && !advertisesHigh) Object.assign((config.discoveredModels as Array<Record<string, unknown>>)[0], {
     supportedReasoningEfforts: levels.map(value => ({ value, description: value })), defaultReasoningEffort: 'medium',
   });
+  if (id === 'deepseek') (config.discoveredModels as Array<Record<string, unknown>>)[0].reasoning = levels.map(id => ({ id, name: formatReasoningValueLabel(id) }));
   if (id === 'pi') (config.discoveredModels as Array<Record<string, unknown>>)[0].thinkingLevels = ['off', ...levels];
   if (id === 'opencode') config.thinkingOptionsByModel = {
     'anthropic/selected': [{ value: 'default', label: 'Default' }, ...levels.map(value => ({ value, label: formatReasoningValueLabel(value) }))],
@@ -253,6 +254,42 @@ it('displays and submits High for a saved OpenCode Default preference', async ()
     const tab = await createTab();
     expect(reasoningStops(tab)).not.toContain('Default');
     await expectSubmission(tab, sessions, entry.selected, 'high');
+  } finally {
+    for (const tab of tabs) await destroyTab(tab);
+  }
+});
+
+it.each([
+  { name: 'Off-only without a saved preference', efforts: ['off'], saved: undefined, expected: 'off', stops: null },
+  { name: 'Off-only with a stale saved High', efforts: ['off'], saved: 'high', expected: 'off', stops: null },
+  { name: 'Off and High', efforts: ['off', 'high'], saved: undefined, expected: 'high', stops: ['Off', 'High'] },
+])('DeepSeek displays and submits supported reasoning for $name', async ({ efforts, saved, expected, stops }) => {
+  const entry = modelCatalogCases.find(({ id }) => id === 'deepseek')!;
+  const settings = createSettings(entry);
+  const config = settings.providerConfigs.deepseek!;
+  (config.discoveredModels as Array<Record<string, unknown>>)[0].reasoning = efforts.map(id => ({ id, name: formatReasoningValueLabel(id) }));
+  if (saved) config.preferredReasoningByModel = { [entry.selected]: saved };
+  else delete settings.savedProviderEffort.deepseek;
+  const { createTab, sessions, tabs } = createChatHarness(settings, entry.id, entry.selected);
+  try {
+    const tab = await createTab();
+    const ui = within(tab.dom.inputComposerEl);
+    const modelButton = ui.getByRole('button', { name: /^Model: Selected label/ });
+    const slider = ui.queryByRole('slider', { hidden: true });
+    expect(slider && reasoningStops(tab)).toEqual(stops);
+    expect(modelButton.getAttribute('aria-label')).toBe(`Model: Selected label${stops ? `, effort ${formatReasoningValueLabel(expected)}` : ''}`);
+    const text = `Send with ${efforts.join(' and ')}`;
+    (ui.getByRole('textbox') as HTMLTextAreaElement).value = text;
+    const pending = tab.controllers.inputController.sendMessage();
+    const findSession = () => sessions.find(session => session.requests.at(-1)?.input.some(part => part.type === 'text' && part.text === text));
+    await waitFor(() => expect(findSession()).toBeDefined());
+    const session = findSession()!;
+    try {
+      expect(session.requests.at(-1)?.configuration).toMatchObject({ model: entry.selected, reasoning: expected });
+    } finally {
+      session.complete();
+      await pending;
+    }
   } finally {
     for (const tab of tabs) await destroyTab(tab);
   }

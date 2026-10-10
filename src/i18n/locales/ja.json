@@ -438,13 +438,29 @@
         "desc": "Grok Build にのみ渡す環境変数。カスタムモデルのシークレットはこのプロバイダーのスコープ内に留まり、ネイティブ設定からは env_key で参照されます。"
       }
     },
+    "deepseek": {
+      "preset": "プリセット",
+      "codeMode": {
+        "name": "コードモードを有効化",
+        "desc": "既存の会話を含め、各会話の次のターンから適用されます。直接ツールに加えてネイティブの run_code を追加します。"
+      },
+      "presetPlugins": {
+        "name": "追加のプリセットプラグイン",
+        "desc": "上級者向け。Claudian のチャットプリセットに追加するネイティブ dsh プラグイン行の YAML リスト（dsh の形式）です。各行には固有の \"id\" と \"name\" が必要です。Claudian 自身の行は置き換えられません。保存すると DeepSeek Harness が再起動し、実行中のターンは停止します。プランモードなど、Claudian に UI がないプラグインは動作しない場合があります。"
+      },
+      "presetPreview": "プリセットのプレビュー",
+      "environment": {
+        "name": "DeepSeek Harness 環境変数",
+        "desc": "DeepSeek Harness にのみ渡される環境変数。既存のネイティブ Web プロファイル、認証情報、モデル、MCP サーバーを使用します。dsh 0.2.0-rc.2 が必要です。Windows はまだサポートされていません。"
+      }
+    },
     "skills": {
       "subTabs": {
         "claude": "Claude Code",
         "shared": "その他のプロバイダー"
       },
       "claudeHelp": ".claude/skills/ の Claude Code スキルと .claude/commands/ のコマンド。",
-      "sharedHelp": "Codex、OpenCode、Pi、Grok Build 用の .agents/skills/ にある共有スキル。",
+      "sharedHelp": "Codex、OpenCode、Pi、Grok Build、DeepSeek Harness 用の .agents/skills/ にある共有スキル。",
       "status": {
         "error": "スキルフォルダーを読み取れませんでした: {message}"
       },
