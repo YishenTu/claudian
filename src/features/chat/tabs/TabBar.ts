@@ -84,11 +84,12 @@ export class TabBar {
     }
 
     const isTitleExpanded = this.expandedTitleTabIds.has(item.id);
-    const badgeEl = this.containerEl.createDiv({
+    const badgeEl = this.containerEl.createEl(item.shortTitle ? 'button' : 'div', {
+      ...(item.shortTitle ? { attr: { type: 'button' } } : {}),
       cls: [
         'claudian-tab-badge',
         stateClass,
-        isTitleExpanded ? 'claudian-tab-badge-expanded' : '',
+        isTitleExpanded || item.shortTitle ? 'claudian-tab-badge-expanded' : '',
       ].filter(Boolean).join(' '),
       text: this.#getBadgeLabel(item),
     });
@@ -167,14 +168,14 @@ export class TabBar {
 
     const isTitleExpanded = this.expandedTitleTabIds.has(item.id);
     badgeEl.textContent = this.#getBadgeLabel(item);
-    badgeEl.toggleClass('claudian-tab-badge-expanded', isTitleExpanded);
+    badgeEl.toggleClass('claudian-tab-badge-expanded', isTitleExpanded || Boolean(item.shortTitle));
     badgeEl.setAttribute('data-title-expanded', isTitleExpanded ? 'true' : 'false');
     this.callbacks.onTitleExpansionChanged?.(this.getExpandedTitleTabIds());
   }
 
   #getBadgeLabel(item: TabBarItem): string {
     if (!this.expandedTitleTabIds.has(item.id)) {
-      return String(item.index);
+      return item.shortTitle ? this.#truncateExpandedTitle(item.shortTitle) : String(item.index);
     }
 
     return this.#truncateExpandedTitle(item.title);

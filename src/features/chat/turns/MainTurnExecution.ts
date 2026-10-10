@@ -235,7 +235,14 @@ export class MainTurnExecution {
     try {
       userMsg.content = admittedTurnRequest.text;
       userMsg.linkedContentPath = admittedTurnRequest.linkedContentPath;
-      this.activeDelivery = turn.onDelivery;
+      const firstUserTurn = !messagesBeforeTurn.some(message => message.role === 'user');
+      const notifyAccepted = (accepted: boolean): void => {
+        turn.onDelivery?.(accepted);
+        if (accepted && firstUserTurn && turnConversationId) {
+          plugin.notifyNamingFirstTurnAccepted?.({ conversationId: turnConversationId, visibleUserText: displayContent });
+        }
+      };
+      this.activeDelivery = notifyAccepted;
       const submission = this.createSubmission(
         displayContent,
         admittedTurnRequest,
@@ -258,7 +265,7 @@ export class MainTurnExecution {
         }
       }
       didEnqueueToSdk = result.accepted;
-      if (result.accepted) turn.onDelivery?.(true);
+      if (result.accepted) notifyAccepted(true);
       shouldReportReviewableSettlement = result.status === 'completed'
         || (result.status === 'error' && result.accepted);
       if (shouldReportReviewableSettlement) {

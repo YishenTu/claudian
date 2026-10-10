@@ -522,5 +522,33 @@
         "summary": "移動 {moved}、変換 {converted}、ゴミ箱 {trashed}、リンク削除 {unlinked}。"
       }
     }
+  },
+  "naming": {
+    "settingName": "Intelligent conversation naming",
+    "settingDescription": "Generate a history title and a semantic short tab label. Disabled by default. Uses the configured title model; disable any companion naming plugin first.",
+    "menu": "Intelligent naming",
+    "both": "Regenerate long and short titles",
+    "long": "Regenerate long title",
+    "short": "Regenerate short label",
+    "editShort": "Edit short label",
+    "shortLabel": "Short tab label",
+    "save": "Save",
+    "invalidShort": "Enter a label with 1–32 Unicode characters.",
+    "confirmTitle": "Confirm naming operation",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "failed": "Naming failed; the previous titles are preserved.",
+    "ownerConflict": "Another naming extension is active. Disable it before enabling built-in naming.",
+    "enableHint": "Enable intelligent conversation naming in Claudian settings.",
+    "batch": "Fill missing labels:",
+    "all": "All history",
+    "days": "days",
+    "noConversation": "No active conversation.",
+    "overwriteWarning": "Replace the requested existing titles? Changes made during generation will be preserved.",
+    "updated": "Conversation naming updated.",
+    "conflict": "The titles changed during generation; current values were preserved.",
+    "notUpdated": "No titles were updated.",
+    "batchWarning": "Only missing short labels will be generated. Existing labels and long titles will not be overwritten. Candidate count:",
+    "batchResult": "Batch finished (updated / failed / skipped):"
   }
 }

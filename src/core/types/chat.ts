@@ -157,6 +157,8 @@ export interface Conversation {
   id: string;
   providerId: ProviderId;
   title: string;
+  /** Optional semantic label, independent of the history title. */
+  shortTitle?: string;
   createdAt: number;
   /** Timestamp of the most recent user or agent conversation activity. */
   lastActivityAt: number;
@@ -182,7 +184,7 @@ export interface Conversation {
 }
 
 /** Detached metadata for controls that do not need transcript or native session state. */
-export type ConversationSummary = Readonly<Pick<Conversation, 'id' | 'providerId' | 'title' | 'selectedModel' | 'isPinned'> & {
+export type ConversationSummary = Readonly<Pick<Conversation, 'id' | 'providerId' | 'title' | 'shortTitle' | 'selectedModel' | 'isPinned'> & {
   capabilities?: Readonly<ProviderCapabilities>;
   usage?: Readonly<Pick<UsageInfo, 'model'>>;
 }>;
@@ -206,6 +208,8 @@ export interface ConversationMeta {
   /** Conversation-owned model selection, projected without hydrating history. */
   selectedModel?: string;
   title: string;
+  /** Optional semantic label, independent of the history title. */
+  shortTitle?: string;
   createdAt: number;
   /** Timestamp of the most recent user or agent conversation activity. */
   lastActivityAt: number;
@@ -233,6 +237,8 @@ export interface SessionMetadata {
   id: string;
   providerId?: ProviderId;
   title: string;
+  /** Optional semantic label, independent of the history title. */
+  shortTitle?: string;
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
   createdAt: number;
   lastActivityAt: number;

@@ -1,3 +1,4 @@
+import type { NamingConversationSnapshot, NamingTitleResult, NamingTitleUpdate } from '@/core/naming/ConversationNamingAPI';
 import { extractUserDisplayContent } from '@/core/prompt/promptContext';
 
 import type { ProviderSessionSnapshot } from '../../core/execution';
@@ -555,6 +556,24 @@ export class ConversationRepository {
     await this.#mutateMetadata(id, () => safeUpdates);
   }
 
+  async updateNamingTitles(id: string, update: NamingTitleUpdate): Promise<NamingTitleResult> {
+    const result = { longTitle: false, shortTitle: false };
+    const input = { ...update };
+    await this.#mutateMetadata(id, conversation => {
+      const patch: ConversationMutablePatch = {};
+      if (input.longTitle?.trim() && (input.expectedLongTitle === undefined || input.expectedLongTitle === conversation.title)) {
+        patch.title = input.longTitle.trim();
+        result.longTitle = true;
+      }
+      if (input.shortTitle?.trim() && (input.expectedShortTitle === undefined || input.expectedShortTitle === (conversation.shortTitle ?? null))) {
+        patch.shortTitle = input.shortTitle.trim();
+        result.shortTitle = true;
+      }
+      return result.longTitle || result.shortTitle ? patch : null;
+    });
+    return result;
+  }
+
   async setPinned(id: string, isPinned: boolean): Promise<void> {
     await this.#mutateMetadata(id, conversation => (
       (isPinned && conversation.isArchived) || conversation.isPinned === isPinned
@@ -816,10 +835,15 @@ export class ConversationRepository {
     return conversation;
   }
 
+  getNamingSnapshot(id: string): NamingConversationSnapshot | null {
+    const record = this.#getRecord(id);
+    return record ? { conversationId: id, createdAt: record.createdAt, longTitle: record.title, shortTitle: record.shortTitle ?? null } : null;
+  }
+
   getSummary(id: string): ConversationSummary | null {
     const record = this.#getRecord(id);
     return record ? {
-      id: record.id, providerId: record.providerId, title: record.title,
+      id: record.id, providerId: record.providerId, title: record.title, shortTitle: record.shortTitle,
       selectedModel: record.selectedModel, isPinned: record.isPinned,
       capabilities: { ...this.deps.providers.getCapabilities(record.providerId, record.providerState) },
       ...(record.usage ? { usage: { model: record.usage.model } } : {}),
@@ -862,6 +886,7 @@ export class ConversationRepository {
       providerId: conversation.providerId,
       selectedModel: conversation.selectedModel,
       title: conversation.title,
+      shortTitle: conversation.shortTitle,
       createdAt: conversation.createdAt,
       lastActivityAt: conversation.lastActivityAt,
       messageCount: conversation.messages.length,
@@ -1151,6 +1176,7 @@ export class ConversationRepository {
       id: conversation.id,
       providerId: conversation.providerId,
       title: conversation.title,
+      shortTitle: conversation.shortTitle,
       titleGenerationStatus: conversation.titleGenerationStatus,
       createdAt: conversation.createdAt,
       lastActivityAt: conversation.lastActivityAt,

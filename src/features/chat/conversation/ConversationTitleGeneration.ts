@@ -8,7 +8,7 @@ import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { t } from '@/i18n/i18n';
 
 export interface ConversationTitleGenerationDeps {
-  host: Pick<ChatFeatureHost, 'settings' | 'getConversationById' | 'renameConversation' | 'updateConversation'>;
+  host: Pick<ChatFeatureHost, 'settings' | 'getConversationById' | 'renameConversation' | 'updateConversation' | 'namingApi'>;
   getService: () => TitleGenerationService | null;
   /** Observes stored title status changes, such as a session list that renders them. */
   onChanged?: () => void;
@@ -40,6 +40,7 @@ export class ConversationTitleGeneration {
     const fallbackTitle = fallbackConversationTitle(userContent);
     await host.renameConversation(conversationId, fallbackTitle);
 
+    if (host.namingApi?.hasFirstTurnSubscriber?.()) return;
     if (!host.settings.enableAutoTitleGeneration
       || !ProviderRegistry.resolveTitleGenerationSelection(host.settings)) {
       return;
@@ -55,6 +56,7 @@ export class ConversationTitleGeneration {
   /** Regenerates a stored Conversation's title from its first user message. */
   async regenerate(conversationId: string): Promise<void> {
     const { host } = this.deps;
+    if (host.namingApi?.requestRegeneration({ conversationId, mode: 'both' })) return;
     if (!host.settings.enableAutoTitleGeneration) return;
     if (!ProviderRegistry.resolveTitleGenerationSelection(host.settings)) {
       new Notice(t('chat.selectAvailableTitleModel'));

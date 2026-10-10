@@ -271,6 +271,7 @@ export class SessionStorage implements SessionMetadataReader {
       updatedAt: _updatedAt,
       lastResponseAt: _lastResponseAt,
       selectedModel: rawSelectedModel,
+      shortTitle: rawShortTitle,
       modelRecoverySource: rawModelRecoverySource,
       linkedContentPath: _rawLinkedContentPath,
       currentNote: _rawCurrentNote,
@@ -283,6 +284,7 @@ export class SessionStorage implements SessionMetadataReader {
     const linkedContent = decodeLinkedContentPathFields(rawMetadata);
     const metadata = {
       ...metadataFields,
+      ...(typeof rawShortTitle === 'string' && rawShortTitle.trim() ? { shortTitle: rawShortTitle.trim() } : {}),
       ...(selectedModel !== undefined ? { selectedModel } : {}),
       ...(modelRecoverySource ? { modelRecoverySource } : {}),
       ...(linkedContent.path ? { linkedContentPath: linkedContent.path } : {}),

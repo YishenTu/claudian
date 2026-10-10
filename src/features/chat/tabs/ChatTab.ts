@@ -147,6 +147,8 @@ export type TabProviderCatalogContext = Readonly<Pick<
  * Tab bar item representation for rendering.
  */
 export interface TabBarItem {
+  /** Persisted semantic task identity; absent values retain numbered badges. */
+  shortTitle?: string;
   id: TabId;
   /** 1-based index for display. */
   index: number;

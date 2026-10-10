@@ -1000,6 +1000,7 @@ export class TabManager implements TabManagerInterface {
         id: tab.id,
         index: index++,
         title: getTabTitle(tab, this.plugin),
+        shortTitle: tab.conversationId ? this.plugin.getConversationSummary(tab.conversationId)?.shortTitle : undefined,
         isActive: tab.id === this.activeTabId,
         isWorking: this.isTabWorking(tab.id),
         attention: runtime?.state.attention ?? null,
