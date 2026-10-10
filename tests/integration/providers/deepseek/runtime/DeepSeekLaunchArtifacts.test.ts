@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { access, chmod, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -178,21 +178,20 @@ it('reports ready only once every durable store an ephemeral session could reach
 it('never republishes a fork token whose publication failed', async () => {
   const root = await mkdtemp(join(tmpdir(), 'deepseek fork tokens '));
   const artifacts = await prepareDeepSeekLaunchArtifacts(root);
-  const directory = dirname(artifacts.patchPath);
   try {
     const patch = JSON.parse(await readFile(artifacts.patchPath, 'utf8'));
     const { stateFile } = patch.flatMap((entry: { insert?: any[] }) => entry.insert ?? []).find((entry: any) => entry.id === 'claudian-ephemeral').config;
-    // The token file cannot be replaced, so the offer fails and its caller never receives a withdrawal.
-    await chmod(directory, 0o500);
+    // A non-empty directory cannot be replaced on any platform, so the offer fails and its caller never receives a withdrawal.
+    await rm(stateFile, { force: true });
+    await mkdir(join(stateFile, 'blocker'), { recursive: true });
     await expect(artifacts.offerEphemeralFork('saved', 4)).rejects.toThrow();
-    await chmod(directory, 0o700);
+    await rm(stateFile, { recursive: true, force: true });
     const withdraw = await artifacts.offerEphemeralFork('other', 2);
     expect(JSON.parse(await readFile(stateFile, 'utf8')).forks.map((fork: any) => fork.parent)).toEqual(['other']);
     await withdraw();
     // A later durable fork of `saved` at that checkpoint must find nothing to claim.
     expect(JSON.parse(await readFile(stateFile, 'utf8'))).toEqual({ forks: [] });
   } finally {
-    await chmod(directory, 0o700);
     await artifacts.dispose();
     await rm(root, { recursive: true, force: true });
   }
