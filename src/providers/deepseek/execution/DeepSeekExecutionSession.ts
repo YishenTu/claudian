@@ -57,6 +57,7 @@ class AdmissionError extends Error {}
 const INTERACTION_DEADLINE_MS = 10_000;
 // Covers the graceful exit of a Host left by a reloaded Claudian instance.
 const WRITER_HANDOFF_MS = 5_000;
+const EPHEMERAL_ENDED = 'This temporary DeepSeek session ended when DeepSeek restarted. Start a new one to continue.';
 
 /** One claimed native session in the shared Host, one requested channel, and independently scoped automatic work. */
 export class DeepSeekExecutionSession implements ProviderExecutionSession {
@@ -87,6 +88,8 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
   private commands?: SlashCommand[];
   private permission?: DeepSeekPermission;
   private followQueue: Promise<void> = Promise.resolve();
+  /** Native generation holding this session's in-memory identity; unset for sessions native stores. */
+  private ephemeralGeneration?: number;
   private readonly subagents = new DeepSeekSubagents(subagent => this.snapshots.emit({ type: 'subagent_updated', subagent }));
 
   constructor(
@@ -258,6 +261,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       const saved = this.binding ?? decodeDeepSeekState(this.config.resumeSeed?.providerState);
       if (saved && saved.home !== lease.home) throw new AdmissionError('DeepSeek native history belongs to a different store. Restore its native store or select the original DeepSeek environment before continuing.');
       this.binding = bindDeepSeekState(saved, { home: lease.home, preset: policy });
+      if (this.ephemeralGeneration !== undefined && this.ephemeralGeneration !== lease.generation) throw new AdmissionError(EPHEMERAL_ENDED);
       // The Host retires a lost process, which ends all of its native work.
       this.offLease.push(lease.onLost((loss, error) => { if (generation === this.generation) void this.fail(error, loss, false); }));
       this.offLease.push(lease.roster.onReset(() => { if (generation === this.generation) this.voidInteractions('superseded'); }));
@@ -274,20 +278,24 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
         this.permission = await readDeepSeekPermission(lease.client, existingId);
         // Claudian archive state is authoritative: a native archive left by a failed restore or dsh web would gate every turn.
         // A pending fork's source is another conversation, and its fork is an independent native root.
-        if (this.nativeId) await lease.client.call('workspace/unarchiveSession', { request: { sessionId: this.nativeId } });
+        // Native never archives an ephemeral session.
+        if (this.nativeId && this.ephemeralGeneration === undefined) await lease.client.call('workspace/unarchiveSession', { request: { sessionId: this.nativeId } });
         this.assertRequest(requested);
       }
+      // A new ephemeral identity is chosen once; without the Host's plugin it falls back to a stored session.
+      const ephemeral = !this.nativeId && this.config.lifecycle === 'ephemeral' && this.config.nativePersistence !== 'enabled' && lease.ephemeral;
       if (this.binding.pendingFork) {
-        const fork = await lease.client.call('session/fork', { request: this.binding.pendingFork });
-        if (!isRecord(fork) || typeof fork.sessionId !== 'string') throw new Error('Malformed DeepSeek fork response.');
-        this.nativeId = fork.sessionId; this.permission = undefined;
+        // Leaving an ephemeral fork orphans only memory; a durable fork keeps the wait so it is never forked twice.
+        this.nativeId = await lease.fork(this.binding.pendingFork, ephemeral, ephemeral ? signal : undefined); this.permission = undefined;
+        if (ephemeral) this.ephemeralGeneration = lease.generation;
         lease.claim(this.nativeId, deliver);
         this.binding = { ...this.binding, pendingFork: undefined };
         this.snapshots.deleteProviderStateValue('pendingFork');
       } else {
-        const created = await this.createNative(lease, signal);
+        const created = await this.createNative(lease, signal, ephemeral ? lease.ephemeralSessionId() : undefined);
         if (!this.nativeId) lease.claim(created, deliver);
         this.nativeId = created;
+        if (ephemeral) this.ephemeralGeneration = lease.generation;
       }
       this.saveBinding();
       this.observer = new DeepSeekSessionObserver(lease.client, lease.roster, this.nativeId, (id, frame) => {
@@ -328,13 +336,14 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
   }
 
   /** Creates or resumes the native session; a reloaded Claudian may still be releasing its writer. */
-  private async createNative(lease: DeepSeekHostLease, signal: AbortSignal): Promise<string> {
-    const request = { cwd: this.config.vaultWorkingDirectory, agentPreset: this.binding!.preset, ...(this.nativeId ? { sessionId: this.nativeId } : {}) };
+  private async createNative(lease: DeepSeekHostLease, signal: AbortSignal, ephemeralId?: string): Promise<string> {
+    const sessionId = this.nativeId ?? ephemeralId;
+    const request = { cwd: this.config.vaultWorkingDirectory, agentPreset: this.binding!.preset, ...(sessionId ? { sessionId } : {}) };
     const deadline = Date.now() + WRITER_HANDOFF_MS;
     for (let delay = 100; ; delay = Math.min(delay * 2, 1_000)) {
       try {
         const created = await lease.client.call('session/create', { request }, { signal });
-        if (!isRecord(created) || typeof created.sessionId !== 'string' || (this.nativeId && this.nativeId !== created.sessionId)) throw new Error('DeepSeek session identity changed during resume.');
+        if (!isRecord(created) || typeof created.sessionId !== 'string' || (sessionId && sessionId !== created.sessionId)) throw new Error('DeepSeek session identity changed during resume.');
         return created.sessionId;
       } catch (error) {
         // Only chat presets carry the user's additional rows; anything else native cannot mount is Claudian's own fault.

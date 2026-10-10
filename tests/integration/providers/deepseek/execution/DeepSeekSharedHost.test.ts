@@ -65,9 +65,9 @@ function port(): ProviderInteractionPort & { askUserQuestion: jest.Mock } {
   return { requestApproval: jest.fn(), askUserQuestion: jest.fn(() => new Promise<never>(() => {})), dismissInteraction: jest.fn() };
 }
 
-function open(interactionPort = port(), resume?: string): ProviderExecutionSession {
+function open(interactionPort = port(), resume?: string, lifecycle: ProviderSessionConfig['lifecycle'] = 'persistent'): ProviderExecutionSession {
   const config: ProviderSessionConfig = {
-    lifecycle: 'persistent', nativePersistence: 'enabled', vaultWorkingDirectory: '/vault', interactionPort,
+    lifecycle, nativePersistence: lifecycle === 'ephemeral' ? 'disabled-if-supported' : 'enabled', vaultWorkingDirectory: '/vault', interactionPort,
     ...(resume ? { resumeSeed: { providerSessionId: resume, providerState: { schemaVersion: 1, home: getDeepSeekHome(process.env), profile: 'web', preset: 'claudian' } } } : {}),
   };
   const session = new DeepSeekExecutionBackend(host, () => deepseek).createSession(config);
@@ -119,6 +119,36 @@ it('serves concurrent conversations and auxiliary tasks from one native process 
   expect(lifecycle.prompts).toEqual(expect.arrayContaining([
     { preset: 'claudian', text: 'Main prompt {literal}' }, { preset: 'claudian-passive', text: 'Title prompt' },
   ]));
+});
+
+it.each([true, false])('keeps an auxiliary task in native memory only when the ephemeral plugin is ready (%s)', async ready => {
+  await deepseek.dispose();
+  ({ deepseek, lifecycle } = peer.host({ ephemeralReady: ready }));
+  const title = open(port(), undefined, 'ephemeral');
+  const main = open();
+  expect(texts(await run(title, request('Title prompt', { kind: 'passive' }), 'title'))).toBe('title');
+  expect(texts(await run(main, request('Main prompt'), 'main'))).toBe('main');
+  const creates = peer.calls.filter(c => c.method === 'session/create').map(c => c.args.request);
+  // The prefixed identity is what the bundled plugin keeps in memory; without it native stores the task as before.
+  const titleId = creates.find(r => r.agentPreset === 'claudian-passive').sessionId;
+  expect(/^claudian-ephemeral-[0-9a-f-]{36}$/.test(titleId ?? '')).toBe(ready);
+  expect(titleId === undefined).toBe(!ready);
+  expect(creates.find(r => r.agentPreset === 'claudian')).not.toHaveProperty('sessionId');
+});
+
+it('ends an ephemeral auxiliary task with the process that held it instead of rebinding', async () => {
+  const task = open(port(), undefined, 'ephemeral');
+  await run(task, request('Inline edit prompt', { kind: 'read-only' }), 'first edit');
+  const [{ args: { request: { sessionId } } }] = peer.calls.filter(c => c.method === 'session/create');
+  lifecycle.exit();
+  await until(() => task.getStatus() === 'invalidated' && lifecycle.disposed === 1);
+  const calls = peer.calls.length;
+  const events = await run(task, request('Inline edit prompt', { kind: 'read-only' }));
+  expect(events.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true, message: expect.stringMatching(/temporary DeepSeek session ended when DeepSeek restarted/) });
+  // Nothing native is touched for the lost session: no resume, projections, unarchive or prompt.
+  expect(peer.calls.slice(calls).filter(c => c.args?.request?.sessionId === sessionId || c.method === 'session/create')).toEqual([]);
+  // An ordinary conversation still rebinds on the replacement process.
+  expect(texts(await run(open(), request('Prompt'), 'served'))).toBe('served');
 });
 
 it('applies a changed prompt on the next turn without restarting the shared process', async () => {

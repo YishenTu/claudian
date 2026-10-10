@@ -1,11 +1,14 @@
+import { randomUUID } from 'node:crypto';
+
 import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTransitionFence';
 
-import type { DeepSeekReader,DeepSeekRemoteClient } from '../remote/DeepSeekRemoteClient';
+import { type DeepSeekReader, type DeepSeekRemoteClient, DeepSeekRemoteError, isRecord } from '../remote/DeepSeekRemoteClient';
 import type { DeepSeekPreset } from '../types';
+import { DEEPSEEK_EPHEMERAL_PREFIX } from './DeepSeekCompatibility';
 import { type DeepSeekHostProcess, type DeepSeekLaunchOptions,getDeepSeekHome } from './DeepSeekHostProcess';
 import { DeepSeekRoster } from './DeepSeekRoster';
 
-export type DeepSeekProcess = Pick<DeepSeekHostProcess, 'client' | 'onExit' | 'dispose' | 'writePrompt' | 'writeCodeMode'>;
+export type DeepSeekProcess = Pick<DeepSeekHostProcess, 'client' | 'onExit' | 'dispose' | 'writePrompt' | 'writeCodeMode' | 'offerEphemeralFork' | 'readEphemeralReady'>;
 export type DeepSeekProcessFactory = (options: DeepSeekLaunchOptions, signal: AbortSignal) => Promise<DeepSeekProcess>;
 export type DeepSeekHostLoss = 'process-exited' | 'transport';
 
@@ -14,6 +17,17 @@ export interface DeepSeekHostLease {
   readonly client: DeepSeekRemoteClient;
   readonly roster: DeepSeekRoster;
   readonly home: string;
+  /** Identifies the native process; ephemeral sessions exist only inside the generation that created them. */
+  readonly generation: number;
+  /** Whether this process keeps ephemeral sessions in memory. Without it native would store them. */
+  readonly ephemeral: boolean;
+  /** A fresh native session id this process keeps in memory; only a process whose plugin is ready hands one out. */
+  ephemeralSessionId(): string;
+  /**
+   * Forks one native session; forks run one at a time per process so an ephemeral fork's token is never shared. The
+   * signal only stops the caller waiting: native forks cannot be cancelled, so the Host keeps the token until it settles.
+   */
+  fork(request: { readonly sessionId: string; readonly atSeq: number }, ephemeral: boolean, signal?: AbortSignal): Promise<string>;
   writePrompt(preset: DeepSeekPreset, text: string): Promise<void>;
   /** Shared by every chat agent of this generation; each applies it at its next turn. */
   writeCodeMode(enabled: boolean): Promise<void>;
@@ -24,9 +38,13 @@ export interface DeepSeekHostLease {
   release(): void;
 }
 
+interface Ready { readonly process: DeepSeekProcess; readonly roster: DeepSeekRoster; readonly home: string; readonly ephemeral: boolean }
+
 interface Generation {
+  readonly id: number;
   readonly abort: AbortController;
-  readonly ready: Promise<{ readonly process: DeepSeekProcess; readonly roster: DeepSeekRoster; readonly home: string }>;
+  readonly ready: Promise<Ready>;
+  forks: Promise<unknown>;
   readonly lost: Set<(loss: DeepSeekHostLoss, error: Error) => void>;
   users: number;
   idleTimer?: number;
@@ -40,6 +58,8 @@ const COLD_METHODS = new Set([
   'session/modelCatalog', 'skills/list',
 ]);
 const RECONNECT_TIMEOUT_MS = 15_000;
+// Covers native MCP discovery during agent composition; a fork still running after it ends with its process.
+const FORK_WATCHDOG_MS = 5 * 60_000;
 
 /**
  * Workspace-owned shared native Host. It owns the process, transport, roster and session claims;
@@ -47,6 +67,7 @@ const RECONNECT_TIMEOUT_MS = 15_000;
  */
 export class DeepSeekHost {
   private current?: Generation;
+  private generations = 0;
   private readonly retiring = new Set<Promise<void>>();
   private readonly fence = new ProviderTransitionFence();
 
@@ -68,14 +89,65 @@ export class DeepSeekHost {
     try { ready = await abortable(generation.ready, signal); } catch (error) { this.leave(generation); throw error; }
     // Loss can land between startup and this continuation; its listeners have already run.
     if (generation.retirement) { this.leave(generation); throw new Error('DeepSeek process exited during startup.'); }
-    const { process, roster, home } = ready;
+    const { process, roster, home, ephemeral } = ready;
     const claims: Array<() => void> = [];
     const lost = new Set<(loss: DeepSeekHostLoss, error: Error) => void>();
     const relay = (loss: DeepSeekHostLoss, error: Error): void => { for (const listener of [...lost]) listener(loss, error); lost.clear(); };
     generation.lost.add(relay);
     let released = false;
     return {
-      client: process.client, roster, home,
+      client: process.client, roster, home, generation: generation.id, ephemeral,
+      ephemeralSessionId: () => {
+        if (!ephemeral) throw new Error('DeepSeek cannot keep this session ephemeral.');
+        return `${DEEPSEEK_EPHEMERAL_PREFIX}${randomUUID()}`;
+      },
+      fork: (request, ephemeralFork, signal) => {
+        if (released) return Promise.reject(new Error('DeepSeek Host lease is released.'));
+        if (ephemeralFork && !ephemeral) return Promise.reject(new Error('DeepSeek cannot keep this fork ephemeral.'));
+        const run = generation.forks.then(async () => {
+          // A fork waiting behind another may outlive its lease or its process; neither may start it.
+          if (released) throw new Error('DeepSeek Host lease is released.');
+          if (generation.retirement) throw new Error('DeepSeek process ended before the fork started.');
+          const withdraw = ephemeralFork ? await process.offerEphemeralFork(request.sessionId, request.atSeq) : undefined;
+          let unresolved = false;
+          let forked = false;
+          let watchdog: number | undefined;
+          let expired = false;
+          try {
+            // Native forks cannot be cancelled, so no client deadline may end one while native continues; only the Host's
+            // watchdog does, by ending the process.
+            const call = process.client.call('session/fork', { request: { sessionId: request.sessionId, atSeq: request.atSeq } }, { timeoutMs: 'none' });
+            call.catch(() => undefined);
+            const fork = await Promise.race([call, new Promise<never>((_, reject) => {
+              watchdog = window.setTimeout(() => { expired = true; reject(new Error('DeepSeek fork did not finish.')); }, FORK_WATCHDOG_MS);
+            })]);
+            forked = true;
+            if (!isRecord(fork) || typeof fork.sessionId !== 'string') throw new Error('Malformed DeepSeek fork response.');
+            return fork.sessionId;
+          } catch (error) {
+            // Only a native refusal proves no fork exists. Otherwise the unfinished fork may still claim a token, its own
+            // after withdrawal or a later fork's, so the process ends first and its token file goes with it. A fork the
+            // watchdog gave up on would also complete after Claudian reported it failed, whatever the plugin state.
+            unresolved = expired || (ephemeral && !(error instanceof DeepSeekRemoteError && error.code !== undefined));
+            if (unresolved) {
+              this.lose(generation, 'transport', error instanceof Error ? error : new Error('DeepSeek fork failed.'));
+              await this.retire(generation);
+            }
+            throw error;
+          } finally {
+            window.clearTimeout(watchdog);
+            // A completed fork claimed its token, which can never be claimed again. A refused fork's unclaimed token
+            // must not outlive a failed withdrawal, or a later fork of that checkpoint would take it.
+            if (!unresolved && withdraw) await withdraw().catch(async () => {
+              if (forked) return;
+              this.lose(generation, 'transport', new Error('DeepSeek could not withdraw a fork token.'));
+              await this.retire(generation);
+            });
+          }
+        });
+        generation.forks = run.catch(() => undefined);
+        return abortable(run, signal);
+      },
       writePrompt: (preset, text) => process.writePrompt(preset, text),
       writeCodeMode: enabled => process.writeCodeMode(enabled),
       claim: (sessionId, deliver) => {
@@ -146,14 +218,14 @@ export class DeepSeekHost {
 
   private begin(): Generation {
     const abort = new AbortController();
-    const generation: Generation = { abort, lost: new Set(), users: 0, ready: this.boot(abort.signal, () => generation) };
+    const generation: Generation = { id: ++this.generations, abort, lost: new Set(), users: 0, forks: Promise.resolve(), ready: this.boot(abort.signal, () => generation) };
     // A failed startup leaves no generation behind; the next caller starts fresh.
     generation.ready.catch(() => { if (this.current === generation) this.current = undefined; });
     this.current = generation;
     return generation;
   }
 
-  private async boot(signal: AbortSignal, self: () => Generation): Promise<{ process: DeepSeekProcess; roster: DeepSeekRoster; home: string }> {
+  private async boot(signal: AbortSignal, self: () => Generation): Promise<Ready> {
     const options = await this.launch();
     const process = await this.spawn(options, signal);
     if (signal.aborted) { await process.dispose(); throw new Error('DeepSeek startup cancelled.'); }
@@ -161,7 +233,9 @@ export class DeepSeekHost {
     process.onExit(() => this.lose(self(), 'process-exited', new Error('DeepSeek process exited.')));
     process.client.onDisconnect(() => this.reconnect(self(), process, roster));
     try { await roster.start(); } catch (error) { roster.dispose(); await process.dispose(); throw error; }
-    return { process, roster, home: getDeepSeekHome(options.environment) };
+    // The plugin reports during native startup; a missing or partial report leaves sessions native.
+    const ephemeral = await process.readEphemeralReady().catch(() => false);
+    return { process, roster, home: getDeepSeekHome(options.environment), ephemeral };
   }
 
   private reconnect(generation: Generation, process: DeepSeekProcess, roster: DeepSeekRoster): void {

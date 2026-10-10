@@ -12,6 +12,10 @@ export interface NativePeerHostOptions {
   readonly beforeStart?: (signal: AbortSignal) => Promise<void>;
   /** Runs inside process disposal; hold it to simulate slow teardown. */
   readonly onDispose?: () => Promise<void>;
+  /** Whether the bundled ephemeral plugin reports ready in each process; defaults to true. */
+  readonly ephemeralReady?: boolean;
+  /** Fails every fork-token withdrawal, as a full or read-only launch directory would. */
+  readonly failWithdrawals?: boolean;
 }
 
 export interface NativePeerLifecycle {
@@ -20,6 +24,8 @@ export interface NativePeerLifecycle {
   readonly prompts: Array<{ preset: string; text: string }>;
   /** Code-mode preferences written to the Host, with how many prompts native had received at that point. */
   readonly codeModes: Array<{ enabled: boolean; promptsSent: number }>;
+  /** Ephemeral fork tokens offered to the Host, with how many forks native had received at offer and at withdrawal. */
+  readonly ephemeralForks: Array<{ parent: string; atSeq: number; forksAtOffer: number; forksAtWithdraw?: number }>;
   /** Simulates the native process exiting on its own. */
   exit(): void;
 }
@@ -86,10 +92,10 @@ export class NativePeer {
     return DeepSeekRemoteClient.open(this.url);
   }
 
-  /** A production shared Host whose process is this peer, recording only process lifecycle, prompt files and code mode. */
+  /** A production shared Host whose process is this peer, recording only process lifecycle, launch files and fork tokens. */
   host(options: NativePeerHostOptions = {}): { deepseek: DeepSeekHost; lifecycle: NativePeerLifecycle } {
     const exits = new Set<() => void>();
-    const lifecycle: NativePeerLifecycle = { starts: 0, disposed: 0, prompts: [], codeModes: [], exit: () => { for (const listener of [...exits]) listener(); } };
+    const lifecycle: NativePeerLifecycle = { starts: 0, disposed: 0, prompts: [], codeModes: [], ephemeralForks: [], exit: () => { for (const listener of [...exits]) listener(); } };
     const deepseek = new DeepSeekHost(async () => ({ cliPath: '/bin/dsh', cwd: '/vault', environment: process.env }), async (_options, signal) => {
       lifecycle.starts++;
       await options.beforeStart?.(signal);
@@ -99,6 +105,16 @@ export class NativePeer {
         onExit: listener => { exits.add(listener); return () => exits.delete(listener); },
         writePrompt: async (preset, text) => { lifecycle.prompts.push({ preset, text }); },
         writeCodeMode: async enabled => { lifecycle.codeModes.push({ enabled, promptsSent: this.calls.filter(call => call.method === 'session/prompt').length }); },
+        readEphemeralReady: async () => options.ephemeralReady ?? true,
+        offerEphemeralFork: async (parent, atSeq) => {
+          const forks = (): number => this.calls.filter(call => call.method === 'session/fork').length;
+          const offer: NativePeerLifecycle['ephemeralForks'][number] = { parent, atSeq, forksAtOffer: forks() };
+          lifecycle.ephemeralForks.push(offer);
+          return async () => {
+            if (options.failWithdrawals) throw new Error('token file is read-only');
+            offer.forksAtWithdraw = forks();
+          };
+        },
         dispose: async () => { exits.clear(); client.dispose(); lifecycle.disposed++; await options.onDispose?.(); },
       };
     }, options.idleMs);

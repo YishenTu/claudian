@@ -19,7 +19,7 @@ it('discovers native models lazily and preserves explicit selection order and un
     mutateSettings: async (mutation: (settings: any) => unknown) => { await mutation(settings); },
     mutateSettingsConditionally: async (mutation: (settings: any) => unknown) => { await mutation(settings); },
   } as unknown as ProviderHost;
-  const start = jest.fn(async () => ({ client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, writeCodeMode: async () => {} }));
+  const start = jest.fn(async () => ({ client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} }));
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
     workspace = createDeepSeekWorkspaceServices(host, start);
@@ -69,7 +69,7 @@ it('lists vault skills for the dropdown from saved native sessions without activ
   const host = { settings, app: { vault: { adapter: { basePath: '/vault' } } }, executionLifecycleRegistry: registry,
     getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: jest.fn(),
   } as unknown as ProviderHost;
-  const start = jest.fn(async () => ({ client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, writeCodeMode: async () => {} }));
+  const start = jest.fn(async () => ({ client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} }));
   // Native list order is not recency order; the newest chat root in the vault owns the catalog.
   const rows = [
     { sessionId: 'older-chat', updatedAt: 1, agentAvailable: false, running: false, blank: false, cwd: '/vault' },
@@ -124,7 +124,7 @@ it('stops the shared Host before a provider transition and restarts it lazily wi
   const start = jest.fn(async (options: { cliPath: string; environment: NodeJS.ProcessEnv; presetPlugins?: unknown }) => {
     launches.push({ cliPath: options.cliPath, home: options.environment.DSH_HOME, presetPlugins: options.presetPlugins });
     const client = await peer.connect();
-    return { client, onExit: () => () => {}, dispose: async () => { client.dispose(); disposed++; }, writePrompt: async () => {}, writeCodeMode: async () => {} };
+    return { client, onExit: () => () => {}, dispose: async () => { client.dispose(); disposed++; }, writePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} };
   });
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
@@ -156,7 +156,7 @@ it('mirrors Claudian archive state onto native sessions in this Host store', asy
   const host = { settings: { providerConfigs: { deepseek: { enabled: true } } }, app: { vault: { adapter: { basePath: '/vault' } } }, executionLifecycleRegistry: registry,
     getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: jest.fn(),
   } as unknown as ProviderHost;
-  const start = jest.fn(async () => ({ client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, writeCodeMode: async () => {} }));
+  const start = jest.fn(async () => ({ client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} }));
   peer.onCall = (method, args) => {
     if (method === 'session/list') return { items: [] };
     if (args.request?.sessionId === 'gone') throw Object.assign(new Error('no such session'), { code: 'session/not-found' });
@@ -204,7 +204,7 @@ it('lets an admitted archive finish before a provider transition stops the Host'
   let disposed = 0;
   const start = jest.fn(async () => {
     const client = await peer.connect();
-    return { client, onExit: () => () => {}, dispose: async () => { client.dispose(); disposed++; }, writePrompt: async () => {}, writeCodeMode: async () => {} };
+    return { client, onExit: () => () => {}, dispose: async () => { client.dispose(); disposed++; }, writePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} };
   });
   let answer!: () => void;
   const archived = new Promise<void>(resolve => { answer = resolve; });

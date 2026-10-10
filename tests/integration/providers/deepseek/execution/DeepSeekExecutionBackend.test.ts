@@ -76,10 +76,10 @@ afterEach(async () => { await session?.dispose(); await deepseek.dispose(); awai
 function savedState(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return { schemaVersion: 1, home: getDeepSeekHome(process.env), profile: 'web', preset: 'claudian', ...overrides };
 }
-function create(resume: boolean | NonNullable<ProviderSessionConfig['resumeSeed']> = false): void {
+function create(resume: boolean | NonNullable<ProviderSessionConfig['resumeSeed']> = false, lifecycle: ProviderSessionConfig['lifecycle'] = 'persistent'): void {
   const resumeSeed = resume === true ? { providerSessionId: 'root', providerState: savedState() } : resume || undefined;
   session = new DeepSeekExecutionBackend(host, () => deepseek).createSession({
-    lifecycle: 'persistent', nativePersistence: 'enabled', vaultWorkingDirectory: '/vault', interactionPort: port,
+    lifecycle, nativePersistence: lifecycle === 'ephemeral' ? 'disabled-if-supported' : 'enabled', vaultWorkingDirectory: '/vault', interactionPort: port,
     ...(resumeSeed ? { resumeSeed } : {}),
   });
   session.onEvent(event => sessionEvents.push(event));
@@ -1068,7 +1068,10 @@ it('rejects a send while background Stop is running and admits after Stop settle
   expect(peer.calls.filter(c => c.method === 'session/prompt')).toHaveLength(2);
 });
 
-it('forks a saved checkpoint on first send and binds the fork without resuming its source', async () => {
+it.each([
+  ['persistent', true], ['ephemeral', true], ['ephemeral', false],
+] as const)('forks a saved checkpoint on first send as a %s session (plugin ready %s) and binds the fork without resuming its source', async (lifecycleKind, ready) => {
+  if (!ready) { await deepseek.dispose(); ({ deepseek, lifecycle } = peer.host({ ephemeralReady: false })); }
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => {
     if (method === 'session/fork') return { sessionId: 'fork' };
@@ -1076,13 +1079,16 @@ it('forks a saved checkpoint on first send and binds the fork without resuming i
     if (method === 'session/list') return { items: [{ sessionId: 'root', agentAvailable: true, running: false }, { sessionId: 'fork', agentAvailable: true, running: false }] };
     return ordinary(method, args);
   };
-  create({ providerState: savedState({ preset: 'claudian-code', pendingFork: { sessionId: 'root', atSeq: 2 } }) });
+  create({ providerState: savedState({ preset: 'claudian-code', pendingFork: { sessionId: 'root', atSeq: 2 } }) }, lifecycleKind);
   followed = 'fork';
   const run = session.execute(request()); const events: ProviderExecutionEvent[] = []; const done = collect(run.events, events);
   await until(() => peer.calls.some(c => c.method === 'session/prompt'));
   begin(run.executionId); answer('forked answer'); await done;
   expect(events.at(-1)?.type).toBe('turn_completed');
   expect(peer.calls.filter(c => c.method === 'session/fork')).toEqual([{ method: 'session/fork', args: { request: { sessionId: 'root', atSeq: 2 } } }]);
+  // A side chat's fork holds the ephemeral token for exactly its own native fork call; a durable fork never does.
+  // Without the plugin a side chat falls back to an ordinary stored fork instead of failing.
+  expect(lifecycle.ephemeralForks).toEqual(lifecycleKind === 'ephemeral' && ready ? [{ parent: 'root', atSeq: 2, forksAtOffer: 0, forksAtWithdraw: 1 }] : []);
   expect(peer.calls.some(c => c.method === 'session/create')).toBe(false);
   // A fork is an independent native root; unarchiving its source would change another conversation.
   expect(peer.calls.some(c => c.method === 'workspace/unarchiveSession')).toBe(false);

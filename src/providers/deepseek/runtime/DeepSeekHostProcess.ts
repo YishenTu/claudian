@@ -88,6 +88,10 @@ export class DeepSeekHostProcess {
 
   writeCodeMode(enabled: boolean): Promise<void> { return this.artifacts.writeCodeMode(enabled); }
 
+  offerEphemeralFork(parent: string, atSeq: number): Promise<() => Promise<void>> { return this.artifacts.offerEphemeralFork(parent, atSeq); }
+
+  readEphemeralReady(): Promise<boolean> { return this.artifacts.readEphemeralReady(); }
+
   onExit(listener: () => void): () => void {
     this.exitListeners.add(listener);
     return () => this.exitListeners.delete(listener);
