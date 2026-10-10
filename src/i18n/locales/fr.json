@@ -1,5 +1,6 @@
 {
   "common": {
+    "inputSuggestions": "Suggestions de saisie",
     "save": "Enregistrer",
     "cancel": "Annuler",
     "delete": "Supprimer",

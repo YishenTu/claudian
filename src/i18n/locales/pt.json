@@ -1,5 +1,6 @@
 {
   "common": {
+    "inputSuggestions": "Sugestões de entrada",
     "save": "Salvar",
     "cancel": "Cancelar",
     "delete": "Excluir",

@@ -1,5 +1,6 @@
 {
   "common": {
+    "inputSuggestions": "入力候補",
     "save": "保存",
     "cancel": "キャンセル",
     "delete": "削除",

@@ -1,5 +1,7 @@
 import { setIcon } from 'obsidian';
 
+import { t } from '@/i18n/i18n';
+
 import type { ComposerDropdownItem, ComposerInputElement } from './types';
 
 export interface ComposerDropdownViewOptions {
@@ -111,7 +113,7 @@ export class ComposerDropdownView {
         'claudian-composer-dropdown',
         this.options.fixed ? 'claudian-composer-dropdown--fixed' : '',
       ].filter(Boolean).join(' '),
-      attr: { role: 'listbox' },
+      attr: { role: 'listbox', 'aria-label': t('common.inputSuggestions') },
     });
     this.options.inputEl.setAttribute?.('aria-autocomplete', 'list');
     this.options.inputEl.setAttribute?.('aria-expanded', 'false');

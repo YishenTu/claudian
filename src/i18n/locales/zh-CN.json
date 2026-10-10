@@ -1,5 +1,6 @@
 {
   "common": {
+    "inputSuggestions": "输入建议",
     "save": "保存",
     "cancel": "取消",
     "delete": "删除",

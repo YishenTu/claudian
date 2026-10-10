@@ -1,5 +1,6 @@
 {
   "common": {
+    "inputSuggestions": "Подсказки ввода",
     "save": "Сохранить",
     "cancel": "Отмена",
     "delete": "Удалить",

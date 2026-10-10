@@ -16,6 +16,8 @@ import { ImageContextManager } from '@/features/chat/composer/ImageContextManage
 import { MainChatComposerDropdown } from '@/features/chat/composer/MainChatComposerDropdown';
 import { CanvasSelectionController } from '@/features/chat/input/CanvasSelectionController';
 import { sendTabInputMessageFromExplicitEnterShortcut } from '@/features/chat/tabs/TabInputEvents';
+import { setLocale } from '@/i18n/i18n';
+import type { Locale } from '@/i18n/types';
 import { CodexCommandCatalog } from '@/providers/codex/commands/CodexCommandCatalog';
 import type { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
 import { CodexSkillListingService } from '@/providers/codex/skills/CodexSkillListingService';
@@ -92,7 +94,13 @@ it('renders a wikilink through Obsidian and opens it without changing the source
   }
 });
 
-it.each(['click', 'Enter', 'Tab'])('inserts and renders a picker wikilink using %s', async method => {
+it.each<[string, Locale, string]>([
+  ['click', 'en', 'Input suggestions'],
+  ['Enter', 'en', 'Input suggestions'],
+  ['Tab', 'en', 'Input suggestions'],
+  ['click', 'de', 'Eingabevorschl\u00e4ge'],
+])('inserts and renders a picker wikilink using %s in %s', async (method, locale, menuName) => {
+  setLocale(locale);
   const parent = document.body.createDiv();
   const app = createApp();
   const editor = new ComposerEditor(parent, app, {} as Component);
@@ -104,6 +112,9 @@ it.each(['click', 'Enter', 'Tab'])('inserts and renders a picker wikilink using 
     editor.element.focus();
     dropdown.handleInputChange();
     const option = await waitFor(() => within(parent).getByRole('option', { name: 'Notes/A note.md' }));
+    const listbox = within(parent).getByRole('listbox');
+    expect(await axe(listbox)).toHaveNoViolations();
+    expect(within(parent).getByRole('listbox', { name: menuName })).toBe(listbox);
     if (method === 'click') fireEvent.click(option);
     else dropdown.handleKeydown(new KeyboardEvent('keydown', { key: method }));
     const link = await waitFor(() => within(parent).getByRole('link', { name: 'A note' }));
@@ -117,6 +128,7 @@ it.each(['click', 'Enter', 'Tab'])('inserts and renders a picker wikilink using 
     files.destroy();
     editor.destroy();
     parent.remove();
+    setLocale('en');
   }
 });
 

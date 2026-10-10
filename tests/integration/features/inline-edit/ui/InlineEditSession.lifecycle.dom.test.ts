@@ -261,7 +261,11 @@ describe('Vault paths that resemble environment variables', () => {
     withVaultFiles(h);
     h.createSession().show();
     typeInstruction(`@a%${variable}`);
-    fireEvent.click(await screen.findByRole('option', { name: percentPath }));
+    const option = await screen.findByRole('option', { name: percentPath });
+    const listbox = screen.getByRole('listbox');
+    expect(await axe(listbox)).toHaveNoViolations();
+    expect(screen.getByRole('listbox', { name: 'Input suggestions' })).toBe(listbox);
+    fireEvent.click(option);
     expect(input().value).toBe(`@${percentPath} `);
   });
 });
