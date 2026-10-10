@@ -222,7 +222,7 @@ describe('Async Subagent Renderer', () => {
     updateAsyncSubagentBlock(state, { ...state.info, agentId: 'agent-xyz', asyncStatus: 'running' });
 
     expect(state.labelEl.textContent).toBe('Background job');
-    expect(state.statusTextEl.textContent).toBe('Running in background');
+    expect(state.statusTextEl.textContent).toBe('');
     const contentText = getTextByClass(state.contentEl as any, 'claudian-subagent-prompt-text')[0];
     expect(contentText).toContain('Do the work');
     expect((state.wrapperEl as any).getClasses()).toEqual(expect.arrayContaining(['running', 'async']));
