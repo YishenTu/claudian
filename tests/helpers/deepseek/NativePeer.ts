@@ -18,6 +18,8 @@ export interface NativePeerLifecycle {
   starts: number;
   disposed: number;
   readonly prompts: Array<{ preset: string; text: string }>;
+  /** Code-mode preferences written to the Host, with how many prompts native had received at that point. */
+  readonly codeModes: Array<{ enabled: boolean; promptsSent: number }>;
   /** Simulates the native process exiting on its own. */
   exit(): void;
 }
@@ -84,10 +86,10 @@ export class NativePeer {
     return DeepSeekRemoteClient.open(this.url);
   }
 
-  /** A production shared Host whose process is this peer, recording only process lifecycle and prompt files. */
+  /** A production shared Host whose process is this peer, recording only process lifecycle, prompt files and code mode. */
   host(options: NativePeerHostOptions = {}): { deepseek: DeepSeekHost; lifecycle: NativePeerLifecycle } {
     const exits = new Set<() => void>();
-    const lifecycle: NativePeerLifecycle = { starts: 0, disposed: 0, prompts: [], exit: () => { for (const listener of [...exits]) listener(); } };
+    const lifecycle: NativePeerLifecycle = { starts: 0, disposed: 0, prompts: [], codeModes: [], exit: () => { for (const listener of [...exits]) listener(); } };
     const deepseek = new DeepSeekHost(async () => ({ cliPath: '/bin/dsh', cwd: '/vault', environment: process.env }), async (_options, signal) => {
       lifecycle.starts++;
       await options.beforeStart?.(signal);
@@ -96,6 +98,7 @@ export class NativePeer {
         client,
         onExit: listener => { exits.add(listener); return () => exits.delete(listener); },
         writePrompt: async (preset, text) => { lifecycle.prompts.push({ preset, text }); },
+        writeCodeMode: async enabled => { lifecycle.codeModes.push({ enabled, promptsSent: this.calls.filter(call => call.method === 'session/prompt').length }); },
         dispose: async () => { exits.clear(); client.dispose(); lifecycle.disposed++; await options.onDispose?.(); },
       };
     }, options.idleMs);

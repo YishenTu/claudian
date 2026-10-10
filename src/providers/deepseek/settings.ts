@@ -9,6 +9,8 @@ import { decodeDeepSeekModelId, type DeepSeekModel, normalizeDeepSeekModels } fr
 export interface DeepSeekProviderSettings {
   enabled: boolean;
   codeMode: boolean;
+  /** Raw JSON list of additional chat preset rows, validated before it is saved. */
+  presetPlugins: string;
   cliPath: string;
   cliPathsByHost: Record<string, string>;
   environmentVariables: string;
@@ -20,7 +22,7 @@ export interface DeepSeekProviderSettings {
 }
 
 export const DEFAULT_DEEPSEEK_PROVIDER_SETTINGS: Readonly<DeepSeekProviderSettings> = Object.freeze({
-  enabled: false, codeMode: false, cliPath: '', cliPathsByHost: {}, environmentVariables: '',
+  enabled: false, codeMode: false, presetPlugins: '', cliPath: '', cliPathsByHost: {}, environmentVariables: '',
   environmentHash: '',
   discoveredModels: [], visibleModels: [], modelAliases: {}, preferredReasoningByModel: {},
 });
@@ -33,6 +35,7 @@ export function getDeepSeekProviderSettings(settings: Record<string, unknown>): 
   return {
     enabled: readStoredBoolean(config.enabled, false),
     codeMode: readStoredBoolean(config.codeMode, false),
+    presetPlugins: readStoredString(config.presetPlugins, ''),
     cliPath: readStoredString(config.cliPath, ''),
     cliPathsByHost: normalizeHostnameStringMap(config.cliPathsByHost),
     environmentVariables: getProviderEnvironmentVariables(settings, 'deepseek'),

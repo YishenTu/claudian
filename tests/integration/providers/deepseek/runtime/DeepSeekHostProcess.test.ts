@@ -43,7 +43,7 @@ interface Invocation { pid: number; cwd: string; args: string[] }
   });
 
   const start = (mode: string, extra: NodeJS.ProcessEnv = {}, signal = new AbortController().signal): Promise<DeepSeekHostProcess> => DeepSeekHostProcess.start({
-    cliPath: FAKE_DSH, cwd: root,
+    cliPath: FAKE_DSH, cwd: root, presetPlugins: [{ id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo' }],
     environment: { ...process.env, DSH_HOME: home, FAKE_DSH_LOG: log, FAKE_DSH_MODE: mode, FAKE_DSH_URL: peer.url, ...extra },
   }, signal);
 
@@ -80,6 +80,11 @@ interface Invocation { pid: number; cwd: string; args: string[] }
       expect(await hostProcess.client.call('session/modelCatalog')).toBe('session/modelCatalog answered');
       await hostProcess.writePrompt('claudian', 'Live prompt');
       expect(await readFile(join(artifactRoot(invocation), 'prompts', 'claudian.txt'), 'utf8')).toBe('Live prompt');
+      await hostProcess.writeCodeMode(true);
+      expect(await readFile(join(artifactRoot(invocation), 'code-mode'), 'utf8')).toBe('both');
+      const patch = JSON.parse(await readFile(invocation.args[invocation.args.indexOf('--patch') + 1], 'utf8'));
+      const chat = patch.find((entry: { insert?: unknown }) => entry.insert).insert.find((entry: any) => entry.config?.id === 'claudian');
+      expect(chat.config.plugins.at(-1)).toEqual({ id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo' });
     } finally { await hostProcess.dispose(); }
     await expectGone(invocation);
     expect(exited).not.toHaveBeenCalled();

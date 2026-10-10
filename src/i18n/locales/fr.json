@@ -444,8 +444,13 @@
       "preset": "Preset",
       "codeMode": {
         "name": "Activer le mode code",
-        "desc": "Ajoute run_code natif en plus des outils directs. S’applique aux nouvelles conversations ; les conversations et forks existants conservent leur mode enregistré."
+        "desc": "S'applique à partir du prochain tour de chaque conversation, y compris les conversations existantes. Ajoute run_code natif aux outils directs."
       },
+      "presetPlugins": {
+        "name": "Plugins de preset supplémentaires",
+        "desc": "Avancé. Une liste YAML (format de dsh) de lignes de plugins dsh natifs ajoutées au preset de discussion de Claudian, chacune avec son propre « id » et son propre « name ». Ces lignes ne peuvent pas remplacer celles de Claudian. L'enregistrement redémarre DeepSeek Harness, ce qui arrête les tours en cours. Les plugins sans interface dans Claudian, comme le mode plan, peuvent ne pas fonctionner."
+      },
+      "presetPreview": "Aperçu du preset",
       "environment": {
         "name": "Variables d'environnement DeepSeek Harness",
         "desc": "Variables d'environnement transmises uniquement à DeepSeek Harness. Utilise votre profil Web natif, vos identifiants, modèles et serveurs MCP existants. Nécessite dsh 0.2.0-rc.2. Windows n'est pas encore pris en charge."

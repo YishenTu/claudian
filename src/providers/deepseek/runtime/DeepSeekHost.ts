@@ -5,7 +5,7 @@ import type { DeepSeekPreset } from '../types';
 import { type DeepSeekHostProcess, type DeepSeekLaunchOptions,getDeepSeekHome } from './DeepSeekHostProcess';
 import { DeepSeekRoster } from './DeepSeekRoster';
 
-export type DeepSeekProcess = Pick<DeepSeekHostProcess, 'client' | 'onExit' | 'dispose' | 'writePrompt'>;
+export type DeepSeekProcess = Pick<DeepSeekHostProcess, 'client' | 'onExit' | 'dispose' | 'writePrompt' | 'writeCodeMode'>;
 export type DeepSeekProcessFactory = (options: DeepSeekLaunchOptions, signal: AbortSignal) => Promise<DeepSeekProcess>;
 export type DeepSeekHostLoss = 'process-exited' | 'transport';
 
@@ -15,6 +15,8 @@ export interface DeepSeekHostLease {
   readonly roster: DeepSeekRoster;
   readonly home: string;
   writePrompt(preset: DeepSeekPreset, text: string): Promise<void>;
+  /** Shared by every chat agent of this generation; each applies it at its next turn. */
+  writeCodeMode(enabled: boolean): Promise<void>;
   /** Exclusive claim of a native session; its interactions are delivered here until release. */
   claim(sessionId: string, deliver: (event: Record<string, unknown>) => void): void;
   /** Fires once if the generation dies while attached. */
@@ -75,6 +77,7 @@ export class DeepSeekHost {
     return {
       client: process.client, roster, home,
       writePrompt: (preset, text) => process.writePrompt(preset, text),
+      writeCodeMode: enabled => process.writeCodeMode(enabled),
       claim: (sessionId, deliver) => {
         if (released) throw new Error('DeepSeek Host lease is released.');
         claims.push(roster.claim(sessionId, deliver));

@@ -19,7 +19,7 @@ it('discovers native models lazily and preserves explicit selection order and un
     mutateSettings: async (mutation: (settings: any) => unknown) => { await mutation(settings); },
     mutateSettingsConditionally: async (mutation: (settings: any) => unknown) => { await mutation(settings); },
   } as unknown as ProviderHost;
-  const start = jest.fn(async () => ({ client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {} }));
+  const start = jest.fn(async () => ({ client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, writeCodeMode: async () => {} }));
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
     workspace = createDeepSeekWorkspaceServices(host, start);
@@ -69,7 +69,7 @@ it('lists vault skills for the dropdown from saved native sessions without activ
   const host = { settings, app: { vault: { adapter: { basePath: '/vault' } } }, executionLifecycleRegistry: registry,
     getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: jest.fn(),
   } as unknown as ProviderHost;
-  const start = jest.fn(async () => ({ client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {} }));
+  const start = jest.fn(async () => ({ client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, writeCodeMode: async () => {} }));
   // Native list order is not recency order; the newest chat root in the vault owns the catalog.
   const rows = [
     { sessionId: 'older-chat', updatedAt: 1, agentAvailable: false, running: false, blank: false, cwd: '/vault' },
@@ -110,21 +110,21 @@ it('lists vault skills for the dropdown from saved native sessions without activ
   } finally { await workspace?.dispose?.(); await registry.dispose(); await peer.close(); }
 });
 
-it('stops the shared Host before a provider transition and restarts it lazily with the new CLI and environment', async () => {
+it('stops the shared Host before a provider transition and restarts it lazily with the new CLI, environment and preset plugins', async () => {
   const peer = new NativePeer(); await peer.open();
-  const settings: any = { providerConfigs: { deepseek: { enabled: true, environmentVariables: 'DSH_HOME=/homes/before' } } };
+  const settings: any = { providerConfigs: { deepseek: { enabled: true, environmentVariables: 'DSH_HOME=/homes/before', presetPlugins: '- id: tool-todo\n  name: "@deepseek-ai/dsh-tool-todo"\n' } } };
   const registry = new ProviderExecutionLifecycleRegistry();
   let cliPath = '/bin/dsh-before';
   const host = { settings, app: { vault: { adapter: { basePath: '/vault' } } }, executionLifecycleRegistry: registry,
     getResolvedProviderCliPath: async () => cliPath, notifyProviderChatOptionsChanged: jest.fn(),
   } as unknown as ProviderHost;
   peer.onCall = method => method === 'session/list' ? { items: [] } : `${method} answered`;
-  const launches: Array<{ cliPath: string; home?: string }> = [];
+  const launches: Array<{ cliPath: string; home?: string; presetPlugins: unknown }> = [];
   let disposed = 0;
-  const start = jest.fn(async (options: { cliPath: string; environment: NodeJS.ProcessEnv }) => {
-    launches.push({ cliPath: options.cliPath, home: options.environment.DSH_HOME });
+  const start = jest.fn(async (options: { cliPath: string; environment: NodeJS.ProcessEnv; presetPlugins?: unknown }) => {
+    launches.push({ cliPath: options.cliPath, home: options.environment.DSH_HOME, presetPlugins: options.presetPlugins });
     const client = await peer.connect();
-    return { client, onExit: () => () => {}, dispose: async () => { client.dispose(); disposed++; }, writePrompt: async () => {} };
+    return { client, onExit: () => () => {}, dispose: async () => { client.dispose(); disposed++; }, writePrompt: async () => {}, writeCodeMode: async () => {} };
   });
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
@@ -134,6 +134,7 @@ it('stops the shared Host before a provider transition and restarts it lazily wi
     await registry.runTransition(['deepseek'], async () => {
       disposedBeforeMutation = disposed;
       settings.providerConfigs.deepseek.environmentVariables = 'DSH_HOME=/homes/after';
+      settings.providerConfigs.deepseek.presetPlugins = '';
       cliPath = '/bin/dsh-after';
     });
     // The old process must release its native writers before settings change.
@@ -141,7 +142,10 @@ it('stops the shared Host before a provider transition and restarts it lazily wi
     expect(start).toHaveBeenCalledTimes(1);
     expect(await workspace.deepseek.read(async (reader, home) => ({ home, value: await reader.call('session/modelCatalog') })))
       .toEqual({ home: '/homes/after', value: 'session/modelCatalog answered' });
-    expect(launches).toEqual([{ cliPath: '/bin/dsh-before', home: '/homes/before' }, { cliPath: '/bin/dsh-after', home: '/homes/after' }]);
+    expect(launches).toEqual([
+      { cliPath: '/bin/dsh-before', home: '/homes/before', presetPlugins: [{ id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo' }] },
+      { cliPath: '/bin/dsh-after', home: '/homes/after', presetPlugins: [] },
+    ]);
   } finally { await workspace?.dispose?.(); await registry.dispose(); await peer.close(); }
 });
 
@@ -152,7 +156,7 @@ it('mirrors Claudian archive state onto native sessions in this Host store', asy
   const host = { settings: { providerConfigs: { deepseek: { enabled: true } } }, app: { vault: { adapter: { basePath: '/vault' } } }, executionLifecycleRegistry: registry,
     getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: jest.fn(),
   } as unknown as ProviderHost;
-  const start = jest.fn(async () => ({ client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {} }));
+  const start = jest.fn(async () => ({ client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, writeCodeMode: async () => {} }));
   peer.onCall = (method, args) => {
     if (method === 'session/list') return { items: [] };
     if (args.request?.sessionId === 'gone') throw Object.assign(new Error('no such session'), { code: 'session/not-found' });
@@ -200,7 +204,7 @@ it('lets an admitted archive finish before a provider transition stops the Host'
   let disposed = 0;
   const start = jest.fn(async () => {
     const client = await peer.connect();
-    return { client, onExit: () => () => {}, dispose: async () => { client.dispose(); disposed++; }, writePrompt: async () => {} };
+    return { client, onExit: () => () => {}, dispose: async () => { client.dispose(); disposed++; }, writePrompt: async () => {}, writeCodeMode: async () => {} };
   });
   let answer!: () => void;
   const archived = new Promise<void>(resolve => { answer = resolve; });

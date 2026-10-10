@@ -12,6 +12,8 @@ import { DeepSeekCLIResolver } from '../runtime/DeepSeekCLIResolver';
 import { DeepSeekHost, type DeepSeekProcessFactory } from '../runtime/DeepSeekHost';
 import { DeepSeekHostProcess } from '../runtime/DeepSeekHostProcess';
 import { createDeepSeekModels } from '../runtime/DeepSeekModels';
+import { parseDeepSeekPresetPlugins } from '../runtime/DeepSeekPresetPlugins';
+import { getDeepSeekProviderSettings } from '../settings';
 import { createDeepSeekSettingsTabRenderer } from '../ui/DeepSeekSettingsTab';
 import { createDeepSeekCommandLoader } from './DeepSeekCommandLoader';
 
@@ -28,7 +30,8 @@ export function createDeepSeekWorkspaceServices(host: ProviderHost, start: DeepS
     const cliPath = await host.getResolvedProviderCliPath('deepseek');
     if (!cliPath) throw new Error('DeepSeek Harness CLI was not found. Install and configure dsh, or set its CLI path in settings.');
     const environment = { ...process.env, ...parseEnvironmentVariables(getRuntimeEnvironmentText(host.settings, 'deepseek')) };
-    return { cliPath, environment, cwd: getVaultPath(host.app) ?? process.cwd() };
+    const presetPlugins = parseDeepSeekPresetPlugins(getDeepSeekProviderSettings(host.settings).presetPlugins);
+    return { cliPath, environment, cwd: getVaultPath(host.app) ?? process.cwd(), presetPlugins };
   }, start);
   const modelCatalog = createDeepSeekModels(host, signal => deepseek.read(client => client.call('session/modelCatalog'), signal));
   const sessionArchive = new DeepSeekSessionArchiveService(deepseek);

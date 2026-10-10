@@ -24,12 +24,12 @@ describe('DeepSeek saved configuration contracts', () => {
 
   it('decodes persisted controls without enabling unsafe or malformed values', () => {
     const settings = { providerConfigs: { deepseek: {
-      enabled: 'true', codeMode: 'true', cliPath: 4,
+      enabled: 'true', codeMode: 'true', cliPath: 4, presetPlugins: ['not text'],
       cliPathsByHost: { other: '/native/dsh', invalid: false },
       visibleModels: ['deepseek:a/b', 'deepseek:a/b', false, 'pi:a/b'],
     } } };
     expect(getDeepSeekProviderSettings(settings)).toMatchObject({
-      enabled: false, codeMode: false, cliPath: '',
+      enabled: false, codeMode: false, cliPath: '', presetPlugins: '',
       cliPathsByHost: { other: '/native/dsh' }, visibleModels: ['deepseek:a/b'],
     });
   });
@@ -59,10 +59,11 @@ describe('DeepSeek saved configuration contracts', () => {
   });
 
   it('pins the preset and store at binding and preserves them for resume/forks', () => {
-    const initial = bindDeepSeekState(undefined, { home: '/original', codeMode: true });
-    expect(initial).toEqual({ schemaVersion: 1, home: '/original', profile: 'web', preset: 'claudian-code' });
-    const pending = { ...initial, pendingFork: { sessionId: 'source', atSeq: 19 } };
-    expect(bindDeepSeekState(pending, { home: '/new-default', codeMode: false })).toEqual(pending);
+    // Code mode is a live preference of the one chat preset, so new bindings never pin it.
+    const initial = bindDeepSeekState(undefined, { home: '/original' });
+    expect(initial).toEqual({ schemaVersion: 1, home: '/original', profile: 'web', preset: 'claudian' });
+    const pending = { ...initial, preset: 'claudian-code' as const, pendingFork: { sessionId: 'source', atSeq: 19 } };
+    expect(bindDeepSeekState(pending, { home: '/new-default' })).toEqual(pending);
     expect(decodeDeepSeekState({ ...pending, token: 'must-not-persist' })).toEqual(pending);
     expect(() => decodeDeepSeekState({ ...initial, preset: 'standard' })).toThrow(/preset/i);
     expect(() => decodeDeepSeekState({ ...initial, schemaVersion: 2 })).toThrow(/version/i);

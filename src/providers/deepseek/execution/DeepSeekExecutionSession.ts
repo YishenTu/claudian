@@ -27,7 +27,7 @@ import { DeepSeekRemoteError, isRecord } from '../remote/DeepSeekRemoteClient';
 import type { DeepSeekHost, DeepSeekHostLease } from '../runtime/DeepSeekHost';
 import { assertDeepSeekModelAvailable } from '../runtime/DeepSeekModels';
 import { getDeepSeekProviderSettings } from '../settings';
-import { bindDeepSeekState, decodeDeepSeekState, type DeepSeekPreset, type DeepSeekProviderState, encodeDeepSeekCheckpoint, isDeepSeekPreset } from '../types';
+import { bindDeepSeekState, decodeDeepSeekState, type DeepSeekPreset, type DeepSeekProviderState, encodeDeepSeekCheckpoint, isDeepSeekAuxiliaryPreset, isDeepSeekPreset } from '../types';
 import { applyDeepSeekPermission, type DeepSeekPermission, readDeepSeekPermission } from './DeepSeekPermissions';
 import { DeepSeekSessionObserver } from './DeepSeekSessionObserver';
 
@@ -214,6 +214,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       return;
     }
     await lease.writePrompt(this.binding!.preset, prompt);
+    if (!isDeepSeekAuxiliaryPreset(this.binding!.preset)) await lease.writeCodeMode(getDeepSeekProviderSettings(this.host.settings).codeMode);
     this.assertRequest(requested);
     requested.delivery = 'sending';
     const response = await lease.client.call('session/prompt', { request: {
@@ -239,7 +240,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       : buildSystemPrompt({ customPrompt: settings.systemPrompt, mediaFolder: settings.mediaFolder, userName: settings.userName, vaultPath: this.config.vaultWorkingDirectory });
     if (!this.lease) await this.attach(requested, policy);
     const preset = this.binding!.preset;
-    if ((policy && preset !== policy) || (!policy && (preset === 'claudian-passive' || preset === 'claudian-read-only'))) {
+    if ((policy && preset !== policy) || (!policy && isDeepSeekAuxiliaryPreset(preset))) {
       throw new AdmissionError('DeepSeek auxiliary tool policy cannot change within a session. Start a new auxiliary session.');
     }
     return prompt;
@@ -256,7 +257,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       this.assertRequest(requested);
       const saved = this.binding ?? decodeDeepSeekState(this.config.resumeSeed?.providerState);
       if (saved && saved.home !== lease.home) throw new AdmissionError('DeepSeek native history belongs to a different store. Restore its native store or select the original DeepSeek environment before continuing.');
-      this.binding = bindDeepSeekState(saved, { home: lease.home, codeMode: getDeepSeekProviderSettings(this.host.settings).codeMode, preset: policy });
+      this.binding = bindDeepSeekState(saved, { home: lease.home, preset: policy });
       // The Host retires a lost process, which ends all of its native work.
       this.offLease.push(lease.onLost((loss, error) => { if (generation === this.generation) void this.fail(error, loss, false); }));
       this.offLease.push(lease.roster.onReset(() => { if (generation === this.generation) this.voidInteractions('superseded'); }));
@@ -268,7 +269,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
         const nativePreset = projection.values.agentPreset;
         if (!isDeepSeekPreset(nativePreset)) throw new Error('DeepSeek native preset is missing or unsupported. The original conversation binding was retained.');
         if (saved && saved.preset !== nativePreset) throw new Error('DeepSeek native preset differs from the saved conversation binding. Restore the original native preset before continuing.');
-        if (policy ? nativePreset !== policy : nativePreset === 'claudian-passive' || nativePreset === 'claudian-read-only') throw new Error('DeepSeek native tool policy differs from the requested conversation policy.');
+        if (policy ? nativePreset !== policy : isDeepSeekAuxiliaryPreset(nativePreset)) throw new Error('DeepSeek native tool policy differs from the requested conversation policy.');
         this.binding = { ...this.binding, preset: nativePreset };
         this.permission = await readDeepSeekPermission(lease.client, existingId);
         // Claudian archive state is authoritative: a native archive left by a failed restore or dsh web would gate every turn.
@@ -336,6 +337,11 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
         if (!isRecord(created) || typeof created.sessionId !== 'string' || (this.nativeId && this.nativeId !== created.sessionId)) throw new Error('DeepSeek session identity changed during resume.');
         return created.sessionId;
       } catch (error) {
+        // Only chat presets carry the user's additional rows; anything else native cannot mount is Claudian's own fault.
+        if (error instanceof DeepSeekRemoteError && error.code === 'agent-preset/invalid' && !isDeepSeekAuxiliaryPreset(this.binding!.preset)
+          && getDeepSeekProviderSettings(this.host.settings).presetPlugins.trim()) {
+          throw new AdmissionError(`DeepSeek could not load its chat preset: ${error.message}. Check Additional preset plugins in the DeepSeek settings.`);
+        }
         if (!(error instanceof DeepSeekRemoteError) || error.code !== 'session/writer-held') throw error;
         if (Date.now() + delay > deadline) throw new AdmissionError('This DeepSeek conversation is open in another DeepSeek Harness process, such as dsh web. Close it there, then resend your draft.');
         await new Promise(resolve => window.setTimeout(resolve, delay));

@@ -444,8 +444,13 @@
       "preset": "預設集",
       "codeMode": {
         "name": "啟用程式碼模式",
-        "desc": "在直接工具之外加入原生 run_code。僅適用於新對話；現有對話與分支保留已儲存的模式。"
+        "desc": "從每個對話的下一輪開始生效，包括既有對話。在直接工具之外加入原生 run_code。"
       },
+      "presetPlugins": {
+        "name": "附加預設外掛",
+        "desc": "進階。附加到 Claudian 聊天預設的原生 dsh 外掛列 YAML 清單（dsh 格式），每列需有自己的 \"id\" 與 \"name\"。這些列不能取代 Claudian 自己的列。儲存會重新啟動 DeepSeek Harness，並停止進行中的回合。Claudian 沒有介面支援的外掛（例如計畫模式）可能無法正常運作。"
+      },
+      "presetPreview": "預設預覽",
       "environment": {
         "name": "DeepSeek Harness 環境變數",
         "desc": "僅傳遞給 DeepSeek Harness 的環境變數。使用你現有的原生 Web 設定檔、憑證、模型與 MCP 伺服器。需要 dsh 0.2.0-rc.2。尚不支援 Windows。"

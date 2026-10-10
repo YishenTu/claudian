@@ -19,6 +19,18 @@ it('gives every preset a live prompt file and its tool policy while keeping prom
     expect(presets['claudian-passive'].config.allow).toEqual([]);
     expect(presets['claudian-read-only'].config.allow).toEqual(['read', 'read_image', 'glob', 'grep']);
     expect(presets.claudian.config.allow).toBeUndefined();
+    // One chat preset: the legacy code-mode id stays declared for saved conversations with identical content, and code
+    // mode is a live per-agent presentation rather than a preset row. Auxiliary presets keep their fixed native policy.
+    const plugins = Object.fromEntries(inserted.slice(1).map((entry: any) => [entry.config.id, entry.config.plugins]));
+    const withoutPrompt = (rows: any[]) => rows.map(row => row.id === 'claudian-compatibility' ? { ...row, config: { ...row.config, promptFile: undefined } } : row);
+    expect(withoutPrompt(plugins['claudian-code'])).toEqual(withoutPrompt(plugins.claudian));
+    expect(plugins.claudian.some((row: any) => row.id === 'agent-tool-presentation')).toBe(false);
+    expect(presets.claudian.config.codeModeFile).toEqual(expect.any(String));
+    expect(presets['claudian-code'].config.codeModeFile).toBe(presets.claudian.config.codeModeFile);
+    for (const auxiliary of ['claudian-passive', 'claudian-read-only']) {
+      expect(presets[auxiliary].config.codeModeFile).toBeUndefined();
+      expect(plugins[auxiliary].find((row: any) => row.id === 'agent-tool-presentation').config).toEqual({ mode: 'native' });
+    }
 
     const first = 'Literal {{title}} ${process.exit(99)} `quotes`\\n Unicode 笔记';
     const edited = 'Edited prompt';
@@ -32,11 +44,11 @@ it('gives every preset a live prompt file and its tool policy while keeping prom
       const plugin = await import(pathToFileURL(process.argv[1]).href);
       const config = JSON.parse(process.argv[2]);
       const sections = [];
-      plugin.apply({ effect: fn => fn(), systemPrompt: {
+      plugin.apply({ effect: fn => fn(), on: () => () => {}, systemPrompt: {
         section: section => { sections.push(section); return () => {}; },
         getSectionOrder: name => name,
       } }, config);
-      for (const bad of [{}, { promptFile: 1 }, { promptFile: 'x', allow: ['write'] }]) {
+      for (const bad of [{}, { promptFile: 1 }, { promptFile: 'x', allow: ['write'] }, { promptFile: 'x', codeModeFile: 1 }, { promptFile: 'x', allow: [], codeModeFile: 'mode' }]) {
         let rejected = false;
         try { plugin.apply({}, bad); } catch { rejected = true; }
         if (!rejected) throw new Error('Unsafe bridge configuration accepted');
@@ -78,6 +90,82 @@ it('applies concurrent prompt edits in call order and leaves an unchanged prompt
     expect(await readFile(promptFile, 'utf8')).toBe('changed');
   } finally {
     await artifacts.dispose();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it('switches each chat agent between direct tools and code mode at its next turn, never mid-turn', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'deepseek code mode '));
+  const artifacts = await prepareDeepSeekLaunchArtifacts(root);
+  try {
+    const patch = JSON.parse(await readFile(artifacts.patchPath, 'utf8'));
+    const compatibility = patch.find((entry: { insert?: unknown }) => entry.insert).insert
+      .find((entry: any) => entry.config?.id === 'claudian').config.plugins.find((row: any) => row.id === 'claudian-compatibility');
+    // Drive the bundled plugin as native does: agent creation, then turn status changes, with code mode edited in between.
+    const script = `
+      import { pathToFileURL } from 'node:url';
+      import { writeFileSync } from 'node:fs';
+      const plugin = await import(pathToFileURL(process.argv[1]).href);
+      const config = JSON.parse(process.argv[2]);
+      const listeners = {};
+      const log = [];
+      plugin.apply({ effect: fn => fn(), systemPrompt: { section: () => () => {}, getSectionOrder: name => name },
+        on: (name, listener) => { (listeners[name] ??= []).push(listener); return () => {}; } }, config);
+      const agent = id => ({ id, ctx: { tools: { presentAs: mode => { log.push(id + ' present ' + mode); return () => log.push(id + ' dispose ' + mode); } } } });
+      const emit = (name, payload) => { for (const listener of listeners[name] ?? []) listener(payload); };
+      const [first, second] = [agent('first'), agent('second')];
+      for (const step of JSON.parse(process.argv[3])) {
+        if (step.write !== undefined) writeFileSync(config.codeModeFile, step.write);
+        else if (step.created) emit('agent/created', { agent: step.created === 'first' ? first : second });
+        else emit('agent/status', { agent: step.agent === 'first' ? first : second, status: step.status });
+      }
+      process.stdout.write(JSON.stringify(log));
+    `;
+    const run = async (steps: unknown[]): Promise<string[]> => JSON.parse((await promisify(execFile)(process.execPath,
+      ['--input-type=module', '-e', script, compatibility.name, JSON.stringify(compatibility.config), JSON.stringify(steps)], { cwd: root })).stdout);
+
+    // A fresh Host starts in direct-tool mode until Claudian writes the preference.
+    expect(await run([{ created: 'first' }])).toEqual(['first present native']);
+    await artifacts.writeCodeMode(true);
+    expect(await run([
+      { created: 'first' },
+      { agent: 'first', status: 'running' },
+      // Edits during a turn wait for the next one; idle transitions and unchanged turns redeclare nothing.
+      { write: 'native' }, { agent: 'first', status: 'idle' },
+      { write: 'both' }, { agent: 'first', status: 'running' },
+      { created: 'second' },
+    ])).toEqual(['first present both', 'second present both']);
+    expect(await run([
+      { created: 'first' }, { created: 'second' },
+      { write: 'native' }, { agent: 'first', status: 'running' },
+    ])).toEqual(['first present both', 'second present both', 'first dispose both', 'first present native']);
+
+    await artifacts.writeCodeMode(false);
+    expect(await readFile(compatibility.config.codeModeFile, 'utf8')).toBe('native');
+    expect(process.platform === 'win32' || ((await stat(compatibility.config.codeModeFile)).mode & 0o777) === 0o600).toBe(true);
+  } finally {
+    await artifacts.dispose();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it('appends user plugin rows to the chat presets after Claudian\'s own rows, never to auxiliary presets', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'deepseek extra plugins '));
+  const extra = [{ id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo', config: { allowParallelInProgress: true } }, { id: 'my-plugin', name: 'my-dsh-plugin', disabled: false }];
+  const own = await prepareDeepSeekLaunchArtifacts(root);
+  const extended = await prepareDeepSeekLaunchArtifacts(root, extra);
+  try {
+    const presetRows = async (patchPath: string): Promise<Record<string, any[]>> => Object.fromEntries(JSON.parse(await readFile(patchPath, 'utf8'))
+      .find((entry: { insert?: unknown }) => entry.insert).insert.slice(1).map((entry: any) => [entry.config.id, entry.config.plugins]));
+    const [ownRows, extendedRows] = await Promise.all([presetRows(own.patchPath), presetRows(extended.patchPath)]);
+    const ids = (rows: any[]) => rows.map(row => row.id);
+    for (const chat of ['claudian', 'claudian-code']) {
+      expect(extendedRows[chat].slice(-2)).toEqual(extra);
+      expect(ids(extendedRows[chat].slice(0, -2))).toEqual(ids(ownRows[chat]));
+    }
+    for (const auxiliary of ['claudian-passive', 'claudian-read-only']) expect(ids(extendedRows[auxiliary])).toEqual(ids(ownRows[auxiliary]));
+  } finally {
+    await Promise.all([own.dispose(), extended.dispose()]);
     await rm(root, { recursive: true, force: true });
   }
 });

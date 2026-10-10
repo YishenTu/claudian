@@ -502,6 +502,8 @@ it('recovers the saved native preset before resuming an unbound conversation', a
   expect(methods.indexOf('workspace/unarchiveSession')).toBeLessThan(methods.indexOf('session/prompt'));
   begin(run.executionId); answer('resumed'); await done;
   expect(session.getSnapshot().providerState).toMatchObject({ preset: 'claudian-code' });
+  // The legacy code-mode preset is an alias of the chat preset: it follows the live preference like any conversation.
+  expect(lifecycle.codeModes).toEqual([{ enabled: false, promptsSent: 0 }]);
 });
 
 it.each([

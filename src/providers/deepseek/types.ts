@@ -1,8 +1,14 @@
+/** `claudian-code` is the legacy code-mode id of the chat preset, kept with identical content for saved conversations. */
 export const DEEPSEEK_PRESETS = ['claudian', 'claudian-code', 'claudian-passive', 'claudian-read-only'] as const;
 export type DeepSeekPreset = typeof DEEPSEEK_PRESETS[number];
 
 export function isDeepSeekPreset(value: unknown): value is DeepSeekPreset {
   return DEEPSEEK_PRESETS.includes(value as DeepSeekPreset);
+}
+
+/** Passive and read-only presets run Claudian's auxiliary tasks on a fixed native tool policy. */
+export function isDeepSeekAuxiliaryPreset(preset: DeepSeekPreset): boolean {
+  return preset === 'claudian-passive' || preset === 'claudian-read-only';
 }
 
 export interface DeepSeekProviderState {
@@ -44,12 +50,9 @@ export function decodeDeepSeekState(value: unknown): DeepSeekProviderState | und
 
 export function bindDeepSeekState(
   saved: unknown,
-  defaults: { home: string; codeMode: boolean; preset?: DeepSeekPreset },
+  defaults: { home: string; preset?: DeepSeekPreset },
 ): DeepSeekProviderState {
-  return decodeDeepSeekState(saved) ?? {
-    schemaVersion: 1, home: defaults.home, profile: 'web',
-    preset: defaults.preset ?? (defaults.codeMode ? 'claudian-code' : 'claudian'),
-  };
+  return decodeDeepSeekState(saved) ?? { schemaVersion: 1, home: defaults.home, profile: 'web', preset: defaults.preset ?? 'claudian' };
 }
 
 export function isCheckpoint(value: unknown): value is number {

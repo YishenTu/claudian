@@ -7,13 +7,11 @@ import { readDeepSeekProjection } from '../history/DeepSeekJournal';
 import { type DeepSeekReader, isRecord } from '../remote/DeepSeekRemoteClient';
 import type { DeepSeekHost } from '../runtime/DeepSeekHost';
 import { getDeepSeekProviderSettings } from '../settings';
-import { decodeDeepSeekState } from '../types';
+import { decodeDeepSeekState, isDeepSeekAuxiliaryPreset, isDeepSeekPreset } from '../types';
 
 const REQUIRES_SESSION = { status: 'requires-session', message: 'Send a message to load DeepSeek commands and skills for this conversation.' } as const;
 /** Saved roots inspected when a blank tab looks for a catalog with its vault. */
 const CATALOG_CANDIDATES = 20;
-/** Both chat presets mount the same skill catalog; code mode changes tools only. Auxiliary presets mount none. */
-const CHAT_PRESETS = new Set<unknown>(['claudian', 'claudian-code']);
 
 /**
  * Native skills are keyed by session cwd and preset, and `skills/list` reads saved sessions without
@@ -53,7 +51,9 @@ async function findCatalogSession(reader: DeepSeekReader, cwd: string): Promise<
     .slice(0, CATALOG_CANDIDATES);
   for (const row of roots) {
     const sessionId = row.sessionId as string;
-    if (CHAT_PRESETS.has((await readDeepSeekProjection(reader, sessionId)).values.agentPreset)) return sessionId;
+    // Both chat preset ids mount the same skill catalog; auxiliary presets mount none.
+    const preset = (await readDeepSeekProjection(reader, sessionId)).values.agentPreset;
+    if (isDeepSeekPreset(preset) && !isDeepSeekAuxiliaryPreset(preset)) return sessionId;
   }
   return undefined;
 }

@@ -9,6 +9,7 @@ import { runProcessProbe } from '@/core/process/ProcessProbe';
 import { DeepSeekRemoteClient } from '../remote/DeepSeekRemoteClient';
 import type { DeepSeekPreset } from '../types';
 import { type DeepSeekLaunchArtifacts, prepareDeepSeekLaunchArtifacts } from './DeepSeekLaunchArtifacts';
+import type { DeepSeekPresetPlugin } from './DeepSeekPresetPlugins';
 
 // Native MCP may spend 60 seconds in each discovery phase; retain a finite, cancellable startup budget.
 const STARTUP_TIMEOUT_MS = 180_000;
@@ -17,6 +18,8 @@ export interface DeepSeekLaunchOptions {
   readonly cliPath: string;
   readonly cwd: string;
   readonly environment: NodeJS.ProcessEnv;
+  /** The user's additional chat preset rows, already validated. */
+  readonly presetPlugins?: readonly DeepSeekPresetPlugin[];
 }
 
 export function getDeepSeekHome(environment: NodeJS.ProcessEnv): string {
@@ -56,7 +59,7 @@ export class DeepSeekHostProcess {
     if (version?.trim() !== '0.2.0-rc.2') {
       throw new Error('Unsupported DeepSeek Harness version. This integration requires 0.2.0-rc.2.');
     }
-    const artifacts = await prepareDeepSeekLaunchArtifacts();
+    const artifacts = await prepareDeepSeekLaunchArtifacts(undefined, options.presetPlugins);
     const child = new ManagedStdioProcess({
       ...spec,
       args: [...spec.args, '--profile', 'web', '--patch', artifacts.patchPath, '--no-open', '--port', '0'],
@@ -82,6 +85,8 @@ export class DeepSeekHostProcess {
   }
 
   writePrompt(preset: DeepSeekPreset, text: string): Promise<void> { return this.artifacts.writePrompt(preset, text); }
+
+  writeCodeMode(enabled: boolean): Promise<void> { return this.artifacts.writeCodeMode(enabled); }
 
   onExit(listener: () => void): () => void {
     this.exitListeners.add(listener);

@@ -21,7 +21,8 @@ let sessions: ProviderExecutionSession[];
 let created: string[];
 let seq: number;
 let jobs: Record<string, unknown[]>;
-let createFailures: (sessionId: string) => Error | undefined;
+/** Native refusal of `session/create`; `sessionId` is absent for a new session. */
+let createFailures: (sessionId: string | undefined, agentPreset: string) => Error | undefined;
 let permissions: Record<string, string>;
 
 beforeEach(async () => {
@@ -34,7 +35,7 @@ beforeEach(async () => {
   peer.onCall = (method, args) => {
     if (method === 'session/create') {
       const resumed = args.request.sessionId as string | undefined;
-      const failure = resumed ? createFailures(resumed) : undefined;
+      const failure = createFailures(resumed, args.request.agentPreset);
       if (failure) throw failure;
       const id = resumed ?? ['alpha', 'beta', 'gamma'][created.length];
       if (!created.includes(id)) created.push(id);
@@ -129,6 +130,22 @@ it('applies a changed prompt on the next turn without restarting the shared proc
   expect(peer.calls.filter(c => c.method === 'session/create')).toHaveLength(1);
 });
 
+it('applies a changed code-mode preference on the next turn of the same conversation and preset', async () => {
+  const config = (host.settings as any).providerConfigs.deepseek;
+  config.codeMode = true;
+  try {
+    const session = open();
+    await run(session, request('Prompt'), 'one');
+    // The title task runs on its fixed auxiliary policy and never touches the chat preference.
+    await run(open(), request('Title prompt', { kind: 'passive' }), 'title');
+    config.codeMode = false;
+    await run(session, request('Prompt'), 'two');
+    expect(lifecycle.codeModes).toEqual([{ enabled: true, promptsSent: 0 }, { enabled: false, promptsSent: 2 }]);
+    expect(peer.calls.filter(c => c.method === 'session/create').map(c => c.args.request.agentPreset)).toEqual(['claudian', 'claudian-passive']);
+    expect(lifecycle.starts).toBe(1);
+  } finally { delete config.codeMode; }
+});
+
 it('routes each native interaction only to the conversation that owns the agent', async () => {
   const alphaPort = port(); const betaPort = port();
   const alpha = open(alphaPort); const beta = open(betaPort);
@@ -156,13 +173,13 @@ it('waits for a reloaded Host to release the writer, then names the other proces
   const backoff = elapseWaitsUpTo(1_000);
   const held = new DeepSeekRemoteError('session "alpha" is already owned by an active write handle', 'session/writer-held');
   let attempts = 0;
-  createFailures = () => (++attempts <= 2 ? held : undefined);
+  createFailures = id => (id && ++attempts <= 2 ? held : undefined);
   const recovered = open(port(), 'alpha');
   expect(texts(await run(recovered, request('Prompt'), 'resumed after handoff'))).toBe('resumed after handoff');
   expect(attempts).toBe(3);
   await recovered.dispose();
 
-  createFailures = () => held;
+  createFailures = id => (id ? held : undefined);
   const blocked = open(port(), 'alpha');
   const started = Date.now();
   const events = await run(blocked, request('Prompt'));
@@ -171,6 +188,22 @@ it('waits for a reloaded Host to release the writer, then names the other proces
   // Backoff 100, 200, 400, 800, 1000, 1000, 1000 ms; the next 1000 ms wait would pass the 5 s handoff window.
   expect(Date.now() - started).toBe(4_500);
   expect(blocked.getStatus()).not.toBe('invalidated');
+});
+
+it('points a chat preset that native cannot mount at the additional preset plugins setting', async () => {
+  const config = (host.settings as any).providerConfigs.deepseek;
+  config.presetPlugins = '[{ "id": "nope", "name": "@example/missing" }]';
+  createFailures = (_id, preset) => preset === 'claudian' ? new DeepSeekRemoteError('nope (@example/missing): never started', 'agent-preset/invalid') : undefined;
+  try {
+    const chat = open();
+    const events = await run(chat, request('Prompt'));
+    expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'configuration', recoverable: true,
+      message: expect.stringMatching(/nope \(@example\/missing\): never started.*Additional preset plugins/) });
+    expect(chat.getStatus()).not.toBe('invalidated');
+    expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(false);
+    // Auxiliary tasks never mount the user's rows, so they keep working.
+    expect(texts(await run(open(), request('Title prompt', { kind: 'passive' }), 'title'))).toBe('title');
+  } finally { delete config.presetPlugins; }
 });
 
 it('stops a closed conversation\'s native work while other conversations keep the process', async () => {

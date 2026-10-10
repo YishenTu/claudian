@@ -1,6 +1,7 @@
 /**
  * Static native plugins, bundled as text and written beside the launch patch. They import only Node
- * built-ins. Prompts never appear in code: each preset reads its own prompt file at every assembly.
+ * built-ins. Prompts never appear in code: each preset reads its own prompt file at every assembly, and chat agents
+ * read the code-mode file at creation and at each turn start.
  */
 export const DEEPSEEK_COMPATIBILITY_SOURCE = String.raw`
 import { readFileSync } from 'node:fs';
@@ -17,6 +18,9 @@ export function apply(ctx, config) {
     || config.allow.some(value => !allowed.includes(value))
     || (config.allow.length !== 0 && (config.allow.length !== 4 || new Set(config.allow).size !== 4)))) {
     throw new TypeError('Claudian auxiliary policy must be passive or read-only.');
+  }
+  if (config.codeModeFile !== undefined && (typeof config.codeModeFile !== 'string' || !config.codeModeFile || config.allow !== undefined)) {
+    throw new TypeError('Claudian code mode requires a chat preset and a mode file.');
   }
   const prompt = () => readFileSync(config.promptFile, 'utf8');
   for (const [name, order, text] of [
@@ -37,6 +41,20 @@ export function apply(ctx, config) {
       agent.ctx.tools.presentAs('native');
       agent.ctx.tools.restrict({ allow: config.allow });
     });
+  }
+  if (config.codeModeFile !== undefined) {
+    // Chat presentation follows Claudian's live code-mode preference, read only between turns.
+    const declared = new WeakMap();
+    const present = agent => {
+      let mode = 'native';
+      try { if (readFileSync(config.codeModeFile, 'utf8') === 'both') mode = 'both'; } catch {}
+      const current = declared.get(agent);
+      if (current?.mode === mode) return;
+      current?.dispose();
+      declared.set(agent, { mode, dispose: agent.ctx.tools.presentAs(mode) });
+    };
+    ctx.on('agent/created', ({ agent }) => present(agent));
+    ctx.on('agent/status', ({ agent, status }) => { if (status === 'running') present(agent); });
   }
 }
 `;

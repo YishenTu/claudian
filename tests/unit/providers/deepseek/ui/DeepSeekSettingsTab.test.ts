@@ -11,7 +11,9 @@ import { createDeepSeekSettingsTabRenderer } from '@/providers/deepseek/ui/DeepS
 jest.mock('obsidian', () => {
   class Setting {
     settingEl: HTMLElement;
-    constructor(container: HTMLElement) { this.settingEl = container.createDiv(); }
+    controlEl: HTMLElement;
+    constructor(container: HTMLElement) { this.settingEl = container.createDiv(); this.controlEl = this.settingEl; }
+    setClass(value: string) { this.settingEl.addClass(value); return this; }
     setName(value: string) { this.settingEl.createDiv({ text: value }); return this; }
     setDesc(value: string) { this.settingEl.createDiv({ text: value }); return this; }
     setHeading() { return this; }
@@ -27,6 +29,17 @@ jest.mock('obsidian', () => {
         },
       };
       callback(toggle);
+      return this;
+    }
+    addTextArea(callback: (text: unknown) => void) {
+      const inputEl = this.settingEl.createEl('textarea');
+      const text = {
+        inputEl,
+        setPlaceholder(value: string) { inputEl.placeholder = value; return this; },
+        setValue(value: string) { inputEl.value = value; return this; },
+        onChange(fn: (value: string) => void) { inputEl.addEventListener('input', () => fn(inputEl.value)); return this; },
+      };
+      callback(text);
       return this;
     }
     addText(callback: (text: unknown) => void) {
@@ -80,6 +93,9 @@ function createHost(deepseekEnabled: boolean) {
   return { host, transitions, mutationsInsideTransition };
 }
 
+/** Lets on-demand module loading and the validation it gates settle. */
+const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
 function render(deepseekEnabled = true) {
   const fixture = createHost(deepseekEnabled);
   const cliResolver = { reset: jest.fn() };
@@ -104,6 +120,54 @@ describe('DeepSeekSettingsTab', () => {
     await waitFor(() => expect(getDeepSeekProviderSettings(host.settings).codeMode).toBe(false));
     expect(host.runProviderExecutionTransition).not.toHaveBeenCalled();
     expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('previews the effective chat preset and applies valid additional plugin rows as a provider runtime change', async () => {
+    const { host, transitions, mutationsInsideTransition, container, ui } = render();
+    const preview = () => ui.getByText(/id: claudian-compatibility/).textContent ?? '';
+    expect(ui.getByText('Preset preview', { selector: 'summary' })).toBeTruthy();
+    await waitFor(() => expect(preview()).toContain('id: tool-ask-user'));
+    expect(preview()).not.toContain('tool-todo');
+    const field = ui.getByRole('textbox', { name: 'Additional preset plugins' }) as HTMLTextAreaElement;
+
+    const rows = '- id: tool-todo\n  name: "@deepseek-ai/dsh-tool-todo"\n';
+    fireEvent.input(field, { target: { value: rows } });
+    // Typing alone never restarts DeepSeek; the edit applies once committed.
+    expect(transitions).toEqual([]);
+    fireEvent.change(field);
+    await waitFor(() => expect(getDeepSeekProviderSettings(host.settings).presetPlugins).toBe(rows));
+    expect(transitions).toEqual([['deepseek']]);
+    expect(mutationsInsideTransition).toEqual([true]);
+    await waitFor(() => expect(preview()).toContain('id: tool-todo'));
+    expect(ui.queryByRole('alert')).toBeNull();
+    expect(field.getAttribute('aria-invalid')).toBeNull();
+
+    // An unchanged commit does not restart the Host again, even once its validation has settled.
+    fireEvent.change(field);
+    await settle();
+    expect(transitions).toEqual([['deepseek']]);
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('keeps invalid additional plugin rows out of settings and explains why', async () => {
+    const { host, transitions, container, ui } = render();
+    const field = ui.getByRole('textbox', { name: 'Additional preset plugins' }) as HTMLTextAreaElement;
+    fireEvent.input(field, { target: { value: '- id: tool-bash\n  name: "@deepseek-ai/dsh-tool-bash"\n' } });
+    fireEvent.change(field);
+    expect((await ui.findByRole('alert')).textContent).toMatch(/"tool-bash"/);
+    expect(field.getAttribute('aria-invalid')).toBe('true');
+    expect(field.value).toContain('tool-bash');
+    expect(getDeepSeekProviderSettings(host.settings).presetPlugins).toBe('');
+    expect(transitions).toEqual([]);
+    expect(await axe(container)).toHaveNoViolations();
+
+    // Clearing the field is valid and clears the explanation without a restart, since nothing saved changed.
+    fireEvent.input(field, { target: { value: '' } });
+    fireEvent.change(field);
+    await waitFor(() => expect(ui.queryByRole('alert')).toBeNull());
+    await settle();
+    expect(field.getAttribute('aria-invalid')).toBeNull();
+    expect(transitions).toEqual([]);
   });
 
   it('applies a CLI path for this computer as a provider runtime change and resets resolution afterwards', async () => {
