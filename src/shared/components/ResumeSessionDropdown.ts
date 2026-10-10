@@ -2,7 +2,7 @@
  * Claudian - Resume session dropdown
  *
  * Dropup UI for selecting a previous conversation to resume.
- * Shown when the /resume built-in command is executed.
+ * Shown when the /sessions built-in command is executed.
  */
 import { setIcon } from 'obsidian';
 

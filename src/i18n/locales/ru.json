@@ -44,9 +44,7 @@
       "unavailableNoUuid": "Невозможно ответвить: отсутствуют идентификаторы сообщений",
       "errorMessageNotFound": "Сообщение не найдено",
       "errorNoSession": "Идентификатор сессии недоступен",
-      "errorNoActiveTab": "Нет активной вкладки",
-      "commandNoMessages": "Нельзя форкнуть: в диалоге нет сообщений",
-      "commandNoAssistantUuid": "Нельзя форкнуть: нет ответа ассистента с идентификаторами"
+      "errorNoActiveTab": "Нет активной вкладки"
     },
     "quote": {
       "buttonLabel": "Цитировать"

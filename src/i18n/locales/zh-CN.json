@@ -44,9 +44,7 @@
       "unavailableNoUuid": "无法分叉：缺少消息标识符",
       "errorMessageNotFound": "未找到消息",
       "errorNoSession": "没有可用的会话 ID",
-      "errorNoActiveTab": "没有活动标签页",
-      "commandNoMessages": "无法分叉：对话中没有消息",
-      "commandNoAssistantUuid": "无法分叉：没有带标识符的助手回复"
+      "errorNoActiveTab": "没有活动标签页"
     },
     "quote": {
       "buttonLabel": "引用"

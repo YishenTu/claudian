@@ -8,7 +8,7 @@ import {
   isCanonicalUserMessage,
 } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import type { ForkContext, ForkSourceCapture, ForkSourceUnavailableReason } from '@/features/chat/conversation/forkSourceTypes';
+import type { ForkContext, ForkSourceCapture } from '@/features/chat/conversation/forkSourceTypes';
 import { getTabProviderId } from '@/features/chat/tabs/providerResolution';
 import { getTabCapabilities, getTabSelectedModel } from '@/features/chat/tabs/tabProviderSettings';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
@@ -194,45 +194,6 @@ export async function handleForkRequest(
     forkAtUserMessage: msgs.slice(0, assistantIdx + 1).filter(isCanonicalUserMessage).length + 1,
     linkedContentPath: source.linkedContentPath,
   });
-}
-
-export async function handleForkAll(
-  tab: AssembledTabRuntime,
-  plugin: ChatFeatureHost,
-  forkRequestCallback: (forkContext: ForkContext) => Promise<void>,
-  isRuntimeLive: (tab: AssembledTabRuntime) => boolean,
-): Promise<void> {
-  const capture = await captureLatestCompletedForkSource(tab, plugin, isRuntimeLive);
-  if (!capture.ok) {
-    const notice = resolveForkAllUnavailableNotice(capture.reason);
-    if (notice) new Notice(notice);
-    return;
-  }
-
-  await forkRequestCallback(capture.context);
-}
-
-function resolveForkAllUnavailableNotice(
-  reason: ForkSourceUnavailableReason,
-): string | null {
-  switch (reason) {
-    case 'unsupported-provider':
-      return 'Fork is not supported by this provider.';
-    case 'streaming':
-      return t('chat.fork.unavailableStreaming');
-    case 'rewinding':
-      return t('chat.rewind.inProgress');
-    case 'no-messages':
-      return t('chat.fork.commandNoMessages');
-    case 'not-latest-reply':
-      return 'This provider can fork only from the latest reply.';
-    case 'no-checkpoint':
-      return t('chat.fork.commandNoAssistantUuid');
-    case 'no-session':
-      return t('chat.fork.failed', { error: t('chat.fork.errorNoSession') });
-    case 'stale-binding':
-      return null;
-  }
 }
 
 function deepClone<T>(value: T): T {

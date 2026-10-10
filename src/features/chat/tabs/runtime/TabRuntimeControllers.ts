@@ -25,7 +25,6 @@ import { AsyncSubagentHistoryRecovery } from '@/features/chat/subagents/AsyncSub
 import type { TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import {
   captureLatestCompletedForkSource,
-  handleForkAll,
   handleForkRequest,
 } from '@/features/chat/tabs/forking/ForkSource';
 import { getTabProviderId, requireTabProviderId } from '@/features/chat/tabs/providerResolution';
@@ -378,14 +377,6 @@ export function buildTabRuntimeControllers(
           if (!isRuntimeLive(runtimeRef.requirePublished())) return Promise.resolve(true);
           return viewHost.handleNewConversationCommand!();
         }
-      : undefined,
-    onForkAll: forkRequestCallback
-      ? () => handleForkAll(
-          runtimeRef.requirePublished(),
-          plugin,
-          forkRequestCallback,
-          isRuntimeLive,
-        )
       : undefined,
     toggleFastMode: () => toggleTabServiceTier(runtimeRef.requirePublished(), plugin),
   });

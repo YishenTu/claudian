@@ -20,7 +20,7 @@ export interface TabManagerViewHost extends Component {
   /** Gets view-owned elements that should preserve active tab selection context. */
   getSharedSelectionFocusScopeEls?(): HTMLElement[];
 
-  /** Handles /clear and /new when the active layout gives New different semantics. */
+  /** Handles /new and /clear when the active layout gives New different semantics. */
   handleNewConversationCommand?(): Promise<boolean>;
 }
 

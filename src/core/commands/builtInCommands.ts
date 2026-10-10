@@ -11,7 +11,6 @@ import type { ProviderCapabilities, ProviderId } from '../providers/types';
 export type BuiltInCommandAction =
   | 'clear'
   | 'resume'
-  | 'fork'
   | 'fast'
   | 'side';
 type BuiltInCommandCapability =
@@ -42,22 +41,17 @@ export interface BuiltInCommandResult {
 
 export const BUILT_IN_COMMANDS: BuiltInCommand[] = [
   {
-    name: 'clear',
-    aliases: ['new'],
+    name: 'new',
+    aliases: ['clear'],
     description: 'Start a new conversation',
     action: 'clear',
   },
   {
-    name: 'resume',
+    name: 'sessions',
+    aliases: ['resume'],
     description: 'Resume a previous conversation',
     action: 'resume',
     requiredCapability: 'supportsNativeHistory',
-  },
-  {
-    name: 'fork',
-    description: 'Fork entire conversation to new session',
-    action: 'fork',
-    requiredCapability: 'supportsFork',
   },
   {
     name: 'fast',

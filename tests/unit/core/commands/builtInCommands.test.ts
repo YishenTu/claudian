@@ -16,18 +16,18 @@ describe('builtInCommands', () => {
   });
 
   describe('detectBuiltInCommand', () => {
-    it('detects /clear command', () => {
-      const result = detectBuiltInCommand('/clear');
+    it('detects /new command', () => {
+      const result = detectBuiltInCommand('/new');
       expect(result).not.toBeNull();
-      expect(result?.command.name).toBe('clear');
+      expect(result?.command.name).toBe('new');
       expect(result?.command.action).toBe('clear');
       expect(result?.args).toBe('');
     });
 
-    it('detects /new command as alias for clear', () => {
-      const result = detectBuiltInCommand('/new');
+    it('detects /clear command as alias for new', () => {
+      const result = detectBuiltInCommand('/clear');
       expect(result).not.toBeNull();
-      expect(result?.command.name).toBe('clear');
+      expect(result?.command.name).toBe('new');
       expect(result?.command.action).toBe('clear');
     });
 
@@ -40,14 +40,14 @@ describe('builtInCommands', () => {
     it('detects command with trailing whitespace', () => {
       const result = detectBuiltInCommand('/clear ');
       expect(result).not.toBeNull();
-      expect(result?.command.name).toBe('clear');
+      expect(result?.command.name).toBe('new');
       expect(result?.args).toBe('');
     });
 
     it('detects command with arguments', () => {
       const result = detectBuiltInCommand('/clear some arguments');
       expect(result).not.toBeNull();
-      expect(result?.command.name).toBe('clear');
+      expect(result?.command.name).toBe('new');
       expect(result?.args).toBe('some arguments');
     });
 
@@ -59,6 +59,7 @@ describe('builtInCommands', () => {
     it('returns null for unknown commands', () => {
       expect(detectBuiltInCommand('/unknown')).toBeNull();
       expect(detectBuiltInCommand('/foo')).toBeNull();
+      expect(detectBuiltInCommand('/fork', { supportsFork: true })).toBeNull();
     });
 
     it('returns null for empty input', () => {
@@ -70,25 +71,19 @@ describe('builtInCommands', () => {
       expect(detectBuiltInCommand('/')).toBeNull();
     });
 
-    it('detects /resume command', () => {
-      const result = detectBuiltInCommand('/resume');
+    it('detects /sessions command', () => {
+      const result = detectBuiltInCommand('/sessions');
       expect(result).not.toBeNull();
-      expect(result?.command.name).toBe('resume');
+      expect(result?.command.name).toBe('sessions');
       expect(result?.command.action).toBe('resume');
       expect(result?.args).toBe('');
     });
 
-    it('detects /fork command', () => {
-      const result = detectBuiltInCommand('/fork');
+    it('detects /resume command as alias for sessions', () => {
+      const result = detectBuiltInCommand('/resume');
       expect(result).not.toBeNull();
-      expect(result?.command.name).toBe('fork');
-      expect(result?.command.action).toBe('fork');
-      expect(result?.args).toBe('');
-    });
-
-    it('detects /fork case-insensitively', () => {
-      expect(detectBuiltInCommand('/FORK')).not.toBeNull();
-      expect(detectBuiltInCommand('/Fork')).not.toBeNull();
+      expect(result?.command.name).toBe('sessions');
+      expect(result?.command.action).toBe('resume');
     });
 
     it('detects /fast command', () => {
@@ -111,9 +106,10 @@ describe('builtInCommands', () => {
 
       expect(commands.length).toBe(BUILT_IN_COMMANDS.length);
 
-      const clearCmd = commands.find((c) => c.name === 'clear');
+      const clearCmd = commands.find((c) => c.name === 'new');
       expect(clearCmd).toBeDefined();
-      expect(clearCmd?.id).toBe('builtin:clear');
+      expect(clearCmd?.id).toBe('builtin:new');
+      expect(clearCmd?.aliases).toEqual(['clear']);
       expect(clearCmd?.description).toBe('Start a new conversation');
       expect(clearCmd?.content).toBe('');
     });
@@ -122,13 +118,13 @@ describe('builtInCommands', () => {
 
   describe('isBuiltInCommandSupported', () => {
     it('returns true for universal commands on any provider', () => {
-      const clearCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'clear')!;
+      const clearCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'new')!;
       expect(isBuiltInCommandSupported(clearCmd, 'claude')).toBe(true);
       expect(isBuiltInCommandSupported(clearCmd, 'codex')).toBe(true);
     });
 
     it('returns false for provider-restricted commands on other providers', () => {
-      const resumeCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'resume')!;
+      const resumeCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'sessions')!;
       expect(isBuiltInCommandSupported(resumeCmd, { supportsNativeHistory: true })).toBe(true);
       expect(isBuiltInCommandSupported(
         resumeCmd,
@@ -137,13 +133,13 @@ describe('builtInCommands', () => {
     });
 
     it('uses provider capabilities for provider-specific commands', () => {
-      const forkCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'fork')!;
+      const sideCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'side')!;
       expect(isBuiltInCommandSupported(
-        forkCmd,
+        sideCmd,
         { supportsNativeHistory: true, supportsFork: true },
       )).toBe(true);
       expect(isBuiltInCommandSupported(
-        forkCmd,
+        sideCmd,
         { supportsNativeHistory: true, supportsFork: false },
       )).toBe(false);
     });

@@ -116,16 +116,20 @@ describe('SlashCommandSource', () => {
     source.destroy();
   });
 
-  it('offers built-ins only for a leading slash and lets built-ins win name collisions', async () => {
+  it('offers built-ins only for a leading slash and lets built-in names and aliases win collisions', async () => {
+    const newEntry = { ...ENTRY, displayPrefix: '/', id: 'provider:new', insertPrefix: '/', name: 'new' };
     const clearEntry = { ...ENTRY, displayPrefix: '/', id: 'provider:clear', insertPrefix: '/', name: 'clear' };
     const source = new SlashCommandSource({
-      providerDiscovery: discovery({ status: 'ready', items: [clearEntry] }),
+      providerDiscovery: discovery({ status: 'ready', items: [newEntry, clearEntry] }),
       providerId: 'claude',
     });
     const leading = await source.load(match('/'), new AbortController().signal);
-    expect(leading.filter(item => item.kind === 'value' && item.label === '/clear')).toHaveLength(1);
+    expect(leading.filter(item => item.kind === 'value' && item.label === '/new')).toEqual([
+      expect.objectContaining({ id: 'builtin:new' }),
+    ]);
+    expect(leading.some(item => item.kind === 'value' && item.label === '/clear')).toBe(false);
     const embedded = await source.load(match('/', '', false), new AbortController().signal);
-    expect(embedded).toEqual([expect.objectContaining({ id: 'provider:clear' })]);
+    expect(embedded.map(item => item.id).sort()).toEqual(['provider:clear', 'provider:new']);
     source.destroy();
   });
 
@@ -168,7 +172,7 @@ describe('SlashCommandSource', () => {
     });
     const items = source.load(match('/'), new AbortController().signal);
     expect(items).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: '/clear' }),
+      expect.objectContaining({ label: '/new' }),
       expect.objectContaining({ state: 'loading' }),
     ]));
     await Promise.resolve();

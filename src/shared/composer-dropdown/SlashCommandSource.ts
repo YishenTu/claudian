@@ -231,7 +231,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
       for (const command of getBuiltInCommandsForDropdown(this.providerId ?? undefined)) {
         const key = command.name.toLocaleLowerCase();
         if (seen.has(key)) continue;
-        seen.add(key);
+        for (const name of [command.name, ...(command.aliases ?? [])]) seen.add(name.toLocaleLowerCase());
         items.push({
           aliases: command.aliases,
           detail: command.argumentHint

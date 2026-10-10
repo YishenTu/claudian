@@ -320,7 +320,7 @@ export class InputController {
       return 'handled';
     }
 
-    // Check for built-in commands first (e.g., /clear, /new)
+    // Check for built-in commands first (e.g., /new, /clear)
     const builtInCmd = options?.turnRequestOverride ? null : detectBuiltInCommand(content, this.#getActiveProviderId());
     if (builtInCmd && destination !== 'side') {
       if (builtInCmd.command.action === 'clear') {
