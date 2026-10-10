@@ -2,6 +2,6 @@ import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTrans
 
 export class CodexMetadataTransitionGate extends ProviderTransitionFence {
   constructor() {
-    super({ abortMessage: 'Codex CLI metadata transition wait aborted' });
+    super({ abortMessage: 'Codex metadata transition wait aborted' });
   }
 }

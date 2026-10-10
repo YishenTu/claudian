@@ -378,7 +378,7 @@ export class CodexExecutionServerRequestRouter {
     nativeTurnId: string,
   ): ActiveInteractionTurn {
     if (!this.observeNativeTurn(threadId, nativeTurnId)) {
-      throw new Error('Stale Codex CLI server request');
+      throw new Error('Stale Codex server request');
     }
 
     const turn = this.activeTurn;
@@ -387,7 +387,7 @@ export class CodexExecutionServerRequestRouter {
       || turn.nativeThreadId !== threadId
       || turn.nativeTurnId !== nativeTurnId
     ) {
-      throw new Error('Stale Codex CLI server request');
+      throw new Error('Stale Codex server request');
     }
     return turn;
   }
@@ -398,7 +398,7 @@ export class CodexExecutionServerRequestRouter {
   ): PendingServerRequest {
     const nativeKey = nativeRequestKey(threadId, requestId);
     if (this.pendingByNativeKey.has(nativeKey)) {
-      throw new Error('Duplicate Codex CLI server request');
+      throw new Error('Duplicate Codex server request');
     }
 
     const interactionId =

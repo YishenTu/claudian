@@ -331,7 +331,7 @@
     "codex": {
       "installationMethod": {
         "name": "Méthode d’installation",
-        "desc": "Comment Claudian doit lancer Codex CLI sous Windows. Windows natif utilise un chemin d’exécutable Windows. WSL lance la CLI Linux dans une distribution choisie.",
+        "desc": "Comment Claudian doit lancer Codex sous Windows. Windows natif utilise un chemin d’exécutable Windows. WSL lance la CLI Linux dans une distribution choisie.",
         "nativeWindows": "Windows natif",
         "wsl": "WSL"
       },
@@ -351,7 +351,7 @@
       },
       "responseStyle": {
         "name": "Style de réponse",
-        "desc": "Choisissez le style de communication de Codex CLI sur les modèles compatibles.",
+        "desc": "Choisissez le style de communication de Codex sur les modèles compatibles.",
         "pragmatic": "Pragmatique",
         "friendly": "Amical",
         "neutral": "Neutre"
@@ -377,8 +377,8 @@
         "desc": "Affiche Ultra dans le sélecteur d’effort pour les modèles Codex compatibles. Ultra utilise le raisonnement maximal avec délégation automatique des tâches."
       },
       "environment": {
-        "name": "Environnement Codex CLI",
-        "desc": "Variables d’exécution appartenant uniquement à Codex CLI. Utilisez ceci pour les réglages OPENAI_* et CODEX_*. Si l’auto-détection de Codex CLI a besoin d’aide, ajoutez son répertoire d’installation au PATH partagé plutôt qu’à cette section fournisseur."
+        "name": "Environnement Codex",
+        "desc": "Variables d’exécution appartenant uniquement à Codex. Utilisez ceci pour les réglages OPENAI_* et CODEX_*. Si l’auto-détection de Codex a besoin d’aide, ajoutez son répertoire d’installation au PATH partagé plutôt qu’à cette section fournisseur."
       }
     },
     "agentSkills": {
@@ -446,7 +446,7 @@
         "shared": "Autres fournisseurs"
       },
       "claudeHelp": "Skills Claude Code dans .claude/skills/ et commandes dans .claude/commands/.",
-      "sharedHelp": "Skills partagés dans .agents/skills/ pour Codex CLI, OpenCode, Pi et Grok Build.",
+      "sharedHelp": "Skills partagés dans .agents/skills/ pour Codex, OpenCode, Pi et Grok Build.",
       "status": {
         "error": "Impossible de lire les dossiers de skills : {message}"
       },

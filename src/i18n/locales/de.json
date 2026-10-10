@@ -331,7 +331,7 @@
     "codex": {
       "installationMethod": {
         "name": "Installationsmethode",
-        "desc": "Wie Claudian Codex CLI unter Windows starten soll. Native Windows verwendet einen Windows-Programmpfad. WSL startet die Linux-CLI in einer ausgewählten Distribution.",
+        "desc": "Wie Claudian Codex unter Windows starten soll. Native Windows verwendet einen Windows-Programmpfad. WSL startet die Linux-CLI in einer ausgewählten Distribution.",
         "nativeWindows": "Natives Windows",
         "wsl": "WSL"
       },
@@ -351,7 +351,7 @@
       },
       "responseStyle": {
         "name": "Antwortstil",
-        "desc": "Wähle den Kommunikationsstil von Codex CLI bei unterstützten Modellen.",
+        "desc": "Wähle den Kommunikationsstil von Codex bei unterstützten Modellen.",
         "pragmatic": "Pragmatisch",
         "friendly": "Freundlich",
         "neutral": "Neutral"
@@ -377,8 +377,8 @@
         "desc": "Ultra in der Auswahl für Codex-Modelle anzeigen, die es unterstützen. Ultra nutzt maximale Denktiefe mit automatischer Aufgabendelegation."
       },
       "environment": {
-        "name": "Codex-CLI-Umgebung",
-        "desc": "Nur Laufzeitvariablen, die Codex CLI gehören. Verwende dies für OPENAI_*- und CODEX_*-Einstellungen. Wenn die Autoerkennung von Codex CLI Hilfe braucht, füge das Installationsverzeichnis dem gemeinsamen PATH hinzu statt diesem Anbieterabschnitt."
+        "name": "Codex-Umgebung",
+        "desc": "Nur Laufzeitvariablen, die Codex gehören. Verwende dies für OPENAI_*- und CODEX_*-Einstellungen. Wenn die Autoerkennung von Codex Hilfe braucht, füge das Installationsverzeichnis dem gemeinsamen PATH hinzu statt diesem Anbieterabschnitt."
       }
     },
     "agentSkills": {
@@ -446,7 +446,7 @@
         "shared": "Andere Anbieter"
       },
       "claudeHelp": "Claude-Code-Skills in .claude/skills/ und Befehle in .claude/commands/.",
-      "sharedHelp": "Gemeinsame Skills in .agents/skills/ für Codex CLI, OpenCode, Pi und Grok Build.",
+      "sharedHelp": "Gemeinsame Skills in .agents/skills/ für Codex, OpenCode, Pi und Grok Build.",
       "status": {
         "error": "Die Skill-Ordner konnten nicht gelesen werden: {message}"
       },

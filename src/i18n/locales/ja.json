@@ -331,7 +331,7 @@
     "codex": {
       "installationMethod": {
         "name": "インストール方式",
-        "desc": "Windows で Claudian が Codex CLI を起動する方法。ネイティブ Windows は Windows 実行ファイルパスを使い、WSL は選択したディストリビューション内で Linux CLI を起動します。",
+        "desc": "Windows で Claudian が Codex を起動する方法。ネイティブ Windows は Windows 実行ファイルパスを使い、WSL は選択したディストリビューション内で Linux CLI を起動します。",
         "nativeWindows": "ネイティブ Windows",
         "wsl": "WSL"
       },
@@ -351,7 +351,7 @@
       },
       "responseStyle": {
         "name": "応答スタイル",
-        "desc": "対応モデルでの Codex CLI の話し方を選択します。",
+        "desc": "対応モデルでの Codex の話し方を選択します。",
         "pragmatic": "実用的",
         "friendly": "フレンドリー",
         "neutral": "ニュートラル"
@@ -377,8 +377,8 @@
         "desc": "Ultra をサポートする Codex モデルの推論レベル選択に表示します。Ultra は最大限の推論とタスクの自動委任を使用します。"
       },
       "environment": {
-        "name": "Codex CLI 環境",
-        "desc": "Codex CLI が所有するランタイム変数のみ。OPENAI_* と CODEX_* 設定に使用します。Codex CLI の自動検出に補助が必要な場合は、このプロバイダー環境ではなく共有 PATH にインストールディレクトリを追加してください。"
+        "name": "Codex 環境",
+        "desc": "Codex が所有するランタイム変数のみ。OPENAI_* と CODEX_* 設定に使用します。Codex の自動検出に補助が必要な場合は、このプロバイダー環境ではなく共有 PATH にインストールディレクトリを追加してください。"
       }
     },
     "agentSkills": {
@@ -446,7 +446,7 @@
         "shared": "その他のプロバイダー"
       },
       "claudeHelp": ".claude/skills/ の Claude Code スキルと .claude/commands/ のコマンド。",
-      "sharedHelp": "Codex CLI、OpenCode、Pi、Grok Build 用の .agents/skills/ にある共有スキル。",
+      "sharedHelp": "Codex、OpenCode、Pi、Grok Build 用の .agents/skills/ にある共有スキル。",
       "status": {
         "error": "スキルフォルダーを読み取れませんでした: {message}"
       },

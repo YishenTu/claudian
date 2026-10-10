@@ -331,7 +331,7 @@
     "codex": {
       "installationMethod": {
         "name": "설치 방식",
-        "desc": "Windows에서 Claudian이 Codex CLI를 실행하는 방식입니다. 네이티브 Windows는 Windows 실행 파일 경로를 사용하고, WSL은 선택한 배포판 안에서 Linux CLI를 실행합니다.",
+        "desc": "Windows에서 Claudian이 Codex를 실행하는 방식입니다. 네이티브 Windows는 Windows 실행 파일 경로를 사용하고, WSL은 선택한 배포판 안에서 Linux CLI를 실행합니다.",
         "nativeWindows": "네이티브 Windows",
         "wsl": "WSL"
       },
@@ -351,7 +351,7 @@
       },
       "responseStyle": {
         "name": "응답 스타일",
-        "desc": "지원되는 모델에서 Codex CLI의 대화 스타일을 선택합니다.",
+        "desc": "지원되는 모델에서 Codex의 대화 스타일을 선택합니다.",
         "pragmatic": "실용적",
         "friendly": "친근함",
         "neutral": "중립적"
@@ -377,8 +377,8 @@
         "desc": "Ultra를 지원하는 Codex 모델의 추론 강도 선택기에 표시합니다. Ultra는 최대 추론과 자동 작업 위임을 사용합니다."
       },
       "environment": {
-        "name": "Codex CLI 환경",
-        "desc": "Codex CLI 전용 런타임 변수만 입력하세요. OPENAI_* 및 CODEX_* 설정에 사용합니다. Codex CLI 자동 감지에 도움이 필요하면 이 공급자 섹션 대신 공유 PATH에 설치 디렉터리를 추가하세요."
+        "name": "Codex 환경",
+        "desc": "Codex 전용 런타임 변수만 입력하세요. OPENAI_* 및 CODEX_* 설정에 사용합니다. Codex 자동 감지에 도움이 필요하면 이 공급자 섹션 대신 공유 PATH에 설치 디렉터리를 추가하세요."
       }
     },
     "agentSkills": {
@@ -446,7 +446,7 @@
         "shared": "기타 제공자"
       },
       "claudeHelp": ".claude/skills/의 Claude Code 스킬과 .claude/commands/의 명령.",
-      "sharedHelp": "Codex CLI, OpenCode, Pi, Grok Build용 .agents/skills/의 공유 스킬.",
+      "sharedHelp": "Codex, OpenCode, Pi, Grok Build용 .agents/skills/의 공유 스킬.",
       "status": {
         "error": "스킬 폴더를 읽을 수 없습니다: {message}"
       },

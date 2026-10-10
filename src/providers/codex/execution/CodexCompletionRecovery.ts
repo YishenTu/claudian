@@ -125,7 +125,7 @@ export class CodexCompletionRecovery {
     }
 
     this.cancel();
-    this.host.fail(recovery.active, 'Codex CLI became idle, but its completed turn could not be recovered.');
+    this.host.fail(recovery.active, 'Codex became idle, but its completed turn could not be recovered.');
   }
 
   #isCurrent(recovery: RecoveryAttempt): boolean {

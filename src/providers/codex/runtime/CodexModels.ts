@@ -9,7 +9,7 @@ export function createCodexModels(host: ProviderHost, native: Pick<CodexModelCat
     providerId: 'codex',
     host,
     update: updateCodexProviderSettings,
-    providerName: 'Codex CLI',
+    providerName: 'Codex',
     read: (settings = host.settings) => {
       const current = getCodexProviderSettings(settings);
       return {

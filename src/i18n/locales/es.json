@@ -331,7 +331,7 @@
     "codex": {
       "installationMethod": {
         "name": "Método de instalación",
-        "desc": "Cómo debe iniciar Claudian Codex CLI en Windows. Windows nativo usa una ruta de ejecutable de Windows. WSL inicia la CLI de Linux dentro de una distribución seleccionada.",
+        "desc": "Cómo debe iniciar Claudian Codex en Windows. Windows nativo usa una ruta de ejecutable de Windows. WSL inicia la CLI de Linux dentro de una distribución seleccionada.",
         "nativeWindows": "Windows nativo",
         "wsl": "WSL"
       },
@@ -351,7 +351,7 @@
       },
       "responseStyle": {
         "name": "Estilo de respuesta",
-        "desc": "Elige cómo se comunica Codex CLI en los modelos compatibles.",
+        "desc": "Elige cómo se comunica Codex en los modelos compatibles.",
         "pragmatic": "Pragmático",
         "friendly": "Amigable",
         "neutral": "Neutral"
@@ -377,8 +377,8 @@
         "desc": "Muestra Ultra en el selector de esfuerzo para los modelos Codex compatibles. Ultra usa el razonamiento máximo con delegación automática de tareas."
       },
       "environment": {
-        "name": "Entorno de Codex CLI",
-        "desc": "Solo variables de ejecución propiedad de Codex CLI. Úsalo para ajustes OPENAI_* y CODEX_*. Si la autodetección de Codex CLI necesita ayuda, añade su directorio de instalación al PATH compartido en lugar de esta sección del proveedor."
+        "name": "Entorno de Codex",
+        "desc": "Solo variables de ejecución propiedad de Codex. Úsalo para ajustes OPENAI_* y CODEX_*. Si la autodetección de Codex necesita ayuda, añade su directorio de instalación al PATH compartido en lugar de esta sección del proveedor."
       }
     },
     "agentSkills": {
@@ -446,7 +446,7 @@
         "shared": "Otros proveedores"
       },
       "claudeHelp": "Skills de Claude Code en .claude/skills/ y comandos en .claude/commands/.",
-      "sharedHelp": "Skills compartidos en .agents/skills/ para Codex CLI, OpenCode, Pi y Grok Build.",
+      "sharedHelp": "Skills compartidos en .agents/skills/ para Codex, OpenCode, Pi y Grok Build.",
       "status": {
         "error": "No se pudieron leer las carpetas de skills: {message}"
       },

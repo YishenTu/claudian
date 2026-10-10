@@ -475,7 +475,7 @@ describe('CodexSettingsTab', () => {
     expect(mockRenderCodexModelPicker).toHaveBeenCalledWith(
       container,
       'codex',
-      'Codex CLI',
+      'Codex',
       expect.objectContaining({ refresh: mockRefreshModelCatalog }),
       expect.any(Function),
     );
@@ -511,7 +511,7 @@ describe('CodexSettingsTab', () => {
     const context = createContext(plugin);
 
     createSettingsRenderer().render(createContainer(), context);
-    const enableSetting = findSetting('Enable Codex CLI');
+    const enableSetting = findSetting('Enable Codex');
     await enableSetting.toggleComponents[0].onChangeCallback?.(false);
 
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('codex');
@@ -550,7 +550,7 @@ describe('CodexSettingsTab', () => {
     const context = createContext(plugin);
 
     createSettingsRenderer().render(createContainer(), context);
-    const toggle = findSetting('Enable Codex CLI').toggleComponents[0];
+    const toggle = findSetting('Enable Codex').toggleComponents[0];
     await toggle.onChangeCallback?.(true);
 
     expect(plugin.runProviderExecutionTransition).toHaveBeenCalledWith(
@@ -582,7 +582,7 @@ describe('CodexSettingsTab', () => {
       const context = createContext(plugin);
 
       createSettingsRenderer().render(createContainer(), context);
-      const toggle = findSetting('Enable Codex CLI').toggleComponents[0];
+      const toggle = findSetting('Enable Codex').toggleComponents[0];
       toggle.value = false;
       toggle.setValue.mockClear();
 
@@ -615,7 +615,7 @@ describe('CodexSettingsTab', () => {
 
     const warningCallIndex = container.createDiv.mock.calls.findIndex(
       ([options]: [{ text?: string }?]) => options?.text
-        === 'No Codex CLI models are enabled. Go to Models below and enable at least one model.',
+        === 'No Codex models are enabled. Go to Models below and enable at least one model.',
     );
     const warningEl = container.createDiv.mock.results[warningCallIndex]?.value;
     expect(warningCallIndex).toBeGreaterThanOrEqual(0);

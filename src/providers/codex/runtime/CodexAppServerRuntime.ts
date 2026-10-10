@@ -108,7 +108,7 @@ export class CodexAppServerConnection {
   isRetired(): boolean { return this.retired; }
 
   assertAlive(): void {
-    if (!this.isAlive()) throw new Error('Codex CLI app-server connection is closed.');
+    if (!this.isAlive()) throw new Error('Codex app-server connection is closed.');
   }
 
   retain(): CodexAppServerLease {

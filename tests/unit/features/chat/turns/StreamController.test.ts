@@ -2782,7 +2782,7 @@ describe('StreamController - Text Content', () => {
       deps.getProviderId = () => 'codex';
 
       const subagentState = {
-        info: { id: 'spawn-1', description: 'Codex CLI subagent', prompt: '', status: 'running', toolCalls: [] },
+        info: { id: 'spawn-1', description: 'Codex subagent', prompt: '', status: 'running', toolCalls: [] },
         labelEl: { setText: jest.fn() },
       };
       createSubagentBlock.mockReturnValueOnce(subagentState);
@@ -2826,7 +2826,7 @@ describe('StreamController - Text Content', () => {
       );
 
       expect(createSubagentBlock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-          description: 'Codex CLI subagent (gpt-5.4-mini)',
+          description: 'Codex subagent (gpt-5.4-mini)',
           prompt: 'Inspect utils.ts and return the final patch summary.',
         }));
       expect(subagentState.info.description).toBe('Zeno (gpt-5.4-mini)');

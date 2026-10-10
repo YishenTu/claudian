@@ -82,10 +82,10 @@ export function resolveCodexTurnReasoningEffort(
   if (request.configuration.reasoning !== undefined && (effort !== request.configuration.reasoning
     || (modelMetadata && !getCodexReasoningEffortOptions(modelMetadata, codexSettings.enableUltraEffort)
       .some(option => option.value === request.configuration.reasoning)))) {
-    throw new Error(`Codex CLI model "${model}" does not support reasoning effort "${request.configuration.reasoning}".`);
+    throw new Error(`Codex model "${model}" does not support reasoning effort "${request.configuration.reasoning}".`);
   }
   if (!effort) {
-    throw new Error(`Codex CLI model "${model}" has no enabled reasoning efforts.`);
+    throw new Error(`Codex model "${model}" has no enabled reasoning efforts.`);
   }
   return effort;
 }

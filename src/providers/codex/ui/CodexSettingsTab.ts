@@ -37,7 +37,7 @@ export function createCodexSettingsTabRenderer(
 
       const enablement: Omit<ProviderEnablementSettingOptions, 'container' | 'description'> = {
         getValue: () => getCodexProviderSettings(settingsBag).enabled,
-        name: t('settings.providerEnablement.name', { provider: 'Codex CLI' }),
+        name: t('settings.providerEnablement.name', { provider: 'Codex' }),
         onChange: async (value) => {
           if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
             settingsBag,
@@ -74,7 +74,7 @@ export function createCodexSettingsTabRenderer(
         getHasEnabledModels: () => getCodexModelOptions(settingsBag).length > 0,
         getIsEnabled: () => getCodexProviderSettings(settingsBag).enabled,
         providerId: 'codex',
-        providerName: 'Codex CLI',
+        providerName: 'Codex',
       });
 
       if (isWindowsHost) {
@@ -225,7 +225,7 @@ export function createCodexSettingsTabRenderer(
 
       new Setting(container).setName(t('settings.models')).setHeading();
 
-      const modelPicker = renderProviderModelsSection(container, 'codex', 'Codex CLI', codexWorkspace.modelCatalog, () => modelWarning.refresh());
+      const modelPicker = renderProviderModelsSection(container, 'codex', 'Codex', codexWorkspace.modelCatalog, () => modelWarning.refresh());
 
       new Setting(container)
         .setName(t('settings.codex.ultraEffort.name'))

@@ -150,7 +150,7 @@ export class CodexThreadBinder {
       )
     ) {
       if (request.persistExtendedHistory === false) {
-        throw new Error('This non-persistent Codex CLI session cannot be restored after its configuration changes. Start a new side chat.');
+        throw new Error('This non-persistent Codex session cannot be restored after its configuration changes. Start a new side chat.');
       }
       const result = await scope.open<ThreadResumeResult>(
         'thread/resume',
@@ -238,7 +238,7 @@ export class CodexThreadBinder {
     const transport = this.connection.transport;
     const scope = this.connection.scope;
     if (!transport || !scope || !this.#pendingFork) {
-      return Promise.reject(new Error('Codex CLI fork setup is not available.'));
+      return Promise.reject(new Error('Codex fork setup is not available.'));
     }
 
     const setup = this.#materializeForkThread(run, request, isCurrent, transport, scope);
@@ -258,7 +258,7 @@ export class CodexThreadBinder {
     scope: CodexThreadScope,
   ): Promise<CodexEnsuredThread> {
     const fork = this.#pendingFork;
-    if (!fork) throw new Error('Codex CLI fork source is not available.');
+    if (!fork) throw new Error('Codex fork source is not available.');
 
     let target = this.#pendingForkTarget;
     if (!target) {
@@ -272,7 +272,7 @@ export class CodexThreadBinder {
     }
 
     if (!isCurrent()) {
-      throw new Error('Codex CLI fork setup was interrupted after child adoption.');
+      throw new Error('Codex fork setup was interrupted after child adoption.');
     }
 
     if (request.persistExtendedHistory === false) {
@@ -288,10 +288,10 @@ export class CodexThreadBinder {
       this.#resumeParams(target.threadId, request, true),
     );
     if (!isCurrent()) {
-      throw new Error('Codex CLI fork setup was interrupted while resuming the child.');
+      throw new Error('Codex fork setup was interrupted while resuming the child.');
     }
     if (resumeResult.thread.id !== target.threadId) {
-      throw new Error('Codex CLI resumed a different thread than the owned fork target.');
+      throw new Error('Codex resumed a different thread than the owned fork target.');
     }
 
     this.#recordApprovalReviewer(resumeResult, request.policy.approvalsReviewer);
@@ -312,10 +312,10 @@ export class CodexThreadBinder {
         },
       );
       if (!isCurrent()) {
-        throw new Error('Codex CLI fork setup was interrupted while rolling back the child.');
+        throw new Error('Codex fork setup was interrupted while rolling back the child.');
       }
       if (rollbackResult.thread.id !== target.threadId) {
-        throw new Error('Codex CLI rolled back a different thread than the owned fork target.');
+        throw new Error('Codex rolled back a different thread than the owned fork target.');
       }
     }
 
@@ -344,7 +344,7 @@ export class CodexThreadBinder {
       this.#setLoadedThreadSandbox(sandboxModeOf(forkResult.sandbox));
       const threadId = normalizeString(forkResult.thread.id);
       if (!threadId) {
-        throw new Error('Codex CLI fork did not return a child thread ID.');
+        throw new Error('Codex fork did not return a child thread ID.');
       }
       const sessionFilePath = forkResult.thread.path
         ? pathMapper?.toHostPath(forkResult.thread.path) ?? forkResult.thread.path

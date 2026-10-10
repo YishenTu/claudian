@@ -331,7 +331,7 @@
     "codex": {
       "installationMethod": {
         "name": "安裝方式",
-        "desc": "Claudian 在 Windows 上啟動 Codex CLI 的方式。原生 Windows 使用 Windows 可執行檔路徑；WSL 會在所選發行版內啟動 Linux CLI。",
+        "desc": "Claudian 在 Windows 上啟動 Codex 的方式。原生 Windows 使用 Windows 可執行檔路徑；WSL 會在所選發行版內啟動 Linux CLI。",
         "nativeWindows": "原生 Windows",
         "wsl": "WSL"
       },
@@ -351,7 +351,7 @@
       },
       "responseStyle": {
         "name": "回覆風格",
-        "desc": "選擇支援此功能的模型中 Codex CLI 的溝通風格。",
+        "desc": "選擇支援此功能的模型中 Codex 的溝通風格。",
         "pragmatic": "務實",
         "friendly": "友善",
         "neutral": "中性"
@@ -377,8 +377,8 @@
         "desc": "在支援 Ultra 的 Codex 模型的推理強度選擇器中顯示此選項。Ultra 使用最高推理強度並自動委派工作。"
       },
       "environment": {
-        "name": "Codex CLI 環境",
-        "desc": "僅限 Codex CLI 擁有的執行階段變數。用於 OPENAI_* 和 CODEX_* 設定。如果 Codex CLI 自動偵測需要協助，請把安裝目錄新增到共享 PATH，而不是此提供者環境。"
+        "name": "Codex 環境",
+        "desc": "僅限 Codex 擁有的執行階段變數。用於 OPENAI_* 和 CODEX_* 設定。如果 Codex 自動偵測需要協助，請把安裝目錄新增到共享 PATH，而不是此提供者環境。"
       }
     },
     "agentSkills": {
@@ -446,7 +446,7 @@
         "shared": "其他供應商"
       },
       "claudeHelp": ".claude/skills/ 中的 Claude Code 技能與 .claude/commands/ 中的指令。",
-      "sharedHelp": ".agents/skills/ 中供 Codex CLI、OpenCode、Pi 與 Grok Build 使用的共用技能。",
+      "sharedHelp": ".agents/skills/ 中供 Codex、OpenCode、Pi 與 Grok Build 使用的共用技能。",
       "status": {
         "error": "無法讀取技能資料夾:{message}"
       },

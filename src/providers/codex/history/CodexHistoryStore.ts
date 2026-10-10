@@ -1510,12 +1510,12 @@ async function runBeforeDeadline<T>(
 ): Promise<T> {
   const remainingMs = deadline - Date.now();
   if (remainingMs <= 0) {
-    throw new Error('Codex CLI history lookup deadline exceeded.');
+    throw new Error('Codex history lookup deadline exceeded.');
   }
 
   return new Promise<T>((resolve, reject) => {
     const timer = window.setTimeout(() => {
-      reject(new Error('Codex CLI history lookup deadline exceeded.'));
+      reject(new Error('Codex history lookup deadline exceeded.'));
     }, remainingMs);
     operation().then(
       (value) => {

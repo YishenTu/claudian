@@ -71,13 +71,13 @@ function validateInitializeTarget(
 ): void {
   if (initializeResult.platformOs !== launchSpec.target.platformOs) {
     throw new Error(
-      `Codex CLI target mismatch: expected ${launchSpec.target.platformOs}, received ${initializeResult.platformOs}`,
+      `Codex target mismatch: expected ${launchSpec.target.platformOs}, received ${initializeResult.platformOs}`,
     );
   }
 
   if (initializeResult.platformFamily !== launchSpec.target.platformFamily) {
     throw new Error(
-      `Codex CLI target mismatch: expected ${launchSpec.target.platformFamily}, received ${initializeResult.platformFamily}`,
+      `Codex target mismatch: expected ${launchSpec.target.platformFamily}, received ${initializeResult.platformFamily}`,
     );
   }
 }

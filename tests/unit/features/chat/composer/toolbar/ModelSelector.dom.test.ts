@@ -74,6 +74,6 @@ it('preserves provider group display order while keeping saved order inside each
     within(group).getAllByRole('option').map(item => item.textContent),
   ])).toEqual([
     ['Claude Code', ['haiku', 'opus']],
-    ['Codex CLI', ['GPT-5.4 Mini', 'GPT-5.5']],
+    ['Codex', ['GPT-5.4 Mini', 'GPT-5.5']],
   ]);
 });

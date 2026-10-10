@@ -15,11 +15,11 @@
 
 ![Preview](assets/Preview.png)
 
-An Obsidian plugin that embeds AI coding agents (Claude Code, Codex CLI, Grok Build, OpenCode, Pi, and more to come) in your vault. Your vault becomes the agent's working directory — file read/write, search, bash, and multi-step workflows all work out of the box.
+An Obsidian plugin that embeds AI coding agents (Claude Code, Codex, Grok Build, OpenCode, Pi, and more to come) in your vault. Your vault becomes the agent's working directory — file read/write, search, bash, and multi-step workflows all work out of the box.
 
 ## Features & Usage
 
-Open Claudian interface from the ribbon icon or command palette. Everything works like your familiar coding agent, Claude Code, Codex CLI, Grok Build, OpenCode, and Pi — talk to the agent, and it reads, writes, edits, searches and run commands in your vault.
+Open Claudian interface from the ribbon icon or command palette. Everything works like your familiar coding agent, Claude Code, Codex, Grok Build, OpenCode, and Pi — talk to the agent, and it reads, writes, edits, searches and run commands in your vault.
 
 **Inline Edit** — Select text or start at the cursor position + hotkey to edit directly in notes with word-level diff preview.
 

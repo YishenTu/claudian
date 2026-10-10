@@ -4092,7 +4092,7 @@ describe('CodexExecutionBackend', () => {
     await expect(session.steer(createRequest(
       new AbortController().signal,
       { input: [{ type: 'text', text: 'redirect' }] },
-    ))).rejects.toThrow('Codex CLI returned an ambiguous steer acknowledgement.');
+    ))).rejects.toThrow('Codex returned an ambiguous steer acknowledgement.');
 
     run.cancel();
     await collectEvents(run.events);

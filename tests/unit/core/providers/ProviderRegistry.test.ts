@@ -205,14 +205,14 @@ describe('ProviderRegistry', () => {
     });
 
     expect(options.find(option => option.value === `openai-codex/${TEST_CODEX_MODEL}`)?.label)
-      .toBe(`Codex CLI: ${TEST_CODEX_MODEL_LABEL}`);
+      .toBe(`Codex: ${TEST_CODEX_MODEL_LABEL}`);
     expect(options.find(option => option.value === 'sonnet')?.label)
       .toBe('Claude Code: Sonnet');
   });
 
   it('returns the display name from provider registration metadata', () => {
     expect(ProviderRegistry.getProviderDisplayName('claude')).toBe('Claude Code');
-    expect(ProviderRegistry.getProviderDisplayName('codex')).toBe('Codex CLI');
+    expect(ProviderRegistry.getProviderDisplayName('codex')).toBe('Codex');
     expect(ProviderRegistry.getProviderDisplayName('grok')).toBe('Grok Build');
   });
 

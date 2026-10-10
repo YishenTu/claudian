@@ -331,7 +331,7 @@
     "codex": {
       "installationMethod": {
         "name": "Способ установки",
-        "desc": "Как Claudian должен запускать Codex CLI в Windows. Нативный Windows использует путь к Windows-исполняемому файлу. WSL запускает Linux CLI внутри выбранного дистрибутива.",
+        "desc": "Как Claudian должен запускать Codex в Windows. Нативный Windows использует путь к Windows-исполняемому файлу. WSL запускает Linux CLI внутри выбранного дистрибутива.",
         "nativeWindows": "Нативный Windows",
         "wsl": "WSL"
       },
@@ -351,7 +351,7 @@
       },
       "responseStyle": {
         "name": "Стиль ответа",
-        "desc": "Выберите стиль общения Codex CLI для поддерживаемых моделей.",
+        "desc": "Выберите стиль общения Codex для поддерживаемых моделей.",
         "pragmatic": "Прагматичный",
         "friendly": "Дружелюбный",
         "neutral": "Нейтральный"
@@ -377,8 +377,8 @@
         "desc": "Показывать Ultra в выборе усилия для моделей Codex, которые его поддерживают. Ultra использует максимальное рассуждение с автоматическим делегированием задач."
       },
       "environment": {
-        "name": "Окружение Codex CLI",
-        "desc": "Только переменные среды выполнения, принадлежащие Codex CLI. Используйте для настроек OPENAI_* и CODEX_*. Если автоопределению Codex CLI нужна помощь, добавьте каталог установки в общий PATH, а не в этот раздел провайдера."
+        "name": "Окружение Codex",
+        "desc": "Только переменные среды выполнения, принадлежащие Codex. Используйте для настроек OPENAI_* и CODEX_*. Если автоопределению Codex нужна помощь, добавьте каталог установки в общий PATH, а не в этот раздел провайдера."
       }
     },
     "agentSkills": {
@@ -446,7 +446,7 @@
         "shared": "Другие провайдеры"
       },
       "claudeHelp": "Навыки Claude Code в .claude/skills/ и команды в .claude/commands/.",
-      "sharedHelp": "Общие навыки в .agents/skills/ для Codex CLI, OpenCode, Pi и Grok Build.",
+      "sharedHelp": "Общие навыки в .agents/skills/ для Codex, OpenCode, Pi и Grok Build.",
       "status": {
         "error": "Не удалось прочитать папки навыков: {message}"
       },

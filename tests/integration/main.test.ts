@@ -3335,7 +3335,7 @@ describe('ClaudianPlugin', () => {
       await chatHostOf(plugin).conversationLifecycle.setArchived(conversation.id, true);
 
       expect(chatHostOf(plugin).getConversationSync(conversation.id)?.isArchived).toBe(true);
-      expect(Notice).toHaveBeenCalledWith('Codex CLI could not archive or restore its sessions: codex unavailable');
+      expect(Notice).toHaveBeenCalledWith('Codex could not archive or restore its sessions: codex unavailable');
     });
 
     it('does not initialize providers without native session archive', async () => {

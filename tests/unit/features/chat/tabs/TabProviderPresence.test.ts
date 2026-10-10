@@ -92,7 +92,7 @@ describe('TabProviderPresence', () => {
   });
 
   it('keeps repeated passive runtime startup failures silent', async () => {
-    const startRuntime = jest.fn().mockRejectedValue(new Error('Codex CLI missing'));
+    const startRuntime = jest.fn().mockRejectedValue(new Error('Codex missing'));
     jest.mocked(ProviderRegistry.getCapabilities).mockImplementation(providerId => ({
       providerId, supportsProviderCommands: true, startsSharedRuntimeOnTabPresence: providerId === 'codex',
     } as any));

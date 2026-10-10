@@ -331,7 +331,7 @@
     "codex": {
       "installationMethod": {
         "name": "Installation method",
-        "desc": "How Claudian should launch Codex CLI on Windows. Native Windows uses a Windows executable path. WSL launches the Linux CLI inside a selected distro.",
+        "desc": "How Claudian should launch Codex on Windows. Native Windows uses a Windows executable path. WSL launches the Linux CLI inside a selected distro.",
         "nativeWindows": "Native Windows",
         "wsl": "WSL"
       },
@@ -351,7 +351,7 @@
       },
       "responseStyle": {
         "name": "Response style",
-        "desc": "Choose how Codex CLI communicates on supported models.",
+        "desc": "Choose how Codex communicates on supported models.",
         "pragmatic": "Pragmatic",
         "friendly": "Friendly",
         "neutral": "Neutral"
@@ -377,8 +377,8 @@
         "desc": "Allow Ultra in the effort selector for Codex models that advertise support. Ultra uses maximum reasoning with automatic task delegation."
       },
       "environment": {
-        "name": "Codex CLI environment",
-        "desc": "Runtime variables owned by Codex CLI only. Use this for OPENAI_* and CODEX_* settings. If Codex CLI auto-detection needs help, add its install directory to shared PATH instead of this provider section."
+        "name": "Codex environment",
+        "desc": "Runtime variables owned by Codex only. Use this for OPENAI_* and CODEX_* settings. If Codex auto-detection needs help, add its install directory to shared PATH instead of this provider section."
       }
     },
     "agentSkills": {
@@ -446,7 +446,7 @@
         "shared": "Other providers"
       },
       "claudeHelp": "Claude Code skills in .claude/skills/ and commands in .claude/commands/.",
-      "sharedHelp": "Shared skills in .agents/skills/ for Codex CLI, OpenCode, Pi and Grok Build.",
+      "sharedHelp": "Shared skills in .agents/skills/ for Codex, OpenCode, Pi and Grok Build.",
       "status": {
         "error": "Could not read the skill folders: {message}"
       },
