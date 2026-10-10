@@ -1033,16 +1033,29 @@ it('rejects a send while background Stop is running and admits after Stop settle
       peer.send('job/list', { type: 'rows', jobs }, jobsOf('root'));
       return { status: 'requested' };
     }
-    if (method === 'session/prompt') { begin(args.request.requestId); answer('sent'); return { accepted: true }; }
+    if (method === 'session/prompt') {
+      begin(args.request.requestId); answer('sent');
+      // Native streams are ordered independently of RPC replies: the turn can end before its prompt is acknowledged.
+      if (args.request.requestId === first?.executionId) await acknowledged;
+      return { accepted: true };
+    }
     return ordinary(method, args);
   };
-  create(); await completeRequest();
-  session.cancel();
+  let acknowledge!: () => void;
+  const acknowledged = new Promise<void>(resolve => { acknowledge = resolve; });
+  create();
+  const first = session.execute(request('first'));
+  // Stop pressed once the turn has ended but before its prompt is acknowledged still stops the job it started.
+  for await (const e of first.events) if (e.type === 'turn_completed') session.cancel();
+  acknowledge();
   await until(() => peer.calls.some(c => c.method === 'job/kill'));
+  await until(() => session.getStatus() !== 'executing');
+  expect(session.getStatus()).toBe('cancelling');
   const events: ProviderExecutionEvent[] = [];
   await collect(session.execute(request('during stop')).events, events);
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'configuration', recoverable: true, message: expect.stringContaining('Wait for Stop to finish') });
   expect(peer.calls.filter(c => c.method === 'session/prompt')).toHaveLength(1);
+  expect(session.getStatus()).toBe('cancelling');
   release();
   await until(() => !session.hasBackgroundWork?.());
   await completeRequest('after stop');

@@ -124,7 +124,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       await requested.admission;
       if (this.requested !== requested) return;
       this.requested = undefined;
-      if (this.snapshots.status !== 'invalidated' && this.snapshots.status !== 'disposed') this.snapshots.setStatus('idle');
+      if (this.snapshots.status !== 'invalidated' && this.snapshots.status !== 'disposed') this.snapshots.setStatus(this.stopTask ? 'cancelling' : 'idle');
       this.publish();
     });
     requested.admission = (previous?.admission ?? Promise.resolve()).then(() => this.admit(requested)).catch(error => {
@@ -138,7 +138,8 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
   }
 
   cancel(): void {
-    if (this.requested) { this.requested.channel.cancel(); return; }
+    // A finished request keeps its slot until its prompt is acknowledged; Stop then targets the work it started.
+    if (this.requested && !this.requested.channel.isTerminal) { this.requested.channel.cancel(); return; }
     if (this.stopTask || !this.observer || this.lifetime.signal.aborted) return;
     this.snapshots.setStatus('cancelling');
     const task = this.stopBackground(this.lifetime.signal).catch(error => this.fail(error, 'transport')).finally(() => {
