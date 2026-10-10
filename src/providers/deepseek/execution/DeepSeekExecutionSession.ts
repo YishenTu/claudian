@@ -558,11 +558,17 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       const agentId = value.agentId as string;
       if (!this.observer?.owns(agentId)) continue;
       const root = agentId === this.nativeId;
+      if (!root && value.event === 'approval/request') {
+        // Subagents keep the permission scope they started with (native approval policy `never`); decline instead of prompting.
+        this.pendingNativeInteractions.delete(id);
+        this.declineApproval(id);
+        continue;
+      }
       const child = root ? undefined : this.childTurns.get(agentId);
       if (root ? !this.turn || (!this.turn.owner && this.requested) : !child) continue;
       // Approvals and tool calls arrive on separate streams; wait for the call until the deadline.
       const callId = value.event === 'approval/request' && isRecord(value.request) && typeof value.request.callId === 'string' ? value.request.callId : undefined;
-      const call = callId === undefined ? undefined : root ? this.turn!.output.call(callId) : this.subagents.call(agentId, callId);
+      const call = callId === undefined ? undefined : this.turn!.output.call(callId);
       if (callId !== undefined && !call && (now === undefined || deadline > now)) continue;
       let turnId: string;
       if (child) {
@@ -582,6 +588,12 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     if (!this.pendingNativeInteractions.size && this.interactionTimer !== undefined) {
       window.clearTimeout(this.interactionTimer); this.interactionTimer = undefined;
     }
+  }
+
+  private declineApproval(eventId: string): void {
+    const generation = this.generation;
+    void this.lease!.client.call('$events/result', { clientId: this.lease!.client.clientId, eventId, outcome: { kind: 'result', value: 'rejected' } })
+      .catch(error => { if (generation === this.generation) void this.fail(error, 'transport'); });
   }
 
   private requestInteraction(value: Record<string, unknown>, turnId: string, call?: DeepSeekToolCall): void {
@@ -785,7 +797,9 @@ function encodeInput(input: ProviderExecutionRequest): unknown[] {
 /** Native localized explanation: configured locale, its base language, English, then the raw reason. */
 function localizedReason(request: Record<string, unknown>, locale: string): string | undefined {
   const display = isRecord(request.displayReason) ? request.displayReason : {};
-  const text = [locale, locale.split('-')[0], 'en'].map(key => display[key]).find(value => typeof value === 'string' && value);
+  // Native `zh` is Simplified Chinese, so Traditional Chinese never falls back to it.
+  const keys = locale === 'zh-TW' ? [locale, 'zh-Hant', 'en'] : [locale, locale.split('-')[0], 'en'];
+  const text = keys.map(key => display[key]).find(value => typeof value === 'string' && value);
   return typeof text === 'string' ? text : typeof request.reason === 'string' && request.reason ? request.reason : undefined;
 }
 

@@ -3,7 +3,7 @@ import { TOOL_SPAWN_AGENT } from '@/core/tools/toolNames';
 import type { SubagentInfo, ToolCallInfo } from '@/core/types';
 
 import { isRecord } from '../remote/DeepSeekRemoteClient';
-import { DeepSeekOutput, type DeepSeekOutputEvent, deepseekText, type DeepSeekToolCall } from './DeepSeekOutput';
+import { DeepSeekOutput, type DeepSeekOutputEvent, deepseekText } from './DeepSeekOutput';
 
 interface Child {
   info: SubagentInfo;
@@ -43,9 +43,6 @@ export class DeepSeekSubagents {
       if (matches.length === 1) this.bind(data.childId, matches[0]);
     }
   }
-
-  /** Details of a tool call in a child's current turn. */
-  call(id: string, callId: string): DeepSeekToolCall | undefined { return this.children.get(id)?.output?.call(callId); }
 
   child(id: string, frame: Record<string, unknown>): void {
     let child = this.children.get(id);

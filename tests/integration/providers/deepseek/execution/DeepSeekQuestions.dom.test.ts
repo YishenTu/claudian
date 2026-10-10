@@ -147,7 +147,8 @@ it.each([
   { name: 'a direct call', locale: 'en', reason: nativeReason.displayReason.en, callId: 'bash-1', order: 'tool first' },
   { name: 'a direct call whose tool frame arrives later', locale: 'zh-CN', reason: nativeReason.displayReason.zh, callId: 'bash-1', order: 'approval first' },
   { name: 'a code-mode call', locale: 'fr', reason: nativeReason.displayReason.en, callId: 'code-1:ptc:1', order: 'tool first' },
-  { name: 'a subagent call', locale: 'en', reason: nativeReason.displayReason.en, callId: 'child-bash', order: 'approval first' },
+  // Native `zh` is Simplified Chinese; Traditional Chinese falls back to English instead.
+  { name: 'a Traditional Chinese locale', locale: 'zh-TW', reason: nativeReason.displayReason.en, callId: 'bash-1', order: 'tool first' },
 ])('renders the action and localized native reason for $name', async ({ locale, reason, callId, order }) => {
   settings.locale = locale;
   renderApprovals(); create();
@@ -156,16 +157,14 @@ it.each([
   try {
     await waitFor(() => expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(true));
     begin(run.executionId);
-    const child = callId === 'child-bash' ? await startChild() : undefined;
     const toolFrame = (): void => {
-      if (child) child({ type: 'event', event: { type: 'tool/call', seq: 1, time, data: { callId, name: 'bash', arguments: JSON.stringify({ command }) } } });
-      else if (callId.includes(':ptc:')) {
+      if (callId.includes(':ptc:')) {
         event('tool/call', { callId: 'code-1', name: 'run_code', arguments: JSON.stringify({ code: 'await bash({ command })' }) });
         event('tool/ptc-dispatch-start', { rootCallId: 'code-1', subCallId: callId, name: 'bash', arguments: { command } });
       } else event('tool/call', { callId, name: 'bash', arguments: JSON.stringify({ command }) });
     };
     if (order === 'tool first') { toolFrame(); await new Promise(resolve => setTimeout(resolve, 20)); }
-    approve(child ? 'child' : 'root', callId);
+    approve('root', callId);
     let early: HTMLElement | null = null;
     if (order === 'approval first') {
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -179,6 +178,27 @@ it.each([
     expect((await axe(document.body)).violations).toEqual([]);
     fireEvent.click(within(document.body).getByRole('button', { name: 'Allow once' }));
     await waitFor(() => expect(peer.calls.find(c => c.method === '$events/result')?.args.outcome).toEqual({ kind: 'result', value: 'allowed-once' }));
+    expect(session.getStatus()).not.toBe('invalidated');
+  } finally {
+    answer('Done');
+    await done;
+  }
+});
+
+it('declines a subagent approval natively without presenting it', async () => {
+  renderApprovals(); create();
+  const requestApproval = jest.spyOn(port, 'requestApproval');
+  const run = session.execute(request());
+  const done = collect(run.events, []);
+  try {
+    await waitFor(() => expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(true));
+    begin(run.executionId);
+    const child = await startChild();
+    child({ type: 'event', event: { type: 'tool/call', seq: 1, time, data: { callId: 'child-bash', name: 'bash', arguments: JSON.stringify({ command }) } } });
+    approve('child', 'child-bash');
+    await waitFor(() => expect(peer.calls.find(c => c.method === '$events/result')?.args).toEqual({ clientId: expect.any(String), eventId: 'approval', outcome: { kind: 'result', value: 'rejected' } }));
+    expect(requestApproval).not.toHaveBeenCalled();
+    expect(within(document.body).queryByRole('region', { name: /approval details/ })).toBeNull();
     expect(session.getStatus()).not.toBe('invalidated');
   } finally {
     answer('Done');
