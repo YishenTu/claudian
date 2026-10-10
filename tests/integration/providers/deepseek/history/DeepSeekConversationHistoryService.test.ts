@@ -175,6 +175,28 @@ it.each(['tool-jobs', 'subagent-settled'])('hydrates native %s completion notice
 });
 
 
+it('splits a steered turn at its steered input, as live steering renders it, with the checkpoint on the final reply', async () => {
+  records = [
+    wire(1, 'turn/start', { turn: 1 }),
+    wire(2, 'user/message', { id: 'u1', source: { kind: 'user', rpcId: 'r' }, content: [{ type: 'text', text: 'write the report' }] }),
+    wire(3, 'assistant/message', { turn: 1, step: 0, message: { content: [{ type: 'text', text: 'drafting' }] } }),
+    wire(4, 'step/start', { turn: 1, step: 1 }),
+    wire(5, 'user/message', { id: 'u2', source: { kind: 'user', rpcId: 'steer-1' }, content: [{ type: 'text', text: 'make it shorter' }] }),
+    wire(6, 'assistant/message', { turn: 1, step: 1, message: { content: [{ type: 'text', text: 'short report' }] } }),
+    wire(7, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    wire(8, 'session/title', { title: 'Report' }),
+  ];
+  const result = await history.hydrateConversationHistory(input, '/vault');
+  expect(result.messages?.map(message => [message.role, message.content])).toEqual([
+    ['user', 'write the report'], ['assistant', 'drafting'], ['user', 'make it shorter'], ['assistant', 'short report'],
+  ]);
+  const [, first, steered, last] = result.messages!;
+  expect(new Set(result.messages!.map(message => message.id)).size).toBe(4);
+  expect(steered.userMessageId).toBe('u2');
+  expect(first.assistantMessageId).toBeUndefined();
+  expect(last).toMatchObject({ assistantMessageId: 'deepseek:seq:7', contentBlocks: [{ type: 'text', content: 'short report' }] });
+});
+
 it('keeps notices with the requested reply when a native notice precedes user input in one turn', async () => {
   records = [wire(0, 'turn/start', { turn: 0 }),
     wire(1, 'user/message', { source: { kind: 'tool-jobs' }, content: [{ type: 'text', text: 'earlier job finished' }] }),

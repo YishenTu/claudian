@@ -11,6 +11,7 @@ export const DEEPSEEK_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Ob
   supportsConversationBranches: false,
   supportsProviderCommands: true,
   supportsImageAttachments: true,
+  supportsTurnSteer: true,
   supportsResponseThroughput: true,
   reasoningControl: 'effort',
 });

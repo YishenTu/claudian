@@ -6,7 +6,7 @@ import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { jobsOf, NativePeer, type NativePeerHostOptions, type NativePeerLifecycle, rootFollow } from '@test/helpers/deepseek/NativePeer';
 import { testDate } from '@test/helpers/testClock';
 
-import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderExecutionSession, ProviderInteractionPort, ProviderSessionConfig, ProviderSessionEvent } from '@/core/execution';
+import { isSteerableExecutionSession, type ProviderExecutionEvent, type ProviderExecutionRequest, type ProviderExecutionSession, type ProviderInteractionPort, type ProviderSessionConfig, type ProviderSessionEvent } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ImageAttachment } from '@/core/types';
 import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSeekExecutionBackend';
@@ -123,6 +123,264 @@ it.each(['tool-jobs', 'subagent-settled'])('attributes only the matched native u
   expect(sessionEvents.filter(e => e.type === 'background_turn_started')).toHaveLength(1);
   expect(sessionEvents.filter(e => e.type === 'background_turn_completed')).toHaveLength(1);
   expect(session.getSnapshot()).toMatchObject({ providerSessionId: 'root', providerState: { checkpointSeq: seq } });
+});
+
+/** Steers the bound session; the request's own signal stands for the caller's Stop. */
+function steer(text: string, signal = new AbortController().signal): Promise<boolean> {
+  if (!isSteerableExecutionSession(session)) throw new Error('DeepSeek session is not steerable.');
+  return session.steer({ ...request(text), signal });
+}
+const steerCalls = () => peer.calls.filter(c => c.method === 'session/prompt' && c.args.request.mode === 'steer');
+/** Starts a requested run whose native turn is claimed and still running. */
+async function runningTurn(): Promise<{ run: ReturnType<ProviderExecutionSession['execute']>; events: ProviderExecutionEvent[]; done: Promise<void> }> {
+  create();
+  const run = session.execute(request());
+  const events: ProviderExecutionEvent[] = [];
+  const done = collect(run.events, events);
+  await until(() => peer.calls.some(c => c.method === 'session/prompt' && c.args.request.requestId === run.executionId));
+  begin(run.executionId);
+  event('assistant/message', { turn: nativeTurn, step: 0, message: { content: [{ type: 'text', text: 'working' }] } });
+  await until(() => events.some(e => e.type === 'turn_started'));
+  return { run, events, done };
+}
+/** Native's inbox projection with the given steered items still waiting for the next step boundary. */
+function pendingSteers(items: Array<{ id: string; rpcId: string; text: string }>): void {
+  peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'inbox', seq: ++seq, value: {
+    'next-turn': [], 'next-step': items.map(item => ({ id: item.id, role: 'user', source: { kind: 'user', rpcId: item.rpcId }, content: [{ type: 'text', text: item.text }] })),
+  } });
+}
+
+it('joins steered input to the running requested turn once native claims it at a step boundary', async () => {
+  const { events, done } = await runningTurn();
+  let settled: boolean | undefined;
+  const steering = steer('also cover tests').then(value => { settled = value; return value; });
+  await until(() => steerCalls().length === 1);
+  const [{ args: { request: sent } }] = steerCalls();
+  expect(sent).toMatchObject({ sessionId: 'root', mode: 'steer', content: [{ type: 'text', text: 'also cover tests' }] });
+  expect(sent.requestId).toEqual(expect.any(String));
+  // Native acknowledged the inbox entry, but only the step boundary that claims it makes it part of the turn.
+  await new Promise(resolve => setTimeout(resolve, 20));
+  expect(settled).toBeUndefined();
+  event('step/start', { turn: nativeTurn, step: 1 });
+  event('user/message', { id: 'user-steer', content: [{ type: 'text', text: 'also cover tests' }], source: { kind: 'user', rpcId: sent.requestId } });
+  expect(await steering).toBe(true);
+  answer('covered', 1); await done;
+  expect(events.filter(e => e.type === 'user_message_started')).toEqual([
+    expect.objectContaining({ content: 'requested', nativeUserMessageId: 'user-1' }),
+    expect.objectContaining({ content: 'also cover tests', nativeUserMessageId: 'user-steer' }),
+  ]);
+  const order = events.map(e => e.type === 'text_delta' ? `text:${e.text}` : e.type).filter(type => type.startsWith('text:') || type === 'user_message_started');
+  expect(order).toEqual(['user_message_started', 'text:working', 'user_message_started', 'text:covered']);
+  expect(events.filter(e => ['turn_completed', 'cancelled', 'execution_error'].includes(e.type))).toMatchObject([{ type: 'turn_completed' }]);
+});
+
+it('steers only into a claimed, running requested turn', async () => {
+  create();
+  expect(await steer('nothing running')).toBe(false);
+  const run = session.execute(request());
+  const events: ProviderExecutionEvent[] = [];
+  const done = collect(run.events, events);
+  await until(() => peer.calls.some(c => c.method === 'session/prompt'));
+  // Admitted but not yet started by native: a steer would start a turn of its own.
+  expect(await steer('too early')).toBe(false);
+  begin(run.executionId); answer('done'); await done;
+  expect(await steer('too late')).toBe(false);
+  expect(steerCalls()).toEqual([]);
+});
+
+it.each([
+  ['Stop', 'cancel'], ['an abandoned steer', 'abort'],
+] as const)('withdraws a steer native has not claimed after %s and returns it as unsent', async (_case, trigger) => {
+  const { run, events, done } = await runningTurn();
+  const stop = new AbortController();
+  const steering = steer('wait, not that', stop.signal);
+  await until(() => steerCalls().length === 1);
+  const rpcId = steerCalls()[0].args.request.requestId;
+  pendingSteers([{ id: 'steer-item', rpcId, text: 'wait, not that' }]);
+  const ordinary = peer.onCall;
+  peer.onCall = (method, args) => {
+    if (method === 'session/updateQueue') { pendingSteers([]); return { accepted: true }; }
+    return ordinary(method, args);
+  };
+  if (trigger === 'cancel') run.cancel(); else stop.abort();
+  expect(await steering).toBe(false);
+  const removal = peer.calls.findIndex(c => c.method === 'session/updateQueue');
+  expect(peer.calls[removal].args.request).toEqual({ sessionId: 'root', itemId: 'steer-item', action: { kind: 'remove' } });
+  // An abandoned steer leaves the turn running; Stop cancels it only after the steer left native's inbox, so the steer
+  // can never prefix a later prompt.
+  if (trigger === 'abort') answer('carried on', 1);
+  await done;
+  const cancelAt = peer.calls.findIndex(c => c.method === 'session/cancel');
+  expect({ cancel: cancelAt === -1 ? 'none' : cancelAt > removal ? 'after removal' : 'before removal', terminal: events.at(-1)?.type })
+    .toEqual(trigger === 'cancel' ? { cancel: 'after removal', terminal: 'cancelled' } : { cancel: 'none', terminal: 'turn_completed' });
+  expect(events.filter(e => e.type === 'user_message_started')).toHaveLength(1);
+});
+
+it('reports a steer native refused as unsent and an unconfirmed one as unknown', async () => {
+  const { done } = await runningTurn();
+  const ordinary = peer.onCall;
+  let failure: Error = Object.assign(new Error('image too large'), { code: 'session/attachment-invalid' });
+  peer.onCall = (method, args) => {
+    if (method === 'session/prompt' && args.request.mode === 'steer') throw failure;
+    return ordinary(method, args);
+  };
+  expect(await steer('with a huge image')).toBe(false);
+  // Without a native verdict the steer may sit in native's inbox; the caller keeps it for reconciliation.
+  failure = new Error('socket hang up');
+  await expect(steer('lost on the wire')).rejects.toThrow();
+  peer.onCall = ordinary;
+  answer('done', 1); await done;
+});
+
+it.each(['claims it', 'Stop withdraws it'] as const)('keeps tracking a steer whose admission was ambiguous until native %s', async outcome => {
+  const { run, events, done } = await runningTurn();
+  const ordinary = peer.onCall;
+  let rpcId = '';
+  peer.onCall = (method, args) => {
+    if (method === 'session/prompt' && args.request.mode === 'steer') {
+      // Native admitted the steer, but its acknowledgement never arrived intact.
+      rpcId = args.request.requestId;
+      pendingSteers([{ id: 'steer-item', rpcId, text: 'add a summary' }]);
+      throw new Error('socket hang up');
+    }
+    if (method === 'session/updateQueue') { pendingSteers([]); return { accepted: true }; }
+    return ordinary(method, args);
+  };
+  await expect(steer('add a summary')).rejects.toThrow();
+  if (outcome === 'claims it') {
+    event('user/message', { id: 'user-late', content: [{ type: 'text', text: 'add a summary' }], source: { kind: 'user', rpcId } });
+    answer('summarised', 1);
+  } else run.cancel();
+  await done;
+  // A claimed steer still shows in the transcript; a withdrawn one leaves native's inbox before the turn is cancelled.
+  expect({
+    echoes: events.filter(e => e.type === 'user_message_started').map(e => (e as { content?: string }).content),
+    removedBeforeCancel: peer.calls.findIndex(c => c.method === 'session/updateQueue') !== -1
+      && peer.calls.findIndex(c => c.method === 'session/updateQueue') < peer.calls.findIndex(c => c.method === 'session/cancel'),
+    terminal: events.at(-1)?.type,
+  }).toEqual(outcome === 'claims it'
+    ? { echoes: ['requested', 'add a summary'], removedBeforeCancel: false, terminal: 'turn_completed' }
+    : { echoes: ['requested'], removedBeforeCancel: true, terminal: 'cancelled' });
+});
+
+it('gives back a steer its turn ended without claiming, before any later Stop', async () => {
+  const { events, done } = await runningTurn();
+  const ordinary = peer.onCall;
+  peer.onCall = (method, args) => {
+    if (method === 'session/updateQueue') { pendingSteers([]); return { accepted: true }; }
+    return ordinary(method, args);
+  };
+  const steering = steer('and then deploy');
+  await until(() => steerCalls().length === 1);
+  pendingSteers([{ id: 'steer-item', rpcId: steerCalls()[0].args.request.requestId, text: 'and then deploy' }]);
+  // The model request fails, so native ends the turn before any step boundary claims the steer.
+  event('turn/end', { turn: nativeTurn, reason: { kind: 'error', error: { message: 'model unavailable' } } });
+  await done;
+  expect(events.at(-1)).toMatchObject({ type: 'execution_error' });
+  expect(await steering).toBe(false);
+  expect(peer.calls.filter(c => c.method === 'session/updateQueue')).toEqual([
+    { method: 'session/updateQueue', args: { request: { sessionId: 'root', itemId: 'steer-item', action: { kind: 'remove' } } } },
+  ]);
+  // Stop finds nothing left to remove for it.
+  session.cancel();
+  await until(() => session.getStatus() === 'idle');
+  expect(peer.calls.filter(c => c.method === 'session/updateQueue')).toHaveLength(1);
+});
+
+it('treats a removal native did not confirm as unknown, not as a steer it gave back', async () => {
+  const { run, done } = await runningTurn();
+  const ordinary = peer.onCall;
+  peer.onCall = (method, args) => method === 'session/updateQueue' ? { unexpected: true } : ordinary(method, args);
+  const stop = new AbortController();
+  const steering = steer('maybe not', stop.signal);
+  await until(() => steerCalls().length === 1);
+  pendingSteers([{ id: 'steer-item', rpcId: steerCalls()[0].args.request.requestId, text: 'maybe not' }]);
+  stop.abort();
+  await expect(steering).rejects.toThrow();
+  peer.onCall = ordinary;
+  answer('done', 1); await done;
+  expect(run.executionId).toEqual(expect.any(String));
+});
+
+it('never lets a Stop delayed by its steer withdrawal cancel a newer turn', async () => {
+  const { run, events, done } = await runningTurn();
+  const ordinary = peer.onCall;
+  let acknowledge!: () => void;
+  const acknowledged = new Promise<void>(resolve => { acknowledge = resolve; });
+  peer.onCall = async (method, args) => {
+    // Native removes the steer at once, but its acknowledgement arrives late.
+    if (method === 'session/updateQueue') { pendingSteers([]); await acknowledged; return { accepted: true }; }
+    return ordinary(method, args);
+  };
+  try {
+  const steering = steer('wait');
+  await until(() => steerCalls().length === 1);
+  pendingSteers([{ id: 'steer-item', rpcId: steerCalls()[0].args.request.requestId, text: 'wait' }]);
+  run.cancel();
+  await until(() => peer.calls.some(c => c.method === 'session/updateQueue'));
+  // Meanwhile the stopped turn finishes on its own and the user sends again.
+  answer('finished anyway', 1); await done;
+  expect(events.at(-1)?.type).toMatch(/turn_completed|cancelled/);
+  const next = session.execute(request('next'));
+  const nextEvents: ProviderExecutionEvent[] = [];
+  const nextDone = collect(next.events, nextEvents);
+  await until(() => peer.calls.some(c => c.method === 'session/prompt' && c.args.request.requestId === next.executionId));
+  begin(next.executionId);
+  await until(() => nextEvents.some(e => e.type === 'turn_started'));
+  acknowledge();
+  expect(await steering).toBe(false);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  expect(peer.calls.some(c => c.method === 'session/cancel')).toBe(false);
+  answer('next answer'); await nextDone;
+  expect(nextEvents.at(-1)?.type).toBe('turn_completed');
+  } finally { acknowledge(); }
+});
+
+it('withdraws an abandoned steer even when its admission acknowledgement failed', async () => {
+  const { done } = await runningTurn();
+  const ordinary = peer.onCall;
+  const stop = new AbortController();
+  peer.onCall = (method, args) => {
+    if (method === 'session/prompt' && args.request.mode === 'steer') {
+      // Native queued it; the caller gave up while the acknowledgement was pending, and then the acknowledgement failed.
+      pendingSteers([{ id: 'steer-item', rpcId: args.request.requestId, text: 'never mind' }]);
+      stop.abort();
+      throw new Error('socket hang up');
+    }
+    if (method === 'session/updateQueue') { pendingSteers([]); return { accepted: true }; }
+    return ordinary(method, args);
+  };
+  // Unknown or, once native confirms the removal first, definitely unsent: never accepted.
+  expect([false, 'unknown']).toContain(await steer('never mind', stop.signal).catch(() => 'unknown'));
+  await until(() => peer.calls.some(c => c.method === 'session/updateQueue'));
+  expect(peer.calls.find(c => c.method === 'session/updateQueue')?.args.request).toEqual({ sessionId: 'root', itemId: 'steer-item', action: { kind: 'remove' } });
+  peer.onCall = ordinary;
+  answer('carried on', 1); await done;
+});
+
+it('confirms a steer native ran as its own turn after the requested turn ended', async () => {
+  const { run, events, done } = await runningTurn();
+  const steering = steer('one more thing');
+  await until(() => steerCalls().length === 1);
+  const rpcId = steerCalls()[0].args.request.requestId;
+  // The turn ended before native's step boundary: native starts a new turn with the steered input.
+  answer('done', 1); await done;
+  expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
+  nativeTurn++; event('turn/start', { turn: nativeTurn });
+  event('user/message', { id: 'user-late', content: [{ type: 'text', text: 'one more thing' }], source: { kind: 'user', rpcId } });
+  expect(await steering).toBe(true);
+  answer('late answer');
+  await until(() => sessionEvents.some(e => e.type === 'background_turn_completed'));
+  expect(events.filter(e => e.type === 'user_message_started')).toHaveLength(1);
+  expect(run.executionId).not.toBe(rpcId);
+});
+
+it('fails a pending steer as unknown when the Host is lost before native claims it', async () => {
+  await runningTurn();
+  const steering = steer('mid-flight');
+  await until(() => steerCalls().length === 1);
+  lifecycle.exit();
+  await expect(steering).rejects.toThrow();
 });
 
 it('admits the next request sent from the previous request\'s terminal event', async () => {

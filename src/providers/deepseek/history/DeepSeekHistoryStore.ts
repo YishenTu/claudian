@@ -17,6 +17,8 @@ export async function loadDeepSeekHistory(client: DeepSeekReader, sessionId: str
   let turnStart = 0;
   let output: DeepSeekOutput | undefined;
   let automatic = true;
+  // Output events belong to the record being replayed; a steer starts a new reply mid-turn.
+  let current: DeepSeekRecord | undefined;
   const pendingNotices: Array<{ type: 'task_notification'; content: string }> = [];
   const tools = new Map<string, ToolCallInfo>();
   const ensureAssistant = (record: DeepSeekRecord): ChatMessage => {
@@ -29,19 +31,22 @@ export async function loadDeepSeekHistory(client: DeepSeekReader, sessionId: str
     return assistant;
   };
   for (const record of records) {
+    current = record;
     // Replacement copies change model context; the native chat retains append-origin history.
     if (record.surfaceOp !== undefined && record.surfaceOp !== 'append') continue;
     // Failed attempts are native diagnostics, not committed assistant messages.
     if (record.type === 'assistant/attempt') continue;
     if (record.type === 'turn/start') {
       assistant = undefined; automatic = true; turnStart = record.time; pendingNotices.length = 0;
-      output = new DeepSeekOutput(event => applyOutput(ensureAssistant(record), tools, event));
+      output = new DeepSeekOutput(event => applyOutput(ensureAssistant(current!), tools, event));
       continue;
     }
     if (record.type === 'user/message') {
       const source = isRecord(record.data.source) ? record.data.source : {};
       if (source.kind === 'user') {
         automatic = false;
+        // User input claimed mid-turn is a steer: what follows is a new reply, as live steering renders it.
+        assistant = undefined;
         const images = await readDeepSeekImages(client, sessionId, record.data.content);
         messages.push({ id: `deepseek:${sessionId}:user:${record.seq}`, role: 'user', timestamp: record.time,
           content: deepseekText(record.data.content), userMessageId: typeof record.data.id === 'string' ? record.data.id : undefined,
@@ -67,7 +72,7 @@ export async function loadDeepSeekHistory(client: DeepSeekReader, sessionId: str
       continue;
     }
     if (record.type.startsWith('assistant/') || record.type.startsWith('tool/') || record.type === 'compaction/end' || record.type === 'request/context') {
-      output ??= new DeepSeekOutput(event => applyOutput(ensureAssistant(record), tools, event));
+      output ??= new DeepSeekOutput(event => applyOutput(ensureAssistant(current!), tools, event));
       output.record(await materializeDeepSeekToolImages(client, sessionId, record));
     }
   }

@@ -51,6 +51,22 @@ interface Turn {
   nativeUserId?: string;
 }
 
+/**
+ * Input steered into the running requested turn. Native takes it into its next-step inbox; it joins the turn only when a
+ * step boundary claims it, so the claim, not the acknowledgement, is acceptance.
+ */
+interface Steer {
+  readonly id: string;
+  readonly owner: RequestedRunChannel;
+  /** The caller's answer; an unknown native disposition rejects it while tracking continues. */
+  readonly answered: Promise<boolean>;
+  answer(accepted: boolean | Error): void;
+  /** Resolves once native disposition is known (claimed or removed) or the binding ends. */
+  readonly released: Promise<void>;
+  release(): void;
+  withdrawal?: Promise<void>;
+}
+
 class AdmissionError extends Error {}
 
 // Bounds how long a native interaction waits for its owner and call details.
@@ -88,6 +104,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
   private commands?: SlashCommand[];
   private permission?: DeepSeekPermission;
   private followQueue: Promise<void> = Promise.resolve();
+  private readonly steers = new Map<string, Steer>();
   /** Native generation holding this session's in-memory identity; unset for sessions native stores. */
   private ephemeralGeneration?: number;
   private readonly subagents = new DeepSeekSubagents(subagent => this.snapshots.emit({ type: 'subagent_updated', subagent }));
@@ -151,6 +168,59 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       this.publish();
     });
     this.stopTask = task; this.publish();
+  }
+
+  /**
+   * Steers input into the running requested turn. True once native claims it into that turn, or into its own turn when
+   * the requested one ended first; false when it was never sent or native refused or gave it back.
+   */
+  async steer(input: ProviderExecutionRequest): Promise<boolean> {
+    const requested = this.requested;
+    const lease = this.lease;
+    // Native would start a new turn for a steer that finds none running, so only a claimed, live request is steerable.
+    if (input.signal.aborted || !requested || requested.command || requested.channel.isTerminal
+      || requested.channel.isCancellationRequested || this.turn?.owner !== requested.channel || this.stopTask || this.detaching
+      || !lease || !this.nativeId) return false;
+    const steer = this.trackSteer(requested.channel);
+    // The caller may give up at any point until native settles it, whatever the acknowledgement says.
+    const abandon = (): void => { void this.withdrawSteer(steer); };
+    input.signal.addEventListener('abort', abandon, { once: true });
+    void steer.released.then(() => input.signal.removeEventListener('abort', abandon));
+    try {
+      const response = await lease.client.call('session/prompt', { request: {
+        sessionId: this.nativeId, requestId: steer.id, mode: 'steer', content: encodeInput(input),
+      } });
+      if (!isRecord(response) || response.accepted !== true) throw new Error('DeepSeek did not acknowledge the steered message.');
+    } catch (error) {
+      // Only a native verdict proves the input never reached the inbox. Otherwise it may still be claimed or need
+      // withdrawing, so tracking outlives the caller's unknown answer.
+      if (error instanceof DeepSeekRemoteError && error.code !== undefined) { steer.answer(false); steer.release(); }
+      else steer.answer(error instanceof Error ? error : new Error('DeepSeek steering failed.'));
+    }
+    if (input.signal.aborted || requested.channel.isTerminal || requested.channel.isCancellationRequested) void this.withdrawSteer(steer);
+    return steer.answered;
+  }
+
+  /** Tracks one steer from its send until native claims or removes it, or the binding ends. */
+  private trackSteer(owner: RequestedRunChannel): Steer {
+    let answer!: (accepted: boolean | Error) => void;
+    let answeredOnce = false;
+    const answered = new Promise<boolean>((resolve, reject) => {
+      answer = accepted => {
+        if (answeredOnce) return;
+        answeredOnce = true;
+        if (accepted instanceof Error) reject(accepted); else resolve(accepted);
+      };
+    });
+    // The answer can precede the acknowledgement; callers observe it through the returned promise.
+    answered.catch(() => undefined);
+    let release!: () => void;
+    const released = new Promise<void>(resolve => { release = resolve; });
+    const steer: Steer = { id: `steer-${randomUUID()}`, owner, answered, answer, released, release: () => { this.steers.delete(steer.id); release(); } };
+    this.steers.set(steer.id, steer);
+    // A turn that ends without claiming a steer gives it back.
+    void owner.terminated.then(() => { if (this.steers.has(steer.id)) void this.withdrawSteer(steer); });
+    return steer;
   }
 
   dispose(): Promise<void> {
@@ -447,11 +517,20 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     if (event.type === 'user/message') {
       const source = isRecord(data.source) ? data.source : {};
       const requested = this.requested;
-      if (source.kind === 'user' && requested && requested.channel.executionId === source.rpcId) {
+      const steer = source.kind === 'user' && typeof source.rpcId === 'string' ? this.steers.get(source.rpcId) : undefined;
+      if (steer) {
+        // A steer claimed into its own turn is shown with that turn; native ran it either way.
+        if (turn.owner === steer.owner && !steer.owner.isTerminal) {
+          steer.owner.emit({ type: 'user_message_started', content: deepseekText(data.content), nativeUserMessageId: typeof data.id === 'string' ? data.id : undefined });
+        }
+        steer.answer(true); steer.release();
+      } else if (source.kind === 'user' && requested && requested.channel.executionId === source.rpcId) {
         if (turn.owner && turn.owner !== requested.channel) throw new Error('DeepSeek request was claimed after output ownership was assigned.');
         requested.delivery = 'claimed'; turn.owner = requested.channel;
         turn.nativeUserId = typeof data.id === 'string' ? data.id : undefined;
         turn.owner.emit({ type: 'turn_started', accepted: true, nativeTurnId: String(turn.native), nativeUserMessageId: turn.nativeUserId });
+        // Core treats the first echo as the submitted input; later ones are steers.
+        turn.owner.emit({ type: 'user_message_started', content: deepseekText(data.content), nativeUserMessageId: turn.nativeUserId });
         turn.owner.emit({ type: 'session_state_changed', snapshot: this.getSnapshot() });
         this.flush(turn);
       } else if (source.kind === 'tool-jobs' || source.kind === 'subagent-settled') {
@@ -684,10 +763,48 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
         requested.cancellation = undefined; return;
       }
       if (this.turn?.owner !== requested.channel) throw new Error('DeepSeek could not reconcile cancellation ownership.');
+      // Cancel keeps native's inbox, so unclaimed steers would prefix the next prompt; they leave it first.
+      await Promise.all([...this.steers.values()].filter(steer => steer.owner === requested.channel).map(steer => this.withdrawSteer(steer)));
+      // The withdrawal can outlast the stopped turn; a later turn is not this Stop's to cancel.
+      if (requested.channel.isTerminal || this.requested !== requested || this.turn?.owner !== requested.channel) return;
       await this.lease!.client.call('session/cancel', { request: { sessionId: this.nativeId } });
       await observer.waitUntil(() => requested.channel.isTerminal, 10_000, this.lifetime.signal);
     })().catch(error => { if (this.requested === requested && !requested.channel.isTerminal) return this.fail(error, 'transport'); });
     requested.cancellation = operation;
+  }
+
+  /**
+   * The single withdrawal of an unclaimed steer, shared by its caller, Stop and its ended turn. Only native's confirmed
+   * removal gives it back; anything unconfirmed answers unknown and keeps it tracked for a later claim or withdrawal.
+   */
+  private withdrawSteer(steer: Steer): Promise<void> {
+    const tracked = (): boolean => this.steers.get(steer.id) === steer;
+    if (!tracked()) return Promise.resolve();
+    steer.withdrawal ??= (async () => {
+      const observer = this.observer;
+      const lease = this.lease;
+      if (!observer || !lease) throw new Error('DeepSeek connection ended before the steered message was confirmed.');
+      const queued = () => observer.queuedItems(this.nativeId!).find(item => item.source?.rpcId === steer.id);
+      await Promise.race([steer.released, observer.waitUntil(() => !tracked() || !!queued(), 10_000, this.lifetime.signal)]);
+      if (!tracked()) return;
+      const item = queued();
+      if (!item) throw new Error('DeepSeek could not find the steered message to withdraw.');
+      try {
+        const removal = await lease.client.call('session/updateQueue', { request: { sessionId: this.nativeId, itemId: item.id, action: { kind: 'remove' } } });
+        if (!isRecord(removal) || removal.accepted !== true) throw new Error('DeepSeek did not confirm removing the steered message.');
+        steer.answer(false); steer.release();
+      } catch (error) {
+        if (!(error instanceof DeepSeekRemoteError) || error.code !== 'session/queue-item-not-found') throw error;
+        // Native claimed it first; its echo releases the steer.
+        await Promise.race([steer.released, new Promise<void>(resolve => window.setTimeout(resolve, 10_000))]);
+        if (tracked()) throw new Error('DeepSeek steered message was neither withdrawn nor claimed.', { cause: error });
+      }
+    })().catch(error => {
+      steer.answer(error instanceof Error ? error : new Error('DeepSeek could not withdraw the steered message.'));
+      // A later Stop or claim may still settle it.
+      steer.withdrawal = undefined;
+    });
+    return steer.withdrawal;
   }
 
   private async stopBackground(signal: AbortSignal): Promise<void> {
@@ -703,6 +820,8 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
           ? { childSessionId: agent.id, parentSessionId: agent.parent, mode: 'continuable' }
           : { request: { sessionId: agent.id } }, options);
         for (const item of observer.queuedItems(agent.id)) {
+          const steer = agent.id === this.nativeId && item.source?.rpcId ? this.steers.get(item.source.rpcId) : undefined;
+          if (steer) { await this.withdrawSteer(steer); continue; }
           try { await this.lease!.client.call('session/updateQueue', { request: { sessionId: agent.id, itemId: item.id, action: { kind: 'remove' } } }, options); }
           catch (error) { if (!(error instanceof DeepSeekRemoteError) || error.code !== 'session/queue-item-not-found') throw error; }
         }
@@ -758,6 +877,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
 
   private unbind(): void {
     ++this.generation;
+    for (const steer of [...this.steers.values()]) { steer.answer(new Error('DeepSeek connection ended before the steered message was confirmed.')); steer.release(); }
     if (this.turn?.owner === 'background') this.background(this.turn, { type: 'background_turn_completed', reason: 'provider-ended' });
     for (const turn of this.childTurns.values()) {
       if (turn.interactionScope) this.snapshots.notify({ type: 'background_turn_completed', reason: 'provider-ended',
