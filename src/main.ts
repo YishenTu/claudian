@@ -1,6 +1,7 @@
 import { SessionSnapshotStore } from './app/conversations/SessionSnapshotStore';
 import { ConversationNamingAPIHost } from './app/integration/ConversationNamingAPIHost';
 import { StartupProfiler } from './core/performance/StartupProfiler';
+import { ConversationNamingFeature } from './features/conversation-naming/ConversationNamingFeature';
 // Must run before any SDK imports to patch Electron/Node.js realm incompatibility
 import { patchSetMaxListenersForElectron } from './utils/electronCompat';
 patchSetMaxListenersForElectron();
@@ -49,6 +50,7 @@ export default class ClaudianPlugin extends Plugin {
   readonly executionLifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   providerHost!: ClaudianProviderHost;
   namingApi!: ConversationNamingAPIHost;
+  private namingFeature: ConversationNamingFeature | null = null;
   private featureHost!: ClaudianFeatureHost;
   private chatHost!: ClaudianChatFeatureHost;
   /** Live committed settings, following Obsidian's plugin convention. */
@@ -115,6 +117,8 @@ export default class ClaudianPlugin extends Plugin {
         void this.views.activateView();
       });
 
+      this.namingFeature = new ConversationNamingFeature(this, this.chatHost, this.namingApi);
+
       this.addCommand({
         id: 'open-view',
         name: 'Open chat view',
@@ -171,6 +175,7 @@ export default class ClaudianPlugin extends Plugin {
 
   onunload(): void {
     this.isUnloading = true;
+    this.namingFeature?.dispose();
     this.namingApi?.dispose();
     // Return any zen presentation to its view before asynchronous shutdown.
     this.zenMode.dispose();
@@ -197,7 +202,10 @@ export default class ClaudianPlugin extends Plugin {
       deferNonRestoredSessionMetadata: true,
       isChatView: isClaudianView,
       isUnloading: () => this.isUnloading,
-      publishCommittedSettings: async (settings, previous) => this.chatViews.publishSettings(settings, previous),
+      publishCommittedSettings: async (settings, previous) => {
+        this.chatViews.publishSettings(settings, previous);
+        this.namingFeature?.syncEnabled();
+      },
       // No chat view can hold tabs before loading completes and assigns the lifecycle.
       onConversationDeleted: conversationId => this.conversationLifecycle.resetDeletedConversationTabs(conversationId),
       onConversationListChanged: () => this.chatViews.notifyConversationListChanged(),

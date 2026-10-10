@@ -521,5 +521,33 @@
         "summary": "已移动 {moved},已转换 {converted},已移到回收站 {trashed},已移除 {unlinked} 个链接。"
       }
     }
+  },
+  "naming": {
+    "settingName": "智能会话命名",
+    "settingDescription": "生成历史长标题与语义短标签，默认关闭。使用已配置的标题模型；请先禁用其他命名伴生插件。",
+    "menu": "智能命名",
+    "both": "重新生成长短标题",
+    "long": "重新生成长标题",
+    "short": "重新生成短标签",
+    "editShort": "编辑短标签",
+    "shortLabel": "Tab 短标签",
+    "save": "保存",
+    "invalidShort": "请输入 1–32 个 Unicode 字符。",
+    "confirmTitle": "确认命名操作",
+    "cancel": "取消",
+    "confirm": "确认",
+    "failed": "命名失败，已保留原有标题。",
+    "ownerConflict": "其他命名插件已接入，请先禁用再启用内置命名。",
+    "enableHint": "请先在 Claudian 设置中启用智能会话命名。",
+    "batch": "补全缺失标签：",
+    "all": "全部历史",
+    "days": "天",
+    "noConversation": "当前没有可命名的会话。",
+    "overwriteWarning": "替换所选已有标题？生成期间的手动修改将保留。",
+    "updated": "会话命名已更新。",
+    "conflict": "生成期间标题被修改，已保留当前值。",
+    "notUpdated": "未更新任何标题。",
+    "batchWarning": "仅补全缺失短标签，不覆盖已有短标签或长标题。候选数量：",
+    "batchResult": "批量完成（更新 / 失败 / 跳过）："
   }
 }

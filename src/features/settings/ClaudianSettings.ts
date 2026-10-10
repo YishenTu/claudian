@@ -393,6 +393,15 @@ export class ClaudianSettingTab extends PluginSettingTab {
     new Setting(container).setName(t('settings.conversations')).setHeading();
 
     new Setting(container)
+      .setName(t('naming.settingName'))
+      .setDesc(t('naming.settingDescription'))
+      .addToggle(toggle => toggle.setValue(this.host.settings.enableIntelligentConversationNaming)
+        .onChange(async enabled => {
+          await this.host.mutateSettings(settings => { settings.enableIntelligentConversationNaming = enabled; });
+          this.update();
+        }));
+
+    new Setting(container)
       .setName(t('settings.autoTitle.name'))
       .setDesc(t('settings.autoTitle.desc'))
       .addToggle((toggle) =>

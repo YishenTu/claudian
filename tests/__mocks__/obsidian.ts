@@ -1,3 +1,5 @@
+import { createMockEl } from '@test/helpers/MockElement';
+
 // Mock for Obsidian API
 
 // Match Obsidian's explicit load/unload lifecycle; DOM removal alone does not unload children.
@@ -53,7 +55,7 @@ export class Plugin {
     this.manifest = manifest;
   }
 
-  addRibbonIcon = jest.fn();
+  addRibbonIcon = jest.fn().mockImplementation(() => typeof document === 'undefined' ? createMockEl() : document.createElement('div'));
   addCommand = jest.fn();
   addSettingTab = jest.fn();
   registerView = jest.fn();

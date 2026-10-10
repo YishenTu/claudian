@@ -131,6 +131,8 @@ export interface ClaudianSettings {
   effortLevel: string;
   serviceTier: string;
   enableAutoTitleGeneration: boolean;
+  /** Optional long/short semantic naming consumer; existing title behavior remains the default. */
+  enableIntelligentConversationNaming: boolean;
   titleGenerationLocale: string;
   titleGenerationModel: string;
 
