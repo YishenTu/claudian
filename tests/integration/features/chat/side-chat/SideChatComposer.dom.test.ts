@@ -8,11 +8,118 @@ import {
 } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
+import { App, Component } from 'obsidian';
 
+import { RuntimeCommandCatalog } from '@/core/providers/commands/RuntimeCommandCatalog';
+import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import type { Conversation } from '@/core/types';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { createTabPlacementPort } from '@/features/chat/tabs/runtime/TabRuntimePorts';
+import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
+import { syncComposerDropdownForProvider } from '@/features/chat/tabs/tabProviderUI';
+import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import { ChatPresentationPlacement } from '@/features/chat/view/ChatPresentationPlacement';
+import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 afterEach(releaseSideChatHarnesses);
+
+it('selects provider compact in an idle child and sends only on a separate Enter', async () => {
+  const originalResizeObserver = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
+  const harness = createHarness();
+  const app = new App();
+  Object.assign(app.vault.adapter, { basePath: '/vault' });
+  Object.assign(app.vault, { on: () => ({}), offref: () => undefined });
+  const conversation = {
+    id: 'conversation-1', providerId: 'claude', selectedModel: 'claude-sonnet-4-5',
+    sessionId: 'main-session', messages: harness.tab.state.messages,
+  } as unknown as Conversation;
+  const plugin = {
+    ...(harness.plugin as ChatFeatureHost), app,
+    getCommittedSettings: () => plugin.settings,
+    settings: {
+      model: 'claude-sonnet-4-5', permissionMode: 'normal', requireCommandOrControlEnterToSend: false,
+      keyboardNavigation: { focusInputKey: 'i', scrollUpKey: 'w', scrollDownKey: 's' },
+      providerConfigs: { claude: { enabled: true } },
+    },
+    getActiveEnvironmentVariables: () => '',
+    getConversationSummary: () => conversation,
+    getConversationSync: () => conversation,
+    getConversationList: () => [conversation],
+  } as unknown as ChatFeatureHost;
+  const catalog = new RuntimeCommandCatalog({
+    dropdownConfig: {
+      providerId: 'claude', triggerChars: ['/'], builtInPrefix: '/', skillPrefix: '/', commandPrefix: '/',
+    },
+    projectEntry: command => ({
+      ...command, providerId: 'claude', kind: 'command', scope: 'runtime', source: 'sdk',
+      displayPrefix: '/', insertPrefix: '/', isEditable: false, isDeletable: false,
+    }),
+  });
+  catalog.setCommandSnapshot([{ id: 'sdk-compact', name: 'compact', content: '', description: 'Compact conversation history' }]);
+  ProviderWorkspaceRegistry.setServices('claude', { commandCatalog: catalog });
+  const tab = await createTabRuntime({
+    plugin, conversation, component: new Component(), containerEl: document.body.createDiv(),
+    mentionDataProvider: new VaultMentionDataProvider(app),
+    getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
+  });
+  try {
+    tab.state.messages = [...conversation.messages];
+    syncComposerDropdownForProvider(tab, plugin);
+    const send = jest.spyOn(tab.controllers.inputController, 'sendMessage');
+    const input = tab.dom.inputEl;
+    const enterText = async (text: string) => {
+      input.focus();
+      input.selectionStart = 0;
+      input.selectionEnd = input.value.length;
+      const textbox = within(input).getByRole('textbox');
+      fireEvent.paste(textbox, { clipboardData: { getData: () => text, files: [] } });
+      await Promise.resolve();
+      return textbox;
+    };
+    await enterText('/');
+    await within(tab.dom.inputContainerEl).findByRole('option', { name: /^\/clear\s/ });
+    expect(within(tab.dom.inputContainerEl).getByRole('option', { name: /^\/side\s/ })).toBeDefined();
+    fireEvent.keyDown(within(input).getByRole('textbox'), { key: 'Escape' });
+    input.value = '';
+
+    const side = tab.controllers.sideChatController;
+    const started = side.handleCommandSubmission('Explore B', []);
+    await waitFor(() => expect(harness.backend.sessions).toHaveLength(1));
+    const child = harness.backend.latest;
+    await waitFor(() => expect(child.requests).toHaveLength(1));
+    child.establishChild('child-session');
+    child.complete();
+    await started;
+    expect(side.destination).toBe('side');
+    expect(child.getStatus()).toBe('idle');
+
+    const textbox = await enterText('/');
+    const compact = await within(tab.dom.inputContainerEl).findByRole('option', { name: /^\/compact\s/ });
+    for (const name of [/^\/clear\s/, /^\/new(?:\s|$)/, /^\/side\s/]) {
+      expect(within(tab.dom.inputContainerEl).queryByRole('option', { name })).toBeNull();
+    }
+    fireEvent.click(compact);
+    expect(input.value).toBe('/compact ');
+    expect(tab.ui.composerDropdown.isVisible()).toBe(false);
+    await within(input).findByRole('img', { name: 'Command: /compact' });
+    expect(send).not.toHaveBeenCalled();
+    expect(child.requests).toHaveLength(1);
+
+    fireEvent.keyDown(textbox, { key: 'Enter', code: 'Enter' });
+    await waitFor(() => expect(child.requests).toHaveLength(2));
+    expect(child.requests[1].input).toEqual([{ type: 'text', text: '/compact' }]);
+    expect(harness.backend.sessions).toEqual([child]);
+    expect(tab.state.messages).toEqual(conversation.messages);
+    expect(send).toHaveBeenCalledTimes(1);
+    child.complete();
+    await send.mock.results[0].value;
+  } finally {
+    await destroyTab(tab);
+    ProviderWorkspaceRegistry.setServices('claude', undefined);
+    globalThis.ResizeObserver = originalResizeObserver;
+  }
+});
 
 it('previews the side colour for a complete command token only', () => {
   const harness = createHarness();

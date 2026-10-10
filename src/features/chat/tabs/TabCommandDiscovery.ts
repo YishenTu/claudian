@@ -149,7 +149,7 @@ export class TabCommandDiscovery {
     const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
     if (!catalog) return { status: 'empty' };
     const entries = await catalog.listDropdownEntries({
-      includeBuiltIns: false,
+      includeBuiltIns: true,
       signal,
       allowCachedCommandSnapshot: discovery.commandSnapshot !== undefined,
       ...(discovery.commandSnapshot !== undefined

@@ -8,12 +8,14 @@ import { MarkdownRenderer, Notice } from 'obsidian';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderCommandCatalog } from '@/core/providers/commands/ProviderCommandCatalog';
+import { ProviderCommandDiscoveryStore } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { ProviderRegistration } from '@/core/providers/types';
 import { InlineEditSessionOwner } from '@/features/inline-edit/InlineEditSessionOwner';
 import { InlineEditModal, InlineEditSession } from '@/features/inline-edit/ui/InlineEditModal';
+import { CodexCommandCatalog } from '@/providers/codex/commands/CodexCommandCatalog';
 
 Object.assign(HTMLElement.prototype, {
   empty(this: HTMLElement) { this.replaceChildren(); },
@@ -72,8 +74,8 @@ function createHarness() {
   };
   const context = { mode: 'selection' as const, selectedText: 'hello' };
   const settled = jest.fn();
-  const createSession = () => new InlineEditSession(
-    app, plugin, plugin, editorView, editor, context, 'note.md', settled, { providerId: 'claude' },
+  const createSession = (providerId: 'claude' | 'codex' = 'claude') => new InlineEditSession(
+    app, plugin, plugin, editorView, editor, context, 'note.md', settled, { providerId },
   );
   const createModal = () => new InlineEditModal(app, plugin, plugin, editor, { editor } as any, context, 'note.md', owner);
   cleanups.push(async () => {
@@ -266,16 +268,61 @@ describe('Vault paths that resemble environment variables', () => {
   });
 });
 
+it('selects a Codex skill in the real widget while excluding provider compact', async () => {
+  const h = createHarness();
+  const createSession = jest.fn();
+  ProviderRegistry.register('codex', {
+    capabilities: { supportsEphemeralSessions: true },
+    createExecutionBackend: () => ({ providerId: 'codex', createSession }),
+    isEnabled: () => true,
+  } as unknown as ProviderRegistration);
+  const load = jest.spyOn(ProviderCommandDiscoveryStore.prototype, 'load');
+  cleanups.push(async () => { load.mockRestore(); });
+  const listSkills = jest.fn().mockResolvedValue([
+    { name: 'review-notes', path: '/skills/review-notes/SKILL.md', scope: 'user', enabled: true },
+  ]);
+  ProviderWorkspaceRegistry.setServices('codex', {
+    commandCatalog: new CodexCommandCatalog({ listSkills, invalidate() {} }),
+  });
+  const session = h.createSession('codex');
+  session.show();
+  input().focus();
+  typeInstruction('$');
+  const option = await screen.findByRole('option', { name: '$review-notes' });
+  expect(await axe(option)).toHaveNoViolations();
+  fireEvent.click(option);
+  expect(input().value).toBe('$review-notes ');
+  expect(input().getAttribute('aria-expanded')).toBe('false');
+  expect(createSession).not.toHaveBeenCalled();
+
+  typeInstruction('/');
+  await waitFor(() => expect(listSkills).toHaveBeenCalledTimes(2));
+  await load.mock.results.at(-1)!.value;
+  expect(screen.queryByRole('option', { name: /^\/compact\s/ })).toBeNull();
+  expect(screen.getByRole('option', { name: 'No matches' })).toBeDefined();
+  expect(input().value).toBe('/');
+  // Reopening the supported trigger proves the current widget is still live.
+  typeInstruction('$');
+  await screen.findByRole('option', { name: '$review-notes' });
+  expect(createSession).not.toHaveBeenCalled();
+  session.reject();
+});
+
 it('uses provider-scoped hidden commands and cancels widget-owned discovery on replacement', async () => {
   const h = createHarness();
   const signals: AbortSignal[] = [];
+  const builtInRequests: boolean[] = [];
   const entries = ['analyze', 'visible'].map(name => ({
     name, id: name, providerId: 'claude', kind: 'command', scope: 'runtime', source: 'user',
     content: '', displayPrefix: '/', insertPrefix: '/', isEditable: false, isDeletable: false,
   } satisfies ProviderCommandEntry));
   const catalog: ProviderCommandCatalog = {
     getDropdownConfig: () => ({ providerId: 'claude', triggerChars: ['/'], builtInPrefix: '/', skillPrefix: '/', commandPrefix: '/' }),
-    async listDropdownEntries({ signal }) { signals.push(signal!); return entries; },
+    async listDropdownEntries({ includeBuiltIns, signal }) {
+      builtInRequests.push(includeBuiltIns);
+      signals.push(signal!);
+      return entries;
+    },
     setCommandSnapshot: () => {},
     refresh: async () => {},
   };
@@ -286,6 +333,7 @@ it('uses provider-scoped hidden commands and cancels widget-owned discovery on r
   typeInstruction('/');
   await screen.findByRole('option', { name: '/visible' });
   expect(screen.queryByRole('option', { name: '/analyze' })).toBeNull();
+  expect(builtInRequests).toEqual([false]);
   h.changeSelection();
   expect(screen.queryByRole('listbox')).toBeNull();
   catalog.listDropdownEntries = ({ signal }) => new Promise(resolve => {

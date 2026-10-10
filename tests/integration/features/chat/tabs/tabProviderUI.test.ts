@@ -1,9 +1,13 @@
 import '@/providers';
 
+import type { ProviderCommandDiscoverySource } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
+import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
+import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { ClaudianSettings, UsageInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import { refreshTabContextUsage } from '@/features/chat/tabs/tabProviderUI';
+import { refreshTabContextUsage, syncComposerDropdownForProvider } from '@/features/chat/tabs/tabProviderUI';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
+import { CodexCommandCatalog } from '@/providers/codex/commands/CodexCommandCatalog';
 
 function createTab(model: string, customContextLimits: Record<string, number>, usageOverrides: Partial<UsageInfo> = {}) {
   const usage: UsageInfo = {
@@ -34,6 +38,41 @@ function createTab(model: string, customContextLimits: Record<string, number>, u
   } as ChatFeatureHost;
   return { tab, plugin, update };
 }
+
+it('discovers provider-owned compact commands through the Main Chat fallback catalog', async () => {
+  const catalog = new CodexCommandCatalog({
+    listSkills: jest.fn().mockResolvedValue([]),
+    invalidate: jest.fn(),
+  });
+  const getCatalog = jest.spyOn(ProviderWorkspaceRegistry, 'getCommandCatalog').mockReturnValue(catalog);
+  let discovery: ProviderCommandDiscoverySource<ProviderCommandEntry> | undefined;
+  const tab = {
+    conversationId: null,
+    providerId: 'codex',
+    providerCatalogResolver: () => null,
+    ui: {
+      composerDropdown: {
+        setProviderId: jest.fn(),
+        setHiddenCommands: jest.fn(),
+        setProviderCatalog: (_config: unknown, source: ProviderCommandDiscoverySource<ProviderCommandEntry>) => {
+          discovery = source;
+        },
+      },
+    },
+  } as unknown as AssembledTabRuntime;
+  const plugin = { settings: { hiddenCommands: [] } } as unknown as ChatFeatureHost;
+
+  try {
+    syncComposerDropdownForProvider(tab, plugin);
+    expect(discovery).toBeDefined();
+    await expect(discovery!.load()).resolves.toMatchObject({
+      status: 'ready',
+      items: [{ name: 'compact', displayPrefix: '/', insertPrefix: '/' }],
+    });
+  } finally {
+    getCatalog.mockRestore();
+  }
+});
 
 describe('tab context usage projection', () => {
   it.each<{ model: string; limits: Record<string, number> }>([
