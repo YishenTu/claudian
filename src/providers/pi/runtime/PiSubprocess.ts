@@ -11,6 +11,8 @@ import { ManagedStdioProcess } from '@/core/process/ManagedStdioProcess';
 
 const STDERR_BUFFER_LIMIT = 8_000;
 const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
+const PI_MANAGED_LAUNCHER = 'pi-launcher.js';
+const PI_MANAGED_RELEASE_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
 
 export interface PiSubprocessLaunchSpec {
   args: string[];
@@ -122,11 +124,12 @@ export function resolvePiProcessSpec(
   }
 
   let nodeEntrypoint: string | null = null;
-  if (command.toLowerCase().endsWith('.cmd')) {
+  if (isWindowsPiLauncher(command)) {
     nodeEntrypoint = resolveInstalledPiBin(command);
     if (!nodeEntrypoint) {
       throw new Error(
-        `The Pi Windows launcher could not be resolved to its Node.js entry point: ${command}`,
+        `The Pi Windows launcher could not be resolved to its Node.js entry point: ${command}. `
+          + `Set the Pi CLI path to the ${PI_PACKAGE_NAME} package's dist/bundle/cli.js instead.`,
       );
     }
   } else if (cliPathRequiresNode(command)) {
@@ -145,11 +148,22 @@ export function resolvePiProcessSpec(
   };
 }
 
-function resolveInstalledPiBin(command: string): string | null {
-  if (path.basename(command).toLowerCase() !== 'pi.cmd') return null;
+function isWindowsPiLauncher(command: string): boolean {
+  const extension = path.extname(command).toLowerCase();
+  return extension === '.cmd' || extension === '.ps1';
+}
 
-  const shimTarget = readWindowsCommandShimTarget(command);
-  return shimTarget ? resolveOwningPiPackageBin(shimTarget) : null;
+function resolveInstalledPiBin(command: string): string | null {
+  const basename = path.basename(command).toLowerCase();
+  let shimTarget: string | null = null;
+  if (basename === 'pi.cmd') {
+    shimTarget = readWindowsCommandShimTarget(command);
+  } else if (basename === 'pi.ps1') {
+    shimTarget = readManagedPowerShellLauncherTarget(command);
+  }
+  if (!shimTarget) return null;
+
+  return resolveOwningPiPackageBin(shimTarget) ?? resolveManagedPiReleaseBin(shimTarget);
 }
 
 function readWindowsCommandShimTarget(command: string): string | null {
@@ -157,7 +171,7 @@ function readWindowsCommandShimTarget(command: string): string | null {
     const contents = fs.readFileSync(command, 'utf8');
     for (const rawLine of contents.split(/\r?\n/u)) {
       const line = rawLine.trim();
-      const relativeMatch = /"%(?:~dp0|dp0%)\\([^"\r\n]+?)"\s+%\*\s*$/iu.exec(line);
+      const relativeMatch = /"%(?:~dp0|dp0%)\\?([^"\r\n]+?)"\s+%\*\s*$/iu.exec(line);
       if (
         relativeMatch?.[1]
         && isSupportedWindowsNodeInvocation(line.slice(0, relativeMatch.index))
@@ -176,6 +190,22 @@ function readWindowsCommandShimTarget(command: string): string | null {
       }
     }
     return null;
+  } catch {
+    return null;
+  }
+}
+
+// The pi.dev managed installer's PowerShell launcher runs its sibling
+// pi-launcher.js; any other PowerShell script is unproved.
+function readManagedPowerShellLauncherTarget(command: string): string | null {
+  try {
+    const contents = fs.readFileSync(command, 'utf8');
+    const declaresLauncher = contents.split(/\r?\n/u).some(line => (
+      /^\$launcher\s*=\s*Join-Path\s+\$basedir\s+"pi-launcher\.js"$/iu.test(line.trim())
+    ));
+    return declaresLauncher
+      ? path.join(path.dirname(command), PI_MANAGED_LAUNCHER)
+      : null;
   } catch {
     return null;
   }
@@ -202,6 +232,39 @@ function resolveOwningPiPackageBin(target: string): string | null {
     current = parent;
   }
   return null;
+}
+
+// pi.dev managed installs keep launchers in <root>/bin and versioned releases
+// under <root>/install, selected by its current-version file.
+function resolveManagedPiReleaseBin(launcher: string): string | null {
+  if (path.basename(launcher).toLowerCase() !== PI_MANAGED_LAUNCHER) return null;
+
+  const installRoot = path.resolve(path.dirname(launcher), '..', 'install');
+  try {
+    if (!fs.statSync(launcher).isFile()) return null;
+    const marker = JSON.parse(
+      fs.readFileSync(path.join(installRoot, 'managed-install.json'), 'utf8'),
+    ) as { kind?: unknown; layout?: unknown; schemaVersion?: unknown };
+    if (
+      marker.kind !== 'pi-managed-install'
+      || marker.schemaVersion !== 1
+      || marker.layout !== 'releases-v1'
+    ) {
+      return null;
+    }
+
+    const version = fs.readFileSync(path.join(installRoot, 'current-version'), 'utf8').trim();
+    if (!PI_MANAGED_RELEASE_VERSION.test(version)) return null;
+    return readPiPackageBin(path.join(
+      installRoot,
+      'releases',
+      version,
+      'node_modules',
+      ...PI_PACKAGE_NAME.split('/'),
+    ));
+  } catch {
+    return null;
+  }
 }
 
 function pathsEqual(left: string, right: string): boolean {

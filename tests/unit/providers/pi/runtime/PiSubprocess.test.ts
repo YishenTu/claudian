@@ -40,6 +40,8 @@ describe('PiSubprocess', () => {
   let windowsNpmPrefix: string;
   let windowsAbsolutePiCommand: string;
   let windowsMalformedCommands: string[];
+  let windowsManagedBin: string;
+  let windowsManagedCommands: Record<'cmd' | 'ps1', string>;
   let windowsPackageRoot: string;
   let windowsPiBin: string;
   let windowsPiCommand: string;
@@ -127,6 +129,13 @@ describe('PiSubprocess', () => {
     windowsUnknownCommand = path.join(windowsNpmPrefix, 'unknown-bin', 'pi.cmd');
     await fs.mkdir(path.dirname(windowsUnknownCommand), { recursive: true });
     await fs.writeFile(windowsUnknownCommand, '@ECHO off\r\nunknown-wrapper %*\r\n');
+
+    const windowsManagedRoot = path.join(windowsNpmPrefix, '.pi', 'agent');
+    windowsManagedBin = await writeManagedPiInstall(windowsManagedRoot, '1.1.0');
+    windowsManagedCommands = {
+      cmd: path.join(windowsManagedRoot, 'bin', 'pi.cmd'),
+      ps1: path.join(windowsManagedRoot, 'bin', 'pi.ps1'),
+    };
 
     const malformedDir = path.join(windowsNpmPrefix, 'malformed-bin');
     await fs.mkdir(malformedDir, { recursive: true });
@@ -316,6 +325,77 @@ describe('PiSubprocess', () => {
     );
   });
 
+  it.each(['cmd', 'ps1'] as const)(
+    'launches the active release entry for a pi.dev managed %s launcher',
+    (launcher) => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      const args = [
+        '--mode',
+        'rpc',
+        '--system-prompt',
+        'First line\nSecond line',
+        '--session',
+        'C:\\Users\\pi\\.pi\\agent\\sessions\\--C--Vault--\\session.jsonl',
+      ];
+      const subprocess = new PiSubprocess({
+        args,
+        command: windowsManagedCommands[launcher],
+        cwd: 'C:\\Vault',
+        env: { PATH: process.env.PATH },
+      });
+
+      subprocess.start();
+
+      expect(mockNativeSpawn).toHaveBeenCalledWith(
+        expect.stringMatching(/node(?:\.exe)?$/i),
+        [windowsManagedBin, ...args],
+        expect.objectContaining({ windowsHide: true }),
+      );
+      expect(mockSpawn).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['an invalid install marker', async (root: string) => {
+      await fs.writeFile(path.join(root, 'install', 'managed-install.json'), '{}');
+    }],
+    ['an unsafe active version', async (root: string) => {
+      await fs.writeFile(path.join(root, 'install', 'current-version'), '../1.1.0\n');
+    }],
+    ['a missing active release', async (root: string) => {
+      await fs.writeFile(path.join(root, 'install', 'current-version'), '9.9.9\n');
+    }],
+  ])('fails closed for a managed launcher with %s', async (_fault, corrupt) => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const root = await fs.mkdtemp(path.join(windowsNpmPrefix, 'managed-fault-'));
+    await writeManagedPiInstall(root, '1.1.0');
+    await corrupt(root);
+
+    for (const launcher of ['pi.cmd', 'pi.ps1']) {
+      expect(() => new PiSubprocess({
+        args: ['--mode', 'rpc'],
+        command: path.join(root, 'bin', launcher),
+        cwd: 'C:\\Vault',
+        env: { PATH: process.env.PATH },
+      })).toThrow('could not be resolved to its Node.js entry point');
+    }
+  });
+
+  it('fails closed instead of shell-launching an unknown PowerShell launcher', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const command = path.join(windowsNpmPrefix, 'ps1-bin', 'pi.ps1');
+    await fs.mkdir(path.dirname(command), { recursive: true });
+    await fs.writeFile(command, '& unknown-wrapper $args\r\n');
+
+    expect(() => new PiSubprocess({
+      args: ['--mode', 'rpc', '--system-prompt', 'First line\nSecond line'],
+      command,
+      cwd: 'C:\\Vault',
+      env: { PATH: process.env.PATH },
+    })).toThrow('could not be resolved to its Node.js entry point');
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
   it('kills the process tree when shutting down a direct Windows Pi launch', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const subprocess = new PiSubprocess({
@@ -417,4 +497,41 @@ async function writePiPackage(packageRoot: string, binPath: string): Promise<voi
     bin: { pi: path.relative(packageRoot, binPath) },
     name: '@earendil-works/pi-coding-agent',
   }));
+}
+
+async function writeManagedPiInstall(root: string, version: string): Promise<string> {
+  const binDir = path.join(root, 'bin');
+  const installRoot = path.join(root, 'install');
+  const packageRoot = path.join(
+    installRoot,
+    'releases',
+    version,
+    'node_modules',
+    '@earendil-works',
+    'pi-coding-agent',
+  );
+  const releaseBin = path.join(packageRoot, 'dist', 'bundle', 'cli.js');
+  await writePiPackage(packageRoot, releaseBin);
+  await fs.mkdir(binDir, { recursive: true });
+  await fs.writeFile(path.join(installRoot, 'managed-install.json'), JSON.stringify({
+    kind: 'pi-managed-install',
+    layout: 'releases-v1',
+    schemaVersion: 1,
+  }));
+  await fs.writeFile(path.join(installRoot, 'current-version'), `${version}\n`);
+  await fs.writeFile(path.join(binDir, 'pi-launcher.js'), '#!/usr/bin/env node\n');
+  await fs.writeFile(
+    path.join(binDir, 'pi.cmd'),
+    '@ECHO off\r\nnode "%~dp0pi-launcher.js" %*\r\n',
+  );
+  await fs.writeFile(path.join(binDir, 'pi.ps1'), [
+    '#!/usr/bin/env pwsh',
+    '$basedir = Split-Path $MyInvocation.MyCommand.Definition -Parent',
+    '$launcher = Join-Path $basedir "pi-launcher.js"',
+    'if ($MyInvocation.ExpectingInput) { $input | & node $launcher $args }',
+    'else { & node $launcher $args }',
+    'exit $LASTEXITCODE',
+    '',
+  ].join('\r\n'));
+  return releaseBin;
 }
