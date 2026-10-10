@@ -1,3 +1,4 @@
+import type { NamingConversationSnapshot, NamingTitleResult, NamingTitleUpdate } from '@/core/naming/ConversationNamingAPI';
 import type { ProviderId } from '@/core/providers/types';
 import type {
   Conversation,
@@ -84,6 +85,12 @@ export class ConversationService {
     await this.#mutateConversations(ids, id => this.deps.repository.setPinned(id, isPinned));
   }
 
+  async updateNamingTitles(id: string, update: NamingTitleUpdate): Promise<NamingTitleResult> {
+    const result = await this.deps.repository.updateNamingTitles(id, update);
+    if (result.longTitle || result.shortTitle) this.notifyConversationListChanged();
+    return result;
+  }
+
   async setLinkedContentPinned(contentPath: string, isPinned: boolean): Promise<void> {
     const changed = await this.deps.pinnedLinkedContentPaths.setPinned(contentPath, isPinned);
     if (changed) {
@@ -155,6 +162,10 @@ export class ConversationService {
 
   getCachedConversation(id: string): Conversation | null {
     return this.deps.repository.getCachedConversation(id);
+  }
+
+  getNamingSnapshot(id: string): NamingConversationSnapshot | null {
+    return this.deps.repository.getNamingSnapshot(id);
   }
 
   getConversationSummary(id: string): ConversationSummary | null {

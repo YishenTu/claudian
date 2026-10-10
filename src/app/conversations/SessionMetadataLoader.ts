@@ -302,6 +302,7 @@ export class SessionMetadataLoader {
       id: meta.id,
       providerId: meta.providerId ?? DEFAULT_CHAT_PROVIDER_ID,
       title: meta.title,
+      shortTitle: meta.shortTitle,
       createdAt: meta.createdAt,
       lastActivityAt: meta.lastActivityAt,
       sessionId: meta.sessionId !== undefined ? meta.sessionId : meta.id,

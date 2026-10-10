@@ -9,6 +9,7 @@ import type { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import type { TabWorkspaceMigrationCoordinator } from '@/app/storage/TabWorkspaceMigrationCoordinator';
 import type { SharedAppStorage } from '@/core/bootstrap/storage';
 import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
+import type { ConversationNamingAPI, NamingFirstTurnEvent } from '@/core/naming/ConversationNamingAPI';
 import { resolveConversationModel } from '@/core/providers/conversationModel';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ProviderId } from '@/core/providers/types';
@@ -47,6 +48,8 @@ export interface FeatureHostDomains {
 }
 
 export interface ChatFeatureHostDomains extends FeatureHostDomains {
+  readonly namingApi?: ConversationNamingAPI;
+  notifyNamingFirstTurnAccepted?(event: NamingFirstTurnEvent): boolean;
   readonly conversations: ConversationService;
   readonly executionPersistence: ConversationRepository;
   readonly chatModelSelection: ChatModelSelectionCoordinator;
@@ -116,6 +119,10 @@ export class ClaudianChatFeatureHost extends ClaudianFeatureHost implements Chat
   readonly chatModelSelection: ChatModelSelectionCoordinator;
   readonly executionPersistence: ConversationRepository;
   readonly conversationLifecycle: ConversationLifecycle;
+  get namingApi(): ConversationNamingAPI | undefined { return this.domains.namingApi; }
+  notifyNamingFirstTurnAccepted(event: NamingFirstTurnEvent): boolean {
+    return this.domains.notifyNamingFirstTurnAccepted?.(event) ?? false;
+  }
 
   constructor(protected readonly domains: ChatFeatureHostDomains) {
     super(domains);

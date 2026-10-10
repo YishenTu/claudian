@@ -954,3 +954,31 @@ describe('ConversationRepository deletion persistence', () => {
     expect(persistence.deleteCurrentMetadata).toHaveBeenCalledTimes(2);
   });
 });
+
+
+describe('ConversationRepository naming updates', () => {
+  it('checks long and short title ownership inside the persistence queue', async () => {
+    const { repository, persistence } = createRepository();
+    const rename = repository.rename('conversation-1', 'Manual');
+    const generated = repository.updateNamingTitles('conversation-1', {
+      expectedLongTitle: 'Conversation', expectedShortTitle: null,
+      longTitle: 'Generated', shortTitle: 'Labels',
+    });
+    await rename;
+    expect(await generated).toEqual({ longTitle: false, shortTitle: true });
+    expect(repository.getSummary('conversation-1')).toMatchObject({ title: 'Manual', shortTitle: 'Labels' });
+    expect(persistence.saveMetadata).toHaveBeenLastCalledWith(expect.objectContaining({
+      title: 'Manual', shortTitle: 'Labels',
+    }));
+  });
+
+  it('does not publish a naming result when persistence fails', async () => {
+    const { repository, persistence } = createRepository();
+    persistence.saveMetadata.mockRejectedValueOnce(new Error('disk full'));
+    await expect(repository.updateNamingTitles('conversation-1', {
+      expectedLongTitle: 'Conversation', longTitle: 'After', shortTitle: 'Labels',
+    })).rejects.toThrow('disk full');
+    expect(repository.getSummary('conversation-1')).toMatchObject({ title: 'Conversation' });
+    expect(repository.getSummary('conversation-1')?.shortTitle).toBeUndefined();
+  });
+});

@@ -1,3 +1,6 @@
+import { AuxiliarySessionController } from '@/core/auxiliary/AuxiliarySessionController';
+import type { NamingTextTask } from '@/core/naming/ConversationNamingAPI';
+
 import { getVaultPath } from '../../utils/path';
 import type { AuxiliaryExecutionContext } from '../auxiliary/AuxiliaryExecutionContext';
 import { InlineEditService as SharedInlineEditService } from '../auxiliary/InlineEditService';
@@ -114,6 +117,42 @@ export class ProviderRegistry {
     return new SharedInlineEditService(
       this.createAuxiliaryExecutionContext(plugin, providerId),
     );
+  }
+
+  static async runNamingTextTask(plugin: ProviderHost, request: NamingTextTask, signal: AbortSignal): Promise<string> {
+    const selection = this.resolveTitleGenerationSelection(plugin.settings);
+    if (!selection) throw new Error('Select an available title model in Claudian settings.');
+    let controller: AuxiliarySessionController | null = null;
+    let expired = false;
+    let rejectAbort: (reason: Error) => void = () => undefined;
+    const deadline = new Promise<never>((_resolve, reject) => { rejectAbort = reject; });
+    const abort = (): void => {
+      expired = true;
+      rejectAbort(new Error('Naming task cancelled.'));
+      controller?.cancel();
+    };
+    signal.addEventListener('abort', abort, { once: true });
+    const timer = window.setTimeout(() => {
+      expired = true;
+      rejectAbort(new Error('Naming task timed out.'));
+      controller?.cancel();
+    }, Math.min(120000, Math.max(1, request.timeoutMs ?? 90000)));
+    const execute = async (): Promise<string> => {
+      if (expired || signal.aborted) throw new Error('Naming task cancelled.');
+      await ProviderWorkspaceRegistry.ensureInitialized(plugin, selection.providerId, 'title-generation');
+      if (expired || signal.aborted) throw new Error('Naming task cancelled.');
+      controller = new AuxiliarySessionController(this.createAuxiliaryExecutionContext(plugin, selection.providerId), 'title', { kind: 'passive' });
+      await controller.startRoot();
+      if (expired || signal.aborted) throw new Error('Naming task cancelled.');
+      return controller.execute({ ...request, model: selection.model, reasoning: null });
+    };
+    try { return await Promise.race([execute(), deadline]); }
+    finally {
+      window.clearTimeout(timer);
+      signal.removeEventListener('abort', abort);
+      const current = controller as AuxiliarySessionController | null;
+      if (current) void current.dispose().catch(() => undefined);
+    }
   }
 
   private static createAuxiliaryExecutionContext(

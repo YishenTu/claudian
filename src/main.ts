@@ -1,4 +1,5 @@
 import { SessionSnapshotStore } from './app/conversations/SessionSnapshotStore';
+import { ConversationNamingAPIHost } from './app/integration/ConversationNamingAPIHost';
 import { StartupProfiler } from './core/performance/StartupProfiler';
 // Must run before any SDK imports to patch Electron/Node.js realm incompatibility
 import { patchSetMaxListenersForElectron } from './utils/electronCompat';
@@ -47,6 +48,7 @@ import { getBuiltInProviderDefaultConfigs } from './providers/defaultProviderCon
 export default class ClaudianPlugin extends Plugin {
   readonly executionLifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   providerHost!: ClaudianProviderHost;
+  namingApi!: ConversationNamingAPIHost;
   private featureHost!: ClaudianFeatureHost;
   private chatHost!: ClaudianChatFeatureHost;
   /** Live committed settings, following Obsidian's plugin convention. */
@@ -169,6 +171,7 @@ export default class ClaudianPlugin extends Plugin {
 
   onunload(): void {
     this.isUnloading = true;
+    this.namingApi?.dispose();
     // Return any zen presentation to its view before asynchronous shutdown.
     this.zenMode.dispose();
     this.vaultContentEvents?.dispose();
@@ -265,9 +268,28 @@ export default class ClaudianPlugin extends Plugin {
       conversations: domains.conversations,
       notifyConversationListChanged: () => this.chatViews.notifyConversationListChanged(),
     });
+    this.namingApi = new ConversationNamingAPIHost({
+      getActiveConversationId: () => this.views.getView()?.getActiveTab()?.conversationId ?? null,
+      getSnapshot: id => domains.conversations.getNamingSnapshot(id),
+      listSnapshots: () => domains.conversations.getConversationList().map(value => ({ conversationId: value.id, createdAt: value.createdAt, longTitle: value.title, shortTitle: value.shortTitle ?? null })),
+      getFirstUserText: async id => {
+        const value = await domains.conversations.getConversationById(id);
+        const first = value?.messages.find(message => message.role === 'user');
+        return first ? Array.from(first.displayContent ?? first.content).slice(0, 4000).join('') : null;
+      },
+      updateTitles: (id, update) => domains.conversations.updateNamingTitles(id, update),
+      setGenerationStatus: async (id, titleGenerationStatus) => {
+        if (!domains.conversations.getConversationSummary(id)) return false;
+        await domains.conversations.updateConversation(id, { titleGenerationStatus });
+        return true;
+      },
+      runTextTask: (request, signal) => ProviderRegistry.runNamingTextTask(this.providerHost, request, signal),
+    });
     this.chatHost = new ClaudianChatFeatureHost({
       ...featureDomains,
       conversationLifecycle: this.conversationLifecycle,
+      namingApi: this.namingApi,
+      notifyNamingFirstTurnAccepted: event => this.namingApi.notifyFirstTurnAccepted(event),
       executionPersistence: domains.conversationRepository,
       chatModelSelection: domains.chatModelSelection,
       sessionSnapshots: this.sessionSnapshots,

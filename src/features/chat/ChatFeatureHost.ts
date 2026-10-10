@@ -1,4 +1,5 @@
 import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
+import type { ConversationNamingAPI, NamingFirstTurnEvent } from '@/core/naming/ConversationNamingAPI';
 import type { ProviderId } from '@/core/providers/types';
 import type { Conversation, ConversationMeta, ConversationMutablePatch, ConversationSummary, StoredChatModelSelection } from '@/core/types';
 import type { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
@@ -65,6 +66,8 @@ export interface ChatViewHost extends ChatViewRefreshHost, TabManagerViewHost {
 
 /** Application capabilities chat needs on top of the feature-neutral `FeatureHost`. */
 export interface ChatFeatureHost extends FeatureHost {
+  readonly namingApi?: ConversationNamingAPI;
+  notifyNamingFirstTurnAccepted?(event: NamingFirstTurnEvent): boolean;
   writeSessionSnapshot(conversationId: string, markdown: string): Promise<string>;
   getSessionSnapshotDirectory(): string;
   readonly chatModelSelection: ChatModelSelectionPort;
