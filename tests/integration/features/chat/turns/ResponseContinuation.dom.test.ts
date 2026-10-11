@@ -282,9 +282,8 @@ it.each(['between', 'during-second', 'after-second'])('groups an older task noti
         }, '/vault');
         expect(hydrated.messages!.filter(message => message.id !== cachedOnly.id).map(message => message.id))
           .toEqual(replay.messages.map(message => message.id));
-        const secondUserIndex = hydrated.messages!.findIndex(message => message.id === 'second-user');
-        expect(hydrated.messages!.findIndex(message => message.id === cachedOnly.id))
-          .toBe(cached === cachedWithExtra ? secondUserIndex + 1 : -1);
+        // Complete native history supersedes a live projection between reflected messages.
+        expect(hydrated.messages!.some(message => message.id === cachedOnly.id)).toBe(false);
         renderer.renderMessages(hydrated.messages!, () => 'Welcome');
         await Promise.resolve();
         assertPlacement();

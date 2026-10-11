@@ -272,6 +272,31 @@ function dedupeMessages(messages: ChatMessage[]): ChatMessage[] {
   return result;
 }
 
+/**
+ * Cached messages are the tab's live projection under Claudian-local ids. Complete native history
+ * supersedes every cached message it reflects by id or native identity, and every unmatched one
+ * before the last reflected message; later messages are the unconfirmed tail. A live task
+ * notification that native never consumed keeps its place.
+ */
+function retainUnconfirmedCachedMessages(cached: ChatMessage[], native: ChatMessage[]): ChatMessage[] {
+  const nativeIds = new Set(native.map(message => message.id));
+  const nativeUserIds = new Set(native.flatMap(message => message.role === 'user' && message.userMessageId
+    ? [message.userMessageId] : []));
+  const nativeAssistantIds = new Set(native.flatMap(message => message.role === 'assistant'
+    && message.assistantMessageId ? [message.assistantMessageId] : []));
+  const nativeNotifications = new Set(native.flatMap(message => (message.contentBlocks ?? [])
+    .flatMap(block => block.type === 'task_notification' ? [block.content] : [])));
+  const reflectsNative = (message: ChatMessage): boolean => nativeIds.has(message.id) || (message.role === 'user'
+    ? !!message.userMessageId && nativeUserIds.has(message.userMessageId)
+    : !!message.assistantMessageId && nativeAssistantIds.has(message.assistantMessageId));
+  const isUnconsumedNotification = (message: ChatMessage): boolean => !!message.contentBlocks?.length
+    && message.contentBlocks.every(block => block.type === 'task_notification' && !nativeNotifications.has(block.content));
+  let lastReflected = -1;
+  cached.forEach((message, index) => { if (reflectsNative(message)) lastReflected = index; });
+  return cached.filter((message, index) => nativeIds.has(message.id)
+    || (!reflectsNative(message) && (index > lastReflected || isUnconsumedNotification(message))));
+}
+
 /** Native transcript order wins; cached-only messages keep their surrounding anchors. */
 function mergeHistoryMessages(cached: ChatMessage[], native: ChatMessage[]): ChatMessage[] {
   const byId = new Map(dedupeMessages([...cached, ...native]).map(message => [message.id, message]));
@@ -822,7 +847,12 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
 
     const filteredSdkMessages = allSdkMessages.filter(msg => !msg.isRebuiltContext);
 
-    const merged = mergeHistoryMessages(conversation.messages, filteredSdkMessages);
+    const complete = errorCount === 0 && unknownSessionCount === 0;
+    // An unreadable segment leaves cached messages as the only copy of its history.
+    const cached = complete
+      ? retainUnconfirmedCachedMessages(conversation.messages, filteredSdkMessages)
+      : conversation.messages;
+    const merged = mergeHistoryMessages(cached, filteredSdkMessages);
 
     if (state.subagentData) {
       await enrichAsyncSubagentToolCalls(
@@ -836,7 +866,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     }
 
     conversation.messages = merged;
-    return { changes: conversation, complete: errorCount === 0 && unknownSessionCount === 0 };
+    return { changes: conversation, complete };
   }
 
   hasConversationModelRecoverySource(conversation: ProviderHistoryInput): boolean {

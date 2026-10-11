@@ -202,7 +202,10 @@ export function parseSDKMessageToChat(
 
   let displayContent: string | undefined;
   if (sdkMsg.type === 'user') {
-    displayContent = commandNameMatch ? commandNameMatch[1] : extractUserDisplayContent(textContent);
+    const commandArgs = commandNameMatch ? extractXMLTag(textContent, 'command-args') : null;
+    displayContent = commandNameMatch
+      ? [commandNameMatch[1], commandArgs].filter(Boolean).join(' ')
+      : extractUserDisplayContent(textContent);
   }
 
   const isInterrupt = sdkMsg.type === 'user' && isInterruptSignalText(textContent);

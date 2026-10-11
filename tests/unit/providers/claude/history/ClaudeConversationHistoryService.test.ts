@@ -503,6 +503,63 @@ describe('ClaudeConversationHistoryService', () => {
       recoverySpy.mockRestore();
     });
 
+    it('replaces live turn projections with native history, keeping unconsumed notifications and the unconfirmed tail', async () => {
+      const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-live-projection-'));
+      const sessionPath = path.join(directory, 'session-1.jsonl');
+      const notification = '<task-notification><task-id>bg-1</task-id><tool-use-id>bash</tool-use-id>'
+        + '<status>completed</status><summary>Background command completed (exit code 0).</summary></task-notification>';
+      const rows = [
+        { type: 'user', uuid: 'command', timestamp: testTime({ seconds: 0 }), message: { content:
+          '<command-message>bg-test</command-message>\n<command-name>/bg-test</command-name>\n<command-args>hello world</command-args>' } },
+        { type: 'user', uuid: 'skill-body', isMeta: true, timestamp: testTime({ seconds: 0 }),
+          message: { content: [{ type: 'text', text: 'Base directory for this skill' }] } },
+        { type: 'assistant', uuid: 'launch', timestamp: testTime({ seconds: 1 }), message: { stop_reason: 'tool_use',
+          content: [{ type: 'tool_use', id: 'bash', name: 'Bash', input: { command: 'sleep 20', run_in_background: true } }] } },
+        { type: 'user', uuid: 'launched', timestamp: testTime({ seconds: 2 }), toolUseResult: {},
+          message: { content: [{ type: 'tool_result', tool_use_id: 'bash', content: 'Started' }] } },
+        { type: 'assistant', uuid: 'first-final', timestamp: testTime({ seconds: 3 }),
+          message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Background task started.' }] } },
+        { type: 'user', uuid: 'notification', timestamp: testTime({ seconds: 23 }), message: { content: notification } },
+        { type: 'assistant', uuid: 'notified-final', timestamp: testTime({ seconds: 24 }),
+          message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'It finished.' }] } },
+      ];
+      await fs.writeFile(sessionPath, rows.map((row, index) => JSON.stringify({
+        ...row, parentUuid: rows[index - 1]?.uuid ?? null,
+      })).join('\n'));
+      const locationSpy = jest.spyOn(historyStore, 'locateSDKSessions')
+        .mockResolvedValue(new Map([['session-1', { availability: 'relocated', sessionPath }]]));
+      // The tab's transcript after the turn and the background response, as saved to the repository.
+      const live: Conversation['messages'] = [
+        { id: 'local-user', role: 'user', content: '/bg-test hello world', displayContent: '/bg-test hello world',
+          timestamp: testDate({ seconds: 0 }).getTime(), userMessageId: 'sent-uuid' },
+        { id: 'local-response', role: 'assistant', content: 'Background task started.', timestamp: testDate({ seconds: 0 }).getTime(),
+          assistantMessageId: 'first-final', toolCalls: [{ id: 'bash', name: 'Bash', input: {}, status: 'completed' }] },
+        { id: 'local-unconsumed', role: 'assistant', isAutomaticResponse: true, content: '', timestamp: testDate({ seconds: 10 }).getTime(),
+          contentBlocks: [{ type: 'task_notification', content: 'Another task finished.' }] },
+        { id: 'local-notification', role: 'assistant', isAutomaticResponse: true, content: '', timestamp: testDate({ seconds: 23 }).getTime(),
+          contentBlocks: [{ type: 'task_notification', content: 'Background command completed (exit code 0).' }] },
+        { id: 'local-background', role: 'assistant', isAutomaticResponse: true, content: 'It finished.',
+          timestamp: testDate({ seconds: 23 }).getTime(), assistantMessageId: 'notified-final' },
+        { id: 'local-pending', role: 'user', content: 'Next question', timestamp: testDate({ seconds: 30 }).getTime() },
+      ];
+
+      try {
+        const hydrated = await new ClaudeConversationHistoryService()
+          .hydrateConversationHistory(createConversation({ messages: live }), '/vault');
+
+        expect(hydrated.messages?.map(message => [message.id, message.displayContent ?? message.content])).toEqual([
+          ['command', '/bg-test hello world'],
+          ['launch', 'Background task started.'],
+          ['local-unconsumed', ''],
+          ['notification', 'It finished.'],
+          ['local-pending', 'Next question'],
+        ]);
+      } finally {
+        locationSpy.mockRestore();
+        await fs.rm(directory, { recursive: true, force: true });
+      }
+    });
+
     it('uses native recovery instead of old conversation backup headers', async () => {
       const vaultPath = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-retired-backup-'));
       const service = new ClaudeConversationHistoryService();
