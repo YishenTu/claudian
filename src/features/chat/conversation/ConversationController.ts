@@ -244,20 +244,23 @@ export class ConversationController {
       // Event work already admitted for this conversation (deferred renders, completion recovery)
       // lands and persists before the tab rebinds; it may have started new work meanwhile.
       await this.deps.awaitBackgroundWork?.();
-      if (this.deps.isClosing?.()) return false;
-      if (this.deps.session.hasBackgroundWork || state.requiresAction) return false;
+      if (this.deps.isClosing?.() || this.#holdsWork()) return false;
 
-      this.#branching.cancelDraft();
+      // Saving and loading only persist and read; the tab keeps its state until the final check.
       await this.save();
       if (this.deps.isClosing?.()) return false;
-
-      subagentManager.clear();
 
       const conversation = await plugin.switchConversation(id);
       if (!conversation || this.deps.isClosing?.()) {
         return false;
       }
 
+      // Work or prompts may have started during the awaits above. This is the last refusal point:
+      // everything after it rebinds execution or clears tab state.
+      if (this.#holdsWork()) return false;
+
+      this.#branching.cancelDraft();
+      subagentManager.clear();
       await this.deps.ensureExecutionForConversation?.(conversation);
       if (this.deps.isClosing?.()) return false;
 
@@ -271,6 +274,11 @@ export class ConversationController {
     }
     this.callbacks.onConversationSwitched?.();
     return true;
+  }
+
+  /** Work or a prompt that rebinding this tab would abandon; transition flags are the caller's own. */
+  #holdsWork(): boolean {
+    return this.deps.session.hasActiveTurn || this.deps.session.hasBackgroundWork || this.deps.state.requiresAction;
   }
 
   rewind(userMessageId: string, mode?: ChatRewindMode): Promise<void> {
