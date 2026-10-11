@@ -44,6 +44,7 @@ beforeEach(async () => {
     containerEl: document.body.createDiv(),
     mentionDataProvider: new VaultMentionDataProvider(app),
     getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
+    openConversation: async () => {}, startNewConversation: async () => {},
   });
   jest.useFakeTimers();
   holdResponse(tab.session.turns);

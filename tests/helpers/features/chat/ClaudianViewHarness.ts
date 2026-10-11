@@ -36,6 +36,8 @@ export function createClaudianView(options: ClaudianViewHarnessOptions = {}): an
         on: jest.fn((name: string) => ({ name })),
       },
       workspace: {
+        layoutReady: true,
+        onLayoutReady: jest.fn((callback: () => void) => callback()),
         on: jest.fn((name: string) => ({ name })),
         requestSaveLayout: Object.assign(jest.fn(), { run: jest.fn() }),
       },

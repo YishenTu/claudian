@@ -1,16 +1,11 @@
 import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
 import {
   decodeTabWorkspaceViewState,
-  resolveTabRestorePlan,
   TAB_WORKSPACE_VIEW_STATE_KEY,
   TAB_WORKSPACE_VIEW_STATE_VERSION,
   type TabWorkspaceViewState,
 } from '@/core/bootstrap/tabManagerState';
-import type {
-  ChatFeatureHost,
-  ChatViewHost,
-  TabWorkspaceStateDeliveryRegistration,
-} from '@/features/chat/ChatFeatureHost';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { TabStatePersistenceCoordinator } from '@/features/chat/tabs/persistence/TabStatePersistenceCoordinator';
 import type { TabBar } from '@/features/chat/tabs/TabBar';
 import type { TabManager } from '@/features/chat/tabs/TabManager';
@@ -25,20 +20,9 @@ type TabWorkspaceTitleState = Pick<TabBar, 'getExpandedTitleTabIds'>;
 type TabWorkspacePersistence = Pick<TabStatePersistenceCoordinator, 'update' | 'flush'>;
 
 export interface TabWorkspaceLifecycleHost {
-  getPlugin(): Pick<
-    ChatFeatureHost,
-    | 'app'
-    | 'settings'
-    | 'registerTabWorkspaceStateDelivery'
-    | 'claimLegacyTabManagerState'
-    | 'completeLegacyTabManagerStateMigration'
-    | 'ensureConversationMetadataLoaded'
-  >;
-  readonly view: ChatViewHost;
+  getPlugin(): Pick<ChatFeatureHost, 'app' | 'settings' | 'ensureConversationMetadataLoaded'>;
   getTabManager(): TabWorkspaceTabManager | null;
   getTabBar(): Pick<TabBar, 'getExpandedTitleTabIds' | 'setExpandedTitleTabIds'> | null;
-  /** Restore keeps only the last active tab in the wide session layout. */
-  isWideLayout(): boolean;
   /** Publishes presentation once the restored workspace owns the view lifecycle. */
   onInitialized(): void;
 }
@@ -55,15 +39,14 @@ export interface TabWorkspaceOpening {
  * Owns a chat view's tab workspace across open and close: Obsidian-delivered view state, the
  * restore plan, view-scoped persistence, and the drained shutdown snapshot that a same-instance
  * reopen restores from. While restoration is pending, its full plan stays the persistence
- * authority; once shells are admitted, live membership owns the lifecycle.
+ * authority; once tab identities are admitted, live membership owns the lifecycle.
  */
 export class TabWorkspaceLifecycle {
   private persistence: TabStatePersistenceCoordinator | null = null;
-  private hasViewScopedState = false;
+  private stateDelivered = false;
   private deliveryRevision = 0;
   private pendingState: AppTabManagerState | null = null;
   private finalizedState: AppTabManagerState | null = null;
-  private delivery: TabWorkspaceStateDeliveryRegistration | null = null;
   private initializedRevision = -1;
   private admittedRevision = -1;
   private initialization: { revision: number; promise: Promise<void> } | null = null;
@@ -95,30 +78,17 @@ export class TabWorkspaceLifecycle {
     const record = state && typeof state === 'object' && !Array.isArray(state)
       ? state as Record<string, unknown>
       : null;
-    const hasViewScopedState = record !== null && TAB_WORKSPACE_VIEW_STATE_KEY in record;
-    this.hasViewScopedState = hasViewScopedState;
-    const registration = this.host.getPlugin().registerTabWorkspaceStateDelivery(
-      this.host.view,
-      hasViewScopedState,
-    );
-    this.delivery = registration;
+    this.stateDelivered = true;
     const revision = this.lifecycleRevision;
 
-    // Once shells are admitted, live membership owns this view lifecycle.
+    // Once tab identities are admitted, live membership owns this view lifecycle.
     if (this.initializedRevision === revision || this.admittedRevision === revision) return;
 
     this.deliveryRevision += 1;
-    this.pendingState = hasViewScopedState && record
+    this.pendingState = record && TAB_WORKSPACE_VIEW_STATE_KEY in record
       ? decodeTabWorkspaceViewState(record[TAB_WORKSPACE_VIEW_STATE_KEY])
       : null;
-
-    if (registration.declarationsReady) {
-      await this.initialize(revision);
-      return;
-    }
-    void registration.waitUntilDeclarationsReady
-      .then(() => this.initialize(revision))
-      .catch(() => undefined);
+    await this.initializeAfterLayout(revision);
   }
 
   /** Starts an open lifecycle; a reopen during close keeps the finalized snapshot. */
@@ -139,6 +109,7 @@ export class TabWorkspaceLifecycle {
     let persistence = this.persistence;
     if (!opening.isReopening || !persistence) {
       if (!opening.isReopening) persistence?.dispose();
+      // Obsidian pulls the current view state through getState() when it saves the layout.
       persistence = new TabStatePersistenceCoordinator(async () => {
         const { workspace } = this.host.getPlugin().app;
         workspace.requestSaveLayout();
@@ -165,15 +136,8 @@ export class TabWorkspaceLifecycle {
       return;
     }
 
-    const delivery = this.delivery;
-    if (!delivery) return;
-    if (delivery.declarationsReady) {
-      await this.initialize(opening.revision);
-      return;
-    }
-    void delivery.waitUntilDeclarationsReady
-      .then(() => this.initialize(opening.revision))
-      .catch(() => undefined);
+    // State delivered while this open was assembling initializes here; otherwise setState will.
+    if (this.stateDelivered) await this.initializeAfterLayout(opening.revision);
   }
 
   isCurrent(revision: number): boolean {
@@ -207,7 +171,7 @@ export class TabWorkspaceLifecycle {
     return this.lifecycleRevision;
   }
 
-  /** Drains admitted work, flushes the final identity, and seals it; shared by every shutdown path. */
+  /** Drains admitted work, then seals and flushes one final identity; shared by every shutdown path. */
   snapshotForShutdown(
     tabManager: TabWorkspaceTabManager | null,
     persistence: TabWorkspacePersistence | null,
@@ -234,10 +198,9 @@ export class TabWorkspaceLifecycle {
     if (this.shutdownSnapshotPromise === snapshot) this.shutdownSnapshotPromise = null;
   }
 
+  /** Snapshots without closing the view; the drain itself begins tab-manager shutdown. */
   async prepareForPluginUnload(): Promise<void> {
-    const tabManager = this.host.getTabManager();
-    tabManager?.beginShutdown();
-    await this.snapshotForShutdown(tabManager, this.persistence);
+    await this.snapshotForShutdown(this.host.getTabManager(), this.persistence);
   }
 
   private async captureShutdownSnapshot(
@@ -250,13 +213,19 @@ export class TabWorkspaceLifecycle {
     } catch {
       // Teardown reports drain failures; identity persistence must still be attempted.
     }
+    let finalState: AppTabManagerState | null = null;
     try {
-      await this.flush(tabManager, persistence);
+      finalState = this.pendingState ?? this.capture(tabManager, tabBar);
+    } finally {
+      this.finalizedState = finalState;
+      tabManager?.sealShutdownSnapshot();
+    }
+    if (!persistence || !finalState) return;
+    try {
+      persistence.update(finalState);
+      await persistence.flush();
     } catch {
       // The storage boundary reports persistence failures. Teardown must still complete.
-    } finally {
-      this.finalizedState = this.pendingState ?? this.capture(tabManager, tabBar);
-      tabManager?.sealShutdownSnapshot();
     }
   }
 
@@ -282,6 +251,8 @@ export class TabWorkspaceLifecycle {
       } while (deliveryRevision !== this.deliveryRevision);
 
       this.initializedRevision = revision;
+      // Live membership now owns the workspace; a later close finalizes a fresh snapshot.
+      this.finalizedState = null;
       this.host.onInitialized();
     })();
     this.initialization = { revision, promise };
@@ -303,20 +274,12 @@ export class TabWorkspaceLifecycle {
       && this.host.getTabManager() === tabManager
       && deliveryRevision === this.deliveryRevision
     );
-    let usedLegacyState = false;
-    let persistedState = reopeningState ?? (this.hasViewScopedState ? this.pendingState : null);
-    if (reopeningState === undefined && !this.hasViewScopedState) {
-      persistedState = await this.host.getPlugin().claimLegacyTabManagerState();
-      usedLegacyState = persistedState !== null;
-    }
-    if (!isStillCurrent()) return;
-
-    const restorePlan = resolveTabRestorePlan(persistedState, {
-      restoreTabsOnStartup: reopeningState === undefined
-        ? this.host.getPlugin().settings.restoreTabsOnStartup
-        : true,
-      isDualPane: this.host.isWideLayout(),
-    });
+    // Decoding guarantees a restorable plan; startup may still decline restoration.
+    const persistedState = reopeningState ?? this.pendingState;
+    const restorePlan: AppTabManagerState = persistedState
+      && (reopeningState !== undefined || this.host.getPlugin().settings.restoreTabsOnStartup)
+      ? persistedState
+      : { openTabs: [], activeTabId: null };
     this.pendingState = restorePlan;
     const conversationIds = Array.from(new Set(
       restorePlan.openTabs
@@ -328,7 +291,7 @@ export class TabWorkspaceLifecycle {
     }
     if (!isStillCurrent()) return;
 
-    // restoreState admits the complete shell set synchronously before activation awaits.
+    // restoreState admits the complete identity set synchronously before activation awaits.
     // From this handoff onward live membership, not later Obsidian deliveries, owns it.
     this.admittedRevision = revision;
     try {
@@ -339,19 +302,22 @@ export class TabWorkspaceLifecycle {
     }
     if (!isStillCurrent()) return;
 
-    this.host.getTabBar()?.setExpandedTitleTabIds(restorePlan.expandedTitleTabIds ?? []);
+    const tabBar = this.host.getTabBar();
+    tabBar?.setExpandedTitleTabIds(restorePlan.expandedTitleTabIds ?? []);
     this.pendingState = null;
+    this.persist(tabManager, this.persistence);
+  }
 
-    if (usedLegacyState) {
-      try {
-        await this.flush(tabManager, this.persistence);
-        await this.host.getPlugin().completeLegacyTabManagerStateMigration();
-      } catch {
-        // Keep the legacy snapshot available when view-state persistence fails.
-      }
-    } else {
-      this.persist(tabManager, this.persistence);
+  /** Defers restoration until Obsidian finishes restoring the startup layout. */
+  private async initializeAfterLayout(revision: number): Promise<void> {
+    const { workspace } = this.host.getPlugin().app;
+    if (workspace.layoutReady) {
+      await this.initialize(revision);
+      return;
     }
+    workspace.onLayoutReady(() => {
+      void this.initialize(revision).catch(() => undefined);
+    });
   }
 
   private capture(
@@ -369,17 +335,5 @@ export class TabWorkspaceLifecycle {
       ...state,
       ...(expandedTitleTabIds.length > 0 ? { expandedTitleTabIds } : {}),
     };
-  }
-
-  /** Flushes the open working set, or the pending restore plan while it is the authority. */
-  private async flush(
-    tabManager: Pick<TabManager, 'getPersistedState'> | null,
-    persistence: TabWorkspacePersistence | null,
-  ): Promise<void> {
-    if (!persistence) return;
-    const state = this.pendingState ?? this.capture(tabManager);
-    if (!state) return;
-    persistence.update(state);
-    await persistence.flush();
   }
 }

@@ -2,8 +2,8 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { ProviderId } from '@/core/providers/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import { refreshTabWorkspaceServices } from '@/features/chat/tabs/tabProviderUI';
-import type { TabSessionState } from '@/features/chat/tabs/TabSession';
 import type { AssembledTabRuntime, TabMembershipView } from '@/features/chat/tabs/types';
 
 /**
@@ -21,7 +21,7 @@ export class TabProviderPresence {
   ) {}
 
   /** Best-effort passive startup; explicit actions report startup failures themselves. */
-  startForTab(tab: TabSessionState): void {
+  startForTab(tab: Readonly<TabIdentity>): void {
     const providerId = tab.providerId;
     if (this.membership.isDestroyed() || tab.lifecycleState === 'closing' || !providerId
       || !ProviderRegistry.isEnabled(providerId, this.plugin.settings)

@@ -15,8 +15,10 @@
  */
 import { createMockEl } from '@test/helpers/MockElement';
 
+import { ChatState } from '@/features/chat/state/ChatState';
 import type { TabManager } from '@/features/chat/tabs/TabManager';
 import { TabSession } from '@/features/chat/tabs/TabSession';
+import type { TabLayoutPolicy } from '@/features/chat/tabs/types';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 export const mockDestroyTab = jest.fn().mockResolvedValue(undefined);
@@ -60,6 +62,7 @@ export const commandCatalog = {
 };
 
 export function createMockTab(options: Record<string, any>): any {
+  const review = new ChatState();
   const tab = {
     id: options.tabId ?? `tab-${mockTabs.length + 1}`,
     conversationId: options.conversation?.id ?? null,
@@ -77,7 +80,8 @@ export function createMockTab(options: Record<string, any>): any {
     ...options.initialState,
     captureReviewableSettlement: options.captureReviewableSettlement ?? null,
     state: {
-      acknowledgeReview: jest.fn(),
+      acknowledgeReview: jest.fn(() => review.acknowledgeReview()),
+      get reviewEpoch() { return review.reviewEpoch; },
       attention: null,
       currentConversationId: options.conversation?.id ?? null,
       hasPendingConversationSave: false,
@@ -93,13 +97,17 @@ export function createMockTab(options: Record<string, any>): any {
         hasActiveAsyncSubagents: jest.fn().mockReturnValue(false),
       },
     },
+    composer: { focus: jest.fn() },
+    linkedContent: { selectExplicit: jest.fn() },
     controllers: {
       conversationController: {
+        createNew: jest.fn().mockResolvedValue(undefined),
         initializeWelcome: jest.fn(),
         save: jest.fn().mockResolvedValue(undefined),
         switchTo: jest.fn().mockImplementation(async (conversationId: string) => {
           tab.session.setConversationId(conversationId);
           tab.state.currentConversationId = conversationId;
+          return true;
         }),
       },
       inputController: {
@@ -118,7 +126,9 @@ export function createMockTab(options: Record<string, any>): any {
     ui: {
     },
   };
-  tab.session = new TabSession(tab, tab.executionCoordinator as never);
+  tab.session = new TabSession(tab, tab.executionCoordinator as never, {
+    hasPendingInteraction: () => tab.state.requiresAction,
+  });
   Object.defineProperty(tab.state, 'currentConversationId', {
     get: () => tab.session.conversationId,
     set: (id: string | null) => tab.session.setConversationId(id),
@@ -217,7 +227,12 @@ export function createPlugin(overrides: Record<string, unknown> = {}) {
   } as any;
 }
 
-export function createManager(plugin = createPlugin(), callbacks: Record<string, unknown> = {}) {
+export function createManager(
+  plugin = createPlugin(),
+  callbacks: Record<string, unknown> = {},
+  viewOverrides: Record<string, unknown> = {},
+  layoutPolicy?: Partial<TabLayoutPolicy>,
+) {
   // Loaded lazily: TabManager pulls in the mocked modules, whose factories load this module.
   const { TabManager: TabManagerClass } = jest.requireActual<{ TabManager: typeof TabManager }>(
     '@/features/chat/tabs/TabManager',
@@ -225,6 +240,7 @@ export function createManager(plugin = createPlugin(), callbacks: Record<string,
   const view = {
     leaf: {},
     getTabManager: jest.fn(),
+    ...viewOverrides,
   } as any;
   return {
     manager: new TabManagerClass(
@@ -233,6 +249,13 @@ export function createManager(plugin = createPlugin(), callbacks: Record<string,
       view,
       callbacks,
       new VaultMentionDataProvider(plugin.app),
+      layoutPolicy && {
+        forkTarget: () => 'ask',
+        openPicked: async () => false,
+        startNew: async () => false,
+        shouldRetainPreview: () => false,
+        ...layoutPolicy,
+      },
     ) as TabManager,
     plugin,
   };
@@ -250,7 +273,6 @@ export function expectTabMetadataReleased(manager: TabManager, tabId: string): v
   expect(discovery.providerRuntimeCommandCache.has(tabId)).toBe(false);
   expect(discovery.providerCommandDiscoveryStores.has(tabId)).toBe(false);
   expect(discovery.tabCommandContextRevisions.has(tabId)).toBe(false);
-  expect(internals.tabActivationRevisions.has(tabId)).toBe(false);
 }
 
 export function deferred<T>(): {

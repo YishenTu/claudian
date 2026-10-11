@@ -112,8 +112,7 @@ describe('ConversationController', () => {
 
     describe('Switching conversations', () => {
       it('should clear queued message on conversation switch', async () => {
-        const dismissPendingInlinePrompts = jest.fn();
-        deps = createConversationControllerDeps({ dismissPendingInlinePrompts });
+        deps = createConversationControllerDeps();
         const onConversationSwitched = jest.fn(() => {
           expect(deps.state.isSwitchingConversation).toBe(false);
         });
@@ -123,11 +122,10 @@ describe('ConversationController', () => {
         deps.state.currentConversationId = 'old-conv';
         deps.state.claimQueuedMessageWriter()(queued('test'));
 
-        await controller.switchTo('new-conv');
+        await expect(controller.switchTo('new-conv')).resolves.toBe(true);
 
         expect(deps.clearQueuedMessage).toHaveBeenCalled();
         expect(inputEl.value).toBe('');
-        expect(dismissPendingInlinePrompts).toHaveBeenCalled();
         expect(onConversationSwitched).toHaveBeenCalled();
       });
 
@@ -146,19 +144,10 @@ describe('ConversationController', () => {
         expect(updates).not.toHaveProperty('lastActivityAt');
       });
 
-      it('should not switch while streaming', async () => {
-        holdResponse(deps.session.turns);
-        deps.state.currentConversationId = 'old-conv';
-
-        await controller.switchTo('new-conv');
-
-        expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
-      });
-
-      it('should not switch to current conversation', async () => {
+      it('reports an already shown, hydrated conversation as switched without reloading it', async () => {
         deps.state.currentConversationId = 'same-conv';
 
-        await controller.switchTo('same-conv');
+        await expect(controller.switchTo('same-conv')).resolves.toBe(true);
 
         expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
       });
@@ -564,22 +553,104 @@ describe('ConversationController - Race Condition Guards', () => {
       expect(deps.state.currentConversationId).toBe('conversation-b');
     });
 
-    it('should not switch when isSwitchingConversation is already true', async () => {
+    type BusyCase = {
+      name: string;
+      work?: Parameters<typeof createConversationControllerDeps>[1];
+      hold?: (fixture: typeof deps) => void;
+    };
+    const busyCases: BusyCase[] = [
+      { name: 'a foreground turn is active', hold: fixture => { holdResponse(fixture.session.turns); } },
+      { name: 'the conversation is rewinding', hold: fixture => { jest.spyOn(fixture.state, 'isRewinding', 'get').mockReturnValue(true); } },
+      { name: 'another switch is running', hold: fixture => { jest.spyOn(fixture.state, 'isSwitchingConversation', 'get').mockReturnValue(true); } },
+      { name: 'the tab is resetting to a new chat', hold: fixture => { jest.spyOn(fixture.state, 'isResettingToNewChat', 'get').mockReturnValue(true); } },
+      { name: 'provider background work is running', work: { hasBackgroundWork: () => true } },
+      { name: 'detached work (async subagents or side chat) is running', work: { hasDetachedWork: () => true } },
+      { name: 'an approval or ask-user prompt is pending', hold: fixture => { fixture.state.beginActionRequired('approval-1'); } },
+    ];
+
+    it.each(busyCases)('refuses without side effects when $name', async ({ work, hold }) => {
+      const dismissPendingInlinePrompts = jest.fn();
+      const awaitBackgroundWork = jest.fn().mockResolvedValue(undefined);
+      deps = createConversationControllerDeps({ dismissPendingInlinePrompts, awaitBackgroundWork }, work);
+      const onConversationSwitched = jest.fn();
+      controller = new ConversationController(deps, { onConversationSwitched });
+      const messages = [{ id: 'kept', role: 'user' as const, content: 'Keep me', timestamp: testDate().getTime() }];
       deps.state.currentConversationId = 'old-conv';
-      jest.spyOn(deps.state, 'isSwitchingConversation', 'get').mockReturnValue(true);
+      deps.state.messages = messages;
+      deps.getInputEl().value = 'retained draft';
+      const queuedMessage = queued('retained queue');
+      deps.state.claimQueuedMessageWriter()(queuedMessage);
+      hold?.(deps);
 
-      await controller.switchTo('new-conv');
+      await expect(controller.switchTo('new-conv')).resolves.toBe(false);
 
+      expect(deps.state.currentConversationId).toBe('old-conv');
+      expect(deps.state.messages).toEqual(messages);
+      expect(deps.getInputEl().value).toBe('retained draft');
+      expect(deps.state.queuedMessage).toBe(queuedMessage);
+      expect(dismissPendingInlinePrompts).not.toHaveBeenCalled();
+      expect(awaitBackgroundWork).not.toHaveBeenCalled();
+      expect(deps.subagentManager.orphanAllActive).not.toHaveBeenCalled();
+      expect(deps.subagentManager.clear).not.toHaveBeenCalled();
+      expect(deps.plugin.updateConversation).not.toHaveBeenCalled();
+      expect(deps.clearQueuedMessage).not.toHaveBeenCalled();
+      expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
+      expect(onConversationSwitched).not.toHaveBeenCalled();
+    });
+
+    it('refuses when draining admitted event work leaves the tab working or awaiting the user', async () => {
+      let detached = false;
+      const awaitBackgroundWork = jest.fn(async () => {
+        detached = true;
+        deps.state.beginActionRequired('async-question');
+      });
+      deps = createConversationControllerDeps({ awaitBackgroundWork }, { hasDetachedWork: () => detached });
+      controller = new ConversationController(deps);
+      deps.state.currentConversationId = 'old-conv';
+      deps.getInputEl().value = 'retained draft';
+
+      await expect(controller.switchTo('new-conv')).resolves.toBe(false);
+
+      expect(awaitBackgroundWork).toHaveBeenCalledTimes(1);
+      expect(deps.state.currentConversationId).toBe('old-conv');
+      expect(deps.state.isSwitchingConversation).toBe(false);
+      expect(deps.getInputEl().value).toBe('retained draft');
+      expect(deps.plugin.updateConversation).not.toHaveBeenCalled();
+      expect(deps.subagentManager.clear).not.toHaveBeenCalled();
       expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
     });
 
-    it('should not switch while resetting to a new chat', async () => {
+    it('reports a switch that was not performed as false', async () => {
       deps.state.currentConversationId = 'old-conv';
-      jest.spyOn(deps.state, 'isResettingToNewChat', 'get').mockReturnValue(true);
+      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue(null);
+      await expect(controller.switchTo('missing')).resolves.toBe(false);
 
-      await controller.switchTo('new-conv');
-
+      deps = createConversationControllerDeps({ isClosing: () => true });
+      controller = new ConversationController(deps);
+      await expect(controller.switchTo('new-conv')).resolves.toBe(false);
       expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
+    });
+
+    it('reports a request superseded by a newer switch as false', async () => {
+      const firstConversation = deferred<any>();
+      (deps.plugin.switchConversation as jest.Mock).mockImplementation(async (id: string) => (
+        id === 'conversation-a' ? firstConversation.promise : { id, messages: [], sessionId: null }
+      ));
+      deps.state.currentConversationId = 'old-conversation';
+
+      const first = controller.switchTo('conversation-a');
+      for (let attempt = 0;
+        attempt < 10 && (deps.plugin.switchConversation as jest.Mock).mock.calls.length === 0;
+        attempt += 1) {
+        await Promise.resolve();
+      }
+      const second = controller.switchTo('conversation-b');
+      const superseded = controller.switchTo('conversation-c');
+      const latest = controller.switchTo('conversation-d');
+      firstConversation.resolve({ id: 'conversation-a', messages: [], sessionId: null });
+
+      await expect(Promise.all([first, second, superseded, latest])).resolves.toEqual([true, false, false, true]);
+      expect(deps.state.currentConversationId).toBe('conversation-d');
     });
 
     it('should reset isSwitchingConversation flag even on error', async () => {

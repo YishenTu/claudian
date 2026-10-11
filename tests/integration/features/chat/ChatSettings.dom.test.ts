@@ -120,6 +120,7 @@ function createChatHarness(settings: ClaudianSettings, id: ProviderId, selected:
       containerEl: document.body.appendChild(document.createElement('div')),
       mentionDataProvider: new VaultMentionDataProvider(plugin.app),
       conversation, getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
+    openConversation: async () => {}, startNewConversation: async () => {},
     });
     tab.state.currentConversationId = conversation.id;
     tab.state.messages = conversation.messages;

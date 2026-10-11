@@ -8,7 +8,7 @@ import { PinnedLinkedContentPathCoordinator } from '@/app/settings/PinnedLinkedC
 import { ConversationPersistenceStore } from '@/app/storage/ConversationPersistenceStore';
 import type { SessionMetadataReadResult } from '@/app/storage/SessionStorage';
 import { SessionStorage } from '@/app/storage/SessionStorage';
-import { SharedStorageService } from '@/app/storage/SharedStorageService';
+import type { SharedStorageService } from '@/app/storage/SharedStorageService';
 import type { ClaudianChatFeatureHost } from '@/composition/ClaudianFeatureHosts';
 import type { ClaudianViews } from '@/composition/ClaudianViews';
 import { getDeviceSessionsPath } from '@/core/bootstrap/storagePaths';
@@ -475,7 +475,7 @@ describe('ClaudianPlugin', () => {
       expect(plugin.registerEvent).toHaveBeenCalledWith({ id: 'workspace-event' });
     });
 
-    it('does not preload legacy tab metadata before a view claims migration', async () => {
+    it('completes onload without waiting for the history scan or loading session metadata', async () => {
       type EmptyMetadataScan = {
         records: [];
         complete: true;
@@ -500,12 +500,6 @@ describe('ClaudianPlugin', () => {
           needsMigration: false,
           source: 'device',
         });
-      (plugin.loadData as jest.Mock).mockResolvedValue({
-        tabManagerState: {
-          openTabs: [{ tabId: 'tab-1', conversationId: restoredMetadata.id }],
-          activeTabId: 'tab-1',
-        },
-      });
 
       const onloadPromise = plugin.onload();
       const completedBeforeHistoryScan = await completesWhilePending(onloadPromise);
@@ -542,40 +536,6 @@ describe('ClaudianPlugin', () => {
         .toBe(restoredMetadata.title);
       expect(loadSourceSpy).toHaveBeenCalledWith(restoredMetadata.id);
       loadSourceSpy.mockRestore();
-    });
-
-    it('discards stale global tab state after a view-scoped restore succeeds', async () => {
-      const clearLegacyState = jest.spyOn(
-        SharedStorageService.prototype,
-        'clearTabManagerState',
-      ).mockResolvedValue(undefined);
-      (plugin.loadData as jest.Mock).mockResolvedValue({
-        tabManagerState: {
-          activeTabId: 'legacy-tab',
-          openTabs: [{ conversationId: null, tabId: 'legacy-tab' }],
-        },
-      });
-      mockApp.workspace.getLeavesOfType.mockReturnValue([{
-        getViewState: jest.fn().mockReturnValue({
-          state: {
-            tabWorkspace: {
-              version: 1,
-              activeTabId: 'view-tab',
-              openTabs: [{ conversationId: null, tabId: 'view-tab' }],
-            },
-          },
-        }),
-      }]);
-      await plugin.onload();
-
-      expect(clearLegacyState).toHaveBeenCalledTimes(1);
-      await expect(chatHostOf(plugin).claimLegacyTabManagerState()).resolves.toBeNull();
-      expect(clearLegacyState).toHaveBeenCalledTimes(1);
-
-      await chatHostOf(plugin).completeLegacyTabManagerStateMigration();
-
-      expect(clearLegacyState).toHaveBeenCalledTimes(1);
-      clearLegacyState.mockRestore();
     });
 
     it('publishes the remaining conversation metadata after layout readiness', async () => {
@@ -787,12 +747,6 @@ describe('ClaudianPlugin', () => {
         }
         return '';
       });
-      (plugin.loadData as jest.Mock).mockResolvedValue({
-        tabManagerState: {
-          openTabs: [{ tabId: 'tab-1', conversationId: restoredMetadata.id }],
-          activeTabId: 'tab-1',
-        },
-      });
       const loadSpy = jest.spyOn(SessionStorage.prototype, 'loadMetadata')
         .mockResolvedValue(restoredMetadata);
       const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
@@ -853,12 +807,6 @@ describe('ClaudianPlugin', () => {
         sessionId: 'deferred-session-id',
         providerState: { providerSessionId: 'deferred-provider-session-id' },
       };
-      (plugin.loadData as jest.Mock).mockResolvedValue({
-        tabManagerState: {
-          openTabs: [{ tabId: 'tab-1', conversationId: restoredMetadata.id }],
-          activeTabId: 'tab-1',
-        },
-      });
       const loadSpy = jest.spyOn(SessionStorage.prototype, 'loadMetadata')
         .mockResolvedValue(restoredMetadata);
       const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
@@ -2685,7 +2633,7 @@ describe('ClaudianPlugin', () => {
         };
         return {
           getTabManager: () => manager,
-          isDualPaneMode: () => false,
+          getCompactTabManager: () => manager,
           prepareForPluginUnload: async () => undefined,
           manager,
         };
@@ -2704,15 +2652,13 @@ describe('ClaudianPlugin', () => {
       expect(chatHostOf(plugin).getView()).toBe(first.view);
     });
 
-    it('delegates New to the active dual-pane navigation policy', async () => {
+    it('delegates New to the focused view layout', async () => {
       await plugin.onload();
 
-      const handleNewConversationCommand = jest.fn().mockResolvedValue(true);
-      const createNewTab = jest.fn().mockResolvedValue(undefined);
+      const startNewConversation = jest.fn().mockResolvedValue(undefined);
       jest.spyOn(viewsOf(plugin), 'getView').mockReturnValue({
-        createNewTab,
         getTabManager: jest.fn().mockReturnValue({}),
-        handleNewConversationCommand,
+        startNewConversation,
       } as any);
 
       const command = getRegisteredCommand('new-tab');
@@ -2720,15 +2666,14 @@ describe('ClaudianPlugin', () => {
       expect(command.checkCallback(false)).toBe(true);
       await new Promise<void>((resolve) => setImmediate(resolve));
 
-      expect(handleNewConversationCommand).toHaveBeenCalledTimes(1);
-      expect(createNewTab).not.toHaveBeenCalled();
+      expect(startNewConversation).toHaveBeenCalledTimes(1);
     });
 
     it('keeps replace and close tab commands out of dual mode', async () => {
       await plugin.onload();
 
       jest.spyOn(viewsOf(plugin), 'getView').mockReturnValue({
-        isDualPaneMode: () => true,
+        getCompactTabManager: () => null,
         getTabManager: jest.fn().mockReturnValue({
           getActiveTab: jest.fn().mockReturnValue({ state: { isStreaming: false } }),
         }),

@@ -22,7 +22,7 @@ import type { SharedStorageService } from './app/storage/SharedStorageService';
 import { AgentSkillResources } from './composition/AgentSkillResources';
 import { ClaudianChatFeatureHost, ClaudianFeatureHost } from './composition/ClaudianFeatureHosts';
 import { ClaudianProviderHost } from './composition/ClaudianProviderHost';
-import { ClaudianViews, isClaudianView } from './composition/ClaudianViews';
+import { ClaudianViews } from './composition/ClaudianViews';
 import { ProviderExecutionLifecycleRegistry } from './core/execution';
 import { ProviderRegistry } from './core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from './core/providers/ProviderSettingsCoordinator';
@@ -192,7 +192,6 @@ export default class ClaudianPlugin extends Plugin {
       providers: ProviderRegistry,
       providerSettings: ProviderSettingsCoordinator,
       deferNonRestoredSessionMetadata: true,
-      isChatView: isClaudianView,
       isUnloading: () => this.isUnloading,
       publishCommittedSettings: async (settings, previous) => this.chatViews.publishSettings(settings, previous),
       // No chat view can hold tabs before loading completes and assigns the lifecycle.
@@ -271,7 +270,6 @@ export default class ClaudianPlugin extends Plugin {
       executionPersistence: domains.conversationRepository,
       chatModelSelection: domains.chatModelSelection,
       sessionSnapshots: this.sessionSnapshots,
-      tabWorkspaceMigration: domains.tabWorkspaceMigration,
       zenMode: this.zenMode,
     });
     this.inactiveSessionArchiver = new InactiveSessionArchiver(this.chatHost);

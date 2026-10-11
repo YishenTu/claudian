@@ -59,6 +59,7 @@ it('refreshes destination settings when the side panel collapses, expands, and i
     conversation,
     getProviderCatalogConfig: () => null,
     isRuntimeLive: () => true,
+    openConversation: async () => {}, startNewConversation: async () => {},
   });
   tab.state.messages = conversation.messages;
   const side = tab.controllers.sideChatController;

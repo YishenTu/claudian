@@ -1,14 +1,14 @@
 import { Notice } from 'obsidian';
 
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import type { AssembledTabRuntime, TabRuntimeResourceState } from '@/features/chat/tabs/types';
+import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
 export interface TabRuntimeCleanupFailure {
   readonly resource: string;
   readonly error: unknown;
 }
 
-export interface TabRuntimeResourceOwner extends TabRuntimeResourceState {
+export interface TabRuntimeResourceOwner {
   dispose(): Promise<readonly TabRuntimeCleanupFailure[]>;
 }
 

@@ -29,6 +29,7 @@ export function createTestTabSession(options: {
         const state = getState?.();
         return !!state && (state.isRewinding || state.isSwitchingConversation || state.isResettingToNewChat);
       },
+      hasPendingInteraction: () => getState?.()?.requiresAction ?? false,
     },
   );
 }

@@ -8,55 +8,47 @@ import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExe
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import type { ChatState } from '@/features/chat/state/ChatState';
 import type { TabAttention, TabReviewOutcome } from '@/features/chat/state/types';
-import type { TabId, TabProviderCatalogContext } from '@/features/chat/tabs/ChatTab';
-import type { TabRuntimeResourceOwner } from '@/features/chat/tabs/TabLifecycle';
-import type { TabSessionState } from '@/features/chat/tabs/TabSession';
+import type { TabId } from '@/features/chat/tabs/ChatTab';
+import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { TabSession } from '@/features/chat/tabs/TabSession';
-import type { AssembledTabRuntime, ProviderCatalogInfo, ProviderCatalogResolver, TabControllers, TabDOMElements, TabProviderContext } from '@/features/chat/tabs/types';
+import type { AssembledTabRuntime, ProviderCatalogInfo, ProviderCatalogResolver, TabControllers, TabDOMElements, TabServices } from '@/features/chat/tabs/types';
 import type { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 export type TabRuntimeCleanup = () => void | Promise<void>;
 
-export interface TabRuntimeConstructionContext {
+/** What a tab runtime is assembled from: host resources, its identity, and manager callbacks. */
+export interface TabRuntimeFactoryOptions {
   plugin: ChatFeatureHost;
   containerEl: HTMLElement;
   component: Component;
   mentionDataProvider: VaultMentionDataProvider;
   conversation?: Conversation;
   tabId?: TabId;
-  initialState?: Readonly<TabSessionState>;
+  initialState?: Readonly<TabIdentity>;
   draftModel?: string | null;
   providerId?: ProviderId | null;
   lifecycleState?: Extract<AssembledTabRuntime['lifecycleState'], 'provisional' | 'open'>;
-  getProviderCatalogConfig: (
-    tab: TabProviderCatalogContext,
-  ) => ProviderCatalogInfo;
+  getProviderCatalogConfig: (tab: Readonly<TabIdentity>) => ProviderCatalogInfo;
   isRuntimeLive: (tab: AssembledTabRuntime) => boolean;
   forkRequestCallback?: (forkContext: ForkContext) => Promise<void>;
-  openConversation?: (conversationId: string) => Promise<void>;
+  /** Opens a session this tab's command picked; the manager binds it to this tab. */
+  openConversation: (conversationId: string) => Promise<void>;
+  /** Starts a new conversation this tab's command requested (/new). */
+  startNewConversation: () => Promise<void>;
   onStreamingChanged?: (tab: AssembledTabRuntime, isStreaming: boolean) => void;
   onWorkChanged?: (tab: AssembledTabRuntime) => void;
   onRewindingChanged?: (tab: AssembledTabRuntime, isRewinding: boolean) => void;
   onAttentionChanged?: (tab: AssembledTabRuntime, attention: TabAttention) => void;
-  onConversationIdChanged?: (
-    tab: AssembledTabRuntime,
-    conversationId: string | null,
-  ) => void;
-  onDraftModelChanged?: (
-    tab: AssembledTabRuntime,
-    draftModel: string | null,
-  ) => void;
-  onProviderChanged?: (
-    tab: AssembledTabRuntime,
-    providerId: ProviderId,
-  ) => void | Promise<void>;
+  onConversationIdChanged?: (tab: AssembledTabRuntime, conversationId: string | null) => void;
+  onDraftModelChanged?: (tab: AssembledTabRuntime, draftModel: string | null) => void;
+  onProviderChanged?: (tab: AssembledTabRuntime, providerId: ProviderId) => void | Promise<void>;
   onCommandContextChanged?: (tab: AssembledTabRuntime) => void;
-  captureReviewableSettlement?: (
-    tab: AssembledTabRuntime,
-    outcome: TabReviewOutcome,
-  ) => () => void;
+  captureReviewableSettlement?: (tab: AssembledTabRuntime, outcome: TabReviewOutcome) => () => void;
+}
+
+/** Factory options plus the cleanup registry every assembly stage acquires resources through. */
+export interface TabRuntimeConstructionContext extends TabRuntimeFactoryOptions {
   registerCleanup: (resource: string, cleanup: TabRuntimeCleanup) => void;
-  resourceOwner: TabRuntimeResourceOwner;
 }
 
 export interface PublishedTabRuntimeRef {
@@ -65,7 +57,8 @@ export interface PublishedTabRuntimeRef {
   publish(runtime: AssembledTabRuntime): void;
 }
 
-export interface TabRuntimeShellBundle extends TabProviderContext {
+/** The first assembly stage: identity-backed session, presentation state, execution, DOM, and services. */
+export interface TabRuntimeCore extends Readonly<TabIdentity> {
   readonly session: TabSession;
   readonly id: TabId;
   hydrationState: AssembledTabRuntime['hydrationState'];
@@ -74,6 +67,7 @@ export interface TabRuntimeShellBundle extends TabProviderContext {
   readonly captureReviewableSettlement: ((outcome: TabReviewOutcome) => () => void) | null;
   readonly state: ChatState;
   readonly dom: TabDOMElements;
+  readonly services: TabServices;
 }
 
 export interface TabRuntimeControllerBundle {

@@ -21,37 +21,4 @@ describe('SharedStorageService', () => {
     expect(adapter.mkdir).not.toHaveBeenCalled();
     expect(adapter.write).not.toHaveBeenCalled();
   });
-
-  it('propagates legacy tab cleanup failures', async () => {
-    const error = new Error('disk full');
-    const plugin = {
-      app: { vault: { adapter: {} } },
-      loadData: jest.fn().mockResolvedValue({
-        tabManagerState: { activeTabId: null, openTabs: [] },
-      }),
-      saveData: jest.fn().mockRejectedValue(error),
-    } as any;
-    const storage = new SharedStorageService(plugin, DEFAULT_CLAUDIAN_SETTINGS);
-
-    await expect(storage.clearTabManagerState()).rejects.toBe(error);
-  });
-
-  it('clears only the legacy global tab snapshot', async () => {
-    const plugin = {
-      app: { vault: { adapter: {} } },
-      loadData: jest.fn().mockResolvedValue({
-        existing: true,
-        tabManagerState: {
-          activeTabId: 'tab-1',
-          openTabs: [{ conversationId: 'conversation-1', tabId: 'tab-1' }],
-        },
-      }),
-      saveData: jest.fn().mockResolvedValue(undefined),
-    } as any;
-    const storage = new SharedStorageService(plugin, DEFAULT_CLAUDIAN_SETTINGS);
-
-    await storage.clearTabManagerState();
-
-    expect(plugin.saveData).toHaveBeenCalledWith({ existing: true });
-  });
 });

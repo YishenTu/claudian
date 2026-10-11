@@ -54,6 +54,7 @@ export class ChatState {
   private state: ChatStateData;
   private _callbacks: ChatStateCallbacks;
   private readonly pendingActionIds = new Set<string>();
+  private reviewEpochValue = 0;
   private pendingReview: {
     outcome: TabReviewOutcome;
     since: number;
@@ -376,7 +377,16 @@ export class ChatState {
     this.#setAttention({ kind: 'review', outcome, since: Date.now() });
   }
 
+  /**
+   * Advances on every review acknowledgement (activation, a new turn). A settlement captured in an
+   * earlier epoch was already seen by the user and must not request review.
+   */
+  get reviewEpoch(): number {
+    return this.reviewEpochValue;
+  }
+
   acknowledgeReview(): void {
+    this.reviewEpochValue += 1;
     this.pendingReview = null;
     if (this.state.attention?.kind === 'review') {
       this.#setAttention(null);

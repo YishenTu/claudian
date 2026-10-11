@@ -1,25 +1,14 @@
 import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
 
-import { TabWorkspaceMigrationCoordinator } from '@/app/storage/TabWorkspaceMigrationCoordinator';
 import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
 
-test.each(['legacy read', 'metadata load'] as const)('a delivered view snapshot supersedes pending %s', async phase => {
-  const legacy: AppTabManagerState = { activeTabId: 'legacy', openTabs: [{ tabId: 'legacy', conversationId: 'legacy-conversation' }] };
+test('a later delivered view snapshot supersedes a restore still loading metadata', async () => {
+  const earlier: AppTabManagerState = { activeTabId: 'earlier', openTabs: [{ tabId: 'earlier', conversationId: 'earlier-conversation' }] };
   const current: AppTabManagerState = { activeTabId: 'current', openTabs: [{ tabId: 'current', conversationId: null }] };
-  let finishRead!: (state: AppTabManagerState) => void;
-  let markReading!: () => void;
-  const reading = new Promise<void>(resolve => { markReading = resolve; });
-  const storage = {
-    getTabManagerState: () => {
-      if (phase === 'metadata load') return Promise.resolve(legacy);
-      markReading();
-      return new Promise<AppTabManagerState>(resolve => { finishRead = resolve; });
-    },
-    clearTabManagerState: jest.fn().mockResolvedValue(undefined),
-  };
+  let finishLoad!: () => void;
+  let markLoading!: () => void;
+  const loading = new Promise<void>(resolve => { markLoading = resolve; });
   const view = createClaudianView();
-  const workspace = { layoutReady: true, getLeavesOfType: () => [{view}], onLayoutReady: () => undefined };
-  const migration = new TabWorkspaceMigrationCoordinator(storage, workspace, candidate => candidate === view);
   let restored: AppTabManagerState | null = null;
   view.tabManager = {
     getActiveTab: () => null,
@@ -31,22 +20,18 @@ test.each(['legacy read', 'metadata load'] as const)('a delivered view snapshot 
   view.plugin = {
     ...view.plugin,
     settings: { restoreTabsOnStartup: true },
-    registerTabWorkspaceStateDelivery: (owner: object, scoped: boolean) => migration.registerStateDelivery(owner, scoped),
-    claimLegacyTabManagerState: () => migration.claimLegacyState(),
-    completeLegacyTabManagerStateMigration: () => migration.completeMigration(),
     ensureConversationMetadataLoaded: jest.fn(async () => {
-      if (phase === 'metadata load') {
-        markReading();
-        await new Promise<void>(resolve => { finishRead = () => resolve(); });
-      }
+      markLoading();
+      await new Promise<void>(resolve => { finishLoad = resolve; });
     }),
   };
   for (const name of ['syncProviderBrandColor', 'updateTabBar', 'notifyConversationNavigationChanged']) view[name] = jest.fn();
-  const firstDelivery = view.setState({}, { history: false });
-  await reading;
-  const scopedDelivery = view.setState({ tabWorkspace: {version: 1, ...current} }, {history: false});
-  finishRead(legacy);
-  await Promise.all([firstDelivery, scopedDelivery]);
+  const firstDelivery = view.setState({ tabWorkspace: { version: 1, ...earlier } }, { history: false });
+  await loading;
+  const secondDelivery = view.setState({ tabWorkspace: { version: 1, ...current } }, { history: false });
+  finishLoad();
+  await Promise.all([firstDelivery, secondDelivery]);
+  expect(view.tabManager.restoreState).toHaveBeenCalledTimes(1);
   expect(view.tabManager.restoreState).toHaveBeenLastCalledWith(current);
   expect(persistence.update).toHaveBeenLastCalledWith(current);
 });

@@ -27,7 +27,6 @@ describe('startApplication', () => {
       providers: overrides.providers ?? ProviderRegistry,
       providerSettings: ProviderSettingsCoordinator,
       deferNonRestoredSessionMetadata: false,
-      isChatView: () => false,
       isUnloading: () => false,
       publishCommittedSettings: async () => undefined,
       onConversationDeleted: async () => undefined,
@@ -73,7 +72,6 @@ describe('startApplication', () => {
       workspace: {
         layoutReady: true,
         onLayoutReady: jest.fn(),
-        getLeavesOfType: jest.fn().mockReturnValue([]),
       },
     };
     plugin = {

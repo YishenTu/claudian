@@ -16,7 +16,8 @@ export interface ForkTargetHost {
   readonly membership: TabMembershipView;
   createTab(conversationId: string): Promise<AssembledTabRuntime | null>;
   discardTab(tabId: TabId): Promise<boolean>;
-  shouldForkToNewTab(): boolean;
+  /** `new-tab` when the layout always forks into a new tab, skipping the target prompt. */
+  forkTarget(): 'ask' | 'new-tab';
 }
 
 type ForkSourceLease = {
@@ -58,7 +59,7 @@ export async function openForkTarget(
   const sourceLease = captureForkSourceLease(context, sourceTab);
   if (!isForkSourceCurrent(host, sourceLease)) return;
 
-  const shouldForkToNewTab = host.shouldForkToNewTab();
+  const shouldForkToNewTab = host.forkTarget() === 'new-tab';
   const target = shouldForkToNewTab
     ? 'new-tab'
     : await chooseForkTarget(host.plugin.app);
@@ -103,7 +104,7 @@ async function forkToNewTab(
     if (!isForkSourceCurrent(host, sourceLease)) {
       if (
         host.membership.getTab(tab.id) === tab
-        && tab.session.userOwnershipRevision !== 0
+        && tab.session.isUserClaimed
       ) {
         return tab;
       }

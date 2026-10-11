@@ -18,7 +18,6 @@ import { PinnedLinkedContentPathCoordinator } from '../settings/PinnedLinkedCont
 import { RuntimeSettingsCoordinator } from '../settings/RuntimeSettingsCoordinator';
 import { SettingsCoordinator } from '../settings/SettingsCoordinator';
 import { SharedStorageService } from '../storage/SharedStorageService';
-import { TabWorkspaceMigrationCoordinator } from '../storage/TabWorkspaceMigrationCoordinator';
 
 export type StartupProviderCatalog = Pick<
   typeof ProviderRegistry,
@@ -40,14 +39,13 @@ export type StartupProviderSettings = Pick<
 >;
 
 export interface ApplicationStartupOptions {
-  /** Plugin data owner for settings files and the legacy tab snapshot. */
+  /** Plugin owner of the settings files and session storage. */
   readonly plugin: Plugin;
   readonly defaultSettings: Readonly<ClaudianSettings>;
   readonly providers: StartupProviderCatalog;
   readonly providerSettings: StartupProviderSettings;
   /** Defers sessions not selected for restoration to the background metadata scan. */
   readonly deferNonRestoredSessionMetadata: boolean;
-  isChatView(value: unknown): boolean;
   isUnloading(): boolean;
   publishCommittedSettings(
     settings: Readonly<ClaudianSettings>,
@@ -72,7 +70,6 @@ export interface ApplicationDomains {
   readonly nativeSessionArchives: NativeSessionArchiveSync;
   readonly runtimeSettings: RuntimeSettingsCoordinator;
   readonly sessionMetadata: SessionMetadataLoader;
-  readonly tabWorkspaceMigration: TabWorkspaceMigrationCoordinator;
 }
 
 /**
@@ -84,11 +81,6 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
   const { plugin, providers, providerSettings } = options;
   const workspace = plugin.app.workspace;
   const storage = new SharedStorageService(plugin, options.defaultSettings);
-  const tabWorkspaceMigration = new TabWorkspaceMigrationCoordinator(
-    storage,
-    workspace,
-    value => options.isChatView(value),
-  );
   const { claudian } = await storage.initialize();
   const settings: ClaudianSettings = {
     ...structuredClone(options.defaultSettings),
@@ -235,6 +227,5 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
     nativeSessionArchives,
     runtimeSettings,
     sessionMetadata,
-    tabWorkspaceMigration,
   };
 }

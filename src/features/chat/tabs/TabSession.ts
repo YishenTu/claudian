@@ -1,15 +1,8 @@
 import type { ProviderId } from '@/core/providers/types';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import type { TabLifecycleState } from '@/features/chat/tabs/ChatTab';
+import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import { type TurnCancelReason, TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
-
-export interface TabSessionState {
-  conversationId: string | null;
-  draftModel: string | null;
-  id: string;
-  lifecycleState: TabLifecycleState;
-  providerId: ProviderId | null;
-}
 
 export interface TabSessionOptions {
   /** Shared with presentation state built before the session; its admission must use `admitsConversationOperations`. */
@@ -19,6 +12,8 @@ export interface TabSessionOptions {
   isConversationBusy?: () => boolean;
   /** Work the execution coordinator does not own, such as async subagents and side chat. */
   hasDetachedWork?: () => boolean;
+  /** An approval or question awaits the user. */
+  hasPendingInteraction?: () => boolean;
   /** Expires every pending prompt, including ones outside the active turn. */
   dismissInteractions?: () => void;
 }
@@ -36,12 +31,12 @@ export class TabSession {
   private backgroundWorkPauseDepth = 0;
   private coordinatorDisposal: Promise<void> | null = null;
   private intentAdmissionPauseDepth = 0;
-  private userOwnershipRevisionValue = 0;
+  private userClaimed = false;
   private identityRevisionValue = 0;
   private identitySealed = false;
 
   constructor(
-    private readonly state: TabSessionState,
+    private readonly identity: TabIdentity,
     private readonly coordinator: ChatExecutionCoordinator,
     private readonly options: TabSessionOptions = {},
   ) {
@@ -55,14 +50,15 @@ export class TabSession {
     });
   }
 
-  get id(): string { return this.state.id; }
-  get lifecycleState(): TabLifecycleState { return this.state.lifecycleState; }
-  get providerId(): ProviderId | null { return this.state.providerId; }
-  get conversationId(): string | null { return this.state.conversationId; }
-  get draftModel(): string | null { return this.state.draftModel; }
+  get id(): string { return this.identity.id; }
+  get lifecycleState(): TabLifecycleState { return this.identity.lifecycleState; }
+  get providerId(): ProviderId | null { return this.identity.providerId; }
+  get conversationId(): string | null { return this.identity.conversationId; }
+  get draftModel(): string | null { return this.identity.draftModel; }
   get executionCoordinator(): ChatExecutionCoordinator { return this.coordinator; }
   get acceptsIntents(): boolean { return this.intentAdmissionPauseDepth === 0; }
-  get userOwnershipRevision(): number { return this.userOwnershipRevisionValue; }
+  /** The user has retained or otherwise claimed this tab; superseded requests must not discard it. */
+  get isUserClaimed(): boolean { return this.userClaimed; }
   get identityRevision(): number { return this.identityRevisionValue; }
 
   /** Admission is open, the tab is not closing, and no conversation transition is running. */
@@ -71,10 +67,13 @@ export class TabSession {
       && !this.isConversationBusy;
   }
 
-  /** No turn, background work, conversation transition, or close holds the tab, so its provider session may be released. */
+  /**
+   * No turn, background work, pending interaction, conversation transition, or close holds the
+   * tab: it may be rebound, released as a preview, or lose its idle provider session.
+   */
   get isIdle(): boolean {
     return !this.turns.isActive && !this.hasBackgroundWork && !this.isConversationBusy
-      && this.lifecycleState !== 'closing';
+      && !(this.options.hasPendingInteraction?.() ?? false) && this.lifecycleState !== 'closing';
   }
 
   private get isConversationBusy(): boolean {
@@ -150,13 +149,13 @@ export class TabSession {
     if (this.identitySealed) return;
     if (this.conversationId !== conversationId || this.providerId !== providerId || this.draftModel !== draftModel) {
       this.identityRevisionValue++;
-      Object.assign(this.state, { conversationId, providerId, draftModel });
+      Object.assign(this.identity, { conversationId, providerId, draftModel });
       this.options.onIdentityChanged?.();
     }
   }
 
   commitAdmission(): void {
-    if (this.lifecycleState === 'provisional') this.state.lifecycleState = 'open';
+    if (this.lifecycleState === 'provisional') this.identity.lifecycleState = 'open';
   }
 
   sealIdentity(): void {
@@ -165,11 +164,11 @@ export class TabSession {
   }
 
   beginClose(): void {
-    this.state.lifecycleState = 'closing';
+    this.identity.lifecycleState = 'closing';
   }
 
   claimUserOwnership(): void {
-    this.userOwnershipRevisionValue += 1;
+    this.userClaimed = true;
   }
 
   pauseIntentAdmission(): void {

@@ -29,13 +29,14 @@ import type { ChatState } from '@/features/chat/state/ChatState';
 import type { TabAttention, TabReviewOutcome } from '@/features/chat/state/types';
 import type { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import type { ChatTab, TabHydrationState, TabId } from '@/features/chat/tabs/ChatTab';
-import type { TabSession, TabSessionState } from '@/features/chat/tabs/TabSession';
+import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
+import type { TabSession } from '@/features/chat/tabs/TabSession';
 import type { StreamController } from '@/features/chat/turns/StreamController';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 /**
  * Read-only projection of TabManager-owned membership and liveness. Collaborators that
- * await revalidate through this view; only TabManager mutates membership.
+ * await revalidate through this view; only TabManager and its activation/close owners mutate it.
  */
 export interface TabMembershipView {
   isDestroyed(): boolean;
@@ -43,12 +44,12 @@ export interface TabMembershipView {
   getTab(tabId: TabId): AssembledTabRuntime | null;
   /** Assembled runtimes in membership order. */
   getAllTabs(): AssembledTabRuntime[];
-  /** Ordered membership, including unassembled restored shells. */
-  getTabIdentities(): readonly Readonly<TabSessionState>[];
+  /** Ordered membership identities, including restored tabs not yet assembled. */
+  getTabIdentities(): readonly Readonly<TabIdentity>[];
   /** Owned, not closing, and the manager is live: the tab may receive new work. */
-  isTabAlive(tab: TabSessionState): boolean;
+  isTabAlive(tab: Readonly<TabIdentity>): boolean;
   /** Owned and the manager is not destroyed: closing tabs may still record terminal state. */
-  isTabStateMutable(tab: TabSessionState): boolean;
+  isTabStateMutable(tab: Readonly<TabIdentity>): boolean;
   /** A close has been admitted for this tab and has not finished releasing it. */
   isCloseClaimed(tabId: TabId): boolean;
 }
@@ -133,15 +134,6 @@ export interface TabDOMElements {
   readonly infoRowEl: HTMLElement;
 }
 
-/** Proof that input/event wiring completed before the runtime was published. */
-export interface TabInputBindings {
-  readonly installed: true;
-}
-
-export interface TabRuntimeResourceState {
-  readonly isDisposed: boolean;
-}
-
 /**
  * Represents a single assembled tab in the multi-tab system.
  * Each tab is an independent chat session with its own runtime instance.
@@ -177,26 +169,28 @@ export interface AssembledTabRuntime extends ChatTab {
 
   /** Per-tab renderer. */
   readonly renderer: MessageRenderer;
-
-  /** Confirms that input/event wiring completed before publication. */
-  readonly inputBindings: TabInputBindings;
-
-  /** Reports operational disposal without exposing teardown authority. */
-  readonly resources: TabRuntimeResourceState;
 }
 
-export type TabProviderContext = Pick<
-  AssembledTabRuntime,
-  'conversationId' | 'providerId' | 'lifecycleState' | 'draftModel'
->;
+/**
+ * Layout semantics the host view injects into its tab manager. Tab commands (/new, /sessions,
+ * fork) consult it with the tab that issued them; a layout that declines leaves the request to
+ * that tab's default behavior.
+ */
+export interface TabLayoutPolicy {
+  /** `new-tab` skips the fork target prompt because the layout always forks into a new tab. */
+  forkTarget(): 'ask' | 'new-tab';
+  /** Opens a session picked from `sourceTab`'s command; false leaves the pick to the source tab. */
+  openPicked(conversationId: string, sourceTab: AssembledTabRuntime): Promise<boolean>;
+  /** Starts a new conversation requested from `sourceTab`; false clears the source tab in place. */
+  startNew(sourceTab: AssembledTabRuntime): Promise<boolean>;
+  /** Sessions whose previews the viewer slot retains instead of releasing (pinned sessions). */
+  shouldRetainPreview(conversationId: string): boolean;
+}
 
 /**
  * Callbacks for tab state changes.
  */
 export interface TabManagerCallbacks {
-  /** Skips the target prompt when the active layout always forks into a new runtime tab. */
-  shouldForkToNewTab?: () => boolean;
-
   /** Called after a newly created tab completes admission. */
   onTabCreated?: (tab: AssembledTabRuntime) => void;
 

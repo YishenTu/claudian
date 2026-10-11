@@ -1,21 +1,19 @@
 import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
 import { TabWorkspaceLifecycle } from '@/features/chat/tabs/persistence/TabWorkspaceLifecycle';
 
-function readyDelivery() {
-  return { declarationsReady: true, waitUntilDeclarationsReady: Promise.resolve() };
-}
-
 function createHarness(options: {
   manager?: Record<string, unknown> | null;
   tabBar?: Record<string, unknown> | null;
   plugin?: Record<string, unknown>;
-  isWide?: boolean;
 } = {}) {
+  const workspace = {
+    layoutReady: true,
+    onLayoutReady: jest.fn(),
+    requestSaveLayout: Object.assign(jest.fn(), { run: jest.fn() }),
+  };
   const plugin = {
-    claimLegacyTabManagerState: jest.fn().mockResolvedValue(null),
-    completeLegacyTabManagerStateMigration: jest.fn().mockResolvedValue(undefined),
+    app: { workspace },
     ensureConversationMetadataLoaded: jest.fn().mockResolvedValue(undefined),
-    registerTabWorkspaceStateDelivery: jest.fn().mockReturnValue(readyDelivery()),
     settings: { restoreTabsOnStartup: true },
     ...options.plugin,
   };
@@ -26,20 +24,18 @@ function createHarness(options: {
   };
   const lifecycle = new TabWorkspaceLifecycle({
     getPlugin: () => plugin as never,
-    view: {} as never,
     getTabManager: () => host.manager as never,
     getTabBar: () => host.tabBar as never,
-    isWideLayout: () => options.isWide ?? false,
     onInitialized: host.onInitialized,
   });
-  return { host, lifecycle, plugin };
+  return { host, lifecycle, plugin, workspace };
 }
 
 const viewState = (state: AppTabManagerState) => ({ tabWorkspace: { version: 1, ...state } });
 
 describe('TabWorkspaceLifecycle', () => {
   describe('delivered view state', () => {
-    it('keeps a valid delivered plan authoritative until shells are admitted', async () => {
+    it('keeps a valid delivered plan authoritative until tab identities are admitted', async () => {
       const state = {
         activeTabId: 'tab-2',
         openTabs: [
@@ -62,16 +58,14 @@ describe('TabWorkspaceLifecycle', () => {
         activeTabId: 'tab-1',
         openTabs: [{ conversationId: 'conversation-1', tabId: 'tab-1' }, { conversationId: 42, tabId: 'tab-2' }],
       }],
-    ])('starts fresh from %s without falling back to the legacy snapshot', async (_label, tabWorkspace) => {
+    ])('starts fresh from %s', async (_label, tabWorkspace) => {
       const restoreState = jest.fn().mockResolvedValue(undefined);
-      const { lifecycle, plugin } = createHarness({
+      const { lifecycle } = createHarness({
         manager: { restoreState, getPersistedState: () => ({ activeTabId: null, openTabs: [] }) },
       });
 
       await lifecycle.setState({ tabWorkspace });
 
-      expect(plugin.registerTabWorkspaceStateDelivery).toHaveBeenCalledWith(expect.anything(), true);
-      expect(plugin.claimLegacyTabManagerState).not.toHaveBeenCalled();
       expect(restoreState).toHaveBeenCalledWith({ activeTabId: null, openTabs: [] });
     });
 
@@ -111,7 +105,7 @@ describe('TabWorkspaceLifecycle', () => {
   });
 
   describe('restore', () => {
-    it('restores every open tab and prepares every bound conversation in single-pane mode', async () => {
+    it('restores every open tab and prepares every bound conversation independently of layout', async () => {
       const restoreState = jest.fn().mockResolvedValue(undefined);
       const setExpandedTitleTabIds = jest.fn();
       const state = {
@@ -138,28 +132,6 @@ describe('TabWorkspaceLifecycle', () => {
         .toBeLessThan(restoreState.mock.invocationCallOrder[0]);
     });
 
-    it('restores and prepares only the last active tab in dual-pane mode', async () => {
-      const restoreState = jest.fn().mockResolvedValue(undefined);
-      const { lifecycle, plugin } = createHarness({
-        isWide: true,
-        manager: { restoreState, getPersistedState: () => ({ activeTabId: null, openTabs: [] }) },
-      });
-
-      await lifecycle.setState(viewState({
-        activeTabId: 'preview-tab',
-        openTabs: [
-          { conversationId: 'conversation-1', tabId: 'tab-1' },
-          { conversationId: 'conversation-preview', tabId: 'preview-tab' },
-        ],
-      }));
-
-      expect(plugin.ensureConversationMetadataLoaded).toHaveBeenCalledWith(['conversation-preview']);
-      expect(restoreState).toHaveBeenCalledWith({
-        activeTabId: 'preview-tab',
-        openTabs: [{ conversationId: 'conversation-preview', tabId: 'preview-tab' }],
-      });
-    });
-
     it('starts fresh without preparing saved conversations when restore is off', async () => {
       const restoreState = jest.fn().mockResolvedValue(undefined);
       const { lifecycle, plugin } = createHarness({
@@ -176,22 +148,24 @@ describe('TabWorkspaceLifecycle', () => {
       expect(restoreState).toHaveBeenCalledWith({ activeTabId: null, openTabs: [] });
     });
 
-    it('claims the legacy global snapshot only when view state is absent', async () => {
-      const legacyState = {
-        activeTabId: 'tab-1',
-        openTabs: [{ conversationId: 'conversation-1', tabId: 'tab-1' }],
-      };
+    it('defers restoring delivered state until the startup layout is ready', async () => {
       const restoreState = jest.fn().mockResolvedValue(undefined);
-      const { lifecycle, plugin } = createHarness({
-        plugin: { claimLegacyTabManagerState: jest.fn().mockResolvedValue(legacyState) },
-        manager: { restoreState, getPersistedState: () => legacyState },
+      const state = { activeTabId: 'tab-1', openTabs: [{ conversationId: null, tabId: 'tab-1' }] };
+      const { host, lifecycle, workspace } = createHarness({
+        manager: { restoreState, getPersistedState: () => state },
       });
+      workspace.layoutReady = false;
 
-      await lifecycle.setState({});
+      await lifecycle.setState(viewState(state));
+      expect(restoreState).not.toHaveBeenCalled();
 
-      expect(plugin.claimLegacyTabManagerState).toHaveBeenCalledTimes(1);
-      expect(restoreState).toHaveBeenCalledWith(legacyState);
-      expect(plugin.completeLegacyTabManagerStateMigration).toHaveBeenCalledTimes(1);
+      workspace.layoutReady = true;
+      for (const [ready] of workspace.onLayoutReady.mock.calls) ready();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(restoreState).toHaveBeenCalledWith(state);
+      expect(host.onInitialized).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -228,6 +202,58 @@ describe('TabWorkspaceLifecycle', () => {
       expect(persistence.flush).toHaveBeenCalledTimes(1);
       expect(manager.sealShutdownSnapshot).toHaveBeenCalledTimes(1);
       expect(lifecycle.getState()).toEqual(viewState(pendingState));
+    });
+
+    it('drains, then seals and flushes the single identity a reopen restores', async () => {
+      const drained = { activeTabId: 'tab-1', openTabs: [{ conversationId: null, tabId: 'tab-1' }] };
+      const late = { activeTabId: 'late-tab', openTabs: [{ conversationId: null, tabId: 'late-tab' }] };
+      const restoreState = jest.fn().mockResolvedValue(undefined);
+      const manager = {
+        drainForShutdownSnapshot: jest.fn().mockResolvedValue(undefined),
+        getPersistedState: jest.fn().mockReturnValueOnce(drained).mockReturnValue(late),
+        restoreState,
+        sealShutdownSnapshot: jest.fn(),
+      };
+      const { host, lifecycle } = createHarness();
+      host.manager = manager;
+      const persistence = { flush: jest.fn().mockResolvedValue(undefined), update: jest.fn() };
+
+      lifecycle.beginClose();
+      await lifecycle.snapshotForShutdown(manager as never, persistence);
+      host.manager = null;
+
+      expect(manager.drainForShutdownSnapshot.mock.invocationCallOrder[0])
+        .toBeLessThan(manager.sealShutdownSnapshot.mock.invocationCallOrder[0]);
+      expect(persistence.update).toHaveBeenCalledTimes(1);
+      expect(persistence.update).toHaveBeenCalledWith(drained);
+      expect(lifecycle.getState()).toEqual(viewState(drained));
+
+      host.manager = manager;
+      await lifecycle.completeOpen(lifecycle.beginOpen());
+      expect(restoreState).toHaveBeenCalledWith(drained);
+    });
+
+    it('stops publishing the previous close snapshot once a reopen restores live membership', async () => {
+      const finalized = { activeTabId: 'tab-1', openTabs: [{ conversationId: null, tabId: 'tab-1' }] };
+      const live = { activeTabId: null as string | null, openTabs: finalized.openTabs };
+      const manager = {
+        drainForShutdownSnapshot: jest.fn().mockResolvedValue(undefined),
+        getPersistedState: jest.fn().mockReturnValue(finalized),
+        restoreState: jest.fn().mockResolvedValue(undefined),
+        sealShutdownSnapshot: jest.fn(),
+      };
+      const { host, lifecycle } = createHarness({ manager });
+      lifecycle.beginClose();
+      await lifecycle.snapshotForShutdown(manager as never, null);
+
+      const opening = lifecycle.beginOpen();
+      await lifecycle.completeOpen(opening);
+      expect(lifecycle.isInitialized(opening.revision)).toBe(true);
+      // Live membership without a restorable active tab has no snapshot to publish.
+      manager.getPersistedState.mockReturnValue(live);
+      host.manager = manager;
+
+      expect(lifecycle.getState()).toEqual({});
     });
   });
 });

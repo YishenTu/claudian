@@ -233,7 +233,6 @@ function expectTabManagerMetadataReleased(manager: TabManager, tabId: string): v
   const internals = manager as any;
   // Discovery state can outlive membership, so a released tab must leave no tracked entry.
   expect(internals.commandDiscovery.getTrackedTabIds()).not.toContain(tabId);
-  expect(internals.tabActivationRevisions.has(tabId)).toBe(false);
 }
 
 function createTrackedTabContainer(): {
@@ -277,6 +276,7 @@ async function createTestTab(
     getProviderCatalogConfig?: TabRuntimeFactoryOptions['getProviderCatalogConfig'];
     onProviderChanged?: (providerId: string) => void | Promise<void>;
     openConversation?: (conversationId: string) => Promise<void>;
+    startNewConversation?: () => Promise<void>;
   } = {},
 ): Promise<any> {
   const component = Object.assign(new Component(), {
@@ -295,7 +295,8 @@ async function createTestTab(
     onProviderChanged: assembly.onProviderChanged
       ? (_tab, providerId) => assembly.onProviderChanged!(providerId)
       : undefined,
-    openConversation: assembly.openConversation,
+    openConversation: assembly.openConversation ?? (async () => {}),
+    startNewConversation: assembly.startNewConversation ?? (async () => {}),
   });
   directlyCreatedTabs.push(tab);
   return tab;
@@ -963,8 +964,41 @@ describe('Tab provider execution ownership', () => {
     }
   });
 
-  it('rolls back DOM ownership when shell construction fails', async () => {
-    const shellError = new Error('shell DOM construction failed');
+  it('saves a conversation switched into a tab whose earlier hydration failed', async () => {
+    const failed = createConversation();
+    const next = { ...createConversation(), id: 'conversation-2', messages: [] };
+    const updateConversation = jest.fn().mockResolvedValue(undefined);
+    const plugin = createPlugin({
+      getCachedConversation: jest.fn((id: string) => (id === failed.id ? failed : next)),
+      getConversationSync: jest.fn((id: string) => (id === failed.id ? failed : next)),
+      switchConversation: jest.fn(async (id: string) => {
+        if (id === failed.id) throw new Error('history unavailable');
+        return next;
+      }),
+      updateConversation,
+    });
+    const manager = createTabManager(plugin);
+
+    try {
+      const tab = await manager.createTab(failed.id);
+      expect(tab?.hydrationState).toBe('failed');
+
+      await expect(tab!.controllers.conversationController.switchTo(next.id)).resolves.toBe(true);
+      expect(tab!.conversationId).toBe(next.id);
+      tab!.state.addMessage({ id: 'user-1', role: 'user', content: 'Hello', timestamp: 1 });
+      await tab!.controllers.conversationController.save();
+
+      expect(updateConversation).toHaveBeenCalledWith(
+        next.id,
+        expect.objectContaining({ messages: [expect.objectContaining({ id: 'user-1' })] }),
+      );
+    } finally {
+      await manager.destroy();
+    }
+  });
+
+  it('rolls back DOM ownership when core construction fails', async () => {
+    const shellError = new Error('core DOM construction failed');
     const tabId = 'shell-failure';
     const { containerEl, removeTabRoot, tabRoot } = createTrackedTabContainer();
     tabRoot.createDiv = jest.fn().mockImplementation(() => {
@@ -1011,7 +1045,7 @@ describe('Tab provider execution ownership', () => {
     }
   });
 
-  it('rolls back UI and shell ownership when controller construction fails', async () => {
+  it('rolls back UI and core ownership when controller construction fails', async () => {
     const controllerError = new Error('controller construction failed');
     const tabId = 'controller-failure';
     const disconnect = jest.fn();
@@ -1039,7 +1073,7 @@ describe('Tab provider execution ownership', () => {
     await manager.destroy();
   });
 
-  it('rolls back controllers, UI, and shell ownership when input wiring fails', async () => {
+  it('rolls back controllers, UI, and core ownership when input wiring fails', async () => {
     const wiringError = new Error('input wiring failed');
     const tabId = 'input-failure';
     const disconnect = jest.fn();
@@ -1658,36 +1692,36 @@ describe('Tab provider execution ownership', () => {
     expect(coordinator.prepare).not.toHaveBeenCalled();
   });
 
-  it('routes /clear through the view layout before resetting the current tab', async () => {
+  it('routes /clear to the manager-owned New port instead of resetting the tab itself', async () => {
     const conversation = createConversation();
     const plugin = createPlugin();
-    const handleNewConversationCommand = jest.fn().mockResolvedValue(true);
+    const startNewConversation = jest.fn().mockResolvedValue(undefined);
     const tab = await createTestTab({
       plugin,
       containerEl: createMockEl() as any,
       conversation,
-    }, { component: { handleNewConversationCommand } });
+    }, { startNewConversation });
     tab.dom.inputEl.value = '/clear';
 
     await tab.controllers.inputController!.sendMessage();
 
-    expect(handleNewConversationCommand).toHaveBeenCalledTimes(1);
+    expect(startNewConversation).toHaveBeenCalledTimes(1);
     expect(tab.conversationId).toBe(conversation.id);
   });
 
-  it('does not route view-owned commands from a closing runtime', async () => {
-    const handleNewConversationCommand = jest.fn().mockResolvedValue(true);
+  it('does not route manager-owned commands from a closing runtime', async () => {
+    const startNewConversation = jest.fn().mockResolvedValue(undefined);
     const tab = await createTestTab({
       plugin: createPlugin(),
       containerEl: createMockEl() as any,
       conversation: createConversation(),
-    }, { component: { handleNewConversationCommand } });
+    }, { startNewConversation });
     tab.session.beginClose();
     tab.dom.inputEl.value = '/clear';
 
     await tab.controllers.inputController.sendMessage();
 
-    expect(handleNewConversationCommand).not.toHaveBeenCalled();
+    expect(startNewConversation).not.toHaveBeenCalled();
   });
 
   it('commits a provisional preview to cold state when the user types', async () => {
@@ -1697,13 +1731,13 @@ describe('Tab provider execution ownership', () => {
       containerEl: createMockEl() as any,
       lifecycleState: 'provisional',
     });
-    expect(tab.session.userOwnershipRevision).toBe(0);
+    expect(tab.session.isUserClaimed).toBe(false);
 
     tab.dom.inputEl.value = 'Keep this draft';
     (tab.dom.inputEl as any).dispatchEvent('input');
 
     expect(tab.lifecycleState).toBe('open');
-    expect(tab.session.userOwnershipRevision).toBe(1);
+    expect(tab.session.isUserClaimed).toBe(true);
   });
 
   it('does not read textarea geometry when the user types', async () => {
@@ -1722,7 +1756,7 @@ describe('Tab provider execution ownership', () => {
     (tab.dom.inputEl as any).dispatchEvent('input');
 
     expect(tab.lifecycleState).toBe('open');
-    expect(tab.session.userOwnershipRevision).toBe(1);
+    expect(tab.session.isUserClaimed).toBe(true);
     expect(readOffsetHeight).not.toHaveBeenCalled();
     expect(readScrollHeight).not.toHaveBeenCalled();
   });
@@ -2439,7 +2473,6 @@ describe('Tab provider execution ownership', () => {
       containerEl: createMockEl() as any,
     });
     const replacementOwner = {
-      isDisposed: false,
       dispose: jest.fn().mockResolvedValue([]),
     };
 
@@ -2450,7 +2483,6 @@ describe('Tab provider execution ownership', () => {
 
     expect(replacementOwner.dispose).not.toHaveBeenCalled();
     expect(coordinatorInstances[0].dispose).toHaveBeenCalledTimes(1);
-    expect(tab.resources.isDisposed).toBe(true);
   });
 
   it('continues teardown after a cleanup failure without reacquiring or retrying resources', async () => {
@@ -2479,8 +2511,6 @@ describe('Tab provider execution ownership', () => {
     expect(disconnect).toHaveBeenCalledTimes(1);
     expect(coordinatorInstances[0].dispose).toHaveBeenCalledTimes(1);
     expect(removeTabRoot).toHaveBeenCalledTimes(1);
-    expect(tab.resources.isDisposed).toBe(true);
-    expect('dispose' in tab.resources).toBe(false);
   });
 
   it('cancels and awaits an active turn before disposing coordinator ownership', async () => {

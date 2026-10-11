@@ -21,23 +21,17 @@ export function createChatTabCommands(deps: ChatTabCommandsDeps): Command[] {
     return deps.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN).length === 0;
   };
 
-  const openNewTab = async (): Promise<void> => {
+  const startNew = async (): Promise<void> => {
     const existingView = views.getView();
     if (existingView) {
-      if (await existingView.handleNewConversationCommand()) return;
-      await existingView.createNewTab();
+      await existingView.startNewConversation();
       return;
     }
     await views.activateView();
     views.getView()?.focusActiveInput();
   };
 
-  /** The focused view's tab manager, unless dual-pane navigation owns the tab commands. */
-  const getCompactTabManager = () => {
-    const view = views.getView();
-    if (!view || view.isDualPaneMode()) return null;
-    return view.getTabManager();
-  };
+  const getCompactTabManager = () => views.getView()?.getCompactTabManager() ?? null;
 
   return [
     {
@@ -45,7 +39,7 @@ export function createChatTabCommands(deps: ChatTabCommandsDeps): Command[] {
       name: 'New',
       checkCallback: (checking: boolean) => {
         if (!canCreateNewTab()) return false;
-        if (!checking) void openNewTab();
+        if (!checking) void startNew();
         return true;
       },
     },

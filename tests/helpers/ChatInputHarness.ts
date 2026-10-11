@@ -209,16 +209,17 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
   jest.spyOn(conversationController, 'save').mockResolvedValue(undefined);
   jest.spyOn(conversationController, 'createNew').mockResolvedValue(undefined);
   const commandOverrides = Object.fromEntries(
-    (['openConversation', 'handleNewConversationCommand', 'toggleFastMode'] as const)
+    (['openConversation', 'startNewConversation', 'toggleFastMode'] as const)
       .filter(key => key in dependencyOverrides)
       .map(key => [key, dependencyOverrides[key]]),
   ) as Partial<BuiltInCommandControllerDeps>;
   const builtInCommands = new BuiltInCommandController({
     plugin,
-    // Tests may replace the conversation owner after construction.
-    get conversationController() { return deps.conversationController; },
-    getLinkedContentController: () => deps.getLinkedContentController(),
     getCurrentConversationId: () => state.currentConversationId,
+    // The tab manager's compact defaults: picks rebind this tab, /new clears it in place.
+    // Tests may replace the conversation owner after construction.
+    openConversation: async (id) => { await deps.conversationController.switchTo(id); },
+    startNewConversation: () => deps.conversationController.createNew(),
     getInputContainerEl,
     getInputEl: () => deps.getInputEl(),
     getSideChatController: () => deps.getSideChatController?.() ?? null,

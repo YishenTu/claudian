@@ -19,7 +19,7 @@ export interface ConversationBranchingDeps {
   getExecutionCoordinator: () => ChatExecutionCoordinator | null;
   ensureExecutionInitialized?: () => Promise<boolean>;
   getSelectedModel?: () => string | null;
-  isDisposed?: () => boolean;
+  isClosing?: () => boolean;
   /** Persists the current conversation state. */
   save: () => Promise<void>;
   /** Replaces the rendered transcript, optionally resyncing welcome visibility to the state. */
@@ -95,7 +95,7 @@ export class ConversationBranching {
     const { draft } = this.#state;
     this.#state = { kind: 'idle' };
     const { state } = this.deps;
-    if (this.deps.isDisposed?.() || state.currentConversationId !== draft.conversationId) return;
+    if (this.deps.isClosing?.() || state.currentConversationId !== draft.conversationId) return;
     this.deps.drafts.restore('main', draft.previousDraft);
     this.deps.renderTranscript(state.messages, true);
     this.deps.getMessagesEl().scrollTop = draft.scrollTop;
@@ -136,7 +136,7 @@ export class ConversationBranching {
     const previous = this.#state;
     let draft = previous.kind === 'idle' ? undefined : previous.draft;
     let coordinator: ChatExecutionCoordinator | null = null;
-    const isCurrent = () => !this.deps.isDisposed?.() && state.currentConversationId === conversationId
+    const isCurrent = () => !this.deps.isClosing?.() && state.currentConversationId === conversationId
       && (!coordinator || coordinator === this.deps.getExecutionCoordinator());
     this.#state = { kind: 'committing', draft };
     this.deps.setRewinding(true);

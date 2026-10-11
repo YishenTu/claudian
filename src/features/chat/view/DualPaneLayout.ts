@@ -27,8 +27,8 @@ export interface DualPaneLayoutHooks {
   renderSidebar(): void;
   /** A compact layout was requested; sidebar interactions must stop before preview cleanup. */
   onLeaveWideRequested(): void;
-  /** Retains what must survive, then closes provisional previews before compact controls return. */
-  discardProvisionalTabs(): Promise<void> | void;
+  /** Releases the viewer slot (retaining what must survive) before compact controls return. */
+  releaseViewerSlot(): Promise<void> | void;
 }
 
 /**
@@ -144,9 +144,9 @@ export class DualPaneLayout {
   }
 
   private async completeCompactTransition(requestRevision: number): Promise<void> {
-    // The tab manager owns preview cleanup and joins overlapping requests to one run.
+    // The viewer slot owns preview cleanup and joins overlapping requests to one run.
     try {
-      await this.hooks.discardProvisionalTabs();
+      await this.hooks.releaseViewerSlot();
     } catch {
       // Overlapping requests share one cleanup, so only the latest one reports its failure.
       if (requestRevision === this.compactRequestRevision) {

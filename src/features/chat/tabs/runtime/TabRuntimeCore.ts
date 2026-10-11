@@ -7,27 +7,28 @@ import { createInteractionPromptPort } from '@/features/chat/interactions/intera
 import { cleanupThinkingBlock } from '@/features/chat/rendering/ThinkingBlockRenderer';
 import { createWelcomeElement } from '@/features/chat/rendering/WelcomeRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
-import type { TabProviderCatalogContext } from '@/features/chat/tabs/ChatTab';
+import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import type {
   PublishedTabRuntimeRef,
   TabRuntimeConstructionContext,
-  TabRuntimeShellBundle,
+  TabRuntimeCore,
 } from '@/features/chat/tabs/runtime/TabRuntimeConstruction';
-import { createTabSessionState, generateTabId } from '@/features/chat/tabs/TabIdentity';
+import { createTabIdentity, generateTabId, type TabIdentity } from '@/features/chat/tabs/TabIdentity';
+import { syncTabProviderServices } from '@/features/chat/tabs/tabProviderLifecycle';
 import { refreshTabContextUsage } from '@/features/chat/tabs/tabProviderUI';
 import { TabSession } from '@/features/chat/tabs/TabSession';
 import {
   createTabMessageId,
   enqueueTabSessionEvent,
 } from '@/features/chat/tabs/TabSessionEvents';
-import type { TabDOMElements } from '@/features/chat/tabs/types';
+import type { TabDOMElements, TabServices } from '@/features/chat/tabs/types';
 import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import { getVaultPath } from '@/utils/path';
 
-export function buildTabRuntimeShell(
+export function buildTabRuntimeCore(
   options: TabRuntimeConstructionContext,
   runtimeRef: PublishedTabRuntimeRef,
-): TabRuntimeShellBundle {
+): TabRuntimeCore {
   const { plugin, conversation } = options;
   const id = options.tabId ?? generateTabId();
   const contentEl = options.containerEl.createDiv({
@@ -64,15 +65,15 @@ export function buildTabRuntimeShell(
     state.currentThinkingState = null;
   });
 
-  const sessionState = options.initialState
+  const identity = options.initialState
     ? { ...options.initialState }
-    : createTabSessionState(plugin.settings, conversation, { ...options, tabId: id });
+    : createTabIdentity(plugin.settings, conversation, { ...options, tabId: id });
   const executionCoordinator = createTabExecutionCoordinator(
     state,
     options,
     runtimeRef,
   );
-  const session: TabSession = new TabSession(sessionState, executionCoordinator, {
+  const session: TabSession = new TabSession(identity, executionCoordinator, {
     turns,
     onIdentityChanged: () => runtimeRef.current()?.ui.promptSuggestion.discard(),
     onWorkChanged: () => {
@@ -87,13 +88,14 @@ export function buildTabRuntimeShell(
         // Collapsed side work stays discoverable from the tab bar.
         || (tab.controllers.sideChatController.runtime?.isWorking ?? false));
     },
+    hasPendingInteraction: () => state.requiresAction,
     dismissInteractions: () => runtimeRef.current()?.controllers.inputController.dismissPendingApproval(),
   });
   options.registerCleanup(
     'tab execution coordinator',
     () => session.disposeExecutionCoordinator(),
   );
-  const providerCatalogContext: TabProviderCatalogContext = Object.freeze({
+  const providerCatalogContext: Readonly<TabIdentity> = Object.freeze({
     get id() {
       return session.id;
     },
@@ -111,6 +113,8 @@ export function buildTabRuntimeShell(
     },
   });
 
+  const services = buildTabServices(session, options, runtimeRef);
+
   return {
     session,
     get id() {
@@ -119,7 +123,7 @@ export function buildTabRuntimeShell(
     get lifecycleState() {
       return session.lifecycleState;
     },
-    hydrationState: sessionState.conversationId ? 'idle' : 'ready',
+    hydrationState: identity.conversationId ? 'idle' : 'ready',
     get draftModel() {
       return session.draftModel;
     },
@@ -136,7 +140,29 @@ export function buildTabRuntimeShell(
       : null,
     state,
     dom,
+    services,
   };
+}
+
+function buildTabServices(
+  identity: Pick<TabSession, 'providerId'>,
+  options: TabRuntimeConstructionContext,
+  runtimeRef: PublishedTabRuntimeRef,
+): TabServices {
+  const subagentManager = new SubagentManager((subagent) => {
+    runtimeRef.requirePublished().controllers.streamController.subagents.onAsyncSubagentStateChange(subagent);
+    options.onWorkChanged?.(runtimeRef.requirePublished());
+  });
+  options.registerCleanup('tab subagent state', () => subagentManager.clear());
+
+  const titleGenerationService = ProviderRegistry.createTitleGenerationService(
+    options.plugin.providerHost,
+  );
+  options.registerCleanup('tab title generation', () => titleGenerationService.cancel());
+
+  const services: TabServices = { subagentManager, titleGenerationService };
+  syncTabProviderServices(identity, services);
+  return services;
 }
 
 function buildTabDOM(contentEl: HTMLElement, options: TabRuntimeConstructionContext): TabDOMElements {
@@ -230,10 +256,7 @@ function createTabExecutionCoordinator(
       new Notice(error instanceof Error ? error.message : 'Provider execution failed.');
     },
     idleReleaseMs: IDLE_SESSION_RELEASE_MS,
-    isOwnerIdle: () => {
-      const tab = runtimeRef.requirePublished();
-      return tab.session.isIdle && !state.requiresAction;
-    },
+    isOwnerIdle: () => runtimeRef.requirePublished().session.isIdle,
     onIdleRelease: () => {
       const tab = runtimeRef.requirePublished();
       if (tab.lifecycleState !== 'closing') options.onCommandContextChanged?.(tab);

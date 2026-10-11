@@ -104,7 +104,7 @@ function createBrowser(deps: ReturnType<typeof createMockDeps>): SessionBrowser 
 
 function renderDropdown(browser: SessionBrowser, deps: ReturnType<typeof createMockDeps>): void {
   browser.renderHistoryDropdown(deps.getHistoryDropdown(), {
-    onSelectConversation: id => new ConversationController(deps).switchTo(id),
+    onSelectConversation: async (id) => { await new ConversationController(deps).switchTo(id); },
   });
 }
 

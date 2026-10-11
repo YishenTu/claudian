@@ -1,20 +1,14 @@
 import { Notice, type Plugin } from 'obsidian';
 
 import type { SharedAppStorage } from '@/core/bootstrap/storage';
-import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
 import { getInstallationKey, type InstallationKey } from '@/core/device/InstallationKey';
 import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { ClaudianSettings } from '@/core/types';
 
 import { ClaudianSettingsStorage, type StoredClaudianSettings } from '../settings/ClaudianSettingsStorage';
 import { ConversationPersistenceStore } from './ConversationPersistenceStore';
-import { normalizeTabManagerState } from './legacyTabManagerState';
 import { migrateSessionSidecars } from './migrateSessionSidecars';
 import { SessionStorage } from './SessionStorage';
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
 
 export class SharedStorageService implements SharedAppStorage {
   readonly installationKey: InstallationKey;
@@ -63,28 +57,6 @@ export class SharedStorageService implements SharedAppStorage {
 
   async saveClaudianSettings(settings: Record<string, unknown>): Promise<void> {
     await this.claudianSettings.save(settings as StoredClaudianSettings);
-  }
-
-  async getTabManagerState(): Promise<AppTabManagerState | null> {
-    try {
-      const data: unknown = await this.plugin.loadData();
-      if (!isRecord(data) || !data.tabManagerState) {
-        return null;
-      }
-
-      return normalizeTabManagerState(data.tabManagerState);
-    } catch {
-      return null;
-    }
-  }
-
-  async clearTabManagerState(): Promise<void> {
-    const loaded: unknown = await this.plugin.loadData();
-    if (!isRecord(loaded) || !('tabManagerState' in loaded)) return;
-
-    const data = { ...loaded };
-    delete data.tabManagerState;
-    await this.plugin.saveData(data);
   }
 
   getAdapter(): VaultFileAdapter {

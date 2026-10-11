@@ -3,6 +3,7 @@ import type { Component, TFile, WorkspaceLeaf } from 'obsidian';
 import type { ProviderId, TitleGenerationService } from '@/core/providers/types';
 import type { ChatMessage } from '@/core/types';
 import type { TabAttention } from '@/features/chat/state/types';
+import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { ZenPresentationPort } from '@/features/chat/zen/types';
 
 /**
@@ -19,9 +20,6 @@ export interface TabManagerViewHost extends Component {
 
   /** Gets view-owned elements that should preserve active tab selection context. */
   getSharedSelectionFocusScopeEls?(): HTMLElement[];
-
-  /** Handles /new and /clear when the active layout gives New different semantics. */
-  handleNewConversationCommand?(): Promise<boolean>;
 }
 
 /**
@@ -34,7 +32,7 @@ export interface TabManagerInterface {
 
   /** Gets all tabs. */
   getAllTabs(): ChatTab[];
-  getTabIdentities(): readonly TabProviderCatalogContext[];
+  getTabIdentities(): readonly Readonly<TabIdentity>[];
 
   /** Reports aggregate user-visible work for a runtime tab. */
   isTabWorking(tabId: TabId): boolean;
@@ -136,12 +134,6 @@ export interface ChatTab {
   refreshProviderControls(): void;
   refreshMessageTimestamps(): void;
 }
-
-/** Stable session projection available while a tab runtime is being assembled. */
-export type TabProviderCatalogContext = Readonly<Pick<
-  ChatTab,
-  'id' | 'conversationId' | 'providerId' | 'lifecycleState' | 'draftModel'
->>;
 
 /**
  * Tab bar item representation for rendering.

@@ -1,7 +1,7 @@
 import type {
   PublishedTabRuntimeRef,
   TabRuntimeConstructionContext,
-  TabRuntimeShellBundle,
+  TabRuntimeCore,
 } from '@/features/chat/tabs/runtime/TabRuntimeConstruction';
 import {
   cancelSelectedDestinationTurn,
@@ -9,16 +9,16 @@ import {
   sendTabInputMessageFromExplicitEnterShortcut,
 } from '@/features/chat/tabs/TabInputEvents';
 import { commitProvisionalTab } from '@/features/chat/tabs/TabLifecycle';
-import type { TabControllers, TabInputBindings, TabUIComponents } from '@/features/chat/tabs/types';
+import type { TabControllers, TabUIComponents } from '@/features/chat/tabs/types';
 
 export function buildTabRuntimeInputBindings(
-  shell: TabRuntimeShellBundle,
+  core: TabRuntimeCore,
   ui: TabUIComponents,
   controllers: TabControllers,
   options: TabRuntimeConstructionContext,
   runtimeRef: PublishedTabRuntimeRef,
-): TabInputBindings {
-  const { dom, state } = shell;
+): void {
+  const { dom, state } = core;
   const { plugin } = options;
 
   const keydownHandler = (event: KeyboardEvent) => {
@@ -235,5 +235,4 @@ export function buildTabRuntimeInputBindings(
   options.registerCleanup('tab message scroll binding', () => {
     dom.messagesEl.removeEventListener('scroll', scrollHandler);
   });
-  return { installed: true };
 }

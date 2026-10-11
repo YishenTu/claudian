@@ -197,6 +197,7 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
       containerEl: view.tabContentEl,
       mentionDataProvider: new VaultMentionDataProvider(plugin.app),
       conversation, getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
+    openConversation: async () => {}, startNewConversation: async () => {},
     });
     tab.state.currentConversationId = conversation.id;
     // jsdom has no layout engine; model the native visibility query at the browser boundary.

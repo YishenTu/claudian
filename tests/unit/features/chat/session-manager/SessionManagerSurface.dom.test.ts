@@ -44,7 +44,6 @@ function createSurface() {
     navigation: {
       contentExists: () => true,
       getConversationStatus: () => ({ openState: 'closed', isRunning: false }),
-      hasUnboundDraft: () => false,
       openConversation: jest.fn().mockResolvedValue(undefined),
       openSessionConversation: jest.fn().mockResolvedValue(undefined),
       startLinkedContentConversation: jest.fn().mockResolvedValue(undefined),

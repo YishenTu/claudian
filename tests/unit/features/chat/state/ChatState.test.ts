@@ -212,6 +212,18 @@ describe('ChatState', () => {
       expect(onAttentionChanged).toHaveBeenLastCalledWith(null);
     });
 
+    it('advances the review epoch on every acknowledgement, even without pending review', () => {
+      const chatState = new ChatState();
+      const captured = chatState.reviewEpoch;
+
+      chatState.acknowledgeReview();
+      const afterFirst = chatState.reviewEpoch;
+      chatState.acknowledgeReview();
+
+      expect(afterFirst).not.toBe(captured);
+      expect(chatState.reviewEpoch).not.toBe(afterFirst);
+    });
+
     it('tracks multiple action-required interactions until the last one ends', () => {
       jest.spyOn(Date, 'now')
         .mockReturnValueOnce(100)

@@ -3,10 +3,10 @@ import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceReg
 import type { Conversation } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { getTabProviderId } from '@/features/chat/tabs/providerResolution';
-import { reconcileBlankTabIdentity } from '@/features/chat/tabs/TabIdentity';
+import { resolveBlankTabReselection, type TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import { isClosingLifecycleState } from '@/features/chat/tabs/TabLifecycle';
 import { applyProviderUIGating, invalidateTabProviderCommands, refreshTabProviderUI, refreshTabWorkspaceServices, syncComposerDropdownForProvider } from '@/features/chat/tabs/tabProviderUI';
-import type { AssembledTabRuntime, TabProviderContext, TabServices } from '@/features/chat/tabs/types';
+import type { AssembledTabRuntime, TabServices } from '@/features/chat/tabs/types';
 import { t } from '@/i18n/i18n';
 
 export function createConversationExecutionBinding(conversation: Conversation) {
@@ -58,7 +58,7 @@ export async function initializeTabExecution(
 
 
 export function syncTabProviderServices(
-  tab: TabProviderContext,
+  tab: Pick<TabIdentity, 'providerId'>,
   services: TabServices,
 ): void {
   if (!tab.providerId) return;
@@ -69,11 +69,12 @@ export function syncTabProviderServices(
 
 export function onProviderAvailabilityChanged(tab: AssembledTabRuntime, plugin: ChatFeatureHost): boolean {
   if (tab.conversationId !== null) return false;
-  const changed = reconcileBlankTabIdentity(tab, plugin);
+  const selection = resolveBlankTabReselection(tab, plugin);
+  if (selection) tab.session.selectDraft(selection.providerId, selection.draftModel);
   syncTabProviderServices(tab, tab.services);
   syncComposerDropdownForProvider(tab, plugin);
   invalidateTabProviderCommands(tab);
   refreshTabProviderUI(tab);
   applyProviderUIGating(tab, plugin);
-  return changed;
+  return selection !== null;
 }

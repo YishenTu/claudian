@@ -20,7 +20,7 @@ async function flushPromises(): Promise<void> {
 function createLayoutHarness(options: {
   settings?: DualPaneLayoutSettings;
   width?: number;
-  discardProvisionalTabs?: () => Promise<void> | void;
+  releaseViewerSlot?: () => Promise<void> | void;
 } = {}) {
   let width = options.width ?? 400;
   const containerEl = createMockEl();
@@ -36,9 +36,9 @@ function createLayoutHarness(options: {
     onEnterWide: jest.fn(() => { calls.push('enter-wide'); }),
     renderSidebar: jest.fn(() => { calls.push('render-sidebar'); }),
     onLeaveWideRequested: jest.fn(() => { calls.push('leave-wide'); }),
-    discardProvisionalTabs: jest.fn(() => {
+    releaseViewerSlot: jest.fn(() => {
       calls.push('discard');
-      return options.discardProvisionalTabs?.();
+      return options.releaseViewerSlot?.();
     }),
   };
   const layout = new DualPaneLayout(hooks);
@@ -147,7 +147,7 @@ describe('DualPaneLayout', () => {
     const cleanup = deferred();
     const harness = createLayoutHarness({
       width: 900,
-      discardProvisionalTabs: () => cleanup.promise,
+      releaseViewerSlot: () => cleanup.promise,
     });
     const observer = observeWidths(harness);
     harness.calls.length = 0;
@@ -173,7 +173,7 @@ describe('DualPaneLayout', () => {
     observer.resize(0);
     await flushPromises();
 
-    expect(harness.hooks.discardProvisionalTabs).not.toHaveBeenCalled();
+    expect(harness.hooks.releaseViewerSlot).not.toHaveBeenCalled();
     expect(harness.layout.isWide).toBe(true);
     expect(harness.containerEl.hasClass('claudian-wide-session-layout')).toBe(true);
   });
@@ -182,7 +182,7 @@ describe('DualPaneLayout', () => {
     const sharedCleanup = deferred();
     const harness = createLayoutHarness({
       width: 900,
-      discardProvisionalTabs: () => sharedCleanup.promise,
+      releaseViewerSlot: () => sharedCleanup.promise,
     });
     const observer = observeWidths(harness);
     (Notice as unknown as jest.Mock).mockClear();
@@ -193,7 +193,7 @@ describe('DualPaneLayout', () => {
     sharedCleanup.reject(new Error('close failed'));
     await flushPromises();
 
-    expect(harness.hooks.discardProvisionalTabs).toHaveBeenCalledTimes(2);
+    expect(harness.hooks.releaseViewerSlot).toHaveBeenCalledTimes(2);
     expect(Notice).toHaveBeenCalledTimes(1);
     expect(Notice).toHaveBeenCalledWith('Failed to close the provisional session preview');
     expect(harness.layout.isWide).toBe(false);
@@ -203,7 +203,7 @@ describe('DualPaneLayout', () => {
     const cleanup = deferred();
     const harness = createLayoutHarness({
       width: 900,
-      discardProvisionalTabs: () => cleanup.promise,
+      releaseViewerSlot: () => cleanup.promise,
     });
     const observer = observeWidths(harness);
     harness.hooks.renderSidebar.mockClear();
@@ -222,7 +222,7 @@ describe('DualPaneLayout', () => {
     const cleanup = deferred();
     const harness = createLayoutHarness({
       width: 900,
-      discardProvisionalTabs: () => cleanup.promise,
+      releaseViewerSlot: () => cleanup.promise,
     });
     const observer = observeWidths(harness);
 

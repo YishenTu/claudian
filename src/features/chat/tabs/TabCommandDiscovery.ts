@@ -8,8 +8,9 @@ import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceReg
 import type { ProviderId } from '@/core/providers/types';
 import type { Conversation, SlashCommand } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import type { TabId, TabProviderCatalogContext } from '@/features/chat/tabs/ChatTab';
+import type { TabId } from '@/features/chat/tabs/ChatTab';
 import { getTabProviderId } from '@/features/chat/tabs/providerResolution';
+import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { AssembledTabRuntime, ProviderCatalogInfo, TabMembershipView } from '@/features/chat/tabs/types';
 import { throwIfAborted, toAbortError } from '@/utils/abort';
 
@@ -114,7 +115,7 @@ export class TabCommandDiscovery {
   }
 
   /** Resolves the command dropdown config and discovery source for a live tab. */
-  getProviderCatalogConfig(tab: TabProviderCatalogContext): ProviderCatalogInfo {
+  getProviderCatalogConfig(tab: Readonly<TabIdentity>): ProviderCatalogInfo {
     if (this.membership.isDestroyed() || tab.lifecycleState === 'closing') return null;
 
     const providerId = getTabProviderId(tab, this.plugin);
@@ -191,11 +192,9 @@ export class TabCommandDiscovery {
     ])];
   }
 
-  clear(): void {
-    this.providerRuntimeCommandLoads.clear();
-    this.providerRuntimeCommandCache.clear();
-    this.providerCommandDiscoveryStores.clear();
-    this.tabCommandContextRevisions.clear();
+  /** Releases every tab's discovery state, collecting failures for the caller. */
+  releaseAll(): unknown[] {
+    return this.getTrackedTabIds().flatMap(tabId => this.releaseTab(tabId));
   }
 
   #isTabProviderCurrent(tab: AssembledTabRuntime, providerId: ProviderId): boolean {

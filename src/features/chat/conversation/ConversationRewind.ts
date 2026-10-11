@@ -27,7 +27,7 @@ export interface ConversationRewindDeps {
   drafts: Pick<ComposerDraftController, 'restore'>;
   getExecutionCoordinator: () => ChatExecutionCoordinator | null;
   ensureExecutionInitialized?: () => Promise<boolean>;
-  isDisposed?: () => boolean;
+  isClosing?: () => boolean;
   save: (updateLastActivity: boolean, options: ConversationSaveOptions) => Promise<void>;
   /** Re-renders the transcript and its welcome element after truncation. */
   renderTranscript: (messages: ChatMessage[]) => void;
@@ -115,7 +115,7 @@ export class ConversationRewind {
           failed(e instanceof Error ? e.message : 'Failed to initialize agent service');
           return;
         }
-        if (this.deps.isDisposed?.()) return;
+        if (this.deps.isClosing?.()) return;
         if (!initialized) {
           failed('Agent service not available');
           return;

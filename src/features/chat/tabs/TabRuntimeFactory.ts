@@ -1,23 +1,15 @@
-import type { Component } from 'obsidian';
-
-import type { ProviderId } from '@/core/providers/types';
-import type { Conversation } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import type { ForkContext } from '@/features/chat/conversation/forkSourceTypes';
-import type { TabAttention, TabReviewOutcome } from '@/features/chat/state/types';
-import type { TabId, TabProviderCatalogContext } from '@/features/chat/tabs/ChatTab';
 import type {
   PublishedTabRuntimeRef,
   TabRuntimeCleanup,
-  TabRuntimeConstructionContext,
   TabRuntimeControllerBundle,
-  TabRuntimeShellBundle,
+  TabRuntimeCore,
+  TabRuntimeFactoryOptions,
 } from '@/features/chat/tabs/runtime/TabRuntimeConstruction';
 import { buildTabRuntimeControllers } from '@/features/chat/tabs/runtime/TabRuntimeControllers';
+import { buildTabRuntimeCore } from '@/features/chat/tabs/runtime/TabRuntimeCore';
 import { buildTabRuntimeInputBindings } from '@/features/chat/tabs/runtime/TabRuntimeInputBindings';
 import { buildTabRuntimePorts } from '@/features/chat/tabs/runtime/TabRuntimePorts';
-import { buildTabRuntimeServices } from '@/features/chat/tabs/runtime/TabRuntimeServices';
-import { buildTabRuntimeShell } from '@/features/chat/tabs/runtime/TabRuntimeShell';
 import { buildTabRuntimeUI } from '@/features/chat/tabs/runtime/TabRuntimeUI';
 import {
   registerTabRuntimeResourceOwner,
@@ -25,52 +17,10 @@ import {
   type TabRuntimeResourceOwner,
 } from '@/features/chat/tabs/TabLifecycle';
 import { applyProviderUIGating, refreshTabProviderUI } from '@/features/chat/tabs/tabProviderUI';
-import type { TabSessionState } from '@/features/chat/tabs/TabSession';
-import type { AssembledTabRuntime, ProviderCatalogInfo, TabInputBindings, TabServices, TabUIComponents } from '@/features/chat/tabs/types';
-import type { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
+import type { AssembledTabRuntime, TabUIComponents } from '@/features/chat/tabs/types';
 
-export interface TabRuntimeFactoryOptions {
-  plugin: ChatFeatureHost;
-  containerEl: HTMLElement;
-  component: Component;
-  mentionDataProvider: VaultMentionDataProvider;
-  conversation?: Conversation;
-  tabId?: TabId;
-  initialState?: Readonly<TabSessionState>;
-  draftModel?: string | null;
-  providerId?: ProviderId | null;
-  lifecycleState?: Extract<
-    AssembledTabRuntime['lifecycleState'],
-    'provisional' | 'open'
-  >;
-  getProviderCatalogConfig: (
-    tab: TabProviderCatalogContext,
-  ) => ProviderCatalogInfo;
-  isRuntimeLive: (tab: AssembledTabRuntime) => boolean;
-  forkRequestCallback?: (forkContext: ForkContext) => Promise<void>;
-  openConversation?: (conversationId: string) => Promise<void>;
-  onStreamingChanged?: (tab: AssembledTabRuntime, isStreaming: boolean) => void;
-  onWorkChanged?: (tab: AssembledTabRuntime) => void;
-  onRewindingChanged?: (tab: AssembledTabRuntime, isRewinding: boolean) => void;
-  onAttentionChanged?: (tab: AssembledTabRuntime, attention: TabAttention) => void;
-  onConversationIdChanged?: (
-    tab: AssembledTabRuntime,
-    conversationId: string | null,
-  ) => void;
-  onDraftModelChanged?: (
-    tab: AssembledTabRuntime,
-    draftModel: string | null,
-  ) => void;
-  onProviderChanged?: (
-    tab: AssembledTabRuntime,
-    providerId: ProviderId,
-  ) => void | Promise<void>;
-  onCommandContextChanged?: (tab: AssembledTabRuntime) => void;
-  captureReviewableSettlement?: (
-    tab: AssembledTabRuntime,
-    outcome: TabReviewOutcome,
-  ) => () => void;
-}
+/** The factory is the only public entry to runtime construction, including its option type. */
+export type { TabRuntimeFactoryOptions };
 
 interface CleanupEntry {
   readonly cleanup: TabRuntimeCleanup;
@@ -81,10 +31,6 @@ class RuntimeResourceOwner implements TabRuntimeResourceOwner {
   private readonly entries: CleanupEntry[] = [];
   private disposal: Promise<readonly TabRuntimeCleanupFailure[]> | null = null;
   private sealed = false;
-
-  get isDisposed(): boolean {
-    return this.disposal !== null;
-  }
 
   register(resource: string, cleanup: TabRuntimeCleanup): void {
     if (this.sealed || this.disposal) {
@@ -150,89 +96,64 @@ function createPublishedTabRuntimeRef(): PublishedTabRuntimeRef {
 }
 
 function composeTabRuntime(
-  shell: TabRuntimeShellBundle,
-  services: TabServices,
+  core: TabRuntimeCore,
   ui: TabUIComponents,
   controllerBundle: TabRuntimeControllerBundle,
-  inputBindings: TabInputBindings,
-  resourceOwner: TabRuntimeResourceOwner,
   plugin: ChatFeatureHost,
 ): AssembledTabRuntime {
-  const ports = buildTabRuntimePorts(shell.dom, ui, controllerBundle, plugin, () => runtime);
+  const ports = buildTabRuntimePorts(core.dom, ui, controllerBundle, plugin, () => runtime);
   const runtime: AssembledTabRuntime = {
-    session: shell.session,
+    session: core.session,
     get id() {
-      return shell.id;
+      return core.id;
     },
     get lifecycleState() {
-      return shell.lifecycleState;
+      return core.lifecycleState;
     },
     get hydrationState() {
-      return shell.hydrationState;
+      return core.hydrationState;
     },
     set hydrationState(value) {
-      shell.hydrationState = value;
+      core.hydrationState = value;
     },
     get draftModel() {
-      return shell.draftModel;
+      return core.draftModel;
     },
     get providerId() {
-      return shell.providerId;
+      return core.providerId;
     },
     get conversationId() {
-      return shell.conversationId;
+      return core.conversationId;
     },
-    executionCoordinator: shell.executionCoordinator,
-    providerCatalogResolver: shell.providerCatalogResolver,
-    captureReviewableSettlement: shell.captureReviewableSettlement,
-    state: shell.state,
+    executionCoordinator: core.executionCoordinator,
+    providerCatalogResolver: core.providerCatalogResolver,
+    captureReviewableSettlement: core.captureReviewableSettlement,
+    state: core.state,
     controllers: controllerBundle.controllers,
-    services,
+    services: core.services,
     ui,
-    dom: shell.dom,
+    dom: core.dom,
     renderer: controllerBundle.renderer,
-    inputBindings,
-    resources: {
-      get isDisposed() {
-        return resourceOwner.isDisposed;
-      },
-    },
     ...ports,
   };
   return runtime;
 }
 
 function assembleTabRuntime(
-  options: TabRuntimeConstructionContext,
+  options: TabRuntimeFactoryOptions,
+  resourceOwner: RuntimeResourceOwner,
 ): AssembledTabRuntime {
+  const context = {
+    ...options,
+    registerCleanup: (resource: string, cleanup: TabRuntimeCleanup) => resourceOwner.register(resource, cleanup),
+  };
   const runtimeRef = createPublishedTabRuntimeRef();
-  const shell = buildTabRuntimeShell(options, runtimeRef);
-  const services = buildTabRuntimeServices(shell, options, runtimeRef);
-  const ui = buildTabRuntimeUI(shell, services, options, runtimeRef);
-  const controllerBundle = buildTabRuntimeControllers(
-    shell,
-    services,
-    ui,
-    options,
-    runtimeRef,
-  );
-  const inputBindings = buildTabRuntimeInputBindings(
-    shell,
-    ui,
-    controllerBundle.controllers,
-    options,
-    runtimeRef,
-  );
-  const runtime = composeTabRuntime(
-    shell,
-    services,
-    ui,
-    controllerBundle,
-    inputBindings,
-    options.resourceOwner,
-    options.plugin,
-  );
-  registerTabRuntimeResourceOwner(runtime, options.resourceOwner);
+  const core = buildTabRuntimeCore(context, runtimeRef);
+  const ui = buildTabRuntimeUI(core, context, runtimeRef);
+  const controllerBundle = buildTabRuntimeControllers(core, ui, context, runtimeRef);
+  buildTabRuntimeInputBindings(core, ui, controllerBundle.controllers, context, runtimeRef);
+  const runtime = composeTabRuntime(core, ui, controllerBundle, options.plugin);
+  registerTabRuntimeResourceOwner(runtime, resourceOwner);
   runtimeRef.publish(runtime);
 
   refreshTabProviderUI(runtime);
@@ -247,11 +168,7 @@ export async function createTabRuntime(
   const resourceOwner = new RuntimeResourceOwner();
 
   try {
-    const runtime = assembleTabRuntime({
-      ...options,
-      registerCleanup: (resource, cleanup) => resourceOwner.register(resource, cleanup),
-      resourceOwner,
-    });
+    const runtime = assembleTabRuntime(options, resourceOwner);
     resourceOwner.seal();
     return runtime;
   } catch (error) {

@@ -9,9 +9,9 @@ describe('TabStatePersistenceCoordinator', () => {
     jest.useRealTimers();
   });
 
-  it('coalesces rapid updates into one write of the latest serialized state', async () => {
-    const persist = jest.fn().mockResolvedValue(undefined);
-    const coordinator = new TabStatePersistenceCoordinator(persist, window, 300);
+  it('coalesces rapid updates into one write', async () => {
+    const write = jest.fn().mockResolvedValue(undefined);
+    const coordinator = new TabStatePersistenceCoordinator(write, window, 300);
 
     coordinator.update({ openTabs: [], activeTabId: null });
     coordinator.update({
@@ -22,22 +22,18 @@ describe('TabStatePersistenceCoordinator', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(persist).toHaveBeenCalledTimes(1);
-    expect(persist).toHaveBeenCalledWith({
-      openTabs: [{ tabId: 'tab-1', conversationId: 'conv-1' }],
-      activeTabId: 'tab-1',
-    });
+    expect(write).toHaveBeenCalledTimes(1);
   });
 
-  it('serializes writes and persists an update received during an in-flight write', async () => {
+  it('serializes writes and writes again for an update received during an in-flight write', async () => {
     let finishFirstWrite!: () => void;
     const firstWrite = new Promise<void>(resolve => {
       finishFirstWrite = resolve;
     });
-    const persist = jest.fn()
+    const write = jest.fn()
       .mockReturnValueOnce(firstWrite)
       .mockResolvedValueOnce(undefined);
-    const coordinator = new TabStatePersistenceCoordinator(persist, window, 300);
+    const coordinator = new TabStatePersistenceCoordinator(write, window, 300);
 
     coordinator.update({ openTabs: [], activeTabId: null });
     jest.advanceTimersByTime(300);
@@ -47,20 +43,16 @@ describe('TabStatePersistenceCoordinator', () => {
       activeTabId: 'tab-2',
     });
 
-    expect(persist).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledTimes(1);
     finishFirstWrite();
     await coordinator.flush();
 
-    expect(persist).toHaveBeenCalledTimes(2);
-    expect(persist).toHaveBeenLastCalledWith({
-      openTabs: [{ tabId: 'tab-2', conversationId: null }],
-      activeTabId: 'tab-2',
-    });
+    expect(write).toHaveBeenCalledTimes(2);
   });
 
-  it('flushes the latest state once and does not rewrite an acknowledged snapshot', async () => {
-    const persist = jest.fn().mockResolvedValue(undefined);
-    const coordinator = new TabStatePersistenceCoordinator(persist, window, 300);
+  it('flushes a change once and does not rewrite an acknowledged state', async () => {
+    const write = jest.fn().mockResolvedValue(undefined);
+    const coordinator = new TabStatePersistenceCoordinator(write, window, 300);
     const state = {
       openTabs: [{ tabId: 'tab-1', conversationId: null }],
       activeTabId: 'tab-1',
@@ -73,6 +65,6 @@ describe('TabStatePersistenceCoordinator', () => {
     jest.advanceTimersByTime(300);
     await Promise.resolve();
 
-    expect(persist).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledTimes(1);
   });
 });

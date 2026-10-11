@@ -6,9 +6,7 @@ import type { SessionSnapshotStore } from '@/app/conversations/SessionSnapshotSt
 import type { ChatModelSelectionCoordinator } from '@/app/settings/ChatModelSelectionCoordinator';
 import type { EnvironmentSettingsService } from '@/app/settings/EnvironmentSettingsService';
 import type { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
-import type { TabWorkspaceMigrationCoordinator } from '@/app/storage/TabWorkspaceMigrationCoordinator';
 import type { SharedAppStorage } from '@/core/bootstrap/storage';
-import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
 import { resolveConversationModel } from '@/core/providers/conversationModel';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ProviderId } from '@/core/providers/types';
@@ -20,11 +18,7 @@ import type {
   ConversationSummary,
   StoredChatModelSelection,
 } from '@/core/types';
-import type {
-  ChatFeatureHost,
-  ChatViewHost,
-  TabWorkspaceStateDeliveryRegistration,
-} from '@/features/chat/ChatFeatureHost';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ClaudianView } from '@/features/chat/ClaudianView';
 import type { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
 import type { ZenModeSource } from '@/features/chat/zen/types';
@@ -51,7 +45,6 @@ export interface ChatFeatureHostDomains extends FeatureHostDomains {
   readonly executionPersistence: ConversationRepository;
   readonly chatModelSelection: ChatModelSelectionCoordinator;
   readonly sessionSnapshots: SessionSnapshotStore;
-  readonly tabWorkspaceMigration: TabWorkspaceMigrationCoordinator;
   readonly conversationLifecycle: ConversationLifecycle;
   readonly zenMode: Pick<ZenModeController, 'register'>;
 }
@@ -202,21 +195,6 @@ export class ClaudianChatFeatureHost extends ClaudianFeatureHost implements Chat
 
   ensureConversationMetadataLoaded(conversationIds: readonly string[]): Promise<void> {
     return this.domains.conversations.ensureConversationMetadataLoaded(conversationIds);
-  }
-
-  registerTabWorkspaceStateDelivery(
-    view: ChatViewHost,
-    hasViewScopedState: boolean,
-  ): TabWorkspaceStateDeliveryRegistration {
-    return this.domains.tabWorkspaceMigration.registerStateDelivery(view, hasViewScopedState);
-  }
-
-  claimLegacyTabManagerState(): Promise<AppTabManagerState | null> {
-    return this.domains.tabWorkspaceMigration.claimLegacyState();
-  }
-
-  completeLegacyTabManagerStateMigration(): Promise<void> {
-    return this.domains.tabWorkspaceMigration.completeMigration();
   }
 
   registerZenModeSource(source: ZenModeSource): () => void {

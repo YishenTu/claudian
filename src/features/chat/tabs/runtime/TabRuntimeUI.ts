@@ -30,7 +30,7 @@ import { getTabProviderId } from '@/features/chat/tabs/providerResolution';
 import type {
   PublishedTabRuntimeRef,
   TabRuntimeConstructionContext,
-  TabRuntimeShellBundle,
+  TabRuntimeCore,
 } from '@/features/chat/tabs/runtime/TabRuntimeConstruction';
 import { commitProvisionalTab } from '@/features/chat/tabs/TabLifecycle';
 import { TabModelSelectionCoordinator } from '@/features/chat/tabs/TabModelSelectionCoordinator';
@@ -39,13 +39,12 @@ import { getBlankTabModelOptions, getTabCapabilities, getTabChatUIConfig, getTab
 import { applyProviderUIGating, refreshTabProviderUI, syncComposerDropdownForProvider, updateTabPermissionMode, updateTabServiceTier } from '@/features/chat/tabs/tabProviderUI';
 import type {
   ProviderCatalogInfo,
-  TabServices,
   TabUIComponents,
 } from '@/features/chat/tabs/types';
 
 function buildContextManagers(
   options: TabRuntimeConstructionContext,
-  shell: TabRuntimeShellBundle,
+  core: TabRuntimeCore,
   contextTray: ComposerContextTray,
   infoRow: ComposerInfoRow,
   onUserModified: () => void,
@@ -54,7 +53,7 @@ function buildContextManagers(
   TabUIComponents,
   'fileContextManager' | 'imageContextManager' | 'linkedContentController'
 > {
-  const { dom } = shell;
+  const { dom } = core;
   const { plugin } = options;
   const fileContextManager = new FileContextManager(options.mentionDataProvider, {
     getConversationList: () => plugin.getConversationList(),
@@ -90,7 +89,7 @@ function buildContextManagers(
 }
 
 function buildComposerDropdown(
-  shell: TabRuntimeShellBundle,
+  core: TabRuntimeCore,
   providerId: ProviderId | null,
   fileContextManager: FileContextManager,
   options: TabRuntimeConstructionContext,
@@ -98,7 +97,7 @@ function buildComposerDropdown(
   catalogInfo?: ProviderCatalogInfo,
   onVisibilityChange?: () => void,
 ): MainChatComposerDropdown {
-  const { dom } = shell;
+  const { dom } = core;
   const dropdown = new MainChatComposerDropdown(
     dom.inputContainerEl,
     dom.inputEl,
@@ -116,19 +115,18 @@ function buildComposerDropdown(
 }
 
 function buildInputToolbar(
-  shell: TabRuntimeShellBundle,
-  services: TabServices,
+  core: TabRuntimeCore,
   options: TabRuntimeConstructionContext,
   runtimeRef: PublishedTabRuntimeRef,
   onUserModified: () => void,
 ): ReturnType<typeof createInputToolbar> {
-  const { dom } = shell;
+  const { dom } = core;
   const { plugin } = options;
 
   const inputToolbar = dom.inputWrapper.createDiv({ cls: 'claudian-input-toolbar' });
 
   const blankTabUIConfigProxy = (): ProviderChatUIConfig => {
-    const baseConfig = getTabChatUIConfig(shell, plugin);
+    const baseConfig = getTabChatUIConfig(core, plugin);
     return {
       ...baseConfig,
       getModelOptions: (settings: Record<string, unknown>) =>
@@ -142,22 +140,22 @@ function buildInputToolbar(
       return tab !== null && options.isRuntimeLive(tab);
     },
     readDraft: () => ({
-      providerId: shell.providerId,
-      model: shell.draftModel,
+      providerId: core.providerId,
+      model: core.draftModel,
     }),
     applyModel: (model) => {
-      shell.session.selectDraft(shell.providerId, model);
+      core.session.selectDraft(core.providerId, model);
     },
     applyProviderTarget: ({ providerId, model }) => {
-      shell.session.selectDraft(providerId, model);
-      syncTabProviderServices(shell, services);
+      core.session.selectDraft(providerId, model);
+      syncTabProviderServices(core, core.services);
       runtimeRef.requirePublished().ui.composerDropdown.clearProviderCatalog();
     },
     restoreDraft: ({ providerId, model }) => {
       const tab = runtimeRef.requirePublished();
-      shell.session.selectDraft(providerId, model);
-      syncTabProviderServices(shell, services);
-      syncComposerDropdownForProvider(tab, plugin, shell.providerCatalogResolver);
+      core.session.selectDraft(providerId, model);
+      syncTabProviderServices(core, core.services);
+      syncComposerDropdownForProvider(tab, plugin, core.providerCatalogResolver);
       refreshTabProviderUI(tab);
       applyProviderUIGating(tab, plugin);
     },
@@ -191,14 +189,14 @@ function buildInputToolbar(
 
   const toolbarComponents = createInputToolbar(inputToolbar, {
     getUIConfig: () => {
-      if (shell.conversationId === null) {
+      if (core.conversationId === null) {
         return blankTabUIConfigProxy();
       }
-      return getTabChatUIConfig(shell, plugin);
+      return getTabChatUIConfig(core, plugin);
     },
-    getCapabilities: () => getTabCapabilities(shell, plugin),
+    getCapabilities: () => getTabCapabilities(core, plugin),
     getSettings: () => {
-      const base = getTabSettingsSnapshot(shell, plugin);
+      const base = getTabSettingsSnapshot(core, plugin);
       const sideSettings = getSelectedSideChat()?.runtime?.settings;
       if (!sideSettings) return base;
       return { ...base, ...sideSettings };
@@ -254,7 +252,7 @@ function buildInputToolbar(
         );
         if (!didCommit || !isSelectionTargetCurrent()) return;
 
-        syncComposerDropdownForProvider(tab, plugin, shell.providerCatalogResolver);
+        syncComposerDropdownForProvider(tab, plugin, core.providerCatalogResolver);
         onUserModified();
         options.onDraftModelChanged?.(tab, tab.draftModel);
         await uiConfig.prepareModelMetadata?.(
@@ -372,12 +370,11 @@ function buildInputToolbar(
 }
 
 export function buildTabRuntimeUI(
-  shell: TabRuntimeShellBundle,
-  services: TabServices,
+  core: TabRuntimeCore,
   options: TabRuntimeConstructionContext,
   runtimeRef: PublishedTabRuntimeRef,
 ): TabUIComponents {
-  const { dom } = shell;
+  const { dom } = core;
   const { plugin } = options;
   const onUserModified = (): void => {
     commitProvisionalTab(runtimeRef.requirePublished());
@@ -396,19 +393,19 @@ export function buildTabRuntimeUI(
   const infoRow = new ComposerInfoRow(dom.infoRowEl);
   options.registerCleanup('tab composer info row', () => infoRow.destroy());
 
-  const toolbar = buildInputToolbar(shell, services, options, runtimeRef, onUserModified);
+  const toolbar = buildInputToolbar(core, options, runtimeRef, onUserModified);
   const contextManagers = buildContextManagers(
     options,
-    shell,
+    core,
     contextTray,
     infoRow,
     onUserModified,
     runtimeRef,
   );
-  const catalogInfo = shell.providerCatalogResolver();
+  const catalogInfo = core.providerCatalogResolver();
   const composerDropdown = buildComposerDropdown(
-    shell,
-    getTabProviderId(shell, plugin),
+    core,
+    getTabProviderId(core, plugin),
     contextManagers.fileContextManager,
     options,
     () => getHiddenCommandSet(plugin.settings),

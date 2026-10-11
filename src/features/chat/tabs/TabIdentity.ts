@@ -8,21 +8,42 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '@/core/providers/types';
 import type { ClaudianSettings, Conversation } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import type { TabId } from '@/features/chat/tabs/ChatTab';
-import type { TabSessionState } from '@/features/chat/tabs/TabSession';
-import type { AssembledTabRuntime, TabProviderContext } from '@/features/chat/tabs/types';
+import type { TabId, TabLifecycleState } from '@/features/chat/tabs/ChatTab';
+
+/**
+ * A tab's persisted identity: what a view restores before any runtime exists. A restored tab
+ * holds it directly; an assembled tab's `TabSession` owns its copy and every transition of it.
+ */
+export interface TabIdentity {
+  id: TabId;
+  conversationId: string | null;
+  draftModel: string | null;
+  providerId: ProviderId | null;
+  lifecycleState: TabLifecycleState;
+}
+
+/** A blank tab's provider and draft model. */
+export interface BlankTabSelection {
+  providerId: ProviderId | null;
+  draftModel: string | null;
+}
 
 /** Generates a unique tab ID. */
 export function generateTabId(): TabId {
   return `tab-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
-/** Select identity without constructing a tab's UI, controllers, or provider resources. */
-export function createTabSessionState(
+/** Selects an identity without constructing a tab's UI, controllers, or provider resources. */
+export function createTabIdentity(
   settings: ClaudianSettings,
   conversation: Conversation | null | undefined,
-  options: { tabId: string; draftModel?: string | null; providerId?: TabSessionState['providerId']; lifecycleState?: TabSessionState['lifecycleState'] },
-): TabSessionState {
+  options: {
+    tabId: string;
+    draftModel?: string | null;
+    providerId?: ProviderId | null;
+    lifecycleState?: TabLifecycleState;
+  },
+): TabIdentity {
   const isBound = !!conversation?.id;
   const restoredDraftModel = typeof options.draftModel === 'string'
     ? options.draftModel.trim()
@@ -70,22 +91,26 @@ function resolveBlankTabFallback(
   return null;
 }
 
-/** Re-selects an available draft model and provider for a blank tab; true when either changed. */
-export function reconcileBlankTabIdentity(tab: TabProviderContext & Partial<Pick<AssembledTabRuntime, 'session'>>, plugin: ChatFeatureHost): boolean {
-  if (tab.conversationId !== null) return false;
+/**
+ * The available draft model and provider a blank tab should switch to after availability
+ * changes; null for bound tabs or when the current selection stands.
+ */
+export function resolveBlankTabReselection(
+  tab: Readonly<TabIdentity>,
+  plugin: ChatFeatureHost,
+): BlankTabSelection | null {
+  if (tab.conversationId !== null) return null;
 
   const settingsSnapshot = plugin.settings as unknown as Record<string, unknown>;
   const enabledProviderIds = ProviderRegistry.getEnabledProviderIds(settingsSnapshot);
-  const previousDraftModel = tab.draftModel;
-  const previousProviderId = tab.providerId;
-  let nextProviderId = tab.providerId;
-  let nextModel = tab.draftModel;
+  let providerId = tab.providerId;
+  let draftModel = tab.draftModel;
 
   if (tab.draftModel) {
     const availableDraftModel = tab.providerId && enabledProviderIds.includes(tab.providerId)
       ? findProviderModelOption(tab.providerId, tab.draftModel, settingsSnapshot)
       : null;
-    if (availableDraftModel) nextModel = availableDraftModel;
+    if (availableDraftModel) draftModel = availableDraftModel;
   } else {
     const fallback = resolveBlankTabFallback(
       settingsSnapshot,
@@ -93,13 +118,12 @@ export function reconcileBlankTabIdentity(tab: TabProviderContext & Partial<Pick
       tab.providerId,
     );
     if (fallback) {
-      nextModel = fallback.model;
-      nextProviderId = fallback.providerId;
+      draftModel = fallback.model;
+      providerId = fallback.providerId;
     }
   }
 
-  if (tab.session) tab.session.selectDraft(nextProviderId, nextModel);
-  else Object.assign(tab, { providerId: nextProviderId, draftModel: nextModel });
-
-  return tab.draftModel !== previousDraftModel || tab.providerId !== previousProviderId;
+  return draftModel !== tab.draftModel || providerId !== tab.providerId
+    ? { providerId, draftModel }
+    : null;
 }

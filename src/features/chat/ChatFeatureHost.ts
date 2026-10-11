@@ -1,9 +1,9 @@
-import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
 import type { ProviderId } from '@/core/providers/types';
 import type { Conversation, ConversationMeta, ConversationMutablePatch, ConversationSummary, StoredChatModelSelection } from '@/core/types';
 import type { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
 import type { ChatExecutionPersistence } from '@/features/chat/execution/ChatExecutionCoordinator';
-import type { ChatTab, TabId, TabManagerViewHost, TabProviderCatalogContext } from '@/features/chat/tabs/ChatTab';
+import type { ChatTab, TabId, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
+import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { ZenModeSource } from '@/features/chat/zen/types';
 import type { FeatureHost } from '@/features/FeatureHost';
 
@@ -30,22 +30,19 @@ export interface ChatViewRefreshHost {
   handleLinkedContentCreated(path: string): void;
 }
 
-export interface TabWorkspaceStateDeliveryRegistration {
-  readonly declarationsReady: boolean;
-  readonly waitUntilDeclarationsReady: Promise<void>;
-}
-
 export interface ChatTabManagerHost {
   canCreateTab(): boolean;
   resetConversationTabs(conversationId: string): Promise<void>;
   getAllTabs(): ChatTab[];
-  getTabIdentities(): readonly TabProviderCatalogContext[];
+  getTabIdentities(): readonly Readonly<TabIdentity>[];
   getTab(tabId: TabId): ChatTab | null;
   getActiveTab(): ChatTab | null;
   getActiveTabId(): TabId | null;
   /** Replaces the active tab's conversation with a blank draft. */
   createNewConversation(): Promise<void>;
   isTabWorking(tabId: TabId): boolean;
+  /** Owned, without an admitted close, and the manager is live: the tab may receive new work. */
+  isTabLive(tabId: TabId): boolean;
   /** Commits provisional previews to retained tabs and claims user ownership. */
   retainTabs(tabIds: readonly TabId[]): void;
   switchToTab(tabId: TabId): Promise<void>;
@@ -56,10 +53,10 @@ export interface ChatTabManagerHost {
 export interface ChatViewHost extends ChatViewRefreshHost, TabManagerViewHost {
   getActiveTab(): ChatTab | null;
   getTabManager(): ChatTabManagerHost | null;
-  /** True while the wide layout gives New and tab commands session-navigation semantics. */
-  isDualPaneMode(): boolean;
-  handleNewConversationCommand(): Promise<boolean>;
-  createNewTab(): Promise<unknown>;
+  /** The tabs that replace and close commands target; null while the wide layout owns navigation. */
+  getCompactTabManager(): ChatTabManagerHost | null;
+  /** Starts a new conversation the active layout's way: a slot draft when wide, else a new tab. */
+  startNewConversation(): Promise<void>;
   focusActiveInput(): void;
 }
 
@@ -102,13 +99,6 @@ export interface ChatFeatureHost extends FeatureHost {
   ensureConversationMetadataLoaded(conversationIds: readonly string[]): Promise<void>;
 
   readonly executionPersistence: ChatExecutionPersistence;
-
-  registerTabWorkspaceStateDelivery(
-    view: ChatViewHost,
-    hasViewScopedState: boolean,
-  ): TabWorkspaceStateDeliveryRegistration;
-  claimLegacyTabManagerState(): Promise<AppTabManagerState | null>;
-  completeLegacyTabManagerStateMigration(): Promise<void>;
 
   /** Offers a view's presentation to the single zen workspace owner; returns its unregistration. */
   registerZenModeSource(source: ZenModeSource): () => void;

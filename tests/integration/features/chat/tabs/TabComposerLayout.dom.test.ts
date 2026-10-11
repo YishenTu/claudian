@@ -64,6 +64,7 @@ async function createTab(linkedContentPath?: string): Promise<AssembledTabRuntim
     conversation,
     getProviderCatalogConfig: () => null,
     isRuntimeLive: () => true,
+    openConversation: async () => {}, startNewConversation: async () => {},
     mentionDataProvider: new VaultMentionDataProvider(app),
   });
   tab.state.messages = conversation.messages;

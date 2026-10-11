@@ -151,6 +151,7 @@ async function createPiView() {
     containerEl: document.body.createDiv(),
     mentionDataProvider: new VaultMentionDataProvider(plugin.app),
     getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
+    openConversation: async () => {}, startNewConversation: async () => {},
   });
   tab.hydrationState = 'ready';
   await tab.executionCoordinator.bindConversation({ conversationId: conversation.id, providerId: 'pi' });

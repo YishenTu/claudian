@@ -102,39 +102,3 @@ export function decodeTabWorkspaceViewState(data: unknown): AppTabManagerState |
     ...(expandedTitleTabIds.length > 0 ? { expandedTitleTabIds } : {}),
   };
 }
-
-export function resolveTabRestorePlan(
-  state: AppTabManagerState | null,
-  options: {
-    restoreTabsOnStartup: boolean;
-    isDualPane: boolean;
-  },
-): AppTabManagerState {
-  if (!state || !options.restoreTabsOnStartup) {
-    return { openTabs: [], activeTabId: null };
-  }
-
-  if (options.isDualPane) {
-    const activeTab = state.openTabs.find(tab => tab.tabId === state.activeTabId);
-    return activeTab
-      ? {
-          openTabs: [activeTab],
-          activeTabId: activeTab.tabId,
-          ...(state.expandedTitleTabIds?.includes(activeTab.tabId)
-            ? { expandedTitleTabIds: [activeTab.tabId] }
-            : {}),
-        }
-      : { openTabs: [], activeTabId: null };
-  }
-
-  const activeTabId = state.openTabs.some(tab => tab.tabId === state.activeTabId)
-    ? state.activeTabId
-    : state.openTabs[0]?.tabId ?? null;
-  return {
-    openTabs: [...state.openTabs],
-    activeTabId,
-    ...(state.expandedTitleTabIds?.length
-      ? { expandedTitleTabIds: [...state.expandedTitleTabIds] }
-      : {}),
-  };
-}

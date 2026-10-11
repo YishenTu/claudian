@@ -10,7 +10,8 @@ import type { ClaudianSettings, Conversation, ConversationSummary } from '@/core
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { type ChatSettings, getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
 import { getTabProviderId, requireTabProviderId } from '@/features/chat/tabs/providerResolution';
-import type { AssembledTabRuntime, TabProviderContext } from '@/features/chat/tabs/types';
+import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
+import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
 /** Presentation only: an unresolved tab owns no provider or execution capabilities. */
 const UNRESOLVED_TAB_CAPABILITIES: ProviderCapabilities = {
@@ -58,7 +59,7 @@ export function getBlankTabModelOptions(
 }
 
 export function getTabCapabilities(
-  tab: TabProviderContext,
+  tab: Readonly<TabIdentity>,
   plugin: ChatFeatureHost,
   conversation?: Conversation | null,
 ): ProviderCapabilities {
@@ -72,7 +73,7 @@ export function getTabCapabilities(
 }
 
 export function getTabChatUIConfig(
-  tab: TabProviderContext,
+  tab: Readonly<TabIdentity>,
   plugin: ChatFeatureHost,
   conversation?: Conversation | null,
 ): ProviderChatUIConfig {
@@ -81,7 +82,7 @@ export function getTabChatUIConfig(
 }
 
 export function getTabSettingsSnapshot(
-  tab: TabProviderContext & Pick<AssembledTabRuntime, 'session'>,
+  tab: Readonly<TabIdentity> & Pick<AssembledTabRuntime, 'session'>,
   plugin: ChatFeatureHost,
   conversation: ConversationSummary | null = tab.conversationId ? plugin.getConversationSummary(tab.conversationId) : null,
 ): TabSettingsSnapshot & ChatSettings {
@@ -122,7 +123,7 @@ export async function updateTabReasoning(
 }
 
 export function getTabSelectedModel(
-  tab: TabProviderContext,
+  tab: Readonly<TabIdentity>,
   plugin: ChatFeatureHost,
   settings: Readonly<ClaudianSettings> = plugin.settings,
   conversation: ConversationSummary | null = tab.conversationId ? plugin.getConversationSummary(tab.conversationId) : null,
@@ -143,7 +144,7 @@ export function getTabSelectedModel(
 }
 
 export async function updateTabProviderSettings(
-  tab: TabProviderContext & Pick<AssembledTabRuntime, 'session'>,
+  tab: Readonly<TabIdentity> & Pick<AssembledTabRuntime, 'session'>,
   plugin: ChatFeatureHost,
   update: (settings: TabSettingsSnapshot) => void,
 ): Promise<TabSettingsSnapshot | null> {
