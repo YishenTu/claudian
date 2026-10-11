@@ -83,6 +83,7 @@ async function createCodexChildTab() {
   } as any);
   const tab: any = { state, renderer, session, executionCoordinator: coordinator, lifecycleState: 'ready',
     dom: { contentEl: messagesEl }, services: { subagentManager: subagents },
+    ui: { promptSuggestion: { discard: () => undefined, receive: () => undefined } },
     controllers: { streamController: stream, conversationController } };
 
   await coordinator.bindConversation({ conversationId: 'conversation', providerId: 'claude' });
@@ -121,7 +122,7 @@ async function createCodexChildTab() {
   };
   return {
     messagesEl, saves, workChanges, tracker, conversationController, child, settle,
-    childTool, savedChildTool, savedStatus, dispose, plugin, state, session,
+    childTool, savedChildTool, savedStatus, dispose, plugin, state, session, backend,
   };
 }
 
@@ -216,6 +217,31 @@ it('refuses a conversation switch when work starts while it saves and loads hist
     streamOutput(view, ['after refused switch\n']);
     await view.settle();
     expect(view.childTool()?.result).toBe('after refused switch\n');
+  } finally {
+    await view.dispose();
+  }
+});
+
+it('keeps a background turn that starts while a refused switch loads history', async () => {
+  const view = await createCodexChildTab();
+  try {
+    view.plugin.switchConversation.mockImplementationOnce(async (id: string) => {
+      view.backend.latest.emitBackgroundEvent({ type: 'background_turn_started' });
+      return { id, providerId: 'codex', messages: [], sessionId: null };
+    });
+
+    await expect(view.conversationController.switchTo('next-conversation')).resolves.toBe(false);
+    expect(view.state.currentConversationId).toBe('conversation');
+
+    // Output after the refusal belongs to the turn that started during the switch.
+    view.backend.latest.emitBackgroundEvent({ type: 'text_delta', text: 'Background answer.' });
+    view.backend.latest.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed' });
+    await view.settle();
+
+    expect(view.messagesEl.textContent).toContain('Background answer.');
+    expect(view.plugin.updateConversation).toHaveBeenLastCalledWith('conversation', expect.anything());
+    expect(view.saves.at(-1)?.some(message => message.role === 'assistant' && message.content.includes('Background answer.')))
+      .toBe(true);
   } finally {
     await view.dispose();
   }

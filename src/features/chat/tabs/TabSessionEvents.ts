@@ -157,10 +157,13 @@ function findSubagentStatus(
   return undefined;
 }
 
+/**
+ * A conversation switch keeps admitting work because it may still be refused: it drains admitted
+ * work before its final refusal check, and binding fences drop work for a binding it replaced.
+ */
 function canAcceptTabBackgroundWork(tab: AssembledTabRuntime): boolean {
   return tab.lifecycleState !== 'closing'
-    && !tab.state.isResettingToNewChat
-    && !tab.state.isSwitchingConversation;
+    && !tab.state.isResettingToNewChat;
 }
 
 export function enqueueTabBackgroundWork(

@@ -255,6 +255,10 @@ export class ConversationController {
         return false;
       }
 
+      // Events keep arriving for the current binding while saving and loading; their work lands too.
+      await this.deps.awaitBackgroundWork?.();
+      if (this.deps.isClosing?.()) return false;
+
       // Work or prompts may have started during the awaits above. This is the last refusal point:
       // everything after it rebinds execution or clears tab state.
       if (this.#holdsWork()) return false;

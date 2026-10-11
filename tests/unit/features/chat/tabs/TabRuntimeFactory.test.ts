@@ -2183,7 +2183,7 @@ describe('Tab provider execution ownership', () => {
       scope: { ...backgroundScope, sequence: 2 },
     }, context);
 
-    jest.spyOn(tab.state, 'isSwitchingConversation', 'get').mockReturnValue(true);
+    jest.spyOn(tab.state, 'isResettingToNewChat', 'get').mockReturnValue(true);
     await coordinatorDeps[0].onSessionEvent?.({
       category: 'provider',
       message: 'transition boundary',
@@ -2195,7 +2195,7 @@ describe('Tab provider execution ownership', () => {
       },
       type: 'session_error',
     }, context);
-    jest.spyOn(tab.state, 'isSwitchingConversation', 'get').mockReturnValue(false);
+    jest.spyOn(tab.state, 'isResettingToNewChat', 'get').mockReturnValue(false);
 
     await coordinatorDeps[0].onSessionEvent?.({
       type: 'background_turn_completed',
