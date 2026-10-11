@@ -1208,25 +1208,48 @@ describe('TabManager provider execution orchestration', () => {
     });
   });
 
-  it('persists a preview only once the user retains it', async () => {
+  it('persists the active blank draft as a preview that survives reload', async () => {
     const { manager } = createManager();
+    const retained = await manager.createTab(null);
     await manager.viewerSlot.startDraft();
-    const preview = manager.getActiveTab()!;
+    const draft = manager.getActiveTab()!;
+    expect(draft.lifecycleState).toBe('provisional');
 
-    expect(manager.getPersistedState()).toEqual({ activeTabId: null, openTabs: [] });
+    const persisted = manager.getPersistedState();
+    expect(persisted).toEqual({
+      activeTabId: draft.id,
+      openTabs: [
+        { tabId: retained!.id, conversationId: null, draftModel: 'claude-default', providerId: 'claude' },
+        { tabId: draft.id, conversationId: null, draftModel: 'claude-default', providerId: 'claude', preview: true },
+      ],
+    });
 
-    preview.session.claimUserOwnership();
-    preview.session.commitAdmission();
+    const wide = createManager(createPlugin(), {}, {}, { showsPreviews: () => true }).manager;
+    await wide.restoreState(persisted);
+    expect(wide.getActiveTabId()).toBe(draft.id);
+    expect(wide.getActiveTab()?.lifecycleState).toBe('provisional');
+    expect(wide.getPersistedState()).toEqual(persisted);
 
-    expect(preview.lifecycleState).toBe('open');
+    const compact = createManager().manager;
+    await compact.restoreState(persisted);
+    expect(compact.getActiveTabId()).toBe(draft.id);
+    expect(compact.getActiveTab()?.lifecycleState).toBe('open');
+    expect(compact.getPersistedState().openTabs[1]).not.toHaveProperty('preview');
+
+    draft.session.claimUserOwnership();
+    draft.session.commitAdmission();
+    expect(manager.getPersistedState().openTabs[1]).not.toHaveProperty('preview');
+  });
+
+  it('drops an inactive draft preview from persistence', async () => {
+    const { manager } = createManager();
+    const retained = await manager.createTab(null);
+    await manager.viewerSlot.startDraft();
+    await manager.switchToTab(retained!.id);
+
     expect(manager.getPersistedState()).toEqual({
-      activeTabId: preview.id,
-      openTabs: [{
-        conversationId: null,
-        draftModel: 'claude-default',
-        providerId: 'claude',
-        tabId: preview.id,
-      }],
+      activeTabId: retained!.id,
+      openTabs: [{ tabId: retained!.id, conversationId: null, draftModel: 'claude-default', providerId: 'claude' }],
     });
   });
 

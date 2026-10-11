@@ -187,6 +187,8 @@ export interface TabLayoutPolicy {
   startNew(sourceTab: AssembledTabRuntime): Promise<boolean>;
   /** Sessions whose previews the viewer slot retains instead of releasing (pinned sessions). */
   shouldRetainPreview(conversationId: string): boolean;
+  /** Whether a viewer slot shows previews; a restored draft preview stays provisional only then. */
+  showsPreviews(): boolean;
 }
 
 /**

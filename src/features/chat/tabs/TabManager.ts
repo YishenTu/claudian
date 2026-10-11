@@ -57,6 +57,7 @@ const DEFAULT_LAYOUT_POLICY: TabLayoutPolicy = {
   openPicked: () => Promise.resolve(false),
   startNew: () => Promise.resolve(false),
   shouldRetainPreview: () => false,
+  showsPreviews: () => false,
 };
 
 /**
@@ -89,7 +90,7 @@ export class TabManager implements TabManagerInterface {
     view: TabManagerViewHost,
     callbacks: TabManagerCallbacks,
     private readonly mentionDataProvider: VaultMentionDataProvider,
-    layoutPolicy: TabLayoutPolicy = DEFAULT_LAYOUT_POLICY,
+    private readonly layoutPolicy: TabLayoutPolicy = DEFAULT_LAYOUT_POLICY,
   ) {
     this.plugin = plugin;
     this.containerEl = containerEl;
@@ -583,9 +584,11 @@ export class TabManager implements TabManagerInterface {
         // Unlike an explicit open, restoring a duplicate must not move focus to that pane.
         if (owner && owner.view.getTabManager() !== this) continue;
       }
+      // A draft preview stays replaceable only where a viewer slot can replace it.
+      const lifecycleState = tabState.preview && this.layoutPolicy.showsPreviews() ? 'provisional' : 'open';
       const identity = createTabIdentity(this.plugin.settings,
         tabState.conversationId ? this.plugin.getCachedConversation(tabState.conversationId) : null,
-        { ...tabState, lifecycleState: 'open' });
+        { ...tabState, lifecycleState });
       membership.addRestored(identity);
       this.providerPresence.startForTab(identity);
     }

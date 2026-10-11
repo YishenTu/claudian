@@ -262,13 +262,15 @@ export class TabMembership implements TabMembershipView {
   }
 
   /**
-   * Every retained tab identity without runtime lifecycle state. Provisional previews are never
-   * persisted; while one is active, the last active retained tab is saved.
+   * Every retained tab identity without runtime lifecycle state. Previews persist only as the
+   * active blank draft, so a new session survives reload; session previews are never persisted.
    */
   getPersistedState(): AppTabManagerState {
+    const draftPreviewId = this.#activeDraftPreviewId();
     const openTabs: AppTabManagerState['openTabs'] = [];
-    for (const record of this.#records.values()) {
-      if (!this.#isRetained(record)) continue;
+    for (const [tabId, record] of this.#records) {
+      const isDraftPreview = tabId === draftPreviewId;
+      if (!isDraftPreview && !this.#isRetained(record)) continue;
       const tab = memberIdentity(record.member!);
       openTabs.push({
         tabId: tab.id,
@@ -277,9 +279,22 @@ export class TabMembership implements TabMembershipView {
           ? { draftModel: tab.draftModel, providerId: tab.providerId }
           : {}),
         ...(tab.label ? { label: tab.label } : {}),
+        ...(isDraftPreview ? { preview: true as const } : {}),
       });
     }
-    return { openTabs, activeTabId: this.getRetainedActiveTabId() };
+    return { openTabs, activeTabId: draftPreviewId ?? this.getRetainedActiveTabId() };
+  }
+
+  /** The most recently activated admitted tab, when it is a blank provisional draft. */
+  #activeDraftPreviewId(): TabId | null {
+    let latest: { tabId: TabId; record: TabRecord } | null = null;
+    for (const [tabId, record] of this.#records) {
+      if (!record.admitted || !record.member || record.activation === null) continue;
+      if (!latest || record.activation > latest.record.activation!) latest = { tabId, record };
+    }
+    if (!latest) return null;
+    const identity = memberIdentity(latest.record.member!);
+    return identity.lifecycleState === 'provisional' && identity.conversationId === null ? latest.tabId : null;
   }
 
   #isRetained(record: TabRecord): boolean {

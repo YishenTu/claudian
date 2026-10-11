@@ -10,6 +10,8 @@ export interface AppTabManagerState {
     providerId?: ProviderId | null;
     /** User-chosen tab label; independent of the bound conversation's title. */
     label?: string;
+    /** The active blank draft was a replaceable preview, not a retained tab. */
+    preview?: true;
   }>;
   activeTabId: string | null;
   expandedTitleTabIds?: string[];
@@ -75,6 +77,9 @@ export function decodeTabWorkspaceViewState(data: unknown): AppTabManagerState |
         || tab.conversationId !== null || !isNonBlankString(tab.draftModel)
       ))
       || ('label' in tab && (typeof tab.label !== 'string' || normalizeTabLabel(tab.label) !== tab.label))
+      || ('preview' in tab && (
+        tab.preview !== true || tab.conversationId !== null || tab.tabId !== data.activeTabId
+      ))
     ) {
       return null;
     }
@@ -85,6 +90,7 @@ export function decodeTabWorkspaceViewState(data: unknown): AppTabManagerState |
       ...(typeof tab.draftModel === 'string' ? { draftModel: tab.draftModel } : {}),
       ...('providerId' in tab ? { providerId: tab.providerId as string | null } : {}),
       ...(typeof tab.label === 'string' ? { label: tab.label } : {}),
+      ...(tab.preview === true ? { preview: true as const } : {}),
     });
     openTabIds.add(tab.tabId);
   }

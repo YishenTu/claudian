@@ -477,6 +477,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       shouldRetainPreview: conversationId => (
         this.plugin.getConversationSummary(conversationId)?.isPinned === true
       ),
+      showsPreviews: () => this.layout.isWide,
     };
   }
 

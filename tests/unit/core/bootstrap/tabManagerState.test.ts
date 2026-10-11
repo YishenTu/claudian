@@ -74,6 +74,24 @@ describe('decodeTabWorkspaceViewState', () => {
     },
     {
       version: 1,
+      activeTabId: 'tab-1',
+      openTabs: [
+        { conversationId: null, tabId: 'tab-1' },
+        { conversationId: null, tabId: 'tab-2', preview: true },
+      ],
+    },
+    {
+      version: 1,
+      activeTabId: 'tab-1',
+      openTabs: [{ conversationId: 'conversation-1', tabId: 'tab-1', preview: true }],
+    },
+    {
+      version: 1,
+      activeTabId: 'tab-1',
+      openTabs: [{ conversationId: null, tabId: 'tab-1', preview: false }],
+    },
+    {
+      version: 1,
       activeTabId: '  ',
       openTabs: [{ conversationId: null, tabId: '  ' }],
     },
@@ -97,4 +115,15 @@ it.each([null, 'codex'])('preserves explicit draft provider %s through snapshot 
 
 it.each([42, '', {}, undefined])('rejects a malformed explicit draft provider %s', providerId => {
   expect(decodeTabWorkspaceViewState({ version: 1, openTabs: [{ tabId: 'draft', conversationId: null, draftModel: 'retired', providerId }], activeTabId: 'draft' })).toBeNull();
+});
+
+it('preserves the active blank draft preview through versioned decoding', () => {
+  const state = {
+    activeTabId: 'draft',
+    openTabs: [
+      { tabId: 'retained', conversationId: 'conversation-1' },
+      { tabId: 'draft', conversationId: null, draftModel: 'claude-default', providerId: 'claude', preview: true },
+    ],
+  };
+  expect(decodeTabWorkspaceViewState({ ...state, version: 1 })).toEqual(state);
 });

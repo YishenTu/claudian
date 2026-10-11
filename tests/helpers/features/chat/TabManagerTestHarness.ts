@@ -262,6 +262,7 @@ export function createManager(
         openPicked: async () => false,
         startNew: async () => false,
         shouldRetainPreview: () => false,
+        showsPreviews: () => false,
         ...layoutPolicy,
       },
     ) as TabManager,
