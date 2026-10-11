@@ -27,29 +27,6 @@ function createTabBarItem(overrides: Partial<TabBarItem> = {}): TabBarItem {
 }
 
 describe('TabBar', () => {
-  describe('update', () => {
-    it('should clear existing badges before rendering', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-      const tabBar = new TabBar(containerEl, callbacks);
-
-      // First update
-      tabBar.update([createTabBarItem()]);
-      expect(containerEl._children.length).toBe(1);
-
-      // Second update should clear first
-      tabBar.update([
-        createTabBarItem({ id: 'tab-1', index: 1 }),
-        createTabBarItem({ id: 'tab-2', index: 2 }),
-        createTabBarItem({ id: 'tab-3', index: 3 }),
-      ]);
-      expect(containerEl._children.length).toBe(3);
-
-      tabBar.update([]);
-      expect(containerEl._children.length).toBe(0);
-    });
-  });
-
   describe('badge rendering', () => {
 
     it('should use aria-label as the single tab title tooltip source', () => {
@@ -295,24 +272,6 @@ describe('TabBar', () => {
       containerEl._children[0].dispatchEvent('click');
 
       expect(callbacks.onTabClick).toHaveBeenCalledWith('clicked-tab');
-    });
-  });
-
-  describe('destroy', () => {
-    it('should empty container', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-      const tabBar = new TabBar(containerEl, callbacks);
-
-      expect(containerEl._classList.has('claudian-tab-badges')).toBe(true);
-
-      tabBar.update([createTabBarItem(), createTabBarItem({ id: 'tab-2', index: 2 })]);
-      expect(containerEl._children.length).toBe(2);
-
-      tabBar.destroy();
-
-      expect(containerEl._children.length).toBe(0);
-      expect(containerEl._classList.has('claudian-tab-badges')).toBe(false);
     });
   });
 });

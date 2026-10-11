@@ -104,6 +104,37 @@ describe('TabBar tab labels', () => {
     expect(callbacks.onTabClose).toHaveBeenCalledWith('tab-1');
   });
 
+  it('reconciles badges by tab id, reordering, restyling, and removing in place until destroyed', () => {
+    const { container, tabBar, ui } = setup();
+    const first = ui.getByRole('button', { name: /^Refactor/ });
+    const second = ui.getByRole('button', { name: /^Second/ });
+    const names = () => ui.getAllByRole('button').map(badge => badge.getAttribute('aria-label'));
+
+    tabBar.update([
+      item({ id: 'tab-2', index: 1, title: 'Second session', isActive: true }),
+      item({ id: 'tab-3', index: 2, title: 'Third session', isWorking: true }),
+      item({ index: 3 }),
+    ]);
+    expect(names()).toEqual([
+      'Second session, active', 'Third session, working', 'Refactor ACP session restore, idle',
+    ]);
+    expect(ui.getByRole('button', { name: /^Second/ })).toBe(second);
+    expect(ui.getByRole('button', { name: /^Refactor/ })).toBe(first);
+    expect(second.className).toBe('claudian-tab-badge claudian-tab-badge-active');
+    expect(first.textContent).toBe('3');
+
+    tabBar.update([item({ index: 1 })]);
+    expect(names()).toEqual(['Refactor ACP session restore, idle']);
+    expect(second.isConnected).toBe(false);
+    tabBar.update([]);
+    expect(container.children).toHaveLength(0);
+
+    tabBar.update([item()]);
+    tabBar.destroy();
+    expect(container.children).toHaveLength(0);
+    expect(container.classList.contains('claudian-tab-badges')).toBe(false);
+  });
+
   it('renames a tab inline without changing its session title', async () => {
     const { container, callbacks, tabBar, ui } = setup();
 
@@ -194,6 +225,44 @@ describe('TabBar tab labels', () => {
     expect(menuTitles(menu)).toEqual(['Rename tab…', 'Reset tab name', 'Show name', 'Close tab']);
     chooseMenuItem(menu, 'Reset tab name');
     expect(callbacks.onTabLabelChange).toHaveBeenLastCalledWith('tab-2', null);
+  });
+
+  it('lets the view cancel an open rename with Escape before anything else', () => {
+    const { callbacks, tabBar, ui } = setup();
+
+    expect(tabBar.handleEscape()).toBe(false);
+    chooseMenuItem(openMenu(ui.getByRole('button', { name: /^Refactor/ })), 'Rename tab…');
+    fireEvent.input(ui.getByRole('textbox', { name: 'Tab name' }), { target: { value: 'Discarded' } });
+
+    expect(tabBar.handleEscape()).toBe(true);
+    expect(ui.queryByRole('textbox')).toBeNull();
+    expect(document.activeElement).toBe(ui.getByRole('button', { name: 'Refactor ACP session restore, idle' }));
+    expect(callbacks.onTabLabelChange).not.toHaveBeenCalled();
+    expect(tabBar.handleEscape()).toBe(false);
+  });
+
+  it('lands a click on another tab whose mousedown commits the rename', () => {
+    const tabs = [item(), item({ id: 'tab-2', index: 2, title: 'Second session' })];
+    const { callbacks, tabBar, ui } = setup(tabs);
+    // Like the view, the owner republishes the bar as soon as the label changes.
+    callbacks.onTabLabelChange.mockImplementation((tabId: string, label: string | null) => {
+      tabBar.update(tabs.map(tab => (tab.id === tabId && label ? { ...tab, label } : tab)));
+    });
+    chooseMenuItem(openMenu(ui.getByRole('button', { name: /^Refactor/ })), 'Rename tab…');
+    const input = ui.getByRole('textbox', { name: 'Tab name' });
+    fireEvent.input(input, { target: { value: 'Docs' } });
+
+    const target = ui.getByRole('button', { name: /^Second/ });
+    fireEvent.mouseDown(target);
+    fireEvent.blur(input);
+    expect(callbacks.onTabLabelChange).toHaveBeenCalledWith('tab-1', 'Docs');
+
+    // The browser only fires click when mouseup lands on the node that received mousedown.
+    expect(ui.getByRole('button', { name: /^Second/ })).toBe(target);
+    fireEvent.mouseUp(target);
+    fireEvent.click(target);
+    expect(callbacks.onTabClick).toHaveBeenCalledWith('tab-2');
+    expect(ui.getByRole('button', { name: /^Docs/ }).textContent).toBe('Docs');
   });
 
   it('toggles between number and expanded name from the menu or double click', () => {

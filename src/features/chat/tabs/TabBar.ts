@@ -75,29 +75,45 @@ export class TabBar {
       editor.editorEl.remove();
     }
     const editorEl = this.labelEditor?.editorEl ?? null;
-    if (editorEl) {
-      for (const child of Array.from(this.containerEl.children)) {
-        if (child !== editorEl) child.remove();
-      }
-    } else {
-      this.containerEl.empty();
-    }
-    this.badgeEls.clear();
 
-    let passedEditor = false;
+    // Badges are reconciled by tab id so a node under the pointer survives a refresh; a click
+    // whose mousedown triggered the refresh (by committing a rename) still lands on it.
+    const previousBadgeEls = this.badgeEls;
+    this.badgeEls = new Map();
+    const orderedEls: HTMLElement[] = [];
     for (const item of items) {
       if (editorEl && item.id === this.labelEditor?.tabId) {
-        passedEditor = true;
+        orderedEls.push(editorEl);
         continue;
       }
-      const badgeEl = this.#renderBadge(item);
-      if (editorEl && !passedEditor) {
-        this.containerEl.insertBefore(badgeEl, editorEl);
+      const badgeEl = previousBadgeEls.get(item.id) ?? this.#createBadge(item.id);
+      previousBadgeEls.delete(item.id);
+      this.#applyBadgeState(badgeEl, item);
+      this.badgeEls.set(item.id, badgeEl);
+      orderedEls.push(badgeEl);
+    }
+    for (const staleEl of previousBadgeEls.values()) staleEl.remove();
+
+    // Only out-of-place nodes move, so stable badges and the rename input stay attached.
+    let nextEl = this.containerEl.firstElementChild;
+    for (const el of orderedEls) {
+      if (el === nextEl) {
+        nextEl = nextEl.nextElementSibling;
+      } else {
+        this.containerEl.insertBefore(el, nextEl);
       }
     }
+    while (nextEl) {
+      const staleEl = nextEl;
+      nextEl = nextEl.nextElementSibling;
+      staleEl.remove();
+    }
 
-    // Re-rendering keeps keyboard focus on the badge that held it.
-    if (focusedTabId) this.badgeEls.get(focusedTabId)?.focus();
+    // Re-rendering keeps keyboard focus on the badge that held it, even if it moved.
+    const focusedBadgeEl = focusedTabId ? this.badgeEls.get(focusedTabId) : undefined;
+    if (focusedBadgeEl && focusedBadgeEl !== this.containerEl.ownerDocument.activeElement) {
+      focusedBadgeEl.focus();
+    }
     this.restoreScrollPosition();
   }
 
@@ -155,8 +171,54 @@ export class TabBar {
     return true;
   }
 
-  /** Renders a single tab badge. */
-  #renderBadge(item: TabBarItem): HTMLElement {
+  /** Cancels an open rename, for the view's Escape chain; returns whether Escape was consumed. */
+  handleEscape(): boolean {
+    if (!this.labelEditor) return false;
+    this.#finishRename(false, true);
+    return true;
+  }
+
+  /** Creates a badge for a tab; listeners read the tab's current item, so updates reuse it. */
+  #createBadge(tabId: TabId): HTMLElement {
+    // Callers move the badge into place.
+    const badgeEl = this.containerEl.createEl('button', { attr: { type: 'button' } });
+
+    badgeEl.addEventListener('click', () => {
+      this.captureScrollPosition();
+      this.callbacks.onTabClick(tabId);
+    });
+
+    badgeEl.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.#toggleBadgeTitle(tabId);
+    });
+
+    badgeEl.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const item = this.#findItem(tabId);
+      if (item) this.#openBadgeMenu(item, e);
+    });
+
+    // Suppress middle-button autoscroll so the click can close the tab instead.
+    badgeEl.addEventListener('mousedown', (e) => {
+      if (e.button === MIDDLE_MOUSE_BUTTON && this.#findItem(tabId)?.canClose) e.preventDefault();
+    });
+    badgeEl.addEventListener('auxclick', (e) => {
+      if (e.button !== MIDDLE_MOUSE_BUTTON || !this.#findItem(tabId)?.canClose) return;
+      e.preventDefault();
+      this.callbacks.onTabClose(tabId);
+    });
+
+    return badgeEl;
+  }
+
+  #findItem(tabId: TabId): TabBarItem | undefined {
+    return this.items.find(candidate => candidate.id === tabId);
+  }
+
+  /** Applies a tab's state and display to its badge. */
+  #applyBadgeState(badgeEl: HTMLElement, item: TabBarItem): void {
     // Determine state class (priority: active > action required > working > review > idle)
     let stateClass = 'claudian-tab-badge-idle';
     if (item.isActive) {
@@ -171,43 +233,8 @@ export class TabBar {
         : 'claudian-tab-badge-review';
     }
 
-    const badgeEl = this.containerEl.createEl('button', {
-      cls: ['claudian-tab-badge', stateClass].join(' '),
-      attr: { type: 'button' },
-    });
+    badgeEl.className = `claudian-tab-badge ${stateClass}`;
     this.#applyBadgeDisplay(badgeEl, item);
-    this.badgeEls.set(item.id, badgeEl);
-
-    // Click handler to switch tab
-    badgeEl.addEventListener('click', () => {
-      this.captureScrollPosition();
-      this.callbacks.onTabClick(item.id);
-    });
-
-    badgeEl.addEventListener('dblclick', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.#toggleBadgeTitle(item.id);
-    });
-
-    badgeEl.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      this.#openBadgeMenu(item, e);
-    });
-
-    if (item.canClose) {
-      // Suppress middle-button autoscroll so the click can close the tab instead.
-      badgeEl.addEventListener('mousedown', (e) => {
-        if (e.button === MIDDLE_MOUSE_BUTTON) e.preventDefault();
-      });
-      badgeEl.addEventListener('auxclick', (e) => {
-        if (e.button !== MIDDLE_MOUSE_BUTTON) return;
-        e.preventDefault();
-        this.callbacks.onTabClose(item.id);
-      });
-    }
-
-    return badgeEl;
   }
 
   #applyBadgeDisplay(badgeEl: HTMLElement, item: TabBarItem): void {
@@ -273,7 +300,9 @@ export class TabBar {
     const revealsLabel = changed && label !== null && !this.expandedTitleTabIds.has(editor.tabId);
     if (revealsLabel) this.expandedTitleTabIds.add(editor.tabId);
     if (item) {
-      const badgeEl = this.#renderBadge(item);
+      const badgeEl = this.#createBadge(item.id);
+      this.#applyBadgeState(badgeEl, item);
+      this.badgeEls.set(item.id, badgeEl);
       editor.editorEl.replaceWith(badgeEl);
       if (restoreFocus) badgeEl.focus();
     } else {
@@ -341,7 +370,7 @@ export class TabBar {
 
   /** Re-applies display state to the tab's current badge; menus may outlive the badge they opened on. */
   #refreshBadge(tabId: TabId): void {
-    const item = this.items.find(candidate => candidate.id === tabId);
+    const item = this.#findItem(tabId);
     const badgeEl = this.badgeEls.get(tabId);
     if (item && badgeEl) this.#applyBadgeDisplay(badgeEl, item);
   }

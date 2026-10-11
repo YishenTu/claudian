@@ -1326,6 +1326,24 @@ describe('ClaudianView Escape handling', () => {
     expect(cancelStreaming).not.toHaveBeenCalled();
   });
 
+  it('lets an open tab rename consume scoped Escape before cancelling the turn', () => {
+    const { cancelStreaming, closeOpenMenu, escape, view } = createEscapeHarness({
+      isStreaming: true,
+      toolbarMenuOpen: true,
+    });
+    let renaming = true;
+    view.tabBar = { handleEscape: jest.fn(() => { const was = renaming; renaming = false; return was; }) };
+
+    expect(escape()).toBe(false);
+    expect(view.tabBar.handleEscape).toHaveBeenCalledTimes(1);
+    expect(closeOpenMenu).not.toHaveBeenCalled();
+    expect(cancelStreaming).not.toHaveBeenCalled();
+
+    // With the rename closed, Escape resumes its usual chain.
+    escape();
+    expect(closeOpenMenu).toHaveBeenCalledTimes(1);
+  });
+
   it('leaves Escape to session search IME composition', () => {
     jest.spyOn(SessionManagerSurface.prototype, 'isComposing', 'get').mockReturnValue(true);
     const handleEscape = jest.spyOn(SessionManagerSurface.prototype, 'handleEscape');

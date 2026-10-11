@@ -645,6 +645,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       if (e.isComposing || this.sessions.isComposing) return;
       const activeTab = this.tabManager?.getActiveTab();
       if (this.sessions.handleEscape()) return false;
+      if (this.tabBar?.handleEscape()) return false;
       // Menus also consume Escape in the capture phase; this covers a keymap that sees it first.
       if (activeTab?.composer.closeOpenMenu()) return false;
       if (!e.defaultPrevented && activeTab) {
