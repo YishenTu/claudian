@@ -203,8 +203,11 @@ describe('TabBar tab labels', () => {
 
     input = rename(/^Refactor/);
     fireEvent.input(input, { target: { value: 'x'.repeat(40) } });
+    // Focus leaving without a pointer press (keyboard, app switch) swaps the badge back at once.
     fireEvent.blur(input);
     expect(callbacks.onTabLabelChange).toHaveBeenLastCalledWith('tab-1', 'x'.repeat(32));
+    expect(input.isConnected).toBe(false);
+    expect(ui.getByRole('button', { name: /^x+ \(/ }).textContent).toBe('x'.repeat(32));
 
     tabBar.update([
       item({ label: 'x'.repeat(32) }),
@@ -241,7 +244,7 @@ describe('TabBar tab labels', () => {
     expect(tabBar.handleEscape()).toBe(false);
   });
 
-  it('lands a click on another tab whose mousedown commits the rename', () => {
+  it('keeps the rename editor in place until a click whose mousedown commits it lands', () => {
     const tabs = [item(), item({ id: 'tab-2', index: 2, title: 'Second session' })];
     const { callbacks, tabBar, ui } = setup(tabs);
     // Like the view, the owner republishes the bar as soon as the label changes.
@@ -252,17 +255,52 @@ describe('TabBar tab labels', () => {
     const input = ui.getByRole('textbox', { name: 'Tab name' });
     fireEvent.input(input, { target: { value: 'Docs' } });
 
+    // The editor is wider than the badge replacing it; swapping before the click lands would
+    // shift the clicked badge out from under the pointer, so the browser would not fire click.
     const target = ui.getByRole('button', { name: /^Second/ });
+    const editorPresent: Record<string, boolean> = {};
+    target.addEventListener('mouseup', () => { editorPresent.mouseup = input.isConnected; });
+    callbacks.onTabClick.mockImplementation(() => { editorPresent.click = input.isConnected; });
+
     fireEvent.mouseDown(target);
     fireEvent.blur(input);
+    // The label commits with the press; only the swap waits for the click.
     expect(callbacks.onTabLabelChange).toHaveBeenCalledWith('tab-1', 'Docs');
-
-    // The browser only fires click when mouseup lands on the node that received mousedown.
     expect(ui.getByRole('button', { name: /^Second/ })).toBe(target);
+
     fireEvent.mouseUp(target);
     fireEvent.click(target);
+    expect(editorPresent).toEqual({ mouseup: true, click: true });
     expect(callbacks.onTabClick).toHaveBeenCalledWith('tab-2');
-    expect(ui.getByRole('button', { name: /^Docs/ }).textContent).toBe('Docs');
+    expect(input.isConnected).toBe(false);
+    const names = ui.getAllByRole('button').map(badge => badge.textContent);
+    expect(names).toEqual(['Docs', '2']);
+  });
+
+  it('swaps a held rename editor back after a press that ends without a click', () => {
+    jest.useFakeTimers();
+    try {
+      const { callbacks, tabBar, ui } = setup();
+      chooseMenuItem(openMenu(ui.getByRole('button', { name: /^Refactor/ })), 'Rename tab…');
+      const input = ui.getByRole('textbox', { name: 'Tab name' });
+      fireEvent.input(input, { target: { value: 'Docs' } });
+
+      // The pointer is dragged off the badge and released elsewhere, so no click follows.
+      fireEvent.mouseDown(ui.getByRole('button', { name: /^Second/ }));
+      fireEvent.blur(input);
+      fireEvent.mouseUp(document.body);
+      expect(callbacks.onTabLabelChange).toHaveBeenCalledWith('tab-1', 'Docs');
+      expect(input.isConnected).toBe(true);
+      expect(tabBar.handleEscape()).toBe(false);
+
+      jest.runOnlyPendingTimers();
+      expect(input.isConnected).toBe(false);
+      expect(ui.getByRole('button', { name: /^Docs/ }).textContent).toBe('Docs');
+      expect(callbacks.onTabLabelChange).toHaveBeenCalledTimes(1);
+      expect(callbacks.onTabClick).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('toggles between number and expanded name from the menu or double click', () => {

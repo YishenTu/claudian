@@ -7,6 +7,8 @@ import { scheduleAnimationFrame } from '@/features/chat/utils/animationFrame';
 const EXPANDED_TITLE_MAX_LENGTH = 32;
 const TRUNCATED_TITLE_SUFFIX = '...';
 const MIDDLE_MOUSE_BUTTON = 1;
+/** How long a held rename editor waits for the click after a pointer release before yielding. */
+const HELD_EDITOR_CLICK_GRACE_MS = 100;
 
 /** Callbacks for TabBar interactions. */
 export interface TabBarCallbacks {
@@ -27,6 +29,15 @@ interface TabLabelEditor {
   tabId: TabId;
   editorEl: HTMLElement;
   inputEl: HTMLInputElement;
+  /** Ends the editor's document listeners and pending timer. */
+  listeners: AbortController;
+  /** A pointer press outside the editor is in progress, so a blur now comes from that press. */
+  isPointerPressed: boolean;
+  /**
+   * The rename is committed, but the editor keeps its slot until the press that blurred it
+   * finishes: the narrower badge would shift the pressed target before its click lands.
+   */
+  isHeld: boolean;
 }
 
 /**
@@ -71,8 +82,7 @@ export class TabBar {
     // An in-progress rename keeps its input node so focus and the typed draft survive refreshes.
     const editor = this.labelEditor;
     if (editor && !items.some(item => item.id === editor.tabId)) {
-      this.labelEditor = null;
-      editor.editorEl.remove();
+      this.#closeEditor(editor, false);
     }
     const editorEl = this.labelEditor?.editorEl ?? null;
 
@@ -129,7 +139,7 @@ export class TabBar {
   beginRename(tabId: TabId): boolean {
     const item = this.items.find(candidate => candidate.id === tabId);
     if (!item) return false;
-    if (this.labelEditor?.tabId === tabId) {
+    if (this.labelEditor?.tabId === tabId && !this.labelEditor.isHeld) {
       this.labelEditor.inputEl.focus();
       return true;
     }
@@ -151,7 +161,12 @@ export class TabBar {
     inputEl.value = item.label ?? '';
     badgeEl.replaceWith(editorEl);
     this.badgeEls.delete(tabId);
-    this.labelEditor = { tabId, editorEl, inputEl };
+    const editor: TabLabelEditor = {
+      tabId, editorEl, inputEl, listeners: new AbortController(),
+      isPointerPressed: false, isHeld: false,
+    };
+    this.labelEditor = editor;
+    this.#trackPointer(editor);
 
     inputEl.addEventListener('keydown', (event) => {
       if (event.isComposing) return;
@@ -164,7 +179,7 @@ export class TabBar {
         this.#finishRename(false, true);
       }
     });
-    inputEl.addEventListener('blur', () => this.#finishRename(true, false));
+    inputEl.addEventListener('blur', () => this.#finishRename(true, false, editor.isPointerPressed));
 
     inputEl.focus();
     inputEl.select();
@@ -173,7 +188,7 @@ export class TabBar {
 
   /** Cancels an open rename, for the view's Escape chain; returns whether Escape was consumed. */
   handleEscape(): boolean {
-    if (!this.labelEditor) return false;
+    if (!this.labelEditor || this.labelEditor.isHeld) return false;
     this.#finishRename(false, true);
     return true;
   }
@@ -280,42 +295,102 @@ export class TabBar {
     menu.showAtMouseEvent(event);
   }
 
-  #finishRename(commit: boolean, restoreFocus: boolean): void {
+  /**
+   * Ends the rename, committing the input when asked. A rename blurred by a pointer press
+   * commits now but holds its slot until that press finishes; keyboard commits swap at once.
+   */
+  #finishRename(commit: boolean, restoreFocus: boolean, holdSlot = false): void {
     const editor = this.labelEditor;
     if (!editor) return;
-    this.labelEditor = null;
+    // A held rename already committed; finishing it only returns the badge.
+    if (editor.isHeld) {
+      this.#closeEditor(editor, restoreFocus);
+      return;
+    }
 
     const itemIndex = this.items.findIndex(candidate => candidate.id === editor.tabId);
-    let item = this.items[itemIndex];
+    const item = this.items[itemIndex];
     const label = commit ? normalizeTabLabel(editor.inputEl.value) : null;
     const changed = commit && !!item && (item.label ?? null) !== label;
     if (changed) {
       // Shown until the owner's next update confirms the tab's label.
-      item = { ...item };
-      if (label === null) delete item.label;
-      else item.label = label;
-      this.items[itemIndex] = item;
+      const labelled = { ...item };
+      if (label === null) delete labelled.label;
+      else labelled.label = label;
+      this.items[itemIndex] = labelled;
     }
     // Reveal a newly saved name; double click still returns the badge to its number.
     const revealsLabel = changed && label !== null && !this.expandedTitleTabIds.has(editor.tabId);
     if (revealsLabel) this.expandedTitleTabIds.add(editor.tabId);
-    if (item) {
-      const badgeEl = this.#createBadge(item.id);
-      this.#applyBadgeState(badgeEl, item);
-      this.badgeEls.set(item.id, badgeEl);
-      editor.editorEl.replaceWith(badgeEl);
-      if (restoreFocus) badgeEl.focus();
+    if (holdSlot && item) {
+      editor.isHeld = true;
+      editor.inputEl.readOnly = true;
     } else {
-      editor.editorEl.remove();
+      this.#closeEditor(editor, restoreFocus);
     }
     if (revealsLabel) this.callbacks.onDisplayStateChanged?.();
     // The tab owns its label; the next update renders it.
     if (changed) this.callbacks.onTabLabelChange(editor.tabId, label);
   }
 
+  /** Removes the editor, returning the tab's current badge to its slot when the tab remains. */
+  #closeEditor(editor: TabLabelEditor, restoreFocus: boolean): void {
+    if (this.labelEditor === editor) this.labelEditor = null;
+    editor.listeners.abort();
+
+    const item = this.#findItem(editor.tabId);
+    if (!item) {
+      editor.editorEl.remove();
+      return;
+    }
+    const badgeEl = this.#createBadge(item.id);
+    this.#applyBadgeState(badgeEl, item);
+    this.badgeEls.set(item.id, badgeEl);
+    editor.editorEl.replaceWith(badgeEl);
+    if (restoreFocus) badgeEl.focus();
+  }
+
+  /**
+   * Follows pointer presses while the editor exists. A held editor yields once the click that
+   * ends its press has reached its target, or shortly after a release that produces no click.
+   */
+  #trackPointer(editor: TabLabelEditor): void {
+    const doc = this.containerEl.ownerDocument;
+    const view = doc.defaultView;
+    const { signal } = editor.listeners;
+    const capture = { capture: true, signal };
+    let graceTimer: number | undefined;
+    signal.addEventListener('abort', () => view?.clearTimeout(graceTimer));
+    const release = (): void => {
+      if (editor.isHeld) this.#closeEditor(editor, false);
+    };
+    const press = (event: Event): void => {
+      if (!event.composedPath().includes(editor.editorEl)) editor.isPointerPressed = true;
+    };
+    const lift = (): void => {
+      editor.isPointerPressed = false;
+      if (!editor.isHeld || !view) return;
+      view.clearTimeout(graceTimer);
+      graceTimer = view.setTimeout(release, HELD_EDITOR_CLICK_GRACE_MS);
+    };
+    // Touch focuses on the compatibility mousedown that follows pointerup, so track both.
+    doc.addEventListener('pointerdown', press, capture);
+    doc.addEventListener('mousedown', press, capture);
+    doc.addEventListener('pointerup', lift, capture);
+    doc.addEventListener('mouseup', lift, capture);
+    doc.addEventListener('pointercancel', () => {
+      editor.isPointerPressed = false;
+      release();
+    }, capture);
+    // Bubbling to the window, the click has already run its target's handlers.
+    view?.addEventListener('click', release, { signal });
+    view?.addEventListener('blur', release, { signal });
+  }
+
   /** Destroys the tab bar. */
   destroy(): void {
     // Drop an open rename before emptying so its blur cannot publish display state.
+    this.labelEditor?.listeners.abort();
     this.labelEditor = null;
     this.containerEl.empty();
     this.containerEl.removeClass('claudian-tab-badges');
