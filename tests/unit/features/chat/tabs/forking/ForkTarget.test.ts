@@ -8,6 +8,7 @@ import {
   mockChooseForkTarget,
   mockCreateTabRuntime,
   mockDestroyTab,
+  mockNextHydration,
   mockTabs,
   runtimeOptions,
 } from '@test/helpers/features/chat/TabManagerTestHarness';
@@ -106,7 +107,7 @@ describe('ForkTarget', () => {
     );
   });
 
-  it('aborts a fork when its source runtime rebinds during provider-state creation', async () => {
+  it.each(['rebind', 'shutdown'] as const)('aborts a fork when its source is invalidated during provider-state creation (%s)', async invalidation => {
     const forkState = deferred<Record<string, unknown>>();
     const buildForkProviderState = jest.fn(() => forkState.promise);
     (ProviderRegistry.getConversationHistoryService as jest.Mock).mockReturnValueOnce({
@@ -116,17 +117,16 @@ describe('ForkTarget', () => {
       getCachedConversation: jest.fn((id: string) => ({ id, providerId: 'claude' })),
     }), {}, {}, NEW_TAB_FORKS);
     const source = await manager.createTab('conversation-a');
-    const conversationChanged = runtimeOptions(0)
-      .onConversationIdChanged as (runtime: any, conversationId: string) => void;
 
     const fork = forkRequestFrom(0)(forkContext({ sourceConversationId: 'conversation-a' }));
     await flushUntil(() => buildForkProviderState.mock.calls.length > 0);
-    conversationChanged(source, 'conversation-b');
+    if (invalidation === 'rebind') await manager.openConversation('conversation-b');
+    else source!.session.runtime.beginShutdown();
     forkState.resolve({ fork: true });
 
     await fork;
     expect(plugin.deleteConversation).toHaveBeenCalledWith('forked');
-    expect(manager.getAllTabs()).toEqual([source]);
+    expect(manager.getActiveTab()).toEqual(expect.objectContaining({ id: source!.id, conversationId: invalidation === 'rebind' ? 'conversation-b' : 'conversation-a' }));
   });
 
   it('revalidates the fork lease before starting target-side effects', async () => {
@@ -134,12 +134,10 @@ describe('ForkTarget', () => {
       getCachedConversation: jest.fn((id: string) => ({ id, providerId: 'claude' })),
     }), {}, {}, NEW_TAB_FORKS);
     const source = await manager.createTab('conversation-a');
-    const conversationChanged = runtimeOptions(0)
-      .onConversationIdChanged as (runtime: any, conversationId: string) => void;
     (plugin.updateConversation as jest.Mock).mockImplementationOnce(() => ({
       then: (resolve: (value?: void) => void) => {
         resolve();
-        queueMicrotask(() => conversationChanged(source, 'conversation-b'));
+        queueMicrotask(() => source!.session.beginClose());
       },
     }));
 
@@ -157,19 +155,19 @@ describe('ForkTarget', () => {
       getCachedConversation: jest.fn((id: string) => ({ id, providerId: 'claude' })),
     }), {}, {}, CURRENT_TAB_FORKS);
     const source = await manager.createTab('conversation-a');
-    (source!.controllers.conversationController.switchTo as jest.Mock).mockClear();
+    (source!.session.runtime.model.hydrate as jest.Mock).mockClear();
     const factoryOptions = runtimeOptions(0);
 
     const fork = factoryOptions.forkRequestCallback(forkContext({
       sourceConversationId: 'conversation-a',
     }));
     await flushUntil(() => mockChooseForkTarget.mock.calls.length > 0);
-    factoryOptions.onConversationIdChanged(source, 'conversation-b');
+    await manager.openConversation('conversation-b');
     target.resolve('current-tab');
     await fork;
 
     expect(plugin.createConversation).not.toHaveBeenCalled();
-    expect(source!.controllers.conversationController.switchTo).not.toHaveBeenCalled();
+    expect(source!.session.runtime.model.hydrate).not.toHaveBeenCalled();
   });
 
   it('forks into a new runtime tab without prompting in dual mode', async () => {
@@ -308,12 +306,11 @@ describe('ForkTarget', () => {
 
   it('deletes a current-tab fork when its source closes during the switch', async () => {
     mockChooseForkTarget.mockResolvedValueOnce('current-tab');
-    const { manager, plugin } = createManager(createPlugin(), {}, {}, CURRENT_TAB_FORKS);
+    const { manager, plugin } = createManager(createPlugin({ getCachedConversation: (id: string) => ({ id, providerId: 'claude' }) }), {}, {}, CURRENT_TAB_FORKS);
     await manager.createTab();
     const source = await manager.createTab();
     const switchToFork = deferred<void>();
-    const switchTo = source!.controllers.conversationController.switchTo as jest.Mock;
-    switchTo.mockImplementationOnce(() => switchToFork.promise);
+    const switchTo = mockNextHydration(async () => switchToFork.promise);
 
     const fork = forkRequestFrom(1)(forkContext());
     await flushUntil(() => switchTo.mock.calls.length > 0);
@@ -325,7 +322,7 @@ describe('ForkTarget', () => {
     expect(plugin.deleteConversation).toHaveBeenCalledWith('forked');
   });
 
-  it('retains a current-tab fork when a reversible close reservation rolls back', async () => {
+  it('discards an uncommitted fork when its target was claimed by a close', async () => {
     mockChooseForkTarget.mockResolvedValueOnce('current-tab');
     const replacementError = new Error('Replacement assembly failed');
     const { manager, plugin } = createManager(createPlugin({
@@ -333,18 +330,11 @@ describe('ForkTarget', () => {
     }), {}, {}, CURRENT_TAB_FORKS);
     const source = await manager.createTab('source-conversation');
     const switchFork = deferred<void>();
-    const conversationChanged = runtimeOptions(0)
-      .onConversationIdChanged as (runtime: any, conversationId: string) => void;
-    source!.controllers.conversationController.switchTo = jest.fn(async (conversationId: string) => {
-      await switchFork.promise;
-      source!.state.currentConversationId = conversationId;
-      conversationChanged(source, conversationId);
-      return true;
-    });
+    const hydration = mockNextHydration(async () => switchFork.promise);
 
     const fork = forkRequestFrom(0)(forkContext({ sourceConversationId: 'source-conversation' }));
     await flushUntil(() => (
-      (source!.controllers.conversationController.switchTo as jest.Mock).mock.calls.length > 0
+      hydration.mock.calls.length > 0
     ));
     const replacementAssembly = deferred<any>();
     mockCreateTabRuntime.mockImplementationOnce(() => replacementAssembly.promise);
@@ -355,21 +345,21 @@ describe('ForkTarget', () => {
     replacementAssembly.reject(replacementError);
     await expect(close).rejects.toBe(replacementError);
 
-    expect(source!.conversationId).toBe('forked');
+    expect(source!.conversationId).toBe('source-conversation');
     expect(source!.session.acceptsIntents).toBe(true);
-    expect(plugin.deleteConversation).not.toHaveBeenCalledWith('forked');
+    expect(plugin.deleteConversation).toHaveBeenCalledWith('forked');
     expect(manager.getAllTabs()).toEqual([source]);
   });
 
   it('keeps the fork target chooser and current-tab replacement in single mode', async () => {
     mockChooseForkTarget.mockResolvedValueOnce('current-tab');
-    const { manager, plugin } = createManager(createPlugin(), {}, {}, CURRENT_TAB_FORKS);
+    const { manager, plugin } = createManager(createPlugin({ getCachedConversation: (id: string) => ({ id, providerId: 'claude' }) }), {}, {}, CURRENT_TAB_FORKS);
     const source = await manager.createTab();
 
     await forkRequestFrom(0)(forkContext());
 
     expect(mockChooseForkTarget).toHaveBeenCalledWith(plugin.app);
-    expect(source!.controllers.conversationController!.switchTo).toHaveBeenCalledWith('forked');
+    expect(manager.getActiveTab()).toEqual(expect.objectContaining({ id: source!.id, conversationId: 'forked' }));
     expect(manager.getTabCount()).toBe(1);
     expect(Notice).toHaveBeenCalled();
   });

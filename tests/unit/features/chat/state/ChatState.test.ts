@@ -224,25 +224,25 @@ describe('ChatState', () => {
       expect(chatState.reviewEpoch).not.toBe(afterFirst);
     });
 
-    it('tracks multiple action-required interactions until the last one ends', () => {
+    it('preserves action attention while the session still reports pending requests', () => {
       jest.spyOn(Date, 'now')
         .mockReturnValueOnce(100)
         .mockReturnValueOnce(200);
       const onAttentionChanged = jest.fn();
       const chatState = new ChatState({ onAttentionChanged });
 
-      chatState.beginActionRequired('approval-1');
-      chatState.beginActionRequired('question-1');
+      chatState.setActionRequired(true);
+      chatState.setActionRequired(true);
 
       expect(chatState.attention).toEqual({ kind: 'action-required', since: 100 });
       expect(chatState.requiresAction).toBe(true);
       expect(onAttentionChanged).toHaveBeenCalledTimes(1);
 
-      chatState.endActionRequired('approval-1');
+      chatState.setActionRequired(true);
       expect(chatState.requiresAction).toBe(true);
       expect(onAttentionChanged).toHaveBeenCalledTimes(1);
 
-      chatState.endActionRequired('question-1');
+      chatState.setActionRequired(false);
       expect(chatState.attention).toBeNull();
       expect(onAttentionChanged).toHaveBeenLastCalledWith(null);
     });
@@ -250,7 +250,7 @@ describe('ChatState', () => {
     it('keeps action-required attention when review is acknowledged', () => {
       const chatState = new ChatState();
 
-      chatState.beginActionRequired('approval-1');
+      chatState.setActionRequired(true);
       chatState.acknowledgeReview();
 
       expect(chatState.requiresAction).toBe(true);
@@ -262,9 +262,9 @@ describe('ChatState', () => {
         .mockReturnValueOnce(200);
       const chatState = new ChatState();
 
-      chatState.beginActionRequired('approval-1');
+      chatState.setActionRequired(true);
       chatState.markReviewRequired();
-      chatState.endActionRequired('approval-1');
+      chatState.setActionRequired(false);
 
       expect(chatState.attention).toEqual({
         kind: 'review',
@@ -280,8 +280,8 @@ describe('ChatState', () => {
       const chatState = new ChatState();
 
       chatState.markReviewRequired();
-      chatState.beginActionRequired('approval-1');
-      chatState.endActionRequired('approval-1');
+      chatState.setActionRequired(true);
+      chatState.setActionRequired(false);
 
       expect(chatState.attention).toEqual({
         kind: 'review',
@@ -293,23 +293,23 @@ describe('ChatState', () => {
     it('acknowledges review hidden beneath action-required attention', () => {
       const chatState = new ChatState();
 
-      chatState.beginActionRequired('approval-1');
+      chatState.setActionRequired(true);
       chatState.markReviewRequired();
       chatState.acknowledgeReview();
-      chatState.endActionRequired('approval-1');
+      chatState.setActionRequired(false);
 
       expect(chatState.attention).toBeNull();
     });
 
-    it('treats duplicate begin and end calls as idempotent', () => {
+    it('treats unchanged interaction projections as idempotent', () => {
       const onAttentionChanged = jest.fn();
       const chatState = new ChatState({ onAttentionChanged });
 
-      chatState.beginActionRequired('approval-1');
-      chatState.beginActionRequired('approval-1');
-      chatState.endActionRequired('missing');
-      chatState.endActionRequired('approval-1');
-      chatState.endActionRequired('approval-1');
+      chatState.setActionRequired(true);
+      chatState.setActionRequired(true);
+      chatState.setActionRequired(false);
+      chatState.setActionRequired(false);
+      chatState.setActionRequired(false);
 
       expect(chatState.attention).toBeNull();
       expect(onAttentionChanged).toHaveBeenCalledTimes(2);
@@ -357,9 +357,9 @@ describe('ChatState', () => {
       const chatState = new ChatState();
 
       chatState.markReviewRequired('completed');
-      chatState.beginActionRequired('approval-1');
+      chatState.setActionRequired(true);
       chatState.markReviewRequired('error');
-      chatState.endActionRequired('approval-1');
+      chatState.setActionRequired(false);
 
       expect(chatState.attention).toEqual({
         kind: 'review',

@@ -287,9 +287,9 @@ it('normalizes a completed synchronous answer containing not-ready prose', () =>
   manager.addSyncToolCall('sync', { id: 'read', name: 'Read', input: { file_path: 'note.md' }, status: 'running' });
   manager.addSyncToolCall('sync', { id: 'read', name: 'Read', input: { limit: 10 }, status: 'running' });
   manager.updateSyncToolResult('sync', 'read', {
-    ...manager.getSyncSubagent('sync')!.info.toolCalls[0], status: 'completed', result: 'The note.',
+    ...manager.getSyncSubagent('sync')!.toolCalls[0], status: 'completed', result: 'The note.',
   });
-  expect(manager.getSyncSubagent('sync')?.info.toolCalls).toEqual([
+  expect(manager.getSyncSubagent('sync')?.toolCalls).toEqual([
     expect.objectContaining({ input: { file_path: 'note.md', limit: 10 }, status: 'completed', result: 'The note.' }),
   ]);
   expect(parent.querySelectorAll('.claudian-subagent-tool-item')).toHaveLength(1);
@@ -670,4 +670,46 @@ it('shows previous runs of reused OpenCode subagents live and after reload', asy
     expect(histories[1].textContent).not.toContain('Answer A');
     expect(await axe(view.parent)).toHaveNoViolations();
   }
+});
+
+it.each(['sync', 'async', 'partial-sync'] as const)('records a %s task and its result without transcript elements', async mode => {
+  const parent = document.body.createDiv();
+  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const state = new ChatState();
+  const manager = new SubagentManager(info => stream.subagents.onAsyncSubagentStateChange(info), new ClaudeTaskResultInterpreter());
+  const renderer = new MessageRenderer(plugin, new Component(), parent);
+  const stream = new StreamController({ plugin, state, renderer, subagentManager: manager,
+    getMessagesEl: () => parent, getProviderId: () => 'claude', updateQueueIndicator: () => {} });
+  cleanups.push(() => { stream.dispose(); manager.clear(); renderer.dispose(); });
+  const message: ChatMessage = { id: 'headless', role: 'assistant', timestamp: testDate().getTime(), content: '', contentBlocks: [], toolCalls: [] };
+  state.addMessage(message);
+  await stream.handleStreamChunk({ type: 'tool_use', id: 'task', name: TOOL_SUBAGENT,
+    input: mode === 'partial-sync' ? {} : { description: 'Research', prompt: 'Read the note.', run_in_background: mode === 'async' } }, message);
+  expect(manager.hasActiveAsyncSubagents()).toBe(mode === 'async');
+  let childOutput: string | undefined;
+  if (mode === 'async') {
+    await stream.handleStreamChunk({ type: 'tool_result', id: 'task', content: 'agentId: child-123' }, message);
+    await stream.subagents.handleAsyncSubagentCompletion({ type: 'async_subagent_completion', providerSessionId: 'session',
+      taskId: 'child-123', status: 'completed', result: 'Research complete.' });
+
+  } else {
+    await stream.handleStreamChunk({ type: 'subagent_tool_use', subagentId: 'task', id: 'read', name: 'Read', input: { file_path: 'note.md' } }, message);
+    await stream.handleStreamChunk({ type: 'subagent_tool_output', subagentId: 'task', id: 'read', content: 'The ' }, message);
+    await stream.handleStreamChunk({ type: 'subagent_tool_output', subagentId: 'task', id: 'read', content: 'note.' }, message);
+    childOutput = message.toolCalls?.[0].subagent?.toolCalls[0]?.result;
+    await stream.handleStreamChunk({ type: 'subagent_tool_result', subagentId: 'task', id: 'read', content: 'The note.' }, message);
+    await stream.handleStreamChunk({ type: 'tool_result', id: 'task', content: 'Research complete.' }, message);
+
+  }
+  expect(childOutput).toBe(mode === 'async' ? undefined : 'The note.');
+  expect(manager.hasActiveAsyncSubagents()).toBe(false);
+  expect(message.toolCalls?.[0].subagent).toMatchObject({ mode: mode === 'async' ? 'async' : 'sync',
+    status: 'completed', result: 'Research complete.', toolCalls: mode === 'async' ? [] : [{ id: 'read', status: 'completed', result: 'The note.' }] });
+  expect(parent.childElementCount).toBe(0);
+  expect(message.contentBlocks).toEqual([{ type: 'subagent', subagentId: 'task', ...(mode === 'async' ? { mode: 'async' } : {}) }]);
+  const model = JSON.stringify(message);
+  manager.attachTaskView(message.toolCalls![0].subagent!, parent);
+  expect(within(parent).getByRole('button', { name: /(?:Background|Subagent) task:.*Research|Subagent task: Subagent task/ })).toBeTruthy();
+  expect(parent.textContent).toContain('Research complete.');
+  expect(JSON.stringify(message)).toBe(model);
 });

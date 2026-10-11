@@ -2,6 +2,7 @@ import { Notice } from 'obsidian';
 
 import type { Conversation } from '@/core/types';
 import type { ChatTabManagerHost, ChatViewHost } from '@/features/chat/ChatFeatureHost';
+import type { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 import type { TabId } from '@/features/chat/tabs/ChatTab';
 
 /** Application conversation writes the lifecycle applies after its tab policy. */
@@ -17,6 +18,7 @@ export interface ConversationLifecycleStore {
 }
 
 export interface ConversationLifecycleDeps {
+  readonly sessions: Pick<SessionRuntimePool, 'isRunning' | 'retire' | 'whenSettled'>;
   readonly conversations: ConversationLifecycleStore;
   readonly views: { getAllViews(): readonly ChatViewHost[] };
 }
@@ -30,14 +32,14 @@ export type ArchivableConversation = Readonly<Pick<Conversation, 'id' | 'isPinne
 
 /**
  * The single owner of archive, restore, pin, and delete across every chat view. A session
- * counts as running when any tab bound to it, in any view, has foreground or background work.
+ * counts as running while its runtime has foreground or background work, including without a view.
  */
 export class ConversationLifecycle {
   constructor(private readonly deps: ConversationLifecycleDeps) {}
 
-  /** True while a tab bound to the session has work that closing or resetting would interrupt. */
+  /** Includes session work with no attached tab. */
   isRunning(conversationId: string): boolean {
-    return this.#boundTabs(conversationId).some(({ manager, tabId }) => manager.isTabWorking(tabId));
+    return this.deps.sessions.isRunning(conversationId);
   }
 
   /** Pins or unpins sessions in one batch; pinning retains their provisional previews. */
@@ -63,7 +65,8 @@ export class ConversationLifecycle {
       new Notice('Running sessions cannot be archived');
       return;
     }
-    await this.deps.conversations.setConversationArchived(conversationId, true);
+    await this.deps.conversations.archiveConversationsIf([conversationId], conversation =>
+      !this.isRunning(conversation.id) && this.#boundTabs(conversation.id).length === 0);
   }
 
   /** Archives a batch, skipping sessions that are running or reopened before their write. */
@@ -77,7 +80,7 @@ export class ConversationLifecycle {
       ? 0
       : await this.deps.conversations.archiveConversationsIf(
           closedIds,
-          conversation => this.#boundTabs(conversation.id).length === 0,
+          conversation => !this.isRunning(conversation.id) && this.#boundTabs(conversation.id).length === 0,
         );
     const skippedCount = conversationIds.length - archivedCount;
     if (skippedCount > 0) {
@@ -90,7 +93,8 @@ export class ConversationLifecycle {
     conversationIds: readonly string[],
     shouldArchive: (conversation: ArchivableConversation) => boolean,
   ): Promise<number> {
-    return this.deps.conversations.archiveConversationsIf(conversationIds, shouldArchive);
+    return this.deps.conversations.archiveConversationsIf(conversationIds, conversation =>
+      !this.isRunning(conversation.id) && shouldArchive(conversation));
   }
 
   restore(conversationIds: readonly string[]): Promise<void> {
@@ -98,7 +102,7 @@ export class ConversationLifecycle {
   }
 
   /**
-   * Deletes sessions in order, skipping any whose bound tabs are running. Tabs bound to a
+   * Deletes sessions in order, skipping any whose runtimes are running. Tabs bound to a
    * deleted session are reset by the deletion callback, not here.
    */
   async delete(conversationIds: readonly string[]): Promise<void> {
@@ -116,8 +120,25 @@ export class ConversationLifecycle {
       : `Skipped ${skippedCount} ${skippedCount === 1 ? 'session that is' : 'sessions that are'} running`);
   }
 
-  /** Repository deletion callback: returns every view's tabs bound to the record to a blank draft. */
+  /**
+   * Repository deletion callback: returns every view's tabs bound to the record to a blank draft.
+   * User deletion skips running sessions, so a running session here is a provider-reported missing
+   * session deleted from inside its own turn. That turn is awaiting this callback and returns its
+   * unsent input to the composer when it settles; the tabs reset afterwards and carry that input.
+   */
   async resetDeletedConversationTabs(conversationId: string): Promise<void> {
+    if (this.deps.sessions.isRunning(conversationId)) {
+      void this.deps.sessions.whenSettled(conversationId)
+        .then(settled => settled ? this.#retireDeletedSession(conversationId) : undefined)
+        .catch((error: unknown) => {
+          new Notice(error instanceof Error ? error.message : 'Failed to close the deleted session');
+        });
+      return;
+    }
+    await this.#retireDeletedSession(conversationId);
+  }
+
+  async #retireDeletedSession(conversationId: string): Promise<void> {
     const errors: unknown[] = [];
     for (const manager of this.#managers()) {
       try {
@@ -126,6 +147,9 @@ export class ConversationLifecycle {
         errors.push(error);
       }
     }
+    // A tab that failed to reset still shows the session; it is disposed once that tab lets go.
+    try { await this.deps.sessions.retire(conversationId); }
+    catch (error) { errors.push(error); }
     if (errors.length > 0) {
       const first = errors[0];
       throw first instanceof Error ? first : new Error(String(first));
@@ -135,8 +159,8 @@ export class ConversationLifecycle {
   /** Closes every tab showing the session; returns false without closing anything when it is running. */
   async #closeTabsBeforeArchive(conversationId: string): Promise<boolean> {
     const boundTabs = this.#boundTabs(conversationId);
-    // Closing would interrupt foreground turns, background work, async subagents, and side chats.
-    if (boundTabs.some(({ manager, tabId }) => manager.isTabWorking(tabId))) return false;
+    // Running sessions cannot be archived, including detached main and side work.
+    if (this.isRunning(conversationId)) return false;
 
     for (const { manager, tabId } of boundTabs) {
       if (!await manager.closeTab(tabId)) {

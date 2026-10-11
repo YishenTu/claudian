@@ -2,7 +2,7 @@
 import '@/providers';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
-import { createTestTabSession, holdResponse } from '@test/helpers/ConversationPorts';
+import { createTestSession, holdResponse } from '@test/helpers/ConversationPorts';
 import {
   createHarness,
   releaseSideChatHarnesses,
@@ -19,7 +19,7 @@ import { ConversationController } from '@/features/chat/conversation/Conversatio
 import { ChatExecutionPreHandoffError } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { ComposerSelections } from '@/features/chat/input/ComposerSelections';
 import { InputController, type InputControllerDeps } from '@/features/chat/input/InputController';
-import { InlineInteractionPrompts } from '@/features/chat/interactions/InlineInteractionPrompts';
+import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
 import { cancelSelectedDestinationTurn } from '@/features/chat/tabs/TabInputEvents';
@@ -36,7 +36,7 @@ function createRouting(
   Object.assign(harness.plugin, { renameConversation: jest.fn().mockResolvedValue(undefined) });
   const mainExecutions: string[] = [];
   const mainMessages: ChatMessage[] = [];
-  const session = createTestTabSession({ coordinator: { cancel: () => deps.getExecutionCoordinator()?.cancel() } });
+  const session = createTestSession({ coordinator: { cancel: () => deps.getExecutionCoordinator()?.cancel() } });
   const state = new ChatState({}, undefined, session.turns);
   state.currentConversationId = 'conversation-1';
   state.addMessage = (message: ChatMessage) => { mainMessages.push(message); };
@@ -51,7 +51,7 @@ function createRouting(
       browser: { getContext: () => context.browserSelection ?? null, poll: async () => undefined, clear() {} },
       canvas: { getContext: () => context.canvasSelection ?? null, poll() {}, clear() {} },
     }),
-    inlinePrompts: new InlineInteractionPrompts({
+    inlinePrompts: new SessionInteractions({
       getPromptParentEl: () => harness.composerEl,
       getSuppressedEl: () => harness.inputContainerEl,
       onBeforeShow: () => () => undefined,

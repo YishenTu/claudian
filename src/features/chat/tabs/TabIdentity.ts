@@ -12,7 +12,8 @@ import type { TabId, TabLifecycleState } from '@/features/chat/tabs/ChatTab';
 
 /**
  * A tab's persisted identity: what a view restores before any runtime exists. A restored tab
- * holds it directly; an assembled tab's `TabSession` owns its copy and every transition of it.
+ * holds it directly. Once assembled, `TabSession` owns the tab's ID, lifecycle and label, while
+ * the attached session owns its conversation, provider and draft model.
  */
 export interface TabIdentity {
   id: TabId;

@@ -1,4 +1,4 @@
-import { createConversationPorts, createTestTabSession, holdResponse } from '@test/helpers/ConversationPorts';
+import { createConversationPorts, createTestSession, holdResponse } from '@test/helpers/ConversationPorts';
 import { createMockEl } from '@test/helpers/MockElement';
 
 import type { ProviderExecutionEvent } from '@/core/execution';
@@ -6,9 +6,9 @@ import { ConversationController } from '@/features/chat/conversation/Conversatio
 import { BuiltInCommandController, type BuiltInCommandControllerDeps } from '@/features/chat/input/BuiltInCommandController';
 import { ComposerSelections } from '@/features/chat/input/ComposerSelections';
 import { InputController, type InputControllerDeps } from '@/features/chat/input/InputController';
-import { InlineInteractionPrompts } from '@/features/chat/interactions/InlineInteractionPrompts';
+import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
+import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { ChatState } from '@/features/chat/state/ChatState';
-import type { TabSession } from '@/features/chat/tabs/TabSession';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 function createInput(): ComposerInputElement {
@@ -81,8 +81,8 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
   const getInputContainerEl = (inputContainerOverride as (() => HTMLElement) | undefined)
     ?? (() => defaultInputContainerEl);
   const selectionSources = createSelectionSources();
-  // The real turn owner, unless a test supplies the tab session it drains or closes.
-  const session: TabSession = (dependencyOverrides.session as TabSession | undefined) ?? createTestTabSession({
+  // The real turn owner, unless a test supplies the session it drains or closes.
+  const session: ChatSessionRuntime = (dependencyOverrides.session as ChatSessionRuntime | undefined) ?? createTestSession({
     getState: () => state,
     coordinator: { cancel: () => deps.getExecutionCoordinator()?.cancel() },
     dismissInteractions: () => controller.dismissPendingApproval(),
@@ -186,10 +186,10 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
           ),
         }
       : {}),
-  } as unknown as InputControllerDeps;
+  } as unknown as InputControllerDeps & { renderer: NonNullable<InputControllerDeps['renderer']> };
   if (!('inlinePrompts' in dependencyOverrides)) {
     Object.assign(deps, {
-      inlinePrompts: new InlineInteractionPrompts({
+      inlinePrompts: new SessionInteractions({
         getPromptParentEl: () => getInputContainerEl().parentElement,
         getSuppressedEl: getInputContainerEl,
       }),
@@ -202,26 +202,23 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
     subagentManager: { orphanAllActive: jest.fn(), clear: jest.fn() } as any,
     getWelcomeEl: () => null, setWelcomeEl: () => undefined, getMessagesEl: deps.getMessagesEl,
     getLinkedContentController: () => deps.getLinkedContentController(),
-    clearQueuedMessage: () => controller.queue.clear(),
     ensureExecutionInitialized: () => deps.ensureExecutionInitialized(),
     getExecutionCoordinator: () => deps.getExecutionCoordinator(),
   });
   jest.spyOn(conversationController, 'save').mockResolvedValue(undefined);
-  jest.spyOn(conversationController, 'createNew').mockResolvedValue(undefined);
   const commandOverrides = Object.fromEntries(
     (['openConversation', 'startNewConversation', 'toggleFastMode'] as const)
       .filter(key => key in dependencyOverrides)
       .map(key => [key, dependencyOverrides[key]]),
   ) as Partial<BuiltInCommandControllerDeps>;
+  const openConversation = jest.fn().mockResolvedValue(undefined);
+  const startNewConversation = jest.fn().mockResolvedValue(undefined);
   const builtInCommands = new BuiltInCommandController({
     plugin,
     getCurrentConversationId: () => state.currentConversationId,
-    // The tab manager's compact defaults: picks rebind this tab, /new clears it in place.
-    // Tests may replace the conversation owner after construction.
-    openConversation: async (id) => { await deps.conversationController.switchTo(id); },
-    startNewConversation: () => deps.conversationController.createNew(),
+    openConversation, startNewConversation,
     getInputContainerEl,
-    getInputEl: () => deps.getInputEl(),
+    getInputEl: () => deps.getInputEl()!,
     getSideChatController: () => deps.getSideChatController?.() ?? null,
     ...commandOverrides,
   });
@@ -229,6 +226,7 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
   if (!('conversationController' in dependencyOverrides)) Object.assign(deps, { conversationController });
   const controller = new InputController(deps);
   return {
+    openConversation, startNewConversation,
     builtInCommands,
     controller,
     coordinator,

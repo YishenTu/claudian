@@ -122,7 +122,7 @@ export class TabActivation {
   #activate(tab: AssembledTabRuntime): void {
     this.host.membership.setActiveTabId(tab.id);
     activateTab(tab);
-    tab.state.acknowledgeReview();
+    tab.session.runtime.peekModel?.acknowledgeReviewIfVisible();
   }
 
   /** Activation and rollback body; the scheduler runs one at a time after its liveness check. */

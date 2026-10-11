@@ -1,7 +1,7 @@
 /** @jest-environment jsdom */
-
 import '@/providers';
 
+import { createTabSession } from '@test/helpers/ConversationPorts';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
@@ -46,7 +46,7 @@ it.each([false, true])('renders a native notification and its follow-up through 
     lifecycle: 'persistent', nativePersistence: 'enabled', vaultWorkingDirectory: '/vault', interactionPort: {} as any,
   });
   let id = 0;
-  const host = { state, renderer, stream, isConnected: () => true, createMessageId: () => `message-${++id}` };
+  const host = { state, renderer, stream, createMessageId: () => `message-${++id}` };
   const output: ProviderBackgroundOutputEvent[] = [];
   session.onEvent(event => {
     if (event.type === 'task_notification') {
@@ -93,8 +93,7 @@ it.each([false, true])('renders a native notification and its follow-up through 
 it.each([false, true])('shows a session notification immediately with streaming=%s without disturbing the response', async (streaming) => {
   const { ProviderExecutionLifecycleRegistry } = await import('@/core/execution');
   const { ChatExecutionCoordinator } = await import('@/features/chat/execution/ChatExecutionCoordinator');
-  const { TabSession } = await import('@/features/chat/tabs/TabSession');
-  const { enqueueTabSessionEvent } = await import('@/features/chat/tabs/TabSessionEvents');
+  const { enqueueTabSessionEvent } = await import('@test/helpers/features/chat/SessionEventsHarness');
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin,
@@ -112,7 +111,7 @@ it.each([false, true])('shows a session notification immediately with streaming=
     resolveMissingProviderSession: async () => 'not_found',
     onSessionEvent: (event, context) => enqueueTabSessionEvent(tab, plugin, event, context),
   });
-  const session = new TabSession({ id: 'tab', conversationId: 'conversation', draftModel: null,
+  const session = createTabSession({ id: 'tab', conversationId: 'conversation', draftModel: null,
     providerId: 'claude', lifecycleState: 'ready' } as any, coordinator);
   const tab = { state, renderer, session, executionCoordinator: coordinator, lifecycleState: 'ready',
     dom: { contentEl: messagesEl }, services: { subagentManager: subagents },
@@ -138,11 +137,11 @@ it.each([false, true])('shows a session notification immediately with streaming=
       header = await within(messagesEl).findByRole('button', { name: 'Task notification' });
     } finally {
       release();
-      await session.awaitBackgroundWork();
+      await session.runtime.awaitBackgroundWork();
     }
     expect(state.currentContentEl).toBe(current);
     backend.latest.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed' });
-    await session.awaitBackgroundWork();
+    await session.runtime.awaitBackgroundWork();
     expect(state.messages.findIndex(message => message.content === 'Earlier background response')).toBeLessThan(
       state.messages.findIndex(message => message.contentBlocks?.some(block => block.type === 'task_notification')),
     );
@@ -191,7 +190,7 @@ it.each(['text', 'image', 'image-only'])('keeps preceding output before a %s pro
     (el as HTMLElement).textContent = markdown;
   });
   const pending = renderAutoTriggeredTurn({ state, renderer, stream,
-    isConnected: () => true, createMessageId: () => 'automatic' }, {
+    createMessageId: () => 'automatic' }, {
     events: [{ type: 'text_delta', text: 'Earlier automatic output', scope: backgroundScope(1) }], metadata: {}, target,
   }, () => true);
   try {
@@ -224,7 +223,7 @@ it.each([false, true])('flushes an automatic tool card before stream disposal wi
   const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
     getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
   try {
-    await renderAutoTriggeredTurn({ state, renderer, stream, isConnected: () => true, createMessageId: () => 'automatic' }, {
+    await renderAutoTriggeredTurn({ state, renderer, stream, createMessageId: () => 'automatic' }, {
       events: [
         { type: 'tool_started', toolCallId: 'read', toolScope: { kind: 'main' }, name: 'Read', input: { file_path: '/tmp/output.txt' }, scope: backgroundScope(1) },
         ...(completed ? [{ type: 'tool_completed' as const, toolCallId: 'read', toolScope: { kind: 'main' as const }, content: 'Task output', scope: backgroundScope(2) }] : []),
@@ -259,7 +258,7 @@ it.each([false, true])('keeps automatic Agent results across requested settlemen
     if (markdown === 'Automatic continuation') { entered(); await gate; }
     (el as HTMLElement).textContent = markdown;
   });
-  const pending = renderAutoTriggeredTurn({ state, renderer, stream, isConnected: () => true, createMessageId: () => 'automatic' }, {
+  const pending = renderAutoTriggeredTurn({ state, renderer, stream, createMessageId: () => 'automatic' }, {
     events: [
       { type: 'tool_started', toolCallId: 'agent', toolScope: { kind: 'main' }, name: 'Agent', input: { ...(pendingAgent ? {} : { run_in_background: false }), description: 'Automatic helper', prompt: 'Inspect output' }, scope: backgroundScope(1) },
       { type: 'text_delta', text: 'Automatic continuation', scope: backgroundScope(2) },
@@ -302,7 +301,7 @@ it.each([false, true])('matches task-notification grouping before and after repl
   const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
     getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
   let id = 0;
-  const host = { state, renderer, stream, isConnected: () => true, createMessageId: () => `message-${++id}` };
+  const host = { state, renderer, stream, createMessageId: () => `message-${++id}` };
   try {
     renderSessionTaskNotification(host, 'Background bash completed.');
     if (interveningInput) {

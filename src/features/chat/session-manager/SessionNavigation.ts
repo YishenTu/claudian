@@ -18,10 +18,11 @@ export class SessionNavigation {
   getConversationStatus(conversationId: string): HistoryConversationStatus {
     const tabManager = this.deps.getTabManager();
     const isRunning = this.deps.plugin.conversationLifecycle.isRunning(conversationId);
+    const attention = this.deps.plugin.sessionRuntimes.get(conversationId)?.statusAttention;
     const activeTab = tabManager?.getActiveTab();
     if (activeTab?.conversationId === conversationId) {
       return {
-        attention: activeTab.state.attention,
+        attention,
         openState: 'current',
         isRunning,
         location: 'current-view',
@@ -32,7 +33,7 @@ export class SessionNavigation {
     const localTab = this.findTabWithConversation(conversationId);
     if (localTab) {
       return {
-        attention: tabManager?.getTab(localTab.id)?.state.attention,
+        attention,
         openState: 'open',
         isRunning,
         location: 'current-view',
@@ -42,10 +43,8 @@ export class SessionNavigation {
 
     const crossViewResult = this.deps.plugin.findConversationAcrossViews(conversationId);
     if (crossViewResult && crossViewResult.view !== this.deps.view) {
-      const crossViewManager = crossViewResult.view.getTabManager();
-      const crossViewTab = crossViewManager?.getTab(crossViewResult.tabId);
       return {
-        attention: crossViewTab?.state.attention,
+        attention,
         openState: 'open',
         isRunning,
         location: 'other-view',
@@ -53,6 +52,7 @@ export class SessionNavigation {
     }
 
     return {
+      attention,
       openState: 'closed',
       isRunning,
       location: 'current-view',

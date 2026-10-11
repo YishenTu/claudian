@@ -3,6 +3,7 @@ import type { ProviderCommandDiscoveryController } from '@/core/providers/comman
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
 import type { ProviderId, TitleGenerationService } from '@/core/providers/types';
 import type { ComposerContextTray } from '@/features/chat/composer/ComposerContextTray';
+import type { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
 import type { ComposerPromptSuggestion } from '@/features/chat/composer/ComposerPromptSuggestion';
 import type { FileContextManager } from '@/features/chat/composer/FileContextManager';
 import type { ImageContextManager } from '@/features/chat/composer/ImageContextManager';
@@ -19,7 +20,7 @@ import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExe
 import type { BuiltInCommandController } from '@/features/chat/input/BuiltInCommandController';
 import type { ComposerSelections } from '@/features/chat/input/ComposerSelections';
 import type { InputController } from '@/features/chat/input/InputController';
-import type { InlineInteractionPrompts } from '@/features/chat/interactions/InlineInteractionPrompts';
+import type { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import type { LinkedContentController } from '@/features/chat/linked-content';
 import type { NavigationController } from '@/features/chat/navigation/NavigationController';
 import type { NavigationSidebar } from '@/features/chat/navigation/NavigationSidebar';
@@ -62,13 +63,14 @@ export type ProviderCatalogInfo = {
 export type ProviderCatalogResolver = () => ProviderCatalogInfo;
 
 /**
- * Controllers managed per-tab.
- * Each tab has its own set of controllers for independent operation.
+ * Controllers a tab exposes: its own composer, selection, command and navigation controllers,
+ * plus the attached session model's conversation, stream, input, prompt and side-chat owners.
  */
 export interface TabControllers {
+  readonly drafts: ComposerDraftController;
   readonly composerSelections: ComposerSelections;
   /** Inline approval and question prompts shared by input and the provider interaction port. */
-  readonly inlinePrompts: InlineInteractionPrompts;
+  readonly inlinePrompts: SessionInteractions;
   readonly conversationController: ConversationController;
   readonly streamController: StreamController;
   readonly inputController: InputController;
@@ -79,7 +81,7 @@ export interface TabControllers {
 }
 
 /**
- * Services managed per-tab.
+ * Session model services a tab presents.
  */
 export interface TabServices {
   readonly subagentManager: SubagentManager;
@@ -135,15 +137,15 @@ export interface TabDOMElements {
 }
 
 /**
- * Represents a single assembled tab in the multi-tab system.
- * Each tab is an independent chat session with its own runtime instance.
+ * A single assembled tab: presentation (DOM, UI, tab-scoped controllers) attached to a chat
+ * session the main-owned pool owns independently of the tab's lifetime.
  */
 export interface AssembledTabRuntime extends ChatTab {
   readonly session: TabSession;
   /** State of loading the provider-owned conversation into the tab UI. */
   hydrationState: TabHydrationState;
 
-  /** Per-tab owner of provider execution and session lifecycle. */
+  /** The attached session's provider execution; it outlives this tab presentation. */
   readonly executionCoordinator: ChatExecutionCoordinator;
 
   /** Tab-manager-owned provider discovery callback retained across UI/runtime refreshes. */
@@ -152,13 +154,13 @@ export interface AssembledTabRuntime extends ChatTab {
   /** Captures whether completed runtime work will need review after finalization. */
   readonly captureReviewableSettlement: ((outcome: TabReviewOutcome) => () => void) | null;
 
-  /** Per-tab chat state. */
+  /** The attached session model's chat state. */
   readonly state: ChatState;
 
   /** Per-tab controllers. */
   readonly controllers: TabControllers;
 
-  /** Per-tab services. */
+  /** The attached session model's services. */
   readonly services: TabServices;
 
   /** Per-tab UI components. */

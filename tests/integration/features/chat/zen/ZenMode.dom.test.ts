@@ -4,6 +4,7 @@ import '@/providers';
 import { deserialize, serialize } from 'node:v8';
 
 import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
+import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { FakeSideSession } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { modelCatalogCases } from '@test/helpers/providerModelCatalogs';
@@ -167,6 +168,8 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
     registerZenModeSource: (source: Parameters<ZenModeController['register']>[0]) => zen.register(source),
   } as unknown as ChatFeatureHost;
 
+  installSessionRuntimePool(plugin);
+
   const addView = async (placement: 'left' | 'right' | 'main', ready = true) => {
     const conversation = {
       id: `conversation-${conversations.length + 1}`,
@@ -199,7 +202,7 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
       conversation, getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
     openConversation: async () => {}, startNewConversation: async () => {},
     });
-    tab.state.currentConversationId = conversation.id;
+    await tab.session.runtime.model.hydrate();
     // jsdom has no layout engine; model the native visibility query at the browser boundary.
     tab.dom.inputEl.checkVisibility = () => {
       if (!tab.dom.inputEl.isConnected) return false;
@@ -581,7 +584,7 @@ it('clears a pending waiting status when provider invalidation ends the turn', a
   expect(tab.state.waitingStatus).toBeNull();
 });
 
-it('leaves no waiting indicator behind when a forced new chat dismisses a pending approval', async () => {
+it('leaves no waiting indicator behind when plugin shutdown dismisses a pending approval', async () => {
   const { tab, sessions, rightSplit, setCollapsed } = await createZenFixture();
   setCollapsed(rightSplit, true);
   const session = await sendFromZen(tab, sessions, 'Write a note');
@@ -600,7 +603,7 @@ it('leaves no waiting indicator behind when a forced new chat dismisses a pendin
     await new Promise(resolve => setTimeout(resolve, 600));
     return save(...args);
   });
-  await conversationController.createNew({ force: true });
+  await tab.session.runtime.dispose();
   await approval;
 
   expect(tab.state.isStreaming).toBe(false);

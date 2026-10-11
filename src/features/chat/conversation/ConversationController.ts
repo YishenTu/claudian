@@ -6,33 +6,30 @@ import type {
   ProviderId,
 } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import type { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
 import { ConversationBranching } from '@/features/chat/conversation/ConversationBranching';
 import { ConversationRewind, type ConversationSaveOptions } from '@/features/chat/conversation/ConversationRewind';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import type { LinkedContentController, LinkedContentSubmissionToken } from '@/features/chat/linked-content';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import {
-  createWelcomeElement,
   pickWelcomeGreeting,
   renderWelcomeContent,
 } from '@/features/chat/rendering/WelcomeRenderer';
+import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
+import type { SessionComposerPort } from '@/features/chat/sessions/SessionComposer';
 import type { ChatState } from '@/features/chat/state/ChatState';
 import type { SubagentManager } from '@/features/chat/subagents/SubagentManager';
-import type { TabSession } from '@/features/chat/tabs/TabSession';
 
 /** Longest a progress-only change waits for its coalesced save. */
 const PROGRESS_SAVE_DELAY_MS = 1_000;
 
 export interface ConversationCallbacks {
-  onNewConversation?: () => void;
   onConversationLoaded?: () => void;
-  onConversationSwitched?: () => void;
 }
 
 /** The tab session capabilities conversation transitions coordinate with. */
 export type ConversationSession = Pick<
-  TabSession,
+  ChatSessionRuntime,
   'canNavigateConversation' | 'runConversationNavigation' | 'hasActiveTurn' | 'cancelTurn' | 'isIdle'
   | 'hasBackgroundWork'
 >;
@@ -40,34 +37,34 @@ export type ConversationSession = Pick<
 export interface ConversationControllerDeps {
   plugin: ChatFeatureHost;
   state: ChatState;
-  renderer: MessageRenderer;
+  renderer: MessageRenderer | null;
   subagentManager: SubagentManager;
   getWelcomeEl: () => HTMLElement | null;
   setWelcomeEl: (el: HTMLElement | null) => void;
-  getMessagesEl: () => HTMLElement;
-  drafts: ComposerDraftController;
+  getMessagesEl: () => HTMLElement | null;
+  drafts: SessionComposerPort;
   session: ConversationSession;
   getLinkedContentController: () => LinkedContentController;
-  clearQueuedMessage: () => void;
   getExecutionCoordinator: () => ChatExecutionCoordinator | null;
   ensureExecutionInitialized?: () => Promise<boolean>;
   getSelectedModel?: () => string | null;
   ensureExecutionForConversation?: (conversation: Conversation | null) => Promise<void>;
-  dismissPendingInlinePrompts?: () => void;
-  awaitBackgroundWork?: () => Promise<void>;
   /** True once the owning tab has begun teardown. */
   isClosing?: () => boolean;
-  isConversationHydrated?: () => boolean;
   /** The transcript now shows the bound conversation (or the blank entry point) in full. */
+  isConversationHydrated?: () => boolean;
   onConversationHydrated?: () => void;
+  onPersistenceChanged?: () => void;
 }
 
 export class ConversationController {
   private deps: ConversationControllerDeps;
   private callbacks: ConversationCallbacks;
-  private switchRequestRevision = 0;
-  private switchTail: Promise<void> = Promise.resolve();
   private pendingProgressSave: { supersede: () => void } | null = null;
+  private pendingSaves = 0;
+  private creation: Promise<void> | null = null;
+  get hasPendingPersistence(): boolean { return this.pendingSaves > 0 || !!this.pendingProgressSave || !!this.creation; }
+  awaitCreation(): Promise<void> { return this.creation ?? Promise.resolve(); }
   readonly #setTransition: ReturnType<ChatState['claimTransitionWriter']>;
   readonly #branching: ConversationBranching;
   readonly #rewind: ConversationRewind;
@@ -82,7 +79,7 @@ export class ConversationController {
     this.#branching = new ConversationBranching({
       state: deps.state,
       setRewinding: value => this.#setTransition('isRewinding', value),
-      renderer: deps.renderer,
+      get renderer() { return deps.renderer; },
       drafts: deps.drafts,
       session: deps.session,
       getMessagesEl: () => this.deps.getMessagesEl(),
@@ -118,69 +115,6 @@ export class ConversationController {
   // ============================================
 
   /**
-   * Resets to entry point state (New Chat).
-   *
-   * Entry point is a blank UI state - no conversation is created until the
-   * first message is sent. This prevents empty conversations cluttering history.
-   */
-  async createNew(options: { force?: boolean } = {}): Promise<void> {
-    const { state, subagentManager, session } = this.deps;
-    const force = !!options.force;
-    const isCancellingForegroundTurn = force && session.hasActiveTurn;
-    if (session.hasActiveTurn && !force) return;
-    if (state.isRewinding) return;
-    if (state.isResettingToNewChat) return;
-    if (state.isSwitchingConversation) return;
-
-    // Set flag to block message sending during reset
-    this.#branching.cancelDraft();
-    this.#setTransition('isResettingToNewChat', true);
-
-    try {
-      this.deps.dismissPendingInlinePrompts?.();
-      // The replaced turn unwinds without presenting into the new chat.
-      if (isCancellingForegroundTurn) session.cancelTurn('new-conversation');
-
-      if (this.deps.awaitBackgroundWork) {
-        await this.deps.awaitBackgroundWork();
-      }
-
-      subagentManager.orphanAllActive();
-
-      // Persist terminalized background tasks before clearing their runtime state.
-      if (state.currentConversationId && state.messages.length > 0) {
-        await this.save(isCancellingForegroundTurn);
-      }
-
-      subagentManager.clear();
-
-      // Clear streaming state and related DOM references
-      state.resetStreamingPresentation();
-      state.toolCallElements.clear();
-      state.writeEditStates.clear();
-
-      await this.#resetToEntryState();
-
-      const messagesEl = this.deps.getMessagesEl();
-      messagesEl.empty();
-
-      const welcomeEl = createWelcomeElement(messagesEl, this.#greeting());
-      this.deps.setWelcomeEl(welcomeEl);
-
-      this.deps.drafts.restore('main', { content: '', images: [] });
-
-      this.deps.getLinkedContentController().resetAutoDraft();
-
-      this.deps.clearQueuedMessage();
-
-      this.callbacks.onNewConversation?.();
-    } finally {
-      this.#setTransition('isResettingToNewChat', false);
-      this.deps.renderer.refreshBranchButtonState();
-    }
-  }
-
-  /**
    * Loads the current tab conversation, or starts at entry point if none.
    *
    * Entry point (no conversation) shows welcome screen without
@@ -191,6 +125,8 @@ export class ConversationController {
 
     const conversationId = state.currentConversationId;
     const conversation = conversationId ? await plugin.getConversationById(conversationId) : null;
+
+    if (conversationId && !conversation) throw new Error(`Conversation ${conversationId} no longer exists`);
 
     // No active conversation - start at entry point
     if (!conversation) {
@@ -206,83 +142,6 @@ export class ConversationController {
     this.#restoreConversation(conversation);
 
     this.callbacks.onConversationLoaded?.();
-  }
-
-  /**
-   * Switches this tab to another conversation, serialized behind earlier requests.
-   *
-   * Resolves `true` once the tab shows `id`, and `false` when the request was superseded,
-   * the tab was disposed, the conversation was not found, or the tab was not idle. A tab that
-   * is not idle (turn, transition, background or detached work, pending interaction) refuses
-   * before any side effect so switching never abandons work or prompts.
-   */
-  async switchTo(id: string): Promise<boolean> {
-    const requestRevision = ++this.switchRequestRevision;
-    const request = this.switchTail
-      .catch(() => undefined)
-      .then(async () => {
-        if (requestRevision !== this.switchRequestRevision) return false;
-        return this.#switchToImmediately(id);
-      });
-    this.switchTail = request.then(
-      () => undefined,
-      () => undefined,
-    );
-    return request;
-  }
-
-  async #switchToImmediately(id: string): Promise<boolean> {
-    const { plugin, state, subagentManager } = this.deps;
-
-    if (this.deps.isClosing?.()) return false;
-    if (id === state.currentConversationId && this.deps.isConversationHydrated?.() !== false) return true;
-    if (!this.deps.session.isIdle) return false;
-
-    this.#setTransition('isSwitchingConversation', true);
-
-    try {
-      // Event work already admitted for this conversation (deferred renders, completion recovery)
-      // lands and persists before the tab rebinds; it may have started new work meanwhile.
-      await this.deps.awaitBackgroundWork?.();
-      if (this.deps.isClosing?.() || this.#holdsWork()) return false;
-
-      // Saving and loading only persist and read; the tab keeps its state until the final check.
-      await this.save();
-      if (this.deps.isClosing?.()) return false;
-
-      const conversation = await plugin.switchConversation(id);
-      if (!conversation || this.deps.isClosing?.()) {
-        return false;
-      }
-
-      // Events keep arriving for the current binding while saving and loading; their work lands too.
-      await this.deps.awaitBackgroundWork?.();
-      if (this.deps.isClosing?.()) return false;
-
-      // Work or prompts may have started during the awaits above. This is the last refusal point:
-      // everything after it rebinds execution or clears tab state.
-      if (this.#holdsWork()) return false;
-
-      this.#branching.cancelDraft();
-      subagentManager.clear();
-      await this.deps.ensureExecutionForConversation?.(conversation);
-      if (this.deps.isClosing?.()) return false;
-
-      this.deps.drafts.restore('main', { content: '', images: [] });
-      this.deps.clearQueuedMessage();
-
-      this.#restoreConversation(conversation);
-    } finally {
-      this.#setTransition('isSwitchingConversation', false);
-      this.deps.renderer.refreshBranchButtonState();
-    }
-    this.callbacks.onConversationSwitched?.();
-    return true;
-  }
-
-  /** Work or a prompt that rebinding this tab would abandon; transition flags are the caller's own. */
-  #holdsWork(): boolean {
-    return this.deps.session.hasActiveTurn || this.deps.session.hasBackgroundWork || this.deps.state.requiresAction;
   }
 
   rewind(userMessageId: string, mode?: ChatRewindMode): Promise<void> {
@@ -311,6 +170,16 @@ export class ConversationController {
     token: LinkedContentSubmissionToken,
     options: { providerId: ProviderId; selectedModel?: string },
   ): Promise<void> {
+    const pending = this.createConversationShell(token, options);
+    this.creation = pending;
+    try { await pending; }
+    finally { if (this.creation === pending) this.creation = null; this.deps.onPersistenceChanged?.(); }
+  }
+
+  private async createConversationShell(
+    token: LinkedContentSubmissionToken,
+    options: { providerId: ProviderId; selectedModel?: string },
+  ): Promise<void> {
     const { plugin, state } = this.deps;
     const conversation = await plugin.createConversation({
       providerId: options.providerId,
@@ -336,6 +205,16 @@ export class ConversationController {
    * only metadata is saved - the SDK handles message persistence.
    */
   async save(updateLastActivity = false, options?: ConversationSaveOptions): Promise<void> {
+    this.pendingSaves++;
+    try { await this.persist(updateLastActivity, options); }
+    catch (error) {
+      // The unsaved state stays dirty so a later save, such as before release, retries it.
+      this.deps.state.hasPendingConversationSave = true;
+      throw error;
+    } finally { this.pendingSaves--; this.deps.onPersistenceChanged?.(); }
+  }
+
+  private async persist(updateLastActivity: boolean, options?: ConversationSaveOptions): Promise<void> {
     // Every save persists the whole current state, including any coalesced progress.
     this.pendingProgressSave?.supersede();
     this.pendingProgressSave = null;
@@ -402,7 +281,6 @@ export class ConversationController {
 
   /**
    * Shared logic for restoring a conversation into the current tab.
-   * Used by both loadActive() and switchTo() to avoid duplication.
    */
   #restoreConversation(conversation: Conversation): void {
     const { plugin, state } = this.deps;
@@ -437,7 +315,7 @@ export class ConversationController {
   /** Replaces the rendered transcript, which recreates the welcome element above it. */
   #renderTranscript(messages: ChatMessage[], syncWelcomeVisibility = true): void {
     this.deps.state.writeEditStates.clear();
-    this.deps.setWelcomeEl(this.deps.renderer.renderMessages(messages, () => this.#greeting()));
+    this.deps.setWelcomeEl(this.deps.renderer?.renderMessages(messages, () => this.#greeting()) ?? null);
     if (syncWelcomeVisibility) this.updateWelcomeVisibility();
   }
 

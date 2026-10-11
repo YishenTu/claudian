@@ -1,12 +1,6 @@
-import { holdResponse } from '@test/helpers/ConversationPorts';
-import { createConversationControllerDeps, deferred } from '@test/helpers/features/chat/ConversationControllerFixture';
-import { testDate } from '@test/helpers/testClock';
+import { createConversationControllerDeps } from '@test/helpers/features/chat/ConversationControllerFixture';
 
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
-import type { QueuedMessage } from '@/features/chat/state/types';
-
-/** A queued follow-up; conversation transitions only clear it through the queue owner. */
-const queued = (content: string): QueuedMessage => ({ content } as QueuedMessage);
 
 jest.mock('@/shared/modals/ConfirmModal', () => ({
   confirm: jest.fn().mockResolvedValue(true),
@@ -22,137 +16,7 @@ describe('ConversationController', () => {
     controller = new ConversationController(deps);
   });
 
-  describe('Queue Management', () => {
-    describe('Creating new conversation', () => {
-      it('should clear queued message on new conversation', async () => {
-        const onNewConversation = jest.fn();
-        const dismissPendingInlinePrompts = jest.fn();
-        deps = createConversationControllerDeps({ dismissPendingInlinePrompts });
-        controller = new ConversationController(deps, { onNewConversation });
-        const linkedContentController = deps.getLinkedContentController();
-        deps.state.claimQueuedMessageWriter()(queued('test'));
-
-        await controller.createNew();
-
-        expect(deps.clearQueuedMessage).toHaveBeenCalled();
-        expect(linkedContentController.resetAutoDraft).toHaveBeenCalled();
-        const welcomeEl = deps.getWelcomeEl()!;
-        expect(welcomeEl.querySelector('.claudian-welcome-brand')?.textContent).toBe('Claudian');
-        expect(welcomeEl.querySelector('.claudian-welcome-greeting')).not.toBeNull();
-        expect(deps.plugin.createConversation).not.toHaveBeenCalled();
-        expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
-        expect(deps.state.currentConversationId).toBeNull();
-        expect(onNewConversation).toHaveBeenCalled();
-        expect(dismissPendingInlinePrompts).toHaveBeenCalled();
-      });
-
-      it('should not create new conversation while streaming', async () => {
-        holdResponse(deps.session.turns);
-        const messages = [{ id: 'retained-message', role: 'user' as const, content: 'Keep me', timestamp: testDate().getTime() }];
-        deps.state.currentConversationId = 'retained-conversation';
-        deps.state.messages = messages;
-        const inputEl = deps.getInputEl();
-        inputEl.value = 'retained draft';
-        const queuedMessage = queued('retained queue');
-        deps.state.claimQueuedMessageWriter()(queuedMessage);
-        const linkedContentController = deps.getLinkedContentController();
-
-        await controller.createNew();
-
-        expect(deps.state.currentConversationId).toBe('retained-conversation');
-        expect(deps.state.messages).toEqual(messages);
-        expect(inputEl.value).toBe('retained draft');
-        expect(deps.state.queuedMessage).toBe(queuedMessage);
-        expect(deps.clearQueuedMessage).not.toHaveBeenCalled();
-        expect(linkedContentController.resetAutoDraft).not.toHaveBeenCalled();
-        expect(deps.subagentManager.orphanAllActive).not.toHaveBeenCalled();
-
-        expect(deps.plugin.createConversation).not.toHaveBeenCalled();
-      });
-
-      it('should save current conversation before creating new one', async () => {
-        deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
-        deps.state.currentConversationId = 'old-conv';
-        deps.state.hasPendingConversationSave = true;
-
-        await controller.createNew();
-
-        expect(deps.plugin.updateConversation).toHaveBeenCalledWith('old-conv', expect.any(Object));
-      });
-
-      it('drains async completions and terminalizes tasks before saving', async () => {
-        const awaitCompletion = jest.fn().mockResolvedValue(undefined);
-        deps = createConversationControllerDeps({ awaitBackgroundWork: awaitCompletion });
-        deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
-        deps.state.currentConversationId = 'old-conv';
-        controller = new ConversationController(deps);
-
-        await controller.createNew();
-
-        expect(awaitCompletion.mock.invocationCallOrder[0])
-          .toBeLessThan((deps.subagentManager.orphanAllActive as jest.Mock).mock.invocationCallOrder[0]);
-        expect((deps.subagentManager.orphanAllActive as jest.Mock).mock.invocationCallOrder[0])
-          .toBeLessThan((deps.plugin.updateConversation as jest.Mock).mock.invocationCallOrder[0]);
-      });
-
-      it('should clear messages and reset state when creating new', async () => {
-        deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
-        deps.state.currentConversationId = 'old-conv';
-
-        const clearMessagesSpy = jest.spyOn(deps.state, 'clearMessages');
-
-        await controller.createNew();
-
-        expect(clearMessagesSpy).toHaveBeenCalled();
-        expect(deps.state.currentConversationId).toBeNull();
-
-        clearMessagesSpy.mockRestore();
-      });
-    });
-
-    describe('Switching conversations', () => {
-      it('should clear queued message on conversation switch', async () => {
-        deps = createConversationControllerDeps();
-        const onConversationSwitched = jest.fn(() => {
-          expect(deps.state.isSwitchingConversation).toBe(false);
-        });
-        controller = new ConversationController(deps, { onConversationSwitched });
-        const inputEl = deps.getInputEl();
-        inputEl.value = 'some input';
-        deps.state.currentConversationId = 'old-conv';
-        deps.state.claimQueuedMessageWriter()(queued('test'));
-
-        await expect(controller.switchTo('new-conv')).resolves.toBe(true);
-
-        expect(deps.clearQueuedMessage).toHaveBeenCalled();
-        expect(inputEl.value).toBe('');
-        expect(onConversationSwitched).toHaveBeenCalled();
-      });
-
-      it('does not touch session activity when switching away without pending messages', async () => {
-        deps.state.currentConversationId = 'old-conv';
-        deps.state.messages = [{ id: '1', role: 'user', content: 'Existing', timestamp: 1 }];
-        deps.state.hasPendingConversationSave = false;
-
-        await controller.switchTo('new-conv');
-
-        expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
-          'old-conv',
-          expect.any(Object),
-        );
-        const updates = (deps.plugin.updateConversation as jest.Mock).mock.calls[0][1];
-        expect(updates).not.toHaveProperty('lastActivityAt');
-      });
-
-      it('reports an already shown, hydrated conversation as switched without reloading it', async () => {
-        deps.state.currentConversationId = 'same-conv';
-
-        await expect(controller.switchTo('same-conv')).resolves.toBe(true);
-
-        expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
-      });
-    });
-
+  describe('Presentation', () => {
     describe('Welcome visibility', () => {
       it('should hide welcome when messages exist', () => {
         deps.state.messages = [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }];
@@ -173,16 +37,16 @@ describe('ConversationController', () => {
         expect(welcomeEl.style.display).not.toBe('none');
       });
 
-      it('should update welcome visibility after switching to conversation with messages', async () => {
-        deps.state.currentConversationId = 'old-conv';
+      it('should update welcome visibility after loading a conversation with messages', async () => {
+        deps.state.currentConversationId = 'new-conv';
         deps.state.messages = [];
-        (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
+        (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
           id: 'new-conv',
           messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
           sessionId: null,
         });
 
-        await controller.switchTo('new-conv');
+        await controller.loadActive();
 
         expect(deps.state.messages.length).toBe(1);
         const welcomeEl = deps.getWelcomeEl()!;
@@ -327,46 +191,6 @@ describe('ConversationController', () => {
     });
   });
 
-  describe('switchTo with linkedContentPath', () => {
-    it('should set linkedContentPath when switched conversation has one', async () => {
-      const linkedContentController = deps.getLinkedContentController();
-      deps.state.currentConversationId = 'old-conv';
-
-      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
-        id: 'new-conv',
-        messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
-        sessionId: null,
-        linkedContentPath: 'docs/readme.md',
-      });
-
-      await controller.switchTo('new-conv');
-
-      expect(linkedContentController.lock).toHaveBeenCalledWith('docs/readme.md');
-    });
-
-    it('locks a switched Conversation with explicit None', async () => {
-      const linkedContentController = deps.getLinkedContentController();
-      deps.state.currentConversationId = 'old-conv';
-
-      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue({
-        id: 'new-conv',
-        messages: [],
-        sessionId: null,
-        linkedContentPath: undefined,
-      });
-
-      await controller.switchTo('new-conv');
-
-      expect(linkedContentController.lock).toHaveBeenCalledWith(undefined);
-      expect(deps.renderer.renderMessages).toHaveBeenCalledWith(
-        expect.any(Array),
-        expect.any(Function),
-      );
-      const greetingFn = (deps.renderer.renderMessages as jest.Mock).mock.calls[0][1];
-      expect(greetingFn().length).toBeGreaterThan(0);
-    });
-  });
-
   describe('loadActive with greeting', () => {
     it('should show welcome and return early when no conversation exists', async () => {
       const onConversationLoaded = jest.fn();
@@ -383,8 +207,8 @@ describe('ConversationController', () => {
   });
 });
 
-describe('ConversationController - provider switching', () => {
-  it('should ensure the tab service matches the switched conversation provider', async () => {
+describe('ConversationController - provider hydration', () => {
+  it('should ensure the tab service matches the loaded conversation provider', async () => {
     const ensureExecutionForConversation = jest.fn().mockResolvedValue(undefined);
     const switchedConversation = {
       id: 'new-conv',
@@ -399,338 +223,14 @@ describe('ConversationController - provider switching', () => {
       ensureExecutionForConversation,
       plugin: {
         ...createConversationControllerDeps().plugin,
-        switchConversation: jest.fn().mockResolvedValue(switchedConversation),
+        getConversationById: jest.fn().mockResolvedValue(switchedConversation),
       } as any,
     });
     const controller = new ConversationController(deps);
-    deps.state.currentConversationId = 'old-conv';
+    deps.state.currentConversationId = 'new-conv';
 
-    await controller.switchTo('new-conv');
+    await controller.loadActive();
 
     expect(ensureExecutionForConversation).toHaveBeenCalledWith(switchedConversation);
-  });
-});
-
-describe('ConversationController - Race Condition Guards', () => {
-  let controller: ConversationController;
-  let deps: ReturnType<typeof createConversationControllerDeps>;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    deps = createConversationControllerDeps();
-    controller = new ConversationController(deps);
-  });
-
-  describe('createNew guards', () => {
-    it('should not create while already resetting to a new chat', async () => {
-      jest.spyOn(deps.state, 'isResettingToNewChat', 'get').mockReturnValue(true);
-      const messages = [{ id: 'retained-message', role: 'user' as const, content: 'Keep me', timestamp: testDate().getTime() }];
-      deps.state.currentConversationId = 'retained-conversation';
-      deps.state.messages = messages;
-      const inputEl = deps.getInputEl();
-      inputEl.value = 'retained draft';
-      const queuedMessage = queued('retained queue');
-      deps.state.claimQueuedMessageWriter()(queuedMessage);
-      const linkedContentController = deps.getLinkedContentController();
-
-      await controller.createNew();
-
-      expect(deps.state.currentConversationId).toBe('retained-conversation');
-      expect(deps.state.messages).toEqual(messages);
-      expect(inputEl.value).toBe('retained draft');
-      expect(deps.state.queuedMessage).toBe(queuedMessage);
-      expect(deps.clearQueuedMessage).not.toHaveBeenCalled();
-      expect(linkedContentController.resetAutoDraft).not.toHaveBeenCalled();
-      expect(deps.subagentManager.orphanAllActive).not.toHaveBeenCalled();
-
-      expect(deps.plugin.createConversation).not.toHaveBeenCalled();
-      expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
-    });
-
-    it('should not create when isSwitchingConversation is true', async () => {
-      jest.spyOn(deps.state, 'isSwitchingConversation', 'get').mockReturnValue(true);
-      const messages = [{ id: 'retained-message', role: 'user' as const, content: 'Keep me', timestamp: testDate().getTime() }];
-      deps.state.currentConversationId = 'retained-conversation';
-      deps.state.messages = messages;
-      const inputEl = deps.getInputEl();
-      inputEl.value = 'retained draft';
-      const queuedMessage = queued('retained queue');
-      deps.state.claimQueuedMessageWriter()(queuedMessage);
-      const linkedContentController = deps.getLinkedContentController();
-
-      await controller.createNew();
-
-      expect(deps.state.currentConversationId).toBe('retained-conversation');
-      expect(deps.state.messages).toEqual(messages);
-      expect(inputEl.value).toBe('retained draft');
-      expect(deps.state.queuedMessage).toBe(queuedMessage);
-      expect(deps.clearQueuedMessage).not.toHaveBeenCalled();
-      expect(linkedContentController.resetAutoDraft).not.toHaveBeenCalled();
-      expect(deps.subagentManager.orphanAllActive).not.toHaveBeenCalled();
-
-      expect(deps.plugin.createConversation).not.toHaveBeenCalled();
-    });
-
-    it('should reset even when streaming if force is true', async () => {
-      const releaseTurn = holdResponse(deps.session.turns);
-      const cancel = jest.fn();
-      deps.getExecutionCoordinator = () => ({ cancel, bindConversation: jest.fn() }) as any;
-      deps.state.currentConversationId = 'active-conversation';
-      deps.state.messages = [
-        { id: 'message-1', role: 'user', content: 'Working', timestamp: testDate().getTime() },
-      ];
-      const initialGeneration = deps.state.streamGeneration;
-      let cancelRequestedAtCancel = false;
-      cancel.mockImplementation(() => { cancelRequestedAtCancel = deps.state.cancelRequested; });
-
-      await controller.createNew({ force: true });
-
-      expect(cancel).toHaveBeenCalledTimes(1);
-      expect(cancelRequestedAtCancel).toBe(true);
-      expect(deps.state.streamGeneration).toBe(initialGeneration + 1);
-      expect(deps.state.currentConversationId).toBeNull();
-      expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
-        'active-conversation',
-        expect.objectContaining({ lastActivityAt: expect.any(Number) }),
-      );
-      await releaseTurn();
-      expect(deps.state.isStreaming).toBe(false);
-    });
-
-    it('should set and reset the new-chat reset flag during entry point reset', async () => {
-      // Entry point model: createNew() just resets state, doesn't create conversation
-      // But the reset flag should still be set during the reset
-      let flagDuringExecution = false;
-
-      deps.state.clearMessages = jest.fn(() => {
-        flagDuringExecution = deps.state.isResettingToNewChat;
-      });
-
-      await controller.createNew();
-
-      expect(flagDuringExecution).toBe(true);
-      expect(deps.state.isResettingToNewChat).toBe(false);
-    });
-  });
-
-  describe('switchTo guards', () => {
-    it('serializes a newer switch behind in-flight hydration instead of dropping it', async () => {
-      const firstConversation = deferred<any>();
-      (deps.plugin.switchConversation as jest.Mock).mockImplementation(async (id: string) => {
-        if (id === 'conversation-a') return firstConversation.promise;
-        return {
-          id,
-          title: id,
-          messages: [],
-          sessionId: null,
-          createdAt: Date.now(),
-          lastActivityAt: Date.now(),
-        };
-      });
-      deps.state.currentConversationId = 'old-conversation';
-
-      const firstSwitch = controller.switchTo('conversation-a');
-      for (let attempt = 0;
-        attempt < 10 && (deps.plugin.switchConversation as jest.Mock).mock.calls.length === 0;
-        attempt += 1) {
-        await Promise.resolve();
-      }
-      const secondSwitch = controller.switchTo('conversation-b');
-
-      expect(deps.plugin.switchConversation).toHaveBeenCalledTimes(1);
-      firstConversation.resolve({
-        id: 'conversation-a',
-        title: 'Conversation A',
-        messages: [],
-        sessionId: null,
-        createdAt: Date.now(),
-        lastActivityAt: Date.now(),
-      });
-      await Promise.all([firstSwitch, secondSwitch]);
-
-      expect(deps.plugin.switchConversation).toHaveBeenNthCalledWith(1, 'conversation-a');
-      expect(deps.plugin.switchConversation).toHaveBeenNthCalledWith(2, 'conversation-b');
-      expect(deps.state.currentConversationId).toBe('conversation-b');
-    });
-
-    type BusyCase = {
-      name: string;
-      work?: Parameters<typeof createConversationControllerDeps>[1];
-      hold?: (fixture: typeof deps) => void;
-    };
-    const busyCases: BusyCase[] = [
-      { name: 'a foreground turn is active', hold: fixture => { holdResponse(fixture.session.turns); } },
-      { name: 'the conversation is rewinding', hold: fixture => { jest.spyOn(fixture.state, 'isRewinding', 'get').mockReturnValue(true); } },
-      { name: 'another switch is running', hold: fixture => { jest.spyOn(fixture.state, 'isSwitchingConversation', 'get').mockReturnValue(true); } },
-      { name: 'the tab is resetting to a new chat', hold: fixture => { jest.spyOn(fixture.state, 'isResettingToNewChat', 'get').mockReturnValue(true); } },
-      { name: 'provider background work is running', work: { hasBackgroundWork: () => true } },
-      { name: 'detached work (async subagents or side chat) is running', work: { hasDetachedWork: () => true } },
-      { name: 'an approval or ask-user prompt is pending', hold: fixture => { fixture.state.beginActionRequired('approval-1'); } },
-    ];
-
-    it.each(busyCases)('refuses without side effects when $name', async ({ work, hold }) => {
-      const dismissPendingInlinePrompts = jest.fn();
-      const awaitBackgroundWork = jest.fn().mockResolvedValue(undefined);
-      deps = createConversationControllerDeps({ dismissPendingInlinePrompts, awaitBackgroundWork }, work);
-      const onConversationSwitched = jest.fn();
-      controller = new ConversationController(deps, { onConversationSwitched });
-      const messages = [{ id: 'kept', role: 'user' as const, content: 'Keep me', timestamp: testDate().getTime() }];
-      deps.state.currentConversationId = 'old-conv';
-      deps.state.messages = messages;
-      deps.getInputEl().value = 'retained draft';
-      const queuedMessage = queued('retained queue');
-      deps.state.claimQueuedMessageWriter()(queuedMessage);
-      hold?.(deps);
-
-      await expect(controller.switchTo('new-conv')).resolves.toBe(false);
-
-      expect(deps.state.currentConversationId).toBe('old-conv');
-      expect(deps.state.messages).toEqual(messages);
-      expect(deps.getInputEl().value).toBe('retained draft');
-      expect(deps.state.queuedMessage).toBe(queuedMessage);
-      expect(dismissPendingInlinePrompts).not.toHaveBeenCalled();
-      expect(awaitBackgroundWork).not.toHaveBeenCalled();
-      expect(deps.subagentManager.orphanAllActive).not.toHaveBeenCalled();
-      expect(deps.subagentManager.clear).not.toHaveBeenCalled();
-      expect(deps.plugin.updateConversation).not.toHaveBeenCalled();
-      expect(deps.clearQueuedMessage).not.toHaveBeenCalled();
-      expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
-      expect(onConversationSwitched).not.toHaveBeenCalled();
-    });
-
-    it('refuses when draining admitted event work leaves the tab working or awaiting the user', async () => {
-      let detached = false;
-      const awaitBackgroundWork = jest.fn(async () => {
-        detached = true;
-        deps.state.beginActionRequired('async-question');
-      });
-      deps = createConversationControllerDeps({ awaitBackgroundWork }, { hasDetachedWork: () => detached });
-      controller = new ConversationController(deps);
-      deps.state.currentConversationId = 'old-conv';
-      deps.getInputEl().value = 'retained draft';
-
-      await expect(controller.switchTo('new-conv')).resolves.toBe(false);
-
-      expect(awaitBackgroundWork).toHaveBeenCalledTimes(1);
-      expect(deps.state.currentConversationId).toBe('old-conv');
-      expect(deps.state.isSwitchingConversation).toBe(false);
-      expect(deps.getInputEl().value).toBe('retained draft');
-      expect(deps.plugin.updateConversation).not.toHaveBeenCalled();
-      expect(deps.subagentManager.clear).not.toHaveBeenCalled();
-      expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
-    });
-
-    it('reports a switch that was not performed as false', async () => {
-      deps.state.currentConversationId = 'old-conv';
-      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue(null);
-      await expect(controller.switchTo('missing')).resolves.toBe(false);
-
-      deps = createConversationControllerDeps({ isClosing: () => true });
-      controller = new ConversationController(deps);
-      await expect(controller.switchTo('new-conv')).resolves.toBe(false);
-      expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
-    });
-
-    it('reports a request superseded by a newer switch as false', async () => {
-      const firstConversation = deferred<any>();
-      (deps.plugin.switchConversation as jest.Mock).mockImplementation(async (id: string) => (
-        id === 'conversation-a' ? firstConversation.promise : { id, messages: [], sessionId: null }
-      ));
-      deps.state.currentConversationId = 'old-conversation';
-
-      const first = controller.switchTo('conversation-a');
-      for (let attempt = 0;
-        attempt < 10 && (deps.plugin.switchConversation as jest.Mock).mock.calls.length === 0;
-        attempt += 1) {
-        await Promise.resolve();
-      }
-      const second = controller.switchTo('conversation-b');
-      const superseded = controller.switchTo('conversation-c');
-      const latest = controller.switchTo('conversation-d');
-      firstConversation.resolve({ id: 'conversation-a', messages: [], sessionId: null });
-
-      await expect(Promise.all([first, second, superseded, latest])).resolves.toEqual([true, false, false, true]);
-      expect(deps.state.currentConversationId).toBe('conversation-d');
-    });
-
-    it('should reset isSwitchingConversation flag even on error', async () => {
-      deps.state.currentConversationId = 'old-conv';
-      (deps.plugin.switchConversation as jest.Mock).mockRejectedValue(new Error('Switch failed'));
-
-      await expect(controller.switchTo('new-conv')).rejects.toThrow('Switch failed');
-
-      expect(deps.state.isSwitchingConversation).toBe(false);
-    });
-
-    it('should reset isSwitchingConversation flag when conversation not found', async () => {
-      deps.state.currentConversationId = 'old-conv';
-      (deps.plugin.switchConversation as jest.Mock).mockResolvedValue(null);
-
-      await controller.switchTo('non-existent');
-
-      expect(deps.state.isSwitchingConversation).toBe(false);
-    });
-
-    it('should set isSwitchingConversation flag during switch', async () => {
-      deps.state.currentConversationId = 'old-conv';
-      let flagDuringSwitch = false;
-      (deps.plugin.switchConversation as jest.Mock).mockImplementation(async () => {
-        flagDuringSwitch = deps.state.isSwitchingConversation;
-        return {
-          id: 'new-conv',
-          title: 'New Conversation',
-          messages: [],
-          sessionId: null,
-          createdAt: Date.now(),
-          lastActivityAt: Date.now(),
-        };
-      });
-
-      await controller.switchTo('new-conv');
-
-      expect(flagDuringSwitch).toBe(true);
-      expect(deps.state.isSwitchingConversation).toBe(false);
-    });
-  });
-
-  describe('mutual exclusion', () => {
-    it('should prevent createNew during switchTo', async () => {
-      deps.state.currentConversationId = 'old-conv';
-      const messages = [{ id: 'retained-message', role: 'user' as const, content: 'Keep me', timestamp: testDate().getTime() }];
-      deps.state.messages = messages;
-      const inputEl = deps.getInputEl();
-      inputEl.value = 'retained draft';
-      const queuedMessage = queued('retained queue');
-      deps.state.claimQueuedMessageWriter()(queuedMessage);
-      const linkedContentController = deps.getLinkedContentController();
-
-      (deps.plugin.switchConversation as jest.Mock).mockImplementation(async () => {
-        const orphanCount = (deps.subagentManager.orphanAllActive as jest.Mock).mock.calls.length;
-        const clearQueueCount = (deps.clearQueuedMessage as jest.Mock).mock.calls.length;
-        const resetDraftCount = (linkedContentController.resetAutoDraft as jest.Mock).mock.calls.length;
-        expect(deps.state.isSwitchingConversation).toBe(true);
-
-        await controller.createNew();
-
-        expect(deps.state.currentConversationId).toBe('old-conv');
-        expect(deps.state.messages).toEqual(messages);
-        expect(inputEl.value).toBe('retained draft');
-        expect(deps.state.queuedMessage).toBe(queuedMessage);
-        expect(deps.subagentManager.orphanAllActive).toHaveBeenCalledTimes(orphanCount);
-        expect(deps.clearQueuedMessage).toHaveBeenCalledTimes(clearQueueCount);
-        expect(linkedContentController.resetAutoDraft).toHaveBeenCalledTimes(resetDraftCount);
-        expect(deps.plugin.createConversation).not.toHaveBeenCalled();
-        return {
-          id: 'new-conv',
-          messages: [],
-          sessionId: null,
-        };
-      });
-
-      await controller.switchTo('new-conv');
-
-      expect(deps.state.currentConversationId).toBe('new-conv');
-      expect(deps.plugin.createConversation).not.toHaveBeenCalled();
-    });
   });
 });

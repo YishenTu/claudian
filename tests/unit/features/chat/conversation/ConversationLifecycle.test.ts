@@ -42,6 +42,7 @@ function createLifecycle(...managers: Array<FakeManager | null>) {
   const views = managers.map(manager => ({ getTabManager: () => manager }));
   const lifecycle = new ConversationLifecycle({
     conversations,
+    sessions: { isRunning: id => managers.some(manager => manager?.tabs.some(tab => tab.conversationId === id && tab.isWorking)), retire: async () => undefined, whenSettled: async () => true },
     views: { getAllViews: () => views as never },
   });
   return { lifecycle, conversations };
@@ -131,9 +132,9 @@ describe('ConversationLifecycle', () => {
 
       expect(local.closeTab).toHaveBeenCalledWith('local-tab');
       expect(other.closeTab).toHaveBeenCalledWith('other-tab');
-      expect(conversations.setConversationArchived).toHaveBeenCalledWith('conversation-1', true);
+      expect(conversations.archiveConversationsIf).toHaveBeenCalledWith(['conversation-1'], expect.any(Function));
       expect(other.closeTab.mock.invocationCallOrder[0])
-        .toBeLessThan(conversations.setConversationArchived.mock.invocationCallOrder[0]);
+        .toBeLessThan(conversations.archiveConversationsIf.mock.invocationCallOrder[0]);
     });
 
     it('does not archive or close anything while any bound tab is working', async () => {

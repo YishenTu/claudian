@@ -24,7 +24,7 @@ export class BackgroundResponses {
     if (turns.has(turnId)) return;
     turns.set(turnId, {
       events: [],
-      target: this.host.isConnected() ? reserveBackgroundTurn(this.host) : undefined,
+      target: reserveBackgroundTurn(this.host),
     });
   }
 
@@ -55,7 +55,7 @@ export class BackgroundResponses {
     const owners = owner === undefined ? [...this.#owners.keys()] : [owner];
     for (const id of owners) {
       for (const response of this.#owners.get(id)?.values() ?? []) {
-        if (response.target) discardBackgroundTurn(this.host.state, response.target);
+        if (response.target) discardBackgroundTurn(this.host, response.target);
       }
       this.#owners.delete(id);
     }

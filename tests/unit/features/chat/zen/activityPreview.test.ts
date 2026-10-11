@@ -64,7 +64,7 @@ describe('formatActivityPreview', () => {
     })];
     expect(formatActivityPreview(state).toolName).toBe('Bash');
 
-    state.beginActionRequired('approval-1');
+    state.setActionRequired(true);
     expect(formatActivityPreview(state).toolName).toBeUndefined();
   });
 
@@ -127,9 +127,9 @@ describe('formatActivityPreview', () => {
     state.recordActivity({ kind: 'tool', tool: tool('completed') });
     expect(formatActivityPreview(state).text).toBe('Compacting...');
 
-    state.beginActionRequired('approval-1');
+    state.setActionRequired(true);
     expect(formatActivityPreview(state).text).toBe('Needs your input');
-    state.endActionRequired('approval-1');
+    state.setActionRequired(false);
 
     state.waitingStatus = null;
     expect(formatActivityPreview(state).text).toBe('Bash · done');
@@ -143,10 +143,10 @@ describe('formatActivityPreview', () => {
     state.recordActivity({ kind: 'error', message: 'Provider\nunavailable' });
     expect(formatActivityPreview(state)).toEqual({ text: 'Error: Provider unavailable', tone: 'error' });
 
-    state.beginActionRequired('approval-1');
+    state.setActionRequired(true);
     expect(formatActivityPreview(state)).toEqual({ text: 'Needs your input', tone: 'action-required' });
 
-    state.endActionRequired('approval-1');
+    state.setActionRequired(false);
     expect(formatActivityPreview(state).tone).toBe('error');
   });
 });

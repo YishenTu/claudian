@@ -25,6 +25,7 @@ export interface ViewerSlotHost {
   discardTab(tabId: TabId): Promise<boolean>;
   /** Sessions whose previews are retained rather than released (pinned sessions). */
   shouldRetain(conversationId: string): boolean;
+  rebind(tab: AssembledTabRuntime, conversationId: string, isCurrent: NavigationRequestCheck): Promise<AssembledTabRuntime | null>;
 }
 
 export interface ViewerSlotRequest {
@@ -33,9 +34,8 @@ export interface ViewerSlotRequest {
 }
 
 /**
- * The view's single replaceable preview: the only creator of provisional tabs. It rebinds the
- * preview only while idle; a busy preview is retained (promoted) instead, so previewing never
- * abandons work, prompts, or interactions. Requests share the manager's navigation queue.
+ * The view's single replaceable preview: the only creator of provisional tabs. Rebinding
+ * detaches the prior session while its work continues. Requests share the navigation queue.
  */
 export class ViewerSlot {
   constructor(private readonly host: ViewerSlotHost) {}
@@ -86,7 +86,7 @@ export class ViewerSlot {
   }
 
   /**
-   * Closes idle previews and retains busy or pinned ones, so none stays provisional. Overlapping
+   * Closes previews and retains pinned ones, so none stays provisional. Overlapping
    * calls share one cleanup, which fences navigation until it finishes.
    */
   async release(): Promise<void> {
@@ -107,17 +107,12 @@ export class ViewerSlot {
     const preview = membership.getAllTabs()
       .find(tab => membership.isTabAlive(tab) && tab.lifecycleState === 'provisional');
     if (preview) {
-      const switched = await preview.controllers.conversationController.switchTo(conversationId);
-      if (!switched && membership.isTabAlive(preview)) {
-        // The preview holds work it cannot drop: retain it and preview in a fresh slot.
-        commitProvisionalTab(preview);
+      const switched = await host.rebind(preview, conversationId, isCurrent);
+      if (switched && membership.isTabAlive(switched)) {
+        await host.switchToTab(switched.id);
+        return;
       }
       if (!isCurrent()) return;
-      const shows = (): boolean => membership.isTabAlive(preview) && preview.conversationId === conversationId;
-      if (switched && shows()) {
-        await host.switchToTab(preview.id);
-        if (!isCurrent() || shows()) return;
-      }
     }
 
     // Selections never rebind a retained tab: when no preview can show the session, create one.
@@ -125,12 +120,9 @@ export class ViewerSlot {
     if (!isCurrent() && createdTab) await this.#discardUnowned(createdTab, conversationId);
   }
 
-  /** Retains busy previews, and the active preview when no retained tab would remain. */
+  /** Retains the active preview when no retained tab would remain. */
   #protectPreviews(): void {
     const { membership } = this.host;
-    for (const tab of membership.getAllTabs()) {
-      if (tab.lifecycleState === 'provisional' && !tab.session.isIdle) commitProvisionalTab(tab);
-    }
     const hasRetainedTab = membership.getTabIdentities().some(
       tab => tab.lifecycleState !== 'provisional' && tab.lifecycleState !== 'closing',
     );
@@ -149,11 +141,6 @@ export class ViewerSlot {
     for (const tabId of previewIds) {
       const tab = membership.getTab(tabId);
       if (!tab || !membership.isTabAlive(tab) || tab.lifecycleState !== 'provisional') continue;
-      // A preview that became busy meanwhile is retained, never left provisional.
-      if (!tab.session.isIdle) {
-        commitProvisionalTab(tab);
-        continue;
-      }
       if (await this.host.closeTab(tabId)) continue;
       const refused = membership.getTab(tabId);
       if (refused && membership.isTabAlive(refused)) commitProvisionalTab(refused);

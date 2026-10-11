@@ -19,7 +19,7 @@ export interface TabRuntimePorts {
 export function buildTabRuntimePorts(
   dom: TabDOMElements,
   ui: TabUIComponents,
-  controllerBundle: TabRuntimeControllerBundle,
+  controllerBundle: Pick<TabRuntimeControllerBundle, 'controllers' | 'renderer'>,
   plugin: ChatFeatureHost,
   getRuntime: () => AssembledTabRuntime,
 ): TabRuntimePorts {
@@ -44,7 +44,7 @@ export function buildTabRuntimePorts(
     },
     refreshMessageTimestamps: () => {
       renderer.refreshMessageTimestamps();
-      controllers.sideChatController.runtime?.renderer.refreshMessageTimestamps();
+      controllers.sideChatController.runtime?.renderer?.refreshMessageTimestamps();
     },
   };
 }

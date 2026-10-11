@@ -122,7 +122,7 @@ export interface ChatTab {
   readonly draftModel: string | null;
   /** The user's custom name for the tab, absent when it shows its conversation title. */
   readonly label?: string;
-  /** Authoritative identity, activity, and runtime owner for the tab. */
+  /** The tab's presentation identity and projections of its attached session's activity. */
   readonly session: { readonly hasActiveTurn: boolean };
   readonly hydrationState: TabHydrationState;
   /** Presentation reads; mutation stays with the tab's controllers. */

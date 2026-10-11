@@ -8,7 +8,7 @@ import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { renderCitationGroup } from '@/features/chat/rendering/CitationRenderer';
 import { hasMermaidFence } from '@/features/chat/rendering/markdown/DisplayOnlyCodeFences';
 import type { RenderContentOptions } from '@/features/chat/rendering/markdown/MarkdownContentRenderer';
-import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import type { LiveTranscriptOptions, MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { createResponseTextBlock } from '@/features/chat/rendering/ResponseLayout';
 import {
   createThinkingBlock,
@@ -33,9 +33,9 @@ export interface StreamControllerDeps {
   onQuestionToolChanged?: (tool: ToolCallInfo) => void;
   plugin: ChatFeatureHost;
   state: ChatState;
-  renderer: MessageRenderer;
+  renderer: MessageRenderer | null;
   subagentManager: SubagentManager;
-  getMessagesEl: () => HTMLElement;
+  getMessagesEl: () => HTMLElement | null;
   updateQueueIndicator: () => void;
   getProviderId?: () => ProviderId;
   /** Recovers finished async subagents from provider history; absent when the owner has none. */
@@ -65,6 +65,8 @@ export class StreamController {
   private readonly thinkingRenderCoordinator: StreamingRenderCoordinator<StreamingContentSnapshot>;
   private tabActive = true;
   private viewportVisible = true;
+  private readonly backgroundStreams = new Set<StreamController>();
+  private onDispose?: () => void;
   private pendingScrollFrame: ScheduledAnimationFrame | null = null;
 
   constructor(deps: StreamControllerDeps) {
@@ -110,10 +112,55 @@ export class StreamController {
 
   /** Share provider/subagent ownership, but isolate a background response's render buffers. */
   createBackgroundStream(state: ChatState): StreamController {
-    const stream = new StreamController({ ...this.deps, state });
+    const deps = this.deps;
+    const stream = new StreamController({ ...deps, state, get renderer() { return deps.renderer; } });
+    this.backgroundStreams.add(stream);
+    stream.onDispose = () => this.backgroundStreams.delete(stream);
     stream.tabActive = this.tabActive;
     stream.viewportVisible = this.viewportVisible;
     return stream;
+  }
+
+  /** Cursors share transcript order while keeping each response's unfinished blocks separate. */
+  get responseStates(): readonly ChatState[] {
+    return [this.deps.state, ...[...this.backgroundStreams].flatMap(stream => stream.responseStates)];
+  }
+
+  get liveTranscriptOptions(): LiveTranscriptOptions {
+    return {
+      isResponseOpen: id => this.responseStates.some(state => state.response.messageId === id),
+      isSubagentTracked: id => this.deps.subagentManager.isTracking(id),
+      onToolRendered: (tool, view) => {
+        for (const state of this.responseStates) {
+          state.toolCallElements.set(tool.id, view.element);
+          if (view.writeEditState) state.writeEditStates.set(tool.id, view.writeEditState);
+        }
+      },
+      renderSubagent: (parent, info) => this.deps.subagentManager.attachTaskView(info, parent),
+      reservePendingSubagent: (parent, toolId) => this.deps.subagentManager.attachPendingTaskView(toolId, parent),
+    };
+  }
+
+  /** Cancels presentation jobs and releases DOM references without changing response models. */
+  detachPresentation(): void {
+    for (const stream of this.backgroundStreams) stream.detachPresentation();
+    this.textRenderCoordinator.cancel();
+    this.thinkingRenderCoordinator.cancel();
+    this.#cancelPendingScroll();
+    this.thinkingIndicator.detachPresentation();
+    this.#tools.cancelAll();
+    this.deps.state.detachPresentation();
+  }
+
+  /** Called synchronously after the transcript's closed blocks and live cards are reconstructed. */
+  restorePresentation(): void {
+    const { state, renderer } = this.deps;
+    state.currentContentEl = state.response.messageId
+      ? renderer?.getMessageContentEl(state.response.messageId) ?? null : null;
+    if (state.currentTextContent) void this.appendText('');
+    if (state.currentThinkingBlock) void this.appendThinking('');
+    if (!state.currentTextContent && !state.currentThinkingBlock && state.response.messageId) this.thinkingIndicator.show();
+    for (const stream of this.backgroundStreams) stream.restorePresentation();
   }
 
   #createRenderCoordinator(
@@ -127,9 +174,9 @@ export class StreamController {
         // Derive options only when a render runs so hidden or throttled deltas skip the scans.
         const options = final ? undefined : this.#getStreamingRenderOptions(content);
         if (options) {
-          await this.deps.renderer.renderContent(el, content, options);
+          await this.deps.renderer?.renderContent(el, content, options);
         } else {
-          await this.deps.renderer.renderContent(el, content);
+          await this.deps.renderer?.renderContent(el, content);
         }
         this.scrollToBottom();
       },
@@ -141,7 +188,9 @@ export class StreamController {
   // ============================================
 
   async handleStreamChunk(chunk: StreamChunk, msg: ChatMessage): Promise<void> {
+    if ((chunk.type === 'text' || chunk.type === 'thinking') && chunk.content.length === 0) return;
     const { state } = this.deps;
+    state.response.messageId ??= msg.id;
     const responseMessage = msg;
     // A notification may split display messages while tools from the earlier segment still run.
     const ownerToolId = chunk.type === 'subagent_tool_use' || chunk.type === 'subagent_tool_result' || chunk.type === 'subagent_tool_output'
@@ -154,7 +203,7 @@ export class StreamController {
     switch (chunk.type) {
       case 'thinking':
         this.#tools.flush();
-        if (state.currentTextEl) {
+        if (state.currentTextContent) {
           await this.finalizeCurrentTextBlock(msg);
         }
         await this.appendThinking(chunk.content);
@@ -163,12 +212,12 @@ export class StreamController {
 
       case 'text':
         this.#tools.flush();
-        if (state.currentThinkingState) {
+        if (state.currentThinkingBlock) {
           await this.finalizeCurrentThinkingBlock(msg);
         }
         msg.content += chunk.content;
         await this.appendText(chunk.content);
-        state.recordActivity({ kind: 'text', text: state.currentTextEl ? state.currentTextContent : msg.content });
+        state.recordActivity({ kind: 'text', text: state.currentTextContent });
         break;
 
       case 'citations':
@@ -181,7 +230,7 @@ export class StreamController {
         break;
 
       case 'tool_use':
-        if (state.currentThinkingState) {
+        if (state.currentThinkingBlock) {
           await this.finalizeCurrentThinkingBlock(responseMessage);
         }
         await this.finalizeCurrentTextBlock(responseMessage);
@@ -229,7 +278,7 @@ export class StreamController {
         msg.contentBlocks = msg.contentBlocks || [];
         msg.contentBlocks.push({ type: 'task_notification', content: chunk.content });
         if (state.currentContentEl) {
-          this.deps.renderer.renderTaskNotification(state.currentContentEl, chunk.content);
+          this.deps.renderer?.renderTaskNotification(state.currentContentEl, chunk.content);
         }
         break;
 
@@ -263,7 +312,7 @@ export class StreamController {
   /** Renders buffered tools and finalizes open thinking and text before a standalone block. */
   async #closeOpenBlocks(msg: ChatMessage): Promise<void> {
     this.#tools.flush();
-    if (this.deps.state.currentThinkingState) {
+    if (this.deps.state.currentThinkingBlock) {
       await this.finalizeCurrentThinkingBlock(msg);
     }
     await this.finalizeCurrentTextBlock(msg);
@@ -295,17 +344,15 @@ export class StreamController {
 
   async appendText(text: string): Promise<void> {
     const { state } = this.deps;
-    if (!state.currentContentEl) return;
-
+    state.currentTextContent += text;
     this.thinkingIndicator.hide();
+    if (!state.currentContentEl) return;
 
     if (!state.currentTextEl) {
       this.textRenderCoordinator.cancel();
       state.currentTextEl = createResponseTextBlock(state.currentContentEl);
-      state.currentTextContent = '';
     }
 
-    state.currentTextContent += text;
     this.textRenderCoordinator.request({
       el: state.currentTextEl,
       content: state.currentTextContent,
@@ -318,25 +365,18 @@ export class StreamController {
     const textEl = state.currentTextEl;
     const content = state.currentTextContent;
 
-    if (
-      textEl
-      && this.#getStreamingRenderOptions(content)
-    ) {
-      this.textRenderCoordinator.request({ el: textEl, content, final: true });
-    }
-    await this.textRenderCoordinator.flush();
-
     if (msg && content) {
       msg.contentBlocks = msg.contentBlocks || [];
       msg.contentBlocks.push({ type: 'text', content });
-      // Copy button added here (not during streaming) to match history-loaded messages
-      if (textEl) {
-        renderer.addTextCopyButton(textEl, content);
-      }
     }
-    this.textRenderCoordinator.cancel();
     state.currentTextEl = null;
     state.currentTextContent = '';
+    if (textEl && this.#getStreamingRenderOptions(content)) {
+      this.textRenderCoordinator.request({ el: textEl, content, final: true });
+    }
+    await this.textRenderCoordinator.flush();
+    if (textEl && msg && content) renderer?.addTextCopyButton(textEl, content);
+    this.textRenderCoordinator.cancel();
   }
 
   // ============================================
@@ -345,12 +385,14 @@ export class StreamController {
 
   async appendThinking(content: string): Promise<void> {
     const { state } = this.deps;
-    if (!state.currentContentEl) return;
-
+    const block = state.currentThinkingBlock ??= { content: '', startTime: Date.now() };
+    block.content += content;
     this.thinkingIndicator.hide();
+    if (!state.currentContentEl) return;
     if (!state.currentThinkingState) {
       this.thinkingRenderCoordinator.cancel();
       const thinkingState = createThinkingBlock(state.currentContentEl, {
+        startTime: block.startTime,
         onToggle: (isExpanded) => {
           this.#handleThinkingToggle(thinkingState, isExpanded);
         },
@@ -359,39 +401,30 @@ export class StreamController {
       this.#syncThinkingRenderAvailability();
     }
 
-    state.currentThinkingState.content += content;
     this.thinkingRenderCoordinator.request({
       el: state.currentThinkingState.contentEl,
-      content: state.currentThinkingState.content,
+      content: block.content,
     });
   }
 
   async finalizeCurrentThinkingBlock(msg?: ChatMessage): Promise<void> {
     const { state } = this.deps;
-    if (!state.currentThinkingState) return;
+    const block = state.currentThinkingBlock;
+    if (!block) return;
 
     const thinkingState = state.currentThinkingState;
-    if (this.#getStreamingRenderOptions(thinkingState.content)) {
-      this.thinkingRenderCoordinator.request({
-        el: thinkingState.contentEl,
-        content: thinkingState.content,
-        final: true,
-      });
+    const durationSeconds = Math.floor((Date.now() - block.startTime) / 1000);
+    if (msg && block.content) {
+      msg.contentBlocks = msg.contentBlocks || [];
+      msg.contentBlocks.push({ type: 'thinking', content: block.content, durationSeconds });
+    }
+    state.currentThinkingBlock = null;
+    state.currentThinkingState = null;
+    if (thinkingState && this.#getStreamingRenderOptions(block.content)) {
+      this.thinkingRenderCoordinator.request({ el: thinkingState.contentEl, content: block.content, final: true });
     }
     await this.thinkingRenderCoordinator.flush();
-
-    const durationSeconds = finalizeThinkingBlock(thinkingState);
-
-    if (msg && thinkingState.content) {
-      msg.contentBlocks = msg.contentBlocks || [];
-      msg.contentBlocks.push({
-        type: 'thinking',
-        content: thinkingState.content,
-        durationSeconds,
-      });
-    }
-
-    state.currentThinkingState = null;
+    if (thinkingState) finalizeThinkingBlock(thinkingState, durationSeconds);
     this.thinkingRenderCoordinator.cancel();
   }
 
@@ -424,7 +457,7 @@ export class StreamController {
 
   /** Scrolls messages to bottom if auto-scroll is enabled. */
   private scrollToBottom(): void {
-    if (this.pendingScrollFrame !== null) return;
+    if (this.pendingScrollFrame !== null || !this.deps.getMessagesEl()) return;
 
     this.pendingScrollFrame = scheduleAnimationFrame(() => {
       this.pendingScrollFrame = null;
@@ -438,7 +471,7 @@ export class StreamController {
     if (!state.autoScrollEnabled) return;
 
     const messagesEl = this.deps.getMessagesEl();
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
   #cancelPendingScroll(): void {
@@ -472,7 +505,7 @@ export class StreamController {
   }
 
   #getMessagesWindow(): Window | null {
-    return this.deps.getMessagesEl().ownerDocument.defaultView ?? null;
+    return this.deps.getMessagesEl()?.ownerDocument.defaultView ?? null;
   }
 
   #getStreamingRenderWindow(): Window | null {
@@ -501,6 +534,9 @@ export class StreamController {
   }
 
   dispose(): void {
+    this.onDispose?.();
+    this.onDispose = undefined;
+    for (const stream of this.backgroundStreams) stream.dispose();
     this.thinkingIndicator.dispose();
     this.subagents.releaseManaged();
     this.textRenderCoordinator.dispose();

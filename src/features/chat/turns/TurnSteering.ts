@@ -115,7 +115,7 @@ export class TurnSteering {
 
     try {
       if (signal?.aborted || this.deps.canStartTurn?.() === false
-        || state.cancelRequested || state.isSwitchingConversation || state.isResettingToNewChat || state.isRewinding) {
+        || state.cancelRequested || state.isRewinding) {
         pending.providerDisposition = 'definitely-unsent';
         return pending;
       }
@@ -203,8 +203,6 @@ export class TurnSteering {
     this.#clearUi(pending);
     if (
       pending.conversationId !== this.deps.state.currentConversationId
-      || this.deps.state.isSwitchingConversation
-      || this.deps.state.isResettingToNewChat
     ) {
       pending.retryState = 'parked';
       return;

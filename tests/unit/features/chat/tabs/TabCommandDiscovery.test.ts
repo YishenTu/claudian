@@ -216,8 +216,6 @@ describe('TabCommandDiscovery', () => {
       getConversationById,
     }));
     const tab = await manager.createTab('conversation-a');
-    const conversationChanged = runtimeOptions(0)
-      .onConversationIdChanged as (runtime: any, conversationId: string) => void;
 
     const staleDiscovery = reloadDiscovery(0, tab);
     for (let attempt = 0;
@@ -225,7 +223,7 @@ describe('TabCommandDiscovery', () => {
       attempt += 1) {
       await Promise.resolve();
     }
-    conversationChanged(tab, 'conversation-b');
+    await manager.openConversation('conversation-b');
     firstLookup.resolve({
       id: 'conversation-a',
       messages: [{ role: 'user', content: 'A' }],
@@ -236,7 +234,7 @@ describe('TabCommandDiscovery', () => {
     await expect(staleDiscovery).resolves.toMatchObject({ status: 'error', retryable: true });
     expect(commandLoader.loadCommands).not.toHaveBeenCalled();
 
-    await expect(reloadDiscovery(0, tab)).resolves.toMatchObject({
+    await expect(reloadDiscovery(1, manager.getActiveTab())).resolves.toMatchObject({
       status: 'ready', items: [{ name: 'review' }],
     });
     expect(commandLoader.loadCommands).toHaveBeenCalledWith(expect.objectContaining({

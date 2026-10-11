@@ -35,7 +35,7 @@ describe('TurnQueue', () => {
     let canStart = false;
     const fixture = createFixture({ canStartTurn: () => canStart });
     const scheduled: Array<() => void> = [];
-    const timeoutSpy = jest.spyOn(window, 'setTimeout').mockImplementation((callback: any) => {
+    const timeoutSpy = jest.spyOn(globalThis, 'setTimeout').mockImplementation((callback: any) => {
       scheduled.push(callback);
       return scheduled.length as unknown as ReturnType<typeof window.setTimeout>;
     });
@@ -288,33 +288,6 @@ describe('TurnQueue', () => {
       .toBe(false);
   });
 
-  it('parks a definite rejection that settles inside the conversation switch window', async () => {
-    const fixture = createFixture();
-    const nativeResult = deferred<ChatSteerOutcome>();
-    fixture.coordinator.steer.mockReturnValueOnce(nativeResult.promise);
-    const releaseTurn = fixture.holdResponse();
-    fixture.input.value = 'conversation A retry';
-
-    await fixture.controller.sendMessage();
-    const steer = fixture.controller.queue.steerNow();
-    await waitForCall(fixture.coordinator.steer);
-    jest.spyOn(fixture.state, 'isSwitchingConversation', 'get').mockReturnValue(true);
-    nativeResult.resolve({ delivery: 'not-sent' });
-    await steer;
-
-    expect(fixture.input.value).toBe('');
-    expect((fixture.controller as any).steering.pendingSteersByConversation.get('conversation-1'))
-      .toMatchObject({ retryState: 'parked' });
-
-    jest.spyOn(fixture.state, 'isSwitchingConversation', 'get').mockReturnValue(false);
-    await releaseTurn();
-    fixture.controller.onConversationActivated();
-    fixture.controller.onConversationActivated();
-    expect(fixture.input.value).toBe('conversation A retry');
-    expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
-      .toBe(false);
-  });
-
   it('keeps B queue independent while typed pre-handoff retry for A is parked', async () => {
     const fixture = createFixture();
     const nativeResult = deferred<ChatSteerOutcome>();
@@ -361,7 +334,7 @@ describe('TurnQueue', () => {
       status: 'completed';
     }>();
     const nativeResult = deferred<ChatSteerOutcome>();
-    const timeoutSpy = jest.spyOn(window, 'setTimeout').mockImplementation(
+    const timeoutSpy = jest.spyOn(globalThis, 'setTimeout').mockImplementation(
       () => 0 as unknown as ReturnType<typeof window.setTimeout>,
     );
     fixture.coordinator.execute.mockReturnValueOnce(mainResult.promise);
@@ -395,7 +368,7 @@ describe('TurnQueue', () => {
       status: 'completed';
     }>();
     const nativeResult = deferred<ChatSteerOutcome>();
-    const timeoutSpy = jest.spyOn(window, 'setTimeout').mockImplementation(
+    const timeoutSpy = jest.spyOn(globalThis, 'setTimeout').mockImplementation(
       () => 0 as unknown as ReturnType<typeof window.setTimeout>,
     );
     fixture.coordinator.execute.mockReturnValueOnce(mainResult.promise);

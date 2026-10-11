@@ -8,9 +8,9 @@ import { VIEW_TYPE_CLAUDIAN } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { SessionManagerSurface, setControlAvailability } from '@/features/chat/session-manager/SessionManagerSurface';
 import { SessionNavigation } from '@/features/chat/session-manager/SessionNavigation';
+import { getSessionProviderId } from '@/features/chat/sessions/sessionProvider';
 import type { ChatTab, TabId } from '@/features/chat/tabs/ChatTab';
 import { TabWorkspaceLifecycle } from '@/features/chat/tabs/persistence/TabWorkspaceLifecycle';
-import { getTabProviderId } from '@/features/chat/tabs/providerResolution';
 import { TabBar } from '@/features/chat/tabs/TabBar';
 import {
   cancelSelectedDestinationTurn,
@@ -171,7 +171,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   refreshModelSelector(changedProviderId?: ProviderId): void {
     this.tabManager?.reconcileProviderAvailability();
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      const providerId = getTabProviderId(tab, this.plugin);
+      const providerId = getSessionProviderId(tab, this.plugin);
       if (
         changedProviderId
         && tab.conversationId !== null
@@ -527,10 +527,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
 
   private async handleTabClose(tabId: TabId): Promise<void> {
     try {
-      const tab = this.tabManager?.getTab(tabId);
-      // Closing from the tab bar is an explicit interrupt of the foreground turn.
-      const force = tab?.session.hasActiveTurn ?? false;
-      await this.tabManager?.closeTab(tabId, force);
+      await this.tabManager?.closeTab(tabId);
       this.updateTabBarVisibility();
     } catch {
       new Notice('Failed to close tab');
@@ -589,7 +586,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
 
   private resolveBrandProviderId(): ProviderId | null {
     const activeTab = this.tabManager?.getActiveTab();
-    return activeTab ? getTabProviderId(activeTab, this.plugin) : DEFAULT_CHAT_PROVIDER_ID;
+    return activeTab ? getSessionProviderId(activeTab, this.plugin) : DEFAULT_CHAT_PROVIDER_ID;
   }
 
   // ============================================
@@ -602,28 +599,6 @@ export class ClaudianView extends ItemView implements ZenModeSource {
 
   private handleLinkedContentMetadataChanged(file: TFile | null): void {
     this.tabManager?.getActiveTab()?.linkedContent.handleActiveFileMetadataChanged(file);
-  }
-
-  handleLinkedContentRenamed(
-    oldPath: string,
-    newPath: string,
-    includeDescendants: boolean,
-  ): void {
-    for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      tab.linkedContent.handleRenamed(oldPath, newPath, includeDescendants);
-    }
-  }
-
-  handleLinkedContentDeleted(path: string, includeDescendants: boolean): void {
-    for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      tab.linkedContent.handleDeleted(path, includeDescendants);
-    }
-  }
-
-  handleLinkedContentCreated(path: string): void {
-    for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      tab.linkedContent.handleCreated(path);
-    }
   }
 
   // ============================================

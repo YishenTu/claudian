@@ -118,11 +118,11 @@ describe('ThinkingIndicator', () => {
       const earlier = state.streamGeneration;
       await finishEarlier();
       const finishCurrent = holdResponse(turns);
-      state.beginActionRequired('prompt');
+      state.setActionRequired(true);
       indicator.show();
       jest.advanceTimersByTime(500);
       expect(state.thinkingEl).toBeNull();
-      state.endActionRequired('prompt');
+      state.setActionRequired(false);
       return { earlier, finishCurrent };
     }
 
@@ -216,8 +216,8 @@ describe('ThinkingIndicator', () => {
     expect(state.thinkingEl).toBeNull();
   });
 
-  it('should not show indicator when currentThinkingState is active', () => {
-    state.currentThinkingState = { content: 'thinking...', container: {}, contentEl: {}, startTime: Date.now() } as any;
+  it('should not show indicator when a thinking block is active', () => {
+    state.currentThinkingBlock = { content: 'thinking...', startTime: Date.now() };
 
     indicator.show();
     jest.advanceTimersByTime(500);

@@ -108,13 +108,13 @@ it.each([false, true])('collapses completed history above the answer and puts co
 
 it('keeps live and finalized thinking accessible without hover tooltip attributes', async () => {
   const host = document.body.createDiv();
-  const state = createThinkingBlock(host);
+  const state = createThinkingBlock(host, { startTime: Date.now() });
   const header = within(host).getByRole('button', { name: 'Thinking 0s...' });
   expect(header.hasAttribute('aria-label')).toBe(false);
   expect(header.hasAttribute('title')).toBe(false);
   fireEvent.keyDown(header, { key: ' ' });
   expect(header.getAttribute('aria-expanded')).toBe('true');
-  finalizeThinkingBlock(state);
+  finalizeThinkingBlock(state, 0);
   expect(within(host).getByRole('button', { name: /^Thought for \d+s$/ })).toBe(header);
   expect(header.getAttribute('aria-expanded')).toBe('false');
   expect((await axe(host)).violations).toEqual([]);
@@ -539,7 +539,7 @@ it.each([true, false])('enables branches after switching and native history corr
   const second: ChatMessage = { id: 'u2', role: 'user', content: 'Second prompt', timestamp: 2,
     treeBranches: ['native-u2'], ...(hasNativeId ? { userMessageId: 'native-u2' } : {}) };
   const plugin = { app: {}, settings: { mediaFolder: '' }, updateConversation: jest.fn(),
-    switchConversation: jest.fn().mockResolvedValue({ id: 'pi-chat', messages: [first, second] }) };
+    getConversationById: jest.fn().mockResolvedValue({ id: 'pi-chat', messages: [first, second] }) };
   const navigateConversationBranch = jest.fn().mockResolvedValue({ status: 'committed', messages: [first] });
   const coordinator = { navigateConversationBranch, supportsConversationBranches: true,
     getConversationBranches: jest.fn().mockResolvedValue({ branches: { 'native-u1': ['native-u1'], 'native-u2': ['native-u2'] },
@@ -549,7 +549,7 @@ it.each([true, false])('enables branches after switching and native history corr
     new Component() as any,
     messagesEl, undefined, undefined, () => ProviderRegistry.getCapabilities('pi'), {
       navigate: (id, target) => controller.navigateBranch(id, target),
-      isBusy: () => state.isSwitchingConversation || state.isRewinding,
+      isBusy: () => state.isRewinding,
     });
   let welcomeEl: HTMLElement | null = null;
   const controller = new ConversationController({ plugin, state, renderer,
@@ -561,7 +561,8 @@ it.each([true, false])('enables branches after switching and native history corr
     getImageContextManager: () => null, clearQueuedMessage: jest.fn(),
     getExecutionCoordinator: () => coordinator,
   } as any);
-  await controller.switchTo('pi-chat');
+  state.currentConversationId = 'pi-chat';
+  await controller.loadActive();
   expect((within(messagesEl).getByRole('button', { name: 'Branch from this prompt' }) as HTMLButtonElement).disabled).toBe(!hasNativeId);
   await controller.save();
   const edit = within(messagesEl).getByRole('button', { name: 'Branch from this prompt' }) as HTMLButtonElement;

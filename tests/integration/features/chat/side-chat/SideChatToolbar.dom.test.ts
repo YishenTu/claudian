@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
+import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { createHarness, releaseSideChatHarnesses, startSideChat } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { App, Component } from 'obsidian';
@@ -51,6 +52,7 @@ it('refreshes destination settings when the side panel collapses, expands, and i
     getConversationSync: () => conversation,
     getConversationList: () => [conversation],
   } as unknown as ChatFeatureHost;
+  if (!plugin.sessionRuntimes) installSessionRuntimePool(plugin);
   const tab = await createTabRuntime({
     plugin,
     component: Object.assign(new Component(), { registerDomEvent: () => undefined, registerEvent: () => undefined }) as never,

@@ -9,9 +9,8 @@ import { Component, MarkdownRenderer } from 'obsidian';
 import { getToolIcon } from '@/core/tools/toolIcons';
 import { applyToolResultPresentation } from '@/core/tools/toolResultDetails';
 import type { ChatMessage, StreamChunk, ToolCallInfo } from '@/core/types';
-import { AsyncQuestionPrompts } from '@/features/chat/interactions/AsyncQuestionPrompts';
 import type { QuestionAnswerHandler } from '@/features/chat/interactions/InlineAskUserQuestion';
-import { InlineInteractionPrompts } from '@/features/chat/interactions/InlineInteractionPrompts';
+import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { renderStoredToolCall, renderToolCall, updateToolCallResult } from '@/features/chat/rendering/tools/ToolCallRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
@@ -355,13 +354,12 @@ function showQuestion(tool: ToolCallInfo, onAnswer: QuestionAnswerHandler) {
   const panelHost = document.body.createDiv();
 
   const block = renderToolCall(document.body.createDiv(), tool, { initiallyExpanded: true });
-  const prompts = new AsyncQuestionPrompts({
-    prompts: new InlineInteractionPrompts({ getPromptParentEl: () => panelHost, getSuppressedEl: () => composer }),
+  const prompts = new SessionInteractions({ getPromptParentEl: () => panelHost, getSuppressedEl: () => composer });
+  prompts.bindAsyncQuestions({
     answer: (_tool, answers) => onAnswer(answers),
     onChange: current => updateToolCallResult(block, current),
-    onPendingChange: () => undefined,
   });
-  prompts.update(tool);
+  prompts.updateAsyncQuestion(tool);
   return { composer, input, panelHost, block, prompts };
 }
 
@@ -381,7 +379,7 @@ it('submits a selected option and a free-text answer once, then restores both an
   fireEvent.input(within(panelHost).getByRole('textbox', { name: 'Any details?' }), { target: { value: 'Preserve my notes.' } });
   // Acknowledgement must not erase a selection made before it arrives.
   updateToolCallResult(block, tool);
-  prompts.update(tool);
+  prompts.updateAsyncQuestion(tool);
   const panel = within(panelHost).getByRole('region', { name: 'Question' });
   fireEvent.click(within(panel).getByRole('button', { name: 'Submit' }));
   expect(within(panel).getByText('History')).toBeDefined();
@@ -441,7 +439,7 @@ it('keeps answer controls usable after rejected submission and disables controls
   expect(tool.resolvedAnswers).toBeUndefined();
   expect((await axe(block)).violations).toEqual([]);
   tool.status = 'error';
-  prompts.update(tool);
+  prompts.updateAsyncQuestion(tool);
   await waitFor(() => expect(within(panelHost).queryByRole('button', { name: 'Submit answers' })).toBeNull());
   expect(composer.classList.contains('claudian-hidden')).toBe(false);
   expect(within(block).getByText('Question expired.')).toBeDefined();
@@ -485,7 +483,7 @@ it('expires dismissed questions and keeps history replay read-only', async () =>
   expect(onAnswer).not.toHaveBeenCalled();
   expect(tool.resolvedAnswers).toBeUndefined();
   expect(within(block).getByText('Question expired.')).toBeDefined();
-  prompts.update(tool);
+  prompts.updateAsyncQuestion(tool);
   const restored = renderStoredToolCall(document.body.createDiv(), tool, { initiallyExpanded: true });
   expect(within(restored).queryByRole('region', { name: 'Question' })).toBeNull();
   expect(within(restored).getByText('Question expired.')).toBeDefined();

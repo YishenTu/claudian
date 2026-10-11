@@ -151,13 +151,15 @@ function assembleTabRuntime(
     registerCleanup: (resource: string, cleanup: TabRuntimeCleanup) => resourceOwner.register(resource, cleanup),
   };
   const runtimeRef = createPublishedTabRuntimeRef();
-  const core = buildTabRuntimeCore(context, runtimeRef);
+  const core = buildTabRuntimeCore(context);
   const ui = buildTabRuntimeUI(core, context, runtimeRef);
   const controllerBundle = buildTabRuntimeControllers(core, ui, context, runtimeRef);
   buildTabRuntimeInputBindings(core, ui, controllerBundle.controllers, context, runtimeRef);
   const runtime = composeTabRuntime(core, ui, controllerBundle, options.plugin);
   registerTabRuntimeResourceOwner(runtime, resourceOwner);
   runtimeRef.publish(runtime);
+  core.session.runtime.model.attach(controllerBundle.presentation);
+  resourceOwner.register('tab session presentation', () => core.session.runtime.peekModel?.detach(controllerBundle.presentation));
 
   refreshTabProviderUI(runtime);
   applyProviderUIGating(runtime, options.plugin);

@@ -2,6 +2,7 @@
 import '@/providers';
 
 import { holdResponse } from '@test/helpers/ConversationPorts';
+import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { fireEvent } from '@testing-library/dom';
 import { App, Component } from 'obsidian';
@@ -39,6 +40,7 @@ beforeEach(async () => {
     getConversationSync: () => conversation,
     getConversationList: () => [conversation],
   } as unknown as ChatFeatureHost;
+  installSessionRuntimePool(plugin);
   tab = await createTabRuntime({
     plugin, conversation, component: new Component(),
     containerEl: document.body.createDiv(),

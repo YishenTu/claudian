@@ -40,16 +40,17 @@ function createRepository(conversation = createConversation()) {
     deleteCurrentMetadata: jest.fn().mockResolvedValue(undefined),
     assignMetadataToDevice: jest.fn().mockResolvedValue(undefined),
   };
+  const onConversationDeleted = jest.fn<Promise<void>, [string]>().mockResolvedValue(undefined);
   const repository = new ConversationRepository({
     providers: ProviderRegistry,
     providerSettings: ProviderSettingsCoordinator,
     getSettings: () => ({}),
     getVaultPath: () => '/vault',
     persistence,
-    onConversationDeleted: jest.fn().mockResolvedValue(undefined),
+    onConversationDeleted,
   });
   repository.replaceAll([conversation]);
-  return { repository, persistence };
+  return { repository, persistence, onConversationDeleted };
 }
 
 describe('ConversationRepository hydration', () => {
@@ -886,6 +887,34 @@ describe('ConversationRepository hydration', () => {
     await expect(deletion).resolves.toBeUndefined();
     expect(repository.getCachedConversation(conversation.id)).toBeNull();
     expect(persistence.deleteCurrentMetadata).toHaveBeenCalledWith(conversation.id);
+  });
+
+  it('joins a repeated delete instead of cleaning up before the record is durably removed', async () => {
+    const conversation = createConversation();
+    const { repository, persistence, onConversationDeleted } = createRepository(conversation);
+    let releaseRemoval!: () => void;
+    persistence.deleteCurrentMetadata.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      releaseRemoval = resolve;
+    }));
+
+    const first = repository.delete(conversation.id);
+    const repeated = repository.delete(conversation.id);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(onConversationDeleted).not.toHaveBeenCalled();
+
+    releaseRemoval();
+    await expect(Promise.all([first, repeated])).resolves.toEqual([undefined, undefined]);
+    expect(onConversationDeleted).toHaveBeenCalledTimes(1);
+    expect(persistence.deleteCurrentMetadata).toHaveBeenCalledTimes(1);
+    expect(repository.getCachedConversation(conversation.id)).toBeNull();
+  });
+
+  it('lets a deleted conversation\'s session release its history', async () => {
+    const conversation = createConversation();
+    const { repository } = createRepository(conversation);
+    await repository.delete(conversation.id);
+
+    await expect(repository.releaseHistory(conversation.id, () => true)).resolves.toBe(true);
   });
 
   it('does not return an already hydrated conversation deleted while model reconciliation is in flight', async () => {

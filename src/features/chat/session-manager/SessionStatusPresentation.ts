@@ -102,6 +102,7 @@ export function sessionStatusText(
   const location = status.location ?? 'current-view';
 
   if (!showOpenStateLabels) return formatSessionDate(timestamp);
+  if (status.attention?.kind === 'action-required') return 'Needs input';
 
   if (openState !== 'closed' && location === 'other-view') {
     return isRunning ? 'Running in another pane' : 'Open in another pane';

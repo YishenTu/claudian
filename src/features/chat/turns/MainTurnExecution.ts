@@ -7,7 +7,6 @@ import type { ProviderId } from '@/core/providers/types';
 import type { ChatMessage, ImageAttachment } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ChatSettings } from '@/features/chat/ChatSettings';
-import type { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
 import type { ConversationController } from '@/features/chat/conversation/ConversationController';
 import type { FirstTurnAdmission } from '@/features/chat/conversation/FirstTurnAdmission';
 import { buildChatExecutionConfiguration } from '@/features/chat/execution/chatExecutionConfiguration';
@@ -17,9 +16,10 @@ import {
   type ChatTurnSubmission,
 } from '@/features/chat/execution/ChatExecutionCoordinator';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import type { SessionComposerPort } from '@/features/chat/sessions/SessionComposer';
 import type { ChatState } from '@/features/chat/state/ChatState';
-import { cloneQueuedMessage, createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
-import type { ChatTurnRequest, QueuedMessage, TabReviewOutcome } from '@/features/chat/state/types';
+import { createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
+import type { ChatTurnRequest, TabReviewOutcome } from '@/features/chat/state/types';
 import { ResponseStream } from '@/features/chat/turns/ResponseStream';
 import type { StreamController } from '@/features/chat/turns/StreamController';
 import type { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
@@ -45,16 +45,16 @@ export interface MainTurn {
 export interface MainTurnExecutionDeps {
   plugin: ChatFeatureHost;
   state: ChatState;
-  renderer: MessageRenderer;
+  renderer: MessageRenderer | null;
   streamController: StreamController;
   conversationController: ConversationController;
-  drafts: ComposerDraftController;
+  drafts: SessionComposerPort;
   turns: TurnCoordinator;
   steering: TurnSteering;
   queue: TurnQueue;
   firstTurn: FirstTurnAdmission;
   getWelcomeEl: () => HTMLElement | null;
-  getMessagesEl: () => HTMLElement;
+  getMessagesEl: () => HTMLElement | null;
   generateId: () => string;
   getSettings: () => Readonly<ChatSettings>;
   getExecutionCoordinator: () => ChatExecutionCoordinator | null;
@@ -86,7 +86,7 @@ export class MainTurnExecution {
 
   constructor(private readonly deps: MainTurnExecutionDeps) {
     this.responseStream = new ResponseStream({
-      state: deps.state, renderer: deps.renderer, stream: deps.streamController, turns: deps.turns,
+      state: deps.state, get renderer() { return deps.renderer; }, stream: deps.streamController, turns: deps.turns,
       createMessageId: () => deps.generateId(),
     });
   }
@@ -107,7 +107,7 @@ export class MainTurnExecution {
   }
 
   async run(turn: MainTurn, signal: AbortSignal): Promise<void> {
-    const { plugin, state, renderer, streamController, conversationController } = this.deps;
+    const { plugin, state, streamController, conversationController } = this.deps;
     const { displayContent, request: turnRequest, images: imagesForMessage } = turn;
     const isCompact = parseCompactCommand(turnRequest.text) !== null;
     const restoreUnsentInput = (request: ChatTurnRequest, merge = true): void => {
@@ -157,7 +157,7 @@ export class MainTurnExecution {
     };
     state.addMessage(userMsg);
     state.hasPendingConversationSave = true;
-    renderer.addMessage(userMsg);
+    this.deps.renderer?.addMessage(userMsg);
 
     const restoreCancelledInput = (): boolean => {
       if (!signal.aborted) return false;
@@ -278,14 +278,14 @@ export class MainTurnExecution {
             ...admittedTurnRequest,
             images: imagesForMessage ?? admittedTurnRequest.images,
           });
-        const queued = this.deps.queue.message;
-        const pendingMessagesToRestore = queued ? cloneQueuedMessage(queued) : null;
-        const composerDraftToRestore = this.#captureComposerDraft();
         const resolution = result.missingSessionResolution ?? 'not_found';
         const { queue } = this.deps;
         if (resolution === 'deleted') {
-          queue.returnMessageToComposer(composerDraftToRestore, { merge: true });
-          queue.returnMessageToComposer(pendingMessagesToRestore, { merge: true });
+          // The composer keeps its draft; the deleted session's tabs reset after this turn settles
+          // and carry the composer, so queued and unsent input must reach it first. Settling first
+          // sends steers that become definitely unsent later to the composer, not a dead queue.
+          this.deps.turns.settle();
+          queue.restoreToComposer();
           queue.returnMessageToComposer(retryMessage, { merge: true });
         } else if (!result.accepted) {
           queue.returnMessageToComposer(retryMessage, { merge: true });
@@ -333,7 +333,7 @@ export class MainTurnExecution {
       else state.clearFlavorTimerInterval();
 
       try {
-        // Skip remaining cleanup if stream was invalidated (tab closed or conversation switched)
+        // Only the response generation that still owns the stream may finalize it.
         if (
           !wasInvalidated
           && !didRollbackUnsentTurn
@@ -347,7 +347,7 @@ export class MainTurnExecution {
           const saveExtras = didEnqueueToSdk ? { resumeAtMessageId: undefined } : undefined;
           await conversationController.save(true, saveExtras);
           const userMsgIndex = state.messages.indexOf(userMsg);
-          renderer.refreshActionButtons(userMsg, state.messages, userMsgIndex >= 0 ? userMsgIndex : undefined);
+          this.deps.renderer?.refreshActionButtons(userMsg, state.messages, userMsgIndex >= 0 ? userMsgIndex : undefined);
           scheduledContinuation = this.deps.queue.scheduleContinuation();
         }
 
@@ -516,7 +516,7 @@ export class MainTurnExecution {
         ...(nativeUserMessageId ? { userMessageId: nativeUserMessageId } : {}),
       };
       this.deps.state.addMessage(userMessage);
-      this.deps.renderer.addMessage(userMessage);
+      this.deps.renderer?.addMessage(userMessage);
     }
     echo.settle();
 
@@ -554,12 +554,6 @@ export class MainTurnExecution {
   // Rollback
   // ============================================
 
-  #captureComposerDraft(): QueuedMessage | null {
-    const { content, images } = this.deps.drafts.capture('main');
-    if (!content.trim() && !images.length) return null;
-    return createQueuedMessage(content, { text: content, images });
-  }
-
   #retainUnsentTurnOnClose(signal: AbortSignal, assistantMessageId?: string): boolean {
     if (!this.deps.isClosing() && signal.reason !== 'shutdown') return false;
     // Teardown retains submitted input in the in-memory conversation projection.
@@ -574,7 +568,7 @@ export class MainTurnExecution {
   #discardStreamingAssistantMessage(messageId: string): void {
     const { state, renderer } = this.deps;
     state.messages = state.messages.filter((message) => message.id !== messageId);
-    renderer.removeMessage(messageId);
+    renderer?.removeMessage(messageId);
     state.resetStreamingPresentation();
   }
 
@@ -586,7 +580,7 @@ export class MainTurnExecution {
     const retainedMessageIds = new Set(messagesBeforeTurn.map(message => message.id));
     for (const message of state.messages) {
       if (!retainedMessageIds.has(message.id)) {
-        renderer.removeMessage(message.id);
+        renderer?.removeMessage(message.id);
       }
     }
 
@@ -617,11 +611,14 @@ export class MainTurnExecution {
     if (!(plugin.settings.enableAutoScroll ?? true)) return;
     if (!state.autoScrollEnabled) return;
 
-    window.requestAnimationFrame(() => {
+    const messagesEl = this.deps.getMessagesEl();
+    const view = messagesEl?.ownerDocument.defaultView;
+    if (!messagesEl || !view) return;
+    view.requestAnimationFrame(() => {
+      if (this.deps.getMessagesEl() !== messagesEl) return;
       if (!(this.deps.plugin.settings.enableAutoScroll ?? true)) return;
       if (!this.deps.state.autoScrollEnabled) return;
 
-      const messagesEl = this.deps.getMessagesEl();
       messagesEl.scrollTop = messagesEl.scrollHeight;
     });
   }

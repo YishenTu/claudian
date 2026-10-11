@@ -88,6 +88,9 @@ export class ConversationRepository {
   private conversationGenerations = new Map<string, number>();
   private deletedConversationIds = new Set<string>();
   private deletingConversationIds = new Set<string>();
+  /** A repeated delete joins the one in flight instead of retrying cleanup before durable removal. */
+  private readonly deletions = new Map<string, Promise<void>>();
+  private readonly deletionCleanups = new Map<string, Promise<void>>();
   private readonly persistenceQueues = new Map<string, Promise<void>>();
   private readonly deletionStates = new Map<string, ConversationDeletionState>();
   private readonly linkedContentPathsByConversationId = new Map<
@@ -386,13 +389,21 @@ export class ConversationRepository {
     });
   }
 
-  async delete(id: string): Promise<void> {
+  delete(id: string): Promise<void> {
+    const inFlight = this.deletions.get(id);
+    if (inFlight) return inFlight;
+    const deletion = this.#delete(id).finally(() => this.deletions.delete(id));
+    this.deletions.set(id, deletion);
+    return deletion;
+  }
+
+  async #delete(id: string): Promise<void> {
     const index = this.conversations.findIndex(
       (conversation) => conversation.id === id,
     );
     if (index === -1) {
       if (this.deletedConversationIds.has(id)) {
-        await this.retryDeletedConversationCleanup(id);
+        await this.#retryDeletedConversationCleanup(id);
       }
       return;
     }
@@ -428,7 +439,6 @@ export class ConversationRepository {
         this.deletingConversationIds.delete(id);
         this.deletionStates.delete(id);
         this.executionBindings.delete(id);
-        await this.#finalizeDeletedConversation(id);
       });
     } catch (error) {
       if (!metadataRemoved) {
@@ -453,18 +463,22 @@ export class ConversationRepository {
       }
       throw error;
     }
+    await this.#finalizeDeletedConversation(id);
   }
 
   async retryDeletedConversationCleanup(id: string): Promise<void> {
+    const inFlight = this.deletions.get(id);
+    if (inFlight) return inFlight;
+    await this.#retryDeletedConversationCleanup(id);
+  }
+
+  async #retryDeletedConversationCleanup(id: string): Promise<void> {
     if (!this.deletedConversationIds.has(id)) {
       return;
     }
     this.deletedConversationIds.add(id);
     this.deletingConversationIds.delete(id);
-    await this.#enqueuePersistence(
-      id,
-      () => this.#finalizeDeletedConversation(id),
-    );
+    await this.#finalizeDeletedConversation(id);
   }
 
   async handleMissingProviderSession(
@@ -617,7 +631,9 @@ export class ConversationRepository {
         delete patch.messages;
       };
       discardSupersededSessionFields();
-      await this.#writeMetadata({ ...conversation, ...patch });
+      await this.#writeMetadata({ ...conversation, ...patch }, {
+        preserveProviderState: !('messages' in patch) && !this.hydratedConversationIds.has(id),
+      });
       if (!this.#isConversationRetained(conversation)) return;
       // Session invalidation cannot cancel an unrelated committed title or pin edit.
       discardSupersededSessionFields();
@@ -753,6 +769,24 @@ export class ConversationRepository {
 
   getCachedConversation(id: string): Conversation | null {
     return this.getSync(id);
+  }
+
+  /** Releases only the hydrated projection, after admitted writes and history reads settle. */
+  async releaseHistory(id: string, canRelease: () => boolean): Promise<boolean> {
+    await this.hydrationPromises.get(id);
+    return this.#enqueuePersistence(id, async () => {
+      const conversation = this.#getRecord(id);
+      // A deleted record retains no history, so its session can drop the model.
+      if (!conversation) return true;
+      if (!canRelease() || this.hydrationPromises.has(id)) return false;
+      if (!this.hydratedConversationIds.has(id) && conversation.messages.length === 0) return true;
+      // Keep the provider-owned metadata projection before dropping its source messages.
+      conversation.providerState = this.toSessionMetadata(conversation, { preserveProviderState: false }).providerState;
+      conversation.messages = [];
+      this.hydratedConversationIds.delete(id);
+      this.#invalidateConversation(id);
+      return true;
+    });
   }
 
   async ensureHydrated(id: string): Promise<Conversation | null> {
@@ -1066,7 +1100,9 @@ export class ConversationRepository {
     if (shouldPersist(value)) {
       const persisted = await this.#enqueuePersistence(conversation.id, async () => {
         if (!await this.#canWriteConversation(conversation) || !isCurrent()) return false;
-        await this.#writeMetadata({ ...conversation, ...patch });
+        await this.#writeMetadata({ ...conversation, ...patch }, {
+          preserveProviderState: !('messages' in patch) && !this.hydratedConversationIds.has(conversation.id),
+        });
         return true;
       });
       if (!persisted || !isCurrent()) return { current: false };
@@ -1107,7 +1143,10 @@ export class ConversationRepository {
   ): Promise<void> {
     // Metadata excludes message history: snapshot the projection, not the whole conversation.
     // The shallow copy keeps projection-time repairs off the caller's record.
-    const metadata = structuredClone(this.toSessionMetadata({ ...conversation }, options));
+    const metadata = structuredClone(this.toSessionMetadata({ ...conversation }, {
+      preserveProviderState: !this.hydratedConversationIds.has(conversation.id),
+      ...options,
+    }));
     const target = this.#requireMetadataTarget(conversation.id);
     return target === 'device'
       ? this.persistence.saveMetadata(metadata)
@@ -1169,7 +1208,21 @@ export class ConversationRepository {
     };
   }
 
-  async #finalizeDeletedConversation(id: string): Promise<void> {
+  /**
+   * Runs after the durable removal leaves the persistence queue: feature cleanup can await
+   * session work that writes or releases this record through the same queue. Concurrent
+   * retries join the cleanup already in flight.
+   */
+  #finalizeDeletedConversation(id: string): Promise<void> {
+    const pending = this.deletionCleanups.get(id);
+    if (pending) return pending;
+    const cleanup = this.#runDeletedConversationCleanup(id)
+      .finally(() => this.deletionCleanups.delete(id));
+    this.deletionCleanups.set(id, cleanup);
+    return cleanup;
+  }
+
+  async #runDeletedConversationCleanup(id: string): Promise<void> {
     let callbackError: unknown;
     try {
       await this.deps.onConversationDeleted(id);

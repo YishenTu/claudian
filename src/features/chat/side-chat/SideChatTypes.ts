@@ -1,6 +1,7 @@
 import type { ProviderId } from '@/core/providers/types';
 import type { ChatMessage } from '@/core/types';
 import type { ForkSourceCapture } from '@/features/chat/conversation/forkSourceTypes';
+import type { ForkCheckpoint } from '@/features/chat/sessions/SessionForkSource';
 
 /** Composer destination derived from side panel expansion; never separately mutable. */
 export type SideChatDestination = 'main' | 'side';
@@ -41,6 +42,7 @@ export interface SideChatParent {
   readonly providerId: ProviderId | null;
   readonly isLive: boolean;
   readonly isStreaming: boolean;
-  readonly lastMessageId: string | undefined;
+  /** Reads the parent's hydrated transcript; an evicted parent is reloaded, never read empty. */
+  readLatestForkCheckpoint(): Promise<ForkCheckpoint | null>;
   captureForkSource(): Promise<ForkSourceCapture>;
 }

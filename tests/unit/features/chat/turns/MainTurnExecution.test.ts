@@ -5,6 +5,7 @@ import type { ProviderExecutionErrorEvent, ProviderExecutionEvent } from '@/core
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ImageAttachment } from '@/core/types';
 import { ChatExecutionPreHandoffError, type ChatTurnSubmission } from '@/features/chat/execution/ChatExecutionCoordinator';
+import { createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
 
 jest.mock('@/core/providers/ProviderRegistry', () => ({
   ProviderRegistry: {
@@ -516,6 +517,28 @@ describe('MainTurnExecution', () => {
     expect(Notice).toHaveBeenCalledWith(
       'The provider session no longer exists. Its Claudian record was removed; send again to start a new session.',
     );
+  });
+
+  it('returns a steer that is definitely unsent after missing-session deletion to the composer', async () => {
+    const fixture = createFixture();
+    fixture.input.value = 'deleted turn';
+    const lateSteer = createQueuedMessage('late steer', { text: 'late steer' });
+    jest.mocked(Notice).mockImplementationOnce(() => {
+      // The steer's provider rejection arrives after the deletion recovery, before the turn ends.
+      fixture.controller.queue.returnUnsent(lateSteer);
+      return {} as Notice;
+    });
+    fixture.coordinator.execute.mockResolvedValueOnce({
+      accepted: false,
+      missingSessionResolution: 'deleted',
+      status: 'missing-session',
+    });
+
+    await fixture.controller.sendMessage();
+
+    expect(fixture.state.queuedMessage).toBeNull();
+    expect(fixture.input.value).toContain('late steer');
+    expect(fixture.input.value).toContain('deleted turn');
   });
 
   it('keeps pending input intact when execution preparation fails', async () => {

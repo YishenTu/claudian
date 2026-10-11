@@ -8,8 +8,8 @@ import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceReg
 import type { ProviderId } from '@/core/providers/types';
 import type { Conversation, SlashCommand } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { getSessionProviderId } from '@/features/chat/sessions/sessionProvider';
 import type { TabId } from '@/features/chat/tabs/ChatTab';
-import { getTabProviderId } from '@/features/chat/tabs/providerResolution';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { AssembledTabRuntime, ProviderCatalogInfo, TabMembershipView } from '@/features/chat/tabs/types';
 import { throwIfAborted, toAbortError } from '@/utils/abort';
@@ -87,7 +87,7 @@ export class TabCommandDiscovery {
       : null;
     for (const tab of this.membership.getAllTabs()) {
       if (!this.membership.isTabAlive(tab)) continue;
-      const providerId = getTabProviderId(tab, this.plugin);
+      const providerId = getSessionProviderId(tab, this.plugin);
       if (!providerId || (filter && !filter.has(providerId))) continue;
       this.invalidateTab(tab.id);
     }
@@ -108,7 +108,7 @@ export class TabCommandDiscovery {
 
     const filter = new Set(ids);
     for (const tab of this.membership.getAllTabs()) {
-      const providerId = getTabProviderId(tab, this.plugin);
+      const providerId = getSessionProviderId(tab, this.plugin);
       if (!providerId || !filter.has(providerId)) continue;
       this.invalidateTab(tab.id);
     }
@@ -118,7 +118,7 @@ export class TabCommandDiscovery {
   getProviderCatalogConfig(tab: Readonly<TabIdentity>): ProviderCatalogInfo {
     if (this.membership.isDestroyed() || tab.lifecycleState === 'closing') return null;
 
-    const providerId = getTabProviderId(tab, this.plugin);
+    const providerId = getSessionProviderId(tab, this.plugin);
     if (!providerId) return null;
     const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
     if (!catalog) return null;
@@ -137,7 +137,7 @@ export class TabCommandDiscovery {
     const targetTab = this.membership.getTab(tabId);
     if (!targetTab || !this.membership.isTabAlive(targetTab)) return { status: 'empty' };
 
-    const providerId = getTabProviderId(targetTab, this.plugin);
+    const providerId = getSessionProviderId(targetTab, this.plugin);
     if (!providerId) return { status: 'empty' };
     const discovery = await this.#getSdkCommandDiscovery(targetTab.id, signal);
     throwIfAborted(signal, ABORT_MESSAGE);
@@ -198,7 +198,7 @@ export class TabCommandDiscovery {
   }
 
   #isTabProviderCurrent(tab: AssembledTabRuntime, providerId: ProviderId): boolean {
-    return this.membership.isTabAlive(tab) && getTabProviderId(tab, this.plugin) === providerId;
+    return this.membership.isTabAlive(tab) && getSessionProviderId(tab, this.plugin) === providerId;
   }
 
   async #getSdkCommandDiscovery(
@@ -211,7 +211,7 @@ export class TabCommandDiscovery {
       return { result: { status: 'empty' } };
     }
 
-    const providerId = getTabProviderId(targetTab, this.plugin);
+    const providerId = getSessionProviderId(targetTab, this.plugin);
     if (!providerId) return { result: { status: 'empty' } };
     await ProviderWorkspaceRegistry.ensureInitialized(this.plugin.providerHost, providerId, 'command-picker');
     throwIfAborted(signal, ABORT_MESSAGE);
@@ -506,7 +506,7 @@ export class TabCommandDiscovery {
         resolveTimeoutMs: () => {
           const tab = this.membership.getTab(tabId);
           if (!tab || !this.membership.isTabAlive(tab)) return undefined;
-          const providerId = getTabProviderId(tab, this.plugin);
+          const providerId = getSessionProviderId(tab, this.plugin);
           if (!providerId) return undefined;
           const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
           return catalog

@@ -376,7 +376,7 @@ test('context controls read detached metadata without copying the transcript', a
   const update = jest.fn();
   const tab = {
     conversationId: conversation.id, providerId: 'claude', draftModel: null,
-    session: { reasoningSelections: new Map() },
+    session: { runtime: { conversationId: conversation.id, providerId: 'claude', draftModel: null, reasoningSelections: new Map(), providerSelections: new Map() } },
     state: { usage: { model: 'sonnet', contextTokens: 50_000, inputTokens: 50_000 } },
     ui: { contextUsageMeter: { update } },
   } as unknown as AssembledTabRuntime;

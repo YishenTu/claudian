@@ -1,25 +1,25 @@
 import '@/providers';
 
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
-import { createConversationPorts, createTestTabSession, holdResponse } from '@test/helpers/ConversationPorts';
+import { createConversationPorts, createTestSession, holdResponse } from '@test/helpers/ConversationPorts';
 import { createMockEl } from '@test/helpers/MockElement';
 import { testDate } from '@test/helpers/testClock';
 import { Menu, setIcon } from 'obsidian';
 
 import type { TitleGenerationService } from '@/core/providers/types';
 import type { ClaudianSettings } from '@/core/types';
-import { ConversationController, type ConversationControllerDeps } from '@/features/chat/conversation/ConversationController';
+import { type ConversationControllerDeps } from '@/features/chat/conversation/ConversationController';
 import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import { formatSessionDate } from '@/features/chat/session-manager/SessionStatusPresentation';
+import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { ChatState } from '@/features/chat/state/ChatState';
-import type { TabSession } from '@/features/chat/tabs/TabSession';
 
 jest.mock('@/shared/modals/ConfirmModal', () => ({
   confirm: jest.fn().mockResolvedValue(true),
 }));
 
-function createMockDeps(overrides: Record<string, unknown> = {}): ConversationControllerDeps & { session: TabSession; plugin: ConversationControllerDeps['plugin'] & { settings: ClaudianSettings }; getHistoryDropdown: () => HTMLElement; getTitleGenerationService: () => TitleGenerationService | null } {
-  const session = createTestTabSession({ getState: () => state });
+function createMockDeps(overrides: Record<string, unknown> = {}): ConversationControllerDeps & { session: ChatSessionRuntime; plugin: ConversationControllerDeps['plugin'] & { settings: ClaudianSettings }; getHistoryDropdown: () => HTMLElement; getTitleGenerationService: () => TitleGenerationService | null } {
+  const session = createTestSession({ getState: () => state });
   const state: ChatState = new ChatState({}, undefined, session.turns);
   const inputEl = { value: '', focus: jest.fn() } as unknown as HTMLTextAreaElement;
   const historyDropdown = createMockEl();
@@ -104,7 +104,7 @@ function createBrowser(deps: ReturnType<typeof createMockDeps>): SessionBrowser 
 
 function renderDropdown(browser: SessionBrowser, deps: ReturnType<typeof createMockDeps>): void {
   browser.renderHistoryDropdown(deps.getHistoryDropdown(), {
-    onSelectConversation: async (id) => { await new ConversationController(deps).switchTo(id); },
+    onSelectConversation: async (id) => { await deps.plugin.switchConversation(id); },
   });
 }
 

@@ -9,7 +9,7 @@ import type { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 
 interface ResponseStreamHost {
   readonly state: ChatState;
-  readonly renderer: MessageRenderer;
+  readonly renderer: MessageRenderer | null;
   readonly stream: StreamController;
   /** The turn whose streaming presentation this response ends. */
   readonly turns: Pick<TurnCoordinator, 'settle'>;
@@ -34,19 +34,20 @@ export class ResponseStream {
     };
     state.addMessage(message);
     this.#active = message;
-    const element = renderer.addMessage(message);
-    const contentEl = element.querySelector<HTMLElement>('.claudian-message-content');
-    if (contentEl) {
-      state.currentContentEl = contentEl;
-      state.currentTextEl = null;
-      state.currentTextContent = '';
-      state.currentThinkingState = null;
-    }
+    state.response.messageId = message.id;
+    const element = renderer?.addMessage(message);
+    const contentEl = element?.querySelector<HTMLElement>('.claudian-message-content') ?? null;
+    state.currentContentEl = contentEl;
+    state.currentTextEl = null;
+    state.currentTextContent = '';
+    state.currentThinkingBlock = null;
+    state.currentThinkingState = null;
     return message;
   }
 
   clear(): void {
     this.#active = null;
+    this.host.state.response.messageId = null;
   }
 
   async handleEvent(event: ProviderExecutionEvent): Promise<void> {
@@ -73,7 +74,7 @@ export class ResponseStream {
     stream.thinkingIndicator.hide();
     if (outcome.interrupted) {
       message.isInterrupt = true;
-      if (state.currentContentEl) renderer.appendInterruptIndicator(state.currentContentEl);
+      if (state.currentContentEl) renderer?.appendInterruptIndicator(state.currentContentEl);
     }
     const successful = !outcome.interrupted && !outcome.failed;
     // Compaction continues the turn, so its time belongs to the completed response.
@@ -85,7 +86,8 @@ export class ResponseStream {
     this.host.turns.settle();
     state.currentContentEl = null;
     await this.flush(message);
-    renderer.finalizeResponse(message, state.messages, successful);
+    state.response.messageId = null;
+    this.host.renderer?.finalizeResponse(message, state.messages, successful);
     stream.subagents.releaseManaged();
   }
 }

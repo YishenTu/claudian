@@ -11,9 +11,8 @@ import type { StreamController } from '@/features/chat/turns/StreamController';
 
 export interface BackgroundTurnRenderHost {
   readonly state: ChatState;
-  readonly renderer: MessageRenderer;
+  readonly renderer: MessageRenderer | null;
   readonly stream: StreamController;
-  isConnected(): boolean;
   createMessageId(): string;
 }
 
@@ -25,7 +24,6 @@ interface BackgroundTurnRenderResult {
 
 export interface BackgroundTurnRenderTarget {
   readonly message: ChatMessage;
-  readonly element: HTMLElement;
 }
 
 /** Reserve transcript order before asynchronous rendering or later input. */
@@ -39,26 +37,26 @@ export function reserveBackgroundTurn(
   const previous = host.state.messages.at(-1);
   if (isStandaloneTaskNotification(previous)) recordResponseContinuation(message, previous);
   host.state.addMessage(message);
-  const element = host.renderer.addMessage(message);
-  element.hidden = true;
-  return { message, element };
+  const element = host.renderer?.addMessage(message) ?? null;
+  if (element) element.hidden = true;
+  return { message };
 }
 
-export function discardBackgroundTurn(state: ChatState, target: BackgroundTurnRenderTarget): void {
-  target.element.remove();
+export function discardBackgroundTurn(host: Pick<BackgroundTurnRenderHost, 'state' | 'renderer'>, target: BackgroundTurnRenderTarget): void {
+  const { state } = host;
+  host.renderer?.removeMessage(target.message.id);
   if (state.messages.includes(target.message)) {
     state.messages = state.messages.filter(message => message !== target.message);
   }
 }
 
-/** A task can finish during any turn; its disclosure must not borrow live stream state. */
+/** The caller admits live session events; detaching the transcript must not drop a notification. */
 export function renderSessionTaskNotification(
-  host: Pick<BackgroundTurnRenderHost, 'state' | 'renderer' | 'isConnected' | 'createMessageId'>,
+  host: Pick<BackgroundTurnRenderHost, 'state' | 'renderer' | 'createMessageId'>,
   content: string,
   afterRequestedEvent?: ProviderRequestedEventScope,
   afterBackgroundEvent?: ProviderBackgroundEventScope,
 ): void {
-  if (!host.isConnected()) return;
   const message: ChatMessage = {
     id: host.createMessageId(), role: 'assistant', isAutomaticResponse: true,
     content: '', timestamp: Date.now(),
@@ -66,10 +64,10 @@ export function renderSessionTaskNotification(
   };
   recordNotificationPredecessors(message, afterRequestedEvent, afterBackgroundEvent);
   host.state.addMessage(message);
-  const element = host.renderer.addMessage(message);
-  const contentEl = element.querySelector<HTMLElement>('.claudian-message-content');
-  if (contentEl) host.renderer.renderTaskNotification(contentEl, content);
-  host.renderer.scrollToBottom();
+  const element = host.renderer?.addMessage(message) ?? null;
+  const contentEl = element?.querySelector<HTMLElement>('.claudian-message-content');
+  if (contentEl) host.renderer?.renderTaskNotification(contentEl, content);
+  host.renderer?.scrollToBottom();
 }
 
 function isVisibleAutoTurnChunk(chunk: StreamChunk, hiddenToolIds: Set<string>): boolean {
@@ -109,7 +107,7 @@ export async function renderAutoTriggeredTurn(
   result: BackgroundTurnRenderResult,
   isCurrent: () => boolean,
 ): Promise<boolean> {
-  if (!isCurrent() || !host.isConnected()) {
+  if (!isCurrent()) {
     return false;
   }
 
@@ -119,7 +117,7 @@ export async function renderAutoTriggeredTurn(
     return chunk ? [{ chunk, scope: event.scope }] : [];
   });
   if (chunks.length === 0) {
-    if (result.target) discardBackgroundTurn(host.state, result.target);
+    if (result.target) discardBackgroundTurn(host, result.target);
     return false;
   }
 
@@ -133,7 +131,7 @@ export async function renderAutoTriggeredTurn(
     id: host.createMessageId(), role: 'assistant', content: '', timestamp: Date.now(),
   };
   const segments = [assistantMessage];
-  if (!hasVisibleContent && target) discardBackgroundTurn(host.state, target);
+  if (!hasVisibleContent && target) discardBackgroundTurn(host, target);
 
   const state = new ChatState({
     onUsageChanged: usage => {
@@ -145,11 +143,12 @@ export async function renderAutoTriggeredTurn(
   });
   state.currentConversationId = host.state.currentConversationId;
   state.autoScrollEnabled = host.state.autoScrollEnabled;
+  state.response.messageId = assistantMessage.id;
   const stream = host.stream.createBackgroundStream(state);
 
   if (hasVisibleContent && target) {
-    target.element.hidden = false;
-    state.currentContentEl = target.element.querySelector<HTMLElement>('.claudian-message-content');
+    state.currentContentEl = host.renderer?.getMessageContentEl(target.message.id) ?? null;
+    if (state.currentContentEl?.parentElement) state.currentContentEl.parentElement.hidden = false;
   }
   state.messages = host.state.messages;
 
@@ -197,12 +196,12 @@ export async function renderAutoTriggeredTurn(
         const previous = getAutomaticNotificationPredecessor(segment, host.state.messages);
         // Include only notification context, never another response's live work.
         const responseMessages = previous ? [previous, segment] : [segment];
-        host.renderer.finalizeResponse(segment, responseMessages);
+        host.renderer?.finalizeResponse(segment, responseMessages);
       }
     }
   } finally {
     stream.dispose();
-    if (hasVisibleContent) host.renderer.scrollToBottom();
+    if (hasVisibleContent) host.renderer?.scrollToBottom();
   }
   return hasVisibleContent;
 }

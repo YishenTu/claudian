@@ -8,6 +8,8 @@ export class SubmissionPreparations {
   private readonly preparations = new Map<AbortController, { destination: ComposerDestination; pending: Promise<void> }>();
   private mainAdmissionBarrier: Promise<void> | null = null;
 
+  constructor(private readonly onSettled?: () => void) {}
+
   /** Admission still reserved by an earlier main submission. */
   get pendingMainAdmission(): Promise<void> | null {
     return this.mainAdmissionBarrier;
@@ -31,6 +33,7 @@ export class SubmissionPreparations {
       await pending;
     } finally {
       this.preparations.delete(controller);
+      this.onSettled?.();
     }
   }
 

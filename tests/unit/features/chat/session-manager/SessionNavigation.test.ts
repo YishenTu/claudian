@@ -38,6 +38,7 @@ function createNavigation(options: {
   const view = options.view ?? {};
   const navigation = new SessionNavigation({
     plugin: {
+      sessionRuntimes: { get: () => null },
       app: { vault: options.vault ?? createVault([]) },
       findConversationAcrossViews: () => null,
       getConversationSummary: () => null,
@@ -65,6 +66,7 @@ describe('SessionNavigation conversation status', () => {
     ];
     const conversationLifecycle = new ConversationLifecycle({
       conversations: {} as never,
+      sessions: { isRunning: id => id === 'shared', retire: async () => undefined, whenSettled: async () => true },
       views: { getAllViews: () => views as never },
     });
     const { navigation } = createNavigation({ tabManager: manager, plugin: { conversationLifecycle } });
@@ -110,6 +112,7 @@ describe('SessionNavigation conversation status', () => {
       tabManager,
       view: ownView,
       plugin: {
+        sessionRuntimes: { get: (id: string) => ({ statusAttention: ({ active: activeTab.state.attention, local: localTab.state.attention, cross: crossViewTab.state.attention } as Record<string, unknown>)[id] }) },
         findConversationAcrossViews: (id: string) => {
           if (id === 'cross') return { tabId: 'tab-cross', view: otherView };
           // A lookup resolving to this navigation's own view is not cross-view.

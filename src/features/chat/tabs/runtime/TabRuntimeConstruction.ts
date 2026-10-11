@@ -6,6 +6,7 @@ import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ForkContext } from '@/features/chat/conversation/forkSourceTypes';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import type { SessionPresentation } from '@/features/chat/sessions/SessionModel';
 import type { ChatState } from '@/features/chat/state/ChatState';
 import type { TabAttention, TabReviewOutcome } from '@/features/chat/state/types';
 import type { TabId } from '@/features/chat/tabs/ChatTab';
@@ -18,6 +19,7 @@ export type TabRuntimeCleanup = () => void | Promise<void>;
 
 /** What a tab runtime is assembled from: host resources, its identity, and manager callbacks. */
 export interface TabRuntimeFactoryOptions {
+  revealSession?: (isCurrent?: () => boolean) => void | Promise<void>;
   plugin: ChatFeatureHost;
   containerEl: HTMLElement;
   component: Component;
@@ -73,4 +75,5 @@ export interface TabRuntimeCore extends Readonly<TabIdentity> {
 export interface TabRuntimeControllerBundle {
   readonly controllers: TabControllers;
   readonly renderer: MessageRenderer;
+  readonly presentation: SessionPresentation;
 }

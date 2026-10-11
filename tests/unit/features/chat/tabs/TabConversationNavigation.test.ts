@@ -9,7 +9,6 @@ import {
   mockTabs,
   runtimeOptions,
 } from '@test/helpers/features/chat/TabManagerTestHarness';
-import { Notice } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -53,31 +52,19 @@ describe('TabConversationNavigation', () => {
   const conversationPlugin = () => createPlugin({
     getCachedConversation: (id: string) => ({ id, providerId: 'claude' }),
   });
-  it('opens the session in a new tab when the current tab refuses to switch', async () => {
+  it('rebinds the tab while its previous session remains unchanged', async () => {
     const { manager } = createManager(conversationPlugin());
     const current = await manager.createTab('conversation-1') as any;
-    current.controllers.conversationController.switchTo.mockResolvedValue(false);
 
     await manager.openConversation('conversation-2');
 
     expect(current.conversationId).toBe('conversation-1');
     const opened = manager.getActiveTab()!;
     expect(opened).not.toBe(current);
+    expect(opened.id).toBe(current.id);
+    expect(manager.getTabCount()).toBe(1);
     expect(opened.conversationId).toBe('conversation-2');
     expect(opened.lifecycleState).toBe('open');
-  });
-
-  it('keeps the current tab and reports when a refused switch has no room for a new tab', async () => {
-    const { manager } = createManager(conversationPlugin());
-    const current = await manager.createTab('conversation-1') as any;
-    current.controllers.conversationController.switchTo.mockResolvedValue(false);
-    jest.spyOn(manager, 'canCreateTab').mockReturnValue(false);
-
-    await manager.openConversation('conversation-2');
-
-    expect(manager.getAllTabs()).toEqual([current]);
-    expect(current.conversationId).toBe('conversation-1');
-    expect(Notice).toHaveBeenCalledTimes(1);
   });
 
   it('lets the layout open a session a tab command picked before rebinding that tab', async () => {
@@ -88,7 +75,7 @@ describe('TabConversationNavigation', () => {
     await runtimeOptions(0).openConversation('conversation-2');
 
     expect(openPicked).toHaveBeenCalledWith('conversation-2', source);
-    expect(source.controllers.conversationController.switchTo).not.toHaveBeenCalledWith('conversation-2');
+    expect(source.session.runtime.model.hydrate).not.toHaveBeenCalledWith('conversation-2');
     expect(source.conversationId).toBe('conversation-1');
   });
 
@@ -126,8 +113,8 @@ describe('TabConversationNavigation', () => {
     const retained = await manager.createTab();
     const source = await manager.createTab();
     const firstSwitch = deferred<void>();
-    (retained!.controllers.conversationController.switchTo as jest.Mock).mockClear();
-    (source!.controllers.conversationController.switchTo as jest.Mock)
+    (retained!.session.runtime.model.hydrate as jest.Mock).mockClear();
+    (source!.session.runtime.model.hydrate as jest.Mock)
       .mockImplementationOnce(() => firstSwitch.promise);
     const openFromSource = mockCreateTabRuntime.mock.calls[1]?.[0]
       .openConversation as (conversationId: string) => Promise<void>;
@@ -135,7 +122,7 @@ describe('TabConversationNavigation', () => {
     const blockingNavigation = manager.openConversation('blocking-conversation');
     for (let attempt = 0;
       attempt < 10
-        && (source!.controllers.conversationController.switchTo as jest.Mock).mock.calls.length === 0;
+        && (source!.session.runtime.model.hydrate as jest.Mock).mock.calls.length === 0;
       attempt += 1) {
       await Promise.resolve();
     }
@@ -144,7 +131,7 @@ describe('TabConversationNavigation', () => {
     firstSwitch.resolve(undefined);
     await Promise.all([blockingNavigation, queuedNavigation]);
 
-    expect(retained!.controllers.conversationController.switchTo).not.toHaveBeenCalled();
+    expect(retained!.session.runtime.model.hydrate).not.toHaveBeenCalled();
     expect(manager.getAllTabs()).toEqual([retained]);
   });
 
@@ -162,8 +149,7 @@ describe('TabConversationNavigation', () => {
 
     await manager.openConversation('conversation-1');
 
-    expect(source!.controllers.conversationController.switchTo)
-      .toHaveBeenCalledWith('conversation-1');
+    expect(manager.getActiveTab()).toEqual(expect.objectContaining({ id: source!.id, conversationId: 'conversation-1' }));
     save.resolve(undefined);
     await close;
   });
@@ -177,12 +163,12 @@ describe('TabConversationNavigation', () => {
     const source = await manager.createTab();
     const target = await manager.createTab('conversation-1', undefined, { activate: false });
     const hydration = deferred<void>();
-    target!.controllers.conversationController.switchTo = jest.fn(() => hydration.promise.then(() => true));
+    target!.session.runtime.model.hydrate = jest.fn(() => hydration.promise);
 
     const navigation = manager.openConversation('conversation-1');
     for (let attempt = 0;
       attempt < 10
-        && (target!.controllers.conversationController.switchTo as jest.Mock).mock.calls.length === 0;
+        && (target!.session.runtime.model.hydrate as jest.Mock).mock.calls.length === 0;
       attempt += 1) {
       await Promise.resolve();
     }
@@ -190,8 +176,7 @@ describe('TabConversationNavigation', () => {
     hydration.resolve(undefined);
     await navigation;
 
-    expect(source!.controllers.conversationController.switchTo)
-      .toHaveBeenCalledWith('conversation-1');
+    expect(manager.getActiveTab()).toEqual(expect.objectContaining({ id: source!.id, conversationId: 'conversation-1' }));
   });
 
   it('accepts the awaited local target while a close it does not own is only beginning', async () => {
@@ -203,13 +188,13 @@ describe('TabConversationNavigation', () => {
     const source = await manager.createTab();
     const target = await manager.createTab('conversation-1', undefined, { activate: false });
     const hydration = deferred<void>();
-    target!.controllers.conversationController.switchTo = jest.fn(() => hydration.promise.then(() => true));
-    (source!.controllers.conversationController.switchTo as jest.Mock).mockClear();
+    target!.session.runtime.model.hydrate = jest.fn(() => hydration.promise);
+    (source!.session.runtime.model.hydrate as jest.Mock).mockClear();
 
     const navigation = manager.openConversation('conversation-1');
     for (let attempt = 0;
       attempt < 10
-        && (target!.controllers.conversationController.switchTo as jest.Mock).mock.calls.length === 0;
+        && (target!.session.runtime.model.hydrate as jest.Mock).mock.calls.length === 0;
       attempt += 1) {
       await Promise.resolve();
     }
@@ -218,7 +203,7 @@ describe('TabConversationNavigation', () => {
     hydration.resolve(undefined);
     await navigation;
 
-    expect(source!.controllers.conversationController.switchTo).not.toHaveBeenCalled();
+    expect(source!.session.runtime.model.hydrate).not.toHaveBeenCalled();
     expect(manager.getTabCount()).toBe(2);
   });
 
@@ -229,7 +214,7 @@ describe('TabConversationNavigation', () => {
     }));
     const { manager } = createManager(createPlugin({ getCachedConversation }));
     const closing = await manager.createTab('conversation-1');
-    (closing!.controllers.conversationController.switchTo as jest.Mock).mockClear();
+    (closing!.session.runtime.model.hydrate as jest.Mock).mockClear();
     const save = deferred<void>();
     closing!.controllers.conversationController.save = jest.fn(() => save.promise);
 
@@ -242,9 +227,8 @@ describe('TabConversationNavigation', () => {
     const replacement = manager.getAllTabs().find(tab => tab !== closing)!;
     await manager.openConversation('conversation-2');
 
-    expect(closing!.controllers.conversationController.switchTo).not.toHaveBeenCalled();
-    expect(replacement.controllers.conversationController.switchTo)
-      .toHaveBeenCalledWith('conversation-2');
+    expect(closing!.session.runtime.model.hydrate).not.toHaveBeenCalled();
+    expect(manager.getActiveTab()).toEqual(expect.objectContaining({ id: replacement.id, conversationId: 'conversation-2' }));
     save.resolve(undefined);
     await close;
   });
@@ -258,6 +242,7 @@ describe('TabConversationNavigation', () => {
       getTabManager: jest.fn().mockReturnValue({ switchToTab }),
     };
     const { manager } = createManager(createPlugin({
+      getCachedConversation: (id: string) => ({ id, providerId: 'claude' }),
       app: {
         vault: { adapter: { basePath: '/vault' } },
         workspace: { revealLeaf },
@@ -305,6 +290,7 @@ describe('TabConversationNavigation', () => {
       getTabManager: jest.fn().mockReturnValue(otherManager),
     };
     const { manager } = createManager(createPlugin({
+      getCachedConversation: (id: string) => ({ id, providerId: 'claude' }),
       app: {
         vault: { adapter: { basePath: '/vault' } },
         workspace: { revealLeaf },
@@ -329,8 +315,7 @@ describe('TabConversationNavigation', () => {
     await navigation;
 
     expect(switchToTab).not.toHaveBeenCalled();
-    expect(source!.controllers.conversationController.switchTo)
-      .toHaveBeenCalledWith('cross-view-conversation');
+    expect(manager.getActiveTab()).toEqual(expect.objectContaining({ id: source!.id, conversationId: 'cross-view-conversation' }));
   });
 
   it('falls back locally when a cross-view target closes during its awaited switch', async () => {
@@ -351,6 +336,7 @@ describe('TabConversationNavigation', () => {
       getTabManager: jest.fn().mockReturnValue(otherManager),
     };
     const { manager } = createManager(createPlugin({
+      getCachedConversation: (id: string) => ({ id, providerId: 'claude' }),
       findConversationAcrossViews: jest.fn().mockReturnValue({
         tabId: 'other-tab',
         view: otherView,
@@ -366,8 +352,7 @@ describe('TabConversationNavigation', () => {
     targetSwitch.resolve(undefined);
     await navigation;
 
-    expect(source!.controllers.conversationController.switchTo)
-      .toHaveBeenCalledWith('cross-view-conversation');
+    expect(manager.getActiveTab()).toEqual(expect.objectContaining({ id: source!.id, conversationId: 'cross-view-conversation' }));
   });
 
   it('does not treat a close-claimed tab in another view as the conversation owner', async () => {
@@ -375,12 +360,12 @@ describe('TabConversationNavigation', () => {
     const other = createManager(createPlugin({ getCachedConversation: lookup }));
     const successor = await other.manager.createTab('one', undefined, { activate: false });
     const closing = await other.manager.createTab('two');
-    const successorHydration = deferred<boolean>();
-    successor!.controllers.conversationController.switchTo = jest.fn(() => successorHydration.promise);
+    const successorHydration = deferred<void>();
+    successor!.session.runtime.model.hydrate = jest.fn(() => successorHydration.promise);
     const close = other.manager.closeTab(closing!.id);
     for (let attempt = 0;
       attempt < 20
-        && (successor!.controllers.conversationController.switchTo as jest.Mock).mock.calls.length === 0;
+        && (successor!.session.runtime.model.hydrate as jest.Mock).mock.calls.length === 0;
       attempt += 1) {
       await Promise.resolve();
     }
@@ -393,8 +378,8 @@ describe('TabConversationNavigation', () => {
 
     await manager.openConversation('two');
 
-    expect(local!.controllers.conversationController.switchTo).toHaveBeenCalledWith('two');
-    successorHydration.resolve(true);
+    expect(manager.getActiveTab()).toEqual(expect.objectContaining({ id: local!.id, conversationId: 'two' }));
+    successorHydration.resolve();
     await close;
   });
 

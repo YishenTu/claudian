@@ -52,7 +52,7 @@ export class TabHydration {
         try {
           // A refusal leaves nothing to hydrate here: a newer switch owns the transcript, or the
           // conversation is gone and the tab shows it empty, as before the boolean contract.
-          await tab.controllers.conversationController.switchTo(tab.conversationId);
+          await tab.session.runtime.model.hydrate();
         } finally {
           if (span) {
             StartupProfiler.finish(span);

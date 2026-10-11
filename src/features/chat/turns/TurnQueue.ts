@@ -11,6 +11,7 @@ import type { TurnSteering } from '@/features/chat/turns/TurnSteering';
 import { t } from '@/i18n/i18n';
 
 export interface TurnQueueDeps {
+  onWorkChanged?: () => void;
   state: ChatState;
   turns: TurnCoordinator;
   drafts: Pick<ComposerDraftController, 'restore'>;
@@ -29,10 +30,11 @@ export interface TurnQueueDeps {
  */
 export class TurnQueue {
   readonly #write: (value: QueuedMessage | null) => void;
-  #scheduled: { conversationId: string | null; timer: number } | null = null;
+  #scheduled: { conversationId: string | null; timer: number | null } | null = null;
 
   constructor(private readonly deps: TurnQueueDeps) {
-    this.#write = deps.state.claimQueuedMessageWriter();
+    const write = deps.state.claimQueuedMessageWriter();
+    this.#write = value => { write(value); deps.onWorkChanged?.(); };
   }
 
   get message(): QueuedMessage | null {
@@ -96,13 +98,13 @@ export class TurnQueue {
     if (this.#scheduled) return true;
 
     // The visible queue retains ownership until the scheduled callback enters a turn.
-    const reservation = { conversationId: state.currentConversationId, timer: 0 };
+    const reservation = { conversationId: state.currentConversationId, timer: null as number | null };
     this.#scheduled = reservation;
     reservation.timer = window.setTimeout(
       () => {
         if (this.#scheduled !== reservation) return;
         if (state.currentConversationId !== reservation.conversationId
-          || state.isRewinding || state.isResettingToNewChat || state.isSwitchingConversation) {
+          || state.isRewinding) {
           this.restoreToComposer();
           return;
         }
@@ -138,7 +140,7 @@ export class TurnQueue {
 
   cancelScheduled(): void {
     if (!this.#scheduled) return;
-    window.clearTimeout(this.#scheduled.timer);
+    if (this.#scheduled.timer !== null) window.clearTimeout(this.#scheduled.timer);
     this.#scheduled = null;
   }
 

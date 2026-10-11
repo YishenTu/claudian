@@ -82,7 +82,7 @@ it.each([false, true])('collapses work across compaction on completion and reloa
     await stream.handleStreamChunk({ type: 'tool_use', id: 'before', name: 'Read', input: { file_path: 'before.md' } }, response);
     await stream.handleStreamChunk({ type: 'tool_result', id: 'before', content: 'Before compaction' }, response);
     await stream.handleStreamChunk({ type: 'context_compacted' }, response);
-    if (notification) renderSessionTaskNotification({ state, renderer, isConnected: () => true,
+    if (notification) renderSessionTaskNotification({ state, renderer,
       createMessageId: () => 'notification' }, 'Task finished.');
     const tool = { type: 'tool_use' as const, id: 'after', name: 'Read', input: { file_path: 'after.md' } };
     response = await continueResponseAfterNotification({ state, renderer, stream, createMessageId: () => 'continuation' }, response, tool);
@@ -127,7 +127,7 @@ it.each(['early', 'late', 'none'])('matches live and JSONL notification order wi
     state.addMessage(response);
     state.currentContentEl = renderer.addMessage(response).querySelector('.claudian-message-content');
     if (hasTool) await stream.handleStreamChunk({ type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }, response);
-    renderSessionTaskNotification({ state, renderer, isConnected: () => true, createMessageId: () => 'notification' }, 'Task finished.');
+    renderSessionTaskNotification({ state, renderer, createMessageId: () => 'notification' }, 'Task finished.');
     const notificationElement = within(messagesEl).getByRole('button', { name: 'Task notification' });
     const toolMessage = response;
     if (hasTool && !lateResult) await stream.handleStreamChunk({ type: 'tool_result', id: 'read', content: 'The note.' }, response);
@@ -220,7 +220,7 @@ it.each(['between', 'during-second', 'after-second'])('groups an older task noti
     })).join('\n'));
     return loadSDKSessionMessages('/vault', 'session', undefined, '/session.jsonl');
   };
-  const notify = () => renderSessionTaskNotification({ state, renderer, isConnected: () => true,
+  const notify = () => renderSessionTaskNotification({ state, renderer,
     createMessageId: () => 'notification' }, 'Old research finished.');
   const assertPlacement = () => {
     const headers = within(messagesEl).getAllByRole('button', { name: /^Worked for/ });
@@ -310,7 +310,7 @@ it.each(['child', 'result', 'snapshot'] as const)('keeps a pending Agent before 
     state.addMessage(original);
     state.currentContentEl = renderer.addMessage(original).querySelector('.claudian-message-content');
     await stream.handleStreamChunk({ type: 'tool_use', id: 'agent', name: 'Agent', input: { description: 'Research' } }, original);
-    renderSessionTaskNotification({ state, renderer, isConnected: () => true, createMessageId: () => 'notification' }, 'Task finished.');
+    renderSessionTaskNotification({ state, renderer, createMessageId: () => 'notification' }, 'Task finished.');
     const text = { type: 'text' as const, content: 'Continuation.' };
     const continuation = await continueResponseAfterNotification({ state, renderer, stream, createMessageId: () => 'continuation' }, original, text);
     await stream.handleStreamChunk(text, continuation);
@@ -348,7 +348,7 @@ it('does not recreate a response after its conversation is cleared during finali
     state.addMessage(original);
     state.currentContentEl = renderer.addMessage(original).querySelector('.claudian-message-content');
     await stream.handleStreamChunk({ type: 'text', content: 'Earlier text.' }, original);
-    renderSessionTaskNotification({ state, renderer, isConnected: () => true, createMessageId: () => 'notification' }, 'Task finished.');
+    renderSessionTaskNotification({ state, renderer, createMessageId: () => 'notification' }, 'Task finished.');
     const pending = continueResponseAfterNotification({ state, renderer, stream, createMessageId: () => 'continuation' }, original, { type: 'text', content: 'Later text.' });
     state.clearMessages();
     messagesEl.replaceChildren();
@@ -371,7 +371,7 @@ it.each(['background', 'user'] as const)('groups only the requested response acr
   const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
     getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
   let nextId = 0;
-  const host = { state, renderer, stream, isConnected: () => true, createMessageId: () => `part-${++nextId}` };
+  const host = { state, renderer, stream, createMessageId: () => `part-${++nextId}` };
   let response: ChatMessage = { id: 'response', role: 'assistant', timestamp: testDate().getTime(), content: '', contentBlocks: [] };
   try {
     state.addMessage(response);
@@ -422,7 +422,7 @@ it('keeps a notification consumed by an automatic response outside an admitted r
   const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
     getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
   let nextId = 0;
-  const host = { state, renderer, stream, isConnected: () => true, createMessageId: () => `part-${++nextId}` };
+  const host = { state, renderer, stream, createMessageId: () => `part-${++nextId}` };
   let response: ChatMessage = { id: 'requested', role: 'assistant', timestamp: testDate().getTime(), content: '', contentBlocks: [] };
   const scope = { kind: 'background' as const, sessionInstanceId: 'session', turnId: 'automatic', sequence: 1 };
   const assertOwnership = () => {

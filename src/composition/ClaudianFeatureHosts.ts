@@ -18,9 +18,10 @@ import type {
   ConversationSummary,
   StoredChatModelSelection,
 } from '@/core/types';
-import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { ChatFeatureHost, ChatSessionRuntimes } from '@/features/chat/ChatFeatureHost';
 import type { ClaudianView } from '@/features/chat/ClaudianView';
 import type { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
+import type { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 import type { ZenModeSource } from '@/features/chat/zen/types';
 import type { ZenModeController } from '@/features/chat/zen/ZenModeController';
 import type { FeatureHost } from '@/features/FeatureHost';
@@ -41,6 +42,7 @@ export interface FeatureHostDomains {
 }
 
 export interface ChatFeatureHostDomains extends FeatureHostDomains {
+  readonly sessionRuntimes: SessionRuntimePool;
   readonly conversations: ConversationService;
   readonly executionPersistence: ConversationRepository;
   readonly chatModelSelection: ChatModelSelectionCoordinator;
@@ -106,12 +108,14 @@ export class ClaudianFeatureHost implements FeatureHost {
 
 /** Chat capabilities: conversations, execution persistence, tab workspace state, and views. */
 export class ClaudianChatFeatureHost extends ClaudianFeatureHost implements ChatFeatureHost {
+  readonly sessionRuntimes: ChatSessionRuntimes;
   readonly chatModelSelection: ChatModelSelectionCoordinator;
   readonly executionPersistence: ConversationRepository;
   readonly conversationLifecycle: ConversationLifecycle;
 
   constructor(protected readonly domains: ChatFeatureHostDomains) {
     super(domains);
+    this.sessionRuntimes = domains.sessionRuntimes;
     this.chatModelSelection = domains.chatModelSelection;
     this.executionPersistence = domains.executionPersistence;
     this.conversationLifecycle = domains.conversationLifecycle;

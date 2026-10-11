@@ -24,6 +24,7 @@ export function buildTabRuntimeInputBindings(
   const keydownHandler = (event: KeyboardEvent) => {
     if ((event.target as HTMLElement | null)?.closest?.('button, a')) return;
     const tab = runtimeRef.requirePublished();
+    if (!options.isRuntimeLive(tab)) return;
     if (sendTabInputMessageFromExplicitEnterShortcut(tab, event)) {
       return;
     }

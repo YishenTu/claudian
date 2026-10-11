@@ -30,7 +30,6 @@ function createHarness() {
   };
   harness.historyRecovery = {
     subagentManager,
-    getMessagesEl: () => messagesEl,
     getProviderId: () => 'claude',
     getProviderSessionId: () => harness.providerSessionId,
     loadSubagentFinalResult: jest.fn().mockResolvedValue(null),

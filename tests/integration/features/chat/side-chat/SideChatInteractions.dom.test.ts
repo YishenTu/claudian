@@ -2,22 +2,61 @@
 import '@/providers';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
-import { createTestTabSession } from '@test/helpers/ConversationPorts';
+import { createTestSession } from '@test/helpers/ConversationPorts';
 import { createHarness, releaseSideChatHarnesses, startSideChat } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { fireEvent, screen, waitFor } from '@testing-library/dom';
 import { axe } from 'jest-axe';
-import { Notice } from 'obsidian';
+import { Component, MarkdownRenderer, Notice } from 'obsidian';
 
 import type { ProviderExecutionRequest } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { InputController, type InputControllerDeps } from '@/features/chat/input/InputController';
-import { InlineInteractionPrompts } from '@/features/chat/interactions/InlineInteractionPrompts';
+import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { formatCodexQuestionReply } from '@/providers/codex/normalization/codexQuestionNormalization';
 
 const taskResultInterpreter = ProviderRegistry.getTaskResultInterpreter('claude');
 
 afterEach(releaseSideChatHarnesses);
+
+it('keeps a child turn and detached approval alive, then restores the completed transcript', async () => {
+  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, text, el) => { el.textContent = text; });
+  const harness = createHarness();
+  const { started } = await startSideChat(harness);
+  const runtime = harness.controller.runtime!;
+  const native = harness.backend.latest;
+  native.emitText('Before ');
+  await waitFor(() => expect(runtime.state.currentTextContent).toBe('Before '));
+  runtime.detachPresentation();
+  harness.composerEl.remove();
+  native.emitText('detachment.');
+  await waitFor(() => expect(runtime.state.currentTextContent).toBe('Before detachment.'));
+  const pending = native.config.interactionPort.requestApproval({
+    interactionId: 'detached-approval', sessionInstanceId: native.sessionInstanceId,
+    turnId: native.activeTurnId, kind: 'approval', toolName: 'Read', input: {}, description: 'Read while detached',
+  }, new AbortController().signal);
+  let settled = false;
+  void pending.then(() => { settled = true; });
+  await Promise.resolve();
+  expect(settled).toBe(false);
+  expect(runtime.state.requiresAction).toBe(true);
+  const root = document.body.createDiv();
+  const messagesEl = root.createDiv();
+  runtime.attachPresentation({ component: new Component(), messagesEl, getPromptParentEl: () => root });
+  fireEvent.click(screen.getByRole('button', { name: 'Allow once' }));
+  await expect(pending).resolves.toMatchObject({ decision: 'allow' });
+  native.emitText(' Reattached.');
+  native.complete();
+  await started;
+  expect(native.cancelCalls).toBe(0);
+  expect(runtime.state.messages.at(-1)?.contentBlocks).toEqual([{ type: 'text', content: 'Before detachment. Reattached.' }]);
+  runtime.detachPresentation();
+  root.remove();
+  const completedRoot = document.body.createDiv();
+  runtime.attachPresentation({ component: new Component(), messagesEl: completedRoot, getPromptParentEl: () => completedRoot });
+  await waitFor(() => expect(completedRoot.textContent).toContain('Before detachment. Reattached.'));
+  expect(runtime.source.messages.map(message => message.content)).toEqual(['Remember A', 'Noted A']);
+});
 
 it('keeps replacement approval attention after a dismissed prompt with the same id settles', async () => {
   const harness = createHarness();
@@ -282,9 +321,9 @@ it('closes the panel on queue admission, delivers later, and keeps it closed aft
 
 it('keeps a pending main question out of the side destination and restores its answers on return', async () => {
   const harness = createHarness({ onDestinationChanged: () => prompts.setActive(harness.controller.destination === 'main') });
-  const session = createTestTabSession();
+  const session = createTestSession();
   const state = new ChatState({}, undefined, session.turns);
-  const prompts = new InlineInteractionPrompts({
+  const prompts = new SessionInteractions({
     getPromptParentEl: () => harness.inputContainerEl.parentElement,
     getSuppressedEl: () => harness.inputContainerEl,
   });

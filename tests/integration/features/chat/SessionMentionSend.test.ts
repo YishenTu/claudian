@@ -7,7 +7,6 @@ import { Notice } from 'obsidian';
 
 import type { ToolCallInfo } from '@/core/types';
 import { cancelSelectedDestinationTurn } from '@/features/chat/tabs/TabInputEvents';
-import { drainTabForShutdownSnapshot } from '@/features/chat/tabs/TabLifecycle';
 
 const id = 'conv-1-source';
 const token = `@[Old title](claudian-session:${id})`;
@@ -205,7 +204,7 @@ it('withdraws an expired async answer waiting behind busy-main reference prepara
   }
 });
 
-it('cancels and drains queued snapshot preparation before tab shutdown finishes', async () => {
+it('cancels and drains queued snapshot preparation before plugin shutdown finishes', async () => {
   const fixture = setup();
   const session = fixture.session;
   const gate = deferred<any>();
@@ -216,9 +215,8 @@ it('cancels and drains queued snapshot preparation before tab shutdown finishes'
   const sending = fixture.controller.sendMessage();
   await waitForCall(fixture.plugin.getConversationById);
   let stopped = false;
-  const draining = drainTabForShutdownSnapshot({ session, state: fixture.state,
-    controllers: { inputController: fixture.controller }, executionCoordinator: fixture.native.coordinator } as never)
-    .then(() => { stopped = true; });
+  session.beginShutdown();
+  const draining = fixture.controller.drainSessionMentionPreparations().then(() => { stopped = true; });
   await new Promise(resolve => setTimeout(resolve, 0));
   expect(stopped).toBe(false);
   gate.resolve(source);
@@ -469,7 +467,7 @@ it.each([false, true])('retains queued priority and captured selections through 
   }
 });
 
-it.each(['cancel', 'withdraw', 'discard', 'pause', 'shutdown', 'replacement'] as const)(
+it.each(['cancel', 'withdraw', 'discard', 'shutdown', 'replacement'] as const)(
   'retains scheduled queued input through %s without a stray handoff', async action => {
     jest.useFakeTimers();
     const fixture = setup();
@@ -486,21 +484,14 @@ it.each(['cancel', 'withdraw', 'discard', 'pause', 'shutdown', 'replacement'] as
         case 'cancel': fixture.controller.cancelStreaming(); break;
         case 'withdraw': fixture.controller.queue.withdrawToComposer(); break;
         case 'discard': fixture.controller.queue.clear(); break;
-        case 'pause': session.pauseIntentAdmission(); break;
         case 'replacement': fixture.state.currentConversationId = 'replacement'; break;
-        case 'shutdown': await drainTabForShutdownSnapshot({ session, state: fixture.state,
-          controllers: { inputController: fixture.controller }, executionCoordinator: fixture.native.coordinator } as never); break;
+        case 'shutdown': session.beginShutdown(); break;
       }
       await jest.advanceTimersByTimeAsync(0);
       expect(fixture.native.backends.get('claude')!.sessions.flatMap(value => value.requests).length).toBe(0);
       expect(fixture.input.value).toBe(['cancel', 'withdraw', 'replacement'].includes(action) ? token : '');
-      if (action === 'pause') {
-        session.resumeIntentAdmission();
-        fixture.controller.resumeQueuedTurnAfterIntentAdmission();
-        await jest.advanceTimersByTimeAsync(0);
-      }
       expect(fixture.native.backends.get('claude')!.sessions.flatMap(value => value.requests)
-        .map(request => request.context?.sessionReferences?.[0].id)).toEqual(action === 'pause' ? [id] : []);
+        .map(request => request.context?.sessionReferences?.[0].id)).toEqual([]);
     } finally {
       fixture.controller.queue.clear();
       await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose();

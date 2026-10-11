@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
+import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { waitFor, within } from '@testing-library/dom';
 import { App, Component, MarkdownRenderer } from 'obsidian';
 
@@ -146,6 +147,7 @@ async function createPiView() {
     mutateSettings: async (mutate: (settings: ClaudianSettings) => void) => mutate(settings),
     chatModelSelection: { beginIntent: () => 1, commitIntent: async () => true },
   } as unknown as ChatFeatureHost;
+  if (!plugin.sessionRuntimes) installSessionRuntimePool(plugin);
   const tab = await createTabRuntime({
     plugin, conversation, component: new Component(),
     containerEl: document.body.createDiv(),
@@ -225,7 +227,7 @@ describe('Pi extension-initiated turns in the chat view', () => {
       await waitFor(() => expect(within(view.tab.dom.messagesEl)
         .getAllByRole('button', { name: 'Task notification' })).toHaveLength(2));
       await waitFor(() => expect(view.tab.executionCoordinator.hasBackgroundWork).toBe(false));
-      await view.tab.session.awaitBackgroundWork();
+      await view.tab.session.runtime.awaitBackgroundWork();
 
       const [prompted, replyA, replyB] = responseElements(view);
       expect(responseElements(view)).toHaveLength(3);
@@ -269,7 +271,7 @@ describe('Pi extension-initiated turns in the chat view', () => {
       await waitFor(() => expect(within(view.tab.dom.messagesEl)
         .getAllByRole('button', { name: 'Task notification' })).toHaveLength(1));
       await waitFor(() => expect(view.tab.executionCoordinator.hasBackgroundWork).toBe(false));
-      await view.tab.session.awaitBackgroundWork();
+      await view.tab.session.runtime.awaitBackgroundWork();
 
       const [prompted, wake] = responseElements(view);
       expect(responseElements(view)).toHaveLength(2);

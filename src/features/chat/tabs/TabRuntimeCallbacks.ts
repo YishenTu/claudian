@@ -17,6 +17,7 @@ export interface TabRuntimeCallbackHost {
   readonly forkTargetHost: ForkTargetHost;
   /** Shutdown has begun but the final identity snapshot is not sealed yet. */
   isShutdownSnapshotOpen(): boolean;
+  startNew(tab: AssembledTabRuntime): Promise<void>;
 }
 
 export type TabRuntimeCallbacks = Omit<
@@ -59,7 +60,7 @@ export function createTabRuntimeCallbacks(
       if (!sourceTab) return;
       if (await host.layoutPolicy.startNew(sourceTab)) return;
       if (!membership.isTabAlive(sourceTab)) return;
-      await sourceTab.controllers.conversationController.createNew();
+      await host.startNew(sourceTab);
     },
     onStreamingChanged: (runtime, isStreaming) => {
       if (membership.isTabStateMutable(runtime)) callbacks.onTabStreamingChanged?.(runtime.id, isStreaming);

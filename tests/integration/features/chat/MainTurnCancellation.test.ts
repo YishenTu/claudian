@@ -1,8 +1,7 @@
 import { createHarness, deferred, FakeSession, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { createFixture } from '@test/helpers/ChatInputHarness';
+import { createTabSession } from '@test/helpers/ConversationPorts';
 
-import { drainTabForShutdownSnapshot } from '@/features/chat/tabs/TabLifecycle';
-import { TabSession } from '@/features/chat/tabs/TabSession';
 
 beforeEach(() => {
   const execute = FakeSession.prototype.execute;
@@ -60,15 +59,15 @@ test.each(['execution initialization', 'handoff authority'] as const)(
 test('shutdown cancels a preparing turn and retains its unsent input for the final snapshot', async () => {
   const native = createHarness();
   await native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
-  const session = new TabSession({
+  const session = createTabSession({
     id: 'tab-1', conversationId: 'conversation-1', providerId: 'claude', draftModel: null, lifecycleState: 'open',
-  }, native.coordinator);
+  }, native.coordinator).runtime;
   const started = deferred<void>();
   const release = deferred<void>();
   const input = createFixture({
     getExecutionCoordinator: () => native.coordinator,
     session,
-    isClosing: () => session.lifecycleState === 'closing',
+    isClosing: () => session.isDisposed,
     canStartTurn: () => session.acceptsIntents,
   });
   input.deps.ensureExecutionInitialized = async () => {
@@ -78,12 +77,8 @@ test('shutdown cancels a preparing turn and retains its unsent input for the fin
   };
   const sending = input.controller.sendMessage({ content: 'Retain this unsent input' });
   await started.promise;
-  session.pauseIntentAdmission();
-  const draining = drainTabForShutdownSnapshot({
-    session, state: input.state,
-    controllers: { inputController: input.controller }, executionCoordinator: native.coordinator,
-  } as any);
-  // Draining pauses all admission synchronously, before awaiting interaction cleanup.
+  session.beginShutdown();
+  const draining = session.turns.drain();
   release.resolve();
   await Promise.all([sending, draining]);
   await native.coordinator.dispose();

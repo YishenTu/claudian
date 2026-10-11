@@ -1,13 +1,13 @@
 import type { EventRef, TAbstractFile, Vault } from 'obsidian';
 import { Notice, TFolder } from 'obsidian';
 
-import type { ChatViewHost } from '@/features/chat/ChatFeatureHost';
+import type { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 
 const VAULT_REFRESH_DELAY_MS = 50;
 
 export interface VaultContentEventsDeps {
+  readonly sessions: Pick<SessionRuntimePool, 'getAll'>;
   readonly vault: Pick<Vault, 'on'>;
-  readonly views: { getAllViews(): readonly ChatViewHost[] };
   readonly conversations: {
     /** Reconciles Linked content identity and pinned paths; publication stays with this owner. */
     applyVaultRename(oldPath: string, newPath: string, includeDescendants: boolean): Promise<void>;
@@ -17,7 +17,7 @@ export interface VaultContentEventsDeps {
 }
 
 /**
- * Delivers Vault create, rename, and delete events to every chat view immediately, applies the
+ * Delivers Vault create, rename, and delete events to every live session model immediately, applies the
  * durable Linked content reconciliation, and coalesces the resulting list refreshes.
  */
 export class VaultContentEvents {
@@ -49,8 +49,8 @@ export class VaultContentEvents {
 
   async handleRename(file: TAbstractFile, oldPath: string): Promise<void> {
     const includeDescendants = file instanceof TFolder;
-    for (const view of this.deps.views.getAllViews()) {
-      view.handleLinkedContentRenamed(oldPath, file.path, includeDescendants);
+    for (const session of this.deps.sessions.getAll()) {
+      session.peekModel?.linkedContentController.handleRenamed(oldPath, file.path, includeDescendants);
     }
     try {
       await this.deps.conversations.applyVaultRename(oldPath, file.path, includeDescendants);
@@ -61,8 +61,8 @@ export class VaultContentEvents {
 
   async handleDelete(file: TAbstractFile): Promise<void> {
     const includeDescendants = file instanceof TFolder;
-    for (const view of this.deps.views.getAllViews()) {
-      view.handleLinkedContentDeleted(file.path, includeDescendants);
+    for (const session of this.deps.sessions.getAll()) {
+      session.peekModel?.linkedContentController.handleDeleted(file.path, includeDescendants);
     }
     try {
       await this.deps.conversations.applyVaultDeletion(file.path, includeDescendants);
@@ -72,8 +72,8 @@ export class VaultContentEvents {
   }
 
   handleCreate(file: TAbstractFile): void {
-    for (const view of this.deps.views.getAllViews()) {
-      view.handleLinkedContentCreated(file.path);
+    for (const session of this.deps.sessions.getAll()) {
+      session.peekModel?.linkedContentController.handleCreated(file.path);
     }
     this.scheduleRefresh();
   }

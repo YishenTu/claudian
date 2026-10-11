@@ -6,8 +6,8 @@ import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderConversationHistoryService, ProviderRegistration } from '@/core/providers/types';
 import { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
+import { captureLatestCompletedForkSource, findLatestForkCheckpoint } from '@/features/chat/sessions/SessionForkSource';
 import { SideChatController } from '@/features/chat/side-chat/SideChatController';
-import { captureLatestCompletedForkSource } from '@/features/chat/tabs/forking/ForkSource';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
 Object.assign(HTMLElement.prototype, {
@@ -132,22 +132,19 @@ export function createHarness(options: {
     getInput: () => inputEl, getImages: () => imageContextManager as never, getDestination: () => controller.destination,
   });
   const controller = new SideChatController({
-    component: new Component(),
-    composerEl,
     drafts,
-    getInputEl: () => inputEl as never,
     parent: {
       get conversationId() { return tab.conversationId; },
       get providerId() { return tab.providerId; },
       get isLive() { return true; },
       get isStreaming() { return tab.state.isStreaming; },
-      get lastMessageId() { return tab.state.messages.at(-1)?.id; },
+      readLatestForkCheckpoint: async () => findLatestForkCheckpoint(tab.state.messages),
       captureForkSource: () => captureLatestCompletedForkSource(tab, plugin, () => true),
     },
-    inputWrapperEl,
     onDestinationChanged: () => { destinationChanges.push(controller.destination); options.onDestinationChanged?.(); },
     plugin,
   });
+  controller.attachPresentation({ component: new Component(), composerEl, inputWrapperEl, getInputEl: () => inputEl as never });
   cleanups.push(async () => {
     await controller.dispose();
     await lifecycleRegistry.dispose();

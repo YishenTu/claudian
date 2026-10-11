@@ -98,7 +98,7 @@ export interface ToolCallStreamDeps {
   plugin: Pick<ChatFeatureHost, 'app' | 'settings'>;
   state: ChatState;
   indicator: Pick<ThinkingIndicator, 'show'>;
-  getMessagesEl: () => HTMLElement;
+  getMessagesEl: () => HTMLElement | null;
   scrollToBottom: () => void;
   onQuestionToolChanged?: (tool: ToolCallInfo) => void;
 }
@@ -189,15 +189,12 @@ export class ToolCallStream {
         this.deps.onQuestionToolChanged?.(existing);
       }
 
+      if (succeeded && isWriteEditTool(existing.name)) {
+        existing.diffData = resolveToolDiffData(chunk.resultDetails?.diff, existing) ?? existing.diffData;
+      }
       const writeEditState = state.writeEditStates.get(chunk.id);
       if (writeEditState && isWriteEditTool(existing.name)) {
-        if (succeeded) {
-          const diffData = resolveToolDiffData(chunk.resultDetails?.diff, existing);
-          if (diffData) {
-            existing.diffData = diffData;
-            updateWriteEditWithDiff(writeEditState, diffData);
-          }
-        }
+        if (succeeded && existing.diffData) updateWriteEditWithDiff(writeEditState, existing.diffData);
         finalizeWriteEditBlock(writeEditState, !succeeded);
       } else {
         this.#cancelOutputRender(chunk.id);
@@ -320,13 +317,13 @@ export class ToolCallStream {
   }
 
   #scheduleOutputRender(toolId: string, toolCall: ToolCallInfo): void {
-    if (this.#outputFrames.has(toolId)) return;
+    if (this.#outputFrames.has(toolId) || !this.deps.getMessagesEl()) return;
 
     const frame = scheduleAnimationFrame(() => {
       this.#outputFrames.delete(toolId);
       updateToolCallResult(this.deps.state.toolCallElements.get(toolId), toolCall);
       this.deps.scrollToBottom();
-    }, this.deps.getMessagesEl().ownerDocument.defaultView ?? null);
+    }, this.deps.getMessagesEl()?.ownerDocument.defaultView ?? null);
     this.#outputFrames.set(toolId, frame);
   }
 

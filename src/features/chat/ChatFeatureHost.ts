@@ -2,6 +2,7 @@ import type { ProviderId } from '@/core/providers/types';
 import type { Conversation, ConversationMeta, ConversationMutablePatch, ConversationSummary, StoredChatModelSelection } from '@/core/types';
 import type { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
 import type { ChatExecutionPersistence } from '@/features/chat/execution/ChatExecutionCoordinator';
+import type { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 import type { ChatTab, TabId, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { ZenModeSource } from '@/features/chat/zen/types';
@@ -25,9 +26,6 @@ export interface ChatViewRefreshHost {
   updateHiddenCommands(): void;
   invalidateProviderCommandCaches(providerIds?: ProviderId[]): void;
   invalidateProviderResources(providerIds: ProviderId[], generation: number): void;
-  handleLinkedContentRenamed(oldPath: string, newPath: string, includeDescendants: boolean): void;
-  handleLinkedContentDeleted(path: string, includeDescendants: boolean): void;
-  handleLinkedContentCreated(path: string): void;
 }
 
 export interface ChatTabManagerHost {
@@ -46,7 +44,7 @@ export interface ChatTabManagerHost {
   /** Commits provisional previews to retained tabs and claims user ownership. */
   retainTabs(tabIds: readonly TabId[]): void;
   switchToTab(tabId: TabId): Promise<void>;
-  closeTab(tabId: TabId, force?: boolean): Promise<boolean>;
+  closeTab(tabId: TabId): Promise<boolean>;
   invalidateProviderResources(providerIds: ProviderId | ProviderId[], generation: number): void;
 }
 
@@ -64,8 +62,12 @@ export interface ChatViewHost extends ChatViewRefreshHost, TabManagerViewHost {
   renameActiveTab(): boolean;
 }
 
+/** Session attachment and lookup; retirement and shutdown stay with the pool's main-owned callers. */
+export type ChatSessionRuntimes = Pick<SessionRuntimePool, 'acquire' | 'release' | 'get' | 'getAttachment'>;
+
 /** Application capabilities chat needs on top of the feature-neutral `FeatureHost`. */
 export interface ChatFeatureHost extends FeatureHost {
+  readonly sessionRuntimes: ChatSessionRuntimes;
   writeSessionSnapshot(conversationId: string, markdown: string): Promise<string>;
   getSessionSnapshotDirectory(): string;
   readonly chatModelSelection: ChatModelSelectionPort;

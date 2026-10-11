@@ -23,7 +23,7 @@ describe('ThinkingBlockRenderer', () => {
     it('reports expansion state without rendering content itself', () => {
       const parentEl = createMockEl();
       const onToggle = jest.fn();
-      const state = createThinkingBlock(parentEl, { onToggle });
+      const state = createThinkingBlock(parentEl, { startTime: Date.now(), onToggle });
       const header = (state.wrapperEl as any)._children[0];
       const clickHandlers = header._eventListeners.get('click') || [];
 
@@ -39,13 +39,13 @@ describe('ThinkingBlockRenderer', () => {
     it('should collapse the block when finalized', () => {
       const parentEl = createMockEl();
 
-      const state = createThinkingBlock(parentEl);
+      const state = createThinkingBlock(parentEl, { startTime: Date.now() });
 
       // Manually expand first
       state.wrapperEl.addClass('expanded');
       state.contentEl.style.display = 'block';
 
-      finalizeThinkingBlock(state);
+      finalizeThinkingBlock(state, 0);
 
       expect(state.wrapperEl.hasClass('expanded')).toBe(false);
       expect(state.contentEl.style.display).toBe('none');
@@ -54,7 +54,7 @@ describe('ThinkingBlockRenderer', () => {
     it('should update label with final duration', () => {
       const parentEl = createMockEl();
 
-      const state = createThinkingBlock(parentEl);
+      const state = createThinkingBlock(parentEl, { startTime: Date.now() });
 
       expect(state.labelEl.textContent).toContain('Thinking');
       expect(state.timerInterval).not.toBeNull();
@@ -62,9 +62,8 @@ describe('ThinkingBlockRenderer', () => {
       // Advance time by 5 seconds
       jest.advanceTimersByTime(5000);
 
-      const duration = finalizeThinkingBlock(state);
-
-      expect(duration).toBe(5);
+      expect(state.labelEl.textContent).toBe('Thinking 5s...');
+      finalizeThinkingBlock(state, 5);
       expect(state.labelEl.textContent).toBe('Thought for 5s');
       expect(state.timerInterval).toBeNull();
     });
@@ -72,7 +71,7 @@ describe('ThinkingBlockRenderer', () => {
     it('should sync isExpanded state so toggle works correctly after finalize', () => {
       const parentEl = createMockEl();
 
-      const state = createThinkingBlock(parentEl);
+      const state = createThinkingBlock(parentEl, { startTime: Date.now() });
       const header = (state.wrapperEl as any)._children[0];
 
       // Expand the block
@@ -83,7 +82,7 @@ describe('ThinkingBlockRenderer', () => {
       expect(header.getAttribute('aria-expanded')).toBe('true');
 
       // Finalize (which collapses)
-      finalizeThinkingBlock(state);
+      finalizeThinkingBlock(state, 0);
       expect(state.isExpanded).toBe(false);
       expect(header.getAttribute('aria-expanded')).toBe('false');
       expect((state.wrapperEl as any).hasClass('expanded')).toBe(false);

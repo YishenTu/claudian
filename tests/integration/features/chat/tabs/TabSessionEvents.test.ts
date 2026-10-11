@@ -1,7 +1,8 @@
 /** @jest-environment jsdom */
-
 import '@/providers';
 
+import { createTabSession } from '@test/helpers/ConversationPorts';
+import { enqueueTabSessionEvent } from '@test/helpers/features/chat/SessionEventsHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
 import { Component, MarkdownRenderer } from 'obsidian';
@@ -14,8 +15,6 @@ import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutio
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
-import { TabSession } from '@/features/chat/tabs/TabSession';
-import { enqueueTabSessionEvent } from '@/features/chat/tabs/TabSessionEvents';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import { CodexSubagentTracker } from '@/providers/codex/execution/CodexSubagentTracker';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
@@ -67,15 +66,15 @@ async function createCodexChildTab() {
     onSessionEvent: (event, context) => enqueueTabSessionEvent(tab, plugin, event, context),
     onBackgroundWorkChanged: working => workChanges.push(working),
   });
-  const session = new TabSession({ id: 'tab', conversationId: 'conversation', draftModel: null,
+  const session = createTabSession({ id: 'tab', conversationId: 'conversation', draftModel: null,
     providerId: 'codex', lifecycleState: 'ready' } as any, coordinator);
   const conversationController = new ConversationController({
     plugin, state, renderer, subagentManager: subagents,
-    session, drafts: { restore: jest.fn() }, clearQueuedMessage: jest.fn(),
+    session: session.runtime, drafts: { restore: jest.fn() }, clearQueuedMessage: jest.fn(),
     getLinkedContentController: () => ({ lock: jest.fn() }),
     getWelcomeEl: () => null, setWelcomeEl: () => undefined,
     getExecutionCoordinator: () => coordinator,
-    awaitBackgroundWork: () => session.awaitBackgroundWork(),
+    awaitBackgroundWork: () => session.runtime.awaitBackgroundWork(),
     ensureExecutionForConversation: async (conversation: { id: string; providerId: 'codex' } | null) => {
       await coordinator.bindConversation(conversation && { conversationId: conversation.id, providerId: conversation.providerId });
     },
@@ -111,7 +110,7 @@ async function createCodexChildTab() {
   const child = (method: string, params: Record<string, unknown>) => {
     tracker.handleNotification('child', 'child-turn', method, { threadId: 'child', turnId: 'child-turn', ...params });
   };
-  const settle = () => session.awaitBackgroundWork();
+  const settle = () => session.runtime.awaitBackgroundWork();
   const childTool = () => message.toolCalls![0].subagent?.toolCalls[0];
   const savedChildTool = () => saves.at(-1)?.[0].toolCalls?.[0].subagent?.toolCalls[0];
   const savedStatus = () => saves.at(-1)?.[0].toolCalls?.[0].subagent?.status;
@@ -138,6 +137,50 @@ function startChild(view: Awaited<ReturnType<typeof createCodexChildTab>>): void
 function streamOutput(view: Awaited<ReturnType<typeof createCodexChildTab>>, lines: readonly string[]): void {
   for (const delta of lines) view.child('item/commandExecution/outputDelta', { itemId: 'command', delta });
 }
+
+it.each([false, true])('saves a standalone task notification without later output (detached: %s)', async detached => {
+  const view = await createCodexChildTab();
+  try {
+    if (detached) view.messagesEl.remove();
+    view.backend.latest.emitSessionEvent({ type: 'task_notification', content: 'Task finished independently.' });
+    await view.settle();
+
+    expect(view.saves.at(-1)?.flatMap(message => message.contentBlocks ?? [])).toContainEqual({
+      type: 'task_notification', content: 'Task finished independently.',
+    });
+    expect(view.plugin.updateConversation).toHaveBeenCalledWith('conversation', expect.objectContaining({
+      messages: expect.arrayContaining([expect.objectContaining({
+        isAutomaticResponse: true,
+        contentBlocks: [{ type: 'task_notification', content: 'Task finished independently.' }],
+      })]),
+    }));
+  } finally { await view.dispose(); }
+});
+
+it.each([false, true])('saves background response blocks while its runtime remains alive (detached: %s)', async detached => {
+  const view = await createCodexChildTab();
+  try {
+    if (detached) view.messagesEl.remove();
+    const native = view.backend.latest;
+    native.emitBackgroundEvent({ type: 'background_turn_started' });
+    native.emitBackgroundEvent({ type: 'thinking_delta', text: 'Checking the result.' });
+    native.emitBackgroundEvent({ type: 'text_delta', text: 'Background result.' });
+    native.emitBackgroundEvent({ type: 'tool_started', toolCallId: 'read', toolScope: { kind: 'main' }, name: 'Read', input: { file_path: 'note.md' } });
+    native.emitBackgroundEvent({ type: 'tool_completed', toolCallId: 'read', toolScope: { kind: 'main' }, content: 'Note contents' });
+    native.emitBackgroundEvent({ type: 'text_delta', text: 'After tool.' });
+    native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed', nativeAssistantId: 'background-checkpoint' });
+    await view.settle();
+
+    const saved = view.saves.at(-1)?.find(message => message.assistantMessageId === 'background-checkpoint');
+    expect(saved?.contentBlocks).toEqual([
+      { type: 'thinking', content: 'Checking the result.', durationSeconds: 0 },
+      { type: 'text', content: 'Background result.' },
+      { type: 'tool_use', toolId: 'read' },
+      { type: 'text', content: 'After tool.' },
+    ]);
+    expect(saved?.toolCalls).toEqual([expect.objectContaining({ id: 'read', status: 'completed', result: 'Note contents' })]);
+  } finally { await view.dispose(); }
+});
 
 it('coalesces Codex child progress saves between immediate lifecycle saves and keeps live output', async () => {
   const view = await createCodexChildTab();
@@ -193,55 +236,6 @@ it('flushes pending Codex child progress with the next direct save and does not 
     await jest.advanceTimersByTimeAsync(QUIET_PERIOD_MS);
     await view.settle();
     expect(view.saves).toHaveLength(1);
-  } finally {
-    await view.dispose();
-  }
-});
-
-it('refuses a conversation switch when work starts while it saves and loads history', async () => {
-  const view = await createCodexChildTab();
-  try {
-    // The tab is idle when the switch is requested; the child starts while the next history loads.
-    expect(view.session.isIdle).toBe(true);
-    view.plugin.switchConversation.mockImplementationOnce(async (id: string) => {
-      startChild(view);
-      return { id, providerId: 'codex', messages: [], sessionId: null };
-    });
-
-    await expect(view.conversationController.switchTo('next-conversation')).resolves.toBe(false);
-
-    expect(view.plugin.switchConversation).toHaveBeenCalledTimes(1);
-    expect(view.state.currentConversationId).toBe('conversation');
-    expect(view.session.hasBackgroundWork).toBe(true);
-    // The live child keeps reporting into the conversation that owns it.
-    streamOutput(view, ['after refused switch\n']);
-    await view.settle();
-    expect(view.childTool()?.result).toBe('after refused switch\n');
-  } finally {
-    await view.dispose();
-  }
-});
-
-it('keeps a background turn that starts while a refused switch loads history', async () => {
-  const view = await createCodexChildTab();
-  try {
-    view.plugin.switchConversation.mockImplementationOnce(async (id: string) => {
-      view.backend.latest.emitBackgroundEvent({ type: 'background_turn_started' });
-      return { id, providerId: 'codex', messages: [], sessionId: null };
-    });
-
-    await expect(view.conversationController.switchTo('next-conversation')).resolves.toBe(false);
-    expect(view.state.currentConversationId).toBe('conversation');
-
-    // Output after the refusal belongs to the turn that started during the switch.
-    view.backend.latest.emitBackgroundEvent({ type: 'text_delta', text: 'Background answer.' });
-    view.backend.latest.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed' });
-    await view.settle();
-
-    expect(view.messagesEl.textContent).toContain('Background answer.');
-    expect(view.plugin.updateConversation).toHaveBeenLastCalledWith('conversation', expect.anything());
-    expect(view.saves.at(-1)?.some(message => message.role === 'assistant' && message.content.includes('Background answer.')))
-      .toBe(true);
   } finally {
     await view.dispose();
   }

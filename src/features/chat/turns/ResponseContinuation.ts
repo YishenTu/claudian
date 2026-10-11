@@ -10,7 +10,7 @@ import type { StreamController } from '@/features/chat/turns/StreamController';
 export async function continueResponseAfterNotification(
   host: {
     state: ChatState;
-    renderer: MessageRenderer;
+    renderer: MessageRenderer | null;
     stream: StreamController;
     /** Automatic rendering has private streaming buffers but shares transcript order. */
     streamState?: ChatState;
@@ -21,6 +21,7 @@ export async function continueResponseAfterNotification(
   chunk: StreamChunk,
   scope?: ProviderTurnEventScope,
 ): Promise<ChatMessage> {
+  if ((chunk.type === 'text' || chunk.type === 'thinking') && chunk.content.length === 0) return message;
   if (!['text', 'thinking', 'citations', 'tool_use', 'notice', 'error', 'context_compacted'].includes(chunk.type)) return message;
   // Repeated tool snapshots update the existing card instead of starting a new segment.
   if (chunk.type === 'tool_use' && host.state.messages.some(item => item.toolCalls?.some(tool => tool.id === chunk.id))) {
@@ -55,7 +56,7 @@ export async function continueResponseAfterNotification(
   if (message.isAutomaticResponse && !message.content
     && !message.contentBlocks?.length && !message.toolCalls?.length) {
     host.state.messages = host.state.messages.filter(item => item !== message);
-    host.renderer.removeMessage(message.id);
+    host.renderer?.removeMessage(message.id);
   }
   const continuation: ChatMessage = {
     id: host.createMessageId(), role: 'assistant', content: '', timestamp: Date.now(),
@@ -67,8 +68,9 @@ export async function continueResponseAfterNotification(
   const messages = host.state.messages;
   messages.splice(insertionIndex, 0, continuation);
   host.state.messages = messages;
-  const element = host.renderer.addMessage(continuation);
-  element.parentElement?.querySelector(`[data-message-id="${preceding.id}"]`)?.after(element);
-  (host.streamState ?? host.state).currentContentEl = element.querySelector<HTMLElement>('.claudian-message-content');
+  (host.streamState ?? host.state).response.messageId = continuation.id;
+  const element = host.renderer?.addMessage(continuation);
+  element?.parentElement?.querySelector(`[data-message-id="${preceding.id}"]`)?.after(element);
+  (host.streamState ?? host.state).currentContentEl = element?.querySelector<HTMLElement>('.claudian-message-content') ?? null;
   return continuation;
 }

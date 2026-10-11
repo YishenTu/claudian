@@ -8,6 +8,7 @@ import {
   mockCreateTab,
   mockCreateTabRuntime,
   mockDestroyTab,
+  mockNextHydration,
   mockTabs,
   runtimeOptions,
 } from '@test/helpers/features/chat/TabManagerTestHarness';
@@ -64,9 +65,7 @@ describe('ViewerSlot', () => {
     await manager.viewerSlot.show('conversation-2');
 
     expect(manager.getTabCount()).toBe(1);
-    expect(preview.controllers.conversationController?.switchTo)
-      .toHaveBeenCalledWith('conversation-2');
-    expect(preview.lifecycleState).toBe('provisional');
+    expect(manager.getActiveTab()).toEqual(expect.objectContaining({ id: preview.id, conversationId: 'conversation-2', lifecycleState: 'provisional' }));
   });
 
   it('keeps the latest provisional selection during overlapping preview hydration', async () => {
@@ -76,26 +75,13 @@ describe('ViewerSlot', () => {
     }));
     const { manager } = createManager(createPlugin({ getCachedConversation }));
     await manager.viewerSlot.show('conversation-1');
-    const preview = manager.getActiveTab()!;
     const firstHydration = deferred<void>();
     const switchedConversationIds: string[] = [];
-    let isSwitching = false;
-    const switchTo = preview.controllers.conversationController!.switchTo as jest.Mock;
-    switchTo.mockImplementation(
-      async (conversationId: string) => {
-        if (isSwitching) return false;
-        isSwitching = true;
-        switchedConversationIds.push(conversationId);
-        try {
-          if (conversationId === 'conversation-2') {
-            await firstHydration.promise;
-          }
-        } finally {
-          isSwitching = false;
-        }
-        return true;
-      },
-    );
+    const hydrate = async (id: string) => {
+      switchedConversationIds.push(id);
+      if (id === 'conversation-2') await firstHydration.promise;
+    };
+    mockNextHydration(hydrate);
 
     const firstSelection = manager.viewerSlot.show('conversation-2');
     for (let attempt = 0;
@@ -107,11 +93,12 @@ describe('ViewerSlot', () => {
     const supersededSelection = manager.viewerSlot.show('conversation-3');
     const latestSelection = manager.viewerSlot.show('conversation-4');
 
+    mockNextHydration(hydrate);
     firstHydration.resolve(undefined);
     await Promise.all([firstSelection, supersededSelection, latestSelection]);
 
     expect(switchedConversationIds).toEqual(['conversation-2', 'conversation-4']);
-    expect(preview.lifecycleState).toBe('provisional');
+    expect(manager.getActiveTab()?.lifecycleState).toBe('provisional');
   });
 
   it('does not demote a preview retained while its conversation switch is pending', async () => {
@@ -123,14 +110,10 @@ describe('ViewerSlot', () => {
     await manager.viewerSlot.show('conversation-1');
     const preview = manager.getActiveTab()!;
     const hydration = deferred<void>();
-    const switchTo = preview.controllers.conversationController.switchTo as jest.Mock;
-    switchTo.mockImplementationOnce(async (conversationId: string) => {
-      await hydration.promise;
-      preview.session.setConversationId(conversationId);
-    });
+    const switchTo = mockNextHydration(async () => hydration.promise);
 
     const navigation = manager.viewerSlot.show('conversation-2');
-    for (let attempt = 0; attempt < 10 && switchTo.mock.calls.length < 2; attempt += 1) {
+    for (let attempt = 0; attempt < 10 && switchTo.mock.calls.length === 0; attempt += 1) {
       await Promise.resolve();
     }
     preview.session.claimUserOwnership();
@@ -138,7 +121,7 @@ describe('ViewerSlot', () => {
     hydration.resolve(undefined);
     await navigation;
 
-    expect(preview.lifecycleState).toBe('open');
+    expect(manager.getActiveTab()?.lifecycleState).toBe('open');
   });
 
   it('keeps a stale provisional target that the user retained during initial hydration', async () => {
@@ -151,7 +134,7 @@ describe('ViewerSlot', () => {
     const hydration = deferred<void>();
     mockCreateTabRuntime.mockImplementationOnce(async (options) => {
       const target = createMockTab(options);
-      target.controllers.conversationController.switchTo = jest.fn(async () => {
+      target.session.runtime.model.hydrate = jest.fn(async () => {
         await hydration.promise;
       });
       return target;
@@ -164,7 +147,7 @@ describe('ViewerSlot', () => {
     const retainedTarget = mockTabs[1];
     for (let attempt = 0;
       attempt < 20
-        && retainedTarget.controllers.conversationController.switchTo.mock.calls.length === 0;
+        && retainedTarget.session.runtime.model.hydrate.mock.calls.length === 0;
       attempt += 1) {
       await Promise.resolve();
     }
@@ -188,11 +171,8 @@ describe('ViewerSlot', () => {
     const { manager } = createManager(createPlugin({ getCachedConversation }));
     const retained = await manager.createTab('retained-conversation');
     await manager.viewerSlot.show('conversation-1');
-    const preview = manager.getActiveTab()!;
     const firstHydration = deferred<void>();
-    const switchTo = preview.controllers.conversationController!.switchTo as jest.Mock;
-    switchTo.mockImplementation(async () => firstHydration.promise);
-    switchTo.mockClear();
+    const switchTo = mockNextHydration(async () => firstHydration.promise);
 
     const previewSelection = manager.viewerSlot.show('conversation-2');
     for (let attempt = 0; attempt < 20 && switchTo.mock.calls.length === 0; attempt += 1) {
@@ -214,11 +194,8 @@ describe('ViewerSlot', () => {
     }));
     const { manager } = createManager(createPlugin({ getCachedConversation }));
     await manager.viewerSlot.show('conversation-1');
-    const preview = manager.getActiveTab()!;
     const firstHydration = deferred<void>();
-    const switchTo = preview.controllers.conversationController!.switchTo as jest.Mock;
-    switchTo.mockImplementation(async () => firstHydration.promise);
-    switchTo.mockClear();
+    const switchTo = mockNextHydration(async () => firstHydration.promise);
 
     const previewSelection = manager.viewerSlot.show('conversation-2');
     for (let attempt = 0; attempt < 20 && switchTo.mock.calls.length === 0; attempt += 1) {
@@ -242,11 +219,8 @@ describe('ViewerSlot', () => {
     }));
     const { manager } = createManager(createPlugin({ getCachedConversation }));
     await manager.viewerSlot.show('conversation-1');
-    const preview = manager.getActiveTab()!;
     const firstHydration = deferred<void>();
-    const switchTo = preview.controllers.conversationController!.switchTo as jest.Mock;
-    switchTo.mockImplementation(async () => firstHydration.promise);
-    switchTo.mockClear();
+    const switchTo = mockNextHydration(async () => firstHydration.promise);
 
     const firstSelection = manager.viewerSlot.show('conversation-2');
     for (let attempt = 0; attempt < 20 && switchTo.mock.calls.length === 0; attempt += 1) {
@@ -259,7 +233,7 @@ describe('ViewerSlot', () => {
     await Promise.all([firstSelection, queuedSelection, destruction]);
 
     expect(manager.getAllTabs()).toHaveLength(0);
-    expect(mockCreateTab).toHaveBeenCalledTimes(1);
+    expect(mockCreateTabRuntime).toHaveBeenCalledTimes(2);
   });
 
   it('discards provisional previews without removing open runtime tabs', async () => {
@@ -311,28 +285,27 @@ describe('ViewerSlot', () => {
     .filter((tab: any) => tab.lifecycleState === 'provisional');
 
   it.each(busyPreviewCases)(
-    'retains a preview holding %s and shows the next session in a fresh preview',
+    'rebinds a preview holding %s without retaining its old presentation',
     async (_label, makeBusy) => {
       const { manager } = createManager(conversationPlugin());
       await manager.viewerSlot.show('conversation-1');
       const preview = manager.getActiveTab() as any;
       makeBusy(preview);
-      // The controller refuses to rebind a tab that is not idle.
-      preview.controllers.conversationController.switchTo.mockResolvedValue(false);
 
       await manager.viewerSlot.show('conversation-2');
 
-      expect(preview.lifecycleState).toBe('open');
+      expect(manager.getAllTabs()).not.toContain(preview);
       expect(preview.conversationId).toBe('conversation-1');
       const slots = provisionalTabs(manager);
       expect(slots).toHaveLength(1);
+      expect(slots[0].id).toBe(preview.id);
       expect(slots[0].conversationId).toBe('conversation-2');
       expect(manager.getActiveTabId()).toBe(slots[0].id);
     },
   );
 
   it.each(busyPreviewCases)(
-    'retains a preview holding %s when leaving the wide layout',
+    'detaches a preview holding %s when leaving the wide layout',
     async (_label, makeBusy) => {
       const { manager } = createManager(conversationPlugin());
       const retained = await manager.createTab('conversation-1');
@@ -342,9 +315,8 @@ describe('ViewerSlot', () => {
 
       await manager.viewerSlot.release();
 
-      expect(manager.getAllTabs()).toEqual([retained, preview]);
-      expect(preview.lifecycleState).toBe('open');
-      expect(mockDestroyTab).not.toHaveBeenCalled();
+      expect(manager.getAllTabs()).toEqual([retained]);
+      expect(mockDestroyTab).toHaveBeenCalledWith(preview);
     },
   );
 
@@ -381,21 +353,21 @@ describe('ViewerSlot', () => {
     const { manager } = createManager(plugin);
     const retained = await manager.createTab('retained-conversation');
     const target = await manager.createTab('conversation-1', undefined, { activate: false });
-    const hydration = deferred<boolean>();
-    target!.controllers.conversationController.switchTo = jest.fn(() => hydration.promise);
-    (retained!.controllers.conversationController.switchTo as jest.Mock).mockClear();
+    const hydration = deferred<void>();
+    target!.session.runtime.model.hydrate = jest.fn(() => hydration.promise);
+    (retained!.session.runtime.model.hydrate as jest.Mock).mockClear();
     const opening = manager.viewerSlot.show('conversation-1');
     for (let attempt = 0;
       attempt < 20
-        && (target!.controllers.conversationController.switchTo as jest.Mock).mock.calls.length === 0;
+        && (target!.session.runtime.model.hydrate as jest.Mock).mock.calls.length === 0;
       attempt += 1) {
       await Promise.resolve();
     }
     await manager.closeTab(target!.id);
-    hydration.resolve(true);
+    hydration.resolve();
     await opening;
 
-    expect(retained!.controllers.conversationController.switchTo).not.toHaveBeenCalled();
+    expect(retained!.session.runtime.model.hydrate).not.toHaveBeenCalled();
     expect(retained!.conversationId).toBe('retained-conversation');
     expect(manager.getActiveTab()).toEqual(expect.objectContaining({
       conversationId: 'conversation-1',
@@ -414,12 +386,12 @@ describe('ViewerSlot', () => {
     const preview = manager.getActiveTab();
     expect(preview?.lifecycleState).toBe('provisional');
     const previewSwitch = deferred<void>();
-    preview!.controllers.conversationController.switchTo = jest.fn(() => previewSwitch.promise.then(() => true));
+    const previewHydration = mockNextHydration(async () => previewSwitch.promise);
 
     const navigation = manager.viewerSlot.show('conversation-2');
     for (let attempt = 0;
       attempt < 10
-        && (preview!.controllers.conversationController.switchTo as jest.Mock).mock.calls.length === 0;
+        && previewHydration.mock.calls.length === 0;
       attempt += 1) {
       await Promise.resolve();
     }
@@ -554,7 +526,6 @@ describe('ViewerSlot', () => {
       expect(draft.conversationId).toBeNull();
       expect(draft.lifecycleState).toBe('provisional');
       expect(source.conversationId).toBe('conversation-1');
-      expect(source.controllers.conversationController.createNew).not.toHaveBeenCalled();
     });
 
     it('clears the source tab in place for /new in the compact layout', async () => {
@@ -563,8 +534,9 @@ describe('ViewerSlot', () => {
 
       await runtimeOptions(0).startNewConversation();
 
-      expect(source.controllers.conversationController.createNew).toHaveBeenCalledTimes(1);
-      expect(manager.getAllTabs()).toEqual([source]);
+      expect(manager.getAllTabs()).toHaveLength(1);
+      expect(manager.getActiveTab()).toEqual(expect.objectContaining({ id: source.id, conversationId: null }));
+      expect(source.conversationId).toBe('conversation-1');
     });
 
     it('retains a pinned session as soon as it is shown and pinned previews on release', async () => {

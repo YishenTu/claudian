@@ -10,7 +10,6 @@ export interface SubagentHistoryRecoveryRequest {
 
 export interface AsyncSubagentHistoryRecoveryDeps {
   subagentManager: SubagentManager;
-  getMessagesEl: () => HTMLElement;
   getProviderId: () => ProviderId;
   getProviderSessionId: () => string | null;
   loadSubagentToolCalls: (
@@ -21,6 +20,7 @@ export interface AsyncSubagentHistoryRecoveryDeps {
   ) => Promise<string | null | undefined>;
   enqueueBackgroundWork: (work: () => Promise<void>) => Promise<void> | null;
   persistConversation: () => Promise<void>;
+  onWorkChanged?: () => void;
 }
 
 interface HydrationResult {
@@ -41,6 +41,12 @@ const ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS = [
  * same provider session still owns the subagent.
  */
 export class AsyncSubagentHistoryRecovery {
+  private readonly timers = new Set<number>();
+  get hasPendingWork(): boolean { return this.timers.size > 0; }
+  dispose(): void {
+    for (const timer of this.timers) window.clearTimeout(timer);
+    this.timers.clear();
+  }
   constructor(private readonly deps: AsyncSubagentHistoryRecoveryDeps) {}
 
   async recover(
@@ -166,9 +172,8 @@ export class AsyncSubagentHistoryRecovery {
     ) return;
 
     const delay = ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS[attempt];
-    const ownerWindow = this.deps.getMessagesEl().ownerDocument.defaultView
-      ?? window;
-    ownerWindow.setTimeout(() => {
+    const timer = window.setTimeout(() => {
+      this.timers.delete(timer);
       const work = () => this.#retryResult(
         subagent,
         providerId,
@@ -176,7 +181,9 @@ export class AsyncSubagentHistoryRecovery {
         attempt,
       );
       void this.deps.enqueueBackgroundWork(work)?.catch(() => undefined);
+      this.deps.onWorkChanged?.();
     }, delay);
+    this.timers.add(timer);
   }
 
   async #retryResult(

@@ -1,10 +1,12 @@
 import type { AskUserAnswers, AskUserQuestionItem, AskUserQuestionOption } from '@/core/types/tools';
+import { QuestionInteractionState } from '@/features/chat/interactions/QuestionInteractionState';
 
 const CHECK_GLYPH = '\u2713';
 
 export type QuestionAnswerHandler = (answers: AskUserAnswers) => Promise<void>;
 
 export interface InlineAskQuestionConfig {
+  state?: QuestionInteractionState;
   onSubmit?: QuestionAnswerHandler;
   title?: string;
   headerEl?: HTMLElement;
@@ -13,26 +15,21 @@ export interface InlineAskQuestionConfig {
 }
 
 export class InlineAskUserQuestion {
-  private containerEl: HTMLElement;
+  private containerEl: HTMLElement | null;
+  private readonly state: QuestionInteractionState;
   private input: Record<string, unknown>;
   private resolveCallback: (result: Record<string, string | string[]> | null) => void;
-  private resolved = false;
-  private submitting = false;
-  private submissionError = '';
   private signal?: AbortSignal;
-  private config: Required<Omit<InlineAskQuestionConfig, 'headerEl' | 'onSubmit'>> & Pick<InlineAskQuestionConfig, 'headerEl' | 'onSubmit'>;
+  private config: Required<Omit<InlineAskQuestionConfig, 'headerEl' | 'onSubmit' | 'state'>> & Pick<InlineAskQuestionConfig, 'headerEl' | 'onSubmit'>;
 
   private questions: AskUserQuestionItem[] = [];
-  private answers = new Map<number, Set<string>>();
-  private customInputs = new Map<number, string>();
 
-  private activeTabIndex = 0;
   private focusedItemIndex = 0;
   private isInputFocused = false;
 
-  private rootEl!: HTMLElement;
-  private tabBar!: HTMLElement;
-  private contentArea!: HTMLElement;
+  private rootEl: HTMLElement | null = null;
+  private tabBar: HTMLElement | null = null;
+  private contentArea: HTMLElement | null = null;
   private tabElements: HTMLElement[] = [];
   private currentItems: HTMLElement[] = [];
   private boundKeyDown: (e: KeyboardEvent) => void;
@@ -46,6 +43,7 @@ export class InlineAskUserQuestion {
     config?: InlineAskQuestionConfig,
   ) {
     this.containerEl = containerEl;
+    this.state = config?.state ?? new QuestionInteractionState();
     this.input = input;
     this.resolveCallback = resolve;
     this.signal = signal;
@@ -60,6 +58,7 @@ export class InlineAskUserQuestion {
   }
 
   render(): void {
+    if (!this.containerEl || this.state.resolved) return;
     this.rootEl = this.containerEl.createDiv({ cls: 'claudian-ask-question-inline', attr: { role: 'region', 'aria-label': this.config.title } });
 
     const titleEl = this.rootEl.createDiv({ cls: 'claudian-ask-inline-title' });
@@ -81,8 +80,8 @@ export class InlineAskUserQuestion {
     }
 
     for (let i = 0; i < this.questions.length; i++) {
-      this.answers.set(i, new Set());
-      this.customInputs.set(i, '');
+      if (!this.state.answers.has(i)) this.state.answers.set(i, new Set());
+      if (!this.state.customInputs.has(i)) this.state.customInputs.set(i, '');
     }
 
     if (!this.config.immediateSelect) {
@@ -97,8 +96,8 @@ export class InlineAskUserQuestion {
 
     // Defer focus to after the element is in the DOM and laid out
     window.requestAnimationFrame(() => {
-      if (this.resolved || this.rootEl.hidden) return;
-      this.rootEl.focus();
+      if (this.state.resolved || !this.rootEl || this.rootEl.hidden) return;
+      this.rootEl?.focus();
       this.rootEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
 
@@ -109,7 +108,28 @@ export class InlineAskUserQuestion {
   }
 
   setVisible(visible: boolean): void {
-    this.rootEl.hidden = !visible;
+    if (this.rootEl) this.rootEl.hidden = !visible;
+  }
+
+  /** Drops only this view. The request, drafts and submission continue in session state. */
+  disposePresentation(): void {
+    this.rootEl?.removeEventListener('keydown', this.boundKeyDown);
+    if (this.signal && this.abortHandler) this.signal.removeEventListener('abort', this.abortHandler);
+    this.abortHandler = null;
+    this.rootEl?.remove();
+    this.rootEl = null;
+    this.tabBar = null;
+    this.contentArea = null;
+    this.containerEl = null;
+    this.tabElements = [];
+    this.currentItems = [];
+  }
+
+  refresh(): void {
+    if (!this.rootEl || this.state.resolved) return;
+    this.rootEl.setAttribute('aria-busy', String(this.state.submitting));
+    this.#renderTabBar();
+    this.#renderTabContent();
   }
 
   destroy(): void {
@@ -194,18 +214,19 @@ export class InlineAskUserQuestion {
   }
 
   #renderTabBar(): void {
+    if (!this.tabBar) return;
     this.tabBar.empty();
     this.tabElements = [];
 
     for (let idx = 0; idx < this.questions.length; idx++) {
       const answered = this.#isQuestionAnswered(idx);
       const tab = this.tabBar.createEl('button', { cls: 'claudian-ask-tab', attr: { type: 'button', 'aria-label': this.questions[idx].header ?? `Q${idx + 1}` } });
-      tab.disabled = this.submitting;
+      tab.disabled = this.state.submitting;
       tab.createSpan({ text: answered ? CHECK_GLYPH : '', cls: 'claudian-ask-tab-step', attr: { 'aria-hidden': 'true' } });
       tab.createSpan({ text: this.questions[idx].header, cls: 'claudian-ask-tab-label' });
       tab.setAttribute('title', this.questions[idx].question);
 
-      if (idx === this.activeTabIndex) tab.addClass('is-active');
+      if (idx === this.state.activeTabIndex) tab.addClass('is-active');
       if (answered) tab.addClass('is-answered');
       tab.addEventListener('click', () => this.#switchTab(idx));
       this.tabElements.push(tab);
@@ -213,38 +234,39 @@ export class InlineAskUserQuestion {
 
     const allAnswered = this.questions.every((_, i) => this.#isQuestionAnswered(i));
     const submitTab = this.tabBar.createEl('button', { cls: 'claudian-ask-tab claudian-ask-tab--submit', attr: { type: 'button', 'aria-label': 'Submit' } });
-    submitTab.disabled = this.submitting;
+    submitTab.disabled = this.state.submitting;
     submitTab.createSpan({ text: 'Submit', cls: 'claudian-ask-tab-label' });
     if (allAnswered) submitTab.addClass('is-ready');
-    if (this.activeTabIndex === this.questions.length) submitTab.addClass('is-active');
+    if (this.state.activeTabIndex === this.questions.length) submitTab.addClass('is-active');
     submitTab.addEventListener('click', () => this.#switchTab(this.questions.length));
     this.tabElements.push(submitTab);
   }
 
   #isQuestionAnswered(idx: number): boolean {
-    return this.answers.get(idx)!.size > 0 || this.customInputs.get(idx)!.trim().length > 0;
+    return this.state.answers.get(idx)!.size > 0 || this.state.customInputs.get(idx)!.trim().length > 0;
   }
 
   #switchTab(index: number): void {
-    if (this.submitting || this.resolved) return;
+    if (this.state.submitting || this.state.resolved) return;
     const clamped = Math.max(0, Math.min(index, this.questions.length));
-    if (clamped === this.activeTabIndex) return;
-    this.activeTabIndex = clamped;
+    if (clamped === this.state.activeTabIndex) return;
+    this.state.activeTabIndex = clamped;
     this.focusedItemIndex = 0;
     this.isInputFocused = false;
     if (!this.config.immediateSelect) {
       this.#renderTabBar();
     }
     this.#renderTabContent();
-    this.rootEl.focus();
+    this.rootEl?.focus();
   }
 
   #renderTabContent(): void {
+    if (!this.contentArea) return;
     this.contentArea.empty();
     this.currentItems = [];
 
-    if (this.activeTabIndex < this.questions.length) {
-      this.#renderQuestionTab(this.activeTabIndex);
+    if (this.state.activeTabIndex < this.questions.length) {
+      this.#renderQuestionTab(this.state.activeTabIndex);
     } else {
       this.#renderSubmitTab();
     }
@@ -257,9 +279,10 @@ export class InlineAskUserQuestion {
   }
 
   #renderQuestionTab(idx: number): void {
+    if (!this.contentArea) return;
     const q = this.questions[idx];
     const isMulti = q.multiSelect;
-    const selected = this.answers.get(idx)!;
+    const selected = this.state.answers.get(idx)!;
 
     this.contentArea.createDiv({
       text: q.question,
@@ -300,7 +323,7 @@ export class InlineAskUserQuestion {
     if (this.#canShowCustomInputForQuestion(q)) {
       const customIdx = q.options.length;
       const customFocused = customIdx === this.focusedItemIndex;
-      const customText = this.customInputs.get(idx) ?? '';
+      const customText = this.state.customInputs.get(idx) ?? '';
       const hasCustomText = customText.trim().length > 0;
 
       const customRow = listEl.createDiv({ cls: 'claudian-ask-item claudian-ask-custom-item' });
@@ -313,12 +336,13 @@ export class InlineAskUserQuestion {
         cls: 'claudian-ask-custom-text',
         value: customText,
       });
+      inputEl.value = customText;
       inputEl.setAttribute('type', q.isSecret ? 'password' : 'text');
       inputEl.setAttribute('aria-label', q.question);
       inputEl.setAttribute('placeholder', q.isSecret ? 'Enter secret\u2026' : 'Type your own answer\u2026');
 
       inputEl.addEventListener('input', () => {
-        this.customInputs.set(idx, inputEl.value);
+        this.state.customInputs.set(idx, inputEl.value);
         const hasText = inputEl.value.trim().length > 0;
         customRow.toggleClass('is-selected', hasText);
         this.#setIndicator(customRow, isMulti, hasText);
@@ -346,6 +370,7 @@ export class InlineAskUserQuestion {
   }
 
   #renderSubmitTab(): void {
+    if (!this.contentArea) return;
     this.contentArea.createDiv({
       text: 'Review your answers',
       cls: 'claudian-ask-review-title',
@@ -358,7 +383,7 @@ export class InlineAskUserQuestion {
       const answerText = this.#getAnswerText(idx);
 
       const pairEl = reviewEl.createEl('button', { cls: 'claudian-ask-review-pair', attr: { type: 'button', 'aria-label': `Edit answer to ${q.question}` } });
-      pairEl.disabled = this.submitting;
+      pairEl.disabled = this.state.submitting;
       const bodyEl = pairEl.createSpan({ cls: 'claudian-ask-review-body' });
       bodyEl.createSpan({ text: q.question, cls: 'claudian-ask-review-q-text' });
       bodyEl.createSpan({
@@ -376,11 +401,11 @@ export class InlineAskUserQuestion {
     const actionsEl = this.contentArea.createDiv({ cls: 'claudian-ask-actions' });
     const allAnswered = this.questions.every((_, i) => this.#isQuestionAnswered(i));
 
-    const submitRow = actionsEl.createEl('button', { cls: 'claudian-ask-item claudian-ask-action claudian-ask-action--primary', attr: { type: 'button', 'aria-label': this.submitting ? 'Sending...' : 'Submit answers' } });
-    submitRow.disabled = this.submitting || !allAnswered;
+    const submitRow = actionsEl.createEl('button', { cls: 'claudian-ask-item claudian-ask-action claudian-ask-action--primary', attr: { type: 'button', 'aria-label': this.state.submitting ? 'Sending...' : 'Submit answers' } });
+    submitRow.disabled = this.state.submitting || !allAnswered;
     if (this.focusedItemIndex === 0) submitRow.addClass('is-focused');
     if (!allAnswered) submitRow.addClass('is-disabled');
-    submitRow.createSpan({ text: this.submitting ? 'Sending...' : 'Submit answers', cls: 'claudian-ask-item-label' });
+    submitRow.createSpan({ text: this.state.submitting ? 'Sending...' : 'Submit answers', cls: 'claudian-ask-item-label' });
     submitRow.addEventListener('click', () => {
       this.focusedItemIndex = 0;
       this.#updateFocusIndicator();
@@ -389,23 +414,23 @@ export class InlineAskUserQuestion {
     this.currentItems.push(submitRow);
 
     const cancelRow = actionsEl.createEl('button', { cls: 'claudian-ask-item claudian-ask-action', attr: { type: 'button', 'aria-label': 'Cancel' } });
-    cancelRow.disabled = this.submitting;
+    cancelRow.disabled = this.state.submitting;
     if (this.focusedItemIndex === 1) cancelRow.addClass('is-focused');
     cancelRow.createSpan({ text: 'Cancel', cls: 'claudian-ask-item-label' });
     cancelRow.addEventListener('click', () => {
-      if (this.submitting) return;
+      if (this.state.submitting) return;
       this.focusedItemIndex = 1;
       this.#handleResolve(null);
     });
     this.currentItems.push(cancelRow);
-    if (this.submissionError) {
-      this.contentArea.createDiv({ text: this.submissionError, cls: 'claudian-ask-error', attr: { role: 'alert' } });
+    if (this.state.submissionError) {
+      this.contentArea.createDiv({ text: this.state.submissionError, cls: 'claudian-ask-error', attr: { role: 'alert' } });
     }
   }
 
   #getAnswerText(idx: number): string {
     const selected = this.#getSelectedLabels(idx);
-    const custom = this.customInputs.get(idx)!;
+    const custom = this.state.customInputs.get(idx)!;
     const parts: string[] = [];
     if (selected.length > 0) parts.push(selected.join(', '));
     if (custom.trim()) parts.push(custom.trim());
@@ -413,9 +438,9 @@ export class InlineAskUserQuestion {
   }
 
   private selectOption(qIdx: number, option: AskUserQuestionOption): void {
-    if (this.submitting || this.resolved) return;
+    if (this.state.submitting || this.state.resolved) return;
     const q = this.questions[qIdx];
-    const selected = this.answers.get(qIdx)!;
+    const selected = this.state.answers.get(qIdx)!;
     const isMulti = q.multiSelect;
     const optionValue = this.#getOptionValue(option);
 
@@ -428,7 +453,7 @@ export class InlineAskUserQuestion {
     } else {
       selected.clear();
       selected.add(optionValue);
-      this.customInputs.set(qIdx, '');
+      this.state.customInputs.set(qIdx, '');
     }
 
     this.#updateOptionVisuals(qIdx);
@@ -444,7 +469,7 @@ export class InlineAskUserQuestion {
     this.#updateTabIndicators();
 
     if (!isMulti) {
-      this.#switchTab(this.activeTabIndex + 1);
+      this.#switchTab(this.state.activeTabIndex + 1);
     }
   }
 
@@ -464,7 +489,7 @@ export class InlineAskUserQuestion {
 
   #updateOptionVisuals(qIdx: number): void {
     const q = this.questions[qIdx];
-    const selected = this.answers.get(qIdx)!;
+    const selected = this.state.answers.get(qIdx)!;
     const isMulti = q.multiSelect;
 
     for (let i = 0; i < q.options.length; i++) {
@@ -478,7 +503,7 @@ export class InlineAskUserQuestion {
 
     if (!isMulti && this.#canShowCustomInputForQuestion(q)) {
       const customRow = this.currentItems[q.options.length];
-      const hasCustomText = this.customInputs.get(qIdx)!.trim().length > 0;
+      const hasCustomText = this.state.customInputs.get(qIdx)!.trim().length > 0;
       if (customRow) {
         customRow.toggleClass('is-selected', hasCustomText);
         this.#setIndicator(customRow, false, hasCustomText);
@@ -519,29 +544,29 @@ export class InlineAskUserQuestion {
         e.stopPropagation();
         this.focusedItemIndex = Math.min(this.focusedItemIndex + 1, maxFocusIndex);
         this.#updateFocusIndicator();
-        this.rootEl.focus();
+        this.rootEl?.focus();
         return true;
       case 'ArrowUp':
         e.preventDefault();
         e.stopPropagation();
         this.focusedItemIndex = Math.max(this.focusedItemIndex - 1, 0);
         this.#updateFocusIndicator();
-        this.rootEl.focus();
+        this.rootEl?.focus();
         return true;
       case 'ArrowLeft':
         if (this.config.immediateSelect) return false;
         e.preventDefault();
         e.stopPropagation();
-        this.#switchTab(this.activeTabIndex - 1);
+        this.#switchTab(this.state.activeTabIndex - 1);
         return true;
       case 'Tab':
         if (this.config.immediateSelect) return false;
         e.preventDefault();
         e.stopPropagation();
         if (e.shiftKey) {
-          this.#switchTab(this.activeTabIndex - 1);
+          this.#switchTab(this.state.activeTabIndex - 1);
         } else {
-          this.#switchTab(this.activeTabIndex + 1);
+          this.#switchTab(this.state.activeTabIndex + 1);
         }
         return true;
       case 'Escape':
@@ -556,7 +581,7 @@ export class InlineAskUserQuestion {
 
   #handleKeyDown(e: KeyboardEvent): void {
     if (e.isComposing) return;
-    if (this.submitting) {
+    if (this.state.submitting) {
       e.preventDefault();
       e.stopPropagation();
       return;
@@ -569,28 +594,28 @@ export class InlineAskUserQuestion {
         e.preventDefault();
         e.stopPropagation();
         this.isInputFocused = false;
-        (this.rootEl.ownerDocument.activeElement as HTMLElement | null)?.blur();
-        this.rootEl.focus();
+        (this.rootEl?.ownerDocument.activeElement as HTMLElement | null)?.blur();
+        this.rootEl?.focus();
         return;
       }
       if (e.key === 'Tab' || e.key === 'Enter') {
         e.preventDefault();
         e.stopPropagation();
         this.isInputFocused = false;
-        (this.rootEl.ownerDocument.activeElement as HTMLElement | null)?.blur();
+        (this.rootEl?.ownerDocument.activeElement as HTMLElement | null)?.blur();
         if (e.key === 'Tab' && e.shiftKey) {
-          this.#switchTab(this.activeTabIndex - 1);
+          this.#switchTab(this.state.activeTabIndex - 1);
         } else {
-          this.#switchTab(this.activeTabIndex + 1);
+          this.#switchTab(this.state.activeTabIndex + 1);
         }
         return;
       }
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault();
         e.stopPropagation();
-        (this.rootEl.ownerDocument.activeElement as HTMLElement | null)?.blur();
+        (this.rootEl?.ownerDocument.activeElement as HTMLElement | null)?.blur();
         this.isInputFocused = false;
-        const q = this.questions[this.activeTabIndex];
+        const q = this.questions[this.state.activeTabIndex];
         const maxIdx = this.#canShowCustomInputForQuestion(q) ? q.options.length : q.options.length - 1;
         if (e.key === 'ArrowUp') {
           this.focusedItemIndex = Math.max(this.focusedItemIndex - 1, 0);
@@ -598,28 +623,28 @@ export class InlineAskUserQuestion {
           this.focusedItemIndex = Math.min(this.focusedItemIndex + 1, maxIdx);
         }
         this.#updateFocusIndicator();
-        this.rootEl.focus();
+        this.rootEl?.focus();
         return;
       }
       return;
     }
 
     if (this.config.immediateSelect) {
-      const q = this.questions[this.activeTabIndex];
+      const q = this.questions[this.state.activeTabIndex];
       const maxIdx = q.options.length - 1;
       if (this.#handleNavigationKey(e, maxIdx)) return;
       if (e.key === 'Enter') {
         e.preventDefault();
         e.stopPropagation();
         if (this.focusedItemIndex <= maxIdx) {
-          this.selectOption(this.activeTabIndex, q.options[this.focusedItemIndex]);
+          this.selectOption(this.state.activeTabIndex, q.options[this.focusedItemIndex]);
         }
       }
       return;
     }
 
-    const isSubmitTab = this.activeTabIndex === this.questions.length;
-    const q = this.questions[this.activeTabIndex];
+    const isSubmitTab = this.state.activeTabIndex === this.questions.length;
+    const q = this.questions[this.state.activeTabIndex];
     const maxFocusIndex = isSubmitTab
       ? 1
       : (this.#canShowCustomInputForQuestion(q) ? q.options.length : q.options.length - 1);
@@ -641,13 +666,13 @@ export class InlineAskUserQuestion {
       case 'ArrowRight':
         e.preventDefault();
         e.stopPropagation();
-        this.#switchTab(this.activeTabIndex + 1);
+        this.#switchTab(this.state.activeTabIndex + 1);
         break;
       case 'Enter':
         e.preventDefault();
         e.stopPropagation();
         if (this.focusedItemIndex < q.options.length) {
-          this.selectOption(this.activeTabIndex, q.options[this.focusedItemIndex]);
+          this.selectOption(this.state.activeTabIndex, q.options[this.focusedItemIndex]);
         } else if (this.#canShowCustomInputForQuestion(q)) {
           this.isInputFocused = true;
           const customRow = this.currentItems[this.focusedItemIndex];
@@ -659,7 +684,7 @@ export class InlineAskUserQuestion {
   }
 
   private handleSubmit(): void {
-    if (this.submitting || this.resolved) return;
+    if (this.state.submitting || this.state.resolved) return;
     const allAnswered = this.questions.every((_, i) => this.#isQuestionAnswered(i));
     if (!allAnswered) return;
 
@@ -667,8 +692,8 @@ export class InlineAskUserQuestion {
     for (let i = 0; i < this.questions.length; i++) {
       const question = this.questions[i];
       const key = question.id ?? question.question;
-      const selectedValues = [...this.answers.get(i)!];
-      const customInput = this.customInputs.get(i)!.trim();
+      const selectedValues = [...this.state.answers.get(i)!];
+      const customInput = this.state.customInputs.get(i)!.trim();
 
       if (question.multiSelect) {
         const answers = [...selectedValues];
@@ -689,21 +714,19 @@ export class InlineAskUserQuestion {
   }
 
   async #submitAsync(result: AskUserAnswers): Promise<void> {
-    this.submitting = true;
-    this.submissionError = '';
-    this.rootEl.setAttribute('aria-busy', 'true');
-    this.#renderTabBar();
-    this.#renderTabContent();
+    this.state.submitting = true;
+    this.state.submissionError = '';
+    if (this.state.onChange) this.state.onChange();
+    else this.refresh();
     try {
       await this.config.onSubmit!(result);
       this.#handleResolve(result);
     } catch (error) {
-      if (this.resolved) return;
-      this.submissionError = error instanceof Error ? error.message : 'Could not send the answer. Please try again.';
-      this.submitting = false;
-      this.rootEl.setAttribute('aria-busy', 'false');
-      this.#renderTabBar();
-      this.#renderTabContent();
+      if (this.state.resolved) return;
+      this.state.submissionError = error instanceof Error ? error.message : 'Could not send the answer. Please try again.';
+      this.state.submitting = false;
+      if (this.state.onChange) this.state.onChange();
+      else this.refresh();
     }
   }
 
@@ -716,7 +739,7 @@ export class InlineAskUserQuestion {
   }
 
   #getSelectedLabels(idx: number): string[] {
-    const selected = this.answers.get(idx)!;
+    const selected = this.state.answers.get(idx)!;
     const question = this.questions[idx];
     return question.options
       .filter(option => selected.has(this.#getOptionValue(option)))
@@ -724,14 +747,9 @@ export class InlineAskUserQuestion {
   }
 
   #handleResolve(result: Record<string, string | string[]> | null): void {
-    if (!this.resolved) {
-      this.resolved = true;
-      this.rootEl?.removeEventListener('keydown', this.boundKeyDown);
-      if (this.signal && this.abortHandler) {
-        this.signal.removeEventListener('abort', this.abortHandler);
-        this.abortHandler = null;
-      }
-      this.rootEl?.remove();
+    if (!this.state.resolved) {
+      this.state.resolved = true;
+      this.disposePresentation();
       this.resolveCallback(result);
     }
   }

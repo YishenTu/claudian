@@ -181,7 +181,7 @@ describe('async question answer submission', () => {
     jest.mocked(ProviderRegistry.formatQuestionReply).mockReturnValue({ content: 'native reply payload', displayContent: `${command}\nYes` });
     await fixture.controller.answerQuestion(tool, { '0': 'Yes' }, 'conversation-1');
     expect(fixture.coordinator.execute.mock.calls[0][0]).toMatchObject({ canonicalText: 'native reply payload', rawDisplayText: `${command}\nYes` });
-    expect(fixture.deps.conversationController.createNew).not.toHaveBeenCalled();
+    expect(fixture.startNewConversation).not.toHaveBeenCalled();
   });
 
   it('delivers answers separately from ordinary queued messages', async () => {

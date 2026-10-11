@@ -2,7 +2,7 @@ import type { Component } from 'obsidian';
 
 import { extractUserDisplayContent } from '@/core/prompt/promptContext';
 import { DEFAULT_CHAT_PROVIDER_ID, type ProviderCapabilities, type ProviderSubagentLifecycleAdapter } from '@/core/providers/types';
-import type { ChatMessage, ImageAttachment, ToolCallInfo } from '@/core/types';
+import type { ChatMessage, ImageAttachment, SubagentInfo, ToolCallInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { renderCitationGroup } from '@/features/chat/rendering/CitationRenderer';
 import { MarkdownContentRenderer, type RenderContentOptions } from '@/features/chat/rendering/markdown/MarkdownContentRenderer';
@@ -21,6 +21,22 @@ import { renderStoredAsyncSubagent, renderStoredSubagent } from '@/features/chat
 import { ImagePreviewModal } from '@/shared/modals/ImagePreviewModal';
 import { registerFileLinkHandler } from '@/utils/fileLink';
 
+
+/** Rendering hooks reconnect live tool cards to their session owners. */
+export interface LiveTranscriptOptions {
+  isResponseOpen(messageId: string): boolean;
+  /** Settled messages reconnect only subagents whose owner still applies provider updates. */
+  isSubagentTracked(toolId: string): boolean;
+  onToolRendered(tool: ToolCallInfo, view: ReturnType<typeof renderToolCard>): void;
+  renderSubagent(parent: HTMLElement, info: SubagentInfo): void;
+  reservePendingSubagent(parent: HTMLElement, toolId: string): boolean;
+}
+
+/** Open response segments use live cards; settled messages keep the stored rendering. */
+interface MessageLiveScope {
+  options: LiveTranscriptOptions;
+  open: boolean;
+}
 
 /**
  * Renders a tab's transcript: live and replayed messages, assistant content
@@ -158,6 +174,10 @@ export class MessageRenderer {
     return msgEl;
   }
 
+  getMessageContentEl(messageId: string): HTMLElement | null {
+    return this.findMessageEl(messageId)?.querySelector<HTMLElement>('.claudian-message-content') ?? null;
+  }
+
   removeMessage(messageId: string): void {
     const msgEl = this.findMessageEl(messageId);
     if (!msgEl) {
@@ -178,7 +198,8 @@ export class MessageRenderer {
    */
   renderMessages(
     messages: ChatMessage[],
-    getGreeting: () => string
+    getGreeting: () => string,
+    live?: LiveTranscriptOptions,
   ): HTMLElement {
     this.#markdown.release();
     this.messagesEl.empty();
@@ -187,16 +208,21 @@ export class MessageRenderer {
 
     // Recreate welcome element after clearing
     const newWelcomeEl = createWelcomeElement(this.messagesEl, getGreeting());
+    const openIds = live ? new Set(messages.filter(message => live.isResponseOpen(message.id))
+      .flatMap(message => getResponseSegments(message, messages).map(segment => segment.id))) : undefined;
 
     for (let i = 0; i < messages.length; i++) {
-      this.renderStoredMessage(messages[i], messages, i);
+      this.renderStoredMessage(messages[i], messages, i, live && { options: live, open: openIds?.has(messages[i].id) === true });
     }
 
     this.scrollToBottom();
     return newWelcomeEl;
   }
 
-  renderStoredMessage(msg: ChatMessage, allMessages?: ChatMessage[], index?: number): void {
+  renderStoredMessage(msg: ChatMessage, allMessages?: ChatMessage[], index?: number, scope?: MessageLiveScope): void {
+    const open = !!scope && (scope.options.isResponseOpen(msg.id)
+      || (msg.isAutomaticResponse === true && msg.completedAt === undefined && !this.#hasVisibleContent(msg)));
+    const live = scope && { options: scope.options, open: scope.open || open };
     // Bare interrupt marker: user-role interrupts (Claude bracket markers) always render
     // as a standalone indicator. Assistant-role interrupts (Codex partial responses)
     // only use the bare marker when there's no content to preserve.
@@ -215,7 +241,7 @@ export class MessageRenderer {
       this.#renderUserMessage(msg, { live: false, allMessages, index });
       return;
     }
-    if (msg.role === 'assistant' && !this.#hasVisibleContent(msg)) {
+    if (msg.role === 'assistant' && !this.#hasVisibleContent(msg) && !open) {
       // A pre-output notification can leave an empty first segment that still
       // anchors its continuation's work disclosure when the transcript rerenders.
       const anchorsContinuation = allMessages?.some(message => message !== msg
@@ -225,7 +251,7 @@ export class MessageRenderer {
 
     const { msgEl, contentEl } = this.#createMessageEl(msg);
     if (msg.role === 'assistant') {
-      this.#renderAssistantContent(msg, contentEl);
+      this.#renderAssistantContent(msg, contentEl, live);
       for (const card of contentEl.querySelectorAll<HTMLElement>('[data-subagent-id], [data-async-subagent-id]')) {
         const id = card.dataset.subagentId ?? card.dataset.asyncSubagentId;
         const info = msg.toolCalls?.find(tool => tool.id === id)?.subagent;
@@ -238,7 +264,7 @@ export class MessageRenderer {
 
     this.#actions.appendTimestamp(msgEl, msg.completedAt);
     const next = index === undefined ? undefined : allMessages?.[index + 1];
-    if (msg.role === 'assistant' && (msg.durationSeconds !== undefined || next?.role !== 'assistant'
+    if (msg.role === 'assistant' && !open && (msg.durationSeconds !== undefined || next?.role !== 'assistant'
       || msg.contentBlocks?.some(block => block.type === 'task_notification'))) {
       this.finalizeResponse(msg, allMessages ?? [msg], !next?.isInterrupt, index);
     }
@@ -331,7 +357,7 @@ export class MessageRenderer {
   /**
    * Renders assistant message content (content blocks or fallback).
    */
-  #renderAssistantContent(msg: ChatMessage, contentEl: HTMLElement): void {
+  #renderAssistantContent(msg: ChatMessage, contentEl: HTMLElement, live?: MessageLiveScope): void {
     if (msg.contentBlocks && msg.contentBlocks.length > 0) {
       const renderedToolIds = new Set<string>();
       for (const block of msg.contentBlocks) {
@@ -355,7 +381,7 @@ export class MessageRenderer {
         } else if (block.type === 'tool_use') {
           const toolCall = msg.toolCalls?.find(tc => tc.id === block.toolId);
           if (toolCall) {
-            this.#renderToolCall(contentEl, toolCall, msg);
+            this.#renderToolCall(contentEl, toolCall, msg, live);
             renderedToolIds.add(toolCall.id);
           }
         } else if (block.type === 'task_notification') {
@@ -372,7 +398,7 @@ export class MessageRenderer {
           });
           if (!taskToolCall) continue;
 
-          this.#renderTaskSubagent(contentEl, taskToolCall, block.mode);
+          this.#renderTaskSubagent(contentEl, taskToolCall, block.mode, live);
           renderedToolIds.add(taskToolCall.id);
         }
       }
@@ -381,20 +407,20 @@ export class MessageRenderer {
       if (msg.toolCalls && msg.toolCalls.length > 0) {
         for (const toolCall of msg.toolCalls) {
           if (renderedToolIds.has(toolCall.id)) continue;
-          this.#renderToolCall(contentEl, toolCall, msg);
+          this.#renderToolCall(contentEl, toolCall, msg, live);
           renderedToolIds.add(toolCall.id);
         }
       }
     } else {
       // Fallback for old conversations without contentBlocks
-      if (msg.content.trim()) {
+      if (msg.content.trim() && !live?.options.isResponseOpen(msg.id)) {
         const textEl = createResponseTextBlock(contentEl);
         void this.renderContent(textEl, msg.content);
         this.addTextCopyButton(textEl, msg.content);
       }
       if (msg.toolCalls) {
         for (const toolCall of msg.toolCalls) {
-          this.#renderToolCall(contentEl, toolCall, msg);
+          this.#renderToolCall(contentEl, toolCall, msg, live);
         }
       }
     }
@@ -404,7 +430,7 @@ export class MessageRenderer {
    * Renders a tool call with special handling for Write/Edit, Agent (subagent),
    * and Codex collab agent lifecycle tools.
    */
-  #renderToolCall(contentEl: HTMLElement, toolCall: ToolCallInfo, msg?: ChatMessage): void {
+  #renderToolCall(contentEl: HTMLElement, toolCall: ToolCallInfo, msg?: ChatMessage, live?: MessageLiveScope): void {
     if (!this.#shouldRenderToolCall(toolCall, msg)) return;
     const subagentAdapter = this.#resolveSubagentAdapter(toolCall.name);
 
@@ -412,17 +438,18 @@ export class MessageRenderer {
       subagentAdapter?.protocol === 'managed-agent'
       && subagentAdapter.isSpawnTool(toolCall.name)
     ) {
-      this.#renderTaskSubagent(contentEl, toolCall);
+      this.#renderTaskSubagent(contentEl, toolCall, undefined, live);
     } else if (
       subagentAdapter?.protocol === 'lifecycle'
       && (subagentAdapter.isSpawnTool(toolCall.name) || toolCall.subagent?.lifecycleSource === 'session')
       && msg
     ) {
-      this.#renderProviderLifecycleSubagent(contentEl, toolCall, msg);
+      this.#renderProviderLifecycleSubagent(contentEl, toolCall, msg, live);
     } else {
-      renderToolCard(contentEl, toolCall, {
-        mode: 'stored', expandFileEditsByDefault: this.plugin.settings?.expandFileEditsByDefault === true,
+      const view = renderToolCard(contentEl, toolCall, {
+        mode: live?.open ? 'live' : 'stored', expandFileEditsByDefault: this.plugin.settings?.expandFileEditsByDefault === true,
       });
+      if (live?.open) live.options.onToolRendered(toolCall, view);
     }
   }
 
@@ -465,8 +492,16 @@ export class MessageRenderer {
   #renderTaskSubagent(
     contentEl: HTMLElement,
     toolCall: ToolCallInfo,
-    modeHint?: 'sync' | 'async'
+    modeHint?: 'sync' | 'async',
+    live?: MessageLiveScope,
   ): void {
+    if (live && (live.open || live.options.isSubagentTracked(toolCall.id))) {
+      if (toolCall.subagent) {
+        live.options.renderSubagent(contentEl, toolCall.subagent);
+        return;
+      }
+      if (live.options.reservePendingSubagent(contentEl, toolCall.id)) return;
+    }
     const subagentInfo = resolveStoredTaskSubagent(toolCall, modeHint);
     if (subagentInfo.mode === 'async') {
       renderStoredAsyncSubagent(contentEl, subagentInfo);
@@ -483,7 +518,12 @@ export class MessageRenderer {
     contentEl: HTMLElement,
     spawnToolCall: ToolCallInfo,
     msg: ChatMessage,
+    live?: MessageLiveScope,
   ): void {
+    if (live && spawnToolCall.subagent && (live.open || live.options.isSubagentTracked(spawnToolCall.id))) {
+      live.options.renderSubagent(contentEl, spawnToolCall.subagent);
+      return;
+    }
     const subagentAdapter = this.#resolveSubagentAdapter(spawnToolCall.name);
     if (!subagentAdapter || subagentAdapter.protocol !== 'lifecycle') {
       renderToolCard(contentEl, spawnToolCall, { mode: 'stored', expandFileEditsByDefault: this.plugin.settings?.expandFileEditsByDefault === true });

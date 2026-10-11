@@ -3,6 +3,7 @@ import '@/providers';
 
 import { deserialize, serialize } from 'node:v8';
 
+import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { FakeSideSession } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { modelCatalogCases } from '@test/helpers/providerModelCatalogs';
@@ -20,8 +21,8 @@ import type { ProviderId } from '@/core/providers/types';
 import type { ClaudianSettings, Conversation } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
+import { updateSessionProviderSettings, updateSessionReasoning } from '@/features/chat/sessions/sessionSettings';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
-import { updateTabProviderSettings } from '@/features/chat/tabs/tabProviderSettings';
 import { refreshTabProviderUI } from '@/features/chat/tabs/tabProviderUI';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
@@ -74,6 +75,7 @@ function createChatHarness(settings: ClaudianSettings, id: ProviderId, selected:
   const app = new App();
   Object.assign(app.vault.adapter, { basePath: '/vault' });
   Object.assign(app.vault, { on: () => ({}), offref: () => undefined });
+  Object.assign(app.workspace, { getActiveFile: () => null });
   const conversations: Conversation[] = [];
   const tabs: AssembledTabRuntime[] = [];
   const sessions: FakeSideSession[] = [];
@@ -108,22 +110,25 @@ function createChatHarness(settings: ClaudianSettings, id: ProviderId, selected:
     mutateSettings: settingsCoordinator.mutate.bind(settingsCoordinator),
     getCommittedSettings: settingsCoordinator.getCommittedSettings.bind(settingsCoordinator),
   } as unknown as ChatFeatureHost;
-  const createTab = async () => {
-    const conversation = {
+  const createTab = async (blank = false, existingId?: string) => {
+    const conversation = conversations.find(entry => entry.id === existingId) ?? {
       id: `conversation-${conversations.length}`, providerId: id, selectedModel: selected,
       messages: [...harness.tab.state.messages], sessionId: `session-${conversations.length}`,
     } as unknown as Conversation;
-    conversations.push(conversation);
+    if (!blank && !existingId) conversations.push(conversation);
+    if (!plugin.sessionRuntimes) installSessionRuntimePool(plugin);
     const tab = await createTabRuntime({
       plugin,
       component: Object.assign(new Component(), { registerDomEvent: () => undefined, registerEvent: () => undefined }) as never,
       containerEl: document.body.appendChild(document.createElement('div')),
       mentionDataProvider: new VaultMentionDataProvider(plugin.app),
-      conversation, getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
+      conversation: blank ? undefined : conversation, providerId: id, draftModel: selected, getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
     openConversation: async () => {}, startNewConversation: async () => {},
     });
-    tab.state.currentConversationId = conversation.id;
-    tab.state.messages = conversation.messages;
+    if (!blank) {
+      tab.state.currentConversationId = conversation.id;
+      tab.state.messages = conversation.messages;
+    }
     tabs.push(tab);
     return tab;
   };
@@ -239,6 +244,41 @@ it('defaults Codex to automatic review and persists and submits each permission 
     const reopened = await createTab();
     expect(within(reopened.dom.inputComposerEl).getByRole('button', { name: 'Permission mode: Approve for me' })).toBeDefined();
     expect(settings.permissionMode).toBe(initialPermissionMode);
+  } finally {
+    for (const tab of tabs) await destroyTab(tab);
+  }
+});
+
+it('keeps permission and service tier independent across sessions and parent model eviction', async () => {
+  const entry = modelCatalogCases.find(({ id }) => id === 'codex')!;
+  const { createTab, sessions, tabs, plugin } = createChatHarness(createSettings(entry), entry.id, entry.selected);
+  try {
+    const first = await createTab();
+    const second = await createTab();
+    await updateSessionProviderSettings(first.session.runtime, plugin, snapshot => {
+      snapshot.permissionMode = 'yolo';
+      snapshot.serviceTier = 'fast';
+    });
+    const model = getChatSettingsSnapshot(plugin.settings, entry.id, entry.selected).model;
+    await expectSubmission(second, sessions, model, 'high');
+    expect(sessions.at(-1)?.requests.at(-1)?.configuration).toMatchObject({ permissionMode: 'auto-review', serviceTier: 'default' });
+    // An unrelated change commits only itself; the second session's own selections stay local.
+    await updateSessionReasoning(second.session.runtime, plugin, 'low');
+    expect(plugin.settings).toMatchObject({
+      savedProviderEffort: { codex: 'low' }, savedProviderPermissionMode: { codex: 'yolo' }, savedProviderServiceTier: { codex: 'fast' },
+    });
+    refreshTabProviderUI(second);
+    await expectSubmission(second, sessions, model, 'low');
+    expect(sessions.at(-1)?.requests.at(-1)?.configuration).toMatchObject({ permissionMode: 'auto-review', serviceTier: 'default' });
+    const identity = first.conversationId!;
+    const runtime = first.session.runtime;
+    await first.session.runtime.model.hydrate();
+    await destroyTab(first);
+    await waitFor(() => expect(runtime.peekModel).toBeNull());
+    const reopened = await createTab(false, identity);
+    expect(reopened.session.runtime).toBe(runtime);
+    await expectSubmission(reopened, sessions, model, 'high');
+    expect(sessions.at(-1)?.requests.at(-1)?.configuration).toMatchObject({ permissionMode: 'yolo', serviceTier: 'fast' });
   } finally {
     for (const tab of tabs) await destroyTab(tab);
   }
@@ -442,18 +482,18 @@ it.each([true, false])('seeds tabs from committed reasoning while a save is pend
   }
 });
 
-test.each(['provider switch', 'switch back', 'closing'] as const)('queued toolbar changes cannot survive %s', async transition => {
+test.each(['provider switch', 'switch back', 'closing'] as const)('queued toolbar changes retain their session only across closing (%s)', async transition => {
   const entry = modelCatalogCases.find(entry => entry.id === 'claude')!;
   const settings = createSettings(entry);
   const { plugin, createTab } = createChatHarness(settings, entry.id, entry.selected);
-  const tab = await createTab();
-  tab.session.startDraft(entry.id, entry.selected);
+  const tab = await createTab(true);
+  tab.session.selectDraft(entry.id, entry.selected);
   try {
     let release!: () => void;
     const blocker = plugin.mutateSettings(() => new Promise<void>(resolve => { release = resolve; }));
     await Promise.resolve();
     const before = structuredClone(settings);
-    const pending = updateTabProviderSettings(tab, plugin, snapshot => { snapshot.permissionMode = 'normal'; });
+    const pending = updateSessionProviderSettings(tab.session.runtime, plugin, snapshot => { snapshot.permissionMode = 'normal'; });
     if (transition === 'closing') tab.session.beginClose();
     else {
       tab.session.selectDraft('codex', 'openai-codex/gpt-5.5');
@@ -461,6 +501,7 @@ test.each(['provider switch', 'switch back', 'closing'] as const)('queued toolba
     }
     release();
     await Promise.all([blocker, pending]);
-    expect(settings).toEqual(before);
+    expect(tab.session.runtime.providerSelections.get(entry.id)?.permissionMode).toBe(transition === 'closing' ? 'normal' : before.permissionMode);
+    expect(transition === 'closing' || JSON.stringify(settings) === JSON.stringify(before)).toBe(true);
   } finally { await destroyTab(tab); }
 });

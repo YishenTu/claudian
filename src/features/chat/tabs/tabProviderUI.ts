@@ -5,9 +5,9 @@ import type { ProviderId } from '@/core/providers/types';
 import type { Conversation } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { toggleServiceTier } from '@/features/chat/composer/toggleServiceTier';
+import { getSessionProviderId } from '@/features/chat/sessions/sessionProvider';
+import { getSessionCapabilities, getSessionChatUIConfig, getSessionSettingsSnapshot, updateSessionProviderSettings } from '@/features/chat/sessions/sessionSettings';
 import { projectContextUsageDisplay } from '@/features/chat/state/usageInfo';
-import { getTabProviderId } from '@/features/chat/tabs/providerResolution';
-import { getTabCapabilities, getTabChatUIConfig, getTabSettingsSnapshot, updateTabProviderSettings } from '@/features/chat/tabs/tabProviderSettings';
 import type {
   AssembledTabRuntime,
   ProviderCatalogInfo,
@@ -37,7 +37,7 @@ export function syncComposerDropdownForProvider(
     return;
   }
 
-  const providerId = getTabProviderId(tab, plugin, conversation);
+  const providerId = getSessionProviderId(tab, plugin, conversation);
   const catalogInfo = (getProviderCatalogConfig ?? tab.providerCatalogResolver)?.()
     ?? (providerId ? getRegistryProviderCatalogInfo(providerId) : null);
 
@@ -65,7 +65,7 @@ export async function updateTabServiceTier(
   plugin: ChatFeatureHost,
   serviceTier: string,
 ): Promise<void> {
-  await updateTabProviderSettings(tab, plugin, (settings) => {
+  await updateSessionProviderSettings(tab.session.runtime, plugin, (settings) => {
     settings.serviceTier = serviceTier;
   });
   tab.ui.serviceTierToggle.updateDisplay();
@@ -76,8 +76,8 @@ export async function toggleTabServiceTier(
   plugin: ChatFeatureHost,
 ): Promise<boolean> {
   return await toggleServiceTier({
-    getUIConfig: () => getTabChatUIConfig(tab, plugin),
-    getSettings: () => getTabSettingsSnapshot(tab, plugin),
+    getUIConfig: () => getSessionChatUIConfig(tab, plugin),
+    getSettings: () => getSessionSettingsSnapshot(tab.session.runtime, plugin),
     onServiceTierChange: serviceTier => updateTabServiceTier(tab, plugin, serviceTier),
   });
 }
@@ -96,8 +96,8 @@ export function applyProviderUIGating(
   tab: AssembledTabRuntime,
   plugin: ChatFeatureHost,
 ): void {
-  const capabilities = getTabCapabilities(tab, plugin);
-  const uiConfig = getTabChatUIConfig(tab, plugin);
+  const capabilities = getSessionCapabilities(tab, plugin);
+  const uiConfig = getSessionChatUIConfig(tab, plugin);
   const hasPermissionToggle = Boolean(uiConfig.getPermissionModeOptions?.()?.length);
 
   tab.ui.permissionToggle.setVisible(hasPermissionToggle);
@@ -112,9 +112,9 @@ export function refreshTabContextUsage(
   plugin: ChatFeatureHost,
 ): void {
   const conversation = tab.conversationId ? plugin.getConversationSummary(tab.conversationId) : null;
-  const settings = getTabSettingsSnapshot(tab, plugin, conversation);
+  const settings = getSessionSettingsSnapshot(tab.session.runtime, plugin, conversation);
   tab.ui.contextUsageMeter.update(projectContextUsageDisplay(tab.state.usage, {
-    providerId: getTabProviderId(tab, plugin, conversation),
+    providerId: getSessionProviderId(tab, plugin, conversation),
     model: settings.model,
     customContextLimits: settings.customContextLimits,
   }));
@@ -134,9 +134,9 @@ export async function updateTabPermissionMode(
   plugin: ChatFeatureHost,
   mode: string,
 ): Promise<void> {
-  const uiConfig = getTabChatUIConfig(tab, plugin);
+  const uiConfig = getSessionChatUIConfig(tab, plugin);
   try {
-    await updateTabProviderSettings(tab, plugin, (settings) => {
+    await updateSessionProviderSettings(tab.session.runtime, plugin, (settings) => {
       if (uiConfig.applyPermissionMode) {
         uiConfig.applyPermissionMode(mode, settings);
       } else {

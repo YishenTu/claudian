@@ -1,5 +1,7 @@
 import type { UsageInfo } from '@/core/types';
 import { cleanupThinkingBlock } from '@/features/chat/rendering/ThinkingBlockRenderer';
+import { ResponseModel } from '@/features/chat/state/ResponseModel';
+import { SessionAttention } from '@/features/chat/state/SessionAttention';
 import type {
   ChatActivity,
   ChatMessage,
@@ -7,6 +9,7 @@ import type {
   ChatStateData,
   PendingToolCall,
   QueuedMessage,
+  StreamingThinkingBlock,
   TabAttention,
   TabReviewOutcome,
   ThinkingBlockState,
@@ -26,15 +29,12 @@ const NO_TURN_ACTIVITY: TurnActivity = Object.freeze({
 function createInitialState(): ChatStateData {
   return {
     messages: [],
-    isResettingToNewChat: false,
-    isSwitchingConversation: false,
     isRewinding: false,
     hasPendingConversationSave: false,
     currentConversationId: null,
     queuedMessage: null,
     currentContentEl: null,
     currentTextEl: null,
-    currentTextContent: '',
     currentThinkingState: null,
     thinkingEl: null,
     queueIndicatorEl: null,
@@ -43,22 +43,16 @@ function createInitialState(): ChatStateData {
     writeEditStates: new Map(),
     pendingTools: new Map(),
     usage: null,
-    attention: null,
     autoScrollEnabled: true, // Default; controllers will override based on settings
-    responseStartTime: null,
     flavorTimerInterval: null,
   };
 }
 
 export class ChatState {
+  readonly response = new ResponseModel();
   private state: ChatStateData;
   private _callbacks: ChatStateCallbacks;
-  private readonly pendingActionIds = new Set<string>();
-  private reviewEpochValue = 0;
-  private pendingReview: {
-    outcome: TabReviewOutcome;
-    since: number;
-  } | null = null;
+  private readonly subscriptions: Array<() => void> = [];
   /** Null derives activity from the latest message after transcript changes. */
   #activity: ChatActivity | null = null;
   #waitingStatus: string | null = null;
@@ -77,10 +71,15 @@ export class ChatState {
     private readonly conversationIdentity?: { get(): string | null; set(id: string | null): void },
     /** The single owner of foreground turn state; presentation only derives from it. */
     private readonly turnActivity: TurnActivity = NO_TURN_ACTIVITY,
+    private readonly sessionAttention = new SessionAttention(),
   ) {
     this.state = createInitialState();
     this._callbacks = callbacks;
-    turnActivity.subscribe(() => this.#onTurnActivityChanged());
+    this.subscriptions.push(turnActivity.subscribe(() => this.#onTurnActivityChanged()));
+    this.subscriptions.push(sessionAttention.subscribe(() => {
+      this._callbacks.onAttentionChanged?.(sessionAttention.attention);
+      this.#notifyActivity();
+    }));
   }
 
   // ============================================
@@ -170,20 +169,12 @@ export class ChatState {
     return this.turnActivity.streamGeneration;
   }
 
-  get isResettingToNewChat(): boolean {
-    return this.state.isResettingToNewChat;
-  }
-
-  get isSwitchingConversation(): boolean {
-    return this.state.isSwitchingConversation;
-  }
-
   get isRewinding(): boolean {
     return this.state.isRewinding;
   }
 
   /** ConversationController is the only writer of navigation transition state. */
-  claimTransitionWriter(): (key: 'isResettingToNewChat' | 'isSwitchingConversation' | 'isRewinding', value: boolean) => void {
+  claimTransitionWriter(): (key: 'isRewinding', value: boolean) => void {
     if (this.#transitionWriterClaimed) throw new Error('Conversation transitions already have an owner.');
     this.#transitionWriterClaimed = true;
     return (key, value) => {
@@ -250,11 +241,19 @@ export class ChatState {
   }
 
   get currentTextContent(): string {
-    return this.state.currentTextContent;
+    return this.response.text;
   }
 
   set currentTextContent(value: string) {
-    this.state.currentTextContent = value;
+    this.response.text = value;
+  }
+
+  get currentThinkingBlock(): StreamingThinkingBlock | null {
+    return this.response.thinking;
+  }
+
+  set currentThinkingBlock(value: StreamingThinkingBlock | null) {
+    this.response.thinking = value;
   }
 
   get currentThinkingState(): ThinkingBlockState | null {
@@ -322,76 +321,12 @@ export class ChatState {
   // Runtime-only Attention State
   // ============================================
 
-  get attention(): TabAttention {
-    return this.state.attention;
-  }
-
-  get requiresAction(): boolean {
-    return this.state.attention?.kind === 'action-required';
-  }
-
-  beginActionRequired(interactionId: string): void {
-    if (this.pendingActionIds.has(interactionId)) return;
-
-    this.pendingActionIds.add(interactionId);
-    if (this.state.attention?.kind === 'review' && this.pendingReview === null) {
-      this.pendingReview = {
-        outcome: this.state.attention.outcome,
-        since: this.state.attention.since,
-      };
-    }
-    if (!this.requiresAction) {
-      this.#setAttention({ kind: 'action-required', since: Date.now() });
-    }
-  }
-
-  endActionRequired(interactionId: string): void {
-    if (!this.pendingActionIds.delete(interactionId)) return;
-    if (this.pendingActionIds.size === 0 && this.requiresAction) {
-      const review = this.pendingReview;
-      this.pendingReview = null;
-      this.#setAttention(review === null
-        ? null
-        : { kind: 'review', ...review });
-    }
-  }
-
-  markReviewRequired(outcome: TabReviewOutcome = 'completed'): void {
-    if (this.state.attention?.kind === 'review') {
-      if (this.state.attention.outcome === 'error' || outcome === 'completed') return;
-      this.#setAttention({
-        kind: 'review',
-        outcome: 'error',
-        since: this.state.attention.since,
-      });
-      return;
-    }
-    if (this.requiresAction) {
-      if (this.pendingReview === null) {
-        this.pendingReview = { outcome, since: Date.now() };
-      } else if (outcome === 'error') {
-        this.pendingReview.outcome = 'error';
-      }
-      return;
-    }
-    this.#setAttention({ kind: 'review', outcome, since: Date.now() });
-  }
-
-  /**
-   * Advances on every review acknowledgement (activation, a new turn). A settlement captured in an
-   * earlier epoch was already seen by the user and must not request review.
-   */
-  get reviewEpoch(): number {
-    return this.reviewEpochValue;
-  }
-
-  acknowledgeReview(): void {
-    this.reviewEpochValue += 1;
-    this.pendingReview = null;
-    if (this.state.attention?.kind === 'review') {
-      this.#setAttention(null);
-    }
-  }
+  get attention(): TabAttention { return this.sessionAttention.attention; }
+  get requiresAction(): boolean { return this.sessionAttention.requiresAction; }
+  get reviewEpoch(): number { return this.sessionAttention.reviewEpoch; }
+  setActionRequired(required: boolean): void { this.sessionAttention.setActionRequired(required); }
+  markReviewRequired(outcome: TabReviewOutcome = 'completed'): void { this.sessionAttention.markReviewRequired(outcome); }
+  acknowledgeReview(): void { this.sessionAttention.acknowledgeReview(); }
 
   // ============================================
   // Auto-Scroll Control
@@ -414,11 +349,11 @@ export class ChatState {
   // ============================================
 
   get responseStartTime(): number | null {
-    return this.state.responseStartTime;
+    return this.response.startedAt;
   }
 
   set responseStartTime(value: number | null) {
-    this.state.responseStartTime = value;
+    this.response.startedAt = value;
   }
 
   get flavorTimerInterval(): number | null {
@@ -429,11 +364,34 @@ export class ChatState {
   // Reset Methods
   // ============================================
 
+  dispose(): void {
+    this.detachPresentation();
+    for (const unsubscribe of this.subscriptions.splice(0)) unsubscribe();
+    this.#activityListeners.clear();
+  }
+
+  /** Releases the current view without ending or discarding an open response. */
+  detachPresentation(): void {
+    cleanupThinkingBlock(this.currentThinkingState);
+    this.clearThinkingIndicatorTimeout();
+    this.clearFlavorTimerInterval();
+    this.currentContentEl = null;
+    this.currentTextEl = null;
+    this.currentThinkingState = null;
+    this.thinkingEl = null;
+    this.queueIndicatorEl = null;
+    this.toolCallElements.clear();
+    this.writeEditStates.clear();
+    this.pendingTools.clear();
+  }
+
   resetStreamingPresentation(): void {
+    this.response.reset();
     cleanupThinkingBlock(this.currentThinkingState);
     this.currentContentEl = null;
     this.currentTextEl = null;
     this.currentTextContent = '';
+    this.currentThinkingBlock = null;
     this.currentThinkingState = null;
     this.responseStartTime = null;
   }
@@ -487,23 +445,4 @@ export class ChatState {
     return typeof window === 'undefined' ? null : window;
   }
 
-  #setAttention(attention: TabAttention): void {
-    const current = this.state.attention;
-    if (
-      current === attention
-      || (current !== null
-        && attention !== null
-        && current.kind === attention.kind
-        && current.since === attention.since
-        && (current.kind !== 'review'
-          || attention.kind !== 'review'
-          || current.outcome === attention.outcome))
-    ) {
-      return;
-    }
-
-    this.state.attention = attention;
-    this._callbacks.onAttentionChanged?.(attention);
-    this.#notifyActivity();
-  }
 }

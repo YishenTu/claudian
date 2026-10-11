@@ -1,5 +1,3 @@
-import { Notice } from 'obsidian';
-
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { TabId, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import { commitProvisionalTab } from '@/features/chat/tabs/TabLifecycle';
@@ -24,6 +22,7 @@ export interface TabConversationNavigationHost {
   createTab(conversationId: string, activate: boolean): Promise<AssembledTabRuntime | null>;
   discardTab(tabId: TabId): Promise<boolean>;
   canCreateTab(): boolean;
+  rebind(tab: AssembledTabRuntime, conversationId: string | null, isCurrent: NavigationRequestCheck): Promise<AssembledTabRuntime | null>;
 }
 
 /**
@@ -124,6 +123,13 @@ export class TabConversationNavigation {
     const { host } = this;
     const { membership } = host;
 
+    const attachment = host.plugin.sessionRuntimes.getAttachment(conversationId);
+    if (attachment) {
+      await attachment.owner.reveal(isCurrent);
+      if (!isCurrent()) return true;
+      if (host.plugin.sessionRuntimes.getAttachment(conversationId) === attachment) return true;
+    }
+
     const localTarget = membership.getTabIdentities()
       .find(tab => membership.isTabAlive(tab) && tab.conversationId === conversationId);
     if (localTarget) {
@@ -221,21 +227,12 @@ export class TabConversationNavigation {
       ? preferredTab
       : membership.getAllTabs().find(tab => membership.isTabAlive(tab)) ?? null;
     if (!activeTab) return;
-    const switched = await activeTab.controllers.conversationController.switchTo(conversationId);
-    if (!isCurrent() || !membership.isTabAlive(activeTab)) return;
-    if (switched && activeTab.conversationId === conversationId) {
-      commitProvisionalTab(activeTab);
-      if (membership.getActiveTabId() !== activeTab.id) {
-        await host.switchToTab(activeTab.id);
+    const switched = await host.rebind(activeTab, conversationId, isCurrent);
+    if (switched && membership.isTabAlive(switched)) {
+      commitProvisionalTab(switched);
+      if (membership.getActiveTabId() !== switched.id) {
+        await host.switchToTab(switched.id);
       }
-      return;
     }
-    // The tab refused to drop its work; a new-tab request already tried creating one.
-    if (switched || preferNewTab) return;
-    if (!host.canCreateTab()) {
-      new Notice('Cannot open the session: the current tab is busy and no new tab can be opened.');
-      return;
-    }
-    await host.createTab(conversationId, activate);
   }
 }

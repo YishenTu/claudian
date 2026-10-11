@@ -1,6 +1,9 @@
+import { Notice } from 'obsidian';
+
 import { type AppTabManagerState, normalizeTabLabel } from '@/core/bootstrap/tabManagerState';
 import type { ProviderId } from '@/core/providers/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { SessionAlreadyAttached } from '@/features/chat/sessions/SessionRuntimePool';
 import type { TabBarItem, TabId, TabManagerInterface, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import type { ForkTargetHost } from '@/features/chat/tabs/forking/ForkTarget';
 import { TabActivation } from '@/features/chat/tabs/TabActivation';
@@ -17,7 +20,9 @@ import {
   type TabIdentity,
 } from '@/features/chat/tabs/TabIdentity';
 import {
+  activateTab,
   commitProvisionalTab,
+  deactivateTab,
   destroyTab,
   drainTabForShutdownSnapshot,
   getTabTitle,
@@ -34,6 +39,7 @@ import type {
 } from '@/features/chat/tabs/types';
 import { ViewerSlot } from '@/features/chat/tabs/ViewerSlot';
 import type { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
+import { revealWorkspaceLeaf } from '@/utils/obsidianCompat';
 
 type CreateTabOptions = {
   activate?: boolean;
@@ -97,6 +103,7 @@ export class TabManager implements TabManagerInterface {
       createTab: conversationId => this.createTab(conversationId),
       discardTab: tabId => this.discardTab(tabId),
       forkTarget: () => layoutPolicy.forkTarget(),
+      rebind: (tab, id, isCurrent) => this.rebindTab(tab, id, isCurrent),
     };
     this.providerPresence = new TabProviderPresence(
       plugin,
@@ -119,6 +126,7 @@ export class TabManager implements TabManagerInterface {
       createTab: (conversationId, activate) => this.createTab(conversationId, undefined, { activate }),
       discardTab: tabId => this.discardTab(tabId),
       canCreateTab: () => this.canCreateTab(),
+      rebind: (tab, id, isCurrent) => this.rebindTab(tab, id, isCurrent),
     });
     this.closePolicy = new TabClosePolicy({
       membership,
@@ -136,6 +144,7 @@ export class TabManager implements TabManagerInterface {
       layoutPolicy,
       forkTargetHost,
       isShutdownSnapshotOpen: () => this.shutdownSnapshotOpen,
+      startNew: tab => this.navigation.enqueue(tab, async isCurrent => { await this.rebindTab(tab, null, isCurrent); }),
     };
     this.viewerSlot = new ViewerSlot({
       app: plugin.app,
@@ -148,6 +157,7 @@ export class TabManager implements TabManagerInterface {
       closeTab: tabId => this.closeTab(tabId),
       discardTab: tabId => this.discardTab(tabId),
       shouldRetain: conversationId => layoutPolicy.shouldRetainPreview(conversationId),
+      rebind: (tab, id, isCurrent) => this.rebindTab(tab, id, isCurrent),
     });
   }
 
@@ -233,6 +243,7 @@ export class TabManager implements TabManagerInterface {
         ...(typeof draftModel === 'string' ? { draftModel } : {}),
         ...(providerId !== undefined ? { providerId } : {}),
         lifecycleState,
+        revealSession: isCurrent => this.revealTab(runtimeTabId, isCurrent),
         ...createTabRuntimeCallbacks(this.runtimeCallbackHost, () => tab),
       });
 
@@ -268,6 +279,10 @@ export class TabManager implements TabManagerInterface {
           'Tab runtime setup failed and rollback also encountered errors',
           { cause: error },
         );
+      }
+      if (error instanceof SessionAlreadyAttached) {
+        await error.attachment.owner.reveal();
+        return null;
       }
       throw error;
     }
@@ -362,6 +377,74 @@ export class TabManager implements TabManagerInterface {
     await this.activation.switchTo(tabId);
   }
 
+  private async revealTab(tabId: TabId, isCurrent: () => boolean = () => true): Promise<void> {
+    const identity = this.membership.getIdentity(tabId);
+    await revealWorkspaceLeaf(this.plugin.app.workspace, this.view.leaf);
+    if (!isCurrent() || !identity || !this.membership.isTabAlive(identity)) return;
+    await this.switchToTab(tabId);
+  }
+
+  /** Replaces presentation in place; the prior session stays independently owned by the pool. */
+  private async rebindTab(
+    source: AssembledTabRuntime,
+    conversationId: string | null,
+    isCurrent: () => boolean = () => this.membership.isTabAlive(source),
+  ): Promise<AssembledTabRuntime | null> {
+    if (!isCurrent() || !this.membership.isTabStateMutable(source)) return null;
+    if (conversationId && source.conversationId === conversationId) return source;
+    const conversation = conversationId ? this.plugin.getCachedConversation(conversationId) : null;
+    if (conversationId && !conversation) return null;
+    const identity = createTabIdentity(this.plugin.settings, conversation, {
+      tabId: source.id, lifecycleState: source.lifecycleState === 'provisional' ? 'provisional' : 'open',
+      ...(source.label ? { label: source.label } : {}),
+    });
+    let target: AssembledTabRuntime | null = null;
+    try {
+      target = await createTabRuntime({
+        plugin: this.plugin, containerEl: this.containerEl, component: this.view,
+        mentionDataProvider: this.mentionDataProvider, initialState: identity, tabId: source.id,
+        conversation: conversation ?? undefined,
+        revealSession: isCurrent => this.revealTab(source.id, isCurrent),
+        ...createTabRuntimeCallbacks(this.runtimeCallbackHost, () => target),
+      });
+      await target.session.runtime.model.hydrate();
+      if (!isCurrent() || !this.membership.isTabStateMutable(source)) { await destroyTab(target); return null; }
+      if (source.lifecycleState === 'open') target.session.commitAdmission();
+      if (source.session.isUserClaimed) target.session.claimUserOwnership();
+      target.session.setLabel(source.label ?? null);
+      // A branch preview's prefilled prompt belongs to the source transcript; restore the user's own draft first.
+      source.controllers.conversationController.cancelBranchDraft();
+      for (const destination of ['main', 'side'] as const) {
+        target.controllers.drafts.restore(destination, source.controllers.drafts.capture(destination), { merge: true });
+      }
+      const wasActive = this.membership.getActiveTabId() === source.id;
+      if (wasActive) deactivateTab(source);
+      this.membership.install(target);
+      try {
+        this.commandDiscovery.invalidateTab(source.id);
+        if (wasActive) await this.activation.activateAdmitted(target.id, null, () => undefined);
+      } catch (error) {
+        this.membership.install(source);
+        if (wasActive) {
+          activateTab(source);
+          this.callbacks.onActiveTabChanged?.(source.id, source.id);
+        }
+        throw error;
+      }
+      // Membership has committed. Cleanup or observer failures cannot retract the new binding.
+      try { await destroyTab(source); } catch (error) {
+        new Notice(error instanceof Error ? error.message : 'Failed to release the previous tab presentation');
+      }
+      this.providerPresence.startForTab(target);
+      try { this.callbacks.onTabConversationChanged?.(target.id, conversationId); } catch { /* committed */ }
+      return target;
+    } catch (error) {
+      if (target && this.membership.getTab(target.id) !== target) await destroyTab(target);
+      if (error instanceof SessionAlreadyAttached) { await error.attachment.owner.reveal(); return null; }
+      throw error;
+    }
+  }
+
   getTabSwitchRequestRevision(): number {
     return this.activation.requestRevision;
   }
@@ -373,11 +456,10 @@ export class TabManager implements TabManagerInterface {
   /**
    * Closes a tab.
    * @param tabId The tab to close.
-   * @param force If true, close even if streaming.
    * @returns True if the tab was closed.
    */
-  async closeTab(tabId: TabId, force = false): Promise<boolean> {
-    return this.closePolicy.close(tabId, force);
+  async closeTab(tabId: TabId): Promise<boolean> {
+    return this.closePolicy.close(tabId);
   }
 
   /**
@@ -454,8 +536,7 @@ export class TabManager implements TabManagerInterface {
       const runtime = membership.getTab(identity.id);
       try {
         if (runtime) {
-          runtime.controllers.inputController.cancelStreaming();
-          await runtime.controllers.conversationController.createNew({ force: true });
+          await this.rebindTab(runtime, null, () => membership.isTabStateMutable(runtime));
         } else {
           const blank = createTabIdentity(this.plugin.settings, null, {
             tabId: identity.id,
@@ -496,6 +577,12 @@ export class TabManager implements TabManagerInterface {
       }
       if (membership.isDestroyed()) return;
       if (membership.holds(tabState.tabId)) continue;
+      if (tabState.conversationId) {
+        const owner = this.plugin.findConversationAcrossViews(tabState.conversationId);
+        // Restore publishes cold identities synchronously, so concurrent panes see the first owner.
+        // Unlike an explicit open, restoring a duplicate must not move focus to that pane.
+        if (owner && owner.view.getTabManager() !== this) continue;
+      }
       const identity = createTabIdentity(this.plugin.settings,
         tabState.conversationId ? this.plugin.getCachedConversation(tabState.conversationId) : null,
         { ...tabState, lifecycleState: 'open' });
@@ -580,8 +667,8 @@ export class TabManager implements TabManagerInterface {
         ...(tab.label ? { label: tab.label } : {}),
         isActive: tab.id === activeTabId,
         isWorking: this.isTabWorking(tab.id),
-        attention: runtime?.state.attention ?? null,
-        canClose: !runtime?.state.isRewinding && (identities.length > 1 || !runtime?.session.hasActiveTurn),
+        attention: runtime?.session.runtime.statusAttention ?? null,
+        canClose: identities.length > 1 || !!tab.conversationId || !!runtime?.state.messages.length,
       };
     });
   }
@@ -608,7 +695,7 @@ export class TabManager implements TabManagerInterface {
   async createNewConversation(): Promise<void> {
     const activeTab = this.getActiveTab();
     if (activeTab) {
-      await activeTab.controllers.conversationController.createNew();
+      await this.runtimeCallbackHost.startNew(activeTab);
     }
   }
 
@@ -632,7 +719,6 @@ export class TabManager implements TabManagerInterface {
     if (this.membership.isDestroyed()) return;
     this.membership.markDestroyed();
     this.shutdownSnapshotOpen = true;
-    for (const tab of this.getAllTabs()) tab.session.beginShutdown();
   }
 
   /** Seals the final identity snapshot so late runtime callbacks cannot mutate tab state. */
@@ -641,7 +727,7 @@ export class TabManager implements TabManagerInterface {
     this.membership.sealIdentities();
   }
 
-  /** Cancels and drains active tab work while terminal binding callbacks remain accepted. */
+  /** Joins navigation and draft promotion before capturing view identity. */
   async drainForShutdownSnapshot(): Promise<void> {
     this.beginShutdown();
     if (!this.shutdownDrainPromise) {

@@ -33,14 +33,14 @@ export class TabClosePolicy {
 
   constructor(private readonly host: TabCloseHost) {}
 
-  /** Closes a tab unless it is busy (without `force`) or the last blank draft. */
-  close(tabId: TabId, force: boolean): Promise<boolean> {
-    return this.#track(this.#close(tabId, force, true));
+  /** Closes a tab unless it is the last blank draft; running session work continues. */
+  close(tabId: TabId): Promise<boolean> {
+    return this.#track(this.#close(tabId, true));
   }
 
   /** Closes a tab even when it is the last blank draft, installing a fresh draft when needed. */
   discard(tabId: TabId): Promise<boolean> {
-    return this.#track(this.#close(tabId, true, false));
+    return this.#track(this.#close(tabId, false));
   }
 
   /** Waits for every admitted close, including ones started meanwhile; returns their failures. */
@@ -63,7 +63,7 @@ export class TabClosePolicy {
     return tracked;
   }
 
-  async #close(tabId: TabId, force: boolean, preserveLastBlank: boolean): Promise<boolean> {
+  async #close(tabId: TabId, preserveLastBlank: boolean): Promise<boolean> {
     const { membership } = this.host;
     const member = membership.getMember(tabId);
     if (!member) return false;
@@ -71,10 +71,6 @@ export class TabClosePolicy {
     const runtime = member.kind === 'assembled' ? member.runtime : null;
     if (tab.lifecycleState === 'closing' || membership.isCloseClaimed(tabId)) return false;
 
-    // Rewind is a provider/local-state transaction and cannot be interrupted by teardown.
-    if (runtime?.state.isRewinding) return false;
-    // Only an explicit force may interrupt the foreground turn.
-    if (runtime?.session.hasActiveTurn && !force) return false;
     // The last tab, already a blank draft, stays as the view's draft container.
     if (
       preserveLastBlank
@@ -87,7 +83,6 @@ export class TabClosePolicy {
 
     // Reserve the close before fallible replacement assembly without fencing state callbacks.
     membership.claimClose(tabId);
-    runtime?.session.pauseIntentAdmission();
     try {
       const idsBefore = membership.getTabIdentities().map(identity => identity.id);
       const closingIndex = idsBefore.indexOf(tabId);
@@ -116,12 +111,6 @@ export class TabClosePolicy {
       // Closing tabs cannot recreate metadata, so in-flight discovery is released once, now.
       closeErrors.push(...this.host.releaseMetadata(tabId));
 
-      // Save before closing; cleanup remains mandatory if save fails.
-      try {
-        await runtime?.controllers.conversationController.save();
-      } catch (error) {
-        closeErrors.push(error);
-      }
       // Destroy resources, then release ownership even if teardown fails.
       try {
         if (runtime) await destroyTab(runtime);
@@ -149,10 +138,6 @@ export class TabClosePolicy {
       return true;
     } finally {
       membership.releaseCloseClaim(tabId);
-      runtime?.session.resumeIntentAdmission();
-      if (runtime && membership.isTabStateMutable(runtime) && runtime.session.acceptsIntents) {
-        runtime.controllers.inputController.resumeQueuedTurnAfterIntentAdmission();
-      }
     }
   }
 

@@ -15,6 +15,8 @@
  */
 import { createMockEl } from '@test/helpers/MockElement';
 
+import { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
+import { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { ChatState } from '@/features/chat/state/ChatState';
 import type { TabManager } from '@/features/chat/tabs/TabManager';
 import { TabSession } from '@/features/chat/tabs/TabSession';
@@ -23,7 +25,6 @@ import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvi
 
 export const mockDestroyTab = jest.fn().mockResolvedValue(undefined);
 export const mockDrainTabForShutdownSnapshot = jest.fn().mockResolvedValue({
-  cancelledActiveTurn: false,
   cleanupFailures: [],
 });
 export const mockTabs: any[] = [];
@@ -63,6 +64,7 @@ export const commandCatalog = {
 
 export function createMockTab(options: Record<string, any>): any {
   const review = new ChatState();
+  const input = { value: '', focus: jest.fn() };
   const tab = {
     id: options.tabId ?? `tab-${mockTabs.length + 1}`,
     conversationId: options.conversation?.id ?? null,
@@ -87,7 +89,6 @@ export function createMockTab(options: Record<string, any>): any {
       hasPendingConversationSave: false,
       isRewinding: false,
       isStreaming: false,
-      isSwitchingConversation: false,
       messages: [],
       markReviewRequired: jest.fn(),
       requiresAction: false,
@@ -100,15 +101,11 @@ export function createMockTab(options: Record<string, any>): any {
     composer: { focus: jest.fn() },
     linkedContent: { selectExplicit: jest.fn() },
     controllers: {
+      drafts: new ComposerDraftController({ getInput: () => input as never, getImages: () => null, getDestination: () => 'main' }),
       conversationController: {
-        createNew: jest.fn().mockResolvedValue(undefined),
         initializeWelcome: jest.fn(),
         save: jest.fn().mockResolvedValue(undefined),
-        switchTo: jest.fn().mockImplementation(async (conversationId: string) => {
-          tab.session.setConversationId(conversationId);
-          tab.state.currentConversationId = conversationId;
-          return true;
-        }),
+        cancelBranchDraft: jest.fn(),
       },
       inputController: {
         resumeQueuedTurnAfterIntentAdmission: jest.fn(),
@@ -126,9 +123,18 @@ export function createMockTab(options: Record<string, any>): any {
     ui: {
     },
   };
-  tab.session = new TabSession(tab, tab.executionCoordinator as never, {
-    hasPendingInteraction: () => tab.state.requiresAction,
-  });
+  tab.session = new TabSession(tab, new ChatSessionRuntime({ ...tab }, tab.executionCoordinator as never, () => ({
+    state: tab.state,
+    get hasPendingInteraction() { return tab.state.requiresAction; },
+    hydrate: jest.fn(async () => { tab.hydrationState = 'ready'; }),
+    acknowledgeReviewIfVisible: () => tab.state.acknowledgeReview(),
+    publish: () => tab.session.runtime.notifyChanged(),
+    dismissInteractions: () => undefined,
+  }) as never));
+  for (const key of ['conversationId', 'providerId', 'draftModel'] as const) {
+    Object.defineProperty(tab, key, { get: () => tab.session[key] });
+  }
+  void tab.session.runtime.model;
   Object.defineProperty(tab.state, 'currentConversationId', {
     get: () => tab.session.conversationId,
     set: (id: string | null) => tab.session.setConversationId(id),
@@ -197,6 +203,7 @@ export function providerRegistryModuleMock() {
 
 export function createPlugin(overrides: Record<string, unknown> = {}) {
   return {
+    sessionRuntimes: { getAttachment: () => null, get: () => null },
     app: {
       vault: { adapter: { basePath: '/vault' } },
       workspace: {
@@ -287,4 +294,18 @@ export function deferred<T>(): {
     reject = rejecter;
   });
   return { promise, reject, resolve };
+}
+
+/** Controls hydration at the runtime factory boundary, including replacement presentations. */
+export function mockNextHydration(hydrate: (conversationId: string) => Promise<unknown>): jest.Mock {
+  const hydration = jest.fn(hydrate);
+  mockCreateTabRuntime.mockImplementationOnce(async options => {
+    const tab = createMockTab(options);
+    tab.session.runtime.model.hydrate = async () => {
+      await hydration(tab.conversationId);
+      tab.hydrationState = 'ready';
+    };
+    return tab;
+  });
+  return hydration;
 }

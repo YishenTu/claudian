@@ -1,14 +1,14 @@
 import { createMockEl } from '@test/helpers/MockElement';
 
-import { InlineInteractionPrompts } from '@/features/chat/interactions/InlineInteractionPrompts';
+import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 
-describe('InlineInteractionPrompts approval details', () => {
+describe('SessionInteractions approval details', () => {
   it('makes long approval details a named keyboard-scrollable region', () => {
     const parentEl = createMockEl();
     const inputContainerEl = createMockEl();
     inputContainerEl.parentElement = parentEl;
     parentEl.appendChild(inputContainerEl);
-    const prompts = new InlineInteractionPrompts({
+    const prompts = new SessionInteractions({
       getPromptParentEl: () => inputContainerEl.parentElement as any,
       getSuppressedEl: () => inputContainerEl as any,
     });
@@ -48,12 +48,12 @@ describe('InlineInteractionPrompts approval details', () => {
   });
 });
 
-describe('InlineInteractionPrompts presentation restore', () => {
+describe('SessionInteractions presentation restore', () => {
   it('resumes the newest response when an older generation prompt settles last', async () => {
     const parentEl = createMockEl();
     let generation = 1;
     const resumed: number[] = [];
-    const prompts = new InlineInteractionPrompts({
+    const prompts = new SessionInteractions({
       getPromptParentEl: () => parentEl as any,
       onBeforeShow: () => {
         const shownGeneration = generation;

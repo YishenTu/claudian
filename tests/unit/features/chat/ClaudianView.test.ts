@@ -249,41 +249,6 @@ describe('ClaudianView tab controls', () => {
     expect(handleActiveFileChanged).toHaveBeenLastCalledWith(null, true);
   });
 
-  it('fans Vault path events to every tab Linked content owner', () => {
-    const first = {
-      handleCreated: jest.fn(),
-      handleDeleted: jest.fn(),
-      handleRenamed: jest.fn(),
-    };
-    const second = {
-      handleCreated: jest.fn(),
-      handleDeleted: jest.fn(),
-      handleRenamed: jest.fn(),
-    };
-    const view = createClaudianView({
-      tabManager: {
-        getAllTabs: jest.fn().mockReturnValue([
-          { linkedContent: first },
-          { linkedContent: second },
-        ]),
-      },
-    });
-
-    view.handleLinkedContentRenamed('Projects/Old', 'Projects/New', true);
-    view.handleLinkedContentDeleted('Projects/New', true);
-    view.handleLinkedContentCreated('Projects/New');
-
-    for (const controller of [first, second]) {
-      expect(controller.handleRenamed).toHaveBeenCalledWith(
-        'Projects/Old',
-        'Projects/New',
-        true,
-      );
-      expect(controller.handleDeleted).toHaveBeenCalledWith('Projects/New', true);
-      expect(controller.handleCreated).toHaveBeenCalledWith('Projects/New');
-    }
-  });
-
   it('hides the new-tab button at capacity and shows it when another tab fits', async () => {
     const { contentEl, manager, view } = await openView();
     const newTabButton = contentEl.querySelector('.claudian-new-tab-btn')!;

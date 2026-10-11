@@ -1326,8 +1326,18 @@ describe('ClaudianPlugin', () => {
       expect(disposeSpy).toHaveBeenCalledTimes(1);
     });
 
-    it('drains views before disposing execution and workspace resources', async () => {
+    it('drains views and detached sessions before disposing execution and workspace resources', async () => {
       await plugin.onload();
+      const pool = chatHostOf().sessionRuntimes;
+      const { attachment } = pool.acquire({ conversationId: 'detached', providerId: 'claude', draftModel: null }, { reveal: () => undefined });
+      let finishSession!: () => void;
+      let turnSignal!: AbortSignal;
+      const turn = attachment.runtime.turns.run(signal => {
+        turnSignal = signal;
+        return new Promise<void>(resolve => { finishSession = resolve; });
+      });
+      pool.release(attachment);
+      const disposeSession = jest.spyOn(attachment.runtime, 'dispose');
       let resolveViewDrain!: () => void;
       const viewDrain = new Promise<void>((resolve) => {
         resolveViewDrain = resolve;
@@ -1349,6 +1359,8 @@ describe('ClaudianPlugin', () => {
       ).mockResolvedValue(undefined);
 
       plugin.onunload();
+      expect(turnSignal.aborted).toBe(true);
+      expect(attachment.runtime.acceptsIntents).toBe(false);
       await Promise.resolve();
 
       expect(prepareForPluginUnload).toHaveBeenCalledTimes(1);
@@ -1356,6 +1368,11 @@ describe('ClaudianPlugin', () => {
       expect(disposeWorkspaces).not.toHaveBeenCalled();
 
       resolveViewDrain();
+      await waitForCondition(() => disposeSession.mock.calls.length > 0);
+      expect(disposeExecution).not.toHaveBeenCalled();
+      expect(disposeWorkspaces).not.toHaveBeenCalled();
+      finishSession();
+      await turn;
       await (plugin as any).applicationShutdownPromise;
 
       expect(disposeExecution).toHaveBeenCalledTimes(1);
@@ -3066,6 +3083,32 @@ describe('ClaudianPlugin', () => {
       expect(first).toHaveBeenCalledTimes(2);
       expect(second).toHaveBeenCalledTimes(2);
     });
+
+    it('deletes an idle session whose detached model is being evicted', async () => {
+      await plugin.onload();
+      const conv = await chatHostOf(plugin).createConversation();
+      const pool = chatHostOf(plugin).sessionRuntimes;
+      const { attachment } = pool.acquire({ conversationId: conv.id, providerId: conv.providerId, draftModel: null }, { reveal: () => undefined });
+      const runtime = attachment.runtime;
+      await runtime.ensureModel();
+      const resetConversationTabs = jest.fn(async () => {
+        // The tab owner detaches the session, then yields while tearing down its presentation.
+        pool.release(attachment);
+        for (let tick = 0; tick < 5; tick++) await new Promise(resolve => setTimeout(resolve, 0));
+      });
+      mockApp.workspace.getLeavesOfType.mockReturnValue([{
+        view: { notifyConversationListChanged: jest.fn(), getTabManager: () => ({ resetConversationTabs }) },
+      }]);
+
+      const settled = jest.fn();
+      void chatHostOf(plugin).deleteConversation(conv.id).then(settled, settled);
+      await waitForCondition(() => settled.mock.calls.length > 0);
+
+      expect(settled).toHaveBeenCalledWith(undefined);
+      expect(pool.get(conv.id)).toBeNull();
+      expect(runtime.isDisposed).toBe(true);
+      expect(chatHostOf(plugin).getConversationList().find(item => item.id === conv.id)).toBeUndefined();
+    });
   });
 
   describe('handleMissingProviderSession', () => {
@@ -3320,13 +3363,32 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('Linked content path events', () => {
+    async function detachedLinkedContentSession() {
+      mockApp.vault.getAbstractFileByPath = jest.fn().mockReturnValue(null);
+      const host = chatHostOf();
+      const conversation = await host.createConversation({ linkedContentPath: 'Projects/Old/Plan.md' });
+      const { attachment } = host.sessionRuntimes.acquire({ conversationId: conversation.id, providerId: conversation.providerId, draftModel: null }, { reveal: () => undefined });
+      const model = attachment.runtime.model;
+      await model.hydrate();
+      void attachment.runtime.turns.run(signal => new Promise<void>(resolve => signal.addEventListener('abort', () => resolve())));
+      host.sessionRuntimes.release(attachment);
+      const linked = model.linkedContentController;
+      jest.spyOn(linked, 'handleCreated');
+      jest.spyOn(linked, 'handleDeleted');
+      jest.spyOn(linked, 'handleRenamed');
+      return linked;
+    }
+
     it('coalesces vault refreshes while delivering every path event immediately', async () => {
       await plugin.onload();
-      const view = { handleLinkedContentCreated: jest.fn(), notifyConversationListChanged: jest.fn() };
+      const linked = await detachedLinkedContentSession();
+      const second = await detachedLinkedContentSession();
+      const view = { notifyConversationListChanged: jest.fn() };
       jest.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([view as any]);
       const listener = mockApp.vault.on.mock.calls.find((call: unknown[]) => call[0] === 'create')![1];
       for (let index = 0; index < 20; index++) listener(new (TFile as any)(`note-${index}.md`));
-      expect(view.handleLinkedContentCreated).toHaveBeenCalledTimes(20);
+      expect(linked.handleCreated).toHaveBeenCalledTimes(20);
+      expect(second.handleCreated).toHaveBeenCalledTimes(20);
       expect(view.notifyConversationListChanged).not.toHaveBeenCalled();
       await new Promise(resolve => window.setTimeout(resolve, 75));
       expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(1);
@@ -3394,9 +3456,8 @@ describe('ClaudianPlugin', () => {
 
     it('invalidates open history projections when unpinned targets disappear or reappear', async () => {
       await plugin.onload();
+      const linked = await detachedLinkedContentSession();
       const view = {
-        handleLinkedContentCreated: jest.fn(),
-        handleLinkedContentDeleted: jest.fn(),
         notifyConversationListChanged: jest.fn(),
       };
       jest.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([view as any]);
@@ -3405,7 +3466,7 @@ describe('ClaudianPlugin', () => {
         new (TFile as any)('Notes/Unpinned.md'),
       );
 
-      expect(view.handleLinkedContentDeleted).toHaveBeenCalledWith(
+      expect(linked.handleDeleted).toHaveBeenCalledWith(
         'Notes/Unpinned.md',
         false,
       );
@@ -3418,7 +3479,7 @@ describe('ClaudianPlugin', () => {
       expect(createListener).toEqual(expect.any(Function));
       createListener(new (TFile as any)('Notes/Unpinned.md'));
 
-      expect(view.handleLinkedContentCreated).toHaveBeenCalledWith('Notes/Unpinned.md');
+      expect(linked.handleCreated).toHaveBeenCalledWith('Notes/Unpinned.md');
       await new Promise(resolve => window.setTimeout(resolve, 75));
       expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(2);
     });
@@ -3439,8 +3500,8 @@ describe('ClaudianPlugin', () => {
 
     it('invalidates deleted targets even when pinned-settings cleanup fails', async () => {
       await plugin.onload();
+      const linked = await detachedLinkedContentSession();
       const view = {
-        handleLinkedContentDeleted: jest.fn(),
         notifyConversationListChanged: jest.fn(),
       };
       jest.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([view as any]);
@@ -3451,7 +3512,7 @@ describe('ClaudianPlugin', () => {
         new (TFile as any)('Notes/Unpinned.md'),
       )).rejects.toThrow('settings unavailable');
 
-      expect(view.handleLinkedContentDeleted).toHaveBeenCalledWith(
+      expect(linked.handleDeleted).toHaveBeenCalledWith(
         'Notes/Unpinned.md',
         false,
       );

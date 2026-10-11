@@ -6,13 +6,12 @@ export interface ThinkingBlockState {
   wrapperEl: HTMLElement;
   contentEl: HTMLElement;
   labelEl: HTMLElement;
-  content: string;
-  startTime: number;
   timerInterval: number | null;
   isExpanded: boolean;
 }
 
 export interface ThinkingBlockOptions {
+  startTime: number;
   onToggle?: (isExpanded: boolean) => void;
 }
 
@@ -34,10 +33,10 @@ function createThinkingBlockElements(parentEl: HTMLElement, label: string, conte
 
 export function createThinkingBlock(
   parentEl: HTMLElement,
-  options: ThinkingBlockOptions = {},
+  options: ThinkingBlockOptions,
 ): ThinkingBlockState {
   const { wrapperEl, headerEl, labelEl, contentEl } = createThinkingBlockElements(parentEl, 'Thinking 0s...');
-  const startTime = Date.now();
+  const { startTime } = options;
 
   // Start timer interval to update label every second
   const timerInterval = window.setInterval(() => {
@@ -49,8 +48,6 @@ export function createThinkingBlock(
     wrapperEl,
     contentEl,
     labelEl,
-    content: '',
-    startTime,
     timerInterval,
     isExpanded: false,
   };
@@ -62,15 +59,12 @@ export function createThinkingBlock(
   return state;
 }
 
-export function finalizeThinkingBlock(state: ThinkingBlockState): number {
+export function finalizeThinkingBlock(state: ThinkingBlockState, durationSeconds: number): void {
   // Stop the timer
   if (state.timerInterval) {
     window.clearInterval(state.timerInterval);
     state.timerInterval = null;
   }
-
-  // Calculate final duration
-  const durationSeconds = Math.floor((Date.now() - state.startTime) / 1000);
 
   // Update label to show final duration (without "...")
   state.labelEl.setText(`Thought for ${durationSeconds}s`);
@@ -80,8 +74,6 @@ export function finalizeThinkingBlock(state: ThinkingBlockState): number {
   if (header) {
     collapseElement(state.wrapperEl, header as HTMLElement, state.contentEl, state);
   }
-
-  return durationSeconds;
 }
 
 export function cleanupThinkingBlock(state: ThinkingBlockState | null) {
