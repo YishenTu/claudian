@@ -2686,6 +2686,29 @@ describe('ClaudianPlugin', () => {
       expect(closeCommand.checkCallback(true)).toBe(false);
     });
 
+    it('offers tab renaming only while the compact tab bar is visible', async () => {
+      await plugin.onload();
+
+      const renameActiveTab = jest.fn().mockReturnValue(true);
+      const view = {
+        isTabBarVisible: jest.fn().mockReturnValue(true),
+        renameActiveTab,
+        getTabManager: jest.fn().mockReturnValue({}),
+      };
+      jest.spyOn(viewsOf(plugin), 'getView').mockReturnValue(view as any);
+      const command = getRegisteredCommand('rename-current-tab');
+
+      expect(command.name).toBe('Rename current tab');
+      expect(command.checkCallback(true)).toBe(true);
+      expect(renameActiveTab).not.toHaveBeenCalled();
+      expect(command.checkCallback(false)).toBe(true);
+      expect(renameActiveTab).toHaveBeenCalledTimes(1);
+
+      view.isTabBarVisible.mockReturnValue(false);
+      expect(command.checkCallback(true)).toBe(false);
+      expect(renameActiveTab).toHaveBeenCalledTimes(1);
+    });
+
     it('opens the view without creating a duplicate tab when no tab layout is persisted', async () => {
       await plugin.onload();
 

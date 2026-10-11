@@ -58,6 +58,10 @@ export interface ChatViewHost extends ChatViewRefreshHost, TabManagerViewHost {
   /** Starts a new conversation the active layout's way: a slot draft when wide, else a new tab. */
   startNewConversation(): Promise<void>;
   focusActiveInput(): void;
+  /** Whether the compact tab bar is shown, counting restored tabs that are not assembled yet. */
+  isTabBarVisible(): boolean;
+  /** Starts inline renaming of the active tab's badge; false when no badge is shown for it. */
+  renameActiveTab(): boolean;
 }
 
 /** Application capabilities chat needs on top of the feature-neutral `FeatureHost`. */

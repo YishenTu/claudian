@@ -6,14 +6,14 @@ describe('decodeTabWorkspaceViewState', () => {
       version: 1,
       activeTabId: 'tab-2',
       openTabs: [
-        { conversationId: 'conversation-1', tabId: 'tab-1' },
+        { conversationId: 'conversation-1', tabId: 'tab-1', label: 'ACP restore' },
         { conversationId: null, draftModel: 'codex:gpt-5', tabId: 'tab-2' },
       ],
       expandedTitleTabIds: ['tab-2'],
     })).toEqual({
       activeTabId: 'tab-2',
       openTabs: [
-        { conversationId: 'conversation-1', tabId: 'tab-1' },
+        { conversationId: 'conversation-1', tabId: 'tab-1', label: 'ACP restore' },
         { conversationId: null, draftModel: 'codex:gpt-5', tabId: 'tab-2' },
       ],
       expandedTitleTabIds: ['tab-2'],
@@ -48,6 +48,14 @@ describe('decodeTabWorkspaceViewState', () => {
       openTabs: [{ conversationId: null, tabId: 'tab-1' }],
       expandedTitleTabIds: ['missing-tab'],
     },
+    ...['', '   ', ' padded ', 42, null, 'x'.repeat(33)].map(label => ({
+      version: 1,
+      activeTabId: 'tab-1',
+      openTabs: [
+        { conversationId: null, tabId: 'tab-1', label: 'Valid' },
+        { conversationId: null, tabId: 'tab-2', label },
+      ],
+    })),
     {
       version: 1,
       activeTabId: 'tab-1',

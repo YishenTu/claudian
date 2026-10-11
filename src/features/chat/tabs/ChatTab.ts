@@ -120,6 +120,8 @@ export interface ChatTab {
    * Used to derive provider on first send. Null after binding.
    */
   readonly draftModel: string | null;
+  /** The user's custom name for the tab, absent when it shows its conversation title. */
+  readonly label?: string;
   /** Authoritative identity, activity, and runtime owner for the tab. */
   readonly session: { readonly hasActiveTurn: boolean };
   readonly hydrationState: TabHydrationState;
@@ -143,6 +145,8 @@ export interface TabBarItem {
   /** 1-based index for display. */
   index: number;
   title: string;
+  /** The user's custom name for the tab, shown instead of the title when set. */
+  label?: string;
   isActive: boolean;
   /** True while any foreground, continuation, provider-background, or async-subagent work remains. */
   isWorking: boolean;

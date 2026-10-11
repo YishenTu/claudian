@@ -119,6 +119,9 @@ function composeTabRuntime(
     get draftModel() {
       return core.draftModel;
     },
+    get label() {
+      return core.session.label ?? undefined;
+    },
     get providerId() {
       return core.providerId;
     },

@@ -1,4 +1,4 @@
-import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
+import { type AppTabManagerState, normalizeTabLabel } from '@/core/bootstrap/tabManagerState';
 import type { ProviderId } from '@/core/providers/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { TabBarItem, TabId, TabManagerInterface, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
@@ -257,6 +257,8 @@ export class TabManager implements TabManagerInterface {
         return null;
       }
 
+      // A rename while the restored tab assembled lands on its identity, not the runtime's copy.
+      if (restoredIdentity) tab.session.setLabel(restoredIdentity.label ?? null);
       this.commandDiscovery.registerTab(tab.id);
     } catch (error) {
       const rollbackErrors = await this.#discardUnpublished(tab, runtimeTabId);
@@ -455,7 +457,10 @@ export class TabManager implements TabManagerInterface {
           runtime.controllers.inputController.cancelStreaming();
           await runtime.controllers.conversationController.createNew({ force: true });
         } else {
-          const blank = createTabIdentity(this.plugin.settings, null, { tabId: identity.id });
+          const blank = createTabIdentity(this.plugin.settings, null, {
+            tabId: identity.id,
+            ...(identity.label ? { label: identity.label } : {}),
+          });
           membership.replaceRestored(blank);
           this.providerPresence.startForTab(blank);
           this.callbacks.onTabConversationChanged?.(blank.id, null);
@@ -541,6 +546,23 @@ export class TabManager implements TabManagerInterface {
     return !!identity && this.membership.isTabAlive(identity);
   }
 
+  /**
+   * Sets or clears (null) the user's name for a tab; it stays with the tab, not its conversation.
+   * Naming is user ownership, so a named preview is retained and its label persists.
+   */
+  setTabLabel(tabId: TabId, label: string | null): void {
+    if (!this.isTabLive(tabId)) return;
+    const normalized = label === null ? null : normalizeTabLabel(label);
+    const runtime = this.getTab(tabId);
+    if (runtime && normalized !== null) commitProvisionalTab(runtime);
+    if (!this.membership.setLabel(tabId, normalized)) return;
+    try {
+      this.callbacks.onTabLabelChanged?.(tabId, normalized);
+    } catch {
+      // The label is committed; an observer failure must not roll it back.
+    }
+  }
+
   // ============================================
   // Tab Bar Data
   // ============================================
@@ -555,6 +577,7 @@ export class TabManager implements TabManagerInterface {
         id: tab.id,
         index: index + 1,
         title: getTabTitle(tab, this.plugin),
+        ...(tab.label ? { label: tab.label } : {}),
         isActive: tab.id === activeTabId,
         isWorking: this.isTabWorking(tab.id),
         attention: runtime?.state.attention ?? null,

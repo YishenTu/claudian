@@ -20,6 +20,8 @@ export interface TabIdentity {
   draftModel: string | null;
   providerId: ProviderId | null;
   lifecycleState: TabLifecycleState;
+  /** The user's name for the tab; it stays with the tab, not the conversation it shows. */
+  label?: string;
 }
 
 /** A blank tab's provider and draft model. */
@@ -42,6 +44,7 @@ export function createTabIdentity(
     draftModel?: string | null;
     providerId?: ProviderId | null;
     lifecycleState?: TabLifecycleState;
+    label?: string;
   },
 ): TabIdentity {
   const isBound = !!conversation?.id;
@@ -69,6 +72,7 @@ export function createTabIdentity(
     draftModel,
     providerId: initialProviderId,
     conversationId: conversation?.id ?? null,
+    ...(options.label ? { label: options.label } : {}),
   };
 }
 

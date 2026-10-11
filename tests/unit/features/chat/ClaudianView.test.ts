@@ -8,6 +8,7 @@ import { SessionManagerSurface } from '@/features/chat/session-manager/SessionMa
 import { createTabComposerPort, createTabPlacementPort } from '@/features/chat/tabs/runtime/TabRuntimePorts';
 import { TabBar } from '@/features/chat/tabs/TabBar';
 import { ChatPresentationPlacement } from '@/features/chat/view/ChatPresentationPlacement';
+import { createChatTabCommands } from '@/features/chat/workspace/ChatTabCommands';
 import type { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 const mockTabManagerConstructor = jest.fn();
@@ -49,6 +50,7 @@ function createFakeTabManager(overrides: Record<string, unknown> = {}): any {
     restoreState: jest.fn().mockResolvedValue(undefined),
     retainTabs: jest.fn(),
     sealShutdownSnapshot: jest.fn(),
+    setTabLabel: jest.fn(),
     viewerSlot: {
       release: jest.fn().mockResolvedValue(undefined),
       show: jest.fn().mockResolvedValue(undefined),
@@ -301,21 +303,28 @@ describe('ClaudianView tab controls', () => {
     expect(newTabButton.getAttribute('aria-hidden')).toBeNull();
   });
 
-  it('shows the compact tab bar while the view holds two tabs, restored shells included', async () => {
+  it('offers tab renaming exactly while the compact tab bar is shown, restored shells included', async () => {
     const manager = createFakeTabManager({
+      getActiveTabId: jest.fn().mockReturnValue('tab-1'),
       // One assembled runtime and one restored shell that has not been activated yet.
       getAllTabs: jest.fn().mockReturnValue([{ id: 'tab-1' }]),
       getTabCount: jest.fn().mockReturnValue(2),
     });
     const { contentEl, view } = await openView({ manager, width: 400 });
+    const rename = createChatTabCommands({
+      workspace: { getLeavesOfType: () => [] },
+      views: { getView: () => view, activateView: jest.fn() },
+    }).find(command => command.id === 'rename-current-tab')!;
     view.refreshTabControls();
 
     expect(contentEl.querySelector('.claudian-tab-bar-container')!.hasClass('claudian-hidden')).toBe(false);
+    expect(rename.checkCallback!(true)).toBe(true);
 
     manager.getTabCount.mockReturnValue(1);
     view.refreshTabControls();
 
     expect(contentEl.querySelector('.claudian-tab-bar-container')!.hasClass('claudian-hidden')).toBe(true);
+    expect(rename.checkCallback!(true)).toBe(false);
   });
 
   it('lends the footer chip slot to the active tab only while the view is compact', async () => {
@@ -417,6 +426,15 @@ describe('ClaudianView tab controls', () => {
     expect(policy.forkTarget()).toBe('ask');
     expect(manager.viewerSlot.show).not.toHaveBeenCalled();
     expect(manager.viewerSlot.startDraft).not.toHaveBeenCalled();
+  });
+
+  it('stores a tab rename on the tab manager', async () => {
+    const manager = createFakeTabManager();
+    const { view } = await openView({ manager });
+
+    view.tabBar.callbacks.onTabLabelChange('tab-1', 'Research');
+
+    expect(manager.setTabLabel).toHaveBeenCalledWith('tab-1', 'Research');
   });
 });
 
@@ -863,6 +881,7 @@ describe('ClaudianView shutdown', () => {
     return {
       destroy: jest.fn(),
       getExpandedTitleTabIds: jest.fn().mockReturnValue([]),
+      getTabLabels: jest.fn().mockReturnValue({}),
     };
   }
 

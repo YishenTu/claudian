@@ -25,67 +25,116 @@
   display: none;
 }
 
-.claudian-tab-badge {
+/* Retain button specificity to override Obsidian's native control chrome. */
+button.claudian-tab-badge {
+  appearance: none;
   display: flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 24px;
   width: 24px;
+  min-width: 24px;
   height: 24px;
+  min-height: 24px;
   box-sizing: border-box;
+  margin: 0;
   padding: 0;
   border-radius: 4px;
   border: 2px solid var(--background-modifier-border);
+  font-family: inherit;
   font-size: 12px;
   font-weight: 500;
+  line-height: 1;
   cursor: pointer;
   color: var(--text-muted);
   background: var(--background-primary);
+  box-shadow: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
-.claudian-tab-badge-expanded {
+button.claudian-tab-badge-expanded {
   flex: 0 0 auto;
   justify-content: flex-start;
   width: auto;
   padding: 0 8px;
 }
 
-.claudian-tab-badge:hover {
+button.claudian-tab-badge:hover,
+button.claudian-tab-badge:active {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
+  box-shadow: none;
 }
 
-.claudian-tab-badge-active {
+button.claudian-tab-badge:focus-visible {
+  box-shadow: none;
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+button.claudian-tab-badge-active {
   border-color: var(--interactive-accent);
   color: var(--text-normal);
 }
 
-.claudian-tab-badge-streaming {
+button.claudian-tab-badge-streaming {
   border-color: var(--text-normal);
 }
 
-body.theme-light .claudian-tab-badge-streaming {
+body.theme-light button.claudian-tab-badge-streaming {
   border-color: #000;
 }
 
-body.theme-dark .claudian-tab-badge-streaming {
+body.theme-dark button.claudian-tab-badge-streaming {
   border-color: #fff;
 }
 
-.claudian-tab-badge-review {
+button.claudian-tab-badge-review {
   border-color: var(--color-green);
 }
 
-.claudian-tab-badge-review-error {
+button.claudian-tab-badge-review-error {
   border-color: var(--text-error);
 }
 
-.claudian-tab-badge-action-required {
+button.claudian-tab-badge-action-required {
   border-color: var(--color-orange);
+}
+
+/* The rename wrapper owns the surface; its embedded input stays transparent and borderless. */
+.claudian-tab-label-editor {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  width: 12em;
+  height: 24px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  border: 2px solid var(--interactive-accent);
+  background: var(--background-primary);
+}
+
+.claudian-tab-label-editor input.claudian-tab-label-input,
+.claudian-tab-label-editor input.claudian-tab-label-input:hover,
+.claudian-tab-label-editor input.claudian-tab-label-input:focus,
+.claudian-tab-label-editor input.claudian-tab-label-input:focus-visible {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-normal);
+  background: transparent;
+  box-shadow: none;
+  outline: none;
 }
 
 .claudian-tab-content-container {

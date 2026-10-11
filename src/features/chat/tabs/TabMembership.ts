@@ -214,6 +214,17 @@ export class TabMembership implements TabMembershipView {
     }
   }
 
+  /** Returns whether the label changed; null clears it. */
+  setLabel(tabId: TabId, label: string | null): boolean {
+    const member = this.getMember(tabId);
+    if (!member) return false;
+    if (member.kind === 'assembled') return member.runtime.session.setLabel(label);
+    if ((member.identity.label ?? null) === label) return false;
+    if (label === null) delete member.identity.label;
+    else member.identity.label = label;
+    return true;
+  }
+
   /** Seals every identity for the final shutdown snapshot. */
   sealIdentities(): void {
     this.#identitiesSealed = true;
@@ -265,6 +276,7 @@ export class TabMembership implements TabMembershipView {
         ...(tab.conversationId === null && tab.draftModel
           ? { draftModel: tab.draftModel, providerId: tab.providerId }
           : {}),
+        ...(tab.label ? { label: tab.label } : {}),
       });
     }
     return { openTabs, activeTabId: this.getRetainedActiveTabId() };

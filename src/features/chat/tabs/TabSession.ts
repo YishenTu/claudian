@@ -55,9 +55,10 @@ export class TabSession {
   get providerId(): ProviderId | null { return this.identity.providerId; }
   get conversationId(): string | null { return this.identity.conversationId; }
   get draftModel(): string | null { return this.identity.draftModel; }
+  get label(): string | null { return this.identity.label ?? null; }
   get executionCoordinator(): ChatExecutionCoordinator { return this.coordinator; }
   get acceptsIntents(): boolean { return this.intentAdmissionPauseDepth === 0; }
-  /** The user has retained or otherwise claimed this tab; superseded requests must not discard it. */
+  /** The user has retained, named, or otherwise claimed this tab; superseded requests must not discard it. */
   get isUserClaimed(): boolean { return this.userClaimed; }
   get identityRevision(): number { return this.identityRevisionValue; }
 
@@ -152,6 +153,14 @@ export class TabSession {
       Object.assign(this.identity, { conversationId, providerId, draftModel });
       this.options.onIdentityChanged?.();
     }
+  }
+
+  /** Returns whether the label changed; null clears it. Labels belong to the tab identity, not its conversation. */
+  setLabel(label: string | null): boolean {
+    if (this.label === label) return false;
+    if (label === null) delete this.identity.label;
+    else this.identity.label = label;
+    return true;
   }
 
   commitAdmission(): void {

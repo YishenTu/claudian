@@ -3,9 +3,25 @@ import { isValidSessionMetadataId } from './storagePaths';
 
 /** Chat tab workspace state persisted per view across restarts. */
 export interface AppTabManagerState {
-  openTabs: Array<{ tabId: string; conversationId: string | null; draftModel?: string; providerId?: ProviderId | null }>;
+  openTabs: Array<{
+    tabId: string;
+    conversationId: string | null;
+    draftModel?: string;
+    providerId?: ProviderId | null;
+    /** User-chosen tab label; independent of the bound conversation's title. */
+    label?: string;
+  }>;
   activeTabId: string | null;
   expandedTitleTabIds?: string[];
+}
+
+/** Longest custom tab label, in Unicode code points. */
+export const TAB_LABEL_MAX_LENGTH = 32;
+
+/** Trims and bounds a user-entered tab label; null clears the label. */
+export function normalizeTabLabel(value: string): string | null {
+  const label = Array.from(value.trim()).slice(0, TAB_LABEL_MAX_LENGTH).join('').trim();
+  return label.length > 0 ? label : null;
 }
 
 export const TAB_WORKSPACE_VIEW_STATE_KEY = 'tabWorkspace';
@@ -58,6 +74,7 @@ export function decodeTabWorkspaceViewState(data: unknown): AppTabManagerState |
         (!isNonBlankString(tab.providerId) && tab.providerId !== null)
         || tab.conversationId !== null || !isNonBlankString(tab.draftModel)
       ))
+      || ('label' in tab && (typeof tab.label !== 'string' || normalizeTabLabel(tab.label) !== tab.label))
     ) {
       return null;
     }
@@ -67,6 +84,7 @@ export function decodeTabWorkspaceViewState(data: unknown): AppTabManagerState |
       conversationId: tab.conversationId,
       ...(typeof tab.draftModel === 'string' ? { draftModel: tab.draftModel } : {}),
       ...('providerId' in tab ? { providerId: tab.providerId as string | null } : {}),
+      ...(typeof tab.label === 'string' ? { label: tab.label } : {}),
     });
     openTabIds.add(tab.tabId);
   }

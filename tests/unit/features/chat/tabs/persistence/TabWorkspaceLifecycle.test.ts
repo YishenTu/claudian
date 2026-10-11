@@ -113,7 +113,7 @@ describe('TabWorkspaceLifecycle', () => {
         openTabs: [
           { conversationId: 'conversation-1', tabId: 'tab-1' },
           { conversationId: 'conversation-2', tabId: 'tab-2' },
-          { conversationId: null, draftModel: 'codex:gpt-5', tabId: 'tab-3' },
+          { conversationId: null, draftModel: 'codex:gpt-5', tabId: 'tab-3', label: 'Scratch' },
         ],
         expandedTitleTabIds: ['tab-1'],
       };

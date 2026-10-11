@@ -1203,6 +1203,55 @@ describe('TabManager provider execution orchestration', () => {
     });
   });
 
+  it('retains a preview the user names, so its label persists', async () => {
+    const onTabLabelChanged = jest.fn();
+    const { manager } = createManager(createPlugin({
+      getCachedConversation: (id: string) => ({ id, providerId: 'claude' }),
+    }), { onTabLabelChanged });
+    await manager.viewerSlot.show('conversation-1');
+    const preview = manager.getActiveTab()!;
+
+    manager.setTabLabel(preview.id, '  Research  ');
+
+    expect(preview.lifecycleState).toBe('open');
+    expect(onTabLabelChanged).toHaveBeenCalledWith(preview.id, 'Research');
+    expect(manager.getTabBarItems()[0]).toEqual(expect.objectContaining({ label: 'Research' }));
+    expect(manager.getPersistedState()).toEqual({
+      activeTabId: preview.id,
+      openTabs: [{ tabId: preview.id, conversationId: 'conversation-1', label: 'Research' }],
+    });
+
+    manager.setTabLabel(preview.id, null);
+
+    expect(onTabLabelChanged).toHaveBeenLastCalledWith(preview.id, null);
+    expect(manager.getPersistedState().openTabs).toEqual([
+      { tabId: preview.id, conversationId: 'conversation-1' },
+    ]);
+  });
+
+  it('restores a tab label onto its identity and keeps it when the tab assembles', async () => {
+    const { manager } = createManager(createPlugin({
+      getCachedConversation: (id: string) => ({ id, providerId: 'claude' }),
+    }));
+
+    await manager.restoreState({
+      openTabs: [
+        { tabId: 'one', conversationId: 'one' },
+        { tabId: 'two', conversationId: 'two', label: 'Draft review' },
+      ],
+      activeTabId: 'one',
+    });
+    expect(manager.getTab('two')).toBeNull();
+    manager.setTabLabel('two', 'Final review');
+    await manager.switchToTab('two');
+
+    expect(manager.getTab('two')?.label).toBe('Final review');
+    expect(manager.getPersistedState().openTabs).toEqual([
+      { tabId: 'one', conversationId: 'one' },
+      { tabId: 'two', conversationId: 'two', label: 'Final review' },
+    ]);
+  });
+
   it('does not treat teardown lifecycle as a committed membership removal', async () => {
     const { manager } = createManager();
     const tab = await manager.createTab(null, 'tearing-down-tab');

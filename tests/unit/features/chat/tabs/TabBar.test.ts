@@ -8,6 +8,7 @@ function createMockCallbacks(): TabBarCallbacks {
   return {
     onTabClick: jest.fn(),
     onTabClose: jest.fn(),
+    onTabLabelChange: jest.fn(),
   };
 }
 
@@ -76,7 +77,7 @@ describe('TabBar', () => {
       const containerEl = createMockEl();
       const callbacks = {
         ...createMockCallbacks(),
-        onTitleExpansionChanged: jest.fn(),
+        onDisplayStateChanged: jest.fn(),
       };
       const tabBar = new TabBar(containerEl, callbacks);
 
@@ -93,14 +94,16 @@ describe('TabBar', () => {
       expect(badge.getAttribute('data-title-expanded')).toBe('true');
       expect(event.preventDefault).toHaveBeenCalled();
       expect(event.stopPropagation).toHaveBeenCalled();
-      expect(callbacks.onTitleExpansionChanged).toHaveBeenNthCalledWith(1, ['tab-2']);
+      expect(callbacks.onDisplayStateChanged).toHaveBeenCalledTimes(1);
+      expect(tabBar.getExpandedTitleTabIds()).toEqual(['tab-2']);
 
       badge.dispatchEvent('dblclick', { preventDefault: jest.fn(), stopPropagation: jest.fn() });
 
       expect(badge.textContent).toBe('5');
       expect(badge.hasClass('claudian-tab-badge-expanded')).toBe(false);
       expect(badge.getAttribute('data-title-expanded')).toBe('false');
-      expect(callbacks.onTitleExpansionChanged).toHaveBeenNthCalledWith(2, []);
+      expect(callbacks.onDisplayStateChanged).toHaveBeenCalledTimes(2);
+      expect(tabBar.getExpandedTitleTabIds()).toEqual([]);
     });
 
     it('should render restored expanded title state', () => {
@@ -292,32 +295,6 @@ describe('TabBar', () => {
       containerEl._children[0].dispatchEvent('click');
 
       expect(callbacks.onTabClick).toHaveBeenCalledWith('clicked-tab');
-    });
-
-    it('should call onTabClose on right-click when canClose is true', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-      const tabBar = new TabBar(containerEl, callbacks);
-
-      tabBar.update([createTabBarItem({ id: 'closeable-tab', canClose: true })]);
-
-      // Simulate right-click (contextmenu)
-      const mockEvent = { preventDefault: jest.fn() };
-      containerEl._children[0].dispatchEvent('contextmenu', mockEvent);
-
-      expect(mockEvent.preventDefault).toHaveBeenCalled();
-      expect(callbacks.onTabClose).toHaveBeenCalledWith('closeable-tab');
-    });
-
-    it('should not register contextmenu handler when canClose is false', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-      const tabBar = new TabBar(containerEl, callbacks);
-
-      tabBar.update([createTabBarItem({ id: 'uncloseable-tab', canClose: false })]);
-
-      // Check that contextmenu handler was not registered
-      expect(containerEl._children[0]._eventListeners.has('contextmenu')).toBe(false);
     });
   });
 
