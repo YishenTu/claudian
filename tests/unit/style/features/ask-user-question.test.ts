@@ -17,6 +17,15 @@ describe('ask-user-question.css', () => {
     style.remove();
   });
 
+  it('suppresses Obsidian hover tooltips across question and permission prompts', () => {
+    const prompt = document.createElement('div');
+    prompt.className = 'claudian-ask-question-inline';
+    document.body.appendChild(prompt);
+
+    // Obsidian skips aria-label tooltips when the hovered element inherits --no-tooltip: true.
+    expect(window.getComputedStyle(prompt).getPropertyValue('--no-tooltip').trim()).toBe('true');
+  });
+
   it('keeps a hidden inline prompt out of layout', () => {
     const prompt = document.createElement('div');
     prompt.className = 'claudian-ask-question-inline';

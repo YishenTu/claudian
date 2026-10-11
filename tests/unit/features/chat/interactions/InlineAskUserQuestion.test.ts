@@ -75,6 +75,15 @@ describe('InlineAskUserQuestion', () => {
       expect(resolve).toHaveBeenCalledWith(null);
     });
 
+    it('shows no native title tooltip on question tabs', () => {
+      const { container } = renderWidget(makeInput([
+        { question: 'First question?', options: ['A'] },
+        { question: 'Second question?', options: ['B'] },
+      ]));
+      const tabs = container.querySelectorAll('claudian-ask-tab') as HTMLElement[];
+      expect(tabs.map(tab => tab.getAttribute('title'))).toEqual([null, null, null]);
+    });
+
     it('filters out questions with no options', () => {
       const input = makeInput([
         { question: 'Q1', options: [] },

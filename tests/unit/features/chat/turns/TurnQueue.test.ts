@@ -415,7 +415,7 @@ describe('TurnQueue', () => {
       });
   });
 
-  it('releases an ambiguous steer lane to durable history at the fenced turn boundary', async () => {
+  it('releases an ambiguous steer lane at the fenced turn boundary', async () => {
     const fixture = createFixture();
     const mainResult = deferred<{
       accepted: boolean;
@@ -541,7 +541,7 @@ describe('TurnQueue', () => {
     await mainTurn;
   });
 
-  it('releases ack-before-live correlation to history when no live event arrives', async () => {
+  it('releases the active lane while retaining acknowledged input for a late echo', async () => {
     const fixture = createFixture();
     const mainResult = deferred<{
       accepted: boolean;
@@ -563,7 +563,7 @@ describe('TurnQueue', () => {
 
     expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
       .toBe(false);
-    expect(fixture.coordinator.releaseSteerCorrelation).toHaveBeenCalledWith(
+    expect(fixture.coordinator.releaseSteerCorrelation).not.toHaveBeenCalledWith(
       submission.submissionId,
     );
   });

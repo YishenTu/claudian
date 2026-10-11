@@ -14,6 +14,7 @@ import { TabWorkspaceLifecycle } from '@/features/chat/tabs/persistence/TabWorks
 import { TabBar } from '@/features/chat/tabs/TabBar';
 import {
   cancelSelectedDestinationTurn,
+  handleComposerMenuKeydown,
   sendTabInputMessageFromExplicitEnterShortcut,
 } from '@/features/chat/tabs/TabInputEvents';
 import { TabManager } from '@/features/chat/tabs/TabManager';
@@ -624,7 +625,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       // Menus also consume Escape in the capture phase; this covers a keymap that sees it first.
       if (activeTab?.composer.closeOpenMenu()) return false;
       if (!e.defaultPrevented && activeTab) {
-        cancelSelectedDestinationTurn(activeTab);
+        if (!handleComposerMenuKeydown(activeTab, e)) cancelSelectedDestinationTurn(activeTab);
       }
       return false;
     });

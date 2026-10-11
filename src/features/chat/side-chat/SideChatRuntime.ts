@@ -526,6 +526,9 @@ export class SideChatRuntime {
     if (event.type === 'background_turn_started') {
       this.#backgroundResponses.reserve(event.scope.sessionInstanceId, event.scope.turnId);
     }
+    if (event.type === 'user_message_started' && event.scope.kind === 'background') {
+      this.#backgroundResponses.userMessage(event.scope.sessionInstanceId, event);
+    }
     const deliver = () => this.#handleSessionEvent(event, isCurrent);
     if (event.type === 'task_notification' && event.scope.kind === 'session') return deliver();
     const work = this.#sessionEventWork.then(deliver);

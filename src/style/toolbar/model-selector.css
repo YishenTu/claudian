@@ -191,10 +191,10 @@
   background: var(--background-modifier-hover);
 }
 
-/* Every model's provider icon carries that provider's brand colour; names stay normal text. */
+/* Every model's provider icon carries that provider's logo colour; names stay normal text. */
 .claudian-toolbar-chip .claudian-model-provider-icon,
 .claudian-model-option .claudian-model-provider-icon {
-  color: var(--claudian-brand);
+  color: var(--claudian-provider-logo);
 }
 
 /* Hover and focus share a fill, so keyboard focus also needs an outline. */

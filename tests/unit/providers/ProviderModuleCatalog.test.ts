@@ -15,6 +15,7 @@ describe('built-in ProviderModule catalog', () => {
     expect(BUILT_IN_PROVIDER_MODULES.map(module => module.id)).toEqual([
       'claude',
       'codex',
+      'deepseek',
       'grok',
       'opencode',
       'pi',
@@ -60,6 +61,7 @@ describe('built-in ProviderModule catalog', () => {
       grok: false,
       opencode: false,
       pi: false,
+      deepseek: false,
     };
 
     for (const module of BUILT_IN_PROVIDER_MODULES) {

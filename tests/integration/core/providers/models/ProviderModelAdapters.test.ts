@@ -8,6 +8,7 @@ import { assertClaudeModelAvailable } from '@/providers/claude/runtime/ClaudeMod
 import { createClaudeModels } from '@/providers/claude/runtime/ClaudeModels';
 import { assertCodexModelAvailable } from '@/providers/codex/runtime/CodexModelAvailability';
 import { createCodexModels } from '@/providers/codex/runtime/CodexModels';
+import { assertDeepSeekModelAvailable, createDeepSeekModels } from '@/providers/deepseek/runtime/DeepSeekModels';
 import { assertGrokModelAvailable } from '@/providers/grok/runtime/GrokModelAvailability';
 import { createGrokModels } from '@/providers/grok/runtime/GrokModels';
 import { assertOpencodeModelAvailable } from '@/providers/opencode/runtime/OpencodeModelAvailability';
@@ -20,9 +21,10 @@ jest.mock('@/providers/pi/runtime/PiModelDiscoveryService', () => ({
   PiModelDiscoveryService: class { discoverModels = mockPiDiscover; },
 }));
 
-const assertions = { claude: assertClaudeModelAvailable, codex: assertCodexModelAvailable, grok: assertGrokModelAvailable, opencode: assertOpencodeModelAvailable, pi: assertPiModelAvailable };
+const assertions = { deepseek: assertDeepSeekModelAvailable, claude: assertClaudeModelAvailable, codex: assertCodexModelAvailable, grok: assertGrokModelAvailable, opencode: assertOpencodeModelAvailable, pi: assertPiModelAvailable };
 
 const browseOrders = {
+  deepseek: ['deepseek:native/selected', 'deepseek:native/unselected-catalog-entry'],
   claude: ['sonnet', 'unselected-catalog-entry'],
   codex: ['gpt-5.5', 'unselected-catalog-entry'],
   grok: ['selected', 'unselected-catalog-entry'],
@@ -40,6 +42,7 @@ it.each(modelCatalogCases)('$id keeps native selection, aliases and metadata beh
   const warmModelsMetadata = jest.fn(async () => true);
   mockPiDiscover.mockResolvedValue({ kind: 'completed', models: read(settings) });
   const factories: Record<string, () => ProviderModelCatalog> = {
+    deepseek: () => createDeepSeekModels(host, async () => { await discovery(); return { groups: [{ id: 'native', models: [{ id: 'selected', name: 'Selected label' }, { id: 'unselected-catalog-entry', name: 'Unselected' }] }] }; }),
     claude: () => createClaudeModels(host, discovery),
     codex: () => createCodexModels(host, { refresh: discovery }),
     grok: () => createGrokModels(host, { refresh: discovery }),

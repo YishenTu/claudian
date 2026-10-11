@@ -439,13 +439,34 @@
         "desc": "Environment variables passed only to Grok Build. Custom-model secrets stay in this provider scope and are referenced from native config by env_key."
       }
     },
+    "deepseek": {
+      "installation": {
+        "desc": "Auto prefers dsh, then discovers Desktop on macOS or Windows. To use Desktop when both are installed, enter its .app path or Windows install folder. Open Desktop once to complete setup.",
+        "desktop": "Using your native Desktop profile.",
+        "web": "Using your native Web profile."
+      },
+      "preset": "Preset",
+      "codeMode": {
+        "name": "Enable code mode",
+        "desc": "Applies from each conversation's next turn, including existing conversations. Adds native run_code alongside direct tools."
+      },
+      "presetPlugins": {
+        "name": "Additional preset plugins",
+        "desc": "Advanced. A YAML list (dsh's format) of native dsh plugin rows appended to Claudian's chat preset, each with its own \"id\" and \"name\". Rows cannot replace Claudian's own. Saving restarts DeepSeek Harness, which stops running turns. Plugins Claudian has no interface for, such as plan mode, may not work."
+      },
+      "presetPreview": "Preset preview",
+      "environment": {
+        "name": "DeepSeek Harness environment variables",
+        "desc": "Environment variables passed only to DeepSeek Harness. Uses your selected native Web or Desktop profile, credentials, models and MCP servers."
+      }
+    },
     "skills": {
       "subTabs": {
         "claude": "Claude Code",
         "shared": "Other providers"
       },
       "claudeHelp": "Claude Code skills in .claude/skills/ and commands in .claude/commands/.",
-      "sharedHelp": "Shared skills in .agents/skills/ for Codex, OpenCode, Pi and Grok Build.",
+      "sharedHelp": "Shared skills in .agents/skills/ for Codex, OpenCode, Pi, Grok Build and DeepSeek Harness.",
       "status": {
         "error": "Could not read the skill folders: {message}"
       },

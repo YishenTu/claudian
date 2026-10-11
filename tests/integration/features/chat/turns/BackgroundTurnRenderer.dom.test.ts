@@ -3,16 +3,17 @@ import '@/providers';
 
 import * as fs from 'node:fs/promises';
 
+import { createFixture, deferred } from '@test/helpers/ChatInputHarness';
 import { createTabSession } from '@test/helpers/ConversationPorts';
 import { enqueueTabSessionEvent } from '@test/helpers/features/chat/SessionEventsHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
-import { testClock } from '@test/helpers/testClock';
-import { within } from '@testing-library/dom';
+import { testClock, testDate } from '@test/helpers/testClock';
+import { waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { Component, MarkdownRenderer } from 'obsidian';
 
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
-import type { ChatMessage } from '@/core/types';
+import { ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest } from '@/core/execution';
+import type { ChatMessage, ImageAttachment } from '@/core/types';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
@@ -117,30 +118,10 @@ it.each([false, true])('replay places the second notification before automatic o
   } finally { renderer.dispose(); }
 });
 
-it.each([false, true])('keeps main-chat automatic work and later output on either side of a notification (compaction: %s)', async (compaction) => {
-  const messagesEl = document.body.createDiv();
-  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
-  const renderer = new MessageRenderer(plugin,
-    new Component(), messagesEl);
-  const state = new ChatState();
-  const subagents = new SubagentManager(() => undefined);
-  const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
-    getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
-  const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
-  const backend = new FakeSideBackend();
-  const coordinator = new ChatExecutionCoordinator({
-    lifecycleRegistry, resolveBackend: () => backend,
-    persistence: { persistExecutionSnapshot: async () => true, registerExecutionBinding: () => undefined, releaseExecutionBinding: () => undefined } as any,
-    interactionPort: {} as any, vaultWorkingDirectory: '/vault', createId: () => 'binding',
-    resolveMissingProviderSession: async () => 'not_found',
-    onSessionEvent: (event, context) => enqueueTabSessionEvent(tab, plugin, event, context),
-  });
-  const session = createTabSession({ id: 'tab', conversationId: 'conversation', draftModel: null,
-    providerId: 'claude', lifecycleState: 'ready' } as any, coordinator);
-  const tab = { state, renderer, session, executionCoordinator: coordinator, lifecycleState: 'ready',
-    ui: { promptSuggestion: { discard() {} } },
-    dom: { contentEl: messagesEl }, services: { subagentManager: subagents },
-    controllers: { streamController: stream, conversationController: { save: async () => undefined } } } as any;
+it.each([
+  [false, false], [true, false], [false, true], [true, true],
+])('keeps background tools and notification order (compaction: %s, steering: %s)', async (compaction, steering) => {
+  const { messagesEl, renderer, state, stream, coordinator, session, backend, dispose } = createBackgroundChat();
   try {
     await coordinator.bindConversation({ conversationId: 'conversation', providerId: 'claude' });
     await coordinator.prepare();
@@ -153,12 +134,13 @@ it.each([false, true])('keeps main-chat automatic work and later output on eithe
     native.emitSessionEvent({ type: 'task_notification', content: 'First task finished.' });
     native.emitBackgroundEvent({ type: 'background_turn_started' });
     native.emitBackgroundEvent({ type: 'tool_started', toolCallId: 'read', toolScope: { kind: 'main' }, name: 'Read', input: { file_path: 'task.output' } });
-    native.emitBackgroundEvent({ type: 'tool_completed', toolCallId: 'read', toolScope: { kind: 'main' }, content: 'First task result' });
     native.emitSessionEvent({ type: 'task_notification', content: 'Second task finished.' });
+    if (steering) native.emitBackgroundEvent({ type: 'user_message_started', content: 'Change the plan', nativeUserMessageId: 'steered-user' });
+    native.emitBackgroundEvent({ type: 'tool_completed', toolCallId: 'read', toolScope: { kind: 'main' }, content: 'First task result' });
     if (compaction) native.emitBackgroundEvent({ type: 'context_compacted' });
     native.emitBackgroundEvent({ type: 'text_delta', text: 'After notification.' });
     native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed', nativeAssistantId: 'final-checkpoint' });
-    await session.runtime.awaitBackgroundWork();
+    await session.awaitBackgroundWork();
     const notifications = within(messagesEl).getAllByRole('button', { name: 'Task notification' });
     const automaticWork = within(messagesEl).getByText('Read');
     expect(notifications[0].compareDocumentPosition(automaticWork) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -166,11 +148,13 @@ it.each([false, true])('keeps main-chat automatic work and later output on eithe
     const notification = notifications[1];
     const answer = within(messagesEl).getByText('After notification.');
     expect(notification.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const output = [notification, ...(compaction ? [within(messagesEl).getByText('Conversation compacted')] : []), answer];
+    const output = [notification, ...(steering ? [within(messagesEl).getByText('Change the plan')] : []),
+      ...(compaction ? [within(messagesEl).getByText('Conversation compacted')] : []), answer];
     for (const [index, element] of output.slice(1).entries()) {
       expect(output[index].compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }
-    expect(state.messages.at(-1)).toMatchObject({ content: 'After notification.', assistantMessageId: 'final-checkpoint', isAutomaticResponse: true });
+    expect(state.messages.at(-1)).toMatchObject({ content: 'After notification.', assistantMessageId: 'final-checkpoint', isAutomaticResponse: !steering });
+    expect(state.messages.flatMap(message => message.toolCalls ?? [])).toMatchObject([{ id: 'read', result: 'First task result', status: 'completed' }]);
     expect(state.messages.filter(message => message.assistantMessageId === 'final-checkpoint')).toHaveLength(1);
     expect(state.currentContentEl).toBe(current);
     await stream.handleStreamChunk({ type: 'text', content: 'answer' }, requested);
@@ -178,11 +162,230 @@ it.each([false, true])('keeps main-chat automatic work and later output on eithe
     expect(requested.content).toBe('Requested answer');
     expect((await axe(messagesEl)).violations).toEqual([]);
   } finally {
-    await coordinator.dispose();
-    await lifecycleRegistry.dispose();
-    stream.dispose(); subagents.clear(); renderer.dispose();
+    await dispose();
   }
 });
+
+it.each([
+  ['', 'steered reply'], ['', ''], ['automatic prefix', 'steered reply'], ['automatic prefix', ''],
+])('preserves background output around accepted input (prefix: %s, reply: %s)', async (prefix, reply) => {
+  const { messagesEl, renderer, state, coordinator, session, backend, dispose } = createBackgroundChat();
+  try {
+    await coordinator.bindConversation({ conversationId: 'conversation', providerId: 'claude' });
+    await coordinator.prepare();
+    const native = backend.latest;
+    native.emitBackgroundEvent({ type: 'background_turn_started' });
+    if (prefix) native.emitBackgroundEvent({ type: 'text_delta', text: prefix });
+    native.emitBackgroundEvent({ type: 'user_message_started', content: 'steered message', nativeUserMessageId: 'steered-user' });
+    await session.awaitBackgroundWork();
+    expect(within(messagesEl).getByText('steered message').closest('[hidden]')).toBeNull();
+    // A later submission must not move ahead of the already accepted steer and its reserved response.
+    const later: ChatMessage = { id: 'later', role: 'user', content: 'later input', timestamp: testDate().getTime() };
+    state.addMessage(later); renderer.addMessage(later);
+    if (reply) native.emitBackgroundEvent({ type: 'text_delta', text: reply });
+    native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed', nativeAssistantId: 'steered-checkpoint' });
+    await session.awaitBackgroundWork();
+    expect(state.messages.filter(message => message.role === 'user').map(message => message.content)).toEqual(['steered message', 'later input']);
+    expect(state.messages.find(message => message.role === 'user')?.userMessageId).toBe('steered-user');
+    expect(state.messages).toMatchObject([
+      ...(prefix ? [{ role: 'assistant', content: prefix, isAutomaticResponse: true }] : []),
+      { role: 'user', content: 'steered message' },
+      ...(reply ? [{ role: 'assistant', content: reply, assistantMessageId: 'steered-checkpoint', isAutomaticResponse: false }] : []),
+      { role: 'user', content: 'later input' },
+    ]);
+    expect(state.messages.filter(message => message.assistantMessageId === 'steered-checkpoint')).toHaveLength(reply ? 1 : 0);
+    const elements = [...(prefix ? [prefix] : []), 'steered message', ...(reply ? [reply] : []), 'later input'].map(text => within(messagesEl).getByText(text));
+    expect(elements.slice(1).map((element, index) => !!(elements[index].compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING)))
+      .toEqual(elements.slice(1).map(() => true));
+    expect((await axe(messagesEl)).violations).toEqual([]);
+  } finally { await dispose(); }
+});
+
+it('does not continue a steered reply from a later turn notification', async () => {
+  const { messagesEl, state, coordinator, session, backend, dispose } = createBackgroundChat();
+  try {
+    await coordinator.bindConversation({ conversationId: 'conversation', providerId: 'claude' });
+    await coordinator.prepare();
+    const native = backend.latest;
+    native.emitBackgroundEvent({ type: 'background_turn_started' });
+    native.emitBackgroundEvent({ type: 'text_delta', text: 'first automatic' });
+    native.emitBackgroundEvent({ type: 'background_turn_started' }, 'background-2');
+    native.emitSessionEvent({ type: 'task_notification', content: 'Second turn task finished.' });
+    native.emitBackgroundEvent({ type: 'user_message_started', content: 'steered message', nativeUserMessageId: 'steered-user' });
+    native.emitBackgroundEvent({ type: 'text_delta', text: 'steered reply' });
+    native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed', nativeAssistantId: 'steered-checkpoint' });
+    await session.awaitBackgroundWork();
+    const notification = within(messagesEl).getByRole('button', { name: 'Task notification' });
+    const reply = within(messagesEl).getByText('steered reply');
+    expect(reply.compareDocumentPosition(notification) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const steered = state.messages.find(message => message.content === 'steered reply');
+    expect(steered).toMatchObject({ isAutomaticResponse: false, assistantMessageId: 'steered-checkpoint' });
+    expect(steered?.responseContinuationOf).toBeUndefined();
+    expect((await axe(messagesEl)).violations).toEqual([]);
+  } finally { await dispose(); }
+});
+
+it.each([
+  ['pending', 'background'], ['uncertain', 'background'],
+  ['pending', 'automatic'], ['uncertain', 'automatic'],
+  ['pending', 'requested'], ['uncertain', 'requested'],
+  ['uncertain', 'rejected'],
+])('reconciles late image input through real chat owners (%s acknowledgement, %s turn)', async (acknowledgement, destination) => {
+  const { messagesEl, state, coordinator, session, backend, input, setImages, dispose } = createBackgroundChat(true);
+  try {
+    await coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+    await coordinator.prepare();
+    const native = backend.latest;
+    const admission = deferred<boolean>();
+    const nativeSteer = jest.fn((_request: ProviderExecutionRequest) => Promise.resolve(true))
+      .mockImplementationOnce(() => admission.promise);
+    Object.assign(native, { steer: nativeSteer });
+    input!.input.value = 'initial message';
+    const first = input!.controller.sendMessage();
+    await waitFor(() => expect(native.requests).toHaveLength(1));
+    native.emitOutput({ type: 'user_message_started', content: 'initial message', nativeUserMessageId: 'initial-user' });
+    native.emitText('initial answer');
+    await waitFor(() => expect(within(messagesEl).getByText('initial answer')).toBeTruthy());
+    const image: ImageAttachment = { id: 'image', name: 'pixel.png', mediaType: 'image/png', data: 'aW1hZ2U=', size: 5, source: 'paste' };
+    const display = destination === 'automatic' && acknowledgement === 'uncertain' ? 'steer with image' : '';
+    input!.input.value = display;
+    setImages([image]);
+    await input!.controller.sendMessage();
+    const steering = input!.controller.queue.steerNow();
+    await waitFor(() => expect(nativeSteer).toHaveBeenCalledTimes(1));
+    if (acknowledgement === 'uncertain') {
+      admission.reject(new Error('Acknowledgement lost'));
+      await steering;
+    }
+    native.complete();
+    await first;
+    state.hasPendingConversationSave = false;
+    const accept = jest.spyOn(coordinator, 'acceptSteerFromProviderEvent');
+    let next: Promise<void> | undefined;
+    const late = { type: 'user_message_started' as const, content: '', nativeUserMessageId: 'late-image-user',
+      inputId: nativeSteer.mock.calls[0][0].inputId };
+    expect(late.inputId).toEqual(expect.any(String));
+    if (destination === 'requested') {
+      input!.input.value = 'new message';
+      next = input!.controller.sendMessage();
+    } else if (destination === 'rejected') {
+      jest.spyOn(native, 'execute').mockImplementationOnce(() => {
+        native.emitBackgroundEvent({ type: 'background_turn_started' });
+        native.emitBackgroundEvent(late);
+        throw new Error('New request failed admission');
+      });
+      input!.input.value = 'new message';
+      await input!.controller.sendMessage();
+    }
+    await waitFor(() => expect(native.requests).toHaveLength(destination === 'requested' ? 2 : 1));
+    if (destination === 'requested') {
+      native.emitOutput({ type: 'user_message_started', content: 'new message', nativeUserMessageId: 'new-user' });
+      admission.resolve(true);
+      await steering;
+      input!.input.value = 'new steer';
+      await input!.controller.sendMessage();
+      await input!.controller.queue.steerNow();
+    }
+    expect(nativeSteer).toHaveBeenCalledTimes(destination === 'requested' ? 2 : 1);
+    if (destination === 'requested') {
+      native.emitOutput(late);
+      native.emitOutput({ type: 'user_message_started', content: 'provider expanded new steer', nativeUserMessageId: 'new-steer-user',
+        inputId: nativeSteer.mock.calls[1][0].inputId });
+    } else if (destination !== 'rejected') {
+      native.emitBackgroundEvent({ type: 'background_turn_started' });
+      if (destination === 'automatic') {
+        native.emitBackgroundEvent({ type: 'assistant_message_started' });
+        native.emitBackgroundEvent({ type: 'text_delta', text: 'automatic work before steering' });
+      }
+      native.emitBackgroundEvent(late);
+    }
+    admission.resolve(true);
+    await steering;
+    if (destination === 'requested') {
+      native.emitText('image answer');
+      native.complete();
+      await next;
+    } else {
+      native.emitBackgroundEvent({ type: 'text_delta', text: 'image answer' });
+      native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed', nativeAssistantId: 'late-checkpoint' });
+    }
+    await session.awaitBackgroundWork();
+    expect(state.messages.filter(message => message.role === 'user')).toMatchObject([
+      { content: 'initial message', userMessageId: 'initial-user' },
+      ...(destination === 'requested' ? [{ content: 'new message', userMessageId: 'new-user' }] : []),
+      { content: display, images: [image], userMessageId: 'late-image-user' },
+      ...(destination === 'requested' ? [{ content: 'new steer', userMessageId: 'new-steer-user' }] : []),
+    ]);
+    expect(accept).toHaveBeenCalledWith(expect.any(String), 'late-image-user');
+    expect(within(messagesEl).getByRole('img', { name: 'pixel.png' })).toBeTruthy();
+    expect(within(messagesEl).getByText('image answer')).toBeTruthy();
+    const prefix = 'automatic work before steering';
+    expect(state.messages.filter(message => message.content === prefix || message.content === 'image answer'
+      || message.userMessageId === 'late-image-user')).toMatchObject([
+      ...(destination === 'automatic' ? [{ role: 'assistant', content: prefix, isAutomaticResponse: true }] : []),
+      { role: 'user', content: display, images: [image], userMessageId: 'late-image-user' },
+      { role: 'assistant', content: 'image answer', ...(destination === 'requested' ? {} : { isAutomaticResponse: false, assistantMessageId: 'late-checkpoint' }) },
+    ]);
+    expect(state.messages.filter(message => message.assistantMessageId === 'late-checkpoint')).toHaveLength(destination === 'requested' ? 0 : 1);
+    const elements = [...(destination === 'automatic' ? [within(messagesEl).getByText(prefix)] : []),
+      within(messagesEl).getByRole('img', { name: 'pixel.png' }), ...(display ? [within(messagesEl).getByText(display)] : []),
+      within(messagesEl).getByText('image answer')];
+    for (const [index, element] of elements.slice(1).entries()) {
+      expect(elements[index].compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect((await axe(messagesEl)).violations).toEqual([]);
+    expect(input!.input.value).toBe(destination === 'rejected' ? 'new message' : '');
+    expect(input!.controller.queue.message).toBeNull();
+    expect(state.hasPendingConversationSave).toBe(true);
+    expect(native.requests).toHaveLength(destination === 'requested' ? 2 : 1);
+    expect(nativeSteer).toHaveBeenCalledTimes(destination === 'requested' ? 2 : 1);
+  } finally { await dispose(); }
+});
+
+function createBackgroundChat(withInput = false) {
+  const messagesEl = document.body.createDiv();
+  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const renderer = new MessageRenderer(plugin,
+    new Component(), messagesEl);
+  const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
+  const backend = new FakeSideBackend();
+  let input: ReturnType<typeof createFixture> | undefined;
+  const coordinator = new ChatExecutionCoordinator({
+    lifecycleRegistry, resolveBackend: () => backend,
+    persistence: { persistExecutionSnapshot: async () => true, registerExecutionBinding: () => undefined,
+      releaseExecutionBinding: () => undefined, assertConversationExecutionAuthority: async () => undefined,
+      recordConversationActivity: async () => undefined },
+    interactionPort: {} as any, vaultWorkingDirectory: '/vault', createId: () => 'binding',
+    resolveMissingProviderSession: async () => 'not_found',
+    onRequestedEvent: event => input?.controller.handleExecutionEvent(event),
+    onSessionEvent: (event, context) => enqueueTabSessionEvent(tab, plugin, event, context),
+  });
+  const tabSession = createTabSession({ id: 'tab', conversationId: 'conversation', draftModel: null,
+    providerId: 'claude', lifecycleState: 'ready' } as any, coordinator);
+  const session = tabSession.runtime;
+  const state = new ChatState({}, undefined, session.turns);
+  const subagents = new SubagentManager(() => undefined);
+  const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
+    getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
+  let images: ImageAttachment[] = [];
+  const setImages = (next: ImageAttachment[]) => { images = next; };
+  if (withInput) input = createFixture({
+    state, session, renderer, streamController: stream,
+    getMessagesEl: () => messagesEl, getExecutionCoordinator: () => coordinator,
+    getImageContextManager: () => ({
+      clearImages: () => setImages([]), getAttachedImages: () => images,
+      hasImages: () => images.length > 0, setImages,
+    }),
+  });
+  const tab = { state, renderer, session: tabSession, executionCoordinator: coordinator, lifecycleState: 'ready',
+    ui: { promptSuggestion: { discard() {} } },
+    dom: { contentEl: messagesEl }, services: { subagentManager: subagents },
+    controllers: { inputController: input?.controller, streamController: stream, conversationController: { save: async () => undefined } } } as any;
+  return { messagesEl, renderer, state, stream, coordinator, session, backend, input, setImages, dispose: async () => {
+    await coordinator.dispose(); await lifecycleRegistry.dispose();
+    stream.dispose(); subagents.clear(); renderer.dispose();
+  } };
+}
 
 it('records requested and background segments around notifications with no presenter', async () => {
   const state = new ChatState();

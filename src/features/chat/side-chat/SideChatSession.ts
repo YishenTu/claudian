@@ -211,7 +211,7 @@ export class SideChatSession {
     this.#executionController?.abort();
     const active = this.#active;
     if (!active) {
-      if (this.#events?.hasBackgroundWork) this.#supervisor.current?.session.cancel();
+      if (this.#events?.hasBackgroundWork || this.#supervisor.current?.session.hasBackgroundWork?.()) this.#supervisor.current?.session.cancel();
       return;
     }
     active.terminationOverride = 'cancelled';

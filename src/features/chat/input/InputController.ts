@@ -37,7 +37,7 @@ import { type MainTurn, MainTurnExecution } from '@/features/chat/turns/MainTurn
 import type { StreamController } from '@/features/chat/turns/StreamController';
 import type { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import { TurnQueue } from '@/features/chat/turns/TurnQueue';
-import { TurnSteering } from '@/features/chat/turns/TurnSteering';
+import { type ProviderEchoClaim, TurnSteering } from '@/features/chat/turns/TurnSteering';
 import { t } from '@/i18n/i18n';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
@@ -72,7 +72,7 @@ export interface InputControllerDeps {
   canStartTurn: () => boolean;
   isClosing: () => boolean;
   /** The session-owned turn activity and its single cancellation recipe. */
-  session: Pick<ChatSessionRuntime, 'turns' | 'cancelTurn'>;
+  session: Pick<ChatSessionRuntime, 'turns' | 'cancelTurn' | 'stopMainBackgroundWork'>;
   /** Queued work and preparation can outlive the foreground turn's idle notification. */
   onWorkChanged?: () => void;
   /** Destination seam for the shared composer; absent means main-only. */
@@ -265,6 +265,11 @@ export class InputController {
 
   handleExecutionEvent(event: ProviderExecutionEvent): Promise<void> {
     return this.execution.handleEvent(event);
+  }
+
+  /** Capture submitted display input before a late steering acknowledgement releases its correlation. */
+  claimBackgroundUserMessage(nativeUserMessageId: string | undefined, inputId?: string): ProviderEchoClaim {
+    return this.steering.claimProviderEcho(nativeUserMessageId, inputId);
   }
 
   async #dispatchMessage(
@@ -540,26 +545,30 @@ export class InputController {
   }
 
   cancelStreaming(): void {
+    const cancelledPreparation = this.preparations.isPreparing(this.deps.drafts.destination);
     this.preparations.abort(this.deps.drafts.destination);
     const sideChat = this.deps.getSideChatController?.() ?? null;
     if (sideChat?.destination === 'side') {
       sideChat.cancelSide();
       return;
     }
-    this.#cancelMainStreaming();
+    // Withdrawing a preparation is the whole Stop; background work keeps running.
+    if (!this.#cancelMainStreaming() && !cancelledPreparation) this.deps.session.stopMainBackgroundWork();
   }
 
-  #cancelMainStreaming(): void {
+  /** Returns whether an in-flight response was cancelled. */
+  #cancelMainStreaming(): boolean {
     this.deps.inlinePrompts.cancelAsyncSubmissions();
     // Settlement already owns the response; only queued input can still be withdrawn.
     if (!this.turns.isInFlight) {
       this.queue.restoreToComposer();
-      return;
+      return false;
     }
     this.deps.session.cancelTurn('user');
     this.queue.restoreToComposer();
     this.steering.clearCurrentUi();
     this.deps.streamController.thinkingIndicator.hide();
+    return true;
   }
 
   /** Cancels the active turn and waits for its cleanup and conversation persistence. */

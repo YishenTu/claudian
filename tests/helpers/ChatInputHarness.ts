@@ -87,7 +87,7 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
     coordinator: { cancel: () => deps.getExecutionCoordinator()?.cancel() },
     dismissInteractions: () => controller.dismissPendingApproval(),
   });
-  const state: ChatState = new ChatState({}, undefined, session.turns);
+  const state: ChatState = (dependencyOverrides.state as ChatState | undefined) ?? new ChatState({}, undefined, session.turns);
   state.currentConversationId = 'conversation-1';
   const input = createInput();
   const queueIndicator = createMockEl();

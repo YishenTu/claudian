@@ -157,21 +157,30 @@ export class MessageRenderer {
    * Adds a new message to the chat during streaming.
    * Returns the message element for content updates.
    */
-  addMessage(msg: ChatMessage): HTMLElement {
+  addMessage(msg: ChatMessage, afterMessageId?: string): HTMLElement {
     if (msg.role === 'user' && msg.displayContent === '' && !msg.images?.length) {
       return this.messagesEl;
     }
     this.#actions.retireFullSessionForks();
+    const previous = this.messagesEl.lastChild;
+    let element: HTMLElement;
     if (msg.role === 'user') {
       const msgEl = this.#renderUserMessage(msg, { live: true });
-      this.scrollToBottom();
-      return msgEl ?? (this.messagesEl.lastElementChild as HTMLElement | null) ?? this.messagesEl;
+      element = msgEl ?? (this.messagesEl.lastElementChild as HTMLElement | null) ?? this.messagesEl;
+    } else {
+      const { msgEl } = this.#createMessageEl(msg);
+      this.#actions.appendTimestamp(msgEl, msg.completedAt);
+      element = msgEl;
     }
-
-    const { msgEl } = this.#createMessageEl(msg);
-    this.#actions.appendTimestamp(msgEl, msg.completedAt);
+    const anchor = afterMessageId === undefined ? null : this.findMessageEl(afterMessageId);
+    if (anchor) {
+      // A user message may render both an image group and a text bubble.
+      const added: ChildNode[] = [];
+      for (let node = previous ? previous.nextSibling : this.messagesEl.firstChild; node; node = node.nextSibling) added.push(node);
+      anchor.after(...added);
+    }
     this.scrollToBottom();
-    return msgEl;
+    return element;
   }
 
   getMessageContentEl(messageId: string): HTMLElement | null {
@@ -179,6 +188,7 @@ export class MessageRenderer {
   }
 
   removeMessage(messageId: string): void {
+    this.messagesEl.querySelector(`[data-user-message-id="${messageId}"]`)?.remove();
     const msgEl = this.findMessageEl(messageId);
     if (!msgEl) {
       return;
@@ -281,6 +291,7 @@ export class MessageRenderer {
     const text = msg.displayContent ?? extractUserDisplayContent(msg.content) ?? msg.content;
     if (msg.images && msg.images.length > 0) {
       const imagesEl = this.#renderMessageImages(msg.images);
+      imagesEl.dataset.userMessageId = msg.id;
       if (!text) this.#actions.appendTimestamp(imagesEl, msg.timestamp);
     }
     if (!text && !this.#actions.branchesEnabled) return null;

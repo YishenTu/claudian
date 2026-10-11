@@ -346,10 +346,10 @@ function getAsyncDisplayStatus(asyncStatus: string | undefined): 'running' | 'co
 function getAsyncStatusText(asyncStatus: string | undefined): string {
   switch (asyncStatus) {
     case 'pending': return 'Initializing';
-    case 'completed': return ''; // Just show tick icon, no text
     case 'error': return 'Error';
     case 'orphaned': return 'Orphaned';
-    default: return 'Running in background';
+    // Running and completed cards show only their status icon.
+    default: return '';
   }
 }
 

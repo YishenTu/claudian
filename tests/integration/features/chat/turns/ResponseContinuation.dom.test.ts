@@ -441,13 +441,11 @@ it('keeps a notification consumed by an automatic response outside an admitted r
     state.addMessage(response);
     state.currentContentEl = renderer.addMessage(response).querySelector('.claudian-message-content');
     renderSessionTaskNotification(host, 'Background task finished.');
-    await renderAutoTriggeredTurn(host, {
-      metadata: {}, events: [
+    await renderAutoTriggeredTurn(host, { spans: [{ events: [
         { type: 'tool_started', scope, toolCallId: 'background-read', toolScope: { kind: 'main' }, name: 'Read', input: { file_path: 'background.md' } },
         { type: 'tool_completed', scope: { ...scope, sequence: 2 }, toolCallId: 'background-read', toolScope: { kind: 'main' }, content: 'Background content.' },
         { type: 'text_delta', scope: { ...scope, sequence: 3 }, text: 'Automatic answer.' },
-      ],
-    }, () => true);
+      ] }], metadata: {} }, () => true);
     const text = { type: 'text' as const, content: 'Requested answer.' };
     response = await continueResponseAfterNotification(host, response, text);
     await stream.handleStreamChunk(text, response);

@@ -220,6 +220,7 @@ export class SessionModel {
       },
       discardSuggestion: () => this.presentation?.suggestions.discard(),
       canAcceptBackgroundWork: () => !session.isDisposed,
+      claimBackgroundUserMessage: (nativeUserMessageId, inputId) => this.inputController.claimBackgroundUserMessage(nativeUserMessageId, inputId),
     });
   }
 

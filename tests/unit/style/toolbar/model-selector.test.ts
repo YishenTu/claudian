@@ -133,7 +133,7 @@ describe('Toolbar popover styles', () => {
   it('shows every provider icon in the list in its brand colour and marks the selection with a light green tick only', () => {
     const toolbar = renderToolbar();
     const color = (selector: string) => style(toolbar.querySelector(selector)!).color;
-    const brand = 'var(--claudian-brand)';
+    const brand = 'var(--claudian-provider-logo)';
     // Only the icon is tinted; model names read as normal text.
     expect({
       selectedIcon: color('[aria-selected="true"] .claudian-model-provider-icon'),
@@ -169,7 +169,7 @@ describe('Toolbar popover styles', () => {
     }).toEqual({ buttonReasoning: 'var(--text-muted)', buttonFastMode: 'var(--text-normal)' });
   });
 
-  it.each(['claude', 'codex', 'opencode', 'pi', 'grok'])(
+  it.each(['claude', 'codex', 'opencode', 'pi', 'grok', 'deepseek'])(
     'gives a %s model row its own brand colour for its icon when providers share one list',
     (provider) => {
       renderToolbar();
@@ -179,10 +179,27 @@ describe('Toolbar popover styles', () => {
         .filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule)
         .filter(rule => rule.selectorText.split(',')
           .some(selector => selector.trim().endsWith(`.claudian-model-option[data-provider="${provider}"]`)))
-        .map(rule => rule.style.getPropertyValue('--claudian-brand').trim());
+        .map(rule => rule.style.getPropertyValue('--claudian-provider-logo').trim());
       expect(aliases).toEqual([`var(--claudian-brand-${provider})`]);
     },
   );
+
+  it('keeps the DeepSeek brand colour on its logo and gives its other accents neutral text colour', () => {
+    renderToolbar();
+    const sheet = document.head.querySelector('style')!.sheet!;
+    const rule = Array.from(sheet.cssRules)
+      .filter((candidate): candidate is CSSStyleRule => candidate instanceof CSSStyleRule)
+      .find(candidate => candidate.selectorText.includes('.claudian-container[data-provider="deepseek"]'))!;
+    expect({
+      logo: rule.style.getPropertyValue('--claudian-provider-logo').trim(),
+      accent: rule.style.getPropertyValue('--claudian-brand').trim(),
+      accentRgb: rule.style.getPropertyValue('--claudian-brand-rgb').trim(),
+    }).toEqual({
+      logo: 'var(--claudian-brand-deepseek)',
+      accent: 'var(--claudian-brand-neutral)',
+      accentRgb: 'var(--claudian-brand-neutral-rgb)',
+    });
+  });
 
   it('warns about the unrestricted permission mode through its icon only', () => {
     const toolbar = renderToolbar();

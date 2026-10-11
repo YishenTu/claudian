@@ -5,6 +5,7 @@ import type {
 } from '@/features/chat/tabs/runtime/TabRuntimeConstruction';
 import {
   cancelSelectedDestinationTurn,
+  handleComposerMenuKeydown,
   sendTabInputMessageFromEnterKey,
   sendTabInputMessageFromExplicitEnterShortcut,
 } from '@/features/chat/tabs/TabInputEvents';
@@ -22,6 +23,7 @@ export function buildTabRuntimeInputBindings(
   const { plugin } = options;
 
   const keydownHandler = (event: KeyboardEvent) => {
+    if (event.key === 'Escape' && event.defaultPrevented) return;
     if ((event.target as HTMLElement | null)?.closest?.('button, a')) return;
     const tab = runtimeRef.requirePublished();
     if (!options.isRuntimeLive(tab)) return;
@@ -29,15 +31,7 @@ export function buildTabRuntimeInputBindings(
       return;
     }
 
-    if (controllers.builtInCommandController.handleResumeKeydown(event)) {
-      return;
-    }
-
-    if (ui.composerDropdown.handleKeydown(event)) {
-      return;
-    }
-
-    if (ui.promptSuggestion.handleKeydown(event)) return;
+    if (handleComposerMenuKeydown(tab, event)) return;
 
     if (event.key === 'Escape' && !event.isComposing) {
       if (cancelSelectedDestinationTurn(tab)) {

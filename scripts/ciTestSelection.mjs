@@ -32,6 +32,7 @@ const fileConsumers = [
     'tests/unit/features/chat/tabs/TabAttentionStyles.test.ts',
     'tests/unit/features/chat/navigation/NavigationSidebar.dom.test.ts',
   ]],
+  [/^tests\/fixtures\/providers\/deepseek\/runtime\//, ['tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts']],
   [/^tests\/fixtures\/providers\/grok\/history\//, [
     'tests/unit/providers/grok/history/GrokConversationHistoryService.test.ts',
     'tests/unit/providers/grok/history/GrokHistoryStore.test.ts',

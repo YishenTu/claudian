@@ -32,7 +32,7 @@ export interface PendingSteerState {
   readonly expectedProviderMessage: PendingProviderUserMessage;
   providerDisposition: PendingSteerProviderDisposition;
   uiState: 'visible' | 'cleared';
-  correlationState: 'pending' | 'settled' | 'delegated-to-history';
+  correlationState: 'pending' | 'settled' | 'awaiting-late-echo';
   retryState: 'blocked' | 'parked' | 'restored';
 }
 
@@ -40,7 +40,8 @@ export interface PendingSteerState {
 export interface ProviderEchoClaim {
   /** Null when the echo does not confirm a pending steer. */
   readonly expected: PendingProviderUserMessage | null;
-  readonly acceptanceError?: unknown;
+  /** Resolves with any persistence error; capturing display input never waits for persistence. */
+  readonly acceptance: Promise<unknown>;
   /** Releases a settled steer once its message is rendered. */
   settle(): void;
 }
@@ -160,31 +161,26 @@ export class TurnSteering {
   release(pending: PendingSteerState): void {
     if (this.#isRegistered(pending)) {
       this.pendingSteersByConversation.delete(pending.conversationId);
-      pending.coordinator.releaseSteerCorrelation(pending.submissionId);
+      if (pending.correlationState !== 'awaiting-late-echo') {
+        pending.coordinator.releaseSteerCorrelation(pending.submissionId);
+      }
     }
   }
 
+  /** Hide the current queue presentation without changing delivery or correlation. */
   clearCurrentUi(): void {
     const pending = this.current;
-    if (!pending) return;
-    pending.uiState = 'cleared';
-    this.deps.onVisibleSteerChanged();
+    if (pending) this.#clearUi(pending);
   }
 
-  /** After its turn, a steer's provider correlation can only come from native history. */
-  delegateCorrelationToHistory(conversationId: string | null): void {
+  /** Free the active lane after its turn; the coordinator retains input for an identified late echo. */
+  finishTurn(conversationId: string | null): void {
     if (!conversationId) return;
     const pending = this.pendingSteersByConversation.get(conversationId);
     if (!pending) return;
-
-    if (pending.correlationState === 'pending') {
-      pending.correlationState = 'delegated-to-history';
-    }
+    if (pending.correlationState === 'pending') pending.correlationState = 'awaiting-late-echo';
     this.#clearUi(pending);
-    if (
-      pending.providerDisposition !== 'awaiting-result'
-      || pending.correlationState === 'settled'
-    ) {
+    if (pending.providerDisposition !== 'awaiting-result' || pending.correlationState === 'settled') {
       this.release(pending);
     }
   }
@@ -219,24 +215,31 @@ export class TurnSteering {
     return true;
   }
 
-  async claimProviderEcho(nativeUserMessageId: string | undefined): Promise<ProviderEchoClaim> {
-    const pending = this.current;
+  claimProviderEcho(nativeUserMessageId: string | undefined, inputId?: string): ProviderEchoClaim {
+    const current = this.current;
+    const pending = current?.correlationState !== 'settled'
+      && (inputId === undefined || current?.submissionId === inputId) ? current : null;
+    const coordinator = pending?.coordinator ?? this.deps.getExecutionCoordinator();
+    const submission = !pending && inputId ? coordinator?.getSteerSubmission(inputId) : undefined;
     const settle = () => {
       if (pending?.correlationState === 'settled') this.release(pending);
     };
-    if (pending?.correlationState !== 'pending') return { expected: null, settle };
+    if (!pending && !submission) return { expected: null, acceptance: Promise.resolve(), settle };
 
-    pending.message.onDelivery?.(true);
-    pending.providerDisposition = 'accepted-awaiting-correlation';
-    pending.correlationState = 'settled';
-    this.#clearUi(pending);
-    let acceptanceError: unknown;
-    try {
-      await pending.coordinator.acceptSteerFromProviderEvent(pending.submissionId, nativeUserMessageId);
-    } catch (error) {
-      acceptanceError = error;
+    if (pending) {
+      pending.message.onDelivery?.(true);
+      pending.providerDisposition = 'accepted-awaiting-correlation';
+      pending.correlationState = 'settled';
+      this.#clearUi(pending);
     }
-    return { expected: pending.expectedProviderMessage, acceptanceError, settle };
+    const expected = pending?.expectedProviderMessage ?? {
+      displayContent: submission!.rawDisplayText,
+      persistedContent: submission!.canonicalText,
+      images: [...submission!.images],
+    };
+    const acceptance = coordinator!.acceptSteerFromProviderEvent(pending?.submissionId ?? inputId!, nativeUserMessageId)
+      .then(() => undefined, (error: unknown) => error);
+    return { expected, acceptance, settle };
   }
 
   #restoreForActiveConversation(pending: PendingSteerState): void {

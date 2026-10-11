@@ -34,19 +34,29 @@ function shouldSendMessageFromEnterKey(
   return true;
 }
 
+/** Open composer menus consume their keys, including Escape, before tab-level handling. */
+export function handleComposerMenuKeydown(tab: AssembledTabRuntime, event: KeyboardEvent): boolean {
+  return tab.controllers.builtInCommandController.handleResumeKeydown(event)
+    || tab.ui.composerDropdown.handleKeydown(event)
+    || tab.ui.promptSuggestion.handleKeydown(event);
+}
+
+/** The composer's selected destination has a turn, preparation, or main background work that Stop would cancel. */
+export function hasCancellableSelectedWork(tab: AssembledTabRuntime): boolean {
+  const sideChat = tab.controllers.sideChatController;
+  if (sideChat.destination === 'side') return sideChat.runtime?.isWorking ?? false;
+  return tab.state.isStreaming || tab.controllers.inputController.isPreparingMainTurn || tab.session.hasMainBackgroundWork;
+}
+
 /**
  * Cancels only the composer's currently selected destination. Returns true when
- * a turn was actually cancelled.
+ * a turn was cancelled or a Stop of main background work started.
  */
 export function cancelSelectedDestinationTurn(tab: AssembledTabRuntime): boolean {
+  if (!hasCancellableSelectedWork(tab)) return false;
   const sideChat = tab.controllers.sideChatController;
-  if (sideChat.destination === 'side') {
-    if (!sideChat.runtime?.isWorking) return false;
-    sideChat.cancelSide();
-    return true;
-  }
-  if (!tab.state.isStreaming && !tab.controllers.inputController.isPreparingMainTurn) return false;
-  tab.controllers.inputController.cancelStreaming();
+  if (sideChat.destination === 'side') sideChat.cancelSide();
+  else tab.controllers.inputController.cancelStreaming();
   return true;
 }
 

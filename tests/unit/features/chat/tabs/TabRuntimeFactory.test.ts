@@ -2188,6 +2188,7 @@ describe('Tab provider execution ownership', () => {
       expect(plugin.updateConversation).toHaveBeenCalledWith('conversation', expect.objectContaining({ lastActivityAt: expect.any(Number) }));
       expect(tab.state.attention).toBeNull();
       expect(tab.state.usage?.contextTokens ?? null).toBe(usage ? 10 : null);
+      expect(tab.state.messages).toEqual([]);
     }
   });
 

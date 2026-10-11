@@ -24,7 +24,8 @@ describe('enhanced CLI discovery and subprocess PATH', () => {
 
   afterEach(() => {
     process.env = originalEnv;
-    rmSync(directory, { recursive: true, force: true });
+    // Windows can briefly lock the copied executable after it exits.
+    rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   it.each(['default', 'home fallback', 'XDG_DATA_HOME', 'MISE_DATA_DIR', 'MISE_SHIMS_DIR', 'npm_config_prefix', ...(!isWindows ? ['.npm-global'] : [])])(

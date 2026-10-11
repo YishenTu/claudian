@@ -41,12 +41,15 @@ export function createSessionModelStub(session: ChatSessionRuntime, ports: Sessi
  * so presentation state derives from the same turn owner, as it does in a session model.
  */
 export function createTestSession(options: SessionModelStubPorts & {
-  coordinator?: Pick<ChatExecutionCoordinator, 'cancel'> & Partial<Pick<ChatExecutionCoordinator, 'hasBackgroundWork'>>;
+  coordinator?: Pick<ChatExecutionCoordinator, 'cancel'>
+    & Partial<Pick<ChatExecutionCoordinator, 'cancelBackgroundWork' | 'hasBackgroundWork' | 'publishedBackgroundWork'>>;
 } = {}): ChatSessionRuntime {
   const { coordinator, ...ports } = options;
   const execution = {
     cancel: () => coordinator?.cancel(),
+    cancelBackgroundWork: () => coordinator?.cancelBackgroundWork?.(),
     get hasBackgroundWork() { return coordinator?.hasBackgroundWork ?? false; },
+    get publishedBackgroundWork() { return coordinator?.publishedBackgroundWork ?? false; },
   };
   const session = new ChatSessionRuntime(
     { conversationId: null, providerId: 'pi', draftModel: null },

@@ -88,6 +88,8 @@ export type ProviderToolPolicy =
  * or opaque provider settings bag.
  */
 export interface ProviderExecutionRequest {
+  /** Opaque caller identity a provider can return with a user-message echo, including a delayed steer. */
+  readonly inputId?: string;
   readonly input: readonly ProviderExecutionInputBlock[];
   readonly context?: ProviderExecutionContext;
   readonly conversationHistory?: readonly ChatMessage[];

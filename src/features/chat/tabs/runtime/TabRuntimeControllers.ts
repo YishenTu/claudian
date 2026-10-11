@@ -14,6 +14,7 @@ import type { SessionChange } from '@/features/chat/sessions/SessionModel';
 import { getSessionCapabilities } from '@/features/chat/sessions/sessionSettings';
 import type { TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import type { PublishedTabRuntimeRef, TabRuntimeConstructionContext, TabRuntimeControllerBundle, TabRuntimeCore } from '@/features/chat/tabs/runtime/TabRuntimeConstruction';
+import { hasCancellableSelectedWork } from '@/features/chat/tabs/TabInputEvents';
 import { commitProvisionalTab } from '@/features/chat/tabs/TabLifecycle';
 import { applyProviderUIGating, invalidateTabProviderCommands, refreshTabContextUsage, refreshTabProviderUI, syncComposerDropdownForProvider, toggleTabServiceTier } from '@/features/chat/tabs/tabProviderUI';
 import type { TabUIComponents } from '@/features/chat/tabs/types';
@@ -110,7 +111,7 @@ export function buildTabRuntimeControllers(
     shouldSkipEscapeHandling: () => {
       if (builtInCommandController.isResumeDropdownVisible()) return true;
       if (ui.composerDropdown.isVisible()) return true;
-      return false;
+      return hasCancellableSelectedWork(runtimeRef.requirePublished());
     },
   });
   options.registerCleanup('tab navigation controller', () => navigationController.dispose());

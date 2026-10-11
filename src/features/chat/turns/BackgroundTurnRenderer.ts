@@ -17,8 +17,12 @@ export interface BackgroundTurnRenderHost {
 }
 
 interface BackgroundTurnRenderResult {
-  events: readonly ProviderBackgroundOutputEvent[];
+  spans: readonly BackgroundTurnRenderSpan[];
   metadata: { assistantMessageId?: string };
+}
+
+export interface BackgroundTurnRenderSpan {
+  events: ProviderBackgroundOutputEvent[];
   target?: BackgroundTurnRenderTarget;
 }
 
@@ -26,18 +30,34 @@ export interface BackgroundTurnRenderTarget {
   readonly message: ChatMessage;
 }
 
+/** Inserts a reply mid-transcript instead of appending an automatic response. */
+export interface BackgroundTurnPlacement {
+  readonly index: number;
+  /** The message whose rendering the reply follows. */
+  readonly after?: string;
+  readonly automatic: boolean;
+}
+
 /** Reserve transcript order before asynchronous rendering or later input. */
 export function reserveBackgroundTurn(
   host: Pick<BackgroundTurnRenderHost, 'state' | 'renderer' | 'createMessageId'>,
+  placement?: BackgroundTurnPlacement,
 ): BackgroundTurnRenderTarget {
   const message: ChatMessage = {
-    id: host.createMessageId(), role: 'assistant', isAutomaticResponse: true,
+    id: host.createMessageId(), role: 'assistant', isAutomaticResponse: placement?.automatic ?? true,
     content: '', timestamp: Date.now(), toolCalls: [], contentBlocks: [],
   };
-  const previous = host.state.messages.at(-1);
+  const messages = host.state.messages;
+  const index = placement?.index ?? messages.length;
+  const previous = messages[index - 1];
   if (isStandaloneTaskNotification(previous)) recordResponseContinuation(message, previous);
-  host.state.addMessage(message);
-  const element = host.renderer?.addMessage(message) ?? null;
+  if (placement) {
+    messages.splice(index, 0, message);
+    host.state.messages = messages;
+  } else {
+    host.state.addMessage(message);
+  }
+  const element = host.renderer?.addMessage(message, placement?.after) ?? null;
   if (element) element.hidden = true;
   return { message };
 }
@@ -112,27 +132,13 @@ export async function renderAutoTriggeredTurn(
   }
 
   const { metadata } = result;
-  const chunks = result.events.flatMap(event => {
+  const spans = result.spans.map(span => ({ ...span, chunks: span.events.flatMap(event => {
     const chunk = providerOutputEventToStreamChunk(event);
     return chunk ? [{ chunk, scope: event.scope }] : [];
-  });
-  if (chunks.length === 0) {
-    if (result.target) discardBackgroundTurn(host, result.target);
-    return false;
-  }
-
-  const hiddenToolIds = new Set(chunks.flatMap(({ chunk }) =>
+  }) }));
+  const hiddenToolIds = new Set(spans.flatMap(span => span.chunks).flatMap(({ chunk }) =>
     chunk.type === 'tool_use' && chunk.name === TOOL_AGENT_OUTPUT ? [chunk.id] : []
   ));
-  const hasVisibleContent = chunks.some(({ chunk }) => isVisibleAutoTurnChunk(chunk, hiddenToolIds));
-
-  const target = result.target ?? (hasVisibleContent ? reserveBackgroundTurn(host) : undefined);
-  let assistantMessage: ChatMessage = target?.message ?? {
-    id: host.createMessageId(), role: 'assistant', content: '', timestamp: Date.now(),
-  };
-  const segments = [assistantMessage];
-  if (!hasVisibleContent && target) discardBackgroundTurn(host, target);
-
   const state = new ChatState({
     onUsageChanged: usage => {
       if (isCurrent() && !host.state.isStreaming) {
@@ -143,65 +149,66 @@ export async function renderAutoTriggeredTurn(
   });
   state.currentConversationId = host.state.currentConversationId;
   state.autoScrollEnabled = host.state.autoScrollEnabled;
-  state.response.messageId = assistantMessage.id;
   const stream = host.stream.createBackgroundStream(state);
-
-  if (hasVisibleContent && target) {
-    state.currentContentEl = host.renderer?.getMessageContentEl(target.message.id) ?? null;
-    if (state.currentContentEl?.parentElement) state.currentContentEl.parentElement.hidden = false;
-  }
-  state.messages = host.state.messages;
+  const segments: ChatMessage[] = [];
+  let checkpointMessage: ChatMessage | undefined;
 
   try {
-    for (const { scope, chunk } of chunks) {
-      if (!isCurrent()) return false;
-      if (hasVisibleContent) {
-        const continuation = await continueResponseAfterNotification({
-          state: host.state, streamState: state, renderer: host.renderer, stream,
-          createMessageId: () => host.createMessageId(), isCurrent,
-        }, assistantMessage, chunk, scope);
+    for (const span of spans) {
+      const start = segments.length;
+      const hasVisibleContent = span.chunks.some(({ chunk }) => isVisibleAutoTurnChunk(chunk, hiddenToolIds));
+      const target = span.target ?? (hasVisibleContent ? reserveBackgroundTurn(host) : undefined);
+      let assistantMessage: ChatMessage = target?.message ?? {
+        id: host.createMessageId(), role: 'assistant', content: '', timestamp: Date.now(),
+      };
+      segments.push(assistantMessage);
+      state.response.messageId = assistantMessage.id;
+      if (target && !hasVisibleContent) discardBackgroundTurn(host, target);
+      state.currentContentEl = hasVisibleContent && target ? host.renderer?.getMessageContentEl(target.message.id) ?? null : null;
+      if (state.currentContentEl?.parentElement) state.currentContentEl.parentElement.hidden = false;
+      for (const { scope, chunk } of span.chunks) {
         if (!isCurrent()) return false;
-        if (continuation !== assistantMessage) {
-          assistantMessage = continuation;
-          segments.push(continuation);
+        if (hasVisibleContent) {
+          const continuation = await continueResponseAfterNotification({
+            state: host.state, streamState: state, renderer: host.renderer, stream,
+            createMessageId: () => host.createMessageId(), isCurrent,
+          }, assistantMessage, chunk, scope);
+          if (!isCurrent()) return false;
+          if (continuation !== assistantMessage) {
+            assistantMessage = continuation;
+            segments.push(continuation);
+          }
         }
+        state.messages = host.state.messages;
+        await stream.handleStreamChunk(chunk, assistantMessage);
+        if (!isCurrent()) return false;
       }
-      state.messages = host.state.messages;
-      await stream.handleStreamChunk(chunk, assistantMessage);
+
       if (!isCurrent()) return false;
-    }
-
-    if (!isCurrent()) return false;
-    await stream.handleStreamChunk({ type: 'done' }, assistantMessage);
-
-    if (
-      isCurrent()
-      && hasVisibleContent
-      && !hasVisibleAutoTurnMessageContent(assistantMessage)
-    ) {
-      const placeholder = '(background task completed)';
-      assistantMessage.content = placeholder;
-      await stream.appendText(placeholder);
-    }
-
-    if (isCurrent() && hasVisibleContent) {
+      await stream.handleStreamChunk({ type: 'done' }, assistantMessage);
       await stream.finalizeCurrentThinkingBlock(assistantMessage);
       if (!isCurrent()) return false;
       await stream.finalizeCurrentTextBlock(assistantMessage);
       if (!isCurrent()) return false;
+      stream.thinkingIndicator.hide();
       assistantMessage.completedAt = Date.now();
-      if (metadata.assistantMessageId) assistantMessage.assistantMessageId = metadata.assistantMessageId;
-      for (const segment of segments) {
-        if (!host.state.messages.includes(segment)) continue;
-        const previous = getAutomaticNotificationPredecessor(segment, host.state.messages);
-        // Include only notification context, never another response's live work.
-        const responseMessages = previous ? [previous, segment] : [segment];
-        host.renderer?.finalizeResponse(segment, responseMessages);
+      if (!hasVisibleAutoTurnMessageContent(assistantMessage) && host.state.messages.includes(assistantMessage)) {
+        host.state.messages = host.state.messages.filter(message => message !== assistantMessage);
+        host.renderer?.removeMessage(assistantMessage.id);
       }
+      checkpointMessage = segments.slice(start).reverse().find(segment => host.state.messages.includes(segment));
     }
+
+    const visible = segments.filter(segment => host.state.messages.includes(segment));
+    if (checkpointMessage && metadata.assistantMessageId) checkpointMessage.assistantMessageId = metadata.assistantMessageId;
+    for (const segment of visible) {
+      const previous = getAutomaticNotificationPredecessor(segment, host.state.messages);
+      // Include only notification context, never another response's live work.
+      host.renderer?.finalizeResponse(segment, previous ? [previous, segment] : [segment]);
+    }
+    return visible.length > 0;
   } finally {
     stream.dispose();
-    if (hasVisibleContent) host.renderer?.scrollToBottom();
+    host.renderer?.scrollToBottom();
   }
-  return hasVisibleContent;
 }

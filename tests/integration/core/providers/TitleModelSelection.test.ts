@@ -9,11 +9,13 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { assertClaudeModelAvailable } from '@/providers/claude/runtime/ClaudeModelAvailability';
 import { updateClaudeProviderSettings } from '@/providers/claude/settings';
 import { assertCodexModelAvailable } from '@/providers/codex/runtime/CodexModelAvailability';
+import { assertDeepSeekModelAvailable } from '@/providers/deepseek/runtime/DeepSeekModels';
 import { assertGrokModelAvailable } from '@/providers/grok/runtime/GrokModelAvailability';
 import { assertOpencodeModelAvailable } from '@/providers/opencode/runtime/OpencodeModelAvailability';
 import { assertPiModelAvailable } from '@/providers/pi/runtime/PiModelAvailability';
 
 const executionGuards = {
+  deepseek: assertDeepSeekModelAvailable,
   claude: assertClaudeModelAvailable, codex: assertCodexModelAvailable, grok: assertGrokModelAvailable,
   opencode: assertOpencodeModelAvailable, pi: assertPiModelAvailable,
 };
@@ -21,6 +23,7 @@ const executionGuards = {
 const titleCases = modelCatalogCases.map(provider => ({
   ...provider,
   forms: {
+    deepseek: ['deepseek:native/selected', 'deepseek:native/selected'],
     claude: ['sonnet', 'claude-code/sonnet'],
     codex: ['gpt-5.5', 'openai-codex/gpt-5.5'],
     grok: ['selected', 'grok/selected'],

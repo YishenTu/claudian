@@ -44,6 +44,26 @@ function createHarness() {
 }
 
 describe('TurnSteering.steer', () => {
+  it('captures submitted input synchronously when its echo precedes the acknowledgement', async () => {
+    const { coordinator, message, returnUnsent, steering } = createHarness();
+    let acknowledge!: (value: unknown) => void;
+    coordinator.steer.mockReturnValue(new Promise(resolve => { acknowledge = resolve; }));
+    const image = { id: 'image', name: 'pixel.png', mediaType: 'image/png' as const, data: 'aW1hZ2U=', size: 5, source: 'paste' as const };
+    message.turnRequest = { text: 'expanded submitted text', images: [image] };
+    const steeringResult = steering.steer(message);
+    steering.finishTurn('conversation-1');
+    const claim = steering.claimProviderEcho('late-user');
+    expect(claim.expected).toMatchObject({ displayContent: 'follow up', persistedContent: 'expanded submitted text', images: [image] });
+    acknowledge({ delivery: 'accepted' });
+    const pending = await steeringResult;
+    await claim.acceptance;
+    claim.settle();
+    steering.restoreIfDefinitelyUnsent(pending);
+    expect(steering.current).toBeNull();
+    expect(returnUnsent).not.toHaveBeenCalled();
+    expect(coordinator.acceptSteerFromProviderEvent).toHaveBeenCalledWith('submission-follow up', 'late-user');
+  });
+
   it('marks an accepted steer as awaiting provider correlation without requeueing it', async () => {
     const { coordinator, message, reportFailure, steering } = createHarness();
     coordinator.steer.mockResolvedValue({ delivery: 'accepted' });
@@ -115,7 +135,8 @@ describe('TurnSteering.steer', () => {
       await Promise.resolve();
     }
     expect(coordinator.steer).toHaveBeenCalledTimes(1);
-    const claim = await steering.claimProviderEcho('native-user');
+    const claim = steering.claimProviderEcho('native-user');
+    await claim.acceptance;
     resolveSteer(outcome);
     const pending = await steer;
     steering.restoreIfDefinitelyUnsent(pending);

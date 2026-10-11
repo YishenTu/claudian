@@ -6,6 +6,31 @@ import { isStandaloneTaskNotification } from '@/features/chat/rendering/Response
 import type { ChatState } from '@/features/chat/state/ChatState';
 import type { StreamController } from '@/features/chat/turns/StreamController';
 
+/** Latest independent notification that precedes this event but follows its reserved response. */
+export function findFollowingNotification(
+  message: ChatMessage,
+  messages: ChatMessage[],
+  scope?: ProviderTurnEventScope,
+): ChatMessage | undefined {
+  const index = messages.indexOf(message);
+  if (index < 0) return undefined;
+  return messages.slice(index + 1).filter(item => {
+    if (!isStandaloneTaskNotification(item)) return false;
+    const predecessor = getNotificationPredecessor(item, scope?.kind ?? 'requested');
+    if (scope?.kind === 'background') {
+      return predecessor?.kind === 'background'
+        && predecessor.sessionInstanceId === scope.sessionInstanceId
+        && predecessor.turnId === scope.turnId
+        && predecessor.sequence < scope.sequence;
+    }
+    return !scope || !predecessor
+      || predecessor.sessionInstanceId !== scope.sessionInstanceId
+      || (predecessor.kind === 'requested' && predecessor.executionId !== scope.executionId)
+      || predecessor.turnId !== scope.turnId
+      || predecessor.sequence < scope.sequence;
+  }).at(-1);
+}
+
 /** Keep new response content after independently delivered session notifications. */
 export async function continueResponseAfterNotification(
   host: {
@@ -27,23 +52,7 @@ export async function continueResponseAfterNotification(
   if (chunk.type === 'tool_use' && host.state.messages.some(item => item.toolCalls?.some(tool => tool.id === chunk.id))) {
     return message;
   }
-  const index = host.state.messages.indexOf(message);
-  if (index < 0) return message;
-  const preceding = host.state.messages.slice(index + 1).filter(item => {
-    if (!isStandaloneTaskNotification(item)) return false;
-    const predecessor = getNotificationPredecessor(item, scope?.kind ?? 'requested');
-    if (scope?.kind === 'background') {
-      return predecessor?.kind === 'background'
-        && predecessor.sessionInstanceId === scope.sessionInstanceId
-        && predecessor.turnId === scope.turnId
-        && predecessor.sequence < scope.sequence;
-    }
-    return !scope || !predecessor
-      || predecessor.sessionInstanceId !== scope.sessionInstanceId
-      || (predecessor.kind === 'requested' && predecessor.executionId !== scope.executionId)
-      || predecessor.turnId !== scope.turnId
-      || predecessor.sequence < scope.sequence;
-  }).at(-1);
+  const preceding = findFollowingNotification(message, host.state.messages, scope);
   if (!preceding) return message;
 
   await host.stream.handleStreamChunk({ type: 'done' }, message);

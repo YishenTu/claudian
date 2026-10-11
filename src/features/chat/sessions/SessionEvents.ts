@@ -11,6 +11,8 @@ import type { TabReviewOutcome } from '@/features/chat/state/types';
 import { BackgroundResponses } from '@/features/chat/turns/BackgroundResponses';
 import type { BackgroundTurnRenderHost } from '@/features/chat/turns/BackgroundTurnRenderer';
 import { renderSessionTaskNotification } from '@/features/chat/turns/BackgroundTurnRenderer';
+import type { ProviderEchoClaim } from '@/features/chat/turns/TurnSteering';
+import { toError } from '@/utils/error';
 
 export interface SessionEventsHost extends BackgroundTurnRenderHost {
   readonly session: ChatSessionRuntime;
@@ -21,6 +23,8 @@ export interface SessionEventsHost extends BackgroundTurnRenderHost {
   receiveSuggestion(turnId: string, suggestion: string): void;
   discardSuggestion(): void;
   canAcceptBackgroundWork(): boolean;
+  /** Captures submitted display input before a late steering acknowledgement releases its correlation. */
+  claimBackgroundUserMessage?(nativeUserMessageId: string | undefined, inputId?: string): ProviderEchoClaim | undefined;
 }
 
 /** Session event ordering and background response ownership, independent of tab membership. */
@@ -135,12 +139,19 @@ export class SessionEvents {
       host.discardSuggestion();
       this.responses.reserve(context.bindingId, event.scope.turnId);
     }
+    // Claim synchronously: the provider can acknowledge the steer immediately after emitting its user event.
+    const user = event.type === 'user_message_started' && event.scope.kind === 'background' ? event : undefined;
+    const claim = user ? host.claimBackgroundUserMessage?.(user.nativeUserMessageId, user.inputId) : undefined;
+    if (user) this.responses.userMessage(context.bindingId, user, claim?.expected);
     const pending = host.session.enqueueBackgroundWork(async () => {
       if (!isCurrent()) {
         this.responses.discard(context.bindingId);
         return;
       }
-      await this.handle(event, context, isCurrent);
+      const acceptanceError = claim ? await claim.acceptance : undefined;
+      try { await this.handle(event, context, isCurrent); }
+      finally { claim?.settle(); }
+      if (acceptanceError) throw toError(acceptanceError, 'Provider user message failed');
     }, event.type === 'task_notification' && event.scope.kind === 'session');
     if (!pending) {
       this.responses.discard(context.bindingId);

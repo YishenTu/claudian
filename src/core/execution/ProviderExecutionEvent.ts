@@ -84,6 +84,8 @@ export type ProviderUserMessageStartedEvent = ProviderEventBase<
   ProviderTurnEventScope
 > &
   ProviderOpaqueEventPayload & {
+    /** The caller's inputId when the provider can correlate this echo to submitted input. */
+    readonly inputId?: string;
     readonly content?: string;
     readonly nativeUserMessageId?: string;
   };

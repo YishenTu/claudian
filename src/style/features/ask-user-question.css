@@ -2,6 +2,8 @@
 
 .claudian-ask-question-inline {
   --claudian-ask-accent: var(--interactive-accent);
+  /* Inherited by question and permission controls; Obsidian then skips their aria-label hover tooltips. */
+  --no-tooltip: true;
 
   display: flex;
   flex-direction: column;

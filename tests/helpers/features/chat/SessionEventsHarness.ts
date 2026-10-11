@@ -32,6 +32,7 @@ export function enqueueTabSessionEvent(
     },
     discardSuggestion: () => tab.ui.promptSuggestion.discard(),
     canAcceptBackgroundWork: () => canAcceptTabBackgroundWork(tab),
+    claimBackgroundUserMessage: (nativeUserMessageId, inputId) => tab.controllers.inputController?.claimBackgroundUserMessage(nativeUserMessageId, inputId),
   });
     eventsBySession.set(session, events);
   }

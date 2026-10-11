@@ -29,6 +29,7 @@ export class TabSession {
   get canNavigateConversation(): boolean { return this.runtime.canNavigateConversation; }
   get hasActiveTurn(): boolean { return this.runtime.hasActiveTurn; }
   get hasBackgroundWork(): boolean { return this.runtime.hasBackgroundWork; }
+  get hasMainBackgroundWork(): boolean { return this.runtime.hasMainBackgroundWork; }
   get isWorking(): boolean { return this.runtime.isWorking; }
 
   cancelTurn(reason: TurnCancelReason, options?: TurnCancelOptions): boolean {

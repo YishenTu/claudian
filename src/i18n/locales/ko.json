@@ -439,13 +439,34 @@
         "desc": "Grok Build에만 전달되는 환경 변수입니다. 사용자 지정 모델의 비밀 값은 이 제공자 범위에 남아 있으며 네이티브 구성에서 env_key로 참조됩니다."
       }
     },
+    "deepseek": {
+      "installation": {
+        "desc": "자동 감지는 dsh를 우선하고 다음으로 macOS 또는 Windows의 Desktop을 찾습니다. 둘 다 설치된 경우 Desktop의 .app 경로 또는 Windows 설치 폴더를 입력하면 선택할 수 있습니다. 먼저 Desktop을 열어 초기 설정을 완료하세요.",
+        "desktop": "네이티브 Desktop 프로필을 사용합니다.",
+        "web": "네이티브 Web 프로필을 사용합니다."
+      },
+      "preset": "프리셋",
+      "codeMode": {
+        "name": "코드 모드 사용",
+        "desc": "기존 대화를 포함해 각 대화의 다음 턴부터 적용됩니다. 직접 도구와 함께 네이티브 run_code를 추가합니다."
+      },
+      "presetPlugins": {
+        "name": "추가 프리셋 플러그인",
+        "desc": "고급. Claudian 채팅 프리셋 뒤에 추가되는 네이티브 dsh 플러그인 행의 YAML 목록(dsh 형식)이며, 각 행에는 고유한 \"id\"와 \"name\"이 있어야 합니다. Claudian 자체 행은 대체할 수 없습니다. 저장하면 DeepSeek Harness가 다시 시작되어 진행 중인 턴이 중지됩니다. 계획 모드처럼 Claudian에 UI가 없는 플러그인은 작동하지 않을 수 있습니다."
+      },
+      "presetPreview": "프리셋 미리보기",
+      "environment": {
+        "name": "DeepSeek Harness 환경 변수",
+        "desc": "DeepSeek Harness에만 전달되는 환경 변수. 선택한 네이티브 Web 또는 Desktop 프로필, 자격 증명, 모델 및 MCP 서버를 사용합니다."
+      }
+    },
     "skills": {
       "subTabs": {
         "claude": "Claude Code",
         "shared": "기타 제공자"
       },
       "claudeHelp": ".claude/skills/의 Claude Code 스킬과 .claude/commands/의 명령.",
-      "sharedHelp": "Codex, OpenCode, Pi, Grok Build용 .agents/skills/의 공유 스킬.",
+      "sharedHelp": "Codex, OpenCode, Pi, Grok Build, DeepSeek Harness용 .agents/skills/의 공유 스킬.",
       "status": {
         "error": "스킬 폴더를 읽을 수 없습니다: {message}"
       },

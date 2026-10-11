@@ -96,7 +96,7 @@ export class MainTurnExecution {
     const assistant = this.responseStream.active;
     if (!assistant) return;
     if (event.type === 'user_message_started') {
-      await this.#handleProviderUserMessageStart(event.content ?? '', event.nativeUserMessageId);
+      await this.#handleProviderUserMessageStart(event.content ?? '', event.nativeUserMessageId, event.inputId);
       return;
     }
     if (event.type === 'assistant_message_started') {
@@ -131,7 +131,7 @@ export class MainTurnExecution {
     state.acknowledgeReview();
 
     let turnConversationId = state.currentConversationId;
-    this.deps.steering.delegateCorrelationToHistory(turnConversationId);
+    this.deps.steering.finishTurn(turnConversationId);
 
     const streamGeneration = this.deps.turns.beginResponse();
     streamController.beginResponse();
@@ -159,10 +159,25 @@ export class MainTurnExecution {
     state.hasPendingConversationSave = true;
     this.deps.renderer?.addMessage(userMsg);
 
-    const restoreCancelledInput = (): boolean => {
+    const rollbackFailedTurn = (assistantMsg?: ChatMessage): void => {
+      // Admission can overlap independent background output. Only this unaccepted submission is rolled back.
+      const owned = new Set([userMsg.id, assistantMsg?.id]);
+      const retained = state.messages.filter(message => {
+        if (!owned.has(message.id)) return true;
+        this.deps.renderer?.removeMessage(message.id);
+        return false;
+      });
+      state.messages = retained;
+      state.hasPendingConversationSave = hadPendingConversationSave
+        || retained.some(message => !messagesBeforeTurn.includes(message));
+      this.#resetTurnStreamingState();
+      if (retained.length === 0) this.deps.getWelcomeEl()?.removeClass('claudian-hidden');
+    };
+
+    const restoreCancelledInput = (assistantMsg?: ChatMessage): boolean => {
       if (!signal.aborted) return false;
       restoreUnsentInput(turnRequest);
-      this.#rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
+      rollbackFailedTurn(assistantMsg);
       this.responseStream.clear();
       this.#resetProviderMessageBoundaryState();
       this.reportDeferredReview();
@@ -180,7 +195,7 @@ export class MainTurnExecution {
     } catch (error) {
       admission.rollbackIfUncreated();
       restoreUnsentInput(turnRequest, false);
-      this.#rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
+      rollbackFailedTurn();
       throw error;
     }
     turnConversationId = state.currentConversationId;
@@ -209,7 +224,7 @@ export class MainTurnExecution {
 
     const rollbackUnstartedTurn = (): void => {
       restoreUnsentInput(admittedTurnRequest);
-      this.#rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
+      rollbackFailedTurn(assistantMsg);
       this.responseStream.clear();
       this.#resetProviderMessageBoundaryState();
       this.reportDeferredReview();
@@ -217,7 +232,7 @@ export class MainTurnExecution {
 
     // Lazy initialization: bind and prepare execution on the first provider action.
     const ready = await this.deps.ensureExecutionInitialized();
-    if (this.#retainUnsentTurnOnClose(signal, assistantMsg.id) || restoreCancelledInput()) return;
+    if (this.#retainUnsentTurnOnClose(signal, assistantMsg.id) || restoreCancelledInput(assistantMsg)) return;
     if (!ready) {
       if (this.#retainUnsentTurnOnClose(signal, assistantMsg.id)) return;
       new Notice('Failed to initialize agent execution. Please try again.');
@@ -289,7 +304,7 @@ export class MainTurnExecution {
           queue.returnMessageToComposer(retryMessage, { merge: true });
         } else if (!result.accepted) {
           queue.returnMessageToComposer(retryMessage, { merge: true });
-          this.#rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
+          rollbackFailedTurn(assistantMsg);
         }
         if (result.accepted) {
           this.#finishAcceptedMissingSession(streamGeneration);
@@ -311,9 +326,9 @@ export class MainTurnExecution {
       if (error instanceof ChatExecutionPreHandoffError) {
         if (!turn.assertBeforeHandoff && this.#retainUnsentTurnOnClose(signal, assistantMsg.id)) return;
         restoreUnsentInput(admittedTurnRequest);
-        this.#rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
+        rollbackFailedTurn(assistantMsg);
         didRollbackUnsentTurn = true;
-        if (!signal.aborted) new Notice('Message was not sent. Please try again.');
+        if (!signal.aborted) new Notice(error.userMessage ?? 'Message was not sent. Please try again.');
         this.reportDeferredReview();
       } else {
         hadExecutionError = true;
@@ -371,7 +386,7 @@ export class MainTurnExecution {
           this.reportDeferredReview();
         }
 
-        this.deps.steering.delegateCorrelationToHistory(turnConversationId);
+        this.deps.steering.finishTurn(turnConversationId);
         this.responseStream.clear();
         this.#resetProviderMessageBoundaryState();
       }
@@ -480,14 +495,15 @@ export class MainTurnExecution {
     this.awaitingProviderAssistantStart = false;
   }
 
-  async #handleProviderUserMessageStart(content: string, nativeUserMessageId: string | undefined): Promise<void> {
+  async #handleProviderUserMessageStart(content: string, nativeUserMessageId: string | undefined, inputId?: string): Promise<void> {
     // The turn's own input echo is already projected.
     if (!this.sawInitialProviderUserMessage) {
       this.sawInitialProviderUserMessage = true;
       return;
     }
 
-    const echo = await this.deps.steering.claimProviderEcho(nativeUserMessageId);
+    const echo = this.deps.steering.claimProviderEcho(nativeUserMessageId, inputId);
+    const acceptanceError = await echo.acceptance;
     const expected = echo.expected;
 
     const previousAssistant = this.responseStream.active;
@@ -524,7 +540,7 @@ export class MainTurnExecution {
     this.deps.streamController.thinkingIndicator.show();
     this.deps.state.responseStartTime = performance.now();
     this.awaitingProviderAssistantStart = true;
-    if (echo.acceptanceError) throw toError(echo.acceptanceError, 'Provider user message failed');
+    if (acceptanceError) throw toError(acceptanceError, 'Provider user message failed');
   }
 
   async #handleProviderAssistantMessageStart(): Promise<void> {
@@ -570,27 +586,6 @@ export class MainTurnExecution {
     state.messages = state.messages.filter((message) => message.id !== messageId);
     renderer?.removeMessage(messageId);
     state.resetStreamingPresentation();
-  }
-
-  #rollbackFailedTurn(
-    messagesBeforeTurn: ChatMessage[],
-    hadPendingConversationSave: boolean,
-  ): void {
-    const { state, renderer } = this.deps;
-    const retainedMessageIds = new Set(messagesBeforeTurn.map(message => message.id));
-    for (const message of state.messages) {
-      if (!retainedMessageIds.has(message.id)) {
-        renderer?.removeMessage(message.id);
-      }
-    }
-
-    state.messages = messagesBeforeTurn;
-    state.hasPendingConversationSave = hadPendingConversationSave;
-    this.#resetTurnStreamingState();
-
-    if (messagesBeforeTurn.length === 0) {
-      this.deps.getWelcomeEl()?.removeClass('claudian-hidden');
-    }
   }
 
   #finishAcceptedMissingSession(streamGeneration: number): void {

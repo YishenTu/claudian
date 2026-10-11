@@ -246,6 +246,7 @@ describe('MainTurnExecution', () => {
     expect(fixture.deps.renderer.removeMessage).toHaveBeenCalledTimes(2);
     expect(fixture.deps.conversationController.save).not.toHaveBeenCalled();
     expect(fixture.deps.streamController.appendError).not.toHaveBeenCalled();
+    expect(Notice).toHaveBeenCalledWith('Message was not sent. Please try again.');
   });
 
   it('keeps unsent input in the closing transcript when preparation fails before handoff', async () => {
@@ -288,12 +289,13 @@ describe('MainTurnExecution', () => {
     };
     fixture.input.value = 'retry after configuration';
     fixture.coordinator.execute.mockRejectedValueOnce(
-      new ChatExecutionPreHandoffError(rejection),
+      new ChatExecutionPreHandoffError(rejection, rejection.message),
     );
 
     await fixture.controller.sendMessage();
 
     expect(fixture.input.value).toBe('retry after configuration');
+    expect(Notice).toHaveBeenCalledWith(rejection.message);
     expect(attachedImages).toEqual([image]);
     expect(fixture.state.messages).toEqual([]);
     expect(fixture.deps.renderer.removeMessage).toHaveBeenCalledTimes(2);

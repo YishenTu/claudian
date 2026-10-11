@@ -311,9 +311,12 @@ test('runtime command discovery cannot import Vault skill management', () => {
   ), []);
 });
 
-test('renderer source does not import AsyncLocalStorage', () => {
-  const pattern = /import\s*\{[^}]*\bAsyncLocalStorage\b[^}]*\}\s*from\s*['"](?:node:)?async_hooks['"]/s;
-  assert.deepEqual(findMatches([sourceRoot], pattern), []);
+test('renderer source does not import Node async hooks', () => {
+  // Generated native-process programs are string literals, not renderer imports.
+  const matches = listTypeScriptFiles(sourceRoot)
+    .filter(file => listSourceImports(file).some(sourceImport => /^(?:node:)?async_hooks$/.test(sourceImport.specifier)))
+    .map(file => normalizeRepositoryPath(path.relative(process.cwd(), file)));
+  assert.deepEqual(matches, []);
 });
 
 test('tab runtime construction stays private to the factory boundary', () => {

@@ -8,6 +8,11 @@ import {
   getEnhancedPath,
 } from '@/core/process/env';
 import { ManagedStdioProcess } from '@/core/process/ManagedStdioProcess';
+import {
+  readPackageBin,
+  readWindowsCommandShimTarget,
+  resolveOwningPackageBin,
+} from '@/core/process/windowsCmdShim';
 
 const STDERR_BUFFER_LIMIT = 8_000;
 const PI_PACKAGE_NAME = '@earendil-works/pi-coding-agent';
@@ -163,36 +168,7 @@ function resolveInstalledPiBin(command: string): string | null {
   }
   if (!shimTarget) return null;
 
-  return resolveOwningPiPackageBin(shimTarget) ?? resolveManagedPiReleaseBin(shimTarget);
-}
-
-function readWindowsCommandShimTarget(command: string): string | null {
-  try {
-    const contents = fs.readFileSync(command, 'utf8');
-    for (const rawLine of contents.split(/\r?\n/u)) {
-      const line = rawLine.trim();
-      const relativeMatch = /"%(?:~dp0|dp0%)\\?([^"\r\n]+?)"\s+%\*\s*$/iu.exec(line);
-      if (
-        relativeMatch?.[1]
-        && isSupportedWindowsNodeInvocation(line.slice(0, relativeMatch.index))
-      ) {
-        const relativeTarget = relativeMatch[1].replace(/[\\/]/gu, path.sep);
-        return path.resolve(path.dirname(command), relativeTarget);
-      }
-
-      const absoluteMatch = /"([^"\r\n]+)"\s+%\*\s*$/u.exec(line);
-      if (
-        absoluteMatch?.[1]
-        && path.isAbsolute(absoluteMatch[1])
-        && isSupportedWindowsNodeInvocation(line.slice(0, absoluteMatch.index))
-      ) {
-        return path.normalize(absoluteMatch[1]);
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  return resolveOwningPackageBin(shimTarget, PI_PACKAGE_NAME, 'pi') ?? resolveManagedPiReleaseBin(shimTarget);
 }
 
 // The pi.dev managed installer's PowerShell launcher runs its sibling
@@ -209,29 +185,6 @@ function readManagedPowerShellLauncherTarget(command: string): string | null {
   } catch {
     return null;
   }
-}
-
-function isSupportedWindowsNodeInvocation(value: string): boolean {
-  const invocation = value.trim().replace(/^@/u, '').trim();
-  if (/^node(?:\.exe)?$/iu.test(invocation)) return true;
-  if (/^"%~dp0\\node(?:\.exe)?"$/iu.test(invocation)) return true;
-  if (/^"(?:[a-z]:[\\/]|\\\\)[^"\r\n]*[\\/]node(?:\.exe)?"$/iu.test(invocation)) {
-    return true;
-  }
-  return /^endLocal\s+&\s+goto\s+#_undefined_#\s+2>NUL\s+\|\|\s+title\s+%COMSPEC%\s+&\s+(?:set\s+PATHEXT=[^&\r\n]+\s+&\s+)?"%_prog%"$/iu.test(invocation);
-}
-
-function resolveOwningPiPackageBin(target: string): string | null {
-  const resolvedTarget = path.resolve(target);
-  let current = path.dirname(resolvedTarget);
-  while (true) {
-    const binPath = readPiPackageBin(current);
-    if (binPath && pathsEqual(binPath, resolvedTarget)) return binPath;
-    const parent = path.dirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-  return null;
 }
 
 // pi.dev managed installs keep launchers in <root>/bin and versioned releases
@@ -255,47 +208,13 @@ function resolveManagedPiReleaseBin(launcher: string): string | null {
 
     const version = fs.readFileSync(path.join(installRoot, 'current-version'), 'utf8').trim();
     if (!PI_MANAGED_RELEASE_VERSION.test(version)) return null;
-    return readPiPackageBin(path.join(
+    return readPackageBin(path.join(
       installRoot,
       'releases',
       version,
       'node_modules',
       ...PI_PACKAGE_NAME.split('/'),
-    ));
-  } catch {
-    return null;
-  }
-}
-
-function pathsEqual(left: string, right: string): boolean {
-  const normalizedLeft = path.normalize(left);
-  const normalizedRight = path.normalize(right);
-  return process.platform === 'win32'
-    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
-    : normalizedLeft === normalizedRight;
-}
-
-function readPiPackageBin(packageRoot: string): string | null {
-  try {
-    const packageJson = JSON.parse(
-      fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'),
-    ) as {
-      bin?: string | Record<string, unknown>;
-      name?: unknown;
-    };
-    if (packageJson.name !== PI_PACKAGE_NAME) return null;
-    const relativeBin = typeof packageJson.bin === 'object'
-      && packageJson.bin !== null
-      && typeof packageJson.bin.pi === 'string'
-      ? packageJson.bin.pi
-      : null;
-    if (!relativeBin) return null;
-
-    const resolvedRoot = path.resolve(packageRoot);
-    const resolvedBin = path.resolve(resolvedRoot, relativeBin);
-    const relative = path.relative(resolvedRoot, resolvedBin);
-    if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
-    return fs.statSync(resolvedBin).isFile() ? resolvedBin : null;
+    ), PI_PACKAGE_NAME, 'pi');
   } catch {
     return null;
   }

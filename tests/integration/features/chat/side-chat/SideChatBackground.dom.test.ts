@@ -30,7 +30,7 @@ async function finishedSide() {
   return harness;
 }
 
-it('shows late background results in side and queues follow-ups until settlement', async () => {
+it.each([false, true])('keeps side background boundaries before queued follow-ups (steering: %s)', async steering => {
   const harness = await finishedSide();
   const native = harness.backend.latest;
   native.emitBackgroundEvent({ type: 'background_turn_started' });
@@ -38,16 +38,29 @@ it('shows late background results in side and queues follow-ups until settlement
   harness.controller.collapse();
   expect(await harness.controller.handleCommandSubmission('Follow up after background', [])).toBe(true);
   expect(harness.controller.runtime?.queuedCount).toBe(1);
+  if (steering) {
+    native.emitBackgroundEvent({ type: 'text_delta', text: 'Automatic prefix' });
+    native.emitBackgroundEvent({ type: 'user_message_started', content: 'Late side input', nativeUserMessageId: 'side-user' });
+  }
   native.emitBackgroundEvent({ type: 'text_delta', text: 'Late background answer' });
   native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed', nativeAssistantId: 'late-answer' });
   await waitFor(() => expect(native.requests).toHaveLength(2));
   expect(native.requests[1].conversationHistory).toEqual(expect.arrayContaining([
     expect.objectContaining({ role: 'assistant', content: 'Late background answer', assistantMessageId: 'late-answer' }),
   ]));
+  const expected = [
+    ...(steering ? [{ role: 'assistant', content: 'Automatic prefix' }, { role: 'user', content: 'Late side input' }] : []),
+    { role: 'assistant', content: 'Late background answer', assistantMessageId: 'late-answer' },
+  ];
+  expect(native.requests[1].conversationHistory?.slice(-expected.length)).toMatchObject(expected);
   native.complete();
   await waitFor(() => expect(harness.controller.runtime?.status).toBe('idle'));
   harness.controller.expand();
   expect(screen.getByText('Late background answer')).toBeDefined();
+  const elements = expected.map(message => screen.getByText(message.content));
+  for (const [index, element] of elements.slice(1).entries()) {
+    expect(elements[index].compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }
   expect(harness.tab.state.messages.map(message => message.content)).toEqual(['Remember A', 'Noted A']);
 });
 

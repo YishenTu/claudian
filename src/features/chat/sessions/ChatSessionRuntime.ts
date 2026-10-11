@@ -170,9 +170,12 @@ export class ChatSessionRuntime {
     return this.coordinator.hasBackgroundWork || !!this.currentModel?.hasPendingWork || !!this.childOwner?.isWorking;
   }
 
+  /** Main-destination work already published to the user, excluding detached side work. */
+  get hasMainBackgroundWork(): boolean { return this.coordinator.publishedBackgroundWork; }
+
   /** Any foreground or background work a user can see. */
   get isWorking(): boolean {
-    return this.hasActiveTurn || this.hasBackgroundWork;
+    return this.hasActiveTurn || this.hasMainBackgroundWork || !!this.currentModel?.hasPendingWork || !!this.childOwner?.isWorking;
   }
 
   /**
@@ -187,6 +190,11 @@ export class ChatSessionRuntime {
       if (cancelled) this.coordinator.cancel();
     }
     return cancelled;
+  }
+
+  /** User Stop for published main background work; a settling foreground turn keeps its response. */
+  stopMainBackgroundWork(): void {
+    if (this.hasMainBackgroundWork) this.coordinator.cancelBackgroundWork();
   }
 
   /**
