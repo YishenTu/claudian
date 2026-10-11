@@ -81,6 +81,15 @@ export class CodexSubagentTracker {
     }
   }
 
+  /**
+   * Activity a child thread records about another agent. Only its own descendants are its
+   * subagents; messages to its parent or siblings target agents this tracker already owns.
+   */
+  childActivity(sourceThreadId: string, item: SubAgentActivityItem, turnId: string): void {
+    const source = this.agents.get(sourceThreadId);
+    if (source && item.agentPath.startsWith(`${source.agentPath}/`)) this.activity(item, turnId);
+  }
+
   turnStarted(threadId: string, turnId: string): boolean {
     const agent = this.agents.get(threadId);
     if (!agent) return false;

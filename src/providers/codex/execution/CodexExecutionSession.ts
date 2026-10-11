@@ -557,7 +557,8 @@ export class CodexExecutionSession
     if (method === 'item/completed') {
       const notification = params as ItemCompletedNotification;
       if (notification.item.type === 'subAgentActivity') {
-        this.subagents.activity(notification.item, notification.turnId);
+        if (notification.threadId === this.threadId) this.subagents.activity(notification.item, notification.turnId);
+        else this.subagents.childActivity(notification.threadId, notification.item, notification.turnId);
       }
     }
     if (this.disposed) return;
