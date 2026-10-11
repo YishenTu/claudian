@@ -51,6 +51,7 @@ function createFakeTabManager(overrides: Record<string, unknown> = {}): any {
     sealShutdownSnapshot: jest.fn(),
     setTabLabel: jest.fn(),
     viewerSlot: {
+      enter: jest.fn().mockResolvedValue(undefined),
       release: jest.fn().mockResolvedValue(undefined),
       show: jest.fn().mockResolvedValue(undefined),
       startDraft: jest.fn().mockResolvedValue(undefined),
@@ -420,6 +421,22 @@ describe('ClaudianView dual-pane wiring', () => {
     await Promise.resolve();
 
     expect(contentEl.hasClass('claudian-wide-session-layout')).toBe(false);
+  });
+
+  it('unloads narrow tabs through the viewer slot only when entering wide after restore', async () => {
+    const manager = createFakeTabManager();
+    const contentEl = createSizedContentEl(640);
+    const resize = captureResizeObserver(contentEl);
+    await openView({ contentEl, manager });
+    expect(contentEl.hasClass('claudian-wide-session-layout')).toBe(true);
+    expect(manager.viewerSlot.enter).not.toHaveBeenCalled();
+
+    resize(400);
+    await Promise.resolve();
+    await Promise.resolve();
+    resize(640);
+
+    expect(manager.viewerSlot.enter).toHaveBeenCalledTimes(1);
   });
 
   it('builds the persistent session column to the right of the chat panel', async () => {

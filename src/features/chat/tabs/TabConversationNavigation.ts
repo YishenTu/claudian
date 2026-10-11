@@ -117,9 +117,14 @@ export class TabConversationNavigation {
 
   /**
    * Shows the conversation's live owner, in this view or another one. Returns true once an
-   * owner shows it; false when none does, so the caller picks its own target.
+   * owner shows it; false when none does, so the caller picks its own target. The wide viewer
+   * passes `previewsOnly`, since its layout never shows this view's narrow tabs.
    */
-  async focusOwner(conversationId: string, isCurrent: NavigationRequestCheck): Promise<boolean> {
+  async focusOwner(
+    conversationId: string,
+    isCurrent: NavigationRequestCheck,
+    options: { previewsOnly?: boolean } = {},
+  ): Promise<boolean> {
     const { host } = this;
     const { membership } = host;
 
@@ -131,7 +136,11 @@ export class TabConversationNavigation {
     }
 
     const localTarget = membership.getTabIdentities()
-      .find(tab => membership.isTabAlive(tab) && tab.conversationId === conversationId);
+      .find(tab => (
+        membership.isTabAlive(tab)
+        && tab.conversationId === conversationId
+        && (!options.previewsOnly || tab.lifecycleState === 'provisional')
+      ));
     if (localTarget) {
       await host.switchToTab(localTarget.id);
       if (!isCurrent()) return true;

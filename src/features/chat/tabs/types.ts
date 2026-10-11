@@ -47,6 +47,9 @@ export interface TabMembershipView {
   getAllTabs(): AssembledTabRuntime[];
   /** Ordered membership identities, including restored tabs not yet assembled. */
   getTabIdentities(): readonly Readonly<TabIdentity>[];
+  getIdentity(tabId: TabId): Readonly<TabIdentity> | null;
+  /** The most recently activated retained (non-preview) tab. */
+  getRetainedActiveTabId(): TabId | null;
   /** Owned, not closing, and the manager is live: the tab may receive new work. */
   isTabAlive(tab: Readonly<TabIdentity>): boolean;
   /** Owned and the manager is not destroyed: closing tabs may still record terminal state. */

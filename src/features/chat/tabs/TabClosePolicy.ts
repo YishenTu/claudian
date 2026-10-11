@@ -1,6 +1,6 @@
 import type { TabId } from '@/features/chat/tabs/ChatTab';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
-import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
+import { deactivateTab, destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import type { TabMembership } from '@/features/chat/tabs/TabMembership';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
@@ -41,6 +41,14 @@ export class TabClosePolicy {
   /** Closes a tab even when it is the last blank draft, installing a fresh draft when needed. */
   discard(tabId: TabId): Promise<boolean> {
     return this.#track(this.#close(tabId, false));
+  }
+
+  /**
+   * Closes a tab whose successor needs its session: tears it down first, then activates the
+   * successor, falling back to any live tab when that activation fails.
+   */
+  handOver(tabId: TabId, successorId: TabId): Promise<boolean> {
+    return this.#track(this.#handOver(tabId, successorId));
   }
 
   /** Waits for every admitted close, including ones started meanwhile; returns their failures. */
@@ -135,6 +143,51 @@ export class TabClosePolicy {
       }
 
       throwCollectedErrors(closeErrors, `Failed to close tab ${tabId} cleanly`);
+      return true;
+    } finally {
+      membership.releaseCloseClaim(tabId);
+    }
+  }
+
+  async #handOver(tabId: TabId, successorId: TabId): Promise<boolean> {
+    const { membership } = this.host;
+    const member = membership.getMember(tabId);
+    const successor = membership.getIdentity(successorId);
+    if (!member || !successor || !membership.isTabAlive(successor)) return false;
+    const tab = membership.getIdentity(tabId)!;
+    if (tab.lifecycleState === 'closing' || membership.isCloseClaimed(tabId)) return false;
+    const runtime = member.kind === 'assembled' ? member.runtime : null;
+    const idsBefore = membership.getTabIdentities().map(identity => identity.id);
+
+    membership.claimClose(tabId);
+    try {
+      if (runtime && membership.getActiveTabId() === tabId) deactivateTab(runtime);
+      membership.beginClose(tabId);
+      const closeErrors: unknown[] = [...this.host.releaseMetadata(tabId)];
+      try {
+        if (runtime) await destroyTab(runtime);
+      } catch (error) {
+        closeErrors.push(error);
+      }
+      membership.remove(tabId);
+      if (membership.getActiveTabId() === tabId) membership.setActiveTabId(null);
+      if (membership.isDestroyed()) return true;
+      try {
+        this.host.onTabClosed(tabId);
+      } catch (error) {
+        closeErrors.push(error);
+      }
+      try {
+        await this.host.switchToTab(successorId);
+      } catch (error) {
+        closeErrors.push(error);
+      }
+      try {
+        await this.#reconcileActiveTab(idsBefore, idsBefore.indexOf(tabId));
+      } catch (error) {
+        closeErrors.push(error);
+      }
+      throwCollectedErrors(closeErrors, `Failed to hand tab ${tabId} over cleanly`);
       return true;
     } finally {
       membership.releaseCloseClaim(tabId);

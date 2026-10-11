@@ -97,7 +97,13 @@ export class ClaudianView extends ItemView implements ZenModeSource {
         this.presentation.updateChip();
         this.updateTabBarVisibility();
       },
-      onEnterWide: () => this.sessions.enterWide(),
+      onEnterWide: () => {
+        this.sessions.enterWide();
+        // Restore enters wide itself; afterwards entering wide unloads the narrow tabs.
+        if (!this.tabWorkspace.isReady) return;
+        void this.tabManager?.viewerSlot.enter()
+          .catch(() => new Notice('Failed to show the session in the wide layout'));
+      },
       renderSidebar: () => this.sessions.renderSidebar(),
       onLeaveWideRequested: () => this.sessions.leaveWide(),
       releaseViewerSlot: () => this.tabManager?.viewerSlot.release(),

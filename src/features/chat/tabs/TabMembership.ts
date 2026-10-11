@@ -145,6 +145,12 @@ export class TabMembership implements TabMembershipView {
     });
   }
 
+  /** Unloads an assembled tab to its restored identity, keeping position and activation history. */
+  unload(identity: TabIdentity): void {
+    const record = this.#records.get(identity.id);
+    if (record?.member?.kind === 'assembled') record.member = { kind: 'restored', identity };
+  }
+
   /** Replaces a restored tab's identity in place, invalidating assemblies of the old one. */
   replaceRestored(identity: TabIdentity): void {
     const record = this.#records.get(identity.id);

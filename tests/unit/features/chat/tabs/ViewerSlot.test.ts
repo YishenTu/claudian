@@ -448,6 +448,93 @@ describe('ViewerSlot', () => {
     ]));
   });
 
+  describe('wide layout without tabs', () => {
+    const shownDraft = (manager: any) => manager.getActiveTab()!.controllers.drafts.capture('main').content;
+
+    it('unloads narrow tabs on entering wide and hands the shown session back on leaving', async () => {
+      const { manager } = createManager(conversationPlugin());
+      const first = await manager.createTab('conversation-1');
+      const second = await manager.createTab('conversation-2', undefined, { activate: false });
+      first!.controllers.drafts.restore('main', { content: 'first note' });
+      second!.controllers.drafts.restore('main', { content: 'second note' });
+
+      await manager.viewerSlot.enter();
+
+      const preview = manager.getActiveTab()!;
+      expect(manager.getAllTabs()).toEqual([preview]);
+      expect(preview).toEqual(expect.objectContaining({ conversationId: 'conversation-1', lifecycleState: 'provisional' }));
+      expect(shownDraft(manager)).toBe('first note');
+      expect(mockDestroyTab).toHaveBeenCalledWith(first);
+      expect(mockDestroyTab).toHaveBeenCalledWith(second);
+      expect(manager.getTabIdentities().map(tab => tab.id)).toEqual([first!.id, second!.id, preview.id]);
+
+      await manager.viewerSlot.show('conversation-2');
+      expect(manager.getTab(second!.id)).toBeNull();
+      expect(manager.getActiveTab()?.lifecycleState).toBe('provisional');
+      expect(shownDraft(manager)).toBe('second note');
+
+      await manager.viewerSlot.release();
+
+      expect(manager.getTabIdentities().map(tab => tab.id)).toEqual([first!.id, second!.id]);
+      expect(manager.getActiveTabId()).toBe(second!.id);
+      expect(shownDraft(manager)).toBe('second note');
+      await manager.switchToTab(first!.id);
+      expect(shownDraft(manager)).toBe('first note');
+    });
+
+    it("continues a blank narrow tab's new session in wide and returns it on leaving", async () => {
+      const { manager } = createManager(conversationPlugin());
+      const blank = await manager.createTab(null);
+      blank!.controllers.drafts.restore('main', { content: 'new idea' });
+
+      await manager.viewerSlot.enter();
+      expect(manager.getActiveTab()).toEqual(expect.objectContaining({ conversationId: null, lifecycleState: 'provisional' }));
+      expect(shownDraft(manager)).toBe('new idea');
+
+      await manager.viewerSlot.release();
+
+      expect(manager.getTabIdentities().map(tab => tab.id)).toEqual([blank!.id]);
+      expect(manager.getActiveTabId()).toBe(blank!.id);
+      expect(shownDraft(manager)).toBe('new idea');
+    });
+
+    it('restores a narrow workspace in wide without assembling its tabs', async () => {
+      const { manager } = createManager(conversationPlugin(), {}, {}, { showsPreviews: () => true });
+
+      await manager.restoreState({
+        openTabs: [{ tabId: 'one', conversationId: 'conversation-1' }, { tabId: 'two', conversationId: 'conversation-2' }],
+        activeTabId: 'two',
+      });
+
+      const preview = manager.getActiveTab()!;
+      expect(manager.getAllTabs()).toEqual([preview]);
+      expect(preview).toEqual(expect.objectContaining({ conversationId: 'conversation-2', lifecycleState: 'provisional' }));
+      expect(manager.getPersistedState()).toEqual({
+        openTabs: [
+          { tabId: 'one', conversationId: 'conversation-1' },
+          { tabId: 'two', conversationId: 'conversation-2' },
+          { tabId: preview.id, conversationId: 'conversation-2', preview: true },
+        ],
+        activeTabId: preview.id,
+      });
+    });
+
+    it('returns a saved preview to its narrow tab when restoring narrow', async () => {
+      const { manager } = createManager(conversationPlugin());
+
+      await manager.restoreState({
+        openTabs: [
+          { tabId: 'one', conversationId: 'conversation-1' },
+          { tabId: 'shown', conversationId: 'conversation-1', preview: true },
+        ],
+        activeTabId: 'shown',
+      });
+
+      expect(manager.getTabIdentities().map(tab => tab.id)).toEqual(['one']);
+      expect(manager.getActiveTabId()).toBe('one');
+    });
+  });
+
   describe('drafts and retention', () => {
     function linkedContentPlugin(paths: string[], overrides: Record<string, unknown> = {}) {
       const files = new Set(paths);
