@@ -300,6 +300,28 @@ it('fences a detached side queue synchronously before the plugin shutdown drain'
   }
 });
 
+it('joins a first-turn title request admitted while the plugin shutdown drain begins', async () => {
+  const h = setup();
+  Object.assign(h.plugin.settings, { enableAutoTitleGeneration: true, titleGenerationModel: 'claude-sonnet-4-5' });
+  const fallbackTitleWritten = deferred<void>();
+  const rename = jest.spyOn(h.plugin, 'renameConversation').mockImplementation(() => fallbackTitleWritten.promise);
+  const tab = await h.attach();
+  tab.controllers.drafts.restore('main', { content: 'First turn' });
+  const sending = tab.controllers.inputController.sendMessage();
+  await waitFor(() => expect(rename).toHaveBeenCalled());
+  const disposing = h.pool.dispose();
+  fallbackTitleWritten.resolve();
+  try {
+    await disposing;
+    const titleSession = h.backend.sessions.find(session => session.config.lifecycle === 'ephemeral');
+    expect(titleSession).toBeDefined();
+    expect(titleSession?.getStatus()).not.toBe('executing');
+  } finally {
+    await sending;
+    await h.plugin.providerHost.executionLifecycleRegistry.dispose();
+  }
+});
+
 it('keeps a detached queued continuation running between provider requests', async () => {
   const h = setup();
   const first = await h.attach();

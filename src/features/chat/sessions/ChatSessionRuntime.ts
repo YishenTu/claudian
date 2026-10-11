@@ -267,9 +267,9 @@ export class ChatSessionRuntime {
     if (!this.cancelTurn('shutdown', { dismissInteractions: true })) this.coordinator.cancel();
     const model = this.currentModel;
     const results = await Promise.allSettled([
-      this.turns.drain(),
+      // An admitted first turn can still launch its title request until the turn settles.
+      this.turns.drain().finally(() => model?.drainAuxiliaryWork()),
       model?.inputController.drainSessionMentionPreparations(),
-      model?.drainAuxiliaryWork(),
       this.awaitBackgroundWork(),
       ...this.modelWork,
       this.childOwner?.dispose(),
