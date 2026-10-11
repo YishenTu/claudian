@@ -1959,7 +1959,7 @@ describe('Tab provider execution ownership', () => {
     expect(startNewConversation).not.toHaveBeenCalled();
   });
 
-  it('commits a provisional preview to cold state when the user types', async () => {
+  it('claims a provisional preview without retaining it when the user types', async () => {
     const plugin = createPlugin();
     const tab = await createTestTab({
       plugin,
@@ -1971,7 +1971,7 @@ describe('Tab provider execution ownership', () => {
     tab.dom.inputEl.value = 'Keep this draft';
     (tab.dom.inputEl as any).dispatchEvent('input');
 
-    expect(tab.lifecycleState).toBe('open');
+    expect(tab.lifecycleState).toBe('provisional');
     expect(tab.session.isUserClaimed).toBe(true);
   });
 
@@ -1996,7 +1996,7 @@ describe('Tab provider execution ownership', () => {
     expect(readScrollHeight).not.toHaveBeenCalled();
   });
 
-  it('commits a provisional preview to cold state when the user attaches an image', async () => {
+  it('claims a provisional preview without retaining it when the user attaches an image', async () => {
     const plugin = createPlugin();
     const tab = await createTestTab({
       plugin,
@@ -2011,10 +2011,11 @@ describe('Tab provider execution ownership', () => {
     }, 'paste');
 
     expect(attached).toBe(true);
-    expect(tab.lifecycleState).toBe('open');
+    expect(tab.lifecycleState).toBe('provisional');
+    expect(tab.session.isUserClaimed).toBe(true);
   });
 
-  it('commits a provisional preview when the user removes captured editor context', async () => {
+  it('claims a provisional preview without retaining it when the user removes captured editor context', async () => {
     const plugin = createPlugin();
     const tab = await createTestTab({
       plugin,
@@ -2034,7 +2035,8 @@ describe('Tab provider execution ownership', () => {
     ) as any;
     removeButton.dispatchEvent('click');
 
-    expect(tab.lifecycleState).toBe('open');
+    expect(tab.lifecycleState).toBe('provisional');
+    expect(tab.session.isUserClaimed).toBe(true);
   });
 
   it('keeps a browsed conversation provisional after hydration', async () => {

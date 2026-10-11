@@ -8,6 +8,7 @@ export interface ComposerDraft {
   readonly content: string;
   readonly images: NonNullable<ChatMessage['images']>;
 }
+export type ComposerDrafts = Readonly<Record<ComposerDestination, ComposerDraft>>;
 
 /** Owns visible and parked drafts. Destination is always derived from presentation. */
 export class ComposerDraftController {

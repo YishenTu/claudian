@@ -16,9 +16,11 @@ export interface ForkTargetHost {
   readonly plugin: ChatFeatureHost;
   readonly membership: TabMembershipView;
   createTab(conversationId: string): Promise<AssembledTabRuntime | null>;
+  /** Shows the session in the wide viewer slot; resolves to the tab showing it, if any. */
+  showInViewer(conversationId: string, sourceTab: AssembledTabRuntime): Promise<AssembledTabRuntime | null>;
   discardTab(tabId: TabId): Promise<boolean>;
-  /** `new-tab` when the layout always forks into a new tab, skipping the target prompt. */
-  forkTarget(): 'ask' | 'new-tab';
+  /** `viewer` when the layout shows forks in its viewer slot, skipping the target prompt. */
+  forkTarget(): 'ask' | 'viewer';
   rebind(tab: AssembledTabRuntime, conversationId: string, isCurrent: () => boolean): Promise<AssembledTabRuntime | null>;
 }
 
@@ -70,18 +72,17 @@ export async function openForkTarget(
   const sourceLease = captureForkSourceLease(context, sourceTab);
   if (!isForkRequestCurrent(host, sourceLease)) return;
 
-  const shouldForkToNewTab = host.forkTarget() === 'new-tab';
-  const target = shouldForkToNewTab
-    ? 'new-tab'
-    : await chooseForkTarget(host.plugin.app);
+  if (host.forkTarget() === 'viewer') {
+    await forkToViewer(host, context, sourceTab);
+    return;
+  }
+  const target = await chooseForkTarget(host.plugin.app);
   if (!target || !isForkRequestCurrent(host, sourceLease)) return;
 
   if (target === 'new-tab') {
     const tab = await forkToNewTab(host, context, sourceTab);
     if (!tab) return;
-    if (!shouldForkToNewTab) {
-      new Notice(t('chat.fork.notice'));
-    }
+    new Notice(t('chat.fork.notice'));
   } else {
     const success = await forkInCurrentTab(host, context, sourceTab);
     if (!success) {
@@ -89,6 +90,28 @@ export async function openForkTarget(
       return;
     }
     new Notice(t('chat.fork.noticeCurrentTab'));
+  }
+}
+
+/** Shows the fork in the viewer slot; showing it may replace the source preview, which is intended. */
+async function forkToViewer(
+  host: ForkTargetHost,
+  context: ForkContext,
+  sourceTab: AssembledTabRuntime,
+): Promise<void> {
+  const sourceLease = captureForkSourceLease(context, sourceTab);
+  if (!isForkRequestCurrent(host, sourceLease)) return;
+  const conversationId = await createForkConversation(host, context, sourceLease);
+  if (!conversationId) return;
+  if (!isForkRequestCurrent(host, sourceLease)) {
+    await deleteForkConversation(host, conversationId);
+    return;
+  }
+  let shown: AssembledTabRuntime | null = null;
+  try {
+    shown = await host.showInViewer(conversationId, sourceTab);
+  } finally {
+    if (!shown) await deleteForkConversation(host, conversationId);
   }
 }
 

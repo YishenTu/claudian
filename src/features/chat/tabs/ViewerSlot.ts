@@ -1,5 +1,6 @@
 import type { App } from 'obsidian';
 
+import type { ComposerDrafts } from '@/features/chat/composer/ComposerDraftController';
 import type { TabId } from '@/features/chat/tabs/ChatTab';
 import type { NavigationRequestCheck, TabConversationNavigation } from '@/features/chat/tabs/TabConversationNavigation';
 import { commitProvisionalTab } from '@/features/chat/tabs/TabLifecycle';
@@ -23,9 +24,13 @@ export interface ViewerSlotHost {
   switchToTab(tabId: TabId): Promise<void>;
   closeTab(tabId: TabId): Promise<boolean>;
   discardTab(tabId: TabId): Promise<boolean>;
-  /** Sessions whose previews are retained rather than released (pinned sessions). */
-  shouldRetain(conversationId: string): boolean;
-  rebind(tab: AssembledTabRuntime, conversationId: string, isCurrent: NavigationRequestCheck): Promise<AssembledTabRuntime | null>;
+  /** Rebinds `tab`, showing `drafts` in place of the source tab's composer drafts. */
+  rebind(
+    tab: AssembledTabRuntime,
+    conversationId: string,
+    isCurrent: NavigationRequestCheck,
+    drafts: ComposerDrafts,
+  ): Promise<AssembledTabRuntime | null>;
 }
 
 export interface ViewerSlotRequest {
@@ -33,11 +38,20 @@ export interface ViewerSlotRequest {
   sourceTab?: AssembledTabRuntime | null;
 }
 
+const EMPTY_DRAFTS: ComposerDrafts = {
+  main: { content: '', images: [] },
+  side: { content: '', images: [] },
+};
+
 /**
- * The view's single replaceable preview: the only creator of provisional tabs. Rebinding
- * detaches the prior session while its work continues. Requests share the navigation queue.
+ * The wide layout's single replaceable preview: the only creator of provisional tabs. Wide
+ * navigation never retains a preview; leaving wide turns the shown one into a tab. Unsent
+ * composer text stays with its session (or the new-session draft) while the slot shows another.
  */
 export class ViewerSlot {
+  /** Unsent drafts keyed by conversation; null keys the new-session draft. Wide-only memory. */
+  readonly #drafts = new Map<string | null, ComposerDrafts>();
+
   constructor(private readonly host: ViewerSlotHost) {}
 
   /** Shows a session: its live owner when one exists, otherwise the preview. */
@@ -45,12 +59,11 @@ export class ViewerSlot {
     await this.host.navigation.enqueue(request.sourceTab ?? null, async (isCurrent) => {
       await this.#show(conversationId, isCurrent);
     });
-    this.#retainWhere(id => id === conversationId && this.host.shouldRetain(id));
   }
 
   /**
-   * Replaces the preview with a blank draft, optionally linked to `linkedContentPath`. The draft
-   * becomes a retained tab once the user types or sends.
+   * Replaces the preview with a blank draft, optionally linked to `linkedContentPath`. The
+   * new-session draft's unsent text returns with it.
    */
   async startDraft(options: ViewerSlotRequest & { linkedContentPath?: string } = {}): Promise<void> {
     const { membership } = this.host;
@@ -60,10 +73,7 @@ export class ViewerSlot {
 
     await this.host.navigation.enqueue(null, async (isCurrent) => {
       this.#assertLinkedContentExists(linkedContentPath);
-      // Retention is decided before the draft exists; the replaced preview closes only after the
-      // draft is active, so closing it never shows the retained tab in between.
-      this.#retainWhere(conversationId => this.host.shouldRetain(conversationId));
-      this.#protectPreviews();
+      for (const preview of this.#livePreviews()) this.#stash(preview);
       const tab = await this.host.createPreview(null);
       if (!tab) throw new Error('Failed to create a provisional chat tab');
       if (!isCurrent()) {
@@ -71,6 +81,7 @@ export class ViewerSlot {
         return;
       }
       try {
+        this.#unstashInto(tab);
         if (linkedContentPath !== undefined) {
           this.#assertLinkedContentExists(linkedContentPath);
           tab.linkedContent.selectExplicit(linkedContentPath);
@@ -86,15 +97,19 @@ export class ViewerSlot {
   }
 
   /**
-   * Closes previews and retains pinned ones, so none stays provisional. Overlapping
-   * calls share one cleanup, which fences navigation until it finishes.
+   * Leaves the wide layout: the shown preview becomes a tab, other previews close, and held
+   * drafts are dropped. Overlapping calls share one cleanup, which fences navigation.
    */
   async release(): Promise<void> {
     if (this.host.membership.isDestroyed()) return;
-    // Pinned previews are retained synchronously, before the cleanup can close them.
-    this.#retainWhere(conversationId => this.host.shouldRetain(conversationId));
     await this.host.navigation.fence(async () => {
-      this.#protectPreviews();
+      const { membership } = this.host;
+      const activeId = membership.getActiveTabId();
+      const active = activeId ? membership.getTab(activeId) : null;
+      if (active && membership.isTabAlive(active) && active.lifecycleState === 'provisional') {
+        commitProvisionalTab(active);
+      }
+      this.#drafts.clear();
       await this.#closePreviews(null);
     });
   }
@@ -104,11 +119,12 @@ export class ViewerSlot {
     const { membership } = host;
     if (await host.navigation.focusOwner(conversationId, isCurrent) || !isCurrent()) return;
 
-    const preview = membership.getAllTabs()
-      .find(tab => membership.isTabAlive(tab) && tab.lifecycleState === 'provisional');
+    const preview = this.#livePreviews()[0];
     if (preview) {
-      const switched = await host.rebind(preview, conversationId, isCurrent);
+      this.#stash(preview);
+      const switched = await host.rebind(preview, conversationId, isCurrent, this.#drafts.get(conversationId) ?? EMPTY_DRAFTS);
       if (switched && membership.isTabAlive(switched)) {
+        this.#drafts.delete(conversationId);
         await host.switchToTab(switched.id);
         return;
       }
@@ -117,19 +133,36 @@ export class ViewerSlot {
 
     // Selections never rebind a retained tab: when no preview can show the session, create one.
     const createdTab = await host.createPreview(conversationId);
-    if (!isCurrent() && createdTab) await this.#discardUnowned(createdTab, conversationId);
+    if (!isCurrent() && createdTab) {
+      await this.#discardUnowned(createdTab, conversationId);
+      return;
+    }
+    if (createdTab) this.#unstashInto(createdTab);
   }
 
-  /** Retains the active preview when no retained tab would remain. */
-  #protectPreviews(): void {
+  #livePreviews(): AssembledTabRuntime[] {
     const { membership } = this.host;
-    const hasRetainedTab = membership.getTabIdentities().some(
-      tab => tab.lifecycleState !== 'provisional' && tab.lifecycleState !== 'closing',
-    );
-    if (!hasRetainedTab) {
-      const activeTabId = membership.getActiveTabId();
-      const activeTab = activeTabId ? membership.getTab(activeTabId) : null;
-      if (activeTab?.lifecycleState === 'provisional') commitProvisionalTab(activeTab);
+    return membership.getAllTabs()
+      .filter(tab => membership.isTabAlive(tab) && tab.lifecycleState === 'provisional');
+  }
+
+  /** Holds the preview's unsent text under the session it shows. */
+  #stash(tab: AssembledTabRuntime): void {
+    const { drafts } = tab.controllers;
+    const held: ComposerDrafts = { main: drafts.capture('main'), side: drafts.capture('side') };
+    if (Object.values(held).some(draft => draft.content.trim() || draft.images.length > 0)) {
+      this.#drafts.set(tab.conversationId, held);
+    } else {
+      this.#drafts.delete(tab.conversationId);
+    }
+  }
+
+  #unstashInto(tab: AssembledTabRuntime): void {
+    const held = this.#drafts.get(tab.conversationId);
+    if (!held) return;
+    this.#drafts.delete(tab.conversationId);
+    for (const destination of ['main', 'side'] as const) {
+      tab.controllers.drafts.restore(destination, held[destination], { merge: true });
     }
   }
 
@@ -155,19 +188,6 @@ export class ViewerSlot {
       && !tab.session.isUserClaimed
     ) {
       await this.host.discardTab(tab.id);
-    }
-  }
-
-  #retainWhere(predicate: (conversationId: string) => boolean): void {
-    const { membership } = this.host;
-    for (const tab of membership.getAllTabs()) {
-      if (
-        tab.conversationId !== null
-        && membership.isTabAlive(tab)
-        && predicate(tab.conversationId)
-      ) {
-        commitProvisionalTab(tab);
-      }
     }
   }
 

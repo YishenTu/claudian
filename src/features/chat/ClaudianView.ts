@@ -463,7 +463,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   /** Wide: tab commands open sessions and start drafts in the viewer slot; compact: in the tab. */
   private createLayoutPolicy(getTabManager: () => TabManager): TabLayoutPolicy {
     return {
-      forkTarget: () => (this.layout.isWide ? 'new-tab' : 'ask'),
+      forkTarget: () => (this.layout.isWide ? 'viewer' : 'ask'),
       openPicked: async (conversationId, sourceTab) => {
         if (!this.layout.isWide) return false;
         await getTabManager().viewerSlot.show(conversationId, { sourceTab });
@@ -474,9 +474,6 @@ export class ClaudianView extends ItemView implements ZenModeSource {
         await getTabManager().viewerSlot.startDraft({ sourceTab });
         return true;
       },
-      shouldRetainPreview: conversationId => (
-        this.plugin.getConversationSummary(conversationId)?.isPinned === true
-      ),
       showsPreviews: () => this.layout.isWide,
     };
   }
@@ -689,8 +686,6 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   appendToActiveInput(text: string): boolean {
     const activeTab = this.tabManager?.getActiveTab();
     if (!activeTab || !text) return false;
-    // Typing into a preview retains it, so appending does too.
-    this.tabManager?.retainTabs([activeTab.id]);
     return activeTab.composer.appendText(text);
   }
 

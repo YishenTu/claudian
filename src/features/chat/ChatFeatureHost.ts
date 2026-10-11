@@ -41,8 +41,6 @@ export interface ChatTabManagerHost {
   isTabWorking(tabId: TabId): boolean;
   /** Owned, without an admitted close, and the manager is live: the tab may receive new work. */
   isTabLive(tabId: TabId): boolean;
-  /** Commits provisional previews to retained tabs and claims user ownership. */
-  retainTabs(tabIds: readonly TabId[]): void;
   switchToTab(tabId: TabId): Promise<void>;
   closeTab(tabId: TabId): Promise<boolean>;
   invalidateProviderResources(providerIds: ProviderId | ProviderId[], generation: number): void;

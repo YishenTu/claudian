@@ -42,17 +42,9 @@ export class ConversationLifecycle {
     return this.deps.sessions.isRunning(conversationId);
   }
 
-  /** Pins or unpins sessions in one batch; pinning retains their provisional previews. */
+  /** Pins or unpins sessions in one batch; pinning affects only the session list. */
   async setPinned(conversationIds: readonly string[], isPinned: boolean): Promise<void> {
     await this.deps.conversations.setConversationsPinned(conversationIds, isPinned);
-    if (!isPinned) return;
-    const ids = new Set(conversationIds);
-    for (const manager of this.#managers()) {
-      const tabIds = manager.getTabIdentities()
-        .filter(tab => tab.conversationId !== null && ids.has(tab.conversationId))
-        .map(tab => tab.id);
-      if (tabIds.length > 0) manager.retainTabs(tabIds);
-    }
   }
 
   /** Archives after closing the session's idle tabs, or restores it without opening one. */

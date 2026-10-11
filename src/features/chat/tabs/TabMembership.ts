@@ -262,15 +262,15 @@ export class TabMembership implements TabMembershipView {
   }
 
   /**
-   * Every retained tab identity without runtime lifecycle state. Previews persist only as the
-   * active blank draft, so a new session survives reload; session previews are never persisted.
+   * Every retained tab identity without runtime lifecycle state. A preview persists only while
+   * active, so the wide viewer's selection (a session or a new draft) survives reload.
    */
   getPersistedState(): AppTabManagerState {
-    const draftPreviewId = this.#activeDraftPreviewId();
+    const activePreviewId = this.#activePreviewId();
     const openTabs: AppTabManagerState['openTabs'] = [];
     for (const [tabId, record] of this.#records) {
-      const isDraftPreview = tabId === draftPreviewId;
-      if (!isDraftPreview && !this.#isRetained(record)) continue;
+      const isActivePreview = tabId === activePreviewId;
+      if (!isActivePreview && !this.#isRetained(record)) continue;
       const tab = memberIdentity(record.member!);
       openTabs.push({
         tabId: tab.id,
@@ -279,14 +279,14 @@ export class TabMembership implements TabMembershipView {
           ? { draftModel: tab.draftModel, providerId: tab.providerId }
           : {}),
         ...(tab.label ? { label: tab.label } : {}),
-        ...(isDraftPreview ? { preview: true as const } : {}),
+        ...(isActivePreview ? { preview: true as const } : {}),
       });
     }
-    return { openTabs, activeTabId: draftPreviewId ?? this.getRetainedActiveTabId() };
+    return { openTabs, activeTabId: activePreviewId ?? this.getRetainedActiveTabId() };
   }
 
-  /** The most recently activated admitted tab, when it is a blank provisional draft. */
-  #activeDraftPreviewId(): TabId | null {
+  /** The most recently activated admitted tab, when it is a provisional preview. */
+  #activePreviewId(): TabId | null {
     let latest: { tabId: TabId; record: TabRecord } | null = null;
     for (const [tabId, record] of this.#records) {
       if (!record.admitted || !record.member || record.activation === null) continue;
@@ -294,7 +294,7 @@ export class TabMembership implements TabMembershipView {
     }
     if (!latest) return null;
     const identity = memberIdentity(latest.record.member!);
-    return identity.lifecycleState === 'provisional' && identity.conversationId === null ? latest.tabId : null;
+    return identity.lifecycleState === 'provisional' ? latest.tabId : null;
   }
 
   #isRetained(record: TabRecord): boolean {

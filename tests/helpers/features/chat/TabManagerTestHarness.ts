@@ -261,7 +261,6 @@ export function createManager(
         forkTarget: () => 'ask',
         openPicked: async () => false,
         startNew: async () => false,
-        shouldRetainPreview: () => false,
         showsPreviews: () => false,
         ...layoutPolicy,
       },

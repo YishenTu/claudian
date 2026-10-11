@@ -32,7 +32,6 @@ import type {
   TabRuntimeConstructionContext,
   TabRuntimeCore,
 } from '@/features/chat/tabs/runtime/TabRuntimeConstruction';
-import { commitProvisionalTab } from '@/features/chat/tabs/TabLifecycle';
 import { TabModelSelectionCoordinator } from '@/features/chat/tabs/TabModelSelectionCoordinator';
 import { syncTabProviderServices } from '@/features/chat/tabs/tabProviderLifecycle';
 import { getBlankTabModelOptions } from '@/features/chat/tabs/tabProviderSettings';
@@ -367,7 +366,7 @@ export function buildTabRuntimeUI(
   const { dom } = core;
   const { plugin } = options;
   const onUserModified = (): void => {
-    commitProvisionalTab(runtimeRef.requirePublished());
+    runtimeRef.requirePublished().session.claimUserOwnership();
   };
   options.registerCleanup(
     'tab textarea sizing',

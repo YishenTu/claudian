@@ -236,7 +236,7 @@ describe('ViewerSlot', () => {
     expect(mockCreateTabRuntime).toHaveBeenCalledTimes(2);
   });
 
-  it('discards provisional previews without removing open runtime tabs', async () => {
+  it('discards inactive previews without removing open runtime tabs', async () => {
     const getCachedConversation = jest.fn((id: string) => ({
       id,
       providerId: 'claude',
@@ -245,6 +245,7 @@ describe('ViewerSlot', () => {
     const first = await manager.createTab('conversation-1');
     const second = await manager.createTab('conversation-2', undefined, { activate: false });
     await manager.viewerSlot.show('conversation-3');
+    await manager.switchToTab(first!.id);
 
     await manager.viewerSlot.release();
 
@@ -312,6 +313,7 @@ describe('ViewerSlot', () => {
       await manager.viewerSlot.show('conversation-2');
       const preview = manager.getActiveTab() as any;
       makeBusy(preview);
+      await manager.viewerSlot.show('conversation-1');
 
       await manager.viewerSlot.release();
 
@@ -320,32 +322,70 @@ describe('ViewerSlot', () => {
     },
   );
 
-  it('returns to the last active retained tab when leaving wide discards the active preview', async () => {
+  it('keeps the shown preview as a tab when leaving wide', async () => {
+    const { manager } = createManager(conversationPlugin());
+    const retained = await manager.createTab('conversation-1');
+    await manager.viewerSlot.show('conversation-2');
+    const preview = manager.getActiveTab()!;
+    expect(preview.lifecycleState).toBe('provisional');
+
+    await manager.viewerSlot.release();
+
+    expect(manager.getAllTabs()).toEqual([retained, preview]);
+    expect(preview.lifecycleState).toBe('open');
+    expect(manager.getActiveTabId()).toBe(preview.id);
+  });
+
+  it('returns to the last active retained tab when the active preview closes', async () => {
     const { manager } = createManager(conversationPlugin());
     const lastActive = await manager.createTab('conversation-1');
     const neighbour = await manager.createTab('conversation-2', undefined, { activate: false });
     await manager.viewerSlot.show('conversation-3');
-    expect(manager.getActiveTab()?.lifecycleState).toBe('provisional');
+    const preview = manager.getActiveTab()!;
 
-    await manager.viewerSlot.release();
+    await manager.closeTab(preview.id);
 
     expect(manager.getAllTabs()).toEqual([lastActive, neighbour]);
     expect(manager.getActiveTabId()).toBe(lastActive!.id);
   });
 
-  it('returns to a preview retained while active once a later preview is discarded', async () => {
+  it('keeps a preview provisional while the user types, holding unsent text per session', async () => {
     const { manager } = createManager(conversationPlugin());
-    const first = await manager.createTab('conversation-1');
+    await manager.viewerSlot.show('conversation-1');
+    const typeDraft = (text: string) => {
+      const tab = manager.getActiveTab()!;
+      tab.session.claimUserOwnership();
+      tab.controllers.drafts.restore('main', { content: text });
+    };
+    const shownDraft = () => manager.getActiveTab()!.controllers.drafts.capture('main').content;
+    typeDraft('first session note');
+
     await manager.viewerSlot.show('conversation-2');
-    const promoted = manager.getActiveTab()!;
-    manager.retainTabs([promoted.id]);
-    const neighbour = await manager.createTab('conversation-3', undefined, { activate: false });
-    await manager.viewerSlot.show('conversation-4');
+    expect(provisionalTabs(manager)).toHaveLength(1);
+    expect(manager.getActiveTab()?.conversationId).toBe('conversation-2');
+    expect(shownDraft()).toBe('');
+    typeDraft('second session note');
 
-    await manager.viewerSlot.release();
+    await manager.viewerSlot.show('conversation-1');
+    expect(shownDraft()).toBe('first session note');
+    await manager.viewerSlot.show('conversation-2');
+    expect(shownDraft()).toBe('second session note');
+    expect(manager.getAllTabs()).toHaveLength(1);
+  });
 
-    expect(manager.getAllTabs()).toEqual([first, promoted, neighbour]);
-    expect(manager.getActiveTabId()).toBe(promoted.id);
+  it("returns a new session's unsent text when another draft starts", async () => {
+    const { manager } = createManager(conversationPlugin());
+    await manager.viewerSlot.startDraft();
+    manager.getActiveTab()!.controllers.drafts.restore('main', { content: 'new idea' });
+
+    await manager.viewerSlot.show('conversation-1');
+    expect(manager.getActiveTab()!.controllers.drafts.capture('main').content).toBe('');
+    await manager.viewerSlot.startDraft();
+
+    const draft = manager.getActiveTab()!;
+    expect(draft.conversationId).toBeNull();
+    expect(draft.controllers.drafts.capture('main').content).toBe('new idea');
+    expect(manager.getAllTabs()).toEqual([draft]);
   });
 
   it('keeps a wide selection out of retained tabs when its owner closes during the switch', async () => {
@@ -537,27 +577,6 @@ describe('ViewerSlot', () => {
       expect(manager.getAllTabs()).toHaveLength(1);
       expect(manager.getActiveTab()).toEqual(expect.objectContaining({ id: source.id, conversationId: null }));
       expect(source.conversationId).toBe('conversation-1');
-    });
-
-    it('retains a pinned session as soon as it is shown and pinned previews on release', async () => {
-      const pinned = new Set<string>(['pinned-conversation']);
-      const { manager } = createManager(conversationPlugin(), {}, {}, {
-        shouldRetainPreview: id => pinned.has(id),
-      });
-      await manager.createTab('retained-conversation');
-
-      await manager.viewerSlot.show('pinned-conversation');
-      expect(manager.getActiveTab()?.lifecycleState).toBe('open');
-
-      await manager.viewerSlot.show('later-pinned');
-      const preview = manager.getActiveTab()!;
-      expect(preview.lifecycleState).toBe('provisional');
-      pinned.add('later-pinned');
-      await manager.viewerSlot.release();
-
-      expect(preview.lifecycleState).toBe('open');
-      expect(manager.getAllTabs()).toContain(preview);
-      expect(mockDestroyTab).not.toHaveBeenCalled();
     });
   });
 });

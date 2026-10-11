@@ -36,8 +36,10 @@ jest.mock('@/core/providers/ProviderRegistry', () => (
   jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').providerRegistryModuleMock()
 ));
 
-/** Layout policy that skips the target chooser and always forks into a new runtime tab. */
-const NEW_TAB_FORKS = { forkTarget: () => 'new-tab' as const };
+/** Layout policy that asks the chooser, which picks a new tab unless a test overrides it. */
+const NEW_TAB_FORKS = { forkTarget: () => 'ask' as const };
+/** Wide layout policy that shows forks in the viewer slot without asking. */
+const VIEWER_FORKS = { forkTarget: () => 'viewer' as const };
 /** Layout policy that asks the chooser, which picks the current tab. */
 const CURRENT_TAB_FORKS = { forkTarget: () => 'ask' as const };
 
@@ -72,6 +74,7 @@ describe('ForkTarget', () => {
     mockTabs.length = 0;
     jest.clearAllMocks();
     mockChooseForkTarget.mockReset();
+    mockChooseForkTarget.mockResolvedValue('new-tab');
     (ProviderRegistry.getCapabilities as jest.Mock).mockReturnValue({
       providerId: 'claude',
       supportsProviderCommands: true,
@@ -170,15 +173,31 @@ describe('ForkTarget', () => {
     expect(source!.session.runtime.model.hydrate).not.toHaveBeenCalled();
   });
 
-  it('forks into a new runtime tab without prompting in dual mode', async () => {
-    const { manager } = createManager(createPlugin(), {}, {}, NEW_TAB_FORKS);
-    await manager.createTab();
+  it('shows a wide fork in the viewer slot without prompting or retaining a tab', async () => {
+    const { manager, plugin } = createManager(createPlugin({
+      getCachedConversation: jest.fn((id: string) => ({ id, providerId: 'claude' })),
+    }), {}, {}, VIEWER_FORKS);
+    const source = await manager.createTab('conversation-a');
 
-    await forkRequestFrom(0)(forkContext());
+    await forkRequestFrom(0)(forkContext({ sourceConversationId: 'conversation-a' }));
 
     expect(mockChooseForkTarget).not.toHaveBeenCalled();
     expect(Notice).not.toHaveBeenCalled();
-    expect(manager.getTabCount()).toBe(2);
+    expect(plugin.deleteConversation).not.toHaveBeenCalled();
+    expect(manager.getActiveTab()).toEqual(expect.objectContaining({ conversationId: 'forked', lifecycleState: 'provisional' }));
+    expect(manager.getPersistedState().openTabs.filter(tab => !tab.preview)).toEqual([
+      { tabId: source!.id, conversationId: 'conversation-a' },
+    ]);
+  });
+
+  it('deletes a wide fork the viewer slot could not show', async () => {
+    const { manager, plugin } = createManager(createPlugin(), {}, {}, VIEWER_FORKS);
+    await manager.createTab();
+    mockCreateTabRuntime.mockRejectedValueOnce(new Error('assembly failed'));
+
+    await expect(forkRequestFrom(0)(forkContext())).rejects.toThrow('assembly failed');
+
+    expect(plugin.deleteConversation).toHaveBeenCalledWith('forked');
   });
 
   it('keeps a forked tab when its post-commit observer throws', async () => {

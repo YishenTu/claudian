@@ -179,14 +179,12 @@ export interface AssembledTabRuntime extends ChatTab {
  * that tab's default behavior.
  */
 export interface TabLayoutPolicy {
-  /** `new-tab` skips the fork target prompt because the layout always forks into a new tab. */
-  forkTarget(): 'ask' | 'new-tab';
+  /** `viewer` skips the fork target prompt because the layout shows forks in its viewer slot. */
+  forkTarget(): 'ask' | 'viewer';
   /** Opens a session picked from `sourceTab`'s command; false leaves the pick to the source tab. */
   openPicked(conversationId: string, sourceTab: AssembledTabRuntime): Promise<boolean>;
   /** Starts a new conversation requested from `sourceTab`; false clears the source tab in place. */
   startNew(sourceTab: AssembledTabRuntime): Promise<boolean>;
-  /** Sessions whose previews the viewer slot retains instead of releasing (pinned sessions). */
-  shouldRetainPreview(conversationId: string): boolean;
   /** Whether a viewer slot shows previews; a restored draft preview stays provisional only then. */
   showsPreviews(): boolean;
 }

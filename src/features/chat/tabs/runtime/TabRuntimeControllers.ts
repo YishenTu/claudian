@@ -15,7 +15,6 @@ import { getSessionCapabilities } from '@/features/chat/sessions/sessionSettings
 import type { TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import type { PublishedTabRuntimeRef, TabRuntimeConstructionContext, TabRuntimeControllerBundle, TabRuntimeCore } from '@/features/chat/tabs/runtime/TabRuntimeConstruction';
 import { hasCancellableSelectedWork } from '@/features/chat/tabs/TabInputEvents';
-import { commitProvisionalTab } from '@/features/chat/tabs/TabLifecycle';
 import { applyProviderUIGating, invalidateTabProviderCommands, refreshTabContextUsage, refreshTabProviderUI, syncComposerDropdownForProvider, toggleTabServiceTier } from '@/features/chat/tabs/tabProviderUI';
 import type { TabUIComponents } from '@/features/chat/tabs/types';
 import { t } from '@/i18n/i18n';
@@ -52,7 +51,7 @@ export function buildTabRuntimeControllers(
     messagesEl: dom.messagesEl,
     label: t('chat.quote.buttonLabel'),
     onQuote: (text) => {
-      commitProvisionalTab(runtimeRef.requirePublished());
+      runtimeRef.requirePublished().session.claimUserOwnership();
       appendQuoteToComposer(dom.inputEl, formatSelectionQuote(text));
     },
   });
@@ -64,20 +63,20 @@ export function buildTabRuntimeControllers(
       ui.contextTray,
       dom.inputEl,
       [dom.contentEl, dom.inputComposerEl, ...getSharedSelectionFocusScopeEls(component)],
-      () => commitProvisionalTab(runtimeRef.requirePublished()),
+      () => runtimeRef.requirePublished().session.claimUserOwnership(),
       owningLeaf,
     ),
     browser: new BrowserSelectionController(
       plugin.app,
       ui.contextTray,
       dom.inputEl,
-      () => commitProvisionalTab(runtimeRef.requirePublished()),
+      () => runtimeRef.requirePublished().session.claimUserOwnership(),
     ),
     canvas: new CanvasSelectionController(
       plugin.app,
       ui.contextTray,
       dom.inputEl,
-      () => commitProvisionalTab(runtimeRef.requirePublished()),
+      () => runtimeRef.requirePublished().session.claimUserOwnership(),
     ),
   });
   options.registerCleanup('tab composer selections', () => composerSelections.stop());

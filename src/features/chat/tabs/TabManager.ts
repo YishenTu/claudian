@@ -3,6 +3,7 @@ import { Notice } from 'obsidian';
 import { type AppTabManagerState, normalizeTabLabel } from '@/core/bootstrap/tabManagerState';
 import type { ProviderId } from '@/core/providers/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { ComposerDrafts } from '@/features/chat/composer/ComposerDraftController';
 import { SessionAlreadyAttached } from '@/features/chat/sessions/SessionRuntimePool';
 import type { TabBarItem, TabId, TabManagerInterface, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import type { ForkTargetHost } from '@/features/chat/tabs/forking/ForkTarget';
@@ -56,7 +57,6 @@ const DEFAULT_LAYOUT_POLICY: TabLayoutPolicy = {
   forkTarget: () => 'ask',
   openPicked: () => Promise.resolve(false),
   startNew: () => Promise.resolve(false),
-  shouldRetainPreview: () => false,
   showsPreviews: () => false,
 };
 
@@ -102,6 +102,11 @@ export class TabManager implements TabManagerInterface {
       plugin,
       membership,
       createTab: conversationId => this.createTab(conversationId),
+      showInViewer: async (conversationId, sourceTab) => {
+        await this.viewerSlot.show(conversationId, { sourceTab });
+        return membership.getAllTabs()
+          .find(tab => tab.conversationId === conversationId && membership.isTabAlive(tab)) ?? null;
+      },
       discardTab: tabId => this.discardTab(tabId),
       forkTarget: () => layoutPolicy.forkTarget(),
       rebind: (tab, id, isCurrent) => this.rebindTab(tab, id, isCurrent),
@@ -157,8 +162,7 @@ export class TabManager implements TabManagerInterface {
       switchToTab: tabId => this.switchToTab(tabId),
       closeTab: tabId => this.closeTab(tabId),
       discardTab: tabId => this.discardTab(tabId),
-      shouldRetain: conversationId => layoutPolicy.shouldRetainPreview(conversationId),
-      rebind: (tab, id, isCurrent) => this.rebindTab(tab, id, isCurrent),
+      rebind: (tab, id, isCurrent, drafts) => this.rebindTab(tab, id, isCurrent, drafts),
     });
   }
 
@@ -390,6 +394,7 @@ export class TabManager implements TabManagerInterface {
     source: AssembledTabRuntime,
     conversationId: string | null,
     isCurrent: () => boolean = () => this.membership.isTabAlive(source),
+    drafts?: ComposerDrafts,
   ): Promise<AssembledTabRuntime | null> {
     if (!isCurrent() || !this.membership.isTabStateMutable(source)) return null;
     if (conversationId && source.conversationId === conversationId) return source;
@@ -416,7 +421,8 @@ export class TabManager implements TabManagerInterface {
       // A branch preview's prefilled prompt belongs to the source transcript; restore the user's own draft first.
       source.controllers.conversationController.cancelBranchDraft();
       for (const destination of ['main', 'side'] as const) {
-        target.controllers.drafts.restore(destination, source.controllers.drafts.capture(destination), { merge: true });
+        const draft = drafts ? drafts[destination] : source.controllers.drafts.capture(destination);
+        target.controllers.drafts.restore(destination, draft, { merge: true });
       }
       const wasActive = this.membership.getActiveTabId() === source.id;
       if (wasActive) deactivateTab(source);
@@ -610,24 +616,14 @@ export class TabManager implements TabManagerInterface {
       }
     }
 
-    await this.createTab();
+    // The wide layout starts on a new-session draft in its viewer slot rather than a retained tab.
+    if (this.layoutPolicy.showsPreviews()) await this.viewerSlot.startDraft();
+    else await this.createTab();
   }
 
   /** Checks if more tabs can be created. */
   canCreateTab(): boolean {
     return !this.membership.isDestroyed();
-  }
-
-  /**
-   * Records explicit user retention: claims ownership of each live runtime and commits it
-   * when it is still a provisional preview. Unknown, unassembled, and closing IDs are ignored.
-   */
-  retainTabs(tabIds: readonly TabId[]): void {
-    for (const tabId of tabIds) {
-      const tab = this.getTab(tabId);
-      if (!tab || !this.membership.isTabAlive(tab)) continue;
-      commitProvisionalTab(tab);
-    }
   }
 
   /** Owned, without an admitted close, and the manager is live: the tab may receive new work. */

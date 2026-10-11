@@ -9,7 +9,6 @@ import {
   sendTabInputMessageFromEnterKey,
   sendTabInputMessageFromExplicitEnterShortcut,
 } from '@/features/chat/tabs/TabInputEvents';
-import { commitProvisionalTab } from '@/features/chat/tabs/TabLifecycle';
 import type { TabControllers, TabUIComponents } from '@/features/chat/tabs/types';
 
 export function buildTabRuntimeInputBindings(
@@ -52,7 +51,7 @@ export function buildTabRuntimeInputBindings(
 
   const inputHandler = () => {
     const tab = runtimeRef.requirePublished();
-    commitProvisionalTab(tab);
+    tab.session.claimUserOwnership();
     controllers.sideChatController.handleComposerInput();
     ui.composerDropdown.handleInputChange();
   };
