@@ -53,6 +53,7 @@
     "sideChat": {
       "title": "Conversation annexe",
       "collapse": "Réduire",
+      "fullHeight": "Pleine hauteur",
       "discard": "Abandonner",
       "statusPreparing": "Préparation",
       "statusQueued": "{count} en attente",

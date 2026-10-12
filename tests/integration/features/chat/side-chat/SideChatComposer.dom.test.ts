@@ -75,6 +75,27 @@ it('opens expanded with a joined border, then collapses to an idle chip over the
   expect(harness.controller.destination).toBe('side');
 });
 
+it('toggles full height without changing the destination, and keeps it across collapse', async () => {
+  const harness = createHarness();
+  const { started } = await startSideChat(harness);
+  harness.backend.latest.establishChild('child-session');
+  harness.backend.latest.complete();
+  await started;
+
+  const panel = screen.getByRole('heading', { name: 'Side chat' }).closest<HTMLElement>('.claudian-side-chat-panel')!;
+  const fullHeight = within(panel).getByRole('button', { name: 'Full height' });
+  expect(fullHeight.getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(fullHeight);
+  expect(fullHeight.getAttribute('aria-pressed')).toBe('true');
+  expect(harness.controller.destination).toBe('side');
+  expect(harness.destinationChanges).toEqual(['side']);
+  expect(await axe(harness.composerEl)).toHaveNoViolations();
+
+  harness.controller.collapse();
+  harness.controller.expand();
+  expect(within(panel).getByRole('button', { name: 'Full height' }).getAttribute('aria-pressed')).toBe('true');
+});
+
 it('keeps separate main and side drafts across expansion changes', async () => {
   const harness = createHarness();
   harness.inputEl.value = '/side Explore B';

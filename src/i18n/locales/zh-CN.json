@@ -53,6 +53,7 @@
     "sideChat": {
       "title": "侧边对话",
       "collapse": "收起",
+      "fullHeight": "全高显示",
       "discard": "放弃",
       "statusPreparing": "准备中",
       "statusQueued": "{count} 条排队中",

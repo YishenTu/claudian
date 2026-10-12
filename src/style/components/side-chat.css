@@ -111,6 +111,26 @@
   max-height: 40vh;
 }
 
+/* Full height: the view's active composer takes the main transcript's space; navigation stays. */
+.claudian-chat-panel:has(> .claudian-input-footer .claudian-side-chat--full-height) > .claudian-tab-content-container {
+  display: none;
+}
+
+.claudian-chat-panel:has(> .claudian-input-footer .claudian-side-chat--full-height) > .claudian-input-footer,
+.claudian-input-footer > .claudian-active-input-slot:has(.claudian-side-chat--full-height),
+.claudian-active-input-slot > .claudian-input-composer:has(> .claudian-side-chat--full-height) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.claudian-active-input-slot .claudian-side-chat--full-height,
+.claudian-active-input-slot .claudian-side-chat--full-height > .claudian-side-chat-panel {
+  flex: 1 1 auto;
+  max-height: none;
+}
+
 .claudian-side-chat-header {
   display: flex;
   align-items: center;
@@ -191,5 +211,10 @@
 
 /* An active side question or permission uses the shared composer's space. */
 .claudian-input-composer.claudian-side-chat-prompt > .claudian-input-container {
+  display: none;
+}
+
+/* The floating zen composer has no view height to fill. */
+.claudian-zen-composer .claudian-side-chat-actions button.claudian-side-chat-full-height {
   display: none;
 }

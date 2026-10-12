@@ -53,6 +53,7 @@
     "sideChat": {
       "title": "사이드 채팅",
       "collapse": "접기",
+      "fullHeight": "전체 높이",
       "discard": "버리기",
       "statusPreparing": "준비 중",
       "statusQueued": "{count}개 대기 중",

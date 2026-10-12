@@ -53,6 +53,7 @@
     "sideChat": {
       "title": "Conversa lateral",
       "collapse": "Recolher",
+      "fullHeight": "Altura total",
       "discard": "Descartar",
       "statusPreparing": "Preparando",
       "statusQueued": "{count} na fila",

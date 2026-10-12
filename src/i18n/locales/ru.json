@@ -53,6 +53,7 @@
     "sideChat": {
       "title": "Побочный чат",
       "collapse": "Свернуть",
+      "fullHeight": "Во всю высоту",
       "discard": "Отменить",
       "statusPreparing": "Подготовка",
       "statusQueued": "В очереди: {count}",

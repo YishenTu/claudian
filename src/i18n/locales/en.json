@@ -53,6 +53,7 @@
     "sideChat": {
       "title": "Side chat",
       "collapse": "Collapse",
+      "fullHeight": "Full height",
       "discard": "Discard",
       "statusPreparing": "Preparing",
       "statusQueued": "{count} queued",

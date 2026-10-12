@@ -53,6 +53,7 @@
     "sideChat": {
       "title": "サイドチャット",
       "collapse": "折りたたむ",
+      "fullHeight": "全高表示",
       "discard": "破棄",
       "statusPreparing": "準備中",
       "statusQueued": "{count} 件待機中",

@@ -27,8 +27,10 @@ export class SideChatPanel {
   readonly #statusIconEl: HTMLElement;
   readonly #titleEl: HTMLElement;
   readonly #collapseEl: HTMLButtonElement;
+  readonly #fullHeightEl: HTMLButtonElement;
   #collapsedHost: HTMLElement | null = null;
   #expanded = true;
+  #fullHeight = false;
 
   constructor(
     private readonly hostEl: HTMLElement,
@@ -61,6 +63,15 @@ export class SideChatPanel {
     });
     const actionsEl = headerEl.createDiv({ cls: 'claudian-side-chat-actions' });
 
+    this.#fullHeightEl = actionsEl.createEl('button', {
+      attr: {
+        'aria-controls': panelId, 'aria-pressed': 'false', type: 'button',
+        'aria-label': t('chat.sideChat.fullHeight'),
+      },
+      cls: 'claudian-side-chat-icon-button claudian-side-chat-full-height',
+    });
+    this.#fullHeightEl.addEventListener('click', () => this.#setFullHeight(!this.#fullHeight));
+
     this.#collapseEl = actionsEl.createEl('button', {
       attr: {
         'aria-controls': panelId, 'aria-expanded': 'true', type: 'button',
@@ -83,6 +94,7 @@ export class SideChatPanel {
     this.messagesEl = this.#panelEl.createDiv({ cls: 'claudian-side-chat-messages' });
     this.promptsEl = this.#panelEl.createDiv({ cls: 'claudian-side-chat-prompts' });
 
+    setIcon(this.#fullHeightEl, 'unfold-vertical');
     this.setExpanded(true);
   }
 
@@ -104,6 +116,7 @@ export class SideChatPanel {
     this.#statusEl.toggleClass('claudian-hidden', expanded);
     this.#statusToggleEl.setAttribute('aria-expanded', expanded ? 'true' : 'false');
     this.#collapseEl.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    this.#setFullHeight(this.#fullHeight);
     this.#updateLocation();
     if (hadFocus) this.focusToggle();
   }
@@ -133,6 +146,19 @@ export class SideChatPanel {
 
   destroy(): void {
     this.rootEl.remove();
+  }
+
+  /**
+   * Full height gives the main transcript's space to the expanded panel; the destination is unchanged.
+   * The choice survives collapse, but only an expanded panel applies it.
+   */
+  #setFullHeight(fullHeight: boolean): void {
+    if (fullHeight !== this.#fullHeight) {
+      this.#fullHeight = fullHeight;
+      this.#fullHeightEl.setAttribute('aria-pressed', fullHeight ? 'true' : 'false');
+      setIcon(this.#fullHeightEl, fullHeight ? 'fold-vertical' : 'unfold-vertical');
+    }
+    this.rootEl.toggleClass('claudian-side-chat--full-height', fullHeight && this.#expanded);
   }
 
   #updateLocation(): void {

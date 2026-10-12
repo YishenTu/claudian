@@ -53,6 +53,7 @@
     "sideChat": {
       "title": "Nebenchat",
       "collapse": "Einklappen",
+      "fullHeight": "Volle Höhe",
       "discard": "Verwerfen",
       "statusPreparing": "Wird vorbereitet",
       "statusQueued": "{count} in Warteschlange",
