@@ -345,22 +345,24 @@ describe('SessionBrowser', () => {
         expect(container.querySelector('.claudian-history-section--sessions')).not.toBeNull();
       });
 
-      it('pulses completed reviews and hides actions for every attention state', () => {
+      it('pulses completed reviews and hides inline actions while a session waits or errored', () => {
         const container = createMockEl();
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
           {
             id: 'review-pinned',
             title: 'Pinned review',
-            createdAt: 4,
+            createdAt: 5,
             isPinned: true,
           },
-          { id: 'action', title: 'Action required', createdAt: 3 },
+          { id: 'action', title: 'Action required', createdAt: 4 },
+          { id: 'error', title: 'Stopped with error', createdAt: 3 },
           { id: 'review', title: 'Review later', createdAt: 2 },
           { id: 'normal', title: 'Normal', createdAt: 1 },
         ]);
         const attentionById = new Map([
-          ['review-pinned', { kind: 'review' as const, outcome: 'completed' as const, since: 300 }],
+          ['review-pinned', { kind: 'review' as const, outcome: 'completed' as const, since: 400 }],
           ['action', { kind: 'action-required' as const, since: 100 }],
+          ['error', { kind: 'review' as const, outcome: 'error' as const, since: 300 }],
           ['review', { kind: 'review' as const, outcome: 'completed' as const, since: 200 }],
         ]);
 
@@ -372,33 +374,29 @@ describe('SessionBrowser', () => {
           }),
           onSelectConversation: jest.fn(),
           sessionActionMode: 'active',
-
-
           showAttentionState: true,
           showPinnedSection: true,
         });
 
         expect(container.querySelector('.claudian-history-section--attention')).toBeNull();
-        expect(container.querySelectorAll('.claudian-history-item')).toHaveLength(4);
-        const attentionItems = container.querySelectorAll('.claudian-history-item--attention');
-        expect(attentionItems).toHaveLength(2);
+        const items = container.querySelectorAll('.claudian-history-item');
+        expect(items).toHaveLength(5);
+        const findItem = (id: string) => items.find(
+          (item: HTMLElement) => item.getAttribute('data-conversation-id') === id,
+        )!;
+        const attentionIds = container.querySelectorAll('.claudian-history-item--attention')
+          .map((item: HTMLElement) => item.getAttribute('data-conversation-id'));
+        expect(attentionIds.sort()).toEqual(['review', 'review-pinned']);
         expect(container.querySelector('.claudian-session-attention-indicator')).toBeNull();
-        const attendedItems = container.querySelectorAll('.claudian-history-item').filter(
-          (item: HTMLElement) => item.getAttribute('data-conversation-id') !== 'normal',
-        );
-        for (const item of attendedItems) {
-          expect(item.querySelector('.claudian-pin-btn')).toBeNull();
-          expect(item.querySelector('.claudian-archive-btn')).toBeNull();
-        }
-        const actionItem = attendedItems.find(
-          (item: HTMLElement) => item.getAttribute('data-conversation-id') === 'action',
-        )!;
-        expect(actionItem.hasClass('claudian-history-item--attention')).toBe(false);
-        const normalItem = container.querySelectorAll('.claudian-history-item').find(
-          (item: HTMLElement) => item.getAttribute('data-conversation-id') === 'normal',
-        )!;
-        expect(normalItem.querySelector('.claudian-pin-btn')).not.toBeNull();
-        expect(normalItem.querySelector('.claudian-archive-btn')).not.toBeNull();
+
+        const inlineActionLabels = (id: string) => ['claudian-pin-btn', 'claudian-archive-btn']
+          .flatMap(cls => findItem(id).querySelectorAll(`.${cls}`))
+          .map((button: HTMLElement) => button.getAttribute('aria-label'));
+        expect(inlineActionLabels('normal')).toEqual(['Pin', 'Archive']);
+        expect(inlineActionLabels('review')).toEqual(['Pin', 'Archive']);
+        expect(inlineActionLabels('review-pinned')).toEqual(['Unpin', 'Archive']);
+        expect(inlineActionLabels('error')).toEqual([]);
+        expect(inlineActionLabels('action')).toEqual([]);
       });
 
       it('does not mark archived rows for attention presentation', () => {

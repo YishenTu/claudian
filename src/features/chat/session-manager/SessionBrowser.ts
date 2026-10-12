@@ -481,10 +481,8 @@ export class SessionBrowser {
 
     const conversationStatus = this.#statusOf(conversation, options);
     const { openState, isRunning } = conversationStatus;
-    const hasAttentionState = canShowAttention(options)
-      && conversationStatus.attention !== null
-      && conversationStatus.attention !== undefined;
-    const showReviewState = hasAttentionState && isCompletedReview(conversationStatus.attention);
+    const attention = canShowAttention(options) ? conversationStatus.attention ?? null : null;
+    const showReviewState = attention !== null && isCompletedReview(attention);
     const sessionStatusKind = sessionIndicatorKind(conversationStatus, options);
     const showRunningPresentation = isRunning
       && sessionStatusKind !== 'action-required';
@@ -549,7 +547,7 @@ export class SessionBrowser {
     const row = (status: HistoryConversationStatus): SessionRow => ({
       conversation,
       status,
-      hasAttention: hasAttentionState,
+      attention,
       beginRename: () => this.#beginRename(item, conversation, options),
     });
 

@@ -4,7 +4,11 @@ import type { ConversationMeta } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { SessionListSectionKind } from '@/features/chat/session-manager/SessionListOrganizer';
 import type { SessionMultiSelection } from '@/features/chat/session-manager/SessionMultiSelection';
-import type { HistoryConversationStatus } from '@/features/chat/session-manager/SessionStatusPresentation';
+import {
+  type HistoryConversationStatus,
+  isCompletedReview,
+} from '@/features/chat/session-manager/SessionStatusPresentation';
+import type { TabAttention } from '@/features/chat/state/types';
 import { confirmDelete } from '@/shared/modals/ConfirmModal';
 
 /** Runs a session action, reporting any failure once as a notice. */
@@ -61,8 +65,8 @@ export type SessionRowActionSurface = 'inline' | 'menu';
 export interface SessionRowActionInput {
   conversation: ConversationMeta;
   status: Pick<HistoryConversationStatus, 'openState' | 'isRunning'>;
-  /** Rows presenting attention hide their inline management actions. */
-  hasAttention: boolean;
+  /** Attention the row presents; null when its surface hides attention. */
+  attention: TabAttention | null;
 }
 
 /** A rendered row; its surface decides where the rename editor appears. */
@@ -131,7 +135,8 @@ export function resolveRowActions(
       actions.push(action('assign-device'));
     }
     if (mode === 'active') {
-      if (!input.hasAttention) {
+      // Rows waiting on the user or showing an error present only their badge.
+      if (input.attention === null || isCompletedReview(input.attention)) {
         if (options.showInlinePinAction !== false) actions.push(pinAction);
         actions.push(archiveAction);
       }
