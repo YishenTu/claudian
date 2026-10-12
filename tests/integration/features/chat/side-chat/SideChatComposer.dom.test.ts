@@ -288,7 +288,6 @@ function mountChipPlacement(context: {
   const chatPanelEl = document.body.appendChild(document.createElement('div'));
   const placement = new ChatPresentationPlacement({
     getActiveTab: () => context.getActiveTab() as never,
-    getTab: () => null,
     isWide: () => context.isWide(),
     getTabCount: () => context.getTabCount(),
   });

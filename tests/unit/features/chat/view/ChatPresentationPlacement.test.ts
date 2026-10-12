@@ -27,7 +27,6 @@ function createPlacement(tabs: ReturnType<typeof createPlacedTab>[]) {
   let isWide = false;
   const placement = new ChatPresentationPlacement({
     getActiveTab: () => active,
-    getTab: id => tabs.find(entry => entry.tab.id === id)?.tab ?? null,
     isWide: () => isWide,
     getTabCount: () => tabs.length,
   });
@@ -81,6 +80,42 @@ describe('ChatPresentationPlacement', () => {
 
     expect(entry.dom.inputComposerEl.parentElement).toBe(harness.slotEl);
     expect(pendingPromptEl.parentElement).toBe(entry.dom.inputComposerEl);
+  });
+
+  it('replaces the footer composer when the active tab is rebound under the same id', () => {
+    const original = createPlacedTab('tab-1');
+    const tabs = [original];
+    const harness = createPlacement(tabs);
+    harness.placement.update();
+    expect(harness.slotEl.children).toHaveLength(1);
+
+    // Starting a new conversation rebuilds the runtime in place: same tab id, new DOM.
+    const rebound = createPlacedTab('tab-1');
+    tabs[0] = rebound;
+    harness.setActive(rebound.tab);
+    harness.placement.update();
+
+    expect(Array.from(harness.slotEl.children)).toEqual([rebound.dom.inputComposerEl]);
+    // The superseded composer returns to its own tab root, so destroying that root removes it.
+    expect(original.dom.inputComposerEl.parentElement).toBe(original.dom.contentEl);
+  });
+
+  it('keeps exactly one footer composer across repeated same-id rebinds', () => {
+    const tabs = [createPlacedTab('tab-1')];
+    const harness = createPlacement(tabs);
+    harness.placement.update();
+
+    for (let i = 0; i < 3; i++) {
+      const previous = tabs[0];
+      const rebound = createPlacedTab('tab-1');
+      tabs[0] = rebound;
+      harness.setActive(rebound.tab);
+      harness.placement.update();
+      // The view then destroys the superseded runtime's root.
+      previous.dom.contentEl.remove();
+    }
+
+    expect(harness.slotEl.children).toHaveLength(1);
   });
 
   it('clears the stable input slot when no tab is active', () => {

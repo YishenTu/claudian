@@ -104,7 +104,6 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     });
     this.presentation = new ChatPresentationPlacement({
       getActiveTab: () => this.getActiveTab(),
-      getTab: tabId => this.tabManager?.getTab(tabId) ?? null,
       isWide: () => this.layout.isWide,
       getTabCount: () => this.tabManager?.getTabCount() ?? null,
     });

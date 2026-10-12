@@ -1,9 +1,8 @@
-import type { ChatTab, TabId, TabTranscriptPlacement } from '@/features/chat/tabs/ChatTab';
+import type { ChatTab, TabTranscriptPlacement } from '@/features/chat/tabs/ChatTab';
 import type { ZenModeSlots } from '@/features/chat/zen/types';
 
 export interface ChatPresentationContext {
   getActiveTab(): ChatTab | null;
-  getTab(tabId: TabId): ChatTab | null;
   isWide(): boolean;
   getTabCount(): number | null;
 }
@@ -18,7 +17,12 @@ export class ChatPresentationPlacement {
   private inputNavRowHostEl: HTMLElement | null = null;
   private activeInputSlotEl: HTMLElement | null = null;
   private navRowContentEl: HTMLElement | null = null;
-  private activeInputTabId: TabId | null = null;
+  /**
+   * The runtime whose composer sits in the active input slot. Held by reference, not by id: a
+   * rebind installs a new runtime under the same tab id, so an id match cannot tell whether the
+   * composer in the slot still belongs to the active tab.
+   */
+  private activeInputTab: ChatTab | null = null;
   private sideChatChipTab: ChatTab | null = null;
   private zenSlots: ZenModeSlots | null = null;
   private zenTranscript: { tab: ChatTab; placement: TabTranscriptPlacement } | null = null;
@@ -60,15 +64,15 @@ export class ChatPresentationPlacement {
     if (!activeTab) {
       activeInputSlotEl.empty();
       zenComposerSlotEl?.empty();
-      this.activeInputTabId = null;
+      this.activeInputTab = null;
       return;
     }
 
-    if (this.activeInputTabId && this.activeInputTabId !== activeTab.id) {
-      this.context.getTab(this.activeInputTabId)?.placement.restoreComposer();
+    if (this.activeInputTab && this.activeInputTab !== activeTab) {
+      this.activeInputTab.placement.restoreComposer();
     }
 
-    if (this.activeInputTabId === activeTab.id) {
+    if (this.activeInputTab === activeTab) {
       if (!activeTab.placement.isComposerPlacedIn(inputSlotEl)) {
         activeTab.placement.placeComposer(inputSlotEl);
       }
@@ -77,7 +81,7 @@ export class ChatPresentationPlacement {
 
     inputSlotEl.empty();
     activeTab.placement.placeComposer(inputSlotEl);
-    this.activeInputTabId = activeTab.id;
+    this.activeInputTab = activeTab;
   }
 
   /** Places the side-chat chip host for the active tab and the current layout. */
@@ -116,11 +120,11 @@ export class ChatPresentationPlacement {
   restoreAll(): void {
     this.sideChatChipTab?.placement.setSideChatChipHost(null);
     this.sideChatChipTab = null;
-    if (!this.activeInputTabId) return;
+    if (!this.activeInputTab) return;
 
-    this.context.getTab(this.activeInputTabId)?.placement.restoreComposer();
+    this.activeInputTab.placement.restoreComposer();
     this.activeInputSlotEl?.empty();
-    this.activeInputTabId = null;
+    this.activeInputTab = null;
   }
 
   /** Moves the active transcript into zen history, restoring any other placement first. */
