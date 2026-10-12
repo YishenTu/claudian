@@ -698,6 +698,8 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   notifyConversationListChanged(): void {
     for (const tab of this.tabManager?.getAllTabs() ?? []) tab.composer.invalidateSessionMentions();
     this.sessions.invalidate();
+    // Unloaded tabs read their running and attention state from session status changes.
+    this.updateTabBar();
   }
 
   private notifyConversationNavigationChanged(): void {

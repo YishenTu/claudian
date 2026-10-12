@@ -190,6 +190,27 @@ describe('ForkTarget', () => {
     ]);
   });
 
+  it('rejects a wide full-session fork if its source advances while the viewer hydrates it', async () => {
+    const { manager, plugin } = createManager(createPlugin({
+      getCachedConversation: jest.fn((id: string) => ({ id, providerId: 'claude' })),
+    }), {}, {}, VIEWER_FORKS);
+    const source = await manager.createTab('conversation-a');
+    source!.state.messages = [{ id: 'latest', role: 'assistant', content: 'Done', timestamp: 1 }];
+    const hydration = deferred<void>();
+    const hydrate = mockNextHydration(() => hydration.promise);
+
+    const fork = forkRequestFrom(0)(forkContext({
+      forkMode: 'full-session', messages: [...source!.state.messages], sourceConversationId: 'conversation-a',
+    }));
+    await flushUntil(() => hydrate.mock.calls.length > 0);
+    source!.state.messages.push({ id: 'next', role: 'user', content: 'Continue', timestamp: 2 });
+    hydration.resolve(undefined);
+    await fork;
+
+    expect(plugin.deleteConversation).toHaveBeenCalledWith('forked');
+    expect(manager.getAllTabs().some(tab => tab.conversationId === 'forked')).toBe(false);
+  });
+
   it('deletes a wide fork the viewer slot could not show', async () => {
     const { manager, plugin } = createManager(createPlugin(), {}, {}, VIEWER_FORKS);
     await manager.createTab();

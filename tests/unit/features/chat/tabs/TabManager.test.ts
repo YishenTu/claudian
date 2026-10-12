@@ -1177,6 +1177,21 @@ describe('TabManager provider execution orchestration', () => {
     expect(manager.getActiveTab()).toEqual(expect.objectContaining({ conversationId: null, lifecycleState: 'provisional' }));
   });
 
+  it('reports an unloaded narrow tab from its running session', async () => {
+    const running = { isWorking: true, statusAttention: 'review' };
+    const { manager } = createManager(createPlugin({
+      getCachedConversation: (id: string) => ({ id, providerId: 'claude' }),
+      sessionRuntimes: { getAttachment: () => null, get: (id: string) => (id === 'conversation-1' ? running : null) },
+    }));
+    const narrow = await manager.createTab('conversation-1');
+    await manager.viewerSlot.enter();
+    expect(manager.getTab(narrow!.id)).toBeNull();
+
+    expect(manager.isTabWorking(narrow!.id)).toBe(true);
+    expect(manager.getTabBarItems().find(item => item.id === narrow!.id))
+      .toEqual(expect.objectContaining({ isWorking: true, attention: 'review' }));
+  });
+
   it('persists the active blank draft as a preview that survives reload', async () => {
     const { manager } = createManager();
     const retained = await manager.createTab(null);

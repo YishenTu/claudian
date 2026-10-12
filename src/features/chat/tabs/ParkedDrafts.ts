@@ -12,9 +12,8 @@ interface ParkedDraft {
 
 /**
  * Unsent input held while no presentation shows it: a session's text while the wide viewer
- * shows another, a narrow tab's text and Linked content choice while the wide layout unloads
- * it, and the new-session draft. In memory only. Every assembled presentation takes what is
- * held for it.
+ * shows another or the wide layout unloads its narrow tab, and the new-session draft's text and
+ * Linked content choice. In memory only. Every assembled presentation takes what is held for it.
  */
 export class ParkedDrafts {
   readonly #parked = new Map<string, ParkedDraft>();
@@ -44,14 +43,6 @@ export class ParkedDrafts {
       drafts: held,
       ...(linked?.mode === 'explicit-draft' ? { linkedContentPath: linked.path } : {}),
     });
-  }
-
-  /** Moves what is held under `from` to `to`, replacing what `to` held. */
-  move(from: string, to: string): void {
-    const held = this.#parked.get(from);
-    if (!held) return;
-    this.#parked.delete(from);
-    this.#parked.set(to, held);
   }
 
   /** Moves the input held for `tab` into its composer and, for a blank draft, its Linked content. */

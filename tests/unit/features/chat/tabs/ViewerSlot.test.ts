@@ -482,34 +482,6 @@ describe('ViewerSlot', () => {
       expect(shownDraft(manager)).toBe('first note');
     });
 
-    it("continues a blank narrow tab's new session in wide and returns it on leaving", async () => {
-      const { manager } = createManager(conversationPlugin());
-      const blank = await manager.createTab(null);
-      blank!.controllers.drafts.restore('main', { content: 'new idea' });
-
-      await manager.viewerSlot.enter();
-      expect(manager.getActiveTab()).toEqual(expect.objectContaining({ conversationId: null, lifecycleState: 'provisional' }));
-      expect(shownDraft(manager)).toBe('new idea');
-
-      await manager.viewerSlot.release();
-
-      expect(manager.getTabIdentities().map(tab => tab.id)).toEqual([blank!.id]);
-      expect(manager.getActiveTabId()).toBe(blank!.id);
-      expect(shownDraft(manager)).toBe('new idea');
-    });
-
-    it("keeps a blank narrow tab's model selection in the wide draft", async () => {
-      const { manager } = createManager(conversationPlugin());
-      const blank = await manager.createTab(null);
-      blank!.session.selectDraft('codex', 'codex:gpt-5');
-
-      await manager.viewerSlot.enter();
-
-      const draft = manager.getActiveTab()!;
-      expect([draft.conversationId, draft.draftModel, draft.providerId, draft.lifecycleState])
-        .toEqual([null, 'codex:gpt-5', 'codex', 'provisional']);
-    });
-
     it('replaces a closed active preview with a draft instead of a narrow tab', async () => {
       const { manager } = createManager(conversationPlugin(), {}, {}, { showsPreviews: () => true });
       const narrow = await manager.createTab('conversation-1');
@@ -536,17 +508,43 @@ describe('ViewerSlot', () => {
       }));
     });
 
-    it("carries a blank tab's explicit Linked content into wide and back", async () => {
+    it('keeps a blank narrow tab and its session as the wide presentation', async () => {
       const { manager } = createManager(conversationPlugin());
       const blank = await manager.createTab(null);
+      const session = blank!.session.runtime;
+      blank!.session.selectDraft('codex', 'codex:gpt-5');
       blank!.linkedContent.selectExplicit('chosen.md');
+      blank!.controllers.drafts.restore('main', { content: 'new idea' });
 
       await manager.viewerSlot.enter();
-      expect(manager.getActiveTab()!.linkedContent.getSnapshot()).toEqual({ mode: 'explicit-draft', path: 'chosen.md' });
+
+      expect(manager.getActiveTab()).toBe(blank);
+      expect(blank!.session.runtime).toBe(session);
+      expect(mockDestroyTab).not.toHaveBeenCalledWith(blank);
 
       await manager.viewerSlot.release();
-      expect(manager.getActiveTabId()).toBe(blank!.id);
-      expect(manager.getActiveTab()!.linkedContent.getSnapshot()).toEqual({ mode: 'explicit-draft', path: 'chosen.md' });
+      expect(manager.getActiveTab()).toBe(blank);
+      expect([blank!.draftModel, blank!.linkedContent.getSnapshot().path, shownDraft(manager)])
+        .toEqual(['codex:gpt-5', 'chosen.md', 'new idea']);
+    });
+
+    it('leaves a usable presentation when narrowing supersedes an unloading wide entry', async () => {
+      const { manager } = createManager(conversationPlugin());
+      const narrow = await manager.createTab('conversation-1');
+      const unloading = deferred<void>();
+      mockDestroyTab.mockImplementationOnce(() => unloading.promise);
+
+      const entering = manager.viewerSlot.enter();
+      for (let attempt = 0; attempt < 20 && mockDestroyTab.mock.calls.length === 0; attempt += 1) {
+        await Promise.resolve();
+      }
+      const releasing = manager.viewerSlot.release();
+      unloading.resolve(undefined);
+      await Promise.all([entering, releasing]);
+
+      expect(manager.getActiveTab()?.conversationId).toBe('conversation-1');
+      expect(manager.getActiveTab()?.lifecycleState).toBe('open');
+      expect(manager.getActiveTabId()).toBe(narrow!.id);
     });
 
     it("returns a blank tab's text after wide browsed another session", async () => {

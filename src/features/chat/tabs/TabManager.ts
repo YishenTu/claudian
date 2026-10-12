@@ -3,6 +3,7 @@ import { Notice } from 'obsidian';
 import { type AppTabManagerState, normalizeTabLabel } from '@/core/bootstrap/tabManagerState';
 import type { ProviderId } from '@/core/providers/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { SessionAlreadyAttached } from '@/features/chat/sessions/SessionRuntimePool';
 import type { TabBarItem, TabId, TabManagerInterface, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import type { ForkTargetHost } from '@/features/chat/tabs/forking/ForkTarget';
@@ -115,8 +116,8 @@ export class TabManager implements TabManagerInterface {
       plugin,
       membership,
       createTab: conversationId => this.createTab(conversationId),
-      showInViewer: async (conversationId, sourceTab) => {
-        await this.viewerSlot.show(conversationId, { sourceTab });
+      showInViewer: async (conversationId, sourceTab, isValid) => {
+        await this.viewerSlot.show(conversationId, { sourceTab, isValid });
         return membership.getAllTabs()
           .find(tab => tab.conversationId === conversationId && membership.isTabAlive(tab)) ?? null;
       },
@@ -173,9 +174,8 @@ export class TabManager implements TabManagerInterface {
       app: plugin.app,
       membership,
       navigation: this.navigation,
-      createPreview: (conversationId, draft) => this.#createTab(conversationId, undefined, {
+      createPreview: conversationId => this.#createTab(conversationId, undefined, {
         lifecycleState: 'provisional',
-        ...(draft?.draftModel ? { draftModel: draft.draftModel, providerId: draft.providerId } : {}),
       }),
       switchToTab: tabId => this.switchToTab(tabId),
       closeTab: tabId => this.closeTab(tabId),
@@ -535,7 +535,15 @@ export class TabManager implements TabManagerInterface {
 
   /** True while the tab has any user-visible foreground or background work in progress. */
   isTabWorking(tabId: TabId): boolean {
-    return this.getTab(tabId)?.session.isWorking ?? false;
+    return this.#sessionOf(tabId)?.isWorking ?? false;
+  }
+
+  /** The tab's session: its attached runtime, else the pool's session for its saved conversation. */
+  #sessionOf(tabId: TabId): Pick<ChatSessionRuntime, 'isWorking' | 'statusAttention'> | null {
+    const runtime = this.getTab(tabId);
+    if (runtime) return runtime.session.runtime;
+    const conversationId = this.membership.getIdentity(tabId)?.conversationId;
+    return conversationId ? this.plugin.sessionRuntimes.get(conversationId) : null;
   }
 
   /** Reconciles blank drafts after provider/model availability changes; inert once shutdown begins. */
@@ -671,7 +679,10 @@ export class TabManager implements TabManagerInterface {
   async #unloadTab(tab: AssembledTabRuntime): Promise<void> {
     const { membership } = this;
     if (membership.getTab(tab.id) !== tab || !membership.isTabAlive(tab) || tab.lifecycleState !== 'open') return;
-    if (membership.getActiveTabId() === tab.id) deactivateTab(tab);
+    if (membership.getActiveTabId() === tab.id) {
+      deactivateTab(tab);
+      membership.setActiveTabId(null);
+    }
     membership.unload({
       id: tab.id,
       conversationId: tab.conversationId,
@@ -729,7 +740,7 @@ export class TabManager implements TabManagerInterface {
         ...(tab.label ? { label: tab.label } : {}),
         isActive: tab.id === activeTabId,
         isWorking: this.isTabWorking(tab.id),
-        attention: runtime?.session.runtime.statusAttention ?? null,
+        attention: this.#sessionOf(tab.id)?.statusAttention ?? null,
         canClose: identities.length > 1 || !!tab.conversationId || !!runtime?.state.messages.length,
       };
     });

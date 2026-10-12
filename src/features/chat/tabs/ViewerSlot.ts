@@ -23,7 +23,7 @@ export interface ViewerSlotHost {
   /** Unsent text no presentation shows; assemblies and rebinds take what is held for them. */
   readonly parkedDrafts: ParkedDrafts;
   /** Creates and activates a provisional tab; only the slot creates previews. */
-  createPreview(conversationId: string | null, draft?: DraftSelection): Promise<AssembledTabRuntime | null>;
+  createPreview(conversationId: string | null): Promise<AssembledTabRuntime | null>;
   switchToTab(tabId: TabId): Promise<void>;
   closeTab(tabId: TabId): Promise<boolean>;
   discardTab(tabId: TabId): Promise<boolean>;
@@ -35,29 +35,28 @@ export interface ViewerSlotHost {
   handOver(tabId: TabId, successorId: TabId): Promise<boolean>;
 }
 
-/** A blank tab's provider and model, carried into the draft that continues its new session. */
-export type DraftSelection = Pick<TabIdentity, 'providerId' | 'draftModel'>;
-
 export interface ViewerSlotRequest {
   /** The tab whose command issued the request; the request lapses once it stops being live. */
   sourceTab?: AssembledTabRuntime | null;
+  /** Further validity the request keeps through the destination's assembly and hydration. */
+  isValid?: () => boolean;
 }
 
 /**
  * The wide layout's single replaceable preview. Tabs are a narrow-layout concept: entering wide
- * unloads them, wide navigation only rebinds or replaces the preview, and leaving wide hands the
- * shown session back to its narrow tab or turns the preview into one.
+ * unloads every tab bound to a session (the pool keeps the session), wide navigation only
+ * rebinds or replaces the preview, and leaving wide hands the shown session back to its narrow
+ * tab or turns the preview into one. A blank narrow tab keeps its draft session loaded, because
+ * nothing else could reacquire it; when selected it stays the wide presentation itself.
  */
 export class ViewerSlot {
-  /** The blank narrow tab whose new session the wide draft continues. */
-  #draftOriginId: TabId | null = null;
-
   constructor(private readonly host: ViewerSlotHost) {}
 
   /** Shows a session: its live owner elsewhere or a preview already showing it, otherwise the preview. */
   async show(conversationId: string, request: ViewerSlotRequest = {}): Promise<void> {
+    const { isValid = () => true } = request;
     await this.host.navigation.enqueue(request.sourceTab ?? null, async (isCurrent) => {
-      await this.#show(conversationId, isCurrent);
+      await this.#show(conversationId, () => isCurrent() && isValid());
     });
   }
 
@@ -73,35 +72,34 @@ export class ViewerSlot {
   }
 
   /**
-   * Enters the wide layout: unloads every narrow tab, parking its unsent text, and shows the
-   * selected tab's session (or a draft continuing its new session) in the preview. Without an
-   * explicit `selected`, the selection is read after any in-flight release settles.
+   * Enters the wide layout: unloads every narrow tab bound to a session, parking its unsent
+   * text, then shows the selected session in the preview, or the selected blank tab itself.
+   * Without an explicit `selected`, the selection is read after any in-flight release settles.
+   * A request superseded after unloading leaves the presentation to whatever superseded it.
    */
   async enter(selected?: Readonly<TabIdentity> | null): Promise<void> {
     await this.host.navigation.awaitFence().catch(() => undefined);
     const target = selected === undefined ? this.#activeIdentity() : selected;
     if (target?.lifecycleState === 'provisional') return;
-    const selection = target ? { ...target } : null;
+    const selection = target ? { id: target.id, conversationId: target.conversationId } : null;
     await this.host.navigation.enqueue(null, async (isCurrent) => {
       const { membership, parkedDrafts } = this.host;
       for (const tab of membership.getAllTabs()) {
-        if (tab.lifecycleState !== 'open' || !membership.isTabAlive(tab)) continue;
-        parkedDrafts.park(tab, tab.id === selection?.id && !tab.conversationId ? 'new-session' : undefined);
+        if (tab.lifecycleState !== 'open' || !tab.conversationId || !membership.isTabAlive(tab)) continue;
+        parkedDrafts.park(tab);
         await this.host.unloadTab(tab);
       }
       if (!isCurrent()) return;
-      if (selection?.conversationId) {
-        await this.#show(selection.conversationId, isCurrent);
-        return;
-      }
-      this.#draftOriginId = selection?.id ?? null;
-      await this.#startDraft(isCurrent, undefined, selection ?? undefined);
+      if (selection?.conversationId) await this.#show(selection.conversationId, isCurrent);
+      else if (selection) await this.host.switchToTab(selection.id);
+      else await this.#startDraft(isCurrent);
     });
   }
 
   /**
    * Leaves the wide layout: the shown session returns to its narrow tab, or the preview becomes
-   * one; other previews close. Overlapping calls share one cleanup, which fences navigation.
+   * one; other previews close, and the view always ends with a live tab. Overlapping calls share
+   * one cleanup, which fences navigation.
    */
   async release(): Promise<void> {
     if (this.host.membership.isDestroyed()) return;
@@ -109,19 +107,18 @@ export class ViewerSlot {
       const { membership, parkedDrafts } = this.host;
       const active = this.#activePreview();
       const narrowTab = active ? this.#narrowTabFor(active) : null;
-      const origin = this.#draftOrigin();
-      this.#draftOriginId = null;
       if (active && narrowTab) {
         parkedDrafts.park(active, ParkedDrafts.keyFor(narrowTab));
         await this.host.handOver(active.id, narrowTab.id);
       } else if (active) {
         commitProvisionalTab(active);
       }
-      // A continued new session not shown at the end of wide returns to the blank tab it came from.
-      if (origin && narrowTab?.id !== origin.id) parkedDrafts.move('new-session', ParkedDrafts.keyFor(origin));
       await this.#closePreviews(null);
-      if (membership.isDestroyed() || this.#activeIdentity()) return;
-      const fallback = membership.getRetainedActiveTabId() ?? membership.getTabIdentities()[0]?.id;
+      if (membership.isDestroyed() || this.#hasLivePresentation()) return;
+      // An interrupted entry may have unloaded the active tab before showing anything.
+      const fallback = membership.getActiveTabId()
+        ?? membership.getRetainedActiveTabId()
+        ?? membership.getTabIdentities()[0]?.id;
       if (fallback) await this.host.switchToTab(fallback);
     });
   }
@@ -146,16 +143,12 @@ export class ViewerSlot {
     if (!isCurrent() && createdTab) await this.#discardUnowned(createdTab, conversationId);
   }
 
-  async #startDraft(
-    isCurrent: NavigationRequestCheck,
-    linkedContentPath?: string,
-    draft?: DraftSelection,
-  ): Promise<void> {
+  async #startDraft(isCurrent: NavigationRequestCheck, linkedContentPath?: string): Promise<void> {
     const { membership, parkedDrafts } = this.host;
     this.#assertLinkedContentExists(linkedContentPath);
     // The draft being replaced keeps its text for the next one, which takes it on assembly.
     for (const preview of this.#livePreviews()) parkedDrafts.park(preview);
-    const tab = await this.host.createPreview(null, draft);
+    const tab = await this.host.createPreview(null);
     if (!tab) throw new Error('Failed to create a provisional chat tab');
     if (!isCurrent()) {
       await this.#discardUnowned(tab, null);
@@ -178,21 +171,17 @@ export class ViewerSlot {
   /** The narrow tab that takes the shown session back when wide ends. */
   #narrowTabFor(preview: AssembledTabRuntime): Readonly<TabIdentity> | null {
     const { membership } = this.host;
-    const narrowTabs = membership.getTabIdentities()
-      .filter(tab => tab.lifecycleState === 'open' && membership.isTabAlive(tab));
-    if (preview.conversationId) {
-      return narrowTabs.find(tab => tab.conversationId === preview.conversationId) ?? null;
-    }
-    return this.#draftOrigin();
+    if (!preview.conversationId) return null;
+    return membership.getTabIdentities().find(tab => (
+      tab.lifecycleState === 'open' && membership.isTabAlive(tab) && tab.conversationId === preview.conversationId
+    )) ?? null;
   }
 
-  /** The live blank narrow tab whose new session the wide drafts continue. */
-  #draftOrigin(): Readonly<TabIdentity> | null {
+  #hasLivePresentation(): boolean {
     const { membership } = this.host;
-    const origin = this.#draftOriginId ? membership.getIdentity(this.#draftOriginId) : null;
-    return origin && origin.lifecycleState === 'open' && origin.conversationId === null && membership.isTabAlive(origin)
-      ? origin
-      : null;
+    const activeId = membership.getActiveTabId();
+    const active = activeId ? membership.getTab(activeId) : null;
+    return !!active && membership.isTabAlive(active);
   }
 
   #activeIdentity(): Readonly<TabIdentity> | null {

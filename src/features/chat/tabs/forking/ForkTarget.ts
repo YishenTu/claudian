@@ -16,8 +16,15 @@ export interface ForkTargetHost {
   readonly plugin: ChatFeatureHost;
   readonly membership: TabMembershipView;
   createTab(conversationId: string): Promise<AssembledTabRuntime | null>;
-  /** Shows the session in the wide viewer slot; resolves to the tab showing it, if any. */
-  showInViewer(conversationId: string, sourceTab: AssembledTabRuntime): Promise<AssembledTabRuntime | null>;
+  /**
+   * Shows the session in the wide viewer slot while `isValid` holds through its hydration;
+   * resolves to the tab showing it, if any.
+   */
+  showInViewer(
+    conversationId: string,
+    sourceTab: AssembledTabRuntime,
+    isValid: () => boolean,
+  ): Promise<AssembledTabRuntime | null>;
   discardTab(tabId: TabId): Promise<boolean>;
   /** `viewer` when the layout shows forks in its viewer slot, skipping the target prompt. */
   forkTarget(): 'ask' | 'viewer';
@@ -109,7 +116,9 @@ async function forkToViewer(
   }
   let shown: AssembledTabRuntime | null = null;
   try {
-    shown = await host.showInViewer(conversationId, sourceTab);
+    // The source session must stay current until the fork is shown; the source tab itself may
+    // be the preview the fork replaces, so its liveness is not part of that check.
+    shown = await host.showInViewer(conversationId, sourceTab, () => isForkSourceCurrent(sourceLease));
   } finally {
     if (!shown) await deleteForkConversation(host, conversationId);
   }
