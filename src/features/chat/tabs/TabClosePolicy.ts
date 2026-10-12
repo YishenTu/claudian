@@ -10,6 +10,8 @@ export interface TabCloseHost {
   switchToTab(tabId: TabId): Promise<void>;
   /** Creates an inactive blank tab so the view keeps one live tab. */
   createReplacement(): Promise<AssembledTabRuntime | null>;
+  /** Creates an inactive draft preview to succeed an active preview; null outside the wide layout. */
+  createPreviewReplacement(): Promise<AssembledTabRuntime | null>;
   /** Releases manager metadata (command discovery) that outlives membership; returns failures. */
   releaseMetadata(tabId: TabId): readonly unknown[];
   /** Publishes a completed close; not called once the manager is destroyed. */
@@ -94,11 +96,16 @@ export class TabClosePolicy {
     try {
       const idsBefore = membership.getTabIdentities().map(identity => identity.id);
       const closingIndex = idsBefore.indexOf(tabId);
-      // Closing a preview returns to the retained tab the user last worked in, not its neighbour.
-      const retainedId = tab.lifecycleState === 'provisional'
+      // Closing the active wide preview shows a draft; elsewhere a preview returns to the retained
+      // tab the user last worked in, not its neighbour.
+      const previewReplacement = tab.lifecycleState === 'provisional' && membership.getActiveTabId() === tabId
+        ? await this.host.createPreviewReplacement()
+        : null;
+      const retainedId = tab.lifecycleState === 'provisional' && !previewReplacement
         ? membership.getRetainedActiveTabId(tabId, true)
         : null;
-      const successor = (retainedId ? membership.getIdentity(retainedId) : null)
+      const successor = previewReplacement
+        ?? (retainedId ? membership.getIdentity(retainedId) : null)
         ?? this.#findLiveTab(idsBefore, closingIndex)
         ?? await this.#ensureLiveTab();
       if (!successor || membership.getMember(tabId) !== member) return false;

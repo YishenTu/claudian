@@ -23,7 +23,7 @@ export interface ViewerSlotHost {
   /** Unsent text no presentation shows; assemblies and rebinds take what is held for them. */
   readonly parkedDrafts: ParkedDrafts;
   /** Creates and activates a provisional tab; only the slot creates previews. */
-  createPreview(conversationId: string | null): Promise<AssembledTabRuntime | null>;
+  createPreview(conversationId: string | null, draft?: DraftSelection): Promise<AssembledTabRuntime | null>;
   switchToTab(tabId: TabId): Promise<void>;
   closeTab(tabId: TabId): Promise<boolean>;
   discardTab(tabId: TabId): Promise<boolean>;
@@ -34,6 +34,9 @@ export interface ViewerSlotHost {
   /** Closes a preview and then activates the narrow tab that takes over its session. */
   handOver(tabId: TabId, successorId: TabId): Promise<boolean>;
 }
+
+/** A blank tab's provider and model, carried into the draft that continues its new session. */
+export type DraftSelection = Pick<TabIdentity, 'providerId' | 'draftModel'>;
 
 export interface ViewerSlotRequest {
   /** The tab whose command issued the request; the request lapses once it stops being live. */
@@ -72,11 +75,14 @@ export class ViewerSlot {
 
   /**
    * Enters the wide layout: unloads every narrow tab, parking its unsent text, and shows the
-   * `selected` tab's session (or a draft continuing its new session) in the preview.
+   * selected tab's session (or a draft continuing its new session) in the preview. Without an
+   * explicit `selected`, the selection is read after any in-flight release settles.
    */
-  async enter(selected: Readonly<TabIdentity> | null = this.#activeIdentity()): Promise<void> {
-    if (selected?.lifecycleState === 'provisional') return;
-    const selection = selected ? { id: selected.id, conversationId: selected.conversationId } : null;
+  async enter(selected?: Readonly<TabIdentity> | null): Promise<void> {
+    await this.host.navigation.awaitFence().catch(() => undefined);
+    const target = selected === undefined ? this.#activeIdentity() : selected;
+    if (target?.lifecycleState === 'provisional') return;
+    const selection = target ? { ...target } : null;
     await this.host.navigation.enqueue(null, async (isCurrent) => {
       const { membership, parkedDrafts } = this.host;
       for (const tab of membership.getAllTabs()) {
@@ -90,7 +96,7 @@ export class ViewerSlot {
         return;
       }
       this.#draftOriginId = selection?.id ?? null;
-      await this.#startDraft(isCurrent);
+      await this.#startDraft(isCurrent, undefined, selection ?? undefined);
     });
   }
 
@@ -138,12 +144,16 @@ export class ViewerSlot {
     if (!isCurrent() && createdTab) await this.#discardUnowned(createdTab, conversationId);
   }
 
-  async #startDraft(isCurrent: NavigationRequestCheck, linkedContentPath?: string): Promise<void> {
+  async #startDraft(
+    isCurrent: NavigationRequestCheck,
+    linkedContentPath?: string,
+    draft?: DraftSelection,
+  ): Promise<void> {
     const { membership, parkedDrafts } = this.host;
     this.#assertLinkedContentExists(linkedContentPath);
     // The draft being replaced keeps its text for the next one, which takes it on assembly.
     for (const preview of this.#livePreviews()) parkedDrafts.park(preview);
-    const tab = await this.host.createPreview(null);
+    const tab = await this.host.createPreview(null, draft);
     if (!tab) throw new Error('Failed to create a provisional chat tab');
     if (!isCurrent()) {
       await this.#discardUnowned(tab, null);

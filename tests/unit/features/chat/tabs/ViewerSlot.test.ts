@@ -498,6 +498,44 @@ describe('ViewerSlot', () => {
       expect(shownDraft(manager)).toBe('new idea');
     });
 
+    it("keeps a blank narrow tab's model selection in the wide draft", async () => {
+      const { manager } = createManager(conversationPlugin());
+      const blank = await manager.createTab(null);
+      blank!.session.selectDraft('codex', 'codex:gpt-5');
+
+      await manager.viewerSlot.enter();
+
+      const draft = manager.getActiveTab()!;
+      expect([draft.conversationId, draft.draftModel, draft.providerId, draft.lifecycleState])
+        .toEqual([null, 'codex:gpt-5', 'codex', 'provisional']);
+    });
+
+    it('replaces a closed active preview with a draft instead of a narrow tab', async () => {
+      const { manager } = createManager(conversationPlugin(), {}, {}, { showsPreviews: () => true });
+      const narrow = await manager.createTab('conversation-1');
+      await manager.viewerSlot.enter();
+      await manager.viewerSlot.show('conversation-2');
+
+      await manager.closeTab(manager.getActiveTabId()!);
+
+      expect(manager.getTab(narrow!.id)).toBeNull();
+      expect(manager.getAllTabs()).toEqual([manager.getActiveTab()]);
+      expect(manager.getActiveTab()).toEqual(expect.objectContaining({ conversationId: null, lifecycleState: 'provisional' }));
+    });
+
+    it('enters wide again after a release that overlapped the request', async () => {
+      const { manager } = createManager(conversationPlugin());
+      const narrow = await manager.createTab('conversation-1');
+      await manager.viewerSlot.enter();
+
+      await Promise.all([manager.viewerSlot.release(), manager.viewerSlot.enter()]);
+
+      expect(manager.getTab(narrow!.id)).toBeNull();
+      expect(manager.getActiveTab()).toEqual(expect.objectContaining({
+        conversationId: 'conversation-1', lifecycleState: 'provisional',
+      }));
+    });
+
     it('restores a narrow workspace in wide without assembling its tabs', async () => {
       const { manager } = createManager(conversationPlugin(), {}, {}, { showsPreviews: () => true });
 

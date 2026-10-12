@@ -68,7 +68,7 @@ export function createMockTab(options: Record<string, any>): any {
   const tab = {
     id: options.tabId ?? `tab-${mockTabs.length + 1}`,
     conversationId: options.conversation?.id ?? null,
-    draftModel: options.conversation ? null : 'claude-default',
+    draftModel: options.conversation ? null : (options.draftModel ?? 'claude-default'),
     executionCoordinator: {
       getCommandSnapshot: () => undefined,
       hasBackgroundWork: false,
@@ -78,7 +78,7 @@ export function createMockTab(options: Record<string, any>): any {
     },
     hydrationState: options.conversation ? 'idle' : 'ready',
     lifecycleState: options.lifecycleState ?? 'open',
-    providerId: options.conversation?.providerId ?? 'claude',
+    providerId: options.conversation?.providerId ?? options.providerId ?? 'claude',
     session: null as unknown as TabSession,
     ...options.initialState,
     captureReviewableSettlement: options.captureReviewableSettlement ?? null,

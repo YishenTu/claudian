@@ -150,6 +150,10 @@ export class TabManager implements TabManagerInterface {
       membership,
       switchToTab: tabId => this.switchToTab(tabId),
       createReplacement: () => this.createTab(null, undefined, { activate: false }),
+      // The wide layout never falls back to a narrow tab: a closed preview gives way to a draft.
+      createPreviewReplacement: () => (layoutPolicy.showsPreviews()
+        ? this.#createTab(null, undefined, { activate: false, lifecycleState: 'provisional' })
+        : Promise.resolve(null)),
       releaseMetadata: tabId => this.commandDiscovery.releaseTab(tabId),
       onTabClosed: tabId => this.callbacks.onTabClosed?.(tabId),
     });
@@ -168,8 +172,9 @@ export class TabManager implements TabManagerInterface {
       app: plugin.app,
       membership,
       navigation: this.navigation,
-      createPreview: conversationId => this.#createTab(conversationId, undefined, {
+      createPreview: (conversationId, draft) => this.#createTab(conversationId, undefined, {
         lifecycleState: 'provisional',
+        ...(draft?.draftModel ? { draftModel: draft.draftModel, providerId: draft.providerId } : {}),
       }),
       switchToTab: tabId => this.switchToTab(tabId),
       closeTab: tabId => this.closeTab(tabId),
