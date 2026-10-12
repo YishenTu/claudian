@@ -26,30 +26,21 @@ describe('Long conversation message styles', () => {
     return window.getComputedStyle(assistantMessage);
   }
 
-  it('disables assistant layout isolation on Windows', () => {
-    const assistantStyle = getAssistantStyle('mod-windows');
-
-    expect({
-      contentVisibility: assistantStyle.getPropertyValue('content-visibility'),
-      containIntrinsicSize: assistantStyle.getPropertyValue('contain-intrinsic-size'),
-    }).toEqual({
-      contentVisibility: 'visible',
-      containIntrinsicSize: 'none',
-    });
-  });
-
+  // Offscreen layout skipping crashed Windows renderers (#1256), jumped macOS
+  // scroll positions (#1596), and crashed accessibility serialization (#1597).
   it.each([
+    ['Windows', 'mod-windows'],
     ['macOS', 'mod-macos'],
     ['Linux', 'mod-linux'],
-  ])('keeps assistant layout isolation on %s', (_platform, platformClass) => {
+  ])('does not skip offscreen assistant layout on %s', (_platform, platformClass) => {
     const assistantStyle = getAssistantStyle(platformClass);
 
     expect({
       contentVisibility: assistantStyle.getPropertyValue('content-visibility'),
       containIntrinsicSize: assistantStyle.getPropertyValue('contain-intrinsic-size'),
     }).toEqual({
-      contentVisibility: 'auto',
-      containIntrinsicSize: 'auto 23.5rem',
+      contentVisibility: '',
+      containIntrinsicSize: '',
     });
   });
 });

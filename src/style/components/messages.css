@@ -317,17 +317,10 @@
 
 .claudian-message-assistant {
   flex-shrink: 0;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 23.5rem;
   align-self: stretch;
   width: 100%;
   padding: 10px 14px;
   text-align: start;
-}
-
-body.mod-windows .claudian-message-assistant {
-  content-visibility: visible;
-  contain-intrinsic-size: none;
 }
 
 .claudian-message-content {
@@ -537,8 +530,6 @@ button.claudian-work-header:disabled {
 
 .claudian-work-history > .claudian-message {
   padding: 0 0 8px;
-  content-visibility: visible;
-  contain-intrinsic-size: none;
 }
 
 .claudian-user-msg-actions {
