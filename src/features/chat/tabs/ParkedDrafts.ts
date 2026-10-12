@@ -4,38 +4,72 @@ import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
 const DESTINATIONS = ['main', 'side'] as const;
 
+interface ParkedDraft {
+  readonly drafts: ComposerDrafts;
+  /** A blank draft's explicit Linked content choice; null explicitly chooses none. */
+  readonly linkedContentPath?: string | null;
+}
+
 /**
- * Unsent composer text held while no presentation shows it: a session's text while the wide
- * viewer shows another, a narrow tab's text while the wide layout unloads it, and the new-session
- * draft. In memory only. Every assembled presentation takes the text held for it.
+ * Unsent input held while no presentation shows it: a session's text while the wide viewer
+ * shows another, a narrow tab's text and Linked content choice while the wide layout unloads
+ * it, and the new-session draft. In memory only. Every assembled presentation takes what is
+ * held for it.
  */
 export class ParkedDrafts {
-  readonly #drafts = new Map<string, ComposerDrafts>();
+  readonly #parked = new Map<string, ParkedDraft>();
 
-  /** A session's text follows the session; a blank tab's stays with that tab or the new-session draft. */
+  /** Whether a held Linked content path still exists when it is restored. */
+  constructor(private readonly linkedContentExists: (path: string) => boolean) {}
+
+  /** A session's input follows the session; a blank tab's stays with that tab or the new-session draft. */
   static keyFor(identity: Pick<TabIdentity, 'id' | 'conversationId' | 'lifecycleState'>): string {
     if (identity.conversationId) return `session:${identity.conversationId}`;
     return identity.lifecycleState === 'provisional' ? 'new-session' : `tab:${identity.id}`;
   }
 
-  /** Holds `tab`'s unsent text under `key`, replacing what was held there. */
+  /** Holds `tab`'s unsent input under `key`, replacing what was held there. */
   park(tab: AssembledTabRuntime, key = ParkedDrafts.keyFor(tab)): void {
     const { drafts } = tab.controllers;
     const held: ComposerDrafts = { main: drafts.capture('main'), side: drafts.capture('side') };
-    if (DESTINATIONS.some(destination => held[destination].content.trim() || held[destination].images.length > 0)) {
-      this.#drafts.set(key, held);
-    } else {
-      this.#drafts.delete(key);
+    const linked = tab.conversationId === null ? tab.linkedContent.getSnapshot() : null;
+    const hasText = DESTINATIONS.some(destination => (
+      held[destination].content.trim() || held[destination].images.length > 0
+    ));
+    if (!hasText && linked?.mode !== 'explicit-draft') {
+      this.#parked.delete(key);
+      return;
     }
+    this.#parked.set(key, {
+      drafts: held,
+      ...(linked?.mode === 'explicit-draft' ? { linkedContentPath: linked.path } : {}),
+    });
   }
 
-  /** Moves the text held for `tab` into its composer. */
-  restoreInto(tab: AssembledTabRuntime, key = ParkedDrafts.keyFor(tab)): void {
-    const held = this.#drafts.get(key);
+  /** Moves what is held under `from` to `to`, replacing what `to` held. */
+  move(from: string, to: string): void {
+    const held = this.#parked.get(from);
     if (!held) return;
-    this.#drafts.delete(key);
+    this.#parked.delete(from);
+    this.#parked.set(to, held);
+  }
+
+  /** Moves the input held for `tab` into its composer and, for a blank draft, its Linked content. */
+  restoreInto(tab: AssembledTabRuntime, key = ParkedDrafts.keyFor(tab)): void {
+    const held = this.#parked.get(key);
+    if (!held) return;
+    this.#parked.delete(key);
     for (const destination of DESTINATIONS) {
-      tab.controllers.drafts.restore(destination, held[destination], { merge: true });
+      tab.controllers.drafts.restore(destination, held.drafts[destination], { merge: true });
+    }
+    const path = held.linkedContentPath;
+    if (
+      path !== undefined
+      && tab.conversationId === null
+      && tab.linkedContent.getSnapshot().mode === 'auto-draft'
+      && (path === null || this.linkedContentExists(path))
+    ) {
+      tab.linkedContent.selectExplicit(path);
     }
   }
 }

@@ -42,6 +42,8 @@ export interface ChatTabManagerHost {
   /** Owned, without an admitted close, and the manager is live: the tab may receive new work. */
   isTabLive(tabId: TabId): boolean;
   switchToTab(tabId: TabId): Promise<void>;
+  /** Shows a tab's session the layout's way: the wide viewer for a narrow tab, otherwise the tab. */
+  focusTab(tabId: TabId): Promise<void>;
   closeTab(tabId: TabId): Promise<boolean>;
   invalidateProviderResources(providerIds: ProviderId | ProviderId[], generation: number): void;
 }

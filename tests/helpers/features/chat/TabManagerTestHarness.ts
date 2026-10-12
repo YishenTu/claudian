@@ -62,6 +62,15 @@ export const commandCatalog = {
   setCommandSnapshot: jest.fn(),
 };
 
+/** Records an explicit Linked content choice the way the controller's snapshot reports it. */
+function createMockLinkedContent() {
+  let snapshot: { mode: string; path: string | null } = { mode: 'auto-draft', path: null };
+  return {
+    getSnapshot: () => snapshot,
+    selectExplicit: jest.fn((path: string | null) => { snapshot = { mode: 'explicit-draft', path }; }),
+  };
+}
+
 export function createMockTab(options: Record<string, any>): any {
   const review = new ChatState();
   const input = { value: '', focus: jest.fn() };
@@ -100,7 +109,7 @@ export function createMockTab(options: Record<string, any>): any {
       },
     },
     composer: { focus: jest.fn() },
-    linkedContent: { selectExplicit: jest.fn() },
+    linkedContent: createMockLinkedContent(),
     controllers: {
       drafts: new ComposerDraftController({ getInput: () => input as never, getImages: () => null, getDestination: () => 'main' }),
       conversationController: {

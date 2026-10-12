@@ -536,6 +536,32 @@ describe('ViewerSlot', () => {
       }));
     });
 
+    it("carries a blank tab's explicit Linked content into wide and back", async () => {
+      const { manager } = createManager(conversationPlugin());
+      const blank = await manager.createTab(null);
+      blank!.linkedContent.selectExplicit('chosen.md');
+
+      await manager.viewerSlot.enter();
+      expect(manager.getActiveTab()!.linkedContent.getSnapshot()).toEqual({ mode: 'explicit-draft', path: 'chosen.md' });
+
+      await manager.viewerSlot.release();
+      expect(manager.getActiveTabId()).toBe(blank!.id);
+      expect(manager.getActiveTab()!.linkedContent.getSnapshot()).toEqual({ mode: 'explicit-draft', path: 'chosen.md' });
+    });
+
+    it("returns a blank tab's text after wide browsed another session", async () => {
+      const { manager } = createManager(conversationPlugin());
+      const blank = await manager.createTab(null);
+      blank!.controllers.drafts.restore('main', { content: 'new idea' });
+
+      await manager.viewerSlot.enter();
+      await manager.viewerSlot.show('conversation-1');
+      await manager.viewerSlot.release();
+      await manager.switchToTab(blank!.id);
+
+      expect(shownDraft(manager)).toBe('new idea');
+    });
+
     it('restores a narrow workspace in wide without assembling its tabs', async () => {
       const { manager } = createManager(conversationPlugin(), {}, {}, { showsPreviews: () => true });
 

@@ -108,6 +108,25 @@ describe('TabConversationNavigation', () => {
     expect(manager.getTab('local')?.conversationId).toBeNull();
   });
 
+  it('shows a session in a wide view through its viewer instead of reloading its narrow tab', async () => {
+    const lookup = (id: string) => ({ id, providerId: 'claude' });
+    const other = createManager(createPlugin({ getCachedConversation: lookup }), {}, {}, { showsPreviews: () => true });
+    await other.manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' });
+    const otherView = { leaf: {}, getTabManager: () => other.manager };
+    const { manager } = createManager(createPlugin({
+      getCachedConversation: lookup,
+      findConversationAcrossViews: (id: string) => id === 'two' ? { tabId: 'two', view: otherView } : null,
+    }));
+    await manager.createTab(null, 'local');
+
+    await manager.openConversation('two');
+
+    expect(other.manager.getTab('two')).toBeNull();
+    const shown = other.manager.getActiveTab()!;
+    expect([shown.conversationId, shown.lifecycleState]).toEqual(['two', 'provisional']);
+    expect(manager.getTabCount()).toBe(1);
+  });
+
   it('keeps a queued open-conversation intent bound to its source runtime', async () => {
     const { manager } = createManager();
     const retained = await manager.createTab();
@@ -239,7 +258,7 @@ describe('TabConversationNavigation', () => {
     const switchToTab = jest.fn().mockResolvedValue(undefined);
     const otherView = {
       leaf: {},
-      getTabManager: jest.fn().mockReturnValue({ switchToTab }),
+      getTabManager: jest.fn().mockReturnValue({ focusTab: switchToTab }),
     };
     const { manager } = createManager(createPlugin({
       getCachedConversation: (id: string) => ({ id, providerId: 'claude' }),
@@ -283,7 +302,7 @@ describe('TabConversationNavigation', () => {
     const otherManager = {
       isTabLive: jest.fn(() => targetTab.lifecycleState !== 'closing'),
       getTabIdentities: () => [targetTab],
-      switchToTab,
+      focusTab: switchToTab,
     };
     const otherView = {
       leaf: {},
@@ -329,7 +348,7 @@ describe('TabConversationNavigation', () => {
     const otherManager = {
       isTabLive: jest.fn(() => targetTab.lifecycleState !== 'closing'),
       getTabIdentities: () => [targetTab],
-      switchToTab,
+      focusTab: switchToTab,
     };
     const otherView = {
       leaf: {},

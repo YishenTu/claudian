@@ -68,7 +68,6 @@ export class ViewerSlot {
     this.#assertLinkedContentExists(linkedContentPath);
 
     await this.host.navigation.enqueue(null, async (isCurrent) => {
-      this.#draftOriginId = null;
       await this.#startDraft(isCurrent, linkedContentPath);
     });
   }
@@ -110,6 +109,7 @@ export class ViewerSlot {
       const { membership, parkedDrafts } = this.host;
       const active = this.#activePreview();
       const narrowTab = active ? this.#narrowTabFor(active) : null;
+      const origin = this.#draftOrigin();
       this.#draftOriginId = null;
       if (active && narrowTab) {
         parkedDrafts.park(active, ParkedDrafts.keyFor(narrowTab));
@@ -117,6 +117,8 @@ export class ViewerSlot {
       } else if (active) {
         commitProvisionalTab(active);
       }
+      // A continued new session not shown at the end of wide returns to the blank tab it came from.
+      if (origin && narrowTab?.id !== origin.id) parkedDrafts.move('new-session', ParkedDrafts.keyFor(origin));
       await this.#closePreviews(null);
       if (membership.isDestroyed() || this.#activeIdentity()) return;
       const fallback = membership.getRetainedActiveTabId() ?? membership.getTabIdentities()[0]?.id;
@@ -181,7 +183,16 @@ export class ViewerSlot {
     if (preview.conversationId) {
       return narrowTabs.find(tab => tab.conversationId === preview.conversationId) ?? null;
     }
-    return narrowTabs.find(tab => tab.id === this.#draftOriginId && tab.conversationId === null) ?? null;
+    return this.#draftOrigin();
+  }
+
+  /** The live blank narrow tab whose new session the wide drafts continue. */
+  #draftOrigin(): Readonly<TabIdentity> | null {
+    const { membership } = this.host;
+    const origin = this.#draftOriginId ? membership.getIdentity(this.#draftOriginId) : null;
+    return origin && origin.lifecycleState === 'open' && origin.conversationId === null && membership.isTabAlive(origin)
+      ? origin
+      : null;
   }
 
   #activeIdentity(): Readonly<TabIdentity> | null {

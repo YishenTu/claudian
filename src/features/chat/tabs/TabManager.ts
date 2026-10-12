@@ -38,7 +38,7 @@ import type {
   TabLayoutPolicy,
   TabManagerCallbacks,
 } from '@/features/chat/tabs/types';
-import { ViewerSlot } from '@/features/chat/tabs/ViewerSlot';
+import { linkedContentExists, ViewerSlot } from '@/features/chat/tabs/ViewerSlot';
 import type { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 import { revealWorkspaceLeaf } from '@/utils/obsidianCompat';
 
@@ -82,7 +82,7 @@ export class TabManager implements TabManagerInterface {
   /** The single owner of per-tab state; collaborators read it as a `TabMembershipView`. */
   private readonly membership = new TabMembership();
   /** Unsent composer text no presentation shows: wide-layout sessions and unloaded narrow tabs. */
-  private readonly parkedDrafts = new ParkedDrafts();
+  private readonly parkedDrafts: ParkedDrafts;
   private callbacks: TabManagerCallbacks;
   private readonly commandDiscovery: TabCommandDiscovery;
   private readonly providerPresence: TabProviderPresence;
@@ -108,6 +108,7 @@ export class TabManager implements TabManagerInterface {
     this.containerEl = containerEl;
     this.view = view;
     this.callbacks = callbacks;
+    this.parkedDrafts = new ParkedDrafts(path => linkedContentExists(plugin.app, path));
     const { membership } = this;
     this.commandDiscovery = new TabCommandDiscovery(plugin, membership);
     const forkTargetHost: ForkTargetHost = {
@@ -654,6 +655,16 @@ export class TabManager implements TabManagerInterface {
     }
 
     await this.createTab();
+  }
+
+  /** Shows a tab's session the layout's way: the wide viewer for a narrow tab, otherwise the tab. */
+  async focusTab(tabId: TabId): Promise<void> {
+    const identity = this.membership.getIdentity(tabId);
+    if (identity?.conversationId && identity.lifecycleState === 'open' && this.layoutPolicy.showsPreviews()) {
+      await this.viewerSlot.show(identity.conversationId);
+      return;
+    }
+    await this.switchToTab(tabId);
   }
 
   /** Unloads an assembled narrow tab to its identity; its session keeps running unattached. */

@@ -174,7 +174,7 @@ export class TabConversationNavigation {
     ) {
       return false;
     }
-    await targetManager.switchToTab(crossViewResult.tabId);
+    await targetManager.focusTab(crossViewResult.tabId);
     if (!isCurrent()) return true;
     return ownsConversation();
   }
