@@ -28,6 +28,8 @@ interface Attempt {
 /** Append-only rendering of one native turn; admission and event scopes belong to the session. */
 export class DeepSeekOutput {
   private readonly attempts = new Map<string, Attempt>();
+  /** Attempts by the seq of their durable settlement, so late records reach a superseded attempt. */
+  private readonly committed = new Map<number, Attempt>();
   private readonly records = new Set<number>();
   private readonly calls = new Map<string, DeepSeekToolCall>();
   private readonly completedTools = new Set<string>();
@@ -56,6 +58,7 @@ export class DeepSeekOutput {
       this.chunk(attempt, value.chunk);
     } else if (value.type === 'end' && isRecord(value.outcome)) {
       if (value.outcome.kind === 'abandoned' && attempt.blocks.size > 0) throw new DeepSeekReplayError();
+      if (typeof value.outcome.seq === 'number') this.committed.set(value.outcome.seq, attempt);
       attempt.settled = true;
     } else throw new Error('Malformed DeepSeek assistant frame.');
   }
@@ -89,11 +92,13 @@ export class DeepSeekOutput {
       this.model = typeof data.provider === 'string' && typeof data.model === 'string' ? encodeDeepSeekModelId(data.provider, data.model) : undefined;
     } else if (value.type === 'assistant/message' || value.type === 'assistant/attempt') {
       const key = attemptKey(data);
-      const attempt = this.attempts.get(key) ?? this.select(`durable:${value.seq}`, key, 0);
+      const active = this.attempts.get(key);
+      const attempt = this.committed.get(value.seq) ?? (active && !active.settled ? active : this.select(`durable:${value.seq}`, key, 0));
       const content = isRecord(data.message) && Array.isArray(data.message.content) ? data.message.content : undefined;
       const blocks = content ? contentBlocks(content) : compactBlocks(Array.isArray(data.stream) ? data.stream : []);
       this.reconcileBlocks(attempt, blocks);
       attempt.settled = true;
+      this.committed.set(value.seq, attempt);
       this.usage(data.usage);
     } else if (value.type === 'tool/call') {
       this.toolStart(data.callId, data.name, data.arguments);
@@ -120,7 +125,8 @@ export class DeepSeekOutput {
   private select(id: string, key: string, revision: number): Attempt {
     let attempt = this.attempts.get(key);
     if (attempt && attempt.id !== id) {
-      if (attempt.blocks.size > 0) throw new DeepSeekReplayError();
+      // Native retries a failed request as a fresh attempt at the same step; settled output stays and the retry appends.
+      if (attempt.blocks.size > 0 && !attempt.settled) throw new DeepSeekReplayError();
       attempt = undefined;
     }
     if (!attempt) {

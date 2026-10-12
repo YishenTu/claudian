@@ -34,6 +34,28 @@ it.each(['divergent', 'abandoned', 'replacement', 'missing-chunk'])('rejects %s 
   expect(events.filter(e => e.type === 'text_delta')).toEqual([{ type: 'text_delta', text: 'Hello' }]);
 });
 
+it('renders a native retry of a settled step from the durable log after the interrupted attempt', () => {
+  const reasoning = { type: 'reasoning-chunks', time0: now, index: 0, dt: [0], texts: ['Thinking'] };
+  output.record({ type: 'assistant/attempt', seq: 86, time: now, data: { turn: 1, step: 11, stream: [reasoning] } });
+  output.record({ type: 'assistant/attempt', seq: 89, time: now, data: { turn: 1, step: 11, stream: [] } });
+  output.record({ type: 'assistant/message', seq: 92, time: now, data: { turn: 1, step: 11, message: { content: [{ type: 'text', text: 'Answer' }] } } });
+  expect(events.filter(e => e.type === 'thinking_delta' || e.type === 'text_delta')).toEqual([
+    { type: 'thinking_delta', text: 'Thinking' }, { type: 'text_delta', text: 'Answer' },
+  ]);
+});
+
+it('appends a live native retry and matches late durable records to their own attempt', () => {
+  output.frame(start); output.frame(textChunk('Hel'));
+  output.frame({ type: 'end', attemptId: 'attempt', revision: 3, index: 1, outcome: { kind: 'committed', eventType: 'assistant/attempt', seq: 20 } });
+  output.frame({ ...start, attemptId: 'retry', revision: 4 });
+  output.frame({ ...textChunk('Hello'), attemptId: 'retry', revision: 5 });
+  output.record({ type: 'assistant/attempt', seq: 20, time: now, data: { turn: 1, step: 0, stream: [{ type: 'text-chunks', time0: now, index: 0, dt: [0], texts: ['Hel'] }] } });
+  output.record({ type: 'assistant/message', seq: 21, time: now, data: { turn: 1, step: 0, message: { content: [{ type: 'text', text: 'Hello world' }] } } });
+  expect(events.filter(e => e.type === 'text_delta')).toEqual([
+    { type: 'text_delta', text: 'Hel' }, { type: 'text_delta', text: 'Hello' }, { type: 'text_delta', text: ' world' },
+  ]);
+});
+
 it('keeps native PTC dispatches nested under one execution and normalizes usage', () => {
   const tool = { type: 'tool/call', seq: 12, time: now, data: { callId: 'outer', name: 'run_code', arguments: '{"code":"await read()"}' } };
   output.record(tool); output.record(tool);
