@@ -31,6 +31,7 @@ export function buildTabRuntimePorts(
     placement: createTabPlacementPort(
       dom,
       hostEl => controllers.sideChatController.setCollapsedHost(hostEl),
+      hostEl => controllers.sideChatController.setFullHeightHost(hostEl),
     ),
     refreshProviderControls: () => {
       refreshTabContextUsage(getRuntime(), plugin);
@@ -99,6 +100,7 @@ export function createTabComposerPort(
 export function createTabPlacementPort(
   dom: Pick<TabDOMElements, 'contentEl' | 'inputComposerEl' | 'messagesWrapperEl' | 'inputEl'>,
   setSideChatChipHost: (hostEl: HTMLElement | null) => void,
+  setSideChatFullHeightHost: (hostEl: HTMLElement | null) => void,
 ): TabPlacementPort {
   const { contentEl, inputComposerEl: composerEl, messagesWrapperEl: transcriptEl } = dom;
   return {
@@ -123,6 +125,7 @@ export function createTabPlacementPort(
       };
     },
     setSideChatChipHost,
+    setSideChatFullHeightHost,
   };
 }
 

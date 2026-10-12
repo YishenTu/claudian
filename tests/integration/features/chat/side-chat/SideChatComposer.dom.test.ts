@@ -300,6 +300,41 @@ it('uses the navigation row for a single-tab chip and moves it above navigation 
   expect(host.childElementCount).toBe(0);
 });
 
+it('applies full height to the view only for the active tab expanded in the footer', async () => {
+  const harness = createHarness();
+  let activeController = harness.controller;
+  const { placement, chatPanelEl } = mountChipPlacement({
+    getActiveTab: () => chipTabFor(activeController),
+    isWide: () => false,
+    getTabCount: () => 2,
+  });
+  placement.updateChip();
+  const { started } = await startSideChat(harness);
+  harness.backend.latest.establishChild('child-session');
+  harness.backend.latest.complete();
+  await started;
+  const isFullHeight = () => chatPanelEl.classList.contains('claudian-chat-panel--side-chat-full-height');
+  expect(isFullHeight()).toBe(false);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Full height' }));
+  expect(isFullHeight()).toBe(true);
+
+  activeController = createHarness().controller;
+  placement.updateChip();
+  expect(isFullHeight()).toBe(false);
+  activeController = harness.controller;
+  placement.updateChip();
+  expect(isFullHeight()).toBe(true);
+
+  harness.controller.collapse();
+  expect(isFullHeight()).toBe(false);
+  harness.controller.expand();
+  expect(isFullHeight()).toBe(true);
+
+  await harness.controller.discard();
+  expect(isFullHeight()).toBe(false);
+});
+
 /** Mounts the view footer placement over a fake active tab whose chip host is the real side chat. */
 function mountChipPlacement(context: {
   getActiveTab(): { placement: ReturnType<typeof createTabPlacementPort> };
@@ -315,16 +350,23 @@ function mountChipPlacement(context: {
   placement.mount(chatPanelEl);
   const footer = chatPanelEl.querySelector<HTMLElement>('.claudian-input-footer')!;
   const navHost = footer.querySelector<HTMLElement>('.claudian-view-input-nav-row')!;
-  return { placement, footer, navHost };
+  return { placement, chatPanelEl, footer, navHost };
 }
 
 const chipTabs = new WeakMap<object, { placement: ReturnType<typeof createTabPlacementPort> }>();
 
 /** A stable tab per side chat controller whose placement routes the chip like an assembled tab. */
-function chipTabFor(controller: { setCollapsedHost(host: HTMLElement | null): void }) {
+function chipTabFor(controller: {
+  setCollapsedHost(host: HTMLElement | null): void;
+  setFullHeightHost(host: HTMLElement | null): void;
+}) {
   let tab = chipTabs.get(controller);
   if (!tab) {
-    tab = { placement: createTabPlacementPort({} as never, host => controller.setCollapsedHost(host)) };
+    tab = { placement: createTabPlacementPort(
+      {} as never,
+      host => controller.setCollapsedHost(host),
+      host => controller.setFullHeightHost(host),
+    ) };
     chipTabs.set(controller, tab);
   }
   return tab;

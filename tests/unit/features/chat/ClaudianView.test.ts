@@ -304,7 +304,7 @@ describe('ClaudianView tab controls', () => {
       id: 'tab-1',
       conversationId: null,
       dom,
-      placement: createTabPlacementPort(dom as never, setSideChatChipHost),
+      placement: createTabPlacementPort(dom as never, setSideChatChipHost, () => {}),
     };
     const manager = createFakeTabManager({
       getActiveTab: jest.fn().mockReturnValue(tab),

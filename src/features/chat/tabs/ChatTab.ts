@@ -100,6 +100,8 @@ export interface TabPlacementPort {
   /** Moves the transcript into `hostEl`, leaving an anchor that the returned handle restores. */
   placeTranscript(hostEl: HTMLElement): TabTranscriptPlacement;
   setSideChatChipHost(hostEl: HTMLElement | null): void;
+  /** Lends the view element that a full height side chat takes over; null outside the view footer. */
+  setSideChatFullHeightHost(hostEl: HTMLElement | null): void;
 }
 
 /**

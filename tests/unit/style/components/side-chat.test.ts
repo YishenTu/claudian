@@ -57,6 +57,10 @@ describe('Side chat full height styles', () => {
       .appendChild(document.createElement('div'));
     composerEl.className = 'claudian-input-composer claudian-side-chat-expanded';
     const panel = new SideChatPanel(composerEl, { onCollapse: () => {}, onDiscard: () => {}, onExpand: () => {} });
+    // The view lends its chat panel only while the composer sits in its footer slot.
+    if (composerParentSelector === '.claudian-active-input-slot') {
+      panel.setFullHeightHost(document.querySelector<HTMLElement>('.claudian-chat-panel'));
+    }
     return {
       panel,
       panelEl: panel.rootEl.querySelector<HTMLElement>('.claudian-side-chat-panel')!,
@@ -65,6 +69,10 @@ describe('Side chat full height styles', () => {
       footerEl: document.querySelector<HTMLElement>('.claudian-input-footer')!,
     };
   }
+
+  it('avoids :has, which forces broad selector invalidation', () => {
+    expect(readFileSync(path.resolve('src/style/components/side-chat.css'), 'utf8')).not.toContain(':has(');
+  });
 
   it('gives the main transcript space to the side panel while full height', () => {
     const { panel, panelEl, transcriptEl, navRowEl, footerEl } = renderView();

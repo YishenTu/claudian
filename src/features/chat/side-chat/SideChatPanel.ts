@@ -9,6 +9,8 @@ export interface SideChatPanelCallbacks {
   onDiscard(): void;
 }
 
+const FULL_HEIGHT_HOST_CLASS = 'claudian-chat-panel--side-chat-full-height';
+
 let panelSequence = 0;
 
 /**
@@ -29,6 +31,7 @@ export class SideChatPanel {
   readonly #collapseEl: HTMLButtonElement;
   readonly #fullHeightEl: HTMLButtonElement;
   #collapsedHost: HTMLElement | null = null;
+  #fullHeightHost: HTMLElement | null = null;
   #expanded = true;
   #fullHeight = false;
 
@@ -108,6 +111,14 @@ export class SideChatPanel {
     this.#updateLocation();
   }
 
+  /** The view lends its chat panel while this composer is its active footer composer. */
+  setFullHeightHost(host: HTMLElement | null): void {
+    if (host === this.#fullHeightHost) return;
+    this.#fullHeightHost?.removeClass(FULL_HEIGHT_HOST_CLASS);
+    this.#fullHeightHost = host;
+    this.#setFullHeight(this.#fullHeight);
+  }
+
   setExpanded(expanded: boolean): void {
     const hadFocus = this.rootEl.contains(this.rootEl.ownerDocument.activeElement);
     this.#expanded = expanded;
@@ -145,6 +156,7 @@ export class SideChatPanel {
   }
 
   destroy(): void {
+    this.setFullHeightHost(null);
     this.rootEl.remove();
   }
 
@@ -158,7 +170,9 @@ export class SideChatPanel {
       this.#fullHeightEl.setAttribute('aria-pressed', fullHeight ? 'true' : 'false');
       setIcon(this.#fullHeightEl, fullHeight ? 'fold-vertical' : 'unfold-vertical');
     }
-    this.rootEl.toggleClass('claudian-side-chat--full-height', fullHeight && this.#expanded);
+    const applied = fullHeight && this.#expanded;
+    this.rootEl.toggleClass('claudian-side-chat--full-height', applied);
+    this.#fullHeightHost?.toggleClass(FULL_HEIGHT_HOST_CLASS, applied);
   }
 
   #updateLocation(): void {

@@ -51,6 +51,7 @@ export class SideChatController {
   #panel: SideChatPanel | null = null;
   #runtime: SideChatRuntime | null = null;
   #collapsedHost: HTMLElement | null = null;
+  #fullHeightHost: HTMLElement | null = null;
   #boundConversationId: string | null = null;
   #mainPlaceholder: string | null = null;
   #startSequence = 0;
@@ -79,6 +80,7 @@ export class SideChatController {
       this.#applyDestinationPresentation('main');
     });
     this.#collapsedHost = null;
+    this.#fullHeightHost = null;
     this.#mainPlaceholder = null;
     this.#presentation = null;
   }
@@ -105,6 +107,11 @@ export class SideChatController {
   setCollapsedHost(host: HTMLElement | null): void {
     this.#collapsedHost = host;
     this.#panel?.setCollapsedHost(host);
+  }
+
+  setFullHeightHost(host: HTMLElement | null): void {
+    this.#fullHeightHost = host;
+    this.#panel?.setFullHeightHost(host);
   }
 
   /** Draft-only colour preview; it never captures a source or starts work. */
@@ -334,6 +341,7 @@ export class SideChatController {
     presentation.composerEl.insertBefore(panel.rootEl, presentation.composerEl.firstChild);
     this.#panel = panel;
     panel.setCollapsedHost(this.#collapsedHost);
+    panel.setFullHeightHost(this.#fullHeightHost);
     runtime.attachPresentation({ component: presentation.component, messagesEl: panel.messagesEl, getPromptParentEl: () => panel.promptsEl });
     this.#applyDestinationPresentation('side');
     this.#refreshPanel();

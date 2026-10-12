@@ -12,6 +12,7 @@ export interface ChatPresentationContext {
  * and side-chat chip live, in the view footer or in attached zen slots.
  */
 export class ChatPresentationPlacement {
+  private chatPanelEl: HTMLElement | null = null;
   private inputFooterEl: HTMLElement | null = null;
   private sideChatChipHostEl: HTMLElement | null = null;
   private inputNavRowHostEl: HTMLElement | null = null;
@@ -31,6 +32,7 @@ export class ChatPresentationPlacement {
 
   /** Builds the view-owned footer: chip slot, navigation row host, and composer slot. */
   mount(chatPanelEl: HTMLElement): void {
+    this.chatPanelEl = chatPanelEl;
     this.inputFooterEl = chatPanelEl.createDiv({ cls: 'claudian-input-footer' });
     this.sideChatChipHostEl = this.inputFooterEl.createDiv({ cls: 'claudian-side-chat-chip-slot' });
     this.inputNavRowHostEl = this.inputFooterEl.createDiv({
@@ -84,7 +86,7 @@ export class ChatPresentationPlacement {
     this.activeInputTab = activeTab;
   }
 
-  /** Places the side-chat chip host for the active tab and the current layout. */
+  /** Lends the side-chat chip and full height hosts to the active tab for the current layout. */
   updateChip(): void {
     const hostEl = this.sideChatChipHostEl;
     if (!hostEl) return;
@@ -97,12 +99,17 @@ export class ChatPresentationPlacement {
       }
     }
     const chipTab = this.context.getActiveTab();
-    if (this.sideChatChipTab !== chipTab) this.sideChatChipTab?.placement.setSideChatChipHost(null);
+    if (this.sideChatChipTab !== chipTab) {
+      this.sideChatChipTab?.placement.setSideChatChipHost(null);
+      this.sideChatChipTab?.placement.setSideChatFullHeightHost(null);
+    }
     this.sideChatChipTab = chipTab;
     // Zen provides its own chip slot; the wide layout keeps the chip inside the composer.
     chipTab?.placement.setSideChatChipHost(
       this.zenSlots?.sideChatChipEl ?? (isWide ? null : hostEl),
     );
+    // The floating zen composer has no transcript of its own to give up.
+    chipTab?.placement.setSideChatFullHeightHost(this.zenSlots ? null : this.chatPanelEl);
   }
 
   /** Lends presentation to zen slots until the returned release runs. */
@@ -119,6 +126,7 @@ export class ChatPresentationPlacement {
   /** Returns the chip and the active composer to their tab-owned locations. */
   restoreAll(): void {
     this.sideChatChipTab?.placement.setSideChatChipHost(null);
+    this.sideChatChipTab?.placement.setSideChatFullHeightHost(null);
     this.sideChatChipTab = null;
     if (!this.activeInputTab) return;
 
