@@ -18,10 +18,11 @@ export function resolveCommandDiscoveryTimeoutMs(
 /** Catalog-only discovery for surfaces without a chat session. */
 export function createCatalogCommandDiscoveryStore(
   catalog: ProviderCommandCatalog,
+  options: { includeBuiltIns?: boolean } = {},
 ): ProviderCommandDiscoveryStore<ProviderCommandEntry> {
   return new ProviderCommandDiscoveryStore(
     async signal => normalizeProviderCommandDiscoveryItems(
-      await catalog.listDropdownEntries({ includeBuiltIns: false, signal }),
+      await catalog.listDropdownEntries({ includeBuiltIns: options.includeBuiltIns ?? false, signal }),
     ),
     { resolveTimeoutMs: () => resolveCommandDiscoveryTimeoutMs(catalog.getDropdownConfig()) },
   );

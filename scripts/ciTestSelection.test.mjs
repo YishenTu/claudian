@@ -93,6 +93,9 @@ test('filesystem-read documentation, styles, and captured fixtures retain their 
   assert.deepEqual(select(['README.md']).testFiles, [docs]);
   assert.deepEqual(select(['src/features/chat/AGENTS.md']).testFiles, [docs]);
   assert.ok(select(['src/style/components/code.css']).testFiles.includes('tests/unit/style/components/code.test.ts'));
+  assert.ok(select(['src/style/components/composer-dropdown.css']).testFiles.includes(
+    'tests/integration/features/inline-edit/ui/InlineEditSession.lifecycle.dom.test.ts',
+  ));
   for (const consumer of [
     'tests/unit/style/components/zen-mode.test.ts',
     'tests/unit/style/settings/base.test.ts',

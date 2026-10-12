@@ -27,6 +27,9 @@ const styleSuites = (existsSync(styleSuiteDirectory) ? readdirSync(styleSuiteDir
 // These consumers read files through fs rather than imports, so Jest cannot find their edges.
 const fileConsumers = [
   [/^src\/i18n\/locales\/.*\.json$/, ['tests/integration/build/dependency-envelope.test.ts']],
+  [/^src\/style\/components\/composer-dropdown\.css$/, [
+    'tests/integration/features/inline-edit/ui/InlineEditSession.lifecycle.dom.test.ts',
+  ]],
   [/^src\/style\//, [
     ...styleSuites,
     'tests/unit/features/chat/tabs/TabAttentionStyles.test.ts',

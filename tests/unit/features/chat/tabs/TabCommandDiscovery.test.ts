@@ -13,6 +13,7 @@ import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { RuntimeCommandCatalog } from '@/core/providers/commands/RuntimeCommandCatalog';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import { CodexCommandCatalog } from '@/providers/codex/commands/CodexCommandCatalog';
 
 jest.mock('@/features/chat/tabs/TabLifecycle', () => (
   jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').tabLifecycleModuleMock()
@@ -137,6 +138,27 @@ describe('TabCommandDiscovery', () => {
       conversation: null,
     }));
     expect(commandLoader.loadCommands.mock.calls[0][0]).not.toHaveProperty('runtime');
+  });
+
+  it('discovers provider-owned compact commands for Main Chat', async () => {
+    const codexCatalog = new CodexCommandCatalog({
+      listSkills: jest.fn().mockResolvedValue([]),
+      invalidate: jest.fn(),
+    });
+    jest.mocked(ProviderWorkspaceRegistry.getCommandCatalog).mockReturnValue(codexCatalog);
+    jest.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockReturnValue(null);
+    const { manager } = createManager();
+    const tab = await manager.createTab();
+    tab!.session.selectDraft('codex', 'codex-default');
+
+    try {
+      await expect(reloadDiscovery(0, tab)).resolves.toMatchObject({
+        status: 'ready',
+        items: [{ name: 'compact', displayPrefix: '/', insertPrefix: '/' }],
+      });
+    } finally {
+      await manager.destroy();
+    }
   });
 
   it('does not start isolated command metadata for a background tab', async () => {
