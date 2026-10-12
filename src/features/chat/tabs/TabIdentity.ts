@@ -23,8 +23,6 @@ export interface TabIdentity {
   lifecycleState: TabLifecycleState;
   /** The user's name for the tab; it stays with the tab, not the conversation it shows. */
   label?: string;
-  /** An unloaded blank tab's held draft session, reattached by this key; never persisted. */
-  draftSessionKey?: string;
 }
 
 /** A blank tab's provider and draft model. */
@@ -48,7 +46,6 @@ export function createTabIdentity(
     providerId?: ProviderId | null;
     lifecycleState?: TabLifecycleState;
     label?: string;
-    draftSessionKey?: string;
   },
 ): TabIdentity {
   const isBound = !!conversation?.id;
@@ -77,7 +74,6 @@ export function createTabIdentity(
     providerId: initialProviderId,
     conversationId: conversation?.id ?? null,
     ...(options.label ? { label: options.label } : {}),
-    ...(!isBound && options.draftSessionKey ? { draftSessionKey: options.draftSessionKey } : {}),
   };
 }
 

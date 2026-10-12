@@ -2,7 +2,7 @@ import type { App } from 'obsidian';
 
 import type { DraftSessionHold } from '@/features/chat/sessions/SessionRuntimePool';
 import type { TabId } from '@/features/chat/tabs/ChatTab';
-import { ParkedDrafts } from '@/features/chat/tabs/ParkedDrafts';
+import type { ParkedDrafts } from '@/features/chat/tabs/ParkedDrafts';
 import type { NavigationRequestCheck, TabConversationNavigation } from '@/features/chat/tabs/TabConversationNavigation';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import { commitProvisionalTab } from '@/features/chat/tabs/TabLifecycle';
@@ -23,10 +23,15 @@ export interface ViewerSlotHost {
   readonly navigation: TabConversationNavigation;
   /** Unsent text no presentation shows; assemblies and rebinds take what is held for them. */
   readonly parkedDrafts: ParkedDrafts;
-  /** Creates and activates a provisional tab, reattaching a held draft session by key if given. */
-  createPreview(conversationId: string | null, draftSessionKey?: string): Promise<AssembledTabRuntime | null>;
+  /**
+   * Creates and activates a provisional tab: reattaching a held draft session by key, or
+   * seeding a new draft with a saved selection.
+   */
+  createPreview(conversationId: string | null, draft?: DraftSource): Promise<AssembledTabRuntime | null>;
   /** Keeps a draft session alive while nothing shows it. */
   holdDraft(tab: AssembledTabRuntime): DraftSessionHold;
+  /** The key of the draft session an unloaded blank tab holds, if any. */
+  heldDraftKey(tabId: TabId): string | null;
   /** Makes an unloaded blank tab the owner of the draft session `tab` shows. */
   adoptDraft(tabId: TabId, tab: AssembledTabRuntime): void;
   switchToTab(tabId: TabId): Promise<void>;
@@ -39,6 +44,9 @@ export interface ViewerSlotHost {
   /** Closes a preview and then activates the narrow tab that takes over its session. */
   handOver(tabId: TabId, successorId: TabId): Promise<boolean>;
 }
+
+/** Where a blank preview's draft session comes from: a held session, or a saved selection. */
+export type DraftSource = { draftSessionKey?: string } & Partial<Pick<TabIdentity, 'draftModel' | 'providerId'>>;
 
 export interface ViewerSlotRequest {
   /** The tab whose command issued the request; the request lapses once it stops being live. */
@@ -101,10 +109,13 @@ export class ViewerSlot {
         await this.#show(selection.conversationId, isCurrent);
         return;
       }
-      const draftSessionKey = selection ? membership.getIdentity(selection.id)?.draftSessionKey : undefined;
-      const draft = await this.#startDraft(isCurrent, undefined, draftSessionKey);
+      const saved = selection ? membership.getIdentity(selection.id) : null;
+      const heldKey = saved ? this.host.heldDraftKey(saved.id) : null;
+      const draft = await this.#startDraft(
+        isCurrent, undefined, saved ? { ...saved, ...(heldKey ? { draftSessionKey: heldKey } : {}) } : undefined,
+      );
       // A blank tab that never had a session continues as the draft the viewer now shows.
-      if (selection && draft && !draftSessionKey) this.host.adoptDraft(selection.id, draft);
+      if (saved && draft && !heldKey) this.host.adoptDraft(saved.id, draft);
     });
   }
 
@@ -122,7 +133,7 @@ export class ViewerSlot {
       const active = this.#activePreview();
       const narrowTab = active ? this.#narrowTabFor(active) : null;
       if (active && narrowTab) {
-        parkedDrafts.park(active, ParkedDrafts.keyForIdentity(narrowTab));
+        parkedDrafts.park(active);
         await this.host.handOver(active.id, narrowTab.id);
       } else if (active) {
         commitProvisionalTab(active);
@@ -171,22 +182,23 @@ export class ViewerSlot {
   async #startDraft(
     isCurrent: NavigationRequestCheck,
     linkedContentPath?: string,
-    draftSessionKey?: string,
+    source?: DraftSource,
   ): Promise<AssembledTabRuntime | null> {
     const { membership, parkedDrafts } = this.host;
     this.#assertLinkedContentExists(linkedContentPath);
     const active = this.#activePreview();
     // The shown blank draft already is the new session.
-    if (active && !active.conversationId && linkedContentPath === undefined && draftSessionKey === undefined) {
+    if (active && !active.conversationId && linkedContentPath === undefined && source === undefined) {
       active.composer.focus();
       return active;
     }
-    const key = draftSessionKey ?? (linkedContentPath === undefined ? this.#newSession?.key : undefined);
+    const draft = source
+      ?? (linkedContentPath === undefined && this.#newSession ? { draftSessionKey: this.#newSession.key } : undefined);
     for (const preview of this.#livePreviews()) {
       if (!preview.conversationId && linkedContentPath !== undefined) this.#rememberNewSession(preview);
       parkedDrafts.park(preview);
     }
-    const tab = await this.host.createPreview(null, key);
+    const tab = await this.host.createPreview(null, draft);
     if (!tab) throw new Error('Failed to create a provisional chat tab');
     // Attached again, the new session no longer needs the slot's hold.
     if (this.#newSession?.key === tab.session.runtime.sessionKey) {
@@ -226,7 +238,7 @@ export class ViewerSlot {
     return membership.getTabIdentities().find(tab => (
       tab.lifecycleState === 'open' && membership.isTabAlive(tab) && (
         (!!preview.conversationId && tab.conversationId === preview.conversationId)
-        || tab.draftSessionKey === sessionKey
+        || this.host.heldDraftKey(tab.id) === sessionKey
       )
     )) ?? null;
   }

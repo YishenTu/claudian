@@ -530,6 +530,35 @@ describe('ViewerSlot', () => {
       expect([shownDraft(manager), (restored.linkedContent as any).getSnapshot().path]).toEqual(['new idea', 'chosen.md']);
     });
 
+    it("seeds a cold wide restore's new session from the saved blank tab selection", async () => {
+      const { manager } = createManager(conversationPlugin(), {}, {}, { showsPreviews: () => true });
+
+      await manager.restoreState({
+        openTabs: [{ tabId: 'draft', conversationId: null, draftModel: 'codex:gpt-5', providerId: 'codex' }],
+        activeTabId: 'draft',
+      });
+
+      const preview = manager.getActiveTab()!;
+      expect([preview.lifecycleState, preview.draftModel, preview.providerId]).toEqual(['provisional', 'codex:gpt-5', 'codex']);
+    });
+
+    it('keeps unsent text with a draft session that creates its conversation while unloaded', async () => {
+      const { manager } = createManager(conversationPlugin());
+      const blank = await manager.createTab(null);
+      await manager.viewerSlot.enter();
+      const session = manager.getActiveTab()!.session.runtime;
+      manager.getActiveTab()!.controllers.drafts.restore('main', { content: 'follow-up' });
+      await manager.viewerSlot.show('conversation-1');
+
+      session.setConversationId('created');
+      manager.reconcileUnloadedSessions();
+      await manager.viewerSlot.release();
+      await manager.switchToTab(blank!.id);
+
+      expect(manager.getActiveTab()!.session.runtime).toBe(session);
+      expect(shownDraft(manager)).toBe('follow-up');
+    });
+
     it('returns to the same new session when New follows browsing another session', async () => {
       const { manager } = createManager(conversationPlugin());
       await manager.viewerSlot.startDraft();

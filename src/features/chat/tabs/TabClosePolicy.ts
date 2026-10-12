@@ -121,26 +121,8 @@ export class TabClosePolicy {
       }
 
       // Replacement admission is complete; teardown is now irreversible.
-      membership.beginClose(tabId);
-      const closeErrors: unknown[] = [];
-      // Closing tabs cannot recreate metadata, so in-flight discovery is released once, now.
-      closeErrors.push(...this.host.releaseMetadata(tabId));
-
-      // Destroy resources, then release ownership even if teardown fails.
-      try {
-        if (runtime) await destroyTab(runtime);
-      } catch (error) {
-        closeErrors.push(error);
-      }
-      membership.remove(tabId);
-      if (membership.getActiveTabId() === tabId) membership.setActiveTabId(null);
-
+      const closeErrors = await this.#tearDown(tabId, runtime);
       if (!membership.isDestroyed()) {
-        try {
-          this.host.onTabClosed(tabId);
-        } catch (error) {
-          closeErrors.push(error);
-        }
         // Reconcile after every close because a different active tab may be closing concurrently.
         try {
           await this.#reconcileActiveTab(idsBefore, closingIndex);
@@ -169,21 +151,8 @@ export class TabClosePolicy {
     membership.claimClose(tabId);
     try {
       if (runtime && membership.getActiveTabId() === tabId) deactivateTab(runtime);
-      membership.beginClose(tabId);
-      const closeErrors: unknown[] = [...this.host.releaseMetadata(tabId)];
-      try {
-        if (runtime) await destroyTab(runtime);
-      } catch (error) {
-        closeErrors.push(error);
-      }
-      membership.remove(tabId);
-      if (membership.getActiveTabId() === tabId) membership.setActiveTabId(null);
+      const closeErrors = await this.#tearDown(tabId, runtime);
       if (membership.isDestroyed()) return true;
-      try {
-        this.host.onTabClosed(tabId);
-      } catch (error) {
-        closeErrors.push(error);
-      }
       try {
         await this.host.switchToTab(successorId);
       } catch (error) {
@@ -199,6 +168,32 @@ export class TabClosePolicy {
     } finally {
       membership.releaseCloseClaim(tabId);
     }
+  }
+
+  /**
+   * Irreversibly tears a claimed tab down: releases its metadata and resources, then its
+   * membership even if teardown fails, and publishes the close while the manager is live.
+   */
+  async #tearDown(tabId: TabId, runtime: AssembledTabRuntime | null): Promise<unknown[]> {
+    const { membership } = this.host;
+    membership.beginClose(tabId);
+    // Closing tabs cannot recreate metadata, so in-flight discovery is released once, now.
+    const errors: unknown[] = [...this.host.releaseMetadata(tabId)];
+    try {
+      if (runtime) await destroyTab(runtime);
+    } catch (error) {
+      errors.push(error);
+    }
+    membership.remove(tabId);
+    if (membership.getActiveTabId() === tabId) membership.setActiveTabId(null);
+    if (!membership.isDestroyed()) {
+      try {
+        this.host.onTabClosed(tabId);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    return errors;
   }
 
   async #reconcileActiveTab(idsBefore: readonly TabId[], closingIndex: number): Promise<void> {

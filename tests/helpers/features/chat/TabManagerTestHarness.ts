@@ -137,7 +137,7 @@ export function createMockTab(options: Record<string, any>): any {
     },
   };
   // The pool port reattaches a held draft by key; every other assembly starts its own session.
-  const heldKey = options.draftSessionKey ?? options.initialState?.draftSessionKey;
+  const heldKey = options.draftSessionKey;
   const session = (heldKey ? mockDraftSessions.get(heldKey) : undefined)
     ?? new ChatSessionRuntime({ ...tab }, tab.executionCoordinator as never, () => ({
       state: tab.state,

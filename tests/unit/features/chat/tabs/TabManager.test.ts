@@ -1188,6 +1188,22 @@ describe('TabManager provider execution orchestration', () => {
     expect(manager.getPersistedState().openTabs[0]).toEqual({ tabId: blank!.id, conversationId: 'created' });
   });
 
+  it('joins an unloaded draft session creating its conversation before the shutdown snapshot', async () => {
+    const { manager } = createManager();
+    const blank = await manager.createTab(null);
+    const session = blank!.session.runtime;
+    await manager.viewerSlot.enter();
+    await manager.viewerSlot.show('conversation-1');
+    jest.spyOn(session, 'awaitIdentitySettlement').mockImplementation(async () => {
+      await Promise.resolve();
+      session.setConversationId('created');
+    });
+
+    await manager.drainForShutdownSnapshot();
+
+    expect(manager.getPersistedState().openTabs[0]).toEqual({ tabId: blank!.id, conversationId: 'created' });
+  });
+
   it('reports an unloaded narrow tab from its running session', async () => {
     const running = { isWorking: true, statusAttention: 'review' };
     const { manager } = createManager(createPlugin({
@@ -1201,6 +1217,17 @@ describe('TabManager provider execution orchestration', () => {
     expect(manager.isTabWorking(narrow!.id)).toBe(true);
     expect(manager.getTabBarItems().find(item => item.id === narrow!.id))
       .toEqual(expect.objectContaining({ isWorking: true, attention: 'review' }));
+  });
+
+  it('reports an unloaded blank tab from its held draft session before it creates a conversation', async () => {
+    const { manager } = createManager();
+    const blank = await manager.createTab(null);
+    jest.spyOn(blank!.session.runtime, 'isWorking', 'get').mockReturnValue(true);
+    await manager.viewerSlot.enter();
+    await manager.viewerSlot.show('conversation-1');
+    expect(manager.getTab(blank!.id)).toBeNull();
+
+    expect(manager.isTabWorking(blank!.id)).toBe(true);
   });
 
   it('persists the active blank draft as a preview that survives reload', async () => {

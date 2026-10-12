@@ -14,7 +14,8 @@ export function buildTabRuntimeCore(options: TabRuntimeConstructionContext): Tab
   const dom = buildTabDOM(contentEl, options);
   const identity = options.initialState ? { ...options.initialState }
     : createTabIdentity(plugin.settings, conversation, { ...options, tabId: id });
-  const acquisition = plugin.sessionRuntimes.acquire(identity, { reveal: options.revealSession ?? (() => dom.inputEl.focus()) });
+  const sessionIdentity = options.draftSessionKey ? { ...identity, draftSessionKey: options.draftSessionKey } : identity;
+  const acquisition = plugin.sessionRuntimes.acquire(sessionIdentity, { reveal: options.revealSession ?? (() => dom.inputEl.focus()) });
   if (!acquisition.acquired) throw new SessionAlreadyAttached(acquisition.attachment);
   const { runtime } = acquisition.attachment;
   options.registerCleanup('session attachment', () => plugin.sessionRuntimes.release(acquisition.attachment));
