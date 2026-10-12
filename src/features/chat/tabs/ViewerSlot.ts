@@ -192,8 +192,8 @@ export class ViewerSlot {
       active.composer.focus();
       return active;
     }
-    const draft = source
-      ?? (linkedContentPath === undefined && this.#newSession ? { draftSessionKey: this.#newSession.key } : undefined);
+    const newSession = linkedContentPath === undefined ? this.#currentNewSession() : null;
+    const draft = source ?? (newSession ? { draftSessionKey: newSession.key } : undefined);
     for (const preview of this.#livePreviews()) {
       if (!preview.conversationId && linkedContentPath !== undefined) this.#rememberNewSession(preview);
       parkedDrafts.park(preview);
@@ -222,6 +222,15 @@ export class ViewerSlot {
     // One preview per view: the draft replaces every earlier one.
     await this.#closePreviews(tab.id);
     return tab;
+  }
+
+  /** The held new session, released once it has created its conversation: it is no longer new. */
+  #currentNewSession(): DraftSessionHold | null {
+    if (this.#newSession?.runtime.conversationId) {
+      this.#newSession.release();
+      this.#newSession = null;
+    }
+    return this.#newSession;
   }
 
   /** Holds a blank preview's draft session so New can return to it after another is shown. */

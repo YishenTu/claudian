@@ -572,6 +572,19 @@ describe('ViewerSlot', () => {
       expect(shownDraft(manager)).toBe('new idea');
     });
 
+    it('starts a fresh new session when the remembered one created its conversation while browsing', async () => {
+      const { manager } = createManager(conversationPlugin());
+      await manager.viewerSlot.startDraft();
+      const session = manager.getActiveTab()!.session.runtime;
+
+      await manager.viewerSlot.show('conversation-1');
+      session.setConversationId('created');
+      await manager.viewerSlot.startDraft();
+
+      expect(manager.getActiveTab()!.session.runtime).not.toBe(session);
+      expect(manager.getActiveTab()!.conversationId).toBeNull();
+    });
+
     it('leaves a usable presentation when narrowing supersedes an unloading wide entry', async () => {
       const { manager } = createManager(conversationPlugin());
       const narrow = await manager.createTab('conversation-1');
