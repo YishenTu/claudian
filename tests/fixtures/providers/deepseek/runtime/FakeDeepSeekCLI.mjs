@@ -3,6 +3,7 @@
 // It loads the lifecycle plugin named by `--patch`, as native does, and prints its launch URL across stdout chunks
 // while staying alive until its owner's stdin closes.
 import { appendFileSync, readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 const args = process.argv.slice(2);
 appendFileSync(process.env.FAKE_DSH_LOG, `${JSON.stringify({ pid: process.pid, cwd: process.cwd(), args })}\n`);
@@ -16,7 +17,7 @@ const mode = process.env.FAKE_DSH_MODE;
 const patch = JSON.parse(readFileSync(args[args.indexOf('--patch') + 1], 'utf8'));
 const lifecycle = patch.find(entry => entry.insert).insert.find(plugin => plugin.id === 'claudian-lifecycle');
 // `untethered` stands in for a Host whose lifecycle plugin never ends it.
-if (mode !== 'untethered') (await import(lifecycle.name)).apply();
+if (mode !== 'untethered') (await import(pathToFileURL(lifecycle.name).href)).apply();
 if (mode === 'exit') {
   process.stderr.write('profile failed to load\n');
   process.exit(3);

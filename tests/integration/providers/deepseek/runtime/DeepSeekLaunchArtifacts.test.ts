@@ -2,6 +2,7 @@ import { execFile, spawn } from 'node:child_process';
 import { access, mkdir, mkdtemp, readFile, rename, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
 import { prepareDeepSeekLaunchArtifacts } from '@/providers/deepseek/runtime/DeepSeekLaunchArtifacts';
@@ -42,7 +43,7 @@ it('gives every preset a live prompt file and its tool policy while keeping prom
     const edited = 'Edited prompt';
     await artifacts.writePrompt('claudian', first);
     const pluginPath = presets.claudian.name;
-    // Native imports row names directly; tests must not repair Windows paths or URL fragments for it.
+    // Native imports preset plugin names literally, so the test must not repair Windows paths or URL fragments.
     // Its prompt section must read the file at each assembly.
     const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', `
       import { writeFileSync } from 'node:fs';
@@ -67,7 +68,7 @@ it('gives every preset a live prompt file and its tool policy while keeping prom
     expect(result).toMatchObject({ persona: { interpolate: false, complete: false }, before: first, after: edited, webSurface: '' });
     expect(await readFile(new URL(pluginPath), 'utf8')).not.toContain(first);
 
-    const modes = await Promise.all([artifacts.patchPath, new URL(pluginPath), new URL(inserted[0].name), presets.claudian.config.promptFile].map(path => stat(path)));
+    const modes = await Promise.all([artifacts.patchPath, new URL(pluginPath), inserted[0].name, presets.claudian.config.promptFile].map(path => stat(path)));
     expect(process.platform === 'win32' || modes.every(mode => (mode.mode & 0o777) === 0o600)).toBe(true);
     await artifacts.dispose();
     await expect(access(artifacts.patchPath)).rejects.toThrow();
@@ -187,11 +188,12 @@ it('reports ready only once every durable store an ephemeral session could reach
     await promisify(execFile)(process.execPath, ['--input-type=module', '-e', `
       import fs from 'node:fs';
       import { syncBuiltinESMExports } from 'node:module';
+      import { pathToFileURL } from 'node:url';
       const { renameSync } = fs;
       let locked = 1;
       fs.renameSync = (...args) => { if (locked-- > 0) throw Object.assign(new Error('EPERM: file in use'), { code: 'EPERM' }); return renameSync(...args); };
       syncBuiltinESMExports();
-      const plugin = await import(process.argv[1]);
+      const plugin = await import(pathToFileURL(process.argv[1]).href);
       const backend = { create: async () => ({}), open: async () => ({}), stat: async () => undefined };
       const domains = { session_projcache: { table: () => ({ put: async () => {} }) } };
       const ctx = {
@@ -231,8 +233,15 @@ it('never republishes a fork token whose publication failed', async () => {
 });
 
 it('appends user plugin rows to the chat presets after Claudian\'s own rows, never to auxiliary presets', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'deepseek extra plugins '));
-  const extra = [{ id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo', config: { allowParallelInProgress: true } }, { id: 'my-plugin', name: 'my-dsh-plugin', disabled: false }];
+  const root = await mkdtemp(join(tmpdir(), 'deepseek extra plugins # '));
+  const local = join(root, 'local #1.mjs');
+  const extra = [
+    { id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo', config: { allowParallelInProgress: true } }, { id: 'my-plugin', name: 'my-dsh-plugin', disabled: false },
+    { id: 'local', name: local }, { id: 'local-group', name: 'cordis:group', group: true, config: [{ id: 'local-child', name: local }] },
+  ];
+  // Native imports preset rows literally, so absolute module paths must arrive as file URLs, as native makes inserted rows.
+  const launched = [...extra.slice(0, 2), { id: 'local', name: pathToFileURL(local).href },
+    { ...extra[3], config: [{ id: 'local-child', name: pathToFileURL(local).href }] }];
   const own = await prepareDeepSeekLaunchArtifacts(root);
   const extended = await prepareDeepSeekLaunchArtifacts(root, extra);
   try {
@@ -241,8 +250,8 @@ it('appends user plugin rows to the chat presets after Claudian\'s own rows, nev
     const [ownRows, extendedRows] = await Promise.all([presetRows(own.patchPath), presetRows(extended.patchPath)]);
     const ids = (rows: any[]) => rows.map(row => row.id);
     for (const chat of ['claudian', 'claudian-code']) {
-      expect(extendedRows[chat].slice(-2)).toEqual(extra);
-      expect(ids(extendedRows[chat].slice(0, -2))).toEqual(ids(ownRows[chat]));
+      expect(extendedRows[chat].slice(-extra.length)).toEqual(launched);
+      expect(ids(extendedRows[chat].slice(0, -extra.length))).toEqual(ids(ownRows[chat]));
     }
     for (const auxiliary of ['claudian-passive', 'claudian-read-only']) expect(ids(extendedRows[auxiliary])).toEqual(ids(ownRows[auxiliary]));
   } finally {
@@ -265,10 +274,11 @@ it('keeps ephemeral sessions in process memory and out of every durable dsh stor
 
     // Drive the bundled plugin against native service boundaries; real rc.2 probes qualify image normalization and storage.
     const script = `
+      import { pathToFileURL } from 'node:url';
       import { AsyncLocalStorage } from 'node:async_hooks';
       import { mkdir, readFile, writeFile } from 'node:fs/promises';
       import { dirname, join } from 'node:path';
-      const plugin = await import(process.argv[1]);
+      const plugin = await import(pathToFileURL(process.argv[1]).href);
       const config = JSON.parse(process.argv[2]);
       const out = { backend: [], projcache: [], workspaces: [], global: [], spilled: [], errors: {} };
       const backend = {
@@ -488,8 +498,9 @@ describe('owner lifecycle tether', () => {
       const lifecyclePath = patch.find((entry: { insert?: unknown }) => entry.insert).insert[0].name;
       // A stand-in Host that would otherwise run indefinitely, like dsh web.
       const child = spawn(process.execPath, ['--input-type=module', '-e', `
+        import { pathToFileURL } from 'node:url';
         ${interrupt}
-        const plugin = await import(process.argv[1]);
+        const plugin = await import(pathToFileURL(process.argv[1]).href);
         plugin.apply();
         setInterval(() => {}, 1000);
         process.stdout.write('ready');
