@@ -71,6 +71,9 @@ function createMockLinkedContent() {
   };
 }
 
+const mockDraftSessions = new Map<string, ChatSessionRuntime>();
+const mockLinkedContent = new WeakMap<ChatSessionRuntime, ReturnType<typeof createMockLinkedContent>>();
+
 export function createMockTab(options: Record<string, any>): any {
   const review = new ChatState();
   const input = { value: '', focus: jest.fn() };
@@ -109,7 +112,7 @@ export function createMockTab(options: Record<string, any>): any {
       },
     },
     composer: { focus: jest.fn() },
-    linkedContent: createMockLinkedContent(),
+    linkedContent: null as unknown as ReturnType<typeof createMockLinkedContent>,
     controllers: {
       drafts: new ComposerDraftController({ getInput: () => input as never, getImages: () => null, getDestination: () => 'main' }),
       conversationController: {
@@ -133,14 +136,22 @@ export function createMockTab(options: Record<string, any>): any {
     ui: {
     },
   };
-  tab.session = new TabSession(tab, new ChatSessionRuntime({ ...tab }, tab.executionCoordinator as never, () => ({
-    state: tab.state,
-    get hasPendingInteraction() { return tab.state.requiresAction; },
-    hydrate: jest.fn(async () => { tab.hydrationState = 'ready'; }),
-    acknowledgeReviewIfVisible: () => tab.state.acknowledgeReview(),
-    publish: () => tab.session.runtime.notifyChanged(),
-    dismissInteractions: () => undefined,
-  }) as never));
+  // The pool port reattaches a held draft by key; every other assembly starts its own session.
+  const heldKey = options.draftSessionKey ?? options.initialState?.draftSessionKey;
+  const session = (heldKey ? mockDraftSessions.get(heldKey) : undefined)
+    ?? new ChatSessionRuntime({ ...tab }, tab.executionCoordinator as never, () => ({
+      state: tab.state,
+      get hasPendingInteraction() { return tab.state.requiresAction; },
+      hydrate: jest.fn(async () => { tab.hydrationState = 'ready'; }),
+      acknowledgeReviewIfVisible: () => tab.state.acknowledgeReview(),
+      publish: () => tab.session.runtime.notifyChanged(),
+      dismissInteractions: () => undefined,
+    }) as never);
+  mockDraftSessions.set(session.sessionKey, session);
+  tab.session = new TabSession(tab, session);
+  // Linked content belongs to the session's model, so a reattached session keeps its choice.
+  tab.linkedContent = mockLinkedContent.get(session) ?? createMockLinkedContent();
+  mockLinkedContent.set(session, tab.linkedContent);
   for (const key of ['conversationId', 'providerId', 'draftModel'] as const) {
     Object.defineProperty(tab, key, { get: () => tab.session[key] });
   }
@@ -213,7 +224,11 @@ export function providerRegistryModuleMock() {
 
 export function createPlugin(overrides: Record<string, unknown> = {}) {
   return {
-    sessionRuntimes: { getAttachment: () => null, get: () => null },
+    sessionRuntimes: {
+      getAttachment: () => null,
+      get: () => null,
+      holdDraft: (runtime: ChatSessionRuntime) => ({ key: runtime.sessionKey, runtime, release: () => undefined }),
+    },
     app: {
       vault: { adapter: { basePath: '/vault' } },
       workspace: {

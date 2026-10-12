@@ -90,6 +90,31 @@ function setup() {
   return { attach, pool, plugin, backend, saves, statusChanges, setNativeHistory: (messages: Conversation['messages']) => { nativeHistory = messages; } };
 }
 
+it('reattaches a held blank draft session, with its selections, to the next presentation', async () => {
+  const h = setup();
+  Object.assign(h.plugin.app.workspace, { getActiveFile: () => null });
+  const first = await h.attach({ blank: true });
+  const runtime = first.session.runtime;
+  runtime.providerSelections.set('claude', { permissionMode: 'yolo', serviceTier: 'default' });
+  const hold = h.pool.holdDraft(runtime);
+  await destroyTab(first);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(runtime.isDisposed).toBe(false);
+
+  const second = await createTabRuntime({
+    plugin: h.plugin, component: new Component(), containerEl: document.body.createDiv(),
+    mentionDataProvider: new VaultMentionDataProvider(h.plugin.app), getProviderCatalogConfig: () => null,
+    isRuntimeLive: () => true, openConversation: async () => undefined, startNewConversation: async () => undefined,
+    draftSessionKey: hold.key,
+  });
+  hold.release();
+
+  expect(second.session.runtime).toBe(runtime);
+  expect(runtime.providerSelections.get('claude')?.permissionMode).toBe('yolo');
+  await destroyTab(second);
+});
+
 it('continues a requested response with no tab, then restores a pending approval and open response', async () => {
   const h = setup();
   const first = await h.attach();

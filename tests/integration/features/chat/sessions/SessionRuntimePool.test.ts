@@ -76,4 +76,36 @@ describe('session ownership across presentations', () => {
     await turn;
     expect(harness.coordinator.state).toBe('disposed');
   });
+
+  it('keeps a held detached draft reachable by its key, through promotion, until the hold ends', async () => {
+    const { pool } = setup();
+    const owner = { reveal: jest.fn() };
+    const flush = async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve(); };
+    const draft = pool.acquire({ conversationId: null, providerId: 'claude', draftModel: 'model' }, owner).attachment;
+    const runtime = draft.runtime;
+    runtime.providerSelections.set('claude', { permissionMode: 'normal', serviceTier: 'default' });
+    const hold = pool.holdDraft(runtime);
+    pool.release(draft);
+    await flush();
+    expect(runtime.isDisposed).toBe(false);
+
+    const again = pool.acquire({ conversationId: null, providerId: 'claude', draftModel: 'model', draftSessionKey: hold.key }, owner);
+    expect(again.attachment.runtime).toBe(runtime);
+    pool.release(again.attachment);
+    runtime.setConversationId('created');
+    const promoted = pool.acquire({ conversationId: null, providerId: 'claude', draftModel: null, draftSessionKey: hold.key }, owner);
+    expect(promoted.attachment.runtime).toBe(runtime);
+    pool.release(promoted.attachment);
+    hold.release();
+
+    const unheld = pool.acquire({ conversationId: null, providerId: 'claude', draftModel: 'model' }, owner).attachment;
+    const released = pool.holdDraft(unheld.runtime);
+    pool.release(unheld);
+    released.release();
+    released.release();
+    await flush();
+    expect(unheld.runtime.isDisposed).toBe(true);
+    expect(pool.acquire({ conversationId: null, providerId: 'claude', draftModel: 'model', draftSessionKey: released.key }, owner)
+      .attachment.runtime).not.toBe(unheld.runtime);
+  });
 });

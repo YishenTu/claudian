@@ -10,6 +10,13 @@ export interface SessionAttachment {
   readonly owner: SessionAttachmentOwner;
 }
 
+/** Keeps a detached draft session alive and reattachable by `key`; `release` is idempotent. */
+export interface DraftSessionHold {
+  readonly key: string;
+  readonly runtime: ChatSessionRuntime;
+  release(): void;
+}
+
 export class SessionAlreadyAttached extends Error {
   constructor(readonly attachment: SessionAttachment) { super('Session already attached'); }
 }
@@ -29,6 +36,8 @@ interface SessionRecord {
   eviction: Promise<void> | null;
   /** Its conversation was deleted; the session is disposed as soon as it is detached and idle. */
   retired: boolean;
+  /** Holders that will reattach this session by its key; a held draft is never disposed as idle. */
+  holds: number;
   settledWaiters: Array<(settled: boolean) => void>;
   unsubscribe(): void;
 }
@@ -40,6 +49,7 @@ function readStatus(runtime: ChatSessionRuntime): SessionStatus {
 export class SessionRuntimePool {
   private readonly records = new Map<ChatSessionRuntime, SessionRecord>();
   private readonly conversations = new Map<string, SessionRecord>();
+  private readonly keys = new Map<string, SessionRecord>();
   private closing = false;
   private disposal: Promise<void> | null = null;
 
@@ -58,15 +68,18 @@ export class SessionRuntimePool {
   /** Reserves synchronously, before model hydration or any view construction can yield. */
   acquire(identity: SessionIdentity, owner: SessionAttachmentOwner): { acquired: boolean; attachment: SessionAttachment } {
     if (this.closing) throw new Error('Session runtime pool is shutting down');
-    let record = identity.conversationId ? this.conversations.get(identity.conversationId) : undefined;
+    let record = (identity.conversationId ? this.conversations.get(identity.conversationId) : undefined)
+      ?? (identity.draftSessionKey ? this.keys.get(identity.draftSessionKey) : undefined);
     if (record?.attachment) return { acquired: false, attachment: record.attachment };
     if (!record) {
-      const runtime = this.deps.createRuntime({ ...identity });
+      const { draftSessionKey: _unused, ...sessionIdentity } = identity;
+      const runtime = this.deps.createRuntime(sessionIdentity);
       record = {
         runtime, status: readStatus(runtime),
-        attachment: null, eviction: null, retired: false, settledWaiters: [], unsubscribe: () => undefined,
+        attachment: null, eviction: null, retired: false, holds: 0, settledWaiters: [], unsubscribe: () => undefined,
       };
       this.records.set(runtime, record);
+      this.keys.set(runtime.sessionKey, record);
       if (record.status.conversationId) this.conversations.set(record.status.conversationId, record);
       const current = record;
       record.unsubscribe = runtime.subscribe(() => this.changed(current));
@@ -74,6 +87,27 @@ export class SessionRuntimePool {
     const attachment = Object.freeze({ runtime: record.runtime, owner });
     record.attachment = attachment;
     return { acquired: true, attachment };
+  }
+
+  /**
+   * Holds a session for a presentation that will reattach it by key. Only a draft depends on
+   * the hold: a session bound to a conversation stays reachable by its conversation anyway.
+   */
+  holdDraft(runtime: ChatSessionRuntime): DraftSessionHold {
+    const record = this.records.get(runtime);
+    if (!record) throw new Error('Session is not owned by this pool');
+    record.holds += 1;
+    let held = true;
+    return {
+      key: runtime.sessionKey,
+      runtime,
+      release: () => {
+        if (!held) return;
+        held = false;
+        record.holds -= 1;
+        if (this.records.get(runtime) === record) this.changed(record);
+      },
+    };
   }
 
   release(attachment: SessionAttachment): void {
@@ -129,7 +163,8 @@ export class SessionRuntimePool {
     const eligible = () => this.canEvict(record) && runtime.peekModel === model;
     if (!eligible()) return true;
     if (!runtime.conversationId) {
-      // Nothing can acquire a detached draft again; its unsent recovery is unreachable.
+      // A held draft is reattached by its key; otherwise nothing can acquire it again.
+      if (record.holds > 0) return false;
       this.remove(record);
       await runtime.dispose();
       return false;
@@ -153,6 +188,7 @@ export class SessionRuntimePool {
     this.settleWaiters(record, false);
     record.unsubscribe();
     this.records.delete(record.runtime);
+    this.keys.delete(record.runtime.sessionKey);
     if (record.status.conversationId) this.conversations.delete(record.status.conversationId);
   }
 

@@ -697,6 +697,8 @@ export class ClaudianView extends ItemView implements ZenModeSource {
 
   notifyConversationListChanged(): void {
     for (const tab of this.tabManager?.getAllTabs() ?? []) tab.composer.invalidateSessionMentions();
+    // A held draft session may have created its conversation while its blank tab was unloaded.
+    this.tabManager?.reconcileUnloadedSessions();
     this.sessions.invalidate();
     // Unloaded tabs read their running and attention state from session status changes.
     this.updateTabBar();

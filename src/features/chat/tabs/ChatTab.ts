@@ -2,7 +2,6 @@ import type { Component, TFile, WorkspaceLeaf } from 'obsidian';
 
 import type { ProviderId, TitleGenerationService } from '@/core/providers/types';
 import type { ChatMessage } from '@/core/types';
-import type { LinkedContentSnapshot } from '@/features/chat/linked-content/LinkedContentController';
 import type { TabAttention } from '@/features/chat/state/types';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { ZenPresentationPort } from '@/features/chat/zen/types';
@@ -55,7 +54,6 @@ export type TabHydrationState = 'idle' | 'loading' | 'ready' | 'failed';
 
 /** Linked content operations a host view forwards to a tab. */
 export interface TabLinkedContentPort {
-  getSnapshot(): LinkedContentSnapshot;
   selectExplicit(path: string | null): void;
   handleActiveFileChanged(file: TFile | null, isActiveOwner: boolean): void;
   handleActiveFileMetadataChanged(file: TFile | null): void;

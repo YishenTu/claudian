@@ -4,63 +4,43 @@ import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
 const DESTINATIONS = ['main', 'side'] as const;
 
-interface ParkedDraft {
-  readonly drafts: ComposerDrafts;
-  /** A blank draft's explicit Linked content choice; null explicitly chooses none. */
-  readonly linkedContentPath?: string | null;
-}
-
 /**
- * Unsent input held while no presentation shows it: a session's text while the wide viewer
- * shows another or the wide layout unloads its narrow tab, and the new-session draft's text and
- * Linked content choice. In memory only. Every assembled presentation takes what is held for it.
+ * Unsent composer text held while no presentation shows its session. Keyed by session, so
+ * whichever presentation reattaches the session takes it. In memory only; everything else a
+ * draft carries (selections, Linked content) belongs to the session itself.
  */
 export class ParkedDrafts {
-  readonly #parked = new Map<string, ParkedDraft>();
+  readonly #parked = new Map<string, ComposerDrafts>();
 
-  /** Whether a held Linked content path still exists when it is restored. */
-  constructor(private readonly linkedContentExists: (path: string) => boolean) {}
-
-  /** A session's input follows the session; a blank tab's stays with that tab or the new-session draft. */
-  static keyFor(identity: Pick<TabIdentity, 'id' | 'conversationId' | 'lifecycleState'>): string {
-    if (identity.conversationId) return `session:${identity.conversationId}`;
-    return identity.lifecycleState === 'provisional' ? 'new-session' : `tab:${identity.id}`;
+  /** Text follows its session: by conversation once it has one, otherwise by its draft session. */
+  static keyFor(tab: AssembledTabRuntime): string {
+    return tab.conversationId ? `session:${tab.conversationId}` : `draft:${tab.session.runtime.sessionKey}`;
   }
 
-  /** Holds `tab`'s unsent input under `key`, replacing what was held there. */
+  /** The key an unloaded tab's presentation will take its text from when it reattaches. */
+  static keyForIdentity(identity: Pick<TabIdentity, 'id' | 'conversationId' | 'draftSessionKey'>): string {
+    if (identity.conversationId) return `session:${identity.conversationId}`;
+    return identity.draftSessionKey ? `draft:${identity.draftSessionKey}` : `tab:${identity.id}`;
+  }
+
+  /** Holds `tab`'s unsent text under `key`, replacing what was held there. */
   park(tab: AssembledTabRuntime, key = ParkedDrafts.keyFor(tab)): void {
     const { drafts } = tab.controllers;
     const held: ComposerDrafts = { main: drafts.capture('main'), side: drafts.capture('side') };
-    const linked = tab.conversationId === null ? tab.linkedContent.getSnapshot() : null;
-    const hasText = DESTINATIONS.some(destination => (
-      held[destination].content.trim() || held[destination].images.length > 0
-    ));
-    if (!hasText && linked?.mode !== 'explicit-draft') {
+    if (DESTINATIONS.some(destination => held[destination].content.trim() || held[destination].images.length > 0)) {
+      this.#parked.set(key, held);
+    } else {
       this.#parked.delete(key);
-      return;
     }
-    this.#parked.set(key, {
-      drafts: held,
-      ...(linked?.mode === 'explicit-draft' ? { linkedContentPath: linked.path } : {}),
-    });
   }
 
-  /** Moves the input held for `tab` into its composer and, for a blank draft, its Linked content. */
+  /** Moves the text held for `tab` into its composer. */
   restoreInto(tab: AssembledTabRuntime, key = ParkedDrafts.keyFor(tab)): void {
     const held = this.#parked.get(key);
     if (!held) return;
     this.#parked.delete(key);
     for (const destination of DESTINATIONS) {
-      tab.controllers.drafts.restore(destination, held.drafts[destination], { merge: true });
-    }
-    const path = held.linkedContentPath;
-    if (
-      path !== undefined
-      && tab.conversationId === null
-      && tab.linkedContent.getSnapshot().mode === 'auto-draft'
-      && (path === null || this.linkedContentExists(path))
-    ) {
-      tab.linkedContent.selectExplicit(path);
+      tab.controllers.drafts.restore(destination, held[destination], { merge: true });
     }
   }
 }

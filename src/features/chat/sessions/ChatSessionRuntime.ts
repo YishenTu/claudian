@@ -9,13 +9,19 @@ export interface SessionIdentity {
   conversationId: string | null;
   providerId: ProviderId | null;
   draftModel: string | null;
+  /** A held draft session to reattach, while it has no conversation to be found by. */
+  draftSessionKey?: string;
 }
+
+let nextSessionKey = 0;
 
 export interface TurnCancelOptions {
   dismissInteractions?: boolean;
 }
 
 export class ChatSessionRuntime {
+  /** Stable for the session's lifetime; how a held draft is reattached before it has a conversation. */
+  readonly sessionKey = `session-${++nextSessionKey}`;
   readonly attention = new SessionAttention();
   private currentModel: SessionModel | null = null;
   private childOwner: SideChatController | null = null;

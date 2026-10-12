@@ -508,24 +508,39 @@ describe('ViewerSlot', () => {
       }));
     });
 
-    it('keeps a blank narrow tab and its session as the wide presentation', async () => {
+    it('unloads a blank narrow tab too and shows its same session in the viewer', async () => {
       const { manager } = createManager(conversationPlugin());
       const blank = await manager.createTab(null);
       const session = blank!.session.runtime;
-      blank!.session.selectDraft('codex', 'codex:gpt-5');
       blank!.linkedContent.selectExplicit('chosen.md');
       blank!.controllers.drafts.restore('main', { content: 'new idea' });
 
       await manager.viewerSlot.enter();
 
-      expect(manager.getActiveTab()).toBe(blank);
-      expect(blank!.session.runtime).toBe(session);
-      expect(mockDestroyTab).not.toHaveBeenCalledWith(blank);
+      const preview = manager.getActiveTab()!;
+      expect(manager.getAllTabs()).toEqual([preview]);
+      expect(manager.getTab(blank!.id)).toBeNull();
+      expect([preview.lifecycleState, preview.session.runtime === session]).toEqual(['provisional', true]);
+      expect([shownDraft(manager), (preview.linkedContent as any).getSnapshot().path]).toEqual(['new idea', 'chosen.md']);
 
       await manager.viewerSlot.release();
-      expect(manager.getActiveTab()).toBe(blank);
-      expect([blank!.draftModel, blank!.linkedContent.getSnapshot().path, shownDraft(manager)])
-        .toEqual(['codex:gpt-5', 'chosen.md', 'new idea']);
+      const restored = manager.getActiveTab()!;
+      expect(restored.id).toBe(blank!.id);
+      expect(restored.session.runtime).toBe(session);
+      expect([shownDraft(manager), (restored.linkedContent as any).getSnapshot().path]).toEqual(['new idea', 'chosen.md']);
+    });
+
+    it('returns to the same new session when New follows browsing another session', async () => {
+      const { manager } = createManager(conversationPlugin());
+      await manager.viewerSlot.startDraft();
+      const session = manager.getActiveTab()!.session.runtime;
+      manager.getActiveTab()!.controllers.drafts.restore('main', { content: 'new idea' });
+
+      await manager.viewerSlot.show('conversation-1');
+      await manager.viewerSlot.startDraft();
+
+      expect(manager.getActiveTab()!.session.runtime).toBe(session);
+      expect(shownDraft(manager)).toBe('new idea');
     });
 
     it('leaves a usable presentation when narrowing supersedes an unloading wide entry', async () => {

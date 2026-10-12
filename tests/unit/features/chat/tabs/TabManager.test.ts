@@ -1177,6 +1177,17 @@ describe('TabManager provider execution orchestration', () => {
     expect(manager.getActiveTab()).toEqual(expect.objectContaining({ conversationId: null, lifecycleState: 'provisional' }));
   });
 
+  it('binds an unloaded blank tab to the conversation its new session creates', async () => {
+    const { manager } = createManager();
+    const blank = await manager.createTab(null);
+    await manager.viewerSlot.enter();
+
+    manager.getActiveTab()!.session.runtime.setConversationId('created');
+    manager.reconcileUnloadedSessions();
+
+    expect(manager.getPersistedState().openTabs[0]).toEqual({ tabId: blank!.id, conversationId: 'created' });
+  });
+
   it('reports an unloaded narrow tab from its running session', async () => {
     const running = { isWorking: true, statusAttention: 'review' };
     const { manager } = createManager(createPlugin({

@@ -30,6 +30,8 @@ export interface TabRuntimeFactoryOptions {
   draftModel?: string | null;
   providerId?: ProviderId | null;
   lifecycleState?: Extract<AssembledTabRuntime['lifecycleState'], 'provisional' | 'open'>;
+  /** A held draft session the new tab reattaches instead of starting a fresh draft. */
+  draftSessionKey?: string;
   getProviderCatalogConfig: (tab: Readonly<TabIdentity>) => ProviderCatalogInfo;
   isRuntimeLive: (tab: AssembledTabRuntime) => boolean;
   forkRequestCallback?: (forkContext: ForkContext) => Promise<void>;
