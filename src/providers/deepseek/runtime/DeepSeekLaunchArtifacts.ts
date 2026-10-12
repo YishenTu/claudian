@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { DEEPSEEK_PRESETS, type DeepSeekPreset } from '../types';
 import { DEEPSEEK_COMPATIBILITY_SOURCE, DEEPSEEK_EPHEMERAL_SOURCE, DEEPSEEK_LIFECYCLE_SOURCE } from './DeepSeekCompatibility';
@@ -72,7 +73,9 @@ export async function prepareDeepSeekLaunchArtifacts(
         && ready.spillGuard === true && ready.attachmentGuard === true;
     } catch { return false; }
   };
-  const paths = { compatibility: compatibilityPath, codeModeFile: codeModePath, promptFile: promptPath };
+  // Cordis imports module names as ESM specifiers; Windows paths and URL fragments need file URLs.
+  // Configuration values consumed by filesystem APIs remain ordinary paths.
+  const paths = { compatibility: pathToFileURL(compatibilityPath).href, codeModeFile: codeModePath, promptFile: promptPath };
   try {
     await mkdir(join(root, 'prompts'), { mode: 0o700 });
     const patch = [
@@ -81,13 +84,13 @@ export async function prepareDeepSeekLaunchArtifacts(
       { id: 'hmr', disabled: true },
       { id: 'session-title-llm', disabled: true },
       { insert: [
-        { id: 'claudian-lifecycle', name: lifecyclePath },
+        { id: 'claudian-lifecycle', name: pathToFileURL(lifecyclePath).href },
         ...DEEPSEEK_PRESETS.map(preset => ({
           id: `preset-${preset}`, name: '@deepseek-ai/dsh-agent-preset',
           config: { id: preset, name: 'Claudian', plugins: buildDeepSeekPresetPlugins(preset, paths, presetPlugins) },
         })),
       ] },
-      { insert: [{ id: 'claudian-ephemeral', name: ephemeralPath, config: { stateFile: ephemeralStatePath, readyFile: ephemeralReadyPath, spillRoot: ephemeralSpillPath, attachmentRoot: ephemeralAttachmentPath } }] },
+      { insert: [{ id: 'claudian-ephemeral', name: pathToFileURL(ephemeralPath).href, config: { stateFile: ephemeralStatePath, readyFile: ephemeralReadyPath, spillRoot: ephemeralSpillPath, attachmentRoot: ephemeralAttachmentPath } }] },
     ];
     await Promise.all([
       writeFile(compatibilityPath, DEEPSEEK_COMPATIBILITY_SOURCE, { mode: 0o600 }),

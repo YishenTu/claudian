@@ -13,7 +13,7 @@ jest.mock('node:fs/promises', () => {
 });
 
 it('gives every preset a live prompt file and its tool policy while keeping prompt text out of code', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'deepseek packaged 文档 '));
+  const root = await mkdtemp(join(tmpdir(), 'deepseek packaged # 文档 '));
   const artifacts = await prepareDeepSeekLaunchArtifacts(root);
   try {
     const patch = JSON.parse(await readFile(artifacts.patchPath, 'utf8'));
@@ -42,12 +42,11 @@ it('gives every preset a live prompt file and its tool policy while keeping prom
     const edited = 'Edited prompt';
     await artifacts.writePrompt('claudian', first);
     const pluginPath = presets.claudian.name;
-    expect(await readFile(pluginPath, 'utf8')).not.toContain(first);
-    // Load the bundled plugin as native does; its prompt section must read the file at each assembly.
+    // Native imports row names directly; tests must not repair Windows paths or URL fragments for it.
+    // Its prompt section must read the file at each assembly.
     const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', `
-      import { pathToFileURL } from 'node:url';
       import { writeFileSync } from 'node:fs';
-      const plugin = await import(pathToFileURL(process.argv[1]).href);
+      const plugin = await import(process.argv[1]);
       const config = JSON.parse(process.argv[2]);
       const sections = [];
       plugin.apply({ effect: fn => fn(), on: () => () => {}, systemPrompt: {
@@ -66,8 +65,9 @@ it('gives every preset a live prompt file and its tool policy while keeping prom
     `, pluginPath, JSON.stringify(presets.claudian.config), edited], { cwd: root });
     const result = JSON.parse(stdout);
     expect(result).toMatchObject({ persona: { interpolate: false, complete: false }, before: first, after: edited, webSurface: '' });
+    expect(await readFile(new URL(pluginPath), 'utf8')).not.toContain(first);
 
-    const modes = await Promise.all([artifacts.patchPath, pluginPath, inserted[0].name, presets.claudian.config.promptFile].map(path => stat(path)));
+    const modes = await Promise.all([artifacts.patchPath, new URL(pluginPath), new URL(inserted[0].name), presets.claudian.config.promptFile].map(path => stat(path)));
     expect(process.platform === 'win32' || modes.every(mode => (mode.mode & 0o777) === 0o600)).toBe(true);
     await artifacts.dispose();
     await expect(access(artifacts.patchPath)).rejects.toThrow();
@@ -131,9 +131,8 @@ it('switches each chat agent between direct tools and code mode at its next turn
       .find((entry: any) => entry.config?.id === 'claudian').config.plugins.find((row: any) => row.id === 'claudian-compatibility');
     // Drive the bundled plugin as native does: agent creation, then turn status changes, with code mode edited in between.
     const script = `
-      import { pathToFileURL } from 'node:url';
       import { writeFileSync } from 'node:fs';
-      const plugin = await import(pathToFileURL(process.argv[1]).href);
+      const plugin = await import(process.argv[1]);
       const config = JSON.parse(process.argv[2]);
       const listeners = {};
       const log = [];
@@ -188,12 +187,11 @@ it('reports ready only once every durable store an ephemeral session could reach
     await promisify(execFile)(process.execPath, ['--input-type=module', '-e', `
       import fs from 'node:fs';
       import { syncBuiltinESMExports } from 'node:module';
-      import { pathToFileURL } from 'node:url';
       const { renameSync } = fs;
       let locked = 1;
       fs.renameSync = (...args) => { if (locked-- > 0) throw Object.assign(new Error('EPERM: file in use'), { code: 'EPERM' }); return renameSync(...args); };
       syncBuiltinESMExports();
-      const plugin = await import(pathToFileURL(process.argv[1]).href);
+      const plugin = await import(process.argv[1]);
       const backend = { create: async () => ({}), open: async () => ({}), stat: async () => undefined };
       const domains = { session_projcache: { table: () => ({ put: async () => {} }) } };
       const ctx = {
@@ -267,11 +265,10 @@ it('keeps ephemeral sessions in process memory and out of every durable dsh stor
 
     // Drive the bundled plugin against native service boundaries; real rc.2 probes qualify image normalization and storage.
     const script = `
-      import { pathToFileURL } from 'node:url';
       import { AsyncLocalStorage } from 'node:async_hooks';
       import { mkdir, readFile, writeFile } from 'node:fs/promises';
       import { dirname, join } from 'node:path';
-      const plugin = await import(pathToFileURL(process.argv[1]).href);
+      const plugin = await import(process.argv[1]);
       const config = JSON.parse(process.argv[2]);
       const out = { backend: [], projcache: [], workspaces: [], global: [], spilled: [], errors: {} };
       const backend = {
@@ -491,9 +488,8 @@ describe('owner lifecycle tether', () => {
       const lifecyclePath = patch.find((entry: { insert?: unknown }) => entry.insert).insert[0].name;
       // A stand-in Host that would otherwise run indefinitely, like dsh web.
       const child = spawn(process.execPath, ['--input-type=module', '-e', `
-        import { pathToFileURL } from 'node:url';
         ${interrupt}
-        const plugin = await import(pathToFileURL(process.argv[1]).href);
+        const plugin = await import(process.argv[1]);
         plugin.apply();
         setInterval(() => {}, 1000);
         process.stdout.write('ready');
