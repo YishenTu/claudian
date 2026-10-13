@@ -330,7 +330,8 @@ export class SessionBrowser {
     const groupStatusKind = groupIndicatorKind(conversationStatuses, options);
     const hasReviewConversation = canShowAttention(options)
       && conversationStatuses.some(({ attention }) => isCompletedReview(attention));
-    const showGroupReviewState = groupStatusKind === null && hasReviewConversation;
+    const showGroupReviewState = (groupStatusKind === null || groupStatusKind === 'unread')
+      && hasReviewConversation;
     const groupHeader = list.createDiv({
       cls: [
         'claudian-session-group-header',
@@ -547,7 +548,7 @@ export class SessionBrowser {
     const row = (status: HistoryConversationStatus): SessionRow => ({
       conversation,
       status,
-      attention,
+      attention: canShowAttention(options) ? status.attention ?? null : null,
       beginRename: () => this.#beginRename(item, conversation, options),
     });
 
@@ -681,7 +682,7 @@ export class SessionBrowser {
           ].filter(Boolean).join(' '),
     });
     const { icon, label } = indicatorPresentation(kind);
-    setIcon(indicator, icon);
+    if (icon) setIcon(indicator, icon);
     indicator.setAttribute('aria-label', label);
     return indicator;
   }

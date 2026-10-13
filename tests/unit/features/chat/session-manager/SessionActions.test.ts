@@ -1,7 +1,11 @@
+import { createHarness } from '@test/helpers/ChatExecutionHarness';
+import { createSessionModelStub } from '@test/helpers/ConversationPorts';
 import { createMockEl } from '@test/helpers/MockElement';
 import { Menu } from 'obsidian';
 
 import { SessionBrowser, type SessionBrowserDeps } from '@/features/chat/session-manager/SessionBrowser';
+import { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
+import { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 
 function createFixture() {
   const deps = {
@@ -229,6 +233,87 @@ describe('SessionActions', () => {
         button.getAttribute('aria-label') === 'Rename'
       ),
     )).toBe(false);
+  });
+
+  it('marks released and never-loaded sessions unread, and read again, from their row menus', async () => {
+    const harness = createHarness();
+    const onChanged = jest.fn();
+    const pool = new SessionRuntimePool({
+      createRuntime: identity => new ChatSessionRuntime(identity, harness.coordinator, session => createSessionModelStub(session)),
+      releaseHistory: async () => true,
+      onChanged,
+      onError: error => { throw error; },
+    });
+    // Opened earlier, then closed: the session keeps a runtime but no loaded model.
+    const { attachment } = pool.acquire({ conversationId: 'seen', providerId: 'claude', draftModel: null }, { reveal: jest.fn() });
+    pool.release(attachment);
+    (deps.plugin as Record<string, unknown>).sessionRuntimes = pool;
+    (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+      { id: 'seen', title: 'Seen', createdAt: 2 },
+      { id: 'never-opened', title: 'Never opened', createdAt: 1, providerId: 'codex' },
+    ]);
+    const render = () => {
+      const container = createMockEl();
+      controller.renderHistoryDropdown(container, {
+        onSelectConversation: jest.fn(),
+        sessionActionMode: 'active',
+        sessionScope: 'active',
+        showAttentionState: true,
+        showOpenStateLabels: false,
+        showOpenStateActions: false,
+        getConversationStatus: id => ({
+          openState: 'closed',
+          isRunning: false,
+          attention: pool.get(id)?.statusAttention ?? null,
+        }),
+      });
+      return (id: string) => container.querySelectorAll('.claudian-history-item').find(
+        (item: ReturnType<typeof createMockEl>) => item.getAttribute('data-conversation-id') === id,
+      )!;
+    };
+    const openMenu = (item: ReturnType<typeof createMockEl>) => {
+      item.dispatchEvent({ type: 'contextmenu', stopPropagation: jest.fn(), preventDefault: jest.fn() });
+      return (Menu as typeof Menu & {
+        instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }>;
+      }).instances.at(-1)!;
+    };
+
+    let findItem = render();
+    expect(findItem('seen').querySelector('.claudian-session-status-indicator')).toBeNull();
+    let menu = openMenu(findItem('seen'));
+    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Mark as unread', 'Rename', 'Archive']);
+    menu.items[1].clickHandler?.();
+
+    expect(onChanged).toHaveBeenCalled();
+    findItem = render();
+    const badge = findItem('seen').querySelector('.claudian-session-status-indicator--unread')!;
+    expect(badge).not.toBeNull();
+    expect(badge.getAttribute('aria-label')).toBe('Unread');
+    expect(findItem('seen').hasClass('claudian-history-item--attention')).toBe(true);
+    menu = openMenu(findItem('seen'));
+    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Mark as read', 'Rename', 'Archive']);
+    menu.items[1].clickHandler?.();
+
+    findItem = render();
+    expect(findItem('seen').querySelector('.claudian-session-status-indicator')).toBeNull();
+    expect(findItem('seen').hasClass('claudian-history-item--attention')).toBe(false);
+
+    // A session not loaded since startup gets its session without loading history.
+    expect(pool.get('never-opened')).toBeNull();
+    menu = openMenu(findItem('never-opened'));
+    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Mark as unread', 'Rename', 'Archive']);
+    menu.items[1].clickHandler?.();
+    expect(pool.get('never-opened')?.providerId).toBe('codex');
+    expect(pool.get('never-opened')?.peekModel).toBeNull();
+    findItem = render();
+    expect(findItem('never-opened').querySelector('.claudian-session-status-indicator--unread')).not.toBeNull();
+
+    // An error badge, like other badges, outranks the unread dot and offers no read-state action.
+    pool.get('never-opened')!.attention.markReviewRequired('error');
+    findItem = render();
+    expect(findItem('never-opened').querySelector('.claudian-session-status-indicator--error')).not.toBeNull();
+    expect(openMenu(findItem('never-opened')).items.map(item => item.title)).toEqual(['Pin', 'Rename', 'Archive']);
+    await pool.dispose();
   });
 
   it('renders archived sessions with restore and delete actions only', () => {

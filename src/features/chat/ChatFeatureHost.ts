@@ -63,7 +63,7 @@ export interface ChatViewHost extends ChatViewRefreshHost, TabManagerViewHost {
 }
 
 /** Session attachment and lookup; retirement and shutdown stay with the pool's main-owned callers. */
-export type ChatSessionRuntimes = Pick<SessionRuntimePool, 'acquire' | 'release' | 'get' | 'getAttachment' | 'holdDraft'>;
+export type ChatSessionRuntimes = Pick<SessionRuntimePool, 'acquire' | 'ensure' | 'release' | 'get' | 'getAttachment' | 'holdDraft'>;
 
 /** Application capabilities chat needs on top of the feature-neutral `FeatureHost`. */
 export interface ChatFeatureHost extends FeatureHost {

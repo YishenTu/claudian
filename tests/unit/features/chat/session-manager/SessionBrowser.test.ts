@@ -925,8 +925,14 @@ describe('SessionBrowser', () => {
         expect(errorItem.hasClass('claudian-history-item--attention')).toBe(false);
         expect(setIcon).toHaveBeenCalledWith(errorBadge, 'x-circle');
 
-        expect(findItem('review').hasClass('claudian-history-item--attention')).toBe(true);
-        expect(findItem('review').querySelector('.claudian-session-status-indicator')).toBeNull();
+        const reviewItem = findItem('review');
+        const unreadBadges = reviewItem.querySelectorAll('.claudian-session-status-indicator');
+        expect(reviewItem.hasClass('claudian-history-item--attention')).toBe(true);
+        expect(unreadBadges).toHaveLength(1);
+        expect(unreadBadges[0].hasClass('claudian-session-status-indicator--unread')).toBe(true);
+        expect(unreadBadges[0].getAttribute('aria-label')).toBe('Unread');
+        expect(setIcon).not.toHaveBeenCalledWith(unreadBadges[0], expect.anything());
+        expect(errorItem.querySelector('.claudian-session-status-indicator--unread')).toBeNull();
         expect(findItem('idle').querySelector('.claudian-session-status-indicator')).toBeNull();
       });
 
@@ -1117,6 +1123,7 @@ describe('SessionBrowser', () => {
           sort: 'last-updated',
           language: 'en',
           showAttentionState: true,
+          showOpenStateLabels: false,
           getConversationStatus: (id) => ({
             openState: 'open',
             isRunning: false,
@@ -1130,9 +1137,14 @@ describe('SessionBrowser', () => {
         expect(header.hasClass('claudian-session-group-header--attention')).toBe(false);
         expect(header.querySelector('.claudian-session-group-attention-indicator')).toBeNull();
 
+        const badge = header.querySelector('.claudian-session-group-status-indicator')!;
+        expect(badge.hasClass('claudian-session-status-indicator--unread')).toBe(true);
+        expect(badge.hasClass('claudian-session-group-status-indicator--visible')).toBe(false);
+
         header.click();
 
         expect(header.hasClass('claudian-session-group-header--attention')).toBe(true);
+        expect(badge.hasClass('claudian-session-group-status-indicator--visible')).toBe(true);
       });
 
       it('should display running status for the current conversation', () => {

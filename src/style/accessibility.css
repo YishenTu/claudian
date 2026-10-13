@@ -28,7 +28,8 @@
 @media (prefers-reduced-motion: reduce) {
   .claudian-inline-spinner,
   .claudian-session-group-header--attention .claudian-session-group-label,
-  .claudian-history-item--attention .claudian-history-item-title {
+  .claudian-history-item--attention .claudian-history-item-title,
+  .claudian-session-status-indicator--unread {
     animation: none;
   }
 }

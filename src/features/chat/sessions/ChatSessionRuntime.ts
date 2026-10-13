@@ -131,6 +131,10 @@ export class ChatSessionRuntime {
       wasActive = this.turns.isActive;
       this.publish('work');
     });
+    // A loaded model publishes attention itself; a released one leaves session lists to us.
+    this.attention.subscribe(() => {
+      if (!this.currentModel) this.notifyChanged();
+    });
   }
 
   get providerId(): ProviderId | null { return this.identity.providerId; }

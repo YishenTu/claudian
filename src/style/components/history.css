@@ -352,6 +352,20 @@
   color: var(--text-error);
 }
 
+/* Pulses with the title it marks, in the same color. */
+.claudian-session-status-indicator--unread {
+  color: var(--text-normal);
+  animation: attention-title-pulse 1.6s ease-in-out infinite;
+}
+
+.claudian-session-status-indicator--unread::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentcolor;
+  content: "";
+}
+
 .claudian-session-group-new-action {
   display: none;
   flex: 0 0 18px;

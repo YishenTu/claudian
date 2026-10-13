@@ -73,20 +73,33 @@ export class SessionRuntimePool {
     if (record?.attachment) return { acquired: false, attachment: record.attachment };
     if (!record) {
       const { draftSessionKey: _unused, ...sessionIdentity } = identity;
-      const runtime = this.deps.createRuntime(sessionIdentity);
-      record = {
-        runtime, status: readStatus(runtime),
-        attachment: null, eviction: null, retired: false, holds: 0, settledWaiters: [], unsubscribe: () => undefined,
-      };
-      this.records.set(runtime, record);
-      this.keys.set(runtime.sessionKey, record);
-      if (record.status.conversationId) this.conversations.set(record.status.conversationId, record);
-      const current = record;
-      record.unsubscribe = runtime.subscribe(() => this.changed(current));
+      record = this.create(sessionIdentity);
     }
     const attachment = Object.freeze({ runtime: record.runtime, owner });
     record.attachment = attachment;
     return { acquired: true, attachment };
+  }
+
+  /**
+   * Returns a conversation's session without attaching it, creating one if none exists. Creation
+   * loads neither history nor provider resources; the session stays reachable by its conversation.
+   */
+  ensure(identity: SessionIdentity & { conversationId: string }): ChatSessionRuntime {
+    if (this.closing) throw new Error('Session runtime pool is shutting down');
+    return (this.conversations.get(identity.conversationId) ?? this.create(identity)).runtime;
+  }
+
+  private create(identity: SessionIdentity): SessionRecord {
+    const runtime = this.deps.createRuntime(identity);
+    const record: SessionRecord = {
+      runtime, status: readStatus(runtime),
+      attachment: null, eviction: null, retired: false, holds: 0, settledWaiters: [], unsubscribe: () => undefined,
+    };
+    this.records.set(runtime, record);
+    this.keys.set(runtime.sessionKey, record);
+    if (record.status.conversationId) this.conversations.set(record.status.conversationId, record);
+    record.unsubscribe = runtime.subscribe(() => this.changed(record));
+    return record;
   }
 
   /**
