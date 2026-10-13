@@ -243,6 +243,10 @@
       "name": "Adiar renderização matemática durante streaming",
       "desc": "Mostrar LaTeX bruto enquanto a resposta é transmitida e renderizar a matemática uma vez quando cada bloco de texto terminar."
     },
+    "pluginRenderedFenceLanguages": {
+      "name": "Linguagens de blocos de código renderizadas por plugins",
+      "desc": "Linguagens de blocos de código, uma por linha, enviadas ao plugin que as renderiza nas notas (por exemplo, vega-lite). São renderizadas quando a resposta termina. Os outros blocos de código são sempre exibidos como código."
+    },
     "expandFileEditsByDefault": {
       "name": "Expandir edições de arquivo por padrão",
       "desc": "Mostrar os diffs de Write e Edit expandidos quando aparecerem pela primeira vez."

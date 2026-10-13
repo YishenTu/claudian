@@ -243,6 +243,10 @@
       "name": "Defer math rendering during streaming",
       "desc": "Show raw LaTeX while responses stream, then render math once when each text block completes."
     },
+    "pluginRenderedFenceLanguages": {
+      "name": "Fence languages rendered by plugins",
+      "desc": "Code block languages, one per line, passed to the plugin that renders them in notes (for example vega-lite). They render once the response finishes. Other code blocks always display as code."
+    },
     "expandFileEditsByDefault": {
       "name": "Expand file edits by default",
       "desc": "Show Write and Edit diffs expanded when they first appear."

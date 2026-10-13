@@ -6,7 +6,10 @@ import type {
 } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { renderCitationGroup } from '@/features/chat/rendering/CitationRenderer';
-import { hasMermaidFence } from '@/features/chat/rendering/markdown/DisplayOnlyCodeFences';
+import {
+  getPluginFenceLanguageSet,
+  hasDeferredDiagramFence,
+} from '@/features/chat/rendering/markdown/DisplayOnlyCodeFences';
 import type { RenderContentOptions } from '@/features/chat/rendering/markdown/MarkdownContentRenderer';
 import type { LiveTranscriptOptions, MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { createResponseTextBlock } from '@/features/chat/rendering/ResponseLayout';
@@ -324,7 +327,10 @@ export class StreamController {
 
   #getStreamingRenderOptions(content: string): RenderContentOptions | undefined {
     const deferMath = this.#shouldDeferMathRendering() && hasStreamingMathDelimiters(content);
-    const deferDiagrams = hasMermaidFence(content);
+    const deferDiagrams = hasDeferredDiagramFence(
+      content,
+      getPluginFenceLanguageSet(this.deps.plugin.settings.pluginRenderedFenceLanguages),
+    );
     if (!deferMath && !deferDiagrams) return undefined;
     return {
       ...(deferMath ? { deferMath: true } : {}),

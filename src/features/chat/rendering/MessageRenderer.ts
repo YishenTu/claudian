@@ -90,6 +90,7 @@ export class MessageRenderer {
     }));
     this.#markdown = new MarkdownContentRenderer(
       this.app, component, messagesEl, () => this.plugin.settings.mediaFolder,
+      () => this.plugin.settings.pluginRenderedFenceLanguages,
     );
     this.#actions = new MessageActions(plugin, messagesEl, this.getCapabilities, {
       rewind: rewindCallback,

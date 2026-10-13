@@ -243,6 +243,10 @@
       "name": "Mathe-Rendering während Streaming aufschieben",
       "desc": "LaTeX während des Streamings roh anzeigen und Mathematik einmal rendern, wenn der Textblock abgeschlossen ist."
     },
+    "pluginRenderedFenceLanguages": {
+      "name": "Von Plugins gerenderte Codeblock-Sprachen",
+      "desc": "Codeblock-Sprachen, eine pro Zeile, die an das Plugin übergeben werden, das sie in Notizen rendert (z. B. vega-lite). Sie werden gerendert, sobald die Antwort fertig ist. Andere Codeblöcke werden immer als Code angezeigt."
+    },
     "expandFileEditsByDefault": {
       "name": "Dateibearbeitungen standardmäßig ausklappen",
       "desc": "Write- und Edit-Diffs beim ersten Erscheinen ausgeklappt anzeigen."

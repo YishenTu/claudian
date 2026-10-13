@@ -195,3 +195,50 @@ it.each([
     expect(forwarded).toContain('claudian-display-only-fence-');
   },
 );
+
+describe('plugin-rendered fence languages', () => {
+  const dispatchedLanguages = (markdown: string): string[] => {
+    // The host boundary dispatches processors by the actual parsed block language.
+    const languages: string[] = [];
+    parser.parse(markdown).iterate({ enter(node) {
+      if (node.name === 'CodeInfo') languages.push(markdown.slice(node.from, node.to));
+    } });
+    return languages;
+  };
+  const source = '```Vega-Lite\n{"mark": "bar"}\n```\n\n```dataviewjs\nvoid 0;\n```';
+
+  beforeEach(() => {
+    renderer.dispose();
+    renderer = new MessageRenderer(
+      { app: {}, settings: { mediaFolder: '', pluginRenderedFenceLanguages: ['vega-lite'] } } as any,
+      new Component(),
+      host,
+    );
+  });
+
+  it('dispatches listed languages to their processors and keeps others inert', async () => {
+    let dispatched: string[] = [];
+    jest.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, markdown, target) => {
+      dispatched = dispatchedLanguages(markdown);
+      (target as HTMLElement).createDiv({ cls: 'block-language-Vega-Lite', text: 'chart' });
+    });
+
+    await renderer.renderContent(host, source);
+
+    expect(dispatched).toEqual(['Vega-Lite', expect.stringMatching(/^claudian-display-only-fence-/)]);
+    expect(host.querySelector('.claudian-render-error')).toBeNull();
+    expect(host.querySelector('.block-language-Vega-Lite')?.textContent).toBe('chart');
+  });
+
+  it('keeps listed languages inert while diagrams are deferred', async () => {
+    let dispatched: string[] = [];
+    jest.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, markdown) => {
+      dispatched = dispatchedLanguages(markdown);
+    });
+
+    await renderer.renderContent(host, source, { deferDiagrams: true });
+
+    expect(dispatched).toHaveLength(2);
+    expect(dispatched.every(language => language.startsWith('claudian-display-only-fence-'))).toBe(true);
+  });
+});

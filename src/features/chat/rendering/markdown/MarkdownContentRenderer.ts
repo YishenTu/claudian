@@ -2,6 +2,7 @@ import type { App, Component } from 'obsidian';
 import { MarkdownRenderer } from 'obsidian';
 
 import {
+  getPluginFenceLanguageSet,
   prepareDisplayOnlyCodeFences,
   restoreDisplayOnlyCodeFences,
 } from '@/features/chat/rendering/markdown/DisplayOnlyCodeFences';
@@ -34,6 +35,7 @@ export class MarkdownContentRenderer {
     private readonly component: Component,
     private readonly rootEl: HTMLElement,
     private readonly getMediaFolder: () => string,
+    private readonly getPluginFenceLanguages: () => readonly string[] | undefined,
   ) {}
 
   get isDisposed(): boolean {
@@ -68,7 +70,11 @@ export class MarkdownContentRenderer {
       // as plain text. Trusted plugin markup (image embeds) is injected only
       // after this step, otherwise it would be escaped too.
       const safeMarkdown = escapeRawHTMLTags(renderMarkdown);
-      const displayOnlyCodeFences = prepareDisplayOnlyCodeFences(safeMarkdown);
+      // Plugin-rendered fences stay inert until the message is final, like Mermaid.
+      const displayOnlyCodeFences = prepareDisplayOnlyCodeFences(
+        safeMarkdown,
+        options?.deferDiagrams ? undefined : getPluginFenceLanguageSet(this.getPluginFenceLanguages()),
+      );
       const processedMarkdown = replaceImageEmbedsWithHTML(
         displayOnlyCodeFences.markdown,
         this.app,

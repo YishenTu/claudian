@@ -1,5 +1,6 @@
 import { loadPrism } from 'obsidian';
 
+import { escapeRawHTMLTags } from '@/features/chat/rendering/markdown/markdownHTML';
 import { transformMarkdownSegments } from '@/utils/markdownSegments';
 
 const PLACEHOLDER_LANGUAGE_PREFIX = 'claudian-display-only-fence-';
@@ -26,9 +27,13 @@ export interface PreparedDisplayOnlyCodeFences {
   fences: DisplayOnlyCodeFence[];
 }
 
-/** Replaces fence languages so Obsidian cannot dispatch registered code-block processors. */
+/**
+ * Replaces fence languages so Obsidian cannot dispatch registered code-block processors,
+ * except languages in `pluginLanguages` (lowercase), which reach their processors untouched.
+ */
 export function prepareDisplayOnlyCodeFences(
   markdown: string,
+  pluginLanguages: ReadonlySet<string> = new Set(),
 ): PreparedDisplayOnlyCodeFences {
   const fences: DisplayOnlyCodeFence[] = [];
   const preparedMarkdown = transformMarkdownSegments(markdown, {
@@ -38,8 +43,12 @@ export function prepareDisplayOnlyCodeFences(
         return opener;
       }
 
-      const placeholderLanguage = `${PLACEHOLDER_LANGUAGE_PREFIX}${fences.length}`;
       const originalLanguage = languageMatch[2];
+      if (pluginLanguages.has(originalLanguage.toLowerCase())) {
+        return opener;
+      }
+
+      const placeholderLanguage = `${PLACEHOLDER_LANGUAGE_PREFIX}${fences.length}`;
       fences.push({ placeholderLanguage, originalLanguage });
 
       const transformedInfo = `${languageMatch[1]}${placeholderLanguage}${languageMatch[3]}`;
@@ -88,8 +97,22 @@ export async function restoreDisplayOnlyCodeFences(
   }
 }
 
-/** Shares fence parsing with the inert rendering pass, including nested fences. */
-export function hasMermaidFence(markdown: string): boolean {
-  return prepareDisplayOnlyCodeFences(markdown).fences
-    .some(fence => fence.originalLanguage.toLowerCase() === 'mermaid');
+/** Normalizes the user's plugin-rendered fence languages for case-insensitive matching. */
+export function getPluginFenceLanguageSet(languages: readonly string[] | undefined): Set<string> {
+  return new Set((languages ?? []).map(language => language.trim().toLowerCase()).filter(Boolean));
+}
+
+/**
+ * Detects fences whose rendering waits for the final message: Mermaid and plugin-rendered languages.
+ * Parses the HTML-escaped Markdown the render pass sees, since escaping can expose fences
+ * that raw HTML blocks hid, including nested fences.
+ */
+export function hasDeferredDiagramFence(
+  markdown: string,
+  pluginLanguages: ReadonlySet<string>,
+): boolean {
+  return prepareDisplayOnlyCodeFences(escapeRawHTMLTags(markdown)).fences.some(fence => {
+    const language = fence.originalLanguage.toLowerCase();
+    return language === 'mermaid' || pluginLanguages.has(language);
+  });
 }

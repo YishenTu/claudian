@@ -376,6 +376,26 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     new Setting(container)
+      .setName(t('settings.pluginRenderedFenceLanguages.name'))
+      .setDesc(t('settings.pluginRenderedFenceLanguages.desc'))
+      .setClass('claudian-settings-textarea')
+      .addTextArea((text) => {
+        text
+          .setValue(this.host.settings.pluginRenderedFenceLanguages.join('\n'))
+          .onChange((value) => {
+            this.textEdits.schedule('pluginRenderedFenceLanguages', (settings) => {
+              settings.pluginRenderedFenceLanguages = value
+                .split(/\r?\n/)
+                .map((entry) => entry.trim())
+                .filter((entry) => entry.length > 0);
+            });
+          });
+        text.inputEl.addEventListener('blur', () => { void this.textEdits.flush(); });
+        text.inputEl.rows = 3;
+        text.inputEl.cols = 30;
+      });
+
+    new Setting(container)
       .setName(t('settings.expandFileEditsByDefault.name'))
       .setDesc(t('settings.expandFileEditsByDefault.desc'))
       .addToggle((toggle) =>

@@ -243,6 +243,10 @@
       "name": "Différer le rendu mathématique pendant le streaming",
       "desc": "Afficher le LaTeX brut pendant la diffusion, puis rendre les formules une fois chaque bloc de texte terminé."
     },
+    "pluginRenderedFenceLanguages": {
+      "name": "Langages de blocs de code rendus par des plugins",
+      "desc": "Langages de blocs de code, un par ligne, transmis au plugin qui les affiche dans les notes (par exemple vega-lite). Ils sont rendus une fois la réponse terminée. Les autres blocs de code restent affichés comme du code."
+    },
     "expandFileEditsByDefault": {
       "name": "Développer les modifications de fichiers par défaut",
       "desc": "Afficher les diffs Write et Edit développés lors de leur première apparition."

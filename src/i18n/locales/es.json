@@ -243,6 +243,10 @@
       "name": "Diferir renderizado matemático durante streaming",
       "desc": "Mostrar LaTeX sin procesar mientras se transmite la respuesta y renderizar las fórmulas una vez al completar cada bloque de texto."
     },
+    "pluginRenderedFenceLanguages": {
+      "name": "Lenguajes de bloques de código renderizados por plugins",
+      "desc": "Lenguajes de bloques de código, uno por línea, que se pasan al plugin que los renderiza en las notas (por ejemplo, vega-lite). Se renderizan cuando termina la respuesta. Los demás bloques de código siempre se muestran como código."
+    },
     "expandFileEditsByDefault": {
       "name": "Expandir ediciones de archivo por defecto",
       "desc": "Mostrar los diffs de Write y Edit expandidos cuando aparecen por primera vez."

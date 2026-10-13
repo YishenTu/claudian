@@ -303,7 +303,7 @@ describe('StreamController - Text Content', () => {
 
     it('scans for deferred math and diagrams only when a text render runs', async () => {
       const mathSpy = jest.spyOn(markdownMath, 'hasStreamingMathDelimiters');
-      const mermaidSpy = jest.spyOn(displayOnlyCodeFences, 'hasMermaidFence');
+      const diagramSpy = jest.spyOn(displayOnlyCodeFences, 'hasDeferredDiagramFence');
       try {
         deps.state.currentTextEl = createMockEl();
         controller.setTabActive(false);
@@ -315,7 +315,7 @@ describe('StreamController - Text Content', () => {
 
         expect(deps.renderer.renderContent).not.toHaveBeenCalled();
         expect(mathSpy).not.toHaveBeenCalled();
-        expect(mermaidSpy).not.toHaveBeenCalled();
+        expect(diagramSpy).not.toHaveBeenCalled();
 
         controller.setTabActive(true);
         jest.advanceTimersByTime(16);
@@ -325,7 +325,7 @@ describe('StreamController - Text Content', () => {
           deps.state.currentTextEl, '$x$ '.repeat(20), { deferMath: true }
         );
         const scansAfterFirstRender = mathSpy.mock.calls.length;
-        expect(mermaidSpy).toHaveBeenCalledTimes(scansAfterFirstRender);
+        expect(diagramSpy).toHaveBeenCalledTimes(scansAfterFirstRender);
 
         for (let i = 0; i < 20; i += 1) {
           await controller.appendText('$y$ ');
@@ -334,7 +334,7 @@ describe('StreamController - Text Content', () => {
         await Promise.resolve();
         expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
         expect(mathSpy).toHaveBeenCalledTimes(scansAfterFirstRender);
-        expect(mermaidSpy).toHaveBeenCalledTimes(scansAfterFirstRender);
+        expect(diagramSpy).toHaveBeenCalledTimes(scansAfterFirstRender);
 
         jest.advanceTimersByTime(150);
         await Promise.resolve();
@@ -345,7 +345,7 @@ describe('StreamController - Text Content', () => {
         expect(mathSpy).toHaveBeenCalledTimes(2 * scansAfterFirstRender);
       } finally {
         mathSpy.mockRestore();
-        mermaidSpy.mockRestore();
+        diagramSpy.mockRestore();
       }
     });
 
@@ -389,6 +389,25 @@ describe('StreamController - Text Content', () => {
     it.each(['```mermaid', '> ```Mermaid title="example"', '- ~~~MERMAID'])('defers %s until text finalization', async opener => {
       deps.state.currentTextEl = createMockEl();
       const content = `${opener}\ngraph TD\nA --> B`;
+      await controller.appendText(content);
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+      expect(deps.renderer.renderContent).toHaveBeenLastCalledWith(
+        deps.state.currentTextEl, content, { deferDiagrams: true }
+      );
+      const target = deps.state.currentTextEl;
+      await controller.finalizeCurrentTextBlock(createTestMessage());
+      expect(deps.renderer.renderContent).toHaveBeenLastCalledWith(target, content);
+    });
+
+    it.each([
+      '```Vega-Lite\n{"mark": "bar"',
+      // Raw HTML is escaped before rendering, which exposes the fence to the renderer.
+      '<div>\n```vega-lite\n{"mark": "bar"',
+      '> <div>\n> ```vega-lite\n> {"mark": "bar"',
+    ])('defers listed plugin fence languages until text finalization: %s', async content => {
+      (deps.plugin.settings as any).pluginRenderedFenceLanguages = ['vega-lite'];
+      deps.state.currentTextEl = createMockEl();
       await controller.appendText(content);
       jest.advanceTimersByTime(16);
       await Promise.resolve();
@@ -1717,7 +1736,7 @@ describe('StreamController - Text Content', () => {
 
     it('does not scan collapsed thinking deltas for deferred math or diagrams', async () => {
       const mathSpy = jest.spyOn(markdownMath, 'hasStreamingMathDelimiters');
-      const mermaidSpy = jest.spyOn(displayOnlyCodeFences, 'hasMermaidFence');
+      const diagramSpy = jest.spyOn(displayOnlyCodeFences, 'hasDeferredDiagramFence');
       try {
         const msg = createTestMessage();
         for (let i = 0; i < 20; i += 1) {
@@ -1728,10 +1747,10 @@ describe('StreamController - Text Content', () => {
 
         expect(deps.renderer.renderContent).not.toHaveBeenCalled();
         expect(mathSpy).not.toHaveBeenCalled();
-        expect(mermaidSpy).not.toHaveBeenCalled();
+        expect(diagramSpy).not.toHaveBeenCalled();
       } finally {
         mathSpy.mockRestore();
-        mermaidSpy.mockRestore();
+        diagramSpy.mockRestore();
       }
     });
 
