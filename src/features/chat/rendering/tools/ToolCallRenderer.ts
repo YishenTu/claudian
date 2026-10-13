@@ -10,6 +10,7 @@ import {
   renderToolCardContent,
 } from '@/features/chat/rendering/tools/toolPresentation';
 import { setToolStatus } from '@/features/chat/rendering/tools/toolStatus';
+import { t } from '@/i18n/i18n';
 
 export interface ToolCallRenderOptions {
   initiallyExpanded?: boolean;
@@ -108,7 +109,7 @@ export function renderToolCall(
   options: ToolCallRenderOptions = {}
 ): HTMLElement {
   const toolEl = createToolCard(parentEl, toolCall, {
-    initialText: 'Running...',
+    initialText: t('chat.tools.running'),
     initiallyExpanded: options.initiallyExpanded,
   });
   return toolEl;

@@ -100,7 +100,9 @@
       "placeholder": "请求修改、@提及文件、运行 /命令",
       "message": "消息",
       "dropImage": "将图片拖到这里",
-      "moreContext": "显示另外 {count} 项上下文"
+      "moreContext": "显示另外 {count} 项上下文",
+      "showLess": "收起",
+      "moreItems": "+{count} 项"
     },
     "worked": "已完成工作",
     "taskNotification": "任务通知",
@@ -141,7 +143,12 @@
       "noOptions": "未记录选项",
       "sendFailed": "无法发送回答，请重试。",
       "answerBelow": "请在下方的问题面板中回答。",
-      "expired": "问题已过期。"
+      "expired": "问题已过期。",
+      "notSent": "回答未发送，请重试。",
+      "unsupportedReply": "此问题无法接受该回答。",
+      "uncertainDelivery": "无法确认回答是否送达。为避免重复发送，未将其重新加入队列。",
+      "differentConversation": "此问题属于另一段对话。",
+      "sideUnavailable": "此侧边对话已不可用。"
     },
     "tools": {
       "calls": "工具调用",
@@ -158,8 +165,35 @@
         "running": "状态：运行中",
         "completed": "状态：已完成",
         "error": "状态：错误",
-        "cancelled": "状态：已取消"
-      }
+        "cancelled": "状态：已取消",
+        "blocked": "状态：已阻止"
+      },
+      "inProgress": "状态：进行中",
+      "writing": "正在写入…",
+      "done": "已完成",
+      "errorResult": "错误",
+      "tasks": "任务",
+      "taskProgress": "任务 {completed}/{total}",
+      "taskProgressLabel": "任务（{completed}/{total}）",
+      "changes": "变更：+{added} -{removed}",
+      "fileDeleted": "文件已删除",
+      "noTextDiff": "没有可用的文本差异",
+      "patch": "补丁",
+      "files": "{count} 个文件",
+      "file": "文件",
+      "enteringPlan": "正在进入规划模式",
+      "planComplete": "规划完成",
+      "messageAgent": "向代理发送消息",
+      "continueAgent": "继续代理任务",
+      "listAgents": "列出代理",
+      "interruptAgent": "中断代理",
+      "allAgents": "所有代理",
+      "commandPlaceholder": "命令",
+      "filesPlaceholder": "文件",
+      "patternPlaceholder": "匹配模式",
+      "toolsPlaceholder": "工具",
+      "agentCount": "{count} 个代理",
+      "agentCountPlural": "{count} 个代理"
     },
     "citations": {
       "memoryUsed": "引用的记忆",
@@ -216,7 +250,9 @@
       "loading": "正在加载…",
       "noMatches": "无匹配项",
       "loadFailed": "无法加载建议",
-      "retryHint": "再次输入以重试"
+      "retryHint": "再次输入以重试",
+      "providerLoading": "正在加载提供商命令…",
+      "providerRetry": "重新查找提供商命令"
     },
     "approval": {
       "title": "需要授权",
@@ -246,7 +282,15 @@
       "allowRule": "对 {host} 应用允许规则。",
       "denyRule": "对 {host} 应用拒绝规则。",
       "details": "{tool} 授权详情",
-      "unexpectedSelection": "意外的授权选项：“{value}”"
+      "unexpectedSelection": "意外的授权选项：“{value}”",
+      "runCommand": "运行命令：{pattern}",
+      "readFile": "读取文件：{pattern}",
+      "writeFile": "写入文件：{pattern}",
+      "editFile": "编辑文件：{pattern}",
+      "searchFiles": "搜索匹配的文件：{pattern}",
+      "searchContent": "搜索匹配的内容：{pattern}",
+      "unknownPattern": "（未知）",
+      "deepseekRequest": "DeepSeek 请求授权。"
     },
     "disclosure": {
       "expand": "{label} - 点击展开",

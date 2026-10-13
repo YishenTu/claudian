@@ -14,6 +14,7 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { InlineAskUserQuestion } from '@/features/chat/interactions/InlineAskUserQuestion';
 import { createInteractionPromptPort } from '@/features/chat/interactions/interactionPromptPort';
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
+import { setLocale } from '@/i18n/i18n';
 import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSeekExecutionBackend';
 import type { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
 
@@ -54,7 +55,7 @@ beforeEach(async () => {
   await peer.open();
   ({ deepseek } = peer.host());
 });
-afterEach(async () => { await session?.dispose(); await deepseek.dispose(); await peer.close(); });
+afterEach(async () => { setLocale('en'); await session?.dispose(); await deepseek.dispose(); await peer.close(); });
 
 function create(): void {
   session = new DeepSeekExecutionBackend(host, () => deepseek).createSession({
@@ -158,6 +159,11 @@ it.each([
     decide: () => fireEvent.keyDown(within(document.body).getByRole('button', { name: 'Allow once' }), { key: 'Escape' }), sent: 'cancelled' },
 ])('renders the action and localized native reason for $name and sends the native decision', async ({ locale, reason, callId, order, decide, sent }) => {
   settings.locale = locale;
+  const chinese = locale === 'zh-CN' || locale === 'zh-TW';
+  if (chinese) setLocale(locale);
+  const detailsName = locale === 'zh-CN' ? 'Bash 授权详情' : locale === 'zh-TW' ? 'Bash 授權詳情' : 'Bash approval details';
+  const description = locale === 'zh-CN' ? '运行命令：' : locale === 'zh-TW' ? '執行命令：' : 'Run command: ';
+  const allowName = locale === 'zh-CN' ? '允许一次' : '允許一次';
   renderApprovals(); create();
   const run = session.execute(request());
   const events: ProviderExecutionEvent[] = [];
@@ -181,11 +187,12 @@ it.each([
     approve('root', callId);
     // Native interactions are handled on receipt, ahead of follow frames sent after them.
     if (order === 'approval first') toolFrame();
-    const details = await within(document.body).findByRole('region', { name: 'Bash approval details' });
-    expect(details.textContent).toBe(`Run command: ${command}`);
+    const details = await within(document.body).findByRole('region', { name: detailsName });
+    expect(details.textContent).toBe(`${description}${command}`);
     expect(within(document.body).getByText(reason)).toBeTruthy();
     expect((await axe(document.body)).violations).toEqual([]);
-    decide();
+    if (chinese) fireEvent.click(within(document.body).getByRole('button', { name: allowName }));
+    else decide();
     await waitFor(() => expect(peer.calls.find(c => c.method === '$events/result')?.args).toEqual({ clientId: expect.any(String), eventId: 'approval', outcome: { kind: 'result', value: sent } }));
     expect(session.getStatus()).not.toBe('invalidated');
   } finally {

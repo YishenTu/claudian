@@ -95,7 +95,7 @@ export class SessionInteractions {
     delivery.onChange(tool);
     void this.#showInline(id, tool.input, question.abort.signal, {
       onSubmit: async answers => {
-        if (question.abort.signal.aborted) throw new Error('This question has expired.');
+        if (question.abort.signal.aborted) throw new Error(t('chat.questions.expired'));
         await delivery.answer(question.tool, answers, question.abort.signal);
         if (!question.abort.signal.aborted) question.tool.resolvedAnswers = answers;
       },

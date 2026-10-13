@@ -7,6 +7,7 @@ import { type App, type Component, MarkdownRenderer, Platform, TFile } from 'obs
 
 import { createCatalogCommandDiscoveryStore } from '@/core/providers/commands/catalogCommandDiscovery';
 import type { ProviderCommandDiscoveryResult } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
+import type { ProviderCommandDiscoverySnapshot } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
 import { ComposerContextTray } from '@/features/chat/composer/ComposerContextTray';
 import { ComposerEditor } from '@/features/chat/composer/ComposerEditor';
@@ -873,5 +874,71 @@ it('localizes image attachment labels and removal controls', async () => {
     editor.destroy();
     parent.remove();
     setLocale('en');
+  }
+});
+
+
+it('localizes image overflow controls and updates their accessible names on expansion', async () => {
+  setLocale('zh-CN');
+  const parent = document.body.createDiv();
+  // jsdom has no layout engine or host stylesheet; supply row metrics and host visibility semantics.
+  const style = parent.createEl('style', { text: '.claudian-hidden, .claudian-context-chip--overflow-hidden { display: none; }' });
+  const editor = createEditor(parent);
+  const trayEl = parent.createDiv();
+  const tray = new ComposerContextTray(trayEl);
+  const images = new ImageContextManager(parent, editor.element, {}, undefined, tray);
+  try {
+    images.setImages(Array.from({ length: 4 }, (_, index) => ({
+      id: `image-${index}`, name: `photo-${index}.png`, mediaType: 'image/png' as const,
+      data: 'dGVzdA==', size: 500, source: 'paste' as const,
+    })));
+    const chips = trayEl.querySelectorAll<HTMLElement>('.claudian-context-chip');
+    [0, 0, 38, 76].forEach((top, index) => Object.defineProperties(chips[index], {
+      offsetParent: { configurable: true, value: trayEl },
+      offsetTop: { configurable: true, value: top }, offsetHeight: { configurable: true, value: 20 },
+    }));
+    tray.refreshLayout();
+    const more = within(trayEl).getByRole('button', { name: '显示另外 2 项上下文' });
+    expect(more.textContent).toBe('+2 项');
+    fireEvent.click(more);
+    const less = within(trayEl).getByRole('button', { name: '收起' });
+    expect(less).toBe(more);
+    expect(less.textContent).toBe('收起');
+    expect(less.getAttribute('aria-expanded')).toBe('true');
+    expect(within(trayEl).getByRole('button', { name: '图片附件：photo-3.png · 500 B' })).toBeDefined();
+    expect(await axe(trayEl)).toHaveNoViolations();
+    fireEvent.click(less);
+    expect(within(trayEl).getByRole('button', { name: '显示另外 2 项上下文' })).toBe(more);
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    expect(within(trayEl).queryByRole('button', { name: '图片附件：photo-3.png · 500 B' })).toBeNull();
+  } finally {
+    images.destroy(); tray.destroy(); editor.destroy(); style.remove(); parent.remove(); setLocale('en');
+  }
+});
+
+
+it.each(['loading', 'error'] as const)('localizes provider command %s wrappers through the real dropdown', async status => {
+  setLocale('zh-CN');
+  const parent = document.body.createDiv();
+  const editor = createEditor(parent);
+  const files = new FileContextManager(new VaultMentionDataProvider(createApp()));
+  const snapshot: ProviderCommandDiscoverySnapshot<ProviderCommandEntry> = status === 'loading'
+    ? { status: 'loading' } : { status: 'error', message: 'Native discovery failure', retryable: true };
+  const dropdown = new MainChatComposerDropdown(parent, editor.element, files, {
+    providerId: 'codex', providerDiscovery: {
+      getSnapshot: () => snapshot, load: async () => ({ status: 'empty' }), retry: async () => ({ status: 'empty' }), subscribe: () => () => undefined,
+    },
+  });
+  try {
+    editor.element.value = '/';
+    editor.element.selectionStart = editor.element.selectionEnd = 1;
+    dropdown.handleInputChange();
+    const expectedTexts = status === 'loading'
+      ? ['正在加载提供商命令…'] : ['重新查找提供商命令', 'Native discovery failure'];
+    await waitFor(() => expect(expectedTexts.map(text => within(parent).getByText(text).textContent)).toEqual(expectedTexts));
+    const optionName = status === 'loading' ? '正在加载提供商命令…' : /重试/;
+    expect(within(parent).getByRole('option', { name: optionName })).toBeDefined();
+  } finally {
+    dropdown.destroy(); files.destroy(); editor.destroy(); parent.remove(); setLocale('en');
   }
 });

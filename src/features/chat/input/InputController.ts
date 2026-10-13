@@ -221,10 +221,10 @@ export class InputController {
       providerId: this.#getActiveProviderId(),
       assertCurrent: () => {
         if (state.currentConversationId !== conversationId || !state.messages.some(message => message.toolCalls?.includes(tool))) {
-          throw new Error('This question belongs to a different conversation.');
+          throw new Error(t('chat.questions.differentConversation'));
         }
         if (!this.deps.canStartTurn() || state.cancelRequested || state.isRewinding) {
-          throw new Error('The answer was not sent. Please try again.');
+          throw new Error(t('chat.questions.notSent'));
         }
       },
       prepare: reply => {

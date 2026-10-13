@@ -100,7 +100,9 @@
       "placeholder": "請求修改、@提及檔案、執行 /命令",
       "message": "訊息",
       "dropImage": "將圖片拖到這裡",
-      "moreContext": "顯示另外 {count} 項上下文"
+      "moreContext": "顯示另外 {count} 項上下文",
+      "showLess": "收合",
+      "moreItems": "+{count} 項"
     },
     "worked": "已完成工作",
     "taskNotification": "任務通知",
@@ -141,7 +143,12 @@
       "noOptions": "未記錄選項",
       "sendFailed": "無法傳送回答，請重試。",
       "answerBelow": "請在下方的問題面板中回答。",
-      "expired": "問題已過期。"
+      "expired": "問題已過期。",
+      "notSent": "回答未傳送，請重試。",
+      "unsupportedReply": "此問題無法接受該回答。",
+      "uncertainDelivery": "無法確認回答是否送達。為避免重複傳送，未將其重新加入佇列。",
+      "differentConversation": "此問題屬於另一段對話。",
+      "sideUnavailable": "此側邊對話已無法使用。"
     },
     "tools": {
       "calls": "工具呼叫",
@@ -158,8 +165,35 @@
         "running": "狀態：執行中",
         "completed": "狀態：已完成",
         "error": "狀態：錯誤",
-        "cancelled": "狀態：已取消"
-      }
+        "cancelled": "狀態：已取消",
+        "blocked": "狀態：已阻擋"
+      },
+      "inProgress": "狀態：進行中",
+      "writing": "正在寫入…",
+      "done": "已完成",
+      "errorResult": "錯誤",
+      "tasks": "任務",
+      "taskProgress": "任務 {completed}/{total}",
+      "taskProgressLabel": "任務（{completed}/{total}）",
+      "changes": "變更：+{added} -{removed}",
+      "fileDeleted": "檔案已刪除",
+      "noTextDiff": "沒有可用的文字差異",
+      "patch": "修補檔",
+      "files": "{count} 個檔案",
+      "file": "檔案",
+      "enteringPlan": "正在進入規劃模式",
+      "planComplete": "規劃完成",
+      "messageAgent": "向代理傳送訊息",
+      "continueAgent": "繼續代理任務",
+      "listAgents": "列出代理",
+      "interruptAgent": "中斷代理",
+      "allAgents": "所有代理",
+      "commandPlaceholder": "命令",
+      "filesPlaceholder": "檔案",
+      "patternPlaceholder": "比對模式",
+      "toolsPlaceholder": "工具",
+      "agentCount": "{count} 個代理",
+      "agentCountPlural": "{count} 個代理"
     },
     "citations": {
       "memoryUsed": "引用的記憶",
@@ -216,7 +250,9 @@
       "loading": "正在載入…",
       "noMatches": "無符合項目",
       "loadFailed": "無法載入建議",
-      "retryHint": "再次輸入以重試"
+      "retryHint": "再次輸入以重試",
+      "providerLoading": "正在載入供應商命令…",
+      "providerRetry": "重新尋找供應商命令"
     },
     "approval": {
       "title": "需要授權",
@@ -246,7 +282,15 @@
       "allowRule": "對 {host} 套用允許規則。",
       "denyRule": "對 {host} 套用拒絕規則。",
       "details": "{tool} 授權詳情",
-      "unexpectedSelection": "非預期的授權選項：「{value}」"
+      "unexpectedSelection": "非預期的授權選項：「{value}」",
+      "runCommand": "執行命令：{pattern}",
+      "readFile": "讀取檔案：{pattern}",
+      "writeFile": "寫入檔案：{pattern}",
+      "editFile": "編輯檔案：{pattern}",
+      "searchFiles": "搜尋符合的檔案：{pattern}",
+      "searchContent": "搜尋符合的內容：{pattern}",
+      "unknownPattern": "（未知）",
+      "deepseekRequest": "DeepSeek 請求授權。"
     },
     "disclosure": {
       "expand": "{label} - 點擊展開",

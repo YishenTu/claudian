@@ -95,7 +95,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
     if (result && result.status !== 'ready' && result.status !== 'empty') {
       const label = result.status === 'requires-session' || result.status === 'error'
         ? result.message
-        : 'Loading provider commands…';
+        : t('chat.suggestions.providerLoading');
       const statusItems: ComposerDropdownItem[] = [
         ...items,
         {
@@ -107,7 +107,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
       ];
       if (result.status === 'error' && result.retryable) {
         statusItems.push({
-          detail: 'Try provider command discovery again',
+          detail: t('chat.suggestions.providerRetry'),
           icon: 'refresh-cw',
           id: 'provider-retry',
           kind: 'value',

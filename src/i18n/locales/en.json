@@ -100,7 +100,9 @@
       "placeholder": "Ask to make changes, @mention files, run /commands",
       "message": "Message",
       "dropImage": "Drop image here",
-      "moreContext": "Show {count} more context items"
+      "moreContext": "Show {count} more context items",
+      "showLess": "Show less",
+      "moreItems": "+{count} more"
     },
     "worked": "Worked",
     "taskNotification": "Task notification",
@@ -141,7 +143,12 @@
       "noOptions": "No options recorded",
       "sendFailed": "Could not send the answer. Please try again.",
       "answerBelow": "Answer in the question panel below.",
-      "expired": "Question expired."
+      "expired": "Question expired.",
+      "notSent": "The answer was not sent. Please try again.",
+      "unsupportedReply": "This question cannot accept that reply.",
+      "uncertainDelivery": "Answer delivery could not be confirmed. It was not requeued to avoid sending it twice.",
+      "differentConversation": "This question belongs to a different conversation.",
+      "sideUnavailable": "This side chat is no longer available."
     },
     "tools": {
       "calls": "Tool calls",
@@ -158,8 +165,35 @@
         "running": "Status: running",
         "completed": "Status: completed",
         "error": "Status: error",
-        "cancelled": "Status: cancelled"
-      }
+        "cancelled": "Status: cancelled",
+        "blocked": "Status: blocked"
+      },
+      "inProgress": "Status: in progress",
+      "writing": "Writing...",
+      "done": "DONE",
+      "errorResult": "ERROR",
+      "tasks": "Tasks",
+      "taskProgress": "Tasks {completed}/{total}",
+      "taskProgressLabel": "Tasks ({completed}/{total})",
+      "changes": "Changes: +{added} -{removed}",
+      "fileDeleted": "File deleted",
+      "noTextDiff": "No textual diff available",
+      "patch": "patch",
+      "files": "{count} files",
+      "file": "file",
+      "enteringPlan": "Entering plan mode",
+      "planComplete": "Plan complete",
+      "messageAgent": "Message agent",
+      "continueAgent": "Continue agent",
+      "listAgents": "List agents",
+      "interruptAgent": "Interrupt agent",
+      "allAgents": "All agents",
+      "commandPlaceholder": "command",
+      "filesPlaceholder": "files",
+      "patternPlaceholder": "pattern",
+      "toolsPlaceholder": "tools",
+      "agentCount": "{count} agent",
+      "agentCountPlural": "{count} agents"
     },
     "citations": {
       "memoryUsed": "Memory used",
@@ -216,7 +250,9 @@
       "loading": "Loading…",
       "noMatches": "No matches",
       "loadFailed": "Could not load suggestions",
-      "retryHint": "Type again to retry"
+      "retryHint": "Type again to retry",
+      "providerLoading": "Loading provider commands…",
+      "providerRetry": "Try provider command discovery again"
     },
     "approval": {
       "title": "Permission required",
@@ -246,7 +282,15 @@
       "allowRule": "Apply an allow rule for {host}.",
       "denyRule": "Apply a deny rule for {host}.",
       "details": "{tool} approval details",
-      "unexpectedSelection": "Unexpected approval selection: \"{value}\""
+      "unexpectedSelection": "Unexpected approval selection: \"{value}\"",
+      "runCommand": "Run command: {pattern}",
+      "readFile": "Read file: {pattern}",
+      "writeFile": "Write to file: {pattern}",
+      "editFile": "Edit file: {pattern}",
+      "searchFiles": "Search files matching: {pattern}",
+      "searchContent": "Search content matching: {pattern}",
+      "unknownPattern": "(unknown)",
+      "deepseekRequest": "DeepSeek requests permission."
     },
     "disclosure": {
       "expand": "{label} - click to expand",

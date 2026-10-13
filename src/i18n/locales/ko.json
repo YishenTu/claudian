@@ -100,7 +100,9 @@
       "placeholder": "변경 요청, @로 파일 언급, /명령 실행",
       "message": "메시지",
       "dropImage": "여기에 이미지 놓기",
-      "moreContext": "컨텍스트 항목 {count}개 더 표시"
+      "moreContext": "컨텍스트 항목 {count}개 더 표시",
+      "showLess": "접기",
+      "moreItems": "+{count}개 더"
     },
     "worked": "작업 완료",
     "taskNotification": "작업 알림",
@@ -141,7 +143,12 @@
       "noOptions": "기록된 선택 항목 없음",
       "sendFailed": "답변을 보내지 못했습니다. 다시 시도하세요.",
       "answerBelow": "아래 질문 패널에서 답변하세요.",
-      "expired": "질문이 만료되었습니다."
+      "expired": "질문이 만료되었습니다.",
+      "notSent": "답변이 전송되지 않았습니다. 다시 시도하세요.",
+      "unsupportedReply": "이 질문은 해당 답변을 받을 수 없습니다.",
+      "uncertainDelivery": "답변 전달을 확인할 수 없습니다. 중복 전송을 피하기 위해 다시 대기열에 넣지 않았습니다.",
+      "differentConversation": "이 질문은 다른 대화에 속합니다.",
+      "sideUnavailable": "이 보조 대화는 더 이상 사용할 수 없습니다."
     },
     "tools": {
       "calls": "도구 호출",
@@ -158,8 +165,35 @@
         "running": "상태: 실행 중",
         "completed": "상태: 완료",
         "error": "상태: 오류",
-        "cancelled": "상태: 취소됨"
-      }
+        "cancelled": "상태: 취소됨",
+        "blocked": "상태: 차단됨"
+      },
+      "inProgress": "상태: 진행 중",
+      "writing": "쓰는 중…",
+      "done": "완료",
+      "errorResult": "오류",
+      "tasks": "작업",
+      "taskProgress": "작업 {completed}/{total}",
+      "taskProgressLabel": "작업 ({completed}/{total})",
+      "changes": "변경: +{added} -{removed}",
+      "fileDeleted": "파일 삭제됨",
+      "noTextDiff": "텍스트 차이 없음",
+      "patch": "패치",
+      "files": "파일 {count}개",
+      "file": "파일",
+      "enteringPlan": "계획 모드로 전환 중",
+      "planComplete": "계획 완료",
+      "messageAgent": "에이전트에 메시지 보내기",
+      "continueAgent": "에이전트 계속",
+      "listAgents": "에이전트 목록",
+      "interruptAgent": "에이전트 중단",
+      "allAgents": "모든 에이전트",
+      "commandPlaceholder": "명령",
+      "filesPlaceholder": "파일",
+      "patternPlaceholder": "패턴",
+      "toolsPlaceholder": "도구",
+      "agentCount": "에이전트 {count}개",
+      "agentCountPlural": "에이전트 {count}개"
     },
     "citations": {
       "memoryUsed": "사용된 메모리",
@@ -216,7 +250,9 @@
       "loading": "불러오는 중…",
       "noMatches": "일치하는 항목 없음",
       "loadFailed": "추천을 불러오지 못했습니다",
-      "retryHint": "다시 입력하여 재시도"
+      "retryHint": "다시 입력하여 재시도",
+      "providerLoading": "제공업체 명령 불러오는 중…",
+      "providerRetry": "제공업체 명령 검색 다시 시도"
     },
     "approval": {
       "title": "권한 필요",
@@ -246,7 +282,15 @@
       "allowRule": "{host}에 허용 규칙 적용.",
       "denyRule": "{host}에 거부 규칙 적용.",
       "details": "{tool} 승인 세부 정보",
-      "unexpectedSelection": "예상치 못한 승인 선택: \"{value}\""
+      "unexpectedSelection": "예상치 못한 승인 선택: \"{value}\"",
+      "runCommand": "명령 실행: {pattern}",
+      "readFile": "파일 읽기: {pattern}",
+      "writeFile": "파일 쓰기: {pattern}",
+      "editFile": "파일 편집: {pattern}",
+      "searchFiles": "일치하는 파일 검색: {pattern}",
+      "searchContent": "일치하는 내용 검색: {pattern}",
+      "unknownPattern": "(알 수 없음)",
+      "deepseekRequest": "DeepSeek이 권한을 요청합니다."
     },
     "disclosure": {
       "expand": "{label} - 클릭하여 펼치기",

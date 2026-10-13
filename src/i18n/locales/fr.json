@@ -100,7 +100,9 @@
       "placeholder": "Demandez des modifications, mentionnez des fichiers avec @, lancez des /commandes",
       "message": "Message",
       "dropImage": "Déposez une image ici",
-      "moreContext": "Afficher {count} autres éléments de contexte"
+      "moreContext": "Afficher {count} autres éléments de contexte",
+      "showLess": "Afficher moins",
+      "moreItems": "+{count} de plus"
     },
     "worked": "Travail effectué",
     "taskNotification": "Notification de tâche",
@@ -141,7 +143,12 @@
       "noOptions": "Aucune option enregistrée",
       "sendFailed": "Impossible d’envoyer la réponse. Réessayez.",
       "answerBelow": "Répondez dans le panneau de questions ci-dessous.",
-      "expired": "La question a expiré."
+      "expired": "La question a expiré.",
+      "notSent": "La réponse n’a pas été envoyée. Réessayez.",
+      "unsupportedReply": "Cette question ne peut pas accepter cette réponse.",
+      "uncertainDelivery": "La remise de la réponse n’a pas pu être confirmée. Elle n’a pas été remise en file pour éviter un double envoi.",
+      "differentConversation": "Cette question appartient à une autre conversation.",
+      "sideUnavailable": "Cette conversation secondaire n’est plus disponible."
     },
     "tools": {
       "calls": "Appels d’outils",
@@ -158,8 +165,35 @@
         "running": "Statut : en cours",
         "completed": "Statut : terminé",
         "error": "Statut : erreur",
-        "cancelled": "Statut : annulé"
-      }
+        "cancelled": "Statut : annulé",
+        "blocked": "Statut : bloqué"
+      },
+      "inProgress": "Statut : en cours",
+      "writing": "Écriture en cours…",
+      "done": "TERMINÉ",
+      "errorResult": "ERREUR",
+      "tasks": "Tâches",
+      "taskProgress": "Tâches {completed}/{total}",
+      "taskProgressLabel": "Tâches ({completed}/{total})",
+      "changes": "Modifications : +{added} -{removed}",
+      "fileDeleted": "Fichier supprimé",
+      "noTextDiff": "Aucune différence textuelle disponible",
+      "patch": "correctif",
+      "files": "{count} fichiers",
+      "file": "fichier",
+      "enteringPlan": "Passage en mode planification",
+      "planComplete": "Plan terminé",
+      "messageAgent": "Envoyer un message à l’agent",
+      "continueAgent": "Continuer l’agent",
+      "listAgents": "Lister les agents",
+      "interruptAgent": "Interrompre l’agent",
+      "allAgents": "Tous les agents",
+      "commandPlaceholder": "commande",
+      "filesPlaceholder": "fichiers",
+      "patternPlaceholder": "motif",
+      "toolsPlaceholder": "outils",
+      "agentCount": "{count} agent",
+      "agentCountPlural": "{count} agents"
     },
     "citations": {
       "memoryUsed": "Mémoire utilisée",
@@ -216,7 +250,9 @@
       "loading": "Chargement…",
       "noMatches": "Aucune correspondance",
       "loadFailed": "Impossible de charger les suggestions",
-      "retryHint": "Saisissez à nouveau pour réessayer"
+      "retryHint": "Saisissez à nouveau pour réessayer",
+      "providerLoading": "Chargement des commandes du fournisseur…",
+      "providerRetry": "Réessayer la découverte des commandes du fournisseur"
     },
     "approval": {
       "title": "Autorisation requise",
@@ -246,7 +282,15 @@
       "allowRule": "Appliquer une règle d’autorisation pour {host}.",
       "denyRule": "Appliquer une règle de refus pour {host}.",
       "details": "Détails de l’autorisation de {tool}",
-      "unexpectedSelection": "Choix d’autorisation inattendu : « {value} »"
+      "unexpectedSelection": "Choix d’autorisation inattendu : « {value} »",
+      "runCommand": "Exécuter la commande : {pattern}",
+      "readFile": "Lire le fichier : {pattern}",
+      "writeFile": "Écrire dans le fichier : {pattern}",
+      "editFile": "Modifier le fichier : {pattern}",
+      "searchFiles": "Rechercher les fichiers correspondant à : {pattern}",
+      "searchContent": "Rechercher le contenu correspondant à : {pattern}",
+      "unknownPattern": "(inconnu)",
+      "deepseekRequest": "DeepSeek demande une autorisation."
     },
     "disclosure": {
       "expand": "{label} - cliquer pour développer",

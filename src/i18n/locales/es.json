@@ -100,7 +100,9 @@
       "placeholder": "Pide cambios, menciona archivos con @, ejecuta /comandos",
       "message": "Mensaje",
       "dropImage": "Suelta una imagen aquí",
-      "moreContext": "Mostrar {count} elementos de contexto más"
+      "moreContext": "Mostrar {count} elementos de contexto más",
+      "showLess": "Mostrar menos",
+      "moreItems": "+{count} más"
     },
     "worked": "Trabajo realizado",
     "taskNotification": "Notificación de tarea",
@@ -141,7 +143,12 @@
       "noOptions": "No hay opciones registradas",
       "sendFailed": "No se pudo enviar la respuesta. Inténtalo de nuevo.",
       "answerBelow": "Responde en el panel de preguntas de abajo.",
-      "expired": "La pregunta ha caducado."
+      "expired": "La pregunta ha caducado.",
+      "notSent": "La respuesta no se envió. Inténtalo de nuevo.",
+      "unsupportedReply": "Esta pregunta no puede aceptar esa respuesta.",
+      "uncertainDelivery": "No se pudo confirmar la entrega de la respuesta. No se volvió a poner en cola para evitar enviarla dos veces.",
+      "differentConversation": "Esta pregunta pertenece a otra conversación.",
+      "sideUnavailable": "Esta conversación lateral ya no está disponible."
     },
     "tools": {
       "calls": "Llamadas a herramientas",
@@ -158,8 +165,35 @@
         "running": "Estado: en ejecución",
         "completed": "Estado: completado",
         "error": "Estado: error",
-        "cancelled": "Estado: cancelado"
-      }
+        "cancelled": "Estado: cancelado",
+        "blocked": "Estado: bloqueado"
+      },
+      "inProgress": "Estado: en curso",
+      "writing": "Escribiendo…",
+      "done": "HECHO",
+      "errorResult": "ERROR",
+      "tasks": "Tareas",
+      "taskProgress": "Tareas {completed}/{total}",
+      "taskProgressLabel": "Tareas ({completed}/{total})",
+      "changes": "Cambios: +{added} -{removed}",
+      "fileDeleted": "Archivo eliminado",
+      "noTextDiff": "No hay diferencias de texto disponibles",
+      "patch": "parche",
+      "files": "{count} archivos",
+      "file": "archivo",
+      "enteringPlan": "Entrando en modo de planificación",
+      "planComplete": "Plan completado",
+      "messageAgent": "Enviar mensaje al agente",
+      "continueAgent": "Continuar agente",
+      "listAgents": "Listar agentes",
+      "interruptAgent": "Interrumpir agente",
+      "allAgents": "Todos los agentes",
+      "commandPlaceholder": "comando",
+      "filesPlaceholder": "archivos",
+      "patternPlaceholder": "patrón",
+      "toolsPlaceholder": "herramientas",
+      "agentCount": "{count} agente",
+      "agentCountPlural": "{count} agentes"
     },
     "citations": {
       "memoryUsed": "Memoria utilizada",
@@ -216,7 +250,9 @@
       "loading": "Cargando…",
       "noMatches": "Sin coincidencias",
       "loadFailed": "No se pudieron cargar las sugerencias",
-      "retryHint": "Escribe de nuevo para reintentar"
+      "retryHint": "Escribe de nuevo para reintentar",
+      "providerLoading": "Cargando comandos del proveedor…",
+      "providerRetry": "Reintentar la detección de comandos del proveedor"
     },
     "approval": {
       "title": "Se requiere permiso",
@@ -246,7 +282,15 @@
       "allowRule": "Aplicar una regla de permiso para {host}.",
       "denyRule": "Aplicar una regla de denegación para {host}.",
       "details": "Detalles de aprobación de {tool}",
-      "unexpectedSelection": "Selección de aprobación inesperada: «{value}»"
+      "unexpectedSelection": "Selección de aprobación inesperada: «{value}»",
+      "runCommand": "Ejecutar comando: {pattern}",
+      "readFile": "Leer archivo: {pattern}",
+      "writeFile": "Escribir en archivo: {pattern}",
+      "editFile": "Editar archivo: {pattern}",
+      "searchFiles": "Buscar archivos que coincidan con: {pattern}",
+      "searchContent": "Buscar contenido que coincida con: {pattern}",
+      "unknownPattern": "(desconocido)",
+      "deepseekRequest": "DeepSeek solicita permiso."
     },
     "disclosure": {
       "expand": "{label} - haz clic para expandir",

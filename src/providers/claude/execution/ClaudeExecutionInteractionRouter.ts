@@ -3,6 +3,8 @@ import type {
   PermissionResult,
 } from '@anthropic-ai/claude-agent-sdk';
 
+import { t } from '@/i18n/i18n';
+
 import {
   type PendingInteraction,
   PendingInteractionLedger,
@@ -22,18 +24,6 @@ export interface ClaudeExecutionInteractionDeps {
   readonly isToolAllowed: (toolName: string) => boolean;
   readonly onToolBlocked: (toolUseId: string) => void;
 }
-
-const ONE_TIME_DECISION_OPTIONS: readonly ProviderApprovalDecisionOption[] = [
-  { label: 'Deny', value: 'deny', decision: 'deny' },
-  { label: 'Allow once', value: 'allow', decision: 'allow' },
-];
-
-// Claude Code decides what an "Always allow" persists and where; offer it only
-// when the SDK suggested permission updates and permits persistent approval.
-const PERSISTABLE_DECISION_OPTIONS: readonly ProviderApprovalDecisionOption[] = [
-  ...ONE_TIME_DECISION_OPTIONS,
-  { label: 'Always allow', value: 'allow-always', decision: 'allow-always' },
-];
 
 export class ClaudeExecutionInteractionRouter {
   private readonly pending: PendingInteractionLedger;
@@ -111,6 +101,14 @@ export class ClaudeExecutionInteractionRouter {
       }
 
       const canPersistApproval = !options.suppressAlwaysAllowRule && Boolean(options.suggestions?.length);
+      const decisionOptions: ProviderApprovalDecisionOption[] = [
+        { label: t('chat.approval.deny'), value: 'deny', decision: 'deny' },
+        { label: t('chat.approval.allowOnce'), value: 'allow', decision: 'allow' },
+      ];
+      // Claude Code owns how suggested permission updates are persisted.
+      if (canPersistApproval) {
+        decisionOptions.push({ label: t('chat.approval.alwaysAllow'), value: 'allow-always', decision: 'allow-always' });
+      }
       const response = await this.deps.interactionPort.requestApproval({
         ...identity,
         kind: 'approval',
@@ -119,9 +117,7 @@ export class ClaudeExecutionInteractionRouter {
         description: getActionDescription(toolName, input),
         decisionReason: options.decisionReason,
         blockedPath: options.blockedPath,
-        decisionOptions: canPersistApproval
-          ? PERSISTABLE_DECISION_OPTIONS
-          : ONE_TIME_DECISION_OPTIONS,
+        decisionOptions,
       }, options.signal);
       this.#assertCurrentResponse(pending, response.interactionId);
       dismissReason = 'resolved';

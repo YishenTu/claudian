@@ -58,6 +58,7 @@ import {
 } from '@/features/chat/rendering/tools/toolExpandedContent';
 import { setToolStatus } from '@/features/chat/rendering/tools/toolStatus';
 import { getWebSearchLabel, getWebSearchSummary, renderWebSearchExpanded } from '@/features/chat/rendering/tools/webSearchContent';
+import { t } from '@/i18n/i18n';
 
 /** Neutral tool fields the expanded view can present. */
 export type ExpandedToolContent = Pick<
@@ -98,7 +99,7 @@ function inputText(key: string, fallback = ''): (input: ToolInput) => string {
 function filePresentation(displayName: string): ToolPresentation {
   return {
     summary: input => fileNameOnly(getInputText(input, 'file_path')),
-    label: input => `${displayName}: ${shortenPath(getInputText(input, 'file_path')) || 'file'}`,
+    label: input => `${displayName}: ${shortenPath(getInputText(input, 'file_path')) || t('chat.tools.file')}`,
   };
 }
 
@@ -157,7 +158,7 @@ function agentWaitSummary(input: ToolInput): string {
   const ids = Array.isArray(input.ids) ? input.ids.length : 0;
   const timeoutMs = typeof input.timeout_ms === 'number' ? input.timeout_ms : undefined;
   const parts: string[] = [];
-  if (ids > 0) parts.push(`${ids} agent${ids === 1 ? '' : 's'}`);
+  if (ids > 0) parts.push(t(ids === 1 ? 'chat.tools.agentCount' : 'chat.tools.agentCountPlural', { count: ids }));
   if (timeoutMs !== undefined) parts.push(`${Math.round(timeoutMs / 1000)}s`);
   return parts.join(', ');
 }
@@ -174,7 +175,7 @@ const TOOL_PRESENTATIONS: ReadonlyMap<string, ToolPresentation> = new Map<string
   [TOOL_EDIT, filePresentation('Edit')],
   [TOOL_BASH, {
     summary: commandSummary,
-    label: input => `Bash: ${truncateText(getInputText(input, 'command', 'command'), 40)}`,
+    label: input => `Bash: ${truncateText(getInputText(input, 'command', t('chat.tools.commandPlaceholder')), 40)}`,
     body: (container, tool) => renderBashContent(container, tool.input, tool.result ?? ''),
     handlesMissingResult: true,
     pendingBody: (container, tool, pendingText) =>
@@ -192,12 +193,12 @@ const TOOL_PRESENTATIONS: ReadonlyMap<string, ToolPresentation> = new Map<string
   [TOOL_GENERATE_VIDEO, { summary: promptSummary }],
   [TOOL_GLOB, {
     summary: inputText('pattern'),
-    label: input => `Glob: ${getInputText(input, 'pattern', 'files')}`,
+    label: input => `Glob: ${getInputText(input, 'pattern', t('chat.tools.filesPlaceholder'))}`,
     body: FILE_SEARCH_BODY,
   }],
   [TOOL_GREP, {
     summary: inputText('pattern'),
-    label: input => `Grep: ${getInputText(input, 'pattern', 'pattern')}`,
+    label: input => `Grep: ${getInputText(input, 'pattern', t('chat.tools.patternPlaceholder'))}`,
     body: FILE_SEARCH_BODY,
   }],
   [TOOL_LS, {
@@ -218,11 +219,11 @@ const TOOL_PRESENTATIONS: ReadonlyMap<string, ToolPresentation> = new Map<string
   }],
   [TOOL_SKILL, {
     summary: inputText('skill'),
-    label: input => `Skill: ${getInputText(input, 'skill', 'skill')}`,
+    label: input => `Skill: ${getInputText(input, 'skill', t('settings.agentSkills.skillBadge'))}`,
   }],
   [TOOL_TOOL_SEARCH, {
     summary: input => truncateText(parseToolSearchQuery(getInputText(input, 'query')), 60),
-    label: input => `ToolSearch: ${parseToolSearchQuery(getInputText(input, 'query')) || 'tools'}`,
+    label: input => `ToolSearch: ${parseToolSearchQuery(getInputText(input, 'query')) || t('chat.tools.toolsPlaceholder')}`,
     body: (container, tool) => renderToolSearchExpanded(container, tool.result ?? ''),
   }],
   [TOOL_TODO_WRITE, {
@@ -238,8 +239,8 @@ const TOOL_PRESENTATIONS: ReadonlyMap<string, ToolPresentation> = new Map<string
   [TOOL_ASK_USER_QUESTION, {
     cardBody: renderAskUserQuestionContent,
   }],
-  [TOOL_ENTER_PLAN_MODE, { name: () => 'Entering plan mode' }],
-  [TOOL_EXIT_PLAN_MODE, { name: () => 'Plan complete' }],
+  [TOOL_ENTER_PLAN_MODE, { name: () => t('chat.tools.enteringPlan') }],
+  [TOOL_EXIT_PLAN_MODE, { name: () => t('chat.tools.planComplete') }],
   [TOOL_APPLY_PATCH, {
     summary: getApplyPatchSummary,
     body: (container, tool) => renderApplyPatchExpanded(container, tool.input, tool.result),
@@ -248,10 +249,10 @@ const TOOL_PRESENTATIONS: ReadonlyMap<string, ToolPresentation> = new Map<string
   }],
   [TOOL_WRITE_STDIN, { summary: getWriteStdinSummary }],
   [TOOL_WORKFLOW, scriptPresentation('Workflow')],
-  [TOOL_SEND_MESSAGE, { ...AGENT_LIFECYCLE, name: () => 'Message agent', summary: agentTargetMessageSummary }],
-  [TOOL_FOLLOWUP_TASK, { ...AGENT_LIFECYCLE, name: () => 'Continue agent', summary: agentTargetMessageSummary }],
-  [TOOL_LIST_AGENTS, { ...AGENT_LIFECYCLE, name: () => 'List agents', summary: inputText('path_prefix', 'All agents') }],
-  [TOOL_INTERRUPT_AGENT, { ...AGENT_LIFECYCLE, name: () => 'Interrupt agent', summary: inputText('target') }],
+  [TOOL_SEND_MESSAGE, { ...AGENT_LIFECYCLE, name: () => t('chat.tools.messageAgent'), summary: agentTargetMessageSummary }],
+  [TOOL_FOLLOWUP_TASK, { ...AGENT_LIFECYCLE, name: () => t('chat.tools.continueAgent'), summary: agentTargetMessageSummary }],
+  [TOOL_LIST_AGENTS, { ...AGENT_LIFECYCLE, name: () => t('chat.tools.listAgents'), summary: input => getInputText(input, 'path_prefix', t('chat.tools.allAgents')) }],
+  [TOOL_INTERRUPT_AGENT, { ...AGENT_LIFECYCLE, name: () => t('chat.tools.interruptAgent'), summary: inputText('target') }],
   [TOOL_SPAWN_AGENT, { ...AGENT_LIFECYCLE, summary: agentMessageSummary(50) }],
   [TOOL_SEND_INPUT, { ...AGENT_LIFECYCLE, summary: agentMessageSummary(40) }],
   [TOOL_WAIT, { ...AGENT_LIFECYCLE, summary: agentWaitSummary }],

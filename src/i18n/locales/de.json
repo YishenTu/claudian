@@ -100,7 +100,9 @@
       "placeholder": "Änderungen anfragen, Dateien mit @ erwähnen, /Befehle ausführen",
       "message": "Nachricht",
       "dropImage": "Bild hier ablegen",
-      "moreContext": "{count} weitere Kontextelemente anzeigen"
+      "moreContext": "{count} weitere Kontextelemente anzeigen",
+      "showLess": "Weniger anzeigen",
+      "moreItems": "+{count} weitere"
     },
     "worked": "Gearbeitet",
     "taskNotification": "Aufgabenbenachrichtigung",
@@ -141,7 +143,12 @@
       "noOptions": "Keine Optionen aufgezeichnet",
       "sendFailed": "Antwort konnte nicht gesendet werden. Bitte erneut versuchen.",
       "answerBelow": "Bitte im Fragenbereich unten antworten.",
-      "expired": "Frage abgelaufen."
+      "expired": "Frage abgelaufen.",
+      "notSent": "Die Antwort wurde nicht gesendet. Bitte erneut versuchen.",
+      "unsupportedReply": "Diese Frage kann diese Antwort nicht annehmen.",
+      "uncertainDelivery": "Die Zustellung der Antwort konnte nicht bestätigt werden. Sie wurde nicht erneut eingereiht, um doppeltes Senden zu vermeiden.",
+      "differentConversation": "Diese Frage gehört zu einer anderen Unterhaltung.",
+      "sideUnavailable": "Dieser Nebenchat ist nicht mehr verfügbar."
     },
     "tools": {
       "calls": "Werkzeugaufrufe",
@@ -158,8 +165,35 @@
         "running": "Status: läuft",
         "completed": "Status: abgeschlossen",
         "error": "Status: Fehler",
-        "cancelled": "Status: abgebrochen"
-      }
+        "cancelled": "Status: abgebrochen",
+        "blocked": "Status: blockiert"
+      },
+      "inProgress": "Status: in Bearbeitung",
+      "writing": "Wird geschrieben…",
+      "done": "FERTIG",
+      "errorResult": "FEHLER",
+      "tasks": "Aufgaben",
+      "taskProgress": "Aufgaben {completed}/{total}",
+      "taskProgressLabel": "Aufgaben ({completed}/{total})",
+      "changes": "Änderungen: +{added} -{removed}",
+      "fileDeleted": "Datei gelöscht",
+      "noTextDiff": "Kein Textvergleich verfügbar",
+      "patch": "Patch",
+      "files": "{count} Dateien",
+      "file": "Datei",
+      "enteringPlan": "Planungsmodus wird gestartet",
+      "planComplete": "Plan abgeschlossen",
+      "messageAgent": "Agent benachrichtigen",
+      "continueAgent": "Agent fortsetzen",
+      "listAgents": "Agents auflisten",
+      "interruptAgent": "Agent unterbrechen",
+      "allAgents": "Alle Agents",
+      "commandPlaceholder": "Befehl",
+      "filesPlaceholder": "Dateien",
+      "patternPlaceholder": "Muster",
+      "toolsPlaceholder": "Werkzeuge",
+      "agentCount": "{count} Agent",
+      "agentCountPlural": "{count} Agenten"
     },
     "citations": {
       "memoryUsed": "Verwendete Erinnerungen",
@@ -216,7 +250,9 @@
       "loading": "Wird geladen…",
       "noMatches": "Keine Treffer",
       "loadFailed": "Vorschläge konnten nicht geladen werden",
-      "retryHint": "Erneut eingeben, um es noch einmal zu versuchen"
+      "retryHint": "Erneut eingeben, um es noch einmal zu versuchen",
+      "providerLoading": "Anbieterbefehle werden geladen…",
+      "providerRetry": "Anbieterbefehle erneut suchen"
     },
     "approval": {
       "title": "Berechtigung erforderlich",
@@ -246,7 +282,15 @@
       "allowRule": "Eine Zulassungsregel für {host} anwenden.",
       "denyRule": "Eine Ablehnungsregel für {host} anwenden.",
       "details": "Genehmigungsdetails für {tool}",
-      "unexpectedSelection": "Unerwartete Genehmigungsauswahl: „{value}“"
+      "unexpectedSelection": "Unerwartete Genehmigungsauswahl: „{value}“",
+      "runCommand": "Befehl ausführen: {pattern}",
+      "readFile": "Datei lesen: {pattern}",
+      "writeFile": "In Datei schreiben: {pattern}",
+      "editFile": "Datei bearbeiten: {pattern}",
+      "searchFiles": "Passende Dateien suchen: {pattern}",
+      "searchContent": "Passende Inhalte suchen: {pattern}",
+      "unknownPattern": "(unbekannt)",
+      "deepseekRequest": "DeepSeek fordert eine Berechtigung an."
     },
     "disclosure": {
       "expand": "{label} - zum Erweitern klicken",

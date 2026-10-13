@@ -1,6 +1,7 @@
 import { setIcon } from 'obsidian';
 
 import type { ToolCallInfo } from '@/core/types';
+import { t } from '@/i18n/i18n';
 
 const STATUS_ICONS: Partial<Record<ToolCallInfo['status'], string>> = {
   completed: 'check',
@@ -13,7 +14,7 @@ export function setToolStatus(
   statusEl: HTMLElement,
   status: ToolCallInfo['status'],
   baseClass: string,
-  ariaLabel = `Status: ${status}`,
+  ariaLabel = t(`chat.tools.status.${status}`),
 ): void {
   statusEl.className = baseClass;
   statusEl.empty();

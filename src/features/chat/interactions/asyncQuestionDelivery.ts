@@ -3,6 +3,7 @@ import { Notice } from 'obsidian';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderQuestionReply } from '@/core/providers/types';
 import type { AskUserAnswers, ProviderId, ToolCallInfo } from '@/core/types';
+import { t } from '@/i18n/i18n';
 
 export type QuestionSteerResult = 'accepted' | 'not-sent' | 'uncertain';
 
@@ -28,14 +29,14 @@ export async function deliverAsyncQuestion(
   binding: QuestionDeliveryBinding,
   signal?: AbortSignal,
 ): Promise<void> {
-  const notSent = () => new Error('The answer was not sent. Please try again.');
+  const notSent = () => new Error(t('chat.questions.notSent'));
   const assertCurrent = () => {
     if (signal?.aborted || tool.questionStatus === 'expired') throw notSent();
     binding.assertCurrent();
   };
   assertCurrent();
   const reply = ProviderRegistry.formatQuestionReply(binding.providerId, tool, answers);
-  if (!reply) throw new Error('This question cannot accept that reply.');
+  if (!reply) throw new Error(t('chat.questions.unsupportedReply'));
   const delivery = binding.prepare({
     ...reply,
     draftContent: Object.values(answers).map(answer => Array.isArray(answer) ? answer.join(', ') : answer).join('\n'),
@@ -46,7 +47,7 @@ export async function deliverAsyncQuestion(
       const result = await delivery.steer(onDelivery);
       if (result !== 'not-sent') {
         if (result === 'uncertain') {
-          new Notice('Answer delivery could not be confirmed. It was not requeued to avoid sending it twice.');
+          new Notice(t('chat.questions.uncertainDelivery'));
         }
         resolve();
         return;

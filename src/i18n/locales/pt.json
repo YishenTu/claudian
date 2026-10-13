@@ -100,7 +100,9 @@
       "placeholder": "Peça alterações, mencione arquivos com @, execute /comandos",
       "message": "Mensagem",
       "dropImage": "Solte uma imagem aqui",
-      "moreContext": "Mostrar mais {count} itens de contexto"
+      "moreContext": "Mostrar mais {count} itens de contexto",
+      "showLess": "Mostrar menos",
+      "moreItems": "+{count} mais"
     },
     "worked": "Trabalho realizado",
     "taskNotification": "Notificação de tarefa",
@@ -141,7 +143,12 @@
       "noOptions": "Nenhuma opção registrada",
       "sendFailed": "Não foi possível enviar a resposta. Tente novamente.",
       "answerBelow": "Responda no painel de perguntas abaixo.",
-      "expired": "A pergunta expirou."
+      "expired": "A pergunta expirou.",
+      "notSent": "A resposta não foi enviada. Tente novamente.",
+      "unsupportedReply": "Esta pergunta não pode aceitar essa resposta.",
+      "uncertainDelivery": "Não foi possível confirmar a entrega da resposta. Ela não foi recolocada na fila para evitar envio duplicado.",
+      "differentConversation": "Esta pergunta pertence a outra conversa.",
+      "sideUnavailable": "Esta conversa lateral não está mais disponível."
     },
     "tools": {
       "calls": "Chamadas de ferramentas",
@@ -158,8 +165,35 @@
         "running": "Status: em execução",
         "completed": "Status: concluído",
         "error": "Status: erro",
-        "cancelled": "Status: cancelado"
-      }
+        "cancelled": "Status: cancelado",
+        "blocked": "Status: bloqueado"
+      },
+      "inProgress": "Status: em andamento",
+      "writing": "Gravando…",
+      "done": "CONCLUÍDO",
+      "errorResult": "ERRO",
+      "tasks": "Tarefas",
+      "taskProgress": "Tarefas {completed}/{total}",
+      "taskProgressLabel": "Tarefas ({completed}/{total})",
+      "changes": "Alterações: +{added} -{removed}",
+      "fileDeleted": "Arquivo excluído",
+      "noTextDiff": "Nenhuma diferença de texto disponível",
+      "patch": "patch",
+      "files": "{count} arquivos",
+      "file": "arquivo",
+      "enteringPlan": "Entrando no modo de planejamento",
+      "planComplete": "Plano concluído",
+      "messageAgent": "Enviar mensagem ao agente",
+      "continueAgent": "Continuar agente",
+      "listAgents": "Listar agentes",
+      "interruptAgent": "Interromper agente",
+      "allAgents": "Todos os agentes",
+      "commandPlaceholder": "comando",
+      "filesPlaceholder": "arquivos",
+      "patternPlaceholder": "padrão",
+      "toolsPlaceholder": "ferramentas",
+      "agentCount": "{count} agente",
+      "agentCountPlural": "{count} agentes"
     },
     "citations": {
       "memoryUsed": "Memória utilizada",
@@ -216,7 +250,9 @@
       "loading": "Carregando…",
       "noMatches": "Sem correspondências",
       "loadFailed": "Não foi possível carregar as sugestões",
-      "retryHint": "Digite novamente para tentar de novo"
+      "retryHint": "Digite novamente para tentar de novo",
+      "providerLoading": "Carregando comandos do provedor…",
+      "providerRetry": "Tentar novamente a descoberta de comandos do provedor"
     },
     "approval": {
       "title": "Permissão necessária",
@@ -246,7 +282,15 @@
       "allowRule": "Aplicar uma regra de permissão para {host}.",
       "denyRule": "Aplicar uma regra de negação para {host}.",
       "details": "Detalhes de aprovação de {tool}",
-      "unexpectedSelection": "Seleção de aprovação inesperada: “{value}”"
+      "unexpectedSelection": "Seleção de aprovação inesperada: “{value}”",
+      "runCommand": "Executar comando: {pattern}",
+      "readFile": "Ler arquivo: {pattern}",
+      "writeFile": "Gravar no arquivo: {pattern}",
+      "editFile": "Editar arquivo: {pattern}",
+      "searchFiles": "Pesquisar arquivos correspondentes a: {pattern}",
+      "searchContent": "Pesquisar conteúdo correspondente a: {pattern}",
+      "unknownPattern": "(desconhecido)",
+      "deepseekRequest": "DeepSeek solicita permissão."
     },
     "disclosure": {
       "expand": "{label} - clique para expandir",

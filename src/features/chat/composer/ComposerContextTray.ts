@@ -116,7 +116,9 @@ export class ComposerContextTray {
     moreButton.removeClass('claudian-hidden');
     if (this.expanded) {
       this.containerEl.addClass('claudian-context-row--expanded');
-      moreButton.textContent = 'Show less';
+      const label = t('chat.composer.showLess');
+      moreButton.textContent = label;
+      moreButton.setAttribute('aria-label', label);
       moreButton.setAttribute('aria-expanded', 'true');
       return;
     }
@@ -138,7 +140,7 @@ export class ComposerContextTray {
     }
 
     const hiddenCount = chips.length - visibleCount;
-    moreButton.textContent = `+${hiddenCount} more`;
+    moreButton.textContent = t('chat.composer.moreItems', { count: hiddenCount });
     moreButton.setAttribute('aria-label', t('chat.composer.moreContext', { count: hiddenCount }));
   }
 

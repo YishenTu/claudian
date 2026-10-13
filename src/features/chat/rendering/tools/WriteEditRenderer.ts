@@ -7,6 +7,7 @@ import { setupCollapsible } from '@/features/chat/rendering/collapsible';
 import { renderDiffContent, renderDiffStats } from '@/features/chat/rendering/tools/DiffRenderer';
 import { fileNameOnly } from '@/features/chat/rendering/tools/toolContentPrimitives';
 import { getToolLabel } from '@/features/chat/rendering/tools/toolPresentation';
+import { t } from '@/i18n/i18n';
 
 export interface WriteEditState {
   wrapperEl: HTMLElement;
@@ -38,7 +39,7 @@ interface WriteEditElements {
 }
 
 function createWriteEditElements(parentEl: HTMLElement, toolCall: ToolCallInfo): WriteEditElements {
-  const filePath = (toolCall.input.file_path as string) || 'file';
+  const filePath = (toolCall.input.file_path as string) || t('chat.tools.file');
   const toolName = toolCall.name; // 'Write' or 'Edit'
 
   const wrapperEl = parentEl.createDiv({ cls: 'claudian-write-edit-block' });
@@ -52,7 +53,7 @@ function createWriteEditElements(parentEl: HTMLElement, toolCall: ToolCallInfo):
   const nameEl = headerEl.createDiv({ cls: 'claudian-write-edit-name' });
   nameEl.setText(toolName);
   const summaryEl = headerEl.createDiv({ cls: 'claudian-write-edit-summary' });
-  summaryEl.setText(fileNameOnly(filePath) || 'file');
+  summaryEl.setText(fileNameOnly(filePath) || t('chat.tools.file'));
 
   const statsEl = headerEl.createDiv({ cls: 'claudian-write-edit-stats' });
   const statusEl = headerEl.createDiv({ cls: 'claudian-write-edit-status' });
@@ -80,12 +81,12 @@ export function createWriteEditBlock(
   } = createWriteEditElements(parentEl, toolCall);
 
   statusEl.addClass('status-running');
-  statusEl.setAttribute('aria-label', 'Status: running');
+  statusEl.setAttribute('aria-label', t('chat.tools.status.running'));
 
   // Initial loading state
   const loadingRow = contentEl.createDiv({ cls: 'claudian-write-edit-diff-row' });
   const loadingEl = loadingRow.createDiv({ cls: 'claudian-write-edit-loading' });
-  loadingEl.setText('Writing...');
+  loadingEl.setText(t('chat.tools.writing'));
 
   // Create state object
   const state: WriteEditState = {
@@ -135,25 +136,25 @@ export function finalizeWriteEditBlock(state: WriteEditState, isError: boolean):
   // Update status icon - only show icon on error
   state.statusEl.className = 'claudian-write-edit-status';
   state.statusEl.empty();
+  state.statusEl.setAttribute('aria-label', t(isError ? 'chat.tools.status.error' : 'chat.tools.status.completed'));
 
   if (isError) {
     state.statusEl.addClass('status-error');
     setIcon(state.statusEl, 'x');
-    state.statusEl.setAttribute('aria-label', 'Status: error');
 
     // Show error in content if no diff was shown
     if (!state.diffLines) {
       state.contentEl.empty();
       const row = state.contentEl.createDiv({ cls: 'claudian-write-edit-diff-row' });
       const errorEl = row.createDiv({ cls: 'claudian-write-edit-error' });
-      errorEl.setText(state.toolCall.result || 'Error');
+      errorEl.setText(state.toolCall.result || t('common.error'));
     }
   } else if (!state.diffLines) {
     // Success but no diff data - clear the "Writing..." loading text and show DONE
     state.contentEl.empty();
     const row = state.contentEl.createDiv({ cls: 'claudian-write-edit-diff-row' });
     const doneEl = row.createDiv({ cls: 'claudian-write-edit-done-text' });
-    doneEl.setText('DONE');
+    doneEl.setText(t('chat.tools.done'));
   }
 
   // Update wrapper class
@@ -171,6 +172,7 @@ export function renderStoredWriteEdit(
 ): HTMLElement {
   const isError = toolCall.status === 'error' || toolCall.status === 'blocked';
   const { wrapperEl, headerEl, statsEl, statusEl, contentEl, baseAriaLabel } = createWriteEditElements(parentEl, toolCall);
+  statusEl.setAttribute('aria-label', t(`chat.tools.status.${toolCall.status}`));
   if (isError) {
     wrapperEl.addClass('error');
   } else if (toolCall.status === 'completed') {
@@ -198,7 +200,7 @@ export function renderStoredWriteEdit(
       errorEl.setText(toolCall.result);
     } else {
       const doneEl = row.createDiv({ cls: 'claudian-write-edit-done-text' });
-      doneEl.setText(isError ? 'ERROR' : 'DONE');
+      doneEl.setText(isError ? t('chat.tools.errorResult') : t('chat.tools.done'));
     }
   };
   const eager = toolCall.status === 'running';

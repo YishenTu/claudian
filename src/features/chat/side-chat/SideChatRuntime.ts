@@ -32,6 +32,7 @@ import {
   StreamController,
 } from '@/features/chat/turns/StreamController';
 import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
+import { t } from '@/i18n/i18n';
 
 export interface SideChatRuntimeDeps {
   readonly plugin: ChatFeatureHost;
@@ -191,9 +192,9 @@ export class SideChatRuntime {
       providerId: this.providerId,
       assertCurrent: () => {
         if (this.#disposed || !this.state.messages.some(message => message.toolCalls?.includes(tool))) {
-          throw new Error('This side chat is no longer available.');
+          throw new Error(t('chat.questions.sideUnavailable'));
         }
-        if (this.state.cancelRequested) throw new Error('The answer was not sent. Please try again.');
+        if (this.state.cancelRequested) throw new Error(t('chat.questions.notSent'));
       },
       prepare: reply => ({
         steer: async () => {

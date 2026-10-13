@@ -100,7 +100,9 @@
       "placeholder": "Запросите изменения, укажите файлы через @, выполните /команды",
       "message": "Сообщение",
       "dropImage": "Перетащите изображение сюда",
-      "moreContext": "Показать ещё элементов контекста: {count}"
+      "moreContext": "Показать ещё элементов контекста: {count}",
+      "showLess": "Показать меньше",
+      "moreItems": "Ещё {count}"
     },
     "worked": "Работа выполнена",
     "taskNotification": "Уведомление о задаче",
@@ -141,7 +143,12 @@
       "noOptions": "Варианты не записаны",
       "sendFailed": "Не удалось отправить ответ. Повторите попытку.",
       "answerBelow": "Ответьте в панели вопросов ниже.",
-      "expired": "Вопрос устарел."
+      "expired": "Вопрос устарел.",
+      "notSent": "Ответ не отправлен. Повторите попытку.",
+      "unsupportedReply": "Этот вопрос не может принять такой ответ.",
+      "uncertainDelivery": "Доставку ответа не удалось подтвердить. Он не поставлен в очередь повторно, чтобы избежать двойной отправки.",
+      "differentConversation": "Этот вопрос относится к другому разговору.",
+      "sideUnavailable": "Этот дополнительный чат больше недоступен."
     },
     "tools": {
       "calls": "Вызовы инструментов",
@@ -158,8 +165,35 @@
         "running": "Статус: выполняется",
         "completed": "Статус: завершено",
         "error": "Статус: ошибка",
-        "cancelled": "Статус: отменено"
-      }
+        "cancelled": "Статус: отменено",
+        "blocked": "Статус: заблокировано"
+      },
+      "inProgress": "Статус: в процессе",
+      "writing": "Запись…",
+      "done": "ГОТОВО",
+      "errorResult": "ОШИБКА",
+      "tasks": "Задачи",
+      "taskProgress": "Задачи {completed}/{total}",
+      "taskProgressLabel": "Задачи ({completed}/{total})",
+      "changes": "Изменения: +{added} -{removed}",
+      "fileDeleted": "Файл удалён",
+      "noTextDiff": "Текстовые изменения недоступны",
+      "patch": "патч",
+      "files": "Файлов: {count}",
+      "file": "файл",
+      "enteringPlan": "Переход в режим планирования",
+      "planComplete": "План готов",
+      "messageAgent": "Отправить сообщение агенту",
+      "continueAgent": "Продолжить работу агента",
+      "listAgents": "Список агентов",
+      "interruptAgent": "Прервать агента",
+      "allAgents": "Все агенты",
+      "commandPlaceholder": "команда",
+      "filesPlaceholder": "файлы",
+      "patternPlaceholder": "шаблон",
+      "toolsPlaceholder": "инструменты",
+      "agentCount": "{count} агент",
+      "agentCountPlural": "Агенты: {count}"
     },
     "citations": {
       "memoryUsed": "Использованная память",
@@ -216,7 +250,9 @@
       "loading": "Загрузка…",
       "noMatches": "Нет совпадений",
       "loadFailed": "Не удалось загрузить подсказки",
-      "retryHint": "Введите снова для повторной попытки"
+      "retryHint": "Введите снова для повторной попытки",
+      "providerLoading": "Загрузка команд провайдера…",
+      "providerRetry": "Повторить поиск команд провайдера"
     },
     "approval": {
       "title": "Требуется разрешение",
@@ -246,7 +282,15 @@
       "allowRule": "Применить разрешающее правило для {host}.",
       "denyRule": "Применить запрещающее правило для {host}.",
       "details": "Подробности разрешения для {tool}",
-      "unexpectedSelection": "Неожиданный выбор разрешения: «{value}»"
+      "unexpectedSelection": "Неожиданный выбор разрешения: «{value}»",
+      "runCommand": "Выполнить команду: {pattern}",
+      "readFile": "Прочитать файл: {pattern}",
+      "writeFile": "Записать в файл: {pattern}",
+      "editFile": "Изменить файл: {pattern}",
+      "searchFiles": "Найти файлы по шаблону: {pattern}",
+      "searchContent": "Найти содержимое по шаблону: {pattern}",
+      "unknownPattern": "(неизвестно)",
+      "deepseekRequest": "DeepSeek запрашивает разрешение."
     },
     "disclosure": {
       "expand": "{label} - нажмите, чтобы развернуть",

@@ -16,6 +16,7 @@ import { appendLinkedContent, appendLinkedContentBody, appendSelectionContexts, 
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { getActionDescription } from '@/core/security/approvalRules';
 import type { SlashCommand } from '@/core/types';
+import { t } from '@/i18n/i18n';
 
 import { readDeepSeekCommands } from '../commands/DeepSeekCommandCatalog';
 import { materializeDeepSeekToolImages } from '../history/DeepSeekImages';
@@ -750,9 +751,9 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     const reason = localizedReason(nativeRequest, this.host.settings.locale);
     const presentation = call
       ? { toolName: call.name, input: { ...call.input }, description: getActionDescription(call.name, call.input), ...(reason ? { decisionReason: reason } : {}) }
-      : { toolName: typeof nativeRequest.toolName === 'string' ? deepseekToolName(nativeRequest.toolName) : 'DeepSeek tool', input: {}, description: reason ?? 'DeepSeek requests permission.' };
+      : { toolName: typeof nativeRequest.toolName === 'string' ? deepseekToolName(nativeRequest.toolName) : 'DeepSeek tool', input: {}, description: reason ?? t('chat.approval.deepseekRequest') };
     const response = value.event === 'approval/request'
-      ? this.config.interactionPort.requestApproval({ ...identity, kind: 'approval', ...presentation, decisionOptions: [{ label: 'Allow once', value: 'allow', decision: 'allow' }, { label: 'Deny', value: 'deny', decision: 'deny' }] }, pending.signal).then(answer => ({ answer, value: answer.decision === 'allow' || answer.decision === 'allow-always' ? 'allowed-once' : answer.decision === 'cancel' ? 'cancelled' : 'rejected' }))
+      ? this.config.interactionPort.requestApproval({ ...identity, kind: 'approval', ...presentation, decisionOptions: [{ label: t('chat.approval.allowOnce'), value: 'allow', decision: 'allow' }, { label: t('chat.approval.deny'), value: 'deny', decision: 'deny' }] }, pending.signal).then(answer => ({ answer, value: answer.decision === 'allow' || answer.decision === 'allow-always' ? 'allowed-once' : answer.decision === 'cancel' ? 'cancelled' : 'rejected' }))
       : this.config.interactionPort.askUserQuestion({ ...identity, kind: 'question', input: questionInput }, pending.signal).then(answer => ({ answer, value: questionAnswers(nativeRequest, answer.answers) }));
     void response.then(async ({ answer, value: result }) => {
       if (generation !== this.generation || this.interactions.isStaleResponse(pending, answer)) return;

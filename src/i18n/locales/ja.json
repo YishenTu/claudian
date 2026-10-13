@@ -100,7 +100,9 @@
       "placeholder": "変更を依頼、@でファイルを指定、/コマンドを実行",
       "message": "メッセージ",
       "dropImage": "ここに画像をドロップ",
-      "moreContext": "他 {count} 件のコンテキストを表示"
+      "moreContext": "他 {count} 件のコンテキストを表示",
+      "showLess": "折りたたむ",
+      "moreItems": "他 {count} 件"
     },
     "worked": "作業完了",
     "taskNotification": "タスク通知",
@@ -141,7 +143,12 @@
       "noOptions": "選択肢の記録がありません",
       "sendFailed": "回答を送信できませんでした。再試行してください。",
       "answerBelow": "下の質問パネルで回答してください。",
-      "expired": "質問の有効期限が切れました。"
+      "expired": "質問の有効期限が切れました。",
+      "notSent": "回答が送信されませんでした。再試行してください。",
+      "unsupportedReply": "この質問はその回答を受け付けられません。",
+      "uncertainDelivery": "回答の送信を確認できませんでした。重複送信を避けるため、再キューイングしませんでした。",
+      "differentConversation": "この質問は別の会話に属しています。",
+      "sideUnavailable": "このサイドチャットは利用できなくなりました。"
     },
     "tools": {
       "calls": "ツール呼び出し",
@@ -158,8 +165,35 @@
         "running": "状態：実行中",
         "completed": "状態：完了",
         "error": "状態：エラー",
-        "cancelled": "状態：キャンセル済み"
-      }
+        "cancelled": "状態：キャンセル済み",
+        "blocked": "状態：ブロック済み"
+      },
+      "inProgress": "状態：進行中",
+      "writing": "書き込み中…",
+      "done": "完了",
+      "errorResult": "エラー",
+      "tasks": "タスク",
+      "taskProgress": "タスク {completed}/{total}",
+      "taskProgressLabel": "タスク（{completed}/{total}）",
+      "changes": "変更：+{added} -{removed}",
+      "fileDeleted": "ファイルを削除しました",
+      "noTextDiff": "テキスト差分がありません",
+      "patch": "パッチ",
+      "files": "{count} 個のファイル",
+      "file": "ファイル",
+      "enteringPlan": "計画モードに移行中",
+      "planComplete": "計画完了",
+      "messageAgent": "エージェントにメッセージを送信",
+      "continueAgent": "エージェントを継続",
+      "listAgents": "エージェント一覧",
+      "interruptAgent": "エージェントを中断",
+      "allAgents": "すべてのエージェント",
+      "commandPlaceholder": "コマンド",
+      "filesPlaceholder": "ファイル",
+      "patternPlaceholder": "パターン",
+      "toolsPlaceholder": "ツール",
+      "agentCount": "エージェント {count} 件",
+      "agentCountPlural": "エージェント {count} 件"
     },
     "citations": {
       "memoryUsed": "使用したメモリ",
@@ -216,7 +250,9 @@
       "loading": "読み込み中…",
       "noMatches": "一致する項目なし",
       "loadFailed": "候補を読み込めませんでした",
-      "retryHint": "再入力して再試行"
+      "retryHint": "再入力して再試行",
+      "providerLoading": "プロバイダーのコマンドを読み込み中…",
+      "providerRetry": "プロバイダーのコマンド検出を再試行"
     },
     "approval": {
       "title": "権限が必要です",
@@ -246,7 +282,15 @@
       "allowRule": "{host} に許可ルールを適用。",
       "denyRule": "{host} に拒否ルールを適用。",
       "details": "{tool} の承認詳細",
-      "unexpectedSelection": "予期しない承認選択：「{value}」"
+      "unexpectedSelection": "予期しない承認選択：「{value}」",
+      "runCommand": "コマンドを実行：{pattern}",
+      "readFile": "ファイルを読み込み：{pattern}",
+      "writeFile": "ファイルに書き込み：{pattern}",
+      "editFile": "ファイルを編集：{pattern}",
+      "searchFiles": "一致するファイルを検索：{pattern}",
+      "searchContent": "一致する内容を検索：{pattern}",
+      "unknownPattern": "（不明）",
+      "deepseekRequest": "DeepSeek が権限を要求しています。"
     },
     "disclosure": {
       "expand": "{label} - クリックして展開",
