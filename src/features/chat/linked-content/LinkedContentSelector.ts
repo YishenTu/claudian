@@ -1,6 +1,7 @@
 import { setIcon } from 'obsidian';
 
 import type { LinkedContentPickerItem } from '@/features/chat/linked-content/LinkedContentPickerSource';
+import { t } from '@/i18n/i18n';
 
 export interface LinkedContentSelectorState {
   readonly mode: 'auto-draft' | 'explicit-draft' | 'submitting' | 'locked';
@@ -58,7 +59,7 @@ export class LinkedContentSelector {
     setIcon(iconEl, 'link');
     const prefixEl = this.selectorRow.createSpan({
       cls: 'claudian-linked-content-selector-prefix',
-      text: 'Linked content:',
+      text: t('chat.linkedContent.label'),
     });
     prefixEl.setAttribute('id', this.prefixId);
     this.selectorButton = this.selectorRow.createEl('button', {
@@ -74,7 +75,7 @@ export class LinkedContentSelector {
 
   #updateSelectorButton(): void {
     if (!this.selectorButton || !this.state) return;
-    const value = this.state.label ?? 'None';
+    const value = this.state.label ?? t('common.none');
     this.selectorButton.setText(value);
   }
 
@@ -186,12 +187,12 @@ export class LinkedContentSelector {
     this.#showPickerResults();
     const listEl = this.pickerEl.createDiv({ cls: 'claudian-linked-content-picker-list' });
     listEl.setAttribute('role', 'listbox');
-    listEl.setAttribute('aria-label', 'Linked content choices');
+    listEl.setAttribute('aria-label', t('chat.linkedContent.choices'));
 
     if (this.filteredItems.length === 0) {
       listEl.createDiv({
         cls: 'claudian-composer-dropdown-item is-empty claudian-linked-content-picker-empty',
-        text: 'No matching files or folders',
+        text: t('chat.linkedContent.noMatch'),
       });
       return;
     }
@@ -251,7 +252,7 @@ export class LinkedContentSelector {
 
   #sizeSearchInputToSelector(selectorRect: DOMRect): void {
     if (!this.searchInput) return;
-    const fallbackWidth = Math.max(1, Array.from(this.state?.label || 'None').length);
+    const fallbackWidth = Math.max(1, Array.from(this.state?.label || t('common.none')).length);
     this.searchInput.style.width = selectorRect.width > 0
       ? `${selectorRect.width}px`
       : `${fallbackWidth}ch`;

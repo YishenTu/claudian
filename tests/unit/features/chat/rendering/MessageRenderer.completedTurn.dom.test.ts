@@ -9,13 +9,14 @@ import { axe } from 'jest-axe';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import type { ChatMessage } from '@/core/types';
+import type { ChatMessage, ToolCallInfo } from '@/core/types';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { createResponseTextBlock } from '@/features/chat/rendering/ResponseLayout';
 import { createThinkingBlock, finalizeThinkingBlock } from '@/features/chat/rendering/ThinkingBlockRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { buildTabRuntimeInputBindings } from '@/features/chat/tabs/runtime/TabRuntimeInputBindings';
+import { setLocale } from '@/i18n/i18n';
 
 HTMLElement.prototype.appendText = function (text) { this.append(document.createTextNode(text)); };
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
@@ -722,4 +723,92 @@ it('reuses created message elements instead of searching the growing history for
   expect(query.mock.calls.filter(([selector]) => selector.includes('data-message-id') || selector.includes('data-work-message-id'))).toHaveLength(0);
   expect(messagesEl.querySelectorAll('.claudian-message')).toHaveLength(100);
   renderer.dispose();
+});
+
+
+it.each([65, undefined])('localizes completed work disclosures (duration: %s)', async durationSeconds => {
+  setLocale('zh-CN');
+  const { renderer, messagesEl } = setup();
+  try {
+    renderer.renderMessages([...messages.slice(0, 2), { ...messages[2], durationSeconds }], () => 'Hello');
+    await Promise.resolve();
+    const header = within(messagesEl).getByRole('button', { name: durationSeconds === undefined ? '已完成工作' : '工作了 01:05' });
+    expect(header.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(header);
+    expect(header.getAttribute('aria-expanded')).toBe('true');
+    expect(within(messagesEl).getByText('Fixed the bug.')).toBeDefined();
+  } finally {
+    renderer.dispose();
+    setLocale('en');
+  }
+});
+
+
+it('localizes task notifications and thinking while preserving message content', async () => {
+  setLocale('zh-CN');
+  const { renderer, messagesEl } = setup();
+  try {
+    renderer.renderMessages([{
+      id: 'notification', role: 'assistant', isAutomaticResponse: true,
+      content: 'Task completed.', timestamp: testDate().getTime(),
+      contentBlocks: [
+        { type: 'task_notification', content: 'Background command completed.' },
+        { type: 'thinking', content: 'Check the result.' },
+        { type: 'text', content: 'Task completed.' },
+      ],
+    }], () => 'Hello');
+    await Promise.resolve();
+    fireEvent.click(within(messagesEl).getByRole('button', { name: '任务通知' }));
+    expect(within(messagesEl).getByText('Background command completed.')).toBeDefined();
+    expect(within(messagesEl).getByRole('button', { name: '思考过程' })).toBeDefined();
+    expect(within(messagesEl).getByText('Task completed.')).toBeDefined();
+  } finally {
+    renderer.dispose();
+    setLocale('en');
+  }
+});
+
+
+it.each(['pending', 'expired'] as const)('localizes async question card chrome (%s)', async questionStatus => {
+  setLocale('zh-CN');
+  const { renderer, messagesEl } = setup('codex');
+  try {
+    const tool: ToolCallInfo = {
+      id: 'async-question', name: 'AskUserQuestion', status: 'completed', questionStatus,
+      input: { replyMode: 'user-message', questions: [{ question: 'Which check?', options: [{ label: 'Lint' }] }] },
+    };
+    renderer.renderStoredMessage({
+      id: 'question-message', role: 'assistant', content: '', timestamp: testDate().getTime(), toolCalls: [tool],
+    });
+    await Promise.resolve();
+    expect(within(messagesEl).getByText(questionStatus === 'pending' ? '请在下方的问题面板中回答。' : '问题已过期。')).toBeDefined();
+    expect(within(messagesEl).getByText('Which check?')).toBeDefined();
+    expect(within(messagesEl).getByText('Lint')).toBeDefined();
+  } finally {
+    renderer.dispose();
+    setLocale('en');
+  }
+});
+
+
+it('localizes citation disclosure names through expansion and collapse', async () => {
+  setLocale('zh-CN');
+  const { renderer, messagesEl } = setup('codex');
+  try {
+    renderer.renderStoredMessage({
+      id: 'cited', role: 'assistant', content: '', timestamp: testDate().getTime(),
+      contentBlocks: [{ type: 'citations', citations: { kind: 'memory', entries: [{ path: 'MEMORY.md', lineStart: 1, lineEnd: 1, note: 'Provider note' }] } }],
+    });
+    await Promise.resolve();
+    const header = within(messagesEl).getByRole('button', { name: '引用的记忆, 1 个来源 - 点击展开' });
+    fireEvent.click(header);
+    expect(within(messagesEl).getByRole('button', { name: '引用的记忆, 1 个来源 - 点击折叠' })).toBe(header);
+    expect(within(messagesEl).getByText('MEMORY.md:1')).toBeDefined();
+    fireEvent.click(header);
+    expect(within(messagesEl).getByRole('button', { name: '引用的记忆, 1 个来源 - 点击展开' })).toBe(header);
+    expect(await axe(messagesEl)).toHaveNoViolations();
+  } finally {
+    renderer.dispose();
+    setLocale('en');
+  }
 });

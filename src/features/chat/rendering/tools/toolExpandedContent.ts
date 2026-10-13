@@ -10,6 +10,7 @@ import {
   renderLinesExpanded,
   setToolIcon,
 } from '@/features/chat/rendering/tools/toolContentPrimitives';
+import { t } from '@/i18n/i18n';
 
 /** Shared expanded bodies for tools whose result is plain or lightly structured text. */
 
@@ -52,7 +53,7 @@ export function renderReadExpanded(container: HTMLElement, result: string, resul
 
 export function renderFileSearchExpanded(container: HTMLElement, result: string): void {
   if (!result.trim()) {
-    renderEmptyResult(container, 'No matches found');
+    renderEmptyResult(container, t('chat.tools.noMatches'));
     return;
   }
   renderLinesExpanded(container, result, 15, true);
@@ -93,7 +94,7 @@ export function renderWebFetchExpanded(container: HTMLElement, result: string): 
     lineEl.setText(result.slice(0, maxChars));
     linesEl.createDiv({
       cls: 'claudian-tool-truncated',
-      text: `... ${result.length - maxChars} more characters`,
+      text: t('chat.tools.moreCharacters', { count: result.length - maxChars }),
     });
   } else {
     lineEl.setText(result);
@@ -110,11 +111,11 @@ export function renderAgentLifecycleExpanded(
   const message = getInputText(input, 'message');
   if (target || message) {
     const inputEl = container.createDiv({ cls: 'claudian-tool-lines' });
-    if (target) inputEl.createDiv({ cls: 'claudian-tool-line', text: `Agent: ${target}` });
+    if (target) inputEl.createDiv({ cls: 'claudian-tool-line', text: t('chat.agent', { agent: target }) });
     if (message) inputEl.createDiv({ cls: 'claudian-tool-line claudian-tool-line-wrap', text: message });
   }
   if (!result) {
-    contentFallback(container, pendingText ?? 'No output');
+    contentFallback(container, pendingText ?? t('chat.tools.noOutput'));
     return;
   }
   // Try to parse as JSON for structured display

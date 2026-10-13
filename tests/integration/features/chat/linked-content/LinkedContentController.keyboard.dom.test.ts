@@ -6,6 +6,7 @@ import { TFolder } from 'obsidian';
 
 import { LinkedContentController } from '@/features/chat/linked-content/LinkedContentController';
 import { createWelcomeElement } from '@/features/chat/rendering/WelcomeRenderer';
+import { setLocale } from '@/i18n/i18n';
 
 beforeAll(() => {
   Object.assign(HTMLElement.prototype, {
@@ -77,5 +78,25 @@ it('navigates linked-content choices with arrows, selects, and returns focus on 
   } finally {
     controller.destroy();
     container.remove();
+  }
+});
+
+
+it('localizes the controller-generated missing-content selector label', () => {
+  setLocale('zh-CN');
+  const controller = new LinkedContentController({
+    app: { vault: { getAbstractFileByPath: () => null }, workspace: { getActiveFile: () => null } } as never,
+    getExcludedTags: () => [], getCachedVaultFiles: () => [], getCachedVaultFolders: () => [],
+  });
+  const container = document.body.createDiv();
+  try {
+    const welcome = createWelcomeElement(container, 'Hello');
+    controller.mountWelcome(welcome);
+    controller.selectExplicit('Missing/Plan.md');
+    expect(within(welcome).getByRole('button', { name: 'Plan.md · 内容缺失' })).toBeDefined();
+  } finally {
+    controller.destroy();
+    container.remove();
+    setLocale('en');
   }
 });

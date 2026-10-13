@@ -6,6 +6,7 @@ import {
   getResponseLayout,
   markResponseElement,
 } from '@/features/chat/rendering/ResponseLayout';
+import { t } from '@/i18n/i18n';
 
 // Disclosure ids stay unique across every renderer sharing the document.
 let nextHistoryId = 0;
@@ -77,7 +78,8 @@ export class ResponseFinalizer {
           cls: 'claudian-work', attr: { 'data-work-message-id': msg.id },
         });
         workContentEl.insertBefore(wrapper, workContentEl.firstChild);
-        const label = msg.durationSeconds === undefined ? 'Worked' : `Worked for ${formatWorkDuration(msg.durationSeconds)}`;
+        const label = msg.durationSeconds === undefined ? t('chat.worked')
+          : t('chat.zen.workedFor', { duration: formatWorkDuration(msg.durationSeconds) });
         const history = this.#createDisclosure(wrapper, 'claudian-work-history', label);
         for (const el of [...earlierEls, ...workEls]) history.appendChild(el);
       }
@@ -90,7 +92,7 @@ export class ResponseFinalizer {
   /** A collapsed notification whose Markdown renders on first expansion. */
   renderTaskNotification(contentEl: HTMLElement, content: string): void {
     const wrapper = markResponseElement(contentEl.createDiv({ cls: 'claudian-task-notification' }), 'notification');
-    const history = this.#createDisclosure(wrapper, 'claudian-task-notification', 'Task notification', () => {
+    const history = this.#createDisclosure(wrapper, 'claudian-task-notification', t('chat.taskNotification'), () => {
       void this.renderContent(body, content);
     });
     const body = history.createDiv({ text: content });

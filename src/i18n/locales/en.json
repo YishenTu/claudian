@@ -9,7 +9,9 @@
     "clearAll": "Clear all",
     "error": "Error",
     "confirm": "Confirm",
-    "refresh": "Refresh"
+    "refresh": "Refresh",
+    "retry": "Retry",
+    "none": "None"
   },
   "chat": {
     "promptSuggestionHint": "Tab to accept",
@@ -93,6 +95,181 @@
       "toolCompleted": "{tool} · done",
       "toolFailed": "{tool} · failed",
       "toolBlocked": "{tool} · blocked"
+    },
+    "composer": {
+      "placeholder": "Ask to make changes, @mention files, run /commands",
+      "message": "Message",
+      "dropImage": "Drop image here",
+      "moreContext": "Show {count} more context items"
+    },
+    "worked": "Worked",
+    "taskNotification": "Task notification",
+    "copyMessage": "Copy message",
+    "renderFailed": "Failed to render message content.",
+    "interruptedHint": "· What should Claudian do instead?",
+    "sessions": {
+      "empty": "No conversations",
+      "noMatch": "No matching sessions",
+      "resume": "Resume conversation",
+      "loading": "Loading conversation…",
+      "current": "Current session",
+      "loadFailed": "Failed to load conversation"
+    },
+    "linkedContent": {
+      "label": "Linked content:",
+      "choices": "Linked content choices",
+      "noMatch": "No matching files or folders",
+      "missing": "Missing content",
+      "path": "Linked content: {path}",
+      "missingPath": "Linked content: {path}. Missing content",
+      "noContent": "No Linked content",
+      "missingNotice": "Linked content is missing: {path}",
+      "openFailed": "Failed to open Linked content: {error}"
+    },
+    "questions": {
+      "title": "Question",
+      "submit": "Submit",
+      "review": "Review your answers",
+      "ready": "Ready to submit your answers?",
+      "sending": "Sending...",
+      "submitAnswers": "Submit answers",
+      "notAnswered": "Not answered",
+      "customAnswer": "Type your own answer…",
+      "secret": "Enter secret…",
+      "editAnswer": "Edit answer to {question}",
+      "waiting": "Waiting for answer...",
+      "noOptions": "No options recorded",
+      "sendFailed": "Could not send the answer. Please try again.",
+      "answerBelow": "Answer in the question panel below.",
+      "expired": "Question expired."
+    },
+    "tools": {
+      "calls": "Tool calls",
+      "output": "Output",
+      "noResult": "No result",
+      "noMatches": "No matches found",
+      "tasksUpdated": "Tasks updated",
+      "noChanges": "No changes",
+      "moreLines": "... {count} more lines",
+      "moreCharacters": "... {count} more characters",
+      "running": "Running...",
+      "noOutput": "No output",
+      "status": {
+        "running": "Status: running",
+        "completed": "Status: completed",
+        "error": "Status: error",
+        "cancelled": "Status: cancelled"
+      }
+    },
+    "citations": {
+      "memoryUsed": "Memory used",
+      "source": "{count} source",
+      "sources": "{count} sources"
+    },
+    "web": {
+      "findInPage": "Find in page",
+      "openPage": "Open page",
+      "urlUnavailable": "URL unavailable",
+      "clickLink": "Click link {id}",
+      "pattern": "Pattern: {pattern}",
+      "query": "Query: {query}",
+      "altQuery": "Alt query: {query}",
+      "search": "Search web",
+      "moreQueries": "... {count} more queries",
+      "clickInPage": "Click link {id} in {url}",
+      "open": "Open {url}",
+      "find": "Find \"{pattern}\"",
+      "inPage": "{action} in {url}",
+      "operations": "{count} web operations",
+      "searchTerm": "search"
+    },
+    "permissionMode": {
+      "label": "Permission mode",
+      "current": "Permission mode: {mode}",
+      "changeFailed": "Failed to change permission mode",
+      "claude": {
+        "auto": "Auto",
+        "manual": "Manual",
+        "acceptEdits": "Accept edits",
+        "yolo": "YOLO",
+        "autoDesc": "Claude handles permission decisions",
+        "manualDesc": "Always ask before making changes",
+        "acceptEditsDesc": "Automatically accept all file edits",
+        "yoloDesc": "Accept all permissions without asking"
+      },
+      "codex": {
+        "autoReview": "Approve for me",
+        "normal": "Ask for approval",
+        "yolo": "Full access",
+        "autoReviewDesc": "Auto-review extra access.",
+        "readOnlyDesc": "Ask before edits or internet.",
+        "normalDesc": "Ask before extra access.",
+        "yoloDesc": "Unrestricted files and internet."
+      }
+    },
+    "thinking": {
+      "active": "Thinking {seconds}s...",
+      "completed": "Thought for {seconds}s",
+      "label": "Thought"
+    },
+    "suggestions": {
+      "loading": "Loading…",
+      "noMatches": "No matches",
+      "loadFailed": "Could not load suggestions",
+      "retryHint": "Type again to retry"
+    },
+    "approval": {
+      "title": "Permission required",
+      "question": "Allow this action?",
+      "deny": "Deny",
+      "allowOnce": "Allow once",
+      "alwaysAllow": "Always allow",
+      "mcpRequest": "MCP request",
+      "mcpServer": "MCP server: {server}",
+      "decline": "Decline",
+      "allow": "Allow",
+      "cancelRequest": "Cancel this request.",
+      "declineRequest": "Decline this request.",
+      "acceptRequest": "Accept this request.",
+      "fileChange": "File change",
+      "fileChangeReason": "File change: {reason}",
+      "permissionRequest": "Permission request",
+      "permissionReason": "Permission request: {reason}",
+      "networkAccess": "Allow {protocol} access to {host}",
+      "execute": "Execute: {command}",
+      "executeCommand": "Execute command",
+      "allowSimilar": "Allow similar commands",
+      "execPolicy": "Approve and store an exec policy amendment.",
+      "host": "host",
+      "allowHost": "Allow {host} for this session",
+      "denyHost": "Deny {host} for this session",
+      "allowRule": "Apply an allow rule for {host}.",
+      "denyRule": "Apply a deny rule for {host}.",
+      "details": "{tool} approval details",
+      "unexpectedSelection": "Unexpected approval selection: \"{value}\""
+    },
+    "disclosure": {
+      "expand": "{label} - click to expand",
+      "collapse": "{label} - click to collapse"
+    },
+    "removeItem": "Remove {item}",
+    "agent": "Agent: {agent}",
+    "images": {
+      "unsupportedProvider": "Image attachments are not supported by this provider.",
+      "tooLarge": "Image exceeds {size} limit.",
+      "unsupportedType": "Unsupported image type.",
+      "attachFailed": "Failed to attach image.",
+      "label": "Image",
+      "numbered": "Image {number}",
+      "attachment": "Image attachment: {name} · {size}",
+      "fileNotFound": "{message} (File not found)",
+      "permissionDenied": "{message} (Permission denied)",
+      "preview": "Image preview: {name}",
+      "closePreview": "Close image preview"
+    },
+    "pi": {
+      "extension": "Pi extension",
+      "notification": "Pi extension notification."
     }
   },
   "settings": {

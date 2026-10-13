@@ -3,6 +3,7 @@ import { setIcon } from 'obsidian';
 import type { ProviderPermissionModeOption } from '@/core/providers/types';
 import { runToolbarAction, ToolbarMenu, type ToolbarMenuGroup } from '@/features/chat/composer/toolbar/ToolbarMenu';
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
+import { t } from '@/i18n/i18n';
 
 /** Choice among the provider's permission modes. */
 export class PermissionToggle {
@@ -16,7 +17,7 @@ export class PermissionToggle {
     this.callbacks = callbacks;
     this.menu = new ToolbarMenu(parentEl, {
       anchorCls: 'claudian-permission-toggle',
-      menuLabel: 'Permission mode',
+      menuLabel: t('chat.permissionMode.label'),
       closeOnSelect: true,
       group: menuGroup,
       onOpen: () => this.updateDisplay(),
@@ -53,7 +54,7 @@ export class PermissionToggle {
     this.iconEl.toggleClass('claudian-hidden', !bypasses);
     if (bypasses) setIcon(this.iconEl, 'shield-alert');
     this.menu.buttonEl.toggleClass('claudian-toolbar-chip--alert', bypasses);
-    this.menu.buttonEl.setAttribute('aria-label', `Permission mode: ${current.label}`);
+    this.menu.buttonEl.setAttribute('aria-label', t('chat.permissionMode.current', { mode: current.label }));
 
     this.menu.menuEl.empty();
     for (const choice of options) {
@@ -68,7 +69,7 @@ export class PermissionToggle {
           runToolbarAction(async () => {
             await this.callbacks.onPermissionModeChange(choice.value);
             this.updateDisplay();
-          }, 'Failed to change permission mode');
+          }, t('chat.permissionMode.changeFailed'));
         },
       });
     }

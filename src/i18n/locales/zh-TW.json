@@ -9,7 +9,9 @@
     "clearAll": "清除全部",
     "error": "錯誤",
     "confirm": "確認",
-    "refresh": "重新整理"
+    "refresh": "重新整理",
+    "retry": "重試",
+    "none": "無"
   },
   "chat": {
     "promptSuggestionHint": "按 Tab 接受",
@@ -93,6 +95,181 @@
       "toolCompleted": "{tool} · 已完成",
       "toolFailed": "{tool} · 失敗",
       "toolBlocked": "{tool} · 已封鎖"
+    },
+    "composer": {
+      "placeholder": "請求修改、@提及檔案、執行 /命令",
+      "message": "訊息",
+      "dropImage": "將圖片拖到這裡",
+      "moreContext": "顯示另外 {count} 項上下文"
+    },
+    "worked": "已完成工作",
+    "taskNotification": "任務通知",
+    "copyMessage": "複製訊息",
+    "renderFailed": "訊息內容呈現失敗。",
+    "interruptedHint": "· 你希望 Claudian 改做什麼？",
+    "sessions": {
+      "empty": "尚無對話",
+      "noMatch": "沒有符合的工作階段",
+      "resume": "繼續對話",
+      "loading": "正在載入對話…",
+      "current": "目前的工作階段",
+      "loadFailed": "載入對話失敗"
+    },
+    "linkedContent": {
+      "label": "關聯內容：",
+      "choices": "關聯內容選項",
+      "noMatch": "沒有符合的檔案或資料夾",
+      "missing": "內容遺失",
+      "path": "關聯內容：{path}",
+      "missingPath": "關聯內容：{path}。內容遺失",
+      "noContent": "無關聯內容",
+      "missingNotice": "關聯內容遺失：{path}",
+      "openFailed": "開啟關聯內容失敗：{error}"
+    },
+    "questions": {
+      "title": "問題",
+      "submit": "提交",
+      "review": "檢查你的回答",
+      "ready": "準備提交回答了嗎？",
+      "sending": "正在傳送…",
+      "submitAnswers": "提交回答",
+      "notAnswered": "未回答",
+      "customAnswer": "輸入你的回答…",
+      "secret": "輸入私密內容…",
+      "editAnswer": "修改「{question}」的回答",
+      "waiting": "等待回答…",
+      "noOptions": "未記錄選項",
+      "sendFailed": "無法傳送回答，請重試。",
+      "answerBelow": "請在下方的問題面板中回答。",
+      "expired": "問題已過期。"
+    },
+    "tools": {
+      "calls": "工具呼叫",
+      "output": "輸出",
+      "noResult": "無結果",
+      "noMatches": "找不到符合項目",
+      "tasksUpdated": "任務已更新",
+      "noChanges": "無變更",
+      "moreLines": "…還有 {count} 行",
+      "moreCharacters": "…還有 {count} 個字元",
+      "running": "執行中…",
+      "noOutput": "無輸出",
+      "status": {
+        "running": "狀態：執行中",
+        "completed": "狀態：已完成",
+        "error": "狀態：錯誤",
+        "cancelled": "狀態：已取消"
+      }
+    },
+    "citations": {
+      "memoryUsed": "引用的記憶",
+      "source": "{count} 個來源",
+      "sources": "{count} 個來源"
+    },
+    "web": {
+      "findInPage": "在頁面中尋找",
+      "openPage": "開啟頁面",
+      "urlUnavailable": "網址無法使用",
+      "clickLink": "點擊連結 {id}",
+      "pattern": "比對模式：{pattern}",
+      "query": "搜尋詞：{query}",
+      "altQuery": "備選搜尋詞：{query}",
+      "search": "搜尋網頁",
+      "moreQueries": "…還有 {count} 個搜尋詞",
+      "clickInPage": "在 {url} 中點擊連結 {id}",
+      "open": "開啟 {url}",
+      "find": "尋找「{pattern}」",
+      "inPage": "在 {url} 中{action}",
+      "operations": "{count} 個網頁操作",
+      "searchTerm": "搜尋"
+    },
+    "permissionMode": {
+      "label": "權限模式",
+      "current": "權限模式：{mode}",
+      "changeFailed": "切換權限模式失敗",
+      "claude": {
+        "auto": "自動",
+        "manual": "手動",
+        "acceptEdits": "接受編輯",
+        "yolo": "YOLO",
+        "autoDesc": "由 Claude 決定是否授權",
+        "manualDesc": "修改前一律詢問",
+        "acceptEditsDesc": "自動接受所有檔案編輯",
+        "yoloDesc": "無須詢問，允許所有操作"
+      },
+      "codex": {
+        "autoReview": "代我審批",
+        "normal": "請求審批",
+        "yolo": "完整存取",
+        "autoReviewDesc": "自動審核額外存取權限。",
+        "readOnlyDesc": "編輯或連網前詢問。",
+        "normalDesc": "額外存取前詢問。",
+        "yoloDesc": "不限制檔案和網路存取。"
+      }
+    },
+    "thinking": {
+      "active": "思考中，已用時 {seconds} 秒…",
+      "completed": "思考了 {seconds} 秒",
+      "label": "思考過程"
+    },
+    "suggestions": {
+      "loading": "正在載入…",
+      "noMatches": "無符合項目",
+      "loadFailed": "無法載入建議",
+      "retryHint": "再次輸入以重試"
+    },
+    "approval": {
+      "title": "需要授權",
+      "question": "允許此操作嗎？",
+      "deny": "拒絕",
+      "allowOnce": "允許一次",
+      "alwaysAllow": "一律允許",
+      "mcpRequest": "MCP 請求",
+      "mcpServer": "MCP 伺服器： {server}",
+      "decline": "拒絕",
+      "allow": "允許",
+      "cancelRequest": "取消此請求。",
+      "declineRequest": "拒絕此請求。",
+      "acceptRequest": "接受此請求。",
+      "fileChange": "檔案修改",
+      "fileChangeReason": "檔案修改：{reason}",
+      "permissionRequest": "權限請求",
+      "permissionReason": "權限請求：{reason}",
+      "networkAccess": "允許透過 {protocol} 存取 {host}",
+      "execute": "執行：{command}",
+      "executeCommand": "執行命令",
+      "allowSimilar": "允許類似命令",
+      "execPolicy": "核准並儲存執行策略變更。",
+      "host": "主機",
+      "allowHost": "在此工作階段中允許 {host}",
+      "denyHost": "在此工作階段中拒絕 {host}",
+      "allowRule": "對 {host} 套用允許規則。",
+      "denyRule": "對 {host} 套用拒絕規則。",
+      "details": "{tool} 授權詳情",
+      "unexpectedSelection": "非預期的授權選項：「{value}」"
+    },
+    "disclosure": {
+      "expand": "{label} - 點擊展開",
+      "collapse": "{label} - 點擊收合"
+    },
+    "removeItem": "移除{item}",
+    "agent": "代理：{agent}",
+    "images": {
+      "unsupportedProvider": "此供應商不支援圖片附件。",
+      "tooLarge": "圖片超過 {size} 的大小限制。",
+      "unsupportedType": "不支援的圖片格式。",
+      "attachFailed": "新增圖片附件失敗。",
+      "label": "圖片",
+      "numbered": "圖片 {number}",
+      "attachment": "圖片附件：{name} · {size}",
+      "fileNotFound": "{message}（檔案不存在）",
+      "permissionDenied": "{message}（無存取權限）",
+      "preview": "圖片預覽：{name}",
+      "closePreview": "關閉圖片預覽"
+    },
+    "pi": {
+      "extension": "Pi 擴充功能",
+      "notification": "Pi 擴充功能通知。"
     }
   },
   "settings": {
@@ -158,7 +335,7 @@
     },
     "codexSandbox": {
       "name": "沙盒",
-      "desc": "Approve for me 和 Ask for approval 模式下的檔案存取權限。唯讀模式會在每次編輯前請求確認；Full access 會忽略此設定。"
+      "desc": "代我審批 和 請求審批 模式下的檔案存取權限。唯讀模式會在每次編輯前請求確認；完整存取 會忽略此設定。"
     },
     "environment": "環境",
     "sharedEnvironment": {

@@ -1,3 +1,5 @@
+import { t } from '@/i18n/i18n';
+
 import { ComposerDropdownView } from './ComposerDropdownView';
 import type {
   ComposerDropdownFolderItem,
@@ -182,7 +184,7 @@ export class ComposerDropdownController {
     }
 
     const generation = this.#invalidateActiveLoad();
-    this.items = [{ id: 'loading', kind: 'status', label: 'Loading…', state: 'loading' }];
+    this.items = [{ id: 'loading', kind: 'status', label: t('chat.suggestions.loading'), state: 'loading' }];
     this.selectedIndex = -1;
     this.view.render(this.items, this.selectedIndex);
 
@@ -217,7 +219,7 @@ export class ComposerDropdownController {
       if (this.destroyed || controller.signal.aborted || generation !== this.generation) return;
       this.items = items.length > 0
         ? items
-        : [{ id: 'empty', kind: 'status', label: 'No matches', state: 'empty' }];
+        : [{ id: 'empty', kind: 'status', label: t('chat.suggestions.noMatches'), state: 'empty' }];
       this.selectedIndex = this.#findSelectable(0, 1, true);
       this.view.render(this.items, this.selectedIndex);
     } catch {
@@ -225,8 +227,8 @@ export class ComposerDropdownController {
       this.items = [{
         id: 'error',
         kind: 'status',
-        label: 'Could not load suggestions',
-        detail: 'Type again to retry',
+        label: t('chat.suggestions.loadFailed'),
+        detail: t('chat.suggestions.retryHint'),
         state: 'error',
       }];
       this.selectedIndex = -1;

@@ -20,6 +20,7 @@ jest.mock('obsidian', () => {
   }
   return { ...actual, Modal };
 });
+import { setLocale } from '@/i18n/i18n';
 import { ObsidianPiExtensionUIRenderer } from '@/providers/pi/ui/ObsidianPiExtensionUIRenderer';
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...names) { this.classList.add(...names); };
@@ -74,5 +75,26 @@ it.each(['input', 'editor'] as const)('closes an active %s dialog when its reque
     controller.abort();
     await result;
     document.body.replaceChildren();
+  }
+});
+
+
+it.each(['input', 'editor'] as const)('localizes fallback %s titles and controls without altering submitted text', async method => {
+  setLocale('zh-CN');
+  const controller = new AbortController();
+  const renderer = new ObsidianPiExtensionUIRenderer({} as App);
+  const result = renderer[method]({ id: 'localized', defaultValue: 'Provider text' }, controller.signal);
+  try {
+    const region = within(document.body).getByRole('region', { name: 'Pi extension' });
+    expect(within(region).getByRole('heading', { name: 'Pi 扩展' })).toBeDefined();
+    expect(within(region).getByRole('textbox', { name: 'Pi 扩展' })).toHaveProperty('value', 'Provider text');
+    expect(within(region).getByRole('button', { name: '取消' })).toBeDefined();
+    fireEvent.click(within(region).getByRole('button', { name: '提交' }));
+    await expect(result).resolves.toEqual({ value: 'Provider text' });
+  } finally {
+    controller.abort();
+    await result;
+    document.body.replaceChildren();
+    setLocale('en');
   }
 });

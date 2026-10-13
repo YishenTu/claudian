@@ -9,7 +9,9 @@
     "clearAll": "清除全部",
     "error": "错误",
     "confirm": "确认",
-    "refresh": "刷新"
+    "refresh": "刷新",
+    "retry": "重试",
+    "none": "无"
   },
   "chat": {
     "promptSuggestionHint": "按 Tab 接受",
@@ -93,6 +95,181 @@
       "toolCompleted": "{tool} · 已完成",
       "toolFailed": "{tool} · 失败",
       "toolBlocked": "{tool} · 已阻止"
+    },
+    "composer": {
+      "placeholder": "请求修改、@提及文件、运行 /命令",
+      "message": "消息",
+      "dropImage": "将图片拖到这里",
+      "moreContext": "显示另外 {count} 项上下文"
+    },
+    "worked": "已完成工作",
+    "taskNotification": "任务通知",
+    "copyMessage": "复制消息",
+    "renderFailed": "消息内容渲染失败。",
+    "interruptedHint": "· 你希望 Claudian 改做什么？",
+    "sessions": {
+      "empty": "暂无对话",
+      "noMatch": "没有匹配的会话",
+      "resume": "继续对话",
+      "loading": "正在加载对话…",
+      "current": "当前会话",
+      "loadFailed": "加载对话失败"
+    },
+    "linkedContent": {
+      "label": "关联内容：",
+      "choices": "关联内容选项",
+      "noMatch": "没有匹配的文件或文件夹",
+      "missing": "内容缺失",
+      "path": "关联内容：{path}",
+      "missingPath": "关联内容：{path}。内容缺失",
+      "noContent": "无关联内容",
+      "missingNotice": "关联内容缺失：{path}",
+      "openFailed": "打开关联内容失败：{error}"
+    },
+    "questions": {
+      "title": "问题",
+      "submit": "提交",
+      "review": "检查你的回答",
+      "ready": "准备提交回答了吗？",
+      "sending": "正在发送…",
+      "submitAnswers": "提交回答",
+      "notAnswered": "未回答",
+      "customAnswer": "输入你的回答…",
+      "secret": "输入私密内容…",
+      "editAnswer": "修改“{question}”的回答",
+      "waiting": "等待回答…",
+      "noOptions": "未记录选项",
+      "sendFailed": "无法发送回答，请重试。",
+      "answerBelow": "请在下方的问题面板中回答。",
+      "expired": "问题已过期。"
+    },
+    "tools": {
+      "calls": "工具调用",
+      "output": "输出",
+      "noResult": "无结果",
+      "noMatches": "未找到匹配项",
+      "tasksUpdated": "任务已更新",
+      "noChanges": "无变更",
+      "moreLines": "…还有 {count} 行",
+      "moreCharacters": "…还有 {count} 个字符",
+      "running": "运行中…",
+      "noOutput": "无输出",
+      "status": {
+        "running": "状态：运行中",
+        "completed": "状态：已完成",
+        "error": "状态：错误",
+        "cancelled": "状态：已取消"
+      }
+    },
+    "citations": {
+      "memoryUsed": "引用的记忆",
+      "source": "{count} 个来源",
+      "sources": "{count} 个来源"
+    },
+    "web": {
+      "findInPage": "在页面中查找",
+      "openPage": "打开页面",
+      "urlUnavailable": "网址不可用",
+      "clickLink": "点击链接 {id}",
+      "pattern": "匹配模式：{pattern}",
+      "query": "搜索词：{query}",
+      "altQuery": "备选搜索词：{query}",
+      "search": "搜索网页",
+      "moreQueries": "…还有 {count} 个搜索词",
+      "clickInPage": "在 {url} 中点击链接 {id}",
+      "open": "打开 {url}",
+      "find": "查找“{pattern}”",
+      "inPage": "在 {url} 中{action}",
+      "operations": "{count} 个网页操作",
+      "searchTerm": "搜索"
+    },
+    "permissionMode": {
+      "label": "权限模式",
+      "current": "权限模式：{mode}",
+      "changeFailed": "切换权限模式失败",
+      "claude": {
+        "auto": "自动",
+        "manual": "手动",
+        "acceptEdits": "接受编辑",
+        "yolo": "YOLO",
+        "autoDesc": "由 Claude 决定是否授权",
+        "manualDesc": "修改前始终询问",
+        "acceptEditsDesc": "自动接受所有文件编辑",
+        "yoloDesc": "无需询问，允许所有操作"
+      },
+      "codex": {
+        "autoReview": "代我审批",
+        "normal": "请求审批",
+        "yolo": "完全访问",
+        "autoReviewDesc": "自动审核额外访问权限。",
+        "readOnlyDesc": "编辑或联网前询问。",
+        "normalDesc": "额外访问前询问。",
+        "yoloDesc": "不限制文件和网络访问。"
+      }
+    },
+    "thinking": {
+      "active": "思考中，已用时 {seconds} 秒…",
+      "completed": "思考了 {seconds} 秒",
+      "label": "思考过程"
+    },
+    "suggestions": {
+      "loading": "正在加载…",
+      "noMatches": "无匹配项",
+      "loadFailed": "无法加载建议",
+      "retryHint": "再次输入以重试"
+    },
+    "approval": {
+      "title": "需要授权",
+      "question": "允许此操作吗？",
+      "deny": "拒绝",
+      "allowOnce": "允许一次",
+      "alwaysAllow": "始终允许",
+      "mcpRequest": "MCP 请求",
+      "mcpServer": "MCP 服务器： {server}",
+      "decline": "拒绝",
+      "allow": "允许",
+      "cancelRequest": "取消此请求。",
+      "declineRequest": "拒绝此请求。",
+      "acceptRequest": "接受此请求。",
+      "fileChange": "文件修改",
+      "fileChangeReason": "文件修改：{reason}",
+      "permissionRequest": "权限请求",
+      "permissionReason": "权限请求：{reason}",
+      "networkAccess": "允许通过 {protocol} 访问 {host}",
+      "execute": "执行：{command}",
+      "executeCommand": "执行命令",
+      "allowSimilar": "允许类似命令",
+      "execPolicy": "批准并保存执行策略变更。",
+      "host": "主机",
+      "allowHost": "在此会话中允许 {host}",
+      "denyHost": "在此会话中拒绝 {host}",
+      "allowRule": "对 {host} 应用允许规则。",
+      "denyRule": "对 {host} 应用拒绝规则。",
+      "details": "{tool} 授权详情",
+      "unexpectedSelection": "意外的授权选项：“{value}”"
+    },
+    "disclosure": {
+      "expand": "{label} - 点击展开",
+      "collapse": "{label} - 点击折叠"
+    },
+    "removeItem": "移除{item}",
+    "agent": "代理：{agent}",
+    "images": {
+      "unsupportedProvider": "此提供商不支持图片附件。",
+      "tooLarge": "图片超过 {size} 的大小限制。",
+      "unsupportedType": "不支持的图片格式。",
+      "attachFailed": "添加图片附件失败。",
+      "label": "图片",
+      "numbered": "图片 {number}",
+      "attachment": "图片附件：{name} · {size}",
+      "fileNotFound": "{message}（文件不存在）",
+      "permissionDenied": "{message}（无访问权限）",
+      "preview": "图片预览：{name}",
+      "closePreview": "关闭图片预览"
+    },
+    "pi": {
+      "extension": "Pi 扩展",
+      "notification": "Pi 扩展通知。"
     }
   },
   "settings": {
@@ -158,7 +335,7 @@
     },
     "codexSandbox": {
       "name": "沙盒",
-      "desc": "Approve for me 和 Ask for approval 模式下的文件访问权限。只读模式会在每次编辑前请求确认；Full access 会忽略此设置。"
+      "desc": "代我审批 和 请求审批 模式下的文件访问权限。只读模式会在每次编辑前请求确认；完全访问 会忽略此设置。"
     },
     "environment": "环境",
     "sharedEnvironment": {

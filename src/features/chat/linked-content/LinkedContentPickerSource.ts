@@ -1,6 +1,7 @@
 import type { TFile } from 'obsidian';
 
 import { normalizeLinkedContentPath } from '@/core/path/LinkedContentPath';
+import { t } from '@/i18n/i18n';
 
 export type LinkedContentPickerItemKind = 'none' | 'file' | 'folder';
 
@@ -35,8 +36,8 @@ export class LinkedContentPickerSource {
         id: 'none',
         kind: 'none',
         path: null,
-        label: 'None',
-        detail: 'No Linked content',
+        label: t('common.none'),
+        detail: t('chat.linkedContent.noContent'),
         icon: 'circle-slash',
       },
     ];

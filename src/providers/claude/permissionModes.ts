@@ -2,7 +2,6 @@ import type { PermissionMode as SDKPermissionMode } from '@anthropic-ai/claude-a
 
 import { getProviderConfig } from '../../core/providers/providerConfig';
 import type {
-  ProviderPermissionModeOption,
   ProviderPermissionModePolicy,
 } from '../../core/providers/types';
 
@@ -34,18 +33,6 @@ export const CLAUDE_PERMISSION_MODE_POLICY: ProviderPermissionModePolicy = Objec
     return safeMode === undefined ? 'acceptEdits' : typeof safeMode === 'string' ? LEGACY_SAFE_MODES[safeMode] : undefined;
   },
 });
-
-export const CLAUDE_PERMISSION_MODE_OPTIONS: readonly ProviderPermissionModeOption[] = Object.freeze([
-  { value: 'auto', label: 'Auto', description: 'Claude handles permission decisions' },
-  { value: 'manual', label: 'Manual', description: 'Always ask before making changes' },
-  { value: 'acceptEdits', label: 'Accept edits', description: 'Automatically accept all file edits' },
-  {
-    value: 'yolo',
-    label: 'YOLO',
-    description: 'Accept all permissions without asking',
-    bypassesApprovals: true,
-  },
-]);
 
 export function isClaudePermissionMode(value: unknown): value is ClaudePermissionMode {
   return (CLAUDE_PERMISSION_MODES as readonly unknown[]).includes(value);

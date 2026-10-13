@@ -1,9 +1,11 @@
 import type {
+  ProviderApprovalInteractionRequest,
   ProviderInteractionPort,
   ProviderQuestionInteractionRequest,
   ProviderQuestionInteractionResponse,
   ProviderToolPolicy,
 } from '@/core/execution';
+import { setLocale } from '@/i18n/i18n';
 import { CodexExecutionServerRequestRouter } from '@/providers/codex/execution/CodexExecutionServerRequestRouter';
 
 const confirmationRequest = {
@@ -50,6 +52,7 @@ function createPendingQuestion() {
 }
 
 describe('CodexExecutionServerRequestRouter', () => {
+  afterEach(() => setLocale('en'));
   it('requires an explicit answer for the captured Computer Use confirmation, even with unrestricted tools', async () => {
     const askUserQuestion = jest.fn(async (request: ProviderQuestionInteractionRequest) => ({
       interactionId: request.interactionId,
@@ -110,7 +113,8 @@ describe('CodexExecutionServerRequestRouter', () => {
     );
   });
 
-  it('leaves confirmation pending until the user explicitly submits a choice', async () => {
+  it.each(['en', 'zh-CN'] as const)('leaves localized confirmation pending until the user explicitly submits a choice (%s)', async locale => {
+    setLocale(locale);
     const question = createPendingQuestion();
     const router = createRouter(question.askUserQuestion, { kind: 'unrestricted' });
     const result = router.handleServerRequest('pending', 'mcpServer/elicitation/request', confirmationRequest);
@@ -121,13 +125,13 @@ describe('CodexExecutionServerRequestRouter', () => {
     expect(settled).toBe(false);
     expect(request.input).toMatchObject({
       questions: [{
-        question: 'MCP server: cua_repl\n\nAllow Computer Use to use "Obsidian"?',
+        question: `${locale === 'en' ? 'MCP server:' : 'MCP 服务器：'} cua_repl\n\nAllow Computer Use to use "Obsidian"?`,
         multiSelect: false,
         isOther: false,
         options: [
-          expect.objectContaining({ value: 'cancel' }),
-          expect.objectContaining({ value: 'decline' }),
-          expect.objectContaining({ value: 'accept' }),
+          expect.objectContaining({ value: 'cancel', label: locale === 'en' ? 'Cancel' : '取消' }),
+          expect.objectContaining({ value: 'decline', label: locale === 'en' ? 'Decline' : '拒绝' }),
+          expect.objectContaining({ value: 'accept', label: locale === 'en' ? 'Allow' : '允许' }),
         ],
       }],
     });
@@ -287,4 +291,30 @@ describe('CodexExecutionServerRequestRouter', () => {
       .resolves.toEqual({ action: 'cancel', content: null });
     expect(router.resolveNativeRequest('failed', 'thread-confirmation')).toBe(false);
   });
+});
+
+
+it('localizes Codex command approval labels without changing native decisions', async () => {
+  setLocale('zh-CN');
+  const requestApproval = jest.fn(async (request: ProviderApprovalInteractionRequest) => ({
+    interactionId: request.interactionId, decision: 'allow' as const,
+  }));
+  const router = new CodexExecutionServerRequestRouter('session-confirmation', {
+    requestApproval,
+    askUserQuestion: async request => ({ interactionId: request.interactionId, answers: {} }),
+    dismissInteraction: () => undefined,
+  }, () => true);
+  router.setActiveTurn({ localTurnId: 'local-turn', nativeThreadId: 'thread-confirmation', nativeTurnId: 'turn-confirmation', toolPolicy: { kind: 'provider-default' } });
+  try {
+    await expect(router.handleServerRequest('command', 'item/commandExecution/requestApproval', {
+      threadId: 'thread-confirmation', turnId: 'turn-confirmation', itemId: 'command-item', command: 'npm test',
+    })).resolves.toEqual({ decision: 'accept' });
+    const [request] = requestApproval.mock.calls[0];
+    expect(request.description).toBe('执行：npm test');
+    expect(request.decisionOptions?.map(option => [option.label, option.value])).toEqual([
+      ['允许一次', 'allow-once'], ['始终允许', 'allow-always'], ['拒绝', 'deny'],
+    ]);
+  } finally {
+    setLocale('en');
+  }
 });

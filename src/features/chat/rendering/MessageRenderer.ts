@@ -18,6 +18,7 @@ import { resolveStoredTaskSubagent } from '@/features/chat/subagents/storedTaskS
 import { resolveSubagentAdapter } from '@/features/chat/subagents/subagentAdapterResolution';
 import { renderSubagentHistory } from '@/features/chat/subagents/SubagentHistoryRenderer';
 import { renderStoredAsyncSubagent, renderStoredSubagent } from '@/features/chat/subagents/SubagentRenderer';
+import { t } from '@/i18n/i18n';
 import { ImagePreviewModal } from '@/shared/modals/ImagePreviewModal';
 import { registerFileLinkHandler } from '@/utils/fileLink';
 
@@ -355,11 +356,11 @@ export class MessageRenderer {
 
   appendInterruptIndicator(contentEl: HTMLElement): void {
     const textEl = createResponseTextBlock(contentEl);
-    textEl.createSpan({ cls: 'claudian-interrupted', text: 'Interrupted' });
+    textEl.createSpan({ cls: 'claudian-interrupted', text: t('chat.zen.interrupted') });
     textEl.appendText(' ');
     textEl.createSpan({
       cls: 'claudian-interrupted-hint',
-      text: '\u00B7 What should Claudian do instead?',
+      text: t('chat.interruptedHint'),
     });
   }
 

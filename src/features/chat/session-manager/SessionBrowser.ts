@@ -38,6 +38,7 @@ import {
   type SessionStatusIndicatorKind,
   sessionStatusText,
 } from '@/features/chat/session-manager/SessionStatusPresentation';
+import { t } from '@/i18n/i18n';
 
 const DEFAULT_HISTORY_PAGE_SIZE = 100;
 
@@ -222,7 +223,7 @@ export class SessionBrowser {
     if (model.isEmpty) {
       sessionList.createDiv({
         cls: 'claudian-history-empty',
-        text: model.hasSearchTerms ? 'No matching sessions' : 'No conversations',
+        text: model.hasSearchTerms ? t('chat.sessions.noMatch') : t('chat.sessions.empty'),
       });
       restorePosition();
       return;

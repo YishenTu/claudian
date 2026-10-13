@@ -1,6 +1,7 @@
 import { setIcon } from 'obsidian';
 
 import { getToolIcon, MCP_ICON_MARKER } from '@/core/tools/toolIcons';
+import { t } from '@/i18n/i18n';
 import { appendMCPIcon } from '@/shared/icons';
 
 export function setToolIcon(el: HTMLElement, name: string): void {
@@ -59,7 +60,7 @@ export function formatToolDisplayValue(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-export function renderEmptyResult(container: HTMLElement, text = 'No result'): void {
+export function renderEmptyResult(container: HTMLElement, text = t('chat.tools.noResult')): void {
   container.createDiv({ cls: 'claudian-tool-empty', text });
 }
 
@@ -90,7 +91,7 @@ export function renderLinesExpanded(
   if (truncated) {
     linesEl.createDiv({
       cls: 'claudian-tool-truncated',
-      text: `... ${lineCount - maxLines} more lines`,
+      text: t('chat.tools.moreLines', { count: lineCount - maxLines }),
     });
   }
 }

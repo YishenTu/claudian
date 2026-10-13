@@ -2,6 +2,7 @@ import { setIcon } from 'obsidian';
 
 import type { ScriptToolCallItem, ToolCallInfo } from '@/core/types';
 import { contentFallback, getInputText, truncateText } from '@/features/chat/rendering/tools/toolContentPrimitives';
+import { t } from '@/i18n/i18n';
 import { stringifyUnknown } from '@/utils/stringify';
 
 /** Header text for a nested tool, supplied by the presentation table. */
@@ -48,13 +49,13 @@ function summarizeToolInput(input: Record<string, unknown>): string {
 }
 
 function renderScriptToolCalls(container: HTMLElement, calls: ScriptToolCallItem[], describeTool: DescribeTool): void {
-  container.createDiv({ cls: 'claudian-tool-script-label', text: 'Tool calls' });
-  const listEl = container.createEl('ul', { cls: 'claudian-tool-script-calls', attr: { 'aria-label': 'Tool calls' } });
+  container.createDiv({ cls: 'claudian-tool-script-label', text: t('chat.tools.calls') });
+  const listEl = container.createEl('ul', { cls: 'claudian-tool-script-calls', attr: { 'aria-label': t('chat.tools.calls') } });
   for (const call of calls) {
     const itemEl = listEl.createEl('li', { cls: 'claudian-tool-script-call' });
     const statusEl = itemEl.createSpan({
       cls: `claudian-tool-status status-${call.status}`,
-      attr: { role: 'img', 'aria-label': `Status: ${call.status}` },
+      attr: { role: 'img', 'aria-label': t(`chat.tools.status.${call.status}`) },
     });
     const icon = SCRIPT_CALL_STATUS_ICONS[call.status];
     if (icon) setIcon(statusEl, icon);
@@ -94,10 +95,10 @@ export function renderScriptContent(
     renderScriptToolCalls(container, toolCall.scriptToolCalls, describeTool);
   }
   const result = toolCall.result ?? '';
-  container.createDiv({ cls: 'claudian-tool-script-label', text: 'Output' });
+  container.createDiv({ cls: 'claudian-tool-script-label', text: t('chat.tools.output') });
   if (result) {
     container.createEl('pre', { cls: 'claudian-tool-script-output', text: result });
   } else if (!toolCall.resultImages?.length) {
-    contentFallback(container, toolCall.status === 'running' ? 'Running...' : 'No result');
+    contentFallback(container, toolCall.status === 'running' ? t('chat.tools.running') : t('chat.tools.noResult'));
   }
 }

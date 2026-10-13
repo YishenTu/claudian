@@ -26,6 +26,7 @@ import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { refreshTabProviderUI } from '@/features/chat/tabs/tabProviderUI';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
+import { setLocale } from '@/i18n/i18n';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '@/providers/codex/settings';
 import { updateCurrentGrokCatalog } from '@/providers/grok/settings';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
@@ -224,7 +225,10 @@ it.each(modelCatalogCases.flatMap(entry => [true, false].map(advertisesHigh => (
   },
 );
 
-it('defaults Codex to automatic review and persists and submits each permission selection', async () => {
+it.each(['en', 'zh-CN'] as const)('defaults Codex to automatic review and persists and submits each permission selection in %s', async locale => {
+  setLocale(locale);
+  const prefix = locale === 'en' ? 'Permission mode:' : '权限模式：';
+  const labels = locale === 'en' ? ['Approve for me', 'Ask for approval', 'Full access'] : ['代我审批', '请求审批', '完全访问'];
   const entry = modelCatalogCases.find(({ id }) => id === 'codex')!;
   const settings = createSettings(entry);
   const initialPermissionMode = settings.permissionMode;
@@ -232,20 +236,21 @@ it('defaults Codex to automatic review and persists and submits each permission 
   try {
     const tab = await createTab();
     const ui = within(tab.dom.inputComposerEl);
-    expect(ui.getByRole('button', { name: 'Permission mode: Approve for me' })).toBeDefined();
+    expect(ui.getByRole('button', { name: `${prefix}${locale === 'en' ? ' ' : ''}${labels[0]}` })).toBeDefined();
     for (const [label, mode] of [
-      ['Ask for approval', 'normal'], ['Full access', 'yolo'], ['Approve for me', 'auto-review'],
+      [labels[1], 'normal'], [labels[2], 'yolo'], [labels[0], 'auto-review'],
     ]) {
-      fireEvent.click(ui.getByRole('button', { name: /^Permission mode:/ }));
+      fireEvent.click(ui.getByRole('button', { name: new RegExp(`^${prefix}`) }));
       fireEvent.click(ui.getByRole('menuitemradio', { name: new RegExp(`^${label}`) }));
       await waitFor(() => expect(settings.savedProviderPermissionMode.codex).toBe(mode));
       await expectSubmission(tab, sessions, getChatSettingsSnapshot(settings, entry.id, entry.selected).model, 'high');
       expect(sessions.at(-1)?.requests.at(-1)?.configuration.permissionMode).toBe(mode);
     }
     const reopened = await createTab();
-    expect(within(reopened.dom.inputComposerEl).getByRole('button', { name: 'Permission mode: Approve for me' })).toBeDefined();
+    expect(within(reopened.dom.inputComposerEl).getByRole('button', { name: `${prefix}${locale === 'en' ? ' ' : ''}${labels[0]}` })).toBeDefined();
     expect(settings.permissionMode).toBe(initialPermissionMode);
   } finally {
+    setLocale('en');
     for (const tab of tabs) await destroyTab(tab);
   }
 });

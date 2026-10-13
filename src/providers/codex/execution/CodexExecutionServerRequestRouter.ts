@@ -7,6 +7,7 @@ import {
   type ProviderToolPolicy,
 } from '@/core/execution';
 import type { ApprovalDecision } from '@/core/types';
+import { t } from '@/i18n/i18n';
 import { normalizeCodexToolName } from '@/providers/codex/normalization/codexToolNormalization';
 import type {
   CommandApprovalRequest,
@@ -198,7 +199,7 @@ export class CodexExecutionServerRequestRouter {
           reason: params.reason ?? null,
           grantRoot: params.grantRoot ?? null,
         },
-        description: params.reason ? `File change: ${params.reason}` : 'File change',
+        description: params.reason ? t('chat.approval.fileChangeReason', { reason: params.reason }) : t('chat.approval.fileChange'),
         nativeContext: {
           requestId,
           threadId: params.threadId,
@@ -235,8 +236,8 @@ export class CodexExecutionServerRequestRouter {
         toolName: 'permissions',
         input: params.permissions as Readonly<Record<string, unknown>>,
         description: params.reason
-          ? `Permission request: ${params.reason}`
-          : 'Permission request',
+          ? t('chat.approval.permissionReason', { reason: params.reason })
+          : t('chat.approval.permissionRequest'),
         ...(params.reason ? { decisionReason: params.reason } : {}),
         nativeContext: {
           requestId,
@@ -333,12 +334,12 @@ export class CodexExecutionServerRequestRouter {
         input: {
           questions: [{
             id: MCP_CONFIRMATION_QUESTION_ID,
-            header: 'MCP request',
-            question: `MCP server: ${params.serverName}\n\n${params.message}`,
+            header: t('chat.approval.mcpRequest'),
+            question: `${t('chat.approval.mcpServer', { server: params.serverName })}\n\n${params.message}`,
             options: [
-              { label: 'Cancel', description: 'Cancel this request.', value: 'cancel' },
-              { label: 'Decline', description: 'Decline this request.', value: 'decline' },
-              { label: 'Allow', description: 'Accept this request.', value: 'accept' },
+              { label: t('common.cancel'), description: t('chat.approval.cancelRequest'), value: 'cancel' },
+              { label: t('chat.approval.decline'), description: t('chat.approval.declineRequest'), value: 'decline' },
+              { label: t('chat.approval.allow'), description: t('chat.approval.acceptRequest'), value: 'accept' },
             ],
             multiSelect: false,
             isOther: false,
@@ -474,9 +475,9 @@ function isDynamicToolAllowed(
 
 function describeCommandApproval(params: CommandApprovalRequest): string {
   if (params.networkApprovalContext) {
-    return `Allow ${params.networkApprovalContext.protocol} access to ${params.networkApprovalContext.host}`;
+    return t('chat.approval.networkAccess', { protocol: params.networkApprovalContext.protocol, host: params.networkApprovalContext.host });
   }
-  return params.command ? `Execute: ${params.command}` : 'Execute command';
+  return params.command ? t('chat.approval.execute', { command: params.command }) : t('chat.approval.executeCommand');
 }
 
 function buildCommandApprovalDecisionOptions(
@@ -492,34 +493,34 @@ function mapDecisionOption(
   params: CommandApprovalRequest,
 ): ProviderApprovalDecisionOption {
   if (decision === 'accept') {
-    return { label: 'Allow once', value: 'allow-once', decision: 'allow' };
+    return { label: t('chat.approval.allowOnce'), value: 'allow-once', decision: 'allow' };
   }
   if (decision === 'acceptForSession') {
     return {
-      label: 'Always allow',
+      label: t('chat.approval.alwaysAllow'),
       value: 'allow-always',
       decision: 'allow-always',
     };
   }
   if (decision === 'decline') {
-    return { label: 'Deny', value: 'deny', decision: 'deny' };
+    return { label: t('chat.approval.deny'), value: 'deny', decision: 'deny' };
   }
   if (decision === 'cancel') {
-    return { label: 'Cancel', value: 'cancel', decision: 'cancel' };
+    return { label: t('common.cancel'), value: 'cancel', decision: 'cancel' };
   }
   if ('acceptWithExecpolicyAmendment' in decision) {
     return {
-      label: 'Allow similar commands',
-      description: 'Approve and store an exec policy amendment.',
+      label: t('chat.approval.allowSimilar'),
+      description: t('chat.approval.execPolicy'),
       value: JSON.stringify(decision),
     };
   }
 
   const amendment = decision.applyNetworkPolicyAmendment.network_policy_amendment;
-  const host = amendment.host || params.networkApprovalContext?.host || 'host';
+  const host = amendment.host || params.networkApprovalContext?.host || t('chat.approval.host');
   return {
-    label: `${amendment.action === 'deny' ? 'Deny' : 'Allow'} ${host} for this session`,
-    description: `Apply a ${amendment.action} rule for ${host}.`,
+    label: t(amendment.action === 'deny' ? 'chat.approval.denyHost' : 'chat.approval.allowHost', { host }),
+    description: t(amendment.action === 'deny' ? 'chat.approval.denyRule' : 'chat.approval.allowRule', { host }),
     value: JSON.stringify(decision),
   };
 }

@@ -5,12 +5,7 @@ import type { ApprovalDecision, AskUserAnswers, ToolCallInfo } from '@/core/type
 import { type InlineAskQuestionConfig, InlineAskUserQuestion } from '@/features/chat/interactions/InlineAskUserQuestion';
 import { QuestionInteractionState } from '@/features/chat/interactions/QuestionInteractionState';
 import { setToolIcon } from '@/features/chat/rendering/tools/toolContentPrimitives';
-
-const APPROVAL_OPTION_MAP: Record<string, ApprovalDecision> = {
-  'Deny': 'deny',
-  'Allow once': 'allow',
-  'Always allow': 'allow-always',
-};
+import { t } from '@/i18n/i18n';
 
 export interface InlineApprovalDecisionOption {
   label: string;
@@ -26,12 +21,13 @@ export interface InlineApprovalOptions {
   decisionOptions?: InlineApprovalDecisionOption[];
 }
 
-const DEFAULT_APPROVAL_DECISION_OPTIONS: InlineApprovalDecisionOption[] =
-  Object.entries(APPROVAL_OPTION_MAP).map(([label, decision]) => ({
-    decision,
-    label,
-    value: label,
-  }));
+function getDefaultApprovalDecisionOptions(): InlineApprovalDecisionOption[] {
+  return [
+    { decision: 'deny', label: t('chat.approval.deny'), value: 'Deny' },
+    { decision: 'allow', label: t('chat.approval.allowOnce'), value: 'Allow once' },
+    { decision: 'allow-always', label: t('chat.approval.alwaysAllow'), value: 'Always allow' },
+  ];
+}
 
 export interface SessionInteractionsDeps {
   /** Element that receives the inline prompt. */
@@ -144,14 +140,14 @@ export class SessionInteractions {
         headerEl.createDiv({ cls: 'claudian-ask-approval-blocked-path', text: approvalOptions.blockedPath });
       }
       if (approvalOptions?.agentID) {
-        headerEl.createDiv({ cls: 'claudian-ask-approval-agent', text: `Agent: ${approvalOptions.agentID}` });
+        headerEl.createDiv({ cls: 'claudian-ask-approval-agent', text: t('chat.agent', { agent: approvalOptions.agentID }) });
       }
 
       const descriptionEl = headerEl.createDiv({
         cls: 'claudian-ask-approval-desc',
         text: description,
       });
-      descriptionEl.setAttribute('aria-label', `${toolName} approval details`);
+      descriptionEl.setAttribute('aria-label', t('chat.approval.details', { tool: toolName }));
       descriptionEl.setAttribute('role', 'region');
       descriptionEl.setAttribute('tabindex', '0');
       descriptionEl.addEventListener('keydown', (event) => {
@@ -167,7 +163,7 @@ export class SessionInteractions {
       return headerEl;
     };
 
-    const decisionOptions = approvalOptions?.decisionOptions ?? DEFAULT_APPROVAL_DECISION_OPTIONS;
+    const decisionOptions = approvalOptions?.decisionOptions ?? getDefaultApprovalDecisionOptions();
     const optionDecisionMap = new Map<string, ApprovalDecision>();
     const questionOptions = decisionOptions.map((option, index) => {
       const value = option.value || `approval-option-${index}`;
@@ -183,9 +179,9 @@ export class SessionInteractions {
 
     const result = await this.#showInline(
       interactionId,
-      { questions: [{ isOther: false, isSecret: false, options: questionOptions, question: 'Allow this action?' }] },
+      { questions: [{ isOther: false, isSecret: false, options: questionOptions, question: t('chat.approval.question') }] },
       signal,
-      { immediateSelect: true, showCustomInput: false, title: 'Permission required' },
+      { immediateSelect: true, showCustomInput: false, title: t('chat.approval.title') },
       createHeader,
     );
 
@@ -193,7 +189,7 @@ export class SessionInteractions {
     const selected = Object.values(result)[0];
     const selectedValue = Array.isArray(selected) ? selected[0] : selected;
     if (typeof selectedValue !== 'string') {
-      new Notice(`Unexpected approval selection: "${String(selectedValue)}"`);
+      new Notice(t('chat.approval.unexpectedSelection', { value: String(selectedValue) }));
       return 'cancel';
     }
 

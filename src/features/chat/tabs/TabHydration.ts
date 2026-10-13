@@ -2,6 +2,7 @@ import { StartupProfiler } from '@/core/performance/StartupProfiler';
 import type { ProviderId } from '@/core/providers/types';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 import { scheduleAnimationFrame } from '@/features/chat/utils/animationFrame';
+import { t } from '@/i18n/i18n';
 
 /** `aborted`: the tab stopped being live; `failed`: the error state is rendered with a retry. */
 export type TabHydrationOutcome = 'aborted' | 'ready' | 'failed';
@@ -96,18 +97,18 @@ function renderTabHydrationState(
   if (!error) {
     statusEl.createDiv({
       cls: 'claudian-tab-hydration-loading',
-      text: 'Loading conversation…',
+      text: t('chat.sessions.loading'),
     });
     return;
   }
 
   statusEl.createDiv({
     cls: 'claudian-tab-hydration-error',
-    text: error instanceof Error ? error.message : 'Failed to load conversation',
+    text: error instanceof Error ? error.message : t('chat.sessions.loadFailed'),
   });
   const retryButton = statusEl.createEl('button', {
     cls: 'mod-cta claudian-tab-hydration-retry',
-    text: 'Retry',
+    text: t('common.retry'),
   });
   retryButton.addEventListener('click', () => {
     onRetry(tab);

@@ -161,7 +161,7 @@ export class MessageActions {
     const copyBtn = textEl.createEl('button', {
       cls: 'claudian-text-copy-btn',
       attr: {
-        'aria-label': 'Copy message',
+        'aria-label': t('chat.copyMessage'),
         type: 'button',
       },
     });
@@ -215,7 +215,7 @@ export class MessageActions {
       () => text,
       () => {
         copyBtn.empty();
-        copyBtn.setText('Copied!');
+        copyBtn.setText(t('chat.codeBlock.copied'));
         copyBtn.classList.add('copied');
       },
       () => {
@@ -288,7 +288,7 @@ export class MessageActions {
       attr: { type: 'button' },
     });
     setIcon(copyBtn, 'copy');
-    copyBtn.setAttribute('aria-label', 'Copy message');
+    copyBtn.setAttribute('aria-label', t('chat.copyMessage'));
     this.#bindCopy(copyBtn, content);
   }
 

@@ -9,7 +9,9 @@
     "clearAll": "すべてクリア",
     "error": "エラー",
     "confirm": "確認",
-    "refresh": "更新"
+    "refresh": "更新",
+    "retry": "再試行",
+    "none": "なし"
   },
   "chat": {
     "promptSuggestionHint": "Tab で採用",
@@ -93,6 +95,181 @@
       "toolCompleted": "{tool} · 完了",
       "toolFailed": "{tool} · 失敗",
       "toolBlocked": "{tool} · ブロック"
+    },
+    "composer": {
+      "placeholder": "変更を依頼、@でファイルを指定、/コマンドを実行",
+      "message": "メッセージ",
+      "dropImage": "ここに画像をドロップ",
+      "moreContext": "他 {count} 件のコンテキストを表示"
+    },
+    "worked": "作業完了",
+    "taskNotification": "タスク通知",
+    "copyMessage": "メッセージをコピー",
+    "renderFailed": "メッセージの表示に失敗しました。",
+    "interruptedHint": "· Claudian は代わりに何をすべきですか？",
+    "sessions": {
+      "empty": "会話がありません",
+      "noMatch": "一致するセッションがありません",
+      "resume": "会話を再開",
+      "loading": "会話を読み込み中…",
+      "current": "現在のセッション",
+      "loadFailed": "会話の読み込みに失敗しました"
+    },
+    "linkedContent": {
+      "label": "リンクされたコンテンツ：",
+      "choices": "リンクするコンテンツの選択肢",
+      "noMatch": "一致するファイルやフォルダーがありません",
+      "missing": "コンテンツが見つかりません",
+      "path": "リンクされたコンテンツ：{path}",
+      "missingPath": "リンクされたコンテンツ：{path}。コンテンツが見つかりません",
+      "noContent": "リンクされたコンテンツなし",
+      "missingNotice": "リンクされたコンテンツが見つかりません：{path}",
+      "openFailed": "リンクされたコンテンツを開けませんでした：{error}"
+    },
+    "questions": {
+      "title": "質問",
+      "submit": "送信",
+      "review": "回答を確認",
+      "ready": "回答を送信しますか？",
+      "sending": "送信中…",
+      "submitAnswers": "回答を送信",
+      "notAnswered": "未回答",
+      "customAnswer": "回答を入力…",
+      "secret": "秘密情報を入力…",
+      "editAnswer": "「{question}」への回答を編集",
+      "waiting": "回答を待機中…",
+      "noOptions": "選択肢の記録がありません",
+      "sendFailed": "回答を送信できませんでした。再試行してください。",
+      "answerBelow": "下の質問パネルで回答してください。",
+      "expired": "質問の有効期限が切れました。"
+    },
+    "tools": {
+      "calls": "ツール呼び出し",
+      "output": "出力",
+      "noResult": "結果なし",
+      "noMatches": "一致する結果がありません",
+      "tasksUpdated": "タスクを更新しました",
+      "noChanges": "変更なし",
+      "moreLines": "…他 {count} 行",
+      "moreCharacters": "…他 {count} 文字",
+      "running": "実行中…",
+      "noOutput": "出力なし",
+      "status": {
+        "running": "状態：実行中",
+        "completed": "状態：完了",
+        "error": "状態：エラー",
+        "cancelled": "状態：キャンセル済み"
+      }
+    },
+    "citations": {
+      "memoryUsed": "使用したメモリ",
+      "source": "{count} 件のソース",
+      "sources": "{count} 件のソース"
+    },
+    "web": {
+      "findInPage": "ページ内を検索",
+      "openPage": "ページを開く",
+      "urlUnavailable": "URL がありません",
+      "clickLink": "リンク {id} をクリック",
+      "pattern": "パターン：{pattern}",
+      "query": "検索語：{query}",
+      "altQuery": "別の検索語：{query}",
+      "search": "ウェブを検索",
+      "moreQueries": "…他 {count} 件の検索語",
+      "clickInPage": "{url} のリンク {id} をクリック",
+      "open": "{url} を開く",
+      "find": "「{pattern}」を検索",
+      "inPage": "{url} で{action}",
+      "operations": "{count} 件のウェブ操作",
+      "searchTerm": "検索"
+    },
+    "permissionMode": {
+      "label": "権限モード",
+      "current": "権限モード：{mode}",
+      "changeFailed": "権限モードの変更に失敗しました",
+      "claude": {
+        "auto": "自動",
+        "manual": "手動",
+        "acceptEdits": "編集を許可",
+        "yolo": "YOLO",
+        "autoDesc": "Claude が権限を判断",
+        "manualDesc": "変更前に毎回確認",
+        "acceptEditsDesc": "すべてのファイル編集を自動許可",
+        "yoloDesc": "確認せずすべての権限を許可"
+      },
+      "codex": {
+        "autoReview": "承認を任せる",
+        "normal": "承認を求める",
+        "yolo": "フルアクセス",
+        "autoReviewDesc": "追加アクセスを自動審査。",
+        "readOnlyDesc": "編集やインターネット利用前に確認。",
+        "normalDesc": "追加アクセス前に確認。",
+        "yoloDesc": "ファイルとインターネットへの無制限アクセス。"
+      }
+    },
+    "thinking": {
+      "active": "思考中 {seconds}秒…",
+      "completed": "{seconds}秒間思考しました",
+      "label": "思考"
+    },
+    "suggestions": {
+      "loading": "読み込み中…",
+      "noMatches": "一致する項目なし",
+      "loadFailed": "候補を読み込めませんでした",
+      "retryHint": "再入力して再試行"
+    },
+    "approval": {
+      "title": "権限が必要です",
+      "question": "この操作を許可しますか？",
+      "deny": "拒否",
+      "allowOnce": "今回のみ許可",
+      "alwaysAllow": "常に許可",
+      "mcpRequest": "MCP リクエスト",
+      "mcpServer": "MCP サーバー：{server}",
+      "decline": "辞退",
+      "allow": "許可",
+      "cancelRequest": "このリクエストをキャンセル。",
+      "declineRequest": "このリクエストを辞退。",
+      "acceptRequest": "このリクエストを許可。",
+      "fileChange": "ファイル変更",
+      "fileChangeReason": "ファイル変更：{reason}",
+      "permissionRequest": "権限リクエスト",
+      "permissionReason": "権限リクエスト：{reason}",
+      "networkAccess": "{host} への {protocol} アクセスを許可",
+      "execute": "実行：{command}",
+      "executeCommand": "コマンドを実行",
+      "allowSimilar": "同様のコマンドを許可",
+      "execPolicy": "実行ポリシーの変更を承認して保存。",
+      "host": "ホスト",
+      "allowHost": "このセッションで {host} を許可",
+      "denyHost": "このセッションで {host} を拒否",
+      "allowRule": "{host} に許可ルールを適用。",
+      "denyRule": "{host} に拒否ルールを適用。",
+      "details": "{tool} の承認詳細",
+      "unexpectedSelection": "予期しない承認選択：「{value}」"
+    },
+    "disclosure": {
+      "expand": "{label} - クリックして展開",
+      "collapse": "{label} - クリックして折りたたむ"
+    },
+    "removeItem": "{item} を削除",
+    "agent": "エージェント：{agent}",
+    "images": {
+      "unsupportedProvider": "このプロバイダーは画像添付に対応していません。",
+      "tooLarge": "画像が {size} の制限を超えています。",
+      "unsupportedType": "未対応の画像形式です。",
+      "attachFailed": "画像の添付に失敗しました。",
+      "label": "画像",
+      "numbered": "画像 {number}",
+      "attachment": "添付画像：{name} · {size}",
+      "fileNotFound": "{message}（ファイルが見つかりません）",
+      "permissionDenied": "{message}（アクセスが拒否されました）",
+      "preview": "画像プレビュー：{name}",
+      "closePreview": "画像プレビューを閉じる"
+    },
+    "pi": {
+      "extension": "Pi 拡張機能",
+      "notification": "Pi 拡張機能の通知。"
     }
   },
   "settings": {
@@ -158,7 +335,7 @@
     },
     "codexSandbox": {
       "name": "サンドボックス",
-      "desc": "Approve for me と Ask for approval モードでのファイルアクセスです。読み取り専用では編集のたびに確認します。Full access では無視されます。"
+      "desc": "承認を任せる と 承認を求める モードでのファイルアクセスです。読み取り専用では編集のたびに確認します。フルアクセス では無視されます。"
     },
     "environment": "環境",
     "sharedEnvironment": {

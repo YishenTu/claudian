@@ -1,5 +1,7 @@
 import { type App, Modal, Notice } from 'obsidian';
 
+import { t } from '@/i18n/i18n';
+
 import type {
   PiExtensionUIConfirmRequest,
   PiExtensionUIEditorRequest,
@@ -57,7 +59,7 @@ export class ObsidianPiExtensionUIRenderer implements PiExtensionUIRenderer {
 function getDisplayText(request: Record<string, unknown>): string {
   const message = typeof request.message === 'string' ? request.message.trim() : '';
   const title = typeof request.title === 'string' ? request.title.trim() : '';
-  return message || title || 'Pi extension notification.';
+  return message || title || t('chat.pi.notification');
 }
 
 function getTitle(request: Record<string, unknown>, fallback: string): string {
@@ -163,7 +165,7 @@ class PiSelectModal extends PiExtensionModal<{ cancelled?: boolean; value?: stri
   }
 
   protected render(): void {
-    this.renderHeader('Pi extension');
+    this.renderHeader(t('chat.pi.extension'));
     const options = getSelectOptions(this.request);
     const listEl = this.contentEl.createDiv({ cls: 'claudian-pi-extension-options' });
     for (const option of options) {
@@ -177,7 +179,7 @@ class PiSelectModal extends PiExtensionModal<{ cancelled?: boolean; value?: stri
   }
 
   private renderCancelButton(): void {
-    const cancelButton = this.contentEl.createEl('button', { text: 'Cancel', attr: { type: 'button' } });
+    const cancelButton = this.contentEl.createEl('button', { text: t('common.cancel'), attr: { type: 'button' } });
     cancelButton.addEventListener('click', () => {
       this.finish({ cancelled: true });
       this.close();
@@ -191,14 +193,14 @@ class PiConfirmModal extends PiExtensionModal<{ cancelled?: boolean; confirmed?:
   }
 
   protected render(): void {
-    this.renderHeader('Pi extension');
+    this.renderHeader(t('chat.pi.extension'));
     const actionsEl = this.contentEl.createDiv({ cls: 'claudian-pi-extension-actions' });
-    const confirmButton = actionsEl.createEl('button', { text: 'Confirm', attr: { type: 'button' } });
+    const confirmButton = actionsEl.createEl('button', { text: t('common.confirm'), attr: { type: 'button' } });
     confirmButton.addEventListener('click', () => {
       this.finish({ confirmed: true });
       this.close();
     });
-    const cancelButton = actionsEl.createEl('button', { text: 'Cancel', attr: { type: 'button' } });
+    const cancelButton = actionsEl.createEl('button', { text: t('common.cancel'), attr: { type: 'button' } });
     cancelButton.addEventListener('click', () => {
       this.finish({ confirmed: false });
       this.close();
@@ -221,7 +223,7 @@ class PiTextModal extends PiExtensionModal<{ cancelled?: boolean; value?: string
   }
 
   protected render(): void {
-    this.renderHeader('Pi extension');
+    this.renderHeader(t('chat.pi.extension'));
     const initialValue = typeof this.request.value === 'string'
       ? this.request.value
       : typeof this.request.defaultValue === 'string'
@@ -230,19 +232,19 @@ class PiTextModal extends PiExtensionModal<{ cancelled?: boolean; value?: string
     const input = this.multiline
       ? this.contentEl.createEl('textarea')
       : this.contentEl.createEl('input', { type: 'text' });
-    input.setAttribute('aria-label', getTitle(this.request, 'Pi extension'));
+    input.setAttribute('aria-label', getTitle(this.request, t('chat.pi.extension')));
     input.value = initialValue;
     if (this.multiline) {
       (input as HTMLTextAreaElement).rows = 8;
     }
 
     const actionsEl = this.contentEl.createDiv({ cls: 'claudian-pi-extension-actions' });
-    const submitButton = actionsEl.createEl('button', { text: 'Submit', attr: { type: 'button' } });
+    const submitButton = actionsEl.createEl('button', { text: t('chat.questions.submit'), attr: { type: 'button' } });
     submitButton.addEventListener('click', () => {
       this.finish({ value: input.value });
       this.close();
     });
-    const cancelButton = actionsEl.createEl('button', { text: 'Cancel', attr: { type: 'button' } });
+    const cancelButton = actionsEl.createEl('button', { text: t('common.cancel'), attr: { type: 'button' } });
     cancelButton.addEventListener('click', () => {
       this.finish({ cancelled: true });
       this.close();

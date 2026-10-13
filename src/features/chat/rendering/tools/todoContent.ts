@@ -2,6 +2,7 @@ import { setIcon } from 'obsidian';
 
 import type { TodoItem } from '@/core/tools/todo';
 import { setToolStatus } from '@/features/chat/rendering/tools/toolStatus';
+import { t } from '@/i18n/i18n';
 
 function getTodos(input: Record<string, unknown>): TodoItem[] | undefined {
   const todos = input.todos;
@@ -45,7 +46,7 @@ export function renderTodoWriteContent(container: HTMLElement, input: Record<str
   const todos = getTodos(input);
   if (!todos) {
     const item = container.createSpan({ cls: 'claudian-tool-result-item' });
-    item.setText('Tasks updated');
+    item.setText(t('chat.tools.tasksUpdated'));
     return;
   }
 

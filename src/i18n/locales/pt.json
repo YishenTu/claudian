@@ -9,7 +9,9 @@
     "clearAll": "Limpar tudo",
     "error": "Erro",
     "confirm": "Confirmar",
-    "refresh": "Atualizar"
+    "refresh": "Atualizar",
+    "retry": "Tentar novamente",
+    "none": "Nenhum"
   },
   "chat": {
     "promptSuggestionHint": "Tab para aceitar",
@@ -93,6 +95,181 @@
       "toolCompleted": "{tool} · concluído",
       "toolFailed": "{tool} · falhou",
       "toolBlocked": "{tool} · bloqueado"
+    },
+    "composer": {
+      "placeholder": "Peça alterações, mencione arquivos com @, execute /comandos",
+      "message": "Mensagem",
+      "dropImage": "Solte uma imagem aqui",
+      "moreContext": "Mostrar mais {count} itens de contexto"
+    },
+    "worked": "Trabalho realizado",
+    "taskNotification": "Notificação de tarefa",
+    "copyMessage": "Copiar mensagem",
+    "renderFailed": "Não foi possível exibir o conteúdo da mensagem.",
+    "interruptedHint": "· O que Claudian deve fazer em vez disso?",
+    "sessions": {
+      "empty": "Nenhuma conversa",
+      "noMatch": "Nenhuma sessão correspondente",
+      "resume": "Retomar conversa",
+      "loading": "Carregando conversa…",
+      "current": "Sessão atual",
+      "loadFailed": "Não foi possível carregar a conversa"
+    },
+    "linkedContent": {
+      "label": "Conteúdo vinculado:",
+      "choices": "Opções de conteúdo vinculado",
+      "noMatch": "Nenhum arquivo ou pasta correspondente",
+      "missing": "Conteúdo ausente",
+      "path": "Conteúdo vinculado: {path}",
+      "missingPath": "Conteúdo vinculado: {path}. Conteúdo ausente",
+      "noContent": "Nenhum conteúdo vinculado",
+      "missingNotice": "Conteúdo vinculado ausente: {path}",
+      "openFailed": "Não foi possível abrir o conteúdo vinculado: {error}"
+    },
+    "questions": {
+      "title": "Pergunta",
+      "submit": "Enviar",
+      "review": "Revise suas respostas",
+      "ready": "Pronto para enviar suas respostas?",
+      "sending": "Enviando…",
+      "submitAnswers": "Enviar respostas",
+      "notAnswered": "Sem resposta",
+      "customAnswer": "Digite sua resposta…",
+      "secret": "Digite o valor secreto…",
+      "editAnswer": "Editar resposta a {question}",
+      "waiting": "Aguardando resposta…",
+      "noOptions": "Nenhuma opção registrada",
+      "sendFailed": "Não foi possível enviar a resposta. Tente novamente.",
+      "answerBelow": "Responda no painel de perguntas abaixo.",
+      "expired": "A pergunta expirou."
+    },
+    "tools": {
+      "calls": "Chamadas de ferramentas",
+      "output": "Saída",
+      "noResult": "Sem resultado",
+      "noMatches": "Nenhuma correspondência encontrada",
+      "tasksUpdated": "Tarefas atualizadas",
+      "noChanges": "Sem alterações",
+      "moreLines": "…mais {count} linhas",
+      "moreCharacters": "…mais {count} caracteres",
+      "running": "Em execução…",
+      "noOutput": "Sem saída",
+      "status": {
+        "running": "Status: em execução",
+        "completed": "Status: concluído",
+        "error": "Status: erro",
+        "cancelled": "Status: cancelado"
+      }
+    },
+    "citations": {
+      "memoryUsed": "Memória utilizada",
+      "source": "{count} fonte",
+      "sources": "{count} fontes"
+    },
+    "web": {
+      "findInPage": "Buscar na página",
+      "openPage": "Abrir página",
+      "urlUnavailable": "URL indisponível",
+      "clickLink": "Clicar no link {id}",
+      "pattern": "Padrão: {pattern}",
+      "query": "Consulta: {query}",
+      "altQuery": "Consulta alternativa: {query}",
+      "search": "Pesquisar na web",
+      "moreQueries": "…mais {count} consultas",
+      "clickInPage": "Clicar no link {id} em {url}",
+      "open": "Abrir {url}",
+      "find": "Buscar “{pattern}”",
+      "inPage": "{action} em {url}",
+      "operations": "{count} operações web",
+      "searchTerm": "pesquisa"
+    },
+    "permissionMode": {
+      "label": "Modo de permissões",
+      "current": "Modo de permissões: {mode}",
+      "changeFailed": "Não foi possível alterar o modo de permissões",
+      "claude": {
+        "auto": "Automático",
+        "manual": "Manual",
+        "acceptEdits": "Aceitar edições",
+        "yolo": "YOLO",
+        "autoDesc": "Claude decide as permissões",
+        "manualDesc": "Sempre perguntar antes de alterar",
+        "acceptEditsDesc": "Aceitar automaticamente todas as edições de arquivos",
+        "yoloDesc": "Aceitar todas as permissões sem perguntar"
+      },
+      "codex": {
+        "autoReview": "Aprovar por mim",
+        "normal": "Pedir aprovação",
+        "yolo": "Acesso completo",
+        "autoReviewDesc": "Revisar automaticamente o acesso adicional.",
+        "readOnlyDesc": "Perguntar antes de editar ou usar a internet.",
+        "normalDesc": "Perguntar antes do acesso adicional.",
+        "yoloDesc": "Acesso irrestrito a arquivos e internet."
+      }
+    },
+    "thinking": {
+      "active": "Pensando há {seconds}s…",
+      "completed": "Pensou por {seconds}s",
+      "label": "Raciocínio"
+    },
+    "suggestions": {
+      "loading": "Carregando…",
+      "noMatches": "Sem correspondências",
+      "loadFailed": "Não foi possível carregar as sugestões",
+      "retryHint": "Digite novamente para tentar de novo"
+    },
+    "approval": {
+      "title": "Permissão necessária",
+      "question": "Permitir esta ação?",
+      "deny": "Negar",
+      "allowOnce": "Permitir uma vez",
+      "alwaysAllow": "Sempre permitir",
+      "mcpRequest": "Solicitação MCP",
+      "mcpServer": "Servidor MCP: {server}",
+      "decline": "Recusar",
+      "allow": "Permitir",
+      "cancelRequest": "Cancelar esta solicitação.",
+      "declineRequest": "Recusar esta solicitação.",
+      "acceptRequest": "Aceitar esta solicitação.",
+      "fileChange": "Alteração de arquivo",
+      "fileChangeReason": "Alteração de arquivo: {reason}",
+      "permissionRequest": "Solicitação de permissão",
+      "permissionReason": "Solicitação de permissão: {reason}",
+      "networkAccess": "Permitir acesso {protocol} a {host}",
+      "execute": "Executar: {command}",
+      "executeCommand": "Executar comando",
+      "allowSimilar": "Permitir comandos semelhantes",
+      "execPolicy": "Aprovar e salvar uma alteração da política de execução.",
+      "host": "host",
+      "allowHost": "Permitir {host} nesta sessão",
+      "denyHost": "Negar {host} nesta sessão",
+      "allowRule": "Aplicar uma regra de permissão para {host}.",
+      "denyRule": "Aplicar uma regra de negação para {host}.",
+      "details": "Detalhes de aprovação de {tool}",
+      "unexpectedSelection": "Seleção de aprovação inesperada: “{value}”"
+    },
+    "disclosure": {
+      "expand": "{label} - clique para expandir",
+      "collapse": "{label} - clique para recolher"
+    },
+    "removeItem": "Remover {item}",
+    "agent": "Agente: {agent}",
+    "images": {
+      "unsupportedProvider": "Este provedor não suporta imagens anexadas.",
+      "tooLarge": "A imagem excede o limite de {size}.",
+      "unsupportedType": "Formato de imagem não suportado.",
+      "attachFailed": "Não foi possível anexar a imagem.",
+      "label": "Imagem",
+      "numbered": "Imagem {number}",
+      "attachment": "Imagem anexada: {name} · {size}",
+      "fileNotFound": "{message} (Arquivo não encontrado)",
+      "permissionDenied": "{message} (Permissão negada)",
+      "preview": "Prévia da imagem: {name}",
+      "closePreview": "Fechar prévia da imagem"
+    },
+    "pi": {
+      "extension": "Extensão Pi",
+      "notification": "Notificação da extensão Pi."
     }
   },
   "settings": {
@@ -158,7 +335,7 @@
     },
     "codexSandbox": {
       "name": "Sandbox",
-      "desc": "Acesso a arquivos nos modos Approve for me e Ask for approval. Somente leitura pede aprovação antes de cada edição; Full access ignora esta opção."
+      "desc": "Acesso a arquivos nos modos Aprovar por mim e Pedir aprovação. Somente leitura pede aprovação antes de cada edição; Acesso completo ignora esta opção."
     },
     "environment": "Ambiente",
     "sharedEnvironment": {

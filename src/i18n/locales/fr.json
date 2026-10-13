@@ -9,7 +9,9 @@
     "clearAll": "Tout effacer",
     "error": "Erreur",
     "confirm": "Confirmer",
-    "refresh": "Actualiser"
+    "refresh": "Actualiser",
+    "retry": "Réessayer",
+    "none": "Aucun"
   },
   "chat": {
     "promptSuggestionHint": "Tab pour accepter",
@@ -93,6 +95,181 @@
       "toolCompleted": "{tool} · terminé",
       "toolFailed": "{tool} · échec",
       "toolBlocked": "{tool} · bloqué"
+    },
+    "composer": {
+      "placeholder": "Demandez des modifications, mentionnez des fichiers avec @, lancez des /commandes",
+      "message": "Message",
+      "dropImage": "Déposez une image ici",
+      "moreContext": "Afficher {count} autres éléments de contexte"
+    },
+    "worked": "Travail effectué",
+    "taskNotification": "Notification de tâche",
+    "copyMessage": "Copier le message",
+    "renderFailed": "Impossible d’afficher le contenu du message.",
+    "interruptedHint": "· Que doit faire Claudian à la place ?",
+    "sessions": {
+      "empty": "Aucune conversation",
+      "noMatch": "Aucune session correspondante",
+      "resume": "Reprendre la conversation",
+      "loading": "Chargement de la conversation…",
+      "current": "Session actuelle",
+      "loadFailed": "Impossible de charger la conversation"
+    },
+    "linkedContent": {
+      "label": "Contenu lié :",
+      "choices": "Choix du contenu lié",
+      "noMatch": "Aucun fichier ou dossier correspondant",
+      "missing": "Contenu manquant",
+      "path": "Contenu lié : {path}",
+      "missingPath": "Contenu lié : {path}. Contenu manquant",
+      "noContent": "Aucun contenu lié",
+      "missingNotice": "Contenu lié manquant : {path}",
+      "openFailed": "Impossible d’ouvrir le contenu lié : {error}"
+    },
+    "questions": {
+      "title": "Question",
+      "submit": "Envoyer",
+      "review": "Vérifiez vos réponses",
+      "ready": "Prêt à envoyer vos réponses ?",
+      "sending": "Envoi en cours…",
+      "submitAnswers": "Envoyer les réponses",
+      "notAnswered": "Sans réponse",
+      "customAnswer": "Saisissez votre réponse…",
+      "secret": "Saisissez la valeur secrète…",
+      "editAnswer": "Modifier la réponse à {question}",
+      "waiting": "En attente d’une réponse…",
+      "noOptions": "Aucune option enregistrée",
+      "sendFailed": "Impossible d’envoyer la réponse. Réessayez.",
+      "answerBelow": "Répondez dans le panneau de questions ci-dessous.",
+      "expired": "La question a expiré."
+    },
+    "tools": {
+      "calls": "Appels d’outils",
+      "output": "Sortie",
+      "noResult": "Aucun résultat",
+      "noMatches": "Aucun résultat trouvé",
+      "tasksUpdated": "Tâches mises à jour",
+      "noChanges": "Aucune modification",
+      "moreLines": "… {count} lignes supplémentaires",
+      "moreCharacters": "… {count} caractères supplémentaires",
+      "running": "En cours…",
+      "noOutput": "Aucune sortie",
+      "status": {
+        "running": "Statut : en cours",
+        "completed": "Statut : terminé",
+        "error": "Statut : erreur",
+        "cancelled": "Statut : annulé"
+      }
+    },
+    "citations": {
+      "memoryUsed": "Mémoire utilisée",
+      "source": "{count} source",
+      "sources": "{count} sources"
+    },
+    "web": {
+      "findInPage": "Rechercher dans la page",
+      "openPage": "Ouvrir la page",
+      "urlUnavailable": "URL indisponible",
+      "clickLink": "Cliquer sur le lien {id}",
+      "pattern": "Motif : {pattern}",
+      "query": "Requête : {query}",
+      "altQuery": "Autre requête : {query}",
+      "search": "Rechercher sur le web",
+      "moreQueries": "… {count} autres requêtes",
+      "clickInPage": "Cliquer sur le lien {id} dans {url}",
+      "open": "Ouvrir {url}",
+      "find": "Rechercher « {pattern} »",
+      "inPage": "{action} dans {url}",
+      "operations": "{count} opérations web",
+      "searchTerm": "recherche"
+    },
+    "permissionMode": {
+      "label": "Mode d’autorisation",
+      "current": "Mode d’autorisation : {mode}",
+      "changeFailed": "Impossible de modifier le mode d’autorisation",
+      "claude": {
+        "auto": "Automatique",
+        "manual": "Manuel",
+        "acceptEdits": "Accepter les modifications",
+        "yolo": "YOLO",
+        "autoDesc": "Claude décide des autorisations",
+        "manualDesc": "Toujours demander avant de modifier",
+        "acceptEditsDesc": "Accepter automatiquement toutes les modifications de fichiers",
+        "yoloDesc": "Accorder toutes les autorisations sans demander"
+      },
+      "codex": {
+        "autoReview": "Approuver pour moi",
+        "normal": "Demander l’approbation",
+        "yolo": "Accès complet",
+        "autoReviewDesc": "Examiner automatiquement les accès supplémentaires.",
+        "readOnlyDesc": "Demander avant de modifier ou d’utiliser internet.",
+        "normalDesc": "Demander avant tout accès supplémentaire.",
+        "yoloDesc": "Accès illimité aux fichiers et à internet."
+      }
+    },
+    "thinking": {
+      "active": "Réflexion depuis {seconds}s…",
+      "completed": "Réflexion pendant {seconds}s",
+      "label": "Réflexion"
+    },
+    "suggestions": {
+      "loading": "Chargement…",
+      "noMatches": "Aucune correspondance",
+      "loadFailed": "Impossible de charger les suggestions",
+      "retryHint": "Saisissez à nouveau pour réessayer"
+    },
+    "approval": {
+      "title": "Autorisation requise",
+      "question": "Autoriser cette action ?",
+      "deny": "Refuser",
+      "allowOnce": "Autoriser une fois",
+      "alwaysAllow": "Toujours autoriser",
+      "mcpRequest": "Requête MCP",
+      "mcpServer": "Serveur MCP : {server}",
+      "decline": "Refuser",
+      "allow": "Autoriser",
+      "cancelRequest": "Annuler cette requête.",
+      "declineRequest": "Refuser cette requête.",
+      "acceptRequest": "Accepter cette requête.",
+      "fileChange": "Modification de fichier",
+      "fileChangeReason": "Modification de fichier : {reason}",
+      "permissionRequest": "Demande d’autorisation",
+      "permissionReason": "Demande d’autorisation : {reason}",
+      "networkAccess": "Autoriser l’accès {protocol} à {host}",
+      "execute": "Exécuter : {command}",
+      "executeCommand": "Exécuter une commande",
+      "allowSimilar": "Autoriser les commandes similaires",
+      "execPolicy": "Approuver et enregistrer une modification de la politique d’exécution.",
+      "host": "hôte",
+      "allowHost": "Autoriser {host} pour cette session",
+      "denyHost": "Refuser {host} pour cette session",
+      "allowRule": "Appliquer une règle d’autorisation pour {host}.",
+      "denyRule": "Appliquer une règle de refus pour {host}.",
+      "details": "Détails de l’autorisation de {tool}",
+      "unexpectedSelection": "Choix d’autorisation inattendu : « {value} »"
+    },
+    "disclosure": {
+      "expand": "{label} - cliquer pour développer",
+      "collapse": "{label} - cliquer pour réduire"
+    },
+    "removeItem": "Retirer {item}",
+    "agent": "Agent : {agent}",
+    "images": {
+      "unsupportedProvider": "Ce fournisseur ne prend pas en charge les images jointes.",
+      "tooLarge": "L’image dépasse la limite de {size}.",
+      "unsupportedType": "Format d’image non pris en charge.",
+      "attachFailed": "Impossible de joindre l’image.",
+      "label": "Image",
+      "numbered": "Image {number}",
+      "attachment": "Image jointe : {name} · {size}",
+      "fileNotFound": "{message} (Fichier introuvable)",
+      "permissionDenied": "{message} (Accès refusé)",
+      "preview": "Aperçu de l’image : {name}",
+      "closePreview": "Fermer l’aperçu de l’image"
+    },
+    "pi": {
+      "extension": "Extension Pi",
+      "notification": "Notification de l’extension Pi."
     }
   },
   "settings": {
@@ -158,7 +335,7 @@
     },
     "codexSandbox": {
       "name": "Sandbox",
-      "desc": "Accès aux fichiers dans les modes Approve for me et Ask for approval. Lecture seule demande avant chaque modification ; Full access l'ignore."
+      "desc": "Accès aux fichiers dans les modes Approuver pour moi et Demander l’approbation. Lecture seule demande avant chaque modification ; Accès complet l'ignore."
     },
     "environment": "Environnement",
     "sharedEnvironment": {

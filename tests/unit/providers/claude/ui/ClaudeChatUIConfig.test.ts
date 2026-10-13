@@ -1,3 +1,4 @@
+import { setLocale } from '@/i18n/i18n';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 
 describe('claudeChatUIConfig', () => {
@@ -138,4 +139,20 @@ describe('claudeChatUIConfig', () => {
       expect(claudeChatUIConfig.getDefaultReasoningValue('opus', settings)).toBe('xhigh');
     });
   });
+});
+
+
+it('resolves permission labels at request time without changing provider mode values', () => {
+  const english = claudeChatUIConfig.getPermissionModeOptions!() ?? [];
+  setLocale('zh-CN');
+  try {
+    const translated = claudeChatUIConfig.getPermissionModeOptions!() ?? [];
+    expect(translated.map(option => option.label)).toEqual(['自动', '手动', '接受编辑', 'YOLO']);
+    expect(translated.map(option => option.value)).toEqual(english.map(option => option.value));
+    expect(translated[0].description).toBe('由 Claude 决定是否授权');
+    expect(translated[3].bypassesApprovals).toBe(true);
+  } finally {
+    setLocale('en');
+  }
+  expect(claudeChatUIConfig.getPermissionModeOptions!()).toEqual(english);
 });

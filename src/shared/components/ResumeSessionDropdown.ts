@@ -6,6 +6,7 @@
  */
 import { setIcon } from 'obsidian';
 
+import { t } from '@/i18n/i18n';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 import type { ConversationMeta } from '../../core/types';
@@ -164,15 +165,15 @@ export class ResumeSessionDropdown {
     this.dropdownEl.empty();
 
     const header = this.dropdownEl.createDiv({ cls: 'claudian-resume-header' });
-    header.createSpan({ text: 'Resume conversation' });
+    header.createSpan({ text: t('chat.sessions.resume') });
 
     const list = this.dropdownEl.createDiv({ cls: 'claudian-resume-list' });
     list.setAttribute('id', this.listboxId);
     list.setAttribute('role', 'listbox');
-    list.setAttribute('aria-label', 'Resume conversation');
+    list.setAttribute('aria-label', t('chat.sessions.resume'));
 
     if (this.conversations.length === 0) {
-      list.createDiv({ cls: 'claudian-resume-empty', text: 'No conversations' });
+      list.createDiv({ cls: 'claudian-resume-empty', text: t('chat.sessions.empty') });
       this.#textbox.removeAttribute('aria-activedescendant');
       return;
     }
@@ -195,7 +196,7 @@ export class ResumeSessionDropdown {
       titleEl.setAttribute('title', conv.title);
       content.createDiv({
         cls: 'claudian-resume-item-date',
-        text: isCurrent ? 'Current session' : this.formatDate(conv.lastActivityAt),
+        text: isCurrent ? t('chat.sessions.current') : this.formatDate(conv.lastActivityAt),
       });
 
       item.addEventListener('click', () => {

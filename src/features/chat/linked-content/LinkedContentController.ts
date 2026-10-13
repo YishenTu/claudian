@@ -13,6 +13,7 @@ import {
   type LinkedContentPresentation,
 } from '@/features/chat/linked-content/LinkedContentPresentation';
 import { LinkedContentSelector } from '@/features/chat/linked-content/LinkedContentSelector';
+import { t } from '@/i18n/i18n';
 import { revealWorkspaceLeaf } from '@/utils/obsidianCompat';
 
 export type LinkedContentMode = 'auto-draft' | 'explicit-draft' | 'submitting' | 'locked';
@@ -267,7 +268,7 @@ export class LinkedContentController {
     if (this.destroyed || !this.path) return;
     const content = deriveLinkedContentPresentation(this.app, this.path);
     if (content.missing || !content.target) {
-      new Notice(`Linked content is missing: ${this.path}`);
+      new Notice(t('chat.linkedContent.missingNotice', { path: this.path }));
       return;
     }
     if (content.target instanceof TFile) {
@@ -275,7 +276,7 @@ export class LinkedContentController {
         await this.#revealFile(content.target);
       } catch (error) {
         new Notice(
-          `Failed to open Linked content: ${error instanceof Error ? error.message : String(error)}`,
+          t('chat.linkedContent.openFailed', { error: error instanceof Error ? error.message : String(error) }),
         );
       }
       return;
@@ -372,7 +373,7 @@ export class LinkedContentController {
       mode: snapshot.mode,
       path: snapshot.path,
       label: presentation?.missing
-        ? `${presentation.label} · Missing content`
+        ? `${presentation.label} · ${t('chat.linkedContent.missing')}`
         : presentation?.label ?? null,
     });
   }

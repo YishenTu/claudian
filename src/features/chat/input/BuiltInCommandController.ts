@@ -102,7 +102,7 @@ export class BuiltInCommandController {
 
     const conversations = this.deps.plugin.getConversationList();
     if (conversations.length === 0) {
-      new Notice('No conversations to resume');
+      new Notice(t('chat.sessions.empty'));
       return;
     }
 

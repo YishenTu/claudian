@@ -1,5 +1,7 @@
 import { setIcon } from 'obsidian';
 
+import { t } from '@/i18n/i18n';
+
 /** Read-only conversation fact shown in the info row; it may still be opened or, before the first message, removed. */
 export interface ComposerInfoItem {
   label: string;
@@ -52,7 +54,7 @@ export class ComposerInfoRow {
       const removeEl = this.linkedSlotEl.createEl('button', {
         cls: 'claudian-input-info-linked-remove',
         text: '×',
-        attr: { type: 'button', 'aria-label': `Remove ${label}` },
+        attr: { type: 'button', 'aria-label': t('chat.removeItem', { item: label }) },
       });
       removeEl.addEventListener('click', item.onRemove);
     }

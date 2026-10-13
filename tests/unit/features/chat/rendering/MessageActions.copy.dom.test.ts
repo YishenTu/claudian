@@ -7,6 +7,7 @@ import { setIcon } from 'obsidian';
 import type { ProviderCapabilities } from '@/core/providers/types';
 import type { ChatMessage } from '@/core/types';
 import { MessageActions } from '@/features/chat/rendering/MessageActions';
+import { setLocale } from '@/i18n/i18n';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.setText = function (text) { this.textContent = typeof text === 'string' ? text : null; };
@@ -49,6 +50,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setLocale('en');
   jest.useRealTimers();
   jest.mocked(setIcon).mockReset();
   Reflect.deleteProperty(navigator, 'clipboard');
@@ -80,6 +82,18 @@ describe.each(copyButtonSources)('%s copy button', (_name, copiedText, render) =
     expect(button.textContent).toBe('');
     expect(button.classList.contains('copied')).toBe(false);
     expect(button.querySelector('[data-icon="copy"]')).not.toBeNull();
+  });
+
+  it('localizes copy feedback and the accessible name', async () => {
+    setLocale('zh-CN');
+    const writeText = writeTextReturning(() => Promise.resolve());
+    const { messagesEl, actions } = setup();
+    render(actions, messagesEl);
+    const button = within(messagesEl).getByRole('button', { name: '复制消息' });
+    fireEvent.click(button);
+    await jest.advanceTimersByTimeAsync(0);
+    expect(writeText).toHaveBeenCalledWith(copiedText);
+    expect(button.textContent).toBe('已复制！');
   });
 
   it('shows no success feedback and arms no timer when the clipboard write is rejected', async () => {

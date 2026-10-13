@@ -46,6 +46,16 @@ function flattenTranslations(
 describe('locale files', () => {
   const english = flattenTranslations(en as unknown as TranslationTree);
 
+  it('preserves interpolation parameters in every locale', () => {
+    const parameters = (value: string) => [...value.matchAll(/\{(\w+)\}/g)].map(match => match[1]).sort();
+    for (const translations of Object.values(locales)) {
+      const localized = flattenTranslations(translations as unknown as TranslationTree);
+      for (const [key, value] of Object.entries(english)) {
+        expect({ key, parameters: parameters(localized[key]) }).toEqual({ key, parameters: parameters(value) });
+      }
+    }
+  });
+
   it('keeps every locale structurally aligned with the English dictionary', () => {
     const englishKeys = Object.keys(english).sort();
     for (const translations of Object.values(locales)) {

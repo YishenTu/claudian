@@ -121,7 +121,7 @@ export class ComposerEditor {
   private view: EditorView | null = null;
   private readonly historyConfig = new Compartment();
   private readonly placeholderConfig = new Compartment();
-  private placeholderText = 'Ask to make changes, @mention files, run /commands';
+  private placeholderText = t('chat.composer.placeholder');
   private ghostText: string | null = null;
   private destroyed = false;
   /** The host until the editor mounts, then CodeMirror's content element, which outlives editor teardown. */
@@ -134,7 +134,7 @@ export class ComposerEditor {
   constructor(parent: HTMLElement, private readonly app: App, private readonly component: Component) {
     const host = parent.createDiv({
       cls: 'claudian-input claudian-composer-editor',
-      attr: { role: 'textbox', 'aria-label': 'Message', 'aria-multiline': 'true', tabindex: '0', dir: 'auto' },
+      attr: { role: 'textbox', 'aria-label': t('chat.composer.message'), 'aria-multiline': 'true', tabindex: '0', dir: 'auto' },
     });
     this.element = host as unknown as ComposerInputElement;
     this.textbox = host;
@@ -170,7 +170,7 @@ export class ComposerEditor {
         this.placeholderConfig.of(placeholder(this.placeholderText)),
         // CodeMirror turns off native spellcheck and autocorrect, which also disables macOS text replacements.
         EditorView.contentAttributes.of({
-          'aria-label': 'Message', 'aria-multiline': 'true', role: 'textbox', spellcheck: 'true', autocorrect: 'on',
+          'aria-label': t('chat.composer.message'), 'aria-multiline': 'true', role: 'textbox', spellcheck: 'true', autocorrect: 'on',
         }),
         EditorView.contentAttributes.of(view => {
           const description = this.ghostDescription(view.state.doc.length);
