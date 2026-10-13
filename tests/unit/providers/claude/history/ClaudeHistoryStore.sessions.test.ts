@@ -2099,6 +2099,25 @@ describe('sdkSession', () => {
       expect(result.map(e => e.uuid)).toEqual(['u1', 'a1']);
     });
 
+    it.each([
+      ['a branch after the compaction', undefined, ['u1', 'a1', 'c1', 's1', 'u3', 'a3']],
+      ['a rewind after the compaction', 's1', ['u1', 'a1', 'c1', 's1']],
+    ])('keeps history before a compact boundary when resolving %s', (_case, resumeAt, expected) => {
+      // Native /compact restarts the parent chain; only logicalParentUuid links the boundary back.
+      const entries: SDKNativeMessage[] = [
+        { type: 'user', uuid: 'u1', parentUuid: null },
+        { type: 'assistant', uuid: 'a1', parentUuid: 'u1' },
+        { type: 'system', subtype: 'compact_boundary', uuid: 'c1', parentUuid: null, logicalParentUuid: 'a1' },
+        { type: 'user', uuid: 's1', parentUuid: 'c1', isMeta: true },
+        { type: 'user', uuid: 'u2', parentUuid: 's1' },        // old branch
+        { type: 'assistant', uuid: 'a2', parentUuid: 'u2' },   // old branch
+        { type: 'user', uuid: 'u3', parentUuid: 's1' },        // new branch
+        { type: 'assistant', uuid: 'a3', parentUuid: 'u3' },   // new branch
+      ];
+
+      expect(filterActiveBranch(entries, resumeAt).map(e => e.uuid)).toEqual(expected);
+    });
+
     it('truncates at resumeAtMessageId mid-branch when branching exists', () => {
       // Branch from a1: old (u2→a2) and new (u3→a3→u4→a4)
       // Rewind on new branch to u4: resumeAtMessageId = a3

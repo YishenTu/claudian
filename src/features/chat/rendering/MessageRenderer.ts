@@ -53,6 +53,7 @@ export class MessageRenderer {
   private removeFileLinkHandler: () => void;
   private readonly imagePreviewModal = new ImagePreviewModal();
   private readonly contentRemovalObserver?: MutationObserver;
+  #pendingLayoutScroll: ResizeObserver | null = null;
   readonly #markdown: MarkdownContentRenderer;
   readonly #actions: MessageActions;
   readonly #finalizer: ResponseFinalizer;
@@ -133,6 +134,7 @@ export class MessageRenderer {
   dispose(): void {
     if (this.#markdown.isDisposed) return;
     this.contentRemovalObserver?.disconnect();
+    this.#cancelLayoutScroll();
     this.#markdown.dispose();
     this.imagePreviewModal.close();
     this.removeFileLinkHandler();
@@ -225,7 +227,7 @@ export class MessageRenderer {
       this.renderStoredMessage(messages[i], messages, i, live && { options: live, open: openIds?.has(messages[i].id) === true });
     }
 
-    this.scrollToBottom();
+    this.#scrollToBottomOnceLaidOut();
     return newWelcomeEl;
   }
 
@@ -630,6 +632,27 @@ export class MessageRenderer {
   /** Scrolls messages container to bottom. */
   scrollToBottom(): void {
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+  }
+
+  /** A transcript rendered into a hidden presentation ignores scroll writes until it gets a box. */
+  #scrollToBottomOnceLaidOut(): void {
+    this.#cancelLayoutScroll();
+    this.scrollToBottom();
+    if (this.messagesEl.clientHeight > 0) return;
+    const Observer = this.messagesEl.ownerDocument?.defaultView?.ResizeObserver;
+    if (!Observer) return;
+    const observer = new Observer(() => {
+      if (this.messagesEl.clientHeight === 0) return;
+      this.#cancelLayoutScroll();
+      this.scrollToBottom();
+    });
+    this.#pendingLayoutScroll = observer;
+    observer.observe(this.messagesEl);
+  }
+
+  #cancelLayoutScroll(): void {
+    this.#pendingLayoutScroll?.disconnect();
+    this.#pendingLayoutScroll = null;
   }
 
   /** Scrolls to bottom if already near bottom (within threshold). */

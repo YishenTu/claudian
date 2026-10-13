@@ -18,6 +18,8 @@ export interface SDKNativeMessage {
     commandMode?: string;
   };
   parentUuid?: string | null;
+  /** Set on `compact_boundary`, whose `parentUuid` restarts the chain, to the pre-compaction parent. */
+  logicalParentUuid?: string | null;
   sessionId?: string;
   uuid?: string;
   timestamp?: string;

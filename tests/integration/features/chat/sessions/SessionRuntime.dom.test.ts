@@ -149,6 +149,45 @@ it('continues a requested response with no tab, then restores a pending approval
   await destroyTab(second);
 });
 
+it('opens a reattached conversation at its latest message after rendering it in a hidden presentation', async () => {
+  // Browser geometry: a transcript inside a hidden tab has no box and ignores scroll writes.
+  const scrollTops = new WeakMap<Element, number>();
+  const isLaidOut = (el: Element) => !el.closest('.claudian-hidden');
+  jest.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+    return isLaidOut(this) ? 400 : 0;
+  });
+  jest.spyOn(Element.prototype, 'scrollHeight', 'get').mockImplementation(function (this: Element) {
+    return isLaidOut(this) ? 2000 : 0;
+  });
+  jest.spyOn(Element.prototype, 'scrollTop', 'get').mockImplementation(function (this: Element) {
+    return scrollTops.get(this) ?? 0;
+  });
+  jest.spyOn(Element.prototype, 'scrollTop', 'set').mockImplementation(function (this: Element, value: number) {
+    if (isLaidOut(this)) scrollTops.set(this, Math.max(0, Math.min(value, this.scrollHeight - this.clientHeight)));
+  });
+  const resizeCallbacks: Array<() => void> = [];
+  globalThis.ResizeObserver = class {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe() { resizeCallbacks.push(() => this.callback([], this as unknown as ResizeObserver)); }
+    unobserve() {}
+    disconnect() {}
+  };
+  const h = setup();
+  h.setNativeHistory([{ id: 'native-history', role: 'assistant', content: 'Latest answer', timestamp: testDate().getTime() }]);
+  const first = await h.attach();
+  await destroyTab(first);
+
+  // Rebinding renders the pooled transcript before activation reveals its tab.
+  const second = await h.attach();
+  expect(second.session.runtime).toBe(first.session.runtime);
+  expect(second.dom.messagesEl.textContent).toContain('Latest answer');
+  resizeCallbacks.forEach(notify => notify());
+
+  const { scrollTop, scrollHeight, clientHeight } = second.dom.messagesEl;
+  expect(scrollTop).toBe(scrollHeight - clientHeight);
+  await destroyTab(second);
+});
+
 it('hydrates an evicted model for a late native notification without replacing the provider binding', async () => {
   const h = setup();
   const first = await h.attach();
