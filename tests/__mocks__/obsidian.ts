@@ -120,6 +120,14 @@ export class FileView extends ItemView {
   navigation = true;
 }
 
+export class TextFileView extends FileView {
+  data = '';
+
+  getViewData(): string {
+    return this.data;
+  }
+}
+
 export class WorkspaceLeaf {}
 
 export class Scope {

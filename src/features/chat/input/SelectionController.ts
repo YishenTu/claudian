@@ -1,5 +1,5 @@
 import type { App, WorkspaceLeaf } from 'obsidian';
-import { MarkdownView } from 'obsidian';
+import { FileView, MarkdownView, TextFileView } from 'obsidian';
 
 import type { EditorSelectionContext } from '@/core/prompt/editorContext';
 import type { ComposerContextTray } from '@/features/chat/composer/ComposerContextTray';
@@ -90,22 +90,28 @@ export class SelectionController {
   poll(): void {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view) {
+      // Other file views (source viewers, PDFs, plugin views) expose their text through the DOM.
+      const fileView = this.app.workspace.getActiveViewOfType(FileView);
+      if (fileView) {
+        this.#pollDOMSelection(fileView);
+        return;
+      }
       // Keep the captured selection only while focus is transitioning into
       // the chat UI; any other leaf switch should drop stale prompt context.
-      this.#clearWhenMarkdownContextIsUnavailable();
+      this.#clearWhenFileContextIsUnavailable();
       return;
     }
 
     // Reading/preview mode has no usable CM6 selection — use DOM selection instead
     if (view.getMode() === 'preview') {
-      this.#pollReadingMode(view);
+      this.#pollDOMSelection(view);
       return;
     }
 
     const editor = view.editor;
     const editorView = getEditorView(editor);
     if (!editorView) {
-      this.#clearWhenMarkdownContextIsUnavailable();
+      this.#clearWhenFileContextIsUnavailable();
       return;
     }
 
@@ -146,10 +152,10 @@ export class SelectionController {
     }
   }
 
-  #pollReadingMode(view: MarkdownView): void {
+  #pollDOMSelection(view: FileView): void {
     const containerEl = view.containerEl;
     if (!containerEl) {
-      this.#clearWhenMarkdownContextIsUnavailable();
+      this.#clearWhenFileContextIsUnavailable();
       return;
     }
 
@@ -181,13 +187,42 @@ export class SelectionController {
 
       if (!unchanged) {
         this.#clearHighlight();
-        this.storedSelection = { notePath, selectedText, lineCount, domRanges };
+        const startLine = this.#findSourceLine(view, selection);
+        this.storedSelection = {
+          notePath,
+          selectedText,
+          lineCount,
+          domRanges,
+          ...(startLine !== undefined && { startLine }),
+        };
         this.updateIndicator();
         this.onUserSelectionChanged?.();
       }
     } else {
       this.#handleDeselection();
     }
+  }
+
+  /** Maps a selection to its 1-indexed source line only where the view renders its source verbatim. */
+  #findSourceLine(view: FileView, selection: Selection | null): number | undefined {
+    if (!(view instanceof TextFileView) || selection?.rangeCount !== 1) return undefined;
+
+    const source = view.getViewData();
+    const range = selection.getRangeAt(0);
+    let node: Node | null = range.commonAncestorContainer;
+    while (node && view.containerEl.contains(node)) {
+      const text = node.textContent ?? '';
+      // Ancestors only gain text, so none further up can match.
+      if (text.length > source.length) return undefined;
+      if (text === source) {
+        const prefix = view.containerEl.ownerDocument.createRange();
+        prefix.selectNodeContents(node);
+        prefix.setEnd(range.startContainer, range.startOffset);
+        return source.slice(0, prefix.toString().length).split(/\r?\n/).length;
+      }
+      node = node.parentNode;
+    }
+    return undefined;
   }
 
   private get cssHighlights(): CustomHighlightRegistry | null {
@@ -305,7 +340,7 @@ export class SelectionController {
     return this.#selectionMatchesRanges(this.#getDocumentSelection(this.#getFocusScopeOwnerDocument()), ranges);
   }
 
-  #clearWhenMarkdownContextIsUnavailable(): void {
+  #clearWhenFileContextIsUnavailable(): void {
     if (!this.storedSelection) return;
     if (this.#isFocusWithinChatSidebar()) {
       this.inputHandoffGraceUntil = null;
