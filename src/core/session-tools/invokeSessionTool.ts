@@ -3,7 +3,7 @@ import {
   isSessionToolPolicyAllowed,
   type ProviderSessionToolPort,
 } from '@/core/execution/ProviderSessionToolPort';
-import { TOOL_CLAUDIAN_LIST_SESSIONS } from '@/core/tools/toolNames';
+import { TOOL_CLAUDIAN_LIST_DESTINATIONS } from '@/core/tools/toolNames';
 
 import { decodeSessionToolCall, type SessionToolResult } from './sessionToolSpecs';
 
@@ -33,8 +33,8 @@ export async function invokeSessionTool(
 
   try {
     const call = decoded.call;
-    const value = call.tool === TOOL_CLAUDIAN_LIST_SESSIONS
-      ? await port.list(signal)
+    const value = call.tool === TOOL_CLAUDIAN_LIST_DESTINATIONS
+      ? await port.list(call.args, signal)
       : await port.send(call.args, signal);
     return { isError: false, text: JSON.stringify(value) };
   } catch (error) {

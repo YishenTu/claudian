@@ -9,13 +9,17 @@ import { testDate } from '@test/helpers/testClock';
 import { waitFor } from '@testing-library/dom';
 import { App } from 'obsidian';
 
+import { ConversationRepository } from '@/app/conversations/ConversationRepository';
+import type { ConversationPersistence } from '@/app/storage/ConversationPersistenceStore';
 import { ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import type { ClaudianSettings, Conversation, ConversationMutablePatch } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
+import { getSessionSettingsSnapshot } from '@/features/chat/sessions/sessionSettings';
 
 function setup() {
   const app = new App();
@@ -23,31 +27,47 @@ function setup() {
   const backend = new FakeSideBackend();
   jest.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
   ProviderWorkspaceRegistry.setServices('claude', {});
+  // Sonnet has effort control; Haiku has none.
+  const catalog = claudeCatalogFixture(['claude-sonnet-4-5', 'claude-haiku-4-5'], ['low', 'high']);
+  delete (catalog.discoveredModels[1] as { supportedEffortLevels?: string[] }).supportedEffortLevels;
   const settings = {
     model: 'claude-sonnet-4-5', permissionMode: 'normal', effortLevel: 'high', excludedTags: [],
     lastSelectedChatModel: { providerId: 'claude', model: 'claude-sonnet-4-5' },
-    providerConfigs: { claude: claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'high']) },
+    providerConfigs: { claude: catalog },
   } as unknown as ClaudianSettings;
-  const record = (id: string): Conversation => ({
+  const record = (id: string, activityOffset = 0): Conversation => ({
     id, sessionId: null, providerId: 'claude', selectedModel: settings.model, title: id === 'sender' ? 'Research' : id,
-    messages: [], createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(),
+    messages: [], createdAt: testDate().getTime(), lastActivityAt: testDate({ minutes: activityOffset }).getTime(),
   } as Conversation);
-  const records = new Map(['sender', 'recipient', 'archived'].map(id => [id, record(id)]));
+  // The recipient is the most recently active session; the caller is older.
+  const records = new Map([['sender', -1], ['recipient', 0], ['archived', 1]].map(([id, offset]) => [id, record(id as string, offset as number)]));
   records.get('archived')!.isArchived = true;
+  const repository = new ConversationRepository({
+    providers: ProviderRegistry, providerSettings: ProviderSettingsCoordinator,
+    getSettings: () => settings, getVaultPath: () => '/vault', onConversationDeleted: async () => undefined,
+    persistence: {
+      metadataReader: { revalidate: jest.fn(), load: jest.fn(), scan: jest.fn(), loadMetadata: jest.fn(), scanMetadata: jest.fn(), listMetadata: jest.fn() },
+      saveMetadata: async () => undefined, deleteCurrentMetadata: async () => undefined, assignMetadataToDevice: async () => undefined,
+    } as ConversationPersistence,
+  });
+  repository.replaceAll([...records.values()]);
   const saves: ConversationMutablePatch[] = [];
   const registry = new ProviderExecutionLifecycleRegistry();
   const host = {
     app, settings, providerHost: { app, settings, executionLifecycleRegistry: registry },
     getSessionSnapshotDirectory: () => '/tmp/claudian-sessions',
     getCommittedSettings: () => settings, getActiveEnvironmentVariables: () => '',
-    getConversationSummary: (id: string) => records.get(id) ?? null,
-    getConversationSync: (id: string) => records.get(id) ?? null,
-    getCachedConversation: (id: string) => records.get(id) ?? null,
-    getConversationById: async (id: string) => records.get(id) ?? null,
-    getConversationList: () => [...records.values()],
-    ensureConversationMetadataLoaded: async () => undefined,
+    getConversationSummary: (id: string) => repository.getSync(id),
+    getConversationSync: (id: string) => repository.getSync(id),
+    getCachedConversation: (id: string) => repository.getSync(id),
+    getConversationById: async (id: string) => repository.getSync(id),
+    getConversationList: () => repository.list(),
+    ensureConversationMetadataLoaded: async () => { repository.mergeMetadataConversations([...records.values()]); },
     renameConversation: async () => undefined,
-    updateConversation: async (_id: string, patch: ConversationMutablePatch) => { saves.push(structuredClone(patch)); },
+    updateConversation: async (id: string, patch: ConversationMutablePatch) => {
+      saves.push(structuredClone(patch));
+      await repository.update(id, patch);
+    },
     createConversation: jest.fn(async () => { const created = record('created'); records.set(created.id, created); return created; }),
     mutateSettings: async (mutate: (settings: ClaudianSettings) => void) => mutate(settings),
     executionPersistence: {
@@ -57,23 +77,52 @@ function setup() {
     },
   } as unknown as ChatFeatureHost;
   const pool = installSessionRuntimePool(host);
-  const service = new SessionMessagingService({ getHost: () => host, getActiveConversationId: () => 'sender' });
+  const refreshModelControls = jest.fn();
+  const service = new SessionMessagingService({ getHost: () => host, getActiveConversationId: () => 'sender', refreshModelControls,
+    commitSelection: (...args) => repository.updateSelectedModelIf(...args),
+  });
   Object.assign(host, { bindSessionTools: (id: string) => service.bindSessionTools(id) });
   const binding = service.bindSessionTools('sender');
-  return { host, pool, service, binding, records, backend, saves, record };
+  return { host, pool, service, binding, records, backend, saves, record, refreshModelControls };
 }
 const requestText = (request: ProviderExecutionRequest) => request.input.filter(block => block.type === 'text').map(block => block.text).join('');
 const signal = () => new AbortController().signal;
+const modelChoice = ({ configuration }: ProviderExecutionRequest) => ({ model: configuration.model, reasoning: configuration.reasoning });
 afterEach(() => { ProviderWorkspaceRegistry.clear(); jest.restoreAllMocks(); });
 
-it('lists metadata and focus without creating runtimes, omitting archived records', async () => {
+const listArgs = (overrides: Partial<{ includeProviders: boolean; limit: number }> = {}) => ({ includeProviders: false, limit: 50, ...overrides });
+
+it('lists recent sessions first without creating runtimes, omitting archived records and providers', async () => {
   const h = setup();
-  expect(await h.binding.port.list(signal())).toEqual([
-    { sessionId: 'sender', title: 'Research', provider: 'claude', status: 'idle', active: true },
+  expect(await h.binding.port.list(listArgs(), signal())).toEqual({ sessions: [
     { sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'idle', active: false },
-  ]);
+    { sessionId: 'sender', title: 'Research', provider: 'claude', status: 'idle', active: true },
+  ] });
+  expect(await h.binding.port.list(listArgs({ limit: 1 }), signal())).toEqual({ sessions: [
+    { sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'idle', active: false },
+  ], truncated: true });
   expect(h.pool.getAll()).toHaveLength(0);
   expect(h.backend.sessions).toHaveLength(0);
+});
+
+it('lists enabled providers with available models, new-session defaults and reasoning, read fresh', async () => {
+  const h = setup();
+  const sonnet = 'claude-code/claude-sonnet-4-5';
+  const haiku = 'claude-code/claude-haiku-4-5';
+  const { providers } = await h.binding.port.list(listArgs({ includeProviders: true }), signal());
+  expect(providers).toEqual([{ provider: 'claude', default: true, models: [
+    { id: sonnet, default: true, reasoning: { options: ['low', 'high'], default: 'high' } },
+    { id: haiku },
+  ] }]);
+
+  // A later user choice of the future-tab model is reflected by the next call.
+  await h.host.mutateSettings(settings => { settings.lastSelectedChatModel = { providerId: 'claude', model: 'claude-haiku-4-5' }; });
+  const fresh = await h.binding.port.list(listArgs({ includeProviders: true }), signal());
+  expect(fresh.providers?.[0]?.models).toEqual([
+    { id: sonnet, reasoning: { options: ['low', 'high'], default: 'high' } },
+    { id: haiku, default: true },
+  ]);
+  expect(h.pool.getAll()).toHaveLength(0);
 });
 
 it('delivers to a cold headless recipient with caller provenance and no composer capture', async () => {
@@ -123,10 +172,31 @@ it.each(['sender', 'archived', 'missing'])('rejects unavailable recipient %s wit
   expect(h.pool.getAll()).toHaveLength(0);
 });
 
-it('rejects an unavailable explicit model before creating a shell', async () => {
+it.each([
+  ['an unknown provider', { provider: 'nope', model: 'm' }, /^Unknown or disabled provider "nope"\. Available: claude$/],
+  ['an unavailable model', { model: 'unavailable' },
+    /^Unknown model "unavailable" for claude\. Available: claude-code\/claude-sonnet-4-5, claude-code\/claude-haiku-4-5$/],
+  ['an unsupported reasoning level', { model: 'claude-sonnet-4-5', reasoning: 'max' },
+    /^Unknown reasoning "max" for claude model claude-code\/claude-sonnet-4-5\. Available: low, high$/],
+  ['reasoning for a model without effort control', { model: 'claude-haiku-4-5', reasoning: 'low' },
+    /^Model claude-code\/claude-haiku-4-5 for claude has no reasoning control\.$/],
+])('rejects %s before creating a shell, listing the valid options', async (_label, choice, error) => {
   const h = setup();
-  await expect(h.binding.port.send({ text: 'Hello', model: 'unavailable' }, signal())).rejects.toThrow(/model/i);
+  await expect(h.binding.port.send({ text: 'Hello', ...choice }, signal())).rejects.toThrow(error);
   expect(h.host.createConversation).not.toHaveBeenCalled();
+});
+
+it('applies an explicit model and reasoning to the new session before its first turn', async () => {
+  const h = setup();
+  expect(await h.binding.port.send({ text: 'New task', provider: 'claude', model: 'claude-sonnet-4-5', reasoning: 'low' }, signal()))
+    .toEqual({ sessionId: 'created', status: 'started' });
+  expect(h.host.createConversation).toHaveBeenCalledWith({ providerId: 'claude', selectedModel: 'claude-code/claude-sonnet-4-5' });
+  await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+  expect(modelChoice(h.backend.latest.requests[0])).toEqual({ model: 'claude-code/claude-sonnet-4-5', reasoning: 'low' });
+  // The session-owned choice does not rewrite the user's saved effort.
+  expect(h.host.settings.effortLevel).toBe('high');
+  h.backend.latest.complete();
+  await h.pool.get('created')!.turns.drain();
 });
 
 it('keeps a published shell on cancellation and joins creation during shutdown', async () => {
@@ -158,7 +228,7 @@ it('revokes released caller bindings without cancelling an already admitted reci
   await h.binding.port.send({ sessionId: 'recipient', text: 'Keep working' }, signal());
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   h.binding.dispose();
-  await expect(h.binding.port.list(signal())).rejects.toThrow();
+  await expect(h.binding.port.list(listArgs(), signal())).rejects.toThrow();
   expect(h.backend.latest.cancelCalls).toBe(0);
   h.backend.latest.complete();
   await h.pool.get('recipient')!.turns.drain();
@@ -178,7 +248,7 @@ it('defers a message when native background work starts during preparation, then
   await waitFor(() => expect(runtime.mailbox!.hasPending || native.requests.length > 0).toBe(true));
   expect(native.requests).toHaveLength(0);
   expect(runtime.mailbox!.hasPending).toBe(true);
-  expect((await h.binding.port.list(signal())).find(item => item.sessionId === 'recipient')?.status).toBe('running');
+  expect((await h.binding.port.list(listArgs(), signal())).sessions.find(item => item.sessionId === 'recipient')?.status).toBe('running');
   native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'provider-ended' });
   await waitFor(() => expect(native.requests).toHaveLength(1));
   native.complete();
@@ -194,6 +264,7 @@ it('creates a headless session using the selected default without mutating the f
   expect(h.host.settings.lastSelectedChatModel).toEqual(seed);
   expect(h.pool.getAttachment('created')).toBeNull();
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+  expect(modelChoice(h.backend.latest.requests[0])).toEqual({ model: 'claude-code/claude-sonnet-4-5', reasoning: 'high' });
   h.backend.latest.complete();
   await h.pool.get('created')!.turns.drain();
 });
@@ -231,4 +302,78 @@ it('waits for a published first-turn shell to adopt its original draft runtime',
   expect(decodeSessionMessage(requestText(h.backend.latest.requests[1]))?.text).toBe('Mailbox follow-up');
   h.backend.latest.complete();
   await original.turns.drain();
+});
+
+const sonnetId = 'claude-code/claude-sonnet-4-5';
+const haikuId = 'claude-code/claude-haiku-4-5';
+
+it('switches an existing session\'s reasoning for the delivered turn and later user turns, not the running one', async () => {
+  const h = setup();
+  const runtime = h.pool.ensure({ conversationId: 'recipient', providerId: 'claude', draftModel: null });
+  await runtime.withModel(async model => {
+    const running = model.inputController.sendMessage({ content: 'User first' });
+    await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+    expect(await h.binding.port.send({ sessionId: 'recipient', text: 'Go faster', reasoning: 'low' }, signal()))
+      .toEqual({ sessionId: 'recipient', status: 'queued' });
+    expect(h.refreshModelControls).toHaveBeenCalledWith('claude');
+    h.backend.latest.complete();
+    await running;
+    await waitFor(() => expect(h.backend.latest.requests).toHaveLength(2));
+    expect(modelChoice(h.backend.latest.requests[0])).toEqual({ model: sonnetId, reasoning: 'high' });
+    expect(decodeSessionMessage(requestText(h.backend.latest.requests[1]))?.text).toBe('Go faster');
+    expect(modelChoice(h.backend.latest.requests[1])).toEqual({ model: sonnetId, reasoning: 'low' });
+    h.backend.latest.complete();
+    await runtime.turns.drain();
+    const later = model.inputController.sendMessage({ content: 'User later' });
+    await waitFor(() => expect(h.backend.latest.requests).toHaveLength(3));
+    expect(modelChoice(h.backend.latest.requests[2])).toEqual({ model: sonnetId, reasoning: 'low' });
+    h.backend.latest.complete();
+    await later;
+  });
+  // The saved preference is untouched; the choice belongs to the session.
+  expect(h.host.settings.effortLevel).toBe('high');
+});
+
+it('switches a history-only session\'s model without opening it in a tab', async () => {
+  const h = setup();
+  expect(h.pool.get('recipient')).toBeNull();
+  expect(await h.binding.port.send({ sessionId: 'recipient', text: 'Use Haiku', model: 'claude-haiku-4-5' }, signal()))
+    .toEqual({ sessionId: 'recipient', status: 'started' });
+  expect(h.host.getConversationSummary('recipient')!.selectedModel).toBe(haikuId);
+  expect(h.pool.getAttachment('recipient')).toBeNull();
+  await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+  expect(modelChoice(h.backend.latest.requests[0])).toEqual({ model: haikuId, reasoning: null });
+  h.backend.latest.complete();
+  await h.pool.get('recipient')!.turns.drain();
+});
+
+it.each([
+  ['an unavailable model', { sessionId: 'recipient', model: 'unavailable' },
+    /^Unknown model "unavailable" for claude\. Available: claude-code\/claude-sonnet-4-5, claude-code\/claude-haiku-4-5$/],
+  ['an unsupported reasoning level', { sessionId: 'recipient', reasoning: 'max' },
+    /^Unknown reasoning "max" for claude model claude-code\/claude-sonnet-4-5\. Available: low, high$/],
+  ['reasoning for the switched model without effort control', { sessionId: 'recipient', model: 'claude-haiku-4-5', reasoning: 'low' },
+    /^Model claude-code\/claude-haiku-4-5 for claude has no reasoning control\.$/],
+  ['a self-send', { sessionId: 'sender', model: 'claude-haiku-4-5', reasoning: 'low' }, /cannot send a message to itself/],
+  ['an archived destination', { sessionId: 'archived', model: 'claude-haiku-4-5' }, /does not exist or is archived/],
+])('rejects an existing-session switch with %s and changes nothing', async (_label, choice, error) => {
+  const h = setup();
+  const runtime = h.pool.ensure({ conversationId: choice.sessionId, providerId: 'claude', draftModel: null });
+  const before = getSessionSettingsSnapshot(runtime, h.host);
+  await expect(h.binding.port.send({ text: 'Hello', ...choice }, signal())).rejects.toThrow(error);
+  expect(h.records.get(choice.sessionId)!.selectedModel).toBe('claude-sonnet-4-5');
+  expect(h.saves).toEqual([]);
+  const after = getSessionSettingsSnapshot(runtime, h.host);
+  expect({ model: after.model, reasoning: after.reasoning }).toEqual({ model: before.model, reasoning: before.reasoning });
+  expect(runtime.mailbox?.hasPending ?? false).toBe(false);
+  expect(h.backend.sessions).toHaveLength(0);
+});
+
+it('applies no switch when the call is cancelled before admission', async () => {
+  const h = setup();
+  const cancelled = new AbortController();
+  cancelled.abort();
+  await expect(h.binding.port.send({ sessionId: 'recipient', text: 'Hello', model: 'claude-haiku-4-5' }, cancelled.signal)).rejects.toThrow();
+  expect(h.records.get('recipient')!.selectedModel).toBe('claude-sonnet-4-5');
+  expect(h.pool.get('recipient')).toBeNull();
 });

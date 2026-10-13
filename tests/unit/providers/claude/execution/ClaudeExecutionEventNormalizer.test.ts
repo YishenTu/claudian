@@ -532,7 +532,7 @@ it('omits throughput for success-subtype API errors', () => {
 });
 
 describe('Claude session message normalization', () => {
-  it.each(['claudian_list_sessions', 'claudian_send_message'])('normalizes %s in live output and native history', name => {
+  it.each(['claudian_list_destinations', 'claudian_send_message'])('normalizes %s in live output and native history', name => {
     const rawName = `mcp__claudian_sessions__${name}`;
     const native = { type: 'assistant' as const, message: { content: [
       { type: 'tool_use' as const, id: 'session-tool', name: rawName, input: {} },

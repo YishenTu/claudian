@@ -29,7 +29,7 @@ Open Claudian interface from the ribbon icon or command palette. Everything work
 
 **@mention** — Type `@` to reference vault files, folders and other Claudian sessions.
 
-**Cross-Session Messaging** — Agents can list your Claudian sessions and message them, or start a new one, with `claudian_list_sessions` and `claudian_send_message`. The recipient runs the message as its own turn (queued if busy) and may reply the same way. Messages show their sender; press Stop in a session to cancel its turn and drop its pending messages.
+**Cross-Session Messaging** — Agents can message other Claudian sessions or start new ones, and recipients can reply. Right-click a session to copy its ID for an agent; Stop drops a session's pending messages.
 
 **Side Chat (`/side` or `/btw`)** — Explore a separate, temporary conversation with follow-ups and tools while keeping the main chat unchanged.
 

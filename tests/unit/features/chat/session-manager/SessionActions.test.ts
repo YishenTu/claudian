@@ -281,7 +281,7 @@ describe('SessionActions', () => {
     let findItem = render();
     expect(findItem('seen').querySelector('.claudian-session-status-indicator')).toBeNull();
     let menu = openMenu(findItem('seen'));
-    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Mark as unread', 'Rename', 'Archive']);
+    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Mark as unread', 'Rename', 'Copy session ID', 'Archive']);
     menu.items[1].clickHandler?.();
 
     expect(onChanged).toHaveBeenCalled();
@@ -291,7 +291,7 @@ describe('SessionActions', () => {
     expect(badge.getAttribute('aria-label')).toBe('Unread');
     expect(findItem('seen').hasClass('claudian-history-item--attention')).toBe(true);
     menu = openMenu(findItem('seen'));
-    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Mark as read', 'Rename', 'Archive']);
+    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Mark as read', 'Rename', 'Copy session ID', 'Archive']);
     menu.items[1].clickHandler?.();
 
     findItem = render();
@@ -301,7 +301,7 @@ describe('SessionActions', () => {
     // A session not loaded since startup gets its session without loading history.
     expect(pool.get('never-opened')).toBeNull();
     menu = openMenu(findItem('never-opened'));
-    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Mark as unread', 'Rename', 'Archive']);
+    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Mark as unread', 'Rename', 'Copy session ID', 'Archive']);
     menu.items[1].clickHandler?.();
     expect(pool.get('never-opened')?.providerId).toBe('codex');
     expect(pool.get('never-opened')?.peekModel).toBeNull();
@@ -312,7 +312,7 @@ describe('SessionActions', () => {
     pool.get('never-opened')!.attention.markReviewRequired('error');
     findItem = render();
     expect(findItem('never-opened').querySelector('.claudian-session-status-indicator--error')).not.toBeNull();
-    expect(openMenu(findItem('never-opened')).items.map(item => item.title)).toEqual(['Pin', 'Rename', 'Archive']);
+    expect(openMenu(findItem('never-opened')).items.map(item => item.title)).toEqual(['Pin', 'Rename', 'Copy session ID', 'Archive']);
     await pool.dispose();
   });
 
@@ -469,6 +469,7 @@ describe('SessionActions', () => {
       'Open in new tab',
       'Open in background tab',
       'Rename',
+      'Copy session ID',
       'Delete',
     ]);
   });
@@ -500,6 +501,7 @@ describe('SessionActions', () => {
     expect(menu.items.map(item => item.title)).toEqual([
       'Switch to open session',
       'Rename',
+      'Copy session ID',
       'Delete',
     ]);
   });
@@ -533,6 +535,7 @@ describe('SessionActions', () => {
     expect(menu.items.map(item => item.title)).toEqual([
       'Switch to open session',
       'Rename',
+      'Copy session ID',
       'Delete',
     ]);
   });
@@ -564,7 +567,7 @@ describe('SessionActions', () => {
     const menu = (Menu as typeof Menu & {
       instances: Array<{ items: Array<{ title: string }> }>;
     }).instances[0];
-    expect(menu.items.map(item => item.title)).toEqual(['Rename', 'Delete']);
+    expect(menu.items.map(item => item.title)).toEqual(['Rename', 'Copy session ID', 'Delete']);
   });
 
   it('shows inline device assignment beside pin and archive only for legacy sessions', async () => {
@@ -628,6 +631,7 @@ describe('SessionActions', () => {
     expect(menu.items.map(item => item.title)).toEqual([
       'Pin',
       'Rename',
+      'Copy session ID',
       'Archive',
     ]);
   });
@@ -658,7 +662,7 @@ describe('SessionActions', () => {
     let menu = (Menu as typeof Menu & {
       instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }>;
     }).instances.at(-1)!;
-    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Rename', 'Archive']);
+    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Rename', 'Copy session ID', 'Archive']);
     menu.items[0].clickHandler?.();
     await Promise.resolve();
     expect(onSetConversationPinned).toHaveBeenCalledWith(['normal'], true);
@@ -673,7 +677,7 @@ describe('SessionActions', () => {
     menu = (Menu as typeof Menu & {
       instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }>;
     }).instances.at(-1)!;
-    expect(menu.items.map(item => item.title)).toEqual(['Unpin', 'Rename', 'Archive']);
+    expect(menu.items.map(item => item.title)).toEqual(['Unpin', 'Rename', 'Copy session ID', 'Archive']);
     menu.items[0].clickHandler?.();
     await Promise.resolve();
     expect(onSetConversationPinned).toHaveBeenCalledWith(['pinned'], false);
@@ -709,6 +713,7 @@ describe('SessionActions', () => {
     expect(menu.items.map(menuItem => menuItem.title)).toEqual([
       'Pin',
       'Rename',
+      'Copy session ID',
       'Archive',
     ]);
   });
@@ -739,7 +744,7 @@ describe('SessionActions', () => {
       }>;
     }).instances.at(-1)!;
     expect(menu.useNativeMenu).toBe(false);
-    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Rename', 'Archive']);
+    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Rename', 'Copy session ID', 'Archive']);
 
     const archivedContainer = createMockEl();
     (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
@@ -766,5 +771,40 @@ describe('SessionActions', () => {
     }).instances.at(-1)!;
     expect(menu.useNativeMenu).toBe(false);
     expect(menu.items.map(item => item.title)).toEqual(['Restore', 'Delete']);
+  });
+
+  it('copies the session ID from non-archived row menus so agents can target the session', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const openRowMenu = (conversation: Record<string, unknown>, mode: 'active' | 'archived') => {
+      const container = createMockEl();
+      (deps.plugin.getConversationList as jest.Mock).mockReturnValue([conversation]);
+      controller.renderHistoryDropdown(container, {
+        onSelectConversation: jest.fn(),
+        showPinnedSection: mode === 'active',
+        showArchivedSection: mode === 'archived',
+        sessionScope: mode,
+        sessionActionMode: mode,
+        showOpenStateActions: false,
+      });
+      container.querySelector('.claudian-history-item')!.dispatchEvent({
+        type: 'contextmenu',
+        stopPropagation: jest.fn(),
+        preventDefault: jest.fn(),
+      });
+      return (Menu as typeof Menu & {
+        instances: Array<{ items: Array<{ title: string; clickHandler?: () => void }> }>;
+      }).instances.at(-1)!;
+    };
+
+    const activeMenu = openRowMenu({ id: 'conv-active-1', title: 'Active', createdAt: 2 }, 'active');
+    const copyItem = activeMenu.items.find(item => item.title === 'Copy session ID');
+    expect(copyItem).toBeDefined();
+    copyItem!.clickHandler!();
+    await Promise.resolve();
+    expect(writeText).toHaveBeenCalledWith('conv-active-1');
+
+    const archivedMenu = openRowMenu({ id: 'conv-archived', title: 'Archived', createdAt: 1, isArchived: true }, 'archived');
+    expect(archivedMenu.items.map(item => item.title)).toEqual(['Restore', 'Delete']);
   });
 });

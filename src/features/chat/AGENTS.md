@@ -14,8 +14,8 @@
 - Open response blocks, tool/subagent records, and pending interaction answers must survive absent presentation. Detach cancels view jobs and releases DOM; it does not finalize blocks or settle requests.
 - Deferred presentation work (indicators, prompt resumes, scheduled renders) is fenced by the stream generation that scheduled it; never apply it to whichever turn is current.
 - Conversation authority is revalidated after session preparation immediately before provider handoff. Superseded preparation cannot install or publish resources.
-
 - Session-message delivery is internally queued main work owned by the recipient's mailbox: it waits for no active, queued, background or interaction work, never merges with or returns to the composer, and only definitely-unsent entries may be retried. Stop, archive, deletion and shutdown discard pending entries; delivery never cancels a recipient turn.
+
 ## Surface and input behavior
 
 - Model selection alone must not change displayed context usage. Retain the previous complete report until the new model reports a usable window; never combine one model’s token count with another model’s window.

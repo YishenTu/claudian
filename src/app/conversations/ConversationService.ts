@@ -80,6 +80,16 @@ export class ConversationService {
     this.notifyConversationListChanged();
   }
 
+  async updateSelectedModelIf(
+    ...args: Parameters<ConversationRepository['updateSelectedModelIf']>
+  ): Promise<boolean> {
+    const committed = await this.deps.repository.updateSelectedModelIf(...args);
+    if (committed) {
+      try { this.notifyConversationListChanged(); } catch { /* Metadata and admission already committed. */ }
+    }
+    return committed;
+  }
+
   async setConversationPinned(id: string, isPinned: boolean): Promise<void> {
     await this.deps.repository.setPinned(id, isPinned);
     this.notifyConversationListChanged();

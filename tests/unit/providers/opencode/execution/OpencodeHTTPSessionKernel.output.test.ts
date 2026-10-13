@@ -223,7 +223,7 @@ it('keeps later steers behind an earlier pending lookup when a middle lookup fai
 });
 
 
-const callSessionTool = async (id = 'ses_main') => invokeSessionTool('claudian_list_sessions', {},
+const callSessionTool = async (id = 'ses_main') => invokeSessionTool('claudian_list_destinations', {},
   resolveCaller?.(id) ?? {port:undefined,toolPolicy:undefined,signal:new AbortController().signal});
 const startToolRun = async (policy: ProviderToolPolicy = {kind:'provider-default'}) => {
   const request = {sessionId:'ses_main',prompt:[{type:'text' as const,text:'work'}]};
@@ -234,8 +234,8 @@ const startToolRun = async (policy: ProviderToolPolicy = {kind:'provider-default
   event('session.execution.started');
   return {completion};
 };
-it.each<ProviderToolPolicy>([{kind:'provider-default'},{kind:'unrestricted'},{kind:'read-only'},{kind:'passive'},{kind:'allow-list',names:['claudian_list_sessions']}])('dispatches session tools with the owning policy %j', async policy => {
-  const list = jest.fn().mockResolvedValue([]);
+it.each<ProviderToolPolicy>([{kind:'provider-default'},{kind:'unrestricted'},{kind:'read-only'},{kind:'passive'},{kind:'allow-list',names:['claudian_list_destinations']}])('dispatches session tools with the owning policy %j', async policy => {
+  const list = jest.fn().mockResolvedValue({ sessions: [] });
   sessionConfig.sessionTools = {list,send:jest.fn()};
   const {completion} = await startToolRun(policy);
   const allowed = ['provider-default','unrestricted'].includes(policy.kind);
@@ -248,20 +248,20 @@ it('denies an unbound caller and pins child calls to the original run through se
   const unbound = await startToolRun();
   expect((await callSessionTool()).isError).toBe(true);
   event('session.execution.succeeded'); await unbound.completion;
-  const list = jest.fn().mockResolvedValue([]);
+  const list = jest.fn().mockResolvedValue({ sessions: [] });
   sessionConfig.sessionTools = {list,send:jest.fn()};
   const first = await startToolRun();
   event('session.tool.input.started',{id:'spawn',name:'subagent'});
   event('session.tool.called',{id:'spawn',input:{background:true}});
   event('session.tool.progress',{id:'spawn',metadata:{sessionID:'child'}});
   expect((await callSessionTool('child')).isError).toBe(false);
-  const signal = list.mock.calls[0][0] as AbortSignal;
+  const signal = list.mock.calls[0][1] as AbortSignal;
   event('session.execution.succeeded'); await first.completion;
   expect(signal.aborted).toBe(true);
   const second = await startToolRun();
   expect((await callSessionTool('child')).isError).toBe(true);
   expect((await callSessionTool()).isError).toBe(false);
-  const nextSignal = list.mock.calls[1][0] as AbortSignal;
+  const nextSignal = list.mock.calls[1][1] as AbortSignal;
   kernel.cancel('ses_main');
   expect(nextSignal.aborted).toBe(true);
   expect((await callSessionTool()).isError).toBe(true);
@@ -274,14 +274,14 @@ it('normalizes native session tools in live output without losing the raw name',
 });
 
 it.each(['cancel', 'completion', 'failure'])('aborts an in-flight child session-tool call on child %s without cancelling the parent', async ending => {
-  const list = jest.fn().mockResolvedValue([]);
+  const list = jest.fn().mockResolvedValue({ sessions: [] });
   sessionConfig.sessionTools = { list, send: jest.fn() };
   const { completion } = await startToolRun();
   event('session.tool.input.started', { id: 'spawn', name: 'subagent' });
   event('session.tool.called', { id: 'spawn', input: {} });
   event('session.tool.progress', { id: 'spawn', metadata: { sessionID: 'child' } });
   expect((await callSessionTool('child')).isError).toBe(false);
-  const signal = list.mock.calls[0][0] as AbortSignal;
+  const signal = list.mock.calls[0][1] as AbortSignal;
   if (ending === 'cancel') kernel.cancel('child');
   else event(ending === 'completion' ? 'session.execution.succeeded' : 'session.execution.failed', { sessionID: 'child' });
   expect(signal.aborted).toBe(true);

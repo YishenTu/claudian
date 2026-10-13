@@ -10,13 +10,15 @@ const IDLE_MS = 30 * 60_000;
 
 afterEach(() => jest.useRealTimers());
 
+const listArgs = { includeProviders: false, limit: 50 };
+
 describe('ChatExecutionCoordinator', () => {
   function createSessionToolHarness() {
     const bindings: { port: ProviderSessionToolPort; dispose: jest.Mock }[] = [];
     const bindSessionTools = jest.fn((_conversationId: string) => {
       const controller = new AbortController();
       const port: ProviderSessionToolPort = {
-        list: async () => { controller.signal.throwIfAborted(); return []; },
+        list: async () => { controller.signal.throwIfAborted(); return { sessions: [] }; },
         send: async () => {
           controller.signal.throwIfAborted();
           return { sessionId: 'recipient', status: 'queued' };
@@ -41,10 +43,10 @@ describe('ChatExecutionCoordinator', () => {
       expect(harness.bindSessionTools).toHaveBeenCalledTimes(1);
       expect(harness.bindSessionTools).toHaveBeenCalledWith('caller');
       expect(port).toBe(harness.bindings[0].port);
-      await expect(port.list(new AbortController().signal)).resolves.toEqual([]);
+      await expect(port.list(listArgs, new AbortController().signal)).resolves.toEqual({ sessions: [] });
       const teardown = deferred<void>();
       const dispose = jest.spyOn(backend.sessions[0], 'dispose').mockImplementationOnce(async () => {
-        await expect(port.list(new AbortController().signal)).rejects.toThrow('Binding revoked');
+        await expect(port.list(listArgs, new AbortController().signal)).rejects.toThrow('Binding revoked');
         await teardown.promise;
       });
       const release = mode === 'bind' ? harness.coordinator.bindConversation(null)
@@ -53,7 +55,7 @@ describe('ChatExecutionCoordinator', () => {
       try {
         for (let attempt = 0; attempt < 20 && !dispose.mock.calls.length; attempt++) await Promise.resolve();
         expect(dispose).toHaveBeenCalledTimes(1);
-        await expect(port.list(new AbortController().signal)).rejects.toThrow('Binding revoked');
+        await expect(port.list(listArgs, new AbortController().signal)).rejects.toThrow('Binding revoked');
         await expect(port.send({ text: 'late' }, new AbortController().signal)).rejects.toThrow('Binding revoked');
       } finally {
         teardown.resolve();
@@ -76,7 +78,7 @@ describe('ChatExecutionCoordinator', () => {
     await harness.coordinator.bindConversation({ conversationId: 'caller', providerId: 'claude' });
     await expect(harness.coordinator.prepare()).rejects.toBe(failure);
     expect(harness.bindings).toHaveLength(1);
-    await expect(harness.bindings[0].port.list(new AbortController().signal)).rejects.toThrow('Binding revoked');
+    await expect(harness.bindings[0].port.list(listArgs, new AbortController().signal)).rejects.toThrow('Binding revoked');
     await harness.coordinator.dispose();
     await harness.registry.dispose();
     expect(harness.bindings[0].dispose).toHaveBeenCalledTimes(1);

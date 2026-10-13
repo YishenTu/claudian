@@ -177,7 +177,7 @@ describe('ClaudeExecutionBackend', () => {
     try {
       await collectEvents(session.execute(createRequest()).events);
       expect(sdkMock.getLastOptions()?.mcpServers).toBeUndefined();
-      sessionTools = { list: async () => [], send: jest.fn() };
+      sessionTools = { list: async () => ({ sessions: [] }), send: jest.fn() };
       await collectEvents(session.execute(createRequest()).events);
       expect(sdkMock.getQueryCallCount()).toBe(2);
       expect(sdkMock.getLastOptions()?.mcpServers).toHaveProperty('claudian_sessions');

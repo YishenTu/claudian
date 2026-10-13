@@ -184,7 +184,7 @@
       "enteringPlan": "計画モードに移行中",
       "planComplete": "計画完了",
       "messageAgent": "エージェントにメッセージを送信",
-      "listSessions": "セッションを一覧表示",
+      "listDestinations": "送信先を一覧表示",
       "messageSession": "セッションにメッセージを送信",
       "continueAgent": "エージェントを継続",
       "listAgents": "エージェント一覧",

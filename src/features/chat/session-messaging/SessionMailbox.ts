@@ -7,9 +7,22 @@ export type SessionMessageUnsentReason = TurnCancelReason | 'failed' | 'deferred
 
 export class SessionMessageDeferredError extends Error {}
 
+interface MailboxEntry {
+  readonly message: SessionMessage;
+  held: boolean;
+}
+
+export interface SessionMessageReservation {
+  readonly isCurrent: boolean;
+  /** Marks admission without dispatch or presentation callbacks. Caller must first check isCurrent. */
+  commit(): void;
+  cancel(): void;
+  publish(): SessionToolDeliveryStatus;
+}
+
 /** Session-owned FIFO; user input and existing execution owners decide when it can dispatch. */
 export class SessionMailbox {
-  private readonly pending: SessionMessage[] = [];
+  private readonly pending: MailboxEntry[] = [];
   private generation = 0;
   private dispatching = false;
 
@@ -22,21 +35,50 @@ export class SessionMailbox {
   get hasPending(): boolean { return this.pending.length > 0; }
 
   admit(message: SessionMessage): SessionToolDeliveryStatus {
+    const reservation = this.reserve(message);
+    reservation.commit();
+    return reservation.publish();
+  }
+
+  /** A held entry retains its FIFO position while a selection commit waits for persistence. */
+  reserve(message: SessionMessage): SessionMessageReservation {
     if (!this.deps.runtime.acceptsIntents || !this.deps.isTargetAvailable()) {
       throw new Error('The target session is unavailable');
     }
-    const starts = !this.hasPending && !this.dispatching && this.canDispatch;
-    this.pending.push(message);
-    this.wake();
-    this.deps.runtime.publish('work');
-    return starts ? 'started' : 'queued';
+    const entry: MailboxEntry = { message, held: true };
+    const generation = this.generation;
+    this.pending.push(entry);
+    const isCurrent = () => generation === this.generation && this.pending.includes(entry)
+      && this.deps.runtime.acceptsIntents && this.deps.isTargetAvailable();
+    const publish = (): SessionToolDeliveryStatus => {
+      const starts = !entry.held && isCurrent() && this.pending[0] === entry && !this.dispatching && this.canDispatch;
+      this.wake();
+      // Publication cannot reject an admission that already committed.
+      try { this.deps.runtime.publish('work'); } catch { /* The session still owns the entry. */ }
+      return starts ? 'started' : 'queued';
+    };
+    publish();
+    return {
+      get isCurrent() { return isCurrent(); },
+      commit: () => {
+        if (!entry.held || !isCurrent()) throw new Error('Session message reservation was discarded');
+        entry.held = false;
+      },
+      cancel: () => {
+        if (!entry.held) return;
+        const index = this.pending.indexOf(entry);
+        if (index !== -1) this.pending.splice(index, 1);
+        publish();
+      },
+      publish,
+    };
   }
 
   clear(): void {
     this.generation++;
     const discarded = this.pending.splice(0);
     if (discarded.length) {
-      this.deps.onDiscard(discarded);
+      this.deps.onDiscard(discarded.map(entry => entry.message));
       this.deps.runtime.publish('work');
     }
   }
@@ -54,10 +96,11 @@ export class SessionMailbox {
       this.clear();
       return;
     }
-    if (this.dispatching || !this.canDispatch) return;
+    if (this.dispatching || this.pending[0].held || !this.canDispatch) return;
     this.dispatching = true;
     const generation = this.generation;
-    const message = this.pending[0];
+    const entry = this.pending[0];
+    const { message } = entry;
     let removed = false;
     let dispositionReported = false;
     void this.deps.runtime.withModel(async model => {
@@ -81,7 +124,7 @@ export class SessionMailbox {
           if (dispositionReported) return;
           dispositionReported = true;
           if (reason === 'deferred' && generation === this.generation && this.deps.runtime.acceptsIntents && this.deps.isTargetAvailable()) {
-            this.pending.unshift(message);
+            this.pending.unshift(entry);
           } else this.deps.onDiscard([message]);
         },
       });

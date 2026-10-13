@@ -6,7 +6,7 @@ isReadOnlyTool,
 isSessionTool,
 isWriteEditTool,
 TOOL_BASH,
-TOOL_CLAUDIAN_LIST_SESSIONS,
+TOOL_CLAUDIAN_LIST_DESTINATIONS,
 TOOL_CLAUDIAN_SEND_MESSAGE,
 TOOL_CLOSE_AGENT,
 TOOL_RESUME_AGENT,
@@ -33,9 +33,9 @@ describe('isAgentLifecycleTool', () => {
 
 describe('isSessionTool', () => {
   it('matches only the Claudian session tools, distinct from runtime agent messaging', () => {
-    expect(TOOL_CLAUDIAN_LIST_SESSIONS).toBe('claudian_list_sessions');
+    expect(TOOL_CLAUDIAN_LIST_DESTINATIONS).toBe('claudian_list_destinations');
     expect(TOOL_CLAUDIAN_SEND_MESSAGE).toBe('claudian_send_message');
-    expect(isSessionTool(TOOL_CLAUDIAN_LIST_SESSIONS)).toBe(true);
+    expect(isSessionTool(TOOL_CLAUDIAN_LIST_DESTINATIONS)).toBe(true);
     expect(isSessionTool(TOOL_CLAUDIAN_SEND_MESSAGE)).toBe(true);
     expect(isSessionTool(TOOL_SEND_MESSAGE)).toBe(false);
     expect(isAgentLifecycleTool(TOOL_CLAUDIAN_SEND_MESSAGE)).toBe(false);

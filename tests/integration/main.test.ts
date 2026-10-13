@@ -1338,7 +1338,7 @@ describe('ClaudianPlugin', () => {
       const disposeWorkspaces = jest.spyOn(ProviderWorkspaceRegistry, 'disposeInitialized');
       plugin.onunload();
       try {
-        await expect(binding.port.list(new AbortController().signal)).rejects.toThrow('shutting down');
+        await expect(binding.port.list({ includeProviders: false, limit: 50 }, new AbortController().signal)).rejects.toThrow('shutting down');
         await waitForCondition(() => dispose.mock.calls.length > 0);
         expect(disposeWorkspaces).not.toHaveBeenCalled();
       } finally {

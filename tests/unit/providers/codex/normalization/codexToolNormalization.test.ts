@@ -29,7 +29,7 @@ it('renders non-JSON tool outputs without losing primitive values or throwing on
 });
 
 describe('normalizeCodexToolName', () => {
-  it.each(['claudian_list_sessions', 'claudian_send_message'])('normalizes the session namespace for %s', name => {
+  it.each(['claudian_list_destinations', 'claudian_send_message'])('normalizes the session namespace for %s', name => {
     expect(normalizeCodexToolName(`claudian_sessions__${name}`)).toBe(name);
     expect(normalizeCodexToolName(name)).toBe(name);
   });

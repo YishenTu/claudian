@@ -1037,7 +1037,7 @@ it.each([
 it('loads a module plugin folder once per shared server and forwards the native caller to its port', async () => {
   const f = await createFixture();
   await f.workspace.metadataService.loadCatalog();
-  const list = jest.fn().mockResolvedValue([{ sessionId: 'target' }]);
+  const list = jest.fn().mockResolvedValue({ sessions: [{ sessionId: 'target' }] });
   const send = jest.fn().mockResolvedValue({ sessionId: 'target', status: 'queued' });
   const session = f.createSession({ sessionTools: { list, send } });
   const control = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
@@ -1054,15 +1054,15 @@ it('loads a module plugin folder once per shared server and forwards the native 
     expect(path.dirname(dir)).toBe(path.dirname(data.path));
     expect(JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'))).toEqual({ type: 'module' });
     expect(existsSync(path.join(dir, 'index.js'))).toBe(true);
-    const call = (sessionID: string) => control.request<any>('/fixture/session-tool', { method: 'POST', body: { tool: 'claudian_list_sessions', args: {}, sessionID } });
+    const call = (sessionID: string) => control.request<any>('/fixture/session-tool', { method: 'POST', body: { tool: 'claudian_list_destinations', args: {}, sessionID } });
     expect((await call('ses_1')).data).toMatchObject({ specs: [
-      { name: 'claudian_list_sessions', options: { codemode: false } },
+      { name: 'claudian_list_destinations', options: { codemode: false } },
       { name: 'claudian_send_message', options: { codemode: false } },
-    ], result: { output: '[{"sessionId":"target"}]' } });
+    ], result: { output: '{"sessions":[{"sessionId":"target"}]}' } });
     expect(list).toHaveBeenCalledTimes(1);
     expect((await call('unknown')).data.isError).toBe(true);
     expect(list).toHaveBeenCalledTimes(1);
-    const aborted = await control.request<any>('/fixture/session-tool', { method: 'POST', body: { tool: 'claudian_list_sessions', args: {}, sessionID: 'ses_1', aborted: true } });
+    const aborted = await control.request<any>('/fixture/session-tool', { method: 'POST', body: { tool: 'claudian_list_destinations', args: {}, sessionID: 'ses_1', aborted: true } });
     expect(aborted.data.isError).toBe(true);
     expect(list).toHaveBeenCalledTimes(1);
     const sent = await control.request<any>('/fixture/session-tool', { method: 'POST', body: { tool: 'claudian_send_message', args: { sessionId: 'target', text: 'Hello' }, sessionID: 'ses_1' } });
@@ -1071,7 +1071,7 @@ it('loads a module plugin folder once per shared server and forwards the native 
     const peer = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
     await peer.dispose();
     expect(f.register).toHaveBeenCalledTimes(1);
-    const signal = list.mock.calls[0][0] as AbortSignal;
+    const signal = list.mock.calls[0][1] as AbortSignal;
     await session.dispose();
     await run;
     expect(signal.aborted).toBe(true);
@@ -1079,7 +1079,7 @@ it('loads a module plugin folder once per shared server and forwards the native 
     await control.dispose();
     await f.workspace.dispose?.();
     expect(existsSync(path.dirname(configPath))).toBe(false);
-    const response = await fetch(data.url, {method:'POST',headers:{'Content-Type':'application/json','X-Claudian-Route':data.routeId},body:JSON.stringify({tool:'claudian_list_sessions',args:{},callerNativeId:'ses_1'})});
+    const response = await fetch(data.url, {method:'POST',headers:{'Content-Type':'application/json','X-Claudian-Route':data.routeId},body:JSON.stringify({tool:'claudian_list_destinations',args:{},callerNativeId:'ses_1'})});
     expect(response.status).toBe(404);
   } finally { await session.dispose(); await run; await control.dispose(); await f.dispose(); }
 });

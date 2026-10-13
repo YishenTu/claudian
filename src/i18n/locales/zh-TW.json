@@ -184,7 +184,7 @@
       "enteringPlan": "正在進入規劃模式",
       "planComplete": "規劃完成",
       "messageAgent": "向代理傳送訊息",
-      "listSessions": "列出工作階段",
+      "listDestinations": "列出目標",
       "messageSession": "向工作階段傳送訊息",
       "continueAgent": "繼續代理任務",
       "listAgents": "列出代理",

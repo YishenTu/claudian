@@ -57,16 +57,16 @@ function createPendingQuestion() {
 describe('CodexExecutionServerRequestRouter', () => {
   afterEach(() => setLocale('en'));
 
-  it.each(['claudian_list_sessions', 'claudian_sessions.claudian_list_sessions'])(
+  it.each(['claudian_list_destinations', 'claudian_sessions.claudian_list_destinations'])(
     'denies session tools even when the allow-list names %s, while ordinary named tools still work', async name => {
-      const port = { list: jest.fn(async () => []), send: jest.fn() };
+      const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn() };
       const router = createRouter(jest.fn(), { kind: 'allow-list', names: [name, 'ordinary'] });
       const registry = new CodexDynamicToolRegistry();
       for (const registration of createCodexSessionTools(port)) registry.register(registration);
       registry.register({ includeInThreadStart: true, tool: { type: 'function', name: 'ordinary', description: '', inputSchema: {} }, handler: async () => ({ success: true, contentItems: [] }) });
       router.setDynamicToolRegistry(registry);
       const params = { threadId: 'thread-confirmation', turnId: 'turn-confirmation', callId: 'call', arguments: {} };
-      await expect(router.handleServerRequest('session', 'item/tool/call', { ...params, namespace: 'claudian_sessions', tool: 'claudian_list_sessions' })).resolves.toMatchObject({ success: false });
+      await expect(router.handleServerRequest('session', 'item/tool/call', { ...params, namespace: 'claudian_sessions', tool: 'claudian_list_destinations' })).resolves.toMatchObject({ success: false });
       expect(port.list).not.toHaveBeenCalled();
       await expect(router.handleServerRequest('ordinary', 'item/tool/call', { ...params, namespace: null, tool: 'ordinary' })).resolves.toMatchObject({ success: true });
     },

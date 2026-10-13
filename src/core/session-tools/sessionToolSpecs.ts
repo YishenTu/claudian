@@ -1,6 +1,6 @@
 import {
   type SessionToolName,
-  TOOL_CLAUDIAN_LIST_SESSIONS,
+  TOOL_CLAUDIAN_LIST_DESTINATIONS,
   TOOL_CLAUDIAN_SEND_MESSAGE,
 } from '@/core/tools/toolNames';
 
@@ -15,14 +15,52 @@ export interface SessionToolSessionSummary {
   readonly active: boolean;
 }
 
+export interface SessionToolListDestinationsArgs {
+  readonly includeProviders: boolean;
+  /** Maximum number of sessions, 1 to 200. */
+  readonly limit: number;
+}
+
+export interface SessionToolReasoningDestination {
+  readonly options: readonly string[];
+  /** Level a new session would use when reasoning is omitted. */
+  readonly default: string;
+}
+
+export interface SessionToolModelDestination {
+  readonly id: string;
+  /** Model a new session uses when provider and model are omitted. */
+  readonly default?: true;
+  /** Present only for models with reasoning effort control. */
+  readonly reasoning?: SessionToolReasoningDestination;
+}
+
+export interface SessionToolProviderDestination {
+  readonly provider: string;
+  /** Provider a new session would use when provider is omitted. */
+  readonly default?: true;
+  readonly models: readonly SessionToolModelDestination[];
+}
+
+export interface SessionToolDestinations {
+  /** Most recently active first, capped at the requested limit. */
+  readonly sessions: readonly SessionToolSessionSummary[];
+  /** Present when more sessions exist than the limit allowed. */
+  readonly truncated?: true;
+  /** Enabled providers; present only when requested. */
+  readonly providers?: readonly SessionToolProviderDestination[];
+}
+
 export interface SessionToolSendMessageArgs {
   /** Omitted to create a new session. */
   readonly sessionId?: string;
   readonly text: string;
   /** New sessions only. */
   readonly provider?: string;
-  /** New sessions only. */
+  /** Initial choice for a new session; a persistent switch for an existing one. */
   readonly model?: string;
+  /** Initial choice for a new session; a persistent switch for an existing one. */
+  readonly reasoning?: string;
 }
 
 /** `started` and `queued` both report mailbox admission, never provider acceptance or completion. */
@@ -34,7 +72,7 @@ export interface SessionToolSendMessageResult {
 }
 
 export type SessionToolCall =
-  | { readonly tool: typeof TOOL_CLAUDIAN_LIST_SESSIONS }
+  | { readonly tool: typeof TOOL_CLAUDIAN_LIST_DESTINATIONS; readonly args: SessionToolListDestinationsArgs }
   | { readonly tool: typeof TOOL_CLAUDIAN_SEND_MESSAGE; readonly args: SessionToolSendMessageArgs };
 
 export type SessionToolCallDecodeResult =
@@ -60,14 +98,15 @@ export interface SessionToolCallRequest {
 
 export type SessionToolCallHandler = (request: SessionToolCallRequest) => Promise<SessionToolResult>;
 
-interface SessionToolStringProperty {
-  readonly type: 'string';
+/** Plain type-and-description properties: some native schema dialects reject range keywords. */
+interface SessionToolProperty {
+  readonly type: 'string' | 'boolean' | 'integer';
   readonly description: string;
 }
 
 export interface SessionToolInputSchema {
   readonly type: 'object';
-  readonly properties: Readonly<Record<string, SessionToolStringProperty>>;
+  readonly properties: Readonly<Record<string, SessionToolProperty>>;
   readonly required?: readonly string[];
   readonly additionalProperties: false;
 }
@@ -78,10 +117,25 @@ export interface SessionToolSpec {
   readonly inputSchema: SessionToolInputSchema;
 }
 
+const LIST_LIMIT_DEFAULT = 50;
+const LIST_LIMIT_MAX = 200;
+const LIST_OPTIONS_HINT = `Call ${TOOL_CLAUDIAN_LIST_DESTINATIONS} with includeProviders: true to see the options.`;
+
+const LIST_DESTINATIONS_PROPERTIES = {
+  includeProviders: {
+    type: 'boolean',
+    description: 'Also return the enabled providers with their models and reasoning levels for starting a new session. Defaults to false.',
+  },
+  limit: {
+    type: 'integer',
+    description: `Maximum number of sessions to return, from 1 to ${LIST_LIMIT_MAX}. Defaults to ${LIST_LIMIT_DEFAULT}.`,
+  },
+} as const satisfies Record<string, SessionToolProperty>;
+
 const SEND_MESSAGE_PROPERTIES = {
   sessionId: {
     type: 'string',
-    description: `Recipient sessionId from ${TOOL_CLAUDIAN_LIST_SESSIONS}, or the session_id of a received message. Omit to create a new session.`,
+    description: `Recipient sessionId from ${TOOL_CLAUDIAN_LIST_DESTINATIONS}, or the session_id of a received message. Omit to create a new session.`,
   },
   text: {
     type: 'string',
@@ -89,23 +143,38 @@ const SEND_MESSAGE_PROPERTIES = {
   },
   provider: {
     type: 'string',
-    description: 'Provider for a new session. Only valid when sessionId is omitted; defaults to the user\'s default provider.',
+    description: `Provider for a new session; requires model. Only valid when sessionId is omitted; omit both to use the user's new-tab provider and model. ${LIST_OPTIONS_HINT}`,
   },
   model: {
     type: 'string',
-    description: 'Model for a new session. Only valid when sessionId is omitted; defaults to the provider\'s default model.',
+    description: [
+      'Model id. For a new session, sets its initial model, from provider when given, otherwise from the user\'s new-tab provider (omit to use the new-tab model).',
+      'With sessionId, switches that session\'s selection, which persists for its later turns; must belong to that session\'s provider.',
+      LIST_OPTIONS_HINT,
+    ].join(' '),
   },
-} as const satisfies Record<string, SessionToolStringProperty>;
+  reasoning: {
+    type: 'string',
+    description: [
+      'Reasoning level, only for models with reasoning levels. For a new session, sets its initial level (defaults to the model\'s default level).',
+      'With sessionId, switches that session\'s selection, which persists for its later turns; applies to the model it will use.',
+      LIST_OPTIONS_HINT,
+    ].join(' '),
+  },
+} as const satisfies Record<string, SessionToolProperty>;
 
 export const SESSION_TOOL_SPECS: readonly SessionToolSpec[] = [
   {
-    name: TOOL_CLAUDIAN_LIST_SESSIONS,
+    name: TOOL_CLAUDIAN_LIST_DESTINATIONS,
     description: [
-      'List the user\'s Claudian chat sessions that can receive messages.',
-      'Returns a JSON array of {sessionId, title, provider, status, active}.',
+      `List where ${TOOL_CLAUDIAN_SEND_MESSAGE} can deliver: existing Claudian chat sessions and, on request, options for a new session.`,
+      'Returns {sessions, truncated?, providers?}.',
+      'sessions is a list of {sessionId, title, provider, status, active}, most recently active first and capped by limit; truncated is true when more exist.',
       'status is "idle", "running", or "awaiting-user"; active marks the session the user is viewing.',
+      'With includeProviders: true, providers lists the enabled providers as {provider, default?, models: [{id, default?, reasoning?: {options, default}}]};',
+      'default marks what a new session uses when provider, model, or reasoning is omitted, and reasoning appears only for models with reasoning levels.',
     ].join(' '),
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    inputSchema: { type: 'object', properties: LIST_DESTINATIONS_PROPERTIES, additionalProperties: false },
   },
   {
     name: TOOL_CLAUDIAN_SEND_MESSAGE,
@@ -127,7 +196,7 @@ export const SESSION_TOOL_SPECS: readonly SessionToolSpec[] = [
 ];
 
 export function decodeSessionToolCall(name: string, args: unknown): SessionToolCallDecodeResult {
-  if (name !== TOOL_CLAUDIAN_LIST_SESSIONS && name !== TOOL_CLAUDIAN_SEND_MESSAGE) {
+  if (name !== TOOL_CLAUDIAN_LIST_DESTINATIONS && name !== TOOL_CLAUDIAN_SEND_MESSAGE) {
     return { ok: false, error: `Unknown session tool "${name}".` };
   }
   const input = args ?? {};
@@ -135,27 +204,38 @@ export function decodeSessionToolCall(name: string, args: unknown): SessionToolC
     return { ok: false, error: 'Tool arguments must be an object.' };
   }
   const record = input as Record<string, unknown>;
-  const properties = name === TOOL_CLAUDIAN_SEND_MESSAGE ? SEND_MESSAGE_PROPERTIES : {};
+  const properties = name === TOOL_CLAUDIAN_SEND_MESSAGE ? SEND_MESSAGE_PROPERTIES : LIST_DESTINATIONS_PROPERTIES;
   const unexpected = Object.keys(record).find(key => !Object.hasOwn(properties, key));
   if (unexpected !== undefined) {
     return { ok: false, error: `Unexpected argument "${unexpected}".` };
   }
-  if (name === TOOL_CLAUDIAN_LIST_SESSIONS) {
-    return { ok: true, call: { tool: name } };
+  // Null is accepted as omitted: some native harnesses send null for absent optionals.
+  if (name === TOOL_CLAUDIAN_LIST_DESTINATIONS) {
+    const includeProviders = record.includeProviders ?? false;
+    if (typeof includeProviders !== 'boolean') {
+      return { ok: false, error: '"includeProviders" must be a boolean.' };
+    }
+    const limit = record.limit ?? LIST_LIMIT_DEFAULT;
+    if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > LIST_LIMIT_MAX) {
+      return { ok: false, error: `"limit" must be an integer from 1 to ${LIST_LIMIT_MAX}.` };
+    }
+    return { ok: true, call: { tool: name, args: { includeProviders, limit } } };
   }
 
   const sendArgs: { -readonly [K in keyof SessionToolSendMessageArgs]: SessionToolSendMessageArgs[K] } = { text: '' };
-  for (const key of ['sessionId', 'text', 'provider', 'model'] as const) {
+  for (const key of ['sessionId', 'text', 'provider', 'model', 'reasoning'] as const) {
     const value = record[key];
-    // Null is accepted as omitted: some native harnesses send null for absent optionals.
     if ((value === undefined || value === null) && key !== 'text') continue;
     if (typeof value !== 'string' || value.trim() === '') {
       return { ok: false, error: `"${key}" must be a non-empty string.` };
     }
     sendArgs[key] = value;
   }
-  if (sendArgs.sessionId !== undefined && (sendArgs.provider !== undefined || sendArgs.model !== undefined)) {
-    return { ok: false, error: '"provider" and "model" apply only when "sessionId" is omitted.' };
+  if (sendArgs.sessionId !== undefined && sendArgs.provider !== undefined) {
+    return { ok: false, error: '"provider" applies only when "sessionId" is omitted.' };
+  }
+  if (sendArgs.provider !== undefined && sendArgs.model === undefined) {
+    return { ok: false, error: '"provider" requires "model".' };
   }
   return { ok: true, call: { tool: name, args: sendArgs } };
 }

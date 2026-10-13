@@ -1,7 +1,8 @@
 import type {
+  SessionToolDestinations,
+  SessionToolListDestinationsArgs,
   SessionToolSendMessageArgs,
   SessionToolSendMessageResult,
-  SessionToolSessionSummary,
 } from '../session-tools/sessionToolSpecs';
 import type { ProviderToolPolicy } from './ProviderExecutionRequest';
 
@@ -10,11 +11,11 @@ import type { ProviderToolPolicy } from './ProviderExecutionRequest';
  *
  * The port is opaque: it exposes no conversation identity. Its presence on a
  * session configuration is what makes the session a main chat. Each call takes
- * the signal of the run that owns the native call. Rejections carry
+ * decoded arguments and the signal of the run that owns the native call. Rejections carry
  * model-facing messages.
  */
 export interface ProviderSessionToolPort {
-  list(signal: AbortSignal): Promise<readonly SessionToolSessionSummary[]>;
+  list(args: SessionToolListDestinationsArgs, signal: AbortSignal): Promise<SessionToolDestinations>;
   send(args: SessionToolSendMessageArgs, signal: AbortSignal): Promise<SessionToolSendMessageResult>;
 }
 

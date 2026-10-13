@@ -29,7 +29,7 @@ import {
   isSteerableExecutionSession,
 } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
-import type { SessionToolCallHandler } from '@/core/session-tools/sessionToolSpecs';
+import type { SessionToolCallHandler, SessionToolListDestinationsArgs } from '@/core/session-tools/sessionToolSpecs';
 import type {
   ACPLoadSessionRequest,
   ACPNewSessionRequest,
@@ -375,7 +375,7 @@ describe('GrokExecutionBackend', () => {
     const route = { url: 'http://127.0.0.1:1234/mcp', routeId: 'private-route', headers: { 'X-Claudian-Route': 'private-route' }, dispose };
     const registerMCPRoute = jest.fn(async (_handler: SessionToolCallHandler) => route);
     const host = { ...createGrokHost(), sessionToolEndpoint: { registerMCPRoute, registerCallRoute: jest.fn() } };
-    const port = { list: jest.fn(async (_signal: AbortSignal) => []), send: jest.fn(async () => ({ sessionId: 'recipient', status: 'queued' as const })) };
+    const port = { list: jest.fn(async (_args: SessionToolListDestinationsArgs, _signal: AbortSignal) => ({ sessions: [] })), send: jest.fn(async () => ({ sessionId: 'recipient', status: 'queued' as const })) };
     const servers = [{ type: 'http', name: 'claudian_sessions', url: route.url, headers: [{ name: 'X-Claudian-Route', value: route.routeId }] }];
     return { host, port, route, registerMCPRoute, servers };
   }
@@ -479,11 +479,11 @@ describe('GrokExecutionBackend', () => {
       expect(fixture.registerMCPRoute).toHaveBeenCalledTimes(1);
       const handler = fixture.registerMCPRoute.mock.calls[0][0];
       const nativeCancel = new AbortController();
-      fixture.port.list.mockImplementation(signal => new Promise((_resolve, reject) => {
+      fixture.port.list.mockImplementation((_args, signal) => new Promise((_resolve, reject) => {
         signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true });
       }));
-      const call = handler({ name: 'claudian_list_sessions', args: {}, signal: nativeCancel.signal });
-      const owningSignal = fixture.port.list.mock.calls[0][0];
+      const call = handler({ name: 'claudian_list_destinations', args: {}, signal: nativeCancel.signal });
+      const owningSignal = fixture.port.list.mock.calls[0][1];
       expect(owningSignal.aborted).toBe(false);
       if (ending === 'native-cancel') nativeCancel.abort();
       else if (ending === 'complete') prompt.resolve({ stopReason: 'end_turn' });
@@ -497,7 +497,7 @@ describe('GrokExecutionBackend', () => {
         await session.dispose();
         await collect(run.events);
       }
-      expect((await handler({ name: 'claudian_list_sessions', args: {}, signal: new AbortController().signal })).isError).toBe(true);
+      expect((await handler({ name: 'claudian_list_destinations', args: {}, signal: new AbortController().signal })).isError).toBe(true);
       expect(fixture.port.list).toHaveBeenCalledTimes(1);
       if (ending === 'complete') {
         await collect(session.execute(executionRequest('next run')).events);

@@ -53,6 +53,7 @@ export type SessionRowActionKind =
   | 'mark-unread'
   | 'mark-read'
   | 'rename'
+  | 'copy-session-id'
   | 'archive'
   | 'restore'
   | 'delete';
@@ -90,6 +91,7 @@ const ROW_ACTION_TITLES: Readonly<Record<SessionRowActionKind, string>> = {
   'mark-unread': 'Mark as unread',
   'mark-read': 'Mark as read',
   rename: 'Rename',
+  'copy-session-id': 'Copy session ID',
   archive: 'Archive',
   restore: 'Restore',
   delete: 'Delete',
@@ -112,6 +114,7 @@ const ROW_ACTION_FAILURES: Readonly<Record<Exclude<SessionRowActionKind, Synchro
   'open-in-new-tab': 'Failed to load conversation',
   'open-in-background-tab': 'Failed to load conversation',
   'switch-to-open': 'Failed to load conversation',
+  'copy-session-id': 'Failed to copy session ID',
   'assign-device': 'Failed to assign session to this device',
   pin: 'Failed to pin session',
   unpin: 'Failed to unpin session',
@@ -182,7 +185,8 @@ export function resolveRowActions(
     const readAction = readStateAction(input);
     if (readAction) actions.push(readAction);
   }
-  actions.push(action('rename'), mode === 'active' ? archiveAction : action('delete'));
+  // The ID lets the user point an agent's claudian_send_message at this session.
+  actions.push(action('rename'), action('copy-session-id'), mode === 'active' ? archiveAction : action('delete'));
   return actions;
 }
 
@@ -477,6 +481,8 @@ export class SessionActions {
           return options.onSelectConversation(id);
         case 'assign-device':
           return options.onAssignConversationToDevice?.(id);
+        case 'copy-session-id':
+          return navigator.clipboard.writeText(id).then(() => { new Notice('Session ID copied'); });
         case 'pin':
         case 'unpin':
           return this.deps.plugin.conversationLifecycle.setPinned([id], kind === 'pin');

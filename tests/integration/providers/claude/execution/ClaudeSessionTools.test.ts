@@ -15,7 +15,7 @@ const sdk = sdkModule as unknown as {
   resetMockMessages(): void;
   setMockMessages(messages: unknown[], options?: { appendResult: boolean }): void;
 };
-const nativeName = 'mcp__claudian_sessions__claudian_list_sessions';
+const nativeName = 'mcp__claudian_sessions__claudian_list_destinations';
 const result = { type: 'result', subtype: 'success' };
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -72,7 +72,7 @@ async function connect() {
   return client;
 }
 function call(client: Client, id: string) {
-  return client.callTool({ name: 'claudian_list_sessions', arguments: {}, _meta: { 'claudecode/toolUseId': id } });
+  return client.callTool({ name: 'claudian_list_destinations', arguments: {}, _meta: { 'claudecode/toolUseId': id } });
 }
 
 describe('Claude session tools', () => {
@@ -83,15 +83,15 @@ describe('Claude session tools', () => {
     await drain(unbound.execute(request()).events);
     expect(sdk.getLastOptions()?.mcpServers).toBeUndefined();
     await unbound.dispose();
-    const bound = session({ list: async () => [], send: jest.fn() }, lifecycle);
+    const bound = session({ list: async () => ({ sessions: [] }), send: jest.fn() }, lifecycle);
     try {
       await drain(bound.execute(request()).events);
       const first = sdk.getLastOptions()?.mcpServers?.claudian_sessions;
       const client = await connect();
       const tools = (await client.listTools()).tools;
-      expect(tools.map(t => t.name)).toEqual(['claudian_list_sessions', 'claudian_send_message']);
+      expect(tools.map(t => t.name)).toEqual(['claudian_list_destinations', 'claudian_send_message']);
       expect(tools.every(t => t._meta?.['anthropic/alwaysLoad'] === true)).toBe(true);
-      expect(await client.callTool({ name: 'claudian_list_sessions', arguments: {} })).toMatchObject({ isError: true });
+      expect(await client.callTool({ name: 'claudian_list_destinations', arguments: {} })).toMatchObject({ isError: true });
       await client.close();
       await drain(bound.execute(request()).events);
       expect(sdk.getLastOptions()?.mcpServers?.claudian_sessions === first).toBe(lifecycle === 'persistent');
@@ -104,11 +104,11 @@ describe('Claude session tools', () => {
 
   it.each([
     { kind: 'provider-default' }, { kind: 'unrestricted' }, { kind: 'passive' }, { kind: 'read-only' },
-    { kind: 'allow-list', names: ['claudian_list_sessions', nativeName] },
+    { kind: 'allow-list', names: ['claudian_list_destinations', nativeName] },
   ] satisfies ProviderExecutionRequest['toolPolicy'][])('checks $kind policy when the native tool actually calls', async policy => {
     const end = deferred<unknown>();
     sdk.setMockMessages([tool('call'), end.promise], { appendResult: false });
-    const list = jest.fn(async () => []);
+    const list = jest.fn(async () => ({ sessions: [] }));
     const bound = session({ list, send: jest.fn() });
     const run = bound.execute(request(policy));
     const outputs: unknown[] = [];
@@ -133,7 +133,7 @@ describe('Claude session tools', () => {
     const start = deferred<unknown>();
     const end = deferred<unknown>();
     sdk.setMockMessages([start.promise, end.promise], { appendResult: false });
-    const list = jest.fn(async () => []);
+    const list = jest.fn(async () => ({ sessions: [] }));
     const bound = session({ list, send: jest.fn() });
     const consume = drain(bound.execute(request()).events);
     let client: Client | undefined;
@@ -195,7 +195,7 @@ describe('Claude session tools', () => {
     const end = deferred<unknown>();
     sdk.setMockMessages([tool('old'), end.promise], { appendResult: false });
     const signals: AbortSignal[] = [];
-    const list = jest.fn((signal: AbortSignal) => {
+    const list = jest.fn((_args: unknown, signal: AbortSignal) => {
       signals.push(signal);
       return new Promise<never>((_resolve, reject) => {
         signal.addEventListener('abort', () => reject(new Error('Cancelled')), { once: true });

@@ -95,7 +95,7 @@ describe('Pi session tools through the generated extension', () => {
     sessionFile = path.join(root, '.pi', 'agent', 'sessions', 'source.jsonl');
     await fs.mkdir(path.dirname(sessionFile), { recursive: true });
     await fs.writeFile(sessionFile, JSON.stringify({ type: 'session', version: 3, id: 'pi-source', cwd: root }) + '\n');
-    port = { list: jest.fn().mockResolvedValue([]), send: jest.fn().mockResolvedValue({ sessionId: 'recipient', status: 'queued' }) };
+    port = { list: jest.fn().mockResolvedValue({ sessions: [] }), send: jest.fn().mockResolvedValue({ sessionId: 'recipient', status: 'queued' }) };
   });
 
   afterEach(async () => {
@@ -154,12 +154,12 @@ describe('Pi session tools through the generated extension', () => {
     await session.dispose();
     await createSession();
     expect(await kernel.request('fixture_tools')).toMatchObject({ tools: [
-      { name: 'claudian_list_sessions', parameters: { type: 'object', properties: {} } },
+      { name: 'claudian_list_destinations', parameters: { type: 'object', properties: {} } },
       { name: 'claudian_send_message', parameters: { required: ['text'] } },
     ] });
     const { drained } = await openRun();
-    expect(await kernel.request('fixture_tool', { name: 'claudian_list_sessions', toolCallId: 'list', args: {} }))
-      .toMatchObject({ isError: false, content: [{ text: '[]' }] });
+    expect(await kernel.request('fixture_tool', { name: 'claudian_list_destinations', toolCallId: 'list', args: {} }))
+      .toMatchObject({ isError: false, content: [{ text: '{"sessions":[]}' }] });
     expect(await kernel.request('fixture_tool', { name: 'claudian_send_message', toolCallId: 'send', args: { text: 'Hello', sessionId: 'recipient' } }))
       .toMatchObject({ isError: false, content: [{ text: JSON.stringify({ sessionId: 'recipient', status: 'queued' }) }] });
     expect(port.send).toHaveBeenCalledWith({ text: 'Hello', sessionId: 'recipient' }, expect.any(AbortSignal));
@@ -171,8 +171,8 @@ describe('Pi session tools through the generated extension', () => {
     await createSession(true, false, false);
     expect(kernel.launchSpec.enableTreeBridge).toBeUndefined();
     const { run, drained } = await openRun();
-    expect(await kernel.request('fixture_tool', { name: 'claudian_list_sessions', toolCallId: 'ephemeral', args: {} }))
-      .toMatchObject({ isError: false, content: [{ text: '[]' }] });
+    expect(await kernel.request('fixture_tool', { name: 'claudian_list_destinations', toolCallId: 'ephemeral', args: {} }))
+      .toMatchObject({ isError: false, content: [{ text: '{"sessions":[]}' }] });
     run.cancel();
     await drained;
   });
@@ -186,7 +186,7 @@ describe('Pi session tools through the generated extension', () => {
     expect(port.send).not.toHaveBeenCalled();
     const index = kernel.launchSpec.args.indexOf('--tools');
     const namedTools = index < 0 ? [] : kernel.launchSpec.args[index + 1].split(',');
-    expect(namedTools).toEqual(expect.arrayContaining(toolPolicy.kind === 'passive' ? [] : ['claudian_list_sessions', 'claudian_send_message']));
+    expect(namedTools).toEqual(expect.arrayContaining(toolPolicy.kind === 'passive' ? [] : ['claudian_list_destinations', 'claudian_send_message']));
     run.cancel();
     await drained;
   });

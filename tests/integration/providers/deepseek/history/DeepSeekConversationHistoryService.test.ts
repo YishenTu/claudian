@@ -245,7 +245,7 @@ it('hydrates a session-message sender and preserves neutral tool names without c
   records = [
     wire(0, 'turn/start', { turn: 0 }),
     wire(1, 'user/message', { source: { kind: 'user' }, content: [{ type: 'text', text: encodeSessionMessage({ from: 'Planner', sessionId: 'sender', text: 'Please review' }) }] }),
-    wire(2, 'tool/call', { callId: 'list', name: 'claudian_list_sessions', arguments: '{}' }),
+    wire(2, 'tool/call', { callId: 'list', name: 'claudian_list_destinations', arguments: '{}' }),
     wire(3, 'tool/call', { callId: 'send', name: 'claudian_send_message', arguments: '{"sessionId":"sender","text":"Reviewed"}' }),
     wire(4, 'tool/call', { callId: 'native', name: 'send_message', arguments: '{"agent_id":"child","text":"Continue"}' }),
     wire(5, 'turn/end', { turn: 0, reason: { kind: 'completed' } }),
@@ -254,7 +254,7 @@ it('hydrates a session-message sender and preserves neutral tool names without c
   expect(result.messages?.[0].sessionMessage).toEqual({ from: 'Planner', sessionId: 'sender' });
   expect(extractUserDisplayContent(result.messages![0].content)).toBe('Please review');
   expect(result.messages?.[1].toolCalls).toMatchObject([
-    { name: 'claudian_list_sessions', providerPayload: { rawName: 'claudian_list_sessions' } },
+    { name: 'claudian_list_destinations', providerPayload: { rawName: 'claudian_list_destinations' } },
     { name: 'claudian_send_message', input: { sessionId: 'sender', text: 'Reviewed' }, providerPayload: { rawName: 'claudian_send_message' } },
     { name: 'send_message', input: { target: 'child', text: 'Continue' } },
   ]);

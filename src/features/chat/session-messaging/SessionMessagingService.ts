@@ -1,10 +1,32 @@
 import type { ProviderSessionToolPort } from '@/core/execution';
-import { findProviderModelOption, resolveNewConversationModel, resolveProviderDefaultModel } from '@/core/providers/conversationModel';
+import {
+  findProviderModelOption,
+  resolveConversationModel,
+  resolveNewConversationModel,
+} from '@/core/providers/conversationModel';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import type { SessionToolSendMessageArgs, SessionToolSendMessageResult, SessionToolSessionSummary } from '@/core/session-tools/sessionToolSpecs';
-import type { ConversationMeta } from '@/core/types';
+import type { ProviderId } from '@/core/providers/types';
+import type {
+  SessionToolDestinations,
+  SessionToolListDestinationsArgs,
+  SessionToolProviderDestination,
+  SessionToolReasoningDestination,
+  SessionToolSendMessageArgs,
+  SessionToolSendMessageResult,
+  SessionToolSessionSummary,
+} from '@/core/session-tools/sessionToolSpecs';
+import type { Conversation, ConversationMeta } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
+import { prepareSessionReasoningSelection } from '@/features/chat/sessions/sessionSettings';
 import { throwIfAborted } from '@/utils/abort';
+
+interface NewSessionChoice {
+  readonly providerId: ProviderId;
+  readonly model: string;
+  /** Explicit choice only; omitted reasoning keeps the new-tab default. */
+  readonly reasoning?: string;
+}
 
 export interface SessionToolBinding {
   readonly port: ProviderSessionToolPort;
@@ -19,6 +41,12 @@ export class SessionMessagingService {
   constructor(private readonly deps: {
     getHost(): ChatFeatureHost;
     getActiveConversationId(): string | null;
+    /** Re-renders open model controls after a session's selection is switched. */
+    refreshModelControls(providerId: ProviderId): void;
+    commitSelection(
+      id: string, expectedModel: string | undefined, model: string | undefined,
+      admission: { isCurrent(candidate: Readonly<Conversation>): boolean; commit(): void },
+    ): Promise<boolean>;
   }) {}
 
   bindSessionTools(conversationId: string): SessionToolBinding {
@@ -35,7 +63,7 @@ export class SessionMessagingService {
     };
     return {
       port: {
-        list: signal => invoke(signal, current => this.list(conversationId, current)),
+        list: (args, signal) => invoke(signal, current => this.list(conversationId, args, current)),
         send: (args, signal) => invoke(signal, current => this.send(conversationId, args, current)),
       },
       dispose: () => binding.abort(new Error('The caller session binding was released')),
@@ -58,11 +86,17 @@ export class SessionMessagingService {
     return record;
   }
 
-  private async list(callerId: string, signal: AbortSignal): Promise<SessionToolSessionSummary[]> {
+  private async list(
+    callerId: string,
+    args: SessionToolListDestinationsArgs,
+    signal: AbortSignal,
+  ): Promise<SessionToolDestinations> {
     await this.resolve(callerId, signal);
     const host = this.deps.getHost();
     const activeId = this.deps.getActiveConversationId();
-    return host.getConversationList().filter(record => !record.isArchived).map(record => {
+    const records = host.getConversationList().filter(record => !record.isArchived)
+      .sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+    const sessions = records.slice(0, args.limit).map((record): SessionToolSessionSummary => {
       const runtime = host.sessionRuntimes.get(record.id);
       return {
         sessionId: record.id,
@@ -73,6 +107,11 @@ export class SessionMessagingService {
         active: record.id === activeId,
       };
     });
+    return {
+      sessions,
+      ...(records.length > args.limit ? { truncated: true as const } : {}),
+      ...(args.includeProviders ? { providers: listProviderDestinations(host.getCommittedSettings()) } : {}),
+    };
   }
 
   private async send(callerId: string, args: SessionToolSendMessageArgs, signal: AbortSignal): Promise<SessionToolSendMessageResult> {
@@ -80,21 +119,15 @@ export class SessionMessagingService {
     const host = this.deps.getHost();
     if (args.sessionId === callerId) throw new Error('A session cannot send a message to itself');
     let target: ConversationMeta;
+    let reasoning: string | undefined;
     if (args.sessionId) {
       target = await this.resolve(args.sessionId, signal);
     } else {
-      const settings = host.getCommittedSettings();
-      const defaults = resolveNewConversationModel(settings);
-      const providerId = args.provider ?? defaults?.providerId;
-      if (!providerId || !ProviderRegistry.getRegisteredProviderIds().includes(providerId)
-        || !ProviderRegistry.isEnabled(providerId, settings)) throw new Error('The requested provider is unavailable');
-      const selectedModel = args.model
-        ? findProviderModelOption(providerId, args.model, settings)
-        : args.provider ? resolveProviderDefaultModel(providerId, settings) : defaults?.model;
-      if (!selectedModel) throw new Error('The requested model is unavailable');
+      const choice = resolveNewSessionChoice(args, host.getCommittedSettings());
+      reasoning = choice.reasoning;
       throwIfAborted(signal, 'Session tool call was cancelled');
       // Creation publishes the shell. Cancellation after this point never rolls it back.
-      const created = await host.createConversation({ providerId, selectedModel });
+      const created = await host.createConversation({ providerId: choice.providerId, selectedModel: choice.model });
       throwIfAborted(signal, 'Session tool call was cancelled');
       target = await this.resolve(created.id, signal);
     }
@@ -102,10 +135,150 @@ export class SessionMessagingService {
       await host.sessionRuntimes.awaitConversationCreations();
       target = await this.resolve(target.id, signal);
     }
+    // Validated against the destination before anything changes; a rejected send switches nothing.
+    let model: string | undefined;
+    if (args.sessionId) ({ model, reasoning } = resolveSessionSwitch(args, target, host));
     throwIfAborted(signal, 'Session tool call was cancelled');
     const runtime = host.sessionRuntimes.ensure({ conversationId: target.id, providerId: target.providerId, draftModel: null });
-    if (!runtime.mailbox) throw new Error('The target session cannot receive messages');
-    const status = runtime.mailbox.admit({ from: caller.title, sessionId: caller.id, text: args.text });
+    const mailbox = runtime.mailbox;
+    if (!mailbox) throw new Error('The target session cannot receive messages');
+    const message = { from: caller.title, sessionId: caller.id, text: args.text };
+    if (model === undefined && reasoning === undefined) {
+      return { sessionId: target.id, status: mailbox.admit(message) };
+    }
+    const resultingModel = model ?? resolveConversationModel(host.getCommittedSettings(), target.providerId, target).model;
+    const selection = reasoning === undefined ? null
+      : prepareSessionReasoningSelection(runtime, target.providerId, resultingModel, reasoning);
+    const reservation = mailbox.reserve(message);
+    try {
+      const committed = await this.deps.commitSelection(target.id, target.selectedModel, model, {
+        isCurrent: candidate => {
+          if (!reservation.isCurrent || signal.aborted || (selection && !selection.isCurrent())) return false;
+          const settings = host.getCommittedSettings();
+          const actualModel = resolveConversationModel(settings, candidate.providerId, candidate).model;
+          if (actualModel !== resultingModel) return false;
+          if (model !== undefined && findProviderModelOption(candidate.providerId, model, settings) !== model) return false;
+          if (reasoning !== undefined) validateReasoning(candidate.providerId, actualModel, reasoning, settings);
+          return true;
+        },
+        commit: () => {
+          reservation.commit();
+          selection?.commit();
+        },
+      });
+      if (!committed) throw new Error('The session or its selection changed before message admission');
+    } catch (error) {
+      reservation.cancel();
+      throw error;
+    }
+    const status = reservation.publish();
+    if (args.sessionId) {
+      try { this.deps.refreshModelControls(target.providerId); } catch { /* Admission already committed. */ }
+    }
     return { sessionId: target.id, status };
   }
+
+}
+
+/** The reasoning a new session with this model would carry; null when the model has no reasoning control. */
+function resolveReasoningDestination(
+  providerId: ProviderId,
+  model: string,
+  settings: Record<string, unknown>,
+): SessionToolReasoningDestination | null {
+  if (ProviderRegistry.getCapabilities(providerId).reasoningControl === 'none') return null;
+  const snapshot = getChatSettingsSnapshot(settings, providerId, model);
+  if (snapshot.reasoning === null) return null;
+  const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
+  const options = uiConfig.getReasoningOptions(snapshot.model, snapshot).map(option => option.value);
+  return {
+    options,
+    default: options.includes(snapshot.reasoning)
+      ? snapshot.reasoning
+      : uiConfig.getDefaultReasoningValue(snapshot.model, snapshot),
+  };
+}
+
+function listProviderDestinations(settings: Record<string, unknown>): SessionToolProviderDestination[] {
+  const defaults = resolveNewConversationModel(settings);
+  return ProviderRegistry.getEnabledProviderIds(settings).map(providerId => {
+    // Only the new-tab model is a default: an explicit provider always comes with a model.
+    const defaultModel = providerId === defaults?.providerId ? defaults.model : null;
+    const models = ProviderRegistry.getModelPolicy(providerId).getModelOptions(settings).map(option => {
+      const reasoning = resolveReasoningDestination(providerId, option.value, settings);
+      return {
+        id: option.value,
+        ...(option.value === defaultModel ? { default: true as const } : {}),
+        ...(reasoning ? { reasoning } : {}),
+      };
+    });
+    return { provider: providerId, ...(providerId === defaults?.providerId ? { default: true as const } : {}), models };
+  });
+}
+
+/** Omitted values follow the new-tab policy; explicit values are validated and never substituted. */
+function resolveNewSessionChoice(args: SessionToolSendMessageArgs, settings: Record<string, unknown>): NewSessionChoice {
+  const defaults = resolveNewConversationModel(settings);
+  const enabled = ProviderRegistry.getEnabledProviderIds(settings);
+  const providerId = args.provider ?? defaults?.providerId;
+  if (!providerId || !enabled.includes(providerId)) {
+    throw new Error(args.provider
+      ? `Unknown or disabled provider "${args.provider}". Available: ${formatOptions(enabled)}`
+      : 'No provider is available for a new session');
+  }
+  let model: string | null;
+  if (args.model) {
+    model = findProviderModelOption(providerId, args.model, settings);
+    if (!model) {
+      const options = ProviderRegistry.getModelPolicy(providerId).getModelOptions(settings).map(option => option.value);
+      throw new Error(`Unknown model "${args.model}" for ${providerId}. Available: ${formatOptions(options)}`);
+    }
+  } else {
+    // Decoding rejects a provider without a model, so this is the new-tab choice.
+    model = defaults?.model ?? null;
+    if (!model) throw new Error(`No model is available for ${providerId}`);
+  }
+  if (args.reasoning !== undefined) validateReasoning(providerId, model, args.reasoning, settings);
+  return { providerId, model, ...(args.reasoning !== undefined ? { reasoning: args.reasoning } : {}) };
+}
+
+/**
+ * An existing session's switch, validated against its own provider and resulting model.
+ * Model is omitted when it would not change; omitted reasoning keeps the session's selection.
+ */
+function resolveSessionSwitch(
+  args: SessionToolSendMessageArgs,
+  target: ConversationMeta,
+  host: ChatFeatureHost,
+): { model?: string; reasoning?: string } {
+  if (args.model === undefined && args.reasoning === undefined) return {};
+  const settings = host.getCommittedSettings();
+  const providerId = target.providerId;
+  const current = resolveConversationModel(settings, providerId, host.getConversationSummary(target.id) ?? target).model;
+  let model = current;
+  if (args.model !== undefined) {
+    const selected = findProviderModelOption(providerId, args.model, settings);
+    if (!selected) {
+      const options = ProviderRegistry.getModelPolicy(providerId).getModelOptions(settings).map(option => option.value);
+      throw new Error(`Unknown model "${args.model}" for ${providerId}. Available: ${formatOptions(options)}`);
+    }
+    model = selected;
+  }
+  if (args.reasoning !== undefined) validateReasoning(providerId, model, args.reasoning, settings);
+  return {
+    ...(model !== current ? { model } : {}),
+    ...(args.reasoning !== undefined ? { reasoning: args.reasoning } : {}),
+  };
+}
+
+function validateReasoning(providerId: ProviderId, model: string, value: string, settings: Record<string, unknown>): void {
+  const reasoning = resolveReasoningDestination(providerId, model, settings);
+  if (!reasoning) throw new Error(`Model ${model} for ${providerId} has no reasoning control.`);
+  if (!reasoning.options.includes(value)) {
+    throw new Error(`Unknown reasoning "${value}" for ${providerId} model ${model}. Available: ${formatOptions(reasoning.options)}`);
+  }
+}
+
+function formatOptions(options: readonly string[]): string {
+  return options.length > 0 ? options.join(', ') : 'none';
 }

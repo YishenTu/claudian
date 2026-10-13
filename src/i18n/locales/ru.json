@@ -184,7 +184,7 @@
       "enteringPlan": "Переход в режим планирования",
       "planComplete": "План готов",
       "messageAgent": "Отправить сообщение агенту",
-      "listSessions": "Список сеансов",
+      "listDestinations": "Список адресатов",
       "messageSession": "Отправить сообщение сеансу",
       "continueAgent": "Продолжить работу агента",
       "listAgents": "Список агентов",

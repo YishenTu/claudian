@@ -184,7 +184,7 @@
       "enteringPlan": "正在进入规划模式",
       "planComplete": "规划完成",
       "messageAgent": "向代理发送消息",
-      "listSessions": "列出会话",
+      "listDestinations": "列出目标",
       "messageSession": "向会话发送消息",
       "continueAgent": "继续代理任务",
       "listAgents": "列出代理",

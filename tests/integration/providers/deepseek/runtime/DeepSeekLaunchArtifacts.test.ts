@@ -288,7 +288,7 @@ it('keeps ephemeral sessions in process memory and out of every durable dsh stor
         create: async (header, options) => { out.backend.push('create ' + header.id + (options?.inheritedEventCount ? '@' + options.inheritedEventCount : '')); return { id: header.id, native: true }; },
         open: async (id, access) => { out.backend.push('open ' + id + ' ' + access); return { id, native: true }; },
         stat: async id => { out.backend.push('stat ' + id); return undefined; },
-        list: async () => [],
+        list: async () => ({ sessions: [] }),
       };
       const original = { create: backend.create, open: backend.open, stat: backend.stat };
       const listeners = {}; const disposers = []; const injections = [];
@@ -588,7 +588,7 @@ it('runs the sessions plugin in a child, forwarding caller identity, re-reading 
     expect(output.tools[1].parameters.sessionId.required).not.toBe(true);
     await aborted;
     expect(calls).toEqual([
-      { name: 'claudian_list_sessions', args: { callId: 'native-call', args: {} }, callerNativeId: 'child-native' },
+      { name: 'claudian_list_destinations', args: { callId: 'native-call', args: {} }, callerNativeId: 'child-native' },
       { name: 'claudian_send_message', args: { callId: 'native-call', args: { sessionId: 'target', text: 'hello' } }, callerNativeId: 'child-native' },
       { name: 'claudian_send_message', args: { callId: 'native-call', args: { text: 'hold' } }, callerNativeId: 'child-native' },
     ]);

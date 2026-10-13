@@ -135,7 +135,7 @@ describe('toolPresentation', () => {
   });
 
   it.each([
-    ['claudian_list_sessions', 'List sessions'],
+    ['claudian_list_destinations', 'List destinations'],
     ['claudian_send_message', 'Message session'],
   ])('presents %s with its readable name and accessible label', (tool, label) => {
     expect(getToolName(tool, {})).toBe(label);

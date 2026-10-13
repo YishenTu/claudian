@@ -86,7 +86,7 @@ export function getSessionSettingsSnapshot(
   }
   Object.assign(snapshot, selections);
   if (snapshot.reasoning !== null) {
-    const key = `${providerId}:${snapshot.model}`;
+    const key = reasoningSelectionKey(providerId, snapshot.model);
     const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
     const selected = tab.reasoningSelections.get(key) ?? snapshot.reasoning;
     const reasoning = uiConfig.getReasoningOptions(snapshot.model, snapshot)
@@ -112,7 +112,26 @@ export async function updateSessionReasoning(
     snapshot.effortLevel = reasoning;
     uiConfig.applyReasoningSelection?.(model, reasoning, snapshot);
   });
-  if (committed) tab.reasoningSelections.set(`${providerId}:${model}`, reasoning);
+  if (committed) tab.reasoningSelections.set(reasoningSelectionKey(providerId, model), reasoning);
+}
+
+/** Captures a compare-and-set against the session's authoritative reasoning selection. */
+export function prepareSessionReasoningSelection(
+  tab: ChatSessionRuntime,
+  providerId: string,
+  model: string,
+  reasoning: string,
+): { isCurrent(): boolean; commit(): void } {
+  const key = reasoningSelectionKey(providerId, model);
+  const previous = tab.reasoningSelections.get(key);
+  return {
+    isCurrent: () => tab.reasoningSelections.get(key) === previous,
+    commit: () => { tab.reasoningSelections.set(key, reasoning); },
+  };
+}
+
+function reasoningSelectionKey(providerId: string, model: string): string {
+  return `${providerId}:${model}`;
 }
 
 export function getSessionSelectedModel(

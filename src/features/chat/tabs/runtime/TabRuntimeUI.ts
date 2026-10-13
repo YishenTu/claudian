@@ -291,7 +291,7 @@ function buildInputToolbar(
       );
       if (!isSelectionTargetCurrent()) return;
 
-      // Sole writer of a bound conversation's model; blank-tab models change through session identity.
+      // A bound conversation's model is its persisted selectedModel (also switched by session messages); blank-tab models change through session identity.
       if (normalizedModel !== getSessionSelectedModel(tab, plugin)) tab.ui.promptSuggestion.discard();
       await plugin.updateConversation(conversationId, {
         selectedModel: normalizedModel,

@@ -276,6 +276,8 @@ export default class ClaudianPlugin extends Plugin {
     this.sessionMessaging = new SessionMessagingService({
       getHost: () => this.chatHost,
       getActiveConversationId: () => this.views.getInputFocusView(this.zenMode.getActiveLeaf())?.getActiveTab()?.conversationId ?? null,
+      refreshModelControls: providerId => this.chatViews.refreshModelSelector(providerId),
+      commitSelection: (...args) => domains.conversations.updateSelectedModelIf(...args),
     });
     this.conversationLifecycle = new ConversationLifecycle({
       conversations: domains.conversations,

@@ -6,7 +6,7 @@ import {
 } from '@/providers/grok/normalization/grokToolNormalization';
 
 describe('grokToolNormalization', () => {
-  it.each(['claudian_list_sessions', 'claudian_send_message'])('normalizes session tool %s in live and replay shapes', name => {
+  it.each(['claudian_list_destinations', 'claudian_send_message'])('normalizes session tool %s in live and replay shapes', name => {
     const key = `claudian_sessions__${name}`;
     const rawInput = { tool_name: key, tool_input: { text: 'hello' } };
     for (const title of ['use_tool', key]) {
