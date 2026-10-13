@@ -376,6 +376,19 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     new Setting(container)
+      .setName(t('settings.expandFileEditsByDefault.name'))
+      .setDesc(t('settings.expandFileEditsByDefault.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.host.settings.expandFileEditsByDefault ?? false)
+          .onChange(async (value) => {
+            await this.host.mutateSettings((settings) => {
+              settings.expandFileEditsByDefault = value;
+            });
+          })
+      );
+
+    new Setting(container)
       .setName(t('settings.pluginRenderedFenceLanguages.name'))
       .setDesc(t('settings.pluginRenderedFenceLanguages.desc'))
       .setClass('claudian-settings-textarea')
@@ -394,19 +407,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text.inputEl.rows = 3;
         text.inputEl.cols = 30;
       });
-
-    new Setting(container)
-      .setName(t('settings.expandFileEditsByDefault.name'))
-      .setDesc(t('settings.expandFileEditsByDefault.desc'))
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.host.settings.expandFileEditsByDefault ?? false)
-          .onChange(async (value) => {
-            await this.host.mutateSettings((settings) => {
-              settings.expandFileEditsByDefault = value;
-            });
-          })
-      );
 
     // --- Conversations ---
 
