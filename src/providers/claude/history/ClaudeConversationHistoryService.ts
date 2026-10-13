@@ -273,12 +273,17 @@ function dedupeMessages(messages: ChatMessage[]): ChatMessage[] {
 }
 
 /**
- * Cached messages are the tab's live projection under Claudian-local ids. Complete native history
- * supersedes every cached message it reflects by id or native identity, and every unmatched one
- * before the last reflected message; later messages are the unconfirmed tail. A live task
- * notification that native never consumed keeps its place.
+ * Cached messages are the tab's live projection under Claudian-local ids. Native history supersedes
+ * every cached message it reflects by id or native identity. Complete history also supersedes every
+ * unmatched one before the last reflected message; later messages are the unconfirmed tail. A live
+ * task notification that native never consumed keeps its place. Incomplete history keeps every
+ * unmatched message: it may be the only copy of an unreadable segment.
  */
-function retainUnconfirmedCachedMessages(cached: ChatMessage[], native: ChatMessage[]): ChatMessage[] {
+function retainUnconfirmedCachedMessages(
+  cached: ChatMessage[],
+  native: ChatMessage[],
+  complete: boolean,
+): ChatMessage[] {
   const nativeIds = new Set(native.map(message => message.id));
   const nativeUserIds = new Set(native.flatMap(message => message.role === 'user' && message.userMessageId
     ? [message.userMessageId] : []));
@@ -294,7 +299,7 @@ function retainUnconfirmedCachedMessages(cached: ChatMessage[], native: ChatMess
   let lastReflected = -1;
   cached.forEach((message, index) => { if (reflectsNative(message)) lastReflected = index; });
   return cached.filter((message, index) => nativeIds.has(message.id)
-    || (!reflectsNative(message) && (index > lastReflected || isUnconsumedNotification(message))));
+    || (!reflectsNative(message) && (!complete || index > lastReflected || isUnconsumedNotification(message))));
 }
 
 /** Native transcript order wins; cached-only messages keep their surrounding anchors. */
@@ -848,10 +853,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     const filteredSdkMessages = allSdkMessages.filter(msg => !msg.isRebuiltContext);
 
     const complete = errorCount === 0 && unknownSessionCount === 0 && missingSessionCount === 0;
-    // An unreadable segment leaves cached messages as the only copy of its history.
-    const cached = complete
-      ? retainUnconfirmedCachedMessages(conversation.messages, filteredSdkMessages)
-      : conversation.messages;
+    const cached = retainUnconfirmedCachedMessages(conversation.messages, filteredSdkMessages, complete);
     const merged = mergeHistoryMessages(cached, filteredSdkMessages);
 
     if (state.subagentData) {

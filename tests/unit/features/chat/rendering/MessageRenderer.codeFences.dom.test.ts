@@ -65,7 +65,7 @@ it.each([
   expect(pre.parentElement).toBe(wrapper);
   expect(code.parentElement).toBe(pre);
   expect(code.textContent).toBe('const x = 1;');
-  const accessibleCopy = within(host).getByRole('button', { name: hasLanguage ? 'Copy code' : 'Copy' });
+  const accessibleCopy = within(host).getByRole('button', { name: hasLanguage ? 'Copy typescript code' : 'Copy' });
   expect(accessibleCopy.getAttribute('type')).toBe('button');
   accessibleCopy.focus();
   expect(document.activeElement).toBe(accessibleCopy);
@@ -77,18 +77,20 @@ it.each([
   expect(wrapper.classList.contains('has-language')).toBe(hasLanguage);
   expect(wrapper.querySelector('.claudian-code-lang-label')?.textContent ?? null).toBe(expectedLabel);
   expect((await axe(host)).violations).toEqual([]);
-
 });
 
-it('copies code through its language label and restores the label after feedback', async () => {
+it('copies code through its language label and exposes the copied feedback accessibly', async () => {
   jest.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, _markdown, target) => {
     const pre = (target as HTMLElement).createEl('pre');
     pre.createEl('code', { cls: 'language-typescript', text: 'const x = 1;' });
   });
   await renderer.renderContent(host, '```typescript\nconst x = 1;\n```');
 
-  const label = within(host).getByRole('button', { name: 'Copy code' });
+  // WCAG 2.5.3: the accessible name contains the visible language label and names the action.
+  const label = within(host).getByRole('button', { name: 'Copy typescript code' });
   expect(label.textContent).toBe('typescript');
+  const status = within(host).getByRole('status');
+  expect(status.textContent).toBe('');
   const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
   const writeText = jest.fn().mockResolvedValue(undefined);
   jest.useFakeTimers();
@@ -101,9 +103,13 @@ it('copies code through its language label and restores the label after feedback
     await Promise.resolve();
     expect(writeText).toHaveBeenCalledWith('const x = 1;');
     expect(label.textContent).toBe('Copied!');
+    expect(within(host).getByRole('button', { name: 'Copied!' })).toBe(label);
+    expect(status.textContent).toBe('Copied!');
 
     jest.advanceTimersByTime(1_500);
     expect(label.textContent).toBe('typescript');
+    expect(within(host).getByRole('button', { name: 'Copy typescript code' })).toBe(label);
+    expect(status.textContent).toBe('');
   } finally {
     jest.clearAllTimers();
     jest.useRealTimers();

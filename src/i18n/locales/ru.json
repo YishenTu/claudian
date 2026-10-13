@@ -50,6 +50,10 @@
     "quote": {
       "buttonLabel": "Цитировать"
     },
+    "codeBlock": {
+      "copyAriaLabel": "Копировать код {language}",
+      "copied": "Скопировано!"
+    },
     "sideChat": {
       "title": "Побочный чат",
       "collapse": "Свернуть",

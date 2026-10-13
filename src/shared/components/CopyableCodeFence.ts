@@ -1,3 +1,5 @@
+import { t } from '@/i18n/i18n';
+
 const COPY_FEEDBACK_DURATION_MS = 1_500;
 
 /** Copies `text()` on click and shows copied feedback until the shared timeout elapses. */
@@ -37,17 +39,28 @@ export function enhanceRenderedCodeFence(pre: HTMLPreElement): HTMLElement {
   const language = code?.className.match(/language-(\w+)/)?.[1];
   if (code && language) {
     wrapper.classList.add('has-language');
-    const label = createEl('button', {
+    const copyLabel = t('chat.codeBlock.copyAriaLabel', { language });
+    const copied = t('chat.codeBlock.copied');
+    // The accessible name keeps the visible language (label-in-name); the status announces feedback.
+    const label = wrapper.createEl('button', {
       cls: 'claudian-code-lang-label',
       text: language,
-      attr: { type: 'button', 'aria-label': 'Copy code' },
+      attr: { type: 'button', 'aria-label': copyLabel },
     });
-    wrapper.appendChild(label);
+    const status = wrapper.createSpan({ cls: 'claudian-code-copy-status', attr: { role: 'status' } });
     bindCopyFeedback(
       label,
       () => code.textContent ?? '',
-      () => label.setText('Copied!'),
-      () => label.setText(language),
+      () => {
+        label.setText(copied);
+        label.setAttribute('aria-label', copied);
+        status.setText(copied);
+      },
+      () => {
+        label.setText(language);
+        label.setAttribute('aria-label', copyLabel);
+        status.setText('');
+      },
     );
   }
 

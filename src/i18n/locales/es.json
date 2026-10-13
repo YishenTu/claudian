@@ -50,6 +50,10 @@
     "quote": {
       "buttonLabel": "Citar"
     },
+    "codeBlock": {
+      "copyAriaLabel": "Copiar código {language}",
+      "copied": "¡Copiado!"
+    },
     "sideChat": {
       "title": "Chat lateral",
       "collapse": "Contraer",

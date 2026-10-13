@@ -50,6 +50,10 @@
     "quote": {
       "buttonLabel": "인용"
     },
+    "codeBlock": {
+      "copyAriaLabel": "{language} 코드 복사",
+      "copied": "복사됨!"
+    },
     "sideChat": {
       "title": "사이드 채팅",
       "collapse": "접기",

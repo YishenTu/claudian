@@ -50,6 +50,10 @@
     "quote": {
       "buttonLabel": "引用"
     },
+    "codeBlock": {
+      "copyAriaLabel": "{language} のコードをコピー",
+      "copied": "コピーしました！"
+    },
     "sideChat": {
       "title": "サイドチャット",
       "collapse": "折りたたむ",
