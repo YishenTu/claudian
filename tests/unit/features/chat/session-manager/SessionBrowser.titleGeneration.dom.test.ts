@@ -26,21 +26,24 @@ function setup(status?: Conversation['titleGenerationStatus'], enabled = true) {
     providerConfigs: { claude: claudeCatalogFixture(['haiku']) },
   };
   const generateTitle = jest.fn(async (id, _text, callback) => callback(id, { success: true, title: 'Code explained' }));
-  const renameConversation = jest.fn(async (_id, title) => { conversation.title = title; });
+  const completeConversationTitleGeneration = jest.fn(async (_id, _expectedTitle, title) => {
+    if (title !== null) conversation.title = title;
+    conversation.titleGenerationStatus = title === null ? 'failed' : 'success';
+  });
   const updateConversation = jest.fn(async (_id, patch) => { Object.assign(conversation, patch); });
   const container = document.body.appendChild(document.createElement('div'));
   const onSelectConversation = jest.fn();
   const browser = new SessionBrowser({
     plugin: {
       settings, getConversationList: () => [conversation],
-      getConversationById: async () => conversation, renameConversation, updateConversation,
+      getConversationById: async () => conversation, completeConversationTitleGeneration, updateConversation,
     },
     getCurrentConversationId: () => null,
     getTitleGenerationService: () => ({ generateTitle, cancel: jest.fn() }),
     onListChanged: () => browser.renderHistoryDropdown(container, { onSelectConversation }),
   } as unknown as SessionBrowserDeps);
   browser.renderHistoryDropdown(container, { onSelectConversation });
-  return { browser, container, settings, conversation, generateTitle, renameConversation, onSelectConversation };
+  return { browser, container, settings, conversation, generateTitle, completeConversationTitleGeneration, onSelectConversation };
 }
 
 afterEach(() => { document.body.replaceChildren(); jest.clearAllMocks(); });
@@ -58,7 +61,7 @@ it('generates a title for a previously skipped chat after selecting an available
   fixture.settings.titleGenerationModel = 'haiku';
   fireEvent.click(button);
   await waitFor(() => expect(fixture.conversation.titleGenerationStatus).toBe('success'));
-  expect(fixture.renameConversation).toHaveBeenCalledWith('conversation', 'Code explained');
+  expect(fixture.completeConversationTitleGeneration).toHaveBeenCalledWith('conversation', 'Fallback title', 'Code explained');
   expect(fixture.onSelectConversation).not.toHaveBeenCalled();
   fixture.browser.dispose();
 });
@@ -95,7 +98,7 @@ it('leaves pending and exposes retry when provider initialization fails', async 
   fireEvent.click(within(fixture.container).getByRole('button', { name: 'Generate title' }));
   await waitFor(() => expect(fixture.conversation.titleGenerationStatus).toBe('failed'));
   expect(fixture.conversation.title).toBe('Fallback title');
-  expect(fixture.renameConversation).not.toHaveBeenCalled();
+  expect(fixture.completeConversationTitleGeneration).toHaveBeenCalledWith('conversation', 'Fallback title', null);
   expect(within(fixture.container).getByRole('button', { name: 'Regenerate title' }).getAttribute('type')).toBe('button');
   fixture.browser.dispose();
 });

@@ -700,7 +700,15 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         throw error;
       }
       if (!active.run.isTerminal) {
+        // A lost response cannot prove that native work stopped. Fence that process before allowing a retry.
+        const shouldShutdown = active.nativeRequestDispatched && !active.settled
+          && (active.runStarted || !(error instanceof PiRPCResponseError));
         this.#finishError(active, error);
+        try {
+          if (shouldShutdown) await this.#shutdownKernel();
+        } catch (cleanupError) {
+          this.lifecycleError ??= toError(cleanupError);
+        }
       }
     }
   }

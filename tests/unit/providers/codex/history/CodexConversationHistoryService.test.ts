@@ -25,6 +25,41 @@ describe('CodexConversationHistoryService', () => {
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
+  it.each(['file://vault/path', 'file:///vault/100%notes'])(
+    'preserves replay around a failed command with unsupported directory URL %s', async workdir => {
+      const sessions = path.join(tempHome, '.codex', 'sessions');
+      fs.mkdirSync(sessions, { recursive: true });
+      const sessionFilePath = path.join(sessions, 'rollout-thread.jsonl');
+      const records = [
+        { type: 'session_meta', payload: { id: 'thread' } },
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn' } },
+        { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Inspect the vault' }] } },
+        { type: 'response_item', payload: { type: 'function_call', name: 'exec_command', call_id: 'bad-directory', arguments: JSON.stringify({ cmd: 'pwd', workdir }) } },
+        { type: 'response_item', payload: { type: 'function_call_output', call_id: 'bad-directory', output: 'Error: Cannot run command: working directory does not exist' } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'The requested directory was unavailable.' }] } },
+        { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn' } },
+      ];
+      fs.writeFileSync(sessionFilePath, records.map((record, seconds) => JSON.stringify({
+        timestamp: testDate({ seconds }).toISOString(), ...record,
+      })).join('\n'));
+
+      const conversation: Conversation = {
+        id: 'conversation', sessionId: 'thread', messages: [],
+        providerId: 'codex', title: 'Imported conversation',
+        createdAt: testDate().getTime(), lastActivityAt: testDate({ seconds: 6 }).getTime(),
+        providerState: { threadId: 'thread', sessionFilePath, transcriptRootPath: sessions },
+      };
+      const result = await new CodexConversationHistoryService().hydrateConversationHistory(conversation, null);
+
+      expect(result.messages?.map(message => message.content)).toEqual(expect.arrayContaining([
+        'Inspect the vault', 'The requested directory was unavailable.',
+      ]));
+      expect(result.messages?.flatMap(message => message.toolCalls ?? [])).toContainEqual(expect.objectContaining({
+        id: 'bad-directory', name: 'Bash', result: 'Error: Cannot run command: working directory does not exist',
+      }));
+    },
+  );
+
   it.each(['normal', 'pending fork', 'established fork'].flatMap(mode =>
     ['raw first', 'raw later', 'native only'].map(events => ({ mode, events })),
   ))('hydrates separate child runs from $mode history with $events events', async ({ mode, events }) => {

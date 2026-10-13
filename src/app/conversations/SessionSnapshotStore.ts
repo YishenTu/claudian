@@ -2,6 +2,8 @@ import * as fs from 'fs/promises';
 import { tmpdir } from 'os';
 import * as path from 'path';
 
+import { assertValidSessionMetadataId } from '@/core/bootstrap/storagePaths';
+
 /** Ephemeral snapshots are local to this machine, outside the synced vault. */
 export class SessionSnapshotStore {
   constructor(
@@ -10,7 +12,7 @@ export class SessionSnapshotStore {
   ) {}
 
   async write(conversationId: string, markdown: string): Promise<string> {
-    if (!/^conv-[0-9]+-[a-z0-9]+$/.test(conversationId)) throw new Error('Invalid conversation id');
+    assertValidSessionMetadataId(conversationId);
     await fs.mkdir(this.directory, { recursive: true, mode: 0o700 });
     await this.assertSafeDirectory();
     let timestamp = this.now();

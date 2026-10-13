@@ -144,11 +144,18 @@ describe('ProviderWorkspaceRegistry', () => {
     expect(ProviderWorkspaceRegistry.getIfInitialized('codex')).not.toBeNull();
   });
 
-  it('disposes every initialized provider even when one cleanup fails', async () => {
-    const disposeClaude = jest.fn().mockRejectedValue(new Error('cleanup failed'));
+  it.each(['throw', 'reject'])('disposes every initialized provider when one cleanup fails via %s', async failure => {
+    const disposeClaude = jest.fn(() => {
+      const error = new Error('cleanup failed');
+      if (failure === 'throw') throw error;
+      return Promise.reject(error);
+    });
     const disposeCodex = jest.fn().mockResolvedValue(undefined);
-    ProviderWorkspaceRegistry.setServices('claude', { dispose: disposeClaude });
-    ProviderWorkspaceRegistry.setServices('codex', { dispose: disposeCodex });
+    ProviderWorkspaceRegistry.register('claude', { initialize: async () => ({ dispose: disposeClaude }) });
+    ProviderWorkspaceRegistry.register('codex', { initialize: async () => ({ dispose: disposeCodex }) });
+    const host = createProviderHost();
+    await ProviderWorkspaceRegistry.ensureInitialized(host, 'claude', 'test');
+    await ProviderWorkspaceRegistry.ensureInitialized(host, 'codex', 'test');
 
     await expect(ProviderWorkspaceRegistry.disposeInitialized()).resolves.toBeUndefined();
 
@@ -156,6 +163,8 @@ describe('ProviderWorkspaceRegistry', () => {
     expect(disposeCodex).toHaveBeenCalledTimes(1);
     expect(ProviderWorkspaceRegistry.getIfInitialized('claude')).toBeNull();
     expect(ProviderWorkspaceRegistry.getIfInitialized('codex')).toBeNull();
+    await expect(ProviderWorkspaceRegistry.ensureInitialized(createProviderHost(), 'codex', 'replacement'))
+      .resolves.toBeUndefined();
   });
 
   it('disposes services that finish initializing after provider disposal', async () => {

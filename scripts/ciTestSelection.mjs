@@ -31,6 +31,7 @@ const fileConsumers = [
     ...styleSuites,
     'tests/unit/features/chat/tabs/TabAttentionStyles.test.ts',
     'tests/unit/features/chat/navigation/NavigationSidebar.dom.test.ts',
+    'tests/unit/features/chat/rendering/MessageRenderer.codeFences.dom.test.ts',
   ]],
   [/^tests\/fixtures\/providers\/deepseek\/runtime\//, ['tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts']],
   [/^tests\/fixtures\/providers\/grok\/history\//, [

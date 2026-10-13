@@ -161,6 +161,10 @@ export class ClaudianChatFeatureHost extends ClaudianFeatureHost implements Chat
     return this.domains.conversations.renameConversation(id, title);
   }
 
+  completeConversationTitleGeneration(id: string, expectedTitle: string, title: string | null): Promise<void> {
+    return this.domains.conversations.completeConversationTitleGeneration(id, expectedTitle, title);
+  }
+
   setLinkedContentPinned(contentPath: string, isPinned: boolean): Promise<void> {
     return this.domains.conversations.setLinkedContentPinned(contentPath, isPinned);
   }

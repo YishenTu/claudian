@@ -3,16 +3,22 @@ import '@/providers';
 import { createHarness, FakeSession, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { createFixture, deferred, waitForCall } from '@test/helpers/ChatInputHarness';
 import { testDate } from '@test/helpers/testClock';
+import * as fs from 'fs/promises';
 import { Notice } from 'obsidian';
+import { tmpdir } from 'os';
+import * as path from 'path';
 
+import { SessionSnapshotStore } from '@/app/conversations/SessionSnapshotStore';
 import type { ToolCallInfo } from '@/core/types';
+import { FileContextManager } from '@/features/chat/composer/FileContextManager';
 import { cancelSelectedDestinationTurn } from '@/features/chat/tabs/TabInputEvents';
+import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 const id = 'conv-1-source';
 const token = `@[Old title](claudian-session:${id})`;
 const time = testDate().getTime();
 
-function setup() {
+function setup(sourceId = id) {
   const native = createHarness();
   const fixture = createFixture({ getExecutionCoordinator: () => native.coordinator });
   const write = jest.fn().mockResolvedValue('/tmp/claudian-sessions/snapshot.md');
@@ -22,7 +28,7 @@ function setup() {
     findConversationAcrossViews: () => null,
   });
   fixture.plugin.getConversationById.mockResolvedValue({
-    id, title: 'Current title', providerId: 'codex', createdAt: time, lastActivityAt: time,
+    id: sourceId, title: 'Current title', providerId: 'codex', createdAt: time, lastActivityAt: time,
     sessionId: 'native-source', messages: [
       { id: 'u', role: 'user', content: 'verbatim prompt', timestamp: time },
       { id: 'a', role: 'assistant', content: 'final answer', timestamp: time },
@@ -43,6 +49,57 @@ beforeEach(() => {
   });
 });
 afterEach(() => jest.restoreAllMocks());
+
+it.each(['f690c4f6-a773-4cb0-a67b-4b08a6ec21b3', 'ses_native-ID.1'])(
+  'sends a native-ID picker selection with its actual snapshot (%s)', async sourceId => {
+    const directory = await fs.mkdtemp(path.join(tmpdir(), 'claudian-mention-send-'));
+    const store = new SessionSnapshotStore(directory, () => time);
+    const fixture = setup(sourceId);
+    const app = { vault: { getFiles: () => [], getAllLoadedFiles: () => [] } };
+    const manager = new FileContextManager(new VaultMentionDataProvider(app as never), {
+      getConversationList: () => [{
+        id: sourceId, title: 'Imported session', providerId: 'codex',
+        hasSessionReference: true, isLegacySession: false,
+        createdAt: time, lastActivityAt: time, messageCount: 2, preview: '',
+      }],
+      getCurrentConversationId: () => 'conversation-1',
+    });
+    Object.assign(fixture.plugin, {
+      writeSessionSnapshot: (conversationId: string, markdown: string) => store.write(conversationId, markdown),
+      getSessionSnapshotDirectory: () => directory,
+    });
+    try {
+      await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+      const source = manager.getMentionSource();
+      const match = source.match('@Imported', 9)!;
+      const items = await source.load(match, new AbortController().signal);
+      const item = items.find(item => item.label === 'Imported session');
+      if (!item || item.kind !== 'value') throw new Error('Expected the imported session');
+      const selection = source.select(item, match);
+      if (selection.kind !== 'replace') throw new Error('Expected a session mention');
+      fixture.input.value = `Use ${selection.text}`;
+
+      await fixture.controller.sendMessage();
+
+      const request = fixture.native.backends.get('claude')!.sessions.flatMap(session => session.requests)[0];
+      expect(request.input).toEqual([{ type: 'text', text: 'Use @"Current title"' }]);
+      const snapshotPath = path.join(directory, `${sourceId}-${time}.md`);
+      expect(request.context?.sessionReferences).toEqual([{
+        id: sourceId, title: 'Current title', providerId: 'codex',
+        updatedAt: new Date(time).toISOString(), snapshotPath,
+      }]);
+      expect(request.configuration.readableRoots).toEqual([directory]);
+      expect(await fs.readFile(snapshotPath, 'utf8')).toContain(
+        '## T1 user\nverbatim prompt\n\n## T1 assistant\nfinal answer',
+      );
+    } finally {
+      manager.destroy();
+      await fixture.native.coordinator.dispose();
+      await fixture.native.registry.dispose();
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+  },
+);
 
 it.each([false, true])('resolves current titles once and carries snapshots through real handoff (queued: %s)', async queued => {
   const fixture = setup();

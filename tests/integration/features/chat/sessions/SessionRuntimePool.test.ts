@@ -77,6 +77,40 @@ describe('session ownership across presentations', () => {
     expect(harness.coordinator.state).toBe('disposed');
   });
 
+  it('joins a retired session whose provider cleanup is still running after removal', async () => {
+    const { pool, harness } = setup();
+    const { attachment } = pool.acquire({ conversationId: 'deleted', providerId: 'claude', draftModel: null }, { reveal: jest.fn() });
+    await harness.coordinator.bindConversation({ conversationId: 'deleted', providerId: 'claude' });
+    await harness.coordinator.prepare();
+    const native = harness.backends.get('claude')!.sessions[0];
+    const enteredCleanup = deferred<void>();
+    const releaseCleanup = deferred<void>();
+    const dispose = native.dispose.bind(native);
+    jest.spyOn(native, 'dispose').mockImplementation(async () => {
+      enteredCleanup.resolve();
+      await releaseCleanup.promise;
+      await dispose();
+    });
+    pool.release(attachment);
+    const retiring = pool.retire('deleted');
+    await enteredCleanup.promise;
+    expect(pool.get('deleted')).toBeNull();
+    expect(pool.getAll()).not.toContain(attachment.runtime);
+
+    let shutdownFinished = false;
+    const shutdown = pool.dispose().then(() => { shutdownFinished = true; });
+    try {
+      await new Promise(resolve => setImmediate(resolve));
+      expect(shutdownFinished).toBe(false);
+    } finally {
+      releaseCleanup.resolve();
+      await Promise.all([retiring, shutdown]);
+      await harness.registry.dispose();
+    }
+    expect(native.disposeCalls).toBe(1);
+    expect(shutdownFinished).toBe(true);
+  });
+
   it('keeps a held detached draft reachable by its key, through promotion, until the hold ends', async () => {
     const { pool } = setup();
     const owner = { reveal: jest.fn() };

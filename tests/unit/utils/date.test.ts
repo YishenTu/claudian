@@ -1,6 +1,9 @@
-import { formatDurationMmSs, getTodayDate } from '../../../src/utils/date';
+import { testDate } from '@test/helpers/testClock';
+
+import { formatDurationMmSs, getTodayDate } from '@/utils/date';
 
 describe('getTodayDate', () => {
+  afterEach(() => jest.useRealTimers());
   it('returns readable date with ISO suffix', () => {
     const result = getTodayDate();
     expect(result).toMatch(/\(\d{4}-\d{2}-\d{2}\)$/);
@@ -17,12 +20,18 @@ describe('getTodayDate', () => {
     expect(result).toContain(String(now.getFullYear()));
   });
 
-  it('ISO portion matches current date', () => {
+  it.each([0, 23])('uses the local calendar day in both portions at %i:30', hour => {
+    const now = testDate();
+    now.setHours(hour, 30, 0, 0);
+    jest.useFakeTimers().setSystemTime(now);
     const result = getTodayDate();
     const isoMatch = result.match(/\((\d{4}-\d{2}-\d{2})\)/);
     expect(isoMatch).not.toBeNull();
-    const today = new Date().toISOString().split('T')[0];
-    expect(isoMatch![1]).toBe(today);
+    const localDate = new Intl.DateTimeFormat('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+    expect(isoMatch![1]).toBe(localDate);
+    expect(result).toContain(now.toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    }));
   });
 });
 

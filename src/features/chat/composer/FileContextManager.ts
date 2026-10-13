@@ -1,5 +1,6 @@
 import type { TFile } from 'obsidian';
 
+import { isValidSessionMetadataId } from '@/core/bootstrap/storagePaths';
 import type { ConversationMeta } from '@/core/types';
 import { formatComposerSessionMention } from '@/features/chat/composer/composerSessionMentions';
 import { formatComposerWikilink } from '@/features/chat/composer/composerWikilinks';
@@ -26,6 +27,7 @@ export class FileContextManager {
       formatVaultFileMention: formatComposerWikilink,
       getSessionItems: sessions ? () => sessions.getConversationList()
         .filter(row => !row.isArchived && !row.isLegacySession && row.hasSessionReference !== false
+          && isValidSessionMetadataId(row.id)
           && row.id !== sessions.getCurrentConversationId())
         .map(row => ({
           id: `session:${row.id}`, kind: 'value' as const, label: row.title, icon: 'message-circle-more',

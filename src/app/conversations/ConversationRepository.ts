@@ -535,6 +535,19 @@ export class ConversationRepository {
     }));
   }
 
+  /** Commits the generated title and status without overwriting a manual rename. */
+  async completeTitleGeneration(id: string, expectedTitle: string, title: string | null): Promise<void> {
+    await this.#mutateMetadata(id, conversation => {
+      if (conversation.title !== expectedTitle) return { titleGenerationStatus: undefined };
+      return title === null
+        ? { titleGenerationStatus: 'failed' }
+        : {
+          title: title.trim() || this.#generateDefaultTitle(),
+          titleGenerationStatus: 'success',
+        };
+    });
+  }
+
   async update(id: string, updates: ConversationMutablePatch): Promise<void> {
     const attemptedImmutableFields = IMMUTABLE_CONVERSATION_PATCH_FIELDS.filter(
       field => Object.prototype.hasOwnProperty.call(updates, field),

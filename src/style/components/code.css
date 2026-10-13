@@ -46,7 +46,17 @@ body.theme-light .claudian-message-content pre {
   -webkit-box-decoration-break: clone;
 }
 
-/* Clickable language label - positioned outside scroll area */
+/* Copy control with a language label, positioned outside the scroll area. */
+.claudian-code-wrapper .claudian-code-lang-label,
+.claudian-code-wrapper .claudian-code-lang-label:hover,
+.claudian-code-wrapper .claudian-code-lang-label:focus,
+.claudian-code-wrapper .claudian-code-lang-label:active,
+.claudian-code-wrapper .claudian-code-lang-label:disabled {
+  height: auto;
+  border: none;
+  box-shadow: none;
+}
+
 .claudian-code-wrapper .claudian-code-lang-label {
   position: absolute;
   top: 6px;
@@ -62,9 +72,16 @@ body.theme-light .claudian-message-content pre {
   transition: color 0.15s ease, background 0.15s ease;
 }
 
-.claudian-code-wrapper .claudian-code-lang-label:hover {
+.claudian-code-wrapper .claudian-code-lang-label:hover,
+.claudian-code-wrapper .claudian-code-lang-label:focus-visible,
+.claudian-code-wrapper .claudian-code-lang-label:active {
   color: var(--text-normal);
   background: var(--background-modifier-hover);
+}
+
+.claudian-code-wrapper .claudian-code-lang-label:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
 }
 
 /* Hide default copy button when language label exists */

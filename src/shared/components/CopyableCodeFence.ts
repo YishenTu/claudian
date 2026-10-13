@@ -37,9 +37,10 @@ export function enhanceRenderedCodeFence(pre: HTMLPreElement): HTMLElement {
   const language = code?.className.match(/language-(\w+)/)?.[1];
   if (code && language) {
     wrapper.classList.add('has-language');
-    const label = createSpan({
+    const label = createEl('button', {
       cls: 'claudian-code-lang-label',
       text: language,
+      attr: { type: 'button', 'aria-label': 'Copy code' },
     });
     wrapper.appendChild(label);
     bindCopyFeedback(

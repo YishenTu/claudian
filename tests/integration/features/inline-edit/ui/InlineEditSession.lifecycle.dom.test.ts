@@ -127,6 +127,25 @@ it('settles inline editing and releases provider work when its editor is destroy
   expect(h.settled.mock.calls).toEqual([[{ decision: 'reject' }]]);
 });
 
+it('mounts another inline edit after the reused editor receives a fresh note state', () => {
+  const h = createHarness();
+  const first = h.createSession();
+  first.show();
+  expect(input()).toBeDefined();
+  first.reject();
+
+  h.editorView.setState(EditorState.create({ doc: 'hello world' }));
+  const second = h.createSession();
+  try {
+    second.show();
+    expect(input()).toBeDefined();
+    typeInstruction('Improve this note');
+    expect(input().value).toBe('Improve this note');
+  } finally {
+    second.close();
+  }
+});
+
 it('retains clarification when CodeMirror releases and later recreates the input widget', async () => {
   const h = createHarness();
   const session = h.createSession();
@@ -193,7 +212,11 @@ it('closes a visible edit on plugin unload without refocusing its editor', async
   await expect(h.createModal().openAndWait()).resolves.toEqual({ decision: 'reject' });
 });
 
-it('keeps the edit alive across preview replacement and applies only explicit acceptance', async () => {
+it.each([
+  { action: 'Accept', keyboard: false },
+  { action: 'Accept', keyboard: true },
+  { action: 'Reject', keyboard: true },
+] as const)('settles the preview through $action (keyboard: $keyboard)', async ({ action, keyboard }) => {
   const h = createHarness();
   const result = h.createModal().openAndWait();
   await screen.findByRole('textbox', { name: 'Edit instructions' });
@@ -201,12 +224,21 @@ it('keeps the edit alive across preview replacement and applies only explicit ac
   await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
   h.backend.sessions[0].emitText('<replacement>Hi</replacement>');
   h.backend.sessions[0].complete();
-  const accept = await screen.findByRole('button', { name: 'Accept inline edit' });
+  const control = await screen.findByRole('button', { name: `${action} inline edit` });
   expect(h.editorView.state.doc.toString()).toBe('hello world');
   expect(await axe(screen.getByRole('toolbar', { name: 'Inline edit actions' }))).toHaveNoViolations();
-  fireEvent.click(accept);
-  await expect(result).resolves.toEqual({ decision: 'accept', editedText: 'Hi' });
-  expect(h.editorView.state.doc.toString()).toBe('Hi world');
+  let nativeActivationAllowed = true;
+  if (keyboard) {
+    control.focus();
+    // jsdom does not synthesize a native button's click after Enter.
+    nativeActivationAllowed = fireEvent.keyDown(control, { key: 'Enter' });
+  }
+  expect(nativeActivationAllowed).toBe(true);
+  fireEvent.click(control);
+  await expect(result).resolves.toEqual(action === 'Accept'
+    ? { decision: 'accept', editedText: 'Hi' }
+    : { decision: 'reject' });
+  expect(h.editorView.state.doc.toString()).toBe(action === 'Accept' ? 'Hi world' : 'hello world');
   expect(h.backend.sessions[0].getStatus()).toBe('disposed');
 });
 

@@ -28,6 +28,7 @@ import {
 } from '@/providers/pi/execution';
 import { PiConversationHistoryService } from '@/providers/pi/history/PiConversationHistoryService';
 import type { PiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpecBuilder';
+import { PiRPCResponseError } from '@/providers/pi/runtime/PiRPCTransport';
 
 class FakeKernel implements PiExecutionKernel {
   readonly requests: Array<{ payload: Record<string, unknown>; type: string }> = [];
@@ -994,6 +995,13 @@ describe('PiExecutionBackend', () => {
     expect(events).not.toContainEqual(expect.objectContaining({
       type: 'turn_completed',
     }));
+    const retry = collect(harness.session.execute(createRequest()).events);
+    await waitFor(() => getPromptMessages(kernel).length === 2);
+    completeTurn(kernel);
+    expect((await retry).at(-1)).toMatchObject({ type: 'turn_completed' });
+    expect(harness.kernels).toHaveLength(1);
+    expect(kernel.shutdown).not.toHaveBeenCalled();
+    await harness.session.dispose();
   });
 
   it('preserves a pending native Pi error when the process exits before agent end', async () => {
@@ -1749,7 +1757,7 @@ describe('PiExecutionBackend', () => {
     const requestHandler = async <T>(type: string): Promise<T> => {
       if (type === failureType && rejectRequest) {
         rejectRequest = false;
-        throw new Error(`${failureType} failed`);
+        throw new PiRPCResponseError(type, `${failureType} failed`);
       }
       const responses: Record<string, unknown> = {
         get_commands: { commands: [] },
@@ -1799,6 +1807,63 @@ describe('PiExecutionBackend', () => {
     expect(getPromptMessages(harness.kernels[0]).at(-1)).toEqual(
       expect.stringContaining('pre-handoff question'),
     );
+  });
+
+  it.each([false, true])('fences an ambiguous prompt failure before retrying (native run started: %s)', async started => {
+    const prompt = createRejectableDeferred<unknown>();
+    const shutdown = createDeferred();
+    let promptCount = 0;
+    const harness: ReturnType<typeof createHarness> = createHarness(createConfig(), (kernel, index) => {
+      if (index === 0) kernel.shutdown.mockImplementation(() => shutdown.promise);
+    }, async <T>(type: string): Promise<T> => {
+      if (type === 'prompt' && promptCount++ === 0) return await prompt.promise as T;
+      return harness.responses.get(type) as T;
+    });
+    const first = collect(harness.session.execute(createRequest()).events);
+    let retry: ProviderExecutionRun | undefined;
+    let retryConsumption: Promise<void> | undefined;
+    try {
+      await waitFor(() => promptCount === 1);
+      const oldKernel = harness.kernels[0];
+      oldKernel.stderr = 'Pi extension is still processing the request';
+      if (started) oldKernel.emit({ type: 'agent_start' });
+      prompt.reject(new Error('Request timeout: prompt (30000ms)'));
+      expect((await first).at(-1)).toMatchObject({
+        type: 'execution_error',
+        message: expect.stringContaining(oldKernel.stderr),
+      });
+
+      const retryEvents: ProviderExecutionEvent[] = [];
+      retry = harness.session.execute(createRequest({ input: [{ type: 'text', text: 'Retry' }] }));
+      retryConsumption = (async () => {
+        for await (const event of retry!.events) retryEvents.push(event);
+      })();
+      await flush();
+      oldKernel.emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'Late first answer' } });
+      completeTurn(oldKernel);
+      await flush();
+      expect(retryEvents).not.toContainEqual(expect.objectContaining({ type: 'text_delta', text: 'Late first answer' }));
+      expect(retryEvents).not.toContainEqual(expect.objectContaining({ type: 'turn_completed' }));
+      expect(oldKernel.shutdown).toHaveBeenCalledTimes(1);
+      expect(getPromptMessages(oldKernel)).toHaveLength(1);
+      expect(harness.kernels).toHaveLength(1);
+
+      shutdown.resolve();
+      await waitFor(() => harness.kernels[1]?.requests.some(request => request.type === 'prompt') ?? false);
+      const replacement = harness.kernels[1];
+      replacement.emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'Retry answer' } });
+      completeTurn(replacement);
+      await retryConsumption;
+      expect(retryEvents.filter(event => event.type === 'text_delta')).toEqual([
+        expect.objectContaining({ text: 'Retry answer' }),
+      ]);
+      expect(retryEvents.at(-1)).toMatchObject({ type: 'turn_completed' });
+    } finally {
+      shutdown.resolve();
+      retry?.cancel();
+      await retryConsumption;
+      await harness.session.dispose();
+    }
   });
 
   it.each([

@@ -107,6 +107,7 @@ it('offers only eligible sessions and follows the captured main/parent conversat
     { id: 'conv-3-old', title: 'Archived', hasSessionReference: true, isArchived: true },
     { id: 'conv-4-legacy', title: 'Legacy', hasSessionReference: true, isLegacySession: true },
     { id: 'conv-5-missing', title: 'Missing', hasSessionReference: false },
+    { id: '../unsafe', title: 'Unsafe identity', hasSessionReference: true },
   ].map(row => ({ ...row, providerId: 'claude' as const, createdAt: 0, lastActivityAt: 0, messageCount: 1, preview: '' }));
   const manager = new FileContextManager(new VaultMentionDataProvider(app), {
     getConversationList: () => rows,

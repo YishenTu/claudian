@@ -325,6 +325,20 @@ it('fences a detached side queue synchronously before the plugin shutdown drain'
   }
 });
 
+it('does not save a deleted conversation still attached when the plugin shuts down', async () => {
+  const h = setup();
+  const tab = await h.attach();
+  tab.state.messages = [{ id: 'unsaved', role: 'user', content: 'Unsaved message', timestamp: testDate().getTime() }];
+  await h.pool.retire('conversation');
+  expect(h.pool.get('conversation')).toBe(tab.session.runtime);
+
+  await h.pool.dispose();
+
+  expect(h.saves).toEqual([]);
+  expect(h.pool.get('conversation')).toBeNull();
+  await destroyTab(tab);
+});
+
 it('joins a first-turn title request admitted while the plugin shutdown drain begins', async () => {
   const h = setup();
   Object.assign(h.plugin.settings, { enableAutoTitleGeneration: true, titleGenerationModel: 'claude-sonnet-4-5' });

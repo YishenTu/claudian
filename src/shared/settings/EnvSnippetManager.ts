@@ -103,6 +103,8 @@ export class EnvSnippetModal extends Modal {
 
     const renderContextLimitFields = () => {
       if (!contextLimitsContainer) return;
+      const draftLimits = new Map([...contextLimitInputs].map(([id, input]) => [id, input.value]));
+      const draftAliases = new Map([...modelAliasInputs].map(([id, input]) => [id, input.value]));
       contextLimitsContainer.empty();
       contextLimitInputs.clear();
       modelAliasInputs.clear();
@@ -139,7 +141,7 @@ export class EnvSnippetModal extends Modal {
           placeholder: t('settings.customModelAliases.placeholder'),
           cls: 'claudian-snippet-alias-input',
         });
-        aliasInput.value = existingAliases[modelId] ?? '';
+        aliasInput.value = draftAliases.get(modelId) ?? existingAliases[modelId] ?? '';
         aliasInput.setAttribute('aria-label', `Alias for ${modelId}`);
         aliasInput.setAttribute('aria-description', t('settings.customModelAliases.ariaDescription'));
         modelAliasInputs.set(modelId, aliasInput);
@@ -149,7 +151,8 @@ export class EnvSnippetModal extends Modal {
           placeholder: '200k',
           cls: 'claudian-snippet-limit-input',
         });
-        input.value = existingLimits[modelId] ? formatContextLimit(existingLimits[modelId]) : '';
+        input.value = draftLimits.get(modelId)
+          ?? (existingLimits[modelId] ? formatContextLimit(existingLimits[modelId]) : '');
         input.setAttribute('aria-label', `Context window for ${modelId}`);
         contextLimitInputs.set(modelId, input);
       }

@@ -521,9 +521,6 @@ export class SessionBrowser {
     if (options.showMetadataPopover) {
       const focusTarget = isSelectable ? content : item;
       focusTarget.setAttribute('tabindex', '0');
-      if (isSelectable) {
-        focusTarget.setAttribute('role', 'button');
-      }
       this.metadataPopover.attach(item, focusTarget, conversation, options);
     } else {
       content.createDiv({
@@ -591,16 +588,16 @@ export class SessionBrowser {
         failureMessage,
       );
     };
-    if (options.showMetadataPopover) {
-      content.addEventListener('keydown', (event) => {
-        if (event.target !== content || (event.key !== 'Enter' && event.key !== ' ')) {
-          return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        selectConversation();
-      });
-    }
+    content.setAttribute('tabindex', '0');
+    content.setAttribute('role', 'button');
+    content.addEventListener('keydown', (event) => {
+      if (event.target !== content || (event.key !== 'Enter' && event.key !== ' ')) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      selectConversation();
+    });
 
     content.addEventListener('click', (event) => {
       event.stopPropagation();

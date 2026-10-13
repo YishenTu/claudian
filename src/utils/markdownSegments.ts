@@ -4,15 +4,29 @@
  * maintain competing parsers or depend on internal segment state.
  */
 
-interface FenceState {
-  marker: '`' | '~';
-  length: number;
-  containers: ContainerToken[];
+import { parser } from '@lezer/markdown';
+
+interface CodeBlock {
+  end: number;
+  infoStart?: number;
 }
 
-interface FenceRun {
-  run: string;
-  containers: ContainerToken[];
+/** The block parser owns code boundaries, including implicit container endings. */
+function getCodeBlocks(markdown: string): Map<number, CodeBlock> {
+  const blocks = new Map<number, CodeBlock>();
+  parser.parse(markdown).iterate({
+    enter(node) {
+      if (node.name !== 'FencedCode' && node.name !== 'CodeBlock') return;
+      const marker = node.name === 'FencedCode' ? node.node.getChild('CodeMark') : null;
+      const lineStart = markdown.lastIndexOf('\n', node.from) + 1;
+      let end = node.to;
+      if (markdown.startsWith('\r\n', end)) end += 2;
+      else if (markdown[end] === '\n') end += 1;
+      blocks.set(lineStart, { end, infoStart: marker ? marker.to - lineStart : undefined });
+      return false;
+    },
+  });
+  return blocks;
 }
 
 type ContainerToken =
@@ -122,44 +136,6 @@ function consumeListContinuation(line: string, indents: number[]): string | null
   return content;
 }
 
-function hasSameParagraphContext(
-  current: ParagraphContext | null,
-  candidate: ParagraphContext,
-): boolean {
-  return current?.blockquoteDepth === candidate.blockquoteDepth
-    && current.listIndents.length === candidate.listIndents.length
-    && current.listIndents.every((indent, index) => indent === candidate.listIndents[index]);
-}
-
-function getFenceRun(line: string): FenceRun | null {
-  const { content, containers } = parseContainerPrefix(line);
-  return getFenceRunFromContent(content, containers);
-}
-
-function getFenceRunFromContent(
-  content: string,
-  containers: ContainerToken[],
-): FenceRun | null {
-  const match = content.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
-  const run = match?.[1] ?? null;
-  if (!run || (run[0] === '`' && match?.[2].includes('`'))) {
-    return null;
-  }
-  return { run, containers };
-}
-
-function getContextContainers(context: ParagraphContext): ContainerToken[] {
-  return [
-    ...Array.from(
-      { length: context.blockquoteDepth },
-      (): ContainerToken => ({ type: 'blockquote' }),
-    ),
-    ...context.listIndents.map(
-      (indent): ContainerToken => ({ type: 'list', indent }),
-    ),
-  ];
-}
-
 function startsNonParagraphBlock(content: string): boolean {
   return /^ {0,3}#{1,6}(?:[ \t]+|$)/.test(content)
     || /^ {0,3}(?:=+|-+)[ \t]*$/.test(content)
@@ -170,29 +146,6 @@ function startsInterruptingHTMLBlock(content: string): boolean {
   return RAW_HTML_TAG_PATTERN.test(content)
     || HTML_BLOCK_TAG_PATTERN.test(content)
     || /^ {0,3}(?:<!--|<\?|<![A-Za-z]|<!\[CDATA\[)/.test(content);
-}
-
-function isClosingFence(line: string, fence: FenceState): boolean {
-  let content = line;
-  for (const container of fence.containers) {
-    if (container.type === 'blockquote') {
-      const quoteMatch = content.match(/^ {0,3}>[ \t]?/);
-      if (!quoteMatch) {
-        return false;
-      }
-      content = content.slice(quoteMatch[0].length);
-    } else {
-      const indentation = content.match(/^ */)?.[0].length ?? 0;
-      if (indentation < container.indent) {
-        return false;
-      }
-      content = content.slice(container.indent);
-    }
-  }
-
-  const match = content.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
-  const run = match?.[1];
-  return !!run && run[0] === fence.marker && run.length >= fence.length;
 }
 
 function readBacktickRun(text: string, index: number): number {
@@ -255,10 +208,8 @@ function appendFenceOpeningSegment(
   segments: MarkdownSegment[],
   line: string,
   lineWithoutNewline: string,
-  fenceRun: FenceRun,
+  infoStart: number,
 ): void {
-  const runStart = lineWithoutNewline.indexOf(fenceRun.run);
-  const infoStart = runStart + fenceRun.run.length;
   segments.push({
     text: line,
     transformable: false,
@@ -367,6 +318,7 @@ function findInlineBlockEnd(
   markdown: string,
   start: number,
   context: ParagraphContext,
+  codeBlocks: ReadonlyMap<number, CodeBlock>,
 ): number {
   let lineEnd = markdown.indexOf('\n', start);
   while (lineEnd !== -1) {
@@ -380,7 +332,7 @@ function findInlineBlockEnd(
     if (
       blockContent === null
       || /^[ \t\r]*$/.test(blockContent)
-      || getFenceRun(nextLine) !== null
+      || codeBlocks.has(nextLineStart)
       || startsNonParagraphBlock(blockContent)
       || startsInterruptingHTMLBlock(blockContent)
     ) {
@@ -506,6 +458,7 @@ function splitInlineMarkdown(
   lineStart: number,
   context: ParagraphContext,
   segments: MarkdownSegment[],
+  codeBlocks: ReadonlyMap<number, CodeBlock>,
 ): InlineContinuation {
   let segmentStart = 0;
   let bracketDepth = 0;
@@ -522,7 +475,7 @@ function splitInlineMarkdown(
         segmentStart = end + 1;
         index = end;
       } else {
-        const inlineBlockEnd = findInlineBlockEnd(markdown, lineStart + index, context);
+        const inlineBlockEnd = findInlineBlockEnd(markdown, lineStart + index, context, codeBlocks);
         const sourceEnd = findMatchingBacktickRun(
           markdown,
           lineStart + index,
@@ -550,7 +503,7 @@ function splitInlineMarkdown(
           index = end;
         } else {
           const mathEnd = runLength === 1
-            ? findInlineBlockEnd(markdown, lineStart + index, context)
+            ? findInlineBlockEnd(markdown, lineStart + index, context, codeBlocks)
             : markdown.length;
           const sourceEnd = findMatchingDollarRun(
             markdown,
@@ -635,7 +588,7 @@ function splitInlineMarkdown(
 
 function splitMarkdown(markdown: string): MarkdownSegment[] {
   const segments: MarkdownSegment[] = [];
-  let fence: FenceState | null = null;
+  const codeBlocks = getCodeBlocks(markdown);
   let rawHtmlTag: string | null = null;
   let inlineCodeRunLength: number | null = null;
   let inlineHtmlEnd: number | null = null;
@@ -649,6 +602,12 @@ function splitMarkdown(markdown: string): MarkdownSegment[] {
     const lineEnd = newlineIndex === -1 ? markdown.length : newlineIndex + 1;
     const line = markdown.slice(lineStart, lineEnd);
     const lineWithoutNewline = line.replace(/\r?\n$/, '');
+    const codeBlock = codeBlocks.get(lineStart);
+    // HTML continuation guesses cannot absorb blocks recognized by the parser.
+    if (codeBlock) {
+      inlineHtmlEnd = null;
+      rawHtmlTag = null;
+    }
 
     if (inlineCodeRunLength !== null) {
       const codeEnd = findMatchingBacktickRun(line, -inlineCodeRunLength, inlineCodeRunLength);
@@ -663,6 +622,7 @@ function splitMarkdown(markdown: string): MarkdownSegment[] {
           lineStart + codeEnd + 1,
           paragraphContext ?? { blockquoteDepth: 0, listIndents: [], containers: [] },
           segments,
+          codeBlocks,
         );
         inlineCodeRunLength = continuation.codeRunLength ?? null;
         inlineHtmlEnd = continuation.htmlEnd ?? null;
@@ -685,6 +645,7 @@ function splitMarkdown(markdown: string): MarkdownSegment[] {
           lineStart + mathEnd + 1,
           paragraphContext ?? { blockquoteDepth: 0, listIndents: [], containers: [] },
           segments,
+          codeBlocks,
         );
         inlineCodeRunLength = continuation.codeRunLength ?? null;
         inlineHtmlEnd = continuation.htmlEnd ?? null;
@@ -707,20 +668,11 @@ function splitMarkdown(markdown: string): MarkdownSegment[] {
           lineStart + localEnd + 1,
           paragraphContext ?? { blockquoteDepth: 0, listIndents: [], containers: [] },
           segments,
+          codeBlocks,
         );
         inlineCodeRunLength = continuation.codeRunLength ?? null;
         inlineHtmlEnd = continuation.htmlEnd ?? null;
         inlineMathRunLength = continuation.mathRunLength ?? null;
-      }
-      lineStart = lineEnd;
-      continue;
-    }
-
-    if (fence) {
-      appendSegment(segments, line, false);
-      if (isClosingFence(lineWithoutNewline, fence)) {
-        fence = null;
-        sealLastSegment(segments);
       }
       lineStart = lineEnd;
       continue;
@@ -785,39 +737,16 @@ function splitMarkdown(markdown: string): MarkdownSegment[] {
       continue;
     }
 
-    const contextualFenceRun = listIndents.length > 0 && listPrefix.indents.length === 0
-      ? getFenceRunFromContent(blockContent, getContextContainers(currentContext))
-      : null;
-    const fenceRun = contextualFenceRun ?? getFenceRun(lineWithoutNewline);
-    if (fenceRun) {
+    if (codeBlock) {
       paragraphContext = null;
-      appendFenceOpeningSegment(segments, line, lineWithoutNewline, fenceRun);
-      fence = {
-        marker: fenceRun.run[0] as '`' | '~',
-        length: fenceRun.run.length,
-        containers: fenceRun.containers,
-      };
-      lineStart = lineEnd;
-      continue;
-    }
-
-    if (/^(?: {4}|\t)/.test(blockContent)) {
-      if (hasSameParagraphContext(paragraphContext, currentContext)) {
-        const continuation = splitInlineMarkdown(
-          markdown,
-          line,
-          lineStart,
-          currentContext,
-          segments,
-        );
-        inlineCodeRunLength = continuation.codeRunLength ?? null;
-        inlineHtmlEnd = continuation.htmlEnd ?? null;
-        inlineMathRunLength = continuation.mathRunLength ?? null;
-      } else {
+      if (codeBlock.infoStart === undefined) {
         appendSegment(segments, line, false);
-        sealLastSegment(segments);
+      } else {
+        appendFenceOpeningSegment(segments, line, lineWithoutNewline, codeBlock.infoStart);
       }
-      lineStart = lineEnd;
+      appendSegment(segments, markdown.slice(lineEnd, codeBlock.end), false);
+      sealLastSegment(segments);
+      lineStart = codeBlock.end;
       continue;
     }
 
@@ -841,6 +770,7 @@ function splitMarkdown(markdown: string): MarkdownSegment[] {
       lineStart,
       currentContext,
       segments,
+      codeBlocks,
     );
     inlineCodeRunLength = continuation.codeRunLength ?? null;
     inlineHtmlEnd = continuation.htmlEnd ?? null;

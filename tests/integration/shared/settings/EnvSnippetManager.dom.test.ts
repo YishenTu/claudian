@@ -8,7 +8,7 @@ import { axe } from 'jest-axe';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
-import { EnvSnippetManager } from '@/shared/settings/EnvSnippetManager';
+import { EnvSnippetManager, EnvSnippetModal } from '@/shared/settings/EnvSnippetManager';
 
 jest.mock('obsidian', () => jest.requireActual('../../../helpers/ObsidianSettingsDOM'));
 
@@ -62,4 +62,32 @@ it('offers saving the current environment from the empty snippet state', async (
 
   const dialog = within(document.body).getByRole('dialog', { name: 'Save snippet' });
   expect(within(dialog).getByDisplayValue('ANTHROPIC_MODEL=custom')).toBeTruthy();
+});
+
+it.each([
+  { alias: 'New alias', context: '64k', modelAliases: { custom: 'New alias' }, contextLimits: { custom: 64000 } },
+  { alias: '', context: '', modelAliases: {}, contextLimits: undefined },
+])('preserves override drafts across environment edits (%j)', async ({ alias, context, modelAliases, contextLimits }) => {
+  const settings = JSON.parse(JSON.stringify(DEFAULT_CLAUDIAN_SETTINGS)) as typeof DEFAULT_CLAUDIAN_SETTINGS;
+  const snippet = {
+    id: 'snippet', name: 'Custom endpoint', description: '', scope: 'provider:claude' as const,
+    envVars: 'ANTHROPIC_MODEL=custom', modelAliases: { custom: 'Old alias' }, contextLimits: { custom: 200000 },
+  };
+  const save = jest.fn();
+  const host = { settings } as ProviderHost;
+  const modal = new EnvSnippetModal({} as ProviderHost['app'], host, snippet, 'provider:claude', save);
+  modal.open();
+  const dialog = within(document.body).getByRole('dialog', { name: 'Edit snippet' });
+  fireEvent.input(within(dialog).getByRole('textbox', { name: 'Alias for custom' }), { target: { value: alias } });
+  fireEvent.input(within(dialog).getByRole('textbox', { name: 'Context window for custom' }), { target: { value: context } });
+  const environment = within(dialog).getByDisplayValue(snippet.envVars);
+  fireEvent.input(environment, { target: { value: `${snippet.envVars}\nCUSTOM_FLAG=true` } });
+  fireEvent.blur(environment);
+
+  expect((within(dialog).getByRole('textbox', { name: 'Alias for custom' }) as HTMLInputElement).value).toBe(alias);
+  expect((within(dialog).getByRole('textbox', { name: 'Context window for custom' }) as HTMLInputElement).value).toBe(context);
+  const overrideRow = within(dialog).getByRole('textbox', { name: 'Alias for custom' }).parentElement!;
+  expect(await axe(overrideRow)).toHaveNoViolations();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Update' }));
+  expect(save).toHaveBeenCalledWith(expect.objectContaining({ modelAliases, contextLimits }));
 });

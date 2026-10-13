@@ -1,11 +1,14 @@
 /** @jest-environment jsdom */
 
+import '@/providers';
+
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 
 import type { ConversationMeta } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import { SessionManagerSurface } from '@/features/chat/session-manager/SessionManagerSurface';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
@@ -62,6 +65,47 @@ function createSurface() {
 
 afterEach(() => {
   document.body.replaceChildren();
+});
+
+it.each([false, true])('opens selectable history rows by keyboard (metadata popovers: %s)', async showMetadataPopover => {
+  const onSelectConversation = jest.fn().mockResolvedValue(undefined);
+  const browser = new SessionBrowser({
+    plugin: {
+      settings: { enableAutoTitleGeneration: false },
+      getConversationList: () => [conversation('Keyboard session'), conversation('current', { title: 'Active conversation' })],
+    } as unknown as ChatFeatureHost,
+    getCurrentConversationId: () => 'current',
+    getTitleGenerationService: () => null,
+    onListChanged: () => undefined,
+  });
+  const host = document.body.createDiv();
+  try {
+    browser.renderHistoryDropdown(host, { onSelectConversation, showMetadataPopover });
+    const view = within(host);
+    const selectable = view.getByRole('button', { name: /^Keyboard session/ });
+    selectable.focus();
+    expect(document.activeElement).toBe(selectable);
+    for (const key of ['Enter', ' ']) fireEvent.keyDown(selectable, { key });
+    expect(onSelectConversation.mock.calls).toEqual([['Keyboard session'], ['Keyboard session']]);
+    expect((await axe(selectable)).violations).toEqual([]);
+
+    const current = view.getByText('Active conversation').parentElement!;
+    expect(view.queryByRole('button', { name: /^Active conversation/ })).toBeNull();
+    fireEvent.keyDown(current, { key: 'Enter' });
+    expect(onSelectConversation).toHaveBeenCalledTimes(2);
+
+    browser.renderHistoryDropdown(host, {
+      onSelectConversation, showMetadataPopover,
+      allowConversationSelection: false, sessionActionMode: 'archived',
+    });
+    const archived = view.getByText('Keyboard session').parentElement!;
+    expect(view.queryByRole('button', { name: /^Keyboard session/ })).toBeNull();
+    fireEvent.keyDown(archived, { key: 'Enter' });
+    expect(onSelectConversation).toHaveBeenCalledTimes(2);
+  } finally {
+    browser.dispose();
+    host.remove();
+  }
 });
 
 it.each([false, true])('keeps session navigation named and operable without tooltips (archive: %s)', async archived => {

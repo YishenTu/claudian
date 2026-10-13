@@ -1,4 +1,4 @@
-import { PassThrough } from 'node:stream';
+import { PassThrough, Writable } from 'node:stream';
 
 import {
   PiRPCResponseError,
@@ -129,5 +129,72 @@ describe('PiRPCTransport', () => {
     await expect(request).rejects.toThrow('Request aborted: get_commands');
     input.write('{"type":"response","id":"req_1","success":true,"result":[]}\n');
     expect((transport as any).pending).toHaveProperty('size', 0);
+  });
+
+  it.each(['write error', 'output close'] as const)('closes pending requests on %s without waiting for a response', async failure => {
+    const input = new PassThrough();
+    const error = new Error('write EPIPE');
+    let failWrite: () => void = () => { throw new Error('No write was issued'); };
+    const output = new Writable({ write(_chunk, _encoding, callback) {
+      if (failure === 'write error') failWrite = () => callback(error);
+      else callback();
+    } });
+    const transport = new PiRPCTransport({ input, output }, 0);
+    const closed = jest.fn();
+    transport.onClose(closed);
+    const pending = Promise.allSettled([transport.request('prompt'), transport.request('get_state')]);
+    try {
+      const streamEvent = new Promise<void>(resolve => output.once(failure === 'write error' ? 'error' : 'close', () => resolve()));
+      if (failure === 'write error') failWrite();
+      else output.destroy();
+      await streamEvent;
+      expect(transport.isClosed).toBe(true);
+      const expected = failure === 'write error' ? error : new PiRPCTransportClosedError('Pi RPC output closed');
+      expect(await pending).toEqual([
+        { status: 'rejected', reason: expected },
+        { status: 'rejected', reason: expected },
+      ]);
+      await expect(transport.request('prompt')).rejects.toBeInstanceOf(PiRPCTransportClosedError);
+      input.destroy();
+      await new Promise(resolve => setImmediate(resolve));
+      expect(closed).toHaveBeenCalledTimes(1);
+    } finally {
+      transport.dispose();
+      await pending;
+      input.destroy();
+      output.destroy();
+    }
+  });
+
+  it('handles an in-flight write error after disposal until the output closes', async () => {
+    const input = new PassThrough();
+    const error = new Error('write EPIPE');
+    let failWrite: () => void = () => { throw new Error('No write was issued'); };
+    const output = new Writable({ write(_chunk, _encoding, callback) {
+      failWrite = () => callback(error);
+    } });
+    const unhandledErrors: unknown[] = [];
+    const emit = output.emit.bind(output);
+    jest.spyOn(output, 'emit').mockImplementation((event, ...args) => {
+      // Record the otherwise fatal event so a failing implementation does not crash the test runner.
+      if (event === 'error' && output.listenerCount('error') === 0) {
+        unhandledErrors.push(args[0]);
+        return false;
+      }
+      return emit(event, ...args);
+    });
+    const transport = new PiRPCTransport({ input, output }, 0);
+    const closed = jest.fn();
+    transport.onClose(closed);
+    const pending = transport.request('prompt');
+    transport.dispose();
+    await expect(pending).rejects.toBeInstanceOf(PiRPCTransportClosedError);
+    const outputClosed = new Promise<void>(resolve => output.once('close', () => resolve()));
+    failWrite();
+    await outputClosed;
+    expect(unhandledErrors).toEqual([]);
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(output.listenerCount('error')).toBe(0);
+    input.destroy();
   });
 });

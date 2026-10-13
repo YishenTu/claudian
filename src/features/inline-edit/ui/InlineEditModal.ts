@@ -149,8 +149,6 @@ const inlineEditField = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
-const installedEditors = new WeakSet<EditorView>();
-
 interface DiffOp { type: 'equal' | 'insert' | 'delete'; text: string; }
 
 function splitLinesPreservingEndings(text: string): string[] {
@@ -468,11 +466,10 @@ export class InlineEditSession {
       this.editorDestroyed = true;
       this.close();
     });
-    if (!installedEditors.has(this.editorView)) {
+    if (this.editorView.state.field(inlineEditField, false) === undefined) {
       this.editorView.dispatch({
         effects: StateEffect.appendConfig.of(inlineEditField),
       });
-      installedEditors.add(this.editorView);
     }
 
     this.#updateHighlight();
@@ -878,7 +875,8 @@ export class InlineEditSession {
       }
       if (e.key === 'Escape' && !e.isComposing) {
         this.reject();
-      } else if (e.key === 'Enter' && !e.isComposing) {
+      } else if (e.key === 'Enter' && !e.isComposing && !this.containerEl?.contains(e.target as Node)) {
+        // Preview controls keep their native Enter activation.
         this.accept();
       }
     };

@@ -31,6 +31,7 @@ describe('ConversationTitleGeneration.regenerate', () => {
     settings: Record<string, unknown>;
     getConversationById: jest.Mock;
     renameConversation: jest.Mock;
+    completeConversationTitleGeneration: jest.Mock;
     updateConversation: jest.Mock;
   };
   let service: { generateTitle: jest.Mock; cancel: jest.Mock };
@@ -50,6 +51,7 @@ describe('ConversationTitleGeneration.regenerate', () => {
       },
       getConversationById: jest.fn().mockResolvedValue(null),
       renameConversation: jest.fn().mockResolvedValue(undefined),
+      completeConversationTitleGeneration: jest.fn().mockResolvedValue(undefined),
       updateConversation: jest.fn().mockResolvedValue(undefined),
     };
     service = { generateTitle: jest.fn().mockResolvedValue(undefined), cancel: jest.fn() };
@@ -166,7 +168,7 @@ describe('ConversationTitleGeneration.regenerate', () => {
     );
   });
 
-  it('should rename conversation with generated title', async () => {
+  it('commits the generated title against the title captured before generation', async () => {
     host.getConversationById.mockResolvedValue({
       id: 'conv-1',
       title: 'Old Title',
@@ -183,7 +185,8 @@ describe('ConversationTitleGeneration.regenerate', () => {
 
     await titles.regenerate('conv-1');
 
-    expect(host.renameConversation).toHaveBeenCalledWith('conv-1', 'New Generated Title');
+    expect(host.completeConversationTitleGeneration).toHaveBeenCalledWith('conv-1', 'Old Title', 'New Generated Title');
+    expect(host.renameConversation).not.toHaveBeenCalled();
   });
 
   describe('generation callback', () => {
@@ -198,52 +201,17 @@ describe('ConversationTitleGeneration.regenerate', () => {
       });
     });
 
-    it('should mark as failed when generation fails and user has not renamed', async () => {
+    it('commits a failed generation against the captured title', async () => {
       service.generateTitle.mockImplementation(
         async (_convId: string, _user: string, callback: any) => {
-          // On callback, the stored title is unchanged (user didn't rename).
-          host.getConversationById.mockResolvedValue({ id: 'conv-1', title: 'Original Title', messages: [] });
-          await callback('conv-1', { success: false, title: '' });
+          await callback('conv-1', { success: false, error: 'Unavailable' });
         },
       );
 
       await titles.regenerate('conv-1');
 
       expect(host.renameConversation).not.toHaveBeenCalled();
-      expect(host.updateConversation).toHaveBeenCalledWith('conv-1', {
-        titleGenerationStatus: 'failed',
-      });
-    });
-
-    it('should clear status when user manually renamed during generation', async () => {
-      service.generateTitle.mockImplementation(
-        async (_convId: string, _user: string, callback: any) => {
-          // On callback, the stored title differs (user renamed).
-          host.getConversationById.mockResolvedValue({ id: 'conv-1', title: 'User Renamed Title', messages: [] });
-          await callback('conv-1', { success: true, title: 'AI Generated Title' });
-        },
-      );
-
-      await titles.regenerate('conv-1');
-
-      // The user's rename takes precedence over the generated title.
-      expect(host.renameConversation).not.toHaveBeenCalled();
-      expect(host.updateConversation).toHaveBeenCalledWith('conv-1', {
-        titleGenerationStatus: undefined,
-      });
-    });
-
-    it('should not apply title when conversation no longer exists during callback', async () => {
-      service.generateTitle.mockImplementation(
-        async (_convId: string, _user: string, callback: any) => {
-          host.getConversationById.mockResolvedValue(null);
-          await callback('conv-1', { success: true, title: 'New Title' });
-        },
-      );
-
-      await titles.regenerate('conv-1');
-
-      expect(host.renameConversation).not.toHaveBeenCalled();
+      expect(host.completeConversationTitleGeneration).toHaveBeenCalledWith('conv-1', 'Original Title', null);
     });
   });
 });

@@ -88,6 +88,8 @@ export interface ChatFeatureHost extends FeatureHost {
     missingProviderSessionId?: string,
   ): Promise<'deleted' | 'reset' | 'preserved' | 'not_found'>;
   renameConversation(id: string, title: string): Promise<void>;
+  /** Completes generation atomically; null records failure. A changed title takes precedence. */
+  completeConversationTitleGeneration(id: string, expectedTitle: string, title: string | null): Promise<void>;
   setLinkedContentPinned(contentPath: string, isPinned: boolean): Promise<void>;
   rewriteLinkedContentPaths(
     oldPath: string,

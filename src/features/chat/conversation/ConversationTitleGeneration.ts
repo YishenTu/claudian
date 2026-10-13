@@ -8,7 +8,8 @@ import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { t } from '@/i18n/i18n';
 
 export interface ConversationTitleGenerationDeps {
-  host: Pick<ChatFeatureHost, 'settings' | 'getConversationById' | 'renameConversation' | 'updateConversation'>;
+  host: Pick<ChatFeatureHost,
+    'settings' | 'getConversationById' | 'renameConversation' | 'updateConversation' | 'completeConversationTitleGeneration'>;
   getService: () => TitleGenerationService | null;
   /** Observes stored title status changes, such as a session list that renders them. */
   onChanged?: () => void;
@@ -85,19 +86,7 @@ export class ConversationTitleGeneration {
   ): Promise<void> {
     const { host } = this.deps;
     return service.generateTitle(conversationId, userContent, async (id, result) => {
-      const current = await host.getConversationById(id);
-      if (!current) return;
-
-      // A manual rename during generation takes precedence over the generated title.
-      const userRenamed = current.title !== expectedTitle;
-      if (result.success && !userRenamed) {
-        await host.renameConversation(id, result.title);
-        await host.updateConversation(id, { titleGenerationStatus: 'success' });
-      } else if (!userRenamed) {
-        await host.updateConversation(id, { titleGenerationStatus: 'failed' });
-      } else {
-        await host.updateConversation(id, { titleGenerationStatus: undefined });
-      }
+      await host.completeConversationTitleGeneration(id, expectedTitle, result.success ? result.title : null);
       this.deps.onChanged?.();
     });
   }

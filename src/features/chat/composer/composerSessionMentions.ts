@@ -1,3 +1,4 @@
+import { isValidSessionMetadataId } from '@/core/bootstrap/storagePaths';
 import { filterMarkdownTextTokens } from '@/utils/markdownTextTokens';
 
 export interface ComposerSessionMention {
@@ -14,11 +15,13 @@ export function formatComposerSessionMention(title: string, conversationId: stri
 
 export function findComposerSessionMentions(text: string): ComposerSessionMention[] {
   if (!text.includes('@[')) return [];
-  const pattern = /@\[((?:\\[\\\]]|[^\]\\\r\n])*)\]\(claudian-session:(conv-[0-9]+-[a-z0-9]+)\)/g;
-  return filterMarkdownTextTokens(text, [...text.matchAll(pattern)].map(match => ({
-    index: match.index,
-    fullMatch: match[0],
-    title: match[1].replace(/\\([\\\]])/g, '$1'),
-    conversationId: match[2],
-  })), true);
+  const pattern = /@\[((?:\\[\\\]]|[^\]\\\r\n])*)\]\(claudian-session:([^)\r\n]+)\)/g;
+  return filterMarkdownTextTokens(text, [...text.matchAll(pattern)]
+    .filter(match => isValidSessionMetadataId(match[2]))
+    .map(match => ({
+      index: match.index,
+      fullMatch: match[0],
+      title: match[1].replace(/\\([\\\]])/g, '$1'),
+      conversationId: match[2],
+    })), true);
 }

@@ -70,6 +70,11 @@ export class ConversationService {
     this.notifyConversationListChanged();
   }
 
+  async completeConversationTitleGeneration(id: string, expectedTitle: string, title: string | null): Promise<void> {
+    await this.deps.repository.completeTitleGeneration(id, expectedTitle, title);
+    this.notifyConversationListChanged();
+  }
+
   async updateConversation(id: string, updates: ConversationMutablePatch): Promise<void> {
     await this.deps.repository.update(id, updates);
     this.notifyConversationListChanged();

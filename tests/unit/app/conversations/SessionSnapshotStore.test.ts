@@ -19,8 +19,14 @@ describe('session snapshot storage', () => {
     expect(second).not.toBe(first);
     expect(await fs.readFile(first, 'utf8')).toBe('first');
     expect(await fs.readFile(second, 'utf8')).toBe('second');
-    await expect(store.write('../escape', 'text')).rejects.toThrow();
   });
+
+  it.each(['', '../escape', '/absolute', 'nested/path', 'nested\\path', '..', 'id%2fescape', 'id%5cescape'])(
+    'rejects unsafe identity %j before creating a snapshot', async id => {
+      await expect(new SessionSnapshotStore(directory).write(id, 'private')).rejects.toThrow();
+      expect(await fs.readdir(directory)).toEqual([]);
+    },
+  );
 
   it.each([0, 1100])('sweeps only stale Markdown files and respects abort (clock offset: %s days)', async days => {
     const sweepClock = testClock({ days });

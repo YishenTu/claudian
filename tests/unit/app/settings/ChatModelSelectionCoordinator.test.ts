@@ -6,9 +6,10 @@ import type { ClaudianSettings } from '@/core/types';
 
 function createCoordinator(
   persist: (settings: ClaudianSettings) => Promise<void> = async () => undefined,
+  publish?: () => void | Promise<void>,
 ) {
   const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
-  const settingsCoordinator = new SettingsCoordinator(settings, persist);
+  const settingsCoordinator = new SettingsCoordinator(settings, persist, publish);
   return {
     coordinator: new ChatModelSelectionCoordinator(settingsCoordinator),
     settings,
@@ -89,6 +90,38 @@ describe('ChatModelSelectionCoordinator', () => {
     expect(persist).toHaveBeenCalledTimes(2);
   });
 
+  it('preserves newer durable intent ordering when settings publication fails', async () => {
+    const persisted: string[] = [];
+    const publicationError = new Error('listener failed');
+    const publish = jest.fn().mockRejectedValueOnce(publicationError);
+    const { coordinator, settings } = createCoordinator(async current => {
+      persisted.push(current.lastSelectedChatModel?.model ?? 'none');
+    }, publish);
+    const earlierIntent = coordinator.beginIntent();
+    const newerIntent = coordinator.beginIntent();
+
+    const newerCommit = coordinator.commitIntent(newerIntent, {
+      providerId: 'codex',
+      model: 'codex/gpt-5.2',
+    }, () => true);
+    const earlierCommit = coordinator.commitIntent(earlierIntent, {
+      providerId: 'claude',
+      model: 'opus',
+    }, () => true);
+
+    await expect(newerCommit).rejects.toMatchObject({
+      cause: publicationError,
+      committed: true,
+      phase: 'post-commit',
+    });
+    await expect(earlierCommit).resolves.toBe(false);
+    expect(settings.lastSelectedChatModel).toEqual({
+      providerId: 'codex',
+      model: 'codex/gpt-5.2',
+    });
+    expect(persisted).toEqual(['codex/gpt-5.2']);
+  });
+
   it('drops an intent that loses ownership while waiting to commit', async () => {
     let releaseFirstPersist!: () => void;
     const firstPersist = new Promise<void>(resolve => {
@@ -124,5 +157,13 @@ describe('ChatModelSelectionCoordinator', () => {
       model: 'opus',
     });
     expect(persistCount).toBe(1);
+
+    staleIntentIsValid = true;
+    await expect(coordinator.commitIntent(staleIntent, {
+      providerId: 'codex',
+      model: 'codex/gpt-5.2',
+    }, () => staleIntentIsValid)).resolves.toBe(true);
+    expect(settings.lastSelectedChatModel?.model).toBe('codex/gpt-5.2');
+    expect(persistCount).toBe(2);
   });
 });

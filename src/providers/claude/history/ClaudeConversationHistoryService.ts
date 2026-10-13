@@ -847,7 +847,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
 
     const filteredSdkMessages = allSdkMessages.filter(msg => !msg.isRebuiltContext);
 
-    const complete = errorCount === 0 && unknownSessionCount === 0;
+    const complete = errorCount === 0 && unknownSessionCount === 0 && missingSessionCount === 0;
     // An unreadable segment leaves cached messages as the only copy of its history.
     const cached = complete
       ? retainUnconfirmedCachedMessages(conversation.messages, filteredSdkMessages)
