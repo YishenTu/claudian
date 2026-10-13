@@ -169,6 +169,25 @@ describe('ClaudeExecutionBackend', () => {
     jest.restoreAllMocks();
   });
 
+  it('restarts the query when session-tool attachment presence changes', async () => {
+    let sessionTools: ProviderSessionConfig['sessionTools'];
+    const config = createConfig();
+    Object.defineProperty(config, 'sessionTools', { get: () => sessionTools });
+    const session = new ClaudeExecutionBackend(createHost()).createSession(config);
+    try {
+      await collectEvents(session.execute(createRequest()).events);
+      expect(sdkMock.getLastOptions()?.mcpServers).toBeUndefined();
+      sessionTools = { list: async () => [], send: jest.fn() };
+      await collectEvents(session.execute(createRequest()).events);
+      expect(sdkMock.getQueryCallCount()).toBe(2);
+      expect(sdkMock.getLastOptions()?.mcpServers).toHaveProperty('claudian_sessions');
+      sessionTools = undefined;
+      await collectEvents(session.execute(createRequest()).events);
+      expect(sdkMock.getQueryCallCount()).toBe(3);
+      expect(sdkMock.getLastOptions()?.mcpServers).toBeUndefined();
+    } finally { await session.dispose(); }
+  });
+
   it('passes Node-backed CLI paths to the SDK even when Node discovery misses', async () => {
     jest.spyOn(env, 'findNodeExecutable').mockReturnValue(null);
     const host = createHost();

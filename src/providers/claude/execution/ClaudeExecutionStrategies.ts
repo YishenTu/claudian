@@ -5,6 +5,10 @@ import type {
   SDKUserMessage,
   SlashCommand,
 } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
+import { createSessionToolMCPServer, SESSION_TOOL_MCP_SERVER_NAME } from '@/core/session-tools/sessionToolMCP';
+import type { SessionToolCallHandler } from '@/core/session-tools/sessionToolSpecs';
 
 import { loadClaudeAgentQuery } from '../loadClaudeAgentSDK';
 import { MessageChannel } from '../runtime/ClaudeMessageChannel';
@@ -22,6 +26,7 @@ export interface ClaudeCommandUpdate {
 
 export interface ClaudeExecutionStrategySink {
   readonly sessionInstanceId: string;
+  getSessionToolHandler(signal: AbortSignal): SessionToolCallHandler | undefined;
   getProviderSessionId(): string | null;
   assertModelAvailable(model: string): void;
   bindNativeTurnInputs(inputs: ClaudeTurnInputs, queryToken: number): void;
@@ -257,6 +262,7 @@ implements ClaudeExecutionStrategy {
       ...request.options,
       abortController,
     };
+    attachSessionTools(options, this.sink, abortController.signal);
     const query = agentQuery({
       prompt: messageChannel,
       options,
@@ -431,6 +437,7 @@ implements ClaudeExecutionStrategy {
       const agentQuery = await loadClaudeAgentQuery();
       abortController.signal.throwIfAborted();
       this.sink.assertModelAvailable(request.model);
+      attachSessionTools(options, this.sink, abortController.signal);
       query = agentQuery({ options, prompt });
       this.activeQuery = query;
       this.sink.handleNativeQueryOpened(query);
@@ -531,5 +538,22 @@ function createPersistentNativeTurn(
       settled = true;
       resolve(outcome);
     },
+  };
+}
+
+/** Construct at query launch: an SDK server instance belongs to one transport. */
+function attachSessionTools(options: Options, sink: ClaudeExecutionStrategySink, signal: AbortSignal): void {
+  const handler = sink.getSessionToolHandler(signal);
+  if (!handler) return;
+  options.mcpServers = {
+    ...options.mcpServers,
+    [SESSION_TOOL_MCP_SERVER_NAME]: {
+      type: 'sdk',
+      name: SESSION_TOOL_MCP_SERVER_NAME,
+      instance: createSessionToolMCPServer(handler) as unknown as McpServer,
+      timeout: 60_000,
+      // Supported by the pinned SDK runtime, but not yet by its public type.
+      disableAutoBackground: true,
+    } as NonNullable<Options['mcpServers']>[string],
   };
 }

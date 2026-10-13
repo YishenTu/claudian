@@ -4,6 +4,10 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import { randomUUID } from 'crypto';
 
+import type { ProviderToolPolicy } from '@/core/execution';
+import { invokeSessionTool } from '@/core/session-tools/invokeSessionTool';
+import type { SessionToolCallHandler } from '@/core/session-tools/sessionToolSpecs';
+
 import {
   type ChatRewindMode,
   type ChatRewindPreview,
@@ -65,6 +69,7 @@ export interface ClaudeExecutionSessionOptions {
 interface ActiveRequestedRun {
   readonly run: RequestedRunChannel;
   readonly abortController: AbortController;
+  readonly toolPolicy: ProviderToolPolicy;
   readonly queryToken: number;
   accepted: boolean;
   nativeFork: boolean;
@@ -84,6 +89,8 @@ interface PendingClaudeSteer {
 }
 
 interface BackgroundTurn {
+  readonly abortController: AbortController;
+  readonly toolPolicy: ProviderToolPolicy | undefined;
   nativeAssistantId?: string;
   readonly queryToken: number;
   readonly turnId: string;
@@ -202,6 +209,7 @@ ClaudeExecutionStrategySink {
     const active: ActiveRequestedRun = {
       run,
       abortController: new AbortController(),
+      toolPolicy: request.toolPolicy,
       queryToken: ++this.queryToken,
       accepted: false,
       nativeFork: false,
@@ -224,6 +232,7 @@ ClaudeExecutionStrategySink {
     if (active?.nativeCompleted) return;
     if (!active || active.run.isTerminal) {
       if (!this.backgroundTurn || this.cancelledBackgroundQueryToken !== null) return;
+      this.backgroundTurn.abortController.abort();
       this.cancelledBackgroundQueryToken = this.backgroundTurn.queryToken;
       this.state.setStatus('cancelling');
       this.#emitBackground(this.backgroundTurn, {
@@ -516,7 +525,14 @@ ClaudeExecutionStrategySink {
         reportedContextWindow,
       },
     );
-    this.responseOwnership.observe(message, channel, normalizedEvents);
+    this.responseOwnership.observe(message, channel, normalizedEvents, () => {
+      const target = this.#getOutputTarget(channel);
+      return target ? {
+        turnId: 'run' in target ? target.run.turnId : target.turnId,
+        signal: target.abortController.signal,
+        toolPolicy: target.toolPolicy,
+      } : undefined;
+    });
     if (message.type === 'stream_event' && message.event.type === 'message_start'
       && message.parent_tool_use_id == null) {
       this.#getOutputTarget(channel);
@@ -760,10 +776,42 @@ ClaudeExecutionStrategySink {
     this.suppressedEphemeralQueryTokens.delete(queryToken);
   }
 
+  getSessionToolHandler(querySignal: AbortSignal): SessionToolCallHandler | undefined {
+    if (!this.config.sessionTools) return undefined;
+    return async ({ name, args, signal, nativeToolUseId }) => {
+      // Bridge manually: Obsidian and the SDK can supply different signal realms.
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      const signals = [querySignal, signal];
+      for (const source of signals) {
+        if (source.aborted) abort();
+        else source.addEventListener('abort', abort, { once: true });
+      }
+      try {
+        const owner = nativeToolUseId
+          ? await this.responseOwnership.waitForToolOwner(nativeToolUseId, controller.signal)
+          : undefined;
+        if (owner) {
+          signals.push(owner.signal);
+          if (owner.signal.aborted) abort();
+          else owner.signal.addEventListener('abort', abort, { once: true });
+        }
+        return await invokeSessionTool(name, args, {
+          port: this.config.sessionTools,
+          toolPolicy: owner?.toolPolicy,
+          signal: controller.signal,
+        });
+      } finally {
+        for (const source of signals) source.removeEventListener('abort', abort);
+      }
+    };
+  }
+
   handleNativeQueryOpened(query: Query): void {
     if (this.nativeQuery === query) return;
     this.suggestionTurnId = null;
     this.nativeQuery = query;
+    this.responseOwnership.clear();
     this.taskNotifications.reset();
     this.commandSnapshot = undefined;
     this.skillNames = [];
@@ -836,6 +884,8 @@ ClaudeExecutionStrategySink {
     if (!this.backgroundTurn) {
       this.suggestionTurnId = null;
       const background: BackgroundTurn = {
+        abortController: new AbortController(),
+        toolPolicy: this.lastEncodedRequest?.toolPolicy,
         queryToken: this.nativeQueryToken,
         turnId: `claude-background-${++this.backgroundCounter}`,
         sequence: 0,
@@ -856,6 +906,8 @@ ClaudeExecutionStrategySink {
   }
 
   #getInteractionTurnId(toolId: string): string | null {
+    const owner = this.responseOwnership.toolOwner(toolId);
+    if (owner) return owner.signal.aborted ? null : owner.turnId;
     const channel = this.responseOwnership.toolChannel(toolId) ?? this.#currentOutputChannel();
     if (channel === 'requested' && this.activeRun) {
       this.#ensureRequestedAccepted(this.activeRun);
@@ -1061,6 +1113,7 @@ ClaudeExecutionStrategySink {
   ): void {
     const background = this.backgroundTurn;
     if (!background) return;
+    background.abortController.abort();
     this.state.setStatus(this.activeRun ? 'executing' : 'idle');
     this.#emitBackground(background, {
       type: 'session_state_changed',
@@ -1082,6 +1135,7 @@ ClaudeExecutionStrategySink {
     active: ActiveRequestedRun,
     event: RequestedRunTerminalEvent,
   ): void {
+    active.abortController.abort();
     const scope = active.run.finish(event);
     if (!scope) return;
     this.lastRequestedEventScope = scope;

@@ -19,6 +19,7 @@ import {
 import type {
   ProviderExecutionRequest,
   ProviderSessionConfig,
+  ProviderToolPolicy,
 } from '../../../core/execution';
 import { buildSystemPrompt } from '../../../core/prompt/mainAgent';
 import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
@@ -69,6 +70,7 @@ export interface ClaudeEncodedExecutionRequest {
   readonly sdkPermissionMode: SDKPermissionMode;
   readonly restartKey: string;
   readonly allowedTools: ReadonlySet<string> | null;
+  readonly toolPolicy: ProviderToolPolicy;
 }
 
 export interface ClaudeEncodedSteer {
@@ -217,6 +219,7 @@ export class ClaudeExecutionRequestEncoder {
       outputStyle: claudeSettings.outputStyle,
       restartKey: JSON.stringify({
         systemPrompt,
+        sessionTools: Boolean(sessionConfig.sessionTools),
         tools: policy.tools,
         hooks: Boolean(policy.hooks),
         cliPath,
@@ -227,6 +230,7 @@ export class ClaudeExecutionRequestEncoder {
         promptSuggestions: options.promptSuggestions,
       }),
       allowedTools: policy.allowedTools,
+      toolPolicy: request.toolPolicy,
     };
   }
 

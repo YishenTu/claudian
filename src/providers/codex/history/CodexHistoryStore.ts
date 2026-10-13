@@ -12,6 +12,8 @@ import {
   parseImageDataUri,
 } from '@/core/execution/imageAttachment';
 import { extractUserDisplayContent } from '@/core/prompt/promptContext';
+import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
+import type { NormalizedCodexToolCall } from '@/providers/codex/normalization/codexToolNormalization';
 import {
   extractCodexUserVisibleText,
   joinCodexUserTextParts,
@@ -648,7 +650,7 @@ function processPersistedToolCall(
 
 function processPersistedNormalizedToolCall(
   callId: string,
-  normalized: { name: string; input: Record<string, unknown> },
+  normalized: NormalizedCodexToolCall,
   timestamp: number,
   ctx: PersistedParseContext,
 ): void {
@@ -682,7 +684,7 @@ function processPersistedNormalizedToolCall(
 
 function pushPersistedNormalizedToolCall(
   callId: string,
-  normalized: { name: string; input: Record<string, unknown> },
+  normalized: NormalizedCodexToolCall,
   timestamp: number,
   ctx: PersistedParseContext,
 ): void {
@@ -699,6 +701,7 @@ function pushPersistedNormalizedToolCall(
     id: callId,
     name: normalized.name,
     input: normalized.input,
+    ...(normalized.providerPayload ? { providerPayload: normalized.providerPayload } : {}),
     status: 'running',
   };
 
@@ -1346,11 +1349,13 @@ function flushBubbleTurnMessages(
   const visibleUserText = extractCodexUserVisibleText(rawUserText);
   const userImages = turn.userImages.length > 0 ? turn.userImages : undefined;
   if (visibleUserText || userImages || isQuestionReply) {
+    const sessionMessage = decodeSessionMessage(rawUserText);
     const extractedDisplay = visibleUserText ? extractUserDisplayContent(visibleUserText) : undefined;
     const displayContent = extractedDisplay ?? (isQuestionReply ? visibleUserText ?? '' : undefined);
     messages.push({
       id: `codex-msg-${msgIndex}`,
       role: 'user',
+      ...(sessionMessage ? { sessionMessage: { from: sessionMessage.from, sessionId: sessionMessage.sessionId } } : {}),
       content: isQuestionReply ? rawUserText : visibleUserText ?? '',
       ...(displayContent !== undefined ? { displayContent } : {}),
       ...(userImages ? { images: userImages } : {}),

@@ -29,6 +29,8 @@ Open Claudian interface from the ribbon icon or command palette. Everything work
 
 **@mention** — Type `@` to reference vault files, folders and other Claudian sessions.
 
+**Cross-Session Messaging** — Agents can list your Claudian sessions and message them, or start a new one, with `claudian_list_sessions` and `claudian_send_message`. The recipient runs the message as its own turn (queued if busy) and may reply the same way. Messages show their sender; press Stop in a session to cancel its turn and drop its pending messages.
+
 **Side Chat (`/side` or `/btw`)** — Explore a separate, temporary conversation with follow-ups and tools while keeping the main chat unchanged.
 
 **MCP Servers** — Connect external tools through each coding agent's native CLI-managed MCP configuration.
@@ -93,7 +95,7 @@ npm run build
 ## Privacy & Data Use
 
 - **Sent to API**: Your input, attached files, images, and tool call outputs. Depending on the selected provider, data is sent to Anthropic (Claude), OpenAI (Codex), xAI (Grok), or the providers configured in OpenCode, Pi, or DeepSeek Harness. The destination can be configured through provider settings and environment variables.
-- **No telemetry or unsolicited background activity**: Claudian does not run telemetry beacons. UI polling timers read local Obsidian/editor selection state only. Network activity is limited to explicit provider runtime work, configured MCP endpoints, provider SDK/CLI calls needed to answer your requests, and their configured services.
+- **No telemetry or unsolicited background activity**: Claudian does not run telemetry beacons. UI polling timers read local Obsidian/editor selection state only. Network activity is limited to explicit provider runtime work, configured MCP endpoints, a 127.0.0.1-only listener that OpenCode, DeepSeek and Grok sessions use for Claudian's session tools, provider SDK/CLI calls needed to answer your requests, and their configured services.
 
 ## Troubleshooting
 

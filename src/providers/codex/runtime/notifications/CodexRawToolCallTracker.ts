@@ -205,6 +205,7 @@ export class CodexRawToolCallTracker {
       id: callId,
       name: normalized.name,
       input: normalized.input,
+      ...(normalized.providerPayload ? { providerPayload: normalized.providerPayload } : {}),
     });
   }
 

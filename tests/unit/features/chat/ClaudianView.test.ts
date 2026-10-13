@@ -1191,7 +1191,7 @@ describe('ClaudianView Escape handling', () => {
       tabManager: {
         getActiveTab: jest.fn().mockReturnValue({
           state: { isStreaming: options.isStreaming },
-          session: { hasMainBackgroundWork: options.backgroundWork ?? false },
+          session: { hasMainBackgroundWork: options.backgroundWork ?? false, runtime: { mailbox: null } },
           ui: {
             composerDropdown: { handleKeydown: () => options.escapeConsumer === 'composer dropdown' },
             promptSuggestion: { handleKeydown: () => options.escapeConsumer === 'prompt suggestion' },

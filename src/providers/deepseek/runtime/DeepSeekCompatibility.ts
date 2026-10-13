@@ -59,6 +59,54 @@ export function apply(ctx, config) {
 }
 `;
 
+/** Registers only Claudian's session tools; the Host owns routing and the execution session owns policy/lifetime. */
+export const DEEPSEEK_SESSIONS_SOURCE = String.raw`
+import { readFile } from 'node:fs/promises';
+
+export const name = 'claudian-sessions';
+export const inject = ['tools', 'loader'];
+
+export async function apply(ctx, config) {
+  if (typeof config?.endpointFile !== 'string' || !Array.isArray(config.tools)) {
+    throw new TypeError('Claudian sessions requires an endpoint file and tool specs.');
+  }
+  const { defineTool } = await ctx.loader.import('@deepseek-ai/dsh-tools');
+  for (const spec of config.tools) {
+    ctx.tools.register(defineTool({
+      name: spec.name,
+      description: spec.description,
+      parameters: Object.fromEntries(Object.entries(spec.inputSchema.properties).map(([key, value]) =>
+        [key, { ...value, ...(spec.inputSchema.required?.includes(key) ? { required: true } : {}) }])),
+      // Mailbox admission answers immediately; there is no wait for the recipient's turn.
+      timeoutMs: 60_000,
+      output: {
+        schema: { type: 'object', additionalProperties: false, properties: {
+          text: { type: 'string', required: true }, isError: { type: 'boolean', required: true },
+        } },
+        render: (_args, value) => [{ type: 'text', text: value.text }],
+      },
+      async execute(args, exec) {
+        exec.signal.throwIfAborted();
+        const callerNativeId = exec.agent?.id;
+        if (typeof callerNativeId !== 'string' || !callerNativeId || typeof exec.callId !== 'string' || !exec.callId) throw new Error('Unbound Claudian session tool caller.');
+        // Read on every call: an endpoint replacement never restarts the shared native Host.
+        const route = JSON.parse(await readFile(config.endpointFile, 'utf8'));
+        if (typeof route.url !== 'string' || typeof route.routeId !== 'string') throw new Error('Claudian session tools are unavailable.');
+        const response = await fetch(route.url, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', [config.routeHeader]: route.routeId },
+          body: JSON.stringify({ tool: spec.name, args: { callId: exec.callId, args }, callerNativeId }), signal: exec.signal,
+        });
+        if (!response.ok) throw new Error('Claudian session tool endpoint returned HTTP ' + response.status);
+        const result = await response.json();
+        if (typeof result?.text !== 'string' || typeof result?.isError !== 'boolean') throw new Error('Invalid Claudian session tool result.');
+        if (result.isError) throw new Error(result.text);
+        return result;
+      },
+    }));
+  }
+}
+`;
+
 /**
  * Claudian keeps the Host's stdin open for its whole lifetime; EOF means the owner is gone. Native runProfile's SIGTERM
  * listener runs its bounded interrupt, which a delivered signal never reaches on Windows (TerminateProcess), so it is

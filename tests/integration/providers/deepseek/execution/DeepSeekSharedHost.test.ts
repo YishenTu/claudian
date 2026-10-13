@@ -1,13 +1,14 @@
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
-import { jobsOf, NativePeer, type NativePeerLifecycle, rootFollow } from '@test/helpers/deepseek/NativePeer';
+import { childFollow, jobsOf, NativePeer, type NativePeerLifecycle, rootFollow } from '@test/helpers/deepseek/NativePeer';
 import { testDate } from '@test/helpers/testClock';
 
 import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderExecutionSession, ProviderInteractionPort, ProviderSessionConfig } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { SessionToolRoute,SessionToolRoutedCallHandler } from '@/core/session-tools/SessionToolEndpoint';
 import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSeekExecutionBackend';
 import { DeepSeekRemoteError } from '@/providers/deepseek/remote/DeepSeekRemoteClient';
 import { getDeepSeekHome } from '@/providers/deepseek/runtime/DeepSeekHome';
-import type { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
+import { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
 
 const time = testDate().getTime();
 // Fixture polling keeps the real clock while tests drive native deadlines on the fake one.
@@ -65,9 +66,9 @@ function port(): ProviderInteractionPort & { askUserQuestion: jest.Mock } {
   return { requestApproval: jest.fn(), askUserQuestion: jest.fn(() => new Promise<never>(() => {})), dismissInteraction: jest.fn() };
 }
 
-function open(interactionPort = port(), resume?: string, lifecycle: ProviderSessionConfig['lifecycle'] = 'persistent'): ProviderExecutionSession {
+function open(interactionPort = port(), resume?: string, lifecycle: ProviderSessionConfig['lifecycle'] = 'persistent', sessionTools?: ProviderSessionConfig['sessionTools']): ProviderExecutionSession {
   const config: ProviderSessionConfig = {
-    lifecycle, nativePersistence: lifecycle === 'ephemeral' ? 'disabled-if-supported' : 'enabled', vaultWorkingDirectory: '/vault', interactionPort,
+    sessionTools, lifecycle, nativePersistence: lifecycle === 'ephemeral' ? 'disabled-if-supported' : 'enabled', vaultWorkingDirectory: '/vault', interactionPort,
     ...(resume ? { resumeSeed: { providerSessionId: resume, providerState: { schemaVersion: 1, home: getDeepSeekHome(process.env, process.cwd()), profile: 'web', preset: 'claudian' } } } : {}),
   };
   const session = new DeepSeekExecutionBackend(host, () => deepseek).createSession(config);
@@ -326,3 +327,320 @@ function elapseWaitsUpTo(limit: number): () => void {
   })();
   return () => { active = false; timers.mockRestore(); };
 }
+
+/** Keep the production Host, roster and execution session; replace only the native process and endpoint port. */
+function sessionToolEndpoint() {
+  let handler: SessionToolRoutedCallHandler | undefined;
+  const route: SessionToolRoute = { url: 'http://127.0.0.1:1234/call', routeId: 'host-route', headers: { 'X-Claudian-Route': 'host-route' }, dispose: jest.fn() };
+  const registerCallRoute = jest.fn(async (call: SessionToolRoutedCallHandler) => { handler = call; return route; });
+  const starts = jest.fn();
+  deepseek = new DeepSeekHost(async () => ({ cliPath: '/dsh', cwd: '/vault', environment: process.env }), async options => {
+    starts(options);
+    const client = await peer.connect();
+    return { client, profile: 'web', onExit: () => () => {}, dispose: async () => client.dispose(),
+      writePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false,
+      offerEphemeralFork: async () => async () => {},
+    };
+  }, undefined, { registerCallRoute, registerMCPRoute: jest.fn() });
+  return { route, registerCallRoute, starts, call: (callerNativeId: string, name = 'claudian_list_sessions', args: unknown = {}, callId = 'session-call', signal = new AbortController().signal) => {
+    expect(handler).toBeDefined();
+    return handler!({ name, args: { callId, args }, callerNativeId, signal });
+  } };
+}
+
+async function startSessionToolTurn(session: ProviderExecutionSession, nativeId: string, input = request('Prompt')) {
+  const execution = session.execute(input);
+  const events: ProviderExecutionEvent[] = [];
+  const done = (async () => { for await (const event of execution.events) events.push(event); })();
+  await until(() => peer.calls.some(call => call.method === 'session/prompt' && call.args.request.requestId === execution.executionId));
+  emit(nativeId, 'turn/start', { turn: seq });
+  emit(nativeId, 'user/message', { source: { kind: 'user', rpcId: execution.executionId }, content: [{ type: 'text', text: 'hello' }] });
+  emit(nativeId, 'tool/call', { callId: 'session-call', name: 'claudian_list_sessions', arguments: '{}' });
+  await until(() => events.some(event => event.type === 'tool_started'));
+  return { execution, events, done };
+}
+
+it('routes session tools through one Host route to the claimed root, denying unknown and unported callers', async () => {
+  const endpoint = sessionToolEndpoint();
+  const list = jest.fn(async () => []);
+  const send = jest.fn(async () => ({ sessionId: 'target', status: 'queued' as const }));
+  const alpha = open(port(), undefined, 'persistent', { list, send });
+  const a = await startSessionToolTurn(alpha, 'alpha');
+  const b = await startSessionToolTurn(open(), 'beta');
+  expect(endpoint.registerCallRoute).toHaveBeenCalledTimes(1);
+  expect(endpoint.starts).toHaveBeenCalledWith(expect.objectContaining({ sessionToolRoute: endpoint.route }));
+  const unknown = new AbortController();
+  const unknownCall = endpoint.call('stranger', 'claudian_list_sessions', {}, 'session-call', unknown.signal);
+  unknown.abort();
+  expect(await unknownCall).toMatchObject({ isError: true });
+  expect(await endpoint.call('beta')).toMatchObject({ isError: true });
+  // One invocation arrives before even the child's roster identity is available.
+  const pendingChild = endpoint.call('child', 'claudian_send_message', { sessionId: 'target', text: 'review' });
+  peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: 'child', parentSessionId: 'alpha', origin: 'subagent', agentAvailable: true, running: true }] });
+  peer.send('session/control', { type: 'projection', sessionId: 'alpha', key: 'subagentCatalog', value: [{ id: 'child', mode: 'continuable' }] });
+  peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { parentSessionId: 'alpha', mode: 'continuable' } });
+  await until(() => [...peer.streams.values()].some(stream => stream.endpoint === 'session/follow' && childFollow('child')(stream.args)));
+  emit('alpha', 'subagent/catalog', { childId: 'child', mode: 'continuable' });
+  peer.send('session/follow', { type: 'event', event: { seq: 1, type: 'turn/start', data: { turn: 1 } } }, childFollow('child'));
+  peer.send('session/follow', { type: 'event', event: { seq: 2, type: 'tool/call', data: { callId: 'session-call', name: 'claudian_send_message', arguments: '{"sessionId":"target","text":"review"}' } } }, childFollow('child'));
+  const childResult = await pendingChild;
+  expect(childResult).toEqual({ isError: false, text: '{"sessionId":"target","status":"queued"}' });
+  expect(send).toHaveBeenCalledWith({ sessionId: 'target', text: 'review' }, expect.any(AbortSignal));
+  expect(await endpoint.call('alpha')).toEqual({ isError: false, text: '[]' });
+  expect(list).toHaveBeenCalledTimes(1);
+  emit('alpha', 'tool/call', { callId: 'send-call', name: 'claudian_send_message', arguments: '{"sessionId":"target","text":"review"}' });
+  emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
+  emit('beta', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
+  await Promise.all([a.done, b.done]);
+  expect(a.events).toContainEqual(expect.objectContaining({ type: 'tool_started', name: 'claudian_send_message', input: { sessionId: 'target', text: 'review' }, providerPayload: { rawName: 'claudian_send_message' } }));
+  const next = await startSessionToolTurn(alpha, 'alpha');
+  expect(await endpoint.call('child', 'claudian_send_message', { text: 'late' })).toMatchObject({ isError: true });
+  expect(send).toHaveBeenCalledTimes(1);
+  peer.send('session/follow', { type: 'event', event: { seq: 3, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } } }, childFollow('child'));
+  peer.send('session/follow', { type: 'event', event: { seq: 4, type: 'turn/start', data: { turn: 2 } } }, childFollow('child'));
+  // A root event behind the child frames observes the real session's follow queue, not fixture timing.
+  emit('alpha', 'tool/call', { callId: 'barrier', name: 'read', arguments: '{}' });
+  await until(() => next.events.some(event => event.type === 'tool_started' && event.toolCallId === 'barrier'));
+  expect(await endpoint.call('child', 'claudian_send_message', { text: 'automatic second child turn' })).toMatchObject({ isError: true });
+  peer.send('session/follow', { type: 'snapshot', cursor: 4, records: [
+    { event: { seq: 1, type: 'turn/start', data: { turn: 1 } } },
+    { event: { seq: 3, type: 'turn/end', data: { turn: 1 } } },
+    { event: { seq: 4, type: 'turn/start', data: { turn: 2 } } },
+  ] }, childFollow('child'));
+  emit('alpha', 'tool/call', { callId: 'replay-barrier', name: 'read', arguments: '{}' });
+  await until(() => next.events.some(event => event.type === 'tool_started' && event.toolCallId === 'replay-barrier'));
+  expect(await endpoint.call('child', 'claudian_send_message', { text: 'replayed child turn' })).toMatchObject({ isError: true });
+  peer.send('session/follow', { type: 'event', event: { seq: 5, type: 'turn/end', data: { turn: 2 } } }, childFollow('child'));
+  emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
+  await next.done;
+  await alpha.dispose();
+  expect(await endpoint.call('alpha')).toMatchObject({ isError: true });
+  await deepseek.dispose();
+  expect(endpoint.route.dispose).toHaveBeenCalledTimes(1);
+});
+
+it.each(['passive', 'read-only', 'allow-list'] as const)('denies %s at call time even when the native Agent has session tools', async kind => {
+  const endpoint = sessionToolEndpoint();
+  const list = jest.fn(async () => []);
+  const input = request('Prompt');
+  const turn = await startSessionToolTurn(open(port(), undefined, 'persistent', { list, send: jest.fn() }), 'alpha', input);
+  // Native retains a chat preset; policy must be checked by the dispatcher, independently of native permissions.
+  Object.assign(input.toolPolicy, { kind, ...(kind === 'allow-list' ? { names: ['claudian_list_sessions'] } : {}) });
+  expect(await endpoint.call('alpha')).toMatchObject({ isError: true });
+  expect(list).not.toHaveBeenCalled();
+  emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
+  await turn.done;
+});
+
+it.each(['cancel', 'terminal', 'release'] as const)('revokes session tool calls on %s without lending a later run its signal', async ending => {
+  const endpoint = sessionToolEndpoint();
+  const signals: AbortSignal[] = [];
+  const list = jest.fn((signal: AbortSignal) => {
+    signals.push(signal);
+    return new Promise<[]>(resolve => signal.addEventListener('abort', () => resolve([]), { once: true }));
+  });
+  const session = open(port(), undefined, 'persistent', { list, send: jest.fn() });
+  const first = await startSessionToolTurn(session, 'alpha');
+  const pending = endpoint.call('alpha');
+  await until(() => signals.length === 1);
+  if (ending === 'cancel') first.execution.cancel();
+  if (ending === 'release') void session.dispose();
+  if (ending === 'terminal') emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
+  await until(() => signals[0].aborted);
+  await pending;
+  if (ending !== 'terminal') emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'cancelled' } });
+  await first.done;
+  expect(await endpoint.call('alpha')).toMatchObject({ isError: true });
+  if (ending === 'release') return;
+  const second = await startSessionToolTurn(session, 'alpha');
+  expect(signals[0].aborted).toBe(true);
+  list.mockImplementationOnce(async signal => { signals.push(signal); return []; });
+  expect(await endpoint.call('alpha')).toMatchObject({ isError: false });
+  expect(signals[1].aborted).toBe(false);
+  emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
+  await second.done;
+});
+
+it('resolves nested child session-tool ownership when the root creation catalog arrives last', async () => {
+  const endpoint = sessionToolEndpoint();
+  const list = jest.fn(async () => []);
+  const session = open(port(), undefined, 'persistent', { list, send: jest.fn() });
+  const turn = await startSessionToolTurn(session, 'alpha');
+  for (const [id, parent] of [['child', 'alpha'], ['grandchild', 'child']]) {
+    peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: id, parentSessionId: parent, origin: 'subagent', agentAvailable: true, running: true }] });
+    peer.send('session/control', { type: 'projection', sessionId: parent, key: 'subagentCatalog', value: [{ id, mode: 'continuable' }] });
+    peer.send('session/control', { type: 'projection', sessionId: id, key: 'subagent', value: { parentSessionId: parent, mode: 'continuable' } });
+    await until(() => [...peer.streams.values()].some(stream => stream.endpoint === 'session/follow' && childFollow(id)(stream.args)));
+  }
+  peer.send('session/follow', { type: 'event', event: { seq: 1, type: 'turn/start', data: { turn: 1 } } }, childFollow('child'));
+  peer.send('session/follow', { type: 'event', event: { seq: 2, type: 'subagent/catalog', data: { childId: 'grandchild', mode: 'continuable' } } }, childFollow('child'));
+  peer.send('session/follow', { type: 'event', event: { seq: 1, type: 'turn/start', data: { turn: 1 } } }, childFollow('grandchild'));
+  peer.send('session/follow', { type: 'event', event: { seq: 3, type: 'tool/call', data: { callId: 'session-call', name: 'claudian_list_sessions', arguments: '{}' } } }, childFollow('child'));
+  peer.send('session/follow', { type: 'event', event: { seq: 2, type: 'tool/call', data: { callId: 'session-call', name: 'claudian_list_sessions', arguments: '{}' } } }, childFollow('grandchild'));
+  emit('alpha', 'subagent/catalog', { childId: 'child', mode: 'continuable' });
+  emit('alpha', 'tool/call', { callId: 'catalog-barrier', name: 'read', arguments: '{}' });
+  await until(() => turn.events.some(event => event.type === 'tool_started' && event.toolCallId === 'catalog-barrier'));
+  const childResult = await endpoint.call('child');
+  const grandchildResult = await endpoint.call('grandchild');
+  peer.send('session/follow', { type: 'event', event: { seq: 4, type: 'turn/end', data: { turn: 1 } } }, childFollow('child'));
+  peer.send('session/follow', { type: 'event', event: { seq: 3, type: 'turn/end', data: { turn: 1 } } }, childFollow('grandchild'));
+  emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
+  await turn.done;
+  expect(childResult).toEqual({ isError: false, text: '[]' });
+  expect(grandchildResult).toEqual({ isError: false, text: '[]' });
+});
+
+// The HTTP bridge and native follow frames arrive independently; no fixture retries the invocation.
+it.each(['tool/call', 'tool/ptc-dispatch-start'])('reconciles one root session-tool invocation before ownership and %s arrive', async type => {
+  const endpoint = sessionToolEndpoint();
+  const list = jest.fn(async () => []);
+  const session = open(port(), undefined, 'persistent', { list, send: jest.fn() });
+  const execution = session.execute(request('Prompt'));
+  const events: ProviderExecutionEvent[] = [];
+  const done = (async () => { for await (const event of execution.events) events.push(event); })();
+  await until(() => peer.calls.some(call => call.method === 'session/prompt' && call.args.request.requestId === execution.executionId));
+  const pending = endpoint.call('alpha');
+  expect(list).not.toHaveBeenCalled();
+  emit('alpha', 'turn/start', { turn: seq });
+  emit('alpha', 'user/message', { source: { kind: 'user', rpcId: execution.executionId }, content: [] });
+  emit('alpha', type, { callId: 'session-call', subCallId: 'session-call', rootCallId: 'script', name: 'claudian_list_sessions', arguments: '{}' });
+  const result = await pending;
+  emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
+  await done;
+  expect(result).toEqual({ isError: false, text: '[]' });
+  expect(list).toHaveBeenCalledTimes(1);
+});
+
+it.each(['native', 'request', 'session'] as const)('cancels a pending session-tool invocation with its %s lifetime', async ending => {
+  const endpoint = sessionToolEndpoint();
+  const list = jest.fn(async () => []);
+  const session = open(port(), undefined, 'persistent', { list, send: jest.fn() });
+  const execution = session.execute(request('Prompt'));
+  const events: ProviderExecutionEvent[] = [];
+  const done = (async () => { for await (const event of execution.events) events.push(event); })();
+  await until(() => peer.calls.some(call => call.method === 'session/prompt' && call.args.request.requestId === execution.executionId));
+  const native = new AbortController();
+  const pending = endpoint.call('alpha', 'claudian_list_sessions', {}, 'session-call', native.signal);
+  let settled = false;
+  void pending.then(() => { settled = true; });
+  await new Promise(resolve => realTimeout(resolve, 10));
+  const settledBeforeCancellation = settled;
+  if (ending === 'native') native.abort();
+  if (ending === 'request') execution.cancel();
+  if (ending === 'session') void session.dispose();
+  expect(await pending).toMatchObject({ isError: true });
+  emit('alpha', 'turn/start', { turn: seq });
+  emit('alpha', 'user/message', { source: { kind: 'user', rpcId: execution.executionId }, content: [] });
+  emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
+  await done;
+  expect(settledBeforeCancellation).toBe(false);
+  if (ending === 'session') return;
+  const next = await startSessionToolTurn(session, 'alpha');
+  // Even a later call with the same ID cannot revive the cancelled invocation.
+  expect(list).not.toHaveBeenCalled();
+  expect(await endpoint.call('alpha')).toMatchObject({ isError: false });
+  expect(list).toHaveBeenCalledTimes(1);
+  emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
+  await next.done;
+});
+
+it.each(['unknown', 'ended', 'wrong-name'] as const)('bounds reconciliation and denies an %s native call identity', async identity => {
+  const endpoint = sessionToolEndpoint();
+  const list = jest.fn(async () => []);
+  const send = jest.fn();
+  const turn = await startSessionToolTurn(open(port(), undefined, 'persistent', { list, send }), 'alpha');
+  if (identity === 'ended') {
+    emit('alpha', 'tool/result', { message: { toolCallId: 'session-call', content: [], isError: false } });
+    emit('alpha', 'tool/call', { callId: 'barrier', name: 'read', arguments: '{}' });
+    await until(() => turn.events.some(event => event.type === 'tool_started' && event.toolCallId === 'barrier'));
+  }
+  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  const pending = endpoint.call('alpha', identity === 'wrong-name' ? 'claudian_send_message' : 'claudian_list_sessions', {}, identity === 'unknown' ? 'unknown' : 'session-call');
+  let settled = false;
+  void pending.then(() => { settled = true; });
+  await Promise.resolve();
+  expect(settled).toBe(false);
+  jest.advanceTimersByTime(10_000);
+  expect(await pending).toMatchObject({ isError: true });
+  jest.useRealTimers();
+  expect(list).not.toHaveBeenCalled();
+  expect(send).not.toHaveBeenCalled();
+  emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
+  await turn.done;
+});
+
+it('reconciles a child call whose new turn overtakes the previous turn end', async () => {
+  const endpoint = sessionToolEndpoint();
+  const list = jest.fn(async () => []);
+  const turn = await startSessionToolTurn(open(port(), undefined, 'persistent', { list, send: jest.fn() }), 'alpha');
+  peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: 'child', parentSessionId: 'alpha', origin: 'subagent', agentAvailable: true, running: true }] });
+  peer.send('session/control', { type: 'projection', sessionId: 'alpha', key: 'subagentCatalog', value: [{ id: 'child', mode: 'continuable' }] });
+  peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { parentSessionId: 'alpha', mode: 'continuable' } });
+  emit('alpha', 'subagent/catalog', { childId: 'child', mode: 'continuable' });
+  await until(() => [...peer.streams.values()].some(stream => stream.endpoint === 'session/follow' && childFollow('child')(stream.args)));
+  peer.send('session/follow', { type: 'event', event: { seq: 1, type: 'turn/start', data: { turn: 1 } } }, childFollow('child'));
+  emit('alpha', 'tool/call', { callId: 'barrier', name: 'read', arguments: '{}' });
+  await until(() => turn.events.some(event => event.type === 'tool_started' && event.toolCallId === 'barrier'));
+  const pending = endpoint.call('child');
+  peer.send('session/follow', { type: 'event', event: { seq: 2, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } } }, childFollow('child'));
+  peer.send('session/follow', { type: 'event', event: { seq: 3, type: 'turn/start', data: { turn: 2 } } }, childFollow('child'));
+  peer.send('session/follow', { type: 'event', event: { seq: 4, type: 'tool/call', data: { callId: 'session-call', name: 'claudian_list_sessions', arguments: '{}' } } }, childFollow('child'));
+  const result = await pending;
+  peer.send('session/follow', { type: 'event', event: { seq: 5, type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } } }, childFollow('child'));
+  emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
+  await turn.done;
+  expect(result).toEqual({ isError: false, text: '[]' });
+  expect(list).toHaveBeenCalledTimes(1);
+});
+
+it.each(['native', 'request', 'timeout'] as const)('denies a pre-announcement child call after %s and cannot lend it a later request', async ending => {
+  const nativeCall = peer.onCall;
+  peer.onCall = (method, args) => method === 'session/cancel' ? {} : nativeCall(method, args);
+  const endpoint = sessionToolEndpoint();
+  const list = jest.fn(async () => []);
+  const session = open(port(), undefined, 'persistent', { list, send: jest.fn() });
+  const first = await startSessionToolTurn(session, 'alpha');
+  // Another live claim keeps an unresolved caller ambiguous when alpha ends.
+  const otherList = jest.fn(async () => []);
+  const other = await startSessionToolTurn(open(port(), undefined, 'persistent', { list: otherList, send: jest.fn() }), 'beta');
+  const native = new AbortController();
+  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  const pending = endpoint.call('child', 'claudian_list_sessions', {}, 'child-call', native.signal);
+  let settled = false;
+  void pending.then(() => { settled = true; });
+  await new Promise(resolve => realTimeout(resolve, 10));
+  const settledBeforeEnding = settled;
+  if (ending === 'native') native.abort();
+  if (ending === 'timeout') jest.advanceTimersByTime(10_000);
+  if (ending === 'request') first.execution.cancel();
+  await new Promise(resolve => realTimeout(resolve, 10));
+  const settledAfterEnding = settled;
+  jest.useRealTimers();
+  emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
+  await first.done;
+  const next = await startSessionToolTurn(session, 'alpha');
+  peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: 'child', parentSessionId: 'alpha', origin: 'subagent', agentAvailable: true, running: true }] });
+  peer.send('session/control', { type: 'projection', sessionId: 'alpha', key: 'subagentCatalog', value: [{ id: 'child', mode: 'continuable' }] });
+  peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { parentSessionId: 'alpha', mode: 'continuable' } });
+  emit('alpha', 'subagent/catalog', { childId: 'child', mode: 'continuable' });
+  await until(() => [...peer.streams.values()].some(stream => stream.endpoint === 'session/follow' && childFollow('child')(stream.args)));
+  peer.send('session/follow', { type: 'event', event: { seq: 1, type: 'turn/start', data: { turn: 1 } } }, childFollow('child'));
+  peer.send('session/follow', { type: 'event', event: { seq: 2, type: 'tool/call', data: { callId: 'child-call', name: 'claudian_list_sessions', arguments: '{}' } } }, childFollow('child'));
+  emit('alpha', 'tool/call', { callId: 'barrier', name: 'read', arguments: '{}' });
+  await until(() => next.events.some(event => event.type === 'tool_started' && event.toolCallId === 'barrier'));
+  const result = await pending;
+  const oldDispatches = list.mock.calls.length;
+  // A fresh invocation proves the child is now owned and callable under the new request.
+  const fresh = await endpoint.call('child', 'claudian_list_sessions', {}, 'child-call');
+  peer.send('session/follow', { type: 'event', event: { seq: 3, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } } }, childFollow('child'));
+  emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
+  emit('beta', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
+  await Promise.all([next.done, other.done]);
+  expect(settledBeforeEnding).toBe(false);
+  expect(settledAfterEnding).toBe(ending !== 'request');
+  expect(result).toMatchObject({ isError: true });
+  expect(oldDispatches).toBe(0);
+  expect(fresh).toMatchObject({ isError: false });
+  expect(list).toHaveBeenCalledTimes(1);
+  expect(otherList).not.toHaveBeenCalled();
+});

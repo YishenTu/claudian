@@ -1,3 +1,4 @@
+import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import { resolveToolDiffData } from '@/core/tools/toolDiff';
 import { isWriteEditTool } from '@/core/tools/toolNames';
 import { applyToolResultPresentation } from '@/core/tools/toolResultDetails';
@@ -49,8 +50,10 @@ export async function loadDeepSeekHistory(client: DeepSeekReader, sessionId: str
         // User input claimed mid-turn is a steer: what follows is a new reply, as live steering renders it.
         assistant = undefined;
         const images = await readDeepSeekImages(client, sessionId, record.data.content);
+        const sender = decodeSessionMessage(deepseekText(record.data.content));
         messages.push({ id: `deepseek:${sessionId}:user:${record.seq}`, role: 'user', timestamp: record.time,
           content: deepseekText(record.data.content), userMessageId: typeof record.data.id === 'string' ? record.data.id : undefined,
+          ...(sender ? { sessionMessage: { from: sender.from, sessionId: sender.sessionId } } : {}),
           ...(images.length ? { images } : {}),
         });
       } else if (source.kind === 'tool-jobs' || source.kind === 'subagent-settled') {

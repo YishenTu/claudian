@@ -1,8 +1,12 @@
+import type { ProviderToolPolicy } from '@/core/execution';
+import { invokeSessionTool, type SessionToolInvocation } from '@/core/session-tools/invokeSessionTool';
 import { OpencodeHTTPSessionKernel } from '@/providers/opencode/execution/OpencodeHTTPSessionKernel';
 import type { OpencodeNativeOutput } from '@/providers/opencode/execution/OpencodeSessionContract';
 import { OpencodeSessionPersistence } from '@/providers/opencode/execution/OpencodeSessionPersistence';
 import type { OpencodeHTTPEvent } from '@/providers/opencode/http/OpencodeHTTPClient';
 
+let resolveCaller: ((id: string) => SessionToolInvocation | undefined) | undefined;
+let sessionConfig: any;
 let kernel: OpencodeHTTPSessionKernel;
 let receive: (event: OpencodeHTTPEvent) => void;
 let output: Array<{ event: OpencodeNativeOutput; session?: string }>;
@@ -27,7 +31,7 @@ beforeEach(async () => {
   read = jest.fn().mockResolvedValue({ data: { output: '', cursor: 0, size: 0, truncated: false } });
   const lease = {
     databasePath: null, isReusable: () => true, onRetired: () => {}, onSuperseded: () => {},
-    subscribe: async (callback: typeof receive) => { receive = callback; },
+    subscribe: async (callback: typeof receive, _error: unknown, _interactive: unknown, resolver: typeof resolveCaller) => { receive = callback; resolveCaller = resolver; },
     registerAgents: async () => ({}), waitForActivation: async () => {}, refreshGlobalForms: async () => {},
     dispose: async () => {},
     request: async (route: string, options?: { body?: unknown }) => {
@@ -41,6 +45,7 @@ beforeEach(async () => {
     },
   };
   const config = { vaultWorkingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: jest.fn() } } as any;
+  sessionConfig = config;
   kernel = new OpencodeHTTPSessionKernel({ config, getActiveTurnId: () => 'turn',
     onNativeOutput: (event: OpencodeNativeOutput, session?: string) => output.push({ event, session }), onNativeTurn: jest.fn(), onClosed: jest.fn(),
   } as any, '/opencode', {}, { acquire: async () => lease } as any, new OpencodeSessionPersistence(config));
@@ -215,4 +220,82 @@ it('keeps later steers behind an earlier pending lookup when a middle lookup fai
   await jest.advanceTimersByTimeAsync(0);
   const steers = bodies.filter((body): body is { text: string } => (body as { delivery?: string }).delivery === 'steer');
   expect(steers.map(body => body.text)).toEqual(['First /writing', 'Third']);
+});
+
+
+const callSessionTool = async (id = 'ses_main') => invokeSessionTool('claudian_list_sessions', {},
+  resolveCaller?.(id) ?? {port:undefined,toolPolicy:undefined,signal:new AbortController().signal});
+const startToolRun = async (policy: ProviderToolPolicy = {kind:'provider-default'}) => {
+  const request = {sessionId:'ses_main',prompt:[{type:'text' as const,text:'work'}]};
+  // The third parameter is the captured execution request, forwarded only by the HTTP path.
+  const completion = kernel.prompt(request, undefined, {toolPolicy:policy,signal:new AbortController().signal});
+  void completion.catch(() => undefined);
+  await jest.advanceTimersByTimeAsync(0);
+  event('session.execution.started');
+  return {completion};
+};
+it.each<ProviderToolPolicy>([{kind:'provider-default'},{kind:'unrestricted'},{kind:'read-only'},{kind:'passive'},{kind:'allow-list',names:['claudian_list_sessions']}])('dispatches session tools with the owning policy %j', async policy => {
+  const list = jest.fn().mockResolvedValue([]);
+  sessionConfig.sessionTools = {list,send:jest.fn()};
+  const {completion} = await startToolRun(policy);
+  const allowed = ['provider-default','unrestricted'].includes(policy.kind);
+  expect((await callSessionTool()).isError).toBe(!allowed);
+  expect(list).toHaveBeenCalledTimes(allowed ? 1 : 0);
+  expect((await callSessionTool('unknown')).isError).toBe(true);
+  event('session.execution.succeeded'); await completion;
+});
+it('denies an unbound caller and pins child calls to the original run through settlement and a later turn', async () => {
+  const unbound = await startToolRun();
+  expect((await callSessionTool()).isError).toBe(true);
+  event('session.execution.succeeded'); await unbound.completion;
+  const list = jest.fn().mockResolvedValue([]);
+  sessionConfig.sessionTools = {list,send:jest.fn()};
+  const first = await startToolRun();
+  event('session.tool.input.started',{id:'spawn',name:'subagent'});
+  event('session.tool.called',{id:'spawn',input:{background:true}});
+  event('session.tool.progress',{id:'spawn',metadata:{sessionID:'child'}});
+  expect((await callSessionTool('child')).isError).toBe(false);
+  const signal = list.mock.calls[0][0] as AbortSignal;
+  event('session.execution.succeeded'); await first.completion;
+  expect(signal.aborted).toBe(true);
+  const second = await startToolRun();
+  expect((await callSessionTool('child')).isError).toBe(true);
+  expect((await callSessionTool()).isError).toBe(false);
+  const nextSignal = list.mock.calls[1][0] as AbortSignal;
+  kernel.cancel('ses_main');
+  expect(nextSignal.aborted).toBe(true);
+  expect((await callSessionTool()).isError).toBe(true);
+  event('session.execution.interrupted'); await second.completion;
+});
+it('normalizes native session tools in live output without losing the raw name', () => {
+  event('session.tool.input.started',{name:'claudian_send_message'});
+  event('session.tool.called',{input:{text:'hello'}});
+  expect(output.at(-1)?.event).toMatchObject({type:'tool_started',name:'claudian_send_message',providerPayload:{rawName:'claudian_send_message'}});
+});
+
+it.each(['cancel', 'completion', 'failure'])('aborts an in-flight child session-tool call on child %s without cancelling the parent', async ending => {
+  const list = jest.fn().mockResolvedValue([]);
+  sessionConfig.sessionTools = { list, send: jest.fn() };
+  const { completion } = await startToolRun();
+  event('session.tool.input.started', { id: 'spawn', name: 'subagent' });
+  event('session.tool.called', { id: 'spawn', input: {} });
+  event('session.tool.progress', { id: 'spawn', metadata: { sessionID: 'child' } });
+  expect((await callSessionTool('child')).isError).toBe(false);
+  const signal = list.mock.calls[0][0] as AbortSignal;
+  if (ending === 'cancel') kernel.cancel('child');
+  else event(ending === 'completion' ? 'session.execution.succeeded' : 'session.execution.failed', { sessionID: 'child' });
+  expect(signal.aborted).toBe(true);
+  expect((await callSessionTool('child')).isError).toBe(true);
+  expect((await callSessionTool()).isError).toBe(false);
+  event('session.execution.succeeded');
+  await completion;
+});
+
+it('auto-approves native session-tool permission requests without opening approval UI', async () => {
+  sessionConfig.interactionPort.requestApproval = jest.fn().mockResolvedValue({ interactionId: 'tool_shell', decision: 'deny' });
+  event('permission.asked', { action: 'claudian_send_message', resources: ['*'] });
+  await jest.advanceTimersByTimeAsync(0);
+  expect(sessionConfig.interactionPort.requestApproval).not.toHaveBeenCalled();
+  expect(requests).toContain('/api/session/ses_main/permission/tool_shell/reply');
+  expect(bodies).toContainEqual({ decision: 'once' });
 });

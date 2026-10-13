@@ -4,6 +4,7 @@ import * as path from 'node:path';
 
 import { testDate, testTime } from '@test/helpers/testClock';
 
+import { encodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import {
   correlatePiUserMessages,
   createPiForkSessionFile,
@@ -17,6 +18,23 @@ import {
 import { encodePiRecoveryPrompt } from '@/providers/pi/history/PiRecoveryPromptCodec';
 
 describe('PiHistoryStore', () => {
+  it('decodes session senders while preserving live-to-native input matching', () => {
+    const envelope = encodeSessionMessage({ from: 'Planner', sessionId: 'sender', text: 'Check this' });
+    const native = parsePiSessionContent(JSON.stringify({ type: 'message', id: 'native-user',
+      message: { role: 'user', content: envelope + '\n\n<active_note>Note</active_note>' } }));
+    expect(native[0]).toMatchObject({ sessionMessage: { from: 'Planner', sessionId: 'sender' }, displayContent: 'Check this' });
+    expect(correlatePiUserMessages([{ id: 'live', role: 'user', content: 'Check this', timestamp: testDate().getTime() }], native))
+      .toEqual({ live: 'native-user' });
+  });
+
+  it('keeps neutral session tool names and native names in replay', () => {
+    const messages = parsePiSessionContent(JSON.stringify({ type: 'message', id: 'assistant', message: {
+      role: 'assistant', content: [{ type: 'toolCall', id: 'tool', name: 'claudian_send_message', arguments: { text: 'Hello' } }],
+    } }));
+    expect(messages[0].toolCalls).toEqual([{ id: 'tool', name: 'claudian_send_message', input: { text: 'Hello' },
+      status: 'running', providerPayload: { rawName: 'claudian_send_message' } }]);
+  });
+
   it('correlates repeated live prompts by their anchored order and leaves unsaved input unbound', () => {
     const native = parsePiSessionContent([
       { type: 'message', id: 'u1', parentId: null, message: { role: 'user', content: 'Repeat' } },

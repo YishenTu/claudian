@@ -7,6 +7,8 @@ import type {
 } from '@/core/execution';
 import { setLocale } from '@/i18n/i18n';
 import { CodexExecutionServerRequestRouter } from '@/providers/codex/execution/CodexExecutionServerRequestRouter';
+import { CodexDynamicToolRegistry } from '@/providers/codex/runtime/CodexDynamicToolRegistry';
+import { createCodexSessionTools } from '@/providers/codex/runtime/CodexSessionTools';
 
 const confirmationRequest = {
   threadId: 'thread-confirmation',
@@ -34,6 +36,7 @@ function createRouter(
     (threadId, turnId) => threadId === 'thread-confirmation' && turnId === 'turn-confirmation',
   );
   router.setActiveTurn({
+    cancellation: new AbortController(),
     localTurnId: 'local-turn',
     nativeThreadId: 'thread-confirmation',
     nativeTurnId: 'turn-confirmation',
@@ -53,6 +56,22 @@ function createPendingQuestion() {
 
 describe('CodexExecutionServerRequestRouter', () => {
   afterEach(() => setLocale('en'));
+
+  it.each(['claudian_list_sessions', 'claudian_sessions.claudian_list_sessions'])(
+    'denies session tools even when the allow-list names %s, while ordinary named tools still work', async name => {
+      const port = { list: jest.fn(async () => []), send: jest.fn() };
+      const router = createRouter(jest.fn(), { kind: 'allow-list', names: [name, 'ordinary'] });
+      const registry = new CodexDynamicToolRegistry();
+      for (const registration of createCodexSessionTools(port)) registry.register(registration);
+      registry.register({ includeInThreadStart: true, tool: { type: 'function', name: 'ordinary', description: '', inputSchema: {} }, handler: async () => ({ success: true, contentItems: [] }) });
+      router.setDynamicToolRegistry(registry);
+      const params = { threadId: 'thread-confirmation', turnId: 'turn-confirmation', callId: 'call', arguments: {} };
+      await expect(router.handleServerRequest('session', 'item/tool/call', { ...params, namespace: 'claudian_sessions', tool: 'claudian_list_sessions' })).resolves.toMatchObject({ success: false });
+      expect(port.list).not.toHaveBeenCalled();
+      await expect(router.handleServerRequest('ordinary', 'item/tool/call', { ...params, namespace: null, tool: 'ordinary' })).resolves.toMatchObject({ success: true });
+    },
+  );
+
   it('requires an explicit answer for the captured Computer Use confirmation, even with unrestricted tools', async () => {
     const askUserQuestion = jest.fn(async (request: ProviderQuestionInteractionRequest) => ({
       interactionId: request.interactionId,
@@ -71,6 +90,7 @@ describe('CodexExecutionServerRequestRouter', () => {
       (threadId, turnId) => threadId === 'thread-confirmation' && turnId === 'turn-confirmation',
     );
     router.setActiveTurn({
+    cancellation: new AbortController(),
       localTurnId: 'local-turn',
       nativeThreadId: 'thread-confirmation',
       nativeTurnId: 'turn-confirmation',
@@ -207,6 +227,7 @@ describe('CodexExecutionServerRequestRouter', () => {
     if (invalidation === 'abort') router.abortAll('cancelled');
     else if (invalidation === 'native resolution') router.resolveNativeRequest('stale', 'thread-confirmation');
     else router.setActiveTurn({
+    cancellation: new AbortController(),
       localTurnId: 'different-local-turn',
       nativeThreadId: 'thread-confirmation',
       nativeTurnId: 'different-native-turn',
@@ -304,7 +325,7 @@ it('localizes Codex command approval labels without changing native decisions', 
     askUserQuestion: async request => ({ interactionId: request.interactionId, answers: {} }),
     dismissInteraction: () => undefined,
   }, () => true);
-  router.setActiveTurn({ localTurnId: 'local-turn', nativeThreadId: 'thread-confirmation', nativeTurnId: 'turn-confirmation', toolPolicy: { kind: 'provider-default' } });
+  router.setActiveTurn({ localTurnId: 'local-turn', nativeThreadId: 'thread-confirmation', nativeTurnId: 'turn-confirmation', toolPolicy: { kind: 'provider-default' }, cancellation: new AbortController() });
   try {
     await expect(router.handleServerRequest('command', 'item/commandExecution/requestApproval', {
       threadId: 'thread-confirmation', turnId: 'turn-confirmation', itemId: 'command-item', command: 'npm test',

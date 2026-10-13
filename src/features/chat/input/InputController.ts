@@ -12,6 +12,7 @@ import type { CanvasSelectionContext } from '@/core/prompt/canvasContext';
 import type { EditorSelectionContext } from '@/core/prompt/editorContext';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderId, TitleGenerationService } from '@/core/providers/types';
+import { encodeSessionMessage, type SessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import type { AskUserAnswers, ChatMessage, ToolCallInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ChatSettings } from '@/features/chat/ChatSettings';
@@ -27,6 +28,7 @@ import { deliverAsyncQuestion } from '@/features/chat/interactions/asyncQuestion
 import type { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import type { LinkedContentController } from '@/features/chat/linked-content';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import type { SessionMessageUnsentReason } from '@/features/chat/session-messaging/SessionMailbox';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import type { SessionComposerPort } from '@/features/chat/sessions/SessionComposer';
 import type { SideChatController } from '@/features/chat/side-chat/SideChatController';
@@ -72,7 +74,7 @@ export interface InputControllerDeps {
   canStartTurn: () => boolean;
   isClosing: () => boolean;
   /** The session-owned turn activity and its single cancellation recipe. */
-  session: Pick<ChatSessionRuntime, 'turns' | 'cancelTurn' | 'stopMainBackgroundWork'>;
+  session: Pick<ChatSessionRuntime, 'turns' | 'cancelTurn' | 'stopMainBackgroundWork' | 'mailbox'>;
   /** Queued work and preparation can outlive the foreground turn's idle notification. */
   onWorkChanged?: () => void;
   /** Destination seam for the shared composer; absent means main-only. */
@@ -137,6 +139,7 @@ export class InputController {
         this.deps.conversationController.cancelBranchDraft();
         const images = message.turnRequest.images ?? [];
         return this.execution.run({
+          origin: 'user',
           displayContent: message.content,
           request: cloneChatTurnRequest(message.turnRequest),
           images: images.length > 0 ? [...images] : undefined,
@@ -209,6 +212,35 @@ export class InputController {
     } finally {
       if (!queued) options?.onDelivery?.(false);
     }
+  }
+
+  /** Mailbox dispatch never reads the composer destination, drafts, or live selections. */
+  get canStartSessionMessage(): boolean {
+    return this.deps.canStartTurn() && !this.turns.isActive && !this.queue.message
+      && !this.preparations.pendingMainAdmission && !this.isPreparingMainTurn
+      && !this.deps.conversationController.hasBranchDraft;
+  }
+
+  async sendSessionMessage(message: SessionMessage, options: {
+    assertBeforeHandoff(): void;
+    onUnsent(reason: SessionMessageUnsentReason): void;
+  }): Promise<void> {
+    if (!this.canStartSessionMessage) {
+      options.onUnsent('deferred');
+      return;
+    }
+    if (this.deps.getTabProviderId() === null) {
+      options.onUnsent('failed');
+      return;
+    }
+    await this.turns.run(signal => this.execution.run({
+      origin: 'session-message',
+      displayContent: message.text,
+      request: { text: encodeSessionMessage(message), images: [], editorSelection: null, browserSelection: null, canvasSelection: null },
+      images: [],
+      composerDraft: 'none',
+      ...options,
+    }, signal));
   }
 
   updateAsyncQuestion(tool: ToolCallInfo): void {
@@ -490,6 +522,7 @@ export class InputController {
     const { displayContent, turnRequest } = this.#buildTurnSubmission(content, imagesForMessage, options);
     const fromComposer = options?.content === undefined || options?.draftConsumed === true;
     return {
+      origin: 'user',
       displayContent,
       request: turnRequest,
       images: imagesForMessage,
@@ -552,6 +585,7 @@ export class InputController {
       sideChat.cancelSide();
       return;
     }
+    this.deps.session.mailbox?.clear();
     // Withdrawing a preparation is the whole Stop; background work keeps running.
     if (!this.#cancelMainStreaming() && !cancelledPreparation) this.deps.session.stopMainBackgroundWork();
   }

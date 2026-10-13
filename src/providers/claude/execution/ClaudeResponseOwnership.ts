@@ -1,14 +1,24 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
+import type { ProviderToolPolicy } from '@/core/execution';
+
 import type { ClaudeExecutionEventChannel, ClaudeNormalizedExecutionEvent } from './ClaudeExecutionEventNormalizer';
+
+export interface ClaudeToolCallOwner {
+  readonly turnId: string;
+  readonly signal: AbortSignal;
+  readonly toolPolicy: ProviderToolPolicy | undefined;
+}
 
 /** Input admission and native response progress have independent lifetimes. */
 export class ClaudeResponseOwnership {
+  private readonly ownerListeners = new Set<(toolId: string, owner: ClaudeToolCallOwner | undefined) => void>();
   private echoedChannel: ClaudeExecutionEventChannel | null = null;
   private readonly streams = new Map<string, ClaudeExecutionEventChannel>();
   private readonly messages = new Map<string, ClaudeExecutionEventChannel>();
   private readonly tools = new Map<string, {
-    channel: ClaudeExecutionEventChannel;
+    channel: ClaudeExecutionEventChannel | undefined;
+    owner?: ClaudeToolCallOwner;
     pending: boolean;
     main: boolean;
   }>();
@@ -35,6 +45,37 @@ export class ClaudeResponseOwnership {
 
   toolChannel(toolId: string): ClaudeExecutionEventChannel | undefined {
     return this.tools.get(toolId)?.channel;
+  }
+
+  toolOwner(toolId: string): ClaudeToolCallOwner | undefined {
+    return this.tools.get(toolId)?.owner;
+  }
+
+  waitForToolOwner(toolId: string, signal: AbortSignal): Promise<ClaudeToolCallOwner | undefined> {
+    if (signal.aborted || this.tools.has(toolId)) return Promise.resolve(this.toolOwner(toolId));
+    // SDK control requests can overtake its async output iterator. Correlate by
+    // native ID only; never substitute whichever run happens to be active.
+    return new Promise(resolve => {
+      const finish = (owner?: ClaudeToolCallOwner) => {
+        window.clearTimeout(timer);
+        signal.removeEventListener('abort', abort);
+        this.ownerListeners.delete(observe);
+        resolve(owner);
+      };
+      const abort = () => finish();
+      const observe = (id: string, owner: ClaudeToolCallOwner | undefined) => {
+        if (id === toolId) finish(owner);
+      };
+      const timer = window.setTimeout(() => finish(), 5_000);
+      this.ownerListeners.add(observe);
+      signal.addEventListener('abort', abort, { once: true });
+    });
+  }
+
+  clear(): void {
+    this.reset('requested');
+    this.reset('background');
+    this.tools.clear();
   }
 
   resolve(message: SDKMessage, requested: boolean, inputIds?: readonly string[]): ClaudeExecutionEventChannel {
@@ -74,6 +115,7 @@ export class ClaudeResponseOwnership {
     message: SDKMessage,
     channel: ClaudeExecutionEventChannel,
     events: readonly ClaudeNormalizedExecutionEvent[],
+    getOwner?: () => ClaudeToolCallOwner | undefined,
   ): void {
     if (message.type === 'stream_event') {
       const key = message.parent_tool_use_id ?? 'main';
@@ -92,13 +134,17 @@ export class ClaudeResponseOwnership {
     for (const normalized of events) {
       if (normalized.type !== 'output') continue;
       const event = normalized.event;
-      if (event.type === 'tool_started' && !this.tools.has(event.toolCallId)) {
+      const existing = 'toolCallId' in event ? this.tools.get(event.toolCallId) : undefined;
+      if (event.type === 'tool_started' && !existing?.channel) {
         const main = event.toolScope.kind === 'main';
-        this.tools.set(event.toolCallId, { channel, pending: true, main });
+        const parent = event.parentToolCallId;
+        const owner = existing ? existing.owner : parent ? this.toolOwner(parent) : getOwner?.();
+        this.tools.set(event.toolCallId, { channel, pending: true, main, owner });
+        for (const listener of this.ownerListeners) listener(event.toolCallId, owner);
         if (main) this.pendingMainTools[channel] += 1;
       } else if (event.type === 'tool_completed') {
         const tool = this.tools.get(event.toolCallId);
-        if (tool?.pending && tool.main) this.pendingMainTools[tool.channel] -= 1;
+        if (tool?.pending && tool.main && tool.channel) this.pendingMainTools[tool.channel] -= 1;
         if (tool) tool.pending = false;
       }
     }
@@ -108,7 +154,13 @@ export class ClaudeResponseOwnership {
     if (this.echoedChannel === channel) this.echoedChannel = null;
     for (const [key, owner] of this.streams) if (owner === channel) this.streams.delete(key);
     for (const [key, owner] of this.messages) if (owner === channel) this.messages.delete(key);
-    for (const [key, tool] of this.tools) if (tool.channel === channel) this.tools.delete(key);
+    // Retain lifetime identity after output settlement: late native calls must
+    // keep the original (now revoked) run, even when another run is active.
+    for (const tool of this.tools.values()) {
+      if (tool.channel !== channel) continue;
+      tool.channel = undefined;
+      tool.pending = false;
+    }
     this.pendingMainTools[channel] = 0;
   }
 }

@@ -14,6 +14,7 @@ function createHost(overrides: Partial<ClaudianProviderHostDeps> = {}): Claudian
     app: {} as ClaudianProviderHostDeps['app'],
     executionLifecycleRegistry: new ProviderExecutionLifecycleRegistry(),
     storage: { installationKey: 'device-key' as never },
+    sessionToolEndpoint: { registerMCPRoute: jest.fn(), registerCallRoute: jest.fn() },
     settings: new SettingsCoordinator(settings, async () => undefined),
     environment: {} as ClaudianProviderHostDeps['environment'],
     notifyProviderChatOptionsChanged: async () => undefined,

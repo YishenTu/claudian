@@ -897,7 +897,7 @@ describe('SessionManagerSurface history dropdown', () => {
       ],
       conversationLifecycle: new ConversationLifecycle({
         conversations: { deleteConversation } as never,
-        sessions: { isRunning: id => id === 'running', retire: async () => undefined, whenSettled: async () => true },
+        sessions: { get: () => null, isRunning: id => id === 'running', retire: async () => undefined, whenSettled: async () => true },
         views: { getAllViews: () => [{ getTabManager: () => manager }] as never },
       }),
       getActiveTab: () => activeTab,

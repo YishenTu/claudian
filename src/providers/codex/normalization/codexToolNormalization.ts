@@ -1,3 +1,5 @@
+import { isSessionTool } from '@/core/tools/toolNames';
+import type { ToolProviderPayload } from '@/core/types';
 import { stringifyUnknown } from '@/utils/stringify';
 
 import { isCodexEncryptedMessage } from './codexSubagentNormalization';
@@ -51,11 +53,18 @@ export function isCodexInternalToolCall(rawName: string | undefined, namespace?:
 
 export function normalizeCodexToolName(rawName: string | undefined): string {
   if (!rawName) return 'tool';
+  const sessionName = rawName.startsWith('claudian_sessions__') ? rawName.slice('claudian_sessions__'.length) : rawName;
+  if (isSessionTool(sessionName)) return sessionName;
   if (NATIVE_TOOLS.has(rawName)) return rawName;
   return TOOL_NAME_MAP[rawName] ?? rawName;
 }
 
+function sessionToolPayload(rawName: string | undefined): Pick<NormalizedCodexToolCall, 'providerPayload'> {
+  return isSessionTool(normalizeCodexToolName(rawName)) ? { providerPayload: { rawName } } : {};
+}
+
 export interface NormalizedCodexToolCall {
+  providerPayload?: ToolProviderPayload;
   name: string;
   input: Record<string, unknown>;
 }
@@ -77,15 +86,17 @@ export function normalizeCodexToolCall(
   return {
     name: normalizeCodexToolName(rawName),
     input: normalizeCodexToolInput(rawName, rawInput),
+    ...sessionToolPayload(rawName),
   };
 }
 
 export function decodeCodexExecEnvelope(
   input: Record<string, unknown>,
 ): NormalizedCodexToolCall[] | null {
-  return decodeCodexExecEnvelopeCalls(input)?.map(({ name, input: normalizedInput }) => ({
+  return decodeCodexExecEnvelopeCalls(input)?.map(({ name, input: normalizedInput, providerPayload }) => ({
     name,
     input: normalizedInput,
+    ...(providerPayload ? { providerPayload } : {}),
   })) ?? null;
 }
 
@@ -110,6 +121,7 @@ export function decodeCodexExecEnvelopeCalls(
       rawInput,
       name: normalizeCodexToolName(call.name),
       input: normalizeCodexToolInput(call.name, rawInput),
+      ...sessionToolPayload(call.name),
     });
   }
 

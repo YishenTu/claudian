@@ -5,6 +5,8 @@ import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
+import { LoopbackSessionToolServer } from '@/core/session-tools/LoopbackSessionToolServer';
+import { SESSION_TOOL_SPECS } from '@/core/session-tools/sessionToolSpecs';
 import { prepareDeepSeekLaunchArtifacts } from '@/providers/deepseek/runtime/DeepSeekLaunchArtifacts';
 
 // The filesystem stays real; individual tests inject the transient lock errors Windows reports for files in use.
@@ -517,4 +519,78 @@ describe('owner lifecycle tether', () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+});
+
+it('runs the sessions plugin in a child, forwarding caller identity, re-reading the route, and cancelling HTTP calls', async () => {
+  const endpoint = new LoopbackSessionToolServer();
+  const replacement = new LoopbackSessionToolServer();
+  const artifacts = await prepareDeepSeekLaunchArtifacts();
+  const calls: Array<{ name: string; args: unknown; callerNativeId: string }> = [];
+  let stopCall = (): void => {};
+  let cancelled!: () => void;
+  const aborted = new Promise<void>(resolve => { cancelled = resolve; });
+  try {
+    const next = await replacement.registerCallRoute(async request => {
+      calls.push({ name: request.name, args: request.args, callerNativeId: request.callerNativeId });
+      if ((request.args as { args: { text?: string } }).args.text === 'hold') {
+        const stopped = new Promise<void>(resolve => request.signal.addEventListener('abort', () => { cancelled(); resolve(); }, { once: true }));
+        stopCall();
+        await stopped;
+      }
+      return { isError: false, text: 'second route' };
+    });
+    const first = await endpoint.registerCallRoute(async request => {
+      calls.push({ name: request.name, args: request.args, callerNativeId: request.callerNativeId });
+      // Replace the launch file while this plugin is still loaded in the child.
+      await artifacts.writeSessionToolRoute(next);
+      return { isError: false, text: 'first route' };
+    });
+    const patch = JSON.parse(await readFile(artifacts.patchPath, 'utf8'));
+    const row = patch.find((entry: any) => entry.insert).insert.find((entry: any) => entry.config?.id === 'claudian').config.plugins.find((entry: any) => entry.id === 'claudian-sessions');
+    expect(row).toBeDefined();
+    await artifacts.writeSessionToolRoute(first);
+    const file = row.config.endpointFile;
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ url: first.url, routeId: first.routeId });
+    const modes = await Promise.all([stat(file), stat(new URL(row.name))]);
+    expect(process.platform === 'win32' || modes.every(mode => (mode.mode & 0o777) === 0o600)).toBe(true);
+    const child = promisify(execFile)(process.execPath, ['--input-type=module', '-e', `
+      const plugin = await import(process.argv[1]);
+      const tools = [];
+      await plugin.apply({ loader: { import: async name => {
+        if (name !== '@deepseek-ai/dsh-tools') throw new Error('Unexpected native dependency');
+        return { defineTool: spec => {
+          if (!spec.output.schema || !spec.output.render) throw new Error('Missing output contract');
+          // Native annotations permit required:true or absence, never required:false.
+          for (const value of Object.values(spec.parameters)) {
+            if ('required' in value && value.required !== true) throw new Error('required must be true when present');
+          }
+          return spec;
+        } };
+      } }, tools: { register: tool => tools.push(tool) } }, JSON.parse(process.argv[2]));
+      const exec = { callId: 'native-call', agent: { id: 'child-native' }, signal: new AbortController().signal };
+      const before = await tools[0].execute({}, exec);
+      const after = await tools[1].execute({ sessionId: 'target', text: 'hello' }, exec);
+      const stop = new AbortController();
+      process.stdin.once('data', () => stop.abort());
+      const pending = tools[1].execute({ text: 'hold' }, { ...exec, signal: stop.signal });
+      let aborted = false;
+      try { await pending; } catch { aborted = true; }
+      process.stdout.write(JSON.stringify({ before, after, aborted, tools: tools.map(tool => ({ name: tool.name, timeoutMs: tool.timeoutMs, parameters: tool.parameters })) }));
+    `, row.name, JSON.stringify(row.config)], { timeout: 10_000 });
+    // Stop only after the real endpoint has received the call and installed its disconnect listener.
+    stopCall = () => { child.child.stdin!.end('abort'); };
+    const { stdout } = await child;
+    const output = JSON.parse(stdout);
+    expect(output).toMatchObject({ before: { text: 'first route' }, after: { text: 'second route' }, aborted: true });
+    expect(output.tools.map((tool: any) => tool.name)).toEqual(SESSION_TOOL_SPECS.map(spec => spec.name));
+    expect(output.tools.every((tool: any) => tool.timeoutMs > 0 && tool.timeoutMs <= 60_000)).toBe(true);
+    expect(output.tools[1].parameters.text).toMatchObject({ type: 'string', required: true });
+    expect(output.tools[1].parameters.sessionId.required).not.toBe(true);
+    await aborted;
+    expect(calls).toEqual([
+      { name: 'claudian_list_sessions', args: { callId: 'native-call', args: {} }, callerNativeId: 'child-native' },
+      { name: 'claudian_send_message', args: { callId: 'native-call', args: { sessionId: 'target', text: 'hello' } }, callerNativeId: 'child-native' },
+      { name: 'claudian_send_message', args: { callId: 'native-call', args: { text: 'hold' } }, callerNativeId: 'child-native' },
+    ]);
+  } finally { await endpoint.close(); await replacement.close(); await artifacts.dispose(); }
 });

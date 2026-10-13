@@ -1,6 +1,7 @@
 import type { ProviderId } from '../types/provider';
 import type { ProviderExecutionSession } from './ProviderExecutionSession';
 import type { ProviderInteractionPort } from './ProviderInteractionPort';
+import type { ProviderSessionToolPort } from './ProviderSessionToolPort';
 
 export type ProviderSessionLifecycle = 'persistent' | 'ephemeral';
 
@@ -21,6 +22,8 @@ export interface ProviderSessionConfig {
   readonly resumeSeed?: ProviderNativeResumeSeed;
   readonly vaultWorkingDirectory: string;
   readonly interactionPort: ProviderInteractionPort;
+  /** Present only for main chat sessions; adapters expose session tools only when it is set. */
+  readonly sessionTools?: ProviderSessionToolPort;
 }
 
 /**

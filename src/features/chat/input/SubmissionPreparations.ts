@@ -22,7 +22,10 @@ export class SubmissionPreparations {
     this.mainAdmissionBarrier = barrier;
     return () => {
       release();
-      if (this.mainAdmissionBarrier === barrier) this.mainAdmissionBarrier = null;
+      if (this.mainAdmissionBarrier === barrier) {
+        this.mainAdmissionBarrier = null;
+        this.onSettled?.();
+      }
     };
   }
 

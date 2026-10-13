@@ -5,6 +5,7 @@ import { holdResponse } from '@test/helpers/ConversationPorts';
 import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { fireEvent, getByRole, waitFor } from '@testing-library/dom';
+import { axe } from 'jest-axe';
 import { App, Component } from 'obsidian';
 
 import type { ChatMessage, Conversation } from '@/core/types';
@@ -36,12 +37,15 @@ beforeEach(async () => {
     settings: {
       model: 'claude-sonnet-4-5', permissionMode: 'normal',
       keyboardNavigation: { focusInputKey: 'i', scrollUpKey: 'w', scrollDownKey: 's' },
-      providerConfigs: { claude: { enabled: true } },
+      providerConfigs: { claude: { enabled: true, visibleModels: ['claude-sonnet-4-5'],
+        discoveredModels: [{ value: 'claude-sonnet-4-5', label: 'Sonnet' }] } },
     },
     getActiveEnvironmentVariables: () => '',
     getConversationSummary: () => conversation,
     getConversationSync: () => conversation,
     getConversationList: () => [conversation],
+    renameConversation: async () => undefined,
+    updateConversation: async () => undefined,
     executionPersistence: {
       registerExecutionBinding: () => {}, releaseExecutionBinding: () => {},
       persistExecutionSnapshot: async () => true, assertConversationExecutionAuthority: async () => {},
@@ -301,4 +305,81 @@ it.each([
     fireEvent.keyDown(input, { key: 'Escape' });
     expect(native.cancelCalls).toBe(1);
   } finally { resolveHistory(null); await sending; }
+});
+
+
+it('lets Escape Stop discard a pending mailbox while no response is active', async () => {
+  await releaseResponse();
+  jest.useRealTimers();
+  const mailbox = tab.session.runtime.mailbox!;
+  // Navigation blocks dispatch without publishing a running response.
+  let finishNavigation!: () => void;
+  const navigation = tab.session.runtime.runConversationNavigation(() => new Promise<void>(resolve => { finishNavigation = resolve; }));
+  expect(mailbox.admit({ from: 'Other session', sessionId: 'other', text: 'Pending request' })).toBe('queued');
+  expect(tab.session.isWorking).toBe(false);
+  expect(mailbox.hasPending).toBe(true);
+  const input = getByRole(tab.dom.inputComposerEl, 'textbox');
+  expect(await axe(input)).toHaveNoViolations();
+  fireEvent.keyDown(input, { key: 'Escape' });
+  try {
+    expect(mailbox.hasPending).toBe(false);
+    expect(harness.backend.sessions.every(session => session.requests.length === 0)).toBe(true);
+  } finally { mailbox.clear(); finishNavigation(); await navigation; }
+});
+
+
+it('dispatches pending mailbox work after the last busy-main reference preparation releases admission', async () => {
+  await tab.executionCoordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+  await tab.executionCoordinator.prepare();
+  const mailbox = tab.session.runtime.mailbox!;
+  let rejectHistory!: (error: Error) => void;
+  const history = new Promise<Conversation | null>((_resolve, reject) => { rejectHistory = reject; });
+  const read = jest.fn((id: string) => id === 'conv-1-source' ? history : Promise.resolve(plugin.getConversationSync(id)));
+  Object.assign(plugin, { getConversationById: read });
+  tab.dom.inputEl.value = '@[Source](claudian-session:conv-1-source)';
+  const preparing = tab.controllers.inputController.sendMessage();
+  expect(read).toHaveBeenCalled();
+  expect(tab.controllers.inputController.isPreparingMainTurn).toBe(true);
+  expect(mailbox.admit({ from: 'Other session', sessionId: 'other', text: 'Mailbox request' })).toBe('queued');
+  await releaseResponse();
+  jest.useRealTimers();
+  expect(tab.session.turns.isActive).toBe(false);
+  expect(mailbox.hasPending).toBe(true);
+  rejectHistory(new Error('Reference unavailable'));
+  await preparing;
+  try {
+    await waitFor(() => expect(harness.backend.sessions.flatMap(session => session.requests)).toHaveLength(1), { onTimeout: error => error });
+    expect(mailbox.hasPending).toBe(false);
+    expect(tab.dom.inputEl.value).toBe('@[Source](claudian-session:conv-1-source)');
+  } finally {
+    mailbox.clear();
+    harness.backend.sessions.forEach(session => session.complete());
+    await tab.session.turns.drain();
+  }
+});
+
+
+it('wakes the mailbox when the user withdraws their queued input', async () => {
+  await tab.executionCoordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+  await tab.executionCoordinator.prepare();
+  Object.assign(plugin, { getConversationById: async (id: string) => plugin.getConversationSync(id) });
+  tab.dom.inputEl.value = 'User follow-up';
+  await tab.controllers.inputController.sendMessage();
+  const mailbox = tab.session.runtime.mailbox!;
+  expect(mailbox.admit({ from: 'Other session', sessionId: 'other', text: 'Mailbox request' })).toBe('queued');
+  await releaseResponse();
+  jest.useRealTimers();
+  expect(tab.session.turns.isActive).toBe(false);
+  expect(mailbox.hasPending).toBe(true);
+  expect(harness.backend.sessions.flatMap(session => session.requests)).toHaveLength(0);
+  tab.controllers.inputController.queue.withdrawToComposer();
+  try {
+    await waitFor(() => expect(harness.backend.sessions.flatMap(session => session.requests)).toHaveLength(1));
+    expect(mailbox.hasPending).toBe(false);
+    expect(tab.dom.inputEl.value).toBe('User follow-up');
+  } finally {
+    mailbox.clear();
+    harness.backend.sessions.forEach(session => session.complete());
+    await tab.session.turns.drain();
+  }
 });

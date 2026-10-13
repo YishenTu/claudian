@@ -43,6 +43,7 @@ describe('DeepSeek additional preset plugins', () => {
     ['duplicate ids', '- { id: a, name: b }\n- { id: a, name: c }\n', /"a".*more than once/],
     // Claudian's own rows (bridge, tool policy and interactive tools Claudian renders) cannot be replaced or shadowed.
     ['Claudian\'s compatibility bridge', '- { id: claudian-compatibility, name: x }\n', /"claudian-compatibility".*Claudian/],
+    ['Claudian sessions bridge', '- { id: claudian-sessions, name: x }\n', /"claudian-sessions".*Claudian/],
     ['a built-in tool row', '- { id: tool-bash, name: "@deepseek-ai/dsh-tool-bash" }\n', /"tool-bash".*Claudian/],
     ['a row nested in Claudian\'s compaction group', '- { id: compaction, name: "cordis:group" }\n', /"compaction".*Claudian/],
   ])('rejects %s with an actionable message', (_case, text, message) => {
@@ -55,7 +56,7 @@ describe('DeepSeek additional preset plugins', () => {
       const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
       Object.defineProperty(process, 'platform', { value: platform });
       try {
-        const paths = { compatibility: '/c.mjs', codeModeFile: '/code-mode', promptFile: () => '/prompt.txt' };
+        const paths = { sessions: '/s.mjs', sessionToolsFile: '/endpoint', compatibility: '/c.mjs', codeModeFile: '/code-mode', promptFile: () => '/prompt.txt' };
         const ids = buildDeepSeekPresetPlugins('claudian', paths).map(row => row.id);
         expect(ids).toContain(shell);
         expect(ids).not.toContain(other);
@@ -75,4 +76,17 @@ describe('DeepSeek additional preset plugins', () => {
     expect(text).not.toMatch(/claudian-deepseek-|\/tmp\/|\\\\/);
     expect((parse(renderDeepSeekPresetPreview([])) as Array<{ id: string }>).at(-1)!.id).toBe('compaction');
   });
+});
+
+it.each(['claudian', 'claudian-code'] as const)('places the sessions bridge in %s before user plugins', preset => {
+  const paths = { compatibility: '/c.mjs', codeModeFile: '/mode', promptFile: () => '/prompt', sessions: '/sessions.mjs', sessionToolsFile: '/endpoint.json' };
+  const rows = buildDeepSeekPresetPlugins(preset, paths, [{ id: 'custom', name: 'custom' }]);
+  const sessions = rows.find(row => row.id === 'claudian-sessions');
+  expect(sessions).toEqual({ id: 'claudian-sessions', name: '/sessions.mjs', config: expect.objectContaining({ endpointFile: '/endpoint.json' }) });
+  expect(rows.indexOf(sessions!)).toBeLessThan(rows.findIndex(row => row.id === 'custom'));
+});
+
+it.each(['claudian-passive', 'claudian-read-only'] as const)('keeps session tools out of %s', preset => {
+  const paths = { compatibility: '/c.mjs', codeModeFile: '/mode', promptFile: () => '/prompt', sessions: '/sessions.mjs', sessionToolsFile: '/endpoint.json' };
+  expect(buildDeepSeekPresetPlugins(preset, paths).map(row => row.id)).not.toContain('claudian-sessions');
 });

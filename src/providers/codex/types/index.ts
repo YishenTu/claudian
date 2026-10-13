@@ -15,6 +15,8 @@ export interface CodexProviderState {
   forkSource?: ForkSource;
   pendingForkTarget?: CodexPendingForkTarget;
   workspaceDependencyToolVersion?: number;
+  /** Absent on threads created before session dynamic tools were exposed. */
+  sessionToolVersion?: number;
 }
 
 export function getCodexState(

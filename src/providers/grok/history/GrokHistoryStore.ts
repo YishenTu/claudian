@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 
+import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import { resolveToolDiffData } from '@/core/tools/toolDiff';
 import { forEachJSONLLine } from '@/utils/jsonlFile';
 
@@ -506,7 +507,9 @@ function finalizeTurn(
   const assistantId = turn.assistantId
     ?? promptId
     ?? `grok-${scope}-turn-${turn.turnIndex}-assistant`;
+  const sessionMessage = decodeSessionMessage(turn.userContent);
   const user: ChatMessage = {
+    ...(sessionMessage ? { sessionMessage: { from: sessionMessage.from, sessionId: sessionMessage.sessionId } } : {}),
     content: turn.userContent,
     id: userId,
     role: 'user',

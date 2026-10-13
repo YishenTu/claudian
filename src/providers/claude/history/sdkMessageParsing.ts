@@ -3,6 +3,7 @@ import {
   parseImageDataUri,
 } from '@/core/execution/imageAttachment';
 import { extractUserDisplayContent } from '@/core/prompt/promptContext';
+import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import { resolveToolDiffData } from '@/core/tools/toolDiff';
 import { isCompactionCanceledStderr, isInterruptSignalText } from '@/providers/claude/history/interrupt';
 
@@ -15,6 +16,7 @@ import type {
   ImageAttachment,
   ToolCallInfo,
 } from '../../../core/types';
+import { normalizeClaudeSessionToolName } from '../normalization/claudeSessionToolNames';
 import { extractXMLTag, parseClaudeTaskNotification } from '../normalization/claudeTaskNotification';
 import { extractClaudeTextContent, isClaudeNoContentPlaceholder } from '../normalization/claudeTextContent';
 import { normalizeClaudeToolResultDetails } from '../normalization/claudeToolResultDetails';
@@ -100,7 +102,9 @@ function extractToolCalls(
     const result = results.get(block.id);
     return {
       id: block.id,
-      name: block.name,
+      name: normalizeClaudeSessionToolName(block.name),
+      ...(normalizeClaudeSessionToolName(block.name) !== block.name
+        ? { providerPayload: { rawName: block.name } } : {}),
       input: block.input ?? {},
       status: result ? (result.isError ? 'error' : 'completed') : 'running',
       result: result?.content,
@@ -208,6 +212,7 @@ export function parseSDKMessageToChat(
       : extractUserDisplayContent(textContent);
   }
 
+  const sessionMessage = sdkMsg.type === 'user' ? decodeSessionMessage(textContent) : null;
   const isInterrupt = sdkMsg.type === 'user' && isInterruptSignalText(textContent);
   const isRebuiltContext = sdkMsg.type === 'user' && isRebuiltContextContent(textContent);
 
@@ -216,6 +221,7 @@ export function parseSDKMessageToChat(
     role: sdkMsg.type,
     content: textContent,
     displayContent,
+    ...(sessionMessage ? { sessionMessage: { from: sessionMessage.from, sessionId: sessionMessage.sessionId } } : {}),
     timestamp,
     toolCalls: sdkMsg.type === 'assistant' ? extractToolCalls(content, toolResults) : undefined,
     contentBlocks: sdkMsg.type === 'assistant' ? mapContentBlocks(content) : undefined,

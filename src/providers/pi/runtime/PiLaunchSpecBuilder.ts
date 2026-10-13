@@ -1,3 +1,5 @@
+import { SESSION_TOOLS } from '@/core/tools/toolNames';
+
 import { decodePiModelId, normalizePiThinkingLevel } from '../models';
 import type { PiProviderSettings } from '../settings';
 import type { PiProviderState } from '../types';
@@ -16,10 +18,12 @@ export interface BuildPiLaunchSpecParams {
   settings: PiProviderSettings;
   systemPrompt?: string;
   thinkingLevel?: string | null;
+  enableSessionTools?: boolean;
   enableTreeBridge?: boolean;
 }
 
 export interface PiLaunchSpec {
+  enableSessionTools?: boolean;
   enableTreeBridge?: boolean;
   args: string[];
   command: string;
@@ -52,9 +56,9 @@ export function buildPiLaunchSpec(params: BuildPiLaunchSpecParams): PiLaunchSpec
   if (params.noTools) {
     args.push('--no-tools');
   } else if (params.tools) {
-    args.push('--tools', params.tools.join(','));
+    args.push('--tools', [...new Set([...params.tools, ...(params.enableSessionTools ? SESSION_TOOLS : [])])].join(','));
   } else if (params.readOnlyTools) {
-    args.push('--tools', READONLY_TOOLS);
+    args.push('--tools', [READONLY_TOOLS, ...(params.enableSessionTools ? SESSION_TOOLS : [])].join(','));
   }
 
   const decodedModel = typeof params.model === 'string' ? decodePiModelId(params.model) : null;
@@ -68,12 +72,14 @@ export function buildPiLaunchSpec(params: BuildPiLaunchSpecParams): PiLaunchSpec
   }
 
   return {
+    ...(params.enableSessionTools ? { enableSessionTools: true } : {}),
     ...(params.enableTreeBridge ? { enableTreeBridge: true } : {}),
     args,
     command: params.command,
     cwd: params.cwd,
     env: params.env ?? process.env,
     processKey: JSON.stringify({
+      enableSessionTools: params.enableSessionTools === true,
       args: withoutSessionTarget(args, sessionFlagIndex),
       command: params.command,
       cwd: params.cwd,

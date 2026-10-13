@@ -2,11 +2,11 @@ import type { Thread, ThreadReadResult } from './codexAppServerTypes';
 import type { CodexRPCTransport } from './CodexRPCTransport';
 
 /** `stopping` means a detached owner is still settling native work; the claimant may retry. */
-export type CodexThreadRelinquishResult = 'transferred' | 'stopping' | 'owned';
+export type CodexThreadRelinquishResult = { completedTurnIds: ReadonlySet<string> } | 'stopping' | 'owned';
 
 export interface CodexThreadClient {
   relinquish(threadId: string, receiver: CodexThreadClient): CodexThreadRelinquishResult;
-  adoptChild(thread: Pick<Thread, 'id' | 'status'>, parentId: string): void;
+  adoptChild(thread: Pick<Thread, 'id' | 'status'>, parentId: string, completedTurnIds?: ReadonlySet<string>): void;
   closed(): void;
   notification(method: string, params: unknown): void;
   serverRequest(requestId: string | number, method: string, params: unknown): Promise<unknown>;
@@ -66,9 +66,9 @@ export class CodexThreadRouter {
 
   register(client: CodexThreadClient): void { this.clients.add(client); }
 
-  claim(threadId: string, client: CodexThreadClient): void {
+  claim(threadId: string, client: CodexThreadClient): ReadonlySet<string> | undefined {
     const existing = this.owners.get(threadId);
-    const handoff = existing && existing !== client ? existing.relinquish(threadId, client) : 'transferred';
+    const handoff = existing && existing !== client ? existing.relinquish(threadId, client) : undefined;
     if (handoff === 'stopping') {
       throw new Error('The previous Codex work for this conversation is still stopping. Retry when it finishes.');
     }
@@ -77,6 +77,7 @@ export class CodexThreadRouter {
     for (const child of this.descendants.values()) {
       if (getParentId(child) === threadId && !this.owners.has(child.id)) client.adoptChild(child, threadId);
     }
+    return handoff?.completedTurnIds;
   }
 
   release(client: CodexThreadClient, threadId?: string): void {

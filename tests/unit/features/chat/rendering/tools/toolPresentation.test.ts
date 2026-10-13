@@ -134,6 +134,14 @@ describe('toolPresentation', () => {
     });
   });
 
+  it.each([
+    ['claudian_list_sessions', 'List sessions'],
+    ['claudian_send_message', 'Message session'],
+  ])('presents %s with its readable name and accessible label', (tool, label) => {
+    expect(getToolName(tool, {})).toBe(label);
+    expect(getToolLabel(tool, {})).toBe(label);
+  });
+
   describe('getToolName', () => {
     it('should return tool name for standard tools', () => {
       expect(getToolName('Read', {})).toBe('Read');

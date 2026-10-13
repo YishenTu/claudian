@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import type { SessionToolRoute } from '@/core/session-tools/SessionToolEndpoint';
+
 import { DEEPSEEK_PRESETS, type DeepSeekPreset } from '../types';
-import { DEEPSEEK_COMPATIBILITY_SOURCE, DEEPSEEK_EPHEMERAL_SOURCE, DEEPSEEK_LIFECYCLE_SOURCE } from './DeepSeekCompatibility';
+import { DEEPSEEK_COMPATIBILITY_SOURCE, DEEPSEEK_EPHEMERAL_SOURCE, DEEPSEEK_LIFECYCLE_SOURCE, DEEPSEEK_SESSIONS_SOURCE } from './DeepSeekCompatibility';
 import { buildDeepSeekPresetPlugins, type DeepSeekPresetPlugin } from './DeepSeekPresetPlugins';
 
 /** Launch-only overlay for one shared Host: every Claudian preset, the lifecycle tether and ephemeral sessions. */
@@ -16,6 +18,8 @@ export interface DeepSeekLaunchArtifacts {
   writePrompt(preset: DeepSeekPreset, text: string): Promise<void>;
   /** Chat agents read it at creation and at each turn start, so a change never lands mid-turn. */
   writeCodeMode(enabled: boolean): Promise<void>;
+  /** Atomically publishes an endpoint replacement without restarting the native Host. */
+  writeSessionToolRoute(route: Pick<SessionToolRoute, 'url' | 'routeId'>): Promise<void>;
   /**
    * Makes the next native fork of `parent` at `atSeq` ephemeral until the returned withdrawal runs. Callers serialize
    * forks so no other fork of the same parent can claim it.
@@ -28,9 +32,12 @@ export interface DeepSeekLaunchArtifacts {
 
 export async function prepareDeepSeekLaunchArtifacts(
   directory = tmpdir(), presetPlugins: readonly DeepSeekPresetPlugin[] = [],
+  sessionToolRoute?: Pick<SessionToolRoute, 'url' | 'routeId'>,
 ): Promise<DeepSeekLaunchArtifacts> {
   const root = await mkdtemp(join(directory, 'claudian-deepseek-'));
   const compatibilityPath = join(root, 'claudian-compatibility.mjs');
+  const sessionsPath = join(root, 'claudian-sessions.mjs');
+  const sessionToolsFile = join(root, 'session-tools.json');
   const lifecyclePath = join(root, 'claudian-lifecycle.mjs');
   const promptPath = (preset: DeepSeekPreset): string => join(root, 'prompts', `${preset}.txt`);
   const codeModePath = join(root, 'code-mode');
@@ -57,6 +64,8 @@ export async function prepareDeepSeekLaunchArtifacts(
   };
   const writePrompt = (preset: DeepSeekPreset, text: string): Promise<void> => replace(promptPath(preset), text);
   const writeCodeMode = (enabled: boolean): Promise<void> => replace(codeModePath, enabled ? 'both' : 'native');
+  const writeSessionToolRoute = (route: Pick<SessionToolRoute, 'url' | 'routeId'>): Promise<void> =>
+    replace(sessionToolsFile, JSON.stringify({ url: route.url, routeId: route.routeId }));
   const offers = new Map<string, { parent: string; atSeq: number; token: string }>();
   const writeOffers = (): Promise<void> => replace(ephemeralStatePath, JSON.stringify({ forks: [...offers.values()] }));
   const offerEphemeralFork = async (parent: string, atSeq: number): Promise<() => Promise<void>> => {
@@ -73,7 +82,7 @@ export async function prepareDeepSeekLaunchArtifacts(
         && ready.spillGuard === true && ready.attachmentGuard === true;
     } catch { return false; }
   };
-  const paths = { compatibility: compatibilityPath, codeModeFile: codeModePath, promptFile: promptPath };
+  const paths = { sessions: sessionsPath, sessionToolsFile, compatibility: compatibilityPath, codeModeFile: codeModePath, promptFile: promptPath };
   try {
     await mkdir(join(root, 'prompts'), { mode: 0o700 });
     const patch = [
@@ -91,6 +100,8 @@ export async function prepareDeepSeekLaunchArtifacts(
       { insert: [{ id: 'claudian-ephemeral', name: ephemeralPath, config: { stateFile: ephemeralStatePath, readyFile: ephemeralReadyPath, spillRoot: ephemeralSpillPath, attachmentRoot: ephemeralAttachmentPath } }] },
     ];
     await Promise.all([
+      replace(sessionsPath, DEEPSEEK_SESSIONS_SOURCE),
+      sessionToolRoute ? writeSessionToolRoute(sessionToolRoute) : replace(sessionToolsFile, '{}'),
       writeFile(compatibilityPath, DEEPSEEK_COMPATIBILITY_SOURCE, { mode: 0o600 }),
       writeFile(lifecyclePath, DEEPSEEK_LIFECYCLE_SOURCE, { mode: 0o600 }),
       writeFile(ephemeralPath, DEEPSEEK_EPHEMERAL_SOURCE, { mode: 0o600 }),
@@ -104,7 +115,7 @@ export async function prepareDeepSeekLaunchArtifacts(
     await removeRoot(root);
     throw error;
   }
-  return { patchPath, desktopRunnerPath, writePrompt, writeCodeMode, offerEphemeralFork, readEphemeralReady, dispose: () => removeRoot(root) };
+  return { patchPath, desktopRunnerPath, writeSessionToolRoute, writePrompt, writeCodeMode, offerEphemeralFork, readEphemeralReady, dispose: () => removeRoot(root) };
 }
 
 /**

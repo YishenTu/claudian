@@ -6,6 +6,10 @@ import {
   buildPromptWithHistoryContext,
 } from '@/core/prompt/historyContext';
 import { appendLinkedContent, appendSelectionContexts, appendSessionReferences } from '@/core/prompt/promptContext';
+import { invokeSessionTool } from '@/core/session-tools/invokeSessionTool';
+import { SESSION_TOOL_ROUTE_HEADER, type SessionToolRoute } from '@/core/session-tools/SessionToolEndpoint';
+import { SESSION_TOOL_MCP_SERVER_NAME } from '@/core/session-tools/sessionToolMCP';
+import { isSessionTool } from '@/core/tools/toolNames';
 
 import {
   type ChatRewindMode,
@@ -30,6 +34,7 @@ import type { ChatMessage } from '../../../core/types';
 import {
   type ACPContentBlock,
   ACPInteractionController,
+  type ACPMCPServer,
   type ACPPromptResponse,
   ACPRequestedTurn,
   type ACPSessionConfigOption,
@@ -145,6 +150,7 @@ RewindableExecutionSession {
   readonly sessionInstanceId = randomUUID();
 
   private active: ActiveExecution | null = null;
+  private sessionToolRoute: Promise<SessionToolRoute> | null = null;
   private cancellationFlight: Promise<void> | null = null;
   private cancellationGeneration = 0;
   private disposalFlight: Promise<void> | null = null;
@@ -255,14 +261,19 @@ RewindableExecutionSession {
     this.disposed = true;
     this.quarantineGeneration += 1;
     this.disposalFlight = (async () => {
-      const active = this.active;
-      if (active) await this.#cancelRun(active.run, 'session-disposed');
-      if (this.cancellationFlight) await this.cancellationFlight;
-      await this.#shutdownNative();
-      this.interactionController.dispose();
-      this.interactionRouter.dismissAll('session-disposed');
-      this.state.clearListeners();
-      this.#updateSnapshot('disposed');
+      try {
+        const active = this.active;
+        if (active) await this.#cancelRun(active.run, 'session-disposed');
+        if (this.cancellationFlight) await this.cancellationFlight;
+        await this.#shutdownNative();
+      } finally {
+        const route = await this.sessionToolRoute?.catch(() => null);
+        route?.dispose();
+        this.interactionController.dispose();
+        this.interactionRouter.dismissAll('session-disposed');
+        this.state.clearListeners();
+        this.#updateSnapshot('disposed');
+      }
     })();
     return this.disposalFlight;
   }
@@ -325,6 +336,7 @@ RewindableExecutionSession {
         recoverable: false,
       });
       this.#emitCurrentSnapshot();
+      active.abortController.abort();
       active.run.finish({
         category: 'configuration',
         message: 'Grok Build does not support reliable exact allow-list enforcement.',
@@ -385,6 +397,7 @@ RewindableExecutionSession {
         recoverable: true,
       });
       this.#emitCurrentSnapshot();
+      active.abortController.abort();
       active.run.finish({
         category,
         message: error instanceof Error ? error.message : String(error),
@@ -443,11 +456,21 @@ RewindableExecutionSession {
       cwd: this.config.vaultWorkingDirectory,
       env: buildGrokRuntimeEnv(this.plugin.settings, command),
       requestPermission: (request, signal) => {
+        const active = this.active;
+        const sessionTool = normalizeGrokToolName(
+          request.toolCall.title ?? '', request.toolCall.rawInput, request.toolCall.rawOutput,
+        );
+        if (isSessionTool(sessionTool)) {
+          return Promise.resolve(
+            !active || !this.config.sessionTools || signal?.aborted || this.#isCancellationRequested(active)
+              ? { outcome: { outcome: 'cancelled' } }
+              : mapACPApprovalDecision('allow', request.options),
+          );
+        }
         const policy = this.active?.request.toolPolicy.kind;
         if (policy === 'passive' || policy === 'read-only') {
           return Promise.resolve({ outcome: { outcome: 'cancelled' } });
         }
-        const active = this.active;
         if (active && shouldAutoApproveGrokPermission(
           active.request.configuration.permissionMode,
           request.toolCall.kind,
@@ -600,10 +623,12 @@ RewindableExecutionSession {
         ),
       };
     }
+    const mcpServers = await this.#getMCPServers();
+    this.#throwIfCancellationRequested(active);
     const response = await native.newSession({
       _meta: this.#buildSessionMeta(request),
       cwd: this.config.vaultWorkingDirectory,
-      mcpServers: [],
+      mcpServers,
     });
     this.#throwIfCancellationRequested(active);
     this.#captureProviderSession(response.sessionId, null);
@@ -625,10 +650,12 @@ RewindableExecutionSession {
     sessionConfigurationKey: string | null,
   ): Promise<string> {
     const owner = this.#getNativeOwner(native);
+    const mcpServers = await this.#getMCPServers();
+    this.#throwIfCancellationRequested(active);
     const response = await native.loadSession({
       _meta: this.#buildSessionMeta(request),
       cwd: this.config.vaultWorkingDirectory,
-      mcpServers: [],
+      mcpServers,
       sessionId: targetSessionId,
     });
     this.#throwIfCancellationRequested(active);
@@ -646,6 +673,37 @@ RewindableExecutionSession {
     await this.#publishSessionModels(response, owner.modelContextKey);
     this.#throwIfCancellationRequested(active);
     return loadedSessionId;
+  }
+
+  async #getMCPServers(): Promise<ACPMCPServer[]> {
+    if (!this.config.sessionTools) return [];
+    this.sessionToolRoute ??= this.plugin.sessionToolEndpoint.registerMCPRoute(call => {
+      // Capture ownership before dispatch: a pending call must never adopt a later run.
+      const active = this.active;
+      return invokeSessionTool(call.name, call.args, {
+        port: this.config.sessionTools,
+        toolPolicy: active?.request.toolPolicy,
+        signal: active
+          ? AbortSignal.any([active.abortController.signal, call.signal])
+          : AbortSignal.abort(),
+      });
+    }).then(route => {
+      if (this.disposed) {
+        route.dispose();
+        throw new GrokExecutionCancellationError();
+      }
+      return route;
+    }).catch(error => {
+      this.sessionToolRoute = null;
+      throw error;
+    });
+    const route = await this.sessionToolRoute;
+    return [{
+      type: 'http',
+      name: SESSION_TOOL_MCP_SERVER_NAME,
+      url: route.url,
+      headers: [{ name: SESSION_TOOL_ROUTE_HEADER, value: route.routeId }],
+    }];
   }
 
   #buildSessionMeta(
@@ -821,6 +879,7 @@ RewindableExecutionSession {
     }
     this.#updateSnapshot('idle');
     this.#emitCurrentSnapshot();
+    active.abortController.abort();
     active.run.finish({
       providerPayload: response,
       reason: mapStopReason(response.stopReason),

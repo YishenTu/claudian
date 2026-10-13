@@ -1,5 +1,6 @@
 import type { ProviderId } from '@/core/providers/types';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
+import type { SessionMailbox } from '@/features/chat/session-messaging/SessionMailbox';
 import type { SessionChange, SessionModel } from '@/features/chat/sessions/SessionModel';
 import type { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import { SessionAttention } from '@/features/chat/state/SessionAttention';
@@ -24,6 +25,7 @@ export class ChatSessionRuntime {
   readonly sessionKey = `session-${++nextSessionKey}`;
   readonly attention = new SessionAttention();
   private currentModel: SessionModel | null = null;
+  private mailboxOwner: SessionMailbox | null = null;
   private childOwner: SideChatController | null = null;
   private lifetime: 'open' | 'closing' | 'disposed' = 'open';
   private readonly listeners = new Set<() => void>();
@@ -83,6 +85,14 @@ export class ChatSessionRuntime {
       });
     }
     await this.currentModel?.conversationController.awaitCreation();
+  }
+
+  get mailbox(): SessionMailbox | null { return this.mailboxOwner; }
+
+  installMailbox(mailbox: SessionMailbox): void {
+    if (this.mailboxOwner) throw new Error('Mailbox already installed');
+    this.mailboxOwner = mailbox;
+    this.subscribe(() => mailbox.wake());
   }
 
   installSideChat(side: SideChatController): void {
@@ -154,7 +164,7 @@ export class ChatSessionRuntime {
    */
   get isIdle(): boolean {
     return !this.turns.isActive && this.pendingBackgroundWork === 0 && this.modelWork.size === 0 && !this.hasBackgroundWork && !this.isConversationBusy
-      && !this.hasPendingInteraction;
+      && !this.hasPendingInteraction && !this.mailboxOwner?.hasPending;
   }
 
   private get isConversationBusy(): boolean {
@@ -162,7 +172,7 @@ export class ChatSessionRuntime {
   }
 
   /** An approval or question awaits the user. */
-  private get hasPendingInteraction(): boolean {
+  get hasPendingInteraction(): boolean {
     return !!this.currentModel?.hasPendingInteraction;
   }
 
@@ -193,6 +203,7 @@ export class ChatSessionRuntime {
    * then cancels provider execution. Non-user reasons also release the turn's presentation.
    */
   cancelTurn(reason: TurnCancelReason, options: TurnCancelOptions = {}): boolean {
+    this.mailboxOwner?.clear();
     const cancelled = this.turns.cancel(reason);
     try {
       if (options.dismissInteractions) this.currentModel?.dismissInteractions();
@@ -215,6 +226,7 @@ export class ChatSessionRuntime {
   beginShutdown(): void {
     if (this.lifetime !== 'open') return;
     this.lifetime = 'closing';
+    this.mailboxOwner?.clear();
     this.turns.cancel('shutdown');
     this.childOwner?.beginShutdown();
   }

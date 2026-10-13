@@ -4,6 +4,8 @@ TOOL_AGENT_OUTPUT,
 TOOL_ASK_USER_QUESTION,
 TOOL_BASH,
 TOOL_BASH_OUTPUT,
+TOOL_CLAUDIAN_LIST_SESSIONS,
+TOOL_CLAUDIAN_SEND_MESSAGE,
 TOOL_EDIT,
 TOOL_EXEC,
 TOOL_GLOB,
@@ -48,6 +50,8 @@ describe('getToolIcon', () => {
     [TOOL_AGENT_OUTPUT, 'bot'],
     [TOOL_ASK_USER_QUESTION, 'help-circle'],
     [TOOL_SKILL, 'zap'],
+    [TOOL_CLAUDIAN_LIST_SESSIONS, 'messages-square'],
+    [TOOL_CLAUDIAN_SEND_MESSAGE, 'send'],
   ])('should return "%s" icon for %s tool', (tool, expectedIcon) => {
     expect(getToolIcon(tool)).toBe(expectedIcon);
   });

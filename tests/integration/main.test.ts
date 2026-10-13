@@ -17,8 +17,10 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
+import { LoopbackSessionToolServer } from '@/core/session-tools/LoopbackSessionToolServer';
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
 import { type ClaudianSettings, type Conversation, type SessionMetadata, VIEW_TYPE_CLAUDIAN } from '@/core/types';
+import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { ZenModeController } from '@/features/chat/zen/ZenModeController';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
@@ -1324,6 +1326,75 @@ describe('ClaudianPlugin', () => {
       await (plugin as any).applicationShutdownPromise;
 
       expect(disposeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('fences session tools synchronously and joins the service before provider teardown', async () => {
+      await plugin.onload();
+      const host = (plugin as unknown as { chatHost: ClaudianChatFeatureHost }).chatHost;
+      const binding = host.bindSessionTools('caller');
+      let release!: () => void;
+      const pending = new Promise<void>(resolve => { release = resolve; });
+      const dispose = jest.spyOn(SessionMessagingService.prototype, 'dispose').mockReturnValueOnce(pending);
+      const disposeWorkspaces = jest.spyOn(ProviderWorkspaceRegistry, 'disposeInitialized');
+      plugin.onunload();
+      try {
+        await expect(binding.port.list(new AbortController().signal)).rejects.toThrow('shutting down');
+        await waitForCondition(() => dispose.mock.calls.length > 0);
+        expect(disposeWorkspaces).not.toHaveBeenCalled();
+      } finally {
+        release();
+        await (plugin as unknown as { applicationShutdownPromise: Promise<void> }).applicationShutdownPromise;
+        dispose.mockRestore();
+        disposeWorkspaces.mockRestore();
+      }
+    });
+
+    it.each([false, true])('closes the session endpoint after workspace cleanup settles (failure: %s)', async fails => {
+      await plugin.onload();
+      expect(plugin.providerHost.sessionToolEndpoint).toBeInstanceOf(LoopbackSessionToolServer);
+      let finishWorkspace!: () => void;
+      const workspaceCleanup = new Promise<void>((resolve, reject) => {
+        finishWorkspace = () => fails ? reject(new Error('workspace cleanup failed')) : resolve();
+      });
+      const disposeWorkspaces = jest.spyOn(ProviderWorkspaceRegistry, 'disposeInitialized')
+        .mockReturnValueOnce(workspaceCleanup);
+      let finishClose!: () => void;
+      const close = jest.spyOn(LoopbackSessionToolServer.prototype, 'close')
+        .mockImplementationOnce(() => new Promise<void>(resolve => { finishClose = resolve; }));
+      let stopped = false;
+      plugin.onunload();
+      const shutdown = (plugin as any).applicationShutdownPromise.then(() => { stopped = true; });
+      try {
+        await waitForCondition(() => disposeWorkspaces.mock.calls.length > 0);
+        expect(close).not.toHaveBeenCalled();
+        finishWorkspace();
+        await waitForCondition(() => close.mock.calls.length > 0);
+        expect(stopped).toBe(false);
+        finishClose();
+        await shutdown;
+        expect(stopped).toBe(true);
+        expect(close).toHaveBeenCalledTimes(1);
+      } finally {
+        finishWorkspace();
+        finishClose?.();
+        close.mockRestore();
+        disposeWorkspaces.mockRestore();
+      }
+    });
+
+    it('releases workspaces and the endpoint when native archive cleanup fails', async () => {
+      await plugin.onload();
+      const failure = new Error('archive cleanup failed');
+      jest.spyOn((plugin as any).nativeSessionArchives, 'dispose').mockRejectedValueOnce(failure);
+      const disposeWorkspaces = jest.spyOn(ProviderWorkspaceRegistry, 'disposeInitialized');
+      const close = jest.spyOn(LoopbackSessionToolServer.prototype, 'close');
+
+      plugin.onunload();
+      await expect((plugin as any).applicationShutdownPromise).rejects.toBe(failure);
+
+      expect(disposeWorkspaces).toHaveBeenCalledTimes(1);
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(disposeWorkspaces.mock.invocationCallOrder[0]).toBeLessThan(close.mock.invocationCallOrder[0]);
     });
 
     it('drains views and detached sessions before disposing execution and workspace resources', async () => {

@@ -18,6 +18,7 @@ interface OwnedThread {
   revision: number;
   subscribed: boolean;
   abandoned: boolean;
+  /** Turns whose request/output lifetime ended; native cleanup may still be pending. */
   readonly completed: Set<string>;
   readonly inputs: Set<() => void>;
   starting?: Promise<unknown>;
@@ -50,8 +51,9 @@ export class CodexThreadScope implements CodexThreadClient {
 
   claim(threadId: string): void { this.#adopt(threadId, null); }
 
-  adoptChild(thread: Pick<Thread, 'id' | 'status'>, parentId: string): void {
+  adoptChild(thread: Pick<Thread, 'id' | 'status'>, parentId: string, completedTurnIds?: ReadonlySet<string>): void {
     const child = this.#adopt(thread.id, parentId);
+    for (const turnId of completedTurnIds ?? []) child.completed.add(turnId);
     if (thread.status.type === 'active') child.state = 'active';
     else this.#idle(child);
     if (this.stopped) void this.#stopThread(child);
@@ -196,12 +198,26 @@ export class CodexThreadScope implements CodexThreadClient {
     if (subtree.some(owned => owned.state !== 'idle' || owned.starting !== undefined || owned.stopping !== undefined)) return 'stopping';
     for (const owned of subtree) this.#forget(owned.id);
     for (const child of subtree.slice(1)) {
-      receiver.adoptChild({ id: child.id, status: { type: 'idle' } }, child.parentId!);
+      receiver.adoptChild({ id: child.id, status: { type: 'idle' } }, child.parentId!, child.completed);
     }
-    return 'transferred';
+    return { completedTurnIds: thread.completed };
+  }
+
+  /** Retires client authority without claiming that native work has stopped. */
+  releaseTurn(threadId: string, turnId: string): void {
+    const thread = this.threads.get(threadId);
+    if (!thread) return;
+    thread.completed.add(turnId);
+    // Server requests can identify a turn before its start acknowledgement.
+    // Preserve that native identity until cleanup, even though client authority ended.
+    if (thread.state === 'starting' && !thread.turnId) thread.turnId = turnId;
   }
 
   serverRequest(id: string | number, method: string, params: unknown): Promise<unknown> {
+    const data = params as { threadId?: string; turnId?: string };
+    if (data.threadId && data.turnId && this.threads.get(data.threadId)?.completed.has(data.turnId)) {
+      return Promise.reject(new Error('Stale Codex server request'));
+    }
     return this.observer?.serverRequest(id, method, params)
       ?? Promise.reject(new Error('Codex chat has closed.'));
   }
@@ -218,7 +234,15 @@ export class CodexThreadScope implements CodexThreadClient {
       if (this.stopped || child.abandoned) void this.#stopThread(child);
       else void this.#readState(child);
     }
-    if (turnId && thread.completed.has(turnId) && data.item?.type !== 'subAgentActivity') return;
+    if (turnId && thread.completed.has(turnId) && data.item?.type !== 'subAgentActivity') {
+      // An errored run can settle locally before its native turn stops. Keep that
+      // cleanup, but never let its late completion idle a newer start or turn.
+      if (method === 'turn/completed' && thread.turnId === turnId) {
+        this.#idle(thread);
+        this.observer?.workChanged();
+      }
+      return;
+    }
     if (method === 'turn/started') {
       thread.turnId = turnId ?? null;
       thread.state = 'active';
@@ -249,8 +273,8 @@ export class CodexThreadScope implements CodexThreadClient {
   #adopt(threadId: string, parentId: string | null): OwnedThread {
     const existing = this.threads.get(threadId);
     if (existing) return existing;
-    this.connection.threads.claim(threadId, this);
-    const thread: OwnedThread = { id: threadId, parentId, state: parentId === null ? 'idle' : 'unknown', turnId: null, revision: 0, subscribed: parentId !== null, abandoned: false, completed: new Set(), inputs: new Set() };
+    const completed = this.connection.threads.claim(threadId, this);
+    const thread: OwnedThread = { id: threadId, parentId, state: parentId === null ? 'idle' : 'unknown', turnId: null, revision: 0, subscribed: parentId !== null, abandoned: false, completed: new Set(completed), inputs: new Set() };
     this.threads.set(threadId, thread);
     return thread;
   }

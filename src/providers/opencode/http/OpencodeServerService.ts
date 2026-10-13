@@ -1,14 +1,17 @@
 import { randomUUID } from 'node:crypto';
 
 import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTransitionFence';
+import { invokeSessionTool, type SessionToolInvocation } from '@/core/session-tools/invokeSessionTool';
+import type { SessionToolEndpoint, SessionToolRoute } from '@/core/session-tools/SessionToolEndpoint';
 
 import { prepareOpencodeLaunchArtifacts } from '../runtime/OpencodeLaunchArtifacts';
 import { resolveOpencodeDatabasePath } from '../runtime/OpencodePaths';
 import { isRecord, OpencodeHTTPClient, type OpencodeHTTPEvent, pollOpencodeUntil } from './OpencodeHTTPClient';
 import { createOpencodeServerConfig, type OpencodeServerConfig } from './OpencodeServerConfig';
 
-type Subscriber = { event: (event: OpencodeHTTPEvent) => void; error: (error: Error) => void; interactive: () => boolean };
+type Subscriber = { event: (event: OpencodeHTTPEvent) => void; error: (error: Error) => void; interactive: () => boolean; sessionTools?: (nativeId: string) => SessionToolInvocation | undefined };
 interface Server {
+  callRoute?: SessionToolRoute;
   client: OpencodeHTTPClient;
   config: OpencodeServerConfig;
   databasePath: string | null;
@@ -41,6 +44,8 @@ export class OpencodeServerService {
   private disposal: Promise<void> | null = null;
   /** The committed default launch; retained when idle and never evicted as an idle peer. */
   private currentLaunch: { compatibility: string; key: string } | null = null;
+
+  constructor(private readonly sessionToolEndpoint?: SessionToolEndpoint) {}
 
   /** Retained execution kernels must fence new turns as well as new leases. */
   async waitUntilAvailable(signal?: AbortSignal): Promise<void> {
@@ -210,21 +215,43 @@ export class OpencodeServerService {
   }
 
   private async create(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, signal: AbortSignal): Promise<Server> {
-    // Leases register agents with their own instructions; base prompt files are placeholders.
-    const artifacts = await prepareOpencodeLaunchArtifacts({ workspaceRoot: cwd, runtimeEnv: environment, nativeVersion: 2, preserveExistingPrompts: true });
-    signal.throwIfAborted();
-    const config = await createOpencodeServerConfig(cwd, environment);
-    const client = new OpencodeHTTPClient(cliPath, cwd, { ...environment, OPENCODE_CONFIG: config.file, OPENCODE_CONFIG_CONTENT: artifacts.configContent });
-    const server: Server = { client, config, databasePath: artifacts.databasePath, subscribers: new Set(), forms: new Map() };
+    const subscribers = new Set<Subscriber>();
+    const config = await createOpencodeServerConfig(cwd, environment, !!this.sessionToolEndpoint);
+    let callRoute: SessionToolRoute | undefined;
+    let client: OpencodeHTTPClient | undefined;
     try {
+      callRoute = await this.sessionToolEndpoint?.registerCallRoute(request => {
+        const owners = [...subscribers].flatMap(subscriber => {
+          const owner = subscriber.sessionTools?.(request.callerNativeId);
+          return owner ? [owner] : [];
+        });
+        const owner = owners.length === 1 ? owners[0] : undefined;
+        return invokeSessionTool(request.name, request.args, {
+          port: owner?.port, toolPolicy: owner?.toolPolicy,
+          signal: owner ? AbortSignal.any([owner.signal, request.signal]) : request.signal,
+        });
+      });
+      // Session instructions and the per-process route never enter the sharing key.
+      const artifacts = await prepareOpencodeLaunchArtifacts({ workspaceRoot: cwd, runtimeEnv: environment, nativeVersion: 2, preserveExistingPrompts: true, sessionToolsPluginPath: config.sessionToolsPluginPath });
+      signal.throwIfAborted();
+      client = new OpencodeHTTPClient(cliPath, cwd, {
+        ...environment, OPENCODE_CONFIG: config.file, OPENCODE_CONFIG_CONTENT: artifacts.configContent,
+        ...(callRoute ? { CLAUDIAN_SESSION_TOOLS_URL: callRoute.url, CLAUDIAN_SESSION_TOOLS_ROUTE_ID: callRoute.routeId } : {}),
+      });
+      const server: Server = { client, config, callRoute, databasePath: artifacts.databasePath, subscribers, forms: new Map() };
       await config.initialize(error => { void this.close(server, error); });
       signal.throwIfAborted();
       return server;
-    } catch (error) { await this.close(server); throw error; }
+    } catch (error) {
+      callRoute?.dispose();
+      try { await client?.dispose(); } finally { await config.dispose(); }
+      throw error;
+    }
   }
 
   private close(server: Server, error?: Error): Promise<void> {
     if (server.close) return server.close;
+    server.callRoute?.dispose();
     server.close = (async () => {
       if (error) await Promise.allSettled([...server.subscribers].map(async subscriber => subscriber.error(error)));
       server.subscribers.clear();
@@ -287,9 +314,9 @@ export class OpencodeServerLease {
     }
   }
 
-  async subscribe(event: Subscriber['event'], error: Subscriber['error'], interactive: Subscriber['interactive']): Promise<void> {
+  async subscribe(event: Subscriber['event'], error: Subscriber['error'], interactive: Subscriber['interactive'], sessionTools?: Subscriber['sessionTools']): Promise<void> {
     this.controller.signal.throwIfAborted();
-    const subscriber = { event, error, interactive };
+    const subscriber = { event, error, interactive, sessionTools };
     this.subscriber = subscriber;
     this.server.subscribers.add(subscriber);
     await subscribeToServer(this.server, this.failServer);

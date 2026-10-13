@@ -20,6 +20,7 @@ export {
   type ImageAttachment,
   type ImageMediaType,
   isCanonicalUserMessage,
+  type SessionMessageSender,
   type SessionMetadata,
   type StreamChunk,
   type TurnStats,

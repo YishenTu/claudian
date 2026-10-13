@@ -164,6 +164,7 @@ export class SessionModel {
       isConversationHydrated: () => this.hydrationState === 'ready',
       onConversationHydrated: () => { this.hydrationState = 'ready'; },
       onPersistenceChanged: () => session.notifyChanged(),
+      onBranchPreviewCancelled: () => this.publish('work'),
       ensureExecutionForConversation: async conversation => {
         this.publish('commands');
         const sameIdentity = session.conversationId === (conversation?.id ?? null);

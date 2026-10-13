@@ -5,6 +5,7 @@
  */
 
 import type { ProviderExecutionContext, ProviderSelectionSnapshot, ProviderSessionReference } from '@/core/execution/ProviderExecutionRequest';
+import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 
 import { appendBrowserContext } from './browserContext';
 import { appendCanvasContext } from './canvasContext';
@@ -64,6 +65,9 @@ function extractContentBeforeXMLContext(text: string): string | undefined {
 export function extractUserDisplayContent(text: string): string | undefined {
   if (!text) return undefined;
 
+  const sessionMessage = decodeSessionMessage(text);
+  if (sessionMessage) return sessionMessage.text;
+
   const xmlDisplayContent = extractContentBeforeXMLContext(text);
   if (xmlDisplayContent !== undefined) {
     return xmlDisplayContent;
@@ -86,6 +90,10 @@ export function extractUserDisplayContent(text: string): string | undefined {
  */
 export function extractUserQuery(prompt: string): string {
   if (!prompt) return '';
+
+  // Match the live display body, which is compared against this native form.
+  const sessionMessage = decodeSessionMessage(prompt);
+  if (sessionMessage) return extractUserQuery(sessionMessage.text);
 
   // Try to extract content before XML context
   const extracted = extractContentBeforeXMLContext(prompt);

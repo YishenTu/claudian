@@ -15,6 +15,7 @@ import type {
   ProviderId,
   ProviderSessionArchive,
 } from '@/core/providers/types';
+import type { SessionToolEndpoint } from '@/core/session-tools/SessionToolEndpoint';
 import type { ClaudianSettings } from '@/core/types';
 import type { EnvironmentScope } from '@/core/types/settings';
 
@@ -23,6 +24,7 @@ export interface ClaudianProviderHostDeps {
   readonly manifest?: { version?: string };
   readonly executionLifecycleRegistry: ProviderExecutionLifecycleRegistry;
   readonly storage: ProviderHostStorage;
+  readonly sessionToolEndpoint: SessionToolEndpoint;
   readonly settings: Pick<
     SettingsCoordinator<ClaudianSettings>,
     'getCommittedSettings' | 'mutate' | 'mutateConditionally'
@@ -47,12 +49,14 @@ export class ClaudianProviderHost implements ProviderHost {
   readonly manifest?: { version?: string };
   readonly executionLifecycleRegistry: ProviderExecutionLifecycleRegistry;
   readonly storage: ProviderHostStorage;
+  readonly sessionToolEndpoint: SessionToolEndpoint;
 
   constructor(private readonly deps: ClaudianProviderHostDeps) {
     this.app = deps.app;
     this.manifest = deps.manifest;
     this.executionLifecycleRegistry = deps.executionLifecycleRegistry;
     this.storage = deps.storage;
+    this.sessionToolEndpoint = deps.sessionToolEndpoint;
   }
 
   get settings(): Readonly<ClaudianSettings> {

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { parse, type ParseError } from 'jsonc-parser';
 
@@ -32,6 +33,7 @@ const DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS: readonly OpencodeManagedAgentConfi
 ];
 
 export interface PrepareOpencodeLaunchArtifactsParams {
+  sessionToolsPluginPath?: string;
   profile?: OpencodeExecutionProfile;
   titleLocale?: string;
   nativeVersion?: 1 | 2;
@@ -91,9 +93,16 @@ export async function prepareOpencodeLaunchArtifacts(
   // Preserve native user layers, protecting substituted user text from expansion
   // a second time. Only our prompt file references still need native expansion.
   const promptMarkers = { managed: randomUUID(), readonly: randomUUID(), passive: randomUUID() };
-  let configContent = serializeManagedConfig(inlineConfig
+  const managedBase = inlineConfig
     ? await parseOpencodeConfig(inlineConfig, 'OPENCODE_CONFIG_CONTENT', params.runtimeEnv, params.workspaceRoot)
-    : {}, promptMarkers, profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[profile])
+    : {};
+  if (params.nativeVersion === 2 && params.sessionToolsPluginPath) {
+    managedBase.plugins = [
+      ...(Array.isArray(managedBase.plugins) ? managedBase.plugins as unknown[] : []),
+      { package: pathToFileURL(params.sessionToolsPluginPath).href },
+    ];
+  }
+  let configContent = serializeManagedConfig(managedBase, promptMarkers, profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[profile])
     .replace(/\{(env|file):/g, '\\u007b$1:');
   for (const key of Object.keys(promptPaths) as OpencodeExecutionProfile[]) {
     configContent = configContent.replaceAll(

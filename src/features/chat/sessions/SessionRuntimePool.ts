@@ -67,6 +67,13 @@ export class SessionRuntimePool {
   getAttachment(id: string): SessionAttachment | null { return this.conversations.get(id)?.attachment ?? null; }
   getAll(): readonly ChatSessionRuntime[] { return [...this.records.keys()]; }
 
+  /** Let first-turn shells adopt their draft runtime before another caller claims a published ID. */
+  async awaitConversationCreations(): Promise<void> {
+    await Promise.allSettled([...this.records.keys()]
+      .filter(runtime => !runtime.conversationId)
+      .map(runtime => runtime.peekModel?.conversationController.awaitCreation() ?? Promise.resolve()));
+  }
+
   /** Reserves synchronously, before model hydration or any view construction can yield. */
   acquire(identity: SessionIdentity, owner: SessionAttachmentOwner): { acquired: boolean; attachment: SessionAttachment } {
     if (this.closing) throw new Error('Session runtime pool is shutting down');
@@ -225,6 +232,7 @@ export class SessionRuntimePool {
     const record = this.conversations.get(id);
     if (!record) return Promise.resolve();
     record.retired = true;
+    record.runtime.mailbox?.clear();
     return this.isReleasable(record) ? this.disposeRecord(record) : Promise.resolve();
   }
 

@@ -1,5 +1,8 @@
 import { parse, type ScalarTag, type SchemaOptions, stringify, YAMLError } from 'yaml';
 
+import { SESSION_TOOL_ROUTE_HEADER } from '@/core/session-tools/SessionToolEndpoint';
+import { SESSION_TOOL_SPECS } from '@/core/session-tools/sessionToolSpecs';
+
 import { type DeepSeekPreset, isDeepSeekAuxiliaryPreset } from '../types';
 
 /** One native Cordis plugin row of an agent preset. */
@@ -13,6 +16,8 @@ export interface DeepSeekPresetPlugin {
 export interface DeepSeekPresetPaths {
   readonly compatibility: string;
   readonly codeModeFile: string;
+  readonly sessions: string;
+  readonly sessionToolsFile: string;
   promptFile(preset: DeepSeekPreset): string;
 }
 
@@ -44,6 +49,7 @@ function assertEntryValue(value: unknown, path: string): void {
 }
 
 const PREVIEW_PATHS: DeepSeekPresetPaths = {
+  sessions: '<claudian-sessions.mjs>', sessionToolsFile: '<session tools endpoint>',
   compatibility: '<claudian-compatibility.mjs>', codeModeFile: '<code mode>', promptFile: () => '<system prompt>',
 };
 
@@ -81,6 +87,7 @@ export function buildDeepSeekPresetPlugins(
       plugin('tool-subagent', { provider: 'spawn', toolName: 'subagent', backgroundMode: 'continuable', modelSelectionSettings: false }),
       { ...plugin('tool-subagent', { provider: 'fork', toolName: 'subagent_fork', backgroundMode: 'continuable', modelSelectionSettings: false }), id: 'tool-subagent-fork' },
       plugin('tool-ask-user'),
+      { id: 'claudian-sessions', name: paths.sessions, config: { endpointFile: paths.sessionToolsFile, routeHeader: SESSION_TOOL_ROUTE_HEADER, tools: SESSION_TOOL_SPECS } },
       plugin('tool-web', { fetch: true, searchTimeoutMs: 60000 }),
     ] : []),
     {

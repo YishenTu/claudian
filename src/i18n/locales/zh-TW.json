@@ -184,6 +184,8 @@
       "enteringPlan": "正在進入規劃模式",
       "planComplete": "規劃完成",
       "messageAgent": "向代理傳送訊息",
+      "listSessions": "列出工作階段",
+      "messageSession": "向工作階段傳送訊息",
       "continueAgent": "繼續代理任務",
       "listAgents": "列出代理",
       "interruptAgent": "中斷代理",
@@ -314,6 +316,11 @@
     "pi": {
       "extension": "Pi 擴充功能",
       "notification": "Pi 擴充功能通知。"
+    },
+    "sessionMessage": {
+      "from": "來自 {sender}",
+      "session": "工作階段：{sessionId}",
+      "undelivered": "無法傳遞來自 {senders} 的訊息。"
     }
   },
   "settings": {

@@ -2,6 +2,7 @@ import { createFixture, deferred } from '@test/helpers/ChatInputHarness';
 import { Notice } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import type { ToolCallInfo } from '@/core/types';
 import type { ChatSteerOutcome } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { ChatExecutionPreHandoffError } from '@/features/chat/execution/ChatExecutionCoordinator';
@@ -18,6 +19,60 @@ jest.mock('@/core/providers/ProviderRegistry', () => ({
     }),
   },
 }));
+
+describe('mailbox input', () => {
+  const message = { from: 'Sender', sessionId: 'sender', text: 'Please inspect this' };
+
+  it('keeps the composer and unread state, and submits a sender envelope without captured context', async () => {
+    const fixture = createFixture();
+    fixture.input.value = 'My unsent draft';
+    const acknowledge = jest.spyOn(fixture.state, 'acknowledgeReview');
+    const onUnsent = jest.fn();
+    await fixture.controller.sendSessionMessage(message, { onUnsent, assertBeforeHandoff: () => undefined });
+    const submission = fixture.coordinator.execute.mock.calls[0][0];
+    expect(decodeSessionMessage(submission.canonicalText)).toEqual(message);
+    expect(submission.context).toEqual({});
+    expect(submission.images).toEqual([]);
+    expect(fixture.state.messages[0]).toMatchObject({ displayContent: message.text, sessionMessage: { from: 'Sender', sessionId: 'sender' } });
+    expect(fixture.input.value).toBe('My unsent draft');
+    expect(acknowledge).not.toHaveBeenCalled();
+    expect(onUnsent).not.toHaveBeenCalled();
+  });
+
+  it('reports terminal preparation failure without putting the envelope in the composer', async () => {
+    const fixture = createFixture({ ensureExecutionInitialized: async () => false });
+    fixture.input.value = 'My draft';
+    const onUnsent = jest.fn();
+    await fixture.controller.sendSessionMessage(message, { onUnsent, assertBeforeHandoff: () => undefined });
+    expect(onUnsent).toHaveBeenCalledWith('failed');
+    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.input.value).toBe('My draft');
+  });
+
+  it('reports Stop during preparation with the cancellation reason and never submits', async () => {
+    const ready = deferred<boolean>();
+    const fixture = createFixture({ ensureExecutionInitialized: () => ready.promise });
+    const onUnsent = jest.fn();
+    const sending = fixture.controller.sendSessionMessage(message, { onUnsent, assertBeforeHandoff: () => undefined });
+    await Promise.resolve();
+    fixture.controller.cancelStreaming();
+    ready.resolve(true);
+    await sending;
+    expect(onUnsent).toHaveBeenCalledWith('user');
+    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.input.value).toBe('');
+  });
+
+  it.each([true, false])('discards only an unaccepted error (accepted: %s)', async accepted => {
+    const fixture = createFixture();
+    fixture.coordinator.execute.mockResolvedValue({ accepted, status: 'error' });
+    const onUnsent = jest.fn();
+    await fixture.controller.sendSessionMessage(message, { onUnsent, assertBeforeHandoff: () => undefined });
+    expect(onUnsent.mock.calls).toEqual(accepted ? [] : [['failed']]);
+    expect(fixture.state.messages).toHaveLength(accepted ? 2 : 0);
+    expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('composer wikilinks', () => {
   it('sends exact aliased wikilinks and retains them in displayed messages', async () => {

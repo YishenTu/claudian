@@ -121,6 +121,7 @@ export class CodexExecutionSession
   private sessionFilePath: string | null;
   private sessionFileLookupThreadId: string | null = null;
   private workspaceDependencyToolVersion: number | null;
+  private sessionToolVersion: number | null;
   private nativeConversationContextEstablished: boolean;
 
   constructor(
@@ -147,16 +148,18 @@ export class CodexExecutionSession
       onExit: () => this.#handleConnectionExit(),
       onRetired: () => this.#releaseRetiredConnection(),
       onRelease: () => {
+        this.serverRequestRouter.abortAll('session-disposed');
         this.subagents.clear();
         this.threads.unload();
         this.serverRequestRouter.setDynamicToolRegistry(null);
       },
-    });
+    }, config.sessionTools);
     this.threads = new CodexThreadBinder(
       {
         threadResumed: thread => this.subagents.seed(thread),
         threadStarted: (active, identity) => {
           this.workspaceDependencyToolVersion = identity.workspaceDependencyToolVersion;
+          this.sessionToolVersion = identity.sessionToolVersion;
           this.threadId = identity.threadId;
           this.sessionFilePath = identity.sessionFilePath;
           this.#publishNativeOwnershipSnapshot(active);
@@ -188,6 +191,7 @@ export class CodexExecutionSession
       ?? null;
     this.workspaceDependencyToolVersion =
       codexState.workspaceDependencyToolVersion ?? null;
+    this.sessionToolVersion = codexState.sessionToolVersion ?? null;
     this.serverRequestRouter = new CodexExecutionServerRequestRouter(
       this.sessionInstanceId,
       config.interactionPort,
@@ -197,7 +201,7 @@ export class CodexExecutionSession
       lifecycleGeneration: () => this.lifecycleGeneration,
       activeRun: () => this.activeRun,
       transport: () => this.connection.transport,
-      replayNotification: (method, params) => this.handleNotification(method, params),
+      replayNotification: (method, params) => this.connection.scope?.notification(method, params),
       fail: (active, message) => this.#finishError(active, 'provider', message, true),
     });
     this.turn = new CodexTurnBinding(
@@ -745,6 +749,10 @@ export class CodexExecutionSession
   }
 
   #releaseRun(active: CodexActiveRun): void {
+    if (active.nativeThreadId && active.nativeTurnId) {
+      this.connection.scope?.releaseTurn(active.nativeThreadId, active.nativeTurnId);
+    }
+    active.cancellation.abort();
     this.completionRecovery.cancel();
     this.turn.release();
     this.serverRequestRouter.abortAll(
@@ -879,6 +887,7 @@ export class CodexExecutionSession
               this.workspaceDependencyToolVersion,
           }
         : {}),
+      ...(this.sessionToolVersion !== null ? { sessionToolVersion: this.sessionToolVersion } : {}),
       ...(pendingForkTarget
         ? { pendingForkTarget: { ...pendingForkTarget } }
         : {}),

@@ -7,3 +7,4 @@
 - Forking creates a new file without altering the source. Recover historical models only on the selected branch; a missing leaf cannot fall back to another branch or promote previous-session locators into live state.
 - Metadata probes are independent processes and may receive extension UI requests. Keep native UI routing out of execution DOM code.
 - Commands may fall back to the pushed catalog when compatibility shims omit get_commands.
+- Session tools use a separate execution-only extension and private extension-UI input channel, never metadata/model probes. Apply the same resume-identity proof to this channel; bind callbacks to the run owning the native tool start and revoke pending calls on tool end, run settlement/cancellation, or process close (Pi does not report dialog aborts).

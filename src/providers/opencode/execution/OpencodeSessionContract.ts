@@ -1,4 +1,4 @@
-import type { ProviderAsyncSubagentCompletedEvent, ProviderBackgroundOutputEvent, ProviderSessionConfig, ProviderSystemInstructions } from '@/core/execution';
+import type { ProviderAsyncSubagentCompletedEvent, ProviderBackgroundOutputEvent, ProviderExecutionRequest,ProviderSessionConfig, ProviderSystemInstructions } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ForkSource, SubagentProgress } from '@/core/types';
 import type { ACPPromptRequest, ACPPromptResponse, ACPSessionConfigOption, ACPSessionModelState, ACPSessionNotification } from '@/providers/acp';
@@ -57,7 +57,7 @@ export interface OpencodeSessionKernel {
   /** Replies `once` to managed permission requests, like OpenCode's `--auto`; `deny` rules never ask. */
   setAutoApprove(enabled: boolean): void;
   /** `userText` locates typed input whose native mentions the kernel may resolve. */
-  prompt(request: ACPPromptRequest, userText?: OpencodeTextRange | null): Promise<Pick<
+  prompt(request: ACPPromptRequest, userText?: OpencodeTextRange | null, run?: Pick<ProviderExecutionRequest, 'toolPolicy' | 'signal'>): Promise<Pick<
     ACPPromptResponse,
     'usage' | 'userMessageId'
   > & Partial<Pick<ACPPromptResponse, 'stopReason'>>>;

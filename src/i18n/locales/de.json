@@ -184,6 +184,8 @@
       "enteringPlan": "Planungsmodus wird gestartet",
       "planComplete": "Plan abgeschlossen",
       "messageAgent": "Agent benachrichtigen",
+      "listSessions": "Sitzungen auflisten",
+      "messageSession": "Sitzung benachrichtigen",
       "continueAgent": "Agent fortsetzen",
       "listAgents": "Agents auflisten",
       "interruptAgent": "Agent unterbrechen",
@@ -314,6 +316,11 @@
     "pi": {
       "extension": "Pi-Erweiterung",
       "notification": "Benachrichtigung der Pi-Erweiterung."
+    },
+    "sessionMessage": {
+      "from": "Von {sender}",
+      "session": "Sitzung: {sessionId}",
+      "undelivered": "Nachrichten von {senders} konnten nicht zugestellt werden."
     }
   },
   "settings": {

@@ -8,7 +8,26 @@ import {
 } from '@test/helpers/providers/grokHistory';
 import { testDate } from '@test/helpers/testClock';
 
+import { extractUserDisplayContent } from '@/core/prompt/promptContext';
+import { encodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
+
 describe('GrokHistoryStore', () => {
+  it('hydrates session sender metadata and neutral MCP tool names from replay', () => {
+    const envelope = encodeSessionMessage({ from: 'Sender & reviewer', sessionId: 'sender-id', text: 'Please review.' });
+    const updates = [
+      { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: envelope } },
+      { sessionUpdate: 'tool_call', toolCallId: 'send', title: 'claudian_sessions__claudian_send_message', status: 'completed',
+        rawInput: { variant: 'UseTool', tool_name: 'claudian_sessions__claudian_send_message', tool_input: { text: 'Reviewed.' } },
+        rawOutput: { type: 'MCP', server_name: 'claudian_sessions', tool_name: 'claudian_send_message', output: { OkayOutput: 'queued' } } },
+      { sessionUpdate: 'turn_completed' },
+    ];
+    const content = updates.map(update => JSON.stringify({ timestamp: testDate().getTime(), method: 'session/update', params: { sessionId: 'recipient', update } })).join('\n');
+    const { messages } = parseGrokHistoryContent(content, 'recipient');
+    expect(messages[0].sessionMessage).toEqual({ from: 'Sender & reviewer', sessionId: 'sender-id' });
+    expect(extractUserDisplayContent(messages[0].content)).toBe('Please review.');
+    expect(messages[1].toolCalls?.[0]).toMatchObject({ name: 'claudian_send_message', input: { text: 'Reviewed.' } });
+  });
+
   it('hydrates complete turns while tolerating malformed, unknown, and incomplete tails', () => {
     const content = fs.readFileSync(path.join(
       process.cwd(),

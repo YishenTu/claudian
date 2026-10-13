@@ -2,7 +2,7 @@ import type { FakeRun } from '@test/helpers/ChatExecutionHarness';
 import { beginExecution, createHarness, createSubmission, deferred, FakeSession, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { testDate } from '@test/helpers/testClock';
 
-import { type ProviderExecutionEvent, type ProviderSessionSnapshot } from '@/core/execution';
+import { type ProviderExecutionEvent, type ProviderSessionSnapshot, type ProviderSessionToolPort } from '@/core/execution';
 import type { ChatMessage } from '@/core/types';
 import { ChatExecutionInteractionStaleError, ChatExecutionPreHandoffError } from '@/features/chat/execution/ChatExecutionCoordinator';
 
@@ -11,6 +11,77 @@ const IDLE_MS = 30 * 60_000;
 afterEach(() => jest.useRealTimers());
 
 describe('ChatExecutionCoordinator', () => {
+  function createSessionToolHarness() {
+    const bindings: { port: ProviderSessionToolPort; dispose: jest.Mock }[] = [];
+    const bindSessionTools = jest.fn((_conversationId: string) => {
+      const controller = new AbortController();
+      const port: ProviderSessionToolPort = {
+        list: async () => { controller.signal.throwIfAborted(); return []; },
+        send: async () => {
+          controller.signal.throwIfAborted();
+          return { sessionId: 'recipient', status: 'queued' };
+        },
+      };
+      const binding = { port, dispose: jest.fn(() => controller.abort(new Error('Binding revoked'))) };
+      bindings.push(binding);
+      return binding;
+    });
+    return { ...createHarness({ bindSessionTools }), bindSessionTools, bindings };
+  }
+
+  it.each(['bind', 'invalidation', 'dispose'] as const)(
+    'revokes session tools before provider teardown on %s', async mode => {
+      const harness = createSessionToolHarness();
+      await harness.coordinator.bindConversation({ conversationId: 'caller', providerId: 'claude' });
+      expect(harness.bindSessionTools).not.toHaveBeenCalled();
+      await harness.coordinator.prepare();
+      await harness.coordinator.prepare();
+      const backend = harness.backends.get('claude')!;
+      const port = backend.configs[0].sessionTools!;
+      expect(harness.bindSessionTools).toHaveBeenCalledTimes(1);
+      expect(harness.bindSessionTools).toHaveBeenCalledWith('caller');
+      expect(port).toBe(harness.bindings[0].port);
+      await expect(port.list(new AbortController().signal)).resolves.toEqual([]);
+      const teardown = deferred<void>();
+      const dispose = jest.spyOn(backend.sessions[0], 'dispose').mockImplementationOnce(async () => {
+        await expect(port.list(new AbortController().signal)).rejects.toThrow('Binding revoked');
+        await teardown.promise;
+      });
+      const release = mode === 'bind' ? harness.coordinator.bindConversation(null)
+        : mode === 'invalidation' ? harness.registry.runTransition(['claude'], async () => undefined)
+          : harness.coordinator.dispose();
+      try {
+        for (let attempt = 0; attempt < 20 && !dispose.mock.calls.length; attempt++) await Promise.resolve();
+        expect(dispose).toHaveBeenCalledTimes(1);
+        await expect(port.list(new AbortController().signal)).rejects.toThrow('Binding revoked');
+        await expect(port.send({ text: 'late' }, new AbortController().signal)).rejects.toThrow('Binding revoked');
+      } finally {
+        teardown.resolve();
+        await release;
+        await harness.coordinator.dispose();
+        await harness.registry.dispose();
+      }
+      expect(harness.bindings[0].dispose).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(['acquire', 'persistence'] as const)('revokes session tools if preparation fails during %s', async phase => {
+    const harness = createSessionToolHarness();
+    const failure = new Error('Preparation failed');
+    if (phase === 'acquire') {
+      jest.spyOn(harness.backends.get('claude')!, 'createSession').mockImplementationOnce(() => { throw failure; });
+    } else {
+      harness.repository.persistExecutionSnapshot.mockRejectedValueOnce(failure);
+    }
+    await harness.coordinator.bindConversation({ conversationId: 'caller', providerId: 'claude' });
+    await expect(harness.coordinator.prepare()).rejects.toBe(failure);
+    expect(harness.bindings).toHaveLength(1);
+    await expect(harness.bindings[0].port.list(new AbortController().signal)).rejects.toThrow('Binding revoked');
+    await harness.coordinator.dispose();
+    await harness.registry.dispose();
+    expect(harness.bindings[0].dispose).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['claude', 'codex'] as const)(
     'validates %s events without serializing resume history after an equivalent rebind',
     async (providerId) => {

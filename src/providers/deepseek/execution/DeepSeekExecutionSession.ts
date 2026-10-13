@@ -11,10 +11,14 @@ import {
   SessionSnapshotState,
   type WithoutEventScope,
 } from '@/core/execution';
+import { isSessionToolPolicyAllowed } from '@/core/execution/ProviderSessionToolPort';
 import { buildSystemPrompt } from '@/core/prompt/mainAgent';
 import { appendLinkedContent, appendLinkedContentBody, appendSelectionContexts, appendSessionReferences, captureSelectionSnapshots } from '@/core/prompt/promptContext';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { getActionDescription } from '@/core/security/approvalRules';
+import { invokeSessionTool } from '@/core/session-tools/invokeSessionTool';
+import type { SessionToolRoutedCallRequest } from '@/core/session-tools/SessionToolEndpoint';
+import { SESSION_TOOL_SPECS, type SessionToolResult } from '@/core/session-tools/sessionToolSpecs';
 import type { SlashCommand } from '@/core/types';
 import { t } from '@/i18n/i18n';
 
@@ -28,6 +32,7 @@ import { DeepSeekRemoteError, isRecord } from '../remote/DeepSeekRemoteClient';
 import { isSameDeepSeekHome } from '../runtime/DeepSeekHome';
 import type { DeepSeekHost, DeepSeekHostLease } from '../runtime/DeepSeekHost';
 import { assertDeepSeekModelAvailable } from '../runtime/DeepSeekModels';
+import type { DeepSeekSessionToolAdmission } from '../runtime/DeepSeekRoster';
 import { getDeepSeekProviderSettings } from '../settings';
 import { decodeDeepSeekState, type DeepSeekPreset, type DeepSeekProviderState, encodeDeepSeekCheckpoint, isDeepSeekAuxiliaryPreset, isDeepSeekPreset } from '../types';
 import { applyDeepSeekPermission, type DeepSeekPermission, readDeepSeekPermission } from './DeepSeekPermissions';
@@ -48,11 +53,19 @@ interface Turn {
   readonly startedAt: number;
   readonly output: DeepSeekOutput;
   readonly buffered: DeepSeekOutputEvent[];
+  readonly sessionCalls: Map<string, string>;
   owner?: RequestedRunChannel | 'background';
   sequence: number;
   nativeUserId?: string;
   /** The request native claimed into this turn; prompt hooks can still end the turn before echoing it. */
   claimed?: Request;
+}
+
+interface ChildState {
+  /** Set once from its parent's native creation catalog, never from whichever root turn happens to be running. */
+  origin?: { readonly request: Request | undefined } | { readonly parent: ChildState };
+  lastSeq: number;
+  turn?: { native: number; id: string; sequence: number; interactionScope: boolean; abort: AbortController; sessionCalls: Map<string, string> };
 }
 
 /**
@@ -95,7 +108,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
   private binding?: DeepSeekProviderState;
   private requested?: Request;
   private turn?: Turn;
-  private readonly childTurns = new Map<string, { native: number; id: string; sequence: number; interactionScope: boolean }>();
+  private readonly children = new Map<string, ChildState>();
   /** Native interactions awaiting ownership or call details, each with its own reconciliation deadline. */
   private readonly pendingNativeInteractions = new Map<string, { readonly value: Record<string, unknown>; readonly deadline: number }>();
   private interactionTimer?: number;
@@ -150,6 +163,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     if (!this.reloadError) this.snapshots.setStatus('executing');
     channel.attachAbortSignal(input.signal);
     void channel.terminated.then(async () => {
+      requested.abort.abort();
       await requested.admission;
       if (this.requested !== requested) return;
       this.requested = undefined;
@@ -341,7 +355,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       this.offLease.push(lease.onLost((loss, error) => { if (generation === this.generation) void this.fail(error, loss, false); }));
       this.offLease.push(lease.roster.onReset(() => { if (generation === this.generation) this.voidInteractions('superseded'); }));
       const deliver = (event: Record<string, unknown>): void => { if (generation === this.generation) this.remoteEvent(event); };
-      if (this.nativeId) lease.claim(this.nativeId, deliver);
+      if (this.nativeId) lease.claim(this.nativeId, deliver, (call, deadline) => this.captureSessionTool(call, deadline));
       const existingId = this.nativeId ?? this.binding.pendingFork?.sessionId;
       if (existingId) {
         const projection = await readDeepSeekProjection(lease.client, existingId);
@@ -363,12 +377,12 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
         // Leaving an ephemeral fork orphans only memory; a durable fork keeps the wait so it is never forked twice.
         this.nativeId = await lease.fork(this.binding.pendingFork, ephemeral, ephemeral ? signal : undefined); this.permission = undefined;
         if (ephemeral) this.ephemeralGeneration = lease.generation;
-        lease.claim(this.nativeId, deliver);
+        lease.claim(this.nativeId, deliver, (call, deadline) => this.captureSessionTool(call, deadline));
         this.binding = { ...this.binding, pendingFork: undefined };
         this.snapshots.deleteProviderStateValue('pendingFork');
       } else {
         const created = await this.createNative(lease, signal, ephemeral ? lease.ephemeralSessionId() : undefined);
-        if (!this.nativeId) lease.claim(created, deliver);
+        if (!this.nativeId) lease.claim(created, deliver, (call, deadline) => this.captureSessionTool(call, deadline));
         this.nativeId = created;
         if (ephemeral) this.ephemeralGeneration = lease.generation;
       }
@@ -508,12 +522,13 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     // Native policy events invalidate the verified proof; ordinary turns need no history scan.
     if (event.type === 'sandbox/mode' || event.type === 'approval/policy') this.permission = undefined;
     this.subagents.parent(event);
+    this.claimChild(event, { request: this.turn?.claimed });
     if (event.type === 'agent/inbox/spliced') { this.trackInbox(data); return; }
     if (event.type === 'turn/start') {
       if (this.turn) throw new Error('DeepSeek opened overlapping native turns.');
       if (typeof data.turn !== 'number') throw new Error('Missing DeepSeek turn identity.');
       const turn: Turn = { native: data.turn, id: randomUUID(), startedAt: typeof event.time === 'number' ? event.time : Date.now(),
-        buffered: [], sequence: 0, output: new DeepSeekOutput(value => this.output(turn, value)),
+        buffered: [], sequence: 0, sessionCalls: new Map(), output: new DeepSeekOutput(value => this.output(turn, value)),
       };
       this.turn = turn;
       return;
@@ -531,7 +546,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
         steer.answer(true); steer.release();
       } else if (source.kind === 'user' && requested && requested.channel.executionId === source.rpcId) {
         if (turn.owner && turn.owner !== requested.channel) throw new Error('DeepSeek request was claimed after output ownership was assigned.');
-        requested.delivery = 'claimed'; turn.owner = requested.channel;
+        requested.delivery = 'claimed'; turn.owner = requested.channel; turn.claimed = requested;
         turn.nativeUserId = typeof data.id === 'string' ? data.id : undefined;
         turn.owner.emit({ type: 'turn_started', accepted: true, nativeTurnId: String(turn.native), nativeUserMessageId: turn.nativeUserId });
         // Core treats the first echo as the submitted input; later ones are steers.
@@ -579,6 +594,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       return;
     }
     if (event.type.startsWith('assistant/') || event.type.startsWith('tool/')) this.classify();
+    this.trackSessionCall(turn.sessionCalls, event);
     turn.output.record(event);
   }
 
@@ -643,24 +659,110 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     this.snapshots.notify({ ...event, scope: { kind: 'background', sessionInstanceId: this.sessionInstanceId, turnId: turn.id, sequence: ++turn.sequence } } as ProviderSessionEvent);
   }
 
+  private child(id: string): ChildState {
+    let child = this.children.get(id);
+    if (!child) { child = { lastSeq: -1 }; this.children.set(id, child); }
+    return child;
+  }
+
+  private claimChild(event: Record<string, unknown>, origin: NonNullable<ChildState['origin']>): void {
+    if (event.type !== 'subagent/catalog' || !isRecord(event.data) || typeof event.data.childId !== 'string') return;
+    const child = this.child(event.data.childId);
+    // Keep the creating parent's identity even when its own catalog has not arrived on the independent stream.
+    child.origin ??= origin;
+  }
+
   private childFollow(id: string, frame: Record<string, unknown>): void {
     this.subagents.child(id, frame);
+    const child = this.child(id);
     const records = frame.type === 'snapshot' && Array.isArray(frame.records)
       ? frame.records.filter(isRecord).map(record => record.event).filter(isRecord)
       : frame.type === 'event' && isRecord(frame.event) ? [frame.event] : [];
     for (const event of records) {
-      if (!isRecord(event.data)) continue;
+      if (typeof event.seq !== 'number' || event.seq <= child.lastSeq || !isRecord(event.data)) continue;
+      child.lastSeq = event.seq;
+      if (event.surfaceOp !== undefined && event.surfaceOp !== 'append') continue;
+      this.claimChild(event, { parent: child });
       if (event.type === 'turn/start' && typeof event.data.turn === 'number') {
-        const previous = this.childTurns.get(id);
-        if (previous?.native === event.data.turn) continue;
-        this.childTurns.set(id, { native: event.data.turn, id: randomUUID(), sequence: 0, interactionScope: false });
+        child.turn?.abort.abort();
+        child.turn = { native: event.data.turn, id: randomUUID(), sequence: 0, interactionScope: false, abort: new AbortController(), sessionCalls: new Map() };
       } else if (event.type === 'turn/end') {
-        const turn = this.childTurns.get(id);
+        const turn = child.turn;
         if (!turn || turn.native !== event.data.turn) continue;
         if (turn.interactionScope) this.background(turn, { type: 'background_turn_completed', reason: 'completed' });
-        this.childTurns.delete(id);
+        turn.abort.abort();
+        child.turn = undefined;
       }
+      if (child.turn) this.trackSessionCall(child.turn.sessionCalls, event);
     }
+  }
+
+  private childRequest(child: ChildState | undefined): Request | undefined {
+    const seen = new Set<ChildState>();
+    while (child && !seen.has(child)) {
+      seen.add(child);
+      const origin = child.origin;
+      if (!origin) return undefined;
+      if ('request' in origin) return origin.request;
+      child = origin.parent;
+    }
+    return undefined;
+  }
+
+  /** Only calls still executing in this native turn can authorize the independent HTTP invocation. */
+  private trackSessionCall(calls: Map<string, string>, event: Record<string, unknown>): void {
+    const data = event.data;
+    if (!isRecord(data)) return;
+    const id = event.type === 'tool/call' ? data.callId : event.type === 'tool/ptc-dispatch-start' ? data.subCallId : undefined;
+    if (typeof id === 'string' && typeof data.name === 'string' && SESSION_TOOL_SPECS.some(spec => spec.name === data.name)) calls.set(id, data.name);
+    if (event.type === 'tool/result' && isRecord(data.message) && typeof data.message.toolCallId === 'string') calls.delete(data.message.toolCallId);
+    if (event.type === 'tool/ptc-dispatch' && typeof data.subCallId === 'string') calls.delete(data.subCallId);
+  }
+
+  private captureSessionTool(call: SessionToolRoutedCallRequest, deadline: number): DeepSeekSessionToolAdmission | undefined {
+    const requested = this.requested;
+    if (!requested || !this.config.sessionTools || !this.observer || this.detaching
+      || requested.channel.isTerminal || requested.channel.isCancellationRequested || !isSessionToolPolicyAllowed(requested.input.toolPolicy)) return undefined;
+    const signal = AbortSignal.any([call.signal, this.lifetime.signal, requested.abort.signal, requested.input.signal]);
+    if (signal.aborted) return undefined;
+    return { signal, invoke: () => this.callSessionTool(call, requested, signal, deadline) };
+  }
+
+  private async callSessionTool(call: SessionToolRoutedCallRequest, requested: Request, signal: AbortSignal, deadline: number): Promise<SessionToolResult> {
+    const envelope = call.args;
+    if (!isRecord(envelope) || typeof envelope.callId !== 'string' || !envelope.callId) {
+      return { isError: true, text: 'Missing DeepSeek session tool call identity.' };
+    }
+    const callId = envelope.callId;
+    // The roster captured this request before discovery; matching native call/turn evidence must still prove ownership.
+    const denied = (): Promise<SessionToolResult> => invokeSessionTool(call.name, envelope.args, { port: this.config.sessionTools, toolPolicy: undefined, signal });
+    if (!this.observer) return denied();
+    const isRoot = call.callerNativeId === this.nativeId;
+    const readTurn = () => isRoot ? this.turn : this.children.get(call.callerNativeId)?.turn;
+    let turn: ReturnType<typeof readTurn>;
+    const active = () => Date.now() < deadline && !signal.aborted && !requested.channel.isTerminal && !requested.channel.isCancellationRequested && !this.detaching;
+    const matches = () => {
+      const current = readTurn();
+      const declared = current?.sessionCalls.get(callId) === call.name;
+      if (declared) turn ??= current;
+      const owner = isRoot ? this.turn?.claimed : this.childRequest(this.children.get(call.callerNativeId));
+      return { current, owner, declared };
+    };
+    try {
+      await this.observer.waitUntil(() => {
+        const { current, owner, declared } = matches();
+        return !active() || (turn !== undefined && current !== turn) || (owner !== undefined && owner !== requested) || (owner === requested && declared);
+      }, Math.max(0, deadline - Date.now()), signal);
+    } catch {
+      return { isError: true, text: 'DeepSeek session tool call ended or did not reconcile before the deadline.' };
+    }
+    const { current, owner, declared } = matches();
+    if (!active() || !current || current !== turn || owner !== requested || !declared) return denied();
+    const childTurn = isRoot ? undefined : this.children.get(call.callerNativeId)?.turn;
+    return invokeSessionTool(call.name, envelope.args, {
+      port: this.config.sessionTools, toolPolicy: requested.input.toolPolicy,
+      signal: childTurn ? AbortSignal.any([signal, childTurn.abort.signal]) : signal,
+    });
   }
 
   private remoteEvent(value: unknown): void {
@@ -703,7 +805,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
         this.declineApproval(id);
         continue;
       }
-      const child = root ? undefined : this.childTurns.get(agentId);
+      const child = root ? undefined : this.children.get(agentId)?.turn;
       if (root ? !this.turn || (!this.turn.owner && this.requested) : !child) continue;
       // Approvals and tool calls arrive on separate streams; wait for the call until the deadline.
       const callId = value.event === 'approval/request' && isRecord(value.request) && typeof value.request.callId === 'string' ? value.request.callId : undefined;
@@ -765,8 +867,9 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
   }
 
   private cancelRequest(requested: Request): void {
+    requested.abort.abort();
     if (requested.delivery === 'unsent' || requested.command) {
-      requested.abort.abort(); requested.channel.finish({ type: 'cancelled' }); return;
+      requested.channel.finish({ type: 'cancelled' }); return;
     }
     this.withdraw(requested);
   }
@@ -919,13 +1022,15 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
 
   private unbind(): void {
     ++this.generation;
+    this.requested?.abort.abort();
     for (const steer of [...this.steers.values()]) { steer.answer(new Error('DeepSeek connection ended before the steered message was confirmed.')); steer.release(); }
     if (this.turn?.owner === 'background') this.background(this.turn, { type: 'background_turn_completed', reason: 'provider-ended' });
-    for (const turn of this.childTurns.values()) {
-      if (turn.interactionScope) this.background(turn, { type: 'background_turn_completed', reason: 'provider-ended' });
+    for (const child of this.children.values()) {
+      child.turn?.abort.abort();
+      if (child.turn?.interactionScope) this.background(child.turn, { type: 'background_turn_completed', reason: 'provider-ended' });
     }
     this.turn = undefined; this.permission = undefined; this.lastSequence = -1; this.followQueue = Promise.resolve();
-    this.childTurns.clear(); this.subagents.clear(); this.inboxPlaces.clear();
+    this.children.clear(); this.subagents.clear(); this.inboxPlaces.clear();
     this.voidInteractions();
     for (const off of this.offLease.splice(0)) off();
     this.observer?.dispose(); this.observer = undefined;

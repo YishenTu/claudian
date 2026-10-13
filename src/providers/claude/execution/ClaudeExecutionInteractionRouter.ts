@@ -16,6 +16,7 @@ import { getActionDescription } from '../../../core/security/approvalRules';
 import {
   TOOL_ASK_USER_QUESTION,
 } from '../../../core/tools/toolNames';
+import { CLAUDE_SESSION_TOOL_PREFIX } from '../normalization/claudeSessionToolNames';
 
 export interface ClaudeExecutionInteractionDeps {
   readonly interactionPort: ProviderInteractionPort;
@@ -37,6 +38,9 @@ export class ClaudeExecutionInteractionRouter {
     input,
     options,
   ): Promise<PermissionResult> => {
+    if (toolName.startsWith(CLAUDE_SESSION_TOOL_PREFIX)) {
+      return { behavior: 'allow', updatedInput: input };
+    }
     if (!this.deps.isToolAllowed(toolName)) {
       return {
         behavior: 'deny',

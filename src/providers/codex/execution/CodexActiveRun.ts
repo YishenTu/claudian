@@ -10,7 +10,7 @@ export interface TurnCompletion {
 /** One requested run: the neutral stream plus the native turn it is bound to. */
 export interface CodexActiveRun {
   readonly run: RequestedRunChannel;
-  /** Aborts on run cancellation; abandons this run's wait for the shared app-server. */
+  /** Aborts on cancellation or settlement; owns startup waits and dynamic tool calls. */
   readonly cancellation: AbortController;
   nativeThreadId: string | null;
   nativeTurnId: string | null;

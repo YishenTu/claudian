@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
 
 import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTransitionFence';
+import type { SessionToolEndpoint } from '@/core/session-tools/SessionToolEndpoint';
 
 import { type DeepSeekReader, type DeepSeekRemoteClient, DeepSeekRemoteError, isRecord } from '../remote/DeepSeekRemoteClient';
 import type { DeepSeekPreset, DeepSeekProfile } from '../types';
 import { DEEPSEEK_EPHEMERAL_PREFIX } from './DeepSeekCompatibility';
 import { getDeepSeekHome } from './DeepSeekHome';
 import type { DeepSeekHostProcess, DeepSeekLaunchOptions } from './DeepSeekHostProcess';
-import { DeepSeekRoster } from './DeepSeekRoster';
+import { DeepSeekRoster, type DeepSeekSessionToolCapture } from './DeepSeekRoster';
 
 export type DeepSeekProcess = Pick<DeepSeekHostProcess, 'client' | 'profile' | 'onExit' | 'dispose' | 'writePrompt' | 'writeCodeMode' | 'offerEphemeralFork' | 'readEphemeralReady'>;
 export type DeepSeekProcessFactory = (options: DeepSeekLaunchOptions, signal: AbortSignal) => Promise<DeepSeekProcess>;
@@ -34,7 +35,7 @@ export interface DeepSeekHostLease {
   /** Shared by every chat agent of this generation; each applies it at its next turn. */
   writeCodeMode(enabled: boolean): Promise<void>;
   /** Exclusive claim of a native session; its interactions are delivered here until release. */
-  claim(sessionId: string, deliver: (event: Record<string, unknown>) => void): void;
+  claim(sessionId: string, deliver: (event: Record<string, unknown>) => void, sessionTools?: DeepSeekSessionToolCapture): void;
   /** Fires once if the generation dies while attached. */
   onLost(listener: (loss: DeepSeekHostLoss, error: Error) => void): () => void;
   release(): void;
@@ -77,6 +78,7 @@ export class DeepSeekHost {
     private readonly launch: () => Promise<DeepSeekLaunchOptions>,
     private readonly spawn: DeepSeekProcessFactory,
     private readonly idleMs = 60_000,
+    private readonly sessionToolEndpoint?: SessionToolEndpoint,
   ) {}
 
   /** Starts the process ahead of first use; it then follows the ordinary idle policy. */
@@ -152,9 +154,9 @@ export class DeepSeekHost {
       },
       writePrompt: (preset, text) => process.writePrompt(preset, text),
       writeCodeMode: enabled => process.writeCodeMode(enabled),
-      claim: (sessionId, deliver) => {
+      claim: (sessionId, deliver, sessionTools) => {
         if (released) throw new Error('DeepSeek Host lease is released.');
-        claims.push(roster.claim(sessionId, deliver));
+        claims.push(roster.claim(sessionId, deliver, sessionTools));
       },
       onLost: listener => { lost.add(listener); return () => lost.delete(listener); },
       release: () => {
@@ -229,15 +231,29 @@ export class DeepSeekHost {
 
   private async boot(signal: AbortSignal, self: () => Generation): Promise<Ready> {
     const options = await this.launch();
-    const process = await this.spawn(options, signal);
-    if (signal.aborted) { await process.dispose(); throw new Error('DeepSeek startup cancelled.'); }
-    const roster = new DeepSeekRoster(process.client, error => this.lose(self(), 'transport', error));
-    process.onExit(() => this.lose(self(), 'process-exited', new Error('DeepSeek process exited.')));
-    process.client.onDisconnect(() => this.reconnect(self(), process, roster));
-    try { await roster.start(); } catch (error) { roster.dispose(); await process.dispose(); throw error; }
-    // The plugin reports during native startup; a missing or partial report leaves sessions native.
-    const ephemeral = await process.readEphemeralReady().catch(() => false);
-    return { process, roster, home: getDeepSeekHome(options.environment, options.cwd), ephemeral };
+    let roster: DeepSeekRoster | undefined;
+    // One route for this native Host generation, shared by all its Agents. Claims remain roster-owned.
+    const route = await this.sessionToolEndpoint?.registerCallRoute(request => roster?.callSessionTool(request)
+      ?? Promise.resolve({ isError: true, text: 'DeepSeek session tools are unavailable.' }));
+    const revoke = (): void => { route?.dispose(); };
+    signal.addEventListener('abort', revoke, { once: true });
+    try {
+      signal.throwIfAborted();
+      const process = await this.spawn({ ...options, ...(route ? { sessionToolRoute: route } : {}) }, signal);
+      try {
+        signal.throwIfAborted();
+        const activeRoster = new DeepSeekRoster(process.client, error => this.lose(self(), 'transport', error));
+        roster = activeRoster;
+        process.onExit(() => this.lose(self(), 'process-exited', new Error('DeepSeek process exited.')));
+        process.client.onDisconnect(() => this.reconnect(self(), process, activeRoster));
+        await roster.start();
+        // The plugin reports during native startup; a missing or partial report leaves sessions native.
+        const ephemeral = await process.readEphemeralReady().catch(() => false);
+        return { process, roster, home: getDeepSeekHome(options.environment, options.cwd), ephemeral };
+      } catch (error) { roster?.dispose(); await process.dispose(); throw error; }
+    } catch (error) {
+      signal.removeEventListener('abort', revoke); revoke(); throw error;
+    }
   }
 
   private reconnect(generation: Generation, process: DeepSeekProcess, roster: DeepSeekRoster): void {

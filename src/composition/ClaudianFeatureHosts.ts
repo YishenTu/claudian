@@ -21,6 +21,7 @@ import type {
 import type { ChatFeatureHost, ChatSessionRuntimes } from '@/features/chat/ChatFeatureHost';
 import type { ClaudianView } from '@/features/chat/ClaudianView';
 import type { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
+import type { SessionMessagingService, SessionToolBinding } from '@/features/chat/session-messaging/SessionMessagingService';
 import type { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 import type { ZenModeSource } from '@/features/chat/zen/types';
 import type { ZenModeController } from '@/features/chat/zen/ZenModeController';
@@ -43,6 +44,7 @@ export interface FeatureHostDomains {
 
 export interface ChatFeatureHostDomains extends FeatureHostDomains {
   readonly sessionRuntimes: SessionRuntimePool;
+  readonly sessionMessaging: SessionMessagingService;
   readonly conversations: ConversationService;
   readonly executionPersistence: ConversationRepository;
   readonly chatModelSelection: ChatModelSelectionCoordinator;
@@ -119,6 +121,10 @@ export class ClaudianChatFeatureHost extends ClaudianFeatureHost implements Chat
     this.chatModelSelection = domains.chatModelSelection;
     this.executionPersistence = domains.executionPersistence;
     this.conversationLifecycle = domains.conversationLifecycle;
+  }
+
+  bindSessionTools(conversationId: string): SessionToolBinding {
+    return this.domains.sessionMessaging.bindSessionTools(conversationId);
   }
 
   writeSessionSnapshot(conversationId: string, markdown: string): Promise<string> {

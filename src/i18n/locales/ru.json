@@ -184,6 +184,8 @@
       "enteringPlan": "Переход в режим планирования",
       "planComplete": "План готов",
       "messageAgent": "Отправить сообщение агенту",
+      "listSessions": "Список сеансов",
+      "messageSession": "Отправить сообщение сеансу",
       "continueAgent": "Продолжить работу агента",
       "listAgents": "Список агентов",
       "interruptAgent": "Прервать агента",
@@ -314,6 +316,11 @@
     "pi": {
       "extension": "Расширение Pi",
       "notification": "Уведомление расширения Pi."
+    },
+    "sessionMessage": {
+      "from": "От {sender}",
+      "session": "Сеанс: {sessionId}",
+      "undelivered": "Не удалось доставить сообщения от {senders}."
     }
   },
   "settings": {

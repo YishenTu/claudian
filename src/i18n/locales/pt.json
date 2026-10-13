@@ -184,6 +184,8 @@
       "enteringPlan": "Entrando no modo de planejamento",
       "planComplete": "Plano concluído",
       "messageAgent": "Enviar mensagem ao agente",
+      "listSessions": "Listar sessões",
+      "messageSession": "Enviar mensagem à sessão",
       "continueAgent": "Continuar agente",
       "listAgents": "Listar agentes",
       "interruptAgent": "Interromper agente",
@@ -314,6 +316,11 @@
     "pi": {
       "extension": "Extensão Pi",
       "notification": "Notificação da extensão Pi."
+    },
+    "sessionMessage": {
+      "from": "De {sender}",
+      "session": "Sessão: {sessionId}",
+      "undelivered": "Não foi possível entregar as mensagens de {senders}."
     }
   },
   "settings": {

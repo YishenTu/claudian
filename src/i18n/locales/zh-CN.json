@@ -184,6 +184,8 @@
       "enteringPlan": "正在进入规划模式",
       "planComplete": "规划完成",
       "messageAgent": "向代理发送消息",
+      "listSessions": "列出会话",
+      "messageSession": "向会话发送消息",
       "continueAgent": "继续代理任务",
       "listAgents": "列出代理",
       "interruptAgent": "中断代理",
@@ -314,6 +316,11 @@
     "pi": {
       "extension": "Pi 扩展",
       "notification": "Pi 扩展通知。"
+    },
+    "sessionMessage": {
+      "from": "来自 {sender}",
+      "session": "会话：{sessionId}",
+      "undelivered": "无法投递来自 {senders} 的消息。"
     }
   },
   "settings": {

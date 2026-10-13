@@ -131,6 +131,8 @@ interface PiPromptImage {
 }
 
 interface ActiveRun {
+  readonly toolPolicy: ProviderToolPolicy;
+  readonly sessionToolController: AbortController;
   readonly abortController: AbortController;
   readonly inputText: string;
   readonly run: RequestedRunChannel;
@@ -556,6 +558,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   #createActiveRun(request: ProviderExecutionRequest): ActiveRun {
     const active: ActiveRun = {
       abortController: new AbortController(),
+      toolPolicy: request.toolPolicy,
+      sessionToolController: new AbortController(),
       inputText: getInputText(request),
       run: new RequestedRunChannel({
         onCancel: () => {
@@ -736,6 +740,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     const toolProfile = resolveToolProfile(request.toolPolicy);
     const launchSpec = buildPiLaunchSpec({
       enableTreeBridge: !this.#shouldDisableNativePersistence(),
+      enableSessionTools: this.config.sessionTools !== undefined,
       command: await this.host.getResolvedProviderCliPath('pi') ?? 'pi',
       cwd: this.config.vaultWorkingDirectory,
       env,
@@ -850,6 +855,16 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     const kernel = this.options.createKernel(
       launchSpec,
       {
+        getSessionToolInvocation: () => {
+          const owner = this.#requestedOutputTarget();
+          if (!this.#isCurrentKernel(kernel, generation) || this.kernelResumeValidationTarget !== null
+            || !owner?.nativeRequestDispatched) return undefined;
+          return {
+            port: this.config.sessionTools,
+            toolPolicy: owner.toolPolicy,
+            signal: AbortSignal.any([owner.abortController.signal, owner.sessionToolController.signal]),
+          };
+        },
         onClose: error => this.#handleKernelClose(kernel, generation, error),
         onEvent: event => this.#handleRpcEvent(kernel, generation, event),
         onExtensionChunk: chunk =>
@@ -1740,6 +1755,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     active: ActiveRun,
     event: RequestedRunTerminalEvent,
   ): void {
+    active.sessionToolController.abort();
     if (!active.run.finish(event)) return;
     if (this.activeRun === active) {
       this.activeRun = null;
@@ -1803,6 +1819,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
 
   #settleRun(active: ActiveRun): void {
     active.settled = true;
+    active.sessionToolController.abort();
     this.#ensureAccepted(active);
     const pendingTerminalError = active.pendingTerminalError;
     active.pendingTerminalError = null;

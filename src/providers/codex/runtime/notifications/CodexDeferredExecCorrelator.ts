@@ -1,5 +1,6 @@
 import * as path from 'path';
 
+import type { ToolProviderPayload } from '@/core/types';
 import {
   codexToolRequestsMatch,
   type DecodedCodexExecEnvelopeCall,
@@ -17,6 +18,7 @@ import { asRecord, firstString } from './codexNotificationValues';
 import type { CodexToolChunkSink, CodexToolLedger } from './CodexToolLedger';
 
 interface ExpectedCall {
+  providerPayload?: ToolProviderPayload;
   name: string;
   input: Record<string, unknown>;
   comparisonInput?: Record<string, unknown>;
@@ -203,7 +205,10 @@ export class CodexDeferredExecCorrelator {
         ? deferredExec.callId
         : `${deferredExec.callId}:${index + 1}`;
       if (!call.fallbackId) {
-        this.sink.emitToolUse({ type: 'tool_use', id: fallbackId, name: call.name, input: call.input });
+        this.sink.emitToolUse({
+          type: 'tool_use', id: fallbackId, name: call.name, input: call.input,
+          ...(call.providerPayload ? { providerPayload: call.providerPayload } : {}),
+        });
         call.fallbackId = fallbackId;
       }
       if (emitResult && !this.ledger.emittedResultIds.has(fallbackId)) {
@@ -331,7 +336,7 @@ function semanticToolName(name: string): string {
 function projectRawSemanticToolCall(
   call: DecodedCodexExecEnvelopeCall,
   workingDirectory?: string,
-): Pick<ExpectedCall, 'name' | 'input' | 'comparisonInput'> {
+): Pick<ExpectedCall, 'name' | 'input' | 'comparisonInput' | 'providerPayload'> {
   const { name, input, rawName, rawInput } = call;
   if (rawName === 'update_plan') {
     const explanation = firstString(rawInput.explanation);
@@ -360,7 +365,7 @@ function projectRawSemanticToolCall(
       },
     };
   }
-  return { name: semanticToolName(name), input };
+  return { name: semanticToolName(name), input, ...(call.providerPayload ? { providerPayload: call.providerPayload } : {}) };
 }
 
 function toolInputsCompatible(

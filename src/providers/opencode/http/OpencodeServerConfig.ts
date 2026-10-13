@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { parseOpencodeConfig, resolveOpencodeConfigPath, writeIfChanged } from '../runtime/OpencodeLaunchArtifacts';
+import { OPENCODE_SESSION_TOOLS_PLUGIN_SOURCE } from '../runtime/OpencodeSessionToolsPlugin';
 import { isRecord } from './OpencodeHTTPClient';
 
 /** Writable explicit-config layer; user files are read, never edited. */
@@ -15,7 +16,7 @@ export class OpencodeServerConfig {
   private watcher?: () => void;
   private readonly source: string | undefined;
 
-  constructor(readonly file: string, cwd: string, private readonly environment: NodeJS.ProcessEnv) {
+  constructor(readonly file: string, cwd: string, private readonly environment: NodeJS.ProcessEnv, readonly sessionToolsPluginPath?: string) {
     this.source = resolveOpencodeConfigPath(environment.OPENCODE_CONFIG, cwd);
   }
 
@@ -71,8 +72,16 @@ export class OpencodeServerConfig {
   }
 }
 
-export async function createOpencodeServerConfig(cwd: string, environment: NodeJS.ProcessEnv): Promise<OpencodeServerConfig> {
+export async function createOpencodeServerConfig(cwd: string, environment: NodeJS.ProcessEnv, sessionTools = false): Promise<OpencodeServerConfig> {
   // Explicit config can contain credentials; never copy it into a synced vault.
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-opencode-'));
-  return new OpencodeServerConfig(path.join(root, 'config.json'), cwd, environment);
+  try {
+    const pluginPath = sessionTools ? path.join(root, 'session-tools') : undefined;
+    if (pluginPath) {
+      await fs.mkdir(pluginPath);
+      await fs.writeFile(path.join(pluginPath, 'package.json'), JSON.stringify({ type: 'module' }));
+      await fs.writeFile(path.join(pluginPath, 'index.js'), OPENCODE_SESSION_TOOLS_PLUGIN_SOURCE);
+    }
+    return new OpencodeServerConfig(path.join(root, 'config.json'), cwd, environment, pluginPath);
+  } catch (error) { await fs.rm(root, { recursive: true, force: true }); throw error; }
 }

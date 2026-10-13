@@ -44,6 +44,7 @@ import {
   reduceRequestedTurnIdentity,
 } from '@/features/chat/execution/RequestedTurnIdentity';
 import { SessionEventStream } from '@/features/chat/execution/SessionEventStream';
+import type { SessionToolBinding } from '@/features/chat/session-messaging/SessionMessagingService';
 import { throwIfAborted } from '@/utils/abort';
 import { toError } from '@/utils/error';
 
@@ -122,6 +123,7 @@ export interface ChatExecutionCoordinatorDeps {
   readonly interactionPort: ProviderInteractionPort;
   readonly vaultWorkingDirectory: string;
   readonly createId: () => string;
+  readonly bindSessionTools?: (conversationId: string) => SessionToolBinding;
   readonly onRequestedEvent?: (
     event: ProviderExecutionEvent,
     context: ChatExecutionEventContext,
@@ -175,6 +177,7 @@ interface SessionBinding {
   lastSnapshotRevision: number;
   pendingWorkCount: number;
   readonly events: SessionEventStream;
+  readonly sessionTools?: SessionToolBinding;
   model?: string;
 }
 
@@ -337,18 +340,26 @@ export class ChatExecutionCoordinator {
       );
     }
 
-    const supervised = this.#supervisor.acquire(
-      backend,
-      {
-        lifecycle: 'persistent',
-        nativePersistence: 'enabled',
-        resumeSeed: conversation.resumeSeed,
-        vaultWorkingDirectory: this.deps.vaultWorkingDirectory,
-        interactionPort: this.#interactions,
-      },
-      (reason) => this.#handleLeaseInvalidation(reason),
-      (event) => this.#handleSessionEvent(event),
-    );
+    const sessionTools = this.deps.bindSessionTools?.(conversation.conversationId);
+    let supervised;
+    try {
+      supervised = this.#supervisor.acquire(
+        backend,
+        {
+          lifecycle: 'persistent',
+          nativePersistence: 'enabled',
+          resumeSeed: conversation.resumeSeed,
+          vaultWorkingDirectory: this.deps.vaultWorkingDirectory,
+          interactionPort: this.#interactions,
+          sessionTools: sessionTools?.port,
+        },
+        (reason) => this.#handleLeaseInvalidation(reason),
+        (event) => this.#handleSessionEvent(event),
+      );
+    } catch (error) {
+      sessionTools?.dispose();
+      throw error;
+    }
     const binding: SessionBinding = {
       conversation,
       bindingId: this.deps.createId(),
@@ -357,6 +368,7 @@ export class ChatExecutionCoordinator {
       lastSnapshotRevision: -1,
       pendingWorkCount: 0,
       events: new SessionEventStream(supervised.session.sessionInstanceId),
+      sessionTools,
     };
     this.#sessionBinding = binding;
     this.#stale = false;
@@ -983,6 +995,7 @@ export class ChatExecutionCoordinator {
     const binding = this.#sessionBinding;
     if (!binding) return;
     this.#sessionBinding = null;
+    binding.sessionTools?.dispose();
     this.#publishBackgroundWork();
     this.#stale = true;
     this.#pendingSteerAttempts.clear();
@@ -997,6 +1010,7 @@ export class ChatExecutionCoordinator {
   async #releaseSessionBinding(): Promise<void> {
     const binding = this.#sessionBinding;
     this.#sessionBinding = null;
+    binding?.sessionTools?.dispose();
     this.#pendingSteerAttempts.clear();
     this.#clearIdleTimer();
     this.#publishBackgroundWork();

@@ -1,12 +1,21 @@
+import type { ProviderToolPolicy } from '@/core/execution';
+
 import type {
   DynamicToolCallParams,
   DynamicToolCallResponse,
   DynamicToolFunctionSpec,
   LegacyDynamicToolSpec,
 } from './codexAppServerTypes';
+import { invokeCodexSessionTool, isCodexSessionTool } from './CodexSessionTools';
+
+export interface CodexDynamicToolContext {
+  readonly signal: AbortSignal;
+  readonly toolPolicy: ProviderToolPolicy;
+}
 
 export type CodexDynamicToolHandler = (
   params: DynamicToolCallParams,
+  context: CodexDynamicToolContext,
 ) => Promise<DynamicToolCallResponse>;
 
 export interface CodexDynamicToolRegistration {
@@ -71,15 +80,18 @@ export class CodexDynamicToolRegistry {
     return this.registrations.get(registrationKey(namespace, tool))?.includeInThreadStart === true;
   }
 
-  async execute(params: DynamicToolCallParams): Promise<DynamicToolCallResponse> {
+  async execute(params: DynamicToolCallParams, context: CodexDynamicToolContext): Promise<DynamicToolCallResponse> {
     const registration = this.registrations.get(registrationKey(params.namespace, params.tool));
     if (!registration) {
+      if (isCodexSessionTool(params.namespace, params.tool)) {
+        return invokeCodexSessionTool(params, { ...context, port: undefined });
+      }
       const qualifiedName = params.namespace
         ? `${params.namespace}.${params.tool}`
         : params.tool;
       throw new Error(`Unsupported dynamic tool: ${qualifiedName}`);
     }
 
-    return registration.handler(params);
+    return registration.handler(params, context);
   }
 }

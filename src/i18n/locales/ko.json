@@ -184,6 +184,8 @@
       "enteringPlan": "계획 모드로 전환 중",
       "planComplete": "계획 완료",
       "messageAgent": "에이전트에 메시지 보내기",
+      "listSessions": "세션 목록 보기",
+      "messageSession": "세션에 메시지 보내기",
       "continueAgent": "에이전트 계속",
       "listAgents": "에이전트 목록",
       "interruptAgent": "에이전트 중단",
@@ -314,6 +316,11 @@
     "pi": {
       "extension": "Pi 확장",
       "notification": "Pi 확장 알림."
+    },
+    "sessionMessage": {
+      "from": "{sender}에서 보냄",
+      "session": "세션: {sessionId}",
+      "undelivered": "{senders}의 메시지를 전달하지 못했습니다."
     }
   },
   "settings": {

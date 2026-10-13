@@ -1,11 +1,13 @@
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderSessionConfig } from '@/core/execution';
 import { normalizeProviderCommandDiscoveryItems } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
 import { ProviderCommandDiscoveryStore } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import { LoopbackSessionToolServer } from '@/core/session-tools/LoopbackSessionToolServer';
 import { SideChatSession } from '@/features/chat/side-chat/SideChatSession';
 import { createOpencodeWorkspaceServices } from '@/providers/opencode/app/OpencodeWorkspaceServices';
 import { opencodeSettingsReconciler } from '@/providers/opencode/env/OpencodeSettingsReconciler';
@@ -33,7 +35,7 @@ const store = process.env.OPENCODE_DB + '.sessions.json';
 const saved = process.env.OPENCODE_DB !== ':memory:' && fs.existsSync(store) ? JSON.parse(fs.readFileSync(store, 'utf8')) : {sessions:[],deleted:[],sequence:0};
 const sessions = new Map(saved.sessions), deleted = saved.deleted; sequence = saved.sequence; let held = null;
 const save = () => { if (process.env.OPENCODE_DB !== ':memory:') fs.writeFileSync(store, JSON.stringify({sessions:[...sessions],deleted,sequence})); };
-const config = () => { const a=JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIG, 'utf8')), b=JSON.parse(process.env.OPENCODE_CONFIG_CONTENT || '{}'); return {...a,...b,agent:{...a.agent,...b.agent},agents:{...a.agents,...b.agents}}; };
+const config = () => { const a=JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIG, 'utf8')), b=JSON.parse(process.env.OPENCODE_CONFIG_CONTENT || '{}'); return {...a,...b,plugins:[...(a.plugins||[]),...(b.plugins||[])],agent:{...a.agent,...b.agent},agents:{...a.agents,...b.agents}}; };
 const agents = () => { const c = config(); return Object.entries(c.agent || {}).map(([id, a]) => ({id, system:a.prompt})).concat(Object.entries(c.agents || {}).map(([id,a]) => ({id,...a}))).filter(a => !a.disabled && !c.agents?.[a.id]?.disabled); };
 const server = http.createServer(async (req, res) => {
  let raw = ''; for await (const c of req) raw += c;
@@ -42,7 +44,17 @@ const server = http.createServer(async (req, res) => {
  res.setHeader('Content-Type', 'application/json');
  const reply = data => res.end(JSON.stringify({data}));
  if (route === '/api/event') { feeds.add(res); res.on('close',()=>feeds.delete(res)); res.setHeader('Content-Type','text/event-stream'); res.write('data: ' + JSON.stringify({type:'server.connected',data:{}}) + '\\n\\n'); return; }
- if (route === '/fixture/config') return reply({ config:config(), path:process.env.OPENCODE_CONFIG });
+ if (route === '/fixture/config') return reply({ config:config(), path:process.env.OPENCODE_CONFIG, url:process.env.CLAUDIAN_SESSION_TOOLS_URL, routeId:process.env.CLAUDIAN_SESSION_TOOLS_ROUTE_ID });
+ if (route === '/fixture/session-tool') {
+   const entry = config().plugins?.find(p => p.package?.includes('/session-tools'));
+   if (!entry) return reply({isError:true,text:'missing plugin'});
+   const plugin = await import(entry.package + '/index.js');
+   const tools = [], controller = new AbortController();
+   if (body.aborted) controller.abort();
+   await plugin.default.setup({tool:{transform:async f=>f({add:d=>tools.push(d)})}});
+   try { return reply({specs:tools.map(t=>({name:t.name,options:t.options})), result:await tools.find(t=>t.name===body.tool).execute(body.args,{sessionID:body.sessionID,signal:controller.signal})}); }
+   catch(error) { return reply({isError:true,text:error.message}); }
+ }
  if (route === '/fixture/event') { emit(body.type, body.data); res.writeHead(204).end(); return; }
  if (route === '/fixture/disconnect') { for(const f of feeds) f.end(); res.writeHead(204).end(); return; }
  if (route === '/api/session/global/form/form_owned' && req.method==='DELETE') { emit('form.cancelled',{sessionID:'global',id:'form_owned'}); res.writeHead(204).end(); return; }
@@ -92,7 +104,10 @@ async function createFixture(version = '2.0.14') {
   const cli = path.join(root, 'opencode.cjs'), log = path.join(root, 'processes');
   writeFileSync(cli, fixture.replace("console.log('2.0.14')", `console.log('${version}')`), { mode: 0o700 });
   writeFileSync(path.join(root, 'native.db'), '');
+  const endpoint = new LoopbackSessionToolServer();
+  const register = jest.spyOn(endpoint, 'registerCallRoute');
   const plugin: any = {
+    sessionToolEndpoint: endpoint,
     app: { vault: { adapter: { basePath: root } } },
     settings: { providerConfigs: { opencode: { enabled: true, cliPath: cli, visibleModels: ['local/chat'], environmentVariables: `OPENCODE_DB=${path.join(root, 'native.db')}\nPROCESS_LOG=${log}\nOPENCODE_CONFIG_CONTENT={}` } } },
     executionLifecycleRegistry: new ProviderExecutionLifecycleRegistry(),
@@ -107,10 +122,10 @@ async function createFixture(version = '2.0.14') {
     vaultWorkingDirectory: root, lifecycle: 'persistent', nativePersistence: 'provider-default', ...config,
     interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, decision: 'deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} },
   });
-  return { root, cli, log, plugin, workspace, backend, createSession,
+  return { root, cli, log, plugin, workspace, backend, createSession, register,
     environment: buildOpencodeRuntimeEnv(plugin.settings, cli),
     processes: () => readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { pid: number; db: string; generation?: string }),
-    async dispose() { await workspace.dispose?.(); rmSync(root, { recursive: true, force: true }); },
+    async dispose() { await workspace.dispose?.(); await endpoint.close(); rmSync(root, { recursive: true, force: true }); },
   };
 }
 
@@ -1016,4 +1031,55 @@ it.each([
       .toMatchObject({ sessionId: 'ses_2', nativeVersion: 2, databasePath: f.environment.OPENCODE_DB });
     expect({ probes: probes() - before, processes: f.processes().length }).toEqual({ probes: 1, processes: 1 });
   } finally { ProviderWorkspaceRegistry.clear(); await f.dispose(); }
+});
+
+
+it('loads a module plugin folder once per shared server and forwards the native caller to its port', async () => {
+  const f = await createFixture();
+  await f.workspace.metadataService.loadCatalog();
+  const list = jest.fn().mockResolvedValue([{ sessionId: 'target' }]);
+  const send = jest.fn().mockResolvedValue({ sessionId: 'target', status: 'queued' });
+  const session = f.createSession({ sessionTools: { list, send } });
+  const control = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
+  const events: ProviderExecutionEvent[] = [];
+  const run = (async () => { for await (const e of session.execute(turn('hold')).events) events.push(e); })();
+  try {
+    await waitFor(() => events.some(e => e.type === 'text_delta'));
+    const { data } = await control.request<any>('/fixture/config');
+    const configPath = data.path;
+    expect(data.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/call$/);
+    expect(data.routeId).toEqual(expect.any(String));
+    const entry = data.config.plugins.find((p: any) => p.package.includes('/session-tools'));
+    const dir = fileURLToPath(entry.package);
+    expect(path.dirname(dir)).toBe(path.dirname(data.path));
+    expect(JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'))).toEqual({ type: 'module' });
+    expect(existsSync(path.join(dir, 'index.js'))).toBe(true);
+    const call = (sessionID: string) => control.request<any>('/fixture/session-tool', { method: 'POST', body: { tool: 'claudian_list_sessions', args: {}, sessionID } });
+    expect((await call('ses_1')).data).toMatchObject({ specs: [
+      { name: 'claudian_list_sessions', options: { codemode: false } },
+      { name: 'claudian_send_message', options: { codemode: false } },
+    ], result: { output: '[{"sessionId":"target"}]' } });
+    expect(list).toHaveBeenCalledTimes(1);
+    expect((await call('unknown')).data.isError).toBe(true);
+    expect(list).toHaveBeenCalledTimes(1);
+    const aborted = await control.request<any>('/fixture/session-tool', { method: 'POST', body: { tool: 'claudian_list_sessions', args: {}, sessionID: 'ses_1', aborted: true } });
+    expect(aborted.data.isError).toBe(true);
+    expect(list).toHaveBeenCalledTimes(1);
+    const sent = await control.request<any>('/fixture/session-tool', { method: 'POST', body: { tool: 'claudian_send_message', args: { sessionId: 'target', text: 'Hello' }, sessionID: 'ses_1' } });
+    expect(sent.data.result.output).toBe('{"sessionId":"target","status":"queued"}');
+    expect(send).toHaveBeenCalledWith({ sessionId: 'target', text: 'Hello' }, expect.any(AbortSignal));
+    const peer = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
+    await peer.dispose();
+    expect(f.register).toHaveBeenCalledTimes(1);
+    const signal = list.mock.calls[0][0] as AbortSignal;
+    await session.dispose();
+    await run;
+    expect(signal.aborted).toBe(true);
+    expect((await call('ses_1')).data.isError).toBe(true);
+    await control.dispose();
+    await f.workspace.dispose?.();
+    expect(existsSync(path.dirname(configPath))).toBe(false);
+    const response = await fetch(data.url, {method:'POST',headers:{'Content-Type':'application/json','X-Claudian-Route':data.routeId},body:JSON.stringify({tool:'claudian_list_sessions',args:{},callerNativeId:'ses_1'})});
+    expect(response.status).toBe(404);
+  } finally { await session.dispose(); await run; await control.dispose(); await f.dispose(); }
 });

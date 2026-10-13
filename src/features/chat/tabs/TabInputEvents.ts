@@ -45,7 +45,8 @@ export function handleComposerMenuKeydown(tab: AssembledTabRuntime, event: Keybo
 export function hasCancellableSelectedWork(tab: AssembledTabRuntime): boolean {
   const sideChat = tab.controllers.sideChatController;
   if (sideChat.destination === 'side') return sideChat.runtime?.isWorking ?? false;
-  return tab.state.isStreaming || tab.controllers.inputController.isPreparingMainTurn || tab.session.hasMainBackgroundWork;
+  return tab.state.isStreaming || tab.controllers.inputController.isPreparingMainTurn || tab.session.hasMainBackgroundWork
+    || !!tab.session.runtime.mailbox?.hasPending;
 }
 
 /**

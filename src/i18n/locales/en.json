@@ -184,6 +184,8 @@
       "enteringPlan": "Entering plan mode",
       "planComplete": "Plan complete",
       "messageAgent": "Message agent",
+      "listSessions": "List sessions",
+      "messageSession": "Message session",
       "continueAgent": "Continue agent",
       "listAgents": "List agents",
       "interruptAgent": "Interrupt agent",
@@ -314,6 +316,11 @@
     "pi": {
       "extension": "Pi extension",
       "notification": "Pi extension notification."
+    },
+    "sessionMessage": {
+      "from": "From {sender}",
+      "session": "Session: {sessionId}",
+      "undelivered": "Messages from {senders} could not be delivered."
     }
   },
   "settings": {

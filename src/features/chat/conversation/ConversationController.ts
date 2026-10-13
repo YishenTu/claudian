@@ -55,6 +55,7 @@ export interface ConversationControllerDeps {
   isConversationHydrated?: () => boolean;
   onConversationHydrated?: () => void;
   onPersistenceChanged?: () => void;
+  onBranchPreviewCancelled?: () => void;
 }
 
 export class ConversationController {
@@ -153,7 +154,9 @@ export class ConversationController {
   }
 
   cancelBranchDraft(): void {
+    const hadDraft = this.#branching.hasDraft;
     this.#branching.cancelDraft();
+    if (hadDraft && !this.#branching.hasDraft) this.deps.onBranchPreviewCancelled?.();
   }
 
   get hasBranchDraft(): boolean {

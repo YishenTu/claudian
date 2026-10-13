@@ -66,7 +66,7 @@ describe('SessionNavigation conversation status', () => {
     ];
     const conversationLifecycle = new ConversationLifecycle({
       conversations: {} as never,
-      sessions: { isRunning: id => id === 'shared', retire: async () => undefined, whenSettled: async () => true },
+      sessions: { get: () => null, isRunning: id => id === 'shared', retire: async () => undefined, whenSettled: async () => true },
       views: { getAllViews: () => views as never },
     });
     const { navigation } = createNavigation({ tabManager: manager, plugin: { conversationLifecycle } });

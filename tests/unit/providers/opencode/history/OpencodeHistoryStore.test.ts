@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { testDate } from '@test/helpers/testClock';
 
 import type * as environmentModule from '@/core/process/env';
+import { encodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import {
   loadOpencodeSessionMessages,
   loadOpencodeSessionModel,
@@ -618,4 +619,15 @@ describe('OpenCode compaction boundaries', () => {
     expect(messages.filter(message => message.id === 'compact')).toMatchObject(status === 'completed'
       ? [{ contentBlocks: [{ type: 'context_compacted' }], timestamp: created + 2 }] : []);
   });
+});
+
+
+it('decodes v2 session-message attribution before stripping prompt tags and preserves neutral tool names', () => {
+  const text = encodeSessionMessage({ from: 'Research', sessionId: 'source', text: 'The result' });
+  const messages = mapOpencodeV2NativeMessages([
+    { id: 'user', type: 'user', text: text + '\n\n<current_note>note.md</current_note>' },
+    { id: 'assistant', type: 'assistant', content: [{ type: 'tool', id: 'call', name: 'claudian_send_message', state: { status: 'completed', input: {text:'Hello'}, content: [{type:'text',text:'{}'}] } }] },
+  ]);
+  expect(messages[0]).toMatchObject({content:'The result',sessionMessage:{from:'Research',sessionId:'source'}});
+  expect(messages[1].toolCalls?.[0]).toMatchObject({name:'claudian_send_message',providerPayload:{rawName:'claudian_send_message'}});
 });

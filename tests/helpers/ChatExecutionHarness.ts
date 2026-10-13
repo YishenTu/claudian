@@ -201,6 +201,7 @@ export function createHarness(options: {
   idleReleaseMs?: number;
   isOwnerIdle?: ChatExecutionCoordinatorDeps['isOwnerIdle'];
   onIdleRelease?: ChatExecutionCoordinatorDeps['onIdleRelease'];
+  bindSessionTools?: ChatExecutionCoordinatorDeps['bindSessionTools'];
 } = {}) {
   const registry = new ProviderExecutionLifecycleRegistry();
   const backends = new Map<ProviderId, FakeBackend>([
@@ -258,6 +259,7 @@ export function createHarness(options: {
     idleReleaseMs: options.idleReleaseMs,
     isOwnerIdle: options.isOwnerIdle,
     onIdleRelease: options.onIdleRelease,
+    bindSessionTools: options.bindSessionTools,
   });
 
   return {

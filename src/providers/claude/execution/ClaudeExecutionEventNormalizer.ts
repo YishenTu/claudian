@@ -16,6 +16,7 @@ import type {
 } from '../../../core/execution';
 import type { TurnStats, UsageInfo } from '../../../core/types';
 import { createTurnStats } from '../../../core/types';
+import { normalizeClaudeSessionToolName } from '../normalization/claudeSessionToolNames';
 import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
 import { normalizeClaudeToolResultDetails } from '../normalization/claudeToolResultDetails';
 import type {
@@ -395,8 +396,10 @@ function normalizeToolStarted(
     type: 'tool_started',
     toolCallId: chunk.id,
     ...identity,
-    name: chunk.name,
+    name: normalizeClaudeSessionToolName(chunk.name),
     input: chunk.input,
+    ...(normalizeClaudeSessionToolName(chunk.name) !== chunk.name
+      ? { providerPayload: { rawName: chunk.name } } : {}),
     ...('providerPayload' in chunk && chunk.providerPayload
       ? { providerPayload: chunk.providerPayload }
       : {}),

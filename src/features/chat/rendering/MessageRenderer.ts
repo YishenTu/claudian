@@ -301,6 +301,13 @@ export class MessageRenderer {
     if (!text && !this.#actions.branchesEnabled) return null;
 
     const { msgEl, contentEl } = this.#createMessageEl(msg);
+    if (msg.sessionMessage) {
+      contentEl.createDiv({
+        cls: 'claudian-session-message-sender',
+        text: t('chat.sessionMessage.from', { sender: msg.sessionMessage.from }),
+        attr: { title: t('chat.sessionMessage.session', { sessionId: msg.sessionMessage.sessionId }) },
+      });
+    }
     if (text) void this.renderContent(createResponseTextBlock(contentEl), text);
     this.#actions.decorateUserMessage(msgEl, msg, text, context.live ? undefined : context);
     return msgEl;

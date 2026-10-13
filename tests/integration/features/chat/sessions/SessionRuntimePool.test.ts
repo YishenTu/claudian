@@ -35,6 +35,7 @@ describe('session ownership across presentations', () => {
     expect(pool.isRunning('created')).toBe(true);
     expect(signal.aborted).toBe(false);
     const store = {
+      getConversationList: () => [],
       deleteConversation: jest.fn(async () => undefined),
       setConversationArchived: jest.fn(async () => undefined),
       setConversationsPinned: jest.fn(async () => undefined),

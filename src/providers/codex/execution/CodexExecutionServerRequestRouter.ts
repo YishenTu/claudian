@@ -27,12 +27,14 @@ import type {
   UserInputResponse,
 } from '@/providers/codex/runtime/codexAppServerTypes';
 import type { CodexDynamicToolRegistry } from '@/providers/codex/runtime/CodexDynamicToolRegistry';
+import { isCodexSessionTool } from '@/providers/codex/runtime/CodexSessionTools';
 
 interface ActiveInteractionTurn {
   readonly localTurnId: string;
   readonly nativeThreadId: string;
   readonly nativeTurnId: string;
   readonly toolPolicy: ProviderToolPolicy;
+  readonly cancellation: AbortController;
 }
 
 interface PendingServerRequest {
@@ -115,6 +117,7 @@ export class CodexExecutionServerRequestRouter {
   abortAll(reason: ProviderInteractionDismissReason): void {
     this.pendingByNativeKey.clear();
     this.interactions.dismissAll(reason);
+    this.activeTurn?.cancellation.abort();
     this.activeTurn = null;
   }
 
@@ -122,10 +125,16 @@ export class CodexExecutionServerRequestRouter {
     params: DynamicToolCallParams,
   ): Promise<DynamicToolCallResponse> {
     const turn = this.#requireActiveTurn(params.threadId, params.turnId);
-    if (!this.dynamicToolRegistry || !isDynamicToolAllowed(turn.toolPolicy, params)) {
+    if (
+      !this.dynamicToolRegistry
+      || (!isCodexSessionTool(params.namespace, params.tool) && !isDynamicToolAllowed(turn.toolPolicy, params))
+    ) {
       throw new Error(`Unsupported dynamic tool: ${qualifiedToolName(params)}`);
     }
-    return this.dynamicToolRegistry.execute(params);
+    return this.dynamicToolRegistry.execute(params, {
+      signal: turn.cancellation.signal,
+      toolPolicy: turn.toolPolicy,
+    });
   }
 
   async #handleCommandApproval(

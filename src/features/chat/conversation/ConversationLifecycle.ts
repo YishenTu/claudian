@@ -1,12 +1,13 @@
 import { Notice } from 'obsidian';
 
-import type { Conversation } from '@/core/types';
+import type { Conversation, ConversationMeta } from '@/core/types';
 import type { ChatTabManagerHost, ChatViewHost } from '@/features/chat/ChatFeatureHost';
 import type { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 import type { TabId } from '@/features/chat/tabs/ChatTab';
 
 /** Application conversation writes the lifecycle applies after its tab policy. */
 export interface ConversationLifecycleStore {
+  getConversationList(): readonly Pick<ConversationMeta, 'id' | 'isArchived'>[];
   deleteConversation(id: string): Promise<void>;
   setConversationArchived(id: string, isArchived: boolean): Promise<void>;
   setConversationsPinned(ids: readonly string[], isPinned: boolean): Promise<void>;
@@ -18,7 +19,7 @@ export interface ConversationLifecycleStore {
 }
 
 export interface ConversationLifecycleDeps {
-  readonly sessions: Pick<SessionRuntimePool, 'isRunning' | 'retire' | 'whenSettled'>;
+  readonly sessions: Pick<SessionRuntimePool, 'get' | 'isRunning' | 'retire' | 'whenSettled'>;
   readonly conversations: ConversationLifecycleStore;
   readonly views: { getAllViews(): readonly ChatViewHost[] };
 }
@@ -57,7 +58,7 @@ export class ConversationLifecycle {
       new Notice('Running sessions cannot be archived');
       return;
     }
-    await this.deps.conversations.archiveConversationsIf([conversationId], conversation =>
+    await this.#archiveAndClear([conversationId], conversation =>
       !this.isRunning(conversation.id) && this.#boundTabs(conversation.id).length === 0);
   }
 
@@ -70,7 +71,7 @@ export class ConversationLifecycle {
     // A session can be reopened while later tabs close; recheck at each archive write.
     const archivedCount = closedIds.length === 0
       ? 0
-      : await this.deps.conversations.archiveConversationsIf(
+      : await this.#archiveAndClear(
           closedIds,
           conversation => !this.isRunning(conversation.id) && this.#boundTabs(conversation.id).length === 0,
         );
@@ -85,8 +86,25 @@ export class ConversationLifecycle {
     conversationIds: readonly string[],
     shouldArchive: (conversation: ArchivableConversation) => boolean,
   ): Promise<number> {
-    return this.deps.conversations.archiveConversationsIf(conversationIds, conversation =>
+    return this.#archiveAndClear(conversationIds, conversation =>
       !this.isRunning(conversation.id) && shouldArchive(conversation));
+  }
+
+  async #archiveAndClear(
+    ids: readonly string[],
+    shouldArchive: (conversation: Readonly<Conversation>) => boolean,
+  ): Promise<number> {
+    try {
+      return await this.deps.conversations.archiveConversationsIf(ids, shouldArchive);
+    } finally {
+      // Persistence may commit part of a batch before failing. Read committed metadata only,
+      // outside its write queue, and revalidate so a concurrent restore keeps its mailbox.
+      const archived = new Set(this.deps.conversations.getConversationList()
+        .filter(conversation => conversation.isArchived).map(conversation => conversation.id));
+      for (const id of ids) {
+        if (archived.has(id)) this.deps.sessions.get(id)?.mailbox?.clear();
+      }
+    }
   }
 
   restore(conversationIds: readonly string[]): Promise<void> {
@@ -119,6 +137,7 @@ export class ConversationLifecycle {
    * unsent input to the composer when it settles; the tabs reset afterwards and carry that input.
    */
   async resetDeletedConversationTabs(conversationId: string): Promise<void> {
+    this.deps.sessions.get(conversationId)?.mailbox?.clear();
     if (this.deps.sessions.isRunning(conversationId)) {
       void this.deps.sessions.whenSettled(conversationId)
         .then(settled => settled ? this.#retireDeletedSession(conversationId) : undefined)

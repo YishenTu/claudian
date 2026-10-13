@@ -1,3 +1,5 @@
+import { isSessionTool } from '@/core/tools/toolNames';
+
 import type { StreamChunk } from '../../../core/types';
 import { getPiCustomMessageDisplayText } from './piCustomMessageNormalization';
 import {
@@ -177,6 +179,7 @@ function normalizeToolUse(
     id,
     input: normalizePiToolInput(event.input ?? event.arguments ?? event.args, name),
     name,
+    ...(isSessionTool(name) ? { providerPayload: { rawName: name } } : {}),
   }];
 }
 

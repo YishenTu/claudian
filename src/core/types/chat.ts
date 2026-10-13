@@ -144,6 +144,15 @@ export interface ChatMessage {
   treeBranches?: readonly string[];
   /** Provider-native assistant message identifier used for rewind/fork checkpoints. */
   assistantMessageId?: string;
+  /** Sender of a user message delivered from another Claudian session; set live and on history replay. */
+  sessionMessage?: SessionMessageSender;
+}
+
+export interface SessionMessageSender {
+  /** Sender session title at delivery time. */
+  readonly from: string;
+  /** Sender conversation id. */
+  readonly sessionId: string;
 }
 
 export function isCanonicalUserMessage(message: ChatMessage): boolean {

@@ -1,6 +1,7 @@
 import { testDate, testTime } from '@test/helpers/testClock';
 import * as path from 'path';
 
+import { encodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import {
   deriveCodexSessionsRootFromSessionPath,
   findCodexSessionFileAsync,
@@ -12,6 +13,19 @@ import {
 const FIXTURES_DIR = path.join(__dirname, '../../../../fixtures/providers/codex/history');
 
 describe('CodexHistoryStore', () => {
+  it.each(['direct', 'script'])('restores sender metadata and native tool identity from a %s call', kind => {
+    const content = [
+      { type: 'event_msg', payload: { type: 'user_message', message: encodeSessionMessage({ from: 'Planner', sessionId: 'sender', text: 'Hello' }) } },
+      { type: 'response_item', payload: kind === 'direct'
+        ? { type: 'function_call', name: 'claudian_sessions__claudian_send_message', call_id: 'send', arguments: '{"text":"Reply","sessionId":"sender"}' }
+        : { type: 'custom_tool_call', name: 'exec', call_id: 'send', input: 'text(await tools.claudian_sessions__claudian_send_message({text:"Reply",sessionId:"sender"}));' } },
+      { type: 'response_item', payload: { type: kind === 'direct' ? 'function_call_output' : 'custom_tool_call_output', call_id: 'send', output: '{"sessionId":"sender","status":"started"}' } },
+    ].map(record => JSON.stringify({ ...record, timestamp: testDate().toISOString() })).join('\n');
+    const messages = parseCodexSessionContent(content);
+    expect(messages.find(message => message.role === 'user')).toMatchObject({ displayContent: 'Hello', sessionMessage: { from: 'Planner', sessionId: 'sender' } });
+    expect(messages.flatMap(message => message.toolCalls ?? [])).toEqual([expect.objectContaining({ name: 'claudian_send_message', providerPayload: expect.objectContaining({ rawName: 'claudian_sessions__claudian_send_message' }) })]);
+  });
+
   it('replays native activity after parent completion and across follow-up turns', () => {
     let seconds = 0;
     const event = (type: string, payload: Record<string, unknown>) => ({ type, timestamp: testDate({ seconds: seconds++ }).toISOString(), payload });

@@ -26,7 +26,7 @@ export async function createOpencodeWorkspaceServices(
   plugin: ProviderHost,
 ): Promise<OpencodeWorkspaceServices> {
   const commandCatalog = new OpencodeCommandCatalog();
-  const serverService = new OpencodeServerService();
+  const serverService = new OpencodeServerService(plugin.sessionToolEndpoint);
   const runtime = new OpencodeSharedRuntime(plugin, serverService, version => commandCatalog.setNativeVersion(version));
   const unregister = plugin.executionLifecycleRegistry.registerTransitionHook('opencode', {
     preserveSessions: session => getOpencodeProviderSettings(plugin.settings).enabled

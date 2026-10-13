@@ -400,7 +400,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       const response = await kernel.prompt({
         prompt: prompt?.blocks ?? [{ type: 'text', text: text.trim() }],
         sessionId: native.sessionId,
-      }, prompt?.userText);
+      }, prompt?.userText, request);
       this.#markNativeConversationContextEstablished(active);
       if (!this.#isRunCurrent(active, generation)) return;
       active.nativeCompleted = response.stopReason !== 'cancelled';

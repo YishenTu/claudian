@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import * as readline from 'node:readline';
 import { pathToFileURL } from 'node:url';
 
-// A deterministic external Pi RPC peer. No application implementation is imported.
+// A deterministic external Pi RPC peer that loads the generated launch extensions.
 const root = process.env.CLAUDIAN_TEST_PI_ROOT;
 const args = process.argv.slice(2);
 const sessionIndex = args.indexOf('--session');
@@ -24,8 +24,12 @@ let holdNext = false;
 let userOnlyNext = false;
 let queueNextSteer = false;
 const commands = new Map();
-const extensionIndex = args.indexOf('--extension');
-if (extensionIndex >= 0) {
+const tools = new Map();
+const toolControllers = new Map();
+let dialogCounter = 0;
+let startupToolAttempted = false;
+for (let extensionIndex = 0; extensionIndex < args.length; extensionIndex++) {
+  if (args[extensionIndex] !== '--extension') continue;
   const sdkDir = path.join(path.dirname(args[extensionIndex + 1]), 'node_modules', '@earendil-works', 'pi-coding-agent');
   fs.mkdirSync(sdkDir, { recursive: true });
   fs.writeFileSync(path.join(sdkDir, 'package.json'), JSON.stringify({ type: 'module', main: 'index.js' }));
@@ -33,6 +37,7 @@ if (extensionIndex >= 0) {
   const extension = await import(pathToFileURL(args[extensionIndex + 1]).href);
   extension.default({
     registerCommand: (name, command) => commands.set(name, command),
+    registerTool: tool => tools.set(tool.name, tool),
     appendEntry: customType => {
       const entry = { type: 'custom', customType, id: `anchor-${Date.now()}`, parentId: leafId };
       fs.appendFileSync(sessionFile, JSON.stringify(entry) + '\n');
@@ -62,13 +67,36 @@ const extensionContext = {
     await options?.withSession?.(extensionContext);
     return { cancelled: false };
   },
-  ui: { setStatus: (statusKey, statusText) => write({ type: 'extension_ui_request', method: 'setStatus', statusKey, statusText }) },
+  ui: {
+    input: (title, placeholder, options = {}) => new Promise(resolve => {
+      const id = `tool-dialog-${++dialogCounter}`;
+      const finish = value => {
+        pendingDialogs.delete(id);
+        options.signal?.removeEventListener('abort', abort);
+        resolve(value);
+      };
+      const abort = () => finish(undefined);
+      if (options.signal?.aborted) return abort();
+      pendingDialogs.set(id, { finish });
+      options.signal?.addEventListener('abort', abort, { once: true });
+      write({ type: 'extension_ui_request', id, method: 'input', title, placeholder });
+    }),
+    setStatus: (statusKey, statusText) => write({ type: 'extension_ui_request', method: 'setStatus', statusKey, statusText }) },
 };
 
 for await (const line of lines) {
   const request = JSON.parse(line);
   switch (request.type) {
     case 'get_state': {
+      if (process.env.CLAUDIAN_TEST_PI_STARTUP_TOOL === '1' && !startupToolAttempted) {
+        startupToolAttempted = true;
+        const tool = tools.get('claudian_send_message');
+        write({ type: 'tool_execution_start', toolCallId: 'startup', toolName: tool.name, args: { text: 'Too early' } });
+        void tool.execute('startup', { text: 'Too early' }, new AbortController().signal, undefined, extensionContext).then(result => {
+          fs.writeFileSync(path.join(root, 'startup-tool.json'), JSON.stringify(result));
+          write({ type: 'tool_execution_end', toolCallId: 'startup', toolName: tool.name, result });
+        });
+      }
       const [header] = readRecords(sessionFile);
       respond(request, {
         sessionId: header?.id ?? 'pi-source',
@@ -120,6 +148,7 @@ for await (const line of lines) {
         respond(request, { disposition: 'handled' });
         break;
       }
+      if (request.message === 'fixture:hold') holdNext = true;
       const records = readRecords(sessionFile);
       const byId = new Map(records.map(record => [record.id, record]));
       const activeIds = [];
@@ -149,6 +178,33 @@ for await (const line of lines) {
       holdNext = false;
       break;
     }
+    case 'fixture_tools': respond(request, { tools: [...tools.values()].map(({ name, parameters }) => ({ name, parameters })) }); break;
+    case 'fixture_tool': {
+      const tool = tools.get(request.name);
+      if (!tool) { respond(request, { isError: true, content: [{ type: 'text', text: 'Tool not registered' }] }); break; }
+      const controller = new AbortController();
+      toolControllers.set(request.toolCallId, controller);
+      write({ type: 'tool_execution_start', toolCallId: request.toolCallId, toolName: tool.name, args: request.args });
+      // Like Pi RPC, keep reading stdin while the extension waits for its UI response.
+      void tool.execute(request.toolCallId, request.args, controller.signal, undefined, extensionContext).then(result => {
+        write({ type: 'tool_execution_end', toolCallId: request.toolCallId, toolName: tool.name, result, isError: result.isError });
+        respond(request, result);
+      }).finally(() => toolControllers.delete(request.toolCallId));
+      break;
+    }
+    case 'fixture_tool_end':
+      toolControllers.get(request.toolCallId)?.abort();
+      respond(request, {});
+      break;
+    case 'fixture_private_input':
+      pendingDialogs.set(request.dialogId, request);
+      write({ type: 'extension_ui_request', id: request.dialogId, method: 'input', title: 'claudian-session-tools', placeholder: JSON.stringify(request.payload) });
+      break;
+    case 'fixture_emit': write(request.event); respond(request, {}); break;
+    case 'abort':
+      for (const controller of toolControllers.values()) controller.abort();
+      respond(request, {});
+      break;
     case 'fixture_echo': respond(request, { value: request.value }); break;
     case 'fixture_extension':
       pendingDialogs.set('dialog-1', request);
@@ -156,7 +212,8 @@ for await (const line of lines) {
       break;
     case 'extension_ui_response': {
       const pending = pendingDialogs.get(request.id);
-      if (pending) { pendingDialogs.delete(request.id); respond(pending, request); }
+      if (pending?.finish) pending.finish(request.cancelled ? undefined : request.value);
+      else if (pending) { pendingDialogs.delete(request.id); respond(pending, request); }
       break;
     }
     case 'fixture_hang': write({ type: 'fixture_waiting' }); break;

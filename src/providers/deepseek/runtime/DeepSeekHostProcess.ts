@@ -3,6 +3,7 @@ import { isAbsolute, join } from 'node:path';
 
 import { findNodeExecutable, getEnhancedPath } from '@/core/process/env';
 import { ManagedStdioProcess, type ManagedStdioProcessOptions } from '@/core/process/ManagedStdioProcess';
+import type { SessionToolRoute } from '@/core/session-tools/SessionToolEndpoint';
 
 import { DeepSeekRemoteClient } from '../remote/DeepSeekRemoteClient';
 import type { DeepSeekPreset, DeepSeekProfile } from '../types';
@@ -17,6 +18,7 @@ const STARTUP_TIMEOUT_MS = 180_000;
 const GRACEFUL_EXIT_TIMEOUT_MS = 6_000;
 
 export interface DeepSeekLaunchOptions {
+  readonly sessionToolRoute?: Pick<SessionToolRoute, 'url' | 'routeId'>;
   readonly cliPath: string;
   readonly cwd: string;
   readonly environment: NodeJS.ProcessEnv;
@@ -56,7 +58,7 @@ export class DeepSeekHostProcess {
         ? { command: desktop.executable, args: ['--expose-internals'], env: { ...environment, ELECTRON_RUN_AS_NODE: '1' } }
         : { command: entry ? findNodeExecutable(environment.PATH) ?? 'node' : cliPath, args: entry ? [entry] : [], env: environment }),
     };
-    const artifacts = await prepareDeepSeekLaunchArtifacts(undefined, options.presetPlugins);
+    const artifacts = await prepareDeepSeekLaunchArtifacts(undefined, options.presetPlugins, options.sessionToolRoute);
     const child = new ManagedStdioProcess({
       ...spec,
       args: [...spec.args, ...(desktop

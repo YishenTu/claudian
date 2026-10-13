@@ -67,6 +67,8 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/core/process/ProcessProbe.test.ts',
     'tests/integration/core/process/loginShellPath.test.ts',
     'tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts',
+    'tests/integration/providers/opencode/http/OpencodeSharedServer.test.ts',
+    'tests/integration/providers/pi/execution/PiExecutionKernel.test.ts',
   ]);
   assert.equal(result.piWindows, true);
   assert.ok(result.testFiles.includes('tests/unit/core/process/windowsCmdShim.test.ts'));

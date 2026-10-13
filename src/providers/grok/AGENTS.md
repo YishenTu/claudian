@@ -10,3 +10,5 @@
 - Do not rewrite native config, own BYOK endpoints, or source shell startup files.
 - Grok discovers user runtime AGENTS.md natively. Claudian must not create, rewrite, suppress, or explicitly inject those files.
 - Nonstandard xAI behavior requires sanitized native protocol evidence.
+- Sessions with a session-tool port attach Claudian’s HTTP MCP route on every `session/new` and `session/load`, including process replacement and fork-child loading. Keep route identity only in `X-Claudian-Route`; Grok persists URLs. Dispose the route with its owning session.
+- Grok MCP calls combine native cancellation with the owning run’s signal, which expires at terminal settlement. Session-tool permission auto-allow belongs in the existing ACP permission handler; do not add a parallel interaction router.

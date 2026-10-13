@@ -5,6 +5,7 @@ import {
   parseImageDataUri,
 } from '@/core/execution/imageAttachment';
 import { extractUserQuery } from '@/core/prompt/promptContext';
+import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import { resolveToolDiffData } from '@/core/tools/toolDiff';
 
 import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
@@ -215,11 +216,14 @@ function mapStoredMessage(
 
   if (role === 'user') {
     if (message.parts.some(part => part.type === 'compaction')) return null;
-    const promptText = extractUserQuery(getJoinedTextParts(message.parts));
+    const rawPrompt = getJoinedTextParts(message.parts);
+    const sessionMessage = decodeSessionMessage(rawPrompt);
+    const promptText = extractUserQuery(rawPrompt);
     const images = buildUserImages(message.parts, id);
     return {
       assistantMessageId: undefined,
       content: promptText,
+      ...(sessionMessage ? { sessionMessage: { from: sessionMessage.from, sessionId: sessionMessage.sessionId } } : {}),
       id,
       ...(images.length > 0 ? { images } : {}),
       role: 'user',

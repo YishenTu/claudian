@@ -2,6 +2,7 @@ import type { ProviderId } from '@/core/providers/types';
 import type { Conversation, ConversationMeta, ConversationMutablePatch, ConversationSummary, StoredChatModelSelection } from '@/core/types';
 import type { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
 import type { ChatExecutionPersistence } from '@/features/chat/execution/ChatExecutionCoordinator';
+import type { SessionToolBinding } from '@/features/chat/session-messaging/SessionMessagingService';
 import type { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 import type { ChatTab, TabId, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
@@ -63,11 +64,12 @@ export interface ChatViewHost extends ChatViewRefreshHost, TabManagerViewHost {
 }
 
 /** Session attachment and lookup; retirement and shutdown stay with the pool's main-owned callers. */
-export type ChatSessionRuntimes = Pick<SessionRuntimePool, 'acquire' | 'ensure' | 'release' | 'get' | 'getAttachment' | 'holdDraft'>;
+export type ChatSessionRuntimes = Pick<SessionRuntimePool, 'awaitConversationCreations' | 'acquire' | 'ensure' | 'release' | 'get' | 'getAttachment' | 'holdDraft'>;
 
 /** Application capabilities chat needs on top of the feature-neutral `FeatureHost`. */
 export interface ChatFeatureHost extends FeatureHost {
   readonly sessionRuntimes: ChatSessionRuntimes;
+  bindSessionTools(conversationId: string): SessionToolBinding;
   writeSessionSnapshot(conversationId: string, markdown: string): Promise<string>;
   getSessionSnapshotDirectory(): string;
   readonly chatModelSelection: ChatModelSelectionPort;

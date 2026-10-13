@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { parseCompactCommand } from '@/core/commands/compactCommand';
 import { PendingInteractionLedger } from '@/core/execution';
 import { resolveTitleGenerationLocale } from '@/core/prompt/titleGeneration';
+import type { SessionToolInvocation } from '@/core/session-tools/invokeSessionTool';
+import { isSessionTool } from '@/core/tools/toolNames';
 import type { ACPPromptRequest, ACPSessionConfigOption } from '@/providers/acp';
 import { filterMarkdownTextTokens } from '@/utils/markdownTextTokens';
 
@@ -24,7 +26,7 @@ import {
 } from './OpencodeSessionContract';
 import type { OpencodeSessionPersistence } from './OpencodeSessionPersistence';
 
-type PendingPrompt = { resolve: (value: { stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }) => void; reject: (error: Error) => void; kind: 'prompt' | 'command' | 'compact'; error?: Error; userMessageId?: string; inputId?: string; announced: boolean; started: boolean; steerable: boolean; idle: boolean };
+type PendingPrompt = { sessionTools?: SessionToolInvocation; toolController: AbortController; resolve: (value: { stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }) => void; reject: (error: Error) => void; kind: 'prompt' | 'command' | 'compact'; error?: Error; userMessageId?: string; inputId?: string; announced: boolean; started: boolean; steerable: boolean; idle: boolean };
 /** Admitted inputs stay owned until native delivery or recall, including compaction controls. */
 type PendingInboxInput = { admission: Promise<InboxAdmission>; recall: Promise<void> | null } & (
   | { kind: 'steer'; text: string; resolve: (delivered: boolean) => void; reject: (error: Error) => void }
@@ -32,7 +34,7 @@ type PendingInboxInput = { admission: Promise<InboxAdmission>; recall: Promise<v
 );
 type InboxAdmission = 'admitted' | 'refused' | 'unknown';
 interface NativeModel { providerID: string; id: string; variant?: string }
-interface NativeChild { outputSessionId: string; toolCallId: string; turnId: string; interactionTurnId: string; background: boolean; text: Map<string, string>; progress: { startedAt: number; toolUses: number; totalTokens: number; lastToolName?: string } }
+interface NativeChild { sessionTools?: SessionToolInvocation; toolController: AbortController; outputSessionId: string; toolCallId: string; turnId: string; interactionTurnId: string; background: boolean; text: Map<string, string>; progress: { startedAt: number; toolUses: number; totalTokens: number; lastToolName?: string } }
 interface NativeTool { name: string; input: Record<string, unknown>; sessionId: string; output: string | null; shell?: OpencodeShellOutput }
 
 /** V2 uses native HTTP events and interactions; ACP is only the v1 wire protocol. */
@@ -89,7 +91,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     this.client.onRetired(() => this.options.onRetired?.());
     this.client.onSuperseded(() => this.options.onSuperseded?.());
     this.databasePath = this.client.databasePath;
-    await this.client.subscribe(event => this.handleEvent(event), error => this.fail(error), () => !this.disposed && !!this.sessionId && !!this.options.openNativeInteraction);
+    await this.client.subscribe(event => this.handleEvent(event), error => this.fail(error), () => !this.disposed && !!this.sessionId && !!this.options.openNativeInteraction, id => this.resolveSessionTools(id));
     this.agents = await this.client.registerAgents(
       [options.profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[options.profile]],
       this.resolveSystemPrompt(options),
@@ -127,6 +129,12 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     return { sessionId, nativeVersion: 2, databasePath: this.databasePath, models: { currentModelId: '', availableModels: this.models.map(model => ({ modelId: `${model.providerID}/${model.id}`, name: `${model.providerID}/${model.name}` })) } };
   }
 
+  private resolveSessionTools(nativeId: string): SessionToolInvocation | undefined {
+    if (this.disposed || this.previewStops.has(nativeId)) return undefined;
+    const invocation = nativeId === this.sessionId ? this.pending?.sessionTools : this.children.get(nativeId)?.sessionTools;
+    return invocation;
+  }
+
   async setConfigOption(request: Record<string, unknown>): Promise<{ configOptions?: ACPSessionConfigOption[] }> {
     const route = `/api/session/${encodeURIComponent(String(request.sessionId))}`;
     const value = String(request.value);
@@ -150,7 +158,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     this.autoApprove = this.profile === 'managed' && enabled;
   }
 
-  async prompt(request: ACPPromptRequest, userText?: OpencodeTextRange | null): Promise<{ stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }> {
+  async prompt(request: ACPPromptRequest, userText?: OpencodeTextRange | null, run?: Parameters<OpencodeSessionKernel['prompt']>[2]): Promise<{ stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }> {
     if (this.pending) throw new Error('OpenCode already has an active request.');
     const { text, files } = toNativeInput(request);
     const compact = parseCompactCommand(text);
@@ -168,7 +176,9 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     let resolve!: PendingPrompt['resolve'];
     let reject!: PendingPrompt['reject'];
     const completion = new Promise<{ stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }>((yes, no) => { resolve = yes; reject = no; });
-    const pending: PendingPrompt = { resolve, reject, kind, ...(kind !== 'command' ? { inputId: nativeMessageId() } : {}), announced: false, started: false, steerable: false, idle: false };
+    const toolController = new AbortController();
+    const sessionTools = run ? { toolPolicy: run.toolPolicy, port: this.options.config.sessionTools, signal: AbortSignal.any([run.signal, toolController.signal, this.controller.signal]) } : undefined;
+    const pending: PendingPrompt = { sessionTools, toolController, resolve, reject, kind, ...(kind !== 'command' ? { inputId: nativeMessageId() } : {}), announced: false, started: false, steerable: false, idle: false };
     this.pending = pending;
     this.previewStops.delete(request.sessionId);
     // A native error may arrive before the admission request resolves.
@@ -264,6 +274,8 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   }
 
   cancel(sessionId: string): void {
+    if (sessionId === this.sessionId) this.pending?.toolController.abort();
+    else this.children.get(sessionId)?.toolController.abort();
     this.previewStops.set(sessionId, 'cancelled');
     for (const tool of this.tools.values()) {
       if (tool.sessionId === sessionId) {
@@ -343,6 +355,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
           result: [...child.text.values()].join('\n') || (data.error ? errorText(data.error) : undefined),
           providerSessionId: this.sessionId ?? undefined,
         });
+        child.toolController.abort();
         this.children.delete(nativeSessionId);
         this.previewStops.delete(nativeSessionId);
         this.workChanged();
@@ -419,7 +432,10 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         if (tool?.name === 'subagent' && typeof metadata.sessionID === 'string' && turnId && !this.children.has(metadata.sessionID)) {
           const background = tool.input.run_in_background === true;
           const interactionTurnId = (background ? this.options.onNativeTaskStarted?.(metadata.sessionID, turnId) : undefined) ?? child?.interactionTurnId ?? turnId;
-          this.children.set(metadata.sessionID, { outputSessionId: background ? metadata.sessionID : child?.outputSessionId ?? metadata.sessionID, toolCallId: identity.toolCallId, turnId, interactionTurnId, background, text: new Map(), progress: { startedAt: Date.now(), toolUses: 0, totalTokens: 0 } });
+          const owner = child ? child.sessionTools : this.pending?.sessionTools;
+          const toolController = new AbortController();
+          const sessionTools = owner ? { ...owner, signal: AbortSignal.any([owner.signal, toolController.signal]) } : undefined;
+          this.children.set(metadata.sessionID, { sessionTools, toolController, outputSessionId: background ? metadata.sessionID : child?.outputSessionId ?? metadata.sessionID, toolCallId: identity.toolCallId, turnId, interactionTurnId, background, text: new Map(), progress: { startedAt: Date.now(), toolUses: 0, totalTokens: 0 } });
         }
         if (tool && !this.previewStops.has(nativeSessionId) && tool.output !== null && typeof metadata.shellID === 'string') {
           tool.shell ??= new OpencodeShellOutput(this.requireClient(), metadata.shellID, content => {
@@ -519,7 +535,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         }
         await this.requireClient().request(`${route}/reply`, { method: 'POST', body: { answer } });
       } else {
-        if (this.autoApprove) {
+        if (this.autoApprove || isSessionTool(normalizeOpencodeToolName(String(data.action)))) {
           await this.requireClient().request(`${route}/reply`, { method: 'POST', body: { decision: 'once' } });
           return;
         }
@@ -617,6 +633,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private finish(stopReason: 'end_turn' | 'cancelled' = 'end_turn'): void {
     const pending = this.pending;
     if (stopReason === 'end_turn' && pending?.error) { this.fail(pending.error); return; }
+    pending?.toolController.abort();
     this.pending = null;
     this.stopTools(this.sessionId ?? undefined);
     void this.recallInboxInputs();
@@ -628,6 +645,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     const error = cause instanceof Error ? cause : new Error(String(cause));
     if (this.disposed) return;
     const pending = this.pending;
+    pending?.toolController.abort();
     this.pending = null;
     this.stopTools(this.sessionId ?? undefined);
     void this.recallInboxInputs();

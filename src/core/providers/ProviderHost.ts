@@ -5,6 +5,7 @@ import type {
   ProviderExecutionLifecycleRegistry,
   ProviderExecutionTransitionScope,
 } from '../execution';
+import type { SessionToolEndpoint } from '../session-tools/SessionToolEndpoint';
 import type { ClaudianSettings } from '../types';
 import type { EnvironmentScope } from '../types/settings';
 import type { ProviderCLIResolutionContext, ProviderId } from './types';
@@ -22,6 +23,8 @@ export interface ProviderHost {
   readonly settings: Readonly<ClaudianSettings>;
   readonly storage: ProviderHostStorage;
   readonly manifest?: { version?: string };
+  /** Loopback endpoint through which shared provider processes reach main-chat session tools. */
+  readonly sessionToolEndpoint: SessionToolEndpoint;
 
   mutateSettings(
     mutation: (settings: ClaudianSettings) => void | Promise<void>,

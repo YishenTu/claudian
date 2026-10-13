@@ -184,6 +184,8 @@
       "enteringPlan": "計画モードに移行中",
       "planComplete": "計画完了",
       "messageAgent": "エージェントにメッセージを送信",
+      "listSessions": "セッションを一覧表示",
+      "messageSession": "セッションにメッセージを送信",
       "continueAgent": "エージェントを継続",
       "listAgents": "エージェント一覧",
       "interruptAgent": "エージェントを中断",
@@ -314,6 +316,11 @@
     "pi": {
       "extension": "Pi 拡張機能",
       "notification": "Pi 拡張機能の通知。"
+    },
+    "sessionMessage": {
+      "from": "{sender} から",
+      "session": "セッション: {sessionId}",
+      "undelivered": "{senders} からのメッセージを配信できませんでした。"
     }
   },
   "settings": {

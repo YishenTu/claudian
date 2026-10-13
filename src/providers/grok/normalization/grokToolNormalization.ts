@@ -1,4 +1,6 @@
+import { SESSION_TOOL_MCP_SERVER_NAME } from '@/core/session-tools/sessionToolMCP';
 import { diffFromStructuredPatch } from '@/core/tools/toolDiff';
+import { isSessionTool, type SessionToolName } from '@/core/tools/toolNames';
 import { stringifyUnknown } from '@/utils/stringify';
 
 import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
@@ -88,6 +90,8 @@ export interface GrokRawToolNameResolution {
 }
 
 export function normalizeGrokToolName(rawName: string, rawInput?: unknown, rawOutput?: unknown): string {
+  const sessionTool = resolveSessionToolName(rawName, rawInput, rawOutput);
+  if (sessionTool) return sessionTool;
   const normalized = rawName.trim();
   const lookup = normalized.toLowerCase();
   // Background shells share the task-output tool with subagents; only proven shell results leave the lifecycle.
@@ -102,6 +106,19 @@ export function normalizeGrokToolName(rawName: string, rawInput?: unknown, rawOu
     return `mcp__${rawInput.tool_name.trim()}`;
   }
   return GROK_TOOL_NAME_MAP[lookup] ?? (normalized || 'tool');
+}
+
+function resolveSessionToolName(rawName: string, rawInput?: unknown, rawOutput?: unknown): SessionToolName | undefined {
+  const key = isRecord(rawInput) && typeof rawInput.tool_name === 'string' ? rawInput.tool_name.trim() : rawName.trim();
+  const prefix = `${SESSION_TOOL_MCP_SERVER_NAME}__`;
+  const name = key.startsWith(prefix) ? key.slice(prefix.length) : undefined;
+  if (name && isSessionTool(name)) return name;
+  if (isRecord(rawOutput) && rawOutput.type === 'MCP'
+    && rawOutput.server_name === SESSION_TOOL_MCP_SERVER_NAME
+    && typeof rawOutput.tool_name === 'string' && isSessionTool(rawOutput.tool_name)) {
+    return rawOutput.tool_name;
+  }
+  return undefined;
 }
 
 export function resolveGrokRawToolName(
@@ -570,6 +587,10 @@ export function normalizeGrokToolInput(rawName: string, value: unknown, rawOutpu
   const input = isRecord(value)
     ? value
     : value === undefined ? {} : { value };
+
+  if (resolveSessionToolName(rawName, value, rawOutput) && isRecord(input.tool_input)) {
+    return input.tool_input;
+  }
 
   switch (rawName.trim().toLowerCase()) {
     case 'get_command_or_subagent_output': {

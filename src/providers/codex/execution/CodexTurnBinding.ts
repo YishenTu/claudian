@@ -75,6 +75,7 @@ export class CodexTurnBinding {
         localTurnId: active.run.turnId,
         nativeThreadId: threadId,
         nativeTurnId,
+        cancellation: active.cancellation,
         toolPolicy: this.#toolPolicy ?? { kind: 'provider-default' },
       });
       active.run.emit({

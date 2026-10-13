@@ -1,4 +1,4 @@
-import type { ProviderToolPolicy } from '@/core/execution';
+import { isSessionToolPolicyAllowed, type ProviderToolPolicy } from '@/core/execution';
 import type {
   Thread,
   ThreadForkResult,
@@ -7,6 +7,7 @@ import type {
   ThreadStartResult,
 } from '@/providers/codex/runtime/codexAppServerTypes';
 import type { CodexRPCTransport } from '@/providers/codex/runtime/CodexRPCTransport';
+import { CODEX_SESSION_TOOL_VERSION, isCodexSessionTool } from '@/providers/codex/runtime/CodexSessionTools';
 import type { CodexThreadScope } from '@/providers/codex/runtime/CodexThreadScope';
 import {
   CODEX_WORKSPACE_DEPENDENCY_TOOL_NAME,
@@ -51,7 +52,7 @@ export interface CodexThreadBinderHost {
   /** An existing thread was resumed into the current process. */
   threadResumed(thread: Thread): void;
   /** thread/start created the session's native thread. */
-  threadStarted(run: CodexActiveRun, identity: CodexThreadIdentity & { threadId: string }): void;
+  threadStarted(run: CodexActiveRun, identity: CodexThreadIdentity & { threadId: string; sessionToolVersion: number | null }): void;
   /** A fork child exists; its identity is durable before the child is resumed. */
   forkTargetAdopted(run: CodexActiveRun, target: CodexPendingForkTarget): void;
   /** The pending fork was materialized at its checkpoint. */
@@ -195,6 +196,8 @@ export class CodexThreadBinder {
     this.host.threadStarted(run, {
       threadId: result.thread.id,
       sessionFilePath,
+      sessionToolVersion: dynamicTools.some(spec => isCodexSessionTool(spec.namespace, spec.name))
+        ? CODEX_SESSION_TOOL_VERSION : null,
       workspaceDependencyToolVersion: dynamicTools.some(spec =>
         spec.namespace === CODEX_WORKSPACE_DEPENDENCY_TOOL_NAMESPACE
         && spec.name === CODEX_WORKSPACE_DEPENDENCY_TOOL_NAME
@@ -449,6 +452,7 @@ function isThreadStartToolAllowed(
   namespace: string | null | undefined,
   name: string,
 ): boolean {
+  if (isCodexSessionTool(namespace, name)) return isSessionToolPolicyAllowed(policy);
   if (policy.kind === 'provider-default' || policy.kind === 'unrestricted') {
     return true;
   }

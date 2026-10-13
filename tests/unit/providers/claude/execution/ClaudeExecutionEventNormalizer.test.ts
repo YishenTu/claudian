@@ -1,7 +1,9 @@
 import { buildSDKMessage } from '@test/helpers/sdkMessages';
 
+import { encodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import { TOOL_TODO_WRITE } from '@/core/tools/toolNames';
 import { ClaudeExecutionEventNormalizer } from '@/providers/claude/execution/ClaudeExecutionEventNormalizer';
+import { parseSDKMessageToChat } from '@/providers/claude/history/sdkMessageParsing';
 
 const msg = buildSDKMessage;
 
@@ -527,4 +529,24 @@ it('omits throughput for success-subtype API errors', () => {
     is_error: true, api_error_status: 500, duration_ms: 2500, usage: { output_tokens: 125 },
   }), 'requested');
   expect(events.find(event => event.type === 'result')).not.toHaveProperty('turnStats', expect.anything());
+});
+
+describe('Claude session message normalization', () => {
+  it.each(['claudian_list_sessions', 'claudian_send_message'])('normalizes %s in live output and native history', name => {
+    const rawName = `mcp__claudian_sessions__${name}`;
+    const native = { type: 'assistant' as const, message: { content: [
+      { type: 'tool_use' as const, id: 'session-tool', name: rawName, input: {} },
+    ] } };
+    const expected = { name, providerPayload: { rawName } };
+    expect(new ClaudeExecutionEventNormalizer().normalize(msg(native), 'requested'))
+      .toContainEqual(expect.objectContaining({ type: 'output', event: expect.objectContaining(expected) }));
+    expect(parseSDKMessageToChat(native)?.toolCalls?.[0]).toMatchObject(expected);
+  });
+
+  it('retains the sender and unwraps a session envelope in history', () => {
+    const content = encodeSessionMessage({ from: 'Research', sessionId: 'sender', text: 'Found it' });
+    expect(parseSDKMessageToChat({ type: 'user', message: { content } })).toMatchObject({
+      displayContent: 'Found it', sessionMessage: { from: 'Research', sessionId: 'sender' },
+    });
+  });
 });

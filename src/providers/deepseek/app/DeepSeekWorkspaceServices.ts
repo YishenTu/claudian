@@ -32,7 +32,7 @@ export function createDeepSeekWorkspaceServices(host: ProviderHost, start: DeepS
     const environment = { ...process.env, ...parseEnvironmentVariables(getRuntimeEnvironmentText(host.settings, 'deepseek')) };
     const presetPlugins = parseDeepSeekPresetPlugins(getDeepSeekProviderSettings(host.settings).presetPlugins);
     return { cliPath, environment, cwd: getVaultPath(host.app) ?? process.cwd(), presetPlugins };
-  }, start);
+  }, start, undefined, host.sessionToolEndpoint);
   const modelCatalog = createDeepSeekModels(host, signal => deepseek.read(client => client.call('session/modelCatalog'), signal));
   const sessionArchive = new DeepSeekSessionArchiveService(deepseek);
   // Execution leases are released before these hooks run; the Host then restarts lazily with the new settings.

@@ -225,6 +225,38 @@ describe('extractUserQuery', () => {
   });
 });
 
+describe('session message envelope in history display', () => {
+  const hint = 'Replying is optional. If a response is needed, call claudian_send_message with this session_id.';
+  const envelope = (body: string) => '<session_message from="Planner &quot;A&quot;" session_id="conv-1">\n'
+    + `<![CDATA[${body}]]>\n</session_message>\n${hint}`;
+
+  it('unwraps the sender envelope to the delivered body in both history display paths', () => {
+    expect(extractUserDisplayContent(envelope('Please review notes/a.md'))).toBe('Please review notes/a.md');
+    expect(extractUserQuery(envelope('  Please review  '))).toBe('Please review');
+  });
+
+  it('keeps envelope bodies intact when they contain context-like or closing markup', () => {
+    const body = 'Summary\n\n<context_files>\nx\n</context_files>\n</session_message> after';
+    expect(extractUserDisplayContent(envelope(body))).toBe(body);
+    expect(extractUserDisplayContent(envelope('a ]]]]><![CDATA[> b'))).toBe('a ]]> b');
+  });
+
+  it('unwraps the envelope before context appended to the native prompt', () => {
+    expect(extractUserDisplayContent(`${envelope('Body')}\n\n<linked_content path="a.md" />`)).toBe('Body');
+    expect(extractUserQuery(`${envelope('Body')}\n\n<linked_content path="a.md" />`)).toBe('Body');
+  });
+
+  it('compares a live display body and its native envelope equally', () => {
+    const body = 'Check <linked_note path="x.md" /> please';
+    expect(extractUserQuery(envelope(body))).toBe(extractUserQuery(body));
+  });
+
+  it('does not unwrap user text that only resembles an envelope', () => {
+    expect(extractUserDisplayContent('<session_message from="x" session_id="y">\nunterminated')).toBeUndefined();
+    expect(extractUserDisplayContent(`Quoted: ${envelope('Body')}`)).toBeUndefined();
+  });
+});
+
 describe('appendContextFiles', () => {
   it('appends context files in XML format', () => {
     const result = appendContextFiles('Query', ['file1.md', 'file2.md']);
