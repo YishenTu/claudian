@@ -6,6 +6,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderSessionConfig } from '@/core/execution';
 import { findNodeExecutable, getEnhancedPath } from '@/core/process/env';
+import type { ManagedStdioProcessOptions } from '@/core/process/ManagedStdioProcess';
+import type * as ProcessProbe from '@/core/process/ProcessProbe';
 import { normalizeProviderCommandDiscoveryItems } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
 import { ProviderCommandDiscoveryStore } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -22,6 +24,13 @@ import { SlashCommandSource } from '@/shared/composer-dropdown/SlashCommandSourc
 
 // Spawning the fake server is slow on Windows CI runners.
 jest.setTimeout(45_000);
+
+// A cold Windows runner can exceed the product's 5-second version probe deadline even after the
+// warmup below. This suite is not about that deadline, so give probes a budget under the test timeout.
+jest.mock('@/core/process/ProcessProbe', () => {
+  const actual: typeof ProcessProbe = jest.requireActual('@/core/process/ProcessProbe');
+  return { ...actual, runProcessProbe: (options: ManagedStdioProcessOptions) => actual.runProcessProbe(options, 30_000) };
+});
 
 const fixture = `#!/usr/bin/env node
 const fs = require('node:fs'), http = require('node:http');
@@ -98,8 +107,8 @@ server.listen(0,'127.0.0.1',()=>console.log(JSON.stringify({url:'http://127.0.0.
 process.stdin.resume(); process.stdin.on('end',()=>{ for(const f of feeds) f.end(); server.close(); });
 `;
 
-// The version probe gives up after 5 seconds. On a cold Windows runner the first Node launch alone
-// can take longer, so pay that cost once here, without a deadline, before any test probes the CLI.
+// On a cold Windows runner the first Node launch alone can take seconds, so pay that cost once here,
+// without a deadline, before any test probes or starts the CLI.
 beforeAll(() => {
   const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-shared-v2-warmup-')));
   try {
