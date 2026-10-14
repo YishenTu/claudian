@@ -1,6 +1,7 @@
 import type { ProviderBackgroundOutputEvent, WithoutEventScope } from '@/core/execution/ProviderExecutionEvent';
+import { normalizeResolvedAnswers } from '@/core/tools/toolInput';
 import * as ToolNames from '@/core/tools/toolNames';
-import type { DiffLine, ScriptToolCallItem, ToolResultDiff, ToolResultImage } from '@/core/types';
+import type { AskUserAnswers, DiffLine, ScriptToolCallItem, ToolResultDiff, ToolResultImage } from '@/core/types';
 
 import { encodeDeepSeekModelId } from '../models';
 import { isRecord } from '../remote/DeepSeekRemoteClient';
@@ -201,9 +202,10 @@ export class DeepSeekOutput {
     const text = deepseekText(content);
     const presented = name === ToolNames.TOOL_READ ? readWindow(meta) : name === ToolNames.TOOL_SKILL ? skillInstructions(text) : undefined;
     const diff = name === ToolNames.TOOL_EDIT || name === ToolNames.TOOL_WRITE ? appliedDiff(meta) : undefined;
+    const resolvedAnswers = name === ToolNames.TOOL_ASK_USER_QUESTION ? questionAnswers(text) : undefined;
     this.emit({ type: 'tool_completed', toolCallId: id, content: presented ?? text, isError: isError === true,
       toolScope: { kind: 'main' }, ...(typeof parent === 'string' ? { parentToolCallId: parent } : {}),
-      resultDetails: { resultFormat: 'plain', ...(diff ? { diff } : {}), ...(resultImages.length ? { resultImages } : {}), ...(calls ? { scriptToolCalls: [...calls.values()] } : {}) },
+      resultDetails: { resultFormat: 'plain', ...(diff ? { diff } : {}), ...(resultImages.length ? { resultImages } : {}), ...(calls ? { scriptToolCalls: [...calls.values()] } : {}), ...(resolvedAnswers ? { resolvedAnswers } : {}) },
     });
   }
 
@@ -289,6 +291,13 @@ function toolInput(name: string, value: unknown): Record<string, unknown> {
   }
   if (name === 'skill' && typeof input.name === 'string') { input.skill = input.name; delete input.name; }
   if (name === 'send_message' && typeof input.agent_id === 'string') { input.target = input.agent_id; delete input.agent_id; }
+  if (name === 'ask_user_question' && Array.isArray(input.questions)) {
+    input.questions = (input.questions as unknown[]).map(question => {
+      if (!isRecord(question) || !('multi_select' in question)) return question;
+      const { multi_select: multiSelect, ...rest } = question;
+      return { ...rest, multiSelect };
+    });
+  }
   return input;
 }
 
@@ -302,6 +311,23 @@ function readWindow(meta: unknown): string | undefined {
 /** Instructions of a loaded native skill, without its model-facing `<skill_content>` wrapper and resource hint. */
 function skillInstructions(text: string): string | undefined {
   return /^<skill_content name="[^"\n]*">\n<skill_resources>\n[\s\S]*?\n<\/skill_resources>\n\n<skill_instructions>\n([\s\S]*)\n<\/skill_instructions>\n<\/skill_content>$/.exec(text)?.[1];
+}
+
+/**
+ * Answers of a native `ask_user_question` batch keyed by question ID: selected labels plus any custom text.
+ * A skipped item, a pending timed call or an unparseable result stays unanswered.
+ */
+function questionAnswers(text: string): AskUserAnswers | undefined {
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { return undefined; }
+  if (!isRecord(parsed) || !Array.isArray(parsed.answers)) return undefined;
+  const answers: Record<string, string[]> = {};
+  for (const answer of parsed.answers) {
+    if (!isRecord(answer) || typeof answer.id !== 'string') continue;
+    const selected = Array.isArray(answer.selected) ? answer.selected.filter((label): label is string => typeof label === 'string' && label.length > 0) : [];
+    answers[answer.id] = typeof answer.custom === 'string' && answer.custom ? [...selected, answer.custom] : selected;
+  }
+  return normalizeResolvedAnswers(answers);
 }
 
 /** Native applied hunks, each with surrounding context lines; a created file has none. */

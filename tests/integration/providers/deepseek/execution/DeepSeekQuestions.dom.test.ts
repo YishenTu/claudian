@@ -14,8 +14,11 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { InlineAskUserQuestion } from '@/features/chat/interactions/InlineAskUserQuestion';
 import { createInteractionPromptPort } from '@/features/chat/interactions/interactionPromptPort';
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
+import { renderStoredToolCall } from '@/features/chat/rendering/tools/ToolCallRenderer';
 import { setLocale } from '@/i18n/i18n';
 import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSeekExecutionBackend';
+import { DeepSeekConversationHistoryService } from '@/providers/deepseek/history/DeepSeekConversationHistoryService';
+import { getDeepSeekHome } from '@/providers/deepseek/runtime/DeepSeekHome';
 import type { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
 
 let peer: NativePeer;
@@ -113,6 +116,36 @@ it.each([
   await waitFor(() => expect(peer.calls.find(c => c.method === '$events/result')?.args).toEqual({ clientId: expect.any(String), eventId: 'question', outcome: { kind: 'result', value: { answers: [sent] } } }));
   answer('saved');
   await done;
+});
+
+it('restores an answered native question from history as its answered review, not the raw native result', async () => {
+  // Captured from a native transcript: one question, answered with its recommended option.
+  const label = 'deepseek provider — deepseek-official/deepseek-flash (Recommended)';
+  const nativeResult = JSON.stringify({ answers: [{ id: 'model', selected: [label] }] });
+  const questions = [{ id: 'model', header: 'Confirm model', question: 'Which deepseek-flash model should the new session use?', options: [
+    { label, description: 'The default provider\'s default model.' },
+    { label: 'pi provider — pi:deepseek/deepseek-flash', description: 'Model id contains a slash.' },
+  ] }];
+  const records = [
+    { type: 'turn/start', seq: 1, time, data: { turn: 3 } },
+    { type: 'tool/call', seq: 2, time, data: { turn: 3, step: 2, callId: 'ask', name: 'ask_user_question', arguments: JSON.stringify({ questions }) } },
+    { type: 'tool/result', seq: 3, time, data: { turn: 3, step: 2, message: { role: 'tool', toolCallId: 'ask', content: [{ type: 'text', text: nativeResult }], isError: false } }, surfaceOp: 'append' },
+    { type: 'turn/end', seq: 4, time, data: { turn: 3, reason: { kind: 'completed' } } },
+  ].map(event => ({ type: 'event', event }));
+  const native = peer.onCall;
+  peer.onCall = (method, args) => method === 'session/projections' ? { asOfSeq: 4, values: { agentPreset: 'claudian' } }
+    : method === 'session/page' ? { records, hasMore: false } : native(method, args);
+  const providerState = { schemaVersion: 1, home: getDeepSeekHome(process.env, process.cwd()), profile: 'web', preset: 'claudian' };
+  const { messages } = await new DeepSeekConversationHistoryService(async () => deepseek).hydrateConversationHistory({ sessionId: 'root', providerState, messages: [] }, '/vault');
+  const tool = messages!.flatMap(message => message.toolCalls ?? [])[0];
+  document.body.replaceChildren();
+  const card = renderStoredToolCall(document.body.createDiv(), tool, { initiallyExpanded: true });
+  expect(within(card).getByText(questions[0].question)).toBeTruthy();
+  expect(within(card).getByText(label)).toBeTruthy();
+  expect(within(card).queryByText(nativeResult)).toBeNull();
+  // The unanswered option list is replaced by the review.
+  expect(within(card).queryByText('pi provider — pi:deepseek/deepseek-flash')).toBeNull();
+  expect((await axe(card)).violations).toEqual([]);
 });
 
 const command = 'rm -rf /tmp/review-generated';

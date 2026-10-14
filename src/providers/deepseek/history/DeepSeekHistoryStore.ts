@@ -102,6 +102,7 @@ function applyOutput(message: ChatMessage, tools: Map<string, ToolCallInfo>, eve
         tool.status = event.isError ? 'error' : 'completed'; tool.result = event.content;
         // A failed edit changed nothing; live turns likewise attach a diff only on success.
         if (!event.isError && isWriteEditTool(tool.name)) tool.diffData = resolveToolDiffData(event.resultDetails?.diff, tool);
+        if (event.resultDetails?.resolvedAnswers) tool.resolvedAnswers = event.resultDetails.resolvedAnswers;
       }
       applyToolResultPresentation(tool, event.resultDetails);
     }

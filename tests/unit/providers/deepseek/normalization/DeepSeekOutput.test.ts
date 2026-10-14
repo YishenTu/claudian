@@ -113,3 +113,45 @@ it('presents native tool inputs, read windows and applied hunks in the neutral t
   expect(completed[3]).toMatchObject({ toolCallId: 'write' });
   expect(completed[3]).not.toHaveProperty('resultDetails.diff');
 });
+
+describe('native ask_user_question results', () => {
+  // Captured from a native transcript: two questions, each answered with its recommended option.
+  const questions = [
+    { id: 'round9', header: 'Round 9', question: 'Record it in DEMO.md as a Round 9 section?', options: [{ label: 'Append a short Round 9 (Recommended)' }, { label: 'Skip it' }] },
+    { id: 'tag', header: 'Stray tag', question: 'Find the stray tag?', options: [{ label: 'Yes, find it (Recommended)' }, { label: 'No' }], multi_select: true },
+  ];
+  const ask = (text: string, isError = false) => {
+    output.record({ type: 'tool/call', seq: 1, time: now, data: { callId: 'ask', name: 'ask_user_question', arguments: JSON.stringify({ questions }) } });
+    output.record({ type: 'tool/result', seq: 2, time: now, data: { message: { toolCallId: 'ask', content: [{ type: 'text', text }], isError } } });
+    return events.find(e => e.type === 'tool_completed');
+  };
+
+  it('presents native questions with the neutral multi-select flag', () => {
+    ask('{"pending":true,"callId":"ask","message":"No answer batch arrived before the timeout."}');
+    expect(events.find(e => e.type === 'tool_started')).toMatchObject({ name: 'AskUserQuestion', input: { questions: [
+      { id: 'round9', question: questions[0].question }, { id: 'tag', question: questions[1].question, multiSelect: true },
+    ] } });
+  });
+
+  it.each([
+    { name: 'selected options of every question', text: '{"answers":[{"id":"round9","selected":["Append a short Round 9 (Recommended)"]},{"id":"tag","selected":["Yes, find it (Recommended)"]}]}',
+      answers: { round9: 'Append a short Round 9 (Recommended)', tag: 'Yes, find it (Recommended)' } },
+    { name: 'a custom answer replacing a single choice and supplementing a multi-select', text: '{"answers":[{"id":"round9","selected":[],"custom":"Only in chat"},{"id":"tag","selected":["Yes, find it (Recommended)"],"custom":"Also the footer"}]}',
+      answers: { round9: 'Only in chat', tag: ['Yes, find it (Recommended)', 'Also the footer'] } },
+    { name: 'a skipped question beside an answered one', text: '{"answers":[{"id":"round9","selected":[]},{"id":"tag","selected":["No"]}]}',
+      answers: { tag: 'No' } },
+  ])('resolves $name keyed by native question ID', ({ text, answers }) => {
+    const completed = ask(text);
+    expect(completed).toMatchObject({ isError: false });
+    expect(completed).toHaveProperty('resultDetails.resolvedAnswers', answers);
+  });
+
+  it.each([
+    { name: 'a fully skipped batch', text: '{"answers":[{"id":"round9","selected":[]},{"id":"tag","selected":[]}]}' },
+    { name: 'a timed call still pending', text: '{"pending":true,"callId":"ask","message":"No answer batch arrived before the timeout."}' },
+    { name: 'a cancelled call', text: 'User question was cancelled', isError: true },
+    { name: 'a failed call echoing answer-shaped text', text: '{"answers":[{"id":"round9","selected":["Skip it"]}]}', isError: true },
+  ])('leaves $name unanswered', ({ text, isError }) => {
+    expect(ask(text, isError)).not.toHaveProperty('resultDetails.resolvedAnswers');
+  });
+});
