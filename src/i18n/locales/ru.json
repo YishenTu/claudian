@@ -318,9 +318,24 @@
       "notification": "Уведомление расширения Pi."
     },
     "sessionMessage": {
-      "from": "От {sender}",
-      "session": "Сеанс: {sessionId}",
-      "undelivered": "Не удалось доставить сообщения от {senders}."
+      "undelivered": "Не удалось доставить сообщения от {senders}.",
+      "fromLabel": "Из сеанса:"
+    },
+    "sessionTools": {
+      "noSessions": "Нет сеансов",
+      "thisSession": "Этот сеанс",
+      "truncated": "Показаны не все сеансы",
+      "recipient": "Получатель",
+      "model": "Модель",
+      "reasoning": "Рассуждение",
+      "message": "Сообщение",
+      "openSession": "Открыть сеанс {sessionId}",
+      "openProviderSession": "Открыть сеанс {provider} {sessionId}",
+      "sessionMissing": "Этот сеанс больше не существует.",
+      "openFailed": "Не удалось открыть сеанс: {message}",
+      "openUnavailable": "Отсюда нельзя открывать сеансы.",
+      "providersIncluded": "Включены доступные провайдеры и модели",
+      "newSession": "Новый сеанс"
     }
   },
   "settings": {

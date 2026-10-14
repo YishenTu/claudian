@@ -363,7 +363,7 @@ async function startSessionToolTurn(session: ProviderExecutionSession, nativeId:
 it('routes session tools through one Host route to the claimed root, denying unknown and unported callers', async () => {
   const endpoint = sessionToolEndpoint();
   const list = jest.fn(async () => ({ sessions: [] }));
-  const send = jest.fn(async () => ({ sessionId: 'target', status: 'queued' as const }));
+  const send = jest.fn(async () => ({ sessionId: 'target', title: 'Review', provider: 'codex', status: 'queued' as const }));
   const alpha = open(port(), undefined, 'persistent', { list, send });
   const a = await startSessionToolTurn(alpha, 'alpha');
   const b = await startSessionToolTurn(open(), 'beta');
@@ -384,7 +384,7 @@ it('routes session tools through one Host route to the claimed root, denying unk
   peer.send('session/follow', { type: 'event', event: { seq: 1, type: 'turn/start', data: { turn: 1 } } }, childFollow('child'));
   peer.send('session/follow', { type: 'event', event: { seq: 2, type: 'tool/call', data: { callId: 'session-call', name: 'claudian_send_message', arguments: '{"sessionId":"target","text":"review"}' } } }, childFollow('child'));
   const childResult = await pendingChild;
-  expect(childResult).toEqual({ isError: false, text: '{"sessionId":"target","status":"queued"}' });
+  expect(childResult).toEqual({ isError: false, text: '{"sessionId":"target","title":"Review","provider":"codex","status":"queued"}' });
   expect(send).toHaveBeenCalledWith({ sessionId: 'target', text: 'review' }, expect.any(AbortSignal));
   expect(await endpoint.call('alpha')).toEqual({ isError: false, text: '{"sessions":[]}' });
   expect(list).toHaveBeenCalledTimes(1);

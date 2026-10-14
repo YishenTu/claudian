@@ -318,9 +318,24 @@
       "notification": "Pi extension notification."
     },
     "sessionMessage": {
-      "from": "From {sender}",
-      "session": "Session: {sessionId}",
-      "undelivered": "Messages from {senders} could not be delivered."
+      "undelivered": "Messages from {senders} could not be delivered.",
+      "fromLabel": "From session:"
+    },
+    "sessionTools": {
+      "noSessions": "No sessions",
+      "thisSession": "This session",
+      "truncated": "More sessions not shown",
+      "recipient": "Recipient",
+      "model": "Model",
+      "reasoning": "Reasoning",
+      "message": "Message",
+      "openSession": "Open session {sessionId}",
+      "openProviderSession": "Open {provider} session {sessionId}",
+      "sessionMissing": "That session no longer exists.",
+      "openFailed": "Failed to open session: {message}",
+      "openUnavailable": "Sessions cannot be opened from here.",
+      "providersIncluded": "Included available providers and models",
+      "newSession": "New session"
     }
   },
   "settings": {

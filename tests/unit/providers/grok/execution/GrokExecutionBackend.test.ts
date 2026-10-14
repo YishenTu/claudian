@@ -375,7 +375,7 @@ describe('GrokExecutionBackend', () => {
     const route = { url: 'http://127.0.0.1:1234/mcp', routeId: 'private-route', headers: { 'X-Claudian-Route': 'private-route' }, dispose };
     const registerMCPRoute = jest.fn(async (_handler: SessionToolCallHandler) => route);
     const host = { ...createGrokHost(), sessionToolEndpoint: { registerMCPRoute, registerCallRoute: jest.fn() } };
-    const port = { list: jest.fn(async (_args: SessionToolListDestinationsArgs, _signal: AbortSignal) => ({ sessions: [] })), send: jest.fn(async () => ({ sessionId: 'recipient', status: 'queued' as const })) };
+    const port = { list: jest.fn(async (_args: SessionToolListDestinationsArgs, _signal: AbortSignal) => ({ sessions: [] })), send: jest.fn(async () => ({ sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' as const })) };
     const servers = [{ type: 'http', name: 'claudian_sessions', url: route.url, headers: [{ name: 'X-Claudian-Route', value: route.routeId }] }];
     return { host, port, route, registerMCPRoute, servers };
   }
@@ -459,7 +459,7 @@ describe('GrokExecutionBackend', () => {
       expect(result.isError).toBe(!allowed);
       expect(fixture.port.send).toHaveBeenCalledTimes(allowed ? 1 : 0);
       expect(result.text).toEqual(allowed
-        ? JSON.stringify({ sessionId: 'recipient', status: 'queued' })
+        ? JSON.stringify({ sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' })
         : 'Session tools are only available in Claudian main chat sessions with the default tool policy.');
       await session.dispose();
       await collect(run.events);

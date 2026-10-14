@@ -45,7 +45,8 @@ export function buildTabRuntimeControllers(
     }, plugin, id, forkRequestCallback, () => !core.session.runtime.isDisposed) : undefined,
     () => getSessionCapabilities(core, plugin),
     { navigate: (id, branchId) => conversationController.navigateBranch(id, branchId),
-      isBusy: () => !core.session.canNavigateConversation });
+      isBusy: () => !core.session.canNavigateConversation },
+    async id => { if (isRuntimeLive(runtimeRef.requirePublished())) await openConversation(id); });
   options.registerCleanup('tab message renderer', () => renderer.dispose());
   const messageQuoteController = new MessageQuoteController({
     messagesEl: dom.messagesEl,

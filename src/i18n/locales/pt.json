@@ -318,9 +318,24 @@
       "notification": "Notificação da extensão Pi."
     },
     "sessionMessage": {
-      "from": "De {sender}",
-      "session": "Sessão: {sessionId}",
-      "undelivered": "Não foi possível entregar as mensagens de {senders}."
+      "undelivered": "Não foi possível entregar as mensagens de {senders}.",
+      "fromLabel": "Da sessão:"
+    },
+    "sessionTools": {
+      "noSessions": "Nenhuma sessão",
+      "thisSession": "Esta sessão",
+      "truncated": "Há mais sessões não exibidas",
+      "recipient": "Destinatário",
+      "model": "Modelo",
+      "reasoning": "Raciocínio",
+      "message": "Mensagem",
+      "openSession": "Abrir a sessão {sessionId}",
+      "openProviderSession": "Abrir a sessão {provider} {sessionId}",
+      "sessionMissing": "Essa sessão não existe mais.",
+      "openFailed": "Não foi possível abrir a sessão: {message}",
+      "openUnavailable": "Não é possível abrir sessões aqui.",
+      "providersIncluded": "Provedores e modelos disponíveis incluídos",
+      "newSession": "Nova sessão"
     }
   },
   "settings": {

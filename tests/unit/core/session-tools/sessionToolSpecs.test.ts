@@ -25,6 +25,9 @@ describe('session tool specs', () => {
       limit: expect.objectContaining({ type: 'integer' }),
     });
     expect(list.inputSchema.required).toBeUndefined();
+    // The caller can recognize its own row, and a send result names its recipient.
+    expect(list.description).toMatch(/self[^.]*calling session/);
+    expect(send.description).toContain('{sessionId, title, provider, status}');
   });
 });
 

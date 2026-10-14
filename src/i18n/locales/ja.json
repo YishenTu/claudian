@@ -318,9 +318,24 @@
       "notification": "Pi 拡張機能の通知。"
     },
     "sessionMessage": {
-      "from": "{sender} から",
-      "session": "セッション: {sessionId}",
-      "undelivered": "{senders} からのメッセージを配信できませんでした。"
+      "undelivered": "{senders} からのメッセージを配信できませんでした。",
+      "fromLabel": "送信元セッション:"
+    },
+    "sessionTools": {
+      "noSessions": "セッションはありません",
+      "thisSession": "このセッション",
+      "truncated": "表示されていないセッションがあります",
+      "recipient": "宛先",
+      "model": "モデル",
+      "reasoning": "推論",
+      "message": "メッセージ",
+      "openSession": "セッション {sessionId} を開く",
+      "openProviderSession": "{provider} のセッション {sessionId} を開く",
+      "sessionMissing": "そのセッションはもう存在しません。",
+      "openFailed": "セッションを開けませんでした: {message}",
+      "openUnavailable": "ここからはセッションを開けません。",
+      "providersIncluded": "利用可能なプロバイダーとモデルを含めました",
+      "newSession": "新しいセッション"
     }
   },
   "settings": {

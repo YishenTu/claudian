@@ -105,6 +105,7 @@ export class SessionMessagingService {
         status: runtime?.statusAttention?.kind === 'action-required' ? 'awaiting-user'
           : runtime?.isWorking ? 'running' : 'idle',
         active: record.id === activeId,
+        ...(record.id === callerId ? { self: true as const } : {}),
       };
     });
     return {
@@ -143,8 +144,9 @@ export class SessionMessagingService {
     const mailbox = runtime.mailbox;
     if (!mailbox) throw new Error('The target session cannot receive messages');
     const message = { from: caller.title, sessionId: caller.id, text: args.text };
+    const recipient = { sessionId: target.id, title: target.title, provider: target.providerId };
     if (model === undefined && reasoning === undefined) {
-      return { sessionId: target.id, status: mailbox.admit(message) };
+      return { ...recipient, status: mailbox.admit(message) };
     }
     const resultingModel = model ?? resolveConversationModel(host.getCommittedSettings(), target.providerId, target).model;
     const selection = reasoning === undefined ? null
@@ -175,7 +177,7 @@ export class SessionMessagingService {
     if (args.sessionId) {
       try { this.deps.refreshModelControls(target.providerId); } catch { /* Admission already committed. */ }
     }
-    return { sessionId: target.id, status };
+    return { ...recipient, status };
   }
 
 }

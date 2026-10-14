@@ -776,3 +776,46 @@ button.claudian-work-header:disabled {
   width: 1em;
   height: 1em;
 }
+
+/* Session links: text-styled native buttons that open another session from the transcript. */
+button.claudian-session-link,
+button.claudian-session-link:hover,
+button.claudian-session-link:focus-visible,
+button.claudian-session-link:active {
+  appearance: none;
+  display: inline;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: var(--link-color);
+  cursor: pointer;
+}
+
+button.claudian-session-link:hover {
+  color: var(--link-color-hover);
+  text-decoration: underline;
+}
+
+button.claudian-session-link:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* Sender of a message delivered from another session, above the message body. */
+.claudian-session-message-sender {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.3em;
+  margin-bottom: 4px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}

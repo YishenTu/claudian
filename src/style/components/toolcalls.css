@@ -312,3 +312,77 @@
   color: var(--color-red);
   white-space: pre-wrap;
 }
+
+/* Session tool cards (list destinations, send message) */
+.claudian-session-tool {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.claudian-session-tool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.claudian-session-tool-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  padding: 1px 0;
+}
+
+.claudian-session-tool-title {
+  min-width: 0;
+}
+
+.claudian-session-tool-note {
+  color: var(--text-muted);
+}
+
+.claudian-session-tool-note {
+  font-style: italic;
+  padding: 2px 0;
+}
+
+.claudian-session-tool-badge {
+  padding: 0 6px;
+  border-radius: var(--radius-s);
+  background-color: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.claudian-session-tool-heading {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-weight: var(--font-semibold);
+}
+
+.claudian-session-tool-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 0;
+}
+
+.claudian-session-tool-fields dt {
+  color: var(--text-muted);
+}
+
+.claudian-session-tool-fields dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin: 0;
+  min-width: 0;
+}
+
+/* The delivered text is plain text; keep its line breaks. */
+.claudian-session-tool-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-normal);
+}

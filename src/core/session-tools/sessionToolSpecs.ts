@@ -13,6 +13,8 @@ export interface SessionToolSessionSummary {
   readonly status: SessionToolSessionStatus;
   /** Informational only: the focused view's active conversation. Never used for routing. */
   readonly active: boolean;
+  /** Present only on the calling session's own row. */
+  readonly self?: true;
 }
 
 export interface SessionToolListDestinationsArgs {
@@ -68,6 +70,10 @@ export type SessionToolDeliveryStatus = 'started' | 'queued';
 
 export interface SessionToolSendMessageResult {
   readonly sessionId: string;
+  /** Recipient title at admission. */
+  readonly title: string;
+  /** Recipient provider id. */
+  readonly provider: string;
   readonly status: SessionToolDeliveryStatus;
 }
 
@@ -169,8 +175,8 @@ export const SESSION_TOOL_SPECS: readonly SessionToolSpec[] = [
     description: [
       `List where ${TOOL_CLAUDIAN_SEND_MESSAGE} can deliver: existing Claudian chat sessions and, on request, options for a new session.`,
       'Returns {sessions, truncated?, providers?}.',
-      'sessions is a list of {sessionId, title, provider, status, active}, most recently active first and capped by limit; truncated is true when more exist.',
-      'status is "idle", "running", or "awaiting-user"; active marks the session the user is viewing.',
+      'sessions is a list of {sessionId, title, provider, status, active, self?}, most recently active first and capped by limit; truncated is true when more exist.',
+      'status is "idle", "running", or "awaiting-user"; active marks the session the user is viewing; self: true marks the calling session, which cannot be messaged.',
       'With includeProviders: true, providers lists the enabled providers as {provider, default?, models: [{id, default?, reasoning?: {options, default}}]};',
       'default marks what a new session uses when provider, model, or reasoning is omitted, and reasoning appears only for models with reasoning levels.',
     ].join(' '),
@@ -181,7 +187,7 @@ export const SESSION_TOOL_SPECS: readonly SessionToolSpec[] = [
     description: [
       'Send a message to another Claudian chat session, or omit sessionId to start a new one.',
       'The message starts a turn in the recipient, or queues until it is free.',
-      'Returns {sessionId, status} immediately, where status is "started" or "queued"; it does not wait for the turn or a reply.',
+      'Returns {sessionId, title, provider, status} immediately, naming the recipient, where status is "started" or "queued"; it does not wait for the turn or a reply.',
       'A session cannot message itself.',
       'Messages from other sessions arrive wrapped in <session_message from="…" session_id="…">.',
       `Replying is optional: call ${TOOL_CLAUDIAN_SEND_MESSAGE} with that session_id only if a response is needed.`,

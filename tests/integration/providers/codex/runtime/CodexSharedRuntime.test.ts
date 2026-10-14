@@ -391,7 +391,7 @@ describe('Codex shared runtime', () => {
       await creation;
       runSignal.throwIfAborted();
       admitted.push(args.text);
-      return { sessionId: 'recipient', status: 'started' };
+      return { sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'started' };
     } };
     const session = new CodexExecutionBackend(plugin, createRuntime()).createSession({ ...config, sessionTools: port });
     const run = session.execute(request);
@@ -418,7 +418,7 @@ describe('Codex shared runtime', () => {
     const port: ProviderSessionToolPort = { list: jest.fn(async () => ({ sessions: [] })), send: async (args, runSignal) => {
       signal = runSignal;
       admitted.push(args.text);
-      return { sessionId: 'recipient', status: 'started' };
+      return { sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'started' };
     } };
     const session = new CodexExecutionBackend(plugin, createRuntime()).createSession({ ...config, sessionTools: port });
     const run = session.execute(request);

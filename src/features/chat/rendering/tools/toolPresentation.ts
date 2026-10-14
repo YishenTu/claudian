@@ -38,6 +38,7 @@ import type { ToolCallInfo } from '@/core/types';
 import { getApplyPatchSummary, renderApplyPatchExpanded, setApplyPatchStatus } from '@/features/chat/rendering/tools/applyPatchContent';
 import { renderAskUserQuestionContent } from '@/features/chat/rendering/tools/askUserQuestionContent';
 import { getScriptLanguage, getScriptSummary, renderScriptContent } from '@/features/chat/rendering/tools/scriptContent';
+import { renderListDestinationsContent, renderSendMessageContent } from '@/features/chat/rendering/tools/sessionToolContent';
 import { getCurrentTaskText, getTodoLabel, getTodoName, renderTodoWriteContent, setTodoWriteStatus } from '@/features/chat/rendering/tools/todoContent';
 import {
   contentFallback,
@@ -251,8 +252,14 @@ const TOOL_PRESENTATIONS: ReadonlyMap<string, ToolPresentation> = new Map<string
   }],
   [TOOL_WRITE_STDIN, { summary: getWriteStdinSummary }],
   [TOOL_WORKFLOW, scriptPresentation('Workflow')],
-  [TOOL_CLAUDIAN_LIST_DESTINATIONS, { name: () => t('chat.tools.listDestinations') }],
-  [TOOL_CLAUDIAN_SEND_MESSAGE, { name: () => t('chat.tools.messageSession') }],
+  [TOOL_CLAUDIAN_LIST_DESTINATIONS, {
+    name: () => t('chat.tools.listDestinations'),
+    body: renderListDestinationsContent,
+  }],
+  [TOOL_CLAUDIAN_SEND_MESSAGE, {
+    name: () => t('chat.tools.messageSession'),
+    body: renderSendMessageContent,
+  }],
   [TOOL_SEND_MESSAGE, { ...AGENT_LIFECYCLE, name: () => t('chat.tools.messageAgent'), summary: agentTargetMessageSummary }],
   [TOOL_FOLLOWUP_TASK, { ...AGENT_LIFECYCLE, name: () => t('chat.tools.continueAgent'), summary: agentTargetMessageSummary }],
   [TOOL_LIST_AGENTS, { ...AGENT_LIFECYCLE, name: () => t('chat.tools.listAgents'), summary: input => getInputText(input, 'path_prefix', t('chat.tools.allAgents')) }],

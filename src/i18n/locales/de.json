@@ -318,9 +318,24 @@
       "notification": "Benachrichtigung der Pi-Erweiterung."
     },
     "sessionMessage": {
-      "from": "Von {sender}",
-      "session": "Sitzung: {sessionId}",
-      "undelivered": "Nachrichten von {senders} konnten nicht zugestellt werden."
+      "undelivered": "Nachrichten von {senders} konnten nicht zugestellt werden.",
+      "fromLabel": "Von Sitzung:"
+    },
+    "sessionTools": {
+      "noSessions": "Keine Sitzungen",
+      "thisSession": "Diese Sitzung",
+      "truncated": "Weitere Sitzungen nicht angezeigt",
+      "recipient": "Empfänger",
+      "model": "Modell",
+      "reasoning": "Reasoning",
+      "message": "Nachricht",
+      "openSession": "Sitzung {sessionId} öffnen",
+      "openProviderSession": "{provider}-Sitzung {sessionId} öffnen",
+      "sessionMissing": "Diese Sitzung existiert nicht mehr.",
+      "openFailed": "Sitzung konnte nicht geöffnet werden: {message}",
+      "openUnavailable": "Sitzungen können hier nicht geöffnet werden.",
+      "providersIncluded": "Verfügbare Anbieter und Modelle einbezogen",
+      "newSession": "Neue Sitzung"
     }
   },
   "settings": {

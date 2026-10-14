@@ -95,7 +95,7 @@ describe('Pi session tools through the generated extension', () => {
     sessionFile = path.join(root, '.pi', 'agent', 'sessions', 'source.jsonl');
     await fs.mkdir(path.dirname(sessionFile), { recursive: true });
     await fs.writeFile(sessionFile, JSON.stringify({ type: 'session', version: 3, id: 'pi-source', cwd: root }) + '\n');
-    port = { list: jest.fn().mockResolvedValue({ sessions: [] }), send: jest.fn().mockResolvedValue({ sessionId: 'recipient', status: 'queued' }) };
+    port = { list: jest.fn().mockResolvedValue({ sessions: [] }), send: jest.fn().mockResolvedValue({ sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' }) };
   });
 
   afterEach(async () => {
@@ -161,7 +161,7 @@ describe('Pi session tools through the generated extension', () => {
     expect(await kernel.request('fixture_tool', { name: 'claudian_list_destinations', toolCallId: 'list', args: {} }))
       .toMatchObject({ isError: false, content: [{ text: '{"sessions":[]}' }] });
     expect(await kernel.request('fixture_tool', { name: 'claudian_send_message', toolCallId: 'send', args: { text: 'Hello', sessionId: 'recipient' } }))
-      .toMatchObject({ isError: false, content: [{ text: JSON.stringify({ sessionId: 'recipient', status: 'queued' }) }] });
+      .toMatchObject({ isError: false, content: [{ text: JSON.stringify({ sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' }) }] });
     expect(port.send).toHaveBeenCalledWith({ text: 'Hello', sessionId: 'recipient' }, expect.any(AbortSignal));
     await kernel.request('fixture_emit', { event: { type: 'agent_settled' } });
     await drained;
@@ -199,7 +199,7 @@ describe('Pi session tools through the generated extension', () => {
     port.send = jest.fn((_args, signal) => {
       callSignal = signal;
       entered();
-      return new Promise(resolve => { finish = () => resolve({ sessionId: 'recipient', status: 'queued' }); });
+      return new Promise(resolve => { finish = () => resolve({ sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' }); });
     });
     await createSession();
     const { run, drained } = await openRun();

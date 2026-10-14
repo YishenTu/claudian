@@ -14,7 +14,7 @@ function createPort() {
       sessions: [{ sessionId: 'conv-2', title: 'Review', provider: 'codex', status: 'idle', active: true }],
     })),
     send: jest.fn<Promise<SessionToolSendMessageResult>, [SessionToolSendMessageArgs, AbortSignal]>(
-      async () => ({ sessionId: 'conv-2', status: 'queued' }),
+      async () => ({ sessionId: 'conv-2', title: 'Review', provider: 'codex', status: 'queued' }),
     ),
   };
   return port satisfies ProviderSessionToolPort;
@@ -48,7 +48,7 @@ describe('invokeSessionTool', () => {
       { port, toolPolicy: { kind: 'unrestricted' }, signal },
     );
 
-    expect(result).toEqual({ isError: false, text: JSON.stringify({ sessionId: 'conv-2', status: 'queued' }) });
+    expect(result).toEqual({ isError: false, text: JSON.stringify({ sessionId: 'conv-2', title: 'Review', provider: 'codex', status: 'queued' }) });
     expect(port.send).toHaveBeenCalledWith({ sessionId: 'conv-2', text: 'Hi' }, signal);
   });
 

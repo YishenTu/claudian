@@ -318,9 +318,24 @@
       "notification": "Pi 확장 알림."
     },
     "sessionMessage": {
-      "from": "{sender}에서 보냄",
-      "session": "세션: {sessionId}",
-      "undelivered": "{senders}의 메시지를 전달하지 못했습니다."
+      "undelivered": "{senders}의 메시지를 전달하지 못했습니다.",
+      "fromLabel": "보낸 세션:"
+    },
+    "sessionTools": {
+      "noSessions": "세션 없음",
+      "thisSession": "이 세션",
+      "truncated": "표시되지 않은 세션이 더 있습니다",
+      "recipient": "받는 세션",
+      "model": "모델",
+      "reasoning": "추론",
+      "message": "메시지",
+      "openSession": "세션 {sessionId} 열기",
+      "openProviderSession": "{provider} 세션 {sessionId} 열기",
+      "sessionMissing": "해당 세션이 더 이상 존재하지 않습니다.",
+      "openFailed": "세션을 열지 못했습니다: {message}",
+      "openUnavailable": "여기에서는 세션을 열 수 없습니다.",
+      "providersIncluded": "사용 가능한 공급자와 모델 포함",
+      "newSession": "새 세션"
     }
   },
   "settings": {

@@ -96,11 +96,16 @@ it('lists recent sessions first without creating runtimes, omitting archived rec
   const h = setup();
   expect(await h.binding.port.list(listArgs(), signal())).toEqual({ sessions: [
     { sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'idle', active: false },
-    { sessionId: 'sender', title: 'Research', provider: 'claude', status: 'idle', active: true },
+    { sessionId: 'sender', title: 'Research', provider: 'claude', status: 'idle', active: true, self: true },
   ] });
   expect(await h.binding.port.list(listArgs({ limit: 1 }), signal())).toEqual({ sessions: [
     { sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'idle', active: false },
   ], truncated: true });
+  // `self` follows the calling binding, independently of the user's active view.
+  expect((await h.service.bindSessionTools('recipient').port.list(listArgs(), signal())).sessions).toEqual([
+    { sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'idle', active: false, self: true },
+    { sessionId: 'sender', title: 'Research', provider: 'claude', status: 'idle', active: true },
+  ]);
   expect(h.pool.getAll()).toHaveLength(0);
   expect(h.backend.sessions).toHaveLength(0);
 });
@@ -128,7 +133,7 @@ it('lists enabled providers with available models, new-session defaults and reas
 it('delivers to a cold headless recipient with caller provenance and no composer capture', async () => {
   const h = setup();
   expect(await h.binding.port.send({ sessionId: 'recipient', text: 'Review this' }, signal()))
-    .toEqual({ sessionId: 'recipient', status: 'started' });
+    .toEqual({ sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'started' });
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   expect(decodeSessionMessage(requestText(h.backend.latest.requests[0]))).toEqual({ from: 'Research', sessionId: 'sender', text: 'Review this' });
   expect(h.backend.latest.config.sessionTools).toBeDefined();
@@ -189,7 +194,7 @@ it.each([
 it('applies an explicit model and reasoning to the new session before its first turn', async () => {
   const h = setup();
   expect(await h.binding.port.send({ text: 'New task', provider: 'claude', model: 'claude-sonnet-4-5', reasoning: 'low' }, signal()))
-    .toEqual({ sessionId: 'created', status: 'started' });
+    .toEqual({ sessionId: 'created', title: 'created', provider: 'claude', status: 'started' });
   expect(h.host.createConversation).toHaveBeenCalledWith({ providerId: 'claude', selectedModel: 'claude-code/claude-sonnet-4-5' });
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   expect(modelChoice(h.backend.latest.requests[0])).toEqual({ model: 'claude-code/claude-sonnet-4-5', reasoning: 'low' });
@@ -259,7 +264,7 @@ it('defers a message when native background work starts during preparation, then
 it('creates a headless session using the selected default without mutating the future-tab seed', async () => {
   const h = setup();
   const seed = structuredClone(h.host.settings.lastSelectedChatModel);
-  expect(await h.binding.port.send({ text: 'New task' }, signal())).toEqual({ sessionId: 'created', status: 'started' });
+  expect(await h.binding.port.send({ text: 'New task' }, signal())).toEqual({ sessionId: 'created', title: 'created', provider: 'claude', status: 'started' });
   expect(h.host.createConversation).toHaveBeenCalledWith({ providerId: 'claude', selectedModel: 'claude-code/claude-sonnet-4-5' });
   expect(h.host.settings.lastSelectedChatModel).toEqual(seed);
   expect(h.pool.getAttachment('created')).toBeNull();
@@ -314,7 +319,7 @@ it('switches an existing session\'s reasoning for the delivered turn and later u
     const running = model.inputController.sendMessage({ content: 'User first' });
     await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
     expect(await h.binding.port.send({ sessionId: 'recipient', text: 'Go faster', reasoning: 'low' }, signal()))
-      .toEqual({ sessionId: 'recipient', status: 'queued' });
+      .toEqual({ sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'queued' });
     expect(h.refreshModelControls).toHaveBeenCalledWith('claude');
     h.backend.latest.complete();
     await running;
@@ -338,7 +343,7 @@ it('switches a history-only session\'s model without opening it in a tab', async
   const h = setup();
   expect(h.pool.get('recipient')).toBeNull();
   expect(await h.binding.port.send({ sessionId: 'recipient', text: 'Use Haiku', model: 'claude-haiku-4-5' }, signal()))
-    .toEqual({ sessionId: 'recipient', status: 'started' });
+    .toEqual({ sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'started' });
   expect(h.host.getConversationSummary('recipient')!.selectedModel).toBe(haikuId);
   expect(h.pool.getAttachment('recipient')).toBeNull();
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));

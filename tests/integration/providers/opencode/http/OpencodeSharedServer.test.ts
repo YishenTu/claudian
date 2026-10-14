@@ -1041,7 +1041,7 @@ it('loads a module plugin folder once per shared server and forwards the native 
   const f = await createFixture();
   await f.workspace.metadataService.loadCatalog();
   const list = jest.fn().mockResolvedValue({ sessions: [{ sessionId: 'target' }] });
-  const send = jest.fn().mockResolvedValue({ sessionId: 'target', status: 'queued' });
+  const send = jest.fn().mockResolvedValue({ sessionId: 'target', title: 'Review', provider: 'codex', status: 'queued' });
   const session = f.createSession({ sessionTools: { list, send } });
   const control = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
   const events: ProviderExecutionEvent[] = [];
@@ -1069,7 +1069,7 @@ it('loads a module plugin folder once per shared server and forwards the native 
     expect(aborted.data.isError).toBe(true);
     expect(list).toHaveBeenCalledTimes(1);
     const sent = await control.request<any>('/fixture/session-tool', { method: 'POST', body: { tool: 'claudian_send_message', args: { sessionId: 'target', text: 'Hello' }, sessionID: 'ses_1' } });
-    expect(sent.data.result.output).toBe('{"sessionId":"target","status":"queued"}');
+    expect(sent.data.result.output).toBe('{"sessionId":"target","title":"Review","provider":"codex","status":"queued"}');
     expect(send).toHaveBeenCalledWith({ sessionId: 'target', text: 'Hello' }, expect.any(AbortSignal));
     const peer = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
     await peer.dispose();

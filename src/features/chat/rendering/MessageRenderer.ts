@@ -1,4 +1,4 @@
-import type { Component } from 'obsidian';
+import { type Component, Notice } from 'obsidian';
 
 import { extractUserDisplayContent } from '@/core/prompt/promptContext';
 import { DEFAULT_CHAT_PROVIDER_ID, type ProviderCapabilities, type ProviderSubagentLifecycleAdapter } from '@/core/providers/types';
@@ -10,6 +10,7 @@ import { type MessageActionCallbacks, MessageActions } from '@/features/chat/ren
 import { getResponseSegments } from '@/features/chat/rendering/NotificationBoundaries';
 import { ResponseFinalizer } from '@/features/chat/rendering/ResponseFinalizer';
 import { createResponseTextBlock } from '@/features/chat/rendering/ResponseLayout';
+import { createSessionLink, registerSessionLinkHandler } from '@/features/chat/rendering/sessionLinks';
 import { renderStoredThinkingBlock } from '@/features/chat/rendering/ThinkingBlockRenderer';
 import { updateToolCallResult } from '@/features/chat/rendering/tools/ToolCallRenderer';
 import { isSilentWriteStdinTool, renderToolCard } from '@/features/chat/rendering/tools/toolCardDispatch';
@@ -52,6 +53,8 @@ export class MessageRenderer {
   private readonly getCapabilities: () => ProviderCapabilities;
   private readonly messageEls = new Map<string, HTMLElement>();
   private removeFileLinkHandler: () => void;
+  private removeSessionLinkHandler: () => void;
+  readonly #openConversation: ((conversationId: string) => Promise<void>) | undefined;
   private readonly imagePreviewModal = new ImagePreviewModal();
   private readonly contentRemovalObserver?: MutationObserver;
   #pendingLayoutScroll: ResizeObserver | null = null;
@@ -75,8 +78,11 @@ export class MessageRenderer {
     forkCallback?: MessageActionCallbacks['fork'],
     getCapabilities?: () => ProviderCapabilities,
     branchActions?: MessageActionCallbacks['branches'],
+    /** Opens a session from a transcript link; omitted where the presentation cannot navigate. */
+    openConversation?: (conversationId: string) => Promise<void>,
   ) {
     this.app = plugin.app;
+    this.#openConversation = openConversation;
     this.plugin = plugin;
     this.messagesEl = messagesEl;
     this.getCapabilities = getCapabilities ?? (() => ({
@@ -106,6 +112,11 @@ export class MessageRenderer {
 
     // Register delegated click handler for file links
     this.removeFileLinkHandler = registerFileLinkHandler(this.app, this.messagesEl);
+    // Live tool cards render into the same container, so one delegated handler covers both paths.
+    this.removeSessionLinkHandler = registerSessionLinkHandler(this.messagesEl, id => { void this.#openSession(id); }, id => {
+      const summary = this.plugin.getConversationSummary(id);
+      return summary ? { title: summary.title || undefined, providerId: summary.providerId } : null;
+    });
 
     // Controllers also clear message DOM directly. Inspect only removed subtrees,
     // rather than scanning every retained message on each streaming mutation.
@@ -141,8 +152,29 @@ export class MessageRenderer {
     this.imagePreviewModal.close();
     this.removeFileLinkHandler();
     this.removeFileLinkHandler = () => {};
+    this.removeSessionLinkHandler();
+    this.removeSessionLinkHandler = () => {};
     this.#actions.clear();
     this.messageEls.clear();
+  }
+
+  /** Session links may outlive their session; a missing one is reported rather than opened. */
+  async #openSession(conversationId: string): Promise<void> {
+    try {
+      const open = this.#openConversation;
+      if (!open) {
+        new Notice(t('chat.sessionTools.openUnavailable'));
+        return;
+      }
+      await this.plugin.ensureConversationMetadataLoaded([conversationId]);
+      if (!this.plugin.getCachedConversation(conversationId)) {
+        new Notice(t('chat.sessionTools.sessionMissing'));
+        return;
+      }
+      await open(conversationId);
+    } catch (error) {
+      new Notice(t('chat.sessionTools.openFailed', { message: error instanceof Error ? error.message : String(error) }));
+    }
   }
 
   #resolveSubagentAdapter(toolName?: string) {
@@ -302,11 +334,11 @@ export class MessageRenderer {
 
     const { msgEl, contentEl } = this.#createMessageEl(msg);
     if (msg.sessionMessage) {
-      contentEl.createDiv({
-        cls: 'claudian-session-message-sender',
-        text: t('chat.sessionMessage.from', { sender: msg.sessionMessage.from }),
-        attr: { title: t('chat.sessionMessage.session', { sessionId: msg.sessionMessage.sessionId }) },
-      });
+      const { from, sessionId } = msg.sessionMessage;
+      // Only the session name is the link; the label stays plain text beside it.
+      const senderEl = contentEl.createDiv({ cls: 'claudian-session-message-sender' });
+      senderEl.createSpan({ text: t('chat.sessionMessage.fromLabel') });
+      createSessionLink(senderEl, { sessionId, text: from });
     }
     if (text) void this.renderContent(createResponseTextBlock(contentEl), text);
     this.#actions.decorateUserMessage(msgEl, msg, text, context.live ? undefined : context);

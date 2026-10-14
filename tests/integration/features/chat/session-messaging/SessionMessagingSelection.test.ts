@@ -141,7 +141,7 @@ it('rejects reasoning validated against a model superseded by a competing select
 it('does not reject an admitted switch when its presentation refresh throws', async () => {
   const h = setup();
   h.refreshModelControls.mockImplementation(() => { throw new Error('View closed'); });
-  await expect(h.send()).resolves.toEqual({ sessionId: 'recipient', status: 'started' });
+  await expect(h.send()).resolves.toEqual({ sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'started' });
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   expect(h.backend.latest.requests[0].configuration).toMatchObject({ model: haiku, reasoning: 'low' });
   h.backend.latest.complete();

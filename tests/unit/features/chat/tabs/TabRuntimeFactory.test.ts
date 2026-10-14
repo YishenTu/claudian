@@ -1064,7 +1064,7 @@ describe('Tab provider execution ownership', () => {
     }
   });
 
-  it('releases the renderer file-link listener during tab teardown', async () => {
+  it('releases the renderer file-link and session-link listeners during tab teardown', async () => {
     const tab = await createTestTab({
       plugin: createPlugin(),
       containerEl: createMockEl() as any,
@@ -1079,7 +1079,7 @@ describe('Tab provider execution ownership', () => {
     });
     const messagesEl = tab.dom.messagesEl as any;
 
-    expect(messagesEl.getEventListenerCount('click')).toBe(1);
+    expect(messagesEl.getEventListenerCount('click')).toBe(2);
     await destroyTab(tab);
     expect(messagesEl.getEventListenerCount('click')).toBe(0);
   });

@@ -318,9 +318,24 @@
       "notification": "Pi 扩展通知。"
     },
     "sessionMessage": {
-      "from": "来自 {sender}",
-      "session": "会话：{sessionId}",
-      "undelivered": "无法投递来自 {senders} 的消息。"
+      "undelivered": "无法投递来自 {senders} 的消息。",
+      "fromLabel": "来自会话："
+    },
+    "sessionTools": {
+      "noSessions": "没有会话",
+      "thisSession": "本会话",
+      "truncated": "还有更多会话未显示",
+      "recipient": "接收方",
+      "model": "模型",
+      "reasoning": "推理",
+      "message": "消息",
+      "openSession": "打开会话 {sessionId}",
+      "openProviderSession": "打开 {provider} 会话 {sessionId}",
+      "sessionMissing": "该会话已不存在。",
+      "openFailed": "无法打开会话：{message}",
+      "openUnavailable": "无法从此处打开会话。",
+      "providersIncluded": "已包含可用的提供商和模型",
+      "newSession": "新会话"
     }
   },
   "settings": {
