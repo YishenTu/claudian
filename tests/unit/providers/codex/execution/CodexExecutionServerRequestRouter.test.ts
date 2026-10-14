@@ -59,7 +59,7 @@ describe('CodexExecutionServerRequestRouter', () => {
 
   it.each(['claudian_list_destinations', 'claudian_sessions.claudian_list_destinations'])(
     'denies session tools even when the allow-list names %s, while ordinary named tools still work', async name => {
-      const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn() };
+      const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn(), read: jest.fn() };
       const router = createRouter(jest.fn(), { kind: 'allow-list', names: [name, 'ordinary'] });
       const registry = new CodexDynamicToolRegistry();
       for (const registration of createCodexSessionTools(port)) registry.register(registration);

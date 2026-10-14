@@ -1111,7 +1111,7 @@ it('keeps an unknown prompt failure ambiguous and invalidates the session', asyn
 
 it.each<Partial<ProviderExecutionRequest>>([
   { context: { linkedContent: { path: 'note.md' } } },
-  { context: { sessionReferences: [{ id: 'other', title: 'Other', providerId: 'deepseek', updatedAt: testDate().toISOString(), snapshotPath: '/vault/other.json' }] } },
+  { context: { sessionReferences: [{ id: 'other', title: 'Other', providerId: 'deepseek', updatedAt: testDate().toISOString() }] } },
   { context: { selections: [{ kind: 'editor', selection: { notePath: 'note.md', mode: 'selection', selectedText: 'selected' } }] } },
   { input: [{ type: 'text', text: '/compact' }, { type: 'image', image: { id: 'i', name: 'i.png', mediaType: 'image/png', data: 'aW1hZ2U=', size: 5, source: 'paste' } }] },
 ])('keeps real context and images out of native compact commands: %j', async attachments => {

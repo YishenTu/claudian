@@ -186,6 +186,7 @@
       "messageAgent": "Envoyer un message à l’agent",
       "listDestinations": "Lister les destinations",
       "messageSession": "Envoyer un message à la session",
+      "readSession": "Lire la session",
       "continueAgent": "Continuer l’agent",
       "listAgents": "Lister les agents",
       "interruptAgent": "Interrompre l’agent",
@@ -335,7 +336,11 @@
       "openFailed": "Impossible d’ouvrir la session : {message}",
       "openUnavailable": "Les sessions ne peuvent pas être ouvertes ici.",
       "providersIncluded": "Fournisseurs et modèles disponibles inclus",
-      "newSession": "Nouvelle session"
+      "newSession": "Nouvelle session",
+      "session": "Session",
+      "turns": "Tours",
+      "turnRange": "{from}–{to} sur {total}",
+      "noTurns": "Aucun pour l’instant"
     }
   },
   "settings": {

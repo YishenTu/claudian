@@ -60,13 +60,11 @@ function setup() {
     app, settings,
     providerHost: { app, settings, executionLifecycleRegistry: registry },
     getCommittedSettings: () => settings, getActiveEnvironmentVariables: () => '',
-    getSessionSnapshotDirectory: () => '/tmp/claudian-sessions',
     getConversationSummary: () => conversation, getConversationSync: () => conversation,
     getCachedConversation: () => conversation,
     getConversationById: jest.fn(async () => ({ ...conversation, messages: structuredClone(nativeHistory) })),
     getConversationList: () => [conversation], renameConversation: async () => undefined,
     findConversationAcrossViews: () => null,
-    writeSessionSnapshot: async () => '/tmp/claudian-sessions/reference.md',
     updateConversation: async (_id: string, patch: ConversationMutablePatch) => { saves.push(structuredClone(patch)); },
     mutateSettings: async (mutate: (settings: ClaudianSettings) => void) => mutate(settings),
     executionPersistence: {

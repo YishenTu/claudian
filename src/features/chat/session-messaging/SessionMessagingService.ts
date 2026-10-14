@@ -10,14 +10,18 @@ import type {
   SessionToolDestinations,
   SessionToolListDestinationsArgs,
   SessionToolProviderDestination,
+  SessionToolReadSessionArgs,
+  SessionToolReadSessionResult,
   SessionToolReasoningDestination,
   SessionToolSendMessageArgs,
   SessionToolSendMessageResult,
+  SessionToolSessionStatus,
   SessionToolSessionSummary,
 } from '@/core/session-tools/sessionToolSpecs';
 import type { Conversation, ConversationMeta } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
+import { formatSessionSnapshot } from '@/features/chat/session-messaging/formatSessionSnapshot';
 import { prepareSessionReasoningSelection } from '@/features/chat/sessions/sessionSettings';
 import { throwIfAborted } from '@/utils/abort';
 
@@ -65,6 +69,7 @@ export class SessionMessagingService {
       port: {
         list: (args, signal) => invoke(signal, current => this.list(conversationId, args, current)),
         send: (args, signal) => invoke(signal, current => this.send(conversationId, args, current)),
+        read: (args, signal) => invoke(signal, current => this.read(args, current)),
       },
       dispose: () => binding.abort(new Error('The caller session binding was released')),
     };
@@ -97,13 +102,11 @@ export class SessionMessagingService {
     const records = host.getConversationList().filter(record => !record.isArchived)
       .sort((a, b) => b.lastActivityAt - a.lastActivityAt);
     const sessions = records.slice(0, args.limit).map((record): SessionToolSessionSummary => {
-      const runtime = host.sessionRuntimes.get(record.id);
       return {
         sessionId: record.id,
         title: record.title,
         provider: record.providerId,
-        status: runtime?.statusAttention?.kind === 'action-required' ? 'awaiting-user'
-          : runtime?.isWorking ? 'running' : 'idle',
+        status: this.status(record.id),
         active: record.id === activeId,
         ...(record.id === callerId ? { self: true as const } : {}),
       };
@@ -113,6 +116,36 @@ export class SessionMessagingService {
       ...(records.length > args.limit ? { truncated: true as const } : {}),
       ...(args.includeProviders ? { providers: listProviderDestinations(host.getCommittedSettings()) } : {}),
     };
+  }
+
+  /** Archived sessions and the caller itself are readable: reading changes nothing. */
+  private async read(args: SessionToolReadSessionArgs, signal: AbortSignal): Promise<SessionToolReadSessionResult> {
+    const host = this.deps.getHost();
+    // Ids can come from earlier messages, before the deferred metadata scan admits them.
+    await host.ensureConversationMetadataLoaded([args.sessionId]);
+    throwIfAborted(signal, 'Session tool call was cancelled');
+    const conversation = await host.getConversationById(args.sessionId);
+    throwIfAborted(signal, 'Session tool call was cancelled');
+    if (!conversation) throw new Error('The session does not exist');
+    // A hydrated runtime holds turns storage may not have yet, including headless sessions.
+    const runtime = host.sessionRuntimes.get(conversation.id);
+    const model = runtime?.conversationId === conversation.id ? runtime.peekModel : null;
+    const live = model?.hydrationState === 'ready' ? model.state : null;
+    const page = formatSessionSnapshot(conversation, live?.messages ?? conversation.messages, live?.isStreaming ?? false,
+      args.beforeTurn !== undefined ? { beforeTurn: args.beforeTurn } : {});
+    return {
+      sessionId: conversation.id,
+      title: conversation.title,
+      provider: conversation.providerId,
+      status: this.status(conversation.id),
+      ...page,
+    };
+  }
+
+  private status(id: string): SessionToolSessionStatus {
+    const runtime = this.deps.getHost().sessionRuntimes.get(id);
+    return runtime?.statusAttention?.kind === 'action-required' ? 'awaiting-user'
+      : runtime?.isWorking ? 'running' : 'idle';
   }
 
   private async send(callerId: string, args: SessionToolSendMessageArgs, signal: AbortSignal): Promise<SessionToolSendMessageResult> {

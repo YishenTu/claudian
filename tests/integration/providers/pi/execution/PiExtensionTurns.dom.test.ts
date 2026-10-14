@@ -135,7 +135,6 @@ async function createPiView() {
       persistExecutionSnapshot: async () => true,
       recordConversationActivity: async () => {},
     },
-    getSessionSnapshotDirectory: () => '/tmp/claudian-sessions',
     getCommittedSettings: () => settings,
     getActiveEnvironmentVariables: () => '',
     getConversationSummary: () => conversation,

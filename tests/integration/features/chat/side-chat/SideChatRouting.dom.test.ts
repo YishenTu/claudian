@@ -574,11 +574,9 @@ it.each([false, true])('keeps the captured side mention after collapse (cancel m
   await started;
   const hydration = deferred<any>();
   const entered = deferred<void>();
-  const write = jest.fn().mockResolvedValue('/tmp/claudian-sessions/side.md');
   Object.assign(routing.deps.plugin, {
     getConversationById: () => { entered.resolve(); return hydration.promise; },
     findConversationAcrossViews: () => null,
-    writeSessionSnapshot: write,
   });
   harness.inputEl.value = '@[Old](claudian-session:conv-1-source)';
   const sending = routing.controller.sendMessage();
@@ -596,8 +594,7 @@ it.each([false, true])('keeps the captured side mention after collapse (cancel m
   await waitFor(() => expect(harness.backend.latest.requests).toHaveLength(2));
   expect(harness.backend.latest.requests[1]).toMatchObject({
     input: [{ type: 'text', text: '@"Renamed"' }],
-    context: { sessionReferences: [{ id: 'conv-1-source', snapshotPath: '/tmp/claudian-sessions/side.md' }] },
-    configuration: { readableRoots: ['/tmp/claudian-sessions'] },
+    context: { sessionReferences: [{ id: 'conv-1-source' }] },
   });
   expect(harness.controller.runtime?.state.messages.find(message => message.content === '@"Renamed"')?.displayContent).toBe('@"Renamed"');
   harness.backend.latest.complete();
@@ -670,14 +667,12 @@ it.each(['side', 'btw'].flatMap(command => ['new', 'collapsed', 'queued'].map(mo
     harness.controller.collapse();
   }
   const token = '@[Old](claudian-session:conv-1-source)';
-  const write = jest.fn().mockResolvedValue('/tmp/claudian-sessions/side.md');
   Object.assign(routing.deps.plugin, {
     getConversationById: async () => ({
       id: 'conv-1-source', title: 'Renamed', providerId: 'codex', createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(),
       messages: [{ id: 'u', role: 'user', content: 'source prompt', timestamp: testDate().getTime() }],
     }),
     findConversationAcrossViews: () => null,
-    writeSessionSnapshot: write,
   });
   harness.inputEl.value = `/${command} Use ${token}`;
   const sending = routing.controller.sendMessage();
@@ -689,12 +684,12 @@ it.each(['side', 'btw'].flatMap(command => ['new', 'collapsed', 'queued'].map(mo
   const request = harness.backend.latest.requests.at(-1)!;
   harness.backend.latest.complete();
   await Promise.all([sending, active]);
-  expect({ input: request.input, references: request.context?.sessionReferences?.map(value => value.id) ?? [], snapshots: write.mock.calls.length })
-    .toEqual({ input: [{ type: 'text', text: 'Use @"Renamed"' }], references: ['conv-1-source'], snapshots: 1 });
+  expect({ input: request.input, references: request.context?.sessionReferences?.map(value => value.id) ?? [] })
+    .toEqual({ input: [{ type: 'text', text: 'Use @"Renamed"' }], references: ['conv-1-source'] });
 });
 
 
-it('reserves command order and snapshots queued mentions before the child becomes idle', async () => {
+it('reserves command order and resolves queued mentions before the child becomes idle', async () => {
   const harness = createHarness();
   const routing = createRouting(harness);
   const { started } = await startSideChat(harness);
@@ -703,11 +698,9 @@ it('reserves command order and snapshots queued mentions before the child become
   harness.controller.collapse();
   const hydration = deferred<any>();
   const entered = jest.fn();
-  const write = jest.fn().mockResolvedValue('/tmp/claudian-sessions/queued.md');
   Object.assign(harness.plugin, {
     getConversationById: () => { entered(); return hydration.promise; },
     findConversationAcrossViews: () => null,
-    writeSessionSnapshot: write,
   });
   harness.inputEl.value = '/side First @[Old](claudian-session:conv-1-source)';
   const first = routing.controller.sendMessage();
@@ -725,7 +718,7 @@ it('reserves command order and snapshots queued mentions before the child become
   await first;
   await waitFor(() => expect(native.requests).toHaveLength(2));
   expect(native.requests[1].input).toEqual([{ type: 'text', text: 'First @"Captured"' }]);
-  expect(write).toHaveBeenCalledTimes(1);
+  expect(entered).toHaveBeenCalledTimes(1);
   native.complete();
   await waitFor(() => expect(native.requests).toHaveLength(3));
   expect(native.requests[2].input).toEqual([{ type: 'text', text: 'Second' }]);

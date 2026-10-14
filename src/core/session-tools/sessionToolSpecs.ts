@@ -1,6 +1,7 @@
 import {
   type SessionToolName,
   TOOL_CLAUDIAN_LIST_DESTINATIONS,
+  TOOL_CLAUDIAN_READ_SESSION,
   TOOL_CLAUDIAN_SEND_MESSAGE,
 } from '@/core/tools/toolNames';
 
@@ -77,9 +78,30 @@ export interface SessionToolSendMessageResult {
   readonly status: SessionToolDeliveryStatus;
 }
 
+export interface SessionToolReadSessionArgs {
+  readonly sessionId: string;
+  /** Session turn number; only turns before it are returned. Omitted for the latest turns. */
+  readonly beforeTurn?: number;
+}
+
+export interface SessionToolReadSessionResult {
+  readonly sessionId: string;
+  readonly title: string;
+  readonly provider: string;
+  readonly status: SessionToolSessionStatus;
+  /** Markdown transcript: a header, then each returned turn's prompt and final reply. */
+  readonly content: string;
+  /** First and last returned turn numbers; both 0 when no turn is returned. */
+  readonly fromTurn: number;
+  readonly toTurn: number;
+  /** Completed turns in the session; a running turn is not counted. */
+  readonly totalTurns: number;
+}
+
 export type SessionToolCall =
   | { readonly tool: typeof TOOL_CLAUDIAN_LIST_DESTINATIONS; readonly args: SessionToolListDestinationsArgs }
-  | { readonly tool: typeof TOOL_CLAUDIAN_SEND_MESSAGE; readonly args: SessionToolSendMessageArgs };
+  | { readonly tool: typeof TOOL_CLAUDIAN_SEND_MESSAGE; readonly args: SessionToolSendMessageArgs }
+  | { readonly tool: typeof TOOL_CLAUDIAN_READ_SESSION; readonly args: SessionToolReadSessionArgs };
 
 export type SessionToolCallDecodeResult =
   | { readonly ok: true; readonly call: SessionToolCall }
@@ -169,6 +191,17 @@ const SEND_MESSAGE_PROPERTIES = {
   },
 } as const satisfies Record<string, SessionToolProperty>;
 
+const READ_SESSION_PROPERTIES = {
+  sessionId: {
+    type: 'string',
+    description: `Session to read: a sessionId from ${TOOL_CLAUDIAN_LIST_DESTINATIONS}, the id of a <context_session>, or the session_id of a received message.`,
+  },
+  beforeTurn: {
+    type: 'integer',
+    description: 'Return only turns before this turn number, to page back from an earlier result\'s fromTurn. Omit for the latest turns.',
+  },
+} as const satisfies Record<string, SessionToolProperty>;
+
 export const SESSION_TOOL_SPECS: readonly SessionToolSpec[] = [
   {
     name: TOOL_CLAUDIAN_LIST_DESTINATIONS,
@@ -199,10 +232,26 @@ export const SESSION_TOOL_SPECS: readonly SessionToolSpec[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: TOOL_CLAUDIAN_READ_SESSION,
+    description: [
+      'Read another Claudian chat session: each turn\'s user prompt and final reply, without tool calls or thinking.',
+      'Use it for a session the user mentions as <context_session id="…">, or to check on a session you messaged.',
+      'Returns {sessionId, title, provider, status, content, fromTurn, toTurn, totalTurns}; content is Markdown with turns numbered from 1.',
+      'It holds the latest completed turns that fit; a turn still running is left out.',
+      'When fromTurn is greater than 1, pass it as beforeTurn to read earlier turns.',
+    ].join(' '),
+    inputSchema: {
+      type: 'object',
+      properties: READ_SESSION_PROPERTIES,
+      required: ['sessionId'],
+      additionalProperties: false,
+    },
+  },
 ];
 
 export function decodeSessionToolCall(name: string, args: unknown): SessionToolCallDecodeResult {
-  if (name !== TOOL_CLAUDIAN_LIST_DESTINATIONS && name !== TOOL_CLAUDIAN_SEND_MESSAGE) {
+  if (name !== TOOL_CLAUDIAN_LIST_DESTINATIONS && name !== TOOL_CLAUDIAN_SEND_MESSAGE && name !== TOOL_CLAUDIAN_READ_SESSION) {
     return { ok: false, error: `Unknown session tool "${name}".` };
   }
   const input = args ?? {};
@@ -210,7 +259,8 @@ export function decodeSessionToolCall(name: string, args: unknown): SessionToolC
     return { ok: false, error: 'Tool arguments must be an object.' };
   }
   const record = input as Record<string, unknown>;
-  const properties = name === TOOL_CLAUDIAN_SEND_MESSAGE ? SEND_MESSAGE_PROPERTIES : LIST_DESTINATIONS_PROPERTIES;
+  const properties = name === TOOL_CLAUDIAN_SEND_MESSAGE ? SEND_MESSAGE_PROPERTIES
+    : name === TOOL_CLAUDIAN_READ_SESSION ? READ_SESSION_PROPERTIES : LIST_DESTINATIONS_PROPERTIES;
   const unexpected = Object.keys(record).find(key => !Object.hasOwn(properties, key));
   if (unexpected !== undefined) {
     return { ok: false, error: `Unexpected argument "${unexpected}".` };
@@ -226,6 +276,17 @@ export function decodeSessionToolCall(name: string, args: unknown): SessionToolC
       return { ok: false, error: `"limit" must be an integer from 1 to ${LIST_LIMIT_MAX}.` };
     }
     return { ok: true, call: { tool: name, args: { includeProviders, limit } } };
+  }
+  if (name === TOOL_CLAUDIAN_READ_SESSION) {
+    const { sessionId } = record;
+    if (typeof sessionId !== 'string' || sessionId.trim() === '') {
+      return { ok: false, error: '"sessionId" must be a non-empty string.' };
+    }
+    const beforeTurn = record.beforeTurn ?? undefined;
+    if (beforeTurn !== undefined && (typeof beforeTurn !== 'number' || !Number.isInteger(beforeTurn) || beforeTurn < 1)) {
+      return { ok: false, error: '"beforeTurn" must be a positive integer.' };
+    }
+    return { ok: true, call: { tool: name, args: { sessionId, ...(beforeTurn !== undefined ? { beforeTurn } : {}) } } };
   }
 
   const sendArgs: { -readonly [K in keyof SessionToolSendMessageArgs]: SessionToolSendMessageArgs[K] } = { text: '' };

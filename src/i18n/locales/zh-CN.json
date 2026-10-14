@@ -186,6 +186,7 @@
       "messageAgent": "向代理发送消息",
       "listDestinations": "列出目标",
       "messageSession": "向会话发送消息",
+      "readSession": "读取会话",
       "continueAgent": "继续代理任务",
       "listAgents": "列出代理",
       "interruptAgent": "中断代理",
@@ -335,7 +336,11 @@
       "openFailed": "无法打开会话：{message}",
       "openUnavailable": "无法从此处打开会话。",
       "providersIncluded": "已包含可用的提供商和模型",
-      "newSession": "新会话"
+      "newSession": "新会话",
+      "session": "会话",
+      "turns": "轮次",
+      "turnRange": "{from}–{to}，共 {total}",
+      "noTurns": "暂无"
     }
   },
   "settings": {

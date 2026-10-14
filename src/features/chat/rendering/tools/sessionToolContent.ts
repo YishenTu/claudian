@@ -155,3 +155,42 @@ export function renderSendMessageContent(container: HTMLElement, tool: ToolSnaps
     root.createDiv({ cls: 'claudian-session-tool-message', text });
   }
 }
+
+// ============================================
+// claudian_read_session
+// ============================================
+
+function parseTurn(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+export function renderReadSessionContent(container: HTMLElement, tool: ToolSnapshot): void {
+  const result = parseResult(tool);
+  const root = container.createDiv({ cls: 'claudian-session-tool' });
+  const sessionId = optionalString(result?.sessionId) ?? getInputText(tool.input, 'sessionId');
+  if (tool.result && !result) {
+    renderRawResult(root, tool);
+    return;
+  }
+  if (!sessionId) return;
+  const fields = root.createEl('dl', { cls: 'claudian-session-tool-fields' });
+  const addField = (label: string): HTMLElement => {
+    fields.createEl('dt', { text: label });
+    return fields.createEl('dd');
+  };
+  // Without a result yet, the link resolves the session's current title.
+  createSessionLink(addField(t('chat.sessionTools.session')), {
+    sessionId,
+    text: optionalString(result?.title),
+    provider: optionalString(result?.provider),
+    cls: 'claudian-session-tool-title',
+  });
+  const from = parseTurn(result?.fromTurn);
+  const to = parseTurn(result?.toTurn);
+  const total = parseTurn(result?.totalTurns);
+  if (from === undefined || to === undefined || total === undefined) return;
+  // The transcript itself is for the agent; the user can open the session to read it.
+  addField(t('chat.sessionTools.turns')).setText(to === 0
+    ? t('chat.sessionTools.noTurns')
+    : t('chat.sessionTools.turnRange', { from, to, total }));
+}

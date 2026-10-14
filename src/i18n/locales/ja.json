@@ -186,6 +186,7 @@
       "messageAgent": "エージェントにメッセージを送信",
       "listDestinations": "送信先を一覧表示",
       "messageSession": "セッションにメッセージを送信",
+      "readSession": "セッションを読む",
       "continueAgent": "エージェントを継続",
       "listAgents": "エージェント一覧",
       "interruptAgent": "エージェントを中断",
@@ -335,7 +336,11 @@
       "openFailed": "セッションを開けませんでした: {message}",
       "openUnavailable": "ここからはセッションを開けません。",
       "providersIncluded": "利用可能なプロバイダーとモデルを含めました",
-      "newSession": "新しいセッション"
+      "newSession": "新しいセッション",
+      "session": "セッション",
+      "turns": "ターン",
+      "turnRange": "{from}–{to} / {total}",
+      "noTurns": "まだありません"
     }
   },
   "settings": {

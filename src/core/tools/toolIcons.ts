@@ -6,6 +6,7 @@ import {
   TOOL_BASH,
   TOOL_BASH_OUTPUT,
   TOOL_CLAUDIAN_LIST_DESTINATIONS,
+  TOOL_CLAUDIAN_READ_SESSION,
   TOOL_CLAUDIAN_SEND_MESSAGE,
   TOOL_CLOSE_AGENT,
   TOOL_EDIT,
@@ -86,6 +87,7 @@ const TOOL_ICONS: Record<string, string> = {
   [TOOL_GENERATE_VIDEO]: 'clapperboard',
   [TOOL_CLAUDIAN_LIST_DESTINATIONS]: 'messages-square',
   [TOOL_CLAUDIAN_SEND_MESSAGE]: 'send',
+  [TOOL_CLAUDIAN_READ_SESSION]: 'book-open',
 };
 
 /** Special marker for MCP tools - signals to use custom SVG. */

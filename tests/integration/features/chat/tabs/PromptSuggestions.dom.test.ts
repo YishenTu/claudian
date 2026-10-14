@@ -80,7 +80,6 @@ async function createView(fakeBackend?: FakeSideBackend) {
       persistExecutionSnapshot: async (...args: unknown[]) => { saved.push(args); return true; },
       recordConversationActivity: async () => {},
     },
-    getSessionSnapshotDirectory: () => '/tmp/claudian-sessions',
     getCommittedSettings: () => settings,
     getActiveEnvironmentVariables: () => '',
     getConversationSummary: (id: string) => conversations.get(id),

@@ -3,7 +3,6 @@ import { testClock } from '@test/helpers/testClock';
 import { Notice, TFile, TFolder } from 'obsidian';
 
 import type { ConversationRepository } from '@/app/conversations/ConversationRepository';
-import { SessionSnapshotStore } from '@/app/conversations/SessionSnapshotStore';
 import { PinnedLinkedContentPathCoordinator } from '@/app/settings/PinnedLinkedContentPathCoordinator';
 import { ConversationPersistenceStore } from '@/app/storage/ConversationPersistenceStore';
 import type { SessionMetadataReadResult } from '@/app/storage/SessionStorage';
@@ -360,34 +359,6 @@ describe('ClaudianPlugin', () => {
       await new Promise(resolve => setTimeout(resolve, 5));
       await (plugin as any).sessionInputCleanup;
       expect(files.has(inputPath)).toBe(mode !== 'run');
-    });
-
-    it('defers snapshot maintenance, aborts it on unload, and joins it before shutdown', async () => {
-      let entered!: () => void;
-      const started = new Promise<void>(resolve => { entered = resolve; });
-      let release!: () => void;
-      const gate = new Promise<void>(resolve => { release = resolve; });
-      let signal: AbortSignal | undefined;
-      const sweep = jest.spyOn(SessionSnapshotStore.prototype, 'sweep').mockImplementation(async received => {
-        signal = received;
-        entered();
-        await gate;
-      });
-      try {
-        await plugin.onload();
-        expect(sweep).not.toHaveBeenCalled();
-        for (const [ready] of mockApp.workspace.onLayoutReady.mock.calls) ready();
-        await started;
-        plugin.onunload();
-        expect(signal?.aborted).toBe(true);
-        let stopped = false;
-        const shutdown = (plugin as any).applicationShutdownPromise.then(() => { stopped = true; });
-        await Promise.resolve();
-        expect(stopped).toBe(false);
-        release();
-        await shutdown;
-        expect(stopped).toBe(true);
-      } finally { release(); sweep.mockRestore(); }
     });
 
     it('joins an admitted input deletion on unload and leaves remaining inputs for the next launch', async () => {

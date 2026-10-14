@@ -55,7 +55,6 @@ function setup() {
   const registry = new ProviderExecutionLifecycleRegistry();
   const host = {
     app, settings, providerHost: { app, settings, executionLifecycleRegistry: registry },
-    getSessionSnapshotDirectory: () => '/tmp/claudian-sessions',
     getCommittedSettings: () => settings, getActiveEnvironmentVariables: () => '',
     getConversationSummary: (id: string) => repository.getSync(id),
     getConversationSync: (id: string) => repository.getSync(id),
@@ -83,7 +82,7 @@ function setup() {
   });
   Object.assign(host, { bindSessionTools: (id: string) => service.bindSessionTools(id) });
   const binding = service.bindSessionTools('sender');
-  return { host, pool, service, binding, records, backend, saves, record, refreshModelControls };
+  return { host, pool, service, binding, records, repository, backend, saves, record, refreshModelControls };
 }
 const requestText = (request: ProviderExecutionRequest) => request.input.filter(block => block.type === 'text').map(block => block.text).join('');
 const signal = () => new AbortController().signal;
@@ -169,6 +168,42 @@ it('keeps FIFO mailbox turns behind queued user input without consuming recovere
     await runtime.turns.drain();
     expect(model.composer.hasRecovery).toBe(true);
   });
+});
+
+it('reads stored transcripts by id, archived included, loading metadata the deferred scan has not admitted', async () => {
+  const h = setup();
+  const time = testDate().getTime();
+  h.records.get('archived')!.messages = [
+    { id: 'u', role: 'user', content: 'q1', timestamp: time },
+    { id: 'a', role: 'assistant', content: 'a1', timestamp: time },
+  ];
+  // Startup admits restored sessions only; the archived one is still waiting for the background scan.
+  h.repository.replaceAll([...h.records.values()].filter(record => record.id !== 'archived'));
+  const read = await h.binding.port.read({ sessionId: 'archived' }, signal());
+  expect(read).toEqual({
+    sessionId: 'archived', title: 'archived', provider: 'claude', status: 'idle',
+    content: expect.stringContaining('ID: archived\nProvider: claude'), fromTurn: 1, toTurn: 1, totalTurns: 1,
+  });
+  expect(read.content).toContain('## T1 user\nq1\n\n## T1 assistant\na1');
+  expect(await h.binding.port.read({ sessionId: 'archived', beforeTurn: 1 }, signal())).toMatchObject({ fromTurn: 0, toTurn: 0, totalTurns: 1 });
+  await expect(h.binding.port.read({ sessionId: 'missing' }, signal())).rejects.toThrow('The session does not exist');
+  expect(h.pool.getAll()).toHaveLength(0);
+});
+
+it('reads a live session from its runtime, omitting the turn still running', async () => {
+  const h = setup();
+  await h.binding.port.send({ sessionId: 'recipient', text: 'Review this' }, signal());
+  await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+  h.backend.latest.emitText('Looks good');
+  expect(await h.binding.port.read({ sessionId: 'recipient' }, signal())).toMatchObject({ status: 'running', totalTurns: 0 });
+  h.backend.latest.complete();
+  await h.pool.get('recipient')!.turns.drain();
+  // Storage is stale; only the runtime's transcript has the finished turn.
+  Object.assign(h.host, { getConversationById: async (id: string) => ({ ...h.records.get(id)!, messages: [] }) });
+  const read = await h.binding.port.read({ sessionId: 'recipient' }, signal());
+  expect(read).toMatchObject({ status: 'idle', fromTurn: 1, toTurn: 1, totalTurns: 1 });
+  expect(read.content).toContain('Review this');
+  expect(read.content).toContain('## T1 assistant\nLooks good');
 });
 
 it.each(['sender', 'archived', 'missing'])('rejects unavailable recipient %s without creating a runtime', async sessionId => {

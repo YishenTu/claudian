@@ -158,6 +158,11 @@ export class SideChatRuntime {
       },
       providerId: deps.source.providerId,
       ephemeral,
+      // The child acts for its parent session, with main chat's session tools and policy gate.
+      bindSessionTools: () => {
+        const conversationId = deps.source.conversationId;
+        return conversationId ? deps.plugin.bindSessionTools?.(conversationId) : undefined;
+      },
       resolveBackend: deps.resolveBackend,
       vaultWorkingDirectory: deps.vaultWorkingDirectory,
     });
@@ -394,7 +399,7 @@ export class SideChatRuntime {
       const result = await this.#session.execute({
         assertBeforeHandoff: submission.assertBeforeHandoff,
         ...(submission.context ? { context: submission.context } : {}),
-        configuration: buildChatExecutionConfiguration(this.#settings, this.deps.plugin.getSessionSnapshotDirectory()),
+        configuration: buildChatExecutionConfiguration(this.#settings),
         conversationHistory: [
           ...this.deps.source.messages,
           ...this.state.messages.slice(0, -2),

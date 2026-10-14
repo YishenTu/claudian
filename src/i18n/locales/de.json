@@ -186,6 +186,7 @@
       "messageAgent": "Agent benachrichtigen",
       "listDestinations": "Ziele auflisten",
       "messageSession": "Sitzung benachrichtigen",
+      "readSession": "Sitzung lesen",
       "continueAgent": "Agent fortsetzen",
       "listAgents": "Agents auflisten",
       "interruptAgent": "Agent unterbrechen",
@@ -335,7 +336,11 @@
       "openFailed": "Sitzung konnte nicht geöffnet werden: {message}",
       "openUnavailable": "Sitzungen können hier nicht geöffnet werden.",
       "providersIncluded": "Verfügbare Anbieter und Modelle einbezogen",
-      "newSession": "Neue Sitzung"
+      "newSession": "Neue Sitzung",
+      "session": "Sitzung",
+      "turns": "Runden",
+      "turnRange": "{from}–{to} von {total}",
+      "noTurns": "Noch keine"
     }
   },
   "settings": {

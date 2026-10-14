@@ -186,6 +186,7 @@
       "messageAgent": "Отправить сообщение агенту",
       "listDestinations": "Список адресатов",
       "messageSession": "Отправить сообщение сеансу",
+      "readSession": "Прочитать сеанс",
       "continueAgent": "Продолжить работу агента",
       "listAgents": "Список агентов",
       "interruptAgent": "Прервать агента",
@@ -335,7 +336,11 @@
       "openFailed": "Не удалось открыть сеанс: {message}",
       "openUnavailable": "Отсюда нельзя открывать сеансы.",
       "providersIncluded": "Включены доступные провайдеры и модели",
-      "newSession": "Новый сеанс"
+      "newSession": "Новый сеанс",
+      "session": "Сеанс",
+      "turns": "Ходы",
+      "turnRange": "{from}–{to} из {total}",
+      "noTurns": "Пока нет"
     }
   },
   "settings": {

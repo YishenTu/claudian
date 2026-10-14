@@ -466,7 +466,6 @@ export class CodexExecutionSession
 
       const turnInput = buildCodexTurnPrompt(
         request,
-        hostPath => this.#mapRequiredHostPath(hostPath),
         thread.forkCheckpoint,
         replayConversationHistory,
       );

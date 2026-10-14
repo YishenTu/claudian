@@ -186,6 +186,7 @@
       "messageAgent": "에이전트에 메시지 보내기",
       "listDestinations": "대상 목록 보기",
       "messageSession": "세션에 메시지 보내기",
+      "readSession": "세션 읽기",
       "continueAgent": "에이전트 계속",
       "listAgents": "에이전트 목록",
       "interruptAgent": "에이전트 중단",
@@ -335,7 +336,11 @@
       "openFailed": "세션을 열지 못했습니다: {message}",
       "openUnavailable": "여기에서는 세션을 열 수 없습니다.",
       "providersIncluded": "사용 가능한 공급자와 모델 포함",
-      "newSession": "새 세션"
+      "newSession": "새 세션",
+      "session": "세션",
+      "turns": "턴",
+      "turnRange": "{from}–{to} / {total}",
+      "noTurns": "아직 없음"
     }
   },
   "settings": {

@@ -23,6 +23,7 @@ describe('ChatExecutionCoordinator', () => {
           controller.signal.throwIfAborted();
           return { sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' };
         },
+        read: jest.fn(),
       };
       const binding = { port, dispose: jest.fn(() => controller.abort(new Error('Binding revoked'))) };
       bindings.push(binding);

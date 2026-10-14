@@ -70,8 +70,6 @@ export type ChatSessionRuntimes = Pick<SessionRuntimePool, 'awaitConversationCre
 export interface ChatFeatureHost extends FeatureHost {
   readonly sessionRuntimes: ChatSessionRuntimes;
   bindSessionTools(conversationId: string): SessionToolBinding;
-  writeSessionSnapshot(conversationId: string, markdown: string): Promise<string>;
-  getSessionSnapshotDirectory(): string;
   readonly chatModelSelection: ChatModelSelectionPort;
   createConversation(options?: {
     providerId?: ProviderId;

@@ -6,6 +6,7 @@ import {
   TOOL_BASH,
   TOOL_BASH_OUTPUT,
   TOOL_CLAUDIAN_LIST_DESTINATIONS,
+  TOOL_CLAUDIAN_READ_SESSION,
   TOOL_CLAUDIAN_SEND_MESSAGE,
   TOOL_EDIT,
   TOOL_EDIT_IMAGE,
@@ -38,7 +39,11 @@ import type { ToolCallInfo } from '@/core/types';
 import { getApplyPatchSummary, renderApplyPatchExpanded, setApplyPatchStatus } from '@/features/chat/rendering/tools/applyPatchContent';
 import { renderAskUserQuestionContent } from '@/features/chat/rendering/tools/askUserQuestionContent';
 import { getScriptLanguage, getScriptSummary, renderScriptContent } from '@/features/chat/rendering/tools/scriptContent';
-import { renderListDestinationsContent, renderSendMessageContent } from '@/features/chat/rendering/tools/sessionToolContent';
+import {
+  renderListDestinationsContent,
+  renderReadSessionContent,
+  renderSendMessageContent,
+} from '@/features/chat/rendering/tools/sessionToolContent';
 import { getCurrentTaskText, getTodoLabel, getTodoName, renderTodoWriteContent, setTodoWriteStatus } from '@/features/chat/rendering/tools/todoContent';
 import {
   contentFallback,
@@ -259,6 +264,11 @@ const TOOL_PRESENTATIONS: ReadonlyMap<string, ToolPresentation> = new Map<string
   [TOOL_CLAUDIAN_SEND_MESSAGE, {
     name: () => t('chat.tools.messageSession'),
     body: renderSendMessageContent,
+  }],
+  [TOOL_CLAUDIAN_READ_SESSION, {
+    name: () => t('chat.tools.readSession'),
+    body: renderReadSessionContent,
+    handlesMissingResult: true,
   }],
   [TOOL_SEND_MESSAGE, { ...AGENT_LIFECYCLE, name: () => t('chat.tools.messageAgent'), summary: agentTargetMessageSummary }],
   [TOOL_FOLLOWUP_TASK, { ...AGENT_LIFECYCLE, name: () => t('chat.tools.continueAgent'), summary: agentTargetMessageSummary }],

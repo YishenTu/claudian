@@ -19,6 +19,7 @@ import { consumeExecutionEvents } from '@/features/chat/execution/consumeExecuti
 import { ExecutionInteractions } from '@/features/chat/execution/ExecutionInteractions';
 import { ExecutionSessionSupervisor } from '@/features/chat/execution/ExecutionSessionSupervisor';
 import { SessionEventStream } from '@/features/chat/execution/SessionEventStream';
+import type { SessionToolBinding } from '@/features/chat/session-messaging/SessionMessagingService';
 import { toError } from '@/utils/error';
 
 export type SideChatTurnStatus =
@@ -59,6 +60,8 @@ export interface SideChatSessionDeps {
   readonly buildChildResumeState: () => Promise<Readonly<Record<string, unknown>>>;
   readonly vaultWorkingDirectory: string;
   readonly interactionPort: ProviderInteractionPort;
+  /** Binds the parent conversation's session tools for each provider session the child acquires. */
+  readonly bindSessionTools?: () => SessionToolBinding | undefined;
   readonly onRequestedEvent?: (event: ProviderExecutionEvent) => void | Promise<void>;
   readonly onSessionEvent?: (event: ProviderSessionEvent, isCurrent: () => boolean) => void | Promise<void>;
   readonly onBackgroundWorkChanged?: () => void;
@@ -87,6 +90,7 @@ export class SideChatSession {
   readonly #supervisor: ExecutionSessionSupervisor;
   readonly #interactions: ExecutionInteractions;
   #events: SessionEventStream | null = null;
+  #sessionTools: SessionToolBinding | undefined;
   #model: string | undefined;
   #childResumeStatePromise: Promise<Readonly<Record<string, unknown>>> | null = null;
   #seed: ProviderNativeResumeSeed | null = null;
@@ -252,18 +256,28 @@ export class SideChatSession {
       );
     }
     this.#lastSnapshotRevision = -1;
-    const supervised = this.#supervisor.acquire(
-      backend,
-      {
-        interactionPort: this.#interactions,
-        lifecycle: this.deps.ephemeral ? 'ephemeral' : 'persistent',
-        nativePersistence: this.deps.ephemeral ? 'disabled-if-supported' : 'enabled',
-        ...(seed ? { resumeSeed: seed } : {}),
-        vaultWorkingDirectory: this.deps.vaultWorkingDirectory,
-      },
-      reason => this.#handleInvalidation(reason),
-      event => this.#handleSessionEvent(event),
-    );
+    this.#releaseSessionTools();
+    const sessionTools = this.deps.bindSessionTools?.();
+    let supervised;
+    try {
+      supervised = this.#supervisor.acquire(
+        backend,
+        {
+          interactionPort: this.#interactions,
+          lifecycle: this.deps.ephemeral ? 'ephemeral' : 'persistent',
+          nativePersistence: this.deps.ephemeral ? 'disabled-if-supported' : 'enabled',
+          ...(seed ? { resumeSeed: seed } : {}),
+          vaultWorkingDirectory: this.deps.vaultWorkingDirectory,
+          ...(sessionTools ? { sessionTools: sessionTools.port } : {}),
+        },
+        reason => this.#handleInvalidation(reason),
+        event => this.#handleSessionEvent(event),
+      );
+    } catch (error) {
+      sessionTools?.dispose();
+      throw error;
+    }
+    this.#sessionTools = sessionTools;
     this.#events = new SessionEventStream(supervised.session.sessionInstanceId);
     return supervised.session;
   }
@@ -366,6 +380,7 @@ export class SideChatSession {
   }
 
   #handleInvalidation(reason: ProviderExecutionInvalidationReason): void {
+    this.#releaseSessionTools();
     this.#invalidated = this.deps.ephemeral;
     this.#events = null;
     this.#model = undefined;
@@ -421,7 +436,13 @@ export class SideChatSession {
   async #releaseSession(): Promise<void> {
     this.#events = null;
     this.#model = undefined;
+    this.#releaseSessionTools();
     await this.#supervisor.release();
+  }
+
+  #releaseSessionTools(): void {
+    this.#sessionTools?.dispose();
+    this.#sessionTools = undefined;
   }
 
   #isInteractionCurrent(request: {

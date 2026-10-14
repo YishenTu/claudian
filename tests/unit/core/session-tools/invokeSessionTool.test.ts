@@ -4,6 +4,8 @@ import { invokeSessionTool } from '@/core/session-tools/invokeSessionTool';
 import type {
   SessionToolDestinations,
   SessionToolListDestinationsArgs,
+  SessionToolReadSessionArgs,
+  SessionToolReadSessionResult,
   SessionToolSendMessageArgs,
   SessionToolSendMessageResult,
 } from '@/core/session-tools/sessionToolSpecs';
@@ -16,6 +18,10 @@ function createPort() {
     send: jest.fn<Promise<SessionToolSendMessageResult>, [SessionToolSendMessageArgs, AbortSignal]>(
       async () => ({ sessionId: 'conv-2', title: 'Review', provider: 'codex', status: 'queued' }),
     ),
+    read: jest.fn<Promise<SessionToolReadSessionResult>, [SessionToolReadSessionArgs, AbortSignal]>(async () => ({
+      sessionId: 'conv-2', title: 'Review', provider: 'codex', status: 'idle',
+      content: '# Review', fromTurn: 0, toTurn: 0, totalTurns: 0,
+    })),
   };
   return port satisfies ProviderSessionToolPort;
 }
@@ -65,6 +71,7 @@ describe('invokeSessionTool', () => {
     const results = await Promise.all([
       invokeSessionTool('claudian_list_destinations', {}, { port: bound ? port : undefined, toolPolicy, signal }),
       invokeSessionTool('claudian_send_message', { text: 'Hi' }, { port: bound ? port : undefined, toolPolicy, signal }),
+      invokeSessionTool('claudian_read_session', { sessionId: 'conv-2' }, { port: bound ? port : undefined, toolPolicy, signal }),
     ]);
 
     for (const result of results) {
@@ -73,6 +80,17 @@ describe('invokeSessionTool', () => {
     }
     expect(port.list).not.toHaveBeenCalled();
     expect(port.send).not.toHaveBeenCalled();
+  });
+
+  it('reads a session and returns its transcript page', async () => {
+    const port = createPort();
+    const signal = new AbortController().signal;
+
+    const result = await invokeSessionTool('claudian_read_session', { sessionId: 'conv-2', beforeTurn: null }, { port, toolPolicy: allowed, signal });
+
+    expect(result.isError).toBe(false);
+    expect(JSON.parse(result.text)).toEqual(expect.objectContaining({ sessionId: 'conv-2', content: '# Review' }));
+    expect(port.read).toHaveBeenCalledWith({ sessionId: 'conv-2' }, signal);
   });
 
   it('reports invalid arguments and cancelled calls as tool errors without reaching the port', async () => {

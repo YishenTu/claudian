@@ -186,6 +186,7 @@
       "messageAgent": "向代理傳送訊息",
       "listDestinations": "列出目標",
       "messageSession": "向工作階段傳送訊息",
+      "readSession": "讀取工作階段",
       "continueAgent": "繼續代理任務",
       "listAgents": "列出代理",
       "interruptAgent": "中斷代理",
@@ -335,7 +336,11 @@
       "openFailed": "無法開啟工作階段：{message}",
       "openUnavailable": "無法從這裡開啟工作階段。",
       "providersIncluded": "已包含可用的提供者和模型",
-      "newSession": "新工作階段"
+      "newSession": "新工作階段",
+      "session": "工作階段",
+      "turns": "輪次",
+      "turnRange": "{from}–{to}，共 {total}",
+      "noTurns": "尚無"
     }
   },
   "settings": {

@@ -375,7 +375,7 @@ describe('GrokExecutionBackend', () => {
     const route = { url: 'http://127.0.0.1:1234/mcp', routeId: 'private-route', headers: { 'X-Claudian-Route': 'private-route' }, dispose };
     const registerMCPRoute = jest.fn(async (_handler: SessionToolCallHandler) => route);
     const host = { ...createGrokHost(), sessionToolEndpoint: { registerMCPRoute, registerCallRoute: jest.fn() } };
-    const port = { list: jest.fn(async (_args: SessionToolListDestinationsArgs, _signal: AbortSignal) => ({ sessions: [] })), send: jest.fn(async () => ({ sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' as const })) };
+    const port = { list: jest.fn(async (_args: SessionToolListDestinationsArgs, _signal: AbortSignal) => ({ sessions: [] })), send: jest.fn(async () => ({ sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' as const })), read: jest.fn() };
     const servers = [{ type: 'http', name: 'claudian_sessions', url: route.url, headers: [{ name: 'X-Claudian-Route', value: route.routeId }] }];
     return { host, port, route, registerMCPRoute, servers };
   }
@@ -601,7 +601,7 @@ describe('GrokExecutionBackend', () => {
           mediaType: 'image/png', size: 5, source: 'paste',
         } }],
         context: { ...capturedSelections, linkedContent: { path: 'note.md' },
-          sessionReferences: [{ id: 'ref', title: 'Review', providerId: 'grok', updatedAt: 'updated', snapshotPath: '/tmp/ref.md' }],
+          sessionReferences: [{ id: 'ref', title: 'Review', providerId: 'grok', updatedAt: 'updated' }],
         },
       }).events);
       expect(native.promptRequests).toEqual([{ sessionId: 'session-existing', prompt: [{ type: 'text', text: command }] }]);
@@ -813,12 +813,12 @@ describe('GrokExecutionBackend', () => {
 
     await collect(session.execute({
       ...baseRequest,
-      context: { ...capturedSelections, sessionReferences: [{ id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated', snapshotPath: '/tmp/claudian-sessions/ref.md' }], linkedContent: { path: 'Projects/Research' } },
+      context: { ...capturedSelections, sessionReferences: [{ id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated' }], linkedContent: { path: 'Projects/Research' } },
     }).events);
 
     expect(native.loadRequests[0]?.cwd).toBe('/tmp/vault');
     expect(native.promptRequests[0]?.prompt).toEqual([{
-      text: 'Inspect linked content\n\n<linked_content path="Projects/Research" />\n\n' + capturedSelectionPrompt + '\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" path="/tmp/claudian-sessions/ref.md" />\n</context_sessions>',
+      text: 'Inspect linked content\n\n<linked_content path="Projects/Research" />\n\n' + capturedSelectionPrompt + '\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" />\n</context_sessions>',
       type: 'text',
     }]);
     expect(JSON.stringify(native.promptRequests[0]?.prompt)).not.toMatch(

@@ -105,7 +105,6 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
     steer: jest.fn().mockResolvedValue({ delivery: 'accepted' }),
   };
   const plugin = {
-    getSessionSnapshotDirectory: () => '/tmp/claudian-sessions',
     createConversation: jest.fn(),
     getConversationById: jest.fn().mockResolvedValue(null),
     getConversationList: jest.fn().mockReturnValue([]),

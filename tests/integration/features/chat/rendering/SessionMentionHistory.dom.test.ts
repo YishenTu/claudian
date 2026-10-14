@@ -16,7 +16,7 @@ import { parsePiSessionContent } from '@/providers/pi/history/PiHistoryStore';
 
 const writeClaudeSession = useClaudeSessionFiles();
 
-const prompt = 'ref @"Review"\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" path="/tmp/claudian-sessions/private.md" />\n</context_sessions>';
+const prompt = 'ref @"Review"\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" />\n</context_sessions>';
 
 beforeEach(() => {
   HTMLElement.prototype.empty = function () { this.replaceChildren(); };

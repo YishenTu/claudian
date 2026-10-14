@@ -974,10 +974,10 @@ it('sends hidden session reference paths through the HTTP v2 prompt boundary', a
     const events: ProviderExecutionEvent[] = [];
     for await (const event of f.session.execute({
       ...request('ref @"Review"'),
-      context: { sessionReferences: [{ id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated', snapshotPath: '/tmp/claudian-sessions/ref.md' }] },
+      context: { sessionReferences: [{ id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated' }] },
     }).events) events.push(event);
     const received = JSON.parse(events.flatMap(event => event.type === 'text_delta' ? [event.text] : []).join(''));
-    expect(received.body.text).toBe('ref @"Review"\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" path="/tmp/claudian-sessions/ref.md" />\n</context_sessions>');
+    expect(received.body.text).toBe('ref @"Review"\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" />\n</context_sessions>');
   } finally { await f.dispose(); }
 });
 it.each(['/compact', ' \t/CoMpAcT  '])('compacts %j with captured editor context', async text => {

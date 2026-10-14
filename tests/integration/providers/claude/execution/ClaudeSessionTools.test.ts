@@ -83,13 +83,13 @@ describe('Claude session tools', () => {
     await drain(unbound.execute(request()).events);
     expect(sdk.getLastOptions()?.mcpServers).toBeUndefined();
     await unbound.dispose();
-    const bound = session({ list: async () => ({ sessions: [] }), send: jest.fn() }, lifecycle);
+    const bound = session({ list: async () => ({ sessions: [] }), send: jest.fn(), read: jest.fn() }, lifecycle);
     try {
       await drain(bound.execute(request()).events);
       const first = sdk.getLastOptions()?.mcpServers?.claudian_sessions;
       const client = await connect();
       const tools = (await client.listTools()).tools;
-      expect(tools.map(t => t.name)).toEqual(['claudian_list_destinations', 'claudian_send_message']);
+      expect(tools.map(t => t.name)).toEqual(['claudian_list_destinations', 'claudian_send_message', 'claudian_read_session']);
       expect(tools.every(t => t._meta?.['anthropic/alwaysLoad'] === true)).toBe(true);
       expect(await client.callTool({ name: 'claudian_list_destinations', arguments: {} })).toMatchObject({ isError: true });
       await client.close();
@@ -109,7 +109,7 @@ describe('Claude session tools', () => {
     const end = deferred<unknown>();
     sdk.setMockMessages([tool('call'), end.promise], { appendResult: false });
     const list = jest.fn(async () => ({ sessions: [] }));
-    const bound = session({ list, send: jest.fn() });
+    const bound = session({ list, send: jest.fn(), read: jest.fn() });
     const run = bound.execute(request(policy));
     const outputs: unknown[] = [];
     const consume = (async () => { for await (const event of run.events) outputs.push(event); })();
@@ -134,7 +134,7 @@ describe('Claude session tools', () => {
     const end = deferred<unknown>();
     sdk.setMockMessages([start.promise, end.promise], { appendResult: false });
     const list = jest.fn(async () => ({ sessions: [] }));
-    const bound = session({ list, send: jest.fn() });
+    const bound = session({ list, send: jest.fn(), read: jest.fn() });
     const consume = drain(bound.execute(request()).events);
     let client: Client | undefined;
     try {
@@ -165,7 +165,7 @@ describe('Claude session tools', () => {
         signal.addEventListener('abort', () => reject(new Error('Cancelled')), { once: true });
       });
     });
-    const bound = session({ list: jest.fn(), send });
+    const bound = session({ list: jest.fn(), send, read: jest.fn() });
     const outputs: unknown[] = [];
     const run = bound.execute(request());
     const consume = (async () => { for await (const event of run.events) outputs.push(event); })();
@@ -201,7 +201,7 @@ describe('Claude session tools', () => {
         signal.addEventListener('abort', () => reject(new Error('Cancelled')), { once: true });
       });
     });
-    const bound = session({ list, send: jest.fn() });
+    const bound = session({ list, send: jest.fn(), read: jest.fn() });
     const run = bound.execute(request());
     const outputs: unknown[] = [];
     const consume = (async () => { for await (const event of run.events) outputs.push(event); })();

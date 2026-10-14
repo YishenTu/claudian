@@ -200,3 +200,24 @@ it('keeps the side answer completed when cancellation follows native completion'
   expect(screen.getByRole('button', { name: /Worked for/ })).toBeTruthy();
   expect(screen.queryByText('Interrupted')).toBeNull();
 });
+
+it('gives the child the parent conversation\'s session tools and releases them with the child', async () => {
+  const harness = createHarness();
+  const port = { list: jest.fn(), send: jest.fn(), read: jest.fn() };
+  const release = jest.fn();
+  const bindSessionTools = jest.fn((_conversationId: string) => ({ port, dispose: release }));
+  Object.assign(harness.plugin, { bindSessionTools });
+  const { started } = await startSideChat(harness);
+  const native = harness.backend.latest;
+  // The side chat acts for its parent session, with the same tools main chat has.
+  expect(bindSessionTools.mock.calls).toEqual([['conversation-1']]);
+  expect(native.config.sessionTools).toBe(port);
+  native.establishChild('child-session');
+  native.complete();
+  await started;
+  expect(release).not.toHaveBeenCalled();
+
+  await harness.controller.discard();
+  expect(native.disposeCalls).toBe(1);
+  expect(release).toHaveBeenCalledTimes(1);
+});

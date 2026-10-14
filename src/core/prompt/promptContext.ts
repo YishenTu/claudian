@@ -129,13 +129,12 @@ export function appendContextFiles(prompt: string, files: string[]): string {
 export function appendSessionReferences(
   prompt: string,
   references?: readonly ProviderSessionReference[],
-  mapPath: (path: string) => string = path => path,
 ): string {
   if (!references?.length) return prompt;
   const entries = references.map(reference => {
     const attributes = {
       title: reference.title, id: reference.id, provider: reference.providerId,
-      updated: reference.updatedAt, path: mapPath(reference.snapshotPath),
+      updated: reference.updatedAt,
     };
     return `<context_session ${Object.entries(attributes)
       .map(([name, value]) => `${name}="${escapePromptXMLAttribute(value)}"`).join(' ')} />`;

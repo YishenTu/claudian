@@ -95,7 +95,7 @@ describe('Pi session tools through the generated extension', () => {
     sessionFile = path.join(root, '.pi', 'agent', 'sessions', 'source.jsonl');
     await fs.mkdir(path.dirname(sessionFile), { recursive: true });
     await fs.writeFile(sessionFile, JSON.stringify({ type: 'session', version: 3, id: 'pi-source', cwd: root }) + '\n');
-    port = { list: jest.fn().mockResolvedValue({ sessions: [] }), send: jest.fn().mockResolvedValue({ sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' }) };
+    port = { list: jest.fn().mockResolvedValue({ sessions: [] }), send: jest.fn().mockResolvedValue({ sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' }), read: jest.fn() };
   });
 
   afterEach(async () => {
@@ -156,6 +156,7 @@ describe('Pi session tools through the generated extension', () => {
     expect(await kernel.request('fixture_tools')).toMatchObject({ tools: [
       { name: 'claudian_list_destinations', parameters: { type: 'object', properties: {} } },
       { name: 'claudian_send_message', parameters: { required: ['text'] } },
+      { name: 'claudian_read_session', parameters: { required: ['sessionId'] } },
     ] });
     const { drained } = await openRun();
     expect(await kernel.request('fixture_tool', { name: 'claudian_list_destinations', toolCallId: 'list', args: {} }))

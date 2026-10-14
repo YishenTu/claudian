@@ -87,7 +87,6 @@ export class CodexInputBundles {
           .map(block => block.text)
           .join('\n\n'),
         request.context?.sessionReferences,
-        hostPath => this.mapRequiredHostPath(hostPath),
       ), request.context);
       if (prompt) {
         input.push({ type: 'text', text: prompt, text_elements: [] });

@@ -186,6 +186,7 @@
       "messageAgent": "Message agent",
       "listDestinations": "List destinations",
       "messageSession": "Message session",
+      "readSession": "Read session",
       "continueAgent": "Continue agent",
       "listAgents": "List agents",
       "interruptAgent": "Interrupt agent",
@@ -335,7 +336,11 @@
       "openFailed": "Failed to open session: {message}",
       "openUnavailable": "Sessions cannot be opened from here.",
       "providersIncluded": "Included available providers and models",
-      "newSession": "New session"
+      "newSession": "New session",
+      "session": "Session",
+      "turns": "Turns",
+      "turnRange": "{from}–{to} of {total}",
+      "noTurns": "None yet"
     }
   },
   "settings": {

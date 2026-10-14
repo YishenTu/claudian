@@ -1,4 +1,3 @@
-import { SessionSnapshotStore } from './app/conversations/SessionSnapshotStore';
 import { StartupProfiler } from './core/performance/StartupProfiler';
 // Must run before any SDK imports to patch Electron/Node.js realm incompatibility
 import { patchSetMaxListenersForElectron } from './utils/electronCompat';
@@ -73,7 +72,6 @@ export default class ClaudianPlugin extends Plugin {
   );
   private readonly agentSkills = new AgentSkillResources(() => this.views.getAllViews());
   private readonly sessionToolEndpoint = new LoopbackSessionToolServer();
-  private readonly sessionSnapshots = new SessionSnapshotStore();
   private readonly inlineEditSessions = new InlineEditSessionOwner();
   private readonly zenMode = new ZenModeController({
     app: this.app,
@@ -94,7 +92,6 @@ export default class ClaudianPlugin extends Plugin {
   private isUnloading = false;
   private applicationShutdownPromise: Promise<void> | null = null;
   private modelMetadataMigration: Promise<void> | null = null;
-  private sessionSnapshotCleanup: Promise<void> | null = null;
   private sessionInputCleanup: Promise<void> | null = null;
   private sessionInputCleanupTimer: number | null = null;
 
@@ -160,7 +157,6 @@ export default class ClaudianPlugin extends Plugin {
         this.sessionInputCleanupTimer = window.setTimeout(() => {
           this.sessionInputCleanupTimer = null;
           if (this.isUnloading) return;
-          this.sessionSnapshotCleanup = this.sessionSnapshots.sweep(this.startupMaintenanceAbort.signal);
           this.sessionInputCleanup = this.storage.cleanupObsoleteSessionInputs(this.startupMaintenanceAbort.signal);
         }, 0);
       });
@@ -297,7 +293,6 @@ export default class ClaudianPlugin extends Plugin {
       conversationLifecycle: this.conversationLifecycle,
       executionPersistence: domains.conversationRepository,
       chatModelSelection: domains.chatModelSelection,
-      sessionSnapshots: this.sessionSnapshots,
       zenMode: this.zenMode,
     });
     this.inactiveSessionArchiver = new InactiveSessionArchiver(this.chatHost);
@@ -308,7 +303,6 @@ export default class ClaudianPlugin extends Plugin {
       await Promise.allSettled([
         this.sessionMetadata?.dispose(),
         this.sessionInputCleanup,
-        this.sessionSnapshotCleanup,
         ...this.views.getAllViews().map(view => view.prepareForPluginUnload()),
       ]);
       // Admitted native archive work needs provider services that are disposed below.

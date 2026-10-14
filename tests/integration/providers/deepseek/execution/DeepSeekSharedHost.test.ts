@@ -364,7 +364,7 @@ it('routes session tools through one Host route to the claimed root, denying unk
   const endpoint = sessionToolEndpoint();
   const list = jest.fn(async () => ({ sessions: [] }));
   const send = jest.fn(async () => ({ sessionId: 'target', title: 'Review', provider: 'codex', status: 'queued' as const }));
-  const alpha = open(port(), undefined, 'persistent', { list, send });
+  const alpha = open(port(), undefined, 'persistent', { list, send, read: jest.fn() });
   const a = await startSessionToolTurn(alpha, 'alpha');
   const b = await startSessionToolTurn(open(), 'beta');
   expect(endpoint.registerCallRoute).toHaveBeenCalledTimes(1);
@@ -423,7 +423,7 @@ it.each(['passive', 'read-only', 'allow-list'] as const)('denies %s at call time
   const endpoint = sessionToolEndpoint();
   const list = jest.fn(async () => ({ sessions: [] }));
   const input = request('Prompt');
-  const turn = await startSessionToolTurn(open(port(), undefined, 'persistent', { list, send: jest.fn() }), 'alpha', input);
+  const turn = await startSessionToolTurn(open(port(), undefined, 'persistent', { list, send: jest.fn(), read: jest.fn() }), 'alpha', input);
   // Native retains a chat preset; policy must be checked by the dispatcher, independently of native permissions.
   Object.assign(input.toolPolicy, { kind, ...(kind === 'allow-list' ? { names: ['claudian_list_destinations'] } : {}) });
   expect(await endpoint.call('alpha')).toMatchObject({ isError: true });
@@ -439,7 +439,7 @@ it.each(['cancel', 'terminal', 'release'] as const)('revokes session tool calls 
     signals.push(signal);
     return new Promise<{ sessions: [] }>(resolve => signal.addEventListener('abort', () => resolve({ sessions: [] }), { once: true }));
   });
-  const session = open(port(), undefined, 'persistent', { list, send: jest.fn() });
+  const session = open(port(), undefined, 'persistent', { list, send: jest.fn(), read: jest.fn() });
   const first = await startSessionToolTurn(session, 'alpha');
   const pending = endpoint.call('alpha');
   await until(() => signals.length === 1);
@@ -464,7 +464,7 @@ it.each(['cancel', 'terminal', 'release'] as const)('revokes session tool calls 
 it('resolves nested child session-tool ownership when the root creation catalog arrives last', async () => {
   const endpoint = sessionToolEndpoint();
   const list = jest.fn(async () => ({ sessions: [] }));
-  const session = open(port(), undefined, 'persistent', { list, send: jest.fn() });
+  const session = open(port(), undefined, 'persistent', { list, send: jest.fn(), read: jest.fn() });
   const turn = await startSessionToolTurn(session, 'alpha');
   for (const [id, parent] of [['child', 'alpha'], ['grandchild', 'child']]) {
     peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: id, parentSessionId: parent, origin: 'subagent', agentAvailable: true, running: true }] });
@@ -494,7 +494,7 @@ it('resolves nested child session-tool ownership when the root creation catalog 
 it.each(['tool/call', 'tool/ptc-dispatch-start'])('reconciles one root session-tool invocation before ownership and %s arrive', async type => {
   const endpoint = sessionToolEndpoint();
   const list = jest.fn(async () => ({ sessions: [] }));
-  const session = open(port(), undefined, 'persistent', { list, send: jest.fn() });
+  const session = open(port(), undefined, 'persistent', { list, send: jest.fn(), read: jest.fn() });
   const execution = session.execute(request('Prompt'));
   const events: ProviderExecutionEvent[] = [];
   const done = (async () => { for await (const event of execution.events) events.push(event); })();
@@ -514,7 +514,7 @@ it.each(['tool/call', 'tool/ptc-dispatch-start'])('reconciles one root session-t
 it.each(['native', 'request', 'session'] as const)('cancels a pending session-tool invocation with its %s lifetime', async ending => {
   const endpoint = sessionToolEndpoint();
   const list = jest.fn(async () => ({ sessions: [] }));
-  const session = open(port(), undefined, 'persistent', { list, send: jest.fn() });
+  const session = open(port(), undefined, 'persistent', { list, send: jest.fn(), read: jest.fn() });
   const execution = session.execute(request('Prompt'));
   const events: ProviderExecutionEvent[] = [];
   const done = (async () => { for await (const event of execution.events) events.push(event); })();
@@ -548,7 +548,7 @@ it.each(['unknown', 'ended', 'wrong-name'] as const)('bounds reconciliation and 
   const endpoint = sessionToolEndpoint();
   const list = jest.fn(async () => ({ sessions: [] }));
   const send = jest.fn();
-  const turn = await startSessionToolTurn(open(port(), undefined, 'persistent', { list, send }), 'alpha');
+  const turn = await startSessionToolTurn(open(port(), undefined, 'persistent', { list, send, read: jest.fn() }), 'alpha');
   if (identity === 'ended') {
     emit('alpha', 'tool/result', { message: { toolCallId: 'session-call', content: [], isError: false } });
     emit('alpha', 'tool/call', { callId: 'barrier', name: 'read', arguments: '{}' });
@@ -572,7 +572,7 @@ it.each(['unknown', 'ended', 'wrong-name'] as const)('bounds reconciliation and 
 it('reconciles a child call whose new turn overtakes the previous turn end', async () => {
   const endpoint = sessionToolEndpoint();
   const list = jest.fn(async () => ({ sessions: [] }));
-  const turn = await startSessionToolTurn(open(port(), undefined, 'persistent', { list, send: jest.fn() }), 'alpha');
+  const turn = await startSessionToolTurn(open(port(), undefined, 'persistent', { list, send: jest.fn(), read: jest.fn() }), 'alpha');
   peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: 'child', parentSessionId: 'alpha', origin: 'subagent', agentAvailable: true, running: true }] });
   peer.send('session/control', { type: 'projection', sessionId: 'alpha', key: 'subagentCatalog', value: [{ id: 'child', mode: 'continuable' }] });
   peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { parentSessionId: 'alpha', mode: 'continuable' } });
@@ -598,11 +598,11 @@ it.each(['native', 'request', 'timeout'] as const)('denies a pre-announcement ch
   peer.onCall = (method, args) => method === 'session/cancel' ? {} : nativeCall(method, args);
   const endpoint = sessionToolEndpoint();
   const list = jest.fn(async () => ({ sessions: [] }));
-  const session = open(port(), undefined, 'persistent', { list, send: jest.fn() });
+  const session = open(port(), undefined, 'persistent', { list, send: jest.fn(), read: jest.fn() });
   const first = await startSessionToolTurn(session, 'alpha');
   // Another live claim keeps an unresolved caller ambiguous when alpha ends.
   const otherList = jest.fn(async () => ({ sessions: [] }));
-  const other = await startSessionToolTurn(open(port(), undefined, 'persistent', { list: otherList, send: jest.fn() }), 'beta');
+  const other = await startSessionToolTurn(open(port(), undefined, 'persistent', { list: otherList, send: jest.fn(), read: jest.fn() }), 'beta');
   const native = new AbortController();
   jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   const pending = endpoint.call('child', 'claudian_list_destinations', {}, 'child-call', native.signal);

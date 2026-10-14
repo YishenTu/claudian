@@ -203,7 +203,6 @@ function createPlugin(overrides: Record<string, unknown> = {}) {
       await mutation(settings);
     }),
     getConversationById: jest.fn().mockResolvedValue(null),
-    getSessionSnapshotDirectory: () => '/snapshots',
     updateConversation: jest.fn().mockResolvedValue(undefined),
     getCachedConversation: jest.fn().mockReturnValue(null),
     getConversationList: jest.fn().mockReturnValue([]),

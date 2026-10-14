@@ -213,3 +213,35 @@ it('reports a session that no longer exists instead of opening it', async () => 
     expect(h.openConversation).not.toHaveBeenCalled();
   } finally { h.renderer.dispose(); }
 });
+
+it('shows which session and turns a read returned, not the transcript, and names a pending read by its current title', async () => {
+  const h = setup();
+  h.records.set(RECIPIENT, { id: RECIPIENT, providerId: 'deepseek', title: 'hi' } as Conversation);
+  try {
+    h.renderer.renderMessages([assistant([
+      {
+        id: 'read', name: 'claudian_read_session', input: { sessionId: RECIPIENT, beforeTurn: 6 }, status: 'completed',
+        result: JSON.stringify({
+          sessionId: RECIPIENT, title: 'hi', provider: 'deepseek', status: 'idle',
+          content: '# hi\n\n## T2 user\nsecret prompt', fromTurn: 2, toTurn: 5, totalTurns: 7,
+        }),
+      },
+      { id: 'read-pending', name: 'claudian_read_session', input: { sessionId: RECIPIENT }, status: 'running' },
+      {
+        id: 'read-empty', name: 'claudian_read_session', input: { sessionId: RECIPIENT }, status: 'completed',
+        result: JSON.stringify({ sessionId: RECIPIENT, title: 'hi', provider: 'deepseek', status: 'running', content: '# hi\n', fromTurn: 0, toTurn: 0, totalTurns: 0 }),
+      },
+    ])], () => '');
+    const [card, pending, empty] = within(h.messagesEl).getAllByRole('button', { name: /Read session/ }).map(header => {
+      fireEvent.click(header);
+      return header.closest<HTMLElement>('.claudian-tool-call')!;
+    });
+    expect(within(card).getByText('2–5 of 7')).toBeTruthy();
+    expect(card.textContent).not.toContain('secret prompt');
+    fireEvent.click(within(card).getByRole('button', { name: 'hi' }));
+    await waitFor(() => expect(h.openConversation).toHaveBeenCalledWith(RECIPIENT));
+    expect(within(pending).getByRole('button', { name: 'hi' })).toBeTruthy();
+    expect(within(empty).getByText('None yet')).toBeTruthy();
+    expect((await axe(h.messagesEl)).violations).toEqual([]);
+  } finally { h.renderer.dispose(); }
+});

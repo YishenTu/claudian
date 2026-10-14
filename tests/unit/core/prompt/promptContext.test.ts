@@ -280,12 +280,12 @@ describe('appendContextFiles', () => {
 
 
 describe('session reference context', () => {
-  it('renders escaped metadata and mapped paths, hidden in both history display paths', () => {
+  it('renders escaped metadata, hidden in both history display paths', () => {
     const prompt = appendSessionReferences('ref @"Review"', [{
       id: 'conv-1-abc', title: 'Review "A" & <B>', providerId: 'codex',
-      updatedAt: 'updated', snapshotPath: 'C:\\tmp\\session.md',
-    }], () => '/mnt/c/tmp/"session".md');
-    expect(prompt).toBe('ref @"Review"\n\n<context_sessions>\n<context_session title="Review &quot;A&quot; &amp; &lt;B&gt;" id="conv-1-abc" provider="codex" updated="updated" path="/mnt/c/tmp/&quot;session&quot;.md" />\n</context_sessions>');
+      updatedAt: 'updated',
+    }]);
+    expect(prompt).toBe('ref @"Review"\n\n<context_sessions>\n<context_session title="Review &quot;A&quot; &amp; &lt;B&gt;" id="conv-1-abc" provider="codex" updated="updated" />\n</context_sessions>');
     expect(extractUserDisplayContent(prompt)).toBe('ref @"Review"');
     expect(extractUserQuery(prompt)).toBe('ref @"Review"');
     expect(extractUserQuery('Query <context_sessions>private</context_sessions> end')).toBe('Query end');

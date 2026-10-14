@@ -276,7 +276,6 @@ it('does not steer Linked content captured while the first turn resolves session
   fixture.plugin.getConversationById.mockReturnValueOnce(source.promise);
   Object.assign(fixture.plugin, {
     findConversationAcrossViews: () => null,
-    writeSessionSnapshot: jest.fn().mockResolvedValue('/tmp/claudian-sessions/source.md'),
   });
   const turn = deferred<{ accepted: boolean; status: string }>();
   fixture.coordinator.execute.mockReturnValueOnce(turn.promise);

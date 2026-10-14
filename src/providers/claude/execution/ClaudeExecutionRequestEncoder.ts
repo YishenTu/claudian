@@ -156,7 +156,6 @@ export class ClaudeExecutionRequestEncoder {
         snapshot: false,
       },
       model,
-      ...(request.configuration.readableRoots?.length ? { additionalDirectories: [...request.configuration.readableRoots] } : {}),
       ...(effort ? { effort } : {}),
       ...(claudeSettings.outputStyle || promptSuggestions ? {
         settings: {

@@ -24,7 +24,6 @@ export interface ProviderSessionReference {
   readonly title: string;
   readonly providerId: string;
   readonly updatedAt: string;
-  readonly snapshotPath: string;
 }
 
 export type ProviderSelectionSnapshot =
@@ -56,7 +55,6 @@ export interface ProviderExecutionConfiguration {
   readonly reasoning?: string | null;
   readonly permissionMode?: string;
   readonly serviceTier?: string;
-  readonly readableRoots?: readonly string[];
   /** Request a transient next-prompt prediction, subject to provider settings and support. Omitted for auxiliary work. */
   readonly promptSuggestions?: boolean;
 }

@@ -1042,7 +1042,7 @@ it('loads a module plugin folder once per shared server and forwards the native 
   await f.workspace.metadataService.loadCatalog();
   const list = jest.fn().mockResolvedValue({ sessions: [{ sessionId: 'target' }] });
   const send = jest.fn().mockResolvedValue({ sessionId: 'target', title: 'Review', provider: 'codex', status: 'queued' });
-  const session = f.createSession({ sessionTools: { list, send } });
+  const session = f.createSession({ sessionTools: { list, send, read: jest.fn() } });
   const control = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
   const events: ProviderExecutionEvent[] = [];
   const run = (async () => { for await (const e of session.execute(turn('hold')).events) events.push(e); })();
@@ -1061,6 +1061,7 @@ it('loads a module plugin folder once per shared server and forwards the native 
     expect((await call('ses_1')).data).toMatchObject({ specs: [
       { name: 'claudian_list_destinations', options: { codemode: false } },
       { name: 'claudian_send_message', options: { codemode: false } },
+      { name: 'claudian_read_session', options: { codemode: false } },
     ], result: { output: '{"sessions":[{"sessionId":"target"}]}' } });
     expect(list).toHaveBeenCalledTimes(1);
     expect((await call('unknown')).data.isError).toBe(true);

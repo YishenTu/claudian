@@ -2,7 +2,6 @@ import type { App } from 'obsidian';
 
 import type { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import type { ConversationService } from '@/app/conversations/ConversationService';
-import type { SessionSnapshotStore } from '@/app/conversations/SessionSnapshotStore';
 import type { ChatModelSelectionCoordinator } from '@/app/settings/ChatModelSelectionCoordinator';
 import type { EnvironmentSettingsService } from '@/app/settings/EnvironmentSettingsService';
 import type { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
@@ -48,7 +47,6 @@ export interface ChatFeatureHostDomains extends FeatureHostDomains {
   readonly conversations: ConversationService;
   readonly executionPersistence: ConversationRepository;
   readonly chatModelSelection: ChatModelSelectionCoordinator;
-  readonly sessionSnapshots: SessionSnapshotStore;
   readonly conversationLifecycle: ConversationLifecycle;
   readonly zenMode: Pick<ZenModeController, 'register'>;
 }
@@ -125,14 +123,6 @@ export class ClaudianChatFeatureHost extends ClaudianFeatureHost implements Chat
 
   bindSessionTools(conversationId: string): SessionToolBinding {
     return this.domains.sessionMessaging.bindSessionTools(conversationId);
-  }
-
-  writeSessionSnapshot(conversationId: string, markdown: string): Promise<string> {
-    return this.domains.sessionSnapshots.write(conversationId, markdown);
-  }
-
-  getSessionSnapshotDirectory(): string {
-    return this.domains.sessionSnapshots.directory;
   }
 
   createConversation(options?: {

@@ -61,7 +61,6 @@ function setup() {
     app, settings,
     providerHost: { app, settings, executionLifecycleRegistry: registry },
     getCommittedSettings: () => settings, getActiveEnvironmentVariables: () => '',
-    getSessionSnapshotDirectory: () => '/tmp/claudian-sessions',
     getConversationSummary: () => conversation, getConversationSync: () => conversation,
     getCachedConversation: () => conversation,
     getConversationById: async () => structuredClone(conversation),

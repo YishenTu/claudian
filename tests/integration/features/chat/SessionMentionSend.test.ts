@@ -3,12 +3,8 @@ import '@/providers';
 import { createHarness, FakeSession, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { createFixture, deferred, waitForCall } from '@test/helpers/ChatInputHarness';
 import { testDate } from '@test/helpers/testClock';
-import * as fs from 'fs/promises';
 import { Notice } from 'obsidian';
-import { tmpdir } from 'os';
-import * as path from 'path';
 
-import { SessionSnapshotStore } from '@/app/conversations/SessionSnapshotStore';
 import type { ToolCallInfo } from '@/core/types';
 import { FileContextManager } from '@/features/chat/composer/FileContextManager';
 import { cancelSelectedDestinationTurn } from '@/features/chat/tabs/TabInputEvents';
@@ -21,12 +17,7 @@ const time = testDate().getTime();
 function setup(sourceId = id) {
   const native = createHarness();
   const fixture = createFixture({ getExecutionCoordinator: () => native.coordinator });
-  const write = jest.fn().mockResolvedValue('/tmp/claudian-sessions/snapshot.md');
-  Object.assign(fixture.plugin, {
-    writeSessionSnapshot: write,
-    getSessionSnapshotDirectory: () => '/tmp/claudian-sessions',
-    findConversationAcrossViews: () => null,
-  });
+  Object.assign(fixture.plugin, { findConversationAcrossViews: () => null });
   fixture.plugin.getConversationById.mockResolvedValue({
     id: sourceId, title: 'Current title', providerId: 'codex', createdAt: time, lastActivityAt: time,
     sessionId: 'native-source', messages: [
@@ -34,7 +25,7 @@ function setup(sourceId = id) {
       { id: 'a', role: 'assistant', content: 'final answer', timestamp: time },
     ],
   } as never);
-  return { ...fixture, native, write };
+  return { ...fixture, native };
 }
 
 beforeEach(() => {
@@ -51,9 +42,7 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 it.each(['f690c4f6-a773-4cb0-a67b-4b08a6ec21b3', 'ses_native-ID.1'])(
-  'sends a native-ID picker selection with its actual snapshot (%s)', async sourceId => {
-    const directory = await fs.mkdtemp(path.join(tmpdir(), 'claudian-mention-send-'));
-    const store = new SessionSnapshotStore(directory, () => time);
+  'sends a native-ID picker selection as a reference the agent reads by id (%s)', async sourceId => {
     const fixture = setup(sourceId);
     const app = { vault: { getFiles: () => [], getAllLoadedFiles: () => [] } };
     const manager = new FileContextManager(new VaultMentionDataProvider(app as never), {
@@ -63,10 +52,6 @@ it.each(['f690c4f6-a773-4cb0-a67b-4b08a6ec21b3', 'ses_native-ID.1'])(
         createdAt: time, lastActivityAt: time, messageCount: 2, preview: '',
       }],
       getCurrentConversationId: () => 'conversation-1',
-    });
-    Object.assign(fixture.plugin, {
-      writeSessionSnapshot: (conversationId: string, markdown: string) => store.write(conversationId, markdown),
-      getSessionSnapshotDirectory: () => directory,
     });
     try {
       await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
@@ -83,20 +68,15 @@ it.each(['f690c4f6-a773-4cb0-a67b-4b08a6ec21b3', 'ses_native-ID.1'])(
 
       const request = fixture.native.backends.get('claude')!.sessions.flatMap(session => session.requests)[0];
       expect(request.input).toEqual([{ type: 'text', text: 'Use @"Current title"' }]);
-      const snapshotPath = path.join(directory, `${sourceId}-${time}.md`);
       expect(request.context?.sessionReferences).toEqual([{
-        id: sourceId, title: 'Current title', providerId: 'codex',
-        updatedAt: new Date(time).toISOString(), snapshotPath,
+        id: sourceId, title: 'Current title', providerId: 'codex', updatedAt: new Date(time).toISOString(),
       }]);
-      expect(request.configuration.readableRoots).toEqual([directory]);
-      expect(await fs.readFile(snapshotPath, 'utf8')).toContain(
-        '## T1 user\nverbatim prompt\n\n## T1 assistant\nfinal answer',
-      );
+      // No snapshot file is written, so the request grants no extra readable directory.
+      expect(request.configuration).not.toHaveProperty('readableRoots');
     } finally {
       manager.destroy();
       await fixture.native.coordinator.dispose();
       await fixture.native.registry.dispose();
-      await fs.rm(directory, { recursive: true, force: true });
     }
   },
 );
@@ -116,22 +96,19 @@ it.each([false, true])('resolves current titles once and carries snapshots throu
     const request = fixture.native.backends.get('claude')!.sessions.flatMap(session => session.requests)[0];
     expect(request.input).toEqual([{ type: 'text', text: 'Use @"Current title" and @"Current title"' }]);
     expect(request.context?.sessionReferences).toEqual([{
-      id, title: 'Current title', providerId: 'codex', updatedAt: new Date(time).toISOString(), snapshotPath: '/tmp/claudian-sessions/snapshot.md',
+      id, title: 'Current title', providerId: 'codex', updatedAt: new Date(time).toISOString(),
     }]);
-    expect(request.configuration.readableRoots).toEqual(['/tmp/claudian-sessions']);
-    expect(fixture.write).toHaveBeenCalledTimes(1);
-    expect(fixture.write.mock.calls[0][1]).toContain('## T1 user\nverbatim prompt\n\n## T1 assistant\nfinal answer');
+    expect(fixture.plugin.getConversationById).toHaveBeenCalledTimes(1);
     const user = fixture.state.messages.find(message => message.role === 'user');
     expect(user?.displayContent).toBe('Use @"Current title" and @"Current title"');
     expect(user?.executionInput?.context?.sessionReferences).toEqual(request.context?.sessionReferences);
   } finally { await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose(); }
 });
 
-it.each(['hydrate', 'write'])('preserves the original token draft when %s fails', async failure => {
+it('preserves the original token draft when the session cannot be loaded', async () => {
   const fixture = setup();
   try {
-    if (failure === 'hydrate') fixture.plugin.getConversationById.mockResolvedValue(null);
-    else fixture.write.mockRejectedValue(new Error('disk full'));
+    fixture.plugin.getConversationById.mockResolvedValue(null);
     fixture.input.value = token;
     await fixture.controller.sendMessage();
     expect(fixture.input.value).toBe(token);
@@ -154,19 +131,6 @@ it('does not send to a replaced conversation while hydration is pending', async 
   expect(fixture.input.value).toBe(token);
   expect(fixture.native.backends.get('claude')!.sessions).toHaveLength(0);
   await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose();
-});
-
-it('uses hydrated repository history while an open source tab is still loading', async () => {
-  const fixture = setup();
-  await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
-  Object.assign(fixture.plugin, { findConversationAcrossViews: () => ({ tabId: 'source-tab', view: {
-    getTabManager: () => ({ getTab: () => ({ conversationId: id, hydrationState: 'loading', state: { messages: [], isStreaming: false } }) }),
-  } }) });
-  try {
-    fixture.input.value = token;
-    await fixture.controller.sendMessage();
-    expect(fixture.write.mock.calls[0][1]).toContain('## T1 user\nverbatim prompt');
-  } finally { await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose(); }
 });
 
 it('restores a plain follow-up queued during failed snapshot preparation', async () => {
@@ -278,7 +242,6 @@ it('cancels and drains queued snapshot preparation before plugin shutdown finish
   expect(stopped).toBe(false);
   gate.resolve(source);
   await Promise.all([sending, draining]);
-  expect(fixture.write).not.toHaveBeenCalled();
   expect(fixture.state.queuedMessage).toBeNull();
   expect(fixture.input.value).toBe(token);
   await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose();
@@ -448,7 +411,8 @@ it.each(['withdraw', 'cancel', 'initialization'])('restores token text and refre
     await releaseTurn();
     fixture.deps.ensureExecutionInitialized = async () => true;
     await fixture.controller.sendMessage();
-    expect(fixture.write).toHaveBeenCalledTimes(2);
+    // The retry resolves the reference again instead of reusing the withdrawn one.
+    expect(fixture.plugin.getConversationById).toHaveBeenCalledTimes(2);
     const request = fixture.native.backends.get('claude')!.sessions.flatMap(session => session.requests)[0];
     expect(request.input).toEqual([{ type: 'text', text: '@"Current title"' + suffix }]);
     expect(request.context?.sessionReferences?.[0].id).toBe(id);
@@ -459,8 +423,9 @@ it.each([false, true])('retains queued priority and captured selections through 
   holdNativeTurns();
   jest.useFakeTimers();
   const fixture = setup();
-  const writing = deferred<string>();
-  fixture.write.mockReturnValue(writing.promise);
+  const source = await fixture.plugin.getConversationById(id);
+  const loading = deferred<any>();
+  fixture.plugin.getConversationById.mockClear().mockReturnValue(loading.promise);
   await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   fixture.input.value = 'active turn';
   const active = fixture.controller.sendMessage();
@@ -491,7 +456,7 @@ it.each([false, true])('retains queued priority and captured selections through 
   fixture.selectionSources.canvas.getContext.mockReturnValue(different ? newer.canvas : null);
   fixture.input.value = token;
   const mention = fixture.controller.sendMessage();
-  await waitForCall(fixture.write);
+  await waitForCall(fixture.plugin.getConversationById);
   older.editor.selectedText = newer.editor.selectedText = 'live editor changed';
   older.browser.selectedText = newer.browser.selectedText = 'live browser changed';
   older.canvas.nodeIds.push('live-node');
@@ -499,7 +464,7 @@ it.each([false, true])('retains queued priority and captured selections through 
   try {
     finishNativeTurn(session, 0);
     await active;
-    writing.resolve('/tmp/claudian-sessions/snapshot.md');
+    loading.resolve(source);
     // Drain promise continuations while deliberately withholding the queued timer.
     for (let tick = 0; tick < 100; tick++) await Promise.resolve();
     expect(session.requests).toHaveLength(1);
@@ -516,7 +481,7 @@ it.each([false, true])('retains queued priority and captured selections through 
   } finally {
     fixture.controller.cancelStreaming();
     fixture.controller.queue.clear();
-    writing.resolve('/tmp/claudian-sessions/snapshot.md');
+    loading.resolve(source);
     session.runs.forEach(run => run.cancel());
     await Promise.allSettled([active, mention]);
     await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose();

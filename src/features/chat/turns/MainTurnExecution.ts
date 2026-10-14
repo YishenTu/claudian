@@ -424,7 +424,7 @@ export class MainTurnExecution {
     return {
       canonicalText: request.text,
       configuration: {
-        ...buildChatExecutionConfiguration(settings, this.deps.plugin.getSessionSnapshotDirectory()),
+        ...buildChatExecutionConfiguration(settings),
         promptSuggestions: true,
       },
       context: {

@@ -186,7 +186,6 @@ export function sandboxModeOf(policy: SandboxPolicy | undefined): string | null 
  */
 export function buildCodexTurnPrompt(
   request: ProviderExecutionRequest,
-  mapRequiredHostPath: (hostPath: string) => string,
   forkCheckpoint?: string,
   replayConversationHistory = false,
 ): string {
@@ -195,7 +194,7 @@ export function buildCodexTurnPrompt(
     .map(block => block.text)
     .join('\n\n');
   const context = request.context;
-  prompt = appendSessionReferences(prompt, context?.sessionReferences, mapRequiredHostPath);
+  prompt = appendSessionReferences(prompt, context?.sessionReferences);
   if (context?.linkedContent) {
     prompt = context.linkedContent.content === undefined
       ? appendLinkedContent(prompt, context.linkedContent.path)

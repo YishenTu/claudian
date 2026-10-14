@@ -304,15 +304,15 @@ describe('Codex shared runtime', () => {
 
   it.each([true, false])('registers session specs and their version only with a port (%s)', async ported => {
     mockAutoReconcile = true;
-    const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn() };
+    const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn(), read: jest.fn() };
     const session = new CodexExecutionBackend(plugin, createRuntime()).createSession({ ...config, ...(ported ? { sessionTools: port } : {}) });
     const output = collect(session.execute(request).events);
     const process = await waitForRequest('turn/start');
     const specs = process.requests.find(call => call.method === 'thread/start')!.params.dynamicTools ?? [];
     expect(specs.filter((spec: any) => spec.namespace === 'claudian_sessions').map((spec: any) => spec.name))
-      .toEqual(ported ? ['claudian_list_destinations', 'claudian_send_message'] : []);
+      .toEqual(ported ? ['claudian_list_destinations', 'claudian_send_message', 'claudian_read_session'] : []);
     expect(specs.every((spec: any) => !('type' in spec))).toBe(true);
-    expect(session.getSnapshot().providerState?.sessionToolVersion).toBe(ported ? 1 : undefined);
+    expect(session.getSnapshot().providerState?.sessionToolVersion).toBe(ported ? 2 : undefined);
     expect(await sessionToolCall(process, 'thread-1')).toMatchObject({ result: { success: ported } });
     expect(port.list.mock.calls).toHaveLength(ported ? 1 : 0);
     complete(process, 'thread-1');
@@ -323,7 +323,7 @@ describe('Codex shared runtime', () => {
   it.each([undefined, 1])('resumes a version %s thread without attempting to replace its fixed specs', async sessionToolVersion => {
     mockAutoReconcile = true;
     const session = new CodexExecutionBackend(plugin, createRuntime()).createSession({ ...config,
-      sessionTools: { list: async () => ({ sessions: [] }), send: jest.fn() },
+      sessionTools: { list: async () => ({ sessions: [] }), send: jest.fn(), read: jest.fn() },
       resumeSeed: { providerSessionId: 'existing', providerState: { threadId: 'existing', sessionToolVersion } },
     });
     const output = collect(session.execute(request).events);
@@ -341,7 +341,7 @@ describe('Codex shared runtime', () => {
     { kind: 'read-only' }, { kind: 'passive' },
   ])('denies session calls under $kind on fresh and resumed tool-bearing threads', async toolPolicy => {
     mockAutoReconcile = true;
-    const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn() };
+    const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn(), read: jest.fn() };
     const backend = new CodexExecutionBackend(plugin, createRuntime());
     for (const resume of [false, true]) {
       const session = backend.createSession({ ...config, sessionTools: port, ...(resume ? {
@@ -392,7 +392,7 @@ describe('Codex shared runtime', () => {
       runSignal.throwIfAborted();
       admitted.push(args.text);
       return { sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'started' };
-    } };
+    }, read: jest.fn() };
     const session = new CodexExecutionBackend(plugin, createRuntime()).createSession({ ...config, sessionTools: port });
     const run = session.execute(request);
     const output = collect(run.events);
@@ -419,7 +419,7 @@ describe('Codex shared runtime', () => {
       signal = runSignal;
       admitted.push(args.text);
       return { sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'started' };
-    } };
+    }, read: jest.fn() };
     const session = new CodexExecutionBackend(plugin, createRuntime()).createSession({ ...config, sessionTools: port });
     const run = session.execute(request);
     const output = collect(run.events);
@@ -443,7 +443,7 @@ describe('Codex shared runtime', () => {
   it.each(['recovered completion', 'terminal error', 'exhausted recovery'])('rejects old calls after %s while the next start is unacknowledged', async terminal => {
     jest.useFakeTimers();
     mockAutoReconcile = true;
-    const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn() };
+    const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn(), read: jest.fn() };
     const session = new CodexExecutionBackend(plugin, createRuntime()).createSession({ ...config, sessionTools: port });
     try {
       const output = collect(session.execute(request).events);
@@ -484,7 +484,7 @@ describe('Codex shared runtime', () => {
 
   it('rejects an old native call after the thread is reattached to a new session', async () => {
     mockAutoReconcile = true;
-    const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn() };
+    const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn(), read: jest.fn() };
     const backend = new CodexExecutionBackend(plugin, createRuntime());
     const first = backend.createSession({ ...config, sessionTools: port });
     const output = collect(first.execute(request).events);

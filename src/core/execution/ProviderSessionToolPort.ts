@@ -1,6 +1,8 @@
 import type {
   SessionToolDestinations,
   SessionToolListDestinationsArgs,
+  SessionToolReadSessionArgs,
+  SessionToolReadSessionResult,
   SessionToolSendMessageArgs,
   SessionToolSendMessageResult,
 } from '../session-tools/sessionToolSpecs';
@@ -17,6 +19,7 @@ import type { ProviderToolPolicy } from './ProviderExecutionRequest';
 export interface ProviderSessionToolPort {
   list(args: SessionToolListDestinationsArgs, signal: AbortSignal): Promise<SessionToolDestinations>;
   send(args: SessionToolSendMessageArgs, signal: AbortSignal): Promise<SessionToolSendMessageResult>;
+  read(args: SessionToolReadSessionArgs, signal: AbortSignal): Promise<SessionToolReadSessionResult>;
 }
 
 /**
