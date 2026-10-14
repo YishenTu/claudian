@@ -577,7 +577,7 @@ it('holds mailbox delivery behind a branch preview and wakes when the full trans
   expect(tab.controllers.conversationController.hasBranchDraft).toBe(true);
   expect(tab.dom.messagesEl.textContent).not.toContain('Second answer');
   const runtime = tab.session.runtime;
-  expect(runtime.mailbox!.admit({ from: 'Sender', sessionId: 'sender', text: 'New incoming task' })).toBe('queued');
+  expect(await runtime.mailbox!.deliver({ message: { from: 'Sender', sessionId: 'sender', text: 'New incoming task' }, signal: new AbortController().signal })).toBe('queued');
   expect(h.backend.sessions.flatMap(session => session.requests)).toHaveLength(0);
   expect(tab.controllers.drafts.capture('main').content).toBe('Second prompt');
   tab.controllers.conversationController.cancelBranchDraft();

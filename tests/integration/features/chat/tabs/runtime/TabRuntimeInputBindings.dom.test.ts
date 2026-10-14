@@ -315,7 +315,7 @@ it('lets Escape Stop discard a pending mailbox while no response is active', asy
   // Navigation blocks dispatch without publishing a running response.
   let finishNavigation!: () => void;
   const navigation = tab.session.runtime.runConversationNavigation(() => new Promise<void>(resolve => { finishNavigation = resolve; }));
-  expect(mailbox.admit({ from: 'Other session', sessionId: 'other', text: 'Pending request' })).toBe('queued');
+  expect(await mailbox.deliver({ message: { from: 'Other session', sessionId: 'other', text: 'Pending request' }, signal: new AbortController().signal })).toBe('queued');
   expect(tab.session.isWorking).toBe(false);
   expect(mailbox.hasPending).toBe(true);
   const input = getByRole(tab.dom.inputComposerEl, 'textbox');
@@ -340,7 +340,7 @@ it('dispatches pending mailbox work after the last busy-main reference preparati
   const preparing = tab.controllers.inputController.sendMessage();
   expect(read).toHaveBeenCalled();
   expect(tab.controllers.inputController.isPreparingMainTurn).toBe(true);
-  expect(mailbox.admit({ from: 'Other session', sessionId: 'other', text: 'Mailbox request' })).toBe('queued');
+  expect(await mailbox.deliver({ message: { from: 'Other session', sessionId: 'other', text: 'Mailbox request' }, signal: new AbortController().signal })).toBe('queued');
   await releaseResponse();
   jest.useRealTimers();
   expect(tab.session.turns.isActive).toBe(false);
@@ -366,7 +366,7 @@ it('wakes the mailbox when the user withdraws their queued input', async () => {
   tab.dom.inputEl.value = 'User follow-up';
   await tab.controllers.inputController.sendMessage();
   const mailbox = tab.session.runtime.mailbox!;
-  expect(mailbox.admit({ from: 'Other session', sessionId: 'other', text: 'Mailbox request' })).toBe('queued');
+  expect(await mailbox.deliver({ message: { from: 'Other session', sessionId: 'other', text: 'Mailbox request' }, signal: new AbortController().signal })).toBe('queued');
   await releaseResponse();
   jest.useRealTimers();
   expect(tab.session.turns.isActive).toBe(false);
