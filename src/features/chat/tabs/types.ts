@@ -30,6 +30,7 @@ import type { ChatState } from '@/features/chat/state/ChatState';
 import type { TabAttention, TabReviewOutcome } from '@/features/chat/state/types';
 import type { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import type { ChatTab, TabHydrationState, TabId } from '@/features/chat/tabs/ChatTab';
+import type { PromptHistoryNavigation } from '@/features/chat/tabs/PromptHistoryNavigation';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { TabSession } from '@/features/chat/tabs/TabSession';
 import type { StreamController } from '@/features/chat/turns/StreamController';
@@ -79,6 +80,7 @@ export interface TabControllers {
   readonly inputController: InputController;
   readonly builtInCommandController: BuiltInCommandController;
   readonly navigationController: NavigationController;
+  readonly promptHistoryNavigation: PromptHistoryNavigation;
   /** Owner of this tab's single temporary side chat and composer destination. */
   readonly sideChatController: SideChatController;
 }

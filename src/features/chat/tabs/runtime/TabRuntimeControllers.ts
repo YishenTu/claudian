@@ -13,6 +13,7 @@ import { handleForkRequest } from '@/features/chat/sessions/SessionForkSource';
 import type { SessionChange } from '@/features/chat/sessions/SessionModel';
 import { getSessionCapabilities } from '@/features/chat/sessions/sessionSettings';
 import type { TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
+import { PromptHistoryNavigation } from '@/features/chat/tabs/PromptHistoryNavigation';
 import type { PublishedTabRuntimeRef, TabRuntimeConstructionContext, TabRuntimeControllerBundle, TabRuntimeCore } from '@/features/chat/tabs/runtime/TabRuntimeConstruction';
 import { hasCancellableSelectedWork } from '@/features/chat/tabs/TabInputEvents';
 import { applyProviderUIGating, invalidateTabProviderCommands, refreshTabContextUsage, refreshTabProviderUI, syncComposerDropdownForProvider, toggleTabServiceTier } from '@/features/chat/tabs/tabProviderUI';
@@ -103,6 +104,16 @@ export function buildTabRuntimeControllers(
     toggleFastMode: () => toggleTabServiceTier(runtimeRef.requirePublished(), plugin),
     onResumeDropdownVisibilityChange: () => ui.promptSuggestion.refresh(),
   });
+  const promptHistoryNavigation = new PromptHistoryNavigation({
+    getMessages: () => state.messages,
+    input: dom.inputEl,
+    onInputReplaced: () => {
+      runtimeRef.requirePublished().session.claimUserOwnership();
+      sideChatController.handleComposerInput();
+      ui.composerDropdown.handleInputChange();
+      ui.promptSuggestion.refresh();
+    },
+  });
   const navigationController = new NavigationController({
     getMessagesEl: () => dom.messagesEl,
     getInputEl: () => dom.inputEl,
@@ -111,6 +122,7 @@ export function buildTabRuntimeControllers(
     shouldSkipEscapeHandling: () => {
       if (builtInCommandController.isResumeDropdownVisible()) return true;
       if (ui.composerDropdown.isVisible()) return true;
+      if (sideChatController.destination === 'main' && promptHistoryNavigation.canRestoreDraft) return true;
       return hasCancellableSelectedWork(runtimeRef.requirePublished());
     },
   });
@@ -144,6 +156,7 @@ export function buildTabRuntimeControllers(
       case 'attention': publishAttention(); break;
       case 'conversation': options.onConversationIdChanged?.(tab, state.currentConversationId); break;
       case 'identity':
+        promptHistoryNavigation.reset();
         ui.promptSuggestion.discard();
         options.onDraftModelChanged?.(tab, tab.draftModel);
         break;
@@ -163,6 +176,7 @@ export function buildTabRuntimeControllers(
         syncComposerDropdownForProvider(tab, plugin, core.providerCatalogResolver);
         break;
       case 'destination':
+        promptHistoryNavigation.reset();
         ui.composerDropdown.setBuiltInsEnabled(sideChatController.destination === 'main');
         refreshTabProviderUI(tab);
         ui.promptSuggestion.refresh();
@@ -181,7 +195,7 @@ export function buildTabRuntimeControllers(
   return {
     renderer,
     controllers: { drafts, composerSelections, inlinePrompts, conversationController, streamController,
-      inputController, builtInCommandController, navigationController, sideChatController },
+      inputController, builtInCommandController, navigationController, promptHistoryNavigation, sideChatController },
     presentation: {
       renderer, messagesEl: dom.messagesEl, queueIndicatorEl: dom.queueIndicatorEl,
       drafts, selections: composerSelections, builtInCommands: builtInCommandController,

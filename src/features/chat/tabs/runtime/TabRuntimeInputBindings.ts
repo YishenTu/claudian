@@ -20,6 +20,7 @@ export function buildTabRuntimeInputBindings(
 ): void {
   const { dom, state } = core;
   const { plugin } = options;
+  const promptHistory = controllers.promptHistoryNavigation;
 
   const keydownHandler = (event: KeyboardEvent) => {
     if (event.key === 'Escape' && event.defaultPrevented) return;
@@ -27,6 +28,7 @@ export function buildTabRuntimeInputBindings(
     const tab = runtimeRef.requirePublished();
     if (!options.isRuntimeLive(tab)) return;
     if (sendTabInputMessageFromExplicitEnterShortcut(tab, event)) {
+      promptHistory.reset();
       return;
     }
 
@@ -40,6 +42,7 @@ export function buildTabRuntimeInputBindings(
     }
 
     if (sendTabInputMessageFromEnterKey(tab, plugin.settings, event)) {
+      promptHistory.reset();
       return;
     }
   };
@@ -50,6 +53,7 @@ export function buildTabRuntimeInputBindings(
   );
 
   const inputHandler = () => {
+    promptHistory.reset();
     const tab = runtimeRef.requirePublished();
     tab.session.claimUserOwnership();
     controllers.sideChatController.handleComposerInput();
@@ -60,6 +64,16 @@ export function buildTabRuntimeInputBindings(
     'tab input change binding',
     () => dom.inputEl.removeEventListener('input', inputHandler),
   );
+
+  const compositionStart = () => promptHistory.handleCompositionStart();
+  const compositionEnd = () => promptHistory.handleCompositionEnd();
+  dom.inputEl.addEventListener('compositionstart', compositionStart);
+  dom.inputEl.addEventListener('compositionend', compositionEnd);
+  options.registerCleanup('tab prompt history composition bindings', () => {
+    dom.inputEl.removeEventListener('compositionstart', compositionStart);
+    dom.inputEl.removeEventListener('compositionend', compositionEnd);
+    promptHistory.reset();
+  });
 
   const composerFocusOut = (event: FocusEvent) => {
     const target = event.relatedTarget as Node | null;
