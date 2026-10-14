@@ -48,6 +48,14 @@ export class ConversationBranching {
     return this.#state.kind !== 'idle';
   }
 
+  /** The transcript the user sees: a preview shows only the messages before the edited prompt. */
+  get visibleMessages(): readonly ChatMessage[] {
+    const { messages } = this.deps.state;
+    if (this.#state.kind !== 'preview') return messages;
+    const index = messages.indexOf(this.#state.draft.message);
+    return index < 0 ? messages : messages.slice(0, index);
+  }
+
   /** Forgets branch state when the tab loads another conversation or a new chat. */
   reset(): void {
     this.#state = { kind: 'idle' };

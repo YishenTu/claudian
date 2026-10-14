@@ -159,6 +159,10 @@ export class ConversationController {
     if (hadDraft && !this.#branching.hasDraft) this.deps.onBranchPreviewCancelled?.();
   }
 
+  get visibleMessages(): readonly ChatMessage[] {
+    return this.#branching.visibleMessages;
+  }
+
   get hasBranchDraft(): boolean {
     return this.#branching.hasDraft;
   }

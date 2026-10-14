@@ -13,6 +13,11 @@ export interface ComposerInputElement extends HTMLElement {
   setCommandResolver?: (resolver: ComposerCommandResolver | null) => void;
   /** Completed chips are not editable completion queries. */
   isChipRange?: (from: number, to: number) => boolean;
+  /**
+   * Whether the collapsed caret is on the first (`up`) or last (`down`) rendered row, counting soft
+   * wraps. Null when the input cannot measure its layout.
+   */
+  isCaretOnEdgeRow?: (direction: 'up' | 'down') => boolean | null;
   /** Element currently exposed as the textbox; popup relationships belong on it. Defaults to the input itself. */
   getAccessibleTextbox?: () => HTMLElement;
 }

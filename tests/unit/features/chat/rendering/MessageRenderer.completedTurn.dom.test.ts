@@ -10,12 +10,12 @@ import { Component, MarkdownRenderer } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage, ToolCallInfo } from '@/core/types';
+import { PromptHistoryNavigation } from '@/features/chat/composer/PromptHistoryNavigation';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { createResponseTextBlock } from '@/features/chat/rendering/ResponseLayout';
 import { createThinkingBlock, finalizeThinkingBlock } from '@/features/chat/rendering/ThinkingBlockRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { PromptHistoryNavigation } from '@/features/chat/tabs/PromptHistoryNavigation';
 import { buildTabRuntimeInputBindings } from '@/features/chat/tabs/runtime/TabRuntimeInputBindings';
 import { setLocale } from '@/i18n/i18n';
 
@@ -669,7 +669,7 @@ it('previews a branch without saving it and restores history when focus leaves t
       promptSuggestion: { refresh: jest.fn() } } as any,
     { conversationController: controller, sideChatController: { handleComposerInput: jest.fn() },
       promptHistoryNavigation: new PromptHistoryNavigation({ getMessages: () => state.messages, input: inputEl,
-        onInputReplaced: () => {} }) } as any,
+        isEnabled: () => true, onInputReplaced: () => {} }) } as any,
     { plugin, registerCleanup: (_name: string, fn: () => void) => cleanup.push(fn) } as any,
     { requirePublished: () => ({ lifecycleState: 'open', session: { claimUserOwnership: jest.fn() } }) } as any);
   renderer.renderMessages(history, () => 'Hello');

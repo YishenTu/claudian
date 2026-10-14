@@ -17,7 +17,7 @@ import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { type ChatMessage, type ClaudianSettings, type Conversation, isCanonicalUserMessage } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import { PromptHistoryNavigation } from '@/features/chat/tabs/PromptHistoryNavigation';
+import { PromptHistoryNavigation } from '@/features/chat/composer/PromptHistoryNavigation';
 import { activateTab, destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { TabManager } from '@/features/chat/tabs/TabManager';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
@@ -327,7 +327,9 @@ it('navigates in order, leaves the oldest boundary native, and restores the empt
     key(view, 'ArrowUp');
     expect(view.tab.dom.inputEl.value).toBe('First\nmultiline');
     expect(key(view, 'ArrowUp').inputPrevented).toBe(false);
+    expect(key(view, 'ArrowUp').inputPrevented).toBe(false);
     expect(view.tab.dom.inputEl.value).toBe('First\nmultiline');
+    expect(key(view, 'ArrowDown').inputPrevented).toBe(false);
     key(view, 'ArrowDown');
     expect(view.tab.dom.inputEl.value).toBe('Latest prompt');
     expect(key(view, 'ArrowDown').inputPrevented).toBe(true);
@@ -338,6 +340,73 @@ it('navigates in order, leaves the oldest boundary native, and restores the empt
     expect(view.tab.dom.inputEl.value).toBe('');
     key(view, 'Escape');
     expect(view.tab.dom.inputEl.value).toBe('');
+  } finally { await view.dispose(); }
+});
+
+it('moves the caret natively inside recalled multiline text and navigates only from its first or last line', async () => {
+  const view = await createView();
+  try {
+    view.tab.state.messages = [user('old', 'Older prompt'), user('new', 'First line\nSecond line')];
+    const input = view.tab.dom.inputEl;
+    key(view, 'ArrowUp');
+    expect(input.value).toBe('First line\nSecond line');
+    expect(input.selectionStart).toBe(input.value.length);
+    expect(key(view, 'ArrowUp').inputPrevented).toBe(false);
+    expect(input.selectionStart).toBeLessThan('First line\n'.length);
+    expect(key(view, 'ArrowDown').inputPrevented).toBe(false);
+    expect(input.selectionStart).toBeGreaterThanOrEqual('First line\n'.length);
+    expect(key(view, 'ArrowUp').inputPrevented).toBe(false);
+    expect(key(view, 'ArrowUp').inputPrevented).toBe(true);
+    expect(input.value).toBe('Older prompt');
+    key(view, 'ArrowDown');
+    expect(input.value).toBe('First line\nSecond line');
+    expect(key(view, 'ArrowDown').inputPrevented).toBe(true);
+    expect(input.value).toBe('');
+  } finally { await view.dispose(); }
+});
+
+it('moves through soft-wrapped rows of recalled text before navigating', async () => {
+  const view = await createView();
+  try {
+    view.tab.state.messages = [user('old', 'Older prompt'), user('new', 'A long prompt that wraps')];
+    const input = view.tab.dom.inputEl;
+    // jsdom has no layout; stand in for the editor's rendered-row measurement.
+    let caretRow = 3;
+    input.isCaretOnEdgeRow = direction => (direction === 'up' ? caretRow === 1 : caretRow === 3);
+    key(view, 'ArrowUp');
+    expect(input.value).toBe('A long prompt that wraps');
+    expect(key(view, 'ArrowUp').inputPrevented).toBe(false);
+    caretRow = 2;
+    expect(key(view, 'ArrowDown').inputPrevented).toBe(false);
+    expect(key(view, 'ArrowUp').inputPrevented).toBe(false);
+    caretRow = 1;
+    expect(key(view, 'ArrowUp').inputPrevented).toBe(true);
+    expect(input.value).toBe('Older prompt');
+  } finally { await view.dispose(); }
+});
+
+it('recalls only prompts shown before the branch point while editing an earlier prompt', async () => {
+  const view = await createView();
+  try {
+    view.tab.state.messages = [
+      user('first', 'First prompt', { userMessageId: 'u1' }),
+      user('edited', 'Edited prompt', { userMessageId: 'u2' }),
+      user('later', 'Later prompt', { userMessageId: 'u3' }),
+    ];
+    await view.tab.controllers.conversationController.navigateBranch('edited');
+    expect(view.tab.controllers.conversationController.hasBranchDraft).toBe(true);
+    const input = view.tab.dom.inputEl;
+    expect(input.value).toBe('Edited prompt');
+    input.focus();
+    input.value = ''; fireEvent.input(input);
+    key(view, 'ArrowUp');
+    expect(input.value).toBe('First prompt');
+    expect(key(view, 'ArrowUp').inputPrevented).toBe(false);
+    view.tab.controllers.conversationController.cancelBranchDraft();
+    input.focus();
+    input.value = ''; fireEvent.input(input);
+    key(view, 'ArrowUp');
+    expect(input.value).toBe('Later prompt');
   } finally { await view.dispose(); }
 });
 
@@ -360,6 +429,8 @@ it('recalls visible canonical user text with display and context fallbacks, excl
       key(view, 'ArrowUp');
       expect(view.tab.dom.inputEl.value).toBe(expected);
       if (view.tab.ui.composerDropdown.isVisible()) key(view, 'Escape');
+      // Leave recalled multiline text through its first line.
+      if (expected.includes('\n')) key(view, 'ArrowUp');
     }
     expect(key(view, 'ArrowUp').inputPrevented).toBe(false);
   } finally { await view.dispose(); }
@@ -503,20 +574,19 @@ it('removes owned history keyboard and composition listeners when the real tab i
   const view = await createView();
   try {
     const keydown = jest.spyOn(PromptHistoryNavigation.prototype, 'handleKeydown');
-    const started = jest.spyOn(PromptHistoryNavigation.prototype, 'handleCompositionStart');
-    const ended = jest.spyOn(PromptHistoryNavigation.prototype, 'handleCompositionEnd');
+    const reset = jest.spyOn(PromptHistoryNavigation.prototype, 'reset');
     view.tab.state.messages = [user('one', 'Existing prompt')];
     key(view, 'ArrowUp');
     expect(keydown).toHaveBeenCalled();
     fireEvent.compositionStart(textbox(view)); fireEvent.compositionEnd(textbox(view));
-    expect(started).toHaveBeenCalled(); expect(ended).toHaveBeenCalled();
+    expect(reset).toHaveBeenCalled();
     const retainedInput = view.tab.dom.inputEl;
     await view.dispose();
-    keydown.mockClear(); started.mockClear(); ended.mockClear();
+    keydown.mockClear(); reset.mockClear();
     fireEvent.keyDown(retainedInput, { key: 'ArrowUp' });
     fireEvent.compositionStart(retainedInput); fireEvent.compositionEnd(retainedInput);
     expect(keydown).not.toHaveBeenCalled();
-    expect(started).not.toHaveBeenCalled(); expect(ended).not.toHaveBeenCalled();
+    expect(reset).not.toHaveBeenCalled();
   } finally { await view.dispose(); }
 });
 

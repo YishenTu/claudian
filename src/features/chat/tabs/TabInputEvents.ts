@@ -39,8 +39,7 @@ export function handleComposerMenuKeydown(tab: AssembledTabRuntime, event: Keybo
   return tab.controllers.builtInCommandController.handleResumeKeydown(event)
     || tab.ui.composerDropdown.handleKeydown(event)
     || tab.ui.promptSuggestion.handleKeydown(event)
-    || (tab.controllers.sideChatController.destination === 'main' && isTabInputFocused(tab)
-      && tab.controllers.promptHistoryNavigation.handleKeydown(event));
+    || tab.controllers.promptHistoryNavigation.handleKeydown(event);
 }
 
 /** The composer's selected destination has a turn, preparation, or main background work that Stop would cancel. */

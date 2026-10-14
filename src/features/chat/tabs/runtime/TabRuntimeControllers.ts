@@ -1,6 +1,7 @@
 import type { Component } from 'obsidian';
 
 import { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
+import { PromptHistoryNavigation } from '@/features/chat/composer/PromptHistoryNavigation';
 import { BrowserSelectionController } from '@/features/chat/input/BrowserSelectionController';
 import { BuiltInCommandController } from '@/features/chat/input/BuiltInCommandController';
 import { CanvasSelectionController } from '@/features/chat/input/CanvasSelectionController';
@@ -13,7 +14,6 @@ import { handleForkRequest } from '@/features/chat/sessions/SessionForkSource';
 import type { SessionChange } from '@/features/chat/sessions/SessionModel';
 import { getSessionCapabilities } from '@/features/chat/sessions/sessionSettings';
 import type { TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
-import { PromptHistoryNavigation } from '@/features/chat/tabs/PromptHistoryNavigation';
 import type { PublishedTabRuntimeRef, TabRuntimeConstructionContext, TabRuntimeControllerBundle, TabRuntimeCore } from '@/features/chat/tabs/runtime/TabRuntimeConstruction';
 import { hasCancellableSelectedWork } from '@/features/chat/tabs/TabInputEvents';
 import { applyProviderUIGating, invalidateTabProviderCommands, refreshTabContextUsage, refreshTabProviderUI, syncComposerDropdownForProvider, toggleTabServiceTier } from '@/features/chat/tabs/tabProviderUI';
@@ -105,8 +105,10 @@ export function buildTabRuntimeControllers(
     onResumeDropdownVisibilityChange: () => ui.promptSuggestion.refresh(),
   });
   const promptHistoryNavigation = new PromptHistoryNavigation({
-    getMessages: () => state.messages,
+    getMessages: () => conversationController.visibleMessages,
     input: dom.inputEl,
+    isEnabled: () => sideChatController.destination === 'main'
+      && dom.inputEl.contains(dom.inputEl.ownerDocument.activeElement),
     onInputReplaced: () => {
       runtimeRef.requirePublished().session.claimUserOwnership();
       sideChatController.handleComposerInput();
@@ -114,6 +116,7 @@ export function buildTabRuntimeControllers(
       ui.promptSuggestion.refresh();
     },
   });
+  options.registerCleanup('tab prompt history', () => promptHistoryNavigation.destroy());
   const navigationController = new NavigationController({
     getMessagesEl: () => dom.messagesEl,
     getInputEl: () => dom.inputEl,
@@ -122,7 +125,7 @@ export function buildTabRuntimeControllers(
     shouldSkipEscapeHandling: () => {
       if (builtInCommandController.isResumeDropdownVisible()) return true;
       if (ui.composerDropdown.isVisible()) return true;
-      if (sideChatController.destination === 'main' && promptHistoryNavigation.canRestoreDraft) return true;
+      if (promptHistoryNavigation.isRecalling) return true;
       return hasCancellableSelectedWork(runtimeRef.requirePublished());
     },
   });

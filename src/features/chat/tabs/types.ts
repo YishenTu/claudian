@@ -8,6 +8,7 @@ import type { ComposerPromptSuggestion } from '@/features/chat/composer/Composer
 import type { FileContextManager } from '@/features/chat/composer/FileContextManager';
 import type { ImageContextManager } from '@/features/chat/composer/ImageContextManager';
 import type { MainChatComposerDropdown } from '@/features/chat/composer/MainChatComposerDropdown';
+import type { PromptHistoryNavigation } from '@/features/chat/composer/PromptHistoryNavigation';
 import type { ContextUsageMeter } from '@/features/chat/composer/toolbar/ContextUsageMeter';
 import type { EffortSelector } from '@/features/chat/composer/toolbar/EffortSelector';
 import type { ModelSelector } from '@/features/chat/composer/toolbar/ModelSelector';
@@ -30,7 +31,6 @@ import type { ChatState } from '@/features/chat/state/ChatState';
 import type { TabAttention, TabReviewOutcome } from '@/features/chat/state/types';
 import type { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import type { ChatTab, TabHydrationState, TabId } from '@/features/chat/tabs/ChatTab';
-import type { PromptHistoryNavigation } from '@/features/chat/tabs/PromptHistoryNavigation';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { TabSession } from '@/features/chat/tabs/TabSession';
 import type { StreamController } from '@/features/chat/turns/StreamController';

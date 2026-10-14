@@ -235,6 +235,15 @@ export class ComposerEditor {
     };
     this.element.isChipRange = (from, to) => isChipRange(this.state.field(decorations), from, to);
     this.element.getAccessibleTextbox = () => this.textbox;
+    this.element.isCaretOnEdgeRow = direction => {
+      const view = this.view;
+      if (!view) return null;
+      const caret = view.state.selection.main;
+      const caretRect = view.coordsAtPos(caret.head, caret.assoc < 0 ? -1 : 1);
+      const edgeRect = direction === 'up' ? view.coordsAtPos(0, 1) : view.coordsAtPos(view.state.doc.length, -1);
+      if (!caretRect || !edgeRect || caretRect.bottom <= caretRect.top || edgeRect.bottom <= edgeRect.top) return null;
+      return direction === 'up' ? caretRect.top < edgeRect.bottom : caretRect.bottom > edgeRect.top;
+    };
     host.setAttribute('data-placeholder', this.placeholderText);
     host.addEventListener('focusin', this.onFocusIn);
   }
