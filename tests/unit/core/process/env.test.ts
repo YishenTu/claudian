@@ -4,6 +4,7 @@ import type * as pathType from 'path';
 const fs = jest.requireActual<typeof fsType>('fs');
 const path = jest.requireActual<typeof pathType>('path');
 
+import { parsePathEntries } from '@/core/process/cliPath';
 import * as env from '@/core/process/env';
 
 const {
@@ -228,6 +229,72 @@ describe('getEnhancedPath', () => {
       const result = getEnhancedPath();
       expect(result).toContain('/custom/fnm');
       delete process.env.FNM_DIR;
+    });
+
+    describe('fnm aliases (Unix)', () => {
+      if (isWindows) return;
+
+      it('includes default Node.js bins without the fnm shell hook', () => {
+        delete process.env.FNM_MULTISHELL_PATH;
+        delete process.env.XDG_DATA_HOME;
+        process.env.FNM_DIR = '/custom/fnm';
+        process.env.HOME = '/fake/home';
+        const entries = parsePathEntries(getEnhancedPath());
+        expect(entries).toEqual(expect.arrayContaining([
+          '/custom/fnm/aliases/default/bin',
+          '/fake/home/.local/share/fnm/aliases/default/bin',
+          '/fake/home/.fnm/aliases/default/bin',
+          ...(process.platform === 'darwin' ? ['/fake/home/Library/Application Support/fnm/aliases/default/bin'] : []),
+        ]));
+      });
+    });
+
+    describe('other Node.js and CLI managers (Unix)', () => {
+      if (isWindows) return;
+
+      const managerVariables = ['NODENV_ROOT', 'PROTO_HOME', 'PNPM_HOME', 'N_PREFIX', 'NVS_HOME', 'XDG_DATA_HOME'];
+
+      it('includes default locations without shell variables', () => {
+        for (const key of managerVariables) delete process.env[key];
+        process.env.HOME = '/fake/home';
+        const entries = parsePathEntries(getEnhancedPath());
+        expect(entries).toEqual(expect.arrayContaining([
+          '/fake/home/.local/share/pi-node/current/bin',
+          '/fake/home/.nodenv/shims',
+          '/fake/home/.proto/shims',
+          '/fake/home/.proto/bin',
+          '/fake/home/.local/share/pnpm',
+          '/fake/home/.nvs/default/bin',
+          '/fake/home/.nix-profile/bin',
+          '/nix/var/nix/profiles/default/bin',
+          '/run/current-system/sw/bin',
+          '/opt/local/bin',
+          '/home/linuxbrew/.linuxbrew/bin',
+          ...(process.platform === 'darwin' ? ['/fake/home/Library/pnpm'] : []),
+        ]));
+      });
+
+      it('follows manager home variables', () => {
+        process.env.HOME = '/fake/home';
+        process.env.XDG_DATA_HOME = '/xdg';
+        process.env.NODENV_ROOT = '/custom/nodenv';
+        process.env.PROTO_HOME = '/custom/proto';
+        process.env.PNPM_HOME = '/custom/pnpm';
+        process.env.N_PREFIX = '/custom/n';
+        process.env.NVS_HOME = '/custom/nvs';
+        const entries = parsePathEntries(getEnhancedPath());
+        expect(entries).toEqual(expect.arrayContaining([
+          '/xdg/pi-node/current/bin',
+          '/xdg/pnpm',
+          '/custom/nodenv/shims',
+          '/custom/proto/shims',
+          '/custom/proto/bin',
+          '/custom/pnpm',
+          '/custom/n/bin',
+          '/custom/nvs/default/bin',
+        ]));
+        expect(entries).not.toContain('/fake/home/.nodenv/shims');
+      });
     });
 
     it('includes NVM_BIN when set', () => {
@@ -754,6 +821,45 @@ describe('getExtraBinaryPaths (Windows branches)', () => {
     const mod = loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     expect(result).toContain('nvm');
+  });
+
+  it('includes fnm default Node.js aliases without the PowerShell hook', () => {
+    delete process.env.FNM_MULTISHELL_PATH;
+    process.env.APPDATA = '/mock/AppData/Roaming';
+    process.env.LOCALAPPDATA = '/mock/AppData/Local';
+    process.env.HOME = '/mock/home';
+    process.env.FNM_DIR = '/mock/fnm';
+    const entries = loadWithWindowsPlatform().getEnhancedPath().split(';');
+    expect(entries).toEqual(expect.arrayContaining([
+      '/mock/fnm/aliases/default',
+      '/mock/AppData/Roaming/fnm/aliases/default',
+      '/mock/AppData/Local/fnm/aliases/default',
+    ]));
+    expect(entries).not.toContain('/mock/fnm/aliases/default/bin');
+  });
+
+  it('includes pnpm, proto, nvs, Yarn, and WinGet locations', () => {
+    for (const key of ['PNPM_HOME', 'PROTO_HOME', 'NVS_HOME']) delete process.env[key];
+    process.env.LOCALAPPDATA = '/mock/AppData/Local';
+    process.env.USERPROFILE = '/mock/home';
+    process.env.HOME = '/mock/home';
+    let entries = loadWithWindowsPlatform().getEnhancedPath().split(';');
+    expect(entries).toEqual(expect.arrayContaining([
+      '/mock/AppData/Local/pnpm',
+      '/mock/home/.proto/shims',
+      '/mock/home/.proto/bin',
+      '/mock/AppData/Local/nvs/default',
+      '/mock/AppData/Local/Yarn/bin',
+      '/mock/AppData/Local/Microsoft/WinGet/Links',
+    ]));
+
+    process.env.PNPM_HOME = '/custom/pnpm';
+    process.env.PROTO_HOME = '/custom/proto';
+    process.env.NVS_HOME = '/custom/nvs';
+    entries = loadWithWindowsPlatform().getEnhancedPath().split(';');
+    expect(entries).toEqual(expect.arrayContaining([
+      '/custom/pnpm', '/custom/proto/shims', '/custom/proto/bin', '/custom/nvs/default',
+    ]));
   });
 
   it('includes VOLTA_HOME/bin when set', () => {

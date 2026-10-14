@@ -7,6 +7,7 @@ import type {
   ProviderExecutionLifecycleRegistry,
   ProviderExecutionTransitionScope,
 } from '@/core/execution';
+import { resolveLoginShellPath } from '@/core/process/loginShellPath';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type {
@@ -98,6 +99,8 @@ export class ClaudianProviderHost implements ProviderHost {
     providerId: ProviderId,
     context?: ProviderCLIResolutionContext,
   ): Promise<string | null> {
+    // Provider launches resolve their CLI here first, so the login-shell PATH is ready for them.
+    await resolveLoginShellPath();
     if (context?.providerTransitionOwner !== true) {
       await ProviderWorkspaceRegistry.ensureInitialized(this, providerId, 'cli-resolution');
     }

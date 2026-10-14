@@ -24,6 +24,7 @@ import { ClaudianChatFeatureHost, ClaudianFeatureHost } from './composition/Clau
 import { ClaudianProviderHost } from './composition/ClaudianProviderHost';
 import { ClaudianViews } from './composition/ClaudianViews';
 import { ProviderExecutionLifecycleRegistry } from './core/execution';
+import { resolveLoginShellPath } from './core/process/loginShellPath';
 import { ProviderRegistry } from './core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from './core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from './core/providers/ProviderWorkspaceRegistry';
@@ -159,6 +160,8 @@ export default class ClaudianPlugin extends Plugin {
           this.sessionInputCleanup = this.storage.cleanupObsoleteSessionInputs(this.startupMaintenanceAbort.signal);
         }, 0);
       });
+      // Started early so the first provider launch rarely waits for the shell.
+      this.app.workspace.onLayoutReady(() => { void resolveLoginShellPath(); });
       this.app.workspace.onLayoutReady(() => {
         if (this.isUnloading || this.modelMetadataMigration) return;
         this.modelMetadataMigration = migrateSelectedModelMetadata(

@@ -4,6 +4,7 @@ const crossPlatformTests = [
   'tests/integration/core/process/ProcessProbe.test.ts',
   'tests/integration/core/process/ManagedStdioProcess.test.ts',
   'tests/integration/core/process/cliBinaryLocator.test.ts',
+  'tests/integration/core/process/loginShellPath.test.ts',
 ];
 
 const scriptTests = [

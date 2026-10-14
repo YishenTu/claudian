@@ -78,7 +78,8 @@ describe('enhanced CLI discovery and subprocess PATH', () => {
       const enhancedPath = getEnhancedPath();
       const entries = enhancedPath.split(path.delimiter);
       expect(entries).toContain(shims);
-      expect(entries.some(entry => entry.includes('unused'))).toBe(false);
+      expect(entries).not.toContain(path.join(directory, 'unused data', 'shims'));
+      expect(entries).not.toContain(path.join(directory, 'unused xdg', 'mise', 'shims'));
       expect(execFileSync(binaryName, ['-p', '"mise probe ok"'], {
         cwd: directory,
         env: { ...process.env, PATH: enhancedPath },
