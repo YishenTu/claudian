@@ -144,6 +144,10 @@ export function renderSendMessageContent(container: HTMLElement, tool: ToolSnaps
       provider: result.provider,
       cls: 'claudian-session-tool-title',
     });
+    // A plain send needs no delivery line; steering and interrupting are worth calling out.
+    const mode = getInputText(tool.input, 'mode');
+    if (mode === 'steer') addField(t('chat.sessionTools.mode')).setText(t('chat.sessionTools.modeSteer'));
+    if (mode === 'interrupt') addField(t('chat.sessionTools.mode')).setText(t('chat.sessionTools.modeInterrupt'));
     const model = getInputText(tool.input, 'model');
     if (model) addField(t('chat.sessionTools.model')).setText(model);
     const reasoning = getInputText(tool.input, 'reasoning');

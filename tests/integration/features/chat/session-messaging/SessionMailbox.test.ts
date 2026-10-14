@@ -139,4 +139,84 @@ describe('session mailbox lifetime and dispatch', () => {
     expect(h.mailbox.hasPending).toBe(false);
     await h.runtime.dispose();
   });
+
+  it('delivers an interrupt first when an older dispatch is still hydrating', async () => {
+    const h = setup();
+    expect(h.mailbox.admit(message('older'))).toBe('started');
+    const interrupt = h.mailbox.reserve(message('interrupt'), { first: true });
+    interrupt.commit();
+    interrupt.publish();
+    h.hydrate.resolve();
+    await flush();
+    expect(h.sent).toEqual(['interrupt']);
+    h.completions[0].resolve();
+    await flush();
+    expect(h.sent).toEqual(['interrupt', 'older']);
+    h.completions[1].resolve();
+    await flush();
+    await h.runtime.dispose();
+  });
+
+  it('lets nothing overtake a held interrupt while its switch commits', async () => {
+    const h = setup();
+    h.mailbox.admit(message('older'));
+    const interrupt = h.mailbox.reserve(message('interrupt'), { first: true });
+    h.hydrate.resolve();
+    await flush();
+    expect(h.sent).toEqual([]);
+    interrupt.commit();
+    interrupt.publish();
+    await flush();
+    expect(h.sent).toEqual(['interrupt']);
+    h.completions[0].resolve();
+    await flush();
+    expect(h.sent).toEqual(['interrupt', 'older']);
+    h.completions[1].resolve();
+    await flush();
+    await h.runtime.dispose();
+  });
+
+  it('returns a deferred older entry behind an interrupt admitted meanwhile', async () => {
+    const h = setup();
+    h.hydrate.resolve();
+    h.mailbox.admit(message('older'));
+    await flush();
+    const interrupt = h.mailbox.reserve(message('interrupt'), { first: true });
+    interrupt.commit();
+    h.callbacks[0].onUnsent('deferred');
+    h.completions[0].resolve();
+    await flush();
+    expect(h.sent).toEqual(['older', 'interrupt']);
+    h.completions[1].resolve();
+    await flush();
+    expect(h.sent).toEqual(['older', 'interrupt', 'older']);
+    h.completions[2].resolve();
+    await flush();
+    await h.runtime.dispose();
+  });
+
+  it('keeps a deferred newer interrupt ahead of older ones, behind interrupts admitted during its attempt', async () => {
+    const h = setup();
+    h.hydrate.resolve();
+    h.mailbox.admit(message('running'));
+    await flush();
+    for (const text of ['old interrupt', 'new interrupt']) {
+      const reservation = h.mailbox.reserve(message(text), { first: true });
+      reservation.commit();
+    }
+    h.completions[0].resolve();
+    await flush();
+    expect(h.sent).toEqual(['running', 'new interrupt']);
+    const newest = h.mailbox.reserve(message('newest interrupt'), { first: true });
+    newest.commit();
+    h.callbacks[1].onUnsent('deferred');
+    h.completions[1].resolve();
+    await flush();
+    for (const index of [2, 3, 4]) {
+      h.completions[index].resolve();
+      await flush();
+    }
+    expect(h.sent).toEqual(['running', 'new interrupt', 'newest interrupt', 'new interrupt', 'old interrupt']);
+    await h.runtime.dispose();
+  });
 });

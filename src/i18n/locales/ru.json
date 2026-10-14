@@ -186,6 +186,7 @@
       "messageAgent": "Отправить сообщение агенту",
       "listDestinations": "Список адресатов",
       "messageSession": "Отправить сообщение сеансу",
+      "stopSession": "Остановить сеанс",
       "readSession": "Прочитать сеанс",
       "continueAgent": "Продолжить работу агента",
       "listAgents": "Список агентов",
@@ -340,7 +341,10 @@
       "session": "Сеанс",
       "turns": "Ходы",
       "turnRange": "{from}–{to} из {total}",
-      "noTurns": "Пока нет"
+      "noTurns": "Пока нет",
+      "mode": "Доставка",
+      "modeSteer": "Добавить в текущий ход",
+      "modeInterrupt": "Прервать текущую работу"
     }
   },
   "settings": {

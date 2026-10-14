@@ -584,8 +584,10 @@ it('runs the sessions plugin in a child, forwarding caller identity, re-reading 
     expect(output).toMatchObject({ before: { text: 'first route' }, after: { text: 'second route' }, aborted: true });
     expect(output.tools.map((tool: any) => tool.name)).toEqual(SESSION_TOOL_SPECS.map(spec => spec.name));
     expect(output.tools.every((tool: any) => tool.timeoutMs > 0 && tool.timeoutMs <= 60_000)).toBe(true);
-    expect(output.tools[1].parameters.text).toMatchObject({ type: 'string', required: true });
+    // Required fields carry the native flag; optional ones omit it.
+    expect(output.tools[2].parameters.sessionId).toMatchObject({ type: 'string', required: true });
     expect(output.tools[1].parameters.sessionId.required).not.toBe(true);
+    expect(output.tools[1].parameters.text.required).not.toBe(true);
     await aborted;
     expect(calls).toEqual([
       { name: 'claudian_list_destinations', args: { callId: 'native-call', args: {} }, callerNativeId: 'child-native' },

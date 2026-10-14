@@ -10,6 +10,8 @@ export class SessionMessageDeferredError extends Error {}
 interface MailboxEntry {
   readonly message: SessionMessage;
   held: boolean;
+  /** Queue order: interrupts first, newest first, then ordinary entries in admission order. */
+  readonly rank: number;
 }
 
 export interface SessionMessageReservation {
@@ -24,6 +26,7 @@ export interface SessionMessageReservation {
 export class SessionMailbox {
   private readonly pending: MailboxEntry[] = [];
   private generation = 0;
+  private admissions = 0;
   private dispatching = false;
 
   constructor(private readonly deps: {
@@ -40,14 +43,18 @@ export class SessionMailbox {
     return reservation.publish();
   }
 
-  /** A held entry retains its FIFO position while a selection commit waits for persistence. */
-  reserve(message: SessionMessage): SessionMessageReservation {
+  /**
+   * A held entry retains its FIFO position while a selection commit waits for persistence.
+   * An interrupting message goes ahead of the entries already waiting.
+   */
+  reserve(message: SessionMessage, options: { first?: boolean } = {}): SessionMessageReservation {
     if (!this.deps.runtime.acceptsIntents || !this.deps.isTargetAvailable()) {
       throw new Error('The target session is unavailable');
     }
-    const entry: MailboxEntry = { message, held: true };
+    const admission = ++this.admissions;
+    const entry: MailboxEntry = { message, held: true, rank: options.first ? -admission : admission };
     const generation = this.generation;
-    this.pending.push(entry);
+    this.insert(entry);
     const isCurrent = () => generation === this.generation && this.pending.includes(entry)
       && this.deps.runtime.acceptsIntents && this.deps.isTargetAvailable();
     const publish = (): SessionToolDeliveryStatus => {
@@ -66,8 +73,7 @@ export class SessionMailbox {
       },
       cancel: () => {
         if (!entry.held) return;
-        const index = this.pending.indexOf(entry);
-        if (index !== -1) this.pending.splice(index, 1);
+        this.remove(entry);
         publish();
       },
       publish,
@@ -81,6 +87,17 @@ export class SessionMailbox {
       this.deps.onDiscard(discarded.map(entry => entry.message));
       this.deps.runtime.publish('work');
     }
+  }
+
+  /** Also how a deferred entry returns: to its own place, not the front. */
+  private insert(entry: MailboxEntry): void {
+    const index = this.pending.findIndex(candidate => candidate.rank > entry.rank);
+    this.pending.splice(index === -1 ? this.pending.length : index, 0, entry);
+  }
+
+  private remove(entry: MailboxEntry): void {
+    const index = this.pending.indexOf(entry);
+    if (index !== -1) this.pending.splice(index, 1);
   }
 
   private get canDispatch(): boolean {
@@ -106,8 +123,9 @@ export class SessionMailbox {
     void this.deps.runtime.withModel(async model => {
       if (generation !== this.generation) return;
       if (!this.deps.isTargetAvailable()) { this.clear(); return; }
-      if (!this.canDispatch) return;
-      this.pending.shift();
+      // An interrupt may have been placed ahead while the model hydrated; the next wake takes the head.
+      if (!this.canDispatch || this.pending[0] !== entry || entry.held) return;
+      this.remove(entry);
       removed = true;
       await model.inputController.sendSessionMessage(message, {
         assertBeforeHandoff: () => {
@@ -124,13 +142,13 @@ export class SessionMailbox {
           if (dispositionReported) return;
           dispositionReported = true;
           if (reason === 'deferred' && generation === this.generation && this.deps.runtime.acceptsIntents && this.deps.isTargetAvailable()) {
-            this.pending.unshift(entry);
+            this.insert(entry);
           } else this.deps.onDiscard([message]);
         },
       });
     }).catch(() => {
       if (generation !== this.generation || dispositionReported) return;
-      if (!removed) this.pending.shift();
+      if (!removed) this.remove(entry);
       this.deps.onDiscard([message]);
     }).finally(() => {
       this.dispatching = false;

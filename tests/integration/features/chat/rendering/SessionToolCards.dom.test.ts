@@ -245,3 +245,25 @@ it('shows which session and turns a read returned, not the transcript, and names
     expect((await axe(h.messagesEl)).violations).toEqual([]);
   } finally { h.renderer.dispose(); }
 });
+
+it('shows how a send was delivered, and names an interrupt without a message as a stop', () => {
+  const h = setup();
+  const result = (status: string) => JSON.stringify({ sessionId: RECIPIENT, title: 'hi', provider: 'deepseek', status });
+  try {
+    h.renderer.renderMessages([assistant([
+      { id: 'steer', name: 'claudian_send_message', status: 'completed', input: { sessionId: RECIPIENT, text: 'Also check X', mode: 'steer' }, result: result('steered') },
+      { id: 'redirect', name: 'claudian_send_message', status: 'completed', input: { sessionId: RECIPIENT, text: 'Do Y instead', mode: 'interrupt' }, result: result('interrupted') },
+      { id: 'stop', name: 'claudian_send_message', status: 'completed', input: { sessionId: RECIPIENT, mode: 'interrupt' }, result: result('interrupted') },
+      { id: 'queue', name: 'claudian_send_message', status: 'completed', input: { sessionId: RECIPIENT, text: 'Plain' }, result: result('queued') },
+    ])], () => '');
+    const headers = within(h.messagesEl).getAllByRole('button', { name: /Message session|Stop session/ });
+    expect(headers.map(header => header.textContent?.match(/Message session|Stop session/)?.[0])).toEqual(['Message session', 'Message session', 'Stop session', 'Message session']);
+    const cards = headers.map(header => { fireEvent.click(header); return header.closest<HTMLElement>('.claudian-tool-call')!; });
+    expect(within(cards[0]).getByText('Steer into running turn')).toBeTruthy();
+    expect(within(cards[1]).getByText('Interrupt current work')).toBeTruthy();
+    expect(within(cards[2]).getByText('Interrupt current work')).toBeTruthy();
+    expect(within(cards[2]).queryByText('Message')).toBeNull();
+    // A plain send stays as before: no delivery line.
+    expect(within(cards[3]).queryByText(/Steer|Interrupt|Mode/)).toBeNull();
+  } finally { h.renderer.dispose(); }
+});

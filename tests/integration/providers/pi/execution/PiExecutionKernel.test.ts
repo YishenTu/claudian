@@ -155,7 +155,7 @@ describe('Pi session tools through the generated extension', () => {
     await createSession();
     expect(await kernel.request('fixture_tools')).toMatchObject({ tools: [
       { name: 'claudian_list_destinations', parameters: { type: 'object', properties: {} } },
-      { name: 'claudian_send_message', parameters: { required: ['text'] } },
+      { name: 'claudian_send_message', parameters: { properties: expect.objectContaining({ text: expect.anything(), mode: expect.anything() }) } },
       { name: 'claudian_read_session', parameters: { required: ['sessionId'] } },
     ] });
     const { drained } = await openRun();

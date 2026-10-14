@@ -186,6 +186,7 @@
       "messageAgent": "向代理发送消息",
       "listDestinations": "列出目标",
       "messageSession": "向会话发送消息",
+      "stopSession": "停止会话",
       "readSession": "读取会话",
       "continueAgent": "继续代理任务",
       "listAgents": "列出代理",
@@ -340,7 +341,10 @@
       "session": "会话",
       "turns": "轮次",
       "turnRange": "{from}–{to}，共 {total}",
-      "noTurns": "暂无"
+      "noTurns": "暂无",
+      "mode": "投递方式",
+      "modeSteer": "插入正在进行的轮次",
+      "modeInterrupt": "中断当前工作"
     }
   },
   "settings": {

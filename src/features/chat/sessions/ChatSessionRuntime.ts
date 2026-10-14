@@ -18,6 +18,8 @@ let nextSessionKey = 0;
 
 export interface TurnCancelOptions {
   dismissInteractions?: boolean;
+  /** Another session's interrupt keeps the pending session messages it is delivered with. */
+  keepMailbox?: boolean;
 }
 
 export class ChatSessionRuntime {
@@ -203,7 +205,7 @@ export class ChatSessionRuntime {
    * then cancels provider execution. Non-user reasons also release the turn's presentation.
    */
   cancelTurn(reason: TurnCancelReason, options: TurnCancelOptions = {}): boolean {
-    this.mailboxOwner?.clear();
+    if (!options.keepMailbox) this.mailboxOwner?.clear();
     const cancelled = this.turns.cancel(reason);
     try {
       if (options.dismissInteractions) this.currentModel?.dismissInteractions();

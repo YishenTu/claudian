@@ -186,6 +186,7 @@
       "messageAgent": "Agent benachrichtigen",
       "listDestinations": "Ziele auflisten",
       "messageSession": "Sitzung benachrichtigen",
+      "stopSession": "Sitzung stoppen",
       "readSession": "Sitzung lesen",
       "continueAgent": "Agent fortsetzen",
       "listAgents": "Agents auflisten",
@@ -340,7 +341,10 @@
       "session": "Sitzung",
       "turns": "Runden",
       "turnRange": "{from}–{to} von {total}",
-      "noTurns": "Noch keine"
+      "noTurns": "Noch keine",
+      "mode": "Zustellung",
+      "modeSteer": "In laufende Runde einsteuern",
+      "modeInterrupt": "Aktuelle Arbeit unterbrechen"
     }
   },
   "settings": {

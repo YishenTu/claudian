@@ -186,6 +186,7 @@
       "messageAgent": "エージェントにメッセージを送信",
       "listDestinations": "送信先を一覧表示",
       "messageSession": "セッションにメッセージを送信",
+      "stopSession": "セッションを停止",
       "readSession": "セッションを読む",
       "continueAgent": "エージェントを継続",
       "listAgents": "エージェント一覧",
@@ -340,7 +341,10 @@
       "session": "セッション",
       "turns": "ターン",
       "turnRange": "{from}–{to} / {total}",
-      "noTurns": "まだありません"
+      "noTurns": "まだありません",
+      "mode": "配信",
+      "modeSteer": "実行中のターンに追加",
+      "modeInterrupt": "現在の作業を中断"
     }
   },
   "settings": {

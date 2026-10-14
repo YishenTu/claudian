@@ -54,10 +54,16 @@ export interface SessionToolDestinations {
   readonly providers?: readonly SessionToolProviderDestination[];
 }
 
+/** How a message reaches a recipient; omitted means queue. */
+export type SessionToolSendMode = 'steer' | 'interrupt';
+
 export interface SessionToolSendMessageArgs {
   /** Omitted to create a new session. */
   readonly sessionId?: string;
-  readonly text: string;
+  /** Required except for an interrupt that only stops the recipient. */
+  readonly text?: string;
+  /** Steer and interrupt need sessionId. */
+  readonly mode?: SessionToolSendMode;
   /** New sessions only. */
   readonly provider?: string;
   /** Initial choice for a new session; a persistent switch for an existing one. */
@@ -66,8 +72,15 @@ export interface SessionToolSendMessageArgs {
   readonly reasoning?: string;
 }
 
-/** `started` and `queued` both report mailbox admission, never provider acceptance or completion. */
+/** `started` and `queued` report mailbox admission, never provider acceptance or completion. */
 export type SessionToolDeliveryStatus = 'started' | 'queued';
+
+/**
+ * A send's outcome: mailbox admission, or `steered` (accepted into the running turn), `uncertain`
+ * (a steer that may have arrived; never resent), `interrupted` (running work stopped; any message is
+ * next) or `idle` (an interrupt without a message found nothing running).
+ */
+export type SessionToolSendStatus = SessionToolDeliveryStatus | 'steered' | 'uncertain' | 'interrupted' | 'idle';
 
 export interface SessionToolSendMessageResult {
   readonly sessionId: string;
@@ -75,7 +88,7 @@ export interface SessionToolSendMessageResult {
   readonly title: string;
   /** Recipient provider id. */
   readonly provider: string;
-  readonly status: SessionToolDeliveryStatus;
+  readonly status: SessionToolSendStatus;
 }
 
 export interface SessionToolReadSessionArgs {
@@ -167,7 +180,16 @@ const SEND_MESSAGE_PROPERTIES = {
   },
   text: {
     type: 'string',
-    description: 'Message for the recipient. Include everything it needs; it cannot see this conversation.',
+    description: 'Message for the recipient. Include everything it needs; it cannot see this conversation. Required, except that mode "interrupt" without text only stops the recipient.',
+  },
+  mode: {
+    type: 'string',
+    description: [
+      '"queue" (default): delivered when the recipient finishes its current work.',
+      '"steer": added to the recipient\'s running turn; it is queued instead when there is no running turn to join.',
+      '"interrupt": stops the recipient\'s current work like the user\'s Stop, then delivers the message first.',
+      '"steer" and "interrupt" need sessionId.',
+    ].join(' '),
   },
   provider: {
     type: 'string',
@@ -220,7 +242,9 @@ export const SESSION_TOOL_SPECS: readonly SessionToolSpec[] = [
     description: [
       'Send a message to another Claudian chat session, or omit sessionId to start a new one.',
       'The message starts a turn in the recipient, or queues until it is free.',
-      'Returns {sessionId, title, provider, status} immediately, naming the recipient, where status is "started" or "queued"; it does not wait for the turn or a reply.',
+      'Returns {sessionId, title, provider, status} immediately, naming the recipient; it does not wait for the turn or a reply.',
+      'status is "started" or "queued" for a delivered message, "steered" when it joined the running turn, "uncertain" when a steer may or may not have arrived (do not resend),',
+      '"interrupted" when running work was stopped (the message, if any, is next), or "idle" when an interrupt without text found nothing running.',
       'A session cannot message itself.',
       'Messages from other sessions arrive wrapped in <session_message from="…" session_id="…">.',
       `Replying is optional: call ${TOOL_CLAUDIAN_SEND_MESSAGE} with that session_id only if a response is needed.`,
@@ -228,7 +252,6 @@ export const SESSION_TOOL_SPECS: readonly SessionToolSpec[] = [
     inputSchema: {
       type: 'object',
       properties: SEND_MESSAGE_PROPERTIES,
-      required: ['text'],
       additionalProperties: false,
     },
   },
@@ -289,14 +312,29 @@ export function decodeSessionToolCall(name: string, args: unknown): SessionToolC
     return { ok: true, call: { tool: name, args: { sessionId, ...(beforeTurn !== undefined ? { beforeTurn } : {}) } } };
   }
 
-  const sendArgs: { -readonly [K in keyof SessionToolSendMessageArgs]: SessionToolSendMessageArgs[K] } = { text: '' };
+  const mode = record.mode ?? 'queue';
+  if (mode !== 'queue' && mode !== 'steer' && mode !== 'interrupt') {
+    return { ok: false, error: '"mode" must be "queue", "steer" or "interrupt".' };
+  }
+  const sendArgs: { -readonly [K in keyof SessionToolSendMessageArgs]: SessionToolSendMessageArgs[K] } = {};
   for (const key of ['sessionId', 'text', 'provider', 'model', 'reasoning'] as const) {
     const value = record[key];
-    if ((value === undefined || value === null) && key !== 'text') continue;
+    if ((value === undefined || value === null) && (key !== 'text' || mode === 'interrupt')) continue;
     if (typeof value !== 'string' || value.trim() === '') {
       return { ok: false, error: `"${key}" must be a non-empty string.` };
     }
     sendArgs[key] = value;
+  }
+  if (mode !== 'queue') {
+    if (sendArgs.sessionId === undefined) return { ok: false, error: '"steer" and "interrupt" need "sessionId".' };
+    sendArgs.mode = mode;
+  }
+  const switches = sendArgs.model !== undefined || sendArgs.reasoning !== undefined;
+  if (mode === 'steer' && switches) {
+    return { ok: false, error: '"model" and "reasoning" cannot be used with "steer"; the running turn keeps its own.' };
+  }
+  if (sendArgs.text === undefined && switches) {
+    return { ok: false, error: '"model" and "reasoning" need "text".' };
   }
   if (sendArgs.sessionId !== undefined && sendArgs.provider !== undefined) {
     return { ok: false, error: '"provider" applies only when "sessionId" is omitted.' };

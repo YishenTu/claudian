@@ -186,6 +186,7 @@
       "messageAgent": "에이전트에 메시지 보내기",
       "listDestinations": "대상 목록 보기",
       "messageSession": "세션에 메시지 보내기",
+      "stopSession": "세션 중지",
       "readSession": "세션 읽기",
       "continueAgent": "에이전트 계속",
       "listAgents": "에이전트 목록",
@@ -340,7 +341,10 @@
       "session": "세션",
       "turns": "턴",
       "turnRange": "{from}–{to} / {total}",
-      "noTurns": "아직 없음"
+      "noTurns": "아직 없음",
+      "mode": "전달",
+      "modeSteer": "실행 중인 턴에 추가",
+      "modeInterrupt": "현재 작업 중단"
     }
   },
   "settings": {

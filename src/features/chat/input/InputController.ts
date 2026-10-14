@@ -29,7 +29,7 @@ import type { SessionInteractions } from '@/features/chat/interactions/SessionIn
 import type { LinkedContentController } from '@/features/chat/linked-content';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import type { SessionMessageUnsentReason } from '@/features/chat/session-messaging/SessionMailbox';
-import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
+import type { ChatSessionRuntime, TurnCancelOptions } from '@/features/chat/sessions/ChatSessionRuntime';
 import type { SessionComposerPort } from '@/features/chat/sessions/SessionComposer';
 import type { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import type { ChatState } from '@/features/chat/state/ChatState';
@@ -241,6 +241,28 @@ export class InputController {
       composerDraft: 'none',
       ...options,
     }, signal));
+  }
+
+  /** Joins another session's message to the running turn; an unsent steer is dropped, never returned to the composer. */
+  async steerSessionMessage(message: SessionMessage, signal: AbortSignal): Promise<'accepted' | 'uncertain' | 'not-sent'> {
+    // A turn waiting on the user's answer is not steered by another session; the message waits its turn.
+    if (!this.steering.canSteer || this.deps.inlinePrompts.pendingCount > 0) return 'not-sent';
+    const request: ChatTurnRequest = {
+      text: encodeSessionMessage(message), images: [], editorSelection: null, browserSelection: null, canvasSelection: null,
+    };
+    const pending = await this.steering.steer(createQueuedMessage(message.text, request), () => undefined, signal);
+    if (pending.providerDisposition === 'definitely-unsent') {
+      this.steering.release(pending);
+      return 'not-sent';
+    }
+    return pending.providerDisposition === 'accepted-awaiting-correlation' ? 'accepted' : 'uncertain';
+  }
+
+  /** Another session's interrupt: the user's Stop for main work, keeping pending session messages. */
+  interruptForSessionMessage(): void {
+    const cancelledPreparation = this.preparations.isPreparing('main');
+    this.preparations.abort('main');
+    if (!this.#cancelMainStreaming({ keepMailbox: true }) && !cancelledPreparation) this.deps.session.stopMainBackgroundWork();
   }
 
   updateAsyncQuestion(tool: ToolCallInfo): void {
@@ -591,14 +613,14 @@ export class InputController {
   }
 
   /** Returns whether an in-flight response was cancelled. */
-  #cancelMainStreaming(): boolean {
+  #cancelMainStreaming(options: TurnCancelOptions = {}): boolean {
     this.deps.inlinePrompts.cancelAsyncSubmissions();
     // Settlement already owns the response; only queued input can still be withdrawn.
     if (!this.turns.isInFlight) {
       this.queue.restoreToComposer();
       return false;
     }
-    this.deps.session.cancelTurn('user');
+    this.deps.session.cancelTurn('user', options);
     this.queue.restoreToComposer();
     this.steering.clearCurrentUi();
     this.deps.streamController.thinkingIndicator.hide();

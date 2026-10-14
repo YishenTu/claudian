@@ -15,6 +15,7 @@ import type {
   SessionToolReasoningDestination,
   SessionToolSendMessageArgs,
   SessionToolSendMessageResult,
+  SessionToolSendStatus,
   SessionToolSessionStatus,
   SessionToolSessionSummary,
 } from '@/core/session-tools/sessionToolSpecs';
@@ -22,6 +23,8 @@ import type { Conversation, ConversationMeta } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
 import { formatSessionSnapshot } from '@/features/chat/session-messaging/formatSessionSnapshot';
+import type { SessionMessageReservation } from '@/features/chat/session-messaging/SessionMailbox';
+import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { prepareSessionReasoningSelection } from '@/features/chat/sessions/sessionSettings';
 import { throwIfAborted } from '@/utils/abort';
 
@@ -176,15 +179,32 @@ export class SessionMessagingService {
     const runtime = host.sessionRuntimes.ensure({ conversationId: target.id, providerId: target.providerId, draftModel: null });
     const mailbox = runtime.mailbox;
     if (!mailbox) throw new Error('The target session cannot receive messages');
-    const message = { from: caller.title, sessionId: caller.id, text: args.text };
     const recipient = { sessionId: target.id, title: target.title, provider: target.providerId };
+    const message = args.text === undefined ? null : { from: caller.title, sessionId: caller.id, text: args.text };
+    if (args.mode === 'steer' && message) {
+      const steered = runtime.peekModel ? await runtime.peekModel.inputController.steerSessionMessage(message, signal) : 'not-sent';
+      if (steered === 'accepted') return { ...recipient, status: 'steered' };
+      if (steered === 'uncertain') return { ...recipient, status: 'uncertain' };
+      // A recipient with no turn to join receives the message as a normal send.
+      throwIfAborted(signal, 'Session tool call was cancelled');
+    }
+    const interrupt = args.mode === 'interrupt';
+    if (!message) return { ...recipient, status: this.interrupt(runtime) ? 'interrupted' : 'idle' };
+    // Ahead of waiting messages, and stopped only once admitted: a rejected send changes nothing.
+    const admit = (reservation: SessionMessageReservation): SessionToolSendStatus => {
+      const interrupted = interrupt && this.interrupt(runtime);
+      const status = reservation.publish();
+      return interrupted ? 'interrupted' : status;
+    };
     if (model === undefined && reasoning === undefined) {
-      return { ...recipient, status: mailbox.admit(message) };
+      const reservation = mailbox.reserve(message, { first: interrupt });
+      reservation.commit();
+      return { ...recipient, status: admit(reservation) };
     }
     const resultingModel = model ?? resolveConversationModel(host.getCommittedSettings(), target.providerId, target).model;
     const selection = reasoning === undefined ? null
       : prepareSessionReasoningSelection(runtime, target.providerId, resultingModel, reasoning);
-    const reservation = mailbox.reserve(message);
+    const reservation = mailbox.reserve(message, { first: interrupt });
     try {
       const committed = await this.deps.commitSelection(target.id, target.selectedModel, model, {
         isCurrent: candidate => {
@@ -206,11 +226,20 @@ export class SessionMessagingService {
       reservation.cancel();
       throw error;
     }
-    const status = reservation.publish();
+    const status = admit(reservation);
     if (args.sessionId) {
       try { this.deps.refreshModelControls(target.providerId); } catch { /* Admission already committed. */ }
     }
     return { ...recipient, status };
+  }
+
+  /** Stops the recipient's main work as the user's Stop would; returns whether anything was running. */
+  private interrupt(runtime: ChatSessionRuntime): boolean {
+    const model = runtime.peekModel;
+    const running = runtime.hasActiveTurn || runtime.hasMainBackgroundWork || !!model?.inputController.isPreparingMainTurn;
+    if (model) model.inputController.interruptForSessionMessage();
+    else runtime.stopMainBackgroundWork();
+    return running;
   }
 
 }

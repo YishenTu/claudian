@@ -206,6 +206,101 @@ it('reads a live session from its runtime, omitting the turn still running', asy
   expect(read.content).toContain('## T1 assistant\nLooks good');
 });
 
+it('interrupts a running recipient, delivers the interrupting message next and keeps other queued messages', async () => {
+  const h = setup();
+  await h.binding.port.send({ sessionId: 'recipient', text: 'Long task' }, signal());
+  await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+  const native = h.backend.latest;
+  expect(await h.binding.port.send({ sessionId: 'recipient', text: 'Later' }, signal())).toMatchObject({ status: 'queued' });
+  expect(await h.binding.port.send({ sessionId: 'recipient', text: 'Do Y instead', mode: 'interrupt' }, signal()))
+    .toEqual({ sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'interrupted' });
+  expect(native.cancelCalls).toBe(1);
+  await waitFor(() => expect(native.requests).toHaveLength(2));
+  expect(decodeSessionMessage(requestText(native.requests[1]))?.text).toBe('Do Y instead');
+  native.complete();
+  await waitFor(() => expect(native.requests).toHaveLength(3));
+  expect(decodeSessionMessage(requestText(native.requests[2]))?.text).toBe('Later');
+  native.complete();
+  await h.pool.get('recipient')!.turns.drain();
+});
+
+it('stops without a message, returning the user\'s queued input to the composer', async () => {
+  const h = setup();
+  const runtime = h.pool.ensure({ conversationId: 'recipient', providerId: 'claude', draftModel: null });
+  await runtime.withModel(async model => {
+    const sending = model.inputController.sendMessage({ content: 'User task' });
+    await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+    await model.inputController.sendMessage({ content: 'User follow-up' });
+    expect(await h.binding.port.send({ sessionId: 'recipient', mode: 'interrupt' }, signal())).toMatchObject({ status: 'interrupted' });
+    await sending;
+    await runtime.turns.drain();
+    // Stopped like the user's Stop: the queued follow-up does not run; it is held for the composer.
+    expect(h.backend.latest.requests).toHaveLength(1);
+    expect(model.composer.hasRecovery).toBe(true);
+  });
+  expect(await h.binding.port.send({ sessionId: 'recipient', mode: 'interrupt' }, signal())).toMatchObject({ status: 'idle' });
+  expect(h.backend.latest.cancelCalls).toBe(1);
+});
+
+it('steers into a running turn with a sender line, and queues when the recipient cannot take a steer', async () => {
+  const h = setup();
+  // An idle recipient has no turn to steer: the message starts one instead.
+  expect(await h.binding.port.send({ sessionId: 'recipient', text: 'Start', mode: 'steer' }, signal())).toMatchObject({ status: 'started' });
+  await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+  const native = h.backend.latest;
+  const steers: ProviderExecutionRequest[] = [];
+  Object.assign(native, { steer: async (request: ProviderExecutionRequest) => { steers.push(request); return true; } });
+  expect(await h.binding.port.send({ sessionId: 'recipient', text: 'Also check X', mode: 'steer' }, signal()))
+    .toEqual({ sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'steered' });
+  expect(decodeSessionMessage(requestText(steers[0]))).toEqual({ from: 'Research', sessionId: 'sender', text: 'Also check X' });
+  // The turn's own input echoes first; the next echo is the steer.
+  native.emitOutput({ type: 'user_message_started', content: requestText(native.requests[0]), nativeUserMessageId: 'native-start' });
+  native.emitOutput({ type: 'user_message_started', content: requestText(steers[0]), nativeUserMessageId: 'native-steer' });
+  const model = h.pool.get('recipient')!.peekModel!;
+  await waitFor(() => expect(model.state.messages.find(message => message.userMessageId === 'native-steer')).toMatchObject({
+    displayContent: 'Also check X', sessionMessage: { from: 'Research', sessionId: 'sender' },
+  }));
+  // A provider that definitely refuses the steer leaves the message queued, never in the composer.
+  Object.assign(native, { steer: async () => false });
+  expect(await h.binding.port.send({ sessionId: 'recipient', text: 'Refused steer', mode: 'steer' }, signal())).toMatchObject({ status: 'queued' });
+  native.complete();
+  await waitFor(() => expect(native.requests).toHaveLength(2));
+  expect(decodeSessionMessage(requestText(native.requests[1]))?.text).toBe('Refused steer');
+  expect(model.composer.hasRecovery).toBe(false);
+  native.complete();
+  await h.pool.get('recipient')!.turns.drain();
+});
+
+it('queues a steer while the recipient waits on a question, and never resends an uncertain steer', async () => {
+  const h = setup();
+  await h.binding.port.send({ sessionId: 'recipient', text: 'Start' }, signal());
+  await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+  const native = h.backend.latest;
+  const steer = jest.fn(async (_request: ProviderExecutionRequest) => true);
+  Object.assign(native, { steer });
+  const port = native.config.interactionPort;
+  const question = port.askUserQuestion({
+    interactionId: 'q', sessionInstanceId: native.sessionInstanceId, turnId: native.activeTurnId, kind: 'question',
+    input: { questions: [{ question: 'Proceed?', options: [{ label: 'Yes', description: '' }] }] },
+  }, new AbortController().signal).catch(() => null);
+  const model = h.pool.get('recipient')!.peekModel!;
+  await waitFor(() => expect(model.hasPendingInteraction).toBe(true));
+  // The user must answer first: the message waits in the mailbox instead of reaching the native steer.
+  expect(await h.binding.port.send({ sessionId: 'recipient', text: 'While asking', mode: 'steer' }, signal())).toMatchObject({ status: 'queued' });
+  expect(steer).not.toHaveBeenCalled();
+  port.dismissInteraction('q', 'native-rejected');
+  await question;
+  // A steer whose handoff outcome is unknown is reported, not queued again.
+  Object.assign(native, { steer: async () => { throw new Error('Transport closed'); } });
+  expect(await h.binding.port.send({ sessionId: 'recipient', text: 'Lost?', mode: 'steer' }, signal())).toMatchObject({ status: 'uncertain' });
+  native.complete();
+  await waitFor(() => expect(native.requests).toHaveLength(2));
+  expect(decodeSessionMessage(requestText(native.requests[1]))?.text).toBe('While asking');
+  native.complete();
+  await h.pool.get('recipient')!.turns.drain();
+  expect(native.requests.map(request => decodeSessionMessage(requestText(request))?.text)).toEqual(['Start', 'While asking']);
+});
+
 it.each(['sender', 'archived', 'missing'])('rejects unavailable recipient %s without creating a runtime', async sessionId => {
   const h = setup();
   await expect(h.binding.port.send({ sessionId, text: 'Hello' }, signal())).rejects.toThrow();

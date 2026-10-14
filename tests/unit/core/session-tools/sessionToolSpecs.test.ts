@@ -8,8 +8,10 @@ describe('session tool specs', () => {
       expect(spec.inputSchema).toMatchObject({ type: 'object', additionalProperties: false });
     }
     const send = SESSION_TOOL_SPECS.find(spec => spec.name === 'claudian_send_message')!;
-    expect(send.inputSchema.required).toEqual(['text']);
-    expect(Object.keys(send.inputSchema.properties)).toEqual(['sessionId', 'text', 'provider', 'model', 'reasoning']);
+    // Text is optional only for an interrupt that just stops; decoding enforces that.
+    expect(send.inputSchema.required).toBeUndefined();
+    expect(Object.keys(send.inputSchema.properties)).toEqual(['sessionId', 'text', 'mode', 'provider', 'model', 'reasoning']);
+    for (const mode of ['"queue"', '"steer"', '"interrupt"']) expect(send.inputSchema.properties.mode?.description).toContain(mode);
     expect(send.description).toContain('<session_message');
     expect(send.description).toMatch(/only if a response is needed/);
     // Explicit new-session choices point at the listing instead of embedding a stale option list.
@@ -65,6 +67,15 @@ describe('decodeSessionToolCall', () => {
       { tool: 'claudian_read_session', args: { sessionId: 'conv-1' } }],
     ['read earlier turns', 'claudian_read_session', { sessionId: 'conv-1', beforeTurn: 4 },
       { tool: 'claudian_read_session', args: { sessionId: 'conv-1', beforeTurn: 4 } }],
+    ['a queue send as the default mode', 'claudian_send_message', { sessionId: 'conv-1', text: 'Hi', mode: 'queue' },
+      { tool: 'claudian_send_message', args: { sessionId: 'conv-1', text: 'Hi' } }],
+    ['a steer', 'claudian_send_message', { sessionId: 'conv-1', text: 'Also check X', mode: 'steer' },
+      { tool: 'claudian_send_message', args: { sessionId: 'conv-1', text: 'Also check X', mode: 'steer' } }],
+    ['an interrupt with a message and a switch', 'claudian_send_message',
+      { sessionId: 'conv-1', text: 'Do Y instead', mode: 'interrupt', model: 'm', reasoning: 'low' },
+      { tool: 'claudian_send_message', args: { sessionId: 'conv-1', text: 'Do Y instead', mode: 'interrupt', model: 'm', reasoning: 'low' } }],
+    ['an interrupt that only stops', 'claudian_send_message', { sessionId: 'conv-1', mode: 'interrupt', text: null },
+      { tool: 'claudian_send_message', args: { sessionId: 'conv-1', mode: 'interrupt' } }],
   ])('decodes %s', (_label, name, args, call) => {
     expect(decodeSessionToolCall(name, args)).toEqual({ ok: true, call });
   });
@@ -96,6 +107,15 @@ describe('decodeSessionToolCall', () => {
     ['a read before turn zero', 'claudian_read_session', { sessionId: 'conv-1', beforeTurn: 0 }, /"beforeTurn" must be a positive integer/],
     ['a fractional beforeTurn', 'claudian_read_session', { sessionId: 'conv-1', beforeTurn: 1.5 }, /"beforeTurn" must be a positive integer/],
     ['unexpected read arguments', 'claudian_read_session', { sessionId: 'conv-1', limit: 3 }, /unexpected argument "limit"/i],
+    ['an unknown mode', 'claudian_send_message', { sessionId: 'conv-1', text: 'Hi', mode: 'now' }, /"mode" must be "queue", "steer" or "interrupt"/],
+    ['a steer without text', 'claudian_send_message', { sessionId: 'conv-1', mode: 'steer' }, /"text" must be a non-empty string/],
+    ['a blank interrupt text', 'claudian_send_message', { sessionId: 'conv-1', mode: 'interrupt', text: ' ' }, /"text" must be a non-empty string/],
+    ['a steer to a new session', 'claudian_send_message', { text: 'Hi', mode: 'steer' }, /"steer" and "interrupt" need "sessionId"/],
+    ['an interrupt of a new session', 'claudian_send_message', { mode: 'interrupt' }, /"steer" and "interrupt" need "sessionId"/],
+    ['a steer with a model switch', 'claudian_send_message', { sessionId: 'conv-1', text: 'Hi', mode: 'steer', model: 'm' },
+      /"model" and "reasoning" cannot be used with "steer"/],
+    ['a stop-only interrupt with a reasoning switch', 'claudian_send_message', { sessionId: 'conv-1', mode: 'interrupt', reasoning: 'low' },
+      /"model" and "reasoning" need "text"/],
   ])('rejects %s', (_label, name, args, error) => {
     const result = decodeSessionToolCall(name, args);
     expect(result.ok).toBe(false);

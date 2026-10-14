@@ -262,7 +262,9 @@ const TOOL_PRESENTATIONS: ReadonlyMap<string, ToolPresentation> = new Map<string
     body: renderListDestinationsContent,
   }],
   [TOOL_CLAUDIAN_SEND_MESSAGE, {
-    name: () => t('chat.tools.messageSession'),
+    // An interrupt without a message only stops the recipient.
+    name: input => (getInputText(input, 'mode') === 'interrupt' && !getInputText(input, 'text')
+      ? t('chat.tools.stopSession') : t('chat.tools.messageSession')),
     body: renderSendMessageContent,
   }],
   [TOOL_CLAUDIAN_READ_SESSION, {

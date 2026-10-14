@@ -7,8 +7,8 @@ import type { DynamicToolCallParams, DynamicToolCallResponse } from './codexAppS
 import type { CodexDynamicToolRegistration } from './CodexDynamicToolRegistry';
 
 export const CODEX_SESSION_TOOL_NAMESPACE = 'claudian_sessions';
-/** Bumped when the spec set changes: a thread keeps the specs it started with (2 adds read). */
-export const CODEX_SESSION_TOOL_VERSION = 2;
+/** Bumped when the specs change: a thread keeps the specs it started with (2 adds read, 3 adds send modes). */
+export const CODEX_SESSION_TOOL_VERSION = 3;
 
 export function isCodexSessionTool(namespace: string | null | undefined, name: string): boolean {
   return namespace === CODEX_SESSION_TOOL_NAMESPACE && isSessionTool(name);

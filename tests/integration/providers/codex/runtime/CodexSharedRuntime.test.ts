@@ -312,7 +312,7 @@ describe('Codex shared runtime', () => {
     expect(specs.filter((spec: any) => spec.namespace === 'claudian_sessions').map((spec: any) => spec.name))
       .toEqual(ported ? ['claudian_list_destinations', 'claudian_send_message', 'claudian_read_session'] : []);
     expect(specs.every((spec: any) => !('type' in spec))).toBe(true);
-    expect(session.getSnapshot().providerState?.sessionToolVersion).toBe(ported ? 2 : undefined);
+    expect(session.getSnapshot().providerState?.sessionToolVersion).toBe(ported ? 3 : undefined);
     expect(await sessionToolCall(process, 'thread-1')).toMatchObject({ result: { success: ported } });
     expect(port.list.mock.calls).toHaveLength(ported ? 1 : 0);
     complete(process, 'thread-1');
@@ -390,7 +390,7 @@ describe('Codex shared runtime', () => {
       signal = runSignal;
       await creation;
       runSignal.throwIfAborted();
-      admitted.push(args.text);
+      admitted.push(args.text!);
       return { sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'started' };
     }, read: jest.fn() };
     const session = new CodexExecutionBackend(plugin, createRuntime()).createSession({ ...config, sessionTools: port });
@@ -417,7 +417,7 @@ describe('Codex shared runtime', () => {
     let signal: AbortSignal | undefined;
     const port: ProviderSessionToolPort = { list: jest.fn(async () => ({ sessions: [] })), send: async (args, runSignal) => {
       signal = runSignal;
-      admitted.push(args.text);
+      admitted.push(args.text!);
       return { sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'started' };
     }, read: jest.fn() };
     const session = new CodexExecutionBackend(plugin, createRuntime()).createSession({ ...config, sessionTools: port });

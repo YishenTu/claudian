@@ -186,6 +186,7 @@
       "messageAgent": "Enviar mensaje al agente",
       "listDestinations": "Listar destinos",
       "messageSession": "Enviar mensaje a la sesión",
+      "stopSession": "Detener sesión",
       "readSession": "Leer sesión",
       "continueAgent": "Continuar agente",
       "listAgents": "Listar agentes",
@@ -340,7 +341,10 @@
       "session": "Sesión",
       "turns": "Turnos",
       "turnRange": "{from}–{to} de {total}",
-      "noTurns": "Ninguno aún"
+      "noTurns": "Ninguno aún",
+      "mode": "Entrega",
+      "modeSteer": "Dirigir el turno en curso",
+      "modeInterrupt": "Interrumpir el trabajo actual"
     }
   },
   "settings": {

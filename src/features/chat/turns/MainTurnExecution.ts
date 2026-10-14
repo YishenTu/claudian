@@ -540,9 +540,12 @@ export class MainTurnExecution {
     const persistedContent = expected?.persistedContent ?? displayContent;
     const images = expected?.images;
     if (displayContent || expected?.persistedContent || (images?.length ?? 0) > 0) {
+      // A steered session message keeps its sender, as history replay decodes it.
+      const sender = decodeSessionMessage(persistedContent);
       const userMessage: ChatMessage = {
         id: this.deps.generateId(),
         role: 'user',
+        ...(sender ? { sessionMessage: { from: sender.from, sessionId: sender.sessionId } } : {}),
         content: persistedContent,
         displayContent,
         timestamp: Date.now(),
