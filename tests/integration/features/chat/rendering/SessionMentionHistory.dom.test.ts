@@ -1,8 +1,8 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
-import * as fs from 'node:fs/promises';
-
+import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
+import { parseGrokHistoryContent } from '@test/helpers/providers/grokHistory';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
@@ -11,11 +11,10 @@ import type { ChatMessage } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
 import { parseCodexSessionContent } from '@/providers/codex/history/CodexHistoryStore';
-import { parseGrokHistoryContent } from '@/providers/grok/history/GrokHistoryStore';
 import { mapOpencodeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
 import { parsePiSessionContent } from '@/providers/pi/history/PiHistoryStore';
 
-jest.mock('node:fs/promises');
+const writeClaudeSession = useClaudeSessionFiles();
 
 const prompt = 'ref @"Review"\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" path="/tmp/claudian-sessions/private.md" />\n</context_sessions>';
 
@@ -32,8 +31,8 @@ it.each(['claude', 'codex', 'opencode', 'pi', 'grok'] as const)('hides snapshot 
   let messages: ChatMessage[];
   switch (provider) {
     case 'claude':
-      jest.mocked(fs.readFile).mockResolvedValue(JSON.stringify({ type: 'user', uuid: 'u', timestamp: testTime(), message: { content: prompt } }));
-      messages = (await loadSDKSessionMessages('/vault', 'session', undefined, '/session.jsonl')).messages;
+      messages = (await loadSDKSessionMessages('/vault', 'session', undefined,
+        writeClaudeSession([{ type: 'user', uuid: 'u', timestamp: testTime(), message: { content: prompt } }]))).messages;
       break;
     case 'codex':
       messages = parseCodexSessionContent(JSON.stringify({ timestamp: testTime(), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: prompt }] } }));

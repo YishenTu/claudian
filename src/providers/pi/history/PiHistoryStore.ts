@@ -7,6 +7,7 @@ import * as path from 'node:path';
 import { buildImageAttachmentFromBase64 } from '@/core/execution/imageAttachment';
 import { extractUserQuery } from '@/core/prompt/promptContext';
 import { resolveToolDiffData } from '@/core/tools/toolDiff';
+import { forEachJSONLLine } from '@/utils/jsonlFile';
 
 import { isWriteEditTool } from '../../../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo, TurnStats } from '../../../core/types';
@@ -203,44 +204,54 @@ export function parsePiSessionModel(
 }
 
 export function parsePiSessionEntries(content: string): ParsedPiSessionEntries {
-  const entries: PiSessionEntry[] = [];
-  let header: Record<string, unknown> | null = null;
-
+  const parsed: ParsedPiSessionEntries = { entries: [], header: null };
   for (const line of content.split(/\r?\n/)) {
-    if (!line.trim()) {
-      continue;
-    }
+    addPiSessionLine(parsed, line);
+  }
+  return parsed;
+}
 
-    let record: Record<string, unknown>;
-    try {
-      const parsed = JSON.parse(line) as unknown;
-      if (!isPlainObject(parsed)) {
-        continue;
-      }
-      record = parsed;
-    } catch {
-      continue;
-    }
+/** Streams a native session file so transcripts larger than one JavaScript string stay readable. */
+export async function readPiSessionEntries(sessionFile: string): Promise<ParsedPiSessionEntries> {
+  const parsed: ParsedPiSessionEntries = { entries: [], header: null };
+  await forEachJSONLLine(sessionFile, (line) => {
+    addPiSessionLine(parsed, line);
+  });
+  return parsed;
+}
 
-    const type = getString(record.type) ?? getString(record.kind) ?? '';
-    if (type === 'session') {
-      header = record;
-      continue;
-    }
-
-    const message = getRecord(record.message) ?? getRecord(record.data) ?? inferMessageRecord(record);
-    entries.push({
-      ...(getString(record.id) ? { id: getString(record.id)! } : {}),
-      ...(message ? { message } : {}),
-      ...(getString(record.parentId) ?? getString(record.parent_id)
-        ? { parentId: (getString(record.parentId) ?? getString(record.parent_id))! }
-        : {}),
-      raw: record,
-      type,
-    });
+function addPiSessionLine(parsed: ParsedPiSessionEntries, line: string): void {
+  if (!line.trim()) {
+    return;
   }
 
-  return { entries, header };
+  let record: Record<string, unknown>;
+  try {
+    const value = JSON.parse(line) as unknown;
+    if (!isPlainObject(value)) {
+      return;
+    }
+    record = value;
+  } catch {
+    return;
+  }
+
+  const type = getString(record.type) ?? getString(record.kind) ?? '';
+  if (type === 'session') {
+    parsed.header = record;
+    return;
+  }
+
+  const message = getRecord(record.message) ?? getRecord(record.data) ?? inferMessageRecord(record);
+  parsed.entries.push({
+    ...(getString(record.id) ? { id: getString(record.id)! } : {}),
+    ...(message ? { message } : {}),
+    ...(getString(record.parentId) ?? getString(record.parent_id)
+      ? { parentId: (getString(record.parentId) ?? getString(record.parent_id))! }
+      : {}),
+    raw: record,
+    type,
+  });
 }
 
 export async function readPiSessionHeader(
@@ -398,8 +409,7 @@ export async function createPiForkSessionFile(
   resumeAt: string,
   options: CreatePiForkSessionFileOptions = {},
 ): Promise<CreatedPiForkSessionFile> {
-  const sourceContent = await fsp.readFile(sourceSessionFile, 'utf-8');
-  const parsed = parsePiSessionEntries(sourceContent);
+  const parsed = await readPiSessionEntries(sourceSessionFile);
   const branchEntries = resolvePiEntryPath(parsed.entries, resumeAt);
   if (branchEntries.length === 0) {
     throw new Error(`Pi fork checkpoint not found: ${resumeAt}`);
@@ -424,13 +434,17 @@ export async function createPiForkSessionFile(
     cwd: options.targetCwd ?? sourceCwd,
     parentSession: sourceSessionFile,
   };
-  const lines = [
-    JSON.stringify(header),
-    ...branchEntries.map(entry => JSON.stringify(entry.raw)),
-  ];
 
   await fsp.mkdir(sessionDir, { recursive: true });
-  await fsp.writeFile(sessionFile, `${lines.join('\n')}\n`, { flag: 'wx' });
+  // Write per record: a long branch can exceed one JavaScript string.
+  const handle = await fsp.open(sessionFile, 'wx');
+  try {
+    // FileHandle.writeFile continues from the current position until every byte is written.
+    await handle.writeFile(`${JSON.stringify(header)}\n`);
+    for (const entry of branchEntries) await handle.writeFile(`${JSON.stringify(entry.raw)}\n`);
+  } finally {
+    await handle.close();
+  }
 
   const created = {
     leafEntryId: resumeAt,

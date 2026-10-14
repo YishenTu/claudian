@@ -1,12 +1,11 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
-import * as fs from 'node:fs/promises';
-
 import { createFixture, deferred } from '@test/helpers/ChatInputHarness';
 import { createTabSession } from '@test/helpers/ConversationPorts';
 import { enqueueTabSessionEvent } from '@test/helpers/features/chat/SessionEventsHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
+import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
 import { testClock, testDate } from '@test/helpers/testClock';
 import { waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
@@ -26,6 +25,7 @@ import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
 
 jest.mock('node:fs/promises');
+const writeSession = useClaudeSessionFiles();
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
 HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
@@ -100,8 +100,8 @@ it.each([false, true])('replay places the second notification before automatic o
     ...(compaction ? [{ type: 'system', subtype: 'compact_boundary', uuid: 'compact', parentUuid: 'n2' }] : []),
     { type: 'assistant', uuid: 'final', parentUuid: compaction ? 'compact' : 'n2', message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'After notification.' }] } },
   ];
-  jest.mocked(fs.readFile).mockResolvedValue(entries.map((entry, index) => JSON.stringify({ timestamp: new Date(1000 + index * 1000).toISOString(), ...entry })).join('\n'));
-  const replay = await loadSDKSessionMessages('/vault', 'session', undefined, '/session.jsonl');
+  const sessionPath = writeSession(entries.map((entry, index) => ({ timestamp: new Date(1000 + index * 1000).toISOString(), ...entry })));
+  const replay = await loadSDKSessionMessages('/vault', 'session', undefined, sessionPath);
   expect(replay.error).toBeUndefined();
   const messagesEl = document.body.createDiv();
   const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any, new Component(), messagesEl);

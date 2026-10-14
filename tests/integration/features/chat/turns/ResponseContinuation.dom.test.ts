@@ -1,9 +1,9 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
-import * as reviewFs from 'node:fs/promises';
 import { deserialize, serialize } from 'node:v8';
 
+import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
@@ -20,6 +20,7 @@ import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
 
 jest.mock('node:fs/promises');
+const writeSession = useClaudeSessionFiles();
 const originalStructuredClone = globalThis.structuredClone;
 beforeAll(() => { globalThis.structuredClone = value => deserialize(serialize(value)); });
 afterAll(() => { globalThis.structuredClone = originalStructuredClone; });
@@ -171,8 +172,7 @@ it.each(['early', 'late', 'none'])('matches live and JSONL notification order wi
       { type: 'attachment', uuid: 'notification', parentUuid: hasTool ? 'result' : 'u', timestamp: testTime({ seconds: 3 }), attachment: { type: 'queued_command', commandMode: 'task-notification', prompt: '<task-notification><task-id>task</task-id><status>completed</status><summary>Task finished.</summary></task-notification>' } },
       { type: 'assistant', uuid: 'answer', parentUuid: 'notification', timestamp: testTime({ seconds: 5 }), message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Requested answer.' }] } },
     ];
-    jest.mocked(reviewFs.readFile).mockResolvedValue(entries.map(entry => JSON.stringify(entry)).join('\n'));
-    const replay = await loadSDKSessionMessages('/vault', 'session', undefined, '/session.jsonl');
+    const replay = await loadSDKSessionMessages('/vault', 'session', undefined, writeSession(entries));
     expect(replay.error).toBeUndefined();
     messagesEl.replaceChildren();
     replay.messages.forEach((message, index) => renderer.renderStoredMessage(message, replay.messages, index));
@@ -214,11 +214,10 @@ it.each(['between', 'during-second', 'after-second'])('groups an older task noti
   const nativeRows = [...prefix, ...(position === 'between' ? [notification] : []), secondUser,
     ...(position === 'during-second' ? [notification] : []), secondFinal,
     ...(position === 'after-second' ? [notification] : [])];
+  let sessionPath = '';
   const loadNative = async (rows: typeof nativeRows) => {
-    jest.mocked(reviewFs.readFile).mockResolvedValue(rows.map((row, index) => JSON.stringify({
-      ...row, parentUuid: rows[index - 1]?.uuid,
-    })).join('\n'));
-    return loadSDKSessionMessages('/vault', 'session', undefined, '/session.jsonl');
+    sessionPath = writeSession(rows.map((row, index) => ({ ...row, parentUuid: rows[index - 1]?.uuid })));
+    return loadSDKSessionMessages('/vault', 'session', undefined, sessionPath);
   };
   const notify = () => renderSessionTaskNotification({ state, renderer,
     createMessageId: () => 'notification' }, 'Old research finished.');
@@ -269,7 +268,7 @@ it.each(['between', 'during-second', 'after-second'])('groups an older task noti
     await Promise.resolve();
     assertPlacement();
     const locate = jest.spyOn(historyStore, 'locateSDKSessions').mockResolvedValue(new Map([
-      ['session', { availability: 'relocated', sessionPath: '/session.jsonl' }],
+      ['session', { availability: 'relocated', sessionPath }],
     ]));
     try {
       const cachedOnly: ChatMessage = { id: 'cached-only', role: 'assistant', content: 'Cached commentary.',

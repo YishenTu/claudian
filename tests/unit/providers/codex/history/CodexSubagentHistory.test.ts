@@ -1,3 +1,4 @@
+import * as nodeFs from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -7,6 +8,7 @@ import { testDate } from '@test/helpers/testClock';
 import type { ChatMessage } from '@/core/types';
 import { hydrateCodexSubagentHistory } from '@/providers/codex/history/CodexSubagentHistory';
 
+jest.mock('node:fs', () => ({ __esModule: true, ...jest.requireActual('node:fs') }));
 jest.mock('node:fs/promises', () => ({ __esModule: true, ...jest.requireActual('node:fs/promises') }));
 
 it('shares directory and transcript reads within one child-history hydration', async () => {
@@ -23,7 +25,7 @@ it('shares directory and transcript reads within one child-history hydration', a
     ['child-a', 'child-b', 'child-a'].map((agentId, index) => ({ id: String(index), name: 'Task', input: {}, status: 'completed',
       subagent: { isExpanded: false, id: String(index), agentId, description: agentId, status: 'completed', lifecycleSource: 'session', completedAt, toolCalls: [] } })) }] as ChatMessage[];
   const directories = jest.spyOn(fs, 'readdir');
-  const reads = jest.spyOn(fs, 'readFile');
+  const reads = jest.spyOn(nodeFs, 'createReadStream');
   try {
     await hydrateCodexSubagentHistory(messages, [root], Date.now() + 10_000);
     expect(messages[0].toolCalls!.map(tool => tool.subagent?.result)).toEqual(['child-a', 'child-b', 'child-a']);

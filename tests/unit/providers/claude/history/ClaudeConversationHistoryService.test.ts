@@ -1,3 +1,4 @@
+import type * as nodeFs from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -223,8 +224,8 @@ describe('ClaudeConversationHistoryService', () => {
         entry({ type: 'assistant', uuid: 'a1', parentUuid: 'u1', timestamp: '2026-01-01T00:00:01Z',
           message: { model: 'claude-opus-4-6', content: [{ type: 'text', text: 'Answer' }] } }),
       ].join('\n'));
-      // Spy on the module object that the history reader's namespace import delegates to.
-      const readSpy = jest.spyOn(jest.requireActual<typeof fs>('fs/promises'), 'readFile');
+      // Spy on the module object that the streaming history reader calls through.
+      const readSpy = jest.spyOn(jest.requireActual<typeof nodeFs>('node:fs'), 'createReadStream');
       const service = new ClaudeConversationHistoryService();
       const conversation = createConversation();
 
@@ -319,7 +320,7 @@ describe('ClaudeConversationHistoryService', () => {
       await writeSession('other-project', 'session-2', 'Replacement');
       const actualFs = jest.requireActual<typeof fs>('fs/promises');
       const readdirSpy = jest.spyOn(actualFs, 'readdir');
-      const readSpy = jest.spyOn(actualFs, 'readFile');
+      const readSpy = jest.spyOn(jest.requireActual<typeof nodeFs>('node:fs'), 'createReadStream');
       const rootScans = () => readdirSpy.mock.calls.filter(([directory]) => directory === projectsPath).length;
       const service = new ClaudeConversationHistoryService();
       const conversation = createConversation();

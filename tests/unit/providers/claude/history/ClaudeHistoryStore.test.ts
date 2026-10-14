@@ -1,12 +1,8 @@
-import * as fs from 'node:fs/promises';
+import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
 
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
 
-jest.mock('node:fs/promises');
-
-const readFile = jest.mocked(fs.readFile);
-
-beforeEach(() => jest.resetAllMocks());
+const writeSession = useClaudeSessionFiles();
 
 it.each([
   ['<summary>Background command completed (exit code 0).</summary>', 'Background command completed (exit code 0).'],
@@ -22,9 +18,9 @@ it.each([
     { type: 'assistant', uuid: 'a2', parentUuid: 'notification', timestamp: '2026-09-20T11:30:23Z',
       message: { content: [{ type: 'text', text: 'Task complete.' }] } },
   ];
-  readFile.mockResolvedValue(entries.map(entry => JSON.stringify(entry)).join('\n'));
+  const sessionPath = writeSession(entries.map(entry => JSON.stringify(entry)).join('\n'));
 
-  const result = await loadSDKSessionMessages('/vault', 'session', undefined, '/session.jsonl');
+  const result = await loadSDKSessionMessages('/vault', 'session', undefined, sessionPath);
 
   expect(result.error).toBeUndefined();
   expect(result.messages).toHaveLength(3);
@@ -50,9 +46,9 @@ it('retains separate notifications when the same task completes again after bein
     { type: 'assistant', uuid: 'a2', parentUuid: 'n2', timestamp: '2026-09-20T11:00:05Z',
       message: { content: [{ type: 'text', text: 'Second follow-up.' }] } },
   ];
-  readFile.mockResolvedValue(entries.map(entry => JSON.stringify(entry)).join('\n'));
+  const sessionPath = writeSession(entries.map(entry => JSON.stringify(entry)).join('\n'));
 
-  const result = await loadSDKSessionMessages('/vault', 'session', undefined, '/session.jsonl');
+  const result = await loadSDKSessionMessages('/vault', 'session', undefined, sessionPath);
 
   expect(result.messages.slice(2).map(message => message.contentBlocks)).toEqual([
     [{ type: 'task_notification', content: 'First result' }, { type: 'text', content: 'First follow-up.' }],
@@ -71,9 +67,9 @@ it('retains a new user request duration when an older task completes before its 
     { type: 'assistant', uuid: 'a2', parentUuid: 'n', timestamp: '2026-09-20T11:00:15Z',
       message: { content: [{ type: 'text', text: 'The requested answer.' }] } },
   ];
-  readFile.mockResolvedValue(entries.map(entry => JSON.stringify(entry)).join('\n'));
+  const sessionPath = writeSession(entries.map(entry => JSON.stringify(entry)).join('\n'));
 
-  const result = await loadSDKSessionMessages('/vault', 'session', undefined, '/session.jsonl');
+  const result = await loadSDKSessionMessages('/vault', 'session', undefined, sessionPath);
 
   expect(result.messages[3]).toMatchObject({
     content: 'The requested answer.', durationSeconds: 5,
@@ -97,9 +93,9 @@ it('keeps a user response active across a notification received between its nati
     { type: 'assistant', uuid: 'answer', parentUuid: 'read-result', timestamp: '2026-09-20T11:00:15Z',
       message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'The requested answer.' }] } },
   ];
-  readFile.mockResolvedValue(entries.map(entry => JSON.stringify(entry)).join('\n'));
+  const sessionPath = writeSession(entries.map(entry => JSON.stringify(entry)).join('\n'));
 
-  const result = await loadSDKSessionMessages('/vault', 'session', undefined, '/session.jsonl');
+  const result = await loadSDKSessionMessages('/vault', 'session', undefined, sessionPath);
 
   expect(result.messages).toHaveLength(2);
   expect(result.messages[1]).toMatchObject({
@@ -123,9 +119,9 @@ it('replays a user prompt absorbed into an automatic response from its queued-co
       attachment: { type: 'queued_command', prompt: 'testing follow up', source_uuid: 'followup', commandMode: 'prompt' } },
     { type: 'assistant', uuid: 'final', parentUuid: 'attachment', message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Bash complete: 186 files.' }] } },
   ];
-  readFile.mockResolvedValue(entries.map((entry, index) => JSON.stringify({ timestamp: new Date(Date.parse('2026-09-21T03:16:01.961Z') + index * 1000).toISOString(), ...entry })).join('\n'));
+  const sessionPath = writeSession(entries.map((entry, index) => JSON.stringify({ timestamp: new Date(Date.parse('2026-09-21T03:16:01.961Z') + index * 1000).toISOString(), ...entry })).join('\n'));
 
-  const result = await loadSDKSessionMessages('/vault', 'session', undefined, '/session.jsonl');
+  const result = await loadSDKSessionMessages('/vault', 'session', undefined, sessionPath);
 
   expect(result.messages.map(message => [message.role, message.content])).toEqual([
     ['user', 'testing follow up'],
@@ -161,9 +157,9 @@ it.each([
     { type: 'assistant', uuid: 'answer', parentUuid: 'notification-attachment', timestamp: '2026-09-21T07:29:15Z',
       message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'PROBE_FOLLOWUP_ACK' }] } },
   ];
-  readFile.mockResolvedValue(entries.map(entry => JSON.stringify(entry)).join('\n'));
+  const sessionPath = writeSession(entries.map(entry => JSON.stringify(entry)).join('\n'));
 
-  const result = await loadSDKSessionMessages('/vault', 'session', undefined, '/session.jsonl');
+  const result = await loadSDKSessionMessages('/vault', 'session', undefined, sessionPath);
 
   expect(result.error).toBeUndefined();
   expect(result.messages).toHaveLength(2);
@@ -192,7 +188,7 @@ it.each([false, true])('counts each main response once across blocks and tools (
     { type: 'assistant', uuid: 'final', parentUuid: 'tool-result', timestamp: '2026-09-20T11:00:02.500Z',
       message: { id: 'response2', usage: { output_tokens: 25 }, stop_reason: 'end_turn', content: [{ type: 'text', text: 'Done' }] } },
   ];
-  readFile.mockResolvedValue(entries.map(entry => JSON.stringify(entry)).join('\n'));
-  const result = await loadSDKSessionMessages('/vault', 'session', undefined, '/session.jsonl');
+  const sessionPath = writeSession(entries.map(entry => JSON.stringify(entry)).join('\n'));
+  const result = await loadSDKSessionMessages('/vault', 'session', undefined, sessionPath);
   expect(result.messages.at(-1)?.turnStats).toEqual(missing ? undefined : { outputTokens: 125, durationMs: 2500 });
 });

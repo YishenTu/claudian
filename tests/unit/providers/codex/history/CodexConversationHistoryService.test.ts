@@ -112,12 +112,12 @@ describe('CodexConversationHistoryService', () => {
     const source = { forkSource: { sessionId: 'parent', resumeAt: 'parent-turn' }, forkSourceSessionFilePath: parentPath, forkSourceTranscriptRootPath: root };
     const providerState = mode === 'normal' ? { threadId: 'parent', sessionFilePath: parentPath, transcriptRootPath: root }
       : mode === 'pending fork' ? source : { ...source, threadId: 'fork', sessionFilePath: forkPath, transcriptRootPath: root };
-    const readFile = jest.spyOn(fs.promises, 'readFile');
+    const openStream = jest.spyOn(fs, 'createReadStream');
     try {
       const result = await new CodexConversationHistoryService().hydrateConversationHistory({
         id: 'conversation', sessionId: mode === 'pending fork' ? null : mode === 'normal' ? 'parent' : 'fork', providerState, messages: [],
       } as any, null);
-      expect(readFile.mock.calls.filter(([file]) => file === parentPath)).toHaveLength(1);
+      expect(openStream.mock.calls.filter(([file]) => file === parentPath)).toHaveLength(1);
       const cards = result.messages!.flatMap(message => message.toolCalls ?? []).filter(tool => tool.subagent);
       expect(cards).toHaveLength(mode === 'normal' ? 2 : 1);
       const owner = result.messages!.find(message => message.toolCalls?.some(tool => tool.id === 'followup'));
@@ -135,7 +135,7 @@ describe('CodexConversationHistoryService', () => {
         status: 'completed', completedAt: testDate({ seconds: 5 }).getTime(), result: 'Ready.', description: 'Bohr (child-model, high)',
         toolCalls: [expect.objectContaining({ id: 'clock-call', status: 'completed', result: expect.stringContaining('Clock result') })],
       });
-    } finally { readFile.mockRestore(); }
+    } finally { openStream.mockRestore(); }
   });
 
   it('hydrates history by resolving the transcript path from thread id', async () => {
@@ -747,6 +747,16 @@ describe('CodexConversationHistoryService', () => {
       )).rejects.toThrow('Fork checkpoint not found');
     });
 
+    it('surfaces a source read failure instead of a missing checkpoint', async () => {
+      // A directory opens like a file but fails to read, standing in for oversized or unreadable transcripts.
+      fs.unlinkSync(transcriptPath);
+      fs.mkdirSync(transcriptPath);
+      const service = new CodexConversationHistoryService();
+      await expect(service.buildForkProviderState(
+        'source-thread-id', 'turn-uuid-2', { sessionFilePath: transcriptPath },
+      )).rejects.toMatchObject({ code: 'EISDIR' });
+    });
+
     it('finds an archived source when its saved path has moved', async () => {
       const archive = path.join(tempHome, '.codex', 'archived_sessions');
       fs.mkdirSync(archive, { recursive: true });
@@ -1195,6 +1205,35 @@ describe('CodexConversationHistoryService', () => {
       expect(conversation.messages).toEqual([]);
     });
   });
+
+  it.each(['normal', 'pending fork', 'established fork'])(
+    'rejects %s hydration when a transcript exists but cannot be read', async mode => {
+      const sessions = path.join(tempHome, '.codex', 'sessions');
+      // A directory opens like a file but fails to read, standing in for oversized or unreadable transcripts.
+      const unreadable = path.join(sessions, 'rollout-unreadable.jsonl');
+      fs.mkdirSync(unreadable, { recursive: true });
+      const readable = path.join(sessions, 'rollout-fork.jsonl');
+      fs.writeFileSync(readable, [
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn' } },
+        { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hello' }] } },
+      ].map((record, seconds) => JSON.stringify({ timestamp: testDate({ seconds }).toISOString(), ...record })).join('\n'));
+      const forkSource = { sessionId: 'source', resumeAt: 'turn' };
+      const providerState = mode === 'normal'
+        ? { threadId: 'thread', sessionFilePath: unreadable }
+        : mode === 'pending fork'
+          ? { forkSource, forkSourceSessionFilePath: unreadable }
+          : { threadId: 'fork', sessionFilePath: readable, forkSource, forkSourceSessionFilePath: unreadable };
+      const conversation: Conversation = {
+        id: 'unreadable', providerId: 'codex', title: 'Unreadable',
+        createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(),
+        sessionId: mode === 'pending fork' ? null : providerState.threadId ?? null,
+        providerState, messages: [],
+      };
+
+      await expect(new CodexConversationHistoryService().hydrateConversationHistory(conversation, null))
+        .rejects.toMatchObject({ code: 'EISDIR' });
+    },
+  );
 
   it('retries hydration after an empty transcript parse', async () => {
     const threadId = 'thread-789';

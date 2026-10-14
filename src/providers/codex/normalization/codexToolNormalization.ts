@@ -847,6 +847,11 @@ export function normalizeCodexToolResult(
   return unwrapTerminalResult(rawResult);
 }
 
+function isImageContentPart(part: unknown): boolean {
+  return !!part && typeof part === 'object' && !Array.isArray(part)
+    && (part as Record<string, unknown>).type === 'input_image';
+}
+
 export function stringifyCodexToolOutput(value: unknown): string {
   if (typeof value === 'string') return value;
   if (value === undefined) return '';
@@ -860,6 +865,11 @@ export function stringifyCodexToolOutput(value: unknown): string {
       })
       .filter(Boolean);
     if (textParts.length > 0) return textParts.join('');
+    // Image payloads have no text projection; stringifying them would copy base64 into result text.
+    const nonImageParts = value.filter(part => !isImageContentPart(part));
+    if (nonImageParts.length < value.length) {
+      return nonImageParts.length > 0 ? stringifyUnknown(nonImageParts) : '';
+    }
   }
 
   return stringifyUnknown(value);

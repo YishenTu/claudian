@@ -153,6 +153,35 @@ describe('GrokConversationHistoryService', () => {
     expect(conversation.providerState).toBeUndefined();
   });
 
+  it('treats a session without native updates as having no history', async () => {
+    const service = new GrokConversationHistoryService();
+    await fs.rm(updatesPath);
+
+    const hydrated = await service.hydrateConversationHistory(createConversation(), vaultPath, {
+      environment: { HOME: tempRoot },
+    });
+
+    expect(hydrated.messages).toEqual([]);
+    expect(hydrated.providerState).toEqual({ sessionDirectory });
+  });
+
+  it.each([
+    ['session', () => createConversation()],
+    ['pending fork', () => ({
+      ...createConversation(),
+      providerState: { forkSource: { resumeAt: 'prompt-1', sessionId: 'session-fixture' }, forkSourceSessionDirectory: sessionDirectory },
+      sessionId: null,
+    })],
+  ])('rejects %s hydration when native updates exist but cannot be read', async (_kind, build) => {
+    const service = new GrokConversationHistoryService();
+    await fs.rm(updatesPath);
+    await fs.mkdir(updatesPath);
+
+    await expect(service.hydrateConversationHistory(build(), vaultPath, {
+      environment: { HOME: tempRoot },
+    })).rejects.toMatchObject({ code: 'EISDIR' });
+  });
+
   describe('resolveMissingConversationSession', () => {
     it('clears a confirmed stale native binding while preserving unknown state', async () => {
       const conversation = createConversation();

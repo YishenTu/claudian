@@ -1,8 +1,10 @@
 import type { Dirent } from 'node:fs';
 import * as fs from 'node:fs/promises';
 
+import { forEachJSONLLine } from '@/utils/jsonlFile';
+
 import type { ChatMessage, SubagentInfo } from '../../../core/types';
-import { findCodexSessionFileAsync, parseCodexSessionContent } from './CodexHistoryStore';
+import { findCodexSessionFileAsync, parseCodexSessionRecordLines, parseCodexSessionTurns } from './CodexHistoryStore';
 
 /** One history hydration, bounded by the parent's observed completion; never polls. */
 export async function hydrateCodexSubagentHistory(
@@ -10,7 +12,7 @@ export async function hydrateCodexSubagentHistory(
 ): Promise<void> {
   // Share immutable observations only within this bounded hydration; later opens retry.
   const directories = new Map<string, Promise<Dirent[]>>();
-  const contents = new Map<string, string>();
+  const contents = new Map<string, string[]>();
   const readDirectory = (directory: string): Promise<Dirent[]> => {
     let pending = directories.get(directory);
     if (!pending) {
@@ -27,21 +29,34 @@ export async function hydrateCodexSubagentHistory(
       if (remaining <= 0) return;
       const file = await findCodexSessionFileAsync(info.agentId, root, remaining, { readDirectory });
       if (!file) continue;
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), Math.max(1, deadline - Date.now()));
       try {
-        const content = contents.get(file) ?? await fs.readFile(file, { encoding: 'utf8', signal: controller.signal });
-        contents.set(file, content);
-        tool.subagent = readCodexChildDetails(content, info);
+        const lines = contents.get(file) ?? await readLinesBeforeDeadline(file, deadline);
+        if (!lines) return;
+        contents.set(file, lines);
+        tool.subagent = readCodexChildDetails(lines, info);
         break;
       } catch {
         // The parent lifecycle remains usable if a child was removed or is unavailable.
-      } finally { window.clearTimeout(timeout); }
+      }
     }
   }
 }
 
-function readCodexChildDetails(content: string, info: SubagentInfo): SubagentInfo {
+/** Streams a child transcript as lines; null when the hydration deadline passes mid-read. */
+async function readLinesBeforeDeadline(file: string, deadline: number): Promise<string[] | null> {
+  const lines: string[] = [];
+  let expired = false;
+  await forEachJSONLLine(file, (line) => {
+    if (Date.now() > deadline) {
+      expired = true;
+      return false;
+    }
+    lines.push(line);
+  });
+  return expired ? null : lines;
+}
+
+function readCodexChildDetails(lines: string[], info: SubagentInfo): SubagentInfo {
   let ownMetadataRead = false;
   let createdAt = -Infinity;
   let turnLines: string[] = [];
@@ -50,7 +65,7 @@ function readCodexChildDetails(content: string, info: SubagentInfo): SubagentInf
   let model: string | undefined;
   let effort: string | undefined;
   let result: string | undefined;
-  for (const line of content.split('\n')) {
+  for (const line of lines) {
     let value: unknown;
     try { value = JSON.parse(line); } catch { continue; }
     const record = asRecord(value);
@@ -86,7 +101,8 @@ function readCodexChildDetails(content: string, info: SubagentInfo): SubagentInf
   }
   const label = nickname ?? info.description;
   const details = [role, model, effort].filter(Boolean);
-  const toolCalls = parseCodexSessionContent(turnLines.join('\n')).flatMap(message => message.toolCalls ?? []);
+  const toolCalls = parseCodexSessionTurns(parseCodexSessionRecordLines(turnLines))
+    .flatMap(turn => turn.messages).flatMap(message => message.toolCalls ?? []);
   return { ...info, toolCalls, description: details.length ? `${label} (${details.join(', ')})` : label, ...(result ? { result } : {}) };
 }
 

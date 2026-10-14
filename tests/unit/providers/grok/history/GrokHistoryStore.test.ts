@@ -2,12 +2,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import compactCompleted from '@test/fixtures/providers/grok/runtime/compaction-completed.json';
-import { testDate } from '@test/helpers/testClock';
-
 import {
   parseGrokHistoryContent,
   resolveGrokPromptIndexAfterAssistant,
-} from '@/providers/grok/history/GrokHistoryStore';
+} from '@test/helpers/providers/grokHistory';
+import { testDate } from '@test/helpers/testClock';
 
 describe('GrokHistoryStore', () => {
   it('hydrates complete turns while tolerating malformed, unknown, and incomplete tails', () => {

@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
+import { parseGrokHistoryContent } from '@test/helpers/providers/grokHistory';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
@@ -18,7 +19,6 @@ import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import type { ACPSessionNotification } from '@/providers/acp';
 import { GrokExecutionBackend, type GrokExecutionNativeConnection } from '@/providers/grok/execution/GrokExecutionBackend';
-import { parseGrokHistoryContent } from '@/providers/grok/history/GrokHistoryStore';
 import { updateCurrentGrokCatalog } from '@/providers/grok/settings';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };

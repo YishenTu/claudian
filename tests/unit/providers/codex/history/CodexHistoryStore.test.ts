@@ -1113,6 +1113,24 @@ describe('CodexHistoryStore', () => {
       ]);
     });
 
+    it('keeps image-only script output bytes out of the result text', () => {
+      const record = (seconds: number, payload: Record<string, unknown>) => JSON.stringify({
+        timestamp: testDate({ seconds }).toISOString(), type: 'response_item', payload,
+      });
+      const messages = parseCodexSessionContent([
+        record(0, { type: 'custom_tool_call', name: 'exec', call_id: 'image_only', input: 'image(globalThis.screenshot);' }),
+        record(1, { type: 'custom_tool_call_output', call_id: 'image_only', output: [
+          { type: 'input_image', image_url: 'data:image/png;base64,aW1hZ2VCeXRlcw==' },
+        ] }),
+      ].join('\n'));
+      const script = messages.flatMap(message => message.toolCalls ?? []).find(tool => tool.id === 'image_only');
+
+      expect(script).toMatchObject({
+        result: '',
+        resultImages: [{ kind: 'data', mediaType: 'image/png', data: 'aW1hZ2VCeXRlcw==' }],
+      });
+    });
+
     it.each([
       ['completed', 'Script completed\nWall time 0.1 seconds\nOutput:\nfinished'],
       ['error', 'Script failed\nWall time 0.1 seconds\nOutput:\nScript error: fixture failure'],

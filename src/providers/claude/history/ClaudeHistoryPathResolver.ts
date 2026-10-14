@@ -2,6 +2,8 @@ import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
+import { forEachJSONLLine } from '@/utils/jsonlFile';
+
 import type { ProviderConversationSessionAvailability } from '../../../core/providers/types';
 import type { ClaudeConfigDirContext } from '../config/ClaudeConfigDir';
 import { resolveClaudeConfigDir } from '../config/ClaudeConfigDir';
@@ -175,35 +177,21 @@ export async function readSDKSession(
   }
 }
 
-const SESSION_PARSE_BATCH_CHARS = 1024 * 1024;
-
 export async function readSDKSessionFile(sessionPath: string): Promise<SDKSessionReadResult> {
   try {
-    const content = await fs.readFile(sessionPath, 'utf-8');
     const messages: SDKNativeMessage[] = [];
     let skippedLines = 0;
-    let offset = 0;
-    let batchStart = 0;
 
-    // Preserve all history, including pre-compaction records, without allocating
-    // a second full-file array or parsing the entire transcript in one UI task.
-    while (offset < content.length) {
-      const newline = content.indexOf('\n', offset);
-      const end = newline === -1 ? content.length : newline;
-      const line = content.slice(offset, end);
-      offset = end + 1;
-      if (line.trim()) {
-        try {
-          messages.push(JSON.parse(line) as SDKNativeMessage);
-        } catch {
-          skippedLines++;
-        }
+    // Stream so transcripts beyond one JavaScript string stay readable; each chunk read
+    // yields to the UI, and all records (including pre-compaction history) are kept.
+    await forEachJSONLLine(sessionPath, line => {
+      if (!line.trim()) return;
+      try {
+        messages.push(JSON.parse(line) as SDKNativeMessage);
+      } catch {
+        skippedLines++;
       }
-      if (offset - batchStart >= SESSION_PARSE_BATCH_CHARS && offset < content.length) {
-        await new Promise<void>(resolve => window.setTimeout(resolve, 0));
-        batchStart = offset;
-      }
-    }
+    });
 
     return { messages, skippedLines };
   } catch (error) {

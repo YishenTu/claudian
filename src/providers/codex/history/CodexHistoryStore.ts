@@ -16,6 +16,7 @@ import {
   extractCodexUserVisibleText,
   joinCodexUserTextParts,
 } from '@/providers/codex/normalization/codexUserText';
+import { forEachJSONLLine } from '@/utils/jsonlFile';
 
 import { normalizeWebSearchResults } from '../../../core/tools/toolResultDetails';
 import type {
@@ -143,7 +144,7 @@ interface PersistedCompactionPayload {
   encrypted_content?: string;
 }
 
-interface ParsedSessionRecord {
+export interface CodexSessionRecord {
   timestamp: number;
   type?: string;
   payload?: PersistedPayload;
@@ -406,7 +407,7 @@ function parseTimestamp(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function parseSessionRecord(line: string): ParsedSessionRecord | null {
+function parseSessionRecord(line: string): CodexSessionRecord | null {
   let parsed: {
     timestamp?: string;
     type?: string;
@@ -418,6 +419,7 @@ function parseSessionRecord(line: string): ParsedSessionRecord | null {
   } catch {
     return null;
   }
+  if (!parsed || typeof parsed !== 'object') return null;
 
   return {
     timestamp: parseTimestamp(parsed.timestamp),
@@ -1552,20 +1554,29 @@ async function defaultPathExists(value: string): Promise<boolean> {
   }
 }
 
-export async function parseCodexSessionFileAsync(
-  filePath: string,
-  timeoutMs = 10_000,
-): Promise<ChatMessage[]> {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+/**
+ * Streams a native transcript into records without materializing the whole file as one string.
+ * Returns null when the file is missing; every other read failure rejects so callers never mistake
+ * an unreadable transcript for an empty one. Malformed lines are skipped.
+ */
+export async function readCodexSessionRecords(filePath: string): Promise<CodexSessionRecord[] | null> {
+  const records: CodexSessionRecord[] = [];
   try {
-    const content = await fsp.readFile(filePath, { encoding: 'utf-8', signal: controller.signal });
-    return parseCodexSessionContent(content);
-  } catch {
-    return [];
-  } finally {
-    window.clearTimeout(timer);
+    await forEachJSONLLine(filePath, (line) => {
+      const record = parseSessionRecord(line);
+      if (record) records.push(record);
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') return null;
+    throw error;
   }
+  return records;
+}
+
+/** Missing transcripts have no history; other read failures reject. */
+export async function parseCodexSessionFileAsync(filePath: string): Promise<ChatMessage[]> {
+  const records = await readCodexSessionRecords(filePath);
+  return records ? parseModernSessionTurns(records).flatMap(turn => turn.messages) : [];
 }
 
 export interface CodexParsedTurn {
@@ -1597,15 +1608,6 @@ class SessionModelReader {
   result(): string | null { return this.checkpoint && !this.reached ? null : this.model; }
 }
 
-export function parseCodexSessionModel(content: string, resumeAtTurnId?: string): string | null {
-  const reader = new SessionModelReader(resumeAtTurnId);
-  for (const line of content.split(/\r?\n/)) {
-    reader.accept(line);
-    if (reader.reached) break;
-  }
-  return reader.result();
-}
-
 /** Stream model metadata; checkpoint recovery does not read the remainder of the file. */
 export async function readCodexSessionModel(file: string, resumeAtTurnId?: string): Promise<string | null> {
   const input = createReadStream(file, { encoding: 'utf8' });
@@ -1625,16 +1627,14 @@ export async function readCodexSessionModel(file: string, resumeAtTurnId?: strin
   }
 }
 
-export function parseCodexSessionRecords(content: string): ParsedSessionRecord[] {
-  return content
-    .split('\n')
-    .filter(line => line.trim())
+export function parseCodexSessionRecordLines(lines: readonly string[]): CodexSessionRecord[] {
+  return lines
     .map(parseSessionRecord)
-    .filter((record): record is ParsedSessionRecord => record !== null);
+    .filter((record): record is CodexSessionRecord => record !== null);
 }
 
-export function parseCodexSessionTurns(content: string | ParsedSessionRecord[], throughTurnId?: string): CodexParsedTurn[] {
-  const records = typeof content === 'string' ? parseCodexSessionRecords(content) : content;
+export function parseCodexSessionTurns(content: string | CodexSessionRecord[], throughTurnId?: string): CodexParsedTurn[] {
+  const records = typeof content === 'string' ? parseCodexSessionRecordLines(content.split('\n')) : content;
   if (throughTurnId) {
     let reached = false;
     const nextTurn = records.findIndex(record => {
@@ -1653,13 +1653,13 @@ export function parseCodexSessionTurns(content: string | ParsedSessionRecord[], 
 // Modern (response_item + event_msg) parser — bubble model
 // ---------------------------------------------------------------------------
 
-function parseModernSessionTurns(records: ParsedSessionRecord[]): CodexParsedTurn[] {
+function parseModernSessionTurns(records: CodexSessionRecord[]): CodexParsedTurn[] {
   const ctx = createPersistedParseContext();
   let threadId: string | undefined;
   const turnOutputTokens = new Map<string, number | undefined>();
   const rawCallIds = new Set<string>();
-  const compactedRecordsWithEvent = new Set<ParsedSessionRecord>();
-  let pendingCompactionRecord: ParsedSessionRecord | undefined;
+  const compactedRecordsWithEvent = new Set<CodexSessionRecord>();
+  let pendingCompactionRecord: CodexSessionRecord | undefined;
 
   // Index completed script failures before projecting their calls. Also pair
   // older compaction records with their explicit marker without replaying context.

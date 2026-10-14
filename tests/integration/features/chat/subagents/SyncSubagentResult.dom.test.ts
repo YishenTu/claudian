@@ -1,9 +1,9 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
-import * as historyFs from 'node:fs/promises';
 import { deserialize, serialize } from 'node:v8';
 
+import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
@@ -20,6 +20,7 @@ import { ClaudeConversationHistoryService } from '@/providers/claude/history/Cla
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
 
 jest.mock('node:fs/promises');
+const writeSession = useClaudeSessionFiles();
 const originalStructuredClone = globalThis.structuredClone;
 beforeAll(() => { globalThis.structuredClone = value => deserialize(serialize(value)); });
 afterAll(() => { globalThis.structuredClone = originalStructuredClone; });
@@ -84,9 +85,9 @@ it.each([
         { ...nativeMessages[1], uuid: 'result', parentUuid: 'spawn', timestamp: testTime({ seconds: 2 }),
           ...(structured ? { toolUseResult: nativeMessages[1].tool_use_result } : {}) },
       ];
-      jest.mocked(historyFs.readFile).mockResolvedValue((source === 'cache-only' ? entries.slice(0, 2) : entries).map(entry => JSON.stringify(entry)).join('\n'));
+      const sessionPath = writeSession(source === 'cache-only' ? entries.slice(0, 2) : entries);
       const locate = jest.spyOn(historyStore, 'locateSDKSessions').mockResolvedValue(new Map([
-        ['session', { availability: 'relocated', sessionPath: '/session.jsonl' }],
+        ['session', { availability: 'relocated', sessionPath }],
       ]));
       try {
         const cachedMessage: ChatMessage = { id: 'spawn', role: 'assistant', content: '', timestamp: testDate({ seconds: 1 }).getTime(),
@@ -133,9 +134,9 @@ it('retains a completed cached async result when native launch input omitted bac
       message: { content: [{ type: 'tool_result', tool_use_id: 'agent', content: 'agent_id=agent-async' }] },
       toolUseResult: { isAsync: true, agentId: 'agent-async', status: 'async_launched' } },
   ];
-  jest.mocked(historyFs.readFile).mockResolvedValue(entries.map(entry => JSON.stringify(entry)).join('\n'));
+  const sessionPath = writeSession(entries);
   const locate = jest.spyOn(historyStore, 'locateSDKSessions').mockResolvedValue(new Map([
-    ['session', { availability: 'relocated', sessionPath: '/session.jsonl' }],
+    ['session', { availability: 'relocated', sessionPath }],
   ]));
   try {
     const history = await new ClaudeConversationHistoryService().hydrateConversationHistory({
