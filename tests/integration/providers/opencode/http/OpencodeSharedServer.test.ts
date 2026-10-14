@@ -1,9 +1,11 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderSessionConfig } from '@/core/execution';
+import { findNodeExecutable, getEnhancedPath } from '@/core/process/env';
 import { normalizeProviderCommandDiscoveryItems } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
 import { ProviderCommandDiscoveryStore } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -95,6 +97,18 @@ const server = http.createServer(async (req, res) => {
 server.listen(0,'127.0.0.1',()=>console.log(JSON.stringify({url:'http://127.0.0.1:'+server.address().port})));
 process.stdin.resume(); process.stdin.on('end',()=>{ for(const f of feeds) f.end(); server.close(); });
 `;
+
+// The version probe gives up after 5 seconds. On a cold Windows runner the first Node launch alone
+// can take longer, so pay that cost once here, without a deadline, before any test probes the CLI.
+beforeAll(() => {
+  const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-shared-v2-warmup-')));
+  try {
+    const cli = path.join(root, 'opencode.cjs');
+    writeFileSync(cli, fixture, { mode: 0o700 });
+    const node = findNodeExecutable(getEnhancedPath(process.env.PATH, cli));
+    if (node) execFileSync(node, [cli, '--version'], { env: { ...process.env, PROCESS_LOG: path.join(root, 'processes') }, stdio: 'ignore' });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 const turn = (text: string): ProviderExecutionRequest => ({
   input: [{ type: 'text', text }],
