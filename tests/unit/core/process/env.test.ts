@@ -217,25 +217,10 @@ describe('getEnhancedPath', () => {
       delete process.env.ASDF_DIR;
     });
 
-    it('includes FNM_MULTISHELL_PATH when set', () => {
-      process.env.FNM_MULTISHELL_PATH = '/tmp/fnm_multishell';
-      const result = getEnhancedPath();
-      expect(result).toContain('/tmp/fnm_multishell');
-      delete process.env.FNM_MULTISHELL_PATH;
-    });
-
-    it('includes FNM_DIR when set', () => {
-      process.env.FNM_DIR = '/custom/fnm';
-      const result = getEnhancedPath();
-      expect(result).toContain('/custom/fnm');
-      delete process.env.FNM_DIR;
-    });
-
     describe('fnm aliases (Unix)', () => {
       if (isWindows) return;
 
       it('includes default Node.js bins without the fnm shell hook', () => {
-        delete process.env.FNM_MULTISHELL_PATH;
         delete process.env.XDG_DATA_HOME;
         process.env.FNM_DIR = '/custom/fnm';
         process.env.HOME = '/fake/home';
@@ -824,7 +809,6 @@ describe('getExtraBinaryPaths (Windows branches)', () => {
   });
 
   it('includes fnm default Node.js aliases without the PowerShell hook', () => {
-    delete process.env.FNM_MULTISHELL_PATH;
     process.env.APPDATA = '/mock/AppData/Roaming';
     process.env.LOCALAPPDATA = '/mock/AppData/Local';
     process.env.HOME = '/mock/home';
@@ -876,31 +860,6 @@ describe('getExtraBinaryPaths (Windows branches)', () => {
     const mod = loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     expect(result).toContain('.volta');
-  });
-
-  it('includes FNM_MULTISHELL_PATH when set', () => {
-    process.env.FNM_MULTISHELL_PATH = '/mock/fnm/multishell';
-    process.env.HOME = '/mock/home';
-    const mod = loadWithWindowsPlatform();
-    const result = mod.getEnhancedPath();
-    expect(result).toContain('/mock/fnm/multishell');
-  });
-
-  it('includes FNM_DIR when set', () => {
-    process.env.FNM_DIR = '/mock/fnm/dir';
-    process.env.HOME = '/mock/home';
-    const mod = loadWithWindowsPlatform();
-    const result = mod.getEnhancedPath();
-    expect(result).toContain('/mock/fnm/dir');
-  });
-
-  it('falls back to LOCALAPPDATA/fnm when FNM_DIR not set', () => {
-    delete process.env.FNM_DIR;
-    process.env.LOCALAPPDATA = '/mock/AppData/Local';
-    process.env.HOME = '/mock/home';
-    const mod = loadWithWindowsPlatform();
-    const result = mod.getEnhancedPath();
-    expect(result).toContain('fnm');
   });
 
   it('includes ChocolateyInstall/bin when set', () => {

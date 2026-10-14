@@ -101,7 +101,11 @@ The following sections use Claude Code as an example.
 
 ### Provider CLI not found
 
-If Claudian cannot auto-detect a provider CLI, verify that the CLI is installed and available to GUI applications through PATH. Typical errors include `spawn claude ENOENT` and `Claude Code CLI not found`. This issue is common with Node version managers (nvm, fnm, volta).
+If Claudian cannot auto-detect a provider CLI, verify that the CLI is installed and available through PATH. Typical errors include `spawn claude ENOENT` and `Claude Code CLI not found`.
+
+On macOS and Linux, Obsidian launched from the Dock or a desktop entry does not inherit your terminal's PATH, so Claudian reads PATH once from your login shell (`$SHELL -i -l`). CLIs and Node.js installed through version managers such as nvm, fnm, Volta, asdf, or mise are found the same way your terminal finds them. Reload Claudian after changing your shell profile. If your profile is slow or interactive, skip that part when `CLAUDIAN_RESOLVING_ENVIRONMENT` is set; Claudian falls back to common install locations if the shell does not answer within 10 seconds.
+
+On Windows, Obsidian uses the PATH from your user and system environment variables. Restart Obsidian after changing them.
 
 Leave the CLI path setting empty first so Claudian can auto-detect the CLI. If auto-detection fails, find the executable path, open Settings → Claudian → Providers → Claude Code, expand the Claude Code installation card, and set Claude Code CLI path.
 
@@ -128,21 +132,18 @@ Claudian discovers models from each configured provider rather than keeping its 
 
 If the model is still absent, the active provider runtime or account has not reported it to Claudian. Public or API availability alone does not guarantee catalog availability for every provider integration or account. Avoid editing Claudian's installed bundle to add the model manually; those changes are unsupported and will be overwritten by updates.
 
-### npm CLI and Node.js not in the same directory
+### Node.js not found for an npm-installed CLI
 
-When using an npm-installed provider CLI, make sure its executable and Node.js are available from the same environment. Check their paths:
+npm-installed provider CLIs need Node.js. Claudian prefers the Node.js next to the CLI, then the first one on PATH. If the CLI still reports that Node.js is missing (for example `env: node: No such file or directory`), check where your terminal finds it:
 
 ```bash
-dirname $(which claude)
 dirname $(which node)
 ```
-
-If the paths differ, GUI apps like Obsidian may not find Node.js.
 
 Either:
 
 1. Install the native binary (recommended).
-2. Add the Node.js path in Settings → Claudian → General → Environment → Shared environment: `PATH=/path/to/node/bin`.
+2. Add that directory in Settings → Claudian → General → Environment → Shared environment: `PATH=/path/to/node/bin`.
 
 ### Authentication fails while the CLI subscription works
 

@@ -2,11 +2,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { parsePathEntries, resolveNvmDefaultBin } from './cliPath';
-import { getLoginShellPathEntries } from './loginShellPath';
 
 const isWindows = process.platform === 'win32';
 const PATH_SEPARATOR = isWindows ? ';' : ':';
 const NODE_EXECUTABLE = isWindows ? 'node.exe' : 'node';
+
+let loginShellPathEntries: readonly string[] = [];
+
+/** Written only by `resolveLoginShellPath`, which owns reading the login shell. */
+export function setLoginShellPathEntries(entries: readonly string[]): void {
+  loginShellPathEntries = entries;
+}
 
 function getHomeDir(): string {
   return process.env.HOME || process.env.USERPROFILE || '';
@@ -27,7 +33,8 @@ function getMiseShimsDir(home: string): string | null {
 }
 
 /** fnm's default Node.js alias, reachable without the shell or PowerShell profile hook. */
-function getFnmDefaultBinPaths(home: string, fnmDir: string | undefined): string[] {
+function getFnmDefaultBinPaths(home: string): string[] {
+  const fnmDir = process.env.FNM_DIR;
   const roots = isWindows
     ? [
       fnmDir,
@@ -109,7 +116,7 @@ function getAppProvidedCLIPaths(): string[] {
  */
 function getExtraBinaryPaths(): string[] {
   const home = getHomeDir();
-  const paths: string[] = [...getLoginShellPathEntries()];
+  const paths: string[] = [...loginShellPathEntries];
 
   if (isWindows) {
     const localAppData = process.env.LOCALAPPDATA;
@@ -153,20 +160,7 @@ function getExtraBinaryPaths(): string[] {
       paths.push(path.join(home, '.volta', 'bin'));
     }
 
-    // fnm (Fast Node Manager): %FNM_MULTISHELL_PATH% is the active Node.js bin
-    const fnmMultishell = process.env.FNM_MULTISHELL_PATH;
-    if (fnmMultishell) {
-      paths.push(fnmMultishell);
-    }
-
-    // fnm (Fast Node Manager): %FNM_DIR% or %LOCALAPPDATA%\fnm
-    const fnmDir = process.env.FNM_DIR;
-    if (fnmDir) {
-      paths.push(fnmDir);
-    } else if (localAppData) {
-      paths.push(path.join(localAppData, 'fnm'));
-    }
-    paths.push(...getFnmDefaultBinPaths(home, fnmDir));
+    paths.push(...getFnmDefaultBinPaths(home));
 
     // Chocolatey: %ChocolateyInstall%\bin or C:\ProgramData\chocolatey\bin
     const chocolateyInstall = process.env.ChocolateyInstall;
@@ -218,16 +212,7 @@ function getExtraBinaryPaths(): string[] {
       paths.push(path.join(asdfRoot, 'bin'));
     }
 
-    const fnmMultishell = process.env.FNM_MULTISHELL_PATH;
-    if (fnmMultishell) {
-      paths.push(fnmMultishell);
-    }
-
-    const fnmDir = process.env.FNM_DIR;
-    if (fnmDir) {
-      paths.push(fnmDir);
-    }
-    paths.push(...getFnmDefaultBinPaths(home, fnmDir));
+    paths.push(...getFnmDefaultBinPaths(home));
 
     if (home) {
       paths.push(path.join(home, 'bin'));
@@ -239,7 +224,6 @@ function getExtraBinaryPaths(): string[] {
       paths.push(path.join(home, '.volta', 'bin'));
       paths.push(path.join(home, '.asdf', 'shims'));
       paths.push(path.join(home, '.asdf', 'bin'));
-      paths.push(path.join(home, '.fnm'));
 
       // NVM: use NVM_BIN if set, otherwise resolve default version from filesystem
       const nvmBin = process.env.NVM_BIN;

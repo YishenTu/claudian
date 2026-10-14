@@ -2,25 +2,20 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { parsePathEntries } from './cliPath';
+import { setLoginShellPathEntries } from './env';
 import { runProcessProbe } from './ProcessProbe';
 
 const LOGIN_SHELL_TIMEOUT_MS = 10_000;
 const PATH_MARKER = '__CLAUDIAN_LOGIN_PATH__';
 
-let entries: readonly string[] = [];
 let resolution: Promise<void> | null = null;
-
-/** Entries of the user's login-shell PATH, empty until resolved or when unavailable. */
-export function getLoginShellPathEntries(): readonly string[] {
-  return entries;
-}
 
 /**
  * GUI-launched apps do not inherit the PATH that shell profiles build (version managers,
  * custom bins). Reads it once from an interactive login shell; failure keeps guessed paths.
  */
 export function resolveLoginShellPath(): Promise<void> {
-  resolution ??= readLoginShellPath().then((value) => { entries = value; });
+  resolution ??= readLoginShellPath().then(setLoginShellPathEntries);
   return resolution;
 }
 
