@@ -1,6 +1,6 @@
 import { Notice } from 'obsidian';
 
-import { extractUserDisplayContent } from '@/core/prompt/promptContext';
+import { getUserDisplayText } from '@/core/prompt/promptContext';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { TitleGenerationService } from '@/core/providers/types';
 import type { ChatMessage } from '@/core/types';
@@ -23,10 +23,6 @@ export function fallbackConversationTitle(firstMessage: string): string {
   return `${autoTitle}${suffix}`;
 }
 
-function userContentOf(message: ChatMessage): string {
-  return message.displayContent ?? extractUserDisplayContent(message.content) ?? message.content;
-}
-
 /**
  * Chat-owned title policy shared by a new Conversation's first turn and explicit regeneration.
  * Generation uses the global title-model selection, independently of chat execution.
@@ -37,7 +33,7 @@ export class ConversationTitleGeneration {
   /** Names a new Conversation from its first user message, then generates a title in the background. */
   async titleFirstTurn(conversationId: string, firstUserMessage: ChatMessage): Promise<void> {
     const { host } = this.deps;
-    const userContent = userContentOf(firstUserMessage);
+    const userContent = getUserDisplayText(firstUserMessage);
     const fallbackTitle = fallbackConversationTitle(userContent);
     await host.renameConversation(conversationId, fallbackTitle);
 
@@ -70,7 +66,7 @@ export class ConversationTitleGeneration {
     if (!firstUserMessage) return;
 
     await this.#markPending(conversationId);
-    await this.#generate(service, conversationId, userContentOf(firstUserMessage), conversation.title);
+    await this.#generate(service, conversationId, getUserDisplayText(firstUserMessage), conversation.title);
   }
 
   async #markPending(conversationId: string): Promise<void> {

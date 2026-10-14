@@ -1,5 +1,6 @@
 /** @jest-environment jsdom */
 
+import { EditorView } from '@codemirror/view';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
@@ -300,6 +301,31 @@ it('leaves native spellcheck and text replacement enabled in the focused textbox
   const content = within(parent).getByRole('textbox', { name: 'Message' });
   expect(content.getAttribute('spellcheck')).toBe('true');
   expect(content.getAttribute('autocorrect')).toBe('on');
+  editor.destroy();
+  parent.remove();
+});
+
+it('reports whether the caret is on the first or last rendered row, including soft wraps', () => {
+  const parent = document.body.createDiv();
+  const editor = createEditor(parent);
+  editor.element.focus();
+  editor.element.value = 'a'.repeat(30);
+  // jsdom has no layout: render ten characters per 20px row; a wrap point belongs to the row the side faces.
+  let measurable = true;
+  jest.spyOn(EditorView.prototype, 'coordsAtPos').mockImplementation((pos: number, side = 1) => {
+    if (!measurable) return null;
+    const row = side < 0 && pos > 0 && pos % 10 === 0 ? pos / 10 - 1 : Math.floor(pos / 10);
+    return { top: row * 20, bottom: row * 20 + 18, left: 0, right: 0 };
+  });
+  const caretOn = (pos: number) => {
+    editor.element.selectionStart = editor.element.selectionEnd = pos;
+    return [editor.element.isCaretOnEdgeRow!('up'), editor.element.isCaretOnEdgeRow!('down')];
+  };
+  expect(caretOn(5)).toEqual([true, false]);
+  expect(caretOn(15)).toEqual([false, false]);
+  expect(caretOn(30)).toEqual([false, true]);
+  measurable = false;
+  expect(caretOn(5)).toEqual([null, null]);
   editor.destroy();
   parent.remove();
 });

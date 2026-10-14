@@ -62,6 +62,11 @@ function extractContentBeforeXMLContext(text: string): string | undefined {
   return undefined;
 }
 
+/** The text a user message shows: its display text, else its content without injected context. */
+export function getUserDisplayText(message: { content: string; displayContent?: string }): string {
+  return message.displayContent ?? extractUserDisplayContent(message.content) ?? message.content;
+}
+
 export function extractUserDisplayContent(text: string): string | undefined {
   if (!text) return undefined;
 

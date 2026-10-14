@@ -1,7 +1,7 @@
 import { Notice } from 'obsidian';
 
 import type { ConversationBranchResult } from '@/core/execution';
-import { extractUserDisplayContent } from '@/core/prompt/promptContext';
+import { getUserDisplayText } from '@/core/prompt/promptContext';
 import type { ChatMessage } from '@/core/types';
 import type { ComposerDraft, ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
@@ -89,7 +89,7 @@ export class ConversationBranching {
     if (!branchMessageId) {
       this.#state = { kind: 'preview', draft: { conversationId, message, previousDraft,
         scrollTop: (this.deps.getMessagesEl()?.scrollTop ?? 0) } };
-      const content = message.displayContent ?? extractUserDisplayContent(message.content) ?? message.content;
+      const content = getUserDisplayText(message);
       this.deps.renderTranscript(messages.slice(0, messages.indexOf(message)), false);
       drafts.restore('main', { content, images: message.images }, { focus: true, notify: true });
       return;

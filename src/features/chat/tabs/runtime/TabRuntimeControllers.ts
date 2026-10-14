@@ -109,12 +109,6 @@ export function buildTabRuntimeControllers(
     input: dom.inputEl,
     isEnabled: () => sideChatController.destination === 'main'
       && dom.inputEl.contains(dom.inputEl.ownerDocument.activeElement),
-    onInputReplaced: () => {
-      runtimeRef.requirePublished().session.claimUserOwnership();
-      sideChatController.handleComposerInput();
-      ui.composerDropdown.handleInputChange();
-      ui.promptSuggestion.refresh();
-    },
   });
   options.registerCleanup('tab prompt history', () => promptHistoryNavigation.destroy());
   const navigationController = new NavigationController({

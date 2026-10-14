@@ -1,4 +1,4 @@
-import { extractUserDisplayContent } from '@/core/prompt/promptContext';
+import { getUserDisplayText } from '@/core/prompt/promptContext';
 import { type ChatMessage, isCanonicalUserMessage } from '@/core/types';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
@@ -7,7 +7,6 @@ interface PromptHistoryNavigationOptions {
   readonly input: ComposerInputElement;
   /** Whether the composer currently targets the transcript history is read from. */
   readonly isEnabled: () => boolean;
-  readonly onInputReplaced: () => void;
 }
 
 /**
@@ -41,10 +40,7 @@ export class PromptHistoryNavigation {
     const { input } = this.options;
     if (!this.isRecalling) this.reset();
     const prompts = this.options.getMessages().filter(isCanonicalUserMessage)
-      .map(message => ({
-        id: message.id,
-        text: message.displayContent ?? extractUserDisplayContent(message.content) ?? message.content,
-      }))
+      .map(message => ({ id: message.id, text: getUserDisplayText(message) }))
       .filter(prompt => prompt.text.length > 0);
 
     if (!this.selected) {
@@ -71,7 +67,6 @@ export class PromptHistoryNavigation {
   }
 
   destroy(): void {
-    this.reset();
     this.options.input.removeEventListener('compositionstart', this.onCompositionStart);
     this.options.input.removeEventListener('compositionend', this.onCompositionEnd);
   }
@@ -90,12 +85,10 @@ export class PromptHistoryNavigation {
     const { input } = this.options;
     const { value, selectionStart, selectionEnd } = input;
     if (selectionStart === null || selectionStart !== selectionEnd) return false;
-    const onEdgeRow = input.isCaretOnEdgeRow?.(key === 'ArrowUp' ? 'up' : 'down');
-    if (onEdgeRow !== undefined && onEdgeRow !== null) return onEdgeRow;
     // Without layout, logical lines approximate rendered rows.
-    return key === 'ArrowUp'
+    return input.isCaretOnEdgeRow?.(key === 'ArrowUp' ? 'up' : 'down') ?? (key === 'ArrowUp'
       ? !value.slice(0, selectionStart).includes('\n')
-      : !value.slice(selectionStart).includes('\n');
+      : !value.slice(selectionStart).includes('\n'));
   }
 
   private select(prompt: { id: string; text: string }): void {
@@ -113,6 +106,7 @@ export class PromptHistoryNavigation {
     if (input.replaceText) input.replaceText(0, input.value.length, text);
     else input.value = text;
     input.selectionStart = input.selectionEnd = text.length;
-    this.options.onInputReplaced();
+    // Recalled text takes the same input lifecycle as typing.
+    input.dispatchEvent(new (input.ownerDocument.defaultView!.Event)('input', { bubbles: true }));
   }
 }

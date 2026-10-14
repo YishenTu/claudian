@@ -1,6 +1,6 @@
 import { type Component, Notice } from 'obsidian';
 
-import { extractUserDisplayContent } from '@/core/prompt/promptContext';
+import { getUserDisplayText } from '@/core/prompt/promptContext';
 import { DEFAULT_CHAT_PROVIDER_ID, type ProviderCapabilities, type ProviderSubagentLifecycleAdapter } from '@/core/providers/types';
 import type { ChatMessage, ImageAttachment, SubagentInfo, ToolCallInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
@@ -324,7 +324,7 @@ export class MessageRenderer {
     msg: ChatMessage,
     context: { live: true } | { live: false; allMessages?: ChatMessage[]; index?: number },
   ): HTMLElement | null {
-    const text = msg.displayContent ?? extractUserDisplayContent(msg.content) ?? msg.content;
+    const text = getUserDisplayText(msg);
     if (msg.images && msg.images.length > 0) {
       const imagesEl = this.#renderMessageImages(msg.images);
       imagesEl.dataset.userMessageId = msg.id;

@@ -1,4 +1,4 @@
-import { extractUserDisplayContent } from '@/core/prompt/promptContext';
+import { getUserDisplayText } from '@/core/prompt/promptContext';
 import { type ChatMessage, type Conversation, isCanonicalUserMessage } from '@/core/types';
 import { getFinalResponseText } from '@/features/chat/rendering/ResponseLayout';
 
@@ -32,7 +32,7 @@ export function formatSessionSnapshot(
   const header = `# ${metadata.title}\n\nID: ${metadata.id}\nProvider: ${metadata.providerId}\nCreated: ${new Date(metadata.createdAt).toISOString()}\nUpdated: ${new Date(metadata.lastActivityAt).toISOString()}`;
   const formatTurn = (index: number): string => {
     const { user, responses } = turns[index];
-    const prompt = user.displayContent ?? extractUserDisplayContent(user.content) ?? user.content;
+    const prompt = getUserDisplayText(user);
     const final = responses.filter(message => message.role === 'assistant')
       .map(getFinalResponseText).filter(text => text.trim()).join('\n\n');
     const placeholder = responses.some(message => message.isInterrupt) ? '(interrupted)'
