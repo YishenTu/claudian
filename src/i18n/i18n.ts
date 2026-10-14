@@ -68,61 +68,24 @@ let currentLocale: Locale = DEFAULT_LOCALE;
  * Get a translation by key with optional parameters
  */
 export function t(key: TranslationKey, params?: Record<string, string | number>): string {
-  const dict = translations[currentLocale] ?? en;
-
-  const keys = key.split('.');
-  let value: unknown = dict;
-
-  for (const k of keys) {
-    if (value && typeof value === 'object' && k in value) {
-      value = (value as Record<string, unknown>)[k];
-    } else {
-      if (currentLocale !== DEFAULT_LOCALE) {
-        return tFallback(key, params);
-      }
-      return key;
-    }
-  }
-
-  if (typeof value !== 'string') {
-    return key;
-  }
-
-  if (params) {
-    return value.replace(/\{(\w+)\}/g, (match: string, param: string): string => {
-      const replacement = params[param];
-      return replacement !== undefined ? `${replacement}` : match;
-    });
-  }
-
-  return value;
+  let value = lookupTranslation(translations[currentLocale] ?? en, key);
+  if (value === undefined && currentLocale !== DEFAULT_LOCALE) value = lookupTranslation(en, key);
+  if (typeof value !== 'string') return key;
+  if (!params) return value;
+  return value.replace(/\{(\w+)\}/g, (match: string, param: string): string => {
+    const replacement = params[param];
+    return replacement !== undefined ? `${replacement}` : match;
+  });
 }
 
-function tFallback(key: TranslationKey, params?: Record<string, string | number>): string {
-  const dict = en;
-  const keys = key.split('.');
-  let value: unknown = dict;
-
-  for (const k of keys) {
-    if (value && typeof value === 'object' && k in value) {
-      value = (value as Record<string, unknown>)[k];
-    } else {
-      return key;
-    }
+/** Undefined means a missing path; null means a present non-string entry. */
+function lookupTranslation(dictionary: TranslationDictionary, key: TranslationKey): string | null | undefined {
+  let value: unknown = dictionary;
+  for (const segment of key.split('.')) {
+    if (!value || typeof value !== 'object' || !(segment in value)) return undefined;
+    value = (value as Record<string, unknown>)[segment];
   }
-
-  if (typeof value !== 'string') {
-    return key;
-  }
-
-  if (params) {
-    return value.replace(/\{(\w+)\}/g, (match: string, param: string): string => {
-      const replacement = params[param];
-      return replacement !== undefined ? `${replacement}` : match;
-    });
-  }
-
-  return value;
+  return typeof value === 'string' ? value : null;
 }
 
 /**

@@ -485,22 +485,6 @@ export class SubagentManager {
     this.sessionSubagentUpdates.clear();
   }
 
-  public orphanAllActive(): SubagentInfo[] {
-    const orphaned: SubagentInfo[] = [];
-
-    for (const record of this.asyncSubagents.values()) {
-      if (record.info.asyncStatus === 'pending' || record.info.asyncStatus === 'running') {
-        this.#markOrphaned(record);
-        orphaned.push(record.info);
-      }
-    }
-
-    this.deferredAsyncCompletions.clear();
-    this.outputToolToTaskToolUseId.clear();
-
-    return orphaned;
-  }
-
   public detachView(): void { this.cards.clear(); }
 
   /** Whether provider events can still change this task after its response settles. */
@@ -534,19 +518,6 @@ export class SubagentManager {
     this.outputToolToTaskToolUseId.clear();
     this.cards.clear();
     this.progress.clear();
-  }
-
-  // ============================================
-  // Private: State Transitions
-  // ============================================
-
-  #markOrphaned(record: AsyncSubagentRecord): void {
-    record.info.asyncStatus = 'orphaned';
-    record.info.status = 'error';
-    record.info.result = 'Conversation ended before task completed';
-    record.info.completedAt = Date.now();
-    record.terminalSource = 'local_error';
-    this.#publishAsyncState(record.info);
   }
 
   #transitionToError(record: AsyncSubagentRecord, errorResult: string): void {

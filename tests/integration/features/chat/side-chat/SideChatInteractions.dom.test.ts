@@ -55,7 +55,11 @@ it('keeps a child turn and detached approval alive, then restores the completed 
   const completedRoot = document.body.createDiv();
   runtime.attachPresentation({ component: new Component(), messagesEl: completedRoot, getPromptParentEl: () => completedRoot });
   await waitFor(() => expect(completedRoot.textContent).toContain('Before detachment. Reattached.'));
-  expect(runtime.source.messages.map(message => message.content)).toEqual(['Remember A', 'Noted A']);
+  const followUp = runtime.submit({ content: 'Continue after reattachment' });
+  await waitFor(() => expect(native.requests).toHaveLength(2));
+  expect(native.requests[1].conversationHistory?.slice(0, 2).map(message => message.content)).toEqual(['Remember A', 'Noted A']);
+  native.complete();
+  await followUp;
 });
 
 it('keeps replacement approval attention after a dismissed prompt with the same id settles', async () => {

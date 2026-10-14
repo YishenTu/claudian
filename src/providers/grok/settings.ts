@@ -103,11 +103,7 @@ export function getGrokProviderSettings(
     allowedModelIds.add(modelId);
   }
 
-  const visibleModels = normalizeGrokVisibleModels(
-    config.visibleModels,
-    allowedModelIds,
-    catalogModels.length > 0,
-  );
+  const visibleModels = normalizeGrokVisibleModels(config.visibleModels);
   const enabledModelIds = new Set(
     visibleModels ?? catalogModels.map(model => model.rawId),
   );
@@ -177,8 +173,6 @@ export function updateGrokProviderSettings(
   const hasCatalog = catalogModels.length > 0;
   const visibleModels = normalizeGrokVisibleModels(
     updates.visibleModels === undefined ? current.visibleModels : updates.visibleModels,
-    allowedModelIds,
-    hasCatalog,
   );
   const enabledModelIds = new Set(
     visibleModels ?? catalogModels.map(model => model.rawId),
@@ -235,11 +229,7 @@ export function updateCurrentGrokCatalog(
   return normalized;
 }
 
-export function normalizeGrokVisibleModels(
-  value: unknown,
-  allowedModelIds: ReadonlySet<string> = new Set(),
-  restrictToAllowed = allowedModelIds.size > 0,
-): string[] | null {
+export function normalizeGrokVisibleModels(value: unknown): string[] | null {
   if (value === null || value === undefined) {
     return null;
   }

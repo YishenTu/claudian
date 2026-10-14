@@ -1,8 +1,8 @@
-import { buildOpencodePromptBlocks, buildOpencodePromptText } from '@/providers/opencode/runtime/buildOpencodePrompt';
+import { buildOpencodePrompt } from '@/providers/opencode/runtime/buildOpencodePrompt';
 
-describe('buildOpencodePromptText', () => {
+describe('buildOpencodePrompt text', () => {
   it('appends Claudian XML context to the user query', () => {
-    const prompt = buildOpencodePromptText({
+    const result = buildOpencodePrompt({
       browserSelection: {
         selectedText: 'Browser quote',
         source: 'browser:https://example.com',
@@ -20,6 +20,9 @@ describe('buildOpencodePromptText', () => {
       text: 'Summarize this',
     });
 
+    const [block] = result.blocks;
+    const prompt = block.type === 'text' ? block.text : '';
+    expect(result.userText).toEqual({ start: 0, end: 'Summarize this'.length });
     expect(prompt).toContain('Summarize this');
     expect(prompt).toContain('<linked_content path="notes/&quot;today&quot; &amp; draft.md" />');
     expect(prompt).not.toMatch(/<(?:linked_note|current_note)\b/);
@@ -28,7 +31,7 @@ describe('buildOpencodePromptText', () => {
   });
 
   it('encodes Linked content without allowing CDATA to close early', () => {
-    const prompt = buildOpencodePromptText({
+    const result = buildOpencodePrompt({
       linkedContent: {
         content: 'Before\n]]>\nAfter',
         path: 'notes/"draft".md',
@@ -36,6 +39,9 @@ describe('buildOpencodePromptText', () => {
       text: 'Review this',
     });
 
+    const [block] = result.blocks;
+    const prompt = block.type === 'text' ? block.text : '';
+    expect(result.userText).toEqual({ start: 0, end: 'Review this'.length });
     expect(prompt).toContain(
       '<linked_content path="notes/&quot;draft&quot;.md">\n<![CDATA[Before\n]]]]><![CDATA[>\nAfter]]>\n</linked_content>',
     );
@@ -43,7 +49,7 @@ describe('buildOpencodePromptText', () => {
   });
 
   it('rebuilds prior conversation context when a native session must be recreated', () => {
-    const prompt = buildOpencodePromptText(
+    const result = buildOpencodePrompt(
       {
         text: 'Continue with the fix',
       },
@@ -63,15 +69,18 @@ describe('buildOpencodePromptText', () => {
       ],
     );
 
+    const [block] = result.blocks;
+    const prompt = block.type === 'text' ? block.text : '';
+    expect(result.userText).toEqual({ start: prompt.length - 'Continue with the fix'.length, end: prompt.length });
     expect(prompt).toContain('User: Inspect the bug');
     expect(prompt).toContain('Assistant: I found the failing path');
     expect(prompt).toContain('User: Continue with the fix');
   });
 });
 
-describe('buildOpencodePromptBlocks', () => {
+describe('buildOpencodePrompt images', () => {
   it('includes image attachments after the main text block', () => {
-    const blocks = buildOpencodePromptBlocks({
+    const { blocks } = buildOpencodePrompt({
       images: [{
         data: 'base64-image',
         id: 'img-1',

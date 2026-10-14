@@ -188,32 +188,6 @@ describe('ComposerDropdownController', () => {
       controller.destroy();
     });
 
-    it('loads a selected folder immediately even for a debounced source', async () => {
-      const input = createInput();
-      const loadFolder = jest.fn().mockResolvedValue([
-        { id: 'alice', kind: 'value', label: 'Alice', replacement: '@Agents/alice ' },
-      ]);
-      const mention = source('@', [{
-        id: 'agents',
-        inputPrefix: 'Agents/',
-        kind: 'folder',
-        label: 'Agents',
-        load: loadFolder,
-      }], 'debounced');
-      const controller = new ComposerDropdownController(createMockEl(), input, [mention]);
-
-      input.value = '@';
-      input.selectionStart = input.selectionEnd = 1;
-      controller.handleInputChange();
-      jest.advanceTimersByTime(200);
-      await Promise.resolve();
-      controller.handleKeydown(key('Enter'));
-
-      expect(loadFolder).toHaveBeenCalledTimes(1);
-      expect(loadFolder).toHaveBeenCalledWith('', expect.any(AbortSignal));
-      controller.destroy();
-    });
-
     it('defers real Vault mention work and preserves its limit, sorting, and selection', async () => {
       const input = createInput();
       const container = createMockEl();
@@ -389,67 +363,6 @@ describe('ComposerDropdownController', () => {
 
     controller.handleKeydown(key('Enter'));
     expect(input.value).toBe('@new ');
-  });
-
-  it('opens a folder and Escape returns to the root menu', async () => {
-    const input = createInput();
-    const containerEl = createMockEl();
-    const folderItems: readonly ComposerDropdownItem[] = [
-      { id: 'alice', kind: 'value', label: 'Alice', replacement: "@Alice's Changes " },
-    ];
-    const mention = source('@', [{
-      id: 'members',
-      kind: 'folder',
-      label: "Member's Changes",
-      load: jest.fn().mockResolvedValue(folderItems),
-    }]);
-    const controller = new ComposerDropdownController(containerEl, input, [mention]);
-
-    input.value = '@';
-    input.selectionStart = input.selectionEnd = 1;
-    controller.handleInputChange();
-    await Promise.resolve();
-    controller.handleKeydown(key('Enter'));
-    await Promise.resolve();
-
-    const labels = () => containerEl
-      .querySelectorAll('.claudian-composer-dropdown-label')
-      .map((el: { textContent: string }) => el.textContent);
-    expect(labels()).toEqual(['Alice']);
-    controller.handleKeydown(key('Escape'));
-    await Promise.resolve();
-    expect(labels()).toEqual(["Member's Changes"]);
-    expect(controller.isVisible()).toBe(true);
-  });
-
-  it('keeps a folder active while typing through a prefix containing spaces', async () => {
-    const input = createInput();
-    const loadFolder = jest.fn().mockResolvedValue([
-      { id: 'alice', kind: 'value', label: 'Alice', replacement: "@Alice's Changes " },
-    ]);
-    const mention = source('@', [{
-      id: 'members',
-      inputPrefix: "Member's Changes/",
-      kind: 'folder',
-      label: "Member's Changes",
-      load: loadFolder,
-    }]);
-    const controller = new ComposerDropdownController(createMockEl(), input, [mention]);
-    input.value = '@';
-    input.selectionStart = input.selectionEnd = 1;
-    controller.handleInputChange();
-    await Promise.resolve();
-    controller.handleKeydown(key('Enter'));
-    await Promise.resolve();
-
-    input.value += 'ali';
-    input.selectionStart = input.selectionEnd = input.value.length;
-    controller.handleInputChange();
-    await Promise.resolve();
-
-    expect(loadFolder).toHaveBeenLastCalledWith('ali', expect.any(AbortSignal));
-    expect(controller.isVisible()).toBe(true);
-    controller.destroy();
   });
 
   it('destroy is idempotent and fences later results', async () => {

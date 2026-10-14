@@ -11,7 +11,7 @@ type LinkResolver = (
 // Mock App and vault for testing
 function createMockApp(files: Map<string, string> = new Map(), resolveLink?: LinkResolver): App {
   const mockFiles = new Map<string, TFile>();
-  files.forEach((resourcePath, filePath) => {
+  files.forEach((_resourcePath, filePath) => {
     mockFiles.set(filePath, {
       path: filePath,
       basename: filePath.split('/').pop()?.replace(/\.[^.]+$/, '') || filePath,

@@ -223,7 +223,7 @@ it.each([false, true])('dispatches queued main input to main with side working=%
   await waitFor(() => expect(harness.backend.latest.requests).toHaveLength(sideWorking ? 2 : 1));
   routing.controller.queue.enqueue(createQueuedMessage('Queued main work', { text: 'Queued main work', images: undefined }));
   harness.inputEl.value = 'Unsent side draft';
-  routing.controller.resumeQueuedTurnAfterIntentAdmission();
+  routing.controller.queue.scheduleContinuation();
 
   try {
     await waitFor(() => expect(routing.mainExecutions).toEqual(['Queued main work']));
@@ -272,7 +272,7 @@ it('keeps unsent side attachments out of a text-only queued main message', async
   const sideImage = { id: 'side-image', name: 'side.png', mediaType: 'image/png', data: 'c2lkZQ==' };
   harness.imageContextManager.setImages([sideImage]);
   routing.controller.queue.enqueue(createQueuedMessage('Text-only main work', { text: 'Text-only main work', images: undefined }));
-  routing.controller.resumeQueuedTurnAfterIntentAdmission();
+  routing.controller.queue.scheduleContinuation();
   await waitFor(() => expect(routing.mainExecutions).toEqual(['Text-only main work']));
   expect(routing.mainMessages.find(message => message.role === 'user')?.images).toBeUndefined();
   expect(harness.imageContextManager.getAttachedImages()).toEqual([sideImage]);
@@ -289,7 +289,7 @@ it.each(['initialization', 'handoff'] as const)('restores a failed main queue to
   const sideImage = { id: 'side-image', name: 'side.png', mediaType: 'image/png', data: 'c2lkZQ==' };
   harness.imageContextManager.setImages([sideImage]);
   routing.controller.queue.enqueue(createQueuedMessage('Retry this in main', { text: 'Retry this in main', images: undefined }));
-  routing.controller.resumeQueuedTurnAfterIntentAdmission();
+  routing.controller.queue.scheduleContinuation();
   await waitFor(() => expect(routing.mainMessages.length).toBeGreaterThan(0));
   await waitFor(() => expect(routing.state.isStreaming).toBe(false));
   expect(harness.controller.destination).toBe('side');
@@ -318,7 +318,7 @@ it.each(['initialization', 'missing-coordinator', 'handoff'] as const)(
     const queuedImage = { id: 'queued-image', name: 'queued.png', mediaType: 'image/png' as const, data: 'cXVldWVk', size: 6, source: 'paste' as const };
     harness.imageContextManager.setImages([sideImage]);
     routing.controller.queue.enqueue(createQueuedMessage('Retry main work', { text: 'Retry main work', images: [queuedImage] }));
-    routing.controller.resumeQueuedTurnAfterIntentAdmission();
+    routing.controller.queue.scheduleContinuation();
     await waitFor(() => expect(routing.mainMessages.length).toBeGreaterThan(0));
     await waitFor(() => expect(routing.state.isStreaming).toBe(false));
     expect(harness.inputEl.value).toBe('Unsent side draft');
@@ -395,7 +395,7 @@ it.each([false, true])('queues collapsed side commands in order with captured in
   expect(harness.inputEl.value).toBe('Unsent side draft');
 });
 
-it.each(['discard', 'cancel', 'replace main'] as const)(
+it.each(['discard', 'cancel'] as const)(
   'clears queued side work on %s without sending it to another destination', async action => {
     const harness = createHarness();
     const routing = createRouting(harness);
@@ -408,7 +408,6 @@ it.each(['discard', 'cancel', 'replace main'] as const)(
     expect(harness.inputEl.value).toBe('');
 
     if (action === 'discard') await harness.controller.discard();
-    else if (action === 'replace main') harness.controller.handleConversationChanged('replacement');
     else harness.controller.cancelSide();
     await started;
     expect(native.requests).toHaveLength(1);

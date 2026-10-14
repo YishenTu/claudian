@@ -1,9 +1,6 @@
 import * as obsidian from 'obsidian';
 
 import {
-  extractBoolean,
-  extractString,
-  extractStringArray,
   parseFrontmatter,
 } from '@/features/agent-skills/frontmatter';
 
@@ -77,86 +74,6 @@ Prompt`;
     expect(result!.frontmatter.enabled).toBe(true);
     expect(result!.frontmatter.count).toBe(5);
     expect(result!.body).toBe('Prompt');
-  });
-});
-
-describe('extractString', () => {
-  it('extracts string value', () => {
-    expect(extractString({ key: 'hello' }, 'key')).toBe('hello');
-  });
-
-  it('returns undefined for missing key', () => {
-    expect(extractString({}, 'key')).toBeUndefined();
-  });
-
-  it('returns undefined for non-string value', () => {
-    expect(extractString({ key: 123 }, 'key')).toBeUndefined();
-  });
-
-  it('returns undefined for empty string', () => {
-    expect(extractString({ key: '' }, 'key')).toBeUndefined();
-  });
-});
-
-describe('extractStringArray', () => {
-  it.each([
-    ['null', null],
-    ['empty string', ''],
-    ['whitespace-only string', '   '],
-  ])('returns undefined for a %s field', (_label, value) => {
-    expect(extractStringArray({ tools: value }, 'tools')).toBeUndefined();
-  });
-
-  it('extracts YAML array while trimming and filtering entries', () => {
-    expect(extractStringArray({ tools: ['  Read  ', '', '  Grep  ', ''] }, 'tools'))
-      .toEqual(['Read', 'Grep']);
-  });
-
-  it('splits comma-separated string', () => {
-    expect(extractStringArray({ tools: 'Read, Grep, Glob' }, 'tools'))
-      .toEqual(['Read', 'Grep', 'Glob']);
-  });
-
-  it('wraps single string in array', () => {
-    expect(extractStringArray({ tools: 'Read' }, 'tools'))
-      .toEqual(['Read']);
-  });
-
-  it('returns undefined for missing key', () => {
-    expect(extractStringArray({}, 'tools')).toBeUndefined();
-  });
-
-  it('returns undefined for non-string/array value', () => {
-    expect(extractStringArray({ tools: 123 }, 'tools')).toBeUndefined();
-    expect(extractStringArray({ tools: true }, 'tools')).toBeUndefined();
-  });
-
-  it('filters empty entries from comma-separated string', () => {
-    expect(extractStringArray({ tools: 'Read,,Grep,' }, 'tools'))
-      .toEqual(['Read', 'Grep']);
-  });
-
-  it('converts non-string array elements to strings', () => {
-    expect(extractStringArray({ tools: [123, 'Read'] }, 'tools'))
-      .toEqual(['123', 'Read']);
-  });
-});
-
-describe('extractBoolean', () => {
-  it('extracts true', () => {
-    expect(extractBoolean({ flag: true }, 'flag')).toBe(true);
-  });
-
-  it('extracts false', () => {
-    expect(extractBoolean({ flag: false }, 'flag')).toBe(false);
-  });
-
-  it('returns undefined for missing key', () => {
-    expect(extractBoolean({}, 'flag')).toBeUndefined();
-  });
-
-  it('returns undefined for non-boolean', () => {
-    expect(extractBoolean({ flag: 'yes' }, 'flag')).toBeUndefined();
   });
 });
 

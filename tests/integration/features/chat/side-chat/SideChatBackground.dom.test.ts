@@ -87,7 +87,7 @@ it('does not render late events after side disposal', async () => {
   native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed' });
   await harness.controller.discard();
   expect(screen.queryByText('Discarded background answer')).toBeNull();
-  expect(harness.controller.hasSideChat).toBe(false);
+  expect(harness.controller.runtime).toBeNull();
 });
 
 it('settles an async subagent from a session notification after the requested turn', async () => {

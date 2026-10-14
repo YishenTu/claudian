@@ -3,8 +3,6 @@ import type { TFile } from 'obsidian';
 import { formatVaultFileMention } from '../mention/formatMention';
 import type { FolderMentionItem } from '../mention/types';
 import type {
-  ComposerDropdownFolderItem,
-  ComposerDropdownItem,
   ComposerDropdownSource,
   ComposerDropdownValueItem,
   ComposerSelectionAction,
@@ -19,9 +17,6 @@ export interface MentionSourceCallbacks {
 export interface MentionSourceOptions {
   readonly getSessionItems?: () => readonly (ComposerDropdownValueItem & { readonly mtime: number })[];
   readonly formatVaultFileMention?: (path: string) => string;
-  readonly getExtensionFolders?: (
-    signal: AbortSignal,
-  ) => Promise<readonly ComposerDropdownFolderItem[]> | readonly ComposerDropdownFolderItem[];
 }
 
 export class MentionSource implements ComposerDropdownSource {
@@ -35,8 +30,6 @@ export class MentionSource implements ComposerDropdownSource {
     private readonly options: MentionSourceOptions = {},
   ) {}
 
-  private extensionFoldersLoader = this.options.getExtensionFolders;
-
   destroy(): void {
     this.listeners.clear();
   }
@@ -44,20 +37,9 @@ export class MentionSource implements ComposerDropdownSource {
   load(
     match: ComposerTriggerMatch,
     signal: AbortSignal,
-  ): Promise<readonly ComposerDropdownItem[]> | readonly ComposerDropdownItem[] {
-    const query = match.query.toLocaleLowerCase();
-    const extensionFolders = this.extensionFoldersLoader?.(signal);
-    if (extensionFolders instanceof Promise) {
-      return extensionFolders
-        .then(folders => this.#finishRootItems(folders, query, signal))
-        .catch(error => {
-          if (signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
-            throw error;
-          }
-          return this.#finishRootItems([], query, signal);
-        });
-    }
-    return this.#finishRootItems(extensionFolders ?? [], query, signal);
+  ): readonly ComposerDropdownValueItem[] {
+    if (signal.aborted) throw new DOMException('Mention lookup was cancelled.', 'AbortError');
+    return this.#vaultItems(match.query.toLocaleLowerCase(), this.options.getSessionItems?.() ?? []);
   }
 
   match(input: string, cursor: number): ComposerTriggerMatch | null {
@@ -86,13 +68,6 @@ export class MentionSource implements ComposerDropdownSource {
     };
   }
 
-  setExtensionFoldersLoader(
-    loader: MentionSourceOptions['getExtensionFolders'],
-  ): void {
-    this.extensionFoldersLoader = loader;
-    this.notify();
-  }
-
   invalidate(): void {
     this.notify();
   }
@@ -100,20 +75,6 @@ export class MentionSource implements ComposerDropdownSource {
   subscribeInvalidation(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
-  }
-
-  #finishRootItems(
-    extensionFolders: readonly ComposerDropdownFolderItem[],
-    query: string,
-    signal: AbortSignal,
-  ): readonly ComposerDropdownItem[] {
-    if (signal.aborted) throw new DOMException('Mention lookup was cancelled.', 'AbortError');
-    const items: ComposerDropdownItem[] = [];
-    for (const folder of extensionFolders) {
-      if (folder.label.toLocaleLowerCase().includes(query)) items.push(folder);
-    }
-    items.push(...this.#vaultItems(query, this.options.getSessionItems?.() ?? []));
-    return items;
   }
 
   #vaultItems(query: string, sessions: readonly (ComposerDropdownValueItem & { readonly mtime: number })[]): readonly ComposerDropdownValueItem[] {

@@ -129,26 +129,20 @@ describe('codex settings', () => {
     ]);
   });
 
-  it('normalizes an explicit visibility filter against the discovered catalog', () => {
-    const discoveredModels = [
-      { model: 'gpt-5.5' },
-      { model: 'gpt-5.4-mini' },
-    ] as any;
-
+  it('normalizes explicit visible models while retaining unavailable selections', () => {
     expect(normalizeCodexVisibleModels(
-      [' gpt-5.4-mini ', 'missing-model', 'gpt-5.4-mini', 42],
-      discoveredModels,
+      [' gpt-5.4-mini ', 'missing-model', 'gpt-5.4-mini', 42]
     )).toEqual(['gpt-5.4-mini', 'missing-model']);
-    expect(normalizeCodexVisibleModels(undefined, discoveredModels)).toBeNull();
+    expect(normalizeCodexVisibleModels(undefined)).toBeNull();
   });
 
-  it('normalizes model aliases against the discovered catalog', () => {
+  it('normalizes model aliases while retaining unknown model ids', () => {
     expect(normalizeCodexModelAliases({
       ' gpt-5.5 ': '  Primary  ',
       'gpt-5.4-mini': ' ',
       missing: 'Missing',
       invalid: 42,
-    }, TEST_CODEX_CATALOG as any)).toEqual({
+    })).toEqual({
       'gpt-5.5': 'Primary', missing: 'Missing',
     });
   });

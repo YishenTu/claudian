@@ -121,11 +121,9 @@ export function createMockTab(options: Record<string, any>): any {
         cancelBranchDraft: jest.fn(),
       },
       inputController: {
-        resumeQueuedTurnAfterIntentAdmission: jest.fn(),
       },
       sideChatController: {
         destination: 'main',
-        handleConversationChanged: jest.fn(),
         runtime: null,
       },
     },

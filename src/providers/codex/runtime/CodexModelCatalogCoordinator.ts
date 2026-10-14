@@ -10,7 +10,6 @@ import { CodexMetadataTransitionGate } from '../metadata/CodexMetadataTransition
 import type { CodexDiscoveredModel } from '../models';
 import {
   getCodexProviderSettings,
-  normalizeCodexVisibleModels,
   updateCodexProviderSettings,
 } from '../settings';
 import {
@@ -264,33 +263,27 @@ export class CodexModelCatalogCoordinator {
       }
       const currentSettings = getCodexProviderSettings(settings);
       const currentModels = currentSettings.discoveredModels;
-      const visibleModels = normalizeCodexVisibleModels(
-        currentSettings.visibleModels,
-        models,
-      );
       const catalogChanged = !sameCatalog(currentModels, models);
-      const visibilityChanged = !sameCatalog(currentSettings.visibleModels, visibleModels);
       const fingerprintChanged = currentSettings.catalogFingerprint !== fingerprint;
       const timestampChanged = currentSettings.catalogTimestamp !== timestamp;
 
-      if (catalogChanged || visibilityChanged || fingerprintChanged || timestampChanged) {
+      if (catalogChanged || fingerprintChanged || timestampChanged) {
         updateCodexProviderSettings(settings, {
           discoveredModels: models,
-          visibleModels,
+          visibleModels: currentSettings.visibleModels,
           catalogFingerprint: fingerprint,
           catalogTimestamp: timestamp,
         });
       }
 
       const selectionChanged = ProviderSettingsCoordinator.normalizeAllModelVariants(settings);
-      const selectorStateChanged = visibilityChanged || selectionChanged;
       const shouldPersist = catalogChanged
-        || selectorStateChanged
+        || selectionChanged
         || fingerprintChanged
         || timestampChanged;
       refreshResult = {
         accepted: true,
-        changed: catalogChanged || selectorStateChanged,
+        changed: catalogChanged || selectionChanged,
         persistedSettingsChanged: shouldPersist,
       };
       return shouldPersist;

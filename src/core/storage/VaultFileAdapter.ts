@@ -130,32 +130,12 @@ export class VaultFileAdapter {
     }
   }
 
-  /** Fails silently if non-empty or missing. */
-  async deleteFolder(path: string): Promise<void> {
-    try {
-      if (await this.exists(path)) {
-        await this.app.vault.adapter.rmdir(path, false);
-      }
-    } catch {
-      // Non-critical: directory may not be empty
-    }
-  }
-
   async listFiles(folder: string): Promise<string[]> {
     if (!(await this.exists(folder))) {
       return [];
     }
     const listing = await this.app.vault.adapter.list(folder);
     return listing.files;
-  }
-
-  /** List subfolders in a folder. Returns relative paths from the folder. */
-  async listFolders(folder: string): Promise<string[]> {
-    if (!(await this.exists(folder))) {
-      return [];
-    }
-    const listing = await this.app.vault.adapter.list(folder);
-    return listing.folders;
   }
 
   /** Recursively list all files in a folder and subfolders. */

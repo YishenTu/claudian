@@ -31,7 +31,7 @@ describe('TurnQueue', () => {
 
   });
 
-  it('reschedules an automatically queued turn after intent admission reopens', async () => {
+  it('retains queued input when admission closes and allows its continuation to be rescheduled', async () => {
     let canStart = false;
     const fixture = createFixture({ canStartTurn: () => canStart });
     const scheduled: Array<() => void> = [];
@@ -46,7 +46,7 @@ describe('TurnQueue', () => {
     expect(fixture.state.queuedMessage).toMatchObject({ content: 'queued during close' });
 
     canStart = true;
-    fixture.controller.resumeQueuedTurnAfterIntentAdmission();
+    fixture.controller.queue.scheduleContinuation();
     expect(fixture.state.queuedMessage).toMatchObject({ content: 'queued during close' });
     scheduled.shift()?.();
     await waitForCall(fixture.coordinator.execute);
@@ -864,7 +864,8 @@ it('queuing another input must retain the running turn drain handle', async () =
     expect(fixture.state.queuedMessage?.content).toBe('queued follow-up');
     expect(fixture.state.isStreaming).toBe(true);
     let cancellationDrainFinished = false;
-    const drain = fixture.controller.cancelStreamingAndWait().then(() => { cancellationDrainFinished = true; });
+    const drain = fixture.session.turns.drain().then(() => { cancellationDrainFinished = true; });
+    fixture.controller.cancelStreaming();
     for (let tick = 0; tick < 20; tick++) await Promise.resolve();
     expect(cancellationDrainFinished).toBe(false);
     void drain;

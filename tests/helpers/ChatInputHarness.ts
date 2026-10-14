@@ -198,7 +198,7 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
   // Conversation creation stays real; persistence and reset are observed at their boundary.
   const conversationController = new ConversationController({
     plugin: plugin as any, state, renderer: deps.renderer, drafts: ports.drafts, session,
-    subagentManager: { orphanAllActive: jest.fn(), clear: jest.fn() } as any,
+    subagentManager: { clear: jest.fn() } as any,
     getWelcomeEl: () => null, setWelcomeEl: () => undefined, getMessagesEl: deps.getMessagesEl,
     getLinkedContentController: () => deps.getLinkedContentController(),
     ensureExecutionInitialized: () => deps.ensureExecutionInitialized(),

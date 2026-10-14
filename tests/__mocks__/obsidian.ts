@@ -198,7 +198,7 @@ export class MarkdownView {
 }
 
 export class Setting {
-  constructor(containerEl: any) {}
+  constructor(_containerEl: any) {}
   setName = jest.fn().mockReturnThis();
   setDesc = jest.fn().mockReturnThis();
   addToggle = jest.fn().mockReturnThis();

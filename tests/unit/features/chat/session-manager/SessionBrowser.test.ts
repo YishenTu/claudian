@@ -73,7 +73,6 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
       renderMessages: jest.fn().mockReturnValue(createMockEl()),
     } as any,
     subagentManager: {
-      orphanAllActive: jest.fn(),
       clear: jest.fn(),
     } as any,
     getHistoryDropdown: () => historyDropdown as any,

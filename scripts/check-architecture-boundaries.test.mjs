@@ -511,10 +511,15 @@ test('Bun lock parsing accepts the repository JSONC shape without weakening JSON
     workspaces: { '': { dependencies: { 'smol-toml': '1.7.1' } } },
     packages: { 'smol-toml': ['smol-toml@1.7.1'] },
   });
-  assert.throws(
-    () => parseBunLock('{ "packages": /* unsupported */ {} }'),
-    /bun\.lock is not valid JSONC/,
-  );
+  const prototypeKey = '{"__proto__": {"packages": {}}, "constructor": "literal"}';
+  assert.deepEqual(parseBunLock(prototypeKey), JSON.parse(prototypeKey));
+  for (const invalid of [
+    '{ "packages": /* unsupported */ {} }',
+    '{ "packages": {} // unsupported\n}',
+    '', '{', '{"packages":}', '{"packages":{} "other":1}', '{} trailing',
+  ]) {
+    assert.throws(() => parseBunLock(invalid), /bun\.lock is not valid JSONC/);
+  }
 });
 
 test('production artifact entry rejects dependency drift before emitting main.js', () => {

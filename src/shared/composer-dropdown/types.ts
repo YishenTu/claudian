@@ -39,21 +39,6 @@ export interface ComposerDropdownValueItem {
   readonly value?: unknown;
 }
 
-export interface ComposerDropdownFolderItem {
-  readonly className?: string;
-  readonly detail?: string;
-  readonly disabled?: boolean;
-  readonly icon?: string;
-  readonly id: string;
-  readonly inputPrefix?: string;
-  readonly kind: 'folder';
-  readonly label: string;
-  load(
-    query: string,
-    signal: AbortSignal,
-  ): Promise<readonly ComposerDropdownItem[]> | readonly ComposerDropdownItem[];
-}
-
 export interface ComposerDropdownStatusItem {
   readonly className?: string;
   readonly detail?: string;
@@ -65,7 +50,6 @@ export interface ComposerDropdownStatusItem {
 
 export type ComposerDropdownItem =
   | ComposerDropdownValueItem
-  | ComposerDropdownFolderItem
   | ComposerDropdownStatusItem;
 
 export type ComposerSelectionAction =

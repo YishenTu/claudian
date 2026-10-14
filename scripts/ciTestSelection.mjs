@@ -45,7 +45,7 @@ const scriptConsumers = new Map(suites.scriptTests.flatMap(file => [
 const globalInputs = new Set([
   'src/main.ts', 'tests/setupWindow.ts', 'scripts/ciTestSelection.mjs',
   'scripts/run-tests.js', 'scripts/run-jest.js', 'scripts/run-cross-platform-tests.js',
-  'scripts/testSuites.cjs', 'tests/tsconfig.json',
+  'scripts/testSuites.cjs',
 ]);
 
 export function selectCiTests({ changes, relatedTests, eventName }) {

@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import pair from '@test/fixtures/providers/codex/turn-stats-pair.json';
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
+import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 
 import type {
   ProviderExecutionEvent,
@@ -69,7 +70,6 @@ jest.mock('@/providers/codex/runtime/codexAppServerSupport', () => {
 });
 
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
-import { parseCodexSessionContent } from '@/providers/codex/history/CodexHistoryStore';
 import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
 import { CodexRPCResponseError } from '@/providers/codex/runtime/CodexRPCTransport';
 import { updateCodexProviderSettings } from '@/providers/codex/settings';

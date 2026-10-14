@@ -45,10 +45,7 @@ export const DEFAULT_PI_PROVIDER_SETTINGS: Readonly<PersistedPiProviderSettings>
   visibleModels: [],
 });
 
-export function normalizePiVisibleModels(
-  value: unknown,
-  discoveredModels: PiDiscoveredModel[] = [],
-): string[] {
+export function normalizePiVisibleModels(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -79,7 +76,7 @@ export function getPiProviderSettings(settings: Record<string, unknown>): PiProv
   const config = getProviderConfig(settings, 'pi');
   const cliPathsByHost = normalizeHostnameStringMap(config.cliPathsByHost);
   const discoveredModels = normalizePiDiscoveredModels(config.discoveredModels ?? config.selectedModels);
-  const visibleModels = normalizePiVisibleModels(config.visibleModels, discoveredModels);
+  const visibleModels = normalizePiVisibleModels(config.visibleModels);
   const persistableIds = getPersistablePiModelIds(settings, visibleModels);
 
   return {
@@ -116,13 +113,8 @@ export function updatePiProviderSettings(
 ): PiProviderSettings {
   const current = getPiProviderSettings(settings);
   const hostnameKey = getInstallationKey();
-  const nextDiscoveredModels = normalizePiDiscoveredModels(
-    updates.discoveredModels ?? current.discoveredModels,
-  );
-  const nextVisibleModels = normalizePiVisibleModels(
-    updates.visibleModels ?? current.visibleModels,
-    nextDiscoveredModels,
-  );
+  const nextDiscoveredModels = normalizePiDiscoveredModels(updates.discoveredModels ?? current.discoveredModels,);
+  const nextVisibleModels = normalizePiVisibleModels(updates.visibleModels ?? current.visibleModels);
   const persistableIds = getPersistablePiModelIds(settings, nextVisibleModels);
   const nextModelAliases = pruneMapToPersistableIds(
     normalizePiModelAliasesForPersistableIds(

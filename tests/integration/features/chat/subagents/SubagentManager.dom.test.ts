@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
+import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, screen, within } from '@testing-library/dom';
 import fs from 'fs';
@@ -21,7 +22,6 @@ import { createAsyncSubagentBlock, createSubagentBlock, updateAsyncSubagentBlock
 import { StreamController } from '@/features/chat/turns/StreamController';
 import { ClaudeTaskResultInterpreter } from '@/providers/claude/runtime/ClaudeTaskResultInterpreter';
 import { CodexSubagentTracker } from '@/providers/codex/execution/CodexSubagentTracker';
-import { parseCodexSessionContent } from '@/providers/codex/history/CodexHistoryStore';
 import { codexSubagentLifecycleAdapter } from '@/providers/codex/normalization/codexSubagentNormalization';
 import type { Thread } from '@/providers/codex/runtime/codexAppServerTypes';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';

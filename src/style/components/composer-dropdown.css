@@ -51,22 +51,16 @@
   background: transparent;
 }
 
-.claudian-composer-dropdown-icon,
-.claudian-composer-dropdown-folder-icon {
+.claudian-composer-dropdown-icon {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   color: var(--text-muted);
 }
 
-.claudian-composer-dropdown-icon svg,
-.claudian-composer-dropdown-folder-icon svg {
+.claudian-composer-dropdown-icon svg {
   width: 14px;
   height: 14px;
-}
-
-.claudian-composer-dropdown-folder-icon {
-  margin-left: auto;
 }
 
 .claudian-composer-dropdown-copy {

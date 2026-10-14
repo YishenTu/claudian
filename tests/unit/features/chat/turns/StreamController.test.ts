@@ -712,7 +712,7 @@ describe('StreamController - Text Content', () => {
       deps.state.currentContentEl = parentEl;
       deps.getProviderId = () => 'opencode';
       const genericEl = createMockEl();
-      renderToolCall.mockImplementationOnce((parent: any, toolCall: ToolCallInfo) => {
+      renderToolCall.mockImplementationOnce((parent: any) => {
         mountMockChild(parent, genericEl);
 
         return genericEl;
@@ -2172,7 +2172,7 @@ describe('StreamController - Text Content', () => {
       const genericEl = createMockEl();
       const writeEditEl = createMockEl();
       let writeEditState: any;
-      renderToolCall.mockImplementationOnce((parent: any, toolCall: ToolCallInfo) => {
+      renderToolCall.mockImplementationOnce((parent: any) => {
         mountMockChild(parent, genericEl);
 
         return genericEl;
@@ -2270,7 +2270,7 @@ describe('StreamController - Text Content', () => {
         mountMockChild(parent, writeEditEl);
         return writeEditState;
       });
-      renderToolCall.mockImplementationOnce((parent: any, toolCall: ToolCallInfo) => {
+      renderToolCall.mockImplementationOnce((parent: any) => {
         mountMockChild(parent, genericEl);
 
         return genericEl;
@@ -2369,7 +2369,7 @@ describe('StreamController - Text Content', () => {
       const bashEl = createMockEl();
       const unknownEl = createMockEl();
       for (const element of [initialEl, bashEl, unknownEl]) {
-        renderToolCall.mockImplementationOnce((parent: any, toolCall: ToolCallInfo) => {
+        renderToolCall.mockImplementationOnce((parent: any) => {
           mountMockChild(parent, element);
 
           return element;
@@ -2468,7 +2468,7 @@ describe('StreamController - Text Content', () => {
       const initialEl = createMockEl();
       const todoEl = createMockEl();
       for (const element of [initialEl, todoEl]) {
-        renderToolCall.mockImplementationOnce((parent: any, toolCall: ToolCallInfo) => {
+        renderToolCall.mockImplementationOnce((parent: any) => {
           mountMockChild(parent, element);
 
           return element;
@@ -2504,7 +2504,7 @@ describe('StreamController - Text Content', () => {
       const initialEl = createMockEl();
       const askEl = createMockEl();
       for (const element of [initialEl, askEl]) {
-        renderToolCall.mockImplementationOnce((parent: any, toolCall: ToolCallInfo) => {
+        renderToolCall.mockImplementationOnce((parent: any) => {
           mountMockChild(parent, element);
 
           return element;
@@ -3003,7 +3003,7 @@ describe('StreamController - Text Content', () => {
           labelEl: { setText: jest.fn() },
         };
       });
-      renderToolCall.mockImplementationOnce((parent: any, toolCall: ToolCallInfo) => {
+      renderToolCall.mockImplementationOnce((parent: any) => {
         mountMockChild(parent, laterToolEl);
 
         return laterToolEl;
@@ -3043,7 +3043,7 @@ describe('StreamController - Text Content', () => {
       deps.state.currentContentEl = parentEl;
       const genericEl = createMockEl();
       const subagentEl = createMockEl();
-      renderToolCall.mockImplementationOnce((parent: any, toolCall: ToolCallInfo) => {
+      renderToolCall.mockImplementationOnce((parent: any) => {
         mountMockChild(parent, genericEl);
 
         return genericEl;
@@ -3200,7 +3200,7 @@ describe('StreamController - Text Content', () => {
         },
         labelEl: { setText: jest.fn() },
       };
-      renderToolCall.mockImplementationOnce((parent: any, toolCall: ToolCallInfo) => {
+      renderToolCall.mockImplementationOnce((parent: any) => {
         mountMockChild(parent, waitEl);
 
         return waitEl;
@@ -3274,7 +3274,7 @@ describe('StreamController - Text Content', () => {
           labelEl: { setText: jest.fn() },
         };
       });
-      renderToolCall.mockImplementationOnce((parent: any, toolCall: ToolCallInfo) => {
+      renderToolCall.mockImplementationOnce((parent: any) => {
         mountMockChild(parent, waitEl);
 
         return waitEl;
@@ -3382,7 +3382,7 @@ describe('StreamController - Text Content', () => {
           labelEl: { setText: jest.fn() },
         };
       });
-      renderToolCall.mockImplementationOnce((parent: any, toolCall: ToolCallInfo) => {
+      renderToolCall.mockImplementationOnce((parent: any) => {
         mountMockChild(parent, outputEl);
 
         return outputEl;
@@ -3488,10 +3488,7 @@ describe('StreamController - Text Content', () => {
         labelEl: { setText: jest.fn() },
       };
       createAsyncSubagentBlock.mockReturnValueOnce(asyncState);
-      renderToolCall.mockImplementationOnce((_parent: any, toolCall: ToolCallInfo) => {
-
-        return outputEl;
-      });
+      renderToolCall.mockReturnValueOnce(outputEl);
       const msg = createTestMessage();
 
       await controller.handleStreamChunk({

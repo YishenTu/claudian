@@ -555,7 +555,7 @@ it.each([true, false])('enables branches after switching and native history corr
   let welcomeEl: HTMLElement | null = null;
   const controller = new ConversationController({ plugin, state, renderer,
     ...createConversationPorts({ state, getInputEl: () => inputEl, getImageContextManager: () => null }),
-    subagentManager: { orphanAllActive: jest.fn(), clear: jest.fn() },
+    subagentManager: { clear: jest.fn() },
     getInputEl: () => inputEl, getMessagesEl: () => messagesEl,
     getWelcomeEl: () => welcomeEl, setWelcomeEl: (el: HTMLElement) => { welcomeEl = el; },
     getLinkedContentController: () => ({ lock: jest.fn() }),

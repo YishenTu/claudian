@@ -1,7 +1,6 @@
 export const ACP_PROTOCOL_VERSION = 1 as const;
 
 export type ACPProtocolVersion = typeof ACP_PROTOCOL_VERSION;
-export type ACPRequestId = number | string | null;
 export type ACPSessionId = string;
 export type ACPSessionModeId = string;
 export type ACPSessionConfigId = string;
@@ -9,7 +8,6 @@ export type ACPSessionConfigValueId = string;
 export type ACPToolCallId = string;
 export type ACPPermissionOptionId = string;
 export type ACPPositionEncodingKind = 'utf-16' | 'utf-32' | 'utf-8';
-export type ACPRole = 'assistant' | 'user';
 export type ACPStopReason = string;
 export type ACPMetadata = Record<string, unknown>;
 

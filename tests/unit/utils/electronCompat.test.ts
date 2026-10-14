@@ -58,7 +58,7 @@ describe('patchSetMaxListenersForElectron', () => {
     // Force a non-eventTargets error by passing something that triggers a different check
     const origSML = events.setMaxListeners;
     const throwingFn = Object.assign(
-      (...args: unknown[]) => {
+      () => {
         // Simulate a different error from setMaxListeners internals
         throw new TypeError('some other TypeError');
       },

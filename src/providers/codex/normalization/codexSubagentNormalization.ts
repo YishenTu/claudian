@@ -296,10 +296,6 @@ export function buildCodexSubagentInfo(
   };
 }
 
-export function isCodexSubagentSpawnToolCall(toolCall: ToolCallInfo): boolean {
-  return toolCall.name === TOOL_SPAWN_AGENT;
-}
-
 function getCodexLifecycleTargetIds(toolCall: ToolCallInfo): string[] {
   const targetIds = new Set(Object.keys(extractCodexWaitResult(toolCall.result).statuses));
   for (const key of ['id', 'target', 'agent_id', 'task_name'] as const) {

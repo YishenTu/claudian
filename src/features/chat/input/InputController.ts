@@ -311,12 +311,6 @@ export class InputController {
     return this.preparations.isPreparing('main');
   }
 
-  resumeQueuedTurnAfterIntentAdmission(): void {
-    if (!this.deps.canStartTurn()) return;
-    if (this.turns.isActive || !this.queue.message) return;
-    this.queue.scheduleContinuation();
-  }
-
   handleExecutionEvent(event: ProviderExecutionEvent): Promise<void> {
     return this.execution.handleEvent(event);
   }
@@ -625,13 +619,6 @@ export class InputController {
     this.steering.clearCurrentUi();
     this.deps.streamController.thinkingIndicator.hide();
     return true;
-  }
-
-  /** Cancels the active turn and waits for its cleanup and conversation persistence. */
-  async cancelStreamingAndWait(): Promise<void> {
-    const activeTurn = Promise.allSettled([this.turns.drain(), this.preparations.settled()]);
-    this.cancelStreaming();
-    await activeTurn;
   }
 
   dismissPendingApproval(): void {

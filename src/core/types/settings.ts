@@ -79,11 +79,6 @@ export type SessionManagerOrganization = 'list' | 'linked-content';
 export type SessionManagerSort = 'last-updated' | 'created';
 export type SessionAutoArchiveAfter = 'off' | '7d' | '14d' | '30d';
 
-export interface LegacyLinkedContentSettingsInput {
-  sessionManagerOrganization?: SessionManagerOrganization | 'linked-note';
-  pinnedLinkedNotePaths?: unknown;
-}
-
 /** Forced provider transition invalidated a parked auxiliary continuation. */
 export interface AuxiliaryContinuityReset {
   success: false;
@@ -93,9 +88,6 @@ export interface AuxiliaryContinuityReset {
   insertedText?: never;
   clarification?: never;
 }
-
-/** Safe/YOLO permission values shared by providers with a two-mode control. */
-export type PermissionMode = 'yolo' | 'normal';
 
 /** Scope for environment variable storage and snippets. */
 export type EnvironmentScope = 'shared' | `provider:${string}`;

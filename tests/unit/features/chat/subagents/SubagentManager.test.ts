@@ -412,25 +412,6 @@ describe('SubagentManager', () => {
       expect(manager.getByTaskId('task-err')).toBe(errored);
     });
 
-    it('marks pending and running async subagents as orphaned', () => {
-      const { manager } = createManager();
-      const parentEl = createMockEl();
-
-      manager.handleTaskToolUse('pending-task', { description: 'Pending task', run_in_background: true }, parentEl);
-      manager.handleTaskToolUse('running-task', { description: 'Running task', run_in_background: true }, parentEl);
-      manager.handleTaskToolResult('running-task', JSON.stringify({ agent_id: 'agent-running' }));
-
-      const orphaned = manager.orphanAllActive();
-
-      expect(orphaned).toHaveLength(2);
-      orphaned.forEach((subagent) => {
-        expect(subagent.asyncStatus).toBe('orphaned');
-        expect(subagent.result).toContain('Conversation ended');
-      });
-      expect(manager.getByTaskId('pending-task')?.asyncStatus).toBe('orphaned');
-      expect(manager.getByTaskId('running-task')?.asyncStatus).toBe('orphaned');
-    });
-
     it('ignores Task results for unknown tasks', () => {
       const { manager } = createManager();
 

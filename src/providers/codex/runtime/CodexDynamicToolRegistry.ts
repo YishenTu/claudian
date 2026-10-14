@@ -76,10 +76,6 @@ export class CodexDynamicToolRegistry {
     return specs;
   }
 
-  isIncludedInThreadStart(namespace: string | null, tool: string): boolean {
-    return this.registrations.get(registrationKey(namespace, tool))?.includeInThreadStart === true;
-  }
-
   async execute(params: DynamicToolCallParams, context: CodexDynamicToolContext): Promise<DynamicToolCallResponse> {
     const registration = this.registrations.get(registrationKey(params.namespace, params.tool));
     if (!registration) {

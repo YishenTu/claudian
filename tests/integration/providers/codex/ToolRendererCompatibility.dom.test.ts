@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
+import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
@@ -16,7 +17,6 @@ import { renderStoredToolCall, renderToolCall, updateToolCallResult } from '@/fe
 import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
-import { parseCodexSessionContent } from '@/providers/codex/history/CodexHistoryStore';
 import { formatCodexQuestionReply } from '@/providers/codex/normalization/codexQuestionNormalization';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 

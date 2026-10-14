@@ -5,17 +5,6 @@ import type { ConversationControllerDeps } from '@/features/chat/conversation/Co
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { ChatState } from '@/features/chat/state/ChatState';
 
-export function deferred<T>(): {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-} {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
-}
-
 export type FixtureDeps = ConversationControllerDeps & { renderer: NonNullable<ConversationControllerDeps['renderer']>; session: ChatSessionRuntime; getInputEl: () => HTMLTextAreaElement; getImageContextManager: () => any };
 
 /** Conversation controller deps with real draft, session, and state owners. */
@@ -74,7 +63,6 @@ export function createConversationControllerDeps(
       refreshBranchButtonState: jest.fn(),
     } as any,
     subagentManager: {
-      orphanAllActive: jest.fn(),
       clear: jest.fn(),
     } as any,
     getWelcomeEl: () => welcomeEl,

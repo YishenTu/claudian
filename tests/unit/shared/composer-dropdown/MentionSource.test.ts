@@ -76,35 +76,6 @@ describe('MentionSource', () => {
     value.destroy();
   });
 
-  it('loads async extension folders without owning their feature semantics', async () => {
-    const { source: value } = source();
-    value.setExtensionFoldersLoader(async () => [{
-      id: 'extension',
-      kind: 'folder',
-      label: "Member's Changes",
-      load: () => [],
-    }]);
-    const items = await value.load(value.match('@member', 7)!, new AbortController().signal);
-    expect(items).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'extension', label: "Member's Changes" }),
-    ]));
-    value.destroy();
-  });
-
-  it('keeps base mentions available when an optional extension fails', async () => {
-    const { source: value } = source();
-    value.setExtensionFoldersLoader(async () => {
-      throw new Error('Reference source unavailable');
-    });
-
-    const items = await value.load(value.match('@alp', 4)!, new AbortController().signal);
-
-    expect(items).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: 'notes/Alpha.md' }),
-    ]));
-    value.destroy();
-  });
-
   it('resolves files inside a Vault Agents folder', async () => {
     const { source: value } = source({
       getCachedVaultFiles: () => [file('Agents/reviewer.md')],

@@ -5,7 +5,6 @@ import type {
 
 /** Stored values; `normal` (ask) and `yolo` (always-approve) predate the full native set. */
 export const GROK_PERMISSION_MODES = ['auto', 'normal', 'acceptEdits', 'yolo'] as const;
-export type GrokPermissionMode = typeof GROK_PERMISSION_MODES[number];
 
 export const GROK_PERMISSION_MODE_POLICY: ProviderPermissionModePolicy = Object.freeze({
   values: GROK_PERMISSION_MODES,

@@ -844,7 +844,7 @@ describe('SessionManagerSurface history dropdown', () => {
 
     expect(render).not.toHaveBeenCalled();
 
-    h.surface.toggleDropdown();
+    h.historyButton.click();
 
     expect(h.historyMenu.hasClass('visible')).toBe(true);
     expect(render).toHaveBeenCalledTimes(1);
@@ -854,7 +854,7 @@ describe('SessionManagerSurface history dropdown', () => {
 
     expect(render).toHaveBeenCalledTimes(2);
 
-    h.surface.toggleDropdown();
+    h.historyButton.click();
     expect(h.historyMenu.hasClass('visible')).toBe(false);
     expect(signalOf(0).aborted).toBe(true);
     expect(signalOf(1).aborted).toBe(true);
@@ -862,14 +862,14 @@ describe('SessionManagerSurface history dropdown', () => {
 
     expect(render).toHaveBeenCalledTimes(2);
 
-    h.surface.toggleDropdown();
+    h.historyButton.click();
 
     expect(render).toHaveBeenCalledTimes(3);
     expect(signalOf(2).aborted).toBe(false);
 
     // Dismissing keeps the current render, so reopening does not rebuild the list.
     h.surface.dismissDropdown();
-    h.surface.toggleDropdown();
+    h.historyButton.click();
     expect(h.historyMenu.hasClass('visible')).toBe(true);
     expect(render).toHaveBeenCalledTimes(3);
     expect(signalOf(2).aborted).toBe(false);
@@ -933,7 +933,7 @@ describe('SessionManagerSurface wide layout transitions', () => {
     expect(signalOf(render, 0).aborted).toBe(true);
     // The cancelled render left the list stale, so the next open renders it again.
     h.state.wide = false;
-    h.surface.toggleDropdown();
+    h.historyButton.click();
     expect(render).toHaveBeenCalledTimes(2);
   });
 

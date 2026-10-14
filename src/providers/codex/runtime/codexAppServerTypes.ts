@@ -6,39 +6,10 @@
 // JSON-RPC base
 // ---------------------------------------------------------------------------
 
-export interface JSONRPCRequest {
-  jsonrpc: '2.0';
-  id: number;
-  method: string;
-  params?: unknown;
-}
-
-export interface JSONRPCNotification {
-  jsonrpc: '2.0';
-  method: string;
-  params?: unknown;
-}
-
-export interface JSONRPCResponse {
-  jsonrpc: '2.0';
-  id: number;
-  result?: unknown;
-  error?: JSONRPCError;
-}
-
 export interface JSONRPCError {
   code: number;
   message: string;
   data?: unknown;
-}
-
-// ---------------------------------------------------------------------------
-// Initialize
-// ---------------------------------------------------------------------------
-
-export interface InitializeParams {
-  clientInfo: { name: string; version: string };
-  capabilities: { experimentalApi?: boolean };
 }
 
 export interface InitializeResult {
@@ -338,15 +309,6 @@ export interface SkillsListEntry {
   errors: SkillErrorInfo[];
 }
 
-export interface SkillsListParams {
-  cwds?: string[];
-  forceReload?: boolean;
-  perCwdExtraUserRoots?: Array<{
-    cwd: string;
-    extraUserRoots: string[];
-  }> | null;
-}
-
 export interface SkillsListResult {
   data: SkillsListEntry[];
 }
@@ -404,25 +366,6 @@ export interface ConfigReadResult {
       exclude_slash_tmp?: boolean;
     } | null;
   };
-}
-
-// ---------------------------------------------------------------------------
-// thread/start
-// ---------------------------------------------------------------------------
-
-export interface ThreadStartParams {
-  model?: string;
-  cwd?: string;
-  approvalPolicy?: string;
-  approvalsReviewer?: string;
-  sandbox?: string;
-  serviceTier?: string | null;
-  baseInstructions?: string;
-  experimentalRawEvents?: boolean;
-  ephemeral?: boolean;
-  persistExtendedHistory?: boolean;
-  sandboxPolicy?: SandboxPolicy;
-  dynamicTools?: LegacyDynamicToolSpec[];
 }
 
 export interface DynamicToolFunctionSpec {
@@ -498,121 +441,22 @@ export type SandboxPolicy =
     networkAccess: string;
   };
 
-// ---------------------------------------------------------------------------
-// thread/resume
-// ---------------------------------------------------------------------------
-
-export interface ThreadResumeParams {
-  threadId: string;
-  model?: string;
-  approvalPolicy?: string;
-  approvalsReviewer?: string;
-  sandbox?: string;
-  serviceTier?: string | null;
-  baseInstructions?: string;
-  experimentalRawEvents?: boolean;
-  persistExtendedHistory?: boolean;
-}
-
 export type ThreadResumeResult = ThreadStartResult;
 
-// ---------------------------------------------------------------------------
-// thread/fork
-// ---------------------------------------------------------------------------
-
-export interface ThreadForkParams {
-  threadId: string;
-}
-
 export type ThreadForkResult = ThreadStartResult;
-
-// ---------------------------------------------------------------------------
-// thread/rollback
-// ---------------------------------------------------------------------------
-
-export interface ThreadRollbackParams {
-  threadId: string;
-  numTurns: number;
-}
 
 export interface ThreadRollbackResult {
   thread: Thread;
 }
 
-// ---------------------------------------------------------------------------
-// thread/compact/start
-// ---------------------------------------------------------------------------
-
-export interface ThreadCompactStartParams {
-  threadId: string;
-}
-
 export type ThreadCompactStartResult = Record<string, never>;
-
-// ---------------------------------------------------------------------------
-// turn/start
-// ---------------------------------------------------------------------------
-
-export interface CollaborationModeSettings {
-  model: string;
-  reasoning_effort: string | null;
-  developer_instructions: string | null;
-}
-
-export interface CollaborationMode {
-  mode: 'plan' | 'default';
-  settings: CollaborationModeSettings;
-}
-
-export interface TurnStartParams {
-  threadId: string;
-  input: UserInput[];
-  cwd?: string;
-  approvalPolicy?: string;
-  approvalsReviewer?: string;
-  model?: string;
-  serviceTier?: string | null;
-  effort?: string;
-  summary?: 'auto' | 'concise' | 'detailed' | 'none';
-  sandboxPolicy?: SandboxPolicy | null;
-  personality?: string;
-  outputSchema?: unknown;
-  collaborationMode?: CollaborationMode;
-}
 
 export interface TurnStartResult {
   turn: Turn;
 }
 
-// ---------------------------------------------------------------------------
-// turn/steer
-// ---------------------------------------------------------------------------
-
-export interface TurnSteerParams {
-  threadId: string;
-  input: UserInput[];
-  expectedTurnId: string;
-}
-
 export interface TurnSteerResult {
   turnId: string;
-}
-
-// ---------------------------------------------------------------------------
-// turn/interrupt
-// ---------------------------------------------------------------------------
-
-export interface TurnInterruptParams {
-  threadId: string;
-  turnId: string;
-}
-
-// ---------------------------------------------------------------------------
-// Server notifications
-// ---------------------------------------------------------------------------
-
-export interface ThreadStartedNotification {
-  thread: Thread;
 }
 
 export interface ThreadStatusChangedNotification {
@@ -640,13 +484,6 @@ export interface ItemCompletedNotification {
   item: ThreadItem;
   threadId: string;
   turnId: string;
-}
-
-export interface AgentMessageDeltaNotification {
-  threadId: string;
-  turnId: string;
-  itemId: string;
-  delta: string;
 }
 
 export interface TokenUsage {
@@ -684,36 +521,6 @@ export interface ErrorNotification {
   willRetry: boolean;
   threadId: string;
   turnId: string;
-}
-
-export interface ReasoningSummaryPartAddedNotification {
-  threadId: string;
-  turnId: string;
-  itemId: string;
-  summaryIndex: number;
-}
-
-export interface ReasoningSummaryTextDeltaNotification {
-  threadId: string;
-  turnId: string;
-  itemId: string;
-  summaryIndex: number;
-  delta: string;
-}
-
-export interface ReasoningTextDeltaNotification {
-  threadId: string;
-  turnId: string;
-  itemId: string;
-  contentIndex: number;
-  delta: string;
-}
-
-export interface PlanDeltaNotification {
-  threadId: string;
-  turnId: string;
-  itemId: string;
-  delta: string;
 }
 
 export type RequestId = string | number;

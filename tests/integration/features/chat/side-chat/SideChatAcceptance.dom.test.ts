@@ -97,7 +97,7 @@ it('surfaces a collapsed side approval without changing the composer destination
   expect(harness.controller.destination).toBe('side');
 });
 
-it('disposes the child when its bound main conversation is replaced but keeps it on tab switching', async () => {
+it('keeps the child on tab switching and disposes it with the parent owner', async () => {
   const harness = createHarness();
   const { started } = await startSideChat(harness);
   harness.backend.latest.establishChild('child-session');
@@ -107,13 +107,12 @@ it('disposes the child when its bound main conversation is replaced but keeps it
 
   harness.controller.setTabActive(false);
   harness.controller.setTabActive(true);
-  harness.controller.handleConversationChanged('conversation-1');
-  expect(harness.controller.hasSideChat).toBe(true);
+  expect(harness.controller.runtime).not.toBeNull();
   expect(native.disposeCalls).toBe(0);
 
-  harness.controller.handleConversationChanged('conversation-2');
+  await harness.controller.dispose();
   await waitFor(() => expect(native.disposeCalls).toBe(1));
-  expect(harness.controller.hasSideChat).toBe(false);
+  expect(harness.controller.runtime).toBeNull();
   expect(screen.queryByRole('heading', { name: 'Side chat' })).toBeNull();
 });
 
@@ -128,7 +127,7 @@ it('is safe to discard repeatedly and cannot be resurrected by late events', asy
   expect(await started).toBe(true);
 
   native.emitSessionEvent({ type: 'commands_changed' });
-  expect(harness.controller.hasSideChat).toBe(false);
+  expect(harness.controller.runtime).toBeNull();
   expect(screen.queryByRole('heading', { name: 'Side chat' })).toBeNull();
 });
 

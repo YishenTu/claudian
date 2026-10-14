@@ -42,7 +42,7 @@ export const grokModelPolicy: ProviderModelPolicy = {
     return firstVisibleModelId ? encodeGrokModelId(firstVisibleModelId) : null;
   },
 
-  ownsModel(model, settings): boolean {
+  ownsModel(model): boolean {
     return isGrokModelSelectionId(model);
   },
 

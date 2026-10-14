@@ -1,3 +1,4 @@
+import { createScanner, SyntaxKind } from 'jsonc-parser';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,32 +20,23 @@ function bunResolutionVersion(resolution) {
 }
 
 export function parseBunLock(source) {
-  try {
-    let normalized = '';
-    let escaped = false;
-    let inString = false;
-    for (let index = 0; index < source.length; index += 1) {
-      const character = source[index];
-      if (inString) {
-        normalized += character;
-        if (escaped) escaped = false;
-        else if (character === '\\') escaped = true;
-        else if (character === '"') inString = false;
-        continue;
-      }
-      if (character === '"') {
-        inString = true;
-        normalized += character;
-        continue;
-      }
-      if (character === ',') {
-        let next = index + 1;
-        while (/\s/.test(source[next] ?? '')) next += 1;
-        if (source[next] === '}' || source[next] === ']') continue;
-      }
-      normalized += character;
+  const scanner = createScanner(source, true);
+  const trailingCommas = [];
+  let previousToken;
+  let commaOffset = 0;
+  for (let token = scanner.scan(); token !== SyntaxKind.EOF; token = scanner.scan()) {
+    if (previousToken === SyntaxKind.CommaToken
+      && (token === SyntaxKind.CloseBraceToken || token === SyntaxKind.CloseBracketToken)) {
+      trailingCommas.push(commaOffset);
     }
-    return JSON.parse(normalized);
+    if (token === SyntaxKind.CommaToken) commaOffset = scanner.getTokenOffset();
+    previousToken = token;
+  }
+  for (const offset of trailingCommas.reverse()) {
+    source = source.slice(0, offset) + source.slice(offset + 1);
+  }
+  try {
+    return JSON.parse(source);
   } catch (error) {
     throw new Error('bun.lock is not valid JSONC.', { cause: error });
   }

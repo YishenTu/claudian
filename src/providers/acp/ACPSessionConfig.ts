@@ -6,9 +6,7 @@ import type {
   ACPSessionConfigSelectGroup,
   ACPSessionConfigSelectOption,
   ACPSessionConfigSelectOptions,
-  ACPSessionMode,
   ACPSessionModelState,
-  ACPSessionModeState,
 } from './types';
 
 export function resolveACPLoadSessionId(
@@ -35,11 +33,6 @@ export interface ACPResolvedSessionModelState {
   _meta?: ACPMetadata | null;
   availableModels: ACPResolvedModelInfo[];
   currentModelId: string | null;
-}
-
-export interface ACPResolvedSessionModeState {
-  availableModes: ACPSessionMode[];
-  currentModeId: string | null;
 }
 
 export interface ACPResolvedSessionThoughtLevelState {
@@ -80,20 +73,6 @@ export function extractACPSessionModelState(params: {
   };
 }
 
-export function extractACPSessionModeState(params: {
-  configOptions?: ACPSessionConfigOption[] | null;
-  modes?: ACPSessionModeState | null;
-}): ACPResolvedSessionModeState {
-  const { items, current } = resolveSelectItems(params.configOptions, 'mode');
-  if (items) {
-    return { availableModes: items, currentModeId: current };
-  }
-  return {
-    availableModes: params.modes?.availableModes ?? [],
-    currentModeId: params.modes?.currentModeId ?? current,
-  };
-}
-
 export function extractACPSessionThoughtLevelState(params: {
   configOptions?: ACPSessionConfigOption[] | null;
 }): ACPResolvedSessionThoughtLevelState {
@@ -110,7 +89,7 @@ export function extractACPSessionThoughtLevelState(params: {
 // when one exists, so fallbacks can still seed a current id from it.
 function resolveSelectItems(
   configOptions: ACPSessionConfigOption[] | null | undefined,
-  category: 'model' | 'mode' | 'thought_level',
+  category: 'model' | 'thought_level',
 ): { configId: string | null; current: string | null; items: SelectItem[] | null } {
   const selectOption = findSessionConfigSelectOption(configOptions, category);
   if (!selectOption) {
@@ -132,7 +111,7 @@ function resolveSelectItems(
 
 function findSessionConfigSelectOption(
   configOptions: ACPSessionConfigOption[] | null | undefined,
-  category: 'model' | 'mode' | 'thought_level',
+  category: 'model' | 'thought_level',
 ): Extract<ACPSessionConfigOption, { type: 'select' }> | null {
   if (!configOptions) {
     return null;

@@ -778,8 +778,6 @@ describe('TabManager provider execution orchestration', () => {
     expect(discovery.providerRuntimeCommandCache.has(retainedDraft!.id)).toBe(false);
     expect(manager.getAllTabs()).toEqual([retainedDraft]);
     expect(retainedDraft!.session.acceptsIntents).toBe(true);
-    expect(retainedDraft!.controllers.inputController.resumeQueuedTurnAfterIntentAdmission)
-      .not.toHaveBeenCalled();
   });
 
   it('does not emit close callbacks after manager destruction begins', async () => {

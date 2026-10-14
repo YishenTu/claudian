@@ -45,6 +45,7 @@ body:
         - Grok
         - OpenCode
         - Pi
+        - DeepSeek Harness
         - Other or new provider
     validations:
       required: true

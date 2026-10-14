@@ -1,6 +1,5 @@
 import {
   extractACPSessionModelState,
-  extractACPSessionModeState,
   extractACPSessionThoughtLevelState,
   resolveACPLoadSessionId,
 } from '../../../../src/providers/acp';
@@ -181,86 +180,6 @@ describe('AcpSessionConfig', () => {
         { description: 'Fast', id: 'openai/gpt-5-mini', name: 'OpenAI/GPT-5 Mini' },
       ],
       currentModelId: 'openai/gpt-5-mini',
-    });
-  });
-
-  it('prefers ACP config mode options over session mode metadata', () => {
-    expect(extractACPSessionModeState({
-      configOptions: [
-        {
-          category: 'mode',
-          currentValue: 'plan',
-          id: 'session_mode',
-          name: 'Mode',
-          options: [
-            { description: 'Default editing agent', name: 'Build', value: 'build' },
-            { description: 'Planning-first agent', name: 'Plan', value: 'plan' },
-          ],
-          type: 'select',
-        },
-      ],
-      modes: {
-        availableModes: [
-          { id: 'summary', name: 'Summary' },
-        ],
-        currentModeId: 'summary',
-      },
-    })).toEqual({
-      availableModes: [
-        { description: 'Default editing agent', id: 'build', name: 'Build' },
-        { description: 'Planning-first agent', id: 'plan', name: 'Plan' },
-      ],
-      currentModeId: 'plan',
-    });
-  });
-
-  it('ignores uncategorized mode selectors', () => {
-    expect(extractACPSessionModeState({ configOptions: [{ currentValue: 'plan', id: 'mode', name: 'Mode', options: [{ name: 'Plan', value: 'plan' }], type: 'select' }] })).toEqual({ availableModes: [], currentModeId: null });
-  });
-
-  it('falls back to ACP session mode metadata when config options are unavailable', () => {
-    expect(extractACPSessionModeState({
-      modes: {
-        availableModes: [
-          { id: 'build', name: 'Build' },
-          { description: 'Planning-first agent', id: 'plan', name: 'Plan' },
-        ],
-        currentModeId: 'build',
-      },
-    })).toEqual({
-      availableModes: [
-        { id: 'build', name: 'Build' },
-        { description: 'Planning-first agent', id: 'plan', name: 'Plan' },
-      ],
-      currentModeId: 'build',
-    });
-  });
-
-  it('falls back to ACP session mode metadata when the config option has no discovered entries', () => {
-    expect(extractACPSessionModeState({
-      configOptions: [
-        {
-          category: 'mode',
-          currentValue: 'plan',
-          id: 'session_mode',
-          name: 'Mode',
-          options: [],
-          type: 'select',
-        },
-      ],
-      modes: {
-        availableModes: [
-          { id: 'build', name: 'Build' },
-          { description: 'Planning-first agent', id: 'plan', name: 'Plan' },
-        ],
-        currentModeId: 'build',
-      },
-    })).toEqual({
-      availableModes: [
-        { id: 'build', name: 'Build' },
-        { description: 'Planning-first agent', id: 'plan', name: 'Plan' },
-      ],
-      currentModeId: 'build',
     });
   });
 

@@ -2,6 +2,7 @@
 import '@/providers';
 
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
+import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import { parseGrokHistoryContent } from '@test/helpers/providers/grokHistory';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { within } from '@testing-library/dom';
@@ -10,7 +11,6 @@ import { Component, MarkdownRenderer } from 'obsidian';
 import type { ChatMessage } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
-import { parseCodexSessionContent } from '@/providers/codex/history/CodexHistoryStore';
 import { mapOpencodeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
 import { parsePiSessionContent } from '@/providers/pi/history/PiHistoryStore';
 

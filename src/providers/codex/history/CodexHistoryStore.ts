@@ -1589,11 +1589,6 @@ export interface CodexParsedTurn {
   messages: ChatMessage[];
 }
 
-export function parseCodexSessionContent(content: string): ChatMessage[] {
-  const turns = parseCodexSessionTurns(content);
-  return turns.flatMap(t => t.messages);
-}
-
 /** Shared checkpoint rules for in-memory and streaming model recovery. */
 class SessionModelReader {
   model: string | null = null;

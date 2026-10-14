@@ -230,10 +230,6 @@ export class SideChatRuntime {
     }, signal);
   }
 
-  get source(): SideChatSource {
-    return this.deps.source;
-  }
-
   get providerId(): ProviderId {
     return this.deps.source.providerId;
   }

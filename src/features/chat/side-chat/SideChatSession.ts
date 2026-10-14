@@ -126,10 +126,6 @@ export class SideChatSession {
       || (this.#supervisor.current?.session.hasBackgroundWork?.() ?? false);
   }
 
-  get hasPendingInteractions(): boolean {
-    return this.#interactions.hasPending;
-  }
-
   async execute(request: SideChatTurnRequest): Promise<SideChatTurnResult> {
     this.#assertAvailable();
     if (this.#executionController) {

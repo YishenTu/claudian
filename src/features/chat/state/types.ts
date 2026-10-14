@@ -43,8 +43,6 @@ export interface PendingToolCall {
   parentEl: HTMLElement | null;
 }
 
-export type TabAttentionKind = 'review' | 'action-required';
-
 export type TabReviewOutcome = 'completed' | 'error';
 
 export type TabAttention =

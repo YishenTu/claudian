@@ -139,25 +139,6 @@ export interface SessionMetadataScanResult {
 }
 
 // ---------------------------------------------------------------------------
-// Provider-owned workspace sub-interfaces
-//
-// These remain here as standalone types so app-level settings/chat code can
-// depend on stable provider workspace contracts without importing concrete
-// provider implementations. They are NOT part of the provider-facing host
-// storage contract (`ProviderHostStorage`).
-// ---------------------------------------------------------------------------
-
-export interface AppCommandStorage {
-  save(command: SlashCommand): Promise<void>;
-  delete(name: string): Promise<void>;
-}
-
-export interface AppSkillStorage {
-  save(skill: SlashCommand): Promise<void>;
-  delete(name: string): Promise<void>;
-}
-
-// ---------------------------------------------------------------------------
 // Provider-owned chat UI configuration
 // ---------------------------------------------------------------------------
 

@@ -13,7 +13,6 @@ class MockKeyboardEvent {
   public altKey: boolean;
   public shiftKey: boolean;
   private defaultPrevented = false;
-  private propagationStopped = false;
 
   constructor(type: string, options: {
     key: string;
@@ -41,7 +40,6 @@ class MockKeyboardEvent {
   }
 
   stopPropagation(): void {
-    this.propagationStopped = true;
   }
 
   get defaultPreventedValue(): boolean {

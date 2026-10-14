@@ -177,10 +177,7 @@ export function applyCodexModelDefaults(
   }
 }
 
-export function normalizeCodexVisibleModels(
-  value: unknown,
-  discoveredModels: CodexDiscoveredModel[] = [],
-): string[] | null {
+export function normalizeCodexVisibleModels(value: unknown): string[] | null {
   if (value === null || value === undefined) {
     return null;
   }
@@ -210,10 +207,7 @@ export function normalizeCodexVisibleModels(
   return visibleModels;
 }
 
-export function normalizeCodexModelAliases(
-  value: unknown,
-  discoveredModels: CodexDiscoveredModel[] = [],
-): Record<string, string> {
+export function normalizeCodexModelAliases(value: unknown): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
   }
@@ -239,7 +233,7 @@ export function getVisibleCodexModelIds(
   discoveredModels: CodexDiscoveredModel[],
 ): string[] {
   if (visibleModels !== null) {
-    return normalizeCodexVisibleModels(visibleModels, discoveredModels) ?? [];
+    return normalizeCodexVisibleModels(visibleModels) ?? [];
   }
 
   const defaultModel = getDefaultCodexModel(discoveredModels);
@@ -295,17 +289,11 @@ function getCodexStoredConfig(
   settings: Record<string, unknown>,
 ): CodexProviderConfig {
   const config = getProviderConfig(settings, 'codex');
-  const cliPathsByHost = normalizeHostnameStringMap(
-    config.cliPathsByHost,
-  );
-  const installationMethodsByHost = normalizeInstallationMethodsByHost(
-    config.installationMethodsByHost,
-  );
-  const wslDistroOverridesByHost = normalizeHostnameStringMap(
-    config.wslDistroOverridesByHost,
-  );
+  const cliPathsByHost = normalizeHostnameStringMap(config.cliPathsByHost,);
+  const installationMethodsByHost = normalizeInstallationMethodsByHost(config.installationMethodsByHost,);
+  const wslDistroOverridesByHost = normalizeHostnameStringMap(config.wslDistroOverridesByHost,);
   const discoveredModels = normalizeCodexDiscoveredModels(config.discoveredModels ?? config.selectedModels);
-  const visibleModels = normalizeCodexVisibleModels(config.visibleModels, discoveredModels);
+  const visibleModels = normalizeCodexVisibleModels(config.visibleModels);
 
   return {
     enabled: readStoredBoolean(
@@ -323,7 +311,7 @@ function getCodexStoredConfig(
     cliPathsByHost,
     discoveredModels,
     modelAliases: pruneCodexModelAliases(
-      normalizeCodexModelAliases(config.modelAliases, discoveredModels),
+      normalizeCodexModelAliases(config.modelAliases),
       getCodexAliasModelIds(visibleModels, discoveredModels),
     ),
     visibleModels,
@@ -448,15 +436,10 @@ export function updateCodexProviderSettings(
   const wslDistroOverridesByHost = persistInstallationSettings
     ? updatedWslDistroOverridesByHost
     : omitCurrentHost(updatedWslDistroOverridesByHost, hostnameKey);
-  const discoveredModels = normalizeCodexDiscoveredModels(
-    updates.discoveredModels ?? current.discoveredModels,
-  );
-  const visibleModels = normalizeCodexVisibleModels(
-    'visibleModels' in updates ? updates.visibleModels : current.visibleModels,
-    discoveredModels,
-  );
+  const discoveredModels = normalizeCodexDiscoveredModels(updates.discoveredModels ?? current.discoveredModels,);
+  const visibleModels = normalizeCodexVisibleModels('visibleModels' in updates ? updates.visibleModels : current.visibleModels);
   const modelAliases = pruneCodexModelAliases(
-    normalizeCodexModelAliases(updates.modelAliases ?? current.modelAliases, discoveredModels),
+    normalizeCodexModelAliases(updates.modelAliases ?? current.modelAliases),
     getCodexAliasModelIds(visibleModels, discoveredModels),
   );
 

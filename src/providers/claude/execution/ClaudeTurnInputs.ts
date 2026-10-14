@@ -46,10 +46,6 @@ export class ClaudeTurnInputs {
     return this.#undeliveredSteers.size > 0;
   }
 
-  isUndeliveredSteer(id: string): boolean {
-    return this.#undeliveredSteers.has(id);
-  }
-
   wasConsumed(id: string): boolean {
     return this.#ids.includes(id) && !this.#unconsumed.has(id);
   }

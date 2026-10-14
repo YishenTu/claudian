@@ -90,7 +90,7 @@ it.each([false, true])('resolves current titles once and carries snapshots throu
     await fixture.controller.sendMessage();
     if (queued) {
       await releaseTurn();
-      fixture.controller.resumeQueuedTurnAfterIntentAdmission();
+      fixture.controller.queue.scheduleContinuation();
       await new Promise(resolve => setTimeout(resolve, 20));
     }
     const request = fixture.native.backends.get('claude')!.sessions.flatMap(session => session.requests)[0];
@@ -501,7 +501,7 @@ it.each(['cancel', 'withdraw', 'discard', 'shutdown', 'replacement'] as const)(
       fixture.input.value = token;
       await fixture.controller.sendMessage();
       await releaseTurn();
-      fixture.controller.resumeQueuedTurnAfterIntentAdmission();
+      fixture.controller.queue.scheduleContinuation();
       switch (action) {
         case 'cancel': fixture.controller.cancelStreaming(); break;
         case 'withdraw': fixture.controller.queue.withdrawToComposer(); break;

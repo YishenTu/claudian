@@ -37,13 +37,6 @@ export interface OpencodePrompt {
   readonly userText: OpencodeTextRange | null;
 }
 
-export function buildOpencodePromptText(
-  request: OpencodePromptRequest,
-  conversationHistory: ChatMessage[] = [],
-): string {
-  return composeOpencodePromptText(request, conversationHistory).text;
-}
-
 function composeOpencodePromptText(
   request: OpencodePromptRequest,
   conversationHistory: ChatMessage[],
@@ -104,11 +97,4 @@ export function buildOpencodePrompt(
   }
 
   return { blocks, userText };
-}
-
-export function buildOpencodePromptBlocks(
-  request: OpencodePromptRequest,
-  conversationHistory: ChatMessage[] = [],
-): ACPContentBlock[] {
-  return buildOpencodePrompt(request, conversationHistory).blocks;
 }

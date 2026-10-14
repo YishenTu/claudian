@@ -79,7 +79,7 @@ describe('Pi settings normalization', () => {
       'pi:anthropic/claude-sonnet-4',
       'pi:missing/model',
       'openai/gpt-5',
-    ], discoveredModels)).toEqual(['pi:anthropic/claude-sonnet-4', 'pi:missing/model']);
+    ])).toEqual(['pi:anthropic/claude-sonnet-4', 'pi:missing/model']);
   });
 
   it('normalizes aliases and defaults unsupported preferred thinking to High', () => {

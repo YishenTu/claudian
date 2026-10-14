@@ -17,11 +17,9 @@ export class SharedStorageService implements SharedAppStorage {
   readonly conversationPersistence: ConversationPersistenceStore;
 
   private adapter: VaultFileAdapter;
-  private plugin: Plugin;
   private obsoleteSessionInputs: string[] = [];
 
   constructor(plugin: Plugin, defaultSettings: Readonly<ClaudianSettings>) {
-    this.plugin = plugin;
     this.adapter = new VaultFileAdapter(plugin.app);
     const deviceKey = this.installationKey = getInstallationKey();
     this.claudianSettings = new ClaudianSettingsStorage(this.adapter, defaultSettings);

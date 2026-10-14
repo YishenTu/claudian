@@ -1,3 +1,4 @@
+import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import { testDate, testTime } from '@test/helpers/testClock';
 import * as path from 'path';
 
@@ -5,7 +6,6 @@ import { encodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelop
 import {
   deriveCodexSessionsRootFromSessionPath,
   findCodexSessionFileAsync,
-  parseCodexSessionContent,
   parseCodexSessionFileAsync,
   parseCodexSessionTurns,
 } from '@/providers/codex/history/CodexHistoryStore';

@@ -84,10 +84,6 @@ export class ComposerDropdownView {
       if (item.detail) {
         copyEl.createDiv({ cls: 'claudian-composer-dropdown-detail', text: item.detail });
       }
-      if (item.kind === 'folder') {
-        const folderIcon = itemEl.createSpan({ cls: 'claudian-composer-dropdown-folder-icon' });
-        setIcon(folderIcon, 'chevron-right');
-      }
 
       if (selectable) {
         itemEl.addEventListener('mouseenter', () => this.options.onHover(index));

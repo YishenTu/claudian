@@ -32,7 +32,7 @@ describe('StreamingRenderCoordinator', () => {
     const secondRender = createDeferred();
     let activeRenders = 0;
     let maxActiveRenders = 0;
-    const render = jest.fn(async (content: string) => {
+    const render = jest.fn(async (_content: string) => {
       activeRenders += 1;
       maxActiveRenders = Math.max(maxActiveRenders, activeRenders);
       await (render.mock.calls.length === 1 ? firstRender.promise : secondRender.promise);

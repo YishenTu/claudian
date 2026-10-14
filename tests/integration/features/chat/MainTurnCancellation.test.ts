@@ -39,7 +39,8 @@ test.each(['execution initialization', 'handoff authority'] as const)(
     await started.promise;
     expect(input.state.isStreaming).toBe(true);
     let drained = false;
-    const draining = input.controller.cancelStreamingAndWait().then(() => { drained = true; });
+    const draining = sending.then(() => { drained = true; });
+    input.controller.cancelStreaming();
     await Promise.resolve();
     expect(drained).toBe(false);
     expect(input.state.cancelRequested).toBe(true);

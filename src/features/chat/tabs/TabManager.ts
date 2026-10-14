@@ -504,10 +504,6 @@ export class TabManager implements TabManagerInterface {
     }
   }
 
-  getTabSwitchRequestRevision(): number {
-    return this.activation.requestRevision;
-  }
-
   async waitForTabSwitchIdle(): Promise<void> {
     await this.activation.waitForIdle();
   }

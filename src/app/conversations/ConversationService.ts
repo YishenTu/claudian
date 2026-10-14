@@ -90,11 +90,6 @@ export class ConversationService {
     return committed;
   }
 
-  async setConversationPinned(id: string, isPinned: boolean): Promise<void> {
-    await this.deps.repository.setPinned(id, isPinned);
-    this.notifyConversationListChanged();
-  }
-
   async setConversationsPinned(ids: readonly string[], isPinned: boolean): Promise<void> {
     await this.#mutateConversations(ids, id => this.deps.repository.setPinned(id, isPinned));
   }

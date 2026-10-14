@@ -43,15 +43,6 @@ function canAcceptTabBackgroundWork(tab: AssembledTabRuntime): boolean {
   return tab.lifecycleState !== 'closing';
 }
 
-export function enqueueTabBackgroundWork(
-  tab: AssembledTabRuntime,
-  work: () => Promise<void>,
-  independent = false,
-): Promise<void> | null {
-  if (!canAcceptTabBackgroundWork(tab)) return null;
-  return tab.session.enqueueBackgroundWork(work, independent);
-}
-
 export function createTabMessageId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }

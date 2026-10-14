@@ -104,10 +104,6 @@ export const codexWorkspaceRegistration: ProviderWorkspaceRegistration<CodexWork
   initialize: async ({ plugin }) => createCodexWorkspaceServices(plugin),
 };
 
-export function maybeGetCodexWorkspaceServices(): CodexWorkspaceServices | null {
-  return ProviderWorkspaceRegistry.getServices('codex') as CodexWorkspaceServices | null;
-}
-
 export function getCodexWorkspaceServices(): CodexWorkspaceServices {
   return ProviderWorkspaceRegistry.requireServices('codex') as CodexWorkspaceServices;
 }

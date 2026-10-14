@@ -155,7 +155,7 @@ it('discards the side chat, releases its session and restores the main composer'
   await waitFor(() => expect(native.disposeCalls).toBe(1));
   expect(screen.queryByRole('heading', { name: 'Side chat' })).toBeNull();
   expect(harness.controller.destination).toBe('main');
-  expect(harness.controller.hasSideChat).toBe(false);
+  expect(harness.controller.runtime).toBeNull();
   expect(harness.composerEl.classList.contains('claudian-side-chat-expanded')).toBe(false);
 });
 
@@ -173,19 +173,19 @@ it('rejects a nested side command and an empty prompt without creating anything'
   const fresh = createHarness();
   await fresh.controller.handleCommandSubmission('', []);
   expect(fresh.backend.sessions).toHaveLength(0);
-  expect(fresh.controller.hasSideChat).toBe(false);
+  expect(fresh.controller.runtime).toBeNull();
 });
 
 it('reports an unavailable provider and a missing checkpoint without starting native work', async () => {
   const unsupported = createHarness({ supportsFork: false });
   await unsupported.controller.handleCommandSubmission('Explore B', []);
   expect(unsupported.backend.sessions).toHaveLength(0);
-  expect(unsupported.controller.hasSideChat).toBe(false);
+  expect(unsupported.controller.runtime).toBeNull();
 
   const withoutCheckpoint = createHarness({ checkpoint: null });
   await withoutCheckpoint.controller.handleCommandSubmission('Explore B', []);
   expect(withoutCheckpoint.backend.sessions).toHaveLength(0);
-  expect(withoutCheckpoint.controller.hasSideChat).toBe(false);
+  expect(withoutCheckpoint.controller.runtime).toBeNull();
 });
 
 

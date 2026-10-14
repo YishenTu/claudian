@@ -43,8 +43,7 @@ export interface SideChatControllerPresentation {
  * Per-main-conversation owner of at most one temporary side chat.
  *
  * Panel expansion alone derives the composer destination; there is no separate
- * selector. Side state lives in memory and is disposed with the parent runtime
- * or a committed replacement of its main conversation.
+ * selector. Side state lives in memory and is disposed with the parent runtime.
  */
 export class SideChatController {
   #presentation: SideChatControllerPresentation | null = null;
@@ -52,7 +51,6 @@ export class SideChatController {
   #runtime: SideChatRuntime | null = null;
   #collapsedHost: HTMLElement | null = null;
   #fullHeightHost: HTMLElement | null = null;
-  #boundConversationId: string | null = null;
   #mainPlaceholder: string | null = null;
   #startSequence = 0;
   #starting = false;
@@ -83,10 +81,6 @@ export class SideChatController {
     this.#fullHeightHost = null;
     this.#mainPlaceholder = null;
     this.#presentation = null;
-  }
-
-  get hasSideChat(): boolean {
-    return this.#runtime !== null || this.#starting;
   }
 
   get isExpanded(): boolean {
@@ -220,7 +214,6 @@ export class SideChatController {
     const runtime = this.#runtime;
     const removePanel = () => {
       this.#runtime = null;
-      this.#boundConversationId = null;
       this.#teardownPanel();
       this.#applyDestinationPresentation('main');
     };
@@ -232,13 +225,6 @@ export class SideChatController {
     } finally {
       await Promise.all([runtime?.dispose(), pendingStart]);
     }
-  }
-
-  /** Disposes the child when its bound main conversation is replaced. */
-  handleConversationChanged(conversationId: string | null): void {
-    if (!this.#runtime && !this.#starting) return;
-    if (this.#boundConversationId === conversationId) return;
-    void this.discard();
   }
 
   setTabActive(active: boolean): void {
@@ -276,7 +262,6 @@ export class SideChatController {
     const sequence = ++this.#startSequence;
     this.#starting = true;
     this.deps.onStatusChanged?.();
-    this.#boundConversationId = parent.conversationId;
     let transferred = false;
     try {
       const capture = await parent.captureForkSource();
@@ -299,7 +284,6 @@ export class SideChatController {
         sessionId: capture.context.sourceSessionId,
       };
 
-      this.#boundConversationId = source.conversationId;
       this.deps.drafts.changeDestination(() => this.#createRuntime(source));
       this.deps.onDestinationChanged();
       transferred = true;
