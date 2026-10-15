@@ -1,12 +1,9 @@
-import type { CursorContext } from '@/core/prompt/editorContext';
-
 import type {
   ProviderExecutionBackend,
   ProviderExecutionTransitionScope,
 } from '../execution';
 import type {
   AskUserAnswers,
-  AuxiliaryContinuityReset,
   Conversation,
   SessionMetadata,
   SlashCommand,
@@ -640,48 +637,5 @@ export interface TitleGenerationService {
     userMessage: string,
     callback: TitleGenerationCallback
   ): Promise<void>;
-  cancel(): void;
-}
-
-// -- Inline edit --
-
-export type InlineEditMode = 'selection' | 'cursor';
-
-export interface InlineEditSelectionRequest {
-  mode: 'selection';
-  instruction: string;
-  notePath: string;
-  selectedText: string;
-  startLine?: number;
-  lineCount?: number;
-  contextFiles?: string[];
-}
-
-export interface InlineEditCursorRequest {
-  mode: 'cursor';
-  instruction: string;
-  notePath: string;
-  cursorContext: CursorContext;
-  contextFiles?: string[];
-}
-
-export type InlineEditRequest = InlineEditSelectionRequest | InlineEditCursorRequest;
-
-export interface InlineEditOutcome {
-  success: boolean;
-  resetRequired?: false;
-  editedText?: string;
-  insertedText?: string;
-  clarification?: string;
-  error?: string;
-}
-
-export type InlineEditResult = InlineEditOutcome | AuxiliaryContinuityReset;
-
-export interface InlineEditService {
-  setModelOverride?(model?: string): void;
-  resetConversation(): void;
-  editText(request: InlineEditRequest): Promise<InlineEditResult>;
-  continueConversation(message: string, contextFiles?: string[]): Promise<InlineEditResult>;
   cancel(): void;
 }

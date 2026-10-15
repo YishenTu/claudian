@@ -1,6 +1,6 @@
 import { getVaultPath } from '../../utils/path';
 import type { AuxiliaryExecutionContext } from '../auxiliary/AuxiliaryExecutionContext';
-import { InlineEditService as SharedInlineEditService } from '../auxiliary/InlineEditService';
+import { InlineEditService } from '../auxiliary/InlineEditService';
 import { RoutedTitleGenerationService } from '../auxiliary/RoutedTitleGenerationService';
 import { TitleGenerationService as SharedTitleGenerationService } from '../auxiliary/TitleGenerationService';
 import type {
@@ -16,7 +16,6 @@ import type { ProviderHost } from './ProviderHost';
 import { ProviderWorkspaceRegistry } from './ProviderWorkspaceRegistry';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
-  type InlineEditService,
   type ProviderCapabilities,
   type ProviderChatUIConfig,
   type ProviderConversationHistoryService,
@@ -110,10 +109,8 @@ export class ProviderRegistry {
     return candidates.length === 1 ? candidates[0] : null;
   }
 
-  static createInlineEditService(plugin: ProviderHost, providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): InlineEditService {
-    return new SharedInlineEditService(
-      this.createAuxiliaryExecutionContext(plugin, providerId),
-    );
+  static createInlineEditService(plugin: ProviderHost, providerId: ProviderId, model?: string): InlineEditService {
+    return new InlineEditService(this.createAuxiliaryExecutionContext(plugin, providerId), model);
   }
 
   private static createAuxiliaryExecutionContext(

@@ -79,16 +79,6 @@ export type SessionManagerOrganization = 'list' | 'linked-content';
 export type SessionManagerSort = 'last-updated' | 'created';
 export type SessionAutoArchiveAfter = 'off' | '7d' | '14d' | '30d';
 
-/** Forced provider transition invalidated a parked auxiliary continuation. */
-export interface AuxiliaryContinuityReset {
-  success: false;
-  resetRequired: true;
-  error: string;
-  editedText?: never;
-  insertedText?: never;
-  clarification?: never;
-}
-
 /** Scope for environment variable storage and snippets. */
 export type EnvironmentScope = 'shared' | `provider:${string}`;
 

@@ -1,12 +1,37 @@
-import { formatEditorContext } from '@/core/prompt/editorContext';
+import { type CursorContext, formatEditorContext } from '@/core/prompt/editorContext';
 import { appendContextFiles } from '@/core/prompt/promptContext';
 
 import { getTodayDate } from '../../utils/date';
-import type {
-  InlineEditCursorRequest,
-  InlineEditRequest,
-  InlineEditResult,
-} from '../providers/types';
+
+export type InlineEditMode = 'selection' | 'cursor';
+
+export interface InlineEditSelectionRequest {
+  mode: 'selection';
+  instruction: string;
+  notePath: string;
+  selectedText: string;
+  startLine?: number;
+  lineCount?: number;
+  contextFiles?: string[];
+}
+
+export interface InlineEditCursorRequest {
+  mode: 'cursor';
+  instruction: string;
+  notePath: string;
+  cursorContext: CursorContext;
+  contextFiles?: string[];
+}
+
+export type InlineEditRequest = InlineEditSelectionRequest | InlineEditCursorRequest;
+
+export interface InlineEditResult {
+  success: boolean;
+  editedText?: string;
+  insertedText?: string;
+  clarification?: string;
+  error?: string;
+}
 
 export function parseInlineEditResponse(responseText: string): InlineEditResult {
   const replacementMatch = responseText.match(/<replacement>([\s\S]*?)<\/replacement>/);

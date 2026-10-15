@@ -14,14 +14,6 @@ interface RenderInlineEditMarkdownPreviewOptions {
   mediaFolder?: string;
 }
 
-function emptyElement(container: HTMLElement): void {
-  if (typeof container.empty === 'function') {
-    container.empty();
-    return;
-  }
-  container.replaceChildren();
-}
-
 function appendFallback(container: HTMLElement, markdown: string): void {
   container.createDiv({ cls: 'claudian-inline-markdown-fallback', text: markdown });
 }
@@ -34,7 +26,7 @@ export async function renderInlineEditMarkdownPreview({
   sourcePath,
   mediaFolder = '',
 }: RenderInlineEditMarkdownPreviewOptions): Promise<void> {
-  emptyElement(container);
+  container.replaceChildren();
 
   try {
     const normalizedMarkdown = normalizeLatexMathDelimiters(markdown);
@@ -48,7 +40,7 @@ export async function renderInlineEditMarkdownPreview({
       processFileLinks(app, container);
     }
   } catch {
-    emptyElement(container);
+    container.replaceChildren();
     appendFallback(container, markdown);
   }
 }

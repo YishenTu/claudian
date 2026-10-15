@@ -25,7 +25,7 @@ it.each([true, false])('selects auxiliary persistence from ephemeral support (%s
   try {
     const results = [
       title.generateTitle('conversation', 'Draft', jest.fn()),
-      inlineEdit.editText({ instruction: 'Improve', mode: 'selection', notePath: 'note.md', selectedText: 'Draft' }),
+      inlineEdit.send({ instruction: 'Improve', mode: 'selection', notePath: 'note.md', selectedText: 'Draft' }),
     ];
     await waitFor(() => backend.sessions.length === 2 && backend.sessions.every(session => session.requests.length === 1));
     const configs = [...backend.configs];
@@ -40,7 +40,7 @@ it.each([true, false])('selects auxiliary persistence from ephemeral support (%s
     })));
   } finally {
     title.cancel();
-    inlineEdit.cancel();
+    inlineEdit.end();
     await lifecycle.dispose();
   }
 });

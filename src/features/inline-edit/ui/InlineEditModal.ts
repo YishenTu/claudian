@@ -4,22 +4,25 @@ import { Decoration, EditorView, WidgetType } from '@codemirror/view';
 import type { App, Component, Editor, MarkdownView } from 'obsidian';
 import { Notice } from 'obsidian';
 
+import type { InlineEditService } from '@/core/auxiliary/InlineEditService';
 import type { CursorContext } from '@/core/prompt/editorContext';
+import type { InlineEditMode, InlineEditRequest } from '@/core/prompt/inlineEdit';
 import { createCatalogCommandDiscoveryStore, discoverSessionlessCommands } from '@/core/providers/commands/catalogCommandDiscovery';
 import { getHiddenCommandSet } from '@/core/providers/commands/hiddenCommands';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
-import { type InlineEditMode, type InlineEditService, type ProviderId } from '@/core/providers/types';
+import type { ProviderId } from '@/core/providers/types';
 import type { FeatureHost } from '@/features/FeatureHost';
 import type { InlineEditSessionOwner } from '@/features/inline-edit/InlineEditSessionOwner';
-import {
-  findBestMentionLookupMatch,
-  isMentionStart,
-  normalizeForPlatformLookup,
-  normalizeMentionPath,
-} from '@/features/inline-edit/ui/contextMentionResolver';
+import { resolveContextFiles } from '@/features/inline-edit/ui/contextMentionResolver';
 import { onInlineEditEditorDestroyed } from '@/features/inline-edit/ui/InlineEditEditorLifetime';
 import { renderInlineEditMarkdownPreview } from '@/features/inline-edit/ui/inlineEditMarkdownPreview';
+import {
+  buildMarkdownDiffDocuments,
+  computeMarkdownDiff,
+  type DiffOp,
+  diffOpsEqual,
+} from '@/features/inline-edit/ui/markdownLineDiff';
 import { normalizeInsertionText } from '@/features/inline-edit/ui/normalizeInsertionText';
 import { hideSelectionHighlight, showSelectionHighlight } from '@/shared/components/SelectionHighlight';
 import {
@@ -88,7 +91,7 @@ class MarkdownDiffWidget extends WidgetType {
   }
 }
 
-export function buildInlineEditInputDecorations(options: {
+function buildInlineEditInputDecorations(options: {
   doc: Text;
   inputPos: number;
   isInbetween?: boolean;
@@ -149,58 +152,6 @@ const inlineEditField = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
-interface DiffOp { type: 'equal' | 'insert' | 'delete'; text: string; }
-
-function splitLinesPreservingEndings(text: string): string[] {
-  if (!text) return [];
-  return text.match(/[^\n]*(?:\n|$)/g)?.filter(line => line.length > 0) ?? [];
-}
-
-function computeMarkdownDiff(oldText: string, newText: string): DiffOp[] {
-  const oldLines = splitLinesPreservingEndings(oldText);
-  const newLines = splitLinesPreservingEndings(newText);
-  const m = oldLines.length, n = newLines.length;
-  const dp: number[][] = Array.from({ length: m + 1 }, () => Array<number>(n + 1).fill(0));
-
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      dp[i][j] = oldLines[i-1] === newLines[j-1]
-        ? dp[i-1][j-1] + 1
-        : Math.max(dp[i-1][j], dp[i][j-1]);
-    }
-  }
-
-  const temp: DiffOp[] = [];
-  let i = m, j = n;
-
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldLines[i-1] === newLines[j-1]) {
-      temp.push({ type: 'equal', text: oldLines[i-1] });
-      i--; j--;
-    } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
-      temp.push({ type: 'insert', text: newLines[j-1] });
-      j--;
-    } else {
-      temp.push({ type: 'delete', text: oldLines[i-1] });
-      i--;
-    }
-  }
-
-  return mergeAdjacentDiffOps(temp.reverse());
-}
-
-function mergeAdjacentDiffOps(ops: DiffOp[]): DiffOp[] {
-  const merged: DiffOp[] = [];
-  for (const op of ops) {
-    if (merged.length > 0 && merged[merged.length-1].type === op.type) {
-      merged[merged.length-1].text += op.text;
-    } else {
-      merged.push({ ...op });
-    }
-  }
-  return merged;
-}
-
 function getDiffBlockClass(type: DiffOp['type']): string {
   switch (type) {
     case 'delete':
@@ -212,51 +163,7 @@ function getDiffBlockClass(type: DiffOp['type']): string {
   }
 }
 
-function buildMarkdownDiffDocuments(diffOps: DiffOp[]): Array<{ type: DiffOp['type']; markdown: string }> {
-  const oldMarkdown = diffOps
-    .filter(op => op.type !== 'insert')
-    .map(op => op.text)
-    .join('');
-  const newMarkdown = diffOps
-    .filter(op => op.type !== 'delete')
-    .map(op => op.text)
-    .join('');
-  const hasDeletion = diffOps.some(op => op.type === 'delete');
-  const hasInsertion = diffOps.some(op => op.type === 'insert');
-
-  const documents: Array<{ type: DiffOp['type']; markdown: string }> = [];
-
-  if (hasDeletion && oldMarkdown) {
-    documents.push({ type: 'delete', markdown: oldMarkdown });
-  }
-
-  if (hasInsertion && newMarkdown) {
-    documents.push({ type: 'insert', markdown: newMarkdown });
-  }
-
-  if (documents.length === 0 && newMarkdown) {
-    documents.push({ type: 'equal', markdown: newMarkdown });
-  }
-
-  return documents;
-}
-
-function diffOpsEqual(left: DiffOp[], right: DiffOp[]): boolean {
-  if (left.length !== right.length) return false;
-  return left.every((op, index) => {
-    const other = right[index];
-    return op.type === other.type && op.text === other.text;
-  });
-}
-
 export type InlineEditDecision = 'accept' | 'edit' | 'reject';
-
-interface InlineEditSourceSnapshot {
-  doc: Text;
-  from: number;
-  text: string;
-  to: number;
-}
 
 interface InlineEditProviderContext {
   modelOverride?: string;
@@ -376,7 +283,6 @@ export class InlineEditSession {
   private inlineEditService: InlineEditService;
   private escHandler: ((e: KeyboardEvent) => void) | null = null;
   private selectionListener: ((e: Event) => void) | null = null;
-  private isConversing = false;
   private generating = false;
   private instructionDraft = '';
   private inputPlaceholder: string | null = null;
@@ -389,7 +295,8 @@ export class InlineEditSession {
   } | null = null;
   private mentionDataProvider: VaultMentionDataProvider;
   private agentReplyRenderVersion = 0;
-  private sourceSnapshot: InlineEditSourceSnapshot | null = null;
+  /** The document the edit was computed against; CodeMirror documents are immutable. */
+  private sourceDoc: Text | null = null;
   private settled = false;
   private generation = 0;
   private releaseEditorLifetime: (() => void) | null = null;
@@ -404,15 +311,10 @@ export class InlineEditSession {
     editContext: InlineEditContext,
     private notePath: string,
     private resolve: (result: { decision: InlineEditDecision; editedText?: string }) => void,
-    providerContext?: InlineEditProviderContext,
+    providerContext: InlineEditProviderContext,
   ) {
-    const resolvedProviderContext = providerContext ?? resolveInlineEditProviderContext(host);
-    const providerId = resolvedProviderContext.providerId;
-    this.inlineEditService = ProviderRegistry.createInlineEditService(
-      host.providerHost,
-      providerId,
-    );
-    this.inlineEditService.setModelOverride?.(resolvedProviderContext.modelOverride);
+    const { modelOverride, providerId } = providerContext;
+    this.inlineEditService = ProviderRegistry.createInlineEditService(host.providerHost, providerId, modelOverride);
     this.resolvedProviderId = providerId;
     this.mentionDataProvider = new VaultMentionDataProvider(this.app, {
       onFileLoadError: () => {
@@ -453,12 +355,7 @@ export class InlineEditSession {
       this.selectedText = this.editor.getSelection() || this.selectedText;
       this.startLine = from.line + 1; // 1-indexed
     }
-    this.sourceSnapshot = {
-      doc,
-      from: this.selFrom,
-      text: this.#getDocumentSlice(doc, this.selFrom, this.selTo),
-      to: this.selTo,
-    };
+    this.sourceDoc = doc;
   }
 
   show() {
@@ -680,21 +577,6 @@ export class InlineEditSession {
     }
   }
 
-  #replaceRenderedPreview(target: HTMLElement, rendered: HTMLElement): void {
-    target.empty();
-
-    if (rendered.childNodes) {
-      for (const child of Array.from(rendered.childNodes)) {
-        target.appendChild(child);
-      }
-      return;
-    }
-
-    for (const child of Array.from(rendered.children)) {
-      target.appendChild(child);
-    }
-  }
-
   private async generate(): Promise<void> {
     if (this.settled || this.generating || !this.inputEl || !this.spinnerEl) return;
     const userMessage = this.inputEl.value.trim();
@@ -706,41 +588,15 @@ export class InlineEditSession {
     const generation = ++this.generation;
     this.generating = true;
 
-    // Slash commands are passed directly to SDK for handling
-
     this.#removeSelectionListeners();
 
     this.inputEl.disabled = true;
     this.spinnerEl.removeClass('claudian-hidden');
 
-    const contextFiles = this.#resolveContextFilesFromMessage(userMessage);
-
     let result;
     try {
-      if (this.isConversing) {
-        result = await this.inlineEditService.continueConversation(userMessage, contextFiles);
-      } else {
-        if (this.mode === 'cursor') {
-          result = await this.inlineEditService.editText({
-            mode: 'cursor',
-            instruction: userMessage,
-            notePath: this.notePath,
-            cursorContext: this.cursorContext as CursorContext,
-            contextFiles,
-          });
-        } else {
-          const lineCount = this.selectedText.split(/\r?\n/).length;
-          result = await this.inlineEditService.editText({
-            mode: 'selection',
-            instruction: userMessage,
-            notePath: this.notePath,
-            selectedText: this.selectedText,
-            startLine: this.startLine,
-            lineCount,
-            contextFiles,
-          });
-        }
-      }
+      // Slash commands stay in the instruction for the provider to handle.
+      result = await this.inlineEditService.send(this.#buildRequest(userMessage));
     } catch (error) {
       if (this.#isGenerationActive(generation)) {
         if (!this.#isSourceUnchanged()) this.#rejectStaleSource();
@@ -771,7 +627,6 @@ export class InlineEditSession {
         this.insertedText = result.insertedText;
         this.#showInsertionInPlace();
       } else if (result.clarification) {
-        this.isConversing = true;
         this.instructionDraft = '';
         this.inputPlaceholder = 'Reply to continue...';
         this.showAgentReply(result.clarification);
@@ -785,12 +640,30 @@ export class InlineEditSession {
         this.#handleError('No response from agent');
       }
     } else {
-      if (result.resetRequired) {
-        this.isConversing = false;
-        this.inlineEditService.resetConversation();
-      }
       this.#handleError(result.error || 'Error - try again');
     }
+  }
+
+  #buildRequest(instruction: string): InlineEditRequest {
+    const contextFiles = resolveContextFiles(instruction, this.mentionDataProvider.getCachedVaultFiles());
+    if (this.mode === 'cursor') {
+      return {
+        mode: 'cursor',
+        instruction,
+        notePath: this.notePath,
+        cursorContext: this.cursorContext as CursorContext,
+        contextFiles,
+      };
+    }
+    return {
+      mode: 'selection',
+      instruction,
+      notePath: this.notePath,
+      selectedText: this.selectedText,
+      startLine: this.startLine,
+      lineCount: this.selectedText.split(/\r?\n/).length,
+      contextFiles,
+    };
   }
 
   private showAgentReply(message: string) {
@@ -806,7 +679,7 @@ export class InlineEditSession {
       if (renderVersion !== this.agentReplyRenderVersion || replyEl !== this.agentReplyEl) {
         return;
       }
-      this.#replaceRenderedPreview(replyEl, renderedEl);
+      replyEl.replaceChildren(...Array.from(renderedEl.childNodes));
     });
     this.containerEl.classList.add('has-agent-reply');
   }
@@ -816,7 +689,7 @@ export class InlineEditSession {
     if (!this.inputEl) return;
     this.inputEl.disabled = false;
     this.inputEl.placeholder = errorMessage;
-    if (!this.isConversing) {
+    if (!this.inlineEditService.isConversing) {
       this.#updatePositionsFromEditor();
       this.#updateHighlight();
       this.#attachSelectionListeners();
@@ -946,9 +819,7 @@ export class InlineEditSession {
     this.generating = false;
     this.releaseEditorLifetime?.();
     this.releaseEditorLifetime = null;
-    this.inlineEditService.cancel();
-    this.inlineEditService.resetConversation();
-    this.isConversing = false;
+    this.inlineEditService.end();
     this.#removeSelectionListeners();
     if (this.escHandler) {
       this.getOwnerDocument().removeEventListener('keydown', this.escHandler);
@@ -972,20 +843,7 @@ export class InlineEditSession {
   }
 
   #isSourceUnchanged(): boolean {
-    const snapshot = this.sourceSnapshot;
-    if (!snapshot) {
-      return false;
-    }
-
-    const currentDoc = this.editorView.state.doc;
-    const currentLength = typeof currentDoc.length === 'number'
-      ? currentDoc.length
-      : Number.POSITIVE_INFINITY;
-    return currentDoc === snapshot.doc
-      && snapshot.from >= 0
-      && snapshot.to >= snapshot.from
-      && snapshot.to <= currentLength
-      && this.#getDocumentSlice(currentDoc, snapshot.from, snapshot.to) === snapshot.text;
+    return this.editorView.state.doc === this.sourceDoc;
   }
 
   #isGenerationActive(generation: number): boolean {
@@ -1003,16 +861,6 @@ export class InlineEditSession {
     this.resolve({ decision: 'reject' });
   }
 
-  #getDocumentSlice(doc: Text, from: number, to: number): string {
-    const compatibleDoc = doc as Text & {
-      sliceString?: (start: number, end: number) => string;
-    };
-    if (typeof compatibleDoc.sliceString === 'function') {
-      return compatibleDoc.sliceString(from, to);
-    }
-    return from === this.selFrom && to === this.selTo ? this.selectedText : '';
-  }
-
   private isKeyboardEventInContext(event: KeyboardEvent): boolean {
     const target = event.target as Node | null;
     if (!target) {
@@ -1025,8 +873,7 @@ export class InlineEditSession {
   }
 
   #focusEditor(): void {
-    const compatibleView = this.editorView as EditorView & { focus?: () => void };
-    compatibleView.focus?.();
+    this.editorView.focus();
   }
 
   private handleKeydown(e: KeyboardEvent) {
@@ -1039,36 +886,4 @@ export class InlineEditSession {
       void this.generate();
     }
   }
-
-  #resolveContextFilesFromMessage(message: string): string[] {
-    if (!message.includes('@')) return [];
-
-    const vaultFiles = this.mentionDataProvider.getCachedVaultFiles();
-
-    const pathLookup = new Map<string, string>();
-    for (const file of vaultFiles) {
-      // TFile paths are already Vault-relative; filesystem normalization would
-      // expand literal `%VAR%`/`$VAR` segments and stat every file.
-      const lookupKey = normalizeForPlatformLookup(normalizeMentionPath(file.path));
-      if (lookupKey && !pathLookup.has(lookupKey)) {
-        pathLookup.set(lookupKey, file.path);
-      }
-    }
-
-    const resolved = new Set<string>();
-    for (let index = 0; index < message.length; index++) {
-      if (!isMentionStart(message, index)) continue;
-
-      const vaultMatch = findBestMentionLookupMatch(
-        message, index + 1, pathLookup
-      );
-      if (vaultMatch) {
-        resolved.add(vaultMatch.resolvedPath);
-        index = vaultMatch.endIndex - 1;
-      }
-    }
-
-    return [...resolved];
-  }
-
 }

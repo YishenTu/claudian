@@ -1,105 +1,26 @@
 /** @jest-environment jsdom */
 import { EditorState } from '@codemirror/state';
-import { EditorView } from '@codemirror/view';
-import { FakeAuxiliaryBackend } from '@test/helpers/core/auxiliary/AuxiliaryExecutionTestHarness';
+import {
+  createInlineEditHarness as createHarness,
+  disposeInlineEditHarnesses,
+  instructionInput as input,
+  showReplacementPreview,
+  submitInstruction,
+  typeInstruction,
+} from '@test/helpers/features/inline-edit/InlineEditDOMHarness';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { MarkdownRenderer, Notice } from 'obsidian';
 
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderCommandCatalog } from '@/core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
 import { RuntimeCommandCatalog } from '@/core/providers/commands/RuntimeCommandCatalog';
-import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
-import type { ProviderRegistration } from '@/core/providers/types';
-import { InlineEditSessionOwner } from '@/features/inline-edit/InlineEditSessionOwner';
-import { InlineEditModal, InlineEditSession } from '@/features/inline-edit/ui/InlineEditModal';
 
-Object.assign(HTMLElement.prototype, {
-  empty(this: HTMLElement) { this.replaceChildren(); },
-  addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); },
-  removeClass(this: HTMLElement, ...names: string[]) { this.classList.remove(...names); },
-  hasClass(this: HTMLElement, name: string) { return this.classList.contains(name); },
-  toggleClass(this: HTMLElement, name: string, enabled: boolean) { this.classList.toggle(name, enabled); },
-  setCssProps(this: HTMLElement, props: Record<string, string>) {
-    for (const [key, value] of Object.entries(props)) this.style.setProperty(key, value);
-  },
-  scrollIntoView() {},
-});
-
-const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
-  for (const cleanup of cleanups.splice(0)) await cleanup();
-  await ProviderWorkspaceRegistry.disposeInitialized();
-  document.body.replaceChildren();
+  await disposeInlineEditHarnesses();
   jest.clearAllMocks();
 });
-
-function createHarness() {
-  const lifecycle = new ProviderExecutionLifecycleRegistry();
-  const backend = new FakeAuxiliaryBackend();
-  const owner = new InlineEditSessionOwner();
-  ProviderWorkspaceRegistry.clear();
-  ProviderWorkspaceRegistry.setServices('claude', {});
-  ProviderRegistry.register('claude', {
-    capabilities: { supportsEphemeralSessions: true, supportsProviderCommands: true },
-    createExecutionBackend: () => backend,
-    isEnabled: () => true,
-  } as unknown as ProviderRegistration);
-  const app: any = {
-    vault: { adapter: { basePath: '/vault' }, getFiles: () => [], getAllLoadedFiles: () => [] },
-  };
-  const plugin: any = {
-    settings: {},
-    providerHost: {
-      app,
-      storage: { getAdapter: () => ({}) },
-      executionLifecycleRegistry: lifecycle,
-      runProviderExecutionTransition: lifecycle.runTransition.bind(lifecycle),
-    },
-  };
-  const editorView = new EditorView({
-    state: EditorState.create({ doc: 'hello world' }),
-    parent: document.body,
-    extensions: EditorView.contentAttributes.of({ 'aria-label': 'Note editor' }),
-  });
-  let end = 5;
-  const editor: any = {
-    cm: editorView,
-    getCursor: (which: string) => ({ line: 0, ch: which === 'from' ? 0 : end }),
-    getSelection: () => 'hello world'.slice(0, end),
-    replaceRange: (text: string) => editorView.dispatch({ changes: { from: 0, to: end, insert: text } }),
-  };
-  const context = { mode: 'selection' as const, selectedText: 'hello' };
-  const settled = jest.fn();
-  const createSession = () => new InlineEditSession(
-    app, plugin, plugin, editorView, editor, context, 'note.md', settled, { providerId: 'claude' },
-  );
-  const createModal = () => new InlineEditModal(app, plugin, plugin, editor, { editor } as any, context, 'note.md', owner);
-  cleanups.push(async () => {
-    owner.dispose();
-    editorView.destroy();
-    await lifecycle.dispose();
-  });
-  return {
-    app, backend, createModal, createSession, editorView, owner, plugin, settled,
-    changeSelection() { end = 11; fireEvent.mouseUp(editorView.dom); },
-  };
-}
-
-function input(): HTMLInputElement {
-  return screen.getByRole('textbox', { name: 'Edit instructions' }) as HTMLInputElement;
-}
-
-function typeInstruction(text: string): void {
-  fireEvent.input(input(), { target: { value: text } });
-}
-
-function submitInstruction(text = 'Make this clearer'): void {
-  typeInstruction(text);
-  fireEvent.keyDown(input(), { key: 'Enter' });
-}
 
 it('removes completion menus when inline edit is rejected after selection changes', async () => {
   const h = createHarness();
@@ -172,6 +93,27 @@ it('retains clarification when CodeMirror releases and later recreates the input
   fireEvent.input(restoredInput, { target: { value: 'Formal' } });
   fireEvent.keyDown(restoredInput, { key: 'Enter' });
   await waitFor(() => expect(h.backend.sessions[0].requests).toHaveLength(2));
+});
+
+it('restarts from the editor context after a clarification reply fails', async () => {
+  const h = createHarness();
+  h.createSession().show();
+  submitInstruction('Improve');
+  await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+  h.backend.sessions[0].emitText('Which tone?');
+  h.backend.sessions[0].complete();
+  await waitFor(() => expect(input().placeholder).toBe('Reply to continue...'));
+
+  submitInstruction('Formal');
+  await waitFor(() => expect(h.backend.sessions[0].requests).toHaveLength(2));
+  h.backend.sessions[0].fail('provider crashed');
+  await waitFor(() => expect(input().disabled).toBe(false));
+
+  // The failed conversation is gone, so the retry carries the selection again.
+  submitInstruction('Formal');
+  await waitFor(() => expect(h.backend.sessions[1]?.requests).toHaveLength(1));
+  expect(h.backend.sessions[1].requests[0].input[0]).toMatchObject({ text: expect.stringContaining('<editor_selection') });
+  expect(h.settled).not.toHaveBeenCalled();
 });
 
 it.each(['plugin unload', 'editor destruction', 'second invocation'] as const)(
@@ -383,4 +325,70 @@ it('rejects changed source before clarification reply without continuing stale e
   await waitFor(() => expect(input().placeholder).toBe('Reply to continue...'));
   await rejectAfterSourceChange(h, 1);
   expect(h.editorView.state.doc.toString()).toBe('XXXXXhello world');
+});
+
+const STALE_SOURCE_NOTICE = 'Inline edit was not applied because the source document or selection changed.';
+
+it.each(['while the provider runs', 'before the preview is accepted'] as const)(
+  'refuses a replacement when the source changes %s', async timing => {
+    const h = createHarness();
+    h.createSession().show();
+    submitInstruction();
+    await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
+    const changeSource = () => h.editorView.dispatch({ changes: { from: h.editorView.state.doc.length, insert: '!' } });
+    if (timing === 'while the provider runs') changeSource();
+    h.backend.sessions[0].emitText('<replacement>Hi</replacement>');
+    h.backend.sessions[0].complete();
+    if (timing === 'before the preview is accepted') {
+      const accept = await screen.findByRole('button', { name: 'Accept inline edit' });
+      changeSource();
+      fireEvent.click(accept);
+    }
+    await waitFor(() => expect(h.settled.mock.calls).toEqual([[{ decision: 'reject' }]]));
+    expect(Notice).toHaveBeenCalledWith(STALE_SOURCE_NOTICE);
+    expect(h.editorView.state.doc.toString()).toBe('hello world!');
+    expect(screen.queryByRole('toolbar', { name: 'Inline edit actions' })).toBeNull();
+  },
+);
+
+it('applies an accepted replacement once and ignores later decisions', async () => {
+  const h = createHarness();
+  const session = h.createSession();
+  session.show();
+  fireEvent.click(await showReplacementPreview(h));
+  session.accept();
+  session.reject();
+  expect(h.settled.mock.calls).toEqual([[{ decision: 'accept', editedText: 'Hi' }]]);
+  expect(h.editorView.state.doc.toString()).toBe('Hi world');
+  expect(h.editorView.hasFocus).toBe(true);
+});
+
+it('never previews a provider result that resolves after the edit is rejected', async () => {
+  const h = createHarness();
+  const session = h.createSession();
+  session.show();
+  submitInstruction();
+  await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
+  // The run finishes before rejection, so its result is already on its way to the session.
+  h.backend.sessions[0].emitText('<replacement>Hi</replacement>');
+  h.backend.sessions[0].complete();
+  session.reject();
+  await new Promise(resolve => window.setTimeout(resolve, 0));
+  expect(screen.queryByRole('button', { name: 'Accept inline edit' })).toBeNull();
+  expect(h.settled.mock.calls).toEqual([[{ decision: 'reject' }]]);
+  expect(h.editorView.state.doc.toString()).toBe('hello world');
+});
+
+it.each([
+  { target: 'outside', key: 'Escape', expected: [] },
+  { target: 'outside', key: 'Enter', expected: [] },
+  { target: 'editor', key: 'Escape', expected: [[{ decision: 'reject' }]] },
+  { target: 'editor', key: 'Enter', expected: [[{ decision: 'accept', editedText: 'Hi' }]] },
+] as const)('handles $key in the $target only when it belongs to the edit', async ({ target, key, expected }) => {
+  const h = createHarness();
+  h.createSession().show();
+  await showReplacementPreview(h);
+  const outside = document.body.appendChild(document.createElement('button'));
+  fireEvent.keyDown(target === 'outside' ? outside : h.editorView.contentDOM, { key });
+  expect(h.settled.mock.calls).toEqual(expected);
 });

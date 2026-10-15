@@ -6,7 +6,9 @@ import {
 import { InlineEditService } from '@/core/auxiliary/InlineEditService';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 
-function createService() {
+const selection = { mode: 'selection', notePath: 'note.md', selectedText: 'draft' } as const;
+
+function createService(model?: string) {
   const backend = new FakeAuxiliaryBackend();
   const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   const service = new InlineEditService({
@@ -19,20 +21,14 @@ function createService() {
     lifecycleRegistry,
     nativePersistence: 'provider-default',
     vaultWorkingDirectory: '/vault',
-  });
+  }, model);
   return { backend, lifecycleRegistry, service };
 }
 
 describe('InlineEditService', () => {
   it('keeps clarification continuity in an independent read-only session', async () => {
-    const { backend, service } = createService();
-    service.setModelOverride('edit-model');
-    const first = service.editText({
-      instruction: 'Improve',
-      mode: 'selection',
-      notePath: 'note.md',
-      selectedText: 'draft',
-    });
+    const { backend, service } = createService('edit-model');
+    const first = service.send({ ...selection, instruction: 'Improve' });
     await waitFor(() => backend.sessions[0]?.requests.length === 1);
     backend.sessions[0].emitText('Which tone?');
     backend.sessions[0].complete();
@@ -41,7 +37,8 @@ describe('InlineEditService', () => {
       success: true,
     });
 
-    const second = service.continueConversation('Formal', ['context.md']);
+    expect(service.isConversing).toBe(true);
+    const second = service.send({ ...selection, instruction: 'Formal', contextFiles: ['context.md'] });
     await waitFor(() => backend.sessions[0]?.requests.length === 2);
     backend.sessions[0].emitText('<replacement>Final</replacement>');
     backend.sessions[0].complete();
@@ -65,37 +62,33 @@ describe('InlineEditService', () => {
       },
       toolPolicy: { kind: 'read-only' },
     });
+    // A continuation carries the reply and its context files, not the editor context again.
     expect(backend.sessions[0].requests[1].input[0]).toMatchObject({
       text: expect.stringContaining('<context_files>'),
       type: 'text',
     });
+    expect(backend.sessions[0].requests[1].input[0]).not.toMatchObject({
+      text: expect.stringContaining('<editor_selection'),
+    });
+    expect(service.isConversing).toBe(false);
   });
 
-  it('requires an explicit root edit after transition invalidates continuity', async () => {
+  it('reports a transition that invalidated continuity and then starts from the editor context', async () => {
     const { backend, lifecycleRegistry, service } = createService();
-    const first = service.editText({
-      instruction: 'Improve',
-      mode: 'selection',
-      notePath: 'note.md',
-      selectedText: 'draft',
-    });
+    const first = service.send({ ...selection, instruction: 'Improve' });
     await waitFor(() => backend.sessions[0]?.requests.length === 1);
     backend.sessions[0].emitText('Which tone?');
     backend.sessions[0].complete();
     await first;
 
     await lifecycleRegistry.runTransition(['claude'], async () => undefined);
-    await expect(service.continueConversation('Formal')).resolves.toMatchObject({
-      resetRequired: true,
+    await expect(service.send({ ...selection, instruction: 'Formal' })).resolves.toEqual({
+      error: 'The provider environment changed. Start a new inline edit.',
       success: false,
     });
+    expect(service.isConversing).toBe(false);
 
-    const restarted = service.editText({
-      instruction: 'Shorten',
-      mode: 'selection',
-      notePath: 'note.md',
-      selectedText: 'draft',
-    });
+    const restarted = service.send({ ...selection, instruction: 'Shorten' });
     await waitFor(() => backend.sessions.length === 2);
     expect(backend.sessions).toHaveLength(2);
     expect(backend.configs).toEqual([

@@ -32,7 +32,6 @@ export { type ProviderId } from './provider';
 // Settings and command types
 export {
   type ApprovalDecision,
-  type AuxiliaryContinuityReset,
   type ClaudianSettings,
   type EnvironmentScope,
   type EnvSnippet,

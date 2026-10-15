@@ -1,4 +1,4 @@
-export interface MentionLookupMatch {
+interface MentionLookupMatch {
   resolvedPath: string;
   endIndex: number;
 }
@@ -29,13 +29,13 @@ function collectMentionEndCandidates(text: string, pathStart: number): number[] 
   return Array.from(candidates).sort((a, b) => b - a);
 }
 
-export function isMentionStart(text: string, index: number): boolean {
+function isMentionStart(text: string, index: number): boolean {
   if (text[index] !== '@') return false;
   if (index === 0) return true;
   return isWhitespace(text[index - 1]);
 }
 
-export function normalizeMentionPath(pathText: string): string {
+function normalizeMentionPath(pathText: string): string {
   return pathText
     .replace(/\\/g, '/')
     .replace(/^\.?\//, '')
@@ -43,11 +43,11 @@ export function normalizeMentionPath(pathText: string): string {
     .replace(/\/+$/, '');
 }
 
-export function normalizeForPlatformLookup(value: string): string {
+function normalizeForPlatformLookup(value: string): string {
   return process.platform === 'win32' ? value.toLowerCase() : value;
 }
 
-export function findBestMentionLookupMatch(
+function findBestMentionLookupMatch(
   text: string,
   pathStart: number,
   pathLookup: Map<string, string>
@@ -77,4 +77,32 @@ export function findBestMentionLookupMatch(
   }
 
   return null;
+}
+
+/** Vault files named by whitespace-led `@path` mentions in a message, in first-seen order. */
+export function resolveContextFiles(message: string, vaultFiles: readonly { path: string }[]): string[] {
+  if (!message.includes('@')) return [];
+
+  const pathLookup = new Map<string, string>();
+  for (const file of vaultFiles) {
+    // TFile paths are already Vault-relative; filesystem normalization would
+    // expand literal `%VAR%`/`$VAR` segments and stat every file.
+    const lookupKey = normalizeForPlatformLookup(normalizeMentionPath(file.path));
+    if (lookupKey && !pathLookup.has(lookupKey)) {
+      pathLookup.set(lookupKey, file.path);
+    }
+  }
+
+  const resolved = new Set<string>();
+  for (let index = 0; index < message.length; index++) {
+    if (!isMentionStart(message, index)) continue;
+
+    const vaultMatch = findBestMentionLookupMatch(message, index + 1, pathLookup);
+    if (vaultMatch) {
+      resolved.add(vaultMatch.resolvedPath);
+      index = vaultMatch.endIndex - 1;
+    }
+  }
+
+  return [...resolved];
 }

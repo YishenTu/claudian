@@ -60,12 +60,13 @@ describe('Claude auxiliary execution', () => {
       const context = createContext();
       updateClaudeProviderSettings(context.host.settings, { promptSuggestions: true });
       const service = ProviderRegistry.createInlineEditService(context.host, 'claude');
-      const start = () => service.editText({
-        instruction: 'Improve this draft',
+      const send = (instruction: string) => service.send({
+        instruction,
         mode: 'selection',
         notePath: 'note.md',
         selectedText: 'Draft',
       });
+      const start = () => send('Improve this draft');
 
       try {
         respond('Which tone?');
@@ -82,12 +83,12 @@ describe('Claude auxiliary execution', () => {
         expect(firstOptions?.effort).toBe('medium');
 
         respond('<replacement>A concise formal draft.</replacement>');
-        await expect(service.continueConversation('Formal')).resolves.toMatchObject({
+        await expect(send('Formal')).resolves.toMatchObject({
           success: true, editedText: 'A concise formal draft.',
         });
         expect(sdkMock.getLastResponse()).toBe(firstQuery);
 
-        service.resetConversation();
+        service.end();
         respond('Which tone for the new request?');
         await expect(start()).resolves.toMatchObject({ success: true });
         expect(firstOptions?.abortController?.signal.aborted).toBe(true);
@@ -95,7 +96,7 @@ describe('Claude auxiliary execution', () => {
         expect(sdkMock.getLastOptions()?.persistSession).toBe(false);
         expect(sdkMock.getLastOptions()?.resume).toBeUndefined();
       } finally {
-        service.cancel();
+        service.end();
         await context.lifecycleRegistry.dispose();
       }
     },
