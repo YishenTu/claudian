@@ -92,10 +92,11 @@
   padding: 0;
 }
 
-/* Inside a note the menu opens downward from the chip's end, where the editor has room. */
+/*
+ * The composer sits above the text it edits, so the menu opens upward (the shared default) and would
+ * otherwise be painted over by that text. It aligns to the chip's end, inside the card.
+ */
 .claudian-inline-model-toolbar .claudian-toolbar-popover {
-  top: calc(100% + 4px);
-  bottom: auto;
   inset-inline-start: auto;
   inset-inline-end: 0;
 }

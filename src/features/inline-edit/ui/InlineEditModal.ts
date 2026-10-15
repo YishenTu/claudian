@@ -315,7 +315,8 @@ export class InlineEditSession {
   private mode: InlineEditMode;
   private cursorContext: CursorContext | null = null;
   private inlineEditService: InlineEditService;
-  private escHandler: ((e: KeyboardEvent) => void) | null = null;
+  /** Removes the current phase's Escape/Enter listener. */
+  private releaseKeyHandler: (() => void) | null = null;
   private selectionListener: ((e: Event) => void) | null = null;
   private generating = false;
   private instructionDraft = '';
@@ -417,12 +418,15 @@ export class InlineEditSession {
     }
 
     // !e.isComposing: skip during IME composition (Chinese, Japanese, Korean, etc.)
-    this.escHandler = (e: KeyboardEvent) => {
+    // Bubble phase, so the instruction's suggestion menu and the model menu close on Escape first.
+    const ownerDocument = this.getOwnerDocument();
+    const onKeydown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.isComposing && this.isKeyboardEventInContext(e)) {
         this.reject();
       }
     };
-    this.getOwnerDocument().addEventListener('keydown', this.escHandler);
+    ownerDocument.addEventListener('keydown', onKeydown);
+    this.releaseKeyHandler = () => ownerDocument.removeEventListener('keydown', onKeydown);
   }
 
   #updateHighlight() {
@@ -869,22 +873,28 @@ export class InlineEditSession {
     this.#installAcceptRejectHandler();
   }
 
+  /**
+   * Window capture runs ahead of CodeMirror, which would insert a newline on Enter and so turn the
+   * accept into a stale-source rejection, and ahead of Obsidian's keymap, which handles Escape.
+   */
   #installAcceptRejectHandler() {
-    if (this.escHandler) {
-      this.getOwnerDocument().removeEventListener('keydown', this.escHandler);
-    }
-    this.escHandler = (e: KeyboardEvent) => {
-      if (!this.isKeyboardEventInContext(e)) {
-        return;
-      }
-      if (e.key === 'Escape' && !e.isComposing) {
+    this.releaseKeyHandler?.();
+    const keyTarget = this.getOwnerDocument().defaultView ?? window;
+    const onKeydown = (e: KeyboardEvent) => {
+      if (e.isComposing || !this.isKeyboardEventInContext(e)) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
         this.reject();
-      } else if (e.key === 'Enter' && !e.isComposing && !this.containerEl?.contains(e.target as Node)) {
+      } else if (e.key === 'Enter' && !this.containerEl?.contains(e.target as Node)) {
         // Preview controls keep their native Enter activation.
+        e.preventDefault();
+        e.stopPropagation();
         this.accept();
       }
     };
-    this.getOwnerDocument().addEventListener('keydown', this.escHandler);
+    keyTarget.addEventListener('keydown', onKeydown, true);
+    this.releaseKeyHandler = () => keyTarget.removeEventListener('keydown', onKeydown, true);
   }
 
   accept() {
@@ -950,9 +960,8 @@ export class InlineEditSession {
     this.releaseEditorLifetime = null;
     this.inlineEditService.end();
     this.#removeSelectionListeners();
-    if (this.escHandler) {
-      this.getOwnerDocument().removeEventListener('keydown', this.escHandler);
-    }
+    this.releaseKeyHandler?.();
+    this.releaseKeyHandler = null;
     if (this.inputResources) this.destroyInputDOM(this.inputResources.container);
 
     if (this.editorDestroyed) return;
@@ -990,12 +999,14 @@ export class InlineEditSession {
     this.resolve({ decision: 'reject' });
   }
 
+  /** Keys aimed at the editor, this widget, or nowhere: a disabled or replaced input leaves focus on the body. */
   private isKeyboardEventInContext(event: KeyboardEvent): boolean {
     const target = event.target as Node | null;
     if (!target) {
       return false;
     }
-    return target === this.containerEl
+    return target === this.getOwnerDocument().body
+      || target === this.containerEl
       || this.containerEl?.contains(target) === true
       || target === this.editorView.dom
       || this.editorView.dom.contains(target);

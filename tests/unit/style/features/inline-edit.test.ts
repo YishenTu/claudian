@@ -8,7 +8,7 @@ describe('inline-edit.css', () => {
 
   beforeEach(() => {
     style = document.createElement('style');
-    style.textContent = ['base/variables.css', 'features/inline-edit.css']
+    style.textContent = ['base/variables.css', 'toolbar/model-selector.css', 'features/inline-edit.css']
       .map(file => readFileSync(path.resolve('src/style', file), 'utf8'))
       .join('\n');
     document.head.appendChild(style);
@@ -39,5 +39,18 @@ describe('inline-edit.css', () => {
 
     expect(window.getComputedStyle(composer).getPropertyValue('--claudian-provider-logo').trim())
       .toBe('var(--claudian-brand-deepseek)');
+  });
+
+  it('opens the model menu upward, away from the selected text below the composer', () => {
+    const composer = mountComposer('claude');
+    composer.querySelector('.claudian-inline-input-wrap')!.insertAdjacentHTML(
+      'beforeend',
+      '<div class="claudian-input-toolbar claudian-inline-model-toolbar"><div class="claudian-toolbar-chip-anchor">'
+        + '<div class="claudian-toolbar-popover"></div></div></div>',
+    );
+    const menu = window.getComputedStyle(composer.querySelector('.claudian-toolbar-popover')!);
+
+    expect(menu.bottom).not.toBe('auto');
+    expect(menu.top).not.toMatch(/100%/);
   });
 });
