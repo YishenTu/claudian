@@ -14,6 +14,16 @@
   background: var(--text-selection);
 }
 
+/*
+ * Obsidian gives every non-editable block in the editor paint containment, which clips whatever a widget
+ * draws outside its box: the composer's model menu and the review's gutter bars. The extra class outranks
+ * Obsidian's selector regardless of stylesheet order.
+ */
+.markdown-source-view.mod-cm6 .cm-content > .claudian-inline-input-container[contenteditable="false"],
+.markdown-source-view.mod-cm6 .cm-content > .claudian-inline-diff-preview[contenteditable="false"] {
+  contain: none !important;
+}
+
 /* CM6 widget container - ensure transparent background */
 .markdown-source-view.mod-cm6 .cm-widgetBuffer,
 .markdown-source-view.mod-cm6 .cm-line.claudian-inline-input-line {
