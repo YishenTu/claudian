@@ -250,7 +250,6 @@
   border-radius: 10px;
   background-color: var(--background-secondary);
   background-image: linear-gradient(var(--background-primary), var(--background-primary));
-  box-shadow: var(--shadow-s);
   font-family: var(--font-interface, -apple-system, BlinkMacSystemFont, sans-serif);
 }
 
