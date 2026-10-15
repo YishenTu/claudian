@@ -186,7 +186,7 @@ it.each([
   expect(h.backend.sessions[0].getStatus()).toBe('disposed');
 });
 
-it('runs the edit with the model and effort chosen on its composer chip without saving them', async () => {
+it('saves the model and effort chosen on its composer chip as the inline edit default', async () => {
   const h = createHarness();
   h.createSession().show();
   expect(await axe(input().closest('.claudian-inline-input-container')!)).toHaveNoViolations();
@@ -200,7 +200,29 @@ it('runs the edit with the model and effort chosen on its composer chip without 
   expect(h.backend.sessions[0].requests[0].configuration).toMatchObject({ model: 'opus', reasoning: 'low' });
   // A running request hides the chip, so its choices cannot change mid-request.
   expect(screen.getByRole('button', { name: 'Model: Opus, effort Low' }).closest('.claudian-hidden')).not.toBeNull();
-  expect(h.plugin.settings).toEqual({ model: 'sonnet', effortLevel: 'high' });
+  // The chat's own selection is untouched.
+  expect(h.plugin.settings).toEqual({
+    model: 'sonnet',
+    effortLevel: 'high',
+    inlineEditModel: { providerId: 'claude', model: 'opus', reasoning: 'low' },
+  });
+});
+
+it.each([
+  { saved: { providerId: 'claude', model: 'opus', reasoning: 'low' }, chip: 'Model: Opus, effort Low', model: 'opus', reasoning: 'low' },
+  // An unavailable saved model falls back to the chat selection with the saved provider effort.
+  { saved: { providerId: 'claude', model: 'retired' }, chip: 'Model: Sonnet, effort High', model: 'sonnet', reasoning: undefined },
+])('starts a new edit from the saved inline default ($saved.model) or else the chat selection', async ({ saved, chip, model, reasoning }) => {
+  const h = createHarness();
+  h.plugin.settings.inlineEditModel = saved;
+  h.plugin.getActiveModelSelection = () => ({ providerId: 'claude', model: 'sonnet' });
+  void h.createModal().openAndWait();
+  await screen.findByRole('button', { name: chip });
+  submitInstruction();
+  await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+  const { configuration } = h.backend.sessions[0].requests[0];
+  expect(configuration.model).toBe(model);
+  expect('reasoning' in configuration ? configuration.reasoning : undefined).toBe(reasoning);
 });
 
 it('continues provider execution when vault mentions cannot load and reports one notice', async () => {

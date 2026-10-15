@@ -42,6 +42,7 @@ export {
   type SessionManagerSort,
   type SlashCommand,
   type StoredChatModelSelection,
+  type StoredInlineEditModelSelection,
   type ZenModePosition,
 } from './settings';
 

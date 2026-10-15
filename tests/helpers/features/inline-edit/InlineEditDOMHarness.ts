@@ -79,6 +79,9 @@ export function createInlineEditHarness() {
     settings: { model: 'sonnet', effortLevel: 'high' },
     getActiveEnvironmentVariables: () => '',
     getActiveModelSelection: () => null,
+    async mutateSettings(mutation: (settings: Record<string, unknown>) => void | Promise<void>) {
+      await mutation(plugin.settings);
+    },
     providerHost: {
       app,
       storage: { getAdapter: () => ({}) },

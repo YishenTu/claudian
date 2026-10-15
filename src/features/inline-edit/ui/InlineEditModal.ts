@@ -173,10 +173,37 @@ export type InlineEditDecision = 'accept' | 'edit' | 'reject';
 
 interface InlineEditProviderContext {
   modelOverride?: string;
+  reasoningOverride?: string;
   providerId: ProviderId;
 }
 
+/** The saved inline default, while its provider is enabled and still offers its model and effort. */
+function resolveSavedInlineEditModel(host: FeatureHost): InlineEditProviderContext | null {
+  const saved = host.settings.inlineEditModel;
+  if (!saved
+    || !ProviderRegistry.getRegisteredProviderIds().includes(saved.providerId)
+    || !ProviderRegistry.isEnabled(saved.providerId, host.settings)) {
+    return null;
+  }
+  const settings = getProviderSettingsSnapshotWithModel({ ...host.settings }, saved.providerId);
+  const uiConfig = ProviderRegistry.getChatUIConfig(saved.providerId);
+  const offered = uiConfig.getModelOptions({
+    ...settings,
+    environmentVariables: host.getActiveEnvironmentVariables(saved.providerId),
+  }).some(option => option.value === saved.model);
+  if (!offered) return null;
+  const reasoningOffered = uiConfig.getReasoningOptions(saved.model, settings)
+    .some(option => option.value === saved.reasoning);
+  return {
+    modelOverride: saved.model,
+    reasoningOverride: reasoningOffered ? saved.reasoning : undefined,
+    providerId: saved.providerId,
+  };
+}
+
 function resolveInlineEditProviderContext(host: FeatureHost): InlineEditProviderContext {
+  const saved = resolveSavedInlineEditModel(host);
+  if (saved) return saved;
   const selection = host.getActiveModelSelection?.();
   const providerId = selection && ProviderRegistry.isEnabled(selection.providerId, host.settings)
     ? selection.providerId : ProviderRegistry.resolveSettingsProviderId(host.settings);
@@ -302,7 +329,7 @@ export class InlineEditSession {
     menus: ToolbarMenuGroup;
     dispose(): void;
   } | null = null;
-  /** This edit's model and effort choices; undefined follows the provider's saved selection. */
+  /** This edit's model and effort; undefined follows the provider's saved selection. */
   private modelOverride: string | undefined;
   private reasoningOverride: string | undefined;
   private mentionDataProvider: VaultMentionDataProvider;
@@ -325,9 +352,10 @@ export class InlineEditSession {
     private resolve: (result: { decision: InlineEditDecision; editedText?: string }) => void,
     providerContext: InlineEditProviderContext,
   ) {
-    const { modelOverride, providerId } = providerContext;
+    const { modelOverride, providerId, reasoningOverride } = providerContext;
     this.inlineEditService = ProviderRegistry.createInlineEditService(host.providerHost, providerId);
     this.modelOverride = modelOverride;
+    this.reasoningOverride = reasoningOverride;
     this.resolvedProviderId = providerId;
     this.mentionDataProvider = new VaultMentionDataProvider(this.app, {
       onFileLoadError: () => {
@@ -558,11 +586,27 @@ export class InlineEditSession {
           this.reasoningOverride = undefined;
         }
         this.inputResources?.effortSelector.updateDisplay();
+        await this.#saveInlineEditDefault();
       },
       onEffortLevelChange: async (effort) => {
         this.reasoningOverride = effort;
+        await this.#saveInlineEditDefault();
       },
     };
+  }
+
+  /** A choice on the chip becomes the model later inline edits start from; chat keeps its own. */
+  async #saveInlineEditDefault(): Promise<void> {
+    const { model } = this.#getModelPickerSettings();
+    if (!model) return;
+    const selection = {
+      providerId: this.resolvedProviderId,
+      model,
+      ...(this.reasoningOverride ? { reasoning: this.reasoningOverride } : {}),
+    };
+    await this.host.mutateSettings((settings) => {
+      settings.inlineEditModel = selection;
+    });
   }
 
   /** Projects the saved provider selection with this edit's choices; nothing is saved. */

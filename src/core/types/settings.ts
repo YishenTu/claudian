@@ -94,6 +94,11 @@ export interface StoredChatModelSelection {
   model: string;
 }
 
+/** Inline edit's own model; reasoning is omitted to follow the provider's saved effort. */
+export interface StoredInlineEditModelSelection extends StoredChatModelSelection {
+  reasoning?: string;
+}
+
 /**
  * Application settings stored in .claudian/claudian-settings.json.
  *
@@ -139,6 +144,8 @@ export interface ClaudianSettings {
   // Provider selection
   settingsProvider: string;  // ProviderId — which provider's model/effort is projected to top-level fields
   lastSelectedChatModel: StoredChatModelSelection | null;
+  /** Null starts inline edits from the active chat selection. */
+  inlineEditModel: StoredInlineEditModelSelection | null;
   savedProviderModel: Partial<Record<string, string>>;
   savedProviderEffort: Partial<Record<string, string>>;
   savedProviderServiceTier: Partial<Record<string, string>>;
