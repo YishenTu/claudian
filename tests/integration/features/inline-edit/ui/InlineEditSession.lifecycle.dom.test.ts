@@ -199,6 +199,9 @@ it('opens the model menu outside the clipped editor widget, above its chip, and 
   // Fixed above the chip: the menu's bottom edge sits 8px over the chip's top.
   expect(menu.style.getPropertyValue('--claudian-toolbar-popover-bottom')).toBe(`${window.innerHeight - 200 + 8}px`);
   expect(await axe(menu)).toHaveNoViolations();
+  // The composer focuses its input shortly after mounting; that must not pull focus out of an open menu.
+  await new Promise(resolve => window.setTimeout(resolve, 80));
+  expect(screen.getByRole('dialog', { name: 'Model options' })).toBe(menu);
 
   // Escape closes the menu first and leaves the edit open.
   fireEvent.keyDown(screen.getByRole('option', { name: 'Sonnet' }), { key: 'Escape' });

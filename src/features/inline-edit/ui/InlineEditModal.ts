@@ -559,7 +559,12 @@ export class InlineEditSession {
     };
     inputEl.addEventListener('keydown', onKeydown);
     inputEl.addEventListener('input', onInput);
-    const focusTimer = window.setTimeout(() => inputEl.focus(), 50);
+    const focusTimer = window.setTimeout(() => {
+      // A model menu opened before this fires keeps focus; moving it would close the menu.
+      const active = ownerDocument.activeElement;
+      if (active && (container.contains(active) || menuLayer.contains(active))) return;
+      inputEl.focus();
+    }, 50);
     this.inputResources = {
       container,
       dropdown,
