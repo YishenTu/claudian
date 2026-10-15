@@ -1,12 +1,17 @@
 import type { ProviderCommandCatalog } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
+import type { ScopedRuntimeInputFingerprints } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type {
   ProviderCLIResolver,
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
 import { CodexCommandCatalog } from '../commands/CodexCommandCatalog';
+import {
+  didCodexRuntimeChangeInvalidateSessions,
+  readSavedCodexRuntimeFingerprints,
+} from '../env/CodexSettingsReconciler';
 import { CodexThreadArchiveService } from '../history/CodexThreadArchiveService';
 import { CodexAppServerRuntime } from '../runtime/CodexAppServerRuntime';
 import { CodexCLIResolver } from '../runtime/CodexCLIResolver';
@@ -45,10 +50,17 @@ export async function createCodexWorkspaceServices(
   const commandCatalog = new CodexCommandCatalog(skillListProvider);
   const modelCatalog = createCodexModels(plugin, modelCatalogCoordinator);
   const sessionArchive = new CodexThreadArchiveService(runtime);
+  // Fingerprints saved before the open transition's mutation.
+  let transitionFingerprints: ScopedRuntimeInputFingerprints | null = null;
   const unregisterTransitionHook = plugin.executionLifecycleRegistry
     .registerTransitionHook('codex', {
-      preserveSessions: () => getCodexProviderSettings(plugin.settings).enabled,
+      // Running sessions survive launch-only changes on the replacement server. A change that
+      // invalidates bindings must also end them, or their late snapshots would restore the old thread.
+      preserveSessions: () => getCodexProviderSettings(plugin.settings).enabled
+        && !(transitionFingerprints
+          && didCodexRuntimeChangeInvalidateSessions(transitionFingerprints, plugin.settings)),
       beforeTransition: async () => {
+        transitionFingerprints = readSavedCodexRuntimeFingerprints(plugin.settings);
         modelCatalog.beginTransition();
         modelCatalogCoordinator.beginEnvironmentTransition();
         skillListProvider.beginEnvironmentTransition();
@@ -64,6 +76,7 @@ export async function createCodexWorkspaceServices(
         try {
           await runtime.endEnvironmentTransition();
         } finally {
+          transitionFingerprints = null;
           modelCatalog.endTransition();
           modelCatalogCoordinator.endEnvironmentTransition();
           skillListProvider.endEnvironmentTransition();

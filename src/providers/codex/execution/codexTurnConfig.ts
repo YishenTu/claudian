@@ -7,6 +7,7 @@ import {
   appendSelectionContexts,
   appendSessionReferences,
 } from '@/core/prompt/promptContext';
+import { encodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import type { ChatMessage } from '@/core/types';
 import { getCodexModelOptions } from '@/providers/codex/modelOptions';
 import {
@@ -222,11 +223,17 @@ export function buildCodexTurnPrompt(
   }
   if (replayConversationHistory) {
     const historyContext = buildContextFromHistory(history as ChatMessage[]);
-    return buildPromptWithHistoryContext(
-      historyContext || null,
+    if (!historyContext) return prompt;
+    const recoveredPrompt = buildPromptWithHistoryContext(
+      historyContext,
       prompt,
       prompt,
       history as ChatMessage[],
+    );
+    // The envelope lets history parsing show only the visible input of the replayed turn.
+    return encodeRecoveryPrompt(
+      historyContext,
+      recoveredPrompt === historyContext ? null : prompt,
     );
   }
   return prompt;

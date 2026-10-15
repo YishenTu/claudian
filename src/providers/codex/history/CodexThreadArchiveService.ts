@@ -16,9 +16,14 @@ export class CodexThreadArchiveService implements ProviderSessionArchive {
 
   async setSessionsArchived(changes: readonly ProviderSessionArchiveChange[]): Promise<void> {
     const requests = changes.flatMap(({ conversation, isArchived }) => {
-      // A pending fork has no thread of its own; never target its source thread.
-      const threadId = getCodexState(conversation.providerState).threadId ?? conversation.sessionId;
-      return threadId ? [{ threadId, isArchived }] : [];
+      const state = getCodexState(conversation.providerState);
+      // Invalidated segments' rollouts move with the conversation; one from another store reports
+      // no rollout and is skipped. A pending fork has no thread of its own; never target its source.
+      const threadIds = new Set([
+        ...(state.previousSegments ?? []).map(segment => segment.threadId),
+        state.threadId ?? conversation.sessionId,
+      ].filter((threadId): threadId is string => !!threadId));
+      return [...threadIds].map(threadId => ({ threadId, isArchived }));
     });
     if (requests.length === 0) return;
     // Register in the same tick as the availability check so drains cannot miss admitted work.

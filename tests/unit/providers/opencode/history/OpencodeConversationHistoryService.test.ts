@@ -239,7 +239,7 @@ describe('OpencodeConversationHistoryService', () => {
   });
 
   describe('resolveMissingConversationSession', () => {
-    it('clears a confirmed stale resume ID while preserving provider-owned state', async () => {
+    it('retires a confirmed stale resume ID to history while preserving provider-owned state', async () => {
       const conversation = createConversation('missing-session', '/tmp/opencode.db');
       conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
       const service = new OpencodeConversationHistoryService();
@@ -257,7 +257,9 @@ describe('OpencodeConversationHistoryService', () => {
         databasePath: '/tmp/opencode.db',
         futureResumeCursor: { token: 'cursor-1' },
         nativeConversationContextEstablished: false,
+        previousSessions: [{ sessionId: 'missing-session', databasePath: '/tmp/opencode.db' }],
       });
+      expect(service.resolveSessionIdForConversation(conversation)).toBeNull();
     });
 
     it('preserves a newer resume ID when the failure identifies another session', async () => {

@@ -1,4 +1,5 @@
 import {
+  compareScopedRuntimeInputFingerprints,
   createRuntimeInputFingerprint,
   isVersionedRuntimeInputFingerprint,
   RUNTIME_INPUT_FINGERPRINT_VERSION,
@@ -76,5 +77,16 @@ describe('RuntimeInputFingerprint', () => {
     expect(fingerprint).not.toContain(Buffer.from(secret, 'utf8').toString('base64'));
     expect(fingerprint).not.toContain(Buffer.from(secret, 'utf8').toString('hex'));
     expect(changedFingerprint).not.toBe(fingerprint);
+  });
+
+  it.each([
+    ['unchanged inputs', { runtime: 'r1', session: 's1' }, { runtime: 'r1', session: 's1' }, false, false],
+    ['a launch-only change', { runtime: 'r1', session: 's1' }, { runtime: 'r2', session: 's1' }, true, false],
+    ['a session-scope change', { runtime: 'r1', session: 's1' }, { runtime: 'r2', session: 's2' }, true, true],
+    ['a pre-split backfill with unchanged runtime', { runtime: 'r1', session: '' }, { runtime: 'r1', session: 's1' }, true, false],
+    ['a pre-split runtime change of unknown scope', { runtime: 'r1', session: '' }, { runtime: 'r2', session: 's1' }, true, true],
+  ])('classifies %s', (_label, saved, current, changed, invalidatesSessions) => {
+    expect(compareScopedRuntimeInputFingerprints(saved, current))
+      .toEqual({ changed, invalidatesSessions });
   });
 });

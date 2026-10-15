@@ -5,6 +5,7 @@ import {
   parseImageDataUri,
 } from '@/core/execution/imageAttachment';
 import { extractUserQuery } from '@/core/prompt/promptContext';
+import { decodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import { resolveToolDiffData } from '@/core/tools/toolDiff';
 
@@ -216,10 +217,14 @@ function mapStoredMessage(
 
   if (role === 'user') {
     if (message.parts.some(part => part.type === 'compaction')) return null;
-    const rawPrompt = getJoinedTextParts(message.parts);
+    const nativePrompt = getJoinedTextParts(message.parts);
+    // Replayed Claudian history is already shown from the sessions it came from.
+    const recovery = decodeRecoveryPrompt(nativePrompt);
+    const images = buildUserImages(message.parts, id);
+    if (recovery?.currentInput === null && images.length === 0) return null;
+    const rawPrompt = recovery ? recovery.currentInput ?? '' : nativePrompt;
     const sessionMessage = decodeSessionMessage(rawPrompt);
     const promptText = extractUserQuery(rawPrompt);
-    const images = buildUserImages(message.parts, id);
     return {
       assistantMessageId: undefined,
       content: promptText,

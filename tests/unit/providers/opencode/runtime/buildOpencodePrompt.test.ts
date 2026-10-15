@@ -1,3 +1,4 @@
+import { decodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import { buildOpencodePrompt } from '@/providers/opencode/runtime/buildOpencodePrompt';
 
 describe('buildOpencodePrompt text', () => {
@@ -74,7 +75,21 @@ describe('buildOpencodePrompt text', () => {
     expect(result.userText).toEqual({ start: prompt.length - 'Continue with the fix'.length, end: prompt.length });
     expect(prompt).toContain('User: Inspect the bug');
     expect(prompt).toContain('Assistant: I found the failing path');
-    expect(prompt).toContain('User: Continue with the fix');
+    // History readers strip the replayed history and keep only this turn's input.
+    expect(decodeRecoveryPrompt(prompt)).toEqual({ currentInput: 'Continue with the fix' });
+  });
+
+  it('replays an unanswered final query without repeating it as current input', () => {
+    const result = buildOpencodePrompt(
+      { text: 'Retry this' },
+      [{ content: 'Retry this', id: 'user-1', role: 'user', timestamp: 1 }],
+    );
+
+    const [block] = result.blocks;
+    const prompt = block.type === 'text' ? block.text : '';
+    expect(result.userText).toBeNull();
+    expect(prompt).toContain('User: Retry this');
+    expect(decodeRecoveryPrompt(prompt)).toEqual({ currentInput: null });
   });
 });
 

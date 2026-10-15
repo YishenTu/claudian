@@ -50,6 +50,25 @@ describe('CodexThreadArchiveService', () => {
     expect(mockAcquire).not.toHaveBeenCalled();
   });
 
+  it.each([true, false])('moves invalidated segment threads with the conversation (archived: %s)', async isArchived => {
+    const service = new CodexThreadArchiveService(runtime);
+    const method = isArchived ? 'thread/archive' : 'thread/unarchive';
+
+    await service.setSessionsArchived(change(conversation('thread-live', {
+      threadId: 'thread-live',
+      previousSegments: [
+        { threadId: 'thread-old' },
+        // A pending fork segment has no thread of its own; its source is never targeted.
+        { forkSource: { sessionId: 'source-thread', resumeAt: 'turn-1' } },
+      ],
+    }), isArchived));
+
+    expect(mockTransportRequest.mock.calls).toEqual([
+      [method, { threadId: 'thread-old' }],
+      [method, { threadId: 'thread-live' }],
+    ]);
+  });
+
   it.each([
     ['thread/archive', true, 'no rollout found for thread id thread-1'],
     ['thread/unarchive', false, 'no archived rollout found for thread id thread-1'],

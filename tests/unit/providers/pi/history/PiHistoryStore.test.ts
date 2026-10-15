@@ -4,6 +4,7 @@ import * as path from 'node:path';
 
 import { testDate, testTime } from '@test/helpers/testClock';
 
+import { encodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import { encodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import {
   correlatePiUserMessages,
@@ -15,7 +16,6 @@ import {
   resolvePiActivePath,
   rollbackCreatedPiForkSessionFile,
 } from '@/providers/pi/history/PiHistoryStore';
-import { encodePiRecoveryPrompt } from '@/providers/pi/history/PiRecoveryPromptCodec';
 
 describe('PiHistoryStore', () => {
   it('decodes session senders while preserving live-to-native input matching', () => {
@@ -867,7 +867,7 @@ it.each([false, true])('restores Pi turn output across tool loops (missing usage
 it('keeps live and replay stats unavailable for a hidden recovery-only input', () => {
   const content = [
     { type: 'message', id: 'recovery', timestamp: testTime({ days: 24, hours: 11 }),
-      message: { role: 'user', content: encodePiRecoveryPrompt('User: Previous question', null) } },
+      message: { role: 'user', content: encodeRecoveryPrompt('User: Previous question', null) } },
     { type: 'message', id: 'answer', parentId: 'recovery', timestamp: testTime({ days: 24, hours: 11, seconds: 2, milliseconds: 500 }),
       message: { role: 'assistant', content: 'Answer', stopReason: 'stop', usage: { output: 125 } } },
   ].map(record => JSON.stringify(record)).join('\n');

@@ -1825,8 +1825,11 @@ describe('CodexExecutionBackend', () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const session = createBackend(createPlugin())
-      .createSession(createSessionConfig());
+    // An invalidated conversation: its earlier thread is history-only and context must be replayed.
+    const previousSegments = [{ threadId: 'thread-invalidated', sessionFilePath: '/tmp/.codex/sessions/thread-invalidated.jsonl' }];
+    const session = createBackend(createPlugin()).createSession(createSessionConfig({
+      resumeSeed: { providerState: { nativeConversationContextEstablished: false, previousSegments } },
+    }));
     const conversationHistory = [
       { id: 'history-user', role: 'user' as const, content: 'prior question', timestamp: 1 },
       { id: 'history-assistant', role: 'assistant' as const, content: 'prior answer', timestamp: 2 },
@@ -1859,6 +1862,24 @@ describe('CodexExecutionBackend', () => {
     expect(turnRequests[0]).toContain('prior answer');
     expect(turnRequests[1]).not.toContain('prior question');
     expect(turnRequests[1]).toContain('Follow up');
+
+    // The native rollout records the replayed prompt; its history must not render as the user's input.
+    const replayedPrompt = mockTransportRequest.mock.calls
+      .find(([method]) => method === 'turn/start')![1].input
+      .find((item: { type: string }) => item.type === 'text').text as string;
+    const rollout = [
+      { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-history-1' } },
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: replayedPrompt }] } },
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'replayed answer' }] } },
+      { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn-history-1' } },
+    ].map(record => JSON.stringify(record)).join('\n');
+    expect(parseCodexSessionContent(rollout).map(message => message.content))
+      .toEqual(['hello', 'replayed answer']);
+    expect(session.getSnapshot().providerState).toMatchObject({
+      threadId: 'thread-history',
+      nativeConversationContextEstablished: true,
+      previousSegments,
+    });
 
     await session.dispose();
   });

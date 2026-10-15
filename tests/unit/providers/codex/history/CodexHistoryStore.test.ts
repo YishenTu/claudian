@@ -2,6 +2,7 @@ import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCod
 import { testDate, testTime } from '@test/helpers/testClock';
 import * as path from 'path';
 
+import { encodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import { encodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import {
   deriveCodexSessionsRootFromSessionPath,
@@ -1635,6 +1636,27 @@ describe('CodexHistoryStore', () => {
   });
 
   describe('parseCodexSessionContent - system-injected user messages', () => {
+    it.each([
+      ['with a current input', 'Earlier answer', 'Next question', ['Next question', 'Next answer']],
+      ['without a current input', 'Earlier answer', null, ['Next answer']],
+      // Image markup inside replayed history must not be stripped before the envelope is measured.
+      ['replaying image markup', 'Use <image href="chart.png"></image>.', 'Next question', ['Next question', 'Next answer']],
+    ])('shows only the visible input of a history replay envelope %s', (_case, earlierAnswer, currentInput, expected) => {
+      const prompt = encodeRecoveryPrompt(`User: Earlier question\n\nAssistant: ${earlierAnswer}`, currentInput);
+      const content = [
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-replay' } },
+        { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: prompt }] } },
+        { type: 'event_msg', payload: { type: 'user_message', message: prompt } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Next answer' }] } },
+        { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn-replay' } },
+      ].map((record, seconds) => JSON.stringify({ ...record, timestamp: testDate({ seconds }).toISOString() })).join('\n');
+
+      const messages = parseCodexSessionContent(content);
+
+      expect(messages.map(message => message.content)).toEqual(expected);
+      expect(JSON.stringify(messages)).not.toContain('Earlier question');
+    });
+
     it('should skip AGENTS.md instructions injected as user message', () => {
       const content = [
         JSON.stringify({ type: 'session_meta', id: 'test-session' }),

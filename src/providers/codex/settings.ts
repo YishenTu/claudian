@@ -44,6 +44,8 @@ export interface CodexProviderConfig {
   reasoningSummary: CodexReasoningSummary;
   environmentVariables: string;
   environmentHash: string;
+  /** Fingerprint of the inputs that select the native session store, endpoint, or account. */
+  sessionEnvironmentHash: string;
   catalogTimestamp: number;
   catalogFingerprint: string;
   installationMethodsByHost: HostnameInstallationMethods;
@@ -113,6 +115,7 @@ export interface CodexProviderSettings {
   reasoningSummary: CodexProviderConfig['reasoningSummary'];
   environmentVariables: CodexProviderConfig['environmentVariables'];
   environmentHash: CodexProviderConfig['environmentHash'];
+  sessionEnvironmentHash: CodexProviderConfig['sessionEnvironmentHash'];
   catalogTimestamp: CodexProviderConfig['catalogTimestamp'];
   catalogFingerprint: CodexProviderConfig['catalogFingerprint'];
   installationMethod: CodexInstallationMethod;
@@ -135,6 +138,7 @@ export const DEFAULT_CODEX_PROVIDER_CONFIG: Readonly<CodexProviderConfig> = Obje
   reasoningSummary: 'detailed',
   environmentVariables: '',
   environmentHash: '',
+  sessionEnvironmentHash: '',
   catalogTimestamp: 0,
   catalogFingerprint: '',
   installationMethodsByHost: {},
@@ -333,6 +337,10 @@ function getCodexStoredConfig(
       config.environmentHash,
       DEFAULT_CODEX_PROVIDER_CONFIG.environmentHash,
     ),
+    sessionEnvironmentHash: readStoredString(
+      config.sessionEnvironmentHash,
+      DEFAULT_CODEX_PROVIDER_CONFIG.sessionEnvironmentHash,
+    ),
     catalogTimestamp: typeof config.catalogTimestamp === 'number'
       && Number.isFinite(config.catalogTimestamp)
       && config.catalogTimestamp >= 0
@@ -486,6 +494,7 @@ export function updateCodexProviderSettings(
     reasoningSummary: next.reasoningSummary,
     environmentVariables: next.environmentVariables,
     environmentHash: next.environmentHash,
+    sessionEnvironmentHash: next.sessionEnvironmentHash,
     catalogTimestamp: next.catalogTimestamp,
     catalogFingerprint: next.catalogFingerprint,
     installationMethodsByHost,

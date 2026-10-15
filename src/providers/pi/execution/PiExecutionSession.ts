@@ -13,6 +13,7 @@ import {
   appendSelectionContexts,
   appendSessionReferences,
 } from '@/core/prompt/promptContext';
+import { encodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 
 import {
   type ConversationBranchRecoveryRequest,
@@ -67,7 +68,6 @@ import {
   resolvePiTreeCursor,
   type rollbackCreatedPiForkSessionFile,
 } from '../history/PiHistoryStore';
-import { encodePiRecoveryPrompt } from '../history/PiRecoveryPromptCodec';
 import {
   clampPiThinkingLevel,
   decodePiModelId,
@@ -2046,7 +2046,7 @@ function encodePrompt(
       text,
       history,
     );
-    text = encodePiRecoveryPrompt(
+    text = encodeRecoveryPrompt(
       historyContext,
       recoveredPrompt === historyContext ? null : text,
     );

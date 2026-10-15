@@ -8,10 +8,15 @@ import {
 } from '../../../core/providers/cli/CLIPathFingerprintInputs';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import {
+  compareScopedRuntimeInputFingerprints,
   createRuntimeInputFingerprint,
   isVersionedRuntimeInputFingerprint,
+  type ScopedRuntimeInputFingerprints,
 } from '../../../core/providers/settings/RuntimeInputFingerprint';
-import type { ProviderSettingsReconciler } from '../../../core/providers/types';
+import type {
+  ProviderEnvironmentReconciliation,
+  ProviderSettingsReconciler,
+} from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import {
   getPiProviderSettings,
@@ -19,30 +24,49 @@ import {
 } from '../settings';
 import { clearPiResumeState } from '../types';
 
-const LEGACY_PI_ENV_HASH_KEYS = [
+/**
+ * Select the native config/session store; `PI_PACKAGE_DIR` can rename the default config dir.
+ * Changes invalidate bindings.
+ */
+const PI_SESSION_ENV_KEYS = [
   'PI_CODING_AGENT_DIR',
   'PI_CODING_AGENT_SESSION_DIR',
   'PI_PACKAGE_DIR',
+] as const;
+
+const LEGACY_PI_ENV_HASH_KEYS = [
+  ...PI_SESSION_ENV_KEYS,
   'PI_OFFLINE',
   'PI_SKIP_VERSION_CHECK',
   'PI_TELEMETRY',
   'PI_CACHE_RETENTION',
 ] as const;
 
+/**
+ * Non-session keys and CLI paths only affect the launched process. Resume targets an absolute
+ * session file whose identity is proved before input, so changes restart runtimes and keep bindings.
+ */
 const PI_ENV_HASH_KEYS = [
   ...LEGACY_PI_ENV_HASH_KEYS,
   'PATH',
 ] as const;
 
-function computePiRuntimeFingerprint(
+function computePiFingerprints(
   environmentText: string,
   cliPathInputs: CLIPathFingerprintInputs,
-): string {
-  return createRuntimeInputFingerprint({
-    additionalInputs: cliPathInputs,
-    environmentKeys: PI_ENV_HASH_KEYS,
-    environmentText,
-  });
+): ScopedRuntimeInputFingerprints {
+  return {
+    runtime: createRuntimeInputFingerprint({
+      additionalInputs: cliPathInputs,
+      environmentKeys: PI_ENV_HASH_KEYS,
+      environmentText,
+    }),
+    session: computePiSessionFingerprint(environmentText),
+  };
+}
+
+function computePiSessionFingerprint(environmentText: string): string {
+  return createRuntimeInputFingerprint({ environmentKeys: PI_SESSION_ENV_KEYS, environmentText });
 }
 
 function invalidatePiConversationSessions(conversations: Conversation[]): Conversation[] {
@@ -80,14 +104,13 @@ export const piSettingsReconciler = {
   reconcileModelWithEnvironment(
     settings: Record<string, unknown>,
     conversations: Conversation[],
-  ): { changed: boolean; invalidatedConversations: Conversation[] } {
+  ): ProviderEnvironmentReconciliation {
     const envText = getRuntimeEnvironmentText(settings, 'pi');
     const piSettings = getPiProviderSettings(settings);
     const cliPathInputs = createCLIPathFingerprintInputs(
       piSettings.cliPathsByHost[getInstallationKey()],
       piSettings.cliPath,
     );
-    const currentHash = computePiRuntimeFingerprint(envText, cliPathInputs);
     const savedHash = piSettings.environmentHash;
 
     const environment = parseEnvironmentVariables(envText);
@@ -98,14 +121,29 @@ export const piSettingsReconciler = {
     if (!savedHash && !hasFingerprintInputs) {
       return { changed: false, invalidatedConversations: [] };
     }
-    if (currentHash === savedHash) {
+    const current = computePiFingerprints(envText, cliPathInputs);
+    const { changed, invalidatesSessions } = compareScopedRuntimeInputFingerprints({
+      runtime: savedHash,
+      // A blank runtime fingerprint is saved only while no input is configured, so its session scope is known.
+      session: savedHash ? piSettings.sessionEnvironmentHash : computePiSessionFingerprint(''),
+    }, current);
+    if (!changed) {
       return { changed: false, invalidatedConversations: [] };
     }
 
-    const invalidatedConversations = invalidatePiConversationSessions(conversations);
+    const invalidatedConversations = invalidatesSessions
+      ? invalidatePiConversationSessions(conversations)
+      : [];
 
-    updatePiProviderSettings(settings, { environmentHash: currentHash });
-    return { changed: true, invalidatedConversations };
+    updatePiProviderSettings(settings, {
+      environmentHash: current.runtime,
+      sessionEnvironmentHash: current.session,
+    });
+    return {
+      changed: true,
+      invalidatedConversations,
+      sessionPolicy: invalidatesSessions ? 'invalidate' : 'reload',
+    };
   },
 
   normalizeModelVariantSettings(settings: Record<string, unknown>): boolean {
@@ -122,8 +160,10 @@ export const piSettingsReconciler = {
       piSettings.environmentHash,
       cliPathInputs,
     )) {
+      const current = computePiFingerprints(envText, cliPathInputs);
       updatePiProviderSettings(settings, {
-        environmentHash: computePiRuntimeFingerprint(envText, cliPathInputs),
+        environmentHash: current.runtime,
+        sessionEnvironmentHash: current.session,
       });
       changed = true;
     }

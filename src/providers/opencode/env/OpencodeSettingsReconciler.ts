@@ -14,7 +14,7 @@ import {
   getOpencodeProviderSettings,
   updateOpencodeProviderSettings
 } from '../settings';
-import { getOpencodeState } from '../types';
+import { clearOpencodeResumeState, getOpencodeState } from '../types';
 
 const OPENCODE_ENV_HASH_KEYS = [
   'OPENCODE_CONFIG',
@@ -47,13 +47,9 @@ function invalidateOpencodeConversationSessions(conversations: Conversation[]): 
     if (state.nativeVersion === 2 && state.databasePath && state.databasePath !== ':memory:') {
       continue;
     }
-    if (!conversation.sessionId && !state.databasePath) {
-      continue;
+    if (clearOpencodeResumeState(conversation, { releaseDatabase: true })) {
+      invalidatedConversations.push(conversation);
     }
-
-    conversation.sessionId = null;
-    conversation.providerState = undefined;
-    invalidatedConversations.push(conversation);
   }
   return invalidatedConversations;
 }

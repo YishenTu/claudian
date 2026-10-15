@@ -1,13 +1,14 @@
+/** Envelope for replaying Claudian history into a fresh native session; history parsers strip it. */
 const RECOVERY_HISTORY_PREFIX = '<claudian_recovery_history length="';
 const RECOVERY_HISTORY_HEADER_SUFFIX = '">\n';
 const RECOVERY_HISTORY_SUFFIX = '\n</claudian_recovery_history>';
 const RECOVERY_INPUT_PREFIX = '\n\nUser: ';
 
-export interface DecodedPiRecoveryPrompt {
+export interface DecodedRecoveryPrompt {
   currentInput: string | null;
 }
 
-export function encodePiRecoveryPrompt(
+export function encodeRecoveryPrompt(
   historyContext: string,
   currentInput: string | null,
 ): string {
@@ -18,7 +19,7 @@ export function encodePiRecoveryPrompt(
     : `${historyBlock}${RECOVERY_INPUT_PREFIX}${currentInput}`;
 }
 
-export function decodePiRecoveryPrompt(prompt: string): DecodedPiRecoveryPrompt | null {
+export function decodeRecoveryPrompt(prompt: string): DecodedRecoveryPrompt | null {
   if (!prompt.startsWith(RECOVERY_HISTORY_PREFIX)) {
     return null;
   }

@@ -24,10 +24,13 @@ export interface PersistedPiProviderSettings {
   cliPathsByHost: HostnameCLIPaths;
   discoveredModels: PiDiscoveredModel[];
   enabled: boolean;
+  /** Fingerprint of every runtime input; a change restarts runtimes. */
   environmentHash: string;
   environmentVariables: string;
   modelAliases: Record<string, string>;
   preferredThinkingByModel: Record<string, PiThinkingLevel>;
+  /** Fingerprint of location-affecting inputs; a change invalidates native bindings. */
+  sessionEnvironmentHash: string;
   visibleModels: string[];
 }
 
@@ -42,6 +45,7 @@ export const DEFAULT_PI_PROVIDER_SETTINGS: Readonly<PersistedPiProviderSettings>
   environmentVariables: '',
   modelAliases: {},
   preferredThinkingByModel: {},
+  sessionEnvironmentHash: '',
   visibleModels: [],
 });
 
@@ -102,6 +106,10 @@ export function getPiProviderSettings(settings: Record<string, unknown>): PiProv
       config.preferredThinkingByModel,
       discoveredModels,
       persistableIds,
+    ),
+    sessionEnvironmentHash: readStoredString(
+      config.sessionEnvironmentHash,
+      DEFAULT_PI_PROVIDER_SETTINGS.sessionEnvironmentHash,
     ),
     visibleModels,
   };
@@ -182,6 +190,7 @@ export function updatePiProviderSettings(
     environmentVariables: next.environmentVariables,
     modelAliases: next.modelAliases,
     preferredThinkingByModel: next.preferredThinkingByModel,
+    sessionEnvironmentHash: next.sessionEnvironmentHash,
     visibleModels: next.visibleModels,
   });
 

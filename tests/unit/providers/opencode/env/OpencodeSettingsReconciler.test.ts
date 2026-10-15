@@ -21,7 +21,7 @@ describe('coordinated OpenCode environment changes', () => {
 });
 
 describe('opencodeSettingsReconciler.reconcileModelWithEnvironment', () => {
-  it('invalidates persisted OpenCode session state when the runtime database/config env changes', () => {
+  it('retires the native binding to history-only state when the runtime database/config env changes', () => {
     const settings: Record<string, unknown> = {
       providerConfigs: {
         opencode: {
@@ -53,7 +53,10 @@ describe('opencodeSettingsReconciler.reconcileModelWithEnvironment', () => {
     expect(result.changed).toBe(true);
     expect(result.invalidatedConversations).toHaveLength(1);
     expect(conversations[0].sessionId).toBeNull();
-    expect(conversations[0].providerState).toBeUndefined();
+    expect(conversations[0].providerState).toEqual({
+      nativeConversationContextEstablished: false,
+      previousSessions: [{ sessionId: 'session-1', databasePath: '/old/opencode.db' }],
+    });
     const fingerprint = (settings.providerConfigs as any).opencode.environmentHash;
     expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
     expect(fingerprint).not.toContain('/new/opencode.db');

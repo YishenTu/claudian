@@ -2421,7 +2421,10 @@ describe('ClaudianPlugin', () => {
       }));
       expect(invalidated).toEqual(expect.objectContaining({
         sessionId: null,
-        providerState: undefined,
+        providerState: {
+          nativeConversationContextEstablished: false,
+          previousSegments: [{ threadId: 'invalidated-thread' }],
+        },
       }));
       expect(getTabManager).not.toHaveBeenCalled();
     });
@@ -2473,7 +2476,7 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('applyProviderRuntimeSettings', () => {
-    it('persists a CLI fingerprint and restart-safe session invalidation atomically', async () => {
+    it('persists a session-scope fingerprint and restart-safe session invalidation atomically', async () => {
       const settingsPath = '.claudian/claudian-settings.json';
       const deferredMetadata = {
         id: 'runtime-settings-restart-session',
@@ -2504,6 +2507,7 @@ describe('ClaudianPlugin', () => {
       await plugin.providerHost.applyProviderRuntimeSettings(['codex'], (settings) => {
         updateCodexProviderSettings(settings, {
           cliPathsByHost: { [hostnameKey]: '/custom/codex' },
+          environmentVariables: 'OPENAI_BASE_URL=https://restart.example.test',
         });
       });
 
@@ -2551,14 +2555,18 @@ describe('ClaudianPlugin', () => {
       loadSourceSpy.mockRestore();
       saveMetadataSpy.mockRestore();
 
+      const historyOnlyState = {
+        nativeConversationContextEstablished: false,
+        previousSegments: [{ threadId: 'codex-thread-id' }],
+      };
       expect(restartedConversation).toEqual(expect.objectContaining({
         sessionId: null,
-        providerState: undefined,
+        providerState: historyOnlyState,
       }));
       expect(persistedMetadata).toEqual(expect.objectContaining({
         sessionId: null,
+        providerState: historyOnlyState,
       }));
-      expect(persistedMetadata).not.toHaveProperty('providerState');
       expect(restartedSettings.providerConfigs.codex.environmentHash).toBe(fingerprint);
       expect(restartedSettings.pendingProviderSessionInvalidations?.codex).toBeUndefined();
       expect(invalidationWrites).toHaveLength(1);
@@ -2612,6 +2620,7 @@ describe('ClaudianPlugin', () => {
         (settings) => {
           updateCodexProviderSettings(settings, {
             cliPathsByHost: { [hostnameKey]: '/custom/post-commit-codex' },
+            environmentVariables: 'OPENAI_BASE_URL=https://post-commit.example.test',
           });
         },
         () => {
@@ -2628,7 +2637,10 @@ describe('ClaudianPlugin', () => {
       )).toBe(true);
       expect(chatHostOf(plugin).getConversationSync(conversation.id)).toEqual(expect.objectContaining({
         sessionId: null,
-        providerState: undefined,
+        providerState: {
+          nativeConversationContextEstablished: false,
+          previousSegments: [{ threadId: 'post-commit-thread' }],
+        },
       }));
       expect(plugin.settings.pendingProviderSessionInvalidations.codex).toBeUndefined();
     });

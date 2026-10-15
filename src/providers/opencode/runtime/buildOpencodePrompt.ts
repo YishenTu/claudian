@@ -8,6 +8,7 @@ import {
   appendSelectionContexts,
   appendSessionReferences,
 } from '@/core/prompt/promptContext';
+import { encodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 
 import type { ProviderLinkedContentContext } from '../../../core/execution';
 import type { ProviderSelectionSnapshot, ProviderSessionReference } from '../../../core/execution/ProviderExecutionRequest';
@@ -58,22 +59,22 @@ function composeOpencodePromptText(
 
   prompt = appendSessionReferences(prompt, request.sessionReferences);
 
-  if (conversationHistory.length === 0) {
+  const historyContext = buildContextFromHistory(conversationHistory);
+  if (!historyContext) {
     return { text: prompt, userText: { start: 0, end: request.text.length } };
   }
-  const historyContext = buildContextFromHistory(conversationHistory);
-  const text = buildPromptWithHistoryContext(
+  // Replayed history stays in an envelope that history readers strip.
+  const appendsPrompt = buildPromptWithHistoryContext(
     historyContext,
     prompt,
     prompt,
     conversationHistory,
-  );
+  ) !== historyContext;
+  const text = encodeRecoveryPrompt(historyContext, appendsPrompt ? prompt : null);
   const start = text.length - prompt.length;
   return {
     text,
-    userText: text === prompt || text.endsWith(`\n\nUser: ${prompt}`)
-      ? { start, end: start + request.text.length }
-      : null,
+    userText: appendsPrompt ? { start, end: start + request.text.length } : null,
   };
 }
 

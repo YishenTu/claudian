@@ -6,6 +6,7 @@ import * as path from 'node:path';
 
 import { buildImageAttachmentFromBase64 } from '@/core/execution/imageAttachment';
 import { extractUserQuery } from '@/core/prompt/promptContext';
+import { decodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import { resolveToolDiffData } from '@/core/tools/toolDiff';
 import { isSessionTool } from '@/core/tools/toolNames';
@@ -23,7 +24,6 @@ import {
   normalizePiToolResultDetails,
 } from '../normalization/piToolNormalization';
 import type { PiTreeCursor } from '../types';
-import { decodePiRecoveryPrompt } from './PiRecoveryPromptCodec';
 
 export interface PiSessionEntry {
   id?: string;
@@ -678,7 +678,7 @@ function mapPiSessionEntry(
 
   if (role === 'user') {
     const rawContent = extractTextContent(message.content ?? message.text ?? message.message);
-    const recoveryPrompt = decodePiRecoveryPrompt(rawContent);
+    const recoveryPrompt = decodeRecoveryPrompt(rawContent);
     const content = recoveryPrompt?.currentInput ?? (recoveryPrompt ? '' : rawContent);
     const sessionMessage = decodeSessionMessage(content);
     const displayContent = sessionMessage?.text ?? extractPiSkillDisplayContent(content);
@@ -791,7 +791,7 @@ function mapPiSessionEntry(
 
 function isHiddenPiRecoveryInput(message: Record<string, unknown>, hasImages?: boolean): boolean {
   const content = extractTextContent(message.content ?? message.text ?? message.message);
-  if (decodePiRecoveryPrompt(content)?.currentInput !== null) return false;
+  if (decodeRecoveryPrompt(content)?.currentInput !== null) return false;
   return !(hasImages ?? (extractUserImages(message.content ?? message.parts ?? message.blocks, 'recovery').length > 0));
 }
 

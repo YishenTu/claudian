@@ -62,6 +62,7 @@ jest.mock('@/providers/opencode/runtime/OpencodeLaunchArtifacts', () => {
   };
 });
 
+import { decodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import type { ACPSessionUpdate } from '@/providers/acp';
 import {
   type OpencodeACPSessionKernel,
@@ -603,8 +604,11 @@ describe('OpencodeExecutionBackend', () => {
     );
   });
 
-  it('bootstraps canonical history when no native session exists', async () => {
-    const harness = createHarness();
+  it('bootstraps canonical history after invalidation while retaining retired sessions', async () => {
+    const previousSessions = [{ sessionId: 'retired-session', databasePath: '/old/opencode.db', nativeVersion: 1 }];
+    const harness = createHarness(createConfig({
+      resumeSeed: { providerState: { nativeConversationContextEstablished: false, previousSessions } },
+    }));
     const run = harness.session.execute(createRequest({
       conversationHistory: [
         { id: 'u1', role: 'user', content: 'prior', timestamp: 1 },
@@ -619,8 +623,14 @@ describe('OpencodeExecutionBackend', () => {
     harness.kernels[0].completePrompt();
     await collect(run.events);
 
-    expect(JSON.stringify(harness.kernels[0].prompts[0])).toContain('prior');
-    expect(JSON.stringify(harness.kernels[0].prompts[0])).toContain('answer');
+    expect(harness.kernels[0].openedResumeIds).toEqual([undefined]);
+    const { prompt: [block] } = harness.kernels[0].prompts[0] as { prompt: Array<{ text?: string }> };
+    expect(decodeRecoveryPrompt(block.text ?? '')).toEqual({ currentInput: 'hello' });
+    expect(block.text).toContain('User: prior\n\nAssistant: answer');
+    expect(harness.session.getSnapshot()).toMatchObject({
+      providerSessionId: 'native-session',
+      providerState: { nativeConversationContextEstablished: true, previousSessions },
+    });
   });
 
   it('does not replay canonical history into a resumed native session', async () => {

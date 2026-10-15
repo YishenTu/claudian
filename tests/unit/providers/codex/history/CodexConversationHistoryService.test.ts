@@ -8,8 +8,12 @@ const path = jest.requireActual<typeof pathType>('path');
 
 import { testDate } from '@test/helpers/testClock';
 
-import type { Conversation } from '@/core/types';
+import { encodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
+import type { ChatMessage, Conversation } from '@/core/types';
+import { codexSettingsReconciler } from '@/providers/codex/env/CodexSettingsReconciler';
 import { CodexConversationHistoryService } from '@/providers/codex/history/CodexConversationHistoryService';
+import * as CodexHistoryStore from '@/providers/codex/history/CodexHistoryStore';
+import { getCodexState } from '@/providers/codex/types';
 
 describe('CodexConversationHistoryService', () => {
   let homeDirSpy: jest.SpyInstance<string, []>;
@@ -906,15 +910,18 @@ describe('CodexConversationHistoryService', () => {
       expect(conversation.sessionId).toBeNull();
       expect(conversation.resumeAtMessageId).toBe('fork-checkpoint');
       expect(conversation.providerState).toEqual({
-        sessionFilePath: '/codex/sessions/thread-missing.jsonl',
-        transcriptRootPath: '/codex/sessions',
-        forkSource: {
-          sessionId: 'thread-source',
-          resumeAt: 'fork-checkpoint',
-        },
-        forkSourceSessionFilePath: '/codex/sessions/thread-source.jsonl',
-        forkSourceTranscriptRootPath: '/codex/sessions',
-        workspaceDependencyToolVersion: 1,
+        nativeConversationContextEstablished: false,
+        previousSegments: [{
+          threadId: 'thread-missing',
+          sessionFilePath: '/codex/sessions/thread-missing.jsonl',
+          transcriptRootPath: '/codex/sessions',
+          forkSource: {
+            sessionId: 'thread-source',
+            resumeAt: 'fork-checkpoint',
+          },
+          forkSourceSessionFilePath: '/codex/sessions/thread-source.jsonl',
+          forkSourceTranscriptRootPath: '/codex/sessions',
+        }],
         futureProviderState: { token: 'keep-me' },
       });
     });
@@ -950,6 +957,197 @@ describe('CodexConversationHistoryService', () => {
 
       expect(conversation.sessionId).toBe('thread-current');
       expect(conversation.providerState).toBe(providerState);
+    });
+  });
+
+  describe('runtime-input invalidation', () => {
+    type Turn = [turnId: string, question: string, answer: string];
+    let sessionsDir: string;
+
+    function writeRollout(threadId: string, turns: Turn[], firstPrompt?: string): string {
+      const filePath = path.join(sessionsDir, `rollout-2026-03-27T00-00-00-${threadId}.jsonl`);
+      let seconds = 0;
+      const record = (type: string, payload: Record<string, unknown>) => JSON.stringify({
+        timestamp: testDate({ seconds: seconds++ }).toISOString(), type, payload,
+      });
+      fs.writeFileSync(filePath, [
+        record('session_meta', { id: threadId }),
+        ...turns.flatMap(([turnId, question, answer], index) => [
+          record('event_msg', { type: 'task_started', turn_id: turnId }),
+          record('response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: index === 0 && firstPrompt ? firstPrompt : question }] }),
+          record('response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: answer }] }),
+          record('event_msg', { type: 'task_complete', turn_id: turnId }),
+        ]),
+      ].join('\n'));
+      return filePath;
+    }
+
+    function codexConversation(sessionId: string | null, providerState: Record<string, unknown>): Conversation {
+      return {
+        id: 'conv-invalidated', providerId: 'codex', title: 'Invalidated',
+        createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(),
+        sessionId, providerState, messages: [],
+      };
+    }
+
+    async function hydrate(conversation: Conversation): Promise<ChatMessage[]> {
+      const update = await new CodexConversationHistoryService()
+        .hydrateConversationHistory({ ...conversation, messages: [] }, null);
+      return update.messages ?? [];
+    }
+
+    const visible = (messages: ChatMessage[]) => messages.map(message => [message.role, message.content]);
+
+    beforeEach(() => {
+      sessionsDir = path.join(tempHome, '.codex', 'sessions', '2026', '03', '27');
+      fs.mkdirSync(sessionsDir, { recursive: true });
+    });
+
+    it.each(['normal', 'pending fork', 'established fork'])(
+      'keeps %s history readable but not resumable after invalidation', async mode => {
+        const sourcePath = writeRollout('source', [['s1', 'SrcQ1', 'SrcA1'], ['s2', 'SrcQ2', 'SrcA2'], ['s3', 'SrcQ3', 'SrcA3']]);
+        const forkPath = writeRollout('fork', [['s1', 'SrcQ1', 'SrcA1'], ['s2', 'SrcQ2', 'SrcA2'], ['f1', 'ForkQ1', 'ForkA1']]);
+        const forkState = { forkSource: { sessionId: 'source', resumeAt: 's2' }, forkSourceSessionFilePath: sourcePath };
+        const conversation = mode === 'normal'
+          ? codexConversation('source', { threadId: 'source', sessionFilePath: sourcePath, nativeConversationContextEstablished: true, sessionToolVersion: 3 })
+          : mode === 'pending fork'
+            ? codexConversation(null, forkState)
+            : codexConversation('fork', { ...forkState, threadId: 'fork', sessionFilePath: forkPath, workspaceDependencyToolVersion: 1 });
+        const service = new CodexConversationHistoryService();
+        const before = visible(await hydrate(conversation));
+        expect(before.length).toBeGreaterThan(0);
+
+        expect(codexSettingsReconciler.invalidateConversationSessions([conversation])).toEqual([conversation]);
+
+        expect(conversation.sessionId).toBeNull();
+        expect(conversation.providerState).toMatchObject({ nativeConversationContextEstablished: false });
+        for (const key of ['threadId', 'sessionFilePath', 'forkSource', 'pendingForkTarget', 'sessionToolVersion', 'workspaceDependencyToolVersion']) {
+          expect(conversation.providerState).not.toHaveProperty(key);
+        }
+        expect(service.resolveSessionIdForConversation(conversation)).toBeNull();
+        expect(service.isPendingForkConversation(conversation)).toBe(false);
+        expect(service.hasConversationModelRecoverySource(conversation)).toBe(false);
+        expect(await service.recoverConversationModelSelection(conversation, null)).toBeNull();
+        expect(codexSettingsReconciler.invalidateConversationSessions([conversation])).toEqual([]);
+
+        const persisted = codexConversation(null, service.buildPersistedProviderState(conversation)!);
+        expect(visible(await hydrate(persisted))).toEqual(before);
+      },
+    );
+
+    it('hydrates earlier segments before a replacement thread that replayed them', async () => {
+      const firstPath = writeRollout('thread-first', [['t1', 'FirstQ', 'FirstA']]);
+      const conversation = codexConversation('thread-first', {
+        threadId: 'thread-first', sessionFilePath: firstPath, nativeConversationContextEstablished: true,
+      });
+      codexSettingsReconciler.invalidateConversationSessions([conversation]);
+
+      const replay = encodeRecoveryPrompt('User: FirstQ\n\nAssistant: FirstA', 'SecondQ');
+      const secondPath = writeRollout('thread-second', [['t2', 'SecondQ', 'SecondA']], replay);
+      // The replacement thread's execution snapshot overlays its binding on the stored state.
+      conversation.sessionId = 'thread-second';
+      conversation.providerState = {
+        ...conversation.providerState,
+        threadId: 'thread-second', sessionFilePath: secondPath, nativeConversationContextEstablished: true,
+      };
+      const expected = [['user', 'FirstQ'], ['assistant', 'FirstA'], ['user', 'SecondQ'], ['assistant', 'SecondA']];
+      const messages = await hydrate(conversation);
+      expect(visible(messages)).toEqual(expected);
+      expect(new Set(messages.map(message => message.id)).size).toBe(messages.length);
+
+      // A second invalidation keeps both segments in order.
+      codexSettingsReconciler.invalidateConversationSessions([conversation]);
+      expect(getCodexState(conversation.providerState).previousSegments).toHaveLength(2);
+      expect(visible(await hydrate(conversation))).toEqual(expected);
+    });
+
+    it('reads an invalidated segment whose rollout was archived after its path was saved', async () => {
+      const activePath = writeRollout('thread-archived', [['a1', 'ArchivedQ', 'ArchivedA']]);
+      const archivedDir = path.join(tempHome, '.codex', 'archived_sessions');
+      fs.mkdirSync(archivedDir, { recursive: true });
+      fs.renameSync(activePath, path.join(archivedDir, path.basename(activePath)));
+      const conversation = codexConversation('thread-archived', {
+        threadId: 'thread-archived', sessionFilePath: activePath,
+        transcriptRootPath: path.join(tempHome, '.codex', 'sessions'),
+      });
+      codexSettingsReconciler.invalidateConversationSessions([conversation]);
+
+      expect(visible(await hydrate(conversation))).toEqual([['user', 'ArchivedQ'], ['assistant', 'ArchivedA']]);
+    });
+
+    it('offers fork and rewind checkpoints only on the live thread', async () => {
+      const oldPath = writeRollout('thread-earlier', [['old-turn', 'OldQ', 'OldA']]);
+      const conversation = codexConversation('thread-earlier', { threadId: 'thread-earlier', sessionFilePath: oldPath });
+      codexSettingsReconciler.invalidateConversationSessions([conversation]);
+      const livePath = writeRollout('thread-live', [['live-turn', 'LiveQ', 'LiveA']]);
+      conversation.providerState = { ...conversation.providerState, threadId: 'thread-live', sessionFilePath: livePath };
+
+      const messages = await hydrate(conversation);
+
+      expect(messages.map(message => [message.content, message.userMessageId, message.assistantMessageId])).toEqual([
+        ['OldQ', undefined, undefined],
+        ['OldA', undefined, undefined],
+        ['LiveQ', 'live-turn', undefined],
+        ['LiveA', undefined, 'live-turn'],
+      ]);
+    });
+
+    it('resolves the live thread before spending lookup time on earlier segments', async () => {
+      const findSessionFile = CodexHistoryStore.findCodexSessionFileAsync;
+      const conversation = codexConversation('thread-lost', { threadId: 'thread-lost' });
+      codexSettingsReconciler.invalidateConversationSessions([conversation]);
+      writeRollout('thread-found', [['found-turn', 'FoundQ', 'FoundA']]);
+      // Located by thread id alone, so the live thread needs lookup time too.
+      conversation.providerState = { ...conversation.providerState, threadId: 'thread-found' };
+      const realNow = Date.now.bind(Date);
+      let elapsed = 0;
+      const now = jest.spyOn(Date, 'now').mockImplementation(() => realNow() + elapsed);
+      const lookup = jest.spyOn(CodexHistoryStore, 'findCodexSessionFileAsync')
+        .mockImplementation(async (threadId, root, timeoutMs) => {
+          if (threadId !== 'thread-lost') return findSessionFile(threadId, root, timeoutMs);
+          // An unavailable earlier segment exhausts whatever budget its search is given.
+          elapsed += timeoutMs ?? 0;
+          return null;
+        });
+      try {
+        expect(visible(await hydrate(conversation))).toEqual([['user', 'FoundQ'], ['assistant', 'FoundA']]);
+      } finally {
+        lookup.mockRestore();
+        now.mockRestore();
+      }
+    });
+
+    it('does not render an earlier segment that is still the live thread', async () => {
+      const threadPath = writeRollout('thread-restored', [['r1', 'RestoredQ', 'RestoredA']]);
+      const conversation = codexConversation('thread-restored', { threadId: 'thread-restored', sessionFilePath: threadPath });
+      codexSettingsReconciler.invalidateConversationSessions([conversation]);
+      // Any path that rebinds the invalidated thread must not show its turns twice.
+      conversation.sessionId = 'thread-restored';
+      conversation.providerState = { ...conversation.providerState, threadId: 'thread-restored', sessionFilePath: threadPath };
+
+      expect(visible(await hydrate(conversation))).toEqual([['user', 'RestoredQ'], ['assistant', 'RestoredA']]);
+    });
+
+    it('forks the live thread without dropping or reviving earlier segments', async () => {
+      const firstPath = writeRollout('thread-old', [['old-1', 'OldQ', 'OldA']]);
+      const conversation = codexConversation('thread-old', { threadId: 'thread-old', sessionFilePath: firstPath });
+      codexSettingsReconciler.invalidateConversationSessions([conversation]);
+      const currentPath = writeRollout('thread-new', [['new-1', 'NewQ1', 'NewA1'], ['new-2', 'NewQ2', 'NewA2']]);
+      const sourceState = { ...conversation.providerState, threadId: 'thread-new', sessionFilePath: currentPath };
+      const service = new CodexConversationHistoryService();
+
+      await expect(service.buildForkProviderState('thread-new', 'old-1', sourceState))
+        .rejects.toThrow('Fork checkpoint not found');
+      const forkState = await service.buildForkProviderState('thread-new', 'new-1', sourceState);
+      expect(forkState).toMatchObject({
+        forkSource: { sessionId: 'thread-new', resumeAt: 'new-1' },
+        previousSegments: getCodexState(conversation.providerState).previousSegments,
+      });
+      const fork = codexConversation(null, forkState);
+      expect(service.resolveSessionIdForConversation(fork)).toBe('thread-new');
+      expect(visible(await hydrate(fork))).toEqual([
+        ['user', 'OldQ'], ['assistant', 'OldA'], ['user', 'NewQ1'], ['assistant', 'NewA1'],
+      ]);
     });
   });
 

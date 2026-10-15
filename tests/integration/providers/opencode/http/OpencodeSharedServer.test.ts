@@ -721,14 +721,17 @@ it('initializes the provider-owned service for early history and reuses it for l
     settings: f.plugin.settings, environment: { ...f.environment, PATH: process.env.PATH }, vaultPath: f.root,
     ensureWorkspace: () => ProviderWorkspaceRegistry.ensureInitialized(f.plugin, 'opencode', 'history'),
   };
-  const conversation: any = { sessionId: 'source', messages: [], providerState: { nativeVersion: 2, databasePath: f.environment.OPENCODE_DB } };
+  const previousSessions = [{ sessionId: 'ses_invalidated', databasePath: f.environment.OPENCODE_DB, nativeVersion: 1 }];
+  const conversation: any = { sessionId: 'source', messages: [], providerState: { nativeVersion: 2, databasePath: f.environment.OPENCODE_DB, previousSessions } };
   try {
     const history = opencodeProviderRegistration.historyService;
     expect(await history.recoverConversationModelSelection!(conversation, f.root, context)).toBe('opencode:local/chat');
     const workspace = ProviderWorkspaceRegistry.getIfInitialized('opencode');
     expect(workspace).not.toBeNull();
     await workspace?.startRuntime?.();
-    expect(await history.buildForkProviderState!('source', 'msg_source', conversation.providerState, f.root, context)).toMatchObject({ sessionId: 'ses_2', databasePath: f.environment.OPENCODE_DB });
+    // A fork keeps the source's earlier native sessions as history only.
+    expect(await history.buildForkProviderState!('source', 'msg_source', conversation.providerState, f.root, context))
+      .toMatchObject({ sessionId: 'ses_2', databasePath: f.environment.OPENCODE_DB, previousSessions });
     expect(f.processes()).toHaveLength(1);
   } finally { await ProviderWorkspaceRegistry.disposeInitialized(); ProviderWorkspaceRegistry.clear(); await f.dispose(); }
 });

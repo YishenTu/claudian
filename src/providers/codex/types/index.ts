@@ -1,8 +1,22 @@
+import type { Conversation } from '../../../core/types';
 import type { ForkSource } from '../../../core/types/chat';
 
 export interface CodexPendingForkTarget {
   threadId: string;
   sessionFilePath?: string;
+}
+
+/**
+ * Native locators of a thread whose binding was invalidated. History-only: hydration
+ * replays them before the live thread, but nothing may resume, fork, or recover models from them.
+ */
+export interface CodexPreviousSegment {
+  threadId?: string;
+  sessionFilePath?: string;
+  transcriptRootPath?: string;
+  forkSource?: ForkSource;
+  forkSourceSessionFilePath?: string;
+  forkSourceTranscriptRootPath?: string;
 }
 
 export interface CodexProviderState {
@@ -17,10 +31,73 @@ export interface CodexProviderState {
   workspaceDependencyToolVersion?: number;
   /** Absent on threads created before session dynamic tools were exposed. */
   sessionToolVersion?: number;
+  /** Invalidated segments, oldest first. */
+  previousSegments?: CodexPreviousSegment[];
 }
 
 export function getCodexState(
   providerState?: Record<string, unknown>,
 ): CodexProviderState {
   return (providerState ?? {});
+}
+
+const LIVE_BINDING_KEYS = [
+  'threadId',
+  'sessionFilePath',
+  'transcriptRootPath',
+  'forkSource',
+  'forkSourceSessionFilePath',
+  'forkSourceTranscriptRootPath',
+  'pendingForkTarget',
+  'sessionToolVersion',
+  'workspaceDependencyToolVersion',
+] as const satisfies ReadonlyArray<keyof CodexProviderState>;
+
+function isSameSegment(left: CodexPreviousSegment, right: CodexPreviousSegment): boolean {
+  return left.threadId === right.threadId
+    && left.sessionFilePath === right.sessionFilePath
+    && left.forkSource?.sessionId === right.forkSource?.sessionId
+    && left.forkSource?.resumeAt === right.forkSource?.resumeAt
+    && left.forkSourceSessionFilePath === right.forkSourceSessionFilePath;
+}
+
+/**
+ * Ends the conversation's native binding without losing its history: the current segment
+ * becomes a history-only previous segment, and the next send replays Claudian history into
+ * a fresh thread. Returns whether there was a binding to clear.
+ */
+export function clearCodexResumeState(
+  conversation: Pick<Conversation, 'sessionId' | 'providerState'>,
+): boolean {
+  const state = getCodexState(conversation.providerState);
+  const threadId = state.threadId ?? state.pendingForkTarget?.threadId ?? conversation.sessionId ?? undefined;
+  const sessionFilePath = state.sessionFilePath ?? state.pendingForkTarget?.sessionFilePath;
+  if (!threadId && !sessionFilePath && !state.forkSource) {
+    return false;
+  }
+
+  const segment: CodexPreviousSegment = {
+    ...(threadId ? { threadId } : {}),
+    ...(sessionFilePath ? { sessionFilePath } : {}),
+    ...(state.transcriptRootPath ? { transcriptRootPath: state.transcriptRootPath } : {}),
+    ...(state.forkSource ? { forkSource: { ...state.forkSource } } : {}),
+    ...(state.forkSource && state.forkSourceSessionFilePath
+      ? { forkSourceSessionFilePath: state.forkSourceSessionFilePath }
+      : {}),
+    ...(state.forkSource && state.forkSourceTranscriptRootPath
+      ? { forkSourceTranscriptRootPath: state.forkSourceTranscriptRootPath }
+      : {}),
+  };
+  const previousSegments = (state.previousSegments ?? []).map(previous => ({ ...previous }));
+  if (!previousSegments.some(previous => isSameSegment(previous, segment))) {
+    previousSegments.push(segment);
+  }
+
+  const providerState: Record<string, unknown> = { ...(conversation.providerState ?? {}) };
+  for (const key of LIVE_BINDING_KEYS) delete providerState[key];
+  providerState.nativeConversationContextEstablished = false;
+  providerState.previousSegments = previousSegments;
+  conversation.sessionId = null;
+  conversation.providerState = providerState;
+  return true;
 }

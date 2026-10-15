@@ -21,6 +21,7 @@
 ## Persistence and model resolution
 
 - Device metadata and host-scoped provider settings use one durable filesystem-safe installation key. Do not derive another identity or initialize the namespace before the seed is durable.
+- Runtime-input invalidation clears resumable native bindings only; history locators survive as recovery-only state. Reads still trust only the current store roots, so a locator in a moved store stays unreadable (accepted limit). Changes that leave the native session store, endpoint, and account unchanged report `reload` and keep bindings.
 - Historical provider ownership does not imply enabled-model availability. Readers expose the stored model until the repository durably adopts `modelToPersist`.
 - Alias canonicalization cannot choose a fallback. Fallback uses explicit registry blank-tab display order, not registration order, alphabetic order, or current settings projection.
 - Title generation uses the global title-model selection independently from chat. Auxiliary continuation remains provider-owned even when core owns orchestration/parsing.

@@ -17,6 +17,7 @@ import type { NormalizedCodexToolCall } from '@/providers/codex/normalization/co
 import {
   extractCodexUserVisibleText,
   joinCodexUserTextParts,
+  unwrapCodexRecoveryPrompt,
 } from '@/providers/codex/normalization/codexUserText';
 import { forEachJSONLLine } from '@/utils/jsonlFile';
 
@@ -445,8 +446,9 @@ function extractUserMessageText(content: PersistedMessagePart[] | undefined): st
     return '';
   }
 
+  // Decode replay envelopes intact; image cleanup would change their recorded length.
   return joinCodexUserTextParts(
-    content.map(part => (typeof part?.text === 'string' ? part.text : '')),
+    content.map(part => (typeof part?.text === 'string' ? unwrapCodexRecoveryPrompt(part.text) : '')),
   );
 }
 
@@ -1269,7 +1271,9 @@ function processEventMsg(
 
     case 'user_message': {
       const turn = ensureTurn(ctx.turns, ctx.turnOrder, nextTurnId(ctx), ctx.currentTurnId, timestamp);
-      const msg = payload.message;
+      const msg = typeof payload.message === 'string'
+        ? unwrapCodexRecoveryPrompt(payload.message)
+        : payload.message;
       if (typeof msg === 'string') {
         const isQuestionReply = applyQuestionReplies(msg, ctx);
         const visibleText = extractCodexUserVisibleText(msg);

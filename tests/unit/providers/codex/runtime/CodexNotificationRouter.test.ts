@@ -1,3 +1,4 @@
+import { encodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import type { StreamChunk } from '@/core/types';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 
@@ -4997,6 +4998,28 @@ describe('CodexNotificationRouter', () => {
 
       expect(chunks).toEqual([
         { type: 'user_message_start', itemId: 'u1', content: 'what was in this img?' },
+      ]);
+    });
+
+    it('shows only the current input of a replayed-history prompt with image markup', () => {
+      const replay = encodeRecoveryPrompt('User: Embed a chart\n\nAssistant: Use <image href="chart.png"></image>.', 'Make it 64px');
+      router.handleNotification('item/started', {
+        item: {
+          type: 'userMessage',
+          id: 'u1',
+          content: [
+            { type: 'text', text: '<image name=[Image #1] path="/tmp/1-image-1.png">' },
+            { type: 'localImage', path: '/tmp/1-image-1.png' },
+            { type: 'text', text: '</image>' },
+            { type: 'text', text: replay },
+          ],
+        },
+        threadId: 't1',
+        turnId: 'turn1',
+      });
+
+      expect(chunks).toEqual([
+        { type: 'user_message_start', itemId: 'u1', content: 'Make it 64px' },
       ]);
     });
 

@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { testDate } from '@test/helpers/testClock';
 
 import type * as environmentModule from '@/core/process/env';
+import { encodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import { encodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import {
   loadOpencodeSessionMessages,
@@ -630,4 +631,18 @@ it('decodes v2 session-message attribution before stripping prompt tags and pres
   ]);
   expect(messages[0]).toMatchObject({content:'The result',sessionMessage:{from:'Research',sessionId:'source'}});
   expect(messages[1].toolCalls?.[0]).toMatchObject({name:'claudian_send_message',providerPayload:{rawName:'claudian_send_message'}});
+});
+
+it.each([1, 2] as const)('hides replayed history in v%p user prompts', version => {
+  const replayed = encodeRecoveryPrompt('User: Earlier\n\nAssistant: Reply', 'Follow up\n\n<current_note>note.md</current_note>');
+  const replayOnly = encodeRecoveryPrompt('User: Earlier', null);
+  const messages = version === 1
+    ? mapOpencodeMessages([replayed, replayOnly].map((text, index) => ({
+        info: { id: `user-${index}`, role: 'user', time: { created: 1_000 + index } },
+        parts: [{ id: `part-${index}`, type: 'text', text }],
+      })))
+    : mapOpencodeV2NativeMessages([replayed, replayOnly].map((text, index) => ({
+        id: `user-${index}`, type: 'user', text, time: { created: 1_000 + index },
+      })));
+  expect(messages.map(message => [message.id, message.content])).toEqual([['user-0', 'Follow up']]);
 });
