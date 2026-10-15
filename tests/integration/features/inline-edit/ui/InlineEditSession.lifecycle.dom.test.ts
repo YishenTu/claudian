@@ -78,7 +78,7 @@ it('retains clarification when CodeMirror releases and later recreates the input
   submitInstruction();
   await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
   // WidgetType.destroy/toDOM are CodeMirror's viewport resource callbacks.
-  const oldContainer = input().parentElement!.parentElement!;
+  const oldContainer = input().closest<HTMLElement>('.claudian-inline-input-container')!;
   session.destroyInputDOM(oldContainer);
   oldContainer.remove();
   h.backend.sessions[0].emitText('Which tone?');

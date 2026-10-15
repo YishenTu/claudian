@@ -497,9 +497,11 @@ export class InlineEditSession {
     });
     this.containerEl = container;
 
-    this.agentReplyEl = container.createDiv({ cls: 'claudian-inline-agent-reply claudian-hidden' });
+    // The widget root only spaces the card: Obsidian zeroes editor widget margins.
+    const cardEl = container.createDiv({ cls: 'claudian-inline-composer' });
+    this.agentReplyEl = cardEl.createDiv({ cls: 'claudian-inline-agent-reply claudian-hidden' });
 
-    const inputWrap = container.createDiv({ cls: 'claudian-inline-input-wrap' });
+    const inputWrap = cardEl.createDiv({ cls: 'claudian-inline-input-wrap' });
 
     const inputEl = inputWrap.createEl('input', {
       cls: 'claudian-inline-input',

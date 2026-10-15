@@ -31,13 +31,20 @@
 }
 
 /*
+ * Obsidian zeroes the margins of editor widgets, which CodeMirror cannot measure, so the widget root
+ * spaces the card with padding; the wider bottom gap separates it from the selected text it edits.
+ */
+.claudian-inline-input-container {
+  padding: 4px 0 12px;
+}
+
+/*
  * Composer card: one row with the instruction and the model chip; a clarifying question sits above it.
  * Secondary stays opaque when translucent themes clear the primary background.
  */
-.claudian-inline-input-container {
+.claudian-inline-composer {
   display: flex;
   flex-direction: column;
-  margin: 4px 0 6px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 10px;
   background-color: var(--background-secondary);
@@ -46,7 +53,7 @@
   font-family: var(--font-interface, -apple-system, BlinkMacSystemFont, sans-serif);
 }
 
-.claudian-inline-input-container:focus-within {
+.claudian-inline-composer:focus-within {
   border-color: var(--background-modifier-border-hover);
 }
 

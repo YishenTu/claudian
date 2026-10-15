@@ -75,4 +75,17 @@ describe('inline-edit.css', () => {
       expect(window.getComputedStyle(widget).getPropertyValue('contain')).toBe('none');
     },
   );
+
+  it('separates the composer from the selected text below with padding, since Obsidian zeroes widget margins', () => {
+    const host = document.createElement('style');
+    host.textContent = '.markdown-source-view.mod-cm6 .cm-content > * { margin: 0 !important; }';
+    document.head.appendChild(host);
+    for (const style of styles) document.head.appendChild(style);
+    styles.push(host);
+    document.body.innerHTML = '<div class="markdown-source-view mod-cm6"><div class="cm-content">'
+      + '<div class="claudian-inline-input-container" contenteditable="false"></div></div></div>';
+    const composer = window.getComputedStyle(document.querySelector('.claudian-inline-input-container')!);
+
+    expect(parseFloat(composer.marginBottom || '0') + parseFloat(composer.paddingBottom || '0')).toBeGreaterThanOrEqual(8);
+  });
 });
