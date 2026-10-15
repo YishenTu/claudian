@@ -210,10 +210,12 @@ it('saves the model and effort chosen on its composer chip as the inline edit de
 
 it.each([
   { saved: { providerId: 'claude', model: 'opus', reasoning: 'low' }, chip: 'Model: Opus, effort Low', model: 'opus', reasoning: 'low' },
-  // An unavailable saved model falls back to the chat selection with the saved provider effort.
-  { saved: { providerId: 'claude', model: 'retired' }, chip: 'Model: Sonnet, effort High', model: 'sonnet', reasoning: undefined },
+  // An unavailable saved model falls back to the chat selection. The provider's saved effort, not its
+  // default, is what the chip shows, and it is sent explicitly: some providers omit an unset effort.
+  { saved: { providerId: 'claude', model: 'retired' }, chip: 'Model: Sonnet, effort Low', model: 'sonnet', reasoning: 'low' },
 ])('starts a new edit from the saved inline default ($saved.model) or else the chat selection', async ({ saved, chip, model, reasoning }) => {
   const h = createHarness();
+  h.plugin.settings.effortLevel = 'low';
   h.plugin.settings.inlineEditModel = saved;
   h.plugin.getActiveModelSelection = () => ({ providerId: 'claude', model: 'sonnet' });
   void h.createModal().openAndWait();
@@ -222,7 +224,7 @@ it.each([
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   const { configuration } = h.backend.sessions[0].requests[0];
   expect(configuration.model).toBe(model);
-  expect('reasoning' in configuration ? configuration.reasoning : undefined).toBe(reasoning);
+  expect(configuration.reasoning).toBe(reasoning);
 });
 
 it('continues provider execution when vault mentions cannot load and reports one notice', async () => {

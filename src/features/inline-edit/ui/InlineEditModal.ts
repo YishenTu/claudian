@@ -624,6 +624,19 @@ export class InlineEditSession {
     return { ...snapshot, model, reasoning: offersReasoning ? reasoning : null };
   }
 
+  /**
+   * Sends the effort the chip shows. Providers differ on an unset effort (some fall back to the saved
+   * one, some omit it), so only an effort the model does not offer is left unset.
+   */
+  #getSubmittedReasoning(): string | undefined {
+    const settings = this.#getModelPickerSettings();
+    if (!settings.reasoning) return undefined;
+    const offered = ProviderRegistry.getChatUIConfig(this.resolvedProviderId)
+      .getReasoningOptions(settings.model, settings)
+      .some(option => option.value === settings.reasoning);
+    return offered ? settings.reasoning : undefined;
+  }
+
   /** While a request runs, a spinner takes the model chip's place. */
   #showGenerating(generating: boolean): void {
     if (this.inputEl) this.inputEl.disabled = generating;
@@ -719,7 +732,7 @@ export class InlineEditSession {
       // Slash commands stay in the instruction for the provider to handle.
       result = await this.inlineEditService.send(this.#buildRequest(userMessage), {
         model: this.modelOverride,
-        reasoning: this.reasoningOverride,
+        reasoning: this.#getSubmittedReasoning(),
       });
     } catch (error) {
       if (this.#isGenerationActive(generation)) {
