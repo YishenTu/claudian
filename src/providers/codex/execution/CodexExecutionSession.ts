@@ -44,9 +44,11 @@ import {
   getCodexProviderSettings,
   getEffectiveCodexReasoningSummary,
 } from '@/providers/codex/settings';
-import type {
-  CodexPendingForkTarget,
-  CodexProviderState,
+import {
+  clearCodexResumeState,
+  type CodexPendingForkTarget,
+  type CodexProviderState,
+  getCodexState,
 } from '@/providers/codex/types';
 
 import type { CodexActiveRun } from './CodexActiveRun';
@@ -162,6 +164,7 @@ export class CodexExecutionSession
           this.sessionToolVersion = identity.sessionToolVersion;
           this.threadId = identity.threadId;
           this.sessionFilePath = identity.sessionFilePath;
+          this.#retainUnboundTranscript();
           this.#publishNativeOwnershipSnapshot(active);
         },
         forkTargetAdopted: (active, target) => this.#adoptPendingForkTarget(active, target),
@@ -860,6 +863,27 @@ export class CodexExecutionSession
       this.#emitSnapshot(active);
     } else {
       this.#emitSessionState();
+    }
+  }
+
+  /**
+   * A fresh thread replaces the stored transcript locator. One left without a thread binding
+   * (e.g. by an older missing-thread reset) still holds the earlier turns, so keep it as history.
+   */
+  #retainUnboundTranscript(): void {
+    const stored = getCodexState(this.state.providerState);
+    if (!stored.sessionFilePath || stored.threadId || stored.forkSource) return;
+    const draft = { sessionId: null, providerState: { ...this.state.providerState } };
+    if (!clearCodexResumeState(draft)) return;
+    this.state.setProviderStateValue('previousSegments', draft.providerState.previousSegments);
+    // Recorded deletes override projection, so drop only stale values the new thread does not replace.
+    const replaced = {
+      sessionFilePath: this.sessionFilePath,
+      sessionToolVersion: this.sessionToolVersion,
+      workspaceDependencyToolVersion: this.workspaceDependencyToolVersion,
+    };
+    for (const [key, value] of Object.entries(replaced)) {
+      if (value === null && this.state.hasProviderStateValue(key)) this.state.deleteProviderStateValue(key);
     }
   }
 

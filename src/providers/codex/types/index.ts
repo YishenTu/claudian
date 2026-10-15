@@ -53,6 +53,13 @@ const LIVE_BINDING_KEYS = [
   'workspaceDependencyToolVersion',
 ] as const satisfies ReadonlyArray<keyof CodexProviderState>;
 
+const ROLLOUT_THREAD_ID_PATTERN = /-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
+
+/** Codex names rollouts `rollout-<timestamp>-<thread id>.jsonl`. */
+function readRolloutThreadId(sessionFilePath: string | undefined): string | undefined {
+  return sessionFilePath?.match(ROLLOUT_THREAD_ID_PATTERN)?.[1];
+}
+
 function isSameSegment(left: CodexPreviousSegment, right: CodexPreviousSegment): boolean {
   return left.threadId === right.threadId
     && left.sessionFilePath === right.sessionFilePath
@@ -70,8 +77,12 @@ export function clearCodexResumeState(
   conversation: Pick<Conversation, 'sessionId' | 'providerState'>,
 ): boolean {
   const state = getCodexState(conversation.providerState);
-  const threadId = state.threadId ?? state.pendingForkTarget?.threadId ?? conversation.sessionId ?? undefined;
   const sessionFilePath = state.sessionFilePath ?? state.pendingForkTarget?.sessionFilePath;
+  const threadId = state.threadId
+    ?? state.pendingForkTarget?.threadId
+    ?? conversation.sessionId
+    // An unbound transcript keeps its native id so archived-root lookup and archiving can find it.
+    ?? (state.forkSource ? undefined : readRolloutThreadId(sessionFilePath));
   if (!threadId && !sessionFilePath && !state.forkSource) {
     return false;
   }

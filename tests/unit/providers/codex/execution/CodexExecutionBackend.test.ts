@@ -18,6 +18,7 @@ import type {
 import { isSteerableExecutionSession } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ClaudianSettings } from '@/core/types';
+import { CodexConversationHistoryService } from '@/providers/codex/history/CodexConversationHistoryService';
 import { createCodexPathMapper } from '@/providers/codex/runtime/CodexPathMapper';
 type MutableTestHost = ProviderHost & { settings: ClaudianSettings };
 
@@ -1884,6 +1885,76 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
+  it('keeps an orphaned transcript from an older missing-thread reset when the next send starts a thread', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'claudian-codex-orphan-'));
+    const sessions = join(root, 'sessions', '2026', '03', '27');
+    mkdirSync(sessions, { recursive: true });
+    const rollout = (threadId: string, question: string, answer: string) => [
+      { type: 'session_meta', payload: { id: threadId } },
+      { type: 'event_msg', payload: { type: 'task_started', turn_id: `${threadId}-turn` } },
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: question }] } },
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: answer }] } },
+      { type: 'event_msg', payload: { type: 'task_complete', turn_id: `${threadId}-turn` } },
+    ].map(record => JSON.stringify(record)).join('\n');
+    const oldThreadId = '019a0000-0000-7000-8000-00000000000a';
+    const oldPath = join(sessions, `rollout-2026-03-27T00-00-00-${oldThreadId}.jsonl`);
+    writeFileSync(oldPath, rollout(oldThreadId, 'Old question', 'Old answer'));
+    const newThreadId = '019a0000-0000-7000-8000-00000000000b';
+    const newPath = join(sessions, `rollout-2026-03-27T01-00-00-${newThreadId}.jsonl`);
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return { userAgent: 'test', codexHome: root, platformFamily: 'unix', platformOs: 'macos' };
+      }
+      if (method === 'thread/start') {
+        const result = createThreadResult(newThreadId);
+        return { ...result, thread: { ...result.thread, path: newPath } };
+      }
+      if (method === 'turn/start') {
+        queueMicrotask(() => completeTurn(newThreadId, `${newThreadId}-turn`));
+        return createTurnResult(`${newThreadId}-turn`);
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    // What the earlier missing-thread reset left: the thread binding is gone, its transcript locators remain.
+    const orphanState = {
+      sessionFilePath: oldPath,
+      transcriptRootPath: join(root, 'sessions'),
+      workspaceDependencyToolVersion: 1,
+    };
+    const history = new CodexConversationHistoryService();
+    const contents = (update: { messages?: Array<{ content: string }> }) => (update.messages ?? []).map(message => message.content);
+    try {
+      const before = await history.hydrateConversationHistory({ sessionId: null, providerState: orphanState, messages: [] }, null);
+      expect(contents(before)).toEqual(['Old question', 'Old answer']);
+
+      const session = createBackend(createPlugin()).createSession(createSessionConfig({
+        resumeSeed: { providerState: { ...orphanState } },
+      }));
+      await collectEvents(session.execute(createRequest(new AbortController().signal, {
+        conversationHistory: before.messages,
+        input: [{ type: 'text', text: 'New question' }],
+      })).events);
+      const prompt = mockTransportRequest.mock.calls
+        .find(([method]) => method === 'turn/start')![1].input
+        .find((item: { type: string }) => item.type === 'text').text as string;
+      writeFileSync(newPath, rollout(newThreadId, prompt, 'New answer'));
+      const snapshot = session.getSnapshot();
+      await session.dispose();
+
+      expect(snapshot.providerState).toMatchObject({
+        threadId: newThreadId,
+        sessionFilePath: newPath,
+        previousSegments: [{ threadId: oldThreadId, sessionFilePath: oldPath }],
+      });
+      const after = await history.hydrateConversationHistory({
+        sessionId: snapshot.providerSessionId ?? null, providerState: snapshot.providerState, messages: [],
+      }, null);
+      expect(contents(after)).toEqual(['Old question', 'Old answer', 'New question', 'New answer']);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('retains cold-start history replay until the first turn is handed off', async () => {
     let turnAttempt = 0;
     mockTransportRequest.mockImplementation(async (method: string) => {
@@ -2610,6 +2681,8 @@ describe('CodexExecutionBackend', () => {
             forkSourceSessionFilePath: '/tmp/source.jsonl',
             forkSourceTranscriptRootPath: '/tmp/sessions',
             forkSource: { sessionId: 'thread-source', resumeAt: 'checkpoint' },
+            // An older missing-thread reset left the lost child's transcript; the fork re-materializes it.
+            sessionFilePath: '/tmp/sessions/thread-lost-child.jsonl',
             unknownFutureState: { keep: true },
           },
         },
@@ -2642,6 +2715,7 @@ describe('CodexExecutionBackend', () => {
       unknownFutureState: { keep: true },
     }));
     expect(forkedSnapshot.providerState).not.toHaveProperty('forkSource');
+    expect(forkedSnapshot.providerState).not.toHaveProperty('previousSegments');
     expect(forkedSnapshot.providerState).not.toHaveProperty('forkSourceSessionFilePath');
     expect(forkedSnapshot.providerState).not.toHaveProperty('forkSourceTranscriptRootPath');
     expect(forkedSnapshot.providerStateDeletes).toEqual([
