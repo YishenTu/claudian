@@ -2,9 +2,9 @@ import { setIcon } from 'obsidian';
 
 import type { ProviderServiceTierToggleConfig } from '@/core/providers/types';
 import { toggleServiceTier } from '@/features/chat/composer/toggleServiceTier';
-import type { ModelMenuPart, ModelSelector } from '@/features/chat/composer/toolbar/ModelSelector';
-import { runToolbarAction } from '@/features/chat/composer/toolbar/ToolbarMenu';
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
+import type { ModelMenuPart, ModelSelector } from '@/shared/toolbar/ModelSelector';
+import { runToolbarAction } from '@/shared/toolbar/ToolbarMenu';
 
 /** Fast-mode switch in the model menu, with an indicator on the model button while active. */
 export class ServiceTierToggle {

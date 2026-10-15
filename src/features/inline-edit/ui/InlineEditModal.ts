@@ -9,6 +9,7 @@ import type { CursorContext } from '@/core/prompt/editorContext';
 import type { InlineEditMode, InlineEditRequest } from '@/core/prompt/inlineEdit';
 import { createCatalogCommandDiscoveryStore, discoverSessionlessCommands } from '@/core/providers/commands/catalogCommandDiscovery';
 import { getHiddenCommandSet } from '@/core/providers/commands/hiddenCommands';
+import { getProviderSettingsSnapshotWithModel } from '@/core/providers/conversationModel';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { ProviderId } from '@/core/providers/types';
@@ -20,6 +21,7 @@ import { renderInlineEditMarkdownPreview } from '@/features/inline-edit/ui/inlin
 import {
   buildMarkdownDiffDocuments,
   computeMarkdownDiff,
+  countDiffLines,
   type DiffOp,
   diffOpsEqual,
 } from '@/features/inline-edit/ui/markdownLineDiff';
@@ -31,6 +33,10 @@ import {
   SlashCommandSource,
 } from '@/shared/composer-dropdown';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
+import { EffortSelector } from '@/shared/toolbar/EffortSelector';
+import { ModelSelector } from '@/shared/toolbar/ModelSelector';
+import { ToolbarMenuGroup } from '@/shared/toolbar/ToolbarMenu';
+import type { ModelPickerCallbacks, ModelPickerSettings } from '@/shared/toolbar/types';
 import { getEditorView } from '@/utils/obsidianCompat';
 
 export type InlineEditContext =
@@ -270,6 +276,7 @@ export class InlineEditModal {
 export class InlineEditSession {
   private inputEl: HTMLInputElement | null = null;
   private spinnerEl: HTMLElement | null = null;
+  private modelToolbarEl: HTMLElement | null = null;
   private agentReplyEl: HTMLElement | null = null;
   private containerEl: HTMLElement | null = null;
   private editedText: string | null = null;
@@ -291,8 +298,13 @@ export class InlineEditSession {
   private inputResources: {
     container: HTMLElement;
     dropdown: ComposerDropdownController;
+    effortSelector: EffortSelector;
+    menus: ToolbarMenuGroup;
     dispose(): void;
   } | null = null;
+  /** This edit's model and effort choices; undefined follows the provider's saved selection. */
+  private modelOverride: string | undefined;
+  private reasoningOverride: string | undefined;
   private mentionDataProvider: VaultMentionDataProvider;
   private agentReplyRenderVersion = 0;
   /** The document the edit was computed against; CodeMirror documents are immutable. */
@@ -314,7 +326,8 @@ export class InlineEditSession {
     providerContext: InlineEditProviderContext,
   ) {
     const { modelOverride, providerId } = providerContext;
-    this.inlineEditService = ProviderRegistry.createInlineEditService(host.providerHost, providerId, modelOverride);
+    this.inlineEditService = ProviderRegistry.createInlineEditService(host.providerHost, providerId);
+    this.modelOverride = modelOverride;
     this.resolvedProviderId = providerId;
     this.mentionDataProvider = new VaultMentionDataProvider(this.app, {
       onFileLoadError: () => {
@@ -438,6 +451,7 @@ export class InlineEditSession {
     this.agentReplyRenderVersion += 1;
     this.inputEl = null;
     this.spinnerEl = null;
+    this.modelToolbarEl = null;
     this.agentReplyEl = null;
     if (this.containerEl === container) this.containerEl = null;
   }
@@ -445,7 +459,10 @@ export class InlineEditSession {
   createInputDOM(): HTMLElement {
     if (this.inputResources) this.destroyInputDOM(this.inputResources.container);
     const ownerDocument = this.getOwnerDocument();
-    const container = createDiv({ cls: 'claudian-inline-input-container' });
+    const container = createDiv({
+      cls: 'claudian-inline-input-container',
+      attr: { 'data-provider': this.resolvedProviderId },
+    });
     this.containerEl = container;
 
     this.agentReplyEl = container.createDiv({ cls: 'claudian-inline-agent-reply claudian-hidden' });
@@ -464,10 +481,13 @@ export class InlineEditSession {
     });
     this.inputEl = inputEl;
     inputEl.value = this.instructionDraft;
-    inputEl.disabled = this.generating;
 
     this.spinnerEl = inputWrap.createDiv({ cls: 'claudian-inline-spinner claudian-hidden' });
-    if (this.generating) this.spinnerEl.removeClass('claudian-hidden');
+    this.modelToolbarEl = inputWrap.createDiv({ cls: 'claudian-input-toolbar claudian-inline-model-toolbar' });
+    const menus = new ToolbarMenuGroup();
+    const modelSelector = new ModelSelector(this.modelToolbarEl, this.#modelPickerCallbacks(), menus);
+    const effortSelector = new EffortSelector(modelSelector, this.#modelPickerCallbacks());
+    this.#showGenerating(this.generating);
 
     const inlineCatalog = ProviderWorkspaceRegistry.getCommandCatalog(this.resolvedProviderId);
     const discovery = inlineCatalog
@@ -504,8 +524,11 @@ export class InlineEditSession {
     this.inputResources = {
       container,
       dropdown,
+      effortSelector,
+      menus,
       dispose: () => {
         window.clearTimeout(focusTimer);
+        menus.destroy();
         inputEl.removeEventListener('keydown', onKeydown);
         inputEl.removeEventListener('input', onInput);
         dropdown.destroy();
@@ -518,6 +541,53 @@ export class InlineEditSession {
     return container;
   }
 
+  #modelPickerCallbacks(): ModelPickerCallbacks {
+    return {
+      getSettings: () => this.#getModelPickerSettings(),
+      getUIConfig: () => ProviderRegistry.getChatUIConfig(this.resolvedProviderId),
+      getCapabilities: () => ProviderRegistry.getCapabilities(this.resolvedProviderId),
+      getEnvironmentVariables: () => this.host.getActiveEnvironmentVariables(this.resolvedProviderId),
+      onModelChange: async (model) => {
+        this.modelOverride = model;
+        // An effort the new model does not offer falls back to the saved one.
+        const settings = this.#getModelPickerSettings();
+        const offered = ProviderRegistry.getChatUIConfig(this.resolvedProviderId)
+          .getReasoningOptions(settings.model, settings)
+          .some(option => option.value === this.reasoningOverride);
+        if (!offered) {
+          this.reasoningOverride = undefined;
+        }
+        this.inputResources?.effortSelector.updateDisplay();
+      },
+      onEffortLevelChange: async (effort) => {
+        this.reasoningOverride = effort;
+      },
+    };
+  }
+
+  /** Projects the saved provider selection with this edit's choices; nothing is saved. */
+  #getModelPickerSettings(): ModelPickerSettings {
+    const snapshot = getProviderSettingsSnapshotWithModel(
+      { ...this.host.settings },
+      this.resolvedProviderId,
+      this.modelOverride,
+    );
+    const model = typeof snapshot.model === 'string' ? snapshot.model : '';
+    const offersReasoning = ProviderRegistry.getChatUIConfig(this.resolvedProviderId)
+      .getReasoningOptions(model, snapshot).length > 0;
+    const reasoning = this.reasoningOverride
+      ?? (typeof snapshot.effortLevel === 'string' ? snapshot.effortLevel : null);
+    return { ...snapshot, model, reasoning: offersReasoning ? reasoning : null };
+  }
+
+  /** While a request runs, a spinner takes the model chip's place. */
+  #showGenerating(generating: boolean): void {
+    if (this.inputEl) this.inputEl.disabled = generating;
+    if (generating) this.inputResources?.menus.closeOpenMenu();
+    this.spinnerEl?.toggleClass('claudian-hidden', !generating);
+    this.modelToolbarEl?.toggleClass('claudian-hidden', generating);
+  }
+
   createDiffPreviewDOM(diffOps: DiffOp[]): HTMLElement {
     const previewEl = createDiv({ cls: 'claudian-inline-diff-preview' });
     this.containerEl = previewEl;
@@ -527,8 +597,14 @@ export class InlineEditSession {
     const actionsEl = previewEl.createDiv({ cls: 'claudian-inline-preview-actions' });
     actionsEl.setAttribute('role', 'toolbar');
     actionsEl.setAttribute('aria-label', 'Inline edit actions');
-    actionsEl.appendChild(this.#createPreviewActionButton('Reject', 'reject', () => this.reject()));
-    actionsEl.appendChild(this.#createPreviewActionButton('Accept', 'accept', () => this.accept()));
+    const statsEl = actionsEl.createDiv({ cls: 'claudian-inline-diff-stats' });
+    const removed = countDiffLines(diffOps, 'delete');
+    const added = countDiffLines(diffOps, 'insert');
+    if (removed > 0) statsEl.createSpan({ cls: 'claudian-inline-diff-stat-del', text: `−${removed}` });
+    if (added > 0) statsEl.createSpan({ cls: 'claudian-inline-diff-stat-ins', text: `+${added}` });
+    statsEl.createSpan({ text: removed + added === 1 ? 'line' : 'lines' });
+    actionsEl.appendChild(this.#createPreviewActionButton('Reject', 'reject', 'Esc', () => this.reject()));
+    actionsEl.appendChild(this.#createPreviewActionButton('Accept', 'accept', '↵', () => this.accept()));
 
     void this.#renderMarkdownDiffPreview(bodyEl, diffOps);
     return previewEl;
@@ -537,6 +613,7 @@ export class InlineEditSession {
   #createPreviewActionButton(
     label: string,
     variant: 'accept' | 'reject',
+    keyHint: string,
     onClick: () => void
   ): HTMLButtonElement {
     const button = createEl('button', {
@@ -548,6 +625,7 @@ export class InlineEditSession {
         'aria-keyshortcuts': variant === 'accept' ? 'Enter' : 'Escape',
       },
     });
+    button.createEl('kbd', { cls: 'claudian-inline-preview-key', text: keyHint, attr: { 'aria-hidden': 'true' } });
     button.addEventListener('click', (event: MouseEvent) => {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -590,13 +668,15 @@ export class InlineEditSession {
 
     this.#removeSelectionListeners();
 
-    this.inputEl.disabled = true;
-    this.spinnerEl.removeClass('claudian-hidden');
+    this.#showGenerating(true);
 
     let result;
     try {
       // Slash commands stay in the instruction for the provider to handle.
-      result = await this.inlineEditService.send(this.#buildRequest(userMessage));
+      result = await this.inlineEditService.send(this.#buildRequest(userMessage), {
+        model: this.modelOverride,
+        reasoning: this.reasoningOverride,
+      });
     } catch (error) {
       if (this.#isGenerationActive(generation)) {
         if (!this.#isSourceUnchanged()) this.#rejectStaleSource();
@@ -606,8 +686,7 @@ export class InlineEditSession {
     } finally {
       if (this.#isGenerationActive(generation)) {
         this.generating = false;
-        if (this.inputEl) this.inputEl.disabled = false;
-        this.spinnerEl?.addClass('claudian-hidden');
+        this.#showGenerating(false);
       }
     }
 

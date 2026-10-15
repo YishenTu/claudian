@@ -1,6 +1,6 @@
-import { nextToolbarId, runToolbarAction, ToolbarMenu, type ToolbarMenuGroup } from '@/features/chat/composer/toolbar/ToolbarMenu';
-import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
 import { createProviderIconSvg } from '@/shared/icons';
+import { nextToolbarId, runToolbarAction, ToolbarMenu, type ToolbarMenuGroup } from '@/shared/toolbar/ToolbarMenu';
+import type { ModelPickerCallbacks } from '@/shared/toolbar/types';
 
 /** A section of the model menu plus a matching detail on the model button. */
 export interface ModelMenuPart {
@@ -20,9 +20,9 @@ export class ModelSelector {
   private readonly partRefreshers: Array<() => void> = [];
   private readonly partDescriptions = new Map<string, string | null>();
   private modelDescription = '';
-  private callbacks: ToolbarCallbacks;
+  private callbacks: ModelPickerCallbacks;
 
-  constructor(parentEl: HTMLElement, callbacks: ToolbarCallbacks, menuGroup?: ToolbarMenuGroup) {
+  constructor(parentEl: HTMLElement, callbacks: ModelPickerCallbacks, menuGroup?: ToolbarMenuGroup) {
     this.callbacks = callbacks;
     this.menu = new ToolbarMenu(parentEl, {
       anchorCls: 'claudian-toolbar-chip-anchor--model claudian-model-selector',

@@ -6,9 +6,10 @@ import { fireEvent, screen, waitFor } from '@testing-library/dom';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
-import type { ProviderId, ProviderRegistration } from '@/core/providers/types';
+import type { ProviderId, ProviderModelPolicy, ProviderRegistration } from '@/core/providers/types';
 import { InlineEditSessionOwner } from '@/features/inline-edit/InlineEditSessionOwner';
 import { InlineEditModal, InlineEditSession } from '@/features/inline-edit/ui/InlineEditModal';
+import { CLAUDE_PROVIDER_ICON } from '@/shared/icons';
 
 // Obsidian augments HTMLElement; jsdom needs the subset Inline Edit uses.
 Object.assign(HTMLElement.prototype, {
@@ -37,13 +38,28 @@ function isProviderEnabled(providerId: ProviderId, settings: Record<string, unkn
   return configs?.[providerId]?.enabled !== false;
 }
 
+/** Two models with two effort levels, enough to drive the composer's model chip. */
+const fakeModelPolicy: ProviderModelPolicy = {
+  getModelOptions: () => [{ value: 'sonnet', label: 'Sonnet' }, { value: 'opus', label: 'Opus' }],
+  ownsModel: model => model === 'sonnet' || model === 'opus',
+  supportsReasoningEffort: () => true,
+  getReasoningOptions: () => [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }],
+  getDefaultReasoningValue: () => 'high',
+  isDefaultModel: () => true,
+  applyModelDefaults: () => {},
+  normalizeModelVariant: model => model,
+  getCustomModelIds: () => new Set(),
+};
+
 /** Registers a provider whose auxiliary sessions are fakes; enablement follows `settings.providerConfigs`. */
 export function registerFakeInlineEditProvider(providerId: ProviderId): FakeAuxiliaryBackend {
   const backend = new FakeAuxiliaryBackend();
   ProviderWorkspaceRegistry.setServices(providerId, {});
   ProviderRegistry.register(providerId, {
     blankTabOrder: 0,
-    capabilities: { supportsEphemeralSessions: true, supportsProviderCommands: true },
+    capabilities: { supportsEphemeralSessions: true, supportsProviderCommands: true, reasoningControl: 'effort' },
+    chatUIConfig: { ...fakeModelPolicy, getProviderIcon: () => CLAUDE_PROVIDER_ICON },
+    modelPolicy: fakeModelPolicy,
     createExecutionBackend: () => backend,
     isEnabled: (settings: Record<string, unknown>) => isProviderEnabled(providerId, settings),
   } as unknown as ProviderRegistration);
@@ -60,7 +76,8 @@ export function createInlineEditHarness() {
     vault: { adapter: { basePath: '/vault' }, getFiles: () => [], getAllLoadedFiles: () => [] },
   };
   const plugin: any = {
-    settings: {},
+    settings: { model: 'sonnet', effortLevel: 'high' },
+    getActiveEnvironmentVariables: () => '',
     getActiveModelSelection: () => null,
     providerHost: {
       app,

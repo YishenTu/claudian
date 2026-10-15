@@ -1,9 +1,9 @@
 import { setIcon } from 'obsidian';
 
 import type { ProviderPermissionModeOption } from '@/core/providers/types';
-import { runToolbarAction, ToolbarMenu, type ToolbarMenuGroup } from '@/features/chat/composer/toolbar/ToolbarMenu';
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
 import { t } from '@/i18n/i18n';
+import { runToolbarAction, ToolbarMenu, type ToolbarMenuGroup } from '@/shared/toolbar/ToolbarMenu';
 
 /** Choice among the provider's permission modes. */
 export class PermissionToggle {

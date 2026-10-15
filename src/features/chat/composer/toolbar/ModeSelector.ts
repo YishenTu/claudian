@@ -1,6 +1,6 @@
 import type { ProviderModeSelectorConfig, ProviderUIOption } from '@/core/providers/types';
-import { runToolbarAction, ToolbarMenu, type ToolbarMenuGroup } from '@/features/chat/composer/toolbar/ToolbarMenu';
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
+import { runToolbarAction, ToolbarMenu, type ToolbarMenuGroup } from '@/shared/toolbar/ToolbarMenu';
 
 /** Provider mode choice; shown only when the provider supplies exactly two options. */
 export class ModeSelector {

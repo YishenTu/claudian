@@ -87,3 +87,9 @@ export function diffOpsEqual(left: DiffOp[], right: DiffOp[]): boolean {
     return op.type === other.type && op.text === other.text;
   });
 }
+
+export function countDiffLines(diffOps: DiffOp[], type: DiffOp['type']): number {
+  return diffOps
+    .filter(op => op.type === type)
+    .reduce((count, op) => count + splitLinesPreservingEndings(op.text).length, 0);
+}

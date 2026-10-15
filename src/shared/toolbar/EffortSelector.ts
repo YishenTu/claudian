@@ -1,8 +1,8 @@
 import { formatReasoningValueLabel } from '@/core/providers/reasoning';
 import type { ProviderUIOption } from '@/core/providers/types';
-import type { ModelMenuPart, ModelSelector } from '@/features/chat/composer/toolbar/ModelSelector';
-import { nextToolbarId, runToolbarAction } from '@/features/chat/composer/toolbar/ToolbarMenu';
-import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
+import type { ModelMenuPart, ModelSelector } from '@/shared/toolbar/ModelSelector';
+import { nextToolbarId, runToolbarAction } from '@/shared/toolbar/ToolbarMenu';
+import type { ModelPickerCallbacks } from '@/shared/toolbar/types';
 
 /** Levels the provider reports for the current model, in its order. */
 interface ReasoningScale {
@@ -20,7 +20,7 @@ interface ReasoningSlider {
 /** Effort: a level on the model button, a slider in its popover. */
 export class EffortSelector {
   private readonly part: ModelMenuPart;
-  private callbacks: ToolbarCallbacks;
+  private callbacks: ModelPickerCallbacks;
   #scale: ReasoningScale | null = null;
   #scaleKey: string | null = null;
   #slider: ReasoningSlider | null = null;
@@ -28,7 +28,7 @@ export class EffortSelector {
   /** Commits still saving; the slider keeps the user's latest level until all have landed. */
   #pendingCommits = 0;
 
-  constructor(modelSelector: ModelSelector, callbacks: ToolbarCallbacks) {
+  constructor(modelSelector: ModelSelector, callbacks: ModelPickerCallbacks) {
     this.callbacks = callbacks;
     this.part = modelSelector.attachPart(
       'reasoning',

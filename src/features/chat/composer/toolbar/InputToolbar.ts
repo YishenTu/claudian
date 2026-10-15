@@ -1,11 +1,11 @@
 import { ContextUsageMeter } from '@/features/chat/composer/toolbar/ContextUsageMeter';
-import { EffortSelector } from '@/features/chat/composer/toolbar/EffortSelector';
-import { ModelSelector } from '@/features/chat/composer/toolbar/ModelSelector';
 import { ModeSelector } from '@/features/chat/composer/toolbar/ModeSelector';
 import { PermissionToggle } from '@/features/chat/composer/toolbar/PermissionToggle';
 import { ServiceTierToggle } from '@/features/chat/composer/toolbar/ServiceTierToggle';
-import { ToolbarMenuGroup, type ToolbarMenus } from '@/features/chat/composer/toolbar/ToolbarMenu';
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
+import { EffortSelector } from '@/shared/toolbar/EffortSelector';
+import { ModelSelector } from '@/shared/toolbar/ModelSelector';
+import { ToolbarMenuGroup, type ToolbarMenus } from '@/shared/toolbar/ToolbarMenu';
 
 export function createInputToolbar(
   parentEl: HTMLElement,

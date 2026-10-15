@@ -8,7 +8,7 @@ import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 
 const selection = { mode: 'selection', notePath: 'note.md', selectedText: 'draft' } as const;
 
-function createService(model?: string) {
+function createService() {
   const backend = new FakeAuxiliaryBackend();
   const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   const service = new InlineEditService({
@@ -21,14 +21,14 @@ function createService(model?: string) {
     lifecycleRegistry,
     nativePersistence: 'provider-default',
     vaultWorkingDirectory: '/vault',
-  }, model);
+  });
   return { backend, lifecycleRegistry, service };
 }
 
 describe('InlineEditService', () => {
   it('keeps clarification continuity in an independent read-only session', async () => {
-    const { backend, service } = createService('edit-model');
-    const first = service.send({ ...selection, instruction: 'Improve' });
+    const { backend, service } = createService();
+    const first = service.send({ ...selection, instruction: 'Improve' }, { model: 'edit-model', reasoning: 'high' });
     await waitFor(() => backend.sessions[0]?.requests.length === 1);
     backend.sessions[0].emitText('Which tone?');
     backend.sessions[0].complete();
@@ -38,7 +38,11 @@ describe('InlineEditService', () => {
     });
 
     expect(service.isConversing).toBe(true);
-    const second = service.send({ ...selection, instruction: 'Formal', contextFiles: ['context.md'] });
+    // Each request runs with the selection its caller holds now, including a continuation.
+    const second = service.send(
+      { ...selection, instruction: 'Formal', contextFiles: ['context.md'] },
+      { model: 'other-model' },
+    );
     await waitFor(() => backend.sessions[0]?.requests.length === 2);
     backend.sessions[0].emitText('<replacement>Final</replacement>');
     backend.sessions[0].complete();
@@ -55,6 +59,7 @@ describe('InlineEditService', () => {
     expect(backend.sessions[0].requests[0]).toMatchObject({
       configuration: {
         model: 'edit-model',
+        reasoning: 'high',
         systemInstructions: {
           instructions: expect.stringContaining('Vault absolute path: /vault'),
           kind: 'explicit',
@@ -62,6 +67,8 @@ describe('InlineEditService', () => {
       },
       toolPolicy: { kind: 'read-only' },
     });
+    expect(backend.sessions[0].requests[1].configuration).toMatchObject({ model: 'other-model' });
+    expect(backend.sessions[0].requests[1].configuration).not.toHaveProperty('reasoning');
     // A continuation carries the reply and its context files, not the editor context again.
     expect(backend.sessions[0].requests[1].input[0]).toMatchObject({
       text: expect.stringContaining('<context_files>'),

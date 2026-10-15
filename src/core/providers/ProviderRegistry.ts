@@ -109,8 +109,8 @@ export class ProviderRegistry {
     return candidates.length === 1 ? candidates[0] : null;
   }
 
-  static createInlineEditService(plugin: ProviderHost, providerId: ProviderId, model?: string): InlineEditService {
-    return new InlineEditService(this.createAuxiliaryExecutionContext(plugin, providerId), model);
+  static createInlineEditService(plugin: ProviderHost, providerId: ProviderId): InlineEditService {
+    return new InlineEditService(this.createAuxiliaryExecutionContext(plugin, providerId));
   }
 
   private static createAuxiliaryExecutionContext(

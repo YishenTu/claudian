@@ -169,6 +169,7 @@ it.each([
   h.backend.sessions[0].complete();
   const control = await screen.findByRole('button', { name: `${action} inline edit` });
   expect(h.editorView.state.doc.toString()).toBe('hello world');
+  expect(screen.getByRole('toolbar', { name: 'Inline edit actions' }).textContent).toContain('−1+1lines');
   expect(await axe(screen.getByRole('toolbar', { name: 'Inline edit actions' }))).toHaveNoViolations();
   let nativeActivationAllowed = true;
   if (keyboard) {
@@ -183,6 +184,23 @@ it.each([
     : { decision: 'reject' });
   expect(h.editorView.state.doc.toString()).toBe(action === 'Accept' ? 'Hi world' : 'hello world');
   expect(h.backend.sessions[0].getStatus()).toBe('disposed');
+});
+
+it('runs the edit with the model and effort chosen on its composer chip without saving them', async () => {
+  const h = createHarness();
+  h.createSession().show();
+  expect(await axe(input().closest('.claudian-inline-input-container')!)).toHaveNoViolations();
+  fireEvent.click(screen.getByRole('button', { name: 'Model: Sonnet, effort High' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Opus' }));
+  await screen.findByRole('button', { name: 'Model: Opus, effort High' });
+  fireEvent.change(screen.getByRole('slider', { name: 'Effort' }), { target: { value: '0' } });
+  await screen.findByRole('button', { name: 'Model: Opus, effort Low' });
+  submitInstruction();
+  await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+  expect(h.backend.sessions[0].requests[0].configuration).toMatchObject({ model: 'opus', reasoning: 'low' });
+  // A running request hides the chip, so its choices cannot change mid-request.
+  expect(screen.getByRole('button', { name: 'Model: Opus, effort Low' }).closest('.claudian-hidden')).not.toBeNull();
+  expect(h.plugin.settings).toEqual({ model: 'sonnet', effortLevel: 'high' });
 });
 
 it('continues provider execution when vault mentions cannot load and reports one notice', async () => {

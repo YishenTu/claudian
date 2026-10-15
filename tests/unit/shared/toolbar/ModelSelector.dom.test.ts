@@ -5,10 +5,10 @@ import '@/providers';
 import { TEST_CODEX_CATALOG } from '@test/helpers/codexModels';
 import { fireEvent, within } from '@testing-library/dom';
 
-import { ModelSelector } from '@/features/chat/composer/toolbar/ModelSelector';
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
 import { getBlankTabModelOptions } from '@/features/chat/tabs/tabProviderSettings';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
+import { ModelSelector } from '@/shared/toolbar/ModelSelector';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };

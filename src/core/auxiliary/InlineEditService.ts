@@ -13,6 +13,12 @@ import { AuxiliarySessionController } from './AuxiliarySessionController';
 const CONTINUITY_RESET_MESSAGE =
   'The provider environment changed. Start a new inline edit.';
 
+/** The model and effort a request runs with; an omitted field follows the provider's saved selection. */
+export interface InlineEditExecutionSelection {
+  readonly model?: string;
+  readonly reasoning?: string;
+}
+
 /**
  * One inline edit's read-only provider conversation. It alone decides whether a request opens the
  * conversation with its editor context or continues a clarification with just the instruction.
@@ -22,7 +28,7 @@ export class InlineEditService {
   private readonly vaultWorkingDirectory: string;
   private conversing = false;
 
-  constructor(context: AuxiliaryExecutionContext, private readonly model?: string) {
+  constructor(context: AuxiliaryExecutionContext) {
     this.vaultWorkingDirectory = context.vaultWorkingDirectory;
     this.controller = new AuxiliarySessionController(
       context,
@@ -36,7 +42,11 @@ export class InlineEditService {
     return this.conversing;
   }
 
-  async send(request: InlineEditRequest): Promise<InlineEditResult> {
+  /** The selection applies to this request only; the caller owns it across a clarification. */
+  async send(
+    request: InlineEditRequest,
+    selection: InlineEditExecutionSelection = {},
+  ): Promise<InlineEditResult> {
     if (this.conversing && this.controller.requiresReset) {
       this.end();
       return { success: false, error: CONTINUITY_RESET_MESSAGE };
@@ -44,7 +54,7 @@ export class InlineEditService {
     if (this.conversing && this.controller.hasSession) {
       return this.sendMessage(request.contextFiles?.length
         ? appendContextFiles(request.instruction, request.contextFiles)
-        : request.instruction);
+        : request.instruction, selection);
     }
     this.conversing = false;
     try {
@@ -52,7 +62,7 @@ export class InlineEditService {
     } catch (error) {
       return toFailure(error);
     }
-    return this.sendMessage(buildInlineEditPrompt(request));
+    return this.sendMessage(buildInlineEditPrompt(request), selection);
   }
 
   /** Cancels work in flight and forgets the conversation; the next request starts a new one. */
@@ -61,10 +71,11 @@ export class InlineEditService {
     this.controller.reset();
   }
 
-  private async sendMessage(prompt: string): Promise<InlineEditResult> {
+  private async sendMessage(prompt: string, selection: InlineEditExecutionSelection): Promise<InlineEditResult> {
     try {
       const text = await this.controller.execute({
-        model: this.model,
+        model: selection.model,
+        reasoning: selection.reasoning,
         prompt,
         systemPrompt: getInlineEditSystemPrompt(this.vaultWorkingDirectory),
       });
