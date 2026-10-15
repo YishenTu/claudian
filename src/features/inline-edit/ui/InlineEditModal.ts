@@ -597,19 +597,23 @@ export class InlineEditSession {
 
   /** A choice on the chip becomes the model later inline edits start from; chat keeps its own. */
   async #saveInlineEditDefault(): Promise<void> {
-    const { model } = this.#getModelPickerSettings();
+    const { model, reasoning } = this.#getModelPickerSettings();
     if (!model) return;
     const selection = {
       providerId: this.resolvedProviderId,
       model,
-      ...(this.reasoningOverride ? { reasoning: this.reasoningOverride } : {}),
+      ...(reasoning ? { reasoning } : {}),
     };
     await this.host.mutateSettings((settings) => {
       settings.inlineEditModel = selection;
     });
   }
 
-  /** Projects the saved provider selection with this edit's choices; nothing is saved. */
+  /**
+   * The model and effort this edit runs with: the provider's saved selection projected with the chip's
+   * choices. The chip displays it, requests send it and the inline default saves it; nothing else may
+   * derive a model or effort.
+   */
   #getModelPickerSettings(): ModelPickerSettings {
     const snapshot = getProviderSettingsSnapshotWithModel(
       { ...this.host.settings },
@@ -621,20 +625,7 @@ export class InlineEditSession {
       .getReasoningOptions(model, snapshot).length > 0;
     const reasoning = this.reasoningOverride
       ?? (typeof snapshot.effortLevel === 'string' ? snapshot.effortLevel : null);
-    return { ...snapshot, model, reasoning: offersReasoning ? reasoning : null };
-  }
-
-  /**
-   * Sends the effort the chip shows. Providers differ on an unset effort (some fall back to the saved
-   * one, some omit it), so only an effort the model does not offer is left unset.
-   */
-  #getSubmittedReasoning(): string | undefined {
-    const settings = this.#getModelPickerSettings();
-    if (!settings.reasoning) return undefined;
-    const offered = ProviderRegistry.getChatUIConfig(this.resolvedProviderId)
-      .getReasoningOptions(settings.model, settings)
-      .some(option => option.value === settings.reasoning);
-    return offered ? settings.reasoning : undefined;
+    return { ...snapshot, model, reasoning: offersReasoning && reasoning ? reasoning : null };
   }
 
   /** While a request runs, a spinner takes the model chip's place. */
@@ -730,9 +721,11 @@ export class InlineEditSession {
     let result;
     try {
       // Slash commands stay in the instruction for the provider to handle.
+      // The request runs with exactly what the model chip shows.
+      const { model, reasoning } = this.#getModelPickerSettings();
       result = await this.inlineEditService.send(this.#buildRequest(userMessage), {
-        model: this.modelOverride,
-        reasoning: this.#getSubmittedReasoning(),
+        model: model || undefined,
+        reasoning,
       });
     } catch (error) {
       if (this.#isGenerationActive(generation)) {

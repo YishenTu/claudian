@@ -208,6 +208,16 @@ it('saves the model and effort chosen on its composer chip as the inline edit de
   });
 });
 
+it('runs a new edit with the model and effort its chip shows when nothing is chosen or saved', async () => {
+  const h = createHarness();
+  void h.createModal().openAndWait();
+  // The chip resolves the provider's saved model and effort; the request must use exactly those.
+  await screen.findByRole('button', { name: 'Model: Sonnet, effort High' });
+  submitInstruction();
+  await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+  expect(h.backend.sessions[0].requests[0].configuration).toMatchObject({ model: 'sonnet', reasoning: 'high' });
+});
+
 it.each([
   { saved: { providerId: 'claude', model: 'opus', reasoning: 'low' }, chip: 'Model: Opus, effort Low', model: 'opus', reasoning: 'low' },
   // An unavailable saved model falls back to the chat selection. The provider's saved effort, not its

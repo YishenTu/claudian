@@ -13,10 +13,10 @@ import { AuxiliarySessionController } from './AuxiliarySessionController';
 const CONTINUITY_RESET_MESSAGE =
   'The provider environment changed. Start a new inline edit.';
 
-/** The model and effort a request runs with; an omitted field follows the provider's saved selection. */
+/** The model and effort a request runs with; null effort omits it, an omitted field follows the provider's saved selection. */
 export interface InlineEditExecutionSelection {
   readonly model?: string;
-  readonly reasoning?: string;
+  readonly reasoning?: string | null;
 }
 
 /**

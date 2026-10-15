@@ -42,27 +42,32 @@ describe('provider and model resolution', () => {
       name: 'uses the enabled settings provider when nothing is selected',
       selection: null,
       settings: { settingsProvider: 'claude', providerConfigs: { claude: { enabled: false } } },
-      expectedModel: undefined,
+      expectedModel: 'sonnet',
+      expectedChip: 'Model: Sonnet, effort High',
     },
     {
       name: 'falls back to the settings provider without the model of a disabled selection',
       selection: { providerId: 'claude', model: 'sonnet' },
       settings: { settingsProvider: 'codex', providerConfigs: { claude: { enabled: false } } },
-      expectedModel: undefined,
+      expectedModel: 'sonnet',
+      expectedChip: 'Model: Sonnet, effort High',
     },
     {
       name: 'uses the selected provider and model',
-      selection: { providerId: 'codex', model: 'gpt-selected' },
+      selection: { providerId: 'codex', model: 'opus' },
       settings: { settingsProvider: 'claude' },
-      expectedModel: 'gpt-selected',
+      expectedModel: 'opus',
+      expectedChip: 'Model: Opus, effort High',
     },
-  ])('$name', async ({ selection, settings, expectedModel }) => {
+  ])('$name', async ({ selection, settings, expectedModel, expectedChip }) => {
     const h = createHarness();
     const codex = registerFakeInlineEditProvider('codex');
     h.plugin.settings = settings;
     h.plugin.getActiveModelSelection = () => selection;
     const result = h.createModal().openAndWait();
     await screen.findByRole('textbox', { name: 'Edit instructions' });
+    // Without a saved model the provider's default is resolved once, shown on the chip and sent.
+    expect(screen.getByRole('button', { name: expectedChip })).toBeDefined();
     submitInstruction();
     await waitFor(() => expect(codex.sessions[0]?.requests).toHaveLength(1));
     expect(h.backend.sessions).toHaveLength(0);
