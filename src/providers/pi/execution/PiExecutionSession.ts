@@ -49,7 +49,6 @@ import type {
   StreamChunk,
   TurnStats,
 } from '../../../core/types';
-import type { PiWorkspaceServices } from '../app/PiWorkspaceServices';
 import { PiConversationHistoryService } from '../history/PiConversationHistoryService';
 import {
   isPiSessionPathReference,
@@ -90,7 +89,6 @@ import {
 import { assertPiModelAvailable } from '../runtime/PiModelAvailability';
 import { buildPiSetModelPayload } from '../runtime/PiRPCPayloads';
 import { type PiRPCRecord, PiRPCResponseError } from '../runtime/PiRPCTransport';
-import { PI_TREE_COMMAND } from '../runtime/PiTreeBridge';
 import {
   getPiProviderSettings,
   type PiProviderSettings,
@@ -100,7 +98,6 @@ import {
   type PiProviderState,
   type PiTreeCursor,
 } from '../types';
-import { normalizePiRuntimeCommands } from './PiCommandMetadataProbe';
 import {
   type PiExecutionKernel,
   type PiExecutionKernelFactory,
@@ -113,7 +110,6 @@ interface PiExecutionSessionOptions {
   readonly rollbackForkSessionFile: typeof rollbackCreatedPiForkSessionFile;
 }
 
-type PiExecutionServices = Pick<PiWorkspaceServices, 'commandCatalog'>;
 
 interface EncodedPiRequest {
   readonly input:
@@ -232,7 +228,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
 
   constructor(
     private readonly host: ProviderHost,
-    private readonly services: PiExecutionServices,
     private readonly config: ProviderSessionConfig,
     private readonly options: PiExecutionSessionOptions,
   ) {
@@ -914,9 +909,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       || !this.#isCurrentKernel(kernel, generation)
     ) {
       await this.#shutdownAcquiredKernel(kernel, generation);
-      return;
     }
-    void this.#publishCommands(kernel, generation);
   }
 
   async #validateKernelResume(signal: AbortSignal): Promise<void> {
@@ -1588,21 +1581,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       signal,
     );
     return buildPiUsageInfo(response, model, contextWindow);
-  }
-
-  async #publishCommands(
-    kernel: PiExecutionKernel,
-    generation: number,
-  ): Promise<void> {
-    try {
-      const response = await kernel.request<unknown>('get_commands', {}, 10_000);
-      if (!this.#isCurrentKernel(kernel, generation) || this.disposed) return;
-      this.services.commandCatalog.setCommandSnapshot(
-        normalizePiRuntimeCommands(response).filter(command => command.name !== PI_TREE_COMMAND),
-      );
-    } catch {
-      // Command metadata is non-blocking; the provider-owned probe can retry.
-    }
   }
 
   async #materializePendingFork(active: ActiveRun): Promise<void> {

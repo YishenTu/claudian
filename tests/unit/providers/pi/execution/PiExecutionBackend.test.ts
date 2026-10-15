@@ -230,9 +230,6 @@ function createHarness(
   const host = createHost();
   const kernels: FakeKernel[] = [];
   const responses = new Map<string, unknown>([
-    ['get_commands', {
-      commands: [{ description: 'Compact context', name: 'compact', source: 'runtime' }],
-    }],
     ['get_session_stats', {
       contextWindow: 200_000,
       inputTokens: 10,
@@ -249,15 +246,8 @@ function createHarness(
     ['set_thinking_level', {}],
     ['steer', { disposition: 'queued' }],
   ]);
-  const commandCatalog = {
-    getDropdownConfig: jest.fn(),
-    listDropdownEntries: jest.fn(async () => []),
-    refresh: jest.fn(async () => undefined),
-    setCommandSnapshot: jest.fn(),
-  };
   const backend = new PiExecutionBackend(
     host,
-    { commandCatalog },
     {
       createKernel: (spec, callbacks) => {
         const kernel = new FakeKernel(spec, callbacks, responses, requestHandler);
@@ -270,7 +260,6 @@ function createHarness(
   );
   return {
     backend,
-    commandCatalog,
     config,
     host,
     kernels,
@@ -732,9 +721,6 @@ describe('PiExecutionBackend', () => {
       status: 'idle',
     });
     expect(harness.session.getSnapshot().providerStateDeletes).toBeUndefined();
-    expect(harness.commandCatalog.setCommandSnapshot).toHaveBeenCalledWith([
-      expect.objectContaining({ id: 'pi:runtime:compact', name: 'compact' }),
-    ]);
     expect(new Set(events.map(event => event.scope.sequence)).size).toBe(events.length);
   });
 

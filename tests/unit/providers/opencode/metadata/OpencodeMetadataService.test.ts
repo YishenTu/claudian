@@ -82,12 +82,10 @@ describe('OpencodeMetadataService', () => {
     } finally { await service.dispose(); }
   });
 
-  it('uses an isolated probe, publishes commands, and persists discovered models', async () => {
+  it('uses an isolated probe, loads commands, and persists discovered models', async () => {
     const plugin = createPlugin();
     const probe = createProbe();
-    const commandCatalog = { setCommandSnapshot: jest.fn() };
     const service = new OpencodeMetadataService(plugin, {
-      commandCatalog,
       createProbe: jest.fn(() => probe),
     });
 
@@ -99,7 +97,6 @@ describe('OpencodeMetadataService', () => {
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([
       { label: 'Claude', rawId: 'anthropic/claude' },
     ]);
-    expect(commandCatalog.setCommandSnapshot).toHaveBeenCalled();
     expect(probe.dispose).toHaveBeenCalledTimes(2);
   });
 
@@ -141,9 +138,7 @@ describe('OpencodeMetadataService', () => {
         rejectLoad = reject;
       })),
     });
-    const commandCatalog = { setCommandSnapshot: jest.fn() };
     const service = new OpencodeMetadataService(transitionPlugin, {
-      commandCatalog,
       createProbe: () => probe,
     });
     const load = service.loadCatalog();
@@ -161,7 +156,6 @@ describe('OpencodeMetadataService', () => {
       afterTransition: expect.any(Function),
       beforeTransition: expect.any(Function),
     });
-    expect(commandCatalog.setCommandSnapshot).toHaveBeenCalledWith([]);
     expect(probe.dispose).toHaveBeenCalledTimes(1);
 
     await service.dispose();
@@ -187,15 +181,12 @@ describe('OpencodeMetadataService', () => {
       probeEnvironments.push(environment);
       return createProbe();
     });
-    const commandCatalog = { setCommandSnapshot: jest.fn() };
     const service = new OpencodeMetadataService(transitionPlugin, {
-      commandCatalog,
       createProbe: createProbeFactory,
     });
 
     await beforeTransition();
     transitionPlugin.mutateSettingsConditionally.mockClear();
-    commandCatalog.setCommandSnapshot.mockClear();
     const catalog = service.loadCatalog();
     const commands = service.discoverCommands();
     const warm = service.warmModelMetadata('opencode:anthropic/claude');
@@ -205,7 +196,6 @@ describe('OpencodeMetadataService', () => {
 
     expect(createProbeFactory).not.toHaveBeenCalled();
     expect(transitionPlugin.mutateSettingsConditionally).not.toHaveBeenCalled();
-    expect(commandCatalog.setCommandSnapshot).not.toHaveBeenCalled();
 
     environment = 'environment-b';
     await afterTransition();

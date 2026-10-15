@@ -5,7 +5,7 @@ import type { App, Component, Editor, MarkdownView } from 'obsidian';
 import { Notice } from 'obsidian';
 
 import type { CursorContext } from '@/core/prompt/editorContext';
-import { createCatalogCommandDiscoveryStore } from '@/core/providers/commands/catalogCommandDiscovery';
+import { createCatalogCommandDiscoveryStore, discoverSessionlessCommands } from '@/core/providers/commands/catalogCommandDiscovery';
 import { getHiddenCommandSet } from '@/core/providers/commands/hiddenCommands';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -573,7 +573,9 @@ export class InlineEditSession {
     if (this.generating) this.spinnerEl.removeClass('claudian-hidden');
 
     const inlineCatalog = ProviderWorkspaceRegistry.getCommandCatalog(this.resolvedProviderId);
-    const discovery = inlineCatalog ? createCatalogCommandDiscoveryStore(inlineCatalog) : null;
+    const discovery = inlineCatalog
+      ? createCatalogCommandDiscoveryStore(inlineCatalog, discoverSessionlessCommands(this.host.providerHost, this.resolvedProviderId))
+      : null;
     const slashSource = new SlashCommandSource({
       includeBuiltIns: false,
       providerId: this.resolvedProviderId,

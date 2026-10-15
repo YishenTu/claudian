@@ -9,6 +9,7 @@ import { MarkdownRenderer, Notice } from 'obsidian';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderCommandCatalog } from '@/core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
+import { RuntimeCommandCatalog } from '@/core/providers/commands/RuntimeCommandCatalog';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { ProviderRegistration } from '@/core/providers/types';
@@ -42,7 +43,7 @@ function createHarness() {
   ProviderWorkspaceRegistry.clear();
   ProviderWorkspaceRegistry.setServices('claude', {});
   ProviderRegistry.register('claude', {
-    capabilities: { supportsEphemeralSessions: true },
+    capabilities: { supportsEphemeralSessions: true, supportsProviderCommands: true },
     createExecutionBackend: () => backend,
     isEnabled: () => true,
   } as unknown as ProviderRegistration);
@@ -312,7 +313,6 @@ it('uses provider-scoped hidden commands and cancels widget-owned discovery on r
   const catalog: ProviderCommandCatalog = {
     getDropdownConfig: () => ({ providerId: 'claude', triggerChars: ['/'], builtInPrefix: '/', skillPrefix: '/', commandPrefix: '/' }),
     async listDropdownEntries({ signal }) { signals.push(signal!); return entries; },
-    setCommandSnapshot: () => {},
     refresh: async () => {},
   };
   ProviderWorkspaceRegistry.setServices('claude', { commandCatalog: catalog });
@@ -335,6 +335,28 @@ it('uses provider-scoped hidden commands and cancels widget-owned discovery on r
   expect(screen.queryByRole('listbox')).toBeNull();
 });
 
+
+it('discovers commands as a blank chat tab does when the provider reports them through its loader', async () => {
+  const h = createHarness();
+  // A runtime catalog lists only what a session or loader reported; nothing has chatted in this run.
+  const catalog = new RuntimeCommandCatalog({
+    dropdownConfig: { providerId: 'claude', triggerChars: ['/'], builtInPrefix: '/', skillPrefix: '/', commandPrefix: '/' },
+    projectEntry: command => ({ ...command, providerId: 'claude', kind: command.kind ?? 'command', scope: 'runtime',
+      source: 'sdk', isEditable: false, isDeletable: false, displayPrefix: '/', insertPrefix: '/' }),
+  });
+  const loadCommands = jest.fn(async () => ({ status: 'ready' as const, items: [
+    { id: 'skill:summarize', name: 'summarize', description: 'Summarize', content: '', kind: 'skill' as const },
+  ] as [ProviderCommandEntry] }));
+  ProviderWorkspaceRegistry.setServices('claude', {
+    commandCatalog: catalog,
+    commandLoader: { getCacheFingerprint: () => 'test', isAvailable: () => true, loadCommands },
+  });
+  h.createSession().show();
+  typeInstruction('/');
+  await screen.findByRole('option', { name: /^\/summarize\b/ });
+  expect(loadCommands).toHaveBeenCalledWith(expect.objectContaining({ allowIsolatedMetadataCreation: true, conversation: null }));
+  expect(screen.queryByRole('option', { name: '/clear' })).toBeNull();
+});
 
 async function rejectAfterSourceChange(h: ReturnType<typeof createHarness>, expectedRequests: number): Promise<void> {
   h.editorView.dispatch({ changes: { from: 0, insert: 'XXXXX' } });

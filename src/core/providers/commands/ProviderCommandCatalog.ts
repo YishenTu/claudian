@@ -21,15 +21,12 @@ export interface ProviderCommandListContext {
   includeBuiltIns: boolean;
   /** Cancels provider-owned work when the requesting discovery is abandoned. */
   signal?: AbortSignal;
-  /** Request-scoped provider command snapshot. Undefined falls back to catalog-owned state. */
+  /** What a live session or command loader reported; the catalog lists exactly these. Undefined lets the catalog discover. */
   commandSnapshot?: readonly SlashCommand[];
-  /** Whether provider-global command state may satisfy a request without a snapshot. */
-  allowCachedCommandSnapshot?: boolean;
 }
 
 export interface ProviderCommandCatalog {
   listDropdownEntries(context: ProviderCommandListContext): Promise<ProviderCommandEntry[]>;
-  setCommandSnapshot(commands: SlashCommand[]): void;
   getDropdownConfig(): ProviderCommandDropdownConfig;
   refresh(): Promise<void>;
 }

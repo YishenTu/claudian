@@ -90,3 +90,10 @@ it.each(['claudian-passive', 'claudian-read-only'] as const)('keeps session tool
   const paths = { compatibility: '/c.mjs', codeModeFile: '/mode', promptFile: () => '/prompt', sessions: '/sessions.mjs', sessionToolsFile: '/endpoint.json' };
   expect(buildDeepSeekPresetPlugins(preset, paths).map(row => row.id)).not.toContain('claudian-sessions');
 });
+
+// Native tool-skill injects a user's `/name` gesture in its pre-step; Inline Edit (read-only) offers skills like chat.
+it.each([['claudian', true], ['claudian-read-only', true], ['claudian-passive', false]] as const)('mounts user-invocable skills in %s: %s', (preset, mounted) => {
+  const paths = { compatibility: '/c.mjs', codeModeFile: '/mode', promptFile: () => '/prompt', sessions: '/sessions.mjs', sessionToolsFile: '/endpoint.json' };
+  const ids = buildDeepSeekPresetPlugins(preset, paths).map(row => row.id);
+  expect(ids.includes('skill-filesystem') && ids.includes('tool-skill')).toBe(mounted);
+});

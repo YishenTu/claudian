@@ -76,12 +76,12 @@ export function buildDeepSeekPresetPlugins(
     plugin('time-context'),
     plugin('tool-fs'),
     plugin('tool-fs-search', { sampleOverCapGlobResults: false }),
+    // Read-only tasks (Inline Edit) take a user's `/skill` gestures; their `allow` policy still hides the skill tool.
+    ...(preset !== 'claudian-passive' ? [plugin('skill-filesystem'), plugin('tool-skill')] : []),
     ...(!auxiliary ? [
       // Native mounts only the platform's shell executor (PowerShell on Windows); its tool must match.
       plugin(process.platform === 'win32' ? 'tool-pwsh' : 'tool-bash'),
       plugin('tool-jobs'),
-      plugin('skill-filesystem'),
-      plugin('tool-skill'),
       plugin('tool-subagent-control'),
       { id: 'tool-subagent-list-agents', name: '@deepseek-ai/dsh-tool-subagent-control/list-agents' },
       plugin('tool-subagent', { provider: 'spawn', toolName: 'subagent', backgroundMode: 'continuable', modelSelectionSettings: false }),

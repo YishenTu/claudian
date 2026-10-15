@@ -26,7 +26,6 @@ import {
 } from '@/providers/acp';
 
 import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
-import type { OpencodeCommandCatalog } from '../commands/OpencodeCommandCatalog';
 import { loadOpencodeTurnStats } from '../history/OpencodeTurnStats';
 import type { OpencodeServerService } from '../http/OpencodeServerService';
 import { projectOpencodeMetadata } from '../metadata/OpencodeMetadataProjection';
@@ -52,7 +51,6 @@ export type OpencodeACPSessionKernelFactory = (
 ) => OpencodeSessionKernel;
 
 export interface OpencodeExecutionSessionOptions {
-  readonly commandCatalog?: Pick<OpencodeCommandCatalog, 'setCommandSnapshot'>;
   readonly serverService: OpencodeServerService;
   readonly createKernel?: OpencodeACPSessionKernelFactory;
 }
@@ -506,12 +504,6 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       metadata = active.turn.handleUpdate(notification.update);
     } catch {
       return;
-    }
-    if (metadata?.type === 'commands' && !this.kernelMetadataController.signal.aborted) {
-      const commands = metadata.commands.map((command) => ({
-        ...command,
-      }));
-      this.options.commandCatalog?.setCommandSnapshot(commands);
     }
     if (metadata?.type === 'config_options') {
       if (this.nativeInfo) {

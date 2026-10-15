@@ -13,21 +13,16 @@ export interface RuntimeCommandCatalogOptions {
 
 export class RuntimeCommandCatalog implements ProviderCommandCatalog {
   private readonly dropdownConfig: ProviderCommandDropdownConfig;
-  private commandSnapshot: SlashCommand[] = [];
 
   constructor(private readonly options: RuntimeCommandCatalogOptions) {
     this.dropdownConfig = cloneDropdownConfig(options.dropdownConfig);
   }
 
-  setCommandSnapshot(commands: SlashCommand[]): void {
-    this.commandSnapshot = commands.map(cloneSlashCommand);
-  }
-
   async listDropdownEntries(
     context: ProviderCommandListContext,
   ): Promise<ProviderCommandEntry[]> {
-    const commands = context.commandSnapshot
-      ?? (context.allowCachedCommandSnapshot === false ? [] : this.commandSnapshot);
+    // Runtime commands exist only as reported by a session or loader.
+    const commands = context.commandSnapshot ?? [];
     return commands.map((command) => cloneProviderCommandEntry(
       this.options.projectEntry(cloneSlashCommand(command)),
     ));

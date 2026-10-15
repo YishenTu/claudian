@@ -3,7 +3,6 @@ import { getProviderConfig } from '../../core/providers/providerConfig';
 import { hasStoredConfigNormalization } from '../../core/providers/settings/storedSettings';
 import type { ProviderModule } from '../../core/providers/types';
 import {
-  getPiWorkspaceServices,
   piWorkspaceRegistration,
 } from './app/PiWorkspaceServices';
 import { PI_PROVIDER_CAPABILITIES } from './capabilities';
@@ -23,7 +22,6 @@ export const piProviderRegistration: ProviderModule = {
   chatUIConfig: piChatUIConfig,
   createExecutionBackend: (plugin) => new PiExecutionBackend(
     plugin,
-    getPiWorkspaceServices(),
     { extensionUiRenderer: new ObsidianPiExtensionUIRenderer(plugin.app) },
   ),
 

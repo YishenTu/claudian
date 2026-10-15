@@ -3,14 +3,14 @@ import { GrokCommandCatalog } from '@/providers/grok/commands/GrokCommandCatalog
 describe('GrokCommandCatalog', () => {
   it('preserves provider-advertised names, order, case, and kind exactly', async () => {
     const catalog = new GrokCommandCatalog();
-    catalog.setCommandSnapshot([
+    const commandSnapshot = [
       { id: 'first', name: 'local:review', description: 'Review changes', content: '', source: 'sdk' },
       { id: 'duplicate', name: 'REVIEW', description: 'Duplicate', content: '', source: 'sdk' },
       { id: 'help', name: 'help', argumentHint: '[topic]', content: '', source: 'sdk', kind: 'command' },
       { id: 'commit', name: 'commit', content: '', source: 'sdk', kind: 'skill' },
-    ]);
+    ] as const;
 
-    await expect(catalog.listDropdownEntries({ includeBuiltIns: true })).resolves.toEqual([
+    await expect(catalog.listDropdownEntries({ commandSnapshot, includeBuiltIns: true })).resolves.toEqual([
       expect.objectContaining({ id: 'first', name: 'local:review', kind: 'command' }),
       expect.objectContaining({ id: 'duplicate', name: 'REVIEW' }),
       expect.objectContaining({ id: 'help', name: 'help', argumentHint: '[topic]', kind: 'command' }),
@@ -20,11 +20,10 @@ describe('GrokCommandCatalog', () => {
 
   it('exposes runtime-only non-editable command entries and slash dropdown behavior', async () => {
     const catalog = new GrokCommandCatalog();
-    catalog.setCommandSnapshot([
-      { id: 'acp:compact', name: 'compact', description: 'Compact context', content: '' },
-    ]);
-
-    const entries = await catalog.listDropdownEntries({ includeBuiltIns: false });
+    const entries = await catalog.listDropdownEntries({
+      commandSnapshot: [{ id: 'acp:compact', name: 'compact', description: 'Compact context', content: '' }],
+      includeBuiltIns: false,
+    });
     expect(entries).toEqual([{
       id: 'acp:compact',
       providerId: 'grok',

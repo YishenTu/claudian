@@ -1,7 +1,4 @@
-import { createCatalogCommandDiscoveryStore } from '@/core/providers/commands/catalogCommandDiscovery';
 import { getHiddenCommandSet } from '@/core/providers/commands/hiddenCommands';
-import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
-import type { ProviderId } from '@/core/providers/types';
 import type { Conversation } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { toggleServiceTier } from '@/features/chat/composer/toggleServiceTier';
@@ -10,21 +7,8 @@ import { getSessionCapabilities, getSessionChatUIConfig, getSessionSettingsSnaps
 import { projectContextUsageDisplay } from '@/features/chat/state/usageInfo';
 import type {
   AssembledTabRuntime,
-  ProviderCatalogInfo,
   ProviderCatalogResolver,
 } from '@/features/chat/tabs/types';
-
-function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalogInfo {
-  const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
-  if (!catalog) {
-    return null;
-  }
-
-  return {
-    config: catalog.getDropdownConfig(),
-    discovery: createCatalogCommandDiscoveryStore(catalog),
-  };
-}
 
 export function syncComposerDropdownForProvider(
   tab: AssembledTabRuntime,
@@ -38,8 +22,7 @@ export function syncComposerDropdownForProvider(
   }
 
   const providerId = getSessionProviderId(tab, plugin, conversation);
-  const catalogInfo = (getProviderCatalogConfig ?? tab.providerCatalogResolver)?.()
-    ?? (providerId ? getRegistryProviderCatalogInfo(providerId) : null);
+  const catalogInfo = (getProviderCatalogConfig ?? tab.providerCatalogResolver)?.() ?? null;
 
   dropdown.setProviderId(providerId);
 

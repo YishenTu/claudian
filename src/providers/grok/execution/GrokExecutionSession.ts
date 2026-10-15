@@ -45,7 +45,6 @@ import {
   buildACPUsageInfo,
   mapACPApprovalDecision,
 } from '../../acp';
-import type { GrokCommandCatalog } from '../commands/GrokCommandCatalog';
 import { computeGrokEnvironmentHash } from '../env/GrokSettingsReconciler';
 import {
   resolveGrokSessionCwd,
@@ -59,7 +58,6 @@ import {
   type GrokDiscoveredModel,
   normalizeGrokDiscoveredModels,
 } from '../models';
-import { normalizeGrokCommands } from '../normalization/grokCommandNormalization';
 import {
   buildGrokToolProviderPayload,
   normalizeGrokToolInput,
@@ -93,7 +91,6 @@ import {
 } from './GrokSessionModelMetadata';
 
 interface GrokExecutionSessionOptions {
-  readonly commandCatalog?: Pick<GrokCommandCatalog, 'setCommandSnapshot'>;
   readonly modelCatalogCoordinator?: Pick<GrokModelCatalogCoordinator, 'mergeLiveModels'>;
   readonly nativeFactory: GrokExecutionNativeFactory;
   readonly resolvePromptIndex?: (
@@ -835,9 +832,7 @@ RewindableExecutionSession {
     // ACP session modes do not describe Grok's Safe/YOLO permissions, so
     // current_mode metadata is ignored.
     const metadata = active.turn.handleUpdate(update);
-    if (metadata?.type === 'commands' && update.sessionUpdate === 'available_commands_update') {
-      this.options.commandCatalog?.setCommandSnapshot(normalizeGrokCommands(update.availableCommands));
-    } else if (metadata?.type === 'config_options') {
+    if (metadata?.type === 'config_options') {
       const owner = this.nativeOwner;
       if (owner) void this.#publishModelsFromConfig(metadata.configOptions, owner);
     }

@@ -20,7 +20,6 @@ import type {
   ACPSetSessionModelResponse,
   ACPSetSessionModeRequest,
 } from '../../acp';
-import type { GrokCommandCatalog } from '../commands/GrokCommandCatalog';
 import { loadGrokPromptIndexAfterAssistant } from '../history/GrokHistoryStore';
 import type { GrokModelCatalogCoordinator } from '../runtime/GrokModelCatalogCoordinator';
 import { GrokExecutionNativeConnectionImpl } from './GrokExecutionNativeConnection';
@@ -103,7 +102,6 @@ export interface GrokExecutionNativeFactory {
 }
 
 export interface GrokExecutionBackendOptions {
-  readonly commandCatalog?: Pick<GrokCommandCatalog, 'setCommandSnapshot'>;
   readonly modelCatalogCoordinator?: Pick<GrokModelCatalogCoordinator, 'mergeLiveModels'>;
   readonly nativeFactory?: GrokExecutionNativeFactory;
   readonly resolvePromptIndex?: (
@@ -128,7 +126,6 @@ export class GrokExecutionBackend implements ProviderExecutionBackend {
 
   createSession(config: ProviderSessionConfig): ProviderExecutionSession {
     return new GrokExecutionSession(this.plugin, config, {
-      commandCatalog: this.options.commandCatalog,
       modelCatalogCoordinator: this.options.modelCatalogCoordinator,
       nativeFactory: this.nativeFactory,
       resolvePromptIndex: this.options.resolvePromptIndex

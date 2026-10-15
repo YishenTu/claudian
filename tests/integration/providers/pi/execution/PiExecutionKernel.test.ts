@@ -110,7 +110,7 @@ describe('Pi session tools through the generated extension', () => {
         providerConfigs: { pi: { enabled: true, visibleModels: [configuration.model],
           discoveredModels: [{ encodedId: configuration.model, id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text'], reasoning: true, thinkingLevels: ['off'] }] } } },
     };
-    const backend = new PiExecutionBackend(host as any, { commandCatalog: { setCommandSnapshot: jest.fn() } } as any, {
+    const backend = new PiExecutionBackend(host as any, {
       createKernel: (spec, callbacks) => {
         kernel = new PiRPCSessionKernel({ ...spec, command: process.execPath,
           args: [path.resolve('tests/fixtures/providers/pi/PiSessionProcess.mjs'), ...spec.args],

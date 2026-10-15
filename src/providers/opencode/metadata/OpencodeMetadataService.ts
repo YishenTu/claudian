@@ -48,7 +48,7 @@ export interface OpencodeMetadataProbe {
 }
 
 export interface OpencodeMetadataServiceOptions {
-  readonly commandCatalog?: Pick<OpencodeCommandCatalog, 'setCommandSnapshot'> & Partial<Pick<OpencodeCommandCatalog, 'setNativeVersion'>>;
+  readonly commandCatalog?: Pick<OpencodeCommandCatalog, 'setNativeVersion'>;
   readonly serverService?: OpencodeServerService;
   readonly createProbe?: () => OpencodeMetadataProbe;
 }
@@ -79,7 +79,7 @@ export class OpencodeMetadataService {
         const environment = buildOpencodeRuntimeEnv(plugin.settings, cliPath);
         const version = await detectOpencodeNativeVersion(cliPath, environment);
         signal.throwIfAborted();
-        options.commandCatalog?.setNativeVersion?.(version);
+        options.commandCatalog?.setNativeVersion(version);
         if (version !== 2) return new DefaultOpencodeMetadataProbe(plugin, {
           cliPath, version, environment: buildOpencodeRuntimeEnv(plugin.settings, cliPath, ':memory:'),
         });
@@ -123,9 +123,6 @@ export class OpencodeMetadataService {
     signal.throwIfAborted();
     await projectOpencodeMetadata(this.plugin, catalog, signal);
     signal.throwIfAborted();
-    if (catalog.commands !== null) {
-      this.options.commandCatalog?.setCommandSnapshot(catalog.commands.map(command => ({ ...command })));
-    }
     return true;
   }
 
@@ -150,9 +147,7 @@ export class OpencodeMetadataService {
           : (await probe.loadCatalog(ownedSignal)).commands;
         ownedSignal.throwIfAborted();
         if (snapshot === null) return { commands: [], loaded: false };
-        const commands = snapshot.map(command => ({ ...command }));
-        this.options.commandCatalog?.setCommandSnapshot(commands);
-        return { commands, loaded: true };
+        return { commands: snapshot.map(command => ({ ...command })), loaded: true };
       }, controller.signal).then(result => result ?? { commands: [], loaded: false });
       flight = { promise, controller, consumers: 0 };
       this.commandFlight = flight;
@@ -223,7 +218,6 @@ export class OpencodeMetadataService {
     try {
       this.commandFlight?.controller.abort();
       this.commandFlight = null;
-      this.options.commandCatalog?.setCommandSnapshot([]);
       await Promise.all([this.probes.quiesce(), this.options.serverService ? undefined : this.serverService.invalidate()]);
     } finally {
       this.transitionFence.endTransition();

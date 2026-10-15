@@ -118,8 +118,6 @@ async function createPiView() {
   };
   const kernels: ScriptedPiKernel[] = [];
   const backend = new PiExecutionBackend(providerHost as never, {
-    commandCatalog: { setCommandSnapshot() {} } as never,
-  }, {
     createKernel: (spec, callbacks) => {
       const kernel = new ScriptedPiKernel(spec, callbacks);
       kernels.push(kernel);

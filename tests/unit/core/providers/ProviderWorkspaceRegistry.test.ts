@@ -60,7 +60,6 @@ describe('ProviderWorkspaceRegistry', () => {
       listVaultEntries: jest.fn(),
       saveVaultEntry: jest.fn(),
       deleteVaultEntry: jest.fn(),
-      setCommandSnapshot: jest.fn(),
       getDropdownConfig: jest.fn(),
       refresh: jest.fn(),
     };

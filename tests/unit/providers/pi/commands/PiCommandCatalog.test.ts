@@ -3,7 +3,7 @@ import { PiCommandCatalog } from '@/providers/pi/commands/PiCommandCatalog';
 describe('PiCommandCatalog', () => {
   it('maps runtime commands into slash dropdown entries without changing order', async () => {
     const catalog = new PiCommandCatalog();
-    catalog.setCommandSnapshot([
+    const commandSnapshot = [
       {
         argumentHint: '<topic>',
         content: '',
@@ -28,9 +28,9 @@ describe('PiCommandCatalog', () => {
         source: 'sdk',
       },
       { content: '', id: 'two', name: 'scope:qualified', source: 'sdk' },
-    ]);
+    ] as const;
 
-    await expect(catalog.listDropdownEntries({ includeBuiltIns: false })).resolves.toEqual([
+    await expect(catalog.listDropdownEntries({ commandSnapshot, includeBuiltIns: false })).resolves.toEqual([
       expect.objectContaining({
         argumentHint: '<topic>',
         description: 'Review changes',

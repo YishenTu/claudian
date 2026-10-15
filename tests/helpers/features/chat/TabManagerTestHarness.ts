@@ -59,7 +59,6 @@ export const commandLoader = {
 export const commandCatalog = {
   getDropdownConfig: jest.fn().mockReturnValue({}),
   listDropdownEntries: jest.fn().mockResolvedValue([]),
-  setCommandSnapshot: jest.fn(),
 };
 
 /** Records an explicit Linked content choice the way the controller's snapshot reports it. */

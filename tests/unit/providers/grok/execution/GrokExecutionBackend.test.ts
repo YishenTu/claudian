@@ -1894,9 +1894,8 @@ describe('GrokExecutionBackend', () => {
     expect(session.getStatus()).toBe('disposed');
   });
 
-  it('deduplicates mirrored Grok notifications and publishes commands', async () => {
+  it('deduplicates mirrored Grok notifications', async () => {
     const native = new FakeNativeConnection();
-    const setCommandSnapshot = jest.fn();
     native.promptImplementation = async () => {
       const update = {
         content: { text: 'once', type: 'text' },
@@ -1904,35 +1903,16 @@ describe('GrokExecutionBackend', () => {
       };
       native.emit(update, 'standard');
       native.emit(update, 'extension');
-      native.emit({
-        availableCommands: [{
-          description: 'Review changes',
-          input: { hint: '[path]' },
-          name: 'review',
-        }, {
-          _meta: { path: '/home/user/.grok/skills/commit/SKILL.md' },
-          description: 'Commit changes',
-          name: 'commit',
-        }],
-        sessionUpdate: 'available_commands_update',
-      });
       return { stopReason: 'end_turn' };
     };
     const session = new GrokExecutionBackend(
       createGrokHost(),
-      {
-        commandCatalog: { setCommandSnapshot },
-        nativeFactory: { create: () => native },
-      },
+      { nativeFactory: { create: () => native } },
     ).createSession(sessionConfig);
 
     const events = await collect(session.execute(executionRequest()).events);
 
     expect(events.filter(event => event.type === 'text_delta')).toHaveLength(1);
-    expect(setCommandSnapshot).toHaveBeenCalledWith([
-      expect.objectContaining({ name: 'review', kind: 'command' }),
-      expect.objectContaining({ name: 'commit', kind: 'skill' }),
-    ]);
   });
 
   it.each([

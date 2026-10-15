@@ -96,7 +96,7 @@ it('lists vault skills for the dropdown from saved native sessions without activ
     const home = getDeepSeekHome(process.env, process.cwd());
     const saved = { sessionId: 'saved', providerState: { schemaVersion: 1, home, profile: 'web', preset: 'claudian-code' } };
     expect(await load(saved)).toMatchObject({ status: 'ready', items: [{ name: 'skill-of-saved', kind: 'skill' }] });
-    // Both chat presets mount the same skills (code mode changes tools only); auxiliary presets mount none.
+    // Both chat presets mount the same skills (code mode changes tools only); a passive root is never the catalog.
     expect(await load(null)).toMatchObject({ status: 'ready', items: [{ name: 'skill-of-chat', kind: 'skill' }] });
     // A conversation saved against another native store cannot name a session in this Host's store.
     const relocated = { sessionId: 'relocated', providerState: { schemaVersion: 1, home: `${home}-relocated`, profile: 'web', preset: 'claudian' } };

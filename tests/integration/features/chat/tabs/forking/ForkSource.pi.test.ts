@@ -5,7 +5,6 @@ jest.mock('cross-spawn', () => jest.fn());
 import { createForkTestEnvironment, type ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
 import spawn from 'cross-spawn';
 
-import { PiCommandCatalog } from '@/providers/pi/commands/PiCommandCatalog';
 import { PiExecutionBackend } from '@/providers/pi/execution/PiExecutionBackend';
 
 async function readRecords(file: string) {
@@ -22,7 +21,7 @@ async function createNativePi(env: ForkTestEnvironment) {
     [path.resolve('tests/fixtures/providers/pi/PiSessionProcess.mjs'), ...args],
     { ...options, env: { ...options.env, CLAUDIAN_TEST_PI_ROOT: env.root, CLAUDIAN_TEST_PI_MISMATCH: mismatch ? '1' : '0' } },
   ));
-  const backend = new PiExecutionBackend(env.host, { commandCatalog: new PiCommandCatalog() });
+  const backend = new PiExecutionBackend(env.host);
   return {
     backend, sourceFile,
     contexts: () => readRecords(path.join(env.root, 'contexts.jsonl')),

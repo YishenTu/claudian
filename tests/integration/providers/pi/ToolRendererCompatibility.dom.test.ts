@@ -305,7 +305,7 @@ it('streams a running script\'s nested calls through the Pi session and refreshe
       providerConfigs: { pi: { enabled: true, visibleModels: [configuration.model],
         discoveredModels: [{ encodedId: configuration.model, id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text'], reasoning: false, thinkingLevels: ['off'] }] } } },
   };
-  const backend = new PiExecutionBackend(host as any, { commandCatalog: { setCommandSnapshot: jest.fn() } } as any, {
+  const backend = new PiExecutionBackend(host as any, {
     createKernel: (spec, callbacks) => new PiRPCSessionKernel({ ...spec, command: process.execPath,
       args: [path.resolve('tests/fixtures/providers/pi/PiSessionProcess.mjs'), ...spec.args],
       env: { ...spec.env, CLAUDIAN_TEST_PI_ROOT: root },

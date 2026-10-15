@@ -10,9 +10,7 @@ describe('ClaudeCommandCatalog', () => {
         { id: 'sdk:commit', name: 'commit', description: 'Create git commit', content: '', source: 'sdk' },
         { id: 'sdk:review', name: 'review', description: 'Review code', content: '', source: 'sdk' },
       ];
-      catalog.setCommandSnapshot(sdkCommands);
-
-      const entries = await catalog.listDropdownEntries({ includeBuiltIns: false });
+      const entries = await catalog.listDropdownEntries({ commandSnapshot: sdkCommands, includeBuiltIns: false });
 
       expect(entries).toHaveLength(2);
 
@@ -29,12 +27,10 @@ describe('ClaudeCommandCatalog', () => {
 
     it('scopes Claude Code built-in commands apart from runtime-defined ones', async () => {
       const catalog = new ClaudeCommandCatalog();
-      catalog.setCommandSnapshot([
+      const entries = await catalog.listDropdownEntries({ includeBuiltIns: false, commandSnapshot: [
         { id: 'sdk:compact', name: 'compact', content: '', source: 'builtin' },
         { id: 'sdk:review', name: 'review', content: '', source: 'sdk' },
-      ]);
-
-      const entries = await catalog.listDropdownEntries({ includeBuiltIns: false });
+      ] });
 
       expect(entries.map(({ name, scope, source, isEditable, isDeletable }) => ({ name, scope, source, isEditable, isDeletable })))
         .toEqual([
@@ -54,15 +50,13 @@ describe('ClaudeCommandCatalog', () => {
     it('filters out built-in hidden SDK commands', async () => {
       const catalog = new ClaudeCommandCatalog();
 
-      catalog.setCommandSnapshot([
+      const entries = await catalog.listDropdownEntries({ includeBuiltIns: false, commandSnapshot: [
         { id: 'sdk:commit', name: 'commit', description: 'Commit', content: '', source: 'sdk' },
         { id: 'sdk:init', name: 'init', description: 'Init', content: '', source: 'sdk' },
         { id: 'sdk:debug', name: 'debug', description: 'Debug', content: '', source: 'sdk' },
         { id: 'sdk:cost', name: 'cost', description: 'Cost', content: '', source: 'sdk' },
         { id: 'sdk:review', name: 'review', description: 'Review', content: '', source: 'sdk' },
-      ]);
-
-      const entries = await catalog.listDropdownEntries({ includeBuiltIns: false });
+      ] });
 
       const names = entries.map(e => e.name);
       expect(names).toEqual(['commit', 'review']);
@@ -71,7 +65,7 @@ describe('ClaudeCommandCatalog', () => {
       expect(names).not.toContain('cost');
     });
 
-    it('probes SDK on cold start when cache is empty', async () => {
+    it('probes SDK when the request carries no snapshot', async () => {
       const probe = jest.fn().mockResolvedValue([
         { id: 'sdk:commit', name: 'commit', description: 'Create git commit', content: '', source: 'sdk' },
       ]);
@@ -103,35 +97,15 @@ describe('ClaudeCommandCatalog', () => {
       ]);
     });
 
-    it('does not probe when runtime commands are cached', async () => {
+    it('does not probe when the request carries a live session snapshot', async () => {
       const probe = jest.fn().mockResolvedValue([]);
       const catalog = new ClaudeCommandCatalog(probe);
 
-      catalog.setCommandSnapshot([
+      await catalog.listDropdownEntries({ includeBuiltIns: false, commandSnapshot: [
         { id: 'sdk:commit', name: 'commit', description: 'Commit', content: '', source: 'sdk' },
-      ]);
-
-      await catalog.listDropdownEntries({ includeBuiltIns: false });
+      ] });
 
       expect(probe).not.toHaveBeenCalled();
-    });
-
-    it('probes independently when cached runtime fallback is disabled', async () => {
-      const probe = jest.fn().mockResolvedValue([
-        { id: 'sdk:cold', name: 'cold', description: 'Cold tab command', content: '', source: 'sdk' },
-      ]);
-      const catalog = new ClaudeCommandCatalog(probe);
-      catalog.setCommandSnapshot([
-        { id: 'sdk:active', name: 'active', description: 'Active tab command', content: '', source: 'sdk' },
-      ]);
-
-      const entries = await catalog.listDropdownEntries({
-        includeBuiltIns: false,
-        allowCachedCommandSnapshot: false,
-      });
-
-      expect(probe).toHaveBeenCalledTimes(1);
-      expect(entries.map(entry => entry.name)).toEqual(['cold']);
     });
 
     it('deduplicates concurrent probe calls', async () => {
@@ -223,25 +197,6 @@ describe('ClaudeCommandCatalog', () => {
       expect(probe).toHaveBeenCalledTimes(2);
     });
 
-    it('clears a live command snapshot when the provider environment changes', async () => {
-      const probe = jest.fn().mockResolvedValue([
-        { id: 'sdk:fresh', name: 'fresh', description: 'Fresh', content: '', source: 'sdk' },
-      ]);
-      const catalog = new ClaudeCommandCatalog(probe);
-      catalog.setCommandSnapshot([
-        { id: 'sdk:old', name: 'old', description: 'Old', content: '', source: 'sdk' },
-      ]);
-
-      await catalog.quiesceForEnvironmentChange();
-
-      await expect(
-        catalog.listDropdownEntries({ includeBuiltIns: false }),
-      ).resolves.toEqual([
-        expect.objectContaining({ name: 'fresh' }),
-      ]);
-      expect(probe).toHaveBeenCalledTimes(1);
-    });
-
     it('cancels a request-scoped probe and starts fresh work on retry', async () => {
       let resolveFirst!: (commands: SlashCommand[]) => void;
       const firstProbe = new Promise<SlashCommand[]>((resolve) => {
@@ -283,31 +238,6 @@ describe('ClaudeCommandCatalog', () => {
       expect(probe.mock.calls[1][0]).toMatchObject({ aborted: false });
     });
 
-    it('does not overwrite runtime commands with stale probe results', async () => {
-
-      let resolveProbe: (v: SlashCommand[]) => void;
-      const probe = jest.fn().mockReturnValue(new Promise<SlashCommand[]>((r) => { resolveProbe = r; }));
-      const catalog = new ClaudeCommandCatalog(probe);
-
-      // Start probe (it will hang)
-      const entriesPromise = catalog.listDropdownEntries({ includeBuiltIns: false });
-
-      // Runtime provides fresh data while probe is in-flight
-      catalog.setCommandSnapshot([
-        { id: 'sdk:review', name: 'review', description: 'Review', content: '', source: 'sdk' },
-      ]);
-
-      // Probe returns stale data
-      resolveProbe!([
-        { id: 'sdk:commit', name: 'commit', description: 'Commit', content: '', source: 'sdk' },
-      ]);
-
-      const entries = await entriesPromise;
-
-      // Runtime data wins — probe result is discarded
-      expect(entries).toHaveLength(1);
-      expect(entries[0].name).toBe('review');
-    });
   });
 
   describe('getDropdownConfig', () => {

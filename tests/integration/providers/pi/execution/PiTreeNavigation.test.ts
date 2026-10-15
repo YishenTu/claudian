@@ -24,7 +24,7 @@ it.each([false, true])('edits, switches and resumes native branches without losi
         discoveredModels: [{ encodedId: configuration.model, id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text', 'image'], reasoning: true, thinkingLevels: ['off', 'high'] }] } } },
   };
   let kernel!: PiRPCSessionKernel;
-  const backend = new PiExecutionBackend(host as any, { commandCatalog: { setCommandSnapshot: jest.fn() } } as any, {
+  const backend = new PiExecutionBackend(host as any, {
     createKernel: (spec, callbacks) => {
       kernel = new PiRPCSessionKernel({ ...spec, command: process.execPath,
         args: [path.resolve('tests/fixtures/providers/pi/PiSessionProcess.mjs'), ...spec.args],

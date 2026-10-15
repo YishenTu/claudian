@@ -582,7 +582,8 @@ it('reloads Codex skills for typed tokens while keeping completed chips atomic',
   const catalog = new CodexCommandCatalog(skills);
   const dropdown = new MainChatComposerDropdown(parent, editor.element, new FileContextManager(new VaultMentionDataProvider(createApp())), {
     providerId: 'codex', providerConfig: catalog.getDropdownConfig(),
-    providerDiscovery: createCatalogCommandDiscoveryStore(catalog),
+    // Codex has no command loader; its catalog discovers skills itself.
+    providerDiscovery: createCatalogCommandDiscoveryStore(catalog, async () => ({ result: { status: 'empty' } })),
   });
   const handleInput = jest.fn(() => dropdown.handleInputChange());
   editor.element.addEventListener('input', handleInput);

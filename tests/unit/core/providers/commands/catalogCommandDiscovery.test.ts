@@ -46,6 +46,9 @@ const reviewEntry = {
   insertPrefix: '/',
 } satisfies ProviderCommandEntry;
 
+/** A provider without a command loader: the catalog discovers on its own. */
+const noLoader = async () => ({ result: { status: 'empty' as const } });
+
 const timedOut = {
   status: 'error',
   message: 'Provider command discovery timed out',
@@ -63,7 +66,7 @@ describe('createCatalogCommandDiscoveryStore', () => {
 
   it('lets a provider-owned deadline outlive the shared picker deadline', async () => {
     const { catalog, resolve } = createPendingCatalog('provider-owned');
-    const discovery = createCatalogCommandDiscoveryStore(catalog);
+    const discovery = createCatalogCommandDiscoveryStore(catalog, noLoader);
 
     const load = discovery.load();
     await jest.advanceTimersByTimeAsync(10_000);
@@ -75,7 +78,7 @@ describe('createCatalogCommandDiscoveryStore', () => {
 
   it('times out at a catalog-declared deadline instead of the shared one', async () => {
     const { catalog } = createPendingCatalog(20_000);
-    const discovery = createCatalogCommandDiscoveryStore(catalog);
+    const discovery = createCatalogCommandDiscoveryStore(catalog, noLoader);
 
     const load = discovery.load();
     await jest.advanceTimersByTimeAsync(10_000);
@@ -87,7 +90,7 @@ describe('createCatalogCommandDiscoveryStore', () => {
 
   it('keeps the shared picker deadline when the catalog declares none', async () => {
     const { catalog } = createPendingCatalog();
-    const discovery = createCatalogCommandDiscoveryStore(catalog);
+    const discovery = createCatalogCommandDiscoveryStore(catalog, noLoader);
 
     const load = discovery.load();
     await jest.advanceTimersByTimeAsync(8_000);

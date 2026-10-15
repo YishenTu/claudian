@@ -4,7 +4,6 @@ import type {
   ProviderCommandListContext,
 } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
-import type { SlashCommand } from '../../../core/types';
 import type { SkillMetadata } from '../runtime/codexAppServerTypes';
 import {
   type CodexSkillListProvider,
@@ -53,10 +52,6 @@ function listedSkillToProviderEntry(skill: SkillMetadata): ProviderCommandEntry 
 
 export class CodexCommandCatalog implements ProviderCommandCatalog {
   constructor(private listProvider: CodexSkillListProvider) {}
-
-  setCommandSnapshot(_commands: SlashCommand[]): void {
-    // Codex dropdown entries come from app-server metadata; runtime commands are ignored.
-  }
 
   async listDropdownEntries(context: ProviderCommandListContext): Promise<ProviderCommandEntry[]> {
     const skills = (await this.listProvider.listSkills(

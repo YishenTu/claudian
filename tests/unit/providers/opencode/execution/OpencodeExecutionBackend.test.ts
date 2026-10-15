@@ -13,7 +13,6 @@ import {
   type ProviderSessionConfig,
   type ProviderSessionEvent,
 } from '@/core/execution';
-import type { SlashCommand } from '@/core/types';
 
 const mockProcessStart = jest.fn();
 const mockProcessShutdown = jest.fn();
@@ -64,7 +63,6 @@ jest.mock('@/providers/opencode/runtime/OpencodeLaunchArtifacts', () => {
 });
 
 import type { ACPSessionUpdate } from '@/providers/acp';
-import type { OpencodeCommandCatalog } from '@/providers/opencode/commands/OpencodeCommandCatalog';
 import {
   type OpencodeACPSessionKernel,
   type OpencodeACPSessionKernelOptions,
@@ -293,11 +291,7 @@ async function waitForCondition(condition: () => boolean): Promise<void> {
 
 function createHarness(config = createConfig()) {
   const kernels: FakeKernel[] = [];
-  const commandCatalog = {
-    setCommandSnapshot: jest.fn(),
-  } as unknown as OpencodeCommandCatalog;
   const backend = new OpencodeExecutionBackend(plugin, {
-    commandCatalog,
     serverService: new OpencodeServerService(),
     createKernel: (options) => {
       const kernel = new FakeKernel(options);
@@ -306,7 +300,7 @@ function createHarness(config = createConfig()) {
     },
   });
   const session = backend.createSession(config);
-  return { backend, commandCatalog, kernels, session };
+  return { backend, kernels, session };
 }
 
 describe('OpencodeExecutionBackend', () => {
@@ -794,9 +788,6 @@ describe('OpencodeExecutionBackend', () => {
     kernel.completePrompt();
     const events = await collect(run.events);
 
-    expect(harness.commandCatalog.setCommandSnapshot).toHaveBeenCalledWith([
-      expect.objectContaining({ name: 'review' }),
-    ]);
     expect(events).toEqual(expect.arrayContaining([
       expect.objectContaining({ text: 'live-output', type: 'text_delta' }),
     ]));
@@ -1012,30 +1003,6 @@ describe('OpencodeExecutionBackend', () => {
       expect.objectContaining({ configId: 'mode', value: 'build' }),
     ]));
     expect(harness.kernels[0].autoApproveCalls).toEqual([autoApprove]);
-  });
-
-  it('publishes immutable command snapshots outside the execution-session API', async () => {
-    const harness = createHarness();
-    const run = harness.session.execute(createRequest());
-    await waitForPrompt(harness.kernels[0]);
-    const commands: SlashCommand[] = [
-      { id: 'acp:review', name: 'review', content: '' },
-    ];
-    harness.kernels[0].notify({
-      availableCommands: [{ name: 'review' }],
-      sessionUpdate: 'available_commands_update',
-    });
-    harness.kernels[0].completePrompt();
-    harness.kernels[0].notify({
-      content: { type: 'text', text: 'ok' },
-      sessionUpdate: 'agent_message_chunk',
-    });
-    await collect(run.events);
-
-    expect(harness.commandCatalog.setCommandSnapshot).toHaveBeenCalledWith([
-      expect.objectContaining(commands[0]),
-    ]);
-    expect('getSupportedCommands' in harness.session).toBe(false);
   });
 
   it('applies OpenCode tool presentation to live ACP events', async () => {

@@ -24,7 +24,6 @@ export const grokProviderRegistration: ProviderModule = {
   createExecutionBackend: (plugin) => {
     const workspace = getGrokWorkspaceServices();
     return new GrokExecutionBackend(plugin, {
-      commandCatalog: workspace.commandCatalog,
       modelCatalogCoordinator: workspace.modelCatalogCoordinator,
     });
   },

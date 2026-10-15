@@ -27,7 +27,6 @@ export const opencodeProviderRegistration: ProviderModule = {
   createExecutionBackend: (plugin) => {
     const workspace = getOpencodeWorkspaceServices();
     return new OpencodeExecutionBackend(plugin, {
-      commandCatalog: workspace.commandCatalog,
       serverService: workspace.serverService,
     });
   },

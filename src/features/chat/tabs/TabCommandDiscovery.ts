@@ -1,4 +1,11 @@
-import { resolveCommandDiscoveryTimeoutMs } from '@/core/providers/commands/catalogCommandDiscovery';
+import {
+  isProviderCommandLoaderAvailable,
+  listDiscoveredCommandEntries,
+  loadProviderCommands,
+  type ProviderCommandLoaderDiscovery,
+  resolveCommandDiscoveryTimeoutMs,
+  toLoaderDiscovery,
+} from '@/core/providers/commands/catalogCommandDiscovery';
 import type { ProviderCommandDiscoveryResult } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
 import { normalizeProviderCommandDiscoveryItems } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
 import { ProviderCommandDiscoveryStore } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
@@ -41,10 +48,7 @@ type ProviderCommandLoadEntry = {
   promise: Promise<ProviderCommandDiscoveryResult<SlashCommand>>;
 };
 
-type SDKCommandDiscovery = {
-  result: ProviderCommandDiscoveryResult<SlashCommand>;
-  commandSnapshot?: readonly SlashCommand[];
-};
+type SDKCommandDiscovery = ProviderCommandLoaderDiscovery;
 
 const ABORT_MESSAGE = 'Provider command discovery aborted';
 
@@ -103,7 +107,6 @@ export class TabCommandDiscovery {
         providerId,
         Math.max(this.#getProviderResourceGeneration(providerId), generation),
       );
-      ProviderWorkspaceRegistry.getCommandCatalog(providerId)?.setCommandSnapshot([]);
     }
 
     const filter = new Set(ids);
@@ -142,23 +145,14 @@ export class TabCommandDiscovery {
     const discovery = await this.#getSdkCommandDiscovery(targetTab.id, signal);
     throwIfAborted(signal, ABORT_MESSAGE);
     if (!this.#isTabProviderCurrent(targetTab, providerId)) return { status: 'empty' };
-    const { result } = discovery;
-    if (result.status === 'error' || result.status === 'requires-session') {
-      return result;
-    }
-
     const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
-    if (!catalog) return { status: 'empty' };
-    const entries = await catalog.listDropdownEntries({
-      includeBuiltIns: false,
-      signal,
-      allowCachedCommandSnapshot: discovery.commandSnapshot !== undefined,
-      ...(discovery.commandSnapshot !== undefined
-        ? { commandSnapshot: discovery.commandSnapshot }
-        : {}),
-    });
+    if (!catalog) {
+      const { result } = discovery;
+      return result.status === 'error' || result.status === 'requires-session' ? result : { status: 'empty' };
+    }
+    const entries = await listDiscoveredCommandEntries(catalog, discovery, signal);
     if (!this.#isTabProviderCurrent(targetTab, providerId)) return { status: 'empty' };
-    return normalizeProviderCommandDiscoveryItems(entries);
+    return entries;
   }
 
   /** Cancels and forgets a tab's discovery state, collecting failures for the caller. */
@@ -232,7 +226,6 @@ export class TabCommandDiscovery {
       };
     }
 
-    const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
     const commandLoader = ProviderWorkspaceRegistry.getCommandLoader(providerId);
     const lookup = await this.#buildLookup(targetTab, providerId);
     throwIfAborted(signal, ABORT_MESSAGE);
@@ -247,33 +240,13 @@ export class TabCommandDiscovery {
     ) {
       return { result: { status: 'empty' }, commandSnapshot: [] };
     }
-    let result: ProviderCommandDiscoveryResult<SlashCommand> = { status: 'empty' };
-    let hasCommandSnapshot = false;
-
-    if (commandLoader) {
-      hasCommandSnapshot = true;
-      result = await this.#ensureRuntimeCommands(targetTab, providerId, lookup, signal);
-    }
-
+    // Without a loader the catalog discovers on its own.
+    if (!commandLoader) return { result: { status: 'empty' } };
+    const result = await this.#ensureRuntimeCommands(targetTab, providerId, lookup, signal);
     if (!this.#isTabProviderCurrent(targetTab, providerId)) {
       return { result: { status: 'empty' } };
     }
-
-    if (
-      catalog
-      && hasCommandSnapshot
-      && targetTab.id === this.membership.getActiveTabId()
-      && this.#isContextCurrent(targetTab, providerId, commandContext)
-      && (result.status === 'ready' || result.status === 'empty')
-    ) {
-      catalog.setCommandSnapshot(result.status === 'ready' ? [...result.items] : []);
-    }
-    return {
-      result,
-      ...(hasCommandSnapshot && (result.status === 'ready' || result.status === 'empty')
-        ? { commandSnapshot: result.status === 'ready' ? result.items : [] }
-        : {}),
-    };
+    return toLoaderDiscovery(result);
   }
 
   async #ensureRuntimeCommands(
@@ -285,7 +258,7 @@ export class TabCommandDiscovery {
     throwIfAborted(signal, ABORT_MESSAGE);
     if (
       !this.membership.isTabAlive(tab)
-      || !this.#isCommandLoaderAvailable(providerId)
+      || !isProviderCommandLoaderAvailable(providerId, this.plugin.settings)
     ) {
       return { status: 'empty' };
     }
@@ -330,12 +303,6 @@ export class TabCommandDiscovery {
     this.providerRuntimeCommandLoads.set(tab.id, entry);
     const result = await this.#awaitLoad(entry, signal);
     return this.#isTabProviderCurrent(tab, providerId) ? result : { status: 'empty' };
-  }
-
-  #isCommandLoaderAvailable(providerId: ProviderId): boolean {
-    const loader = ProviderWorkspaceRegistry.getCommandLoader(providerId);
-    if (!loader) return false;
-    return loader.isAvailable(this.plugin.settings);
   }
 
   async #buildLookup(
@@ -462,11 +429,7 @@ export class TabCommandDiscovery {
     context: ProviderCommandContext,
     signal: AbortSignal,
   ): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {
-    const loader = ProviderWorkspaceRegistry.getCommandLoader(providerId);
-    if (!loader) {
-      return { status: 'empty' };
-    }
-    const result = await loader.loadCommands({
+    const result = await loadProviderCommands(providerId, {
       allowIsolatedMetadataCreation: context.allowIsolatedMetadataCreation,
       conversation: context.conversation,
       plugin: this.plugin.providerHost,

@@ -40,7 +40,6 @@ function createRuntimeCatalog(): RuntimeCommandCatalog {
       isEditable: false, isDeletable: false, displayPrefix: '/', insertPrefix: '/',
     }),
   });
-  jest.spyOn(catalog, 'setCommandSnapshot');
   return catalog;
 }
 
@@ -288,7 +287,6 @@ describe('TabCommandDiscovery', () => {
     await expect(oldLoad).resolves.toMatchObject({
       status: 'ready', items: [{ description: 'Old command', name: 'old' }],
     });
-    expect(catalog.setCommandSnapshot).not.toHaveBeenCalled();
 
     commandLoader.loadCommands.mockResolvedValueOnce({
       status: 'ready',
@@ -298,9 +296,6 @@ describe('TabCommandDiscovery', () => {
       status: 'ready', items: [{ description: 'Fresh command', name: 'fresh' }],
     });
     expect(commandLoader.loadCommands).toHaveBeenCalledTimes(2);
-    expect(catalog.setCommandSnapshot).toHaveBeenCalledWith([
-      { description: 'Fresh command', name: 'fresh' },
-    ]);
     await executionLifecycleRegistry.dispose();
   });
 

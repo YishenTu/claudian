@@ -3,7 +3,7 @@ import { OpencodeCommandCatalog } from '@/providers/opencode/commands/OpencodeCo
 describe('OpencodeCommandCatalog', () => {
   it('maps runtime commands into slash dropdown entries', async () => {
     const catalog = new OpencodeCommandCatalog();
-    catalog.setCommandSnapshot([
+    const commandSnapshot = [
       {
         id: 'acp:review',
         name: 'local:shared-review',
@@ -26,9 +26,9 @@ describe('OpencodeCommandCatalog', () => {
         content: '',
         source: 'sdk',
       },
-    ]);
+    ] as const;
 
-    await expect(catalog.listDropdownEntries({ includeBuiltIns: false })).resolves.toEqual([
+    await expect(catalog.listDropdownEntries({ commandSnapshot, includeBuiltIns: false })).resolves.toEqual([
       {
         id: 'acp:review',
         providerId: 'opencode',
