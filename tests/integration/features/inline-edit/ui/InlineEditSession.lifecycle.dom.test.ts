@@ -186,6 +186,36 @@ it.each([
   expect(h.backend.sessions[0].getStatus()).toBe('disposed');
 });
 
+it('opens the model menu outside the clipped editor widget, above its chip, and removes it with the edit', async () => {
+  const h = createHarness();
+  const session = h.createSession();
+  session.show();
+  const chip = screen.getByRole('button', { name: 'Model: Sonnet, effort High' });
+  chip.getBoundingClientRect = () => DOMRect.fromRect({ x: 300, y: 200, width: 120, height: 24 });
+  fireEvent.click(chip);
+  const menu = screen.getByRole('dialog', { name: 'Model options' });
+  // Obsidian gives editor widgets paint containment, which clips anything inside them that overflows.
+  expect(input().closest('.claudian-inline-input-container')!.contains(menu)).toBe(false);
+  // Fixed above the chip: the menu's bottom edge sits 8px over the chip's top.
+  expect(menu.style.getPropertyValue('--claudian-toolbar-popover-bottom')).toBe(`${window.innerHeight - 200 + 8}px`);
+  expect(await axe(menu)).toHaveNoViolations();
+
+  // Escape closes the menu first and leaves the edit open.
+  fireEvent.keyDown(screen.getByRole('option', { name: 'Sonnet' }), { key: 'Escape' });
+  expect(screen.queryByRole('dialog', { name: 'Model options' })).toBeNull();
+  expect(h.settled).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(chip);
+
+  fireEvent.click(chip);
+  fireEvent.click(screen.getByRole('option', { name: 'Opus' }));
+  await screen.findByRole('button', { name: 'Model: Opus, effort High' });
+  expect(screen.getByRole('dialog', { name: 'Model options' })).toBeDefined();
+  session.reject();
+  // Closing the edit with the menu open must not leave it behind outside the editor.
+  expect(menu.isConnected).toBe(false);
+  expect(screen.queryByRole('option', { name: 'Opus' })).toBeNull();
+});
+
 it('saves the model and effort chosen on its composer chip as the inline edit default', async () => {
   const h = createHarness();
   h.createSession().show();

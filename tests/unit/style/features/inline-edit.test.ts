@@ -44,37 +44,30 @@ describe('inline-edit.css', () => {
       .toBe('var(--claudian-brand-deepseek)');
   });
 
-  it('opens the model menu upward, away from the selected text below the composer', () => {
-    const composer = mountComposer('claude');
-    composer.querySelector('.claudian-inline-input-wrap')!.insertAdjacentHTML(
-      'beforeend',
-      '<div class="claudian-input-toolbar claudian-inline-model-toolbar"><div class="claudian-toolbar-chip-anchor">'
-        + '<div class="claudian-toolbar-popover"></div></div></div>',
-    );
-    const menu = window.getComputedStyle(composer.querySelector('.claudian-toolbar-popover')!);
+  it('floats the model menu fixed above its chip, outside the clipped editor, in the provider colours', () => {
+    document.body.innerHTML = '<div class="claudian-inline-menu-layer" data-provider="deepseek">'
+      + '<div class="claudian-toolbar-popover claudian-toolbar-popover--floating"></div></div>';
+    const menu = window.getComputedStyle(document.querySelector('.claudian-toolbar-popover')!);
+    // jsdom does not inherit custom properties, so the layer the menu inherits from is read directly.
+    const layer = window.getComputedStyle(document.querySelector('.claudian-inline-menu-layer')!);
 
-    expect(menu.bottom).not.toBe('auto');
-    expect(menu.top).not.toMatch(/100%/);
+    // ToolbarMenu sets the variable from the chip's position, so the menu opens upward from it.
+    expect(menu.position).toBe('fixed');
+    expect(menu.top).toBe('auto');
+    expect(menu.bottom).toBe('var(--claudian-toolbar-popover-bottom)');
+    expect(layer.getPropertyValue('--claudian-provider-logo').trim()).toBe('var(--claudian-brand-deepseek)');
   });
 
-  it.each(['claudian-inline-input-container', 'claudian-inline-diff-preview'])(
-    'lets the %s widget paint outside its box despite Obsidian containing editor widgets',
-    (widgetClass) => {
-      // Obsidian app.css: block widgets are non-editable children of .cm-content and get paint containment,
-      // which would clip the model menu and the review's gutter bars. It loads before plugin styles;
-      // jsdom cascades sheets in insertion order, so the plugin sheets are re-inserted after it.
-      const host = document.createElement('style');
-      host.textContent = '.markdown-source-view.mod-cm6 .cm-content > [contenteditable=false] { contain: paint !important; }';
-      document.head.appendChild(host);
-      for (const style of styles) document.head.appendChild(style);
-      styles.push(host);
-      document.body.innerHTML = '<div class="markdown-source-view mod-cm6"><div class="cm-content">'
-        + `<div class="${widgetClass}" contenteditable="false"></div></div></div>`;
-      const widget = document.querySelector(`.${widgetClass}`)!;
+  it('keeps the review gutter bars inside the widget box, which Obsidian clips', () => {
+    document.body.innerHTML = '<div class="claudian-inline-diff-preview"><div class="claudian-inline-diff-preview-body">'
+      + '<div class="claudian-diff-block claudian-diff-del"></div></div></div>';
 
-      expect(window.getComputedStyle(widget).getPropertyValue('contain')).toBe('none');
-    },
-  );
+    for (const selector of ['.claudian-inline-diff-preview-body', '.claudian-diff-block']) {
+      const style = window.getComputedStyle(document.querySelector(selector)!);
+      // jsdom keeps logical margins as declared, so a negative bleed shows up as a minus sign.
+      expect(`${style.marginLeft} ${style.getPropertyValue('margin-inline')}`).not.toMatch(/-\d/);
+    }
+  });
 
   it('separates the composer from the selected text below with padding, since Obsidian zeroes widget margins', () => {
     const host = document.createElement('style');

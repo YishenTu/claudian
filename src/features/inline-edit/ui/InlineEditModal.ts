@@ -519,7 +519,12 @@ export class InlineEditSession {
     this.spinnerEl = inputWrap.createDiv({ cls: 'claudian-inline-spinner claudian-hidden' });
     this.modelToolbarEl = inputWrap.createDiv({ cls: 'claudian-input-toolbar claudian-inline-model-toolbar' });
     const menus = new ToolbarMenuGroup();
-    const modelSelector = new ModelSelector(this.modelToolbarEl, this.#modelPickerCallbacks(), menus);
+    // Obsidian clips editor widgets, so the open model menu floats in a layer outside the editor.
+    const menuLayer = ownerDocument.body.createDiv({
+      cls: 'claudian-inline-menu-layer',
+      attr: { 'data-provider': this.resolvedProviderId },
+    });
+    const modelSelector = new ModelSelector(this.modelToolbarEl, this.#modelPickerCallbacks(), menus, menuLayer);
     const effortSelector = new EffortSelector(modelSelector, this.#modelPickerCallbacks());
     this.#showGenerating(this.generating);
 
@@ -563,6 +568,7 @@ export class InlineEditSession {
       dispose: () => {
         window.clearTimeout(focusTimer);
         menus.destroy();
+        menuLayer.remove();
         inputEl.removeEventListener('keydown', onKeydown);
         inputEl.removeEventListener('input', onInput);
         dropdown.destroy();

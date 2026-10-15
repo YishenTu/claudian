@@ -22,7 +22,13 @@ export class ModelSelector {
   private modelDescription = '';
   private callbacks: ModelPickerCallbacks;
 
-  constructor(parentEl: HTMLElement, callbacks: ModelPickerCallbacks, menuGroup?: ToolbarMenuGroup) {
+  constructor(
+    parentEl: HTMLElement,
+    callbacks: ModelPickerCallbacks,
+    menuGroup?: ToolbarMenuGroup,
+    /** See `ToolbarMenu`'s `floatingLayer`. */
+    floatingLayer?: HTMLElement,
+  ) {
     this.callbacks = callbacks;
     this.menu = new ToolbarMenu(parentEl, {
       anchorCls: 'claudian-toolbar-chip-anchor--model claudian-model-selector',
@@ -31,6 +37,7 @@ export class ModelSelector {
       popupRole: 'dialog',
       closeOnSelect: false,
       group: menuGroup,
+      floatingLayer,
       onOpen: () => {
         this.updateDisplay();
         this.renderOptions();

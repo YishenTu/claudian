@@ -140,6 +140,17 @@
   min-width: max(100%, 160px);
 }
 
+/* A floating menu (ToolbarMenu's floatingLayer) is fixed above its button's end edge. */
+.claudian-toolbar-popover.claudian-toolbar-popover--floating {
+  position: fixed;
+  top: auto;
+  bottom: var(--claudian-toolbar-popover-bottom);
+  inset-inline-start: auto;
+  right: var(--claudian-toolbar-popover-right);
+  min-width: var(--claudian-toolbar-popover-min-width);
+  max-width: 280px;
+}
+
 .claudian-toolbar-popover[hidden] {
   display: none;
 }

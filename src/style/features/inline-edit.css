@@ -14,16 +14,6 @@
   background: var(--text-selection);
 }
 
-/*
- * Obsidian gives every non-editable block in the editor paint containment, which clips whatever a widget
- * draws outside its box: the composer's model menu and the review's gutter bars. The extra class outranks
- * Obsidian's selector regardless of stylesheet order.
- */
-.markdown-source-view.mod-cm6 .cm-content > .claudian-inline-input-container[contenteditable="false"],
-.markdown-source-view.mod-cm6 .cm-content > .claudian-inline-diff-preview[contenteditable="false"] {
-  contain: none !important;
-}
-
 /* CM6 widget container - ensure transparent background */
 .markdown-source-view.mod-cm6 .cm-widgetBuffer,
 .markdown-source-view.mod-cm6 .cm-line.claudian-inline-input-line {
@@ -109,15 +99,6 @@
   padding: 0;
 }
 
-/*
- * The composer sits above the text it edits, so the menu opens upward (the shared default) and would
- * otherwise be painted over by that text. It aligns to the chip's end, inside the card.
- */
-.claudian-inline-model-toolbar .claudian-toolbar-popover {
-  inset-inline-start: auto;
-  inset-inline-end: 0;
-}
-
 /* Clarifying question: the card's first section, above the reply row. */
 .claudian-inline-agent-reply {
   padding: 10px 12px;
@@ -147,8 +128,6 @@
 }
 
 .claudian-inline-diff-preview-body {
-  /* Bleeds into the gutter so block text stays aligned with the note; the scroller would clip a block's own bleed. */
-  margin-inline: -12px -8px;
   font-family: var(--font-text);
   font-size: var(--font-text-size);
   line-height: var(--line-height-normal);
@@ -231,9 +210,12 @@
   overflow-wrap: break-word;
 }
 
-/* Removed and added blocks read as lines in the note, each marked by a gutter bar. */
+/*
+ * Removed and added blocks read as lines in the note, each marked by a gutter bar. Obsidian clips editor
+ * widgets to their box, so the bar stays inside the block.
+ */
 .claudian-diff-block {
-  padding: 1px 8px 1px 12px;
+  padding: 1px 8px 1px 10px;
 }
 
 .claudian-diff-del:not(.claudian-diff-block) {
@@ -251,7 +233,6 @@
   box-shadow: inset 3px 0 rgb(240 90 90 / 85%);
   color: var(--text-muted);
   text-decoration: line-through;
-  text-decoration-color: rgb(255 90 90 / 55%);
 }
 
 .claudian-diff-block.claudian-diff-ins {

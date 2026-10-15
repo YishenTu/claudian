@@ -69,9 +69,19 @@ interface ToolbarMenuOptions {
   menuLabel: string;
   closeOnSelect: boolean;
   group?: ToolbarMenuGroup;
+  /**
+   * For hosts that clip their content, such as CodeMirror widgets: while open, the menu moves into this
+   * layer, fixed above its button's end edge, and returns to its button when it closes.
+   */
+  floatingLayer?: HTMLElement;
   /** Rereads settings into the button and menu before the menu shows. */
   onOpen: () => void;
 }
+
+/** Gap between a floating menu and its button, matching the anchored menu's. */
+const FLOATING_MENU_GAP = 8;
+/** A floating menu keeps the anchored model menu's minimum width. */
+const FLOATING_MENU_MIN_WIDTH = 160;
 
 interface ToolbarMenuItemOptions {
   role: 'menuitemradio' | 'menuitemcheckbox' | 'option' | 'switch';
@@ -101,6 +111,7 @@ export class ToolbarMenu {
   readonly #popupRole: 'menu' | 'dialog';
   #lastFocusedKey: string | null = null;
   #keyTarget: Window | null = null;
+  #floatingWindow: Window | null = null;
 
   constructor(parentEl: HTMLElement, options: ToolbarMenuOptions) {
     this.#options = options;
@@ -128,7 +139,9 @@ export class ToolbarMenu {
     this.buttonEl.addEventListener('keydown', this.#onButtonKeydown);
     this.menuEl.addEventListener('keydown', this.#onMenuKeydown);
     this.menuEl.addEventListener('focusin', this.#onMenuFocusIn);
-    this.anchorEl.addEventListener('focusout', this.#onAnchorFocusOut);
+    this.anchorEl.addEventListener('focusout', this.#onFocusOut);
+    // A floating menu lives outside the anchor while open.
+    if (options.floatingLayer) this.menuEl.addEventListener('focusout', this.#onFocusOut);
   }
 
   get isOpen(): boolean {
@@ -192,6 +205,7 @@ export class ToolbarMenu {
         this.#options.group?.release(this);
         return;
       }
+      this.#float();
       this.menuEl.hidden = false;
       this.buttonEl.setAttribute('aria-expanded', 'true');
       this.anchorEl.ownerDocument.addEventListener('pointerdown', this.#onDocumentPointerDown, true);
@@ -206,6 +220,7 @@ export class ToolbarMenu {
     if (!this.isOpen) return;
     this.menuEl.hidden = true;
     this.buttonEl.setAttribute('aria-expanded', 'false');
+    this.#land();
     this.anchorEl.ownerDocument.removeEventListener('pointerdown', this.#onDocumentPointerDown, true);
     this.#keyTarget?.removeEventListener('keydown', this.#onWindowKeydown, true);
     this.#keyTarget = null;
@@ -226,6 +241,42 @@ export class ToolbarMenu {
       return;
     }
     this.#focusItem('checked');
+  }
+
+  /** Moves a floating menu into its layer and keeps it over the button while the page scrolls. */
+  #float(): void {
+    const layer = this.#options.floatingLayer;
+    if (!layer) return;
+    layer.appendChild(this.menuEl);
+    this.menuEl.addClass('claudian-toolbar-popover--floating');
+    this.#floatingWindow = this.anchorEl.ownerDocument.defaultView;
+    this.#floatingWindow?.addEventListener('scroll', this.#placeFloating, true);
+    this.#floatingWindow?.addEventListener('resize', this.#placeFloating);
+    this.#placeFloating();
+  }
+
+  #land(): void {
+    if (!this.#options.floatingLayer) return;
+    this.#floatingWindow?.removeEventListener('scroll', this.#placeFloating, true);
+    this.#floatingWindow?.removeEventListener('resize', this.#placeFloating);
+    this.#floatingWindow = null;
+    this.menuEl.removeClass('claudian-toolbar-popover--floating');
+    this.anchorEl.appendChild(this.menuEl);
+  }
+
+  readonly #placeFloating = (): void => {
+    const view = this.#floatingWindow;
+    if (!view) return;
+    const button = this.buttonEl.getBoundingClientRect();
+    this.menuEl.setCssProps({
+      '--claudian-toolbar-popover-right': `${view.innerWidth - button.right}px`,
+      '--claudian-toolbar-popover-bottom': `${view.innerHeight - button.top + FLOATING_MENU_GAP}px`,
+      '--claudian-toolbar-popover-min-width': `${Math.max(button.width, FLOATING_MENU_MIN_WIDTH)}px`,
+    });
+  };
+
+  #contains(node: Node | null): boolean {
+    return node !== null && (this.anchorEl.contains(node) || this.menuEl.contains(node));
   }
 
   #items(scopeEl: Element = this.menuEl): HTMLElement[] {
@@ -308,12 +359,12 @@ export class ToolbarMenu {
     this.close(true);
   };
 
-  readonly #onAnchorFocusOut = (event: FocusEvent): void => {
+  readonly #onFocusOut = (event: FocusEvent): void => {
     const next = event.relatedTarget as Node | null;
-    if (next && !this.anchorEl.contains(next)) this.close(false);
+    if (next && !this.#contains(next)) this.close(false);
   };
 
   readonly #onDocumentPointerDown = (event: Event): void => {
-    if (!this.anchorEl.contains(event.target as Node | null)) this.close(false);
+    if (!this.#contains(event.target as Node | null)) this.close(false);
   };
 }
