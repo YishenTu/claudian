@@ -106,11 +106,22 @@ export function clearCodexResumeState(
       ? { forkSourceTranscriptRootPath: state.forkSourceTranscriptRootPath }
       : {}),
   };
-  const previousSegments = (state.previousSegments ?? [])
-    // A materialized fork child already contains the source prefix its pending segment showed.
-    .filter(previous => !(segment.threadId && isPendingForkSegmentOf(previous, segment)))
-    .map(previous => ({ ...previous }));
-  if (!previousSegments.some(previous => isSameSegment(previous, segment))) {
+  // A native thread is one segment: its newest state replaces earlier records of the same thread,
+  // and a materialized fork child replaces the pending segment that showed its source prefix.
+  const supersedes = (previous: CodexPreviousSegment) => !!segment.threadId && (
+    previous.threadId === segment.threadId || isPendingForkSegmentOf(previous, segment)
+  );
+  const previousSegments: CodexPreviousSegment[] = [];
+  let placed = false;
+  for (const previous of state.previousSegments ?? []) {
+    if (!supersedes(previous)) {
+      previousSegments.push({ ...previous });
+    } else if (!placed) {
+      previousSegments.push(segment);
+      placed = true;
+    }
+  }
+  if (!placed && !previousSegments.some(previous => isSameSegment(previous, segment))) {
     previousSegments.push(segment);
   }
 

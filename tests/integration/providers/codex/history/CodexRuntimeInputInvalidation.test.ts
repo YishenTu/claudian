@@ -341,6 +341,11 @@ describe('Codex runtime-input changes', () => {
             live.setProviderStateValue('threadId', adoptedThreadId);
             live.setProviderStateValue('sessionFilePath', childPath);
             await emitSnapshot('idle');
+            // Completing fork setup consumes the fork metadata for the same child thread.
+            for (const key of ['forkSource', 'forkSourceSessionFilePath', 'forkSourceTranscriptRootPath', 'pendingForkTarget']) {
+              live.deleteProviderStateValue(key);
+            }
+            await emitSnapshot('idle');
           },
         });
       });
