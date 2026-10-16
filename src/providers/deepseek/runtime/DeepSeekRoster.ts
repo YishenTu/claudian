@@ -39,10 +39,13 @@ export class DeepSeekRoster {
   private generation = 0;
   private listed = false;
   private baselined = false;
+  private ended = false;
 
   constructor(private readonly client: DeepSeekRemoteClient, private readonly onFailure: (error: Error) => void) {}
 
   get ready(): boolean { return this.listed && this.baselined; }
+  /** The Host retired this process generation; its native work is gone and no reconnect follows. */
+  get disposed(): boolean { return this.ended; }
 
   /** Opens one baseline generation. Call again after the client reconnects. */
   async start(signal?: AbortSignal): Promise<void> {
@@ -155,6 +158,7 @@ export class DeepSeekRoster {
   onReset(listener: () => void): () => void { this.resetListeners.add(listener); return () => this.resetListeners.delete(listener); }
 
   dispose(): void {
+    this.ended = true;
     ++this.generation; this.clear(); this.roots.clear();
     this.changed();
     this.changeListeners.clear(); this.resetListeners.clear();

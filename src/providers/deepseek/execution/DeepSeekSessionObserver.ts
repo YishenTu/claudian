@@ -48,6 +48,9 @@ export class DeepSeekSessionObserver {
 
   onChange(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 
+  /** The observer failed and no longer tracks native state. */
+  get failed(): boolean { return !!this.failure; }
+
   isReady(): boolean {
     return this.roster.ready && !!this.roster.row(this.rootId) && this.ownedIds().every(id => {
       const state = this.followed.get(id);
@@ -93,21 +96,50 @@ export class DeepSeekSessionObserver {
     this.changed();
   }
 
+  /** The conversation's interactions ended with its binding; a retained observer keeps tracking only native work. */
+  clearInteractions(): void {
+    this.interactions.clear();
+    this.changed();
+  }
+
+  /** Remaining milliseconds of a budget that elapses only while the transport is up; recovery pauses it. */
+  connectedBudget(timeoutMs: number): () => number {
+    let left = timeoutMs;
+    let last = Date.now();
+    let connected = this.roster.ready;
+    return () => {
+      const now = Date.now();
+      if (connected) left -= now - last;
+      last = now; connected = this.roster.ready;
+      return left;
+    };
+  }
+
+  /** The deadline pauses while the Host recovers the transport; a retired process ends the wait. */
   async waitUntil(predicate: () => boolean, timeoutMs = 30_000, signal?: AbortSignal): Promise<void> {
     if (this.failure) throw this.failure;
     if (signal?.aborted) throw new Error('DeepSeek observation cancelled.');
     if (predicate()) return;
+    const remaining = this.connectedBudget(timeoutMs);
     await new Promise<void>((resolve, reject) => {
+      let timer: number | undefined;
       const finish = (error?: Error): void => {
         window.clearTimeout(timer); off(); signal?.removeEventListener('abort', abort);
         if (error) reject(error); else resolve();
       };
       const abort = (): void => finish(new Error('DeepSeek observation cancelled.'));
+      const arm = (): void => {
+        window.clearTimeout(timer); timer = undefined;
+        const left = remaining();
+        if (this.roster.disposed) finish(new Error('DeepSeek process ended.'));
+        else if (left <= 0) finish(new Error('DeepSeek native state did not reconcile before the deadline.'));
+        else if (this.roster.ready) timer = window.setTimeout(arm, left);
+      };
       const off = this.onChange(() => {
-        if (this.failure) finish(this.failure); else if (predicate()) finish();
+        if (this.failure) finish(this.failure); else if (predicate()) finish(); else arm();
       });
-      const timer = window.setTimeout(() => finish(new Error('DeepSeek native state did not reconcile before the deadline.')), timeoutMs);
       signal?.addEventListener('abort', abort, { once: true });
+      arm();
     });
   }
 

@@ -118,6 +118,8 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
   private stopTask?: Promise<void>;
   private disposal?: Promise<void>;
   private detaching?: Promise<void>;
+  /** A failed binding kept only so a Stop or closing can still end the native work the live process keeps. */
+  private retained = false;
   // Only transcript divergence prevents rebinding after a failure.
   private reloadError?: DeepSeekReplayError;
   private publishedWork = false;
@@ -184,7 +186,8 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     // A finished request keeps its slot until its prompt is acknowledged; Stop then targets the work it started.
     if (this.requested && !this.requested.channel.isTerminal) { this.requested.channel.cancel(); return; }
     if (this.stopTask || !this.observer || this.lifetime.signal.aborted) return;
-    this.snapshots.setStatus('cancelling');
+    // Stopping retained work does not revive a failed conversation.
+    if (this.snapshots.status !== 'invalidated') this.snapshots.setStatus('cancelling');
     const task = this.stopBackground(this.lifetime.signal).catch(error => this.fail(error, 'transport')).finally(() => {
       if (this.stopTask === task) this.stopTask = undefined;
       if (this.snapshots.status === 'cancelling') this.snapshots.setStatus('idle');
@@ -248,7 +251,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       this.interactions.dismissAll('session-disposed');
       this.snapshots.setStatus('disposed');
       // Leaving the conversation stops its native work.
-      this.disposal = this.detach(true).finally(() => this.snapshots.clearListeners());
+      this.disposal = this.detach('stop').finally(() => this.snapshots.clearListeners());
     }
     return this.disposal;
   }
@@ -330,6 +333,8 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     const policy: DeepSeekPreset | undefined = input.toolPolicy.kind === 'passive' ? 'claudian-passive' : input.toolPolicy.kind === 'read-only' ? 'claudian-read-only' : undefined;
     const prompt = input.configuration.systemInstructions.kind === 'explicit' ? input.configuration.systemInstructions.instructions
       : buildSystemPrompt({ customPrompt: settings.systemPrompt, mediaFolder: settings.mediaFolder, userName: settings.userName, vaultPath: this.config.vaultWorkingDirectory });
+    // A retained binding only serves Stop and closing; sending rebinds with fresh native baselines.
+    if (this.retained) this.unbind();
     if (!this.lease) await this.attach(requested, policy);
     const preset = this.binding!.preset;
     if ((policy && preset !== policy) || (!policy && isDeepSeekAuxiliaryPreset(preset))) {
@@ -351,8 +356,11 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       if (saved && !isSameDeepSeekHome(saved.home, lease.home)) throw new AdmissionError('DeepSeek native history belongs to a different store. Restore its native store or select the original DeepSeek environment before continuing.');
       this.binding = saved ?? { schemaVersion: 1, home: lease.home, profile: lease.profile, preset: policy ?? 'claudian' };
       if (this.ephemeralGeneration !== undefined && this.ephemeralGeneration !== lease.generation) throw new AdmissionError(EPHEMERAL_ENDED);
-      // The Host retires a lost process, which ends all of its native work.
-      this.offLease.push(lease.onLost((loss, error) => { if (generation === this.generation) void this.fail(error, loss, false); }));
+      // The Host retires a lost process, which ends all of its native work; a retained binding has nothing left to stop.
+      this.offLease.push(lease.onLost((loss, error) => {
+        if (generation === this.generation) void this.fail(error, loss, true);
+        else if (this.retained && this.lease === lease) this.unbind();
+      }));
       this.offLease.push(lease.roster.onReset(() => { if (generation === this.generation) this.voidInteractions('superseded'); }));
       const deliver = (event: Record<string, unknown>): void => { if (generation === this.generation) this.remoteEvent(event); };
       if (this.nativeId) lease.claim(this.nativeId, deliver, (call, deadline) => this.captureSessionTool(call, deadline));
@@ -953,35 +961,39 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     return steer.withdrawal;
   }
 
-  private async stopBackground(signal: AbortSignal): Promise<void> {
+  private async stopBackground(signal?: AbortSignal): Promise<void> {
     const observer = this.observer!;
-    const deadline = Date.now() + 10_000;
-    const options = { signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]) };
+    const roster = this.lease!.roster;
+    // Stop's deadline elapses only while the transport is up: the Host either reconnects, so Stop resumes, or retires
+    // the process, which ends its work.
+    const remaining = observer.connectedBudget(10_000);
+    const options = (): { signal: AbortSignal } => ({ signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000) });
     const killed = new Set<string>();
     while (observer.hasWork()) {
-      if (Date.now() >= deadline) throw new Error('DeepSeek background Stop did not settle. Reopen the conversation to recover its native state.');
+      if (roster.disposed) throw new Error('DeepSeek process ended before background Stop settled.');
+      if (remaining() <= 0) throw new Error('DeepSeek background Stop did not settle. Reopen the conversation to recover its native state.');
       const agents = [...observer.activeAgents()].reverse();
       for (const agent of agents) {
         if (agent.running && (!agent.parent || agent.mode === 'continuable')) await this.lease!.client.call(agent.parent ? 'subagents/interruptByParent' : 'session/cancel', agent.parent
           ? { childSessionId: agent.id, parentSessionId: agent.parent, mode: 'continuable' }
-          : { request: { sessionId: agent.id } }, options);
+          : { request: { sessionId: agent.id } }, options());
         for (const item of observer.queuedItems(agent.id)) {
           const steer = agent.id === this.nativeId && item.source?.rpcId ? this.steers.get(item.source.rpcId) : undefined;
           if (steer) { await this.withdrawSteer(steer); continue; }
-          await this.removeQueued(agent.id, item.id, options);
+          await this.removeQueued(agent.id, item.id, options());
         }
       }
       for (const job of observer.ownedJobs()) {
         const key = `${job.owner}:${job.id}`;
         if (killed.has(key)) continue;
-        await this.lease!.client.call('job/kill', { request: { sessionId: job.owner, jobId: job.id } }, options); killed.add(key);
+        await this.lease!.client.call('job/kill', { request: { sessionId: job.owner, jobId: job.id } }, options()); killed.add(key);
       }
       if (!observer.hasWork()) break;
       // Yield until authoritative native updates arrive; the deadline bounds stalled producers.
       await new Promise<void>(resolve => {
         const finish = (): void => { window.clearTimeout(timer); off(); resolve(); };
         const off = observer.onChange(finish);
-        const timer = window.setTimeout(finish, Math.min(100, Math.max(1, deadline - Date.now())));
+        const timer = window.setTimeout(finish, Math.min(100, Math.max(1, remaining())));
       });
     }
     this.interactions.dismissAll('cancelled');
@@ -991,15 +1003,17 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
    * Failing ends this conversation's binding, never its native work: the live process keeps that work and rebinding
    * observes it again. Only the user's intent stops work: a Stop still in progress here, or closing the conversation.
    */
-  private async fail(error: unknown, category: 'configuration' | 'transport' | 'process-exited' | 'provider-session-missing', stopWork = this.stopInProgress()): Promise<void> {
+  private async fail(error: unknown, category: 'configuration' | 'transport' | 'process-exited' | 'provider-session-missing', processEnded = false): Promise<void> {
     if (this.snapshots.status === 'disposed' || this.snapshots.status === 'invalidated') return;
+    // Decided before finishing the requested run, whose pending Stop is part of the intent.
+    const mode = processEnded || this.observer?.failed ? 'release' : this.stopInProgress() ? 'stop' : 'retain';
     if (error instanceof DeepSeekReplayError) this.reloadError = error;
     const message = error instanceof Error ? error.message : 'DeepSeek execution failed.';
     this.requested?.channel.finish({ type: 'execution_error', category, message, recoverable: true, ...(category === 'provider-session-missing' ? { missingProviderSessionId: this.nativeId } : {}) });
     this.snapshots.invalidate({ reason: category === 'process-exited' ? 'process-exited' : category === 'provider-session-missing' ? 'provider-session-missing' : 'transport-closed', recoverable: true, message });
     this.snapshots.emit({ type: 'session_error', category, message, recoverable: true });
     this.interactions.dismissAll('native-rejected');
-    await this.detach(stopWork);
+    await this.detach(mode);
   }
 
   /** A background Stop, or a Stop of the requested run that has not ended; a cancelled request that already ended authorizes nothing. */
@@ -1008,21 +1022,25 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     return !!this.stopTask || (!!channel && channel.isCancellationRequested && !channel.isTerminal);
   }
 
-  private detach(stopWork: boolean): Promise<void> {
+  /**
+   * Ends this binding. `stop` first stops its native work; `retain` keeps the lease, claim and observer so a later Stop or
+   * closing can; `release` lets go of a binding with nothing left to stop.
+   */
+  private detach(mode: 'stop' | 'retain' | 'release'): Promise<void> {
     if (this.detaching) return this.detaching;
     const observer = this.observer;
     const task = (async () => {
-      if (!stopWork || !observer) return;
+      if (mode !== 'stop' || !observer) return;
       try {
         // Job rows refresh after every turn; decide only on reconciled state.
         await observer.waitUntil(() => observer.isReady(), 5_000);
-        if (observer.hasWork()) await this.stopBackground(AbortSignal.timeout(10_000));
+        if (observer.hasWork()) await this.stopBackground();
       } catch {
         // Unconfirmed native work ends with the shared Host; the session is already retired.
       }
     })().finally(() => {
       if (this.detaching === task) this.detaching = undefined;
-      this.unbind();
+      if (mode === 'retain' && this.lease) { this.endBinding(); this.retained = true; } else this.unbind();
     });
     this.detaching = task;
     this.publish();
@@ -1030,6 +1048,17 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
   }
 
   private unbind(): void {
+    this.endBinding();
+    this.retained = false;
+    for (const off of this.offLease.splice(0)) off();
+    this.observer?.dispose(); this.observer = undefined;
+    this.lease?.release(); this.lease = undefined;
+    if (this.commands) { this.commands = undefined; this.snapshots.emit({ type: 'commands_changed' }); }
+    this.publish();
+  }
+
+  /** Ends this conversation's view of the binding; the observer keeps tracking native work while it is retained. */
+  private endBinding(): void {
     ++this.generation;
     this.requested?.abort.abort();
     for (const steer of [...this.steers.values()]) { steer.answer(new Error('DeepSeek connection ended before the steered message was confirmed.')); steer.release(); }
@@ -1041,10 +1070,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     this.turn = undefined; this.permission = undefined; this.lastSequence = -1; this.followQueue = Promise.resolve();
     this.children.clear(); this.subagents.clear(); this.inboxPlaces.clear();
     this.voidInteractions();
-    for (const off of this.offLease.splice(0)) off();
-    this.observer?.dispose(); this.observer = undefined;
-    this.lease?.release(); this.lease = undefined;
-    if (this.commands) { this.commands = undefined; this.snapshots.emit({ type: 'commands_changed' }); }
+    this.observer?.clearInteractions();
     this.publish();
   }
 

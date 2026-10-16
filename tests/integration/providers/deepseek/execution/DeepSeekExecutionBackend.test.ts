@@ -835,7 +835,8 @@ it('fails a conversation whose reconnect replay read fails without stopping the 
   for (const stream of peer.streams.values()) stream.socket.terminate();
   await done;
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'transport', recoverable: true, message: 'DeepSeek HTTP transport failed.' });
-  await until(() => session.getStatus() === 'invalidated' && !session.hasBackgroundWork?.());
+  // The failed conversation retains its binding, so the work it keeps stays visible and stoppable.
+  await until(() => session.getStatus() === 'invalidated' && !!session.hasBackgroundWork?.());
   expect(peer.calls.some(c => c.method === 'session/cancel' || c.method === 'job/kill')).toBe(false);
   expect(lifecycle.disposed).toBe(0);
 });
@@ -850,7 +851,8 @@ it('keeps native work when withdrawing a request queued behind a failed automati
   failAutomatic();
   await done;
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'transport', recoverable: true, message: 'DeepSeek HTTP transport failed.' });
-  await until(() => session.getStatus() === 'invalidated' && !session.hasBackgroundWork?.());
+  // The failed conversation retains its binding, so the work it keeps stays visible and stoppable.
+  await until(() => session.getStatus() === 'invalidated' && !!session.hasBackgroundWork?.());
   // Only the withdrawal itself reached native; no cleanup removed queued input, cancelled or killed anything.
   expect(peer.calls.filter(c => c.method === 'session/updateQueue')).toHaveLength(1);
   expect(peer.calls.some(c => c.method === 'session/cancel' || c.method === 'job/kill')).toBe(false);
@@ -880,7 +882,8 @@ it('keeps native work when withdrawing after a failed automatic turn outwaits Ho
     for (const stream of peer.streams.values()) stream.socket.terminate();
     for (let elapsed = 0; elapsed < 11_000; elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
     recovered = true;
-    for (let elapsed = 0; elapsed < 6_000; elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+    // The withdrawal's deadline resumes with the transport and then expires; native never shows the queued input.
+    for (let elapsed = 0; elapsed < 14_000 && !events.some(e => e.type === 'execution_error'); elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
   } finally { jest.useRealTimers(); }
   await done;
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true });
@@ -917,7 +920,7 @@ it('finishes a Stop requested before its prompt fails on the transport', async (
   expect(jobs).toEqual([]);
 });
 
-it('fails a message that outwaits Host recovery without stopping earlier native work', async () => {
+it('holds a message sent during a long Host recovery until the transport returns, keeping earlier native work', async () => {
   const jobs = [{ id: 'job', owner: 'root', status: 'running' }];
   const ordinaryOpen = peer.onOpen;
   peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
@@ -929,19 +932,59 @@ it('fails a message that outwaits Host recovery without stopping earlier native 
   jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   const settle = async (): Promise<void> => { for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve)); };
   const events: ProviderExecutionEvent[] = [];
+  const prompts = (): number => peer.calls.filter(c => c.method === 'session/prompt').length;
+  let run!: ReturnType<ProviderExecutionSession['execute']>;
+  let done!: Promise<void>;
   try {
     for (const stream of peer.streams.values()) stream.socket.terminate();
     await settle();
-    const run = session.execute(request('during recovery'));
-    void collect(run.events, events);
-    for (let elapsed = 0; elapsed < 16_000 && !events.some(e => e.type === 'execution_error'); elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
-    // Recovery completes while any cleanup would still be waiting for native state.
+    run = session.execute(request('during recovery'));
+    done = collect(run.events, events);
+    // Longer than admission's readiness deadline: recovery pauses it.
+    for (let elapsed = 0; elapsed < 20_000; elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+    expect(events.some(e => e.type === 'execution_error')).toBe(false);
+    expect(prompts()).toBe(1);
     recovered = true;
-    for (let elapsed = 0; elapsed < 6_000; elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+    for (let elapsed = 0; elapsed < 6_000 && prompts() < 2; elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
   } finally { jest.useRealTimers(); }
-  expect(events.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true });
-  expect(peer.calls.filter(c => c.method === 'session/prompt')).toHaveLength(1);
+  await until(() => prompts() === 2);
+  begin(run.executionId); answer('after recovery'); await done;
+  expect(events.at(-1)?.type).toBe('turn_completed');
   expect(peer.calls.some(c => c.method === 'session/cancel' || c.method === 'job/kill')).toBe(false);
+  expect(lifecycle.disposed).toBe(0);
+});
+
+it('finishes a background Stop once a Host recovery longer than its deadline completes', async () => {
+  let jobs = [{ id: 'job', owner: 'root', status: 'running' }];
+  const ordinaryOpen = peer.onOpen;
+  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  let dropped = false;
+  let recovered = false;
+  const ordinaryCall = peer.onCall;
+  peer.onCall = (method, args) => {
+    if (method === 'session/list' && dropped && !recovered) return Promise.reject(new Error('roster unavailable'));
+    if (method === 'job/kill') { jobs = []; peer.send('job/list', { type: 'rows', jobs }, jobsOf('root')); return { status: 'requested' }; }
+    return ordinaryCall(method, args);
+  };
+  create(); await completeRequest();
+  expect(session.hasBackgroundWork?.()).toBe(true);
+  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  const settle = async (): Promise<void> => { for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve)); };
+  const kills = (): number => peer.calls.filter(c => c.method === 'job/kill').length;
+  try {
+    dropped = true;
+    for (const stream of peer.streams.values()) stream.socket.terminate();
+    await settle();
+    session.cancel();
+    // Twice Stop's own deadline: recovery pauses it rather than abandoning the job.
+    for (let elapsed = 0; elapsed < 20_000; elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+    expect(kills()).toBe(0);
+    recovered = true;
+    for (let elapsed = 0; elapsed < 6_000 && !kills(); elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+  } finally { jest.useRealTimers(); }
+  await until(() => kills() === 1 && !session.hasBackgroundWork?.());
+  expect(jobs).toEqual([]);
+  expect(session.getStatus()).toBe('idle');
   expect(lifecycle.disposed).toBe(0);
 });
 
@@ -969,7 +1012,8 @@ it('keeps background work when a request cancelled before sending still holds it
   // A subagent's approval is declined without the user; the transport fails that background answer.
   announceChild('continuable', true);
   peer.send('$events', { type: 'waterfall', eventId: 'approval', event: 'approval/request', agentId: 'child', request: {} });
-  await until(() => session.getStatus() === 'invalidated' && !session.hasBackgroundWork?.());
+  // The failed conversation retains its binding, so the work it keeps stays visible and stoppable.
+  await until(() => session.getStatus() === 'invalidated' && !!session.hasBackgroundWork?.());
   expect(peer.calls.some(c => c.method === '$events/result')).toBe(true);
   expect(peer.calls.some(c => c.method === 'session/cancel' || c.method === 'subagents/interruptByParent' || c.method === 'job/kill')).toBe(false);
   expect(peer.calls.filter(c => c.method === 'session/prompt')).toHaveLength(1);
@@ -1004,12 +1048,16 @@ it('finishes an explicit Stop whose job cleanup the transport interrupted', asyn
   expect(lifecycle.disposed).toBe(0);
 });
 
-it('fails the conversation on a transport failure without stopping the native work the live process keeps', async () => {
-  const jobs = [{ id: 'job', owner: 'root', status: 'running' }];
+it('fails the conversation on a transport failure without stopping the native work the live process keeps, until it closes', async () => {
+  let jobs = [{ id: 'job', owner: 'root', status: 'running' }];
   const ordinaryOpen = peer.onOpen;
   peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
   const ordinaryCall = peer.onCall;
-  peer.onCall = (method, args) => method === '$events/result' ? NATIVE_RESET : ordinaryCall(method, args);
+  peer.onCall = (method, args) => {
+    if (method === '$events/result') return NATIVE_RESET;
+    if (method === 'job/kill') { jobs = []; peer.send('job/list', { type: 'rows', jobs }, jobsOf('root')); return { status: 'requested' }; }
+    return ordinaryCall(method, args);
+  };
   port.askUserQuestion = jest.fn(async () => ({ interactionId: 'question', answers: { q: 'Yes' } }));
   create(); const run = session.execute(request()); const events: ProviderExecutionEvent[] = [];
   const done = collect(run.events, events);
@@ -1018,9 +1066,14 @@ it('fails the conversation on a transport failure without stopping the native wo
   peer.send('$events', { type: 'waterfall', eventId: 'question', event: 'user-questions/request', agentId: 'root', request: { questions: [{ id: 'q', question: 'Continue?', options: [{ label: 'Yes' }] }] } });
   await done;
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'transport', recoverable: true, message: 'DeepSeek HTTP transport failed.' });
-  await until(() => session.getStatus() === 'invalidated' && !session.hasBackgroundWork?.());
+  // The failed conversation retains its binding, so the work it keeps stays visible and stoppable.
+  await until(() => session.getStatus() === 'invalidated' && !!session.hasBackgroundWork?.());
   expect(peer.calls.some(c => c.method === 'session/cancel' || c.method === 'job/kill')).toBe(false);
   expect(lifecycle.disposed).toBe(0);
+  // Closing the failed conversation still stops the work it retained.
+  await session.dispose();
+  expect(peer.calls.filter(c => c.method === 'job/kill')).toEqual([{ method: 'job/kill', args: { request: { sessionId: 'root', jobId: 'job' } } }]);
+  expect(peer.calls.some(c => c.method === 'session/cancel')).toBe(true);
 });
 
 it('resolves native tool image references inside the owning session', async () => {
@@ -1432,7 +1485,7 @@ it('fails promptly without stopping owned work when a follow failure races a pen
   await until(() => session.getStatus() === 'invalidated');
   childSnapshot();
   // No Stop is in progress, so the failure releases the binding and the live process keeps the root job and child.
-  await until(() => !session.hasBackgroundWork?.());
+  await until(() => session.getStatus() === 'invalidated' && !!session.hasBackgroundWork?.());
   expect(peer.calls.some(c => c.method === 'job/kill' || c.method === 'subagents/interruptByParent' || c.method === 'session/cancel')).toBe(false);
   expect(rootJobs).toHaveLength(1);
 });
