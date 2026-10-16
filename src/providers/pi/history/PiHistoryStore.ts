@@ -6,7 +6,7 @@ import * as path from 'node:path';
 
 import { buildImageAttachmentFromBase64 } from '@/core/execution/imageAttachment';
 import { extractUserQuery } from '@/core/prompt/promptContext';
-import { decodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
+import { decodeRecoveryPrompt, unwrapRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import { resolveToolDiffData } from '@/core/tools/toolDiff';
 import { isSessionTool } from '@/core/tools/toolNames';
@@ -678,8 +678,7 @@ function mapPiSessionEntry(
 
   if (role === 'user') {
     const rawContent = extractTextContent(message.content ?? message.text ?? message.message);
-    const recoveryPrompt = decodeRecoveryPrompt(rawContent);
-    const content = recoveryPrompt?.currentInput ?? (recoveryPrompt ? '' : rawContent);
+    const content = unwrapRecoveryPrompt(rawContent);
     const sessionMessage = decodeSessionMessage(content);
     const displayContent = sessionMessage?.text ?? extractPiSkillDisplayContent(content);
     const messageId = entry.id ?? createSyntheticPiMessageId(

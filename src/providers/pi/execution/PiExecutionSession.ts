@@ -5,7 +5,6 @@ import { parseCompactCommand } from '@/core/commands/compactCommand';
 import { parseEnvironmentVariables } from '@/core/process/env';
 import {
   buildContextFromHistory,
-  buildPromptWithHistoryContext,
   getHistoryImages,
 } from '@/core/prompt/historyContext';
 import {
@@ -13,7 +12,7 @@ import {
   appendSelectionContexts,
   appendSessionReferences,
 } from '@/core/prompt/promptContext';
-import { encodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
+import { buildRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 
 import {
   type ConversationBranchRecoveryRequest,
@@ -2040,16 +2039,7 @@ function encodePrompt(
   if (replayConversationHistory && request.conversationHistory?.length) {
     const history = [...request.conversationHistory] as ChatMessage[];
     const historyContext = buildContextFromHistory(history, { preserveCapturedContext });
-    const recoveredPrompt = buildPromptWithHistoryContext(
-      historyContext,
-      text,
-      text,
-      history,
-    );
-    text = encodeRecoveryPrompt(
-      historyContext,
-      recoveredPrompt === historyContext ? null : text,
-    );
+    text = buildRecoveryPrompt(historyContext, text, history);
   }
   const historyImages: PiPromptImage[] = replayConversationHistory && preserveCapturedContext
     ? getHistoryImages(request.conversationHistory ?? []).map(image => ({

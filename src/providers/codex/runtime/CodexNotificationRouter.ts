@@ -1,3 +1,4 @@
+import { unwrapRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import type { StreamChunk } from '@/core/types';
 import { parseCodexQuestionReply } from '@/providers/codex/normalization/codexQuestionNormalization';
 import {
@@ -8,7 +9,6 @@ import {
 import {
   extractCodexUserVisibleText,
   joinCodexUserTextParts,
-  unwrapCodexRecoveryPrompt,
 } from '@/providers/codex/normalization/codexUserText';
 
 import type {
@@ -581,7 +581,7 @@ export class CodexNotificationRouter {
 
     // Decode replay envelopes intact; image cleanup would change their recorded length.
     const rawContent = joinCodexUserTextParts(
-      item.content.map((part) => (part.type === 'text' ? unwrapCodexRecoveryPrompt(part.text) : '')),
+      item.content.map((part) => (part.type === 'text' ? unwrapRecoveryPrompt(part.text) : '')),
       '\n\n',
     );
     const visibleContent = extractCodexUserVisibleText(rawContent);

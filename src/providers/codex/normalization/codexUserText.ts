@@ -1,5 +1,3 @@
-import { decodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
-
 import { stripCodexQuestionReplies } from './codexQuestionNormalization';
 
 const CODEX_IMAGE_OPEN_TAG_PATTERN = /^<image\b[^>]*>$/i;
@@ -110,10 +108,4 @@ export function extractCodexUserVisibleText(text: string): string | null {
   ).trim();
 
   return visible ? visible : null;
-}
-
-/** A history replay envelope carries only its current input as visible user text. */
-export function unwrapCodexRecoveryPrompt(text: string): string {
-  const recovery = decodeRecoveryPrompt(text);
-  return recovery ? recovery.currentInput ?? '' : text;
 }

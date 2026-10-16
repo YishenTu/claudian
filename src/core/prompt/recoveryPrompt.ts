@@ -1,3 +1,7 @@
+import type { ChatMessage } from '@/core/types';
+
+import { buildPromptWithHistoryContext } from './historyContext';
+
 /** Envelope for replaying Claudian history into a fresh native session; history parsers strip it. */
 const RECOVERY_HISTORY_PREFIX = '<claudian_recovery_history length="';
 const RECOVERY_HISTORY_HEADER_SUFFIX = '">\n';
@@ -48,4 +52,20 @@ export function decodeRecoveryPrompt(prompt: string): DecodedRecoveryPrompt | nu
     return null;
   }
   return { currentInput: remainder.slice(RECOVERY_INPUT_PREFIX.length) };
+}
+
+/** Replays history into a fresh native session, omitting the input when history already ends with it. */
+export function buildRecoveryPrompt(
+  historyContext: string,
+  prompt: string,
+  history: ChatMessage[],
+): string {
+  const repeatsLastInput = buildPromptWithHistoryContext(historyContext, prompt, prompt, history) === historyContext;
+  return encodeRecoveryPrompt(historyContext, repeatsLastInput ? null : prompt);
+}
+
+/** The visible user input of an envelope; other text is returned unchanged. */
+export function unwrapRecoveryPrompt(text: string): string {
+  const recovery = decodeRecoveryPrompt(text);
+  return recovery ? recovery.currentInput ?? '' : text;
 }

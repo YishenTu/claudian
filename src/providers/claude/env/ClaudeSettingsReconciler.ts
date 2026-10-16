@@ -80,7 +80,6 @@ function computeFingerprints(inputs: FingerprintInputs): ScopedRuntimeInputFinge
   return { runtime: computeRuntimeFingerprint(inputs), session: computeSessionFingerprint(inputs) };
 }
 
-
 function hasFingerprintInputs({ environment, cliPathInputs }: FingerprintInputs): boolean {
   return hasCLIPathFingerprintInputs(cliPathInputs)
     || ALL_FINGERPRINT_ENV_KEYS.some(key => Object.prototype.hasOwnProperty.call(environment, key));
