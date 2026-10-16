@@ -102,15 +102,15 @@ export class DeepSeekSessionObserver {
     this.changed();
   }
 
-  /** Remaining milliseconds of a budget that elapses only while the transport is up; recovery pauses it. */
+  /** Remaining milliseconds of a budget that Host recovery pauses; that recovery has its own bounded budget. */
   connectedBudget(timeoutMs: number): () => number {
     let left = timeoutMs;
     let last = Date.now();
-    let connected = this.roster.ready;
+    let connected = !this.roster.recovering;
     return () => {
       const now = Date.now();
       if (connected) left -= now - last;
-      last = now; connected = this.roster.ready;
+      last = now; connected = !this.roster.recovering;
       return left;
     };
   }
@@ -133,7 +133,7 @@ export class DeepSeekSessionObserver {
         const left = remaining();
         if (this.roster.disposed) finish(new Error('DeepSeek process ended.'));
         else if (left <= 0) finish(new Error('DeepSeek native state did not reconcile before the deadline.'));
-        else if (this.roster.ready) timer = window.setTimeout(arm, left);
+        else if (!this.roster.recovering) timer = window.setTimeout(arm, left);
       };
       const off = this.onChange(() => {
         if (this.failure) finish(this.failure); else if (predicate()) finish(); else arm();

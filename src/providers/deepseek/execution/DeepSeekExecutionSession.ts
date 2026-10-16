@@ -333,8 +333,9 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     const policy: DeepSeekPreset | undefined = input.toolPolicy.kind === 'passive' ? 'claudian-passive' : input.toolPolicy.kind === 'read-only' ? 'claudian-read-only' : undefined;
     const prompt = input.configuration.systemInstructions.kind === 'explicit' ? input.configuration.systemInstructions.instructions
       : buildSystemPrompt({ customPrompt: settings.systemPrompt, mediaFolder: settings.mediaFolder, userName: settings.userName, vaultPath: this.config.vaultWorkingDirectory });
-    // A retained binding only serves Stop and closing; sending rebinds with fresh native baselines.
-    if (this.retained) this.unbind();
+    // A retained binding only serves Stop and closing; sending rebinds with fresh native baselines. Its conversation
+    // state already ended with the failure, so releasing it leaves this request alone.
+    if (this.retained) this.release();
     if (!this.lease) await this.attach(requested, policy);
     const preset = this.binding!.preset;
     if ((policy && preset !== policy) || (!policy && isDeepSeekAuxiliaryPreset(preset))) {
@@ -964,7 +965,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
   private async stopBackground(signal?: AbortSignal): Promise<void> {
     const observer = this.observer!;
     const roster = this.lease!.roster;
-    // Stop's deadline elapses only while the transport is up: the Host either reconnects, so Stop resumes, or retires
+    // Host recovery pauses Stop's deadline: the Host either reconnects, so Stop resumes, or retires
     // the process, which ends its work.
     const remaining = observer.connectedBudget(10_000);
     const options = (): { signal: AbortSignal } => ({ signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000) });
@@ -1049,6 +1050,11 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
 
   private unbind(): void {
     this.endBinding();
+    this.release();
+  }
+
+  /** Lets go of the lease, claim and observer. */
+  private release(): void {
     this.retained = false;
     for (const off of this.offLease.splice(0)) off();
     this.observer?.dispose(); this.observer = undefined;

@@ -920,6 +920,45 @@ it('finishes a Stop requested before its prompt fails on the transport', async (
   expect(jobs).toEqual([]);
 });
 
+it('rebinds a send after a retained transport failure without cancelling it', async () => {
+  const jobs = [{ id: 'job', owner: 'root', status: 'running' }];
+  const ordinaryOpen = peer.onOpen;
+  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  let resets = 0;
+  const ordinaryCall = peer.onCall;
+  peer.onCall = (method, args) => method === '$events/result' && !resets++ ? NATIVE_RESET : ordinaryCall(method, args);
+  port.askUserQuestion = jest.fn(async () => ({ interactionId: 'question', answers: { q: 'Yes' } }));
+  create(); const run = session.execute(request()); const events: ProviderExecutionEvent[] = [];
+  const done = collect(run.events, events);
+  await until(() => peer.calls.some(c => c.method === 'session/prompt'));
+  begin(run.executionId);
+  peer.send('$events', { type: 'waterfall', eventId: 'question', event: 'user-questions/request', agentId: 'root', request: { questions: [{ id: 'q', question: 'Continue?', options: [{ label: 'Yes' }] }] } });
+  await done;
+  await until(() => session.getStatus() === 'invalidated' && !!session.hasBackgroundWork?.());
+  const retry = session.execute(request('retry')); const retried: ProviderExecutionEvent[] = [];
+  const retryDone = collect(retry.events, retried);
+  await until(() => peer.calls.filter(c => c.method === 'session/prompt').length === 2);
+  begin(retry.executionId); answer('resent'); await retryDone;
+  expect(retried.at(-1)?.type).toBe('turn_completed');
+  expect(peer.calls.some(c => c.method === 'session/cancel' || c.method === 'job/kill')).toBe(false);
+});
+
+it('fails a send whose initial control baseline never arrives instead of waiting forever', async () => {
+  const ordinaryOpen = peer.onOpen;
+  // A healthy socket that never baselines native control state; no Host recovery is in progress.
+  peer.onOpen = (endpoint, args, send) => { if (endpoint !== 'session/control') ordinaryOpen(endpoint, args, send); };
+  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  const settle = async (): Promise<void> => { for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve)); };
+  const events: ProviderExecutionEvent[] = [];
+  try {
+    create(); const run = session.execute(request());
+    void collect(run.events, events);
+    for (let elapsed = 0; elapsed < 120_000 && !events.some(e => e.type === 'execution_error'); elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+  } finally { jest.useRealTimers(); }
+  expect(events.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true });
+  expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(false);
+});
+
 it('holds a message sent during a long Host recovery until the transport returns, keeping earlier native work', async () => {
   const jobs = [{ id: 'job', owner: 'root', status: 'running' }];
   const ordinaryOpen = peer.onOpen;
