@@ -80,15 +80,6 @@ function computeFingerprints(inputs: FingerprintInputs): ScopedRuntimeInputFinge
   return { runtime: computeRuntimeFingerprint(inputs), session: computeSessionFingerprint(inputs) };
 }
 
-function readSavedFingerprints({ savedFingerprint, savedSessionFingerprint }: FingerprintInputs): ScopedRuntimeInputFingerprints {
-  return {
-    runtime: savedFingerprint,
-    // A blank runtime fingerprint is saved only while no input is configured, so its session scope is known.
-    session: savedFingerprint
-      ? savedSessionFingerprint
-      : computeSessionFingerprint({ environment: {}, environmentText: '' }),
-  };
-}
 
 function hasFingerprintInputs({ environment, cliPathInputs }: FingerprintInputs): boolean {
   return hasCLIPathFingerprintInputs(cliPathInputs)
@@ -138,15 +129,16 @@ export const claudeSettingsReconciler = {
       return { changed: false, invalidatedConversations: [] };
     }
     const current = computeFingerprints(inputs);
-    const { changed, invalidatesSessions } = compareScopedRuntimeInputFingerprints(
-      readSavedFingerprints(inputs),
+    const { changed, sessionPolicy } = compareScopedRuntimeInputFingerprints(
+      { environmentHash: inputs.savedFingerprint, sessionEnvironmentHash: inputs.savedSessionFingerprint },
       current,
+      computeSessionFingerprint({ environment: {}, environmentText: '' }),
     );
     if (!changed) {
       return { changed: false, invalidatedConversations: [] };
     }
 
-    const invalidatedConversations = invalidatesSessions
+    const invalidatedConversations = sessionPolicy === 'invalidate'
       ? invalidateClaudeConversationSessions(conversations)
       : [];
 
@@ -154,11 +146,7 @@ export const claudeSettingsReconciler = {
       environmentHash: current.runtime,
       sessionEnvironmentHash: current.session,
     });
-    return {
-      changed: true,
-      invalidatedConversations,
-      sessionPolicy: invalidatesSessions ? 'invalidate' : 'reload',
-    };
+    return { changed: true, invalidatedConversations, sessionPolicy };
   },
 
   normalizeModelVariantSettings(settings: Record<string, unknown>): boolean {

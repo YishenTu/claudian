@@ -382,15 +382,6 @@ describe('ProviderSettingsCoordinator', () => {
         normalizeModelVariantSettings: jest.fn(() => false),
       };
       const reloadReconciler: ProviderSettingsReconciler = {
-        environmentSessionPolicy: 'reload',
-        invalidateConversationSessions: jest.fn(conversations => conversations),
-        reconcileModelWithEnvironment: jest.fn(() => ({
-          changed: true,
-          invalidatedConversations: [],
-        })),
-        normalizeModelVariantSettings: jest.fn(() => false),
-      };
-      const launchOnlyReconciler: ProviderSettingsReconciler = {
         invalidateConversationSessions: jest.fn(conversations => conversations),
         reconcileModelWithEnvironment: jest.fn(() => ({
           changed: true,
@@ -407,14 +398,13 @@ describe('ProviderSettingsCoordinator', () => {
         .mockImplementation((providerId) => {
           if (providerId === 'fake-invalidate') return defaultReconciler;
           if (providerId === 'fake-reload') return reloadReconciler;
-          if (providerId === 'fake-launch-only') return launchOnlyReconciler;
           return originalGetSettingsReconciler(providerId);
         });
       const settingsProviderSpy = jest.spyOn(ProviderRegistry, 'resolveSettingsProviderId')
         .mockReturnValue('fake-invalidate');
       const uiConfigSpy = jest.spyOn(ProviderRegistry, 'getModelPolicy')
         .mockImplementation((providerId) => (
-          providerId === 'fake-invalidate' || providerId === 'fake-reload' || providerId === 'fake-launch-only'
+          providerId === 'fake-invalidate' || providerId === 'fake-reload'
             ? originalGetChatUIConfig('claude')
             : originalGetChatUIConfig(providerId)
         ));
@@ -432,17 +422,15 @@ describe('ProviderSettingsCoordinator', () => {
       const result = ProviderSettingsCoordinator.reconcileProviders(
         { model: 'haiku' },
         [invalidatedConversation, preservedConversation],
-        ['fake-invalidate', 'fake-reload', 'fake-launch-only'],
+        ['fake-invalidate', 'fake-reload'],
       );
       reconcilerSpy.mockRestore();
       settingsProviderSpy.mockRestore();
       uiConfigSpy.mockRestore();
 
-      expect(defaultReconciler.environmentSessionPolicy).toBeUndefined();
       expect(result.environmentChangedProviderIds).toEqual([
         'fake-invalidate',
         'fake-reload',
-        'fake-launch-only',
       ]);
       expect(result.sessionInvalidationProviderIds).toEqual(['fake-invalidate']);
       expect(result.invalidatedConversations).toEqual([invalidatedConversation]);

@@ -1,5 +1,6 @@
 import { Notice, type Plugin } from 'obsidian';
 
+import type { ProviderExecutionLifecycleRegistry } from '@/core/execution/ProviderExecutionLifecycleRegistry';
 import { StartupProfiler } from '@/core/performance/StartupProfiler';
 import type { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
@@ -45,6 +46,7 @@ export interface ApplicationStartupOptions {
   readonly defaultSettings: Readonly<ClaudianSettings>;
   readonly providers: StartupProviderCatalog;
   readonly providerSettings: StartupProviderSettings;
+  readonly executionLifecycle: Pick<ProviderExecutionLifecycleRegistry, 'markSessionsInvalidated'>;
   /** Defers sessions not selected for restoration to the background metadata scan. */
   readonly deferNonRestoredSessionMetadata: boolean;
   isUnloading(): boolean;
@@ -110,6 +112,7 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
   const runtimeSettings: RuntimeSettingsCoordinator = new RuntimeSettingsCoordinator({
     settings: settingsCoordinator,
     conversations: conversationRepository,
+    executionLifecycle: options.executionLifecycle,
     getSettings: () => settings,
     // Consulted only by post-startup commits, after the loader below exists.
     canCompleteInvalidations: (): boolean => sessionMetadata.hasLoadedAll && !options.isUnloading(),

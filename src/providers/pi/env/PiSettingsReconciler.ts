@@ -122,16 +122,16 @@ export const piSettingsReconciler = {
       return { changed: false, invalidatedConversations: [] };
     }
     const current = computePiFingerprints(envText, cliPathInputs);
-    const { changed, invalidatesSessions } = compareScopedRuntimeInputFingerprints({
-      runtime: savedHash,
-      // A blank runtime fingerprint is saved only while no input is configured, so its session scope is known.
-      session: savedHash ? piSettings.sessionEnvironmentHash : computePiSessionFingerprint(''),
-    }, current);
+    const { changed, sessionPolicy } = compareScopedRuntimeInputFingerprints(
+      { environmentHash: savedHash, sessionEnvironmentHash: piSettings.sessionEnvironmentHash },
+      current,
+      computePiSessionFingerprint(''),
+    );
     if (!changed) {
       return { changed: false, invalidatedConversations: [] };
     }
 
-    const invalidatedConversations = invalidatesSessions
+    const invalidatedConversations = sessionPolicy === 'invalidate'
       ? invalidatePiConversationSessions(conversations)
       : [];
 
@@ -139,11 +139,7 @@ export const piSettingsReconciler = {
       environmentHash: current.runtime,
       sessionEnvironmentHash: current.session,
     });
-    return {
-      changed: true,
-      invalidatedConversations,
-      sessionPolicy: invalidatesSessions ? 'invalidate' : 'reload',
-    };
+    return { changed: true, invalidatedConversations, sessionPolicy };
   },
 
   normalizeModelVariantSettings(settings: Record<string, unknown>): boolean {

@@ -1,3 +1,4 @@
+import type { ProviderExecutionLifecycleRegistry } from '@/core/execution/ProviderExecutionLifecycleRegistry';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator, type SettingsReconciliationResult } from '@/core/providers/ProviderSettingsCoordinator';
 import type { ProviderId } from '@/core/providers/types';
@@ -9,6 +10,8 @@ import { type SettingsCoordinator, type SettingsMutation, SettingsPostCommitErro
 interface RuntimeSettingsCoordinatorOptions {
   readonly settings: SettingsCoordinator<ClaudianSettings>;
   readonly conversations: Pick<ConversationRepository, 'invalidateProviderSessions' | 'persistProviderSessionInvalidations'>;
+  /** Learns which providers' sessions a transition's change invalidated, so preserved sessions follow their bindings. */
+  readonly executionLifecycle: Pick<ProviderExecutionLifecycleRegistry, 'markSessionsInvalidated'>;
   readonly getSettings: () => ClaudianSettings;
   readonly canCompleteInvalidations: () => boolean;
 }
@@ -227,6 +230,7 @@ export class RuntimeSettingsCoordinator {
         this.commitPendingSessionInvalidations(invalidationGenerations);
         this.blockEnvironmentInvalidationCompletion(invalidationGenerations);
         this.options.conversations.invalidateProviderSessions(reconciliation.sessionInvalidationProviderIds);
+        this.options.executionLifecycle.markSessionsInvalidated(reconciliation.sessionInvalidationProviderIds);
         invalidationPublished = true;
       });
       settingsCommitted = true;

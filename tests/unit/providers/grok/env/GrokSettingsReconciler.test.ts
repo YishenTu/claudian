@@ -74,7 +74,6 @@ describe('GrokSettingsReconciler', () => {
       sessionId: 'session-1',
     } as unknown as Conversation;
 
-    expect(grokSettingsReconciler.environmentSessionPolicy).toBe('reload');
     expect(grokSettingsReconciler.invalidateConversationSessions([grokConversation]))
       .toEqual([]);
     expect(grokConversation).toEqual(expect.objectContaining({
@@ -133,7 +132,7 @@ describe('GrokSettingsReconciler', () => {
       [grokConversation, otherConversation],
     );
 
-    expect(result).toEqual({ changed: true, invalidatedConversations: [] });
+    expect(result).toEqual({ changed: true, invalidatedConversations: [], sessionPolicy: 'reload' });
     expect(getGrokProviderSettings(settings).catalogsByHost).toEqual({
       'current-host': catalog('current-model'),
       'other-host': catalog('other-model'),

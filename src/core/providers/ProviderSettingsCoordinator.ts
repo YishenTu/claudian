@@ -439,7 +439,7 @@ export class ProviderSettingsCoordinator {
       if (changed) {
         anyChanged = true;
         environmentChangedProviderIds.push(providerId);
-        if ((sessionPolicy ?? reconciler.environmentSessionPolicy ?? 'invalidate') === 'invalidate') {
+        if ((sessionPolicy ?? 'invalidate') === 'invalidate') {
           sessionInvalidationProviderIds.push(providerId);
         }
         this.persistProjectedProviderState(targetSettings, providerId);

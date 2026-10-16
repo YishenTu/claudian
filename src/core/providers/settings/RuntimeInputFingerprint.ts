@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { parseEnvironmentVariables } from '@/core/process/env';
+import type { ProviderEnvironmentSessionPolicy } from '@/core/providers/types';
 
 export const RUNTIME_INPUT_FINGERPRINT_VERSION = 1;
 
@@ -51,24 +52,36 @@ export interface ScopedRuntimeInputFingerprints {
   session: string;
 }
 
-export interface RuntimeInputFingerprintChange {
+/** The provider's persisted `environmentHash` and `sessionEnvironmentHash`. */
+export interface SavedScopedRuntimeInputFingerprints {
+  readonly environmentHash: string;
+  readonly sessionEnvironmentHash: string;
+}
+
+export interface ScopedRuntimeInputChange {
   changed: boolean;
-  invalidatesSessions: boolean;
+  /** Meaningful only when changed: what the change does to conversation bindings. */
+  sessionPolicy: ProviderEnvironmentSessionPolicy;
 }
 
 /**
- * Compares saved and current scoped fingerprints. A blank saved session fingerprint
- * predates the split: it is backfilled while runtime inputs are unchanged, and any
- * runtime change is treated as session-affecting because its scope is unknown.
+ * The scoped-fingerprint protocol shared by providers. A blank runtime fingerprint is saved
+ * only while no input is configured, so it compares against `emptySessionFingerprint`. A blank
+ * session fingerprint beside a saved runtime predates the split: it is backfilled while runtime
+ * inputs are unchanged, and any runtime change invalidates because its scope is unknown.
+ * Callers persist `current` as the new saved fingerprints when the result is changed.
  */
 export function compareScopedRuntimeInputFingerprints(
-  saved: ScopedRuntimeInputFingerprints,
+  saved: SavedScopedRuntimeInputFingerprints,
   current: ScopedRuntimeInputFingerprints,
-): RuntimeInputFingerprintChange {
-  const runtimeChanged = saved.runtime !== current.runtime;
-  const sessionChanged = saved.session !== current.session;
+  emptySessionFingerprint: string,
+): ScopedRuntimeInputChange {
+  const savedSession = saved.environmentHash ? saved.sessionEnvironmentHash : emptySessionFingerprint;
+  const runtimeChanged = saved.environmentHash !== current.runtime;
+  const sessionChanged = savedSession !== current.session;
+  const invalidatesSessions = sessionChanged && (savedSession !== '' || runtimeChanged);
   return {
     changed: runtimeChanged || sessionChanged,
-    invalidatesSessions: sessionChanged && (saved.session !== '' || runtimeChanged),
+    sessionPolicy: invalidatesSessions ? 'invalidate' : 'reload',
   };
 }

@@ -797,14 +797,12 @@ describe('ClaudianPlugin', () => {
       );
       const claudeReconciler = ProviderRegistry.getSettingsReconciler('claude');
       const reconcileSpy = jest.spyOn(claudeReconciler, 'reconcileModelWithEnvironment')
-        .mockReturnValue({ changed: true, invalidatedConversations: [] });
-      claudeReconciler.environmentSessionPolicy = 'reload';
+        .mockReturnValue({ changed: true, invalidatedConversations: [], sessionPolicy: 'reload' });
 
       try {
         await plugin.onload();
         await (plugin as any).sessionMetadata.loadRemaining();
       } finally {
-        delete claudeReconciler.environmentSessionPolicy;
         reconcileSpy.mockRestore();
         loadSpy.mockRestore();
         listSpy.mockRestore();
@@ -2384,8 +2382,7 @@ describe('ClaudianPlugin', () => {
 
       const claudeReconciler = ProviderRegistry.getSettingsReconciler('claude');
       const reconcileSpy = jest.spyOn(claudeReconciler, 'reconcileModelWithEnvironment')
-        .mockReturnValue({ changed: true, invalidatedConversations: [] });
-      claudeReconciler.environmentSessionPolicy = 'reload';
+        .mockReturnValue({ changed: true, invalidatedConversations: [], sessionPolicy: 'reload' });
       const stagePendingSpy = jest.spyOn(runtimeSettingsOf(plugin), 'stagePendingSessionInvalidations');
       const getTabManager = jest.fn();
       const mockView = {
@@ -2404,7 +2401,6 @@ describe('ClaudianPlugin', () => {
           ].join('\n'),
         );
       } finally {
-        delete claudeReconciler.environmentSessionPolicy;
         reconcileSpy.mockRestore();
       }
 

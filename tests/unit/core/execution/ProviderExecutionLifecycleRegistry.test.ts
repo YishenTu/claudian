@@ -138,6 +138,33 @@ it('invalidates retained leases when the transition disables their provider', as
   await registry.dispose();
 });
 
+it('tells preservation hooks whether the transition invalidated their provider\'s sessions', async () => {
+  const registry = new ProviderExecutionLifecycleRegistry();
+  const backend = new TestBackend('shared-provider');
+  const decisions: boolean[] = [];
+  registry.registerTransitionHook('shared-provider', {
+    preserveSessions: (_session, { sessionsInvalidated }) => {
+      decisions.push(sessionsInvalidated);
+      return !sessionsInvalidated;
+    },
+    beforeTransition: () => undefined,
+  });
+  const lease = registry.acquire(backend, createSessionConfig(), 'chat');
+
+  await registry.runTransition(['shared-provider'], async () => {
+    registry.markSessionsInvalidated(['shared-provider']);
+  });
+  expect(decisions).toEqual([false, true]);
+  expect(lease.isCurrent()).toBe(false);
+  expect(backend.sessions[0].disposeCalls).toBe(1);
+
+  // The fact belongs to one transition; the next one starts without it.
+  const next = registry.acquire(backend, createSessionConfig(), 'chat');
+  await registry.runTransition(['shared-provider'], async () => undefined);
+  expect(next.isCurrent()).toBe(true);
+  await registry.dispose();
+});
+
 function createSessionConfig(
   lifecycle: ProviderSessionConfig['lifecycle'] = 'persistent',
 ): ProviderSessionConfig {

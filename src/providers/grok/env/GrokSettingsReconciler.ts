@@ -31,8 +31,6 @@ export function computeGrokEnvironmentHash(settings: Record<string, unknown>): s
 }
 
 export const grokSettingsReconciler: ProviderSettingsReconciler = {
-  environmentSessionPolicy: 'reload',
-
   invalidateConversationSessions: () => [],
 
   reconcileModelWithEnvironment(settings) {
@@ -46,7 +44,8 @@ export const grokSettingsReconciler: ProviderSettingsReconciler = {
     }
 
     updateGrokProviderSettings(settings, { environmentHash });
-    return { changed: true, invalidatedConversations: [] };
+    // Grok sessions resume across environment changes.
+    return { changed: true, invalidatedConversations: [], sessionPolicy: 'reload' };
   },
 
   normalizeModelVariantSettings(settings): boolean {

@@ -80,13 +80,18 @@ describe('RuntimeInputFingerprint', () => {
   });
 
   it.each([
-    ['unchanged inputs', { runtime: 'r1', session: 's1' }, { runtime: 'r1', session: 's1' }, false, false],
-    ['a launch-only change', { runtime: 'r1', session: 's1' }, { runtime: 'r2', session: 's1' }, true, false],
-    ['a session-scope change', { runtime: 'r1', session: 's1' }, { runtime: 'r2', session: 's2' }, true, true],
-    ['a pre-split backfill with unchanged runtime', { runtime: 'r1', session: '' }, { runtime: 'r1', session: 's1' }, true, false],
-    ['a pre-split runtime change of unknown scope', { runtime: 'r1', session: '' }, { runtime: 'r2', session: 's1' }, true, true],
-  ])('classifies %s', (_label, saved, current, changed, invalidatesSessions) => {
-    expect(compareScopedRuntimeInputFingerprints(saved, current))
-      .toEqual({ changed, invalidatesSessions });
+    ['unchanged inputs', ['r1', 's1'], ['r1', 's1'], false, 'reload'],
+    ['a launch-only change', ['r1', 's1'], ['r2', 's1'], true, 'reload'],
+    ['a session-scope change', ['r1', 's1'], ['r2', 's2'], true, 'invalidate'],
+    ['a pre-split backfill with unchanged runtime', ['r1', ''], ['r1', 's1'], true, 'reload'],
+    ['a pre-split runtime change of unknown scope', ['r1', ''], ['r2', 's1'], true, 'invalidate'],
+    ['a first launch-only input after none was configured', ['', ''], ['r1', 'empty'], true, 'reload'],
+    ['a first session-scope input after none was configured', ['', ''], ['r1', 's1'], true, 'invalidate'],
+  ] as const)('classifies %s', (_label, [environmentHash, sessionEnvironmentHash], [runtime, session], changed, sessionPolicy) => {
+    expect(compareScopedRuntimeInputFingerprints(
+      { environmentHash, sessionEnvironmentHash },
+      { runtime, session },
+      'empty',
+    )).toEqual({ changed, sessionPolicy });
   });
 });

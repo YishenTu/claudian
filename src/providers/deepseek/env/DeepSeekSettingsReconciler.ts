@@ -7,7 +7,6 @@ import type { ProviderSettingsReconciler } from '@/core/providers/types';
 import { getDeepSeekProviderSettings, updateDeepSeekProviderSettings } from '../settings';
 
 export const deepseekSettingsReconciler: ProviderSettingsReconciler = {
-  environmentSessionPolicy: 'reload',
   invalidateConversationSessions: () => [],
   reconcileModelWithEnvironment(settings) {
     const current = getDeepSeekProviderSettings(settings);
@@ -20,6 +19,7 @@ export const deepseekSettingsReconciler: ProviderSettingsReconciler = {
     });
     if (current.environmentHash === environmentHash) return { changed: false, invalidatedConversations: [] };
     updateDeepSeekProviderSettings(settings, { environmentHash });
-    return { changed: true, invalidatedConversations: [] };
+    // DeepSeek sessions resume across environment changes.
+    return { changed: true, invalidatedConversations: [], sessionPolicy: 'reload' };
   },
 };

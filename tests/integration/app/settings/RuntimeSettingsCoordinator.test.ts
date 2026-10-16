@@ -21,6 +21,7 @@ it.each(['persistence', 'publication'] as const)(
       settings: coordinator,
       getSettings: () => settings,
       canCompleteInvalidations: () => true,
+      executionLifecycle: { markSessionsInvalidated: () => undefined },
       conversations: {
         invalidateProviderSessions: () => [],
         persistProviderSessionInvalidations: async () => undefined,

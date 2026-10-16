@@ -56,9 +56,20 @@ type ProviderExecutionTransitionCallback = (
   context: ProviderExecutionTransitionContext,
 ) => void | Promise<void>;
 
+export interface ProviderExecutionPreservationContext {
+  /**
+   * The transition's committed change invalidated this provider's conversation sessions.
+   * Always false before the mutation; the hook is asked again after it.
+   */
+  readonly sessionsInvalidated: boolean;
+}
+
 export type ProviderExecutionTransitionHook = {
   /** Shared-runtime providers fence new work and drain their own native generations. */
-  preserveSessions?(session: ProviderExecutionSession): boolean;
+  preserveSessions?(
+    session: ProviderExecutionSession,
+    context: ProviderExecutionPreservationContext,
+  ): boolean;
 } & (
   {
       beforeTransition: ProviderExecutionTransitionCallback;
@@ -90,6 +101,8 @@ export class ProviderExecutionRegistryDisposedError extends Error {
 interface ProviderLifecycleState {
   generation: number;
   transitionReservations: number;
+  /** Set by the open transition's mutation when it invalidated this provider's sessions. */
+  sessionsInvalidated: boolean;
   readonly leases: Set<ProviderExecutionSessionLeaseImpl>;
   readonly hooks: Set<ProviderExecutionTransitionHook>;
   readonly lock: AsyncLock;
@@ -296,6 +309,7 @@ export class ProviderExecutionLifecycleRegistry {
       }
 
       this.#assertAvailable();
+      for (const { state } of states) state.sessionsInvalidated = false;
 
       const contexts = states.map(({ providerId, state }) => {
         state.generation += 1;
@@ -311,7 +325,9 @@ export class ProviderExecutionLifecycleRegistry {
       let hasResult = false;
       const transitionHooks = states.map(({ state }) => [...state.hooks]);
       const isPreserved = (state: ProviderLifecycleState, lease: ProviderExecutionSessionLeaseImpl) => (
-        [...state.hooks].some(hook => hook.preserveSessions?.(lease.session))
+        [...state.hooks].some(hook => hook.preserveSessions?.(lease.session, {
+          sessionsInvalidated: state.sessionsInvalidated,
+        }))
       );
 
       try {
@@ -382,10 +398,23 @@ export class ProviderExecutionLifecycleRegistry {
     } finally {
       for (const { state } of states) {
         state.transitionReservations -= 1;
+        state.sessionsInvalidated = false;
       }
       for (let index = releaseLocks.length - 1; index >= 0; index -= 1) {
         releaseLocks[index]();
       }
+    }
+  }
+
+  /**
+   * Records that the open transition's committed change invalidated these providers'
+   * conversation sessions, so preservation hooks can end sessions whose bindings it retired.
+   * Outside a transition there are no preserved sessions to decide, so it is a no-op.
+   */
+  markSessionsInvalidated(providerIds: readonly ProviderId[]): void {
+    for (const providerId of providerIds) {
+      const state = this.states.get(providerId);
+      if (state && state.transitionReservations > 0) state.sessionsInvalidated = true;
     }
   }
 
@@ -463,6 +492,7 @@ export class ProviderExecutionLifecycleRegistry {
       state = {
         generation: 0,
         transitionReservations: 0,
+        sessionsInvalidated: false,
         leases: new Set(),
         hooks: new Set(),
         lock: new AsyncLock(),

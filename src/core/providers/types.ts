@@ -103,14 +103,11 @@ export type ProviderEnvironmentSessionPolicy = 'invalidate' | 'reload';
 export interface ProviderEnvironmentReconciliation {
   changed: boolean;
   invalidatedConversations: Conversation[];
-  /** Overrides `environmentSessionPolicy` for this change, e.g. when only launch inputs changed. */
+  /** How this change treats conversation bindings; `invalidate` when omitted. */
   sessionPolicy?: ProviderEnvironmentSessionPolicy;
 }
 
 export interface ProviderSettingsReconciler {
-  /** Default for changes that do not report a `sessionPolicy`; `invalidate` when omitted. */
-  environmentSessionPolicy?: ProviderEnvironmentSessionPolicy;
-
   handleEnvironmentChange?(settings: Record<string, unknown>): boolean;
 
   /**
@@ -122,6 +119,7 @@ export interface ProviderSettingsReconciler {
   /**
    * Whether invalidation deliberately keeps this conversation's binding live (its native
    * store is unaffected), so a session still running for it keeps its execution authority.
+   * `invalidateConversationSessions` must leave exactly these conversations untouched.
    */
   preservesConversationSession?(conversation: Conversation): boolean;
 

@@ -47,6 +47,7 @@ function fixture() {
   const runtimeSettings = new RuntimeSettingsCoordinator({
     settings: new SettingsCoordinator(settings, async () => undefined),
     conversations: repository, getSettings: () => settings, canCompleteInvalidations: () => false,
+    executionLifecycle: new ProviderExecutionLifecycleRegistry(),
   });
   return { conversation, persistence, repository, runtimeSettings };
 }
@@ -316,6 +317,32 @@ test('provider invalidation keeps execution bindings the provider preserved', as
   })).resolves.toBe(true);
   expect(persistence.saveMetadata).toHaveBeenCalledTimes(1);
   await expect(repository.assertConversationExecutionAuthority(preserved.id, 'preserved-binding', 1)).resolves.toBeUndefined();
+});
+
+test('provider invalidation keeps the binding of a shared-runtime first run that has no native session yet', async () => {
+  const { repository, persistence } = fixture();
+  // OpenCode keeps shared-runtime sessions through the transition; a first V2 run has not
+  // captured its database yet, so its binding must stay live with the session.
+  const fresh: Conversation = {
+    id: 'fresh-conversation', providerId: 'opencode', title: 'Fresh',
+    sessionId: null, createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(),
+    messages: [], isPinned: false,
+  };
+  repository.replaceAll([fresh]);
+  repository.registerExecutionBinding(fresh.id, 'first-run', 1);
+
+  expect(repository.invalidateProviderSessions(['opencode'])).toEqual([]);
+
+  await expect(repository.persistExecutionSnapshot(fresh.id, 'first-run', 1, {
+    providerId: 'opencode',
+    revision: 1,
+    status: 'idle',
+    providerSessionId: 'ses_first',
+    providerState: { nativeVersion: 2, databasePath: '/data/opencode/opencode.db', sessionId: 'ses_first' },
+  })).resolves.toBe(true);
+  expect(repository.getSync(fresh.id)?.sessionId).toBe('ses_first');
+  expect(persistence.saveMetadata).toHaveBeenCalledTimes(1);
+  await expect(repository.assertConversationExecutionAuthority(fresh.id, 'first-run', 1)).resolves.toBeUndefined();
 });
 
 test('provider invalidation demotes a snapshot that was admitted but not yet written', async () => {

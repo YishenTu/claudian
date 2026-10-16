@@ -81,9 +81,11 @@ function fixture() {
     } as never,
     onConversationDeleted: async () => undefined,
   });
+  const lifecycle = new ProviderExecutionLifecycleRegistry();
   const runtimeSettings = new RuntimeSettingsCoordinator({
     settings: new SettingsCoordinator(settings, async () => undefined),
     conversations: repository,
+    executionLifecycle: lifecycle,
     getSettings: () => settings,
     canCompleteInvalidations: () => false,
   });
@@ -93,7 +95,7 @@ function fixture() {
     closedConversation('conv-a', 'thread-a', 'Question A', 'Answer A'),
     closedConversation('conv-b', 'thread-b', 'Question B', 'Answer B'),
   ]);
-  return { repository, runtimeSettings, saveMetadata, settings };
+  return { lifecycle, repository, runtimeSettings, saveMetadata, settings };
 }
 
 async function visibleHistory(repository: ConversationRepository, id: string): Promise<string[]> {
@@ -162,8 +164,7 @@ describe('Codex runtime-input changes', () => {
     ['disabling Codex', (codex: Record<string, unknown>) => { codex.enabled = false; }, false, 'thread-a'],
     ['a CLI path change', (codex: Record<string, unknown>) => { codex.cliPath = '/opt/codex/bin/codex'; }, true, 'thread-a'],
   ])('lets a running session outlive %s only when its binding stays valid', async (_change, change, preserved, binding) => {
-    const { repository, runtimeSettings, settings } = fixture();
-    const lifecycle = new ProviderExecutionLifecycleRegistry();
+    const { lifecycle, repository, runtimeSettings, settings } = fixture();
     const workspace = await createCodexWorkspaceServices({
       settings, executionLifecycleRegistry: lifecycle,
     } as unknown as ProviderHost);
@@ -222,12 +223,11 @@ describe('Codex runtime-input changes', () => {
     ['disabling Codex', (codex: Record<string, unknown>) => { codex.enabled = false; }, false, 'thread-a'],
     ['a CLI path change', (codex: Record<string, unknown>) => { codex.cliPath = '/opt/codex/bin/codex'; }, true, 'thread-a'],
   ])('keeps a first thread adopted during %s as history only when its binding was retired', async (_change, change, preserved, binding) => {
-    const { repository, runtimeSettings, settings } = fixture();
+    const { lifecycle, repository, runtimeSettings, settings } = fixture();
     repository.replaceAll(['conv-a', 'conv-b'].map(id => repository.getCachedConversation(id)!).map(conversation => conversation.id === 'conv-a'
       ? { ...conversation, sessionId: null, providerState: undefined, messages: [] }
       : conversation));
     let adoptedThreadId: string | null = null;
-    const lifecycle = new ProviderExecutionLifecycleRegistry();
     const workspace = await createCodexWorkspaceServices({
       settings, executionLifecycleRegistry: lifecycle,
     } as unknown as ProviderHost);
@@ -286,7 +286,7 @@ describe('Codex runtime-input changes', () => {
   });
 
   it('keeps a fork child adopted during an endpoint change as one history segment', async () => {
-    const { repository, runtimeSettings, settings } = fixture();
+    const { lifecycle, repository, runtimeSettings, settings } = fixture();
     const sourcePath = repository.getCachedConversation('conv-a')!.providerState!.sessionFilePath as string;
     const childPath = sourcePath.replace('thread-a.jsonl', 'thread-child.jsonl');
     repository.replaceAll(['conv-a', 'conv-b'].map(id => repository.getCachedConversation(id)!).map(conversation => conversation.id === 'conv-a'
@@ -296,7 +296,6 @@ describe('Codex runtime-input changes', () => {
         }, messages: [] }
       : conversation));
     let adoptedThreadId: string | null = null;
-    const lifecycle = new ProviderExecutionLifecycleRegistry();
     const workspace = await createCodexWorkspaceServices({
       settings, executionLifecycleRegistry: lifecycle,
     } as unknown as ProviderHost);

@@ -199,6 +199,7 @@ export default class ClaudianPlugin extends Plugin {
       defaultSettings: createDefaultClaudianSettings(getBuiltInProviderDefaultConfigs()),
       providers: ProviderRegistry,
       providerSettings: ProviderSettingsCoordinator,
+      executionLifecycle: this.executionLifecycleRegistry,
       deferNonRestoredSessionMetadata: true,
       isUnloading: () => this.isUnloading,
       publishCommittedSettings: async (settings, previous) => this.chatViews.publishSettings(settings, previous),

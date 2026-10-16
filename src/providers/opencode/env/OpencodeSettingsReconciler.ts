@@ -35,10 +35,19 @@ function computeOpencodeRuntimeFingerprint(
   });
 }
 
-/** V2 resumes against its captured database, including while the old launch drains. */
-function preservesOpencodeConversationSession(conversation: Conversation): boolean {
+/**
+ * The one rule for what an environment change keeps: V2 resumes against its captured database,
+ * including while the old launch drains, and a conversation without native state has nothing to
+ * retire (a shared-runtime first run captures its database as it starts). The workspace hook keeps
+ * running sessions by the same rule, so a kept session always keeps its binding.
+ */
+export function preservesOpencodeConversationSession(
+  conversation: Pick<Conversation, 'sessionId' | 'providerState'>,
+): boolean {
   const state = getOpencodeState(conversation.providerState);
-  return state.nativeVersion === 2 && !!state.databasePath && state.databasePath !== ':memory:';
+  if (state.nativeVersion === 2 && !!state.databasePath && state.databasePath !== ':memory:') return true;
+  return !conversation.sessionId && !state.sessionId && !state.forkSource
+    && !state.databasePath && !state.nativeVersion;
 }
 
 function invalidateOpencodeConversationSessions(conversations: Conversation[]): Conversation[] {

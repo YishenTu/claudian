@@ -10,6 +10,7 @@ import {
   compareScopedRuntimeInputFingerprints,
   createRuntimeInputFingerprint,
   isVersionedRuntimeInputFingerprint,
+  type SavedScopedRuntimeInputFingerprints,
   type ScopedRuntimeInputFingerprints,
 } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type {
@@ -96,7 +97,7 @@ function getCodexRuntimeFingerprintState(settings: Record<string, unknown>): {
   environmentText: string;
   hasFingerprintInputs: boolean;
   providerEnabled: boolean;
-  saved: ScopedRuntimeInputFingerprints;
+  saved: SavedScopedRuntimeInputFingerprints;
 } {
   const environmentText = getRuntimeEnvironmentText(settings, 'codex');
   const codexSettings = getCodexProviderSettings(settings);
@@ -122,36 +123,11 @@ function getCodexRuntimeFingerprintState(settings: Record<string, unknown>): {
       || ENV_HASH_KEYS.some(key => Object.prototype.hasOwnProperty.call(environment, key))
     ),
     providerEnabled: codexSettings.enabled,
-    saved: readSavedCodexRuntimeFingerprints(settings),
+    saved: {
+      environmentHash: codexSettings.environmentHash,
+      sessionEnvironmentHash: codexSettings.sessionEnvironmentHash,
+    },
   };
-}
-
-/** The fingerprints recorded by the last reconciliation. */
-export function readSavedCodexRuntimeFingerprints(
-  settings: Record<string, unknown>,
-): ScopedRuntimeInputFingerprints {
-  const codexSettings = getCodexProviderSettings(settings);
-  return {
-    runtime: codexSettings.environmentHash,
-    // A blank runtime fingerprint is saved only while no input is configured, so its session scope is known.
-    session: codexSettings.environmentHash
-      ? codexSettings.sessionEnvironmentHash
-      : computeCodexSessionEnvHash('', {
-        installationMethod: DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod,
-        wslDistroOverride: DEFAULT_CODEX_PROVIDER_SETTINGS.wslDistroOverride,
-      }),
-  };
-}
-
-/** Whether the reconciliations recorded since `before` invalidated Codex thread bindings. */
-export function didCodexRuntimeChangeInvalidateSessions(
-  before: ScopedRuntimeInputFingerprints,
-  settings: Record<string, unknown>,
-): boolean {
-  return compareScopedRuntimeInputFingerprints(
-    before,
-    readSavedCodexRuntimeFingerprints(settings),
-  ).invalidatesSessions;
 }
 
 function invalidateCodexConversationSessions(conversations: Conversation[]): Conversation[] {
@@ -168,15 +144,22 @@ export const codexSettingsReconciler = {
     conversations: Conversation[],
   ): ProviderEnvironmentReconciliation {
     const fingerprint = getCodexRuntimeFingerprintState(settings);
-    if (!fingerprint.saved.runtime && !fingerprint.hasFingerprintInputs) {
+    if (!fingerprint.saved.environmentHash && !fingerprint.hasFingerprintInputs) {
       return { changed: false, invalidatedConversations: [] };
     }
-    const change = compareScopedRuntimeInputFingerprints(fingerprint.saved, fingerprint.current);
-    if (!change.changed) {
+    const { changed, sessionPolicy } = compareScopedRuntimeInputFingerprints(
+      fingerprint.saved,
+      fingerprint.current,
+      computeCodexSessionEnvHash('', {
+        installationMethod: DEFAULT_CODEX_PROVIDER_SETTINGS.installationMethod,
+        wslDistroOverride: DEFAULT_CODEX_PROVIDER_SETTINGS.wslDistroOverride,
+      }),
+    );
+    if (!changed) {
       return { changed: false, invalidatedConversations: [] };
     }
 
-    const invalidatedConversations = change.invalidatesSessions
+    const invalidatedConversations = sessionPolicy === 'invalidate'
       ? invalidateCodexConversationSessions(conversations)
       : [];
 
@@ -190,11 +173,7 @@ export const codexSettingsReconciler = {
       environmentHash: fingerprint.current.runtime,
       sessionEnvironmentHash: fingerprint.current.session,
     });
-    return {
-      changed: true,
-      invalidatedConversations,
-      sessionPolicy: change.invalidatesSessions ? 'invalidate' : 'reload',
-    };
+    return { changed: true, invalidatedConversations, sessionPolicy };
   },
 
   normalizeModelVariantSettings(settings: Record<string, unknown>): boolean {
@@ -207,7 +186,7 @@ export const codexSettingsReconciler = {
       (fingerprint.providerEnabled || fingerprint.hasFingerprintInputs)
       && isCurrentLegacyCodexFingerprint(
         fingerprint.environmentText,
-        fingerprint.saved.runtime,
+        fingerprint.saved.environmentHash,
       )
     ) {
       updateCodexProviderSettings(settings, {
