@@ -3,7 +3,7 @@ import '@/providers';
 import { createHarness as createCoordinator } from '@test/helpers/ChatExecutionHarness';
 import { createFixture } from '@test/helpers/ChatInputHarness';
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
-import { jobsOf, NativePeer, type NativePeerHostOptions, type NativePeerLifecycle, rootFollow } from '@test/helpers/deepseek/NativePeer';
+import { jobsOf, NATIVE_RESET, NativePeer, type NativePeerHostOptions, type NativePeerLifecycle, rootFollow } from '@test/helpers/deepseek/NativePeer';
 import { testDate } from '@test/helpers/testClock';
 
 import { isSteerableExecutionSession, type ProviderExecutionEvent, type ProviderExecutionRequest, type ProviderExecutionSession, type ProviderInteractionPort, type ProviderSessionConfig, type ProviderSessionEvent } from '@/core/execution';
@@ -821,6 +821,208 @@ it('reads missed durable records beyond a reconnect snapshot without replaying i
   expect(peer.calls.filter(c => c.method === 'session/prompt')).toHaveLength(1);
 });
 
+it('fails a conversation whose reconnect replay read fails without stopping the native work the live process keeps', async () => {
+  const jobs = [{ id: 'job', owner: 'root', status: 'running' }];
+  create(); const run = session.execute(request()); const events: ProviderExecutionEvent[] = [];
+  const done = collect(run.events, events);
+  await until(() => peer.calls.some(c => c.method === 'session/prompt'));
+  begin(run.executionId);
+  const ordinaryCall = peer.onCall; const ordinaryOpen = peer.onOpen;
+  const cursor = seq + 5;
+  peer.onCall = (method, args) => method === 'session/page' && args.request.throughSeq === cursor ? NATIVE_RESET : ordinaryCall(method, args);
+  peer.onOpen = (endpoint, args, send) => endpoint === 'session/follow' ? send({ type: 'snapshot', cursor, records: [] })
+    : endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  for (const stream of peer.streams.values()) stream.socket.terminate();
+  await done;
+  expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'transport', recoverable: true, message: 'DeepSeek HTTP transport failed.' });
+  await until(() => session.getStatus() === 'invalidated' && !session.hasBackgroundWork?.());
+  expect(peer.calls.some(c => c.method === 'session/cancel' || c.method === 'job/kill')).toBe(false);
+  expect(lifecycle.disposed).toBe(0);
+});
+
+it('keeps native work when withdrawing a request queued behind a failed automatic turn fails on the transport', async () => {
+  const jobs = [{ id: 'job', owner: 'root', status: 'running' }];
+  const ordinaryOpen = peer.onOpen;
+  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  const ordinaryCall = peer.onCall;
+  peer.onCall = (method, args) => method === 'session/updateQueue' ? NATIVE_RESET : ordinaryCall(method, args);
+  const { events, done } = await queueBehindFailedAutomaticTurn();
+  failAutomatic();
+  await done;
+  expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'transport', recoverable: true, message: 'DeepSeek HTTP transport failed.' });
+  await until(() => session.getStatus() === 'invalidated' && !session.hasBackgroundWork?.());
+  // Only the withdrawal itself reached native; no cleanup removed queued input, cancelled or killed anything.
+  expect(peer.calls.filter(c => c.method === 'session/updateQueue')).toHaveLength(1);
+  expect(peer.calls.some(c => c.method === 'session/cancel' || c.method === 'job/kill')).toBe(false);
+  expect(lifecycle.disposed).toBe(0);
+});
+
+it('keeps native work when withdrawing after a failed automatic turn outwaits Host recovery', async () => {
+  const jobs = [{ id: 'job', owner: 'root', status: 'running' }];
+  const ordinaryOpen = peer.onOpen;
+  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  create();
+  const run = session.execute(request()); const events: ProviderExecutionEvent[] = [];
+  const done = collect(run.events, events);
+  await until(() => peer.calls.some(c => c.method === 'session/prompt'));
+  begin();
+  event('assistant/message', { turn: nativeTurn, step: 0, message: { content: [{ type: 'text', text: 'automatic work' }] } });
+  await until(() => sessionEvents.some(e => e.type === 'background_turn_started'));
+  let recovered = false;
+  const ordinaryCall = peer.onCall;
+  peer.onCall = (method, args) => method === 'session/list' && !recovered ? Promise.reject(new Error('roster unavailable')) : ordinaryCall(method, args);
+  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  const settle = async (): Promise<void> => { for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve)); };
+  try {
+    // The automatic turn fails just before native's heartbeat drops the client, so the withdrawal waits on recovery.
+    failAutomatic();
+    await settle();
+    for (const stream of peer.streams.values()) stream.socket.terminate();
+    for (let elapsed = 0; elapsed < 11_000; elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+    recovered = true;
+    for (let elapsed = 0; elapsed < 6_000; elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+  } finally { jest.useRealTimers(); }
+  await done;
+  expect(events.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true });
+  expect(peer.calls.some(c => c.method === 'session/cancel' || c.method === 'job/kill' || c.method === 'session/updateQueue')).toBe(false);
+  expect(lifecycle.disposed).toBe(0);
+});
+
+it('finishes a Stop requested before its prompt fails on the transport', async () => {
+  let jobs: unknown[] = [];
+  const ordinaryOpen = peer.onOpen;
+  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  let reset!: () => void;
+  const ordinaryCall = peer.onCall;
+  peer.onCall = (method, args) => {
+    if (method === 'session/prompt') return new Promise(resolve => { reset = () => resolve(NATIVE_RESET); });
+    if (method === 'job/kill') { jobs = []; peer.send('job/list', { type: 'rows', jobs }, jobsOf('root')); return { status: 'requested' }; }
+    return ordinaryCall(method, args);
+  };
+  create(); const run = session.execute(request()); const events: ProviderExecutionEvent[] = [];
+  const done = collect(run.events, events);
+  await until(() => !!reset);
+  // Native starts the submitted turn and its job before acknowledging the prompt or echoing the message.
+  nativeTurn++;
+  event('turn/start', { turn: nativeTurn });
+  jobs = [{ id: 'job', owner: 'root', status: 'running' }];
+  peer.send('job/list', { type: 'rows', jobs }, jobsOf('root'));
+  await until(() => !!session.hasBackgroundWork?.());
+  run.cancel();
+  reset();
+  await done;
+  await until(() => session.getStatus() === 'invalidated' && !session.hasBackgroundWork?.());
+  expect(peer.calls.some(c => c.method === 'session/cancel')).toBe(true);
+  expect(peer.calls.some(c => c.method === 'job/kill')).toBe(true);
+  expect(jobs).toEqual([]);
+});
+
+it('fails a message that outwaits Host recovery without stopping earlier native work', async () => {
+  const jobs = [{ id: 'job', owner: 'root', status: 'running' }];
+  const ordinaryOpen = peer.onOpen;
+  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  create(); await completeRequest();
+  expect(session.hasBackgroundWork?.()).toBe(true);
+  let recovered = false;
+  const ordinaryCall = peer.onCall;
+  peer.onCall = (method, args) => method === 'session/list' && !recovered ? Promise.reject(new Error('roster unavailable')) : ordinaryCall(method, args);
+  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  const settle = async (): Promise<void> => { for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve)); };
+  const events: ProviderExecutionEvent[] = [];
+  try {
+    for (const stream of peer.streams.values()) stream.socket.terminate();
+    await settle();
+    const run = session.execute(request('during recovery'));
+    void collect(run.events, events);
+    for (let elapsed = 0; elapsed < 16_000 && !events.some(e => e.type === 'execution_error'); elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+    // Recovery completes while any cleanup would still be waiting for native state.
+    recovered = true;
+    for (let elapsed = 0; elapsed < 6_000; elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+  } finally { jest.useRealTimers(); }
+  expect(events.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true });
+  expect(peer.calls.filter(c => c.method === 'session/prompt')).toHaveLength(1);
+  expect(peer.calls.some(c => c.method === 'session/cancel' || c.method === 'job/kill')).toBe(false);
+  expect(lifecycle.disposed).toBe(0);
+});
+
+it('keeps background work when a request cancelled before sending still holds its slot', async () => {
+  const jobs = [{ id: 'job', owner: 'root', status: 'running' }];
+  const ordinaryOpen = peer.onOpen;
+  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  let acknowledge: (() => void) | undefined;
+  const ordinaryCall = peer.onCall;
+  peer.onCall = (method, args) => {
+    if (method === 'session/prompt' && !acknowledge) return new Promise(resolve => { acknowledge = () => resolve({ accepted: true }); });
+    if (method === '$events/result') return NATIVE_RESET;
+    return ordinaryCall(method, args);
+  };
+  create();
+  const first = session.execute(request()); const firstEvents: ProviderExecutionEvent[] = [];
+  const firstDone = collect(first.events, firstEvents);
+  await until(() => !!acknowledge);
+  // Native runs the turn before acknowledging its prompt, so the finished request keeps the slot.
+  begin(first.executionId); answer('first done'); await firstDone;
+  const second = session.execute(request('second')); const secondEvents: ProviderExecutionEvent[] = [];
+  const secondDone = collect(second.events, secondEvents);
+  second.cancel(); await secondDone;
+  expect(secondEvents.at(-1)?.type).toBe('cancelled');
+  // A subagent's approval is declined without the user; the transport fails that background answer.
+  announceChild('continuable', true);
+  peer.send('$events', { type: 'waterfall', eventId: 'approval', event: 'approval/request', agentId: 'child', request: {} });
+  await until(() => session.getStatus() === 'invalidated' && !session.hasBackgroundWork?.());
+  expect(peer.calls.some(c => c.method === '$events/result')).toBe(true);
+  expect(peer.calls.some(c => c.method === 'session/cancel' || c.method === 'subagents/interruptByParent' || c.method === 'job/kill')).toBe(false);
+  expect(peer.calls.filter(c => c.method === 'session/prompt')).toHaveLength(1);
+  acknowledge!();
+});
+
+it('finishes an explicit Stop whose job cleanup the transport interrupted', async () => {
+  let jobs: unknown[] = [];
+  let kills = 0;
+  const ordinaryOpen = peer.onOpen;
+  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  const ordinaryCall = peer.onCall;
+  peer.onCall = (method, args) => {
+    if (method !== 'job/kill') return ordinaryCall(method, args);
+    if (kills++ === 0) return NATIVE_RESET;
+    jobs = [{ id: 'job', owner: 'root', status: 'killed' }];
+    peer.send('job/list', { type: 'rows', jobs }, jobsOf('root'));
+    return { status: 'requested' };
+  };
+  create(); const run = session.execute(request()); const events: ProviderExecutionEvent[] = [];
+  const done = collect(run.events, events);
+  await until(() => peer.calls.some(c => c.method === 'session/prompt'));
+  begin(run.executionId);
+  jobs = [{ id: 'job', owner: 'root', status: 'running' }];
+  peer.send('job/list', { type: 'rows', jobs }, jobsOf('root'));
+  answer('job started'); await done;
+  expect(session.hasBackgroundWork?.()).toBe(true);
+  session.cancel();
+  await until(() => kills === 2 && !session.hasBackgroundWork?.());
+  expect(jobs).toEqual([{ id: 'job', owner: 'root', status: 'killed' }]);
+  expect(session.getStatus()).toBe('invalidated');
+  expect(lifecycle.disposed).toBe(0);
+});
+
+it('fails the conversation on a transport failure without stopping the native work the live process keeps', async () => {
+  const jobs = [{ id: 'job', owner: 'root', status: 'running' }];
+  const ordinaryOpen = peer.onOpen;
+  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  const ordinaryCall = peer.onCall;
+  peer.onCall = (method, args) => method === '$events/result' ? NATIVE_RESET : ordinaryCall(method, args);
+  port.askUserQuestion = jest.fn(async () => ({ interactionId: 'question', answers: { q: 'Yes' } }));
+  create(); const run = session.execute(request()); const events: ProviderExecutionEvent[] = [];
+  const done = collect(run.events, events);
+  await until(() => peer.calls.some(c => c.method === 'session/prompt'));
+  begin(run.executionId);
+  peer.send('$events', { type: 'waterfall', eventId: 'question', event: 'user-questions/request', agentId: 'root', request: { questions: [{ id: 'q', question: 'Continue?', options: [{ label: 'Yes' }] }] } });
+  await done;
+  expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'transport', recoverable: true, message: 'DeepSeek HTTP transport failed.' });
+  await until(() => session.getStatus() === 'invalidated' && !session.hasBackgroundWork?.());
+  expect(peer.calls.some(c => c.method === 'session/cancel' || c.method === 'job/kill')).toBe(false);
+  expect(lifecycle.disposed).toBe(0);
+});
+
 it('resolves native tool image references inside the owning session', async () => {
   const ordinary = peer.onCall;
   peer.onCall = (method, args) => method === 'session/attachment'
@@ -1189,7 +1391,8 @@ it.each(['root', 'child'])('closes %s background scope on process exit and waits
 });
 
 
-it('stops owned work promptly when a follow failure races a pending child snapshot', async () => {
+/** A bound root with a running job and a continuable child whose follow snapshot native still holds back. */
+async function holdChildSnapshot(): Promise<{ childSnapshot: () => void; rootJobs: unknown[] }> {
   const ordinaryOpen = peer.onOpen;
   let childFollow: ((value: unknown) => void) | undefined;
   let childJobs: ((value: unknown) => void) | undefined;
@@ -1219,12 +1422,28 @@ it('stops owned work promptly when a follow failure races a pending child snapsh
   await until(() => !!childFollow && !!childJobs);
   // The child's jobs precede the failing root frames on the shared stream, so only its snapshot remains to make it ready.
   childJobs!({ type: 'rows', jobs: [] });
+  return { childSnapshot: () => childFollow!({ type: 'snapshot', cursor: 0, records: [] }), rootJobs };
+}
+
+it('fails promptly without stopping owned work when a follow failure races a pending child snapshot', async () => {
+  const { childSnapshot, rootJobs } = await holdChildSnapshot();
   // Root frame processing fails (overlapping turns) while the child's snapshot is still in flight.
   nativeTurn++; event('turn/start', { turn: nativeTurn }); event('turn/start', { turn: nativeTurn + 1 });
   await until(() => session.getStatus() === 'invalidated');
-  childFollow!({ type: 'snapshot', cursor: 0, records: [] });
-  // Readiness waiters must wake on applied frames even while the failed queue is detaching.
+  childSnapshot();
+  // No Stop is in progress, so the failure releases the binding and the live process keeps the root job and child.
+  await until(() => !session.hasBackgroundWork?.());
+  expect(peer.calls.some(c => c.method === 'job/kill' || c.method === 'subagents/interruptByParent' || c.method === 'session/cancel')).toBe(false);
+  expect(rootJobs).toHaveLength(1);
+});
+
+it('stops owned work promptly when closing races a pending child snapshot', async () => {
+  const { childSnapshot } = await holdChildSnapshot();
+  const closed = session.dispose();
+  childSnapshot();
+  // Readiness waiters must wake on applied frames while closing detaches, well before the cleanup deadline.
   await until(() => peer.calls.some(c => c.method === 'job/kill'));
+  await closed;
   expect(peer.calls.filter(c => c.method === 'job/kill')).toMatchObject([{ args: { request: { sessionId: 'root', jobId: 'job' } } }]);
   expect(peer.calls.filter(c => c.method === 'subagents/interruptByParent')).toMatchObject([{ args: { childSessionId: 'child', parentSessionId: 'root', mode: 'continuable' } }]);
 });

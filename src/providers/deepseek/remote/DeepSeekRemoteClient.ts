@@ -73,6 +73,8 @@ export class DeepSeekRemoteClient {
   async connect(signal?: AbortSignal): Promise<void> {
     this.assertLive();
     const generation = ++this.generation;
+    // A superseded socket may still be open, holding native subscriptions; its streams belong to the old generation.
+    this.socket?.terminate(); this.streams.clear();
     const socket = new WebSocket(`${this.origin.replace('http:', 'ws:')}/api/remote.mux`, {
       headers: { Cookie: this.cookie }, maxPayload: MAX_RESPONSE_BYTES,
     });

@@ -313,17 +313,73 @@ it('never hands out a lease on a process that exited while startup was finishing
   } finally { await deepseek.dispose(); }
 });
 
-it('fails attached sessions recoverably and replaces the process when reconnection cannot list sessions', async () => {
+it('keeps one live mux while reconnecting the live process through a roster failure and a socket that drops again', async () => {
   const { deepseek, lifecycle } = peer.host();
   try {
     const lease = await deepseek.attach();
-    const lost = new Promise<[string, Error]>(resolve => lease.onLost((loss, error) => resolve([loss, error])));
-    peer.onCall = method => method === 'session/list' ? Promise.reject(new Error('roster unavailable')) : `${method} answered`;
-    for (const stream of peer.streams.values()) stream.socket.terminate();
-    const [loss, error] = await lost;
+    const losses: string[] = [];
+    lease.onLost(loss => losses.push(loss));
+    const lists = (): number => peer.calls.filter(call => call.method === 'session/list').length;
+    const before = lists();
+    const sockets = openSockets();
+    let drops = 0;
+    lease.client.onDisconnect(() => { drops++; });
+    peer.onCall = async method => {
+      if (method !== 'session/list') return `${method} answered`;
+      if (lists() === before + 1) throw new Error('roster unavailable');
+      if (lists() === before + 2) {
+        // Native's heartbeat terminates a stalled client again after the reconnected socket subscribed to its streams.
+        dropHost();
+        await until(() => drops === 2);
+      }
+      return { items: [] };
+    };
+    dropHost();
+    await until(() => lists() === before + 3);
+    await until(() => [...peer.streams.values()].some(stream => stream.endpoint === 'session/control' && stream.socket.readyState === stream.socket.OPEN));
+    await until(() => openSockets() === sockets);
+    expect(losses).toEqual([]);
+    expect(lifecycle.disposed).toBe(0);
+    lease.release();
+  } finally { await deepseek.dispose(); }
+});
+
+it('retries a failed reconnection of the live process, failing attached sessions and replacing it only when the budget ends', async () => {
+  const { deepseek, lifecycle } = peer.host();
+  try {
+    const lease = await deepseek.attach();
+    const losses: Array<[string, Error]> = [];
+    lease.onLost((loss, error) => losses.push([loss, error]));
+    const lists = (): number => peer.calls.filter(call => call.method === 'session/list').length;
+    let hang = false;
+    let hung = 0;
+    // Late in the budget native stops answering the roster; its request must not outlive the budget.
+    peer.onCall = method => method !== 'session/list' ? `${method} answered`
+      : hang ? (hung++, new Promise<never>(() => {})) : Promise.reject(new Error('roster unavailable'));
+    // The fixture server answers on immediates; reconnection waits and client deadlines run on the fake clock.
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+    dropHost();
+    for (let elapsed = 0; elapsed < 55_000; elapsed += 250) {
+      hang = elapsed >= 50_000;
+      const attempts = lists();
+      jest.advanceTimersByTime(250);
+      for (let turns = 0; lists() === attempts && turns < 50; turns++) await flush();
+    }
+    expect(lists()).toBeGreaterThan(5);
+    // Its own 30-second deadline cannot elapse before the budget ends, so this request is outstanding at expiry.
+    expect(hung).toBe(1);
+    expect(losses).toEqual([]);
+    expect(lifecycle.disposed).toBe(0);
+    jest.advanceTimersByTime(6_000);
+    for (let turns = 0; !losses.length && turns < 1_000; turns++) await flush();
+    jest.useRealTimers();
+    expect(losses).toHaveLength(1);
+    const [[loss, error]] = losses;
     expect(loss).toBe('transport');
     expect(error.message).toMatch(/roster unavailable/);
     await until(() => lifecycle.disposed === 1);
+    // Only the fixture's own client remains: no attempt's socket outlives the process.
+    await until(() => openSockets() === 1);
     lease.release();
     peer.onCall = method => method === 'session/list' ? { items: [] } : `${method} answered`;
     const replacement = await deepseek.attach();
@@ -332,6 +388,16 @@ it('fails attached sessions recoverably and replaces the process when reconnecti
     replacement.release();
   } finally { await deepseek.dispose(); }
 });
+
+/** Native's heartbeat terminating the Host's mux; the fixture's own client keeps its socket. */
+function dropHost(): void {
+  for (const stream of peer.streams.values()) if (stream.endpoint === 'session/control') stream.socket.terminate();
+}
+
+/** Distinct open mux sockets at the native peer, including the fixture's own client. */
+function openSockets(): number {
+  return new Set([...peer.streams.values()].filter(stream => stream.socket.readyState === stream.socket.OPEN).map(stream => stream.socket)).size;
+}
 
 /** Settles every pending microtask continuation. */
 function flush(): Promise<void> {

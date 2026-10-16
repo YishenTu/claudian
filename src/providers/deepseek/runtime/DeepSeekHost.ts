@@ -53,6 +53,8 @@ interface Generation {
   idleTimer?: number;
   retirement?: Promise<void>;
   reconnect?: Promise<void>;
+  /** The socket dropped while a reconnection was in flight, outdating that attempt. */
+  dropped?: boolean;
 }
 
 /** Native reads that never activate a saved session or take its writer. */
@@ -60,7 +62,9 @@ const COLD_METHODS = new Set([
   'session/list', 'session/projections', 'session/page', 'session/attachment',
   'session/modelCatalog', 'skills/list',
 ]);
-const RECONNECT_TIMEOUT_MS = 15_000;
+// Native's heartbeat drops a client that stalls for a few seconds while the live process keeps its work.
+const RECONNECT_BUDGET_MS = 60_000;
+const RECONNECT_BACKOFF_MS = [250, 500, 1_000, 2_000];
 // Covers native MCP discovery during agent composition; a fork still running after it ends with its process.
 const FORK_WATCHDOG_MS = 5 * 60_000;
 
@@ -257,12 +261,43 @@ export class DeepSeekHost {
   }
 
   private reconnect(generation: Generation, process: DeepSeekProcess, roster: DeepSeekRoster): void {
-    if (generation !== this.current || generation.reconnect) return;
-    roster.reset();
-    const signal = AbortSignal.any([generation.abort.signal, AbortSignal.timeout(RECONNECT_TIMEOUT_MS)]);
-    generation.reconnect = process.client.connect(signal).then(() => roster.start())
+    if (generation !== this.current) return;
+    if (generation.reconnect) { generation.dropped = true; return; }
+    generation.reconnect = this.reconnectWithinBudget(generation, process, roster)
       .catch(error => this.lose(generation, 'transport', error instanceof Error ? error : new Error('DeepSeek reconnection failed.')))
       .finally(() => { generation.reconnect = undefined; });
+  }
+
+  /** Retiring would end the live process and all its work, so only a transport that stays down past the budget is lost. */
+  private async reconnectWithinBudget(generation: Generation, process: DeepSeekProcess, roster: DeepSeekRoster): Promise<void> {
+    const budget = new AbortController();
+    const timer = window.setTimeout(() => budget.abort(), RECONNECT_BUDGET_MS);
+    const signal = AbortSignal.any([generation.abort.signal, budget.signal]);
+    let failure: unknown;
+    try {
+      for (let attempt = 0; ; attempt++) {
+        generation.dropped = false;
+        roster.reset();
+        try {
+          await process.client.connect(signal);
+          await roster.start(signal);
+          if (signal.aborted) throw new Error('DeepSeek reconnection timed out.');
+          if (!generation.dropped) return;
+          failure = new Error('DeepSeek event connection closed.');
+        } catch (error) {
+          if (!signal.aborted || failure === undefined) failure = error;
+        }
+        if (signal.aborted) throw failure;
+        await new Promise<void>(resolve => {
+          const done = (): void => { window.clearTimeout(wait); signal.removeEventListener('abort', done); resolve(); };
+          const wait = window.setTimeout(done, RECONNECT_BACKOFF_MS[Math.min(attempt, RECONNECT_BACKOFF_MS.length - 1)]);
+          signal.addEventListener('abort', done, { once: true });
+        });
+        if (signal.aborted) throw failure;
+      }
+    } finally {
+      window.clearTimeout(timer);
+    }
   }
 
   private lose(generation: Generation, loss: DeepSeekHostLoss, error: Error): void {

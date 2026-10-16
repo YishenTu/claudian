@@ -45,7 +45,7 @@ export class DeepSeekRoster {
   get ready(): boolean { return this.listed && this.baselined; }
 
   /** Opens one baseline generation. Call again after the client reconnects. */
-  async start(): Promise<void> {
+  async start(signal?: AbortSignal): Promise<void> {
     this.clear();
     const generation = ++this.generation;
     const pending: unknown[] = [];
@@ -69,7 +69,7 @@ export class DeepSeekRoster {
       } else throw new Error('Malformed DeepSeek control frame.');
       this.changed();
     }, fail));
-    const roster = await this.client.call('session/list', { _request: {} });
+    const roster = await this.client.call('session/list', { _request: {} }, signal ? { signal } : {});
     if (generation !== this.generation) return;
     if (!isRecord(roster) || !Array.isArray(roster.items)) throw new Error('Malformed DeepSeek session roster.');
     for (const item of roster.items) this.upsert(item);

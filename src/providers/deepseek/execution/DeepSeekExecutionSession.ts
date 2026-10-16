@@ -987,7 +987,11 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     this.interactions.dismissAll('cancelled');
   }
 
-  private async fail(error: unknown, category: 'configuration' | 'transport' | 'process-exited' | 'provider-session-missing', stopWork = true): Promise<void> {
+  /**
+   * Failing ends this conversation's binding, never its native work: the live process keeps that work and rebinding
+   * observes it again. Only the user's intent stops work: a Stop still in progress here, or closing the conversation.
+   */
+  private async fail(error: unknown, category: 'configuration' | 'transport' | 'process-exited' | 'provider-session-missing', stopWork = this.stopInProgress()): Promise<void> {
     if (this.snapshots.status === 'disposed' || this.snapshots.status === 'invalidated') return;
     if (error instanceof DeepSeekReplayError) this.reloadError = error;
     const message = error instanceof Error ? error.message : 'DeepSeek execution failed.';
@@ -995,8 +999,13 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     this.snapshots.invalidate({ reason: category === 'process-exited' ? 'process-exited' : category === 'provider-session-missing' ? 'provider-session-missing' : 'transport-closed', recoverable: true, message });
     this.snapshots.emit({ type: 'session_error', category, message, recoverable: true });
     this.interactions.dismissAll('native-rejected');
-    // The shared Host stays up for other conversations; stop this one's native work when still observable.
     await this.detach(stopWork);
+  }
+
+  /** A background Stop, or a Stop of the requested run that has not ended; a cancelled request that already ended authorizes nothing. */
+  private stopInProgress(): boolean {
+    const channel = this.requested?.channel;
+    return !!this.stopTask || (!!channel && channel.isCancellationRequested && !channel.isTerminal);
   }
 
   private detach(stopWork: boolean): Promise<void> {

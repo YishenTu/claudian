@@ -31,6 +31,9 @@ export interface NativePeerLifecycle {
   exit(): void;
 }
 
+/** Returned from `onCall` to reset the HTTP connection instead of answering, as a dropped loopback transport does. */
+export const NATIVE_RESET = Symbol('native transport reset');
+
 /** Selects one session-scoped stream by its open arguments. */
 export type NativeStreamTarget = (args: Record<string, any>) => boolean;
 /** The follow stream of a root session. */
@@ -67,7 +70,7 @@ export class NativePeer {
       this.calls.push({ method: frame.method, args });
       response.on('close', () => { if (!response.writableEnded) this.abandoned.push(frame.method); });
       void Promise.resolve().then(() => this.onCall(frame.method, args)).then(
-        value => response.end(JSON.stringify({ rpcId: frame.rpcId, result: { ok: true, value } })),
+        value => value === NATIVE_RESET ? request.socket.destroy() : response.end(JSON.stringify({ rpcId: frame.rpcId, result: { ok: true, value } })),
         error => response.end(JSON.stringify({ rpcId: frame.rpcId, result: { ok: false, error: { message: String(error), ...(error && typeof error.code === 'string' ? { code: error.code } : {}) } } })),
       );
     });
