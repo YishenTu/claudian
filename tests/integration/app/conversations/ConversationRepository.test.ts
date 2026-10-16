@@ -288,6 +288,30 @@ test('provider invalidation rejects later snapshots from an execution binding th
   expect(repository.getSync(conversation.id)?.sessionId).toBe('native-replacement');
 });
 
+test('provider invalidation keeps execution bindings the provider preserved', async () => {
+  const { repository, persistence } = fixture();
+  // OpenCode V2 keeps sessions bound to a persistent native database across runtime changes.
+  const preserved: Conversation = {
+    id: 'preserved-conversation', providerId: 'opencode', title: 'Preserved',
+    sessionId: 'ses_preserved', createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(),
+    messages: [], isPinned: false,
+    providerState: { nativeVersion: 2, databasePath: '/data/opencode/opencode.db', sessionId: 'ses_preserved' },
+  };
+  repository.replaceAll([preserved]);
+  repository.registerExecutionBinding(preserved.id, 'preserved-binding', 1);
+
+  expect(repository.invalidateProviderSessions(['opencode'])).toEqual([]);
+
+  await expect(repository.persistExecutionSnapshot(preserved.id, 'preserved-binding', 1, {
+    providerId: 'opencode',
+    revision: 1,
+    status: 'idle',
+    providerSessionId: 'ses_preserved',
+  })).resolves.toBe(true);
+  expect(persistence.saveMetadata).toHaveBeenCalledTimes(1);
+  await expect(repository.assertConversationExecutionAuthority(preserved.id, 'preserved-binding', 1)).resolves.toBeUndefined();
+});
+
 test('provider invalidation drops a snapshot that was admitted but not yet written', async () => {
   const { repository, persistence, conversation } = fixture();
   repository.registerExecutionBinding(conversation.id, 'surviving-binding', 1);

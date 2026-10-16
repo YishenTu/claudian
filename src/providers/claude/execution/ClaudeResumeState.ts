@@ -58,10 +58,13 @@ export class ClaudeResumeState {
       return {};
     }
     const nativeResumeSessionId = this.getNativeResumeSessionId();
+    if (!nativeResumeSessionId) {
+      // A checkpoint without a session (cleared resume state) is invalid native input;
+      // the fresh session receives replayed history instead.
+      return {};
+    }
     return {
-      ...(nativeResumeSessionId
-        ? { sessionId: nativeResumeSessionId }
-        : {}),
+      sessionId: nativeResumeSessionId,
       ...(this.resumeAt ? { resumeAt: this.resumeAt } : {}),
       ...(this.pendingFork ? { fork: true } : {}),
     };

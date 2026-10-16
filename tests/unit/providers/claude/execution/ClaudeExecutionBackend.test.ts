@@ -614,6 +614,28 @@ describe('ClaudeExecutionBackend', () => {
     ]);
   });
 
+  it('starts fresh without a rewind checkpoint once the resume binding was cleared', async () => {
+    // Cleared resume state (#1651): the rewind checkpoint survives, but there is no session to resume.
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'fresh-session' },
+      { type: 'result', subtype: 'success' },
+    ], { appendResult: false });
+    const session = new ClaudeExecutionBackend(createHost())
+      .createSession(createConfig({
+        resumeSeed: {
+          resumeCheckpoint: 'assistant-checkpoint',
+          providerState: { previousProviderSessionIds: ['retired-session'] },
+        },
+      }));
+
+    await collectEvents(session.execute(createRequest()).events);
+
+    const options = sdkMock.getLastOptions();
+    expect(options).not.toHaveProperty('resume');
+    expect(options).not.toHaveProperty('resumeSessionAt');
+    expect(session.getSnapshot().providerSessionId).toBe('fresh-session');
+  });
+
   it('resumes and materializes a pending fork without losing opaque provider state', async () => {
     sdkMock.setMockMessages([
       { type: 'system', subtype: 'init', session_id: 'forked-session' },

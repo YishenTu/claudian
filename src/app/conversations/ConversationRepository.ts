@@ -711,13 +711,13 @@ export class ConversationRepository {
     const drafts = this.conversations
       .filter(conversation => providers.has(conversation.providerId))
       .map(conversation => cloneJSON(conversation));
-    // A session that outlived the transition still holds the retired binding; its later
-    // snapshots must not restore it. The replacement session registers a new binding.
-    for (const draft of drafts) this.executionBindings.close(draft.id);
     const invalidated = this.deps.providerSettings.invalidateConversationSessions(drafts, providerIds);
     return invalidated.flatMap(draft => {
       const conversation = this.#getRecord(draft.id);
       if (!conversation) return [];
+      // A session that outlived the transition still holds the retired binding; its later
+      // snapshots must not restore it. Bindings the provider preserved stay open.
+      this.executionBindings.close(draft.id);
       conversation.sessionId = draft.sessionId;
       conversation.providerState = draft.providerState;
       conversation.resumeAtMessageId = draft.resumeAtMessageId;
