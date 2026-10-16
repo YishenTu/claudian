@@ -261,7 +261,7 @@ test('provider invalidation fences session fields while preserving the rest of a
   expect(persistence.saveMetadata.mock.calls.at(-1)?.[0]).toMatchObject({ title: 'Renamed', sessionId: null });
 });
 
-test('provider invalidation rejects later snapshots from an execution binding that survived it', async () => {
+test('provider invalidation demotes later snapshots from an execution binding that survived it', async () => {
   const { repository, persistence, conversation } = fixture();
   repository.registerExecutionBinding(conversation.id, 'surviving-binding', 1);
   // An open binding belongs to a session that kept running through the transition (e.g. a preserved Codex turn).
@@ -272,10 +272,16 @@ test('provider invalidation rejects later snapshots from an execution binding th
     providerId: 'claude',
     revision: 1,
     status: 'idle',
-    providerSessionId: 'native-shared',
-  })).resolves.toBe(false);
-  expect(repository.getSync(conversation.id)?.sessionId).toBeNull();
-  expect(persistence.saveMetadata).toHaveBeenCalledTimes(writes);
+    providerSessionId: 'native-late',
+  })).resolves.toBe(true);
+  // The late session stays readable as history but never becomes the live binding.
+  expect(repository.getSync(conversation.id)).toMatchObject({
+    sessionId: null,
+    providerState: { previousProviderSessionIds: ['native-shared', 'native-late'] },
+  });
+  expect(persistence.saveMetadata).toHaveBeenCalledTimes(writes + 1);
+  await expect(repository.assertConversationExecutionAuthority(conversation.id, 'surviving-binding', 1))
+    .rejects.toThrow('no longer available');
 
   // The replacement session can still bind and persist.
   repository.registerExecutionBinding(conversation.id, 'replacement-binding', 2);
@@ -312,7 +318,7 @@ test('provider invalidation keeps execution bindings the provider preserved', as
   await expect(repository.assertConversationExecutionAuthority(preserved.id, 'preserved-binding', 1)).resolves.toBeUndefined();
 });
 
-test('provider invalidation drops a snapshot that was admitted but not yet written', async () => {
+test('provider invalidation demotes a snapshot that was admitted but not yet written', async () => {
   const { repository, persistence, conversation } = fixture();
   repository.registerExecutionBinding(conversation.id, 'surviving-binding', 1);
   let finishWrite!: () => void;
@@ -323,15 +329,20 @@ test('provider invalidation drops a snapshot that was admitted but not yet writt
     providerId: 'claude',
     revision: 1,
     status: 'idle',
-    providerSessionId: 'native-shared',
+    providerSessionId: 'native-late',
   });
   const invalidation = repository.persistConversations(repository.invalidateProviderSessions(['claude']));
   finishWrite();
   await Promise.all([rename, invalidation]);
 
-  await expect(lateSnapshot).resolves.toBe(false);
-  expect(repository.getSync(conversation.id)).toMatchObject({ title: 'Renamed', sessionId: null });
-  expect(persistence.saveMetadata.mock.calls.at(-1)?.[0]).toMatchObject({ sessionId: null });
+  await expect(lateSnapshot).resolves.toBe(true);
+  const historyOnly = {
+    title: 'Renamed',
+    sessionId: null,
+    providerState: { previousProviderSessionIds: ['native-shared', 'native-late'] },
+  };
+  expect(repository.getSync(conversation.id)).toMatchObject(historyOnly);
+  expect(persistence.saveMetadata.mock.calls.at(-1)?.[0]).toMatchObject(historyOnly);
 });
 
 test('a missing-session check waits for an already-admitted binding write', async () => {

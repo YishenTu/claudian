@@ -479,6 +479,11 @@ export class ProviderSettingsCoordinator {
     return invalidatedConversations;
   }
 
+  static preservesConversationSession(conversation: Conversation): boolean {
+    return ProviderRegistry.getSettingsReconciler(conversation.providerId)
+      .preservesConversationSession?.(conversation) ?? false;
+  }
+
   static normalizeAllModelVariants(settings: Record<string, unknown>): boolean {
     let anyChanged = false;
     const settingsProvider = getSettingsProviderId(settings);

@@ -32,6 +32,7 @@ export type StartupProviderSettings = Pick<
   typeof ProviderSettingsCoordinator,
   | 'getProviderSettingsSnapshot'
   | 'invalidateConversationSessions'
+  | 'preservesConversationSession'
   | 'normalizeAllModelVariants'
   | 'normalizeProviderSelection'
   | 'persistProjectedProviderState'

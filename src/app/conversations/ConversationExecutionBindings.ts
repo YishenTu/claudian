@@ -9,6 +9,8 @@ export interface ExecutionBindingState {
   readonly providerId: ProviderId;
   readonly providerGeneration: number;
   closed: boolean;
+  /** Ended by session invalidation: later snapshots keep their history but never bind. */
+  retired: boolean;
   latestSnapshot: ProviderSessionSnapshot | null;
   lastPersistedRevision: number;
 }
@@ -19,6 +21,8 @@ export interface ConversationExecutionBindingsDeps {
   isTransientDeletionBinding(conversationId: string, binding: ExecutionBindingState): boolean;
   /** A fresh native session supersedes any pending historical model recovery. */
   discardModelRecovery(conversation: Conversation): void;
+  /** Applies provider session invalidation, turning a native binding into history-only state. */
+  invalidateSession(conversation: Conversation): void;
 }
 
 /**
@@ -59,6 +63,7 @@ export class ConversationExecutionBindings {
       providerId: conversation.providerId,
       providerGeneration,
       closed: false,
+      retired: false,
       latestSnapshot: null,
       lastPersistedRevision: -1,
     });
@@ -82,7 +87,7 @@ export class ConversationExecutionBindings {
       || (!conversation && !isTransientDeletionBinding)
       || binding.bindingId !== bindingId
       || binding.providerGeneration !== providerGeneration
-      || binding.closed
+      || (binding.closed && !binding.retired)
       || snapshot.providerId !== binding.providerId
       || snapshot.revision < (binding.latestSnapshot?.revision ?? -1)
       || snapshot.revision <= binding.lastPersistedRevision
@@ -127,12 +132,15 @@ export class ConversationExecutionBindings {
     );
   }
 
-  /** Retires whichever binding owns the conversation: later and still-queued snapshots are dropped. */
-  close(conversationId: string): void {
+  /**
+   * Ends the binding's execution authority after its session was invalidated. Its later and
+   * still-queued snapshots are applied as invalidated, keeping their history but never binding.
+   */
+  retire(conversationId: string): void {
     const binding = this.bindings.get(conversationId);
     if (!binding) return;
     binding.closed = true;
-    binding.latestSnapshot = null;
+    binding.retired = true;
   }
 
   release(
@@ -189,6 +197,7 @@ export class ConversationExecutionBindings {
 
       const latest = binding.latestSnapshot;
       this.#applySnapshot(current, latest);
+      if (binding.retired) this.deps.invalidateSession(current);
       await fence.writeMetadata(current);
       binding.lastPersistedRevision = latest.revision;
       return true;

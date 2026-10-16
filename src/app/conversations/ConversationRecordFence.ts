@@ -12,7 +12,7 @@ export type ConversationProviderCatalog = Pick<
 /** Provider settings policy the conversation repository depends on. */
 export type ConversationProviderSettings = Pick<
   typeof ProviderSettingsCoordinator,
-  'getProviderSettingsSnapshot' | 'invalidateConversationSessions'
+  'getProviderSettingsSnapshot' | 'invalidateConversationSessions' | 'preservesConversationSession'
 >;
 
 export interface ConversationMetadataWriteOptions {

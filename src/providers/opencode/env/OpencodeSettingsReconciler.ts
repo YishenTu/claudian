@@ -35,16 +35,16 @@ function computeOpencodeRuntimeFingerprint(
   });
 }
 
+/** V2 resumes against its captured database, including while the old launch drains. */
+function preservesOpencodeConversationSession(conversation: Conversation): boolean {
+  const state = getOpencodeState(conversation.providerState);
+  return state.nativeVersion === 2 && !!state.databasePath && state.databasePath !== ':memory:';
+}
+
 function invalidateOpencodeConversationSessions(conversations: Conversation[]): Conversation[] {
   const invalidatedConversations: Conversation[] = [];
   for (const conversation of conversations) {
-    if (conversation.providerId !== 'opencode') {
-      continue;
-    }
-
-    const state = getOpencodeState(conversation.providerState);
-    // V2 resumes against its captured database, including while the old launch drains.
-    if (state.nativeVersion === 2 && state.databasePath && state.databasePath !== ':memory:') {
+    if (conversation.providerId !== 'opencode' || preservesOpencodeConversationSession(conversation)) {
       continue;
     }
     if (clearOpencodeResumeState(conversation, { releaseDatabase: true })) {
@@ -57,6 +57,8 @@ function invalidateOpencodeConversationSessions(conversations: Conversation[]): 
 export const opencodeSettingsReconciler = {
 
   invalidateConversationSessions: invalidateOpencodeConversationSessions,
+
+  preservesConversationSession: preservesOpencodeConversationSession,
 
   reconcileModelWithEnvironment(
     settings: Record<string, unknown>,

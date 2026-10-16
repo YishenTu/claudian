@@ -119,6 +119,12 @@ export interface ProviderSettingsReconciler {
    */
   invalidateConversationSessions(conversations: Conversation[]): Conversation[];
 
+  /**
+   * Whether invalidation deliberately keeps this conversation's binding live (its native
+   * store is unaffected), so a session still running for it keeps its execution authority.
+   */
+  preservesConversationSession?(conversation: Conversation): boolean;
+
   reconcileModelWithEnvironment(
     settings: Record<string, unknown>,
     conversations: Conversation[],
