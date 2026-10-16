@@ -18,6 +18,9 @@ export interface TabBarCallbacks {
   /** Called when a tab is closed from its menu or by middle click. */
   onTabClose: (tabId: TabId) => void;
 
+  /** Called when a tab is dropped before or after another tab. */
+  onTabMove?: (tabId: TabId, targetTabId: TabId, after: boolean) => void;
+
   /** Called when the user renames a tab (a normalized label) or resets its name (null). */
   onTabLabelChange: (tabId: TabId, label: string | null) => void;
 
@@ -51,6 +54,8 @@ export class TabBar {
   private items: TabBarItem[] = [];
   private badgeEls = new Map<TabId, HTMLElement>();
   private labelEditor: TabLabelEditor | null = null;
+  private draggedTabId: TabId | null = null;
+  private dropTargetEl: HTMLElement | null = null;
   private lastKnownScrollLeft = 0;
   private readonly handleScroll = (): void => {
     this.captureScrollPosition();
@@ -198,6 +203,32 @@ export class TabBar {
     // Callers move the badge into place.
     const badgeEl = this.containerEl.createEl('button', { attr: { type: 'button' } });
 
+    badgeEl.addEventListener('dragstart', (event) => {
+      if (!this.#findItem(tabId) || this.items.length < 2) {
+        event.preventDefault();
+        return;
+      }
+      this.draggedTabId = tabId;
+      event.dataTransfer?.setData('text/plain', tabId);
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+    });
+    badgeEl.addEventListener('dragover', (event) => {
+      if (!this.draggedTabId || this.draggedTabId === tabId || !this.#findItem(tabId)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+      this.#showDropTarget(badgeEl, event);
+    });
+    badgeEl.addEventListener('drop', (event) => {
+      if (!this.draggedTabId || this.draggedTabId === tabId || !this.#findItem(tabId)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const draggedTabId = this.draggedTabId;
+      const after = this.#isAfterMidpoint(badgeEl, event);
+      this.#clearDragState();
+      this.callbacks.onTabMove?.(draggedTabId, tabId, after);
+    });
+    badgeEl.addEventListener('dragend', () => this.#clearDragState());
+
     badgeEl.addEventListener('click', () => {
       this.captureScrollPosition();
       this.callbacks.onTabClick(tabId);
@@ -228,6 +259,28 @@ export class TabBar {
     return badgeEl;
   }
 
+  #isAfterMidpoint(badgeEl: HTMLElement, event: DragEvent): boolean {
+    const rect = badgeEl.getBoundingClientRect();
+    return event.clientX >= rect.left + rect.width / 2;
+  }
+
+  #showDropTarget(badgeEl: HTMLElement, event: DragEvent): void {
+    this.#clearDropTarget();
+    this.dropTargetEl = badgeEl;
+    badgeEl.addClass(this.#isAfterMidpoint(badgeEl, event)
+      ? 'claudian-tab-badge-drop-after' : 'claudian-tab-badge-drop-before');
+  }
+
+  #clearDropTarget(): void {
+    this.dropTargetEl?.removeClass('claudian-tab-badge-drop-before', 'claudian-tab-badge-drop-after');
+    this.dropTargetEl = null;
+  }
+
+  #clearDragState(): void {
+    this.#clearDropTarget();
+    this.draggedTabId = null;
+  }
+
   #findItem(tabId: TabId): TabBarItem | undefined {
     return this.items.find(candidate => candidate.id === tabId);
   }
@@ -249,6 +302,7 @@ export class TabBar {
     }
 
     badgeEl.className = `claudian-tab-badge ${stateClass}`;
+    badgeEl.draggable = this.items.length > 1;
     this.#applyBadgeDisplay(badgeEl, item);
   }
 
