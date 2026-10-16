@@ -821,6 +821,22 @@ it('reads missed durable records beyond a reconnect snapshot without replaying i
   expect(peer.calls.filter(c => c.method === 'session/prompt')).toHaveLength(1);
 });
 
+/** Answers every job stream with the current rows; other streams keep their ordinary handling. */
+function serveJobs(rows: () => readonly unknown[]): void {
+  const ordinaryOpen = peer.onOpen;
+  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs: rows() }) : ordinaryOpen(endpoint, args, send);
+}
+
+/** Lets fixture I/O answered on immediates settle. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve));
+}
+
+/** Drives the fake clock in 250 ms steps for up to `ms`, or until `done` holds, settling fixture I/O after each. */
+async function elapse(ms: number, done: () => boolean = () => false): Promise<void> {
+  for (let elapsed = 0; elapsed < ms && !done(); elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+}
+
 it('fails a conversation whose reconnect replay read fails without stopping the native work the live process keeps', async () => {
   const jobs = [{ id: 'job', owner: 'root', status: 'running' }];
   create(); const run = session.execute(request()); const events: ProviderExecutionEvent[] = [];
@@ -843,8 +859,7 @@ it('fails a conversation whose reconnect replay read fails without stopping the 
 
 it('keeps native work when withdrawing a request queued behind a failed automatic turn fails on the transport', async () => {
   const jobs = [{ id: 'job', owner: 'root', status: 'running' }];
-  const ordinaryOpen = peer.onOpen;
-  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  serveJobs(() => jobs);
   const ordinaryCall = peer.onCall;
   peer.onCall = (method, args) => method === 'session/updateQueue' ? NATIVE_RESET : ordinaryCall(method, args);
   const { events, done } = await queueBehindFailedAutomaticTurn();
@@ -861,8 +876,7 @@ it('keeps native work when withdrawing a request queued behind a failed automati
 
 it('keeps native work when withdrawing after a failed automatic turn outwaits Host recovery', async () => {
   const jobs = [{ id: 'job', owner: 'root', status: 'running' }];
-  const ordinaryOpen = peer.onOpen;
-  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  serveJobs(() => jobs);
   create();
   const run = session.execute(request()); const events: ProviderExecutionEvent[] = [];
   const done = collect(run.events, events);
@@ -874,16 +888,15 @@ it('keeps native work when withdrawing after a failed automatic turn outwaits Ho
   const ordinaryCall = peer.onCall;
   peer.onCall = (method, args) => method === 'session/list' && !recovered ? Promise.reject(new Error('roster unavailable')) : ordinaryCall(method, args);
   jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
-  const settle = async (): Promise<void> => { for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve)); };
   try {
     // The automatic turn fails just before native's heartbeat drops the client, so the withdrawal waits on recovery.
     failAutomatic();
     await settle();
     for (const stream of peer.streams.values()) stream.socket.terminate();
-    for (let elapsed = 0; elapsed < 11_000; elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+    await elapse(11_000);
     recovered = true;
     // The withdrawal's deadline resumes with the transport and then expires; native never shows the queued input.
-    for (let elapsed = 0; elapsed < 14_000 && !events.some(e => e.type === 'execution_error'); elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+    await elapse(14_000, () => events.some(e => e.type === 'execution_error'));
   } finally { jest.useRealTimers(); }
   await done;
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true });
@@ -893,8 +906,7 @@ it('keeps native work when withdrawing after a failed automatic turn outwaits Ho
 
 it('finishes a Stop requested before its prompt fails on the transport', async () => {
   let jobs: unknown[] = [];
-  const ordinaryOpen = peer.onOpen;
-  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  serveJobs(() => jobs);
   let reset!: () => void;
   const ordinaryCall = peer.onCall;
   peer.onCall = (method, args) => {
@@ -920,10 +932,9 @@ it('finishes a Stop requested before its prompt fails on the transport', async (
   expect(jobs).toEqual([]);
 });
 
-it('rebinds a send after a retained transport failure without cancelling it', async () => {
+it.each([false, true])('rebinds a send after a retained transport failure without cancelling it (Host lost before rebinding: %s)', async hostLost => {
   const jobs = [{ id: 'job', owner: 'root', status: 'running' }];
-  const ordinaryOpen = peer.onOpen;
-  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  serveJobs(() => jobs);
   let resets = 0;
   const ordinaryCall = peer.onCall;
   peer.onCall = (method, args) => method === '$events/result' && !resets++ ? NATIVE_RESET : ordinaryCall(method, args);
@@ -936,6 +947,8 @@ it('rebinds a send after a retained transport failure without cancelling it', as
   await done;
   await until(() => session.getStatus() === 'invalidated' && !!session.hasBackgroundWork?.());
   const retry = session.execute(request('retry')); const retried: ProviderExecutionEvent[] = [];
+  // The retained binding's process ends after the send is requested but before it rebinds.
+  if (hostLost) lifecycle.exit();
   const retryDone = collect(retry.events, retried);
   await until(() => peer.calls.filter(c => c.method === 'session/prompt').length === 2);
   begin(retry.executionId); answer('resent'); await retryDone;
@@ -948,12 +961,11 @@ it('fails a send whose initial control baseline never arrives instead of waiting
   // A healthy socket that never baselines native control state; no Host recovery is in progress.
   peer.onOpen = (endpoint, args, send) => { if (endpoint !== 'session/control') ordinaryOpen(endpoint, args, send); };
   jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
-  const settle = async (): Promise<void> => { for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve)); };
   const events: ProviderExecutionEvent[] = [];
   try {
     create(); const run = session.execute(request());
     void collect(run.events, events);
-    for (let elapsed = 0; elapsed < 120_000 && !events.some(e => e.type === 'execution_error'); elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+    await elapse(120_000, () => events.some(e => e.type === 'execution_error'));
   } finally { jest.useRealTimers(); }
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true });
   expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(false);
@@ -961,15 +973,13 @@ it('fails a send whose initial control baseline never arrives instead of waiting
 
 it('holds a message sent during a long Host recovery until the transport returns, keeping earlier native work', async () => {
   const jobs = [{ id: 'job', owner: 'root', status: 'running' }];
-  const ordinaryOpen = peer.onOpen;
-  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  serveJobs(() => jobs);
   create(); await completeRequest();
   expect(session.hasBackgroundWork?.()).toBe(true);
   let recovered = false;
   const ordinaryCall = peer.onCall;
   peer.onCall = (method, args) => method === 'session/list' && !recovered ? Promise.reject(new Error('roster unavailable')) : ordinaryCall(method, args);
   jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
-  const settle = async (): Promise<void> => { for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve)); };
   const events: ProviderExecutionEvent[] = [];
   const prompts = (): number => peer.calls.filter(c => c.method === 'session/prompt').length;
   let run!: ReturnType<ProviderExecutionSession['execute']>;
@@ -980,11 +990,11 @@ it('holds a message sent during a long Host recovery until the transport returns
     run = session.execute(request('during recovery'));
     done = collect(run.events, events);
     // Longer than admission's readiness deadline: recovery pauses it.
-    for (let elapsed = 0; elapsed < 20_000; elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+    await elapse(20_000);
     expect(events.some(e => e.type === 'execution_error')).toBe(false);
     expect(prompts()).toBe(1);
     recovered = true;
-    for (let elapsed = 0; elapsed < 6_000 && prompts() < 2; elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+    await elapse(6_000, () => prompts() === 2);
   } finally { jest.useRealTimers(); }
   await until(() => prompts() === 2);
   begin(run.executionId); answer('after recovery'); await done;
@@ -995,8 +1005,7 @@ it('holds a message sent during a long Host recovery until the transport returns
 
 it('finishes a background Stop once a Host recovery longer than its deadline completes', async () => {
   let jobs = [{ id: 'job', owner: 'root', status: 'running' }];
-  const ordinaryOpen = peer.onOpen;
-  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  serveJobs(() => jobs);
   let dropped = false;
   let recovered = false;
   const ordinaryCall = peer.onCall;
@@ -1008,7 +1017,6 @@ it('finishes a background Stop once a Host recovery longer than its deadline com
   create(); await completeRequest();
   expect(session.hasBackgroundWork?.()).toBe(true);
   jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
-  const settle = async (): Promise<void> => { for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve)); };
   const kills = (): number => peer.calls.filter(c => c.method === 'job/kill').length;
   try {
     dropped = true;
@@ -1016,10 +1024,10 @@ it('finishes a background Stop once a Host recovery longer than its deadline com
     await settle();
     session.cancel();
     // Twice Stop's own deadline: recovery pauses it rather than abandoning the job.
-    for (let elapsed = 0; elapsed < 20_000; elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+    await elapse(20_000);
     expect(kills()).toBe(0);
     recovered = true;
-    for (let elapsed = 0; elapsed < 6_000 && !kills(); elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+    await elapse(6_000, () => kills() > 0);
   } finally { jest.useRealTimers(); }
   await until(() => kills() === 1 && !session.hasBackgroundWork?.());
   expect(jobs).toEqual([]);
@@ -1029,8 +1037,7 @@ it('finishes a background Stop once a Host recovery longer than its deadline com
 
 it('keeps background work when a request cancelled before sending still holds its slot', async () => {
   const jobs = [{ id: 'job', owner: 'root', status: 'running' }];
-  const ordinaryOpen = peer.onOpen;
-  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  serveJobs(() => jobs);
   let acknowledge: (() => void) | undefined;
   const ordinaryCall = peer.onCall;
   peer.onCall = (method, args) => {
@@ -1062,8 +1069,7 @@ it('keeps background work when a request cancelled before sending still holds it
 it('finishes an explicit Stop whose job cleanup the transport interrupted', async () => {
   let jobs: unknown[] = [];
   let kills = 0;
-  const ordinaryOpen = peer.onOpen;
-  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  serveJobs(() => jobs);
   const ordinaryCall = peer.onCall;
   peer.onCall = (method, args) => {
     if (method !== 'job/kill') return ordinaryCall(method, args);
@@ -1089,8 +1095,7 @@ it('finishes an explicit Stop whose job cleanup the transport interrupted', asyn
 
 it('fails the conversation on a transport failure without stopping the native work the live process keeps, until it closes', async () => {
   let jobs = [{ id: 'job', owner: 'root', status: 'running' }];
-  const ordinaryOpen = peer.onOpen;
-  peer.onOpen = (endpoint, args, send) => endpoint === 'job/list' ? send({ type: 'rows', jobs }) : ordinaryOpen(endpoint, args, send);
+  serveJobs(() => jobs);
   const ordinaryCall = peer.onCall;
   peer.onCall = (method, args) => {
     if (method === '$events/result') return NATIVE_RESET;

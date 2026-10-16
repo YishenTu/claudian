@@ -360,7 +360,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       // The Host retires a lost process, which ends all of its native work; a retained binding has nothing left to stop.
       this.offLease.push(lease.onLost((loss, error) => {
         if (generation === this.generation) void this.fail(error, loss, true);
-        else if (this.retained && this.lease === lease) this.unbind();
+        else if (this.retained && this.lease === lease) this.release();
       }));
       this.offLease.push(lease.roster.onReset(() => { if (generation === this.generation) this.voidInteractions('superseded'); }));
       const deliver = (event: Record<string, unknown>): void => { if (generation === this.generation) this.remoteEvent(event); };
