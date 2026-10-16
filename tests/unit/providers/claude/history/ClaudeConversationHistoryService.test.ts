@@ -476,6 +476,7 @@ describe('ClaudeConversationHistoryService', () => {
     });
   });
 
+  // Retired-binding migration (#1647): delete this block after 2027-04-16.
   describe('bindings retired by an earlier version', () => {
     const retired = (overrides: Partial<Conversation> = {}): Conversation => createConversation({
       sessionId: null,
@@ -523,15 +524,23 @@ describe('ClaudeConversationHistoryService', () => {
       expect(update?.providerState).not.toHaveProperty('providerSessionId');
     });
 
-    it('keeps a binding retired by the current version history-only', async () => {
-      const conversation = createConversation();
-      clearClaudeResumeState(conversation);
-
-      expect(await recover(conversation, ['session-1'])).toBeNull();
-    });
   });
 
   describe('hydrateConversationHistory', () => {
+    it('never matches a transcript by time for a record with retired sessions', async () => {
+      const conversation = createConversation();
+      clearClaudeResumeState(conversation);
+      // A transcript matching the conversation's times would be the deliberately retired session.
+      const timeRecovery = jest.spyOn(historyStore, 'recoverSDKSessionIdByTime').mockResolvedValue('session-1');
+      try {
+        expect(await new ClaudeConversationHistoryService()
+          .recoverConversationSessionReference(conversation, '/vault')).toBeNull();
+        expect(timeRecovery).not.toHaveBeenCalled();
+      } finally {
+        timeRecovery.mockRestore();
+      }
+    });
+
     it('recovers an unlinked native transcript from the conversation timestamps', async () => {
       const service = new ClaudeConversationHistoryService();
       const conversation = createConversation({

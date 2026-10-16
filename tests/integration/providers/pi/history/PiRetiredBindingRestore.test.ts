@@ -1,3 +1,4 @@
+// Retired-binding migration (#1647): delete this file after 2027-04-16.
 import '@/providers';
 
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';

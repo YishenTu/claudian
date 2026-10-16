@@ -738,6 +738,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     const state = getClaudeState(conversation.providerState);
     // Retired sessions are exact locators; matching by time must never stand in for them.
     if (state.previousProviderSessionIds?.length) {
+      // Retired-binding migration: return null here once the restore is removed.
       return this.#restoreEarlierRetiredBinding(conversation, state, vaultPath, pathContext);
     }
     if (input.createdAt === undefined || input.lastActivityAt === undefined) {
@@ -760,6 +761,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   }
 
   /**
+   * Retired-binding migration (#1647, added 2026-10-16; remove after 2027-04-16).
    * Earlier versions retired live bindings on launch-only changes without marking them. The latest
    * session is restored once when its transcript is still in the configured store; a kept
    * checkpoint may be a pending fork's, whose retired session belongs to the fork source.

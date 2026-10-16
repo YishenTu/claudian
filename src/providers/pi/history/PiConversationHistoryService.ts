@@ -35,7 +35,7 @@ import {
 } from './PiHistoryStore';
 
 const PI_PROVIDER_STATE_KEYS = [
-  'bindingRetired',
+  'bindingRetired', // Retired-binding migration.
   'treeCursor',
   'treeSelections',
   'forkSource',
@@ -253,6 +253,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   }
 
   /**
+   * Retired-binding migration (#1647, added 2026-10-16; remove after 2027-04-16).
    * Earlier versions retired live bindings on launch-only changes without marking them. The latest
    * session is restored once when it is still this conversation's own transcript in the configured
    * store. A pending fork retires into its source session, which predates the fork.
@@ -598,7 +599,7 @@ async function isMatchingArchivedPiSession(
   return await resolveRealPath(header.cwd) === await resolveRealPath(vaultPath);
 }
 
-/** The session's own id when it started no earlier than the conversation that owns it. */
+/** Retired-binding migration: the session's own id when it started no earlier than its conversation. */
 async function readOwnPiSessionId(
   sessionFile: string,
   source: PiPreviousSession,
