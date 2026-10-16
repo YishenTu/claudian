@@ -1035,6 +1035,25 @@ describe('CodexConversationHistoryService', () => {
       },
     );
 
+    it('keeps a fork source prefix readable after resetting a missing fork child', async () => {
+      const sourcePath = writeRollout('source', [['s1', 'SrcQ1', 'SrcA1'], ['s2', 'SrcQ2', 'SrcA2'], ['s3', 'SrcQ3', 'SrcA3']]);
+      const conversation = codexConversation('fork', {
+        forkSource: { sessionId: 'source', resumeAt: 's2' },
+        forkSourceSessionFilePath: sourcePath,
+        threadId: 'fork',
+        sessionFilePath: path.join(sessionsDir, 'rollout-2026-03-27T00-00-00-fork.jsonl'),
+      });
+      const sourcePrefix = [['user', 'SrcQ1'], ['assistant', 'SrcA1'], ['user', 'SrcQ2'], ['assistant', 'SrcA2']];
+      expect(visible(await hydrate(conversation))).toEqual(sourcePrefix);
+
+      const reset = await new CodexConversationHistoryService()
+        .resolveMissingConversationSession({ ...conversation, messages: [] }, null, 'fork');
+      expect(reset.outcome).toBe('reset');
+      Object.assign(conversation, reset.changes);
+
+      expect(visible(await hydrate(conversation))).toEqual(sourcePrefix);
+    });
+
     it('hydrates earlier segments before a replacement thread that replayed them', async () => {
       const firstPath = writeRollout('thread-first', [['t1', 'FirstQ', 'FirstA']]);
       const conversation = codexConversation('thread-first', {

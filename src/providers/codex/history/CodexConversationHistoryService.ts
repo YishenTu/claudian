@@ -289,7 +289,12 @@ export class CodexConversationHistoryService implements ProviderConversationHist
         pathContext,
         lookupDeadline,
       );
-      if (!thread) return [];
+      if (!thread) {
+        // A fork whose own transcript is gone still shows its source prefix, as live hydration did.
+        return segment.forkSource
+          ? await this.#readPendingForkSegment(segment, pathContext, lookupDeadline) ?? []
+          : [];
+      }
       const { sessionFile, turns } = thread;
       if (segment.forkSource) {
         const sourceSessionFile = await this.#resolveSourceSessionFile(

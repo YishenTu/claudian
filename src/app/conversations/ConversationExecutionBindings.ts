@@ -127,6 +127,14 @@ export class ConversationExecutionBindings {
     );
   }
 
+  /** Retires whichever binding owns the conversation: later and still-queued snapshots are dropped. */
+  close(conversationId: string): void {
+    const binding = this.bindings.get(conversationId);
+    if (!binding) return;
+    binding.closed = true;
+    binding.latestSnapshot = null;
+  }
+
   release(
     conversationId: string,
     bindingId: string,
