@@ -1882,6 +1882,7 @@ describe('ClaudeExecutionBackend', () => {
     });
     expect(conversation.sessionId).toBeNull();
     expect(conversation.providerState).toEqual({
+      bindingRetired: true,
       previousProviderSessionIds: ['previous-session'],
     });
 

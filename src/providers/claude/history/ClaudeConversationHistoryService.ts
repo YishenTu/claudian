@@ -623,6 +623,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     state.previousProviderSessionIds = [
       ...new Set([...(state.previousProviderSessionIds || []), sessionId]),
     ];
+    state.bindingRetired = true;
     delete state.providerSessionId;
 
     if (state.forkSource?.sessionId === sessionId) {
@@ -666,6 +667,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
 
     const state = { ...getClaudeState(conversation.providerState) };
     state.previousProviderSessionIds = preservedSessionIds;
+    state.bindingRetired = true;
     delete state.providerSessionId;
     if (state.forkSource?.sessionId === currentSessionId) {
       conversation.resumeAtMessageId = state.forkSource.resumeAt;
@@ -730,7 +732,15 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     pathContext?: ProviderHistoryPathContext,
   ): Promise<ProviderHistoryUpdate | null> {
     const conversation = copyProviderHistoryState(input);
-    if (input.createdAt === undefined || input.lastActivityAt === undefined || !vaultPath || this.resolveSessionIdForConversation(conversation)) {
+    if (!vaultPath || this.resolveSessionIdForConversation(conversation)) {
+      return null;
+    }
+    const state = getClaudeState(conversation.providerState);
+    // Retired sessions are exact locators; matching by time must never stand in for them.
+    if (state.previousProviderSessionIds?.length) {
+      return this.#restoreEarlierRetiredBinding(conversation, state, vaultPath, pathContext);
+    }
+    if (input.createdAt === undefined || input.lastActivityAt === undefined) {
       return null;
     }
 
@@ -745,6 +755,37 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     conversation.providerState = sanitizeProviderState({
       ...getClaudeState(conversation.providerState),
       providerSessionId: recoveredSessionId,
+    });
+    return conversation;
+  }
+
+  /**
+   * Earlier versions retired live bindings on launch-only changes without marking them. The latest
+   * session is restored once when its transcript is still in the configured store; a kept
+   * checkpoint may be a pending fork's, whose retired session belongs to the fork source.
+   */
+  async #restoreEarlierRetiredBinding(
+    conversation: ProviderHistoryState,
+    state: ClaudeProviderState,
+    vaultPath: string,
+    pathContext?: ProviderHistoryPathContext,
+  ): Promise<ProviderHistoryUpdate | null> {
+    if (state.bindingRetired) return null;
+    const previousSessionIds = state.previousProviderSessionIds ?? [];
+    const sessionId = previousSessionIds.at(-1)!;
+    const availability = conversation.resumeAtMessageId
+      ? 'missing'
+      : (await locateSDKSession(vaultPath, sessionId, pathContext)).availability;
+    if (availability === 'unknown') return null;
+    if (availability !== 'available') {
+      conversation.providerState = sanitizeProviderState({ ...state, bindingRetired: true });
+      return conversation;
+    }
+    conversation.sessionId = sessionId;
+    conversation.providerState = sanitizeProviderState({
+      ...state,
+      providerSessionId: sessionId,
+      previousProviderSessionIds: previousSessionIds.length > 1 ? previousSessionIds.slice(0, -1) : undefined,
     });
     return conversation;
   }

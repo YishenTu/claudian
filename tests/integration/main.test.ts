@@ -748,6 +748,7 @@ describe('ClaudianPlugin', () => {
       expect(restored).toEqual(expect.objectContaining({
         sessionId: null,
         providerState: {
+          bindingRetired: true,
           previousProviderSessionIds: ['restored-provider-session-id'],
         },
         resumeAtMessageId: 'restored-message-id',
@@ -755,6 +756,7 @@ describe('ClaudianPlugin', () => {
       expect(deferred).toEqual(expect.objectContaining({
         sessionId: null,
         providerState: {
+          bindingRetired: true,
           previousProviderSessionIds: ['deferred-provider-session-id'],
         },
         resumeAtMessageId: 'deferred-message-id',
@@ -880,10 +882,12 @@ describe('ClaudianPlugin', () => {
 
       expect(first?.sessionId).toBeNull();
       expect(first?.providerState).toEqual({
+        bindingRetired: true,
         previousProviderSessionIds: ['first-provider-session-id'],
       });
       expect(later?.sessionId).toBeNull();
       expect(later?.providerState).toEqual({
+        bindingRetired: true,
         previousProviderSessionIds: ['later-provider-session-id'],
       });
       expect(pendingGeneration).toEqual(expect.any(Number));
@@ -1201,10 +1205,12 @@ describe('ClaudianPlugin', () => {
 
       expect(restartedConversation?.sessionId).toBeNull();
       expect(restartedConversation?.providerState).toEqual({
+        bindingRetired: true,
         previousProviderSessionIds: ['restart-provider-session-id'],
       });
       expect(persistedMetadata.sessionId).toBeNull();
       expect(persistedMetadata.providerState).toEqual({
+        bindingRetired: true,
         previousProviderSessionIds: ['restart-provider-session-id'],
       });
       expect(restartedSettings.pendingProviderSessionInvalidations?.claude).toBeUndefined();
@@ -2154,6 +2160,7 @@ describe('ClaudianPlugin', () => {
       expect(invalidateSpy).toHaveBeenCalledTimes(1);
       expect(chatHostOf(plugin).getConversationSync(live.id)?.sessionId).toBeNull();
       expect(chatHostOf(plugin).getConversationSync(live.id)?.providerState).toEqual({
+        bindingRetired: true,
         previousProviderSessionIds: [
           'live-previous-session',
           'live-provider-session',
@@ -2162,6 +2169,7 @@ describe('ClaudianPlugin', () => {
       expect(live.resumeAtMessageId).toBe('live-resume-message');
       expect(chatHostOf(plugin).getConversationSync(deferredMetadata.id)?.sessionId).toBeNull();
       expect(chatHostOf(plugin).getConversationSync(deferredMetadata.id)?.providerState).toEqual({
+        bindingRetired: true,
         previousProviderSessionIds: [
           'deferred-previous-session',
           'deferred-provider-session',
@@ -3212,6 +3220,7 @@ describe('ClaudianPlugin', () => {
       const preserved = chatHostOf(plugin).getConversationSync(conv.id);
       expect(preserved?.sessionId).toBeNull();
       expect(preserved?.providerState).toEqual({
+        bindingRetired: true,
         previousProviderSessionIds: ['temporarily-inaccessible'],
       });
     });

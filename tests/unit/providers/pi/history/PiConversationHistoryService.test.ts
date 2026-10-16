@@ -850,6 +850,7 @@ describe('PiConversationHistoryService', () => {
       };
       expect(recreatedConversation.sessionId).toBeNull();
       expect(recreatedConversation.providerState).toEqual({
+        bindingRetired: true,
         futureResumeCursor: { token: 'keep-me' },
         previousSessions: [{
           leafEntryId: 'assistant-1',
@@ -888,6 +889,7 @@ describe('PiConversationHistoryService', () => {
 
       expect(conversation.sessionId).toBeNull();
       expect(conversation.providerState).toEqual({
+        bindingRetired: true,
         futureResumeCursor: { token: 'keep-me' },
         previousSessions: [{
           leafEntryId: 'assistant-1',

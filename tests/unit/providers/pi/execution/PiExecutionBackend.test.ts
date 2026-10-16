@@ -1440,6 +1440,7 @@ describe('PiExecutionBackend', () => {
     });
     expect(conversation.sessionId).toBeNull();
     expect(conversation.providerState).toEqual({
+      bindingRetired: true,
       futureResumeCursor: { token: 'keep-me' },
       previousSessions: [{
         sessionFile: missingSessionFile,

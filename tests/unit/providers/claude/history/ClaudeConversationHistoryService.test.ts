@@ -9,6 +9,7 @@ import type { Conversation, ToolCallInfo } from '@/core/types';
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
 import type { SDKSessionLocation } from '@/providers/claude/history/ClaudeHistoryPathResolver';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
+import { clearClaudeResumeState } from '@/providers/claude/types/providerState';
 
 function createConversation(overrides: Partial<Conversation> = {}): Conversation {
   return {
@@ -380,6 +381,7 @@ describe('ClaudeConversationHistoryService', () => {
       expect(conversation.sessionId).toBeNull();
       expect(conversation.providerState).toEqual({
         previousProviderSessionIds: ['session-previous', 'session-1'],
+        bindingRetired: true,
       });
 
       locationSpy.mockRestore();
@@ -467,9 +469,65 @@ describe('ClaudeConversationHistoryService', () => {
       expect(conversation.sessionId).toBeNull();
       expect(conversation.providerState).toEqual({
         previousProviderSessionIds: ['session-previous'],
+        bindingRetired: true,
       });
 
       locationSpy.mockRestore();
+    });
+  });
+
+  describe('bindings retired by an earlier version', () => {
+    const retired = (overrides: Partial<Conversation> = {}): Conversation => createConversation({
+      sessionId: null,
+      providerState: { previousProviderSessionIds: ['session-0', 'session-1'] },
+      ...overrides,
+    });
+
+    async function recover(conversation: Conversation, sessionIds: string[]) {
+      const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-retired-binding-'));
+      const vaultPath = path.join(configDir, 'vault');
+      const pathContext = { environment: { CLAUDE_CONFIG_DIR: configDir }, vaultPath };
+      const sessionDir = path.join(historyStore.getSDKProjectsPath(pathContext), historyStore.encodeVaultPathForSDK(vaultPath));
+      await fs.mkdir(sessionDir, { recursive: true });
+      await Promise.all(sessionIds.map(sessionId => fs.writeFile(
+        path.join(sessionDir, `${sessionId}.jsonl`),
+        JSON.stringify({ type: 'user', uuid: 'u1', sessionId, timestamp: testTime(), message: { content: 'Question' } }),
+      )));
+      // A transcript that matches the conversation's times must not stand in for a retired binding.
+      const timeRecovery = jest.spyOn(historyStore, 'recoverSDKSessionIdByTime').mockResolvedValue('session-1');
+      try {
+        const update = await new ClaudeConversationHistoryService()
+          .recoverConversationSessionReference(conversation, vaultPath, pathContext);
+        expect(timeRecovery).not.toHaveBeenCalled();
+        return update;
+      } finally {
+        timeRecovery.mockRestore();
+        await fs.rm(configDir, { recursive: true, force: true });
+      }
+    }
+
+    it('restores the latest retired session when its transcript is still in the configured store', async () => {
+      expect(await recover(retired(), ['session-0', 'session-1'])).toMatchObject({
+        sessionId: 'session-1',
+        providerState: { providerSessionId: 'session-1', previousProviderSessionIds: ['session-0'] },
+      });
+    });
+
+    it.each([
+      ['its transcript is missing', retired(), []],
+      // A pending fork retires into its source session and leaves its fork checkpoint behind.
+      ['the record kept a checkpoint', retired({ resumeAtMessageId: 'assistant-1' }), ['session-1']],
+    ])('records the retirement as final when %s', async (_case, conversation, sessionIds) => {
+      const update = await recover(conversation, sessionIds);
+      expect(update).toMatchObject({ sessionId: null, providerState: { bindingRetired: true } });
+      expect(update?.providerState).not.toHaveProperty('providerSessionId');
+    });
+
+    it('keeps a binding retired by the current version history-only', async () => {
+      const conversation = createConversation();
+      clearClaudeResumeState(conversation);
+
+      expect(await recover(conversation, ['session-1'])).toBeNull();
     });
   });
 

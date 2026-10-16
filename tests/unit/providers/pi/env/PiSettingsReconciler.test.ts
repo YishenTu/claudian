@@ -55,6 +55,7 @@ describe('piSettingsReconciler', () => {
         });
         expect(conversation.sessionId).toBeNull();
         expect(conversation.providerState).toEqual({
+          bindingRetired: true,
           previousSessions: [{
             leafEntryId: 'assistant-1',
             sessionFile: '/sessions/current.jsonl',
@@ -178,6 +179,7 @@ describe('piSettingsReconciler', () => {
     });
     expect(piConversation.sessionId).toBeNull();
     expect(piConversation.providerState).toEqual({
+      bindingRetired: true,
       futureResumeCursor: { token: 'keep-me' },
       previousSessions: [{
         leafEntryId: 'assistant-1',
@@ -257,6 +259,7 @@ describe('piSettingsReconciler', () => {
       conversation,
     ]);
     expect(conversation.providerState).toEqual({
+      bindingRetired: true,
       futureResumeCursor: { token: 'keep-me' },
       previousSessions: [{
         leafEntryId: 'assistant-1',

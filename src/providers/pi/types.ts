@@ -12,6 +12,11 @@ export interface PiPreviousSession {
 }
 
 export interface PiProviderState {
+  /**
+   * Set whenever Claudian retires the live binding: previous sessions stay history-only.
+   * Records retired by earlier versions lack it and get one exact restore of their latest session.
+   */
+  bindingRetired?: boolean;
   treeCursor?: PiTreeCursor;
   treeSelections?: Record<string, PiTreeCursor>;
   forkSource?: PiForkSource;
@@ -54,6 +59,7 @@ export function getPiState(value: unknown): PiProviderState {
       return cursor ? [[id, cursor]] : [];
     })) : undefined;
   return {
+    ...(record.bindingRetired === true ? { bindingRetired: true } : {}),
     ...(treeCursor ? { treeCursor } : {}),
     ...(treeSelections ? { treeSelections } : {}),
     ...(forkSource ? { forkSource } : {}),
@@ -78,6 +84,7 @@ export function getPiState(value: unknown): PiProviderState {
 
 export function buildPersistedPiState(state: PiProviderState): PiProviderState | undefined {
   const persisted: PiProviderState = {
+    ...(state.bindingRetired ? { bindingRetired: true } : {}),
     ...(state.treeCursor ? { treeCursor: state.treeCursor } : {}),
     ...(state.treeSelections ? { treeSelections: state.treeSelections } : {}),
     ...(state.forkSource ? { forkSource: state.forkSource } : {}),
@@ -120,7 +127,7 @@ export function clearPiResumeState(conversation: Pick<Conversation, 'sessionId' 
     currentSession,
   );
 
-  const providerState = { ...(conversation.providerState ?? {}) };
+  const providerState: Record<string, unknown> = { ...(conversation.providerState ?? {}), bindingRetired: true };
   delete providerState.forkSource;
   delete providerState.forkSourceSessionFile;
   delete providerState.leafEntryId;

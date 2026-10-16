@@ -19,6 +19,7 @@ import {
   clearPiResumeState,
   getPiState,
   type PiPreviousSession,
+  type PiProviderState,
 } from '../types';
 import {
   isPiSessionPathReference,
@@ -34,6 +35,7 @@ import {
 } from './PiHistoryStore';
 
 const PI_PROVIDER_STATE_KEYS = [
+  'bindingRetired',
   'treeCursor',
   'treeSelections',
   'forkSource',
@@ -247,6 +249,48 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     }
 
     conversation.messages = dedupeMessages(messages);
+    return conversation;
+  }
+
+  /**
+   * Earlier versions retired live bindings on launch-only changes without marking them. The latest
+   * session is restored once when it is still this conversation's own transcript in the configured
+   * store. A pending fork retires into its source session, which predates the fork.
+   */
+  async recoverConversationSessionReference(
+    input: ProviderHistoryInput,
+    vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): Promise<ProviderHistoryUpdate | null> {
+    const conversation = copyProviderHistoryState(input);
+    const state = getPiState(conversation.providerState);
+    const latest = state.previousSessions?.at(-1);
+    if (
+      !latest || state.bindingRetired || !vaultPath || !pathContext || input.createdAt === undefined
+      || conversation.sessionId || state.sessionId || state.sessionFile || state.forkSource
+    ) {
+      return null;
+    }
+
+    const sessionFile = resolvePiSessionFileHint(latest.sessionFile, latest.sessionId, vaultPath, pathContext);
+    const sessionId = sessionFile
+      ? await readOwnPiSessionId(sessionFile, latest, vaultPath, input.createdAt)
+      : null;
+    const nextState: PiProviderState = sessionFile && sessionId
+      ? {
+        ...state,
+        previousSessions: state.previousSessions!.slice(0, -1),
+        sessionFile,
+        sessionId,
+        ...(latest.leafEntryId ? { leafEntryId: latest.leafEntryId } : {}),
+      }
+      : { ...state, bindingRetired: true };
+    conversation.sessionId = sessionId;
+    conversation.providerState = mergePersistedProviderState(
+      conversation.providerState,
+      PI_PROVIDER_STATE_KEYS,
+      buildPersistedPiState(nextState) as Record<string, unknown> | undefined,
+    );
     return conversation;
   }
 
@@ -552,6 +596,21 @@ async function isMatchingArchivedPiSession(
   }
 
   return await resolveRealPath(header.cwd) === await resolveRealPath(vaultPath);
+}
+
+/** The session's own id when it started no earlier than the conversation that owns it. */
+async function readOwnPiSessionId(
+  sessionFile: string,
+  source: PiPreviousSession,
+  vaultPath: string,
+  createdAt: number,
+): Promise<string | null> {
+  if (!await isMatchingArchivedPiSession(sessionFile, source, vaultPath)) return null;
+  const header = await readPiSessionHeader(sessionFile);
+  const startedAt = typeof header?.timestamp === 'string' ? Date.parse(header.timestamp) : Number.NaN;
+  return typeof header?.id === 'string' && header.id.trim() && startedAt >= createdAt
+    ? header.id.trim()
+    : null;
 }
 
 async function resolveRealPath(value: string): Promise<string> {

@@ -142,6 +142,7 @@ describe('claudeSettingsReconciler', () => {
       expect(result.invalidatedConversations).toEqual([conversation]);
       expect(conversation.sessionId).toBeNull();
       expect(conversation.providerState).toEqual({
+        bindingRetired: true,
         previousProviderSessionIds: ['session-1'],
       });
       expect(settings.model).toBe('claude-opus-4-6');
@@ -210,6 +211,7 @@ describe('claudeSettingsReconciler', () => {
       expect(claudeConversation.sessionId).toBeNull();
       expect(claudeConversation.resumeAtMessageId).toBe('assistant-1');
       expect(claudeConversation.providerState).toEqual({
+        bindingRetired: true,
         previousProviderSessionIds: ['previous-session', 'provider-session'],
         subagentData: { task: { id: 'task' } },
         uiMetadata: { keep: true },
@@ -243,6 +245,7 @@ describe('claudeSettingsReconciler', () => {
 
       expect(result.invalidatedConversations).toEqual([conversation]);
       expect(conversation.providerState).toEqual({
+        bindingRetired: true,
         previousProviderSessionIds: ['provider-session'],
       });
     });
