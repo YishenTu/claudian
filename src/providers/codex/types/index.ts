@@ -60,6 +60,13 @@ function readRolloutThreadId(sessionFilePath: string | undefined): string | unde
   return sessionFilePath?.match(ROLLOUT_THREAD_ID_PATTERN)?.[1];
 }
 
+function isPendingForkSegmentOf(pending: CodexPreviousSegment, child: CodexPreviousSegment): boolean {
+  return !pending.threadId
+    && !!pending.forkSource
+    && pending.forkSource.sessionId === child.forkSource?.sessionId
+    && pending.forkSource.resumeAt === child.forkSource?.resumeAt;
+}
+
 function isSameSegment(left: CodexPreviousSegment, right: CodexPreviousSegment): boolean {
   return left.threadId === right.threadId
     && left.sessionFilePath === right.sessionFilePath
@@ -99,7 +106,10 @@ export function clearCodexResumeState(
       ? { forkSourceTranscriptRootPath: state.forkSourceTranscriptRootPath }
       : {}),
   };
-  const previousSegments = (state.previousSegments ?? []).map(previous => ({ ...previous }));
+  const previousSegments = (state.previousSegments ?? [])
+    // A materialized fork child already contains the source prefix its pending segment showed.
+    .filter(previous => !(segment.threadId && isPendingForkSegmentOf(previous, segment)))
+    .map(previous => ({ ...previous }));
   if (!previousSegments.some(previous => isSameSegment(previous, segment))) {
     previousSegments.push(segment);
   }

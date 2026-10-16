@@ -284,4 +284,76 @@ describe('Codex runtime-input changes', () => {
       await lifecycle.dispose();
     }
   });
+
+  it('keeps a fork child adopted during an endpoint change as one history segment', async () => {
+    const { repository, runtimeSettings, settings } = fixture();
+    const sourcePath = repository.getCachedConversation('conv-a')!.providerState!.sessionFilePath as string;
+    const childPath = sourcePath.replace('thread-a.jsonl', 'thread-child.jsonl');
+    repository.replaceAll(['conv-a', 'conv-b'].map(id => repository.getCachedConversation(id)!).map(conversation => conversation.id === 'conv-a'
+      ? { ...conversation, sessionId: null, providerState: {
+          forkSource: { sessionId: 'thread-a', resumeAt: 'thread-a-turn' },
+          forkSourceSessionFilePath: sourcePath,
+        }, messages: [] }
+      : conversation));
+    let adoptedThreadId: string | null = null;
+    const lifecycle = new ProviderExecutionLifecycleRegistry();
+    const workspace = await createCodexWorkspaceServices({
+      settings, executionLifecycleRegistry: lifecycle,
+    } as unknown as ProviderHost);
+    const live = new SessionSnapshotState({
+      providerId: 'codex',
+      sessionInstanceId: 'live-session',
+      providerState: repository.getCachedConversation('conv-a')!.providerState,
+      readProviderSessionId: () => adoptedThreadId,
+    });
+    const persistedSnapshots: Array<Promise<boolean>> = [];
+    const supervisor = new ExecutionSessionSupervisor(lifecycle);
+    // The chat coordinator persists every session state change admitted by the supervisor.
+    const { generation } = supervisor.acquire({
+      providerId: 'codex',
+      createSession: () => ({
+        onEvent: (listener: (event: ProviderSessionEvent) => void) => live.onEvent(listener),
+        getSnapshot: () => live.getSnapshot(),
+        dispose: async () => undefined,
+      }),
+    } as never, {} as never, () => undefined, (event) => {
+      if (event.type !== 'session_state_changed') return;
+      persistedSnapshots.push(repository.persistExecutionSnapshot('conv-a', 'binding-a', generation, event.snapshot));
+    });
+    const emitSnapshot = (status: 'executing' | 'idle') => {
+      live.setStatus(status);
+      live.emit({ type: 'session_state_changed', snapshot: live.getSnapshot() } as never);
+      return Promise.all(persistedSnapshots);
+    };
+    try {
+      repository.registerExecutionBinding('conv-a', 'binding-a', generation);
+      await emitSnapshot('executing');
+
+      await lifecycle.runTransition(['codex'], async () => {
+        await runtimeSettings.commit(['codex'], (draft) => {
+          (draft.providerConfigs as any).codex.environmentVariables
+            = `CODEX_HOME=${codexHome}\nOPENAI_BASE_URL=https://new.example.com/v1`;
+        }, {
+          failureMessage: 'Failed to save settings',
+          onSettingsCommitted: async () => {
+            adoptedThreadId = 'thread-child';
+            fs.writeFileSync(childPath, fs.readFileSync(sourcePath, 'utf8').replace('"id":"thread-a"', '"id":"thread-child"'));
+            live.setProviderStateValue('threadId', adoptedThreadId);
+            live.setProviderStateValue('sessionFilePath', childPath);
+            await emitSnapshot('idle');
+          },
+        });
+      });
+      expect(supervisor.current).toBeNull();
+
+      // The late fork child supersedes its pending segment instead of repeating the source prefix.
+      await emitSnapshot('idle');
+      expect(repository.getCachedConversation('conv-a')?.sessionId).toBeNull();
+      expect(await visibleHistory(repository, 'conv-a')).toEqual(['Question A', 'Answer A']);
+    } finally {
+      await supervisor.release();
+      await workspace.dispose();
+      await lifecycle.dispose();
+    }
+  });
 });
