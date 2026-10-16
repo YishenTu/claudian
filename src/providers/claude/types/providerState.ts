@@ -6,7 +6,7 @@ export interface ClaudeProviderState {
   providerSessionId?: string;
   previousProviderSessionIds?: string[];
   /**
-   * Retired-binding migration (#1647, added 2026-10-16; remove after 2027-04-16). Set whenever Claudian retires the live
+   * Retired-binding migration (#1647, added 2026-10-16; remove after 2027-01-16). Set whenever Claudian retires the live
    * binding, so only retirements left by earlier versions get the one-time restore. Remove this
    * field, its writes, and every block tagged "Retired-binding migration" together.
    */

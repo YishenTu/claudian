@@ -476,7 +476,7 @@ describe('ClaudeConversationHistoryService', () => {
     });
   });
 
-  // Retired-binding migration (#1647): delete this block after 2027-04-16.
+  // Retired-binding migration (#1647): delete this block after 2027-01-16.
   describe('bindings retired by an earlier version', () => {
     const retired = (overrides: Partial<Conversation> = {}): Conversation => createConversation({
       sessionId: null,
