@@ -193,11 +193,19 @@ test('persists only subagent state that native history cannot rebuild and restor
   await writeSidecar('agent-sync', [
     toolUse('edit-1', 'Edit', editInput),
     toolResult('edit-1', 'Edited', { filePath: '/notes/a.md', oldString: 'old', newString: 'new', structuredPatch: patch }),
+    // A later SendMessage continuation appends another run to the same sidecar.
+    { type: 'user', timestamp: testTime({ seconds: 10 }), message: { role: 'user', content: 'Follow up' } },
+    { ...toolUse('later-1', 'Bash', { command: 'ls' }), timestamp: testTime({ seconds: 11 }) },
+    { ...toolResult('later-1', 'a.md'), timestamp: testTime({ seconds: 12 }) },
   ]);
   await writeSidecar('agent-legacy', [toolUse('grep-1', 'Grep', grepInput), toolResult('grep-1', 'a.md')]);
   await writeSidecar('agent-old', [toolUse('glob-1', 'Glob', { pattern: '*.md' }), toolResult('glob-1', 'a.md')]);
   await writeSidecar('agent-fail', [toolUse('read-fail', 'Read', readInput)]);
   await writeSidecar('agent-running', [toolUse('read-running', 'Read', readInput)]);
+  await writeSidecar('agent-summary', [
+    toolUse('read-summary', 'Read', readInput), toolResult('read-summary', 'b text'),
+    { type: 'assistant', message: { role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: 'Full report' }] } },
+  ]);
   await writeSidecar('agent-bg', [
     toolUse('read-bg', 'Read', readInput), toolResult('read-bg', 'b text'),
     { type: 'assistant', message: { role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: 'Background report' }] } },
@@ -216,7 +224,8 @@ test('persists only subagent state that native history cannot rebuild and restor
     { type: 'user', uuid: 'prompt', timestamp: testTime({ seconds: 0 }), message: { role: 'user', content: 'Delegate' } },
     { type: 'assistant', uuid: 'launch', timestamp: testTime({ seconds: 1 }), message: { role: 'assistant', stop_reason: 'tool_use',
       content: [task('task-sync'), task('task-local'), task('task-legacy'), task('task-bg', { run_in_background: true }),
-        task('task-old'), task('task-fail', { run_in_background: true }), task('task-running')] } },
+        task('task-old'), task('task-fail', { run_in_background: true }), task('task-running'),
+        task('task-summary', { run_in_background: true })] } },
     completed('task-sync', 'agent-sync'),
     completed('task-local', 'agent-local'),
     completed('task-legacy', 'agent-legacy'),
@@ -226,6 +235,10 @@ test('persists only subagent state that native history cannot rebuild and restor
     taskResult('task-old', '[Subagent hand-back] The text below is the final report of a subagent. The report follows:\n'
       + '  task-old done\nagentId: agent-old (use SendMessage to continue)\n<usage>total_tokens: 1</usage>', {}),
     taskResult('task-fail', 'Async agent launched', { status: 'async_launched', isAsync: true, agentId: 'agent-fail' }),
+    taskResult('task-summary', 'Async agent launched', { status: 'async_launched', isAsync: true, agentId: 'agent-summary' }),
+    // The completion notice carries only a summary; the report lives in the sidecar.
+    { type: 'queue-operation', operation: 'enqueue', timestamp: testTime({ seconds: 5 }), content:
+      '<task-notification><task-id>agent-summary</task-id><status>completed</status><summary>Agent finished</summary></task-notification>' },
   ];
   await fs.writeFile(path.join(projectPath, 'native-1.jsonl'), jsonl(rows.map((row, index) => ({
     ...row, sessionId: 'native-1', parentUuid: rows[index - 1]?.uuid ?? null,
@@ -265,6 +278,9 @@ test('persists only subagent state that native history cannot rebuild and restor
   const running = liveSubagent('task-running', 'agent-running', {
     id: 'read-running', name: 'Read', input: readInput, status: 'running',
   }, { status: 'running', result: undefined });
+  const summarized = liveSubagent('task-summary', 'agent-summary', {
+    id: 'read-summary', name: 'Read', input: readInput, status: 'completed', result: 'b text',
+  }, { mode: 'async', asyncStatus: 'completed', result: 'Full report' });
   const failedOverlay = {
     id: 'task-fail', mode: 'async', agentId: 'agent-fail', status: 'error', asyncStatus: 'error',
     result: 'Agent failed: quota exceeded',
@@ -280,7 +296,7 @@ test('persists only subagent state that native history cannot rebuild and restor
     repository.replaceAll([conversation]);
     await repository.update(conversation.id, { messages: [{
       id: 'launch', role: 'assistant', content: '', timestamp: now,
-      toolCalls: [synced, unsynced, legacy, background, old, failed, running].map(subagent => ({
+      toolCalls: [synced, unsynced, legacy, background, old, failed, running, summarized].map(subagent => ({
         id: subagent.id, name: 'Agent', input: { description: subagent.description, prompt: subagent.prompt },
         status: 'completed' as const, result: subagent.result, subagent,
       })),
@@ -292,6 +308,7 @@ test('persists only subagent state that native history cannot rebuild and restor
       'task-bg': { id: 'task-bg', mode: 'async', agentId: 'agent-bg', status: 'completed', asyncStatus: 'completed' },
       'task-fail': failedOverlay,
       'task-running': running,
+      'task-summary': { id: 'task-summary', mode: 'async', agentId: 'agent-summary', status: 'completed', asyncStatus: 'completed' },
     });
 
     const reopened = createRepository();
@@ -320,6 +337,7 @@ test('persists only subagent state that native history cannot rebuild and restor
     expect(restored('task-old')).toMatchObject({ agentId: 'agent-old', result: 'task-old done',
       toolCalls: [expect.objectContaining({ id: 'glob-1', result: 'a.md' })] });
     expect(restored('task-fail')).toMatchObject({ status: 'error', result: 'Agent failed: quota exceeded' });
+    expect(restored('task-summary')).toMatchObject({ status: 'completed', result: 'Full report' });
 
     // Reopening adopted the legacy record's native identity, so the next save drops it too.
     await reopened.rename(conversation.id, 'Renamed');
@@ -328,6 +346,7 @@ test('persists only subagent state that native history cannot rebuild and restor
       'task-bg': { id: 'task-bg', mode: 'async', agentId: 'agent-bg', status: 'completed', asyncStatus: 'completed' },
       'task-fail': failedOverlay,
       'task-running': running,
+      'task-summary': { id: 'task-summary', mode: 'async', agentId: 'agent-summary', status: 'completed', asyncStatus: 'completed' },
     });
 
     // History rewound before every subagent leaves no stored copies to reattach.

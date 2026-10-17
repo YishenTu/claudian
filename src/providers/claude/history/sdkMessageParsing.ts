@@ -298,7 +298,11 @@ export function collectAsyncSubagentResults(
       continue;
     }
 
-    results.set(notification.taskId, { result: notification.content, status });
+    results.set(notification.taskId, {
+      result: notification.content,
+      status,
+      summaryOnly: extractXMLTag(sdkMsg.content!, 'result') === null,
+    });
   }
 
   return results;

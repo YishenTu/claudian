@@ -2558,7 +2558,7 @@ describe('sdkSession', () => {
       ];
 
       expect(collectAsyncSubagentResults(entries).get('has-id'))
-        .toEqual({ result: 'Background task completed.', status: 'completed' });
+        .toEqual({ result: 'Background task completed.', status: 'completed', summaryOnly: true });
     });
 
     it('reads a summary-only notification as the live notification parser does', () => {
@@ -2567,7 +2567,7 @@ describe('sdkSession', () => {
 
       expect(parseClaudeTaskNotification(content)).toEqual({ taskId: 'failed-agent', content: 'Agent "Review code" failed' });
       expect(collectAsyncSubagentResults([{ type: 'queue-operation', operation: 'enqueue', content }]).get('failed-agent'))
-        .toEqual({ result: 'Agent "Review code" failed', status: 'failed' });
+        .toEqual({ result: 'Agent "Review code" failed', status: 'failed', summaryOnly: true });
     });
 
     it('ignores non-queue-operation messages', () => {

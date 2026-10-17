@@ -35,6 +35,7 @@ import {
   loadSubagentFinalResult,
   loadSubagentToolCalls,
   readSubagentToolUseIndex,
+  type SubagentRunWindow,
 } from './sdkSubagentSidecar';
 
 export { recoverSDKSessionIdByTime } from './ClaudeSessionRecovery';
@@ -225,13 +226,15 @@ export async function loadSDKSessionMessages(
 
   const taskResults = new ClaudeTaskResultInterpreter();
   const sidecarLoads: Array<{ subagent: SubagentInfo; promise: Promise<ToolCallInfo[]> }> = [];
-  const loadSidecarToolCalls = (subagent: SubagentInfo): void => {
+  const loadSidecarToolCalls = (subagent: SubagentInfo, runWindow?: SubagentRunWindow): void => {
     if (!subagent.agentId || !isValidAgentId(subagent.agentId)) return;
     sidecarLoads.push({
       subagent,
-      promise: loadSubagentToolCalls(vaultPath, sessionId, subagent.agentId, sessionPath, pathContext),
+      promise: loadSubagentToolCalls(vaultPath, sessionId, subagent.agentId, sessionPath, pathContext, runWindow),
     });
   };
+  const reportLoads: Array<{ subagent: SubagentInfo; toolCall: ToolCallInfo; promise: Promise<string | null> }> = [];
+  const toolTimes = collectToolTimes(filteredEntries);
   for (const message of chatMessages) {
     for (const toolCall of message.toolCalls ?? []) {
       if (!isClaudeSubagentToolName(toolCall.name) || toolCall.input.run_in_background === true
@@ -258,7 +261,11 @@ export async function loadSDKSessionMessages(
           toolCalls: [],
           agentId,
         };
-        loadSidecarToolCalls(toolCall.subagent);
+        // Continuations and reuse append later runs; replay only this invocation's activity.
+        const startedAt = toolTimes.uses.get(toolCall.id);
+        const endedAt = toolTimes.results.get(toolCall.id);
+        loadSidecarToolCalls(toolCall.subagent, startedAt !== undefined && endedAt !== undefined
+          ? { startedAt, endedAt } : undefined);
       }
     }
   }
@@ -286,6 +293,14 @@ export async function loadSDKSessionMessages(
           }
           toolCall.status = subagent.status;
           loadSidecarToolCalls(subagent);
+          if (subagent.agentId && isValidAgentId(subagent.agentId)
+            && asyncSubagentResults.get(subagent.agentId)?.summaryOnly) {
+            reportLoads.push({
+              subagent,
+              toolCall,
+              promise: loadSubagentFinalResult(vaultPath, sessionId, subagent.agentId, sessionPath, pathContext),
+            });
+          }
         }
       }
     }
@@ -295,6 +310,14 @@ export async function loadSDKSessionMessages(
   const sidecarToolCalls = await Promise.all(sidecarLoads.map(load => load.promise));
   sidecarLoads.forEach(({ subagent }, index) => {
     if (sidecarToolCalls[index].length > 0) subagent.toolCalls = sidecarToolCalls[index];
+  });
+  // A summary-only notice defers to the sidecar's final report, as live completion recovery does.
+  const reports = await Promise.all(reportLoads.map(load => load.promise));
+  reportLoads.forEach(({ subagent, toolCall }, index) => {
+    const report = reports[index]?.trim();
+    if (!report) return;
+    subagent.result = report;
+    toolCall.result = report;
   });
 
   // Notification timestamps record enqueue time, not consumption. Pin their
@@ -310,6 +333,22 @@ export async function loadSDKSessionMessages(
   }
 
   return { messages: chatMessages, skippedLines: result.skippedLines };
+}
+
+/** Native timestamps of each tool call and of its result, which bound a sync subagent run. */
+function collectToolTimes(entries: SDKNativeMessage[]): { uses: Map<string, number>; results: Map<string, number> } {
+  const uses = new Map<string, number>();
+  const results = new Map<string, number>();
+  for (const entry of entries) {
+    const timestamp = parseNativeTimestamp(entry.timestamp);
+    const content = entry.message?.content;
+    if (timestamp === undefined || !Array.isArray(content)) continue;
+    for (const block of content) {
+      if (block.type === 'tool_use' && block.id) uses.set(block.id, timestamp);
+      if (block.type === 'tool_result' && block.tool_use_id) results.set(block.tool_use_id, timestamp);
+    }
+  }
+  return { uses, results };
 }
 
 function parseNativeTimestamp(value: string | undefined): number | undefined {

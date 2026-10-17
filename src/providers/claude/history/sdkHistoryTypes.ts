@@ -73,6 +73,8 @@ export interface SDKSessionLoadResult {
 export interface AsyncSubagentResult {
   result: string;
   status: string;
+  /** The notice carried only a summary; the full report lives in the sidecar. */
+  summaryOnly: boolean;
 }
 
 export type ResolvedAsyncStatus = Exclude<AsyncSubagentStatus, 'pending'>;

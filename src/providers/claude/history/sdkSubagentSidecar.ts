@@ -37,6 +37,12 @@ type SubagentToolEvent =
       timestamp: number;
     };
 
+function isWithinRun(entry: unknown, runWindow: SubagentRunWindow): boolean {
+  const raw = (entry as { timestamp?: unknown } | null)?.timestamp;
+  const timestamp = typeof raw === 'string' ? Date.parse(raw) : Number.NaN;
+  return timestamp >= runWindow.startedAt && timestamp <= runWindow.endedAt;
+}
+
 function parseTimestampMs(raw: unknown): number {
   if (typeof raw !== 'string') {
     return Date.now();
@@ -253,12 +259,19 @@ export function readSubagentToolUseIndex(
   return index;
 }
 
+/** Bounds of one invocation; a reused agent appends later runs to the same sidecar. */
+export interface SubagentRunWindow {
+  startedAt: number;
+  endedAt: number;
+}
+
 export async function loadSubagentToolCalls(
   vaultPath: string,
   sessionId: string,
   agentId: string,
   sessionPath?: string,
   pathContext?: ProviderHistoryPathContext,
+  runWindow?: SubagentRunWindow,
 ): Promise<ToolCallInfo[]> {
   const subagentFilePath = getSubagentSidecarPath(
     vaultPath,
@@ -288,6 +301,8 @@ export async function loadSubagentToolCalls(
         return;
       }
 
+      // Untimed rows cannot be placed in a run, so a bounded replay omits them.
+      if (runWindow && !isWithinRun(raw, runWindow)) return;
       for (const event of parseSubagentEvents(raw)) {
         const key = `${event.type}:${event.toolUseId}`;
         if (seen.has(key)) {
