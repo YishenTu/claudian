@@ -2565,7 +2565,7 @@ describe('sdkSession', () => {
       const content = '<task-notification><task-id>failed-agent</task-id><status>failed</status>'
         + '<summary>Agent "Review code" failed</summary></task-notification>';
 
-      expect(parseClaudeTaskNotification(content)).toEqual({ taskId: 'failed-agent', content: 'Agent "Review code" failed' });
+      expect(parseClaudeTaskNotification(content)).toEqual({ taskId: 'failed-agent', content: 'Agent "Review code" failed', hasResult: false });
       expect(collectAsyncSubagentResults([{ type: 'queue-operation', operation: 'enqueue', content }]).get('failed-agent'))
         .toEqual({ result: 'Agent "Review code" failed', status: 'failed', summaryOnly: true });
     });

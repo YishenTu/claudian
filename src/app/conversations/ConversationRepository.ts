@@ -747,20 +747,28 @@ export class ConversationRepository {
    */
   async compactPersistedProviderState(isStopped: () => boolean): Promise<number> {
     const vaultPath = this.deps.getVaultPath();
-    const registeredProviderIds = new Set(this.deps.providers.getRegisteredProviderIds());
+    const checks = new Map<ProviderId, ((input: ProviderHistoryInput) => boolean) | null>();
+    const getCheck = (providerId: ProviderId): ((input: ProviderHistoryInput) => boolean) | null => {
+      if (!checks.has(providerId)) {
+        const historyService = this.deps.providers.getRegisteredProviderIds().includes(providerId)
+          ? this.deps.providers.getConversationHistoryService(providerId)
+          : null;
+        const pathContext = this.#getHistoryPathContext(providerId, vaultPath);
+        checks.set(providerId, historyService?.hasRedundantPersistedState
+          ? input => historyService.hasRedundantPersistedState!(input, vaultPath, pathContext)
+          : null);
+      }
+      return checks.get(providerId)!;
+    };
     let compacted = 0;
     for (const { id, providerId } of [...this.conversations]) {
       if (isStopped()) break;
       const current = this.#getRecord(id);
-      if (!current || this.hydratedConversationIds.has(id) || !registeredProviderIds.has(providerId)) continue;
-      const historyService = this.deps.providers.getConversationHistoryService(providerId);
-      const pathContext = this.#getHistoryPathContext(providerId, vaultPath);
-      const isRedundant = (conversation: Conversation): boolean => !!historyService.hasRedundantPersistedState?.(
-        conversation, vaultPath, pathContext,
-      ) || (!!conversation.modelRecoverySource && !!historyService.hasRedundantPersistedState?.(
-        { ...conversation.modelRecoverySource, messages: [] }, vaultPath, pathContext,
-      ));
-      if (!isRedundant(current)) continue;
+      const isRedundant = current && !this.hydratedConversationIds.has(id) ? getCheck(providerId) : null;
+      if (!current || !isRedundant || !(
+        isRedundant(current)
+        || (current.modelRecoverySource && isRedundant({ ...current.modelRecoverySource, messages: [] }))
+      )) continue;
       try {
         await this.#enqueuePersistence(id, async () => {
           const record = this.#getRecord(id);
@@ -1279,12 +1287,12 @@ export class ConversationRepository {
     const historyService = this.deps.providers.getConversationHistoryService(
       conversation.providerId,
     );
-    const vaultPath = this.deps.getVaultPath();
-    const nativeHistory = historyService.buildPersistedProviderState
-      ? { vaultPath, pathContext: this.#getHistoryPathContext(conversation.providerId, vaultPath) }
-      : {};
+    const getNativeHistory = () => {
+      const vaultPath = this.deps.getVaultPath();
+      return { vaultPath, pathContext: this.#getHistoryPathContext(conversation.providerId, vaultPath) };
+    };
     const providerState = historyService.buildPersistedProviderState
-      ? historyService.buildPersistedProviderState(conversation, { ...options, ...nativeHistory })
+      ? historyService.buildPersistedProviderState(conversation, { ...options, getNativeHistory })
       : conversation.providerState;
     const modelRecoverySource = !getStoredModelSelection(conversation.selectedModel)
       && conversation.modelRecoverySource
@@ -1293,7 +1301,7 @@ export class ConversationRepository {
     if (modelRecoverySource && historyService.buildPersistedProviderState) {
       modelRecoverySource.providerState = historyService.buildPersistedProviderState(
         { ...modelRecoverySource, messages: [] },
-        { preserveProviderState: true, ...nativeHistory },
+        { preserveProviderState: true, getNativeHistory },
       );
     }
     return {

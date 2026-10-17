@@ -762,8 +762,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     conversation: ProviderHistoryInput,
     options: {
       preserveProviderState?: boolean;
-      vaultPath?: string | null;
-      pathContext?: ProviderHistoryPathContext;
+      getNativeHistory?: () => { vaultPath: string | null; pathContext?: ProviderHistoryPathContext };
     } = {},
   ): Record<string, unknown> | undefined {
     const providerState: ClaudeProviderState = {
@@ -773,7 +772,8 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     const subagentData = options.preserveProviderState
       ? providerState.subagentData ?? {}
       : buildPersistedSubagentData(conversation.messages);
-    const findNativeSidecar = this.#createSidecarLookup(conversation, options.vaultPath, options.pathContext);
+    const nativeHistory = Object.keys(subagentData).length > 0 ? options.getNativeHistory?.() : undefined;
+    const findNativeSidecar = this.#createSidecarLookup(conversation, nativeHistory?.vaultPath, nativeHistory?.pathContext);
     const persistedSubagents = Object.fromEntries(Object.entries(subagentData).flatMap(([id, subagent]) => {
       const persisted = buildPersistedSubagent(subagent, findNativeSidecar);
       return persisted ? [[id, persisted]] : [];
@@ -793,9 +793,12 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     pathContext?: ProviderHistoryPathContext,
   ): boolean {
     const findNativeSidecar = this.#createSidecarLookup(conversation, vaultPath, pathContext);
-    return Object.values(getClaudeState(conversation.providerState).subagentData ?? {}).some(subagent => (
-      isFullClaudeSubagent(subagent) && findNativeSidecar(subagent) !== null
-    ));
+    // Redundant exactly when the save projection would drop or reduce a stored full record.
+    return Object.values(getClaudeState(conversation.providerState).subagentData ?? {}).some(subagent => {
+      if (!isFullClaudeSubagent(subagent)) return false;
+      const persisted = buildPersistedSubagent(subagent, findNativeSidecar);
+      return persisted === null || !isFullClaudeSubagent(persisted);
+    });
   }
 
   /**

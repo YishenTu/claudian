@@ -381,7 +381,10 @@ test('compacts stored subagent copies in the background after all metadata loads
   });
   // The first record's subagents have native sidecars; the legacy one predates stored agent ids.
   await store.saveMetadata(stored('redundant', [subagent('agent-sync'), subagent('agent-legacy', false)]));
-  await store.saveMetadata(stored('sole-copy', [subagent('agent-local'), subagent('agent-unindexed', false)]));
+  // A sync run without a result stays a sole copy even though its sidecar exists.
+  await store.saveMetadata(stored('sole-copy', [
+    subagent('agent-local'), subagent('agent-unindexed', false), { ...subagent('agent-sync'), status: 'running' },
+  ]));
   const read = (id: string) => fs.readFile(path.join(root, DEVICE_PATH, `${id}.meta.json`), 'utf8');
   const soleCopy = await read('sole-copy');
   const previousHome = process.env.CLAUDE_CONFIG_DIR;

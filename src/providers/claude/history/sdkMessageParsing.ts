@@ -301,7 +301,7 @@ export function collectAsyncSubagentResults(
     results.set(notification.taskId, {
       result: notification.content,
       status,
-      summaryOnly: extractXMLTag(sdkMsg.content!, 'result') === null,
+      summaryOnly: !notification.hasResult,
     });
   }
 

@@ -500,9 +500,8 @@ export interface ProviderConversationHistoryService {
     options?: {
       /** Preserve existing history state instead of rebuilding it from unloaded messages. */
       preserveProviderState?: boolean;
-      /** Locates native history so the projection can omit what it already holds. */
-      vaultPath?: string | null;
-      pathContext?: ProviderHistoryPathContext;
+      /** Locates native history so the projection can omit what it already holds; resolve only when needed. */
+      getNativeHistory?: () => { vaultPath: string | null; pathContext?: ProviderHistoryPathContext };
     },
   ): Record<string, unknown> | undefined;
   /** Whether stored state duplicates native history, so rewriting its projection would shrink it. */

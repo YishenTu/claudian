@@ -1,16 +1,21 @@
 import { extractClaudeTextContent } from './claudeTextContent';
 
 /** Consumed task-notification content shared by native replay and live user echoes. */
-export function parseClaudeTaskNotification(content: unknown): { taskId: string; content: string } | null {
+export function parseClaudeTaskNotification(
+  content: unknown,
+): { taskId: string; content: string; hasResult: boolean } | null {
   const text = extractClaudeTextContent(content);
   if (!text.trimStart().startsWith('<task-notification>')) return null;
   const taskId = extractXMLTag(text, 'task-id');
   if (!taskId) return null;
   const status = extractXMLTag(text, 'status');
   if (!status) return null;
-  return { taskId, content: extractXMLTag(text, 'result')
-    ?? extractXMLTag(text, 'summary')
-    ?? `Background task ${status}.` };
+  const result = extractXMLTag(text, 'result');
+  return {
+    taskId,
+    content: result ?? extractXMLTag(text, 'summary') ?? `Background task ${status}.`,
+    hasResult: result !== null,
+  };
 }
 
 export function extractXMLTag(content: string, tagName: string): string | null {
