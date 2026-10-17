@@ -390,8 +390,18 @@ test('compacts stored subagent copies in the background after all metadata loads
   const previousHome = process.env.CLAUDE_CONFIG_DIR;
   process.env.CLAUDE_CONFIG_DIR = claudeHome;
   let atListPublication: string | undefined;
+  const repository = createRepository();
+  // Observe when the real background pass settles instead of polling files mid-write.
+  const compact = repository.compactPersistedProviderState.bind(repository);
+  const passSettled = new Promise<number>(resolve => {
+    jest.spyOn(repository, 'compactPersistedProviderState').mockImplementation(async isStopped => {
+      const count = await compact(isStopped);
+      resolve(count);
+      return count;
+    });
+  });
   const loader = new SessionMetadataLoader({
-    sessions: store.metadataReader, conversations: createRepository(),
+    sessions: store.metadataReader, conversations: repository,
     providerSettings: ProviderSettingsCoordinator,
     runtimeSettings: {
       getPendingProviderIds: () => [],
@@ -405,12 +415,8 @@ test('compacts stored subagent copies in the background after all metadata loads
   try {
     loader.finishStartup(false, true);
     loader.scheduleRemainingLoad();
-    let compacted: SessionMetadata | undefined;
-    for (let attempt = 0; attempt < 200 && !compacted; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, 5));
-      const current = JSON.parse(await read('redundant')) as SessionMetadata;
-      if (!current.providerState?.subagentData) compacted = current;
-    }
+    expect(await passSettled).toBe(1);
+    const compacted = JSON.parse(await read('redundant')) as SessionMetadata;
 
     expect(atListPublication).toContain('read-agent-sync');
     expect(compacted).toMatchObject({ id: 'redundant', title: metadata.title, sessionId: 'native-1' });
