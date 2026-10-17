@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
-import { testDate } from '@test/helpers/testClock';
+import { testDate, testTime } from '@test/helpers/testClock';
 import { App, Notice, type Plugin } from 'obsidian';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
@@ -20,6 +20,7 @@ import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCo
 import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { Conversation, SessionMetadata, SubagentInfo } from '@/core/types';
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
+import { encodeVaultPathForSDK } from '@/providers/claude/history/ClaudeHistoryPathResolver';
 
 const DEVICE_KEY = `device-${'a'.repeat(64)}`;
 const DEVICE_PATH = getDeviceSessionsPath(DEVICE_KEY);
@@ -164,6 +165,238 @@ test.each(['unloaded', 'model-recovery'] as const)('strips image payloads when s
   expect(repository.getSync(conversation.id)).toEqual(before);
   expect(hydrate).not.toHaveBeenCalled();
   expect(await adapter.read(nativePath)).toBe(result);
+});
+
+test('persists only subagent state that native history cannot rebuild and restores the rest on reopen', async () => {
+  const now = testDate().getTime();
+  const claudeHome = path.join(root, 'claude-home');
+  const projectPath = path.join(claudeHome, 'projects', encodeVaultPathForSDK(root));
+  const sidecarDirectory = path.join(projectPath, 'native-1', 'subagents');
+  await fs.mkdir(sidecarDirectory, { recursive: true });
+  const jsonl = (rows: object[]) => rows.map(row => JSON.stringify(row)).join('\n');
+  const writeSidecar = (agentId: string, rows: object[]) => fs.writeFile(
+    path.join(sidecarDirectory, `agent-${agentId}.jsonl`),
+    jsonl(rows.map(row => ({ isSidechain: true, timestamp: testTime({ seconds: 2 }), ...row }))),
+  );
+  const toolUse = (id: string, name: string, input: object) => ({
+    type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id, name, input }] },
+  });
+  const toolResult = (id: string, content: string, toolUseResult?: object) => ({
+    type: 'user', ...(toolUseResult ? { toolUseResult } : {}),
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content }] },
+  });
+  const editInput = { file_path: '/notes/a.md', old_string: 'old', new_string: 'new' };
+  const patch = [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-old', '+new'] }];
+  const grepInput = { pattern: 'todo' };
+  const readInput = { file_path: '/notes/b.md' };
+  await writeSidecar('agent-sync', [
+    toolUse('edit-1', 'Edit', editInput),
+    toolResult('edit-1', 'Edited', { filePath: '/notes/a.md', oldString: 'old', newString: 'new', structuredPatch: patch }),
+  ]);
+  await writeSidecar('agent-legacy', [toolUse('grep-1', 'Grep', grepInput), toolResult('grep-1', 'a.md')]);
+  await writeSidecar('agent-old', [toolUse('glob-1', 'Glob', { pattern: '*.md' }), toolResult('glob-1', 'a.md')]);
+  await writeSidecar('agent-fail', [toolUse('read-fail', 'Read', readInput)]);
+  await writeSidecar('agent-running', [toolUse('read-running', 'Read', readInput)]);
+  await writeSidecar('agent-bg', [
+    toolUse('read-bg', 'Read', readInput), toolResult('read-bg', 'b text'),
+    { type: 'assistant', message: { role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: 'Background report' }] } },
+  ]);
+  const task = (id: string, input: object = {}) => ({
+    type: 'tool_use', id, name: 'Agent', input: { description: `${id} description`, prompt: `${id} prompt`, ...input },
+  });
+  const taskResult = (id: string, content: string, toolUseResult: object) => ({
+    type: 'user', uuid: `${id}-result`, timestamp: testTime({ seconds: 4 }), toolUseResult,
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content }] },
+  });
+  const completed = (id: string, agentId: string) => taskResult(id, `${id} done`, {
+    status: 'completed', agentId, content: [{ type: 'text', text: `${id} done` }],
+  });
+  const rows = [
+    { type: 'user', uuid: 'prompt', timestamp: testTime({ seconds: 0 }), message: { role: 'user', content: 'Delegate' } },
+    { type: 'assistant', uuid: 'launch', timestamp: testTime({ seconds: 1 }), message: { role: 'assistant', stop_reason: 'tool_use',
+      content: [task('task-sync'), task('task-local'), task('task-legacy'), task('task-bg', { run_in_background: true }),
+        task('task-old'), task('task-fail', { run_in_background: true }), task('task-running')] } },
+    completed('task-sync', 'agent-sync'),
+    completed('task-local', 'agent-local'),
+    completed('task-legacy', 'agent-legacy'),
+    // The completion notice never reached the transcript; Claudian observed it live.
+    taskResult('task-bg', 'Async agent launched', { status: 'async_launched', isAsync: true, agentId: 'agent-bg' }),
+    // Older results identify the agent only in the hand-back text.
+    taskResult('task-old', '[Subagent hand-back] The text below is the final report of a subagent. The report follows:\n'
+      + '  task-old done\nagentId: agent-old (use SendMessage to continue)\n<usage>total_tokens: 1</usage>', {}),
+    taskResult('task-fail', 'Async agent launched', { status: 'async_launched', isAsync: true, agentId: 'agent-fail' }),
+  ];
+  await fs.writeFile(path.join(projectPath, 'native-1.jsonl'), jsonl(rows.map((row, index) => ({
+    ...row, sessionId: 'native-1', parentUuid: rows[index - 1]?.uuid ?? null,
+  }))));
+  const previousHome = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = claudeHome;
+
+  const liveSubagent = (
+    id: string, agentId: string | undefined, toolCall: SubagentInfo['toolCalls'][number], fields: Partial<SubagentInfo> = {},
+  ): SubagentInfo => ({
+    id, description: `${id} description`, prompt: `${id} prompt`, mode: 'sync', status: 'completed', result: `${id} done`,
+    ...(agentId ? { agentId } : {}), isExpanded: false, toolCalls: [toolCall], ...fields,
+  });
+  const synced = liveSubagent('task-sync', 'agent-sync', {
+    id: 'edit-1', name: 'Edit', input: editInput, status: 'completed', result: 'Edited',
+    diffData: { filePath: '/notes/a.md', diffLines: [], stats: { added: 1, removed: 1 } },
+  });
+  // No native sidecar holds this subagent's calls, so metadata remains their only copy.
+  const unsynced = liveSubagent('task-local', 'agent-local', {
+    id: 'read-1', name: 'Read', input: { file_path: '/notes/a.md' }, status: 'completed', result: 'note text',
+  });
+  // Saved before sync subagents recorded their native identity; the transcript still has it.
+  const legacy = liveSubagent('task-legacy', undefined, {
+    id: 'grep-1', name: 'Grep', input: grepInput, status: 'completed', result: 'a.md',
+  });
+  const background = liveSubagent('task-bg', 'agent-bg', {
+    id: 'read-bg', name: 'Read', input: readInput, status: 'completed', result: 'b text',
+  }, { mode: 'async', asyncStatus: 'completed', result: 'Background report', startedAt: now, completedAt: now });
+  const old = liveSubagent('task-old', 'agent-old', {
+    id: 'glob-1', name: 'Glob', input: { pattern: '*.md' }, status: 'completed', result: 'a.md',
+  });
+  // The failure explanation came from a notification the transcript lacks; the sidecar has no final text.
+  const failed = liveSubagent('task-fail', 'agent-fail', {
+    id: 'read-fail', name: 'Read', input: readInput, status: 'running',
+  }, { mode: 'async', status: 'error', asyncStatus: 'error', result: 'Agent failed: quota exceeded' });
+  // The transcript has no result for a run still in flight, so nothing native can rebuild it yet.
+  const running = liveSubagent('task-running', 'agent-running', {
+    id: 'read-running', name: 'Read', input: readInput, status: 'running',
+  }, { status: 'running', result: undefined });
+  const failedOverlay = {
+    id: 'task-fail', mode: 'async', agentId: 'agent-fail', status: 'error', asyncStatus: 'error',
+    result: 'Agent failed: quota exceeded',
+  };
+  const conversation: Conversation = {
+    ...metadata, providerId: 'claude', createdAt: now, lastActivityAt: now, sessionId: 'native-1',
+    providerState: { providerSessionId: 'native-1' }, messages: [],
+  };
+  const savedSubagents = async () => (await store.metadataReader.loadMetadata(conversation.id))
+    ?.providerState?.subagentData as Record<string, unknown> | undefined;
+  try {
+    const repository = createRepository();
+    repository.replaceAll([conversation]);
+    await repository.update(conversation.id, { messages: [{
+      id: 'launch', role: 'assistant', content: '', timestamp: now,
+      toolCalls: [synced, unsynced, legacy, background, old, failed, running].map(subagent => ({
+        id: subagent.id, name: 'Agent', input: { description: subagent.description, prompt: subagent.prompt },
+        status: 'completed' as const, result: subagent.result, subagent,
+      })),
+    }] });
+
+    expect(await savedSubagents()).toEqual({
+      'task-local': unsynced,
+      'task-legacy': legacy,
+      'task-bg': { id: 'task-bg', mode: 'async', agentId: 'agent-bg', status: 'completed', asyncStatus: 'completed' },
+      'task-fail': failedOverlay,
+      'task-running': running,
+    });
+
+    const reopened = createRepository();
+    reopened.mergeMetadataConversations([{
+      ...conversation, providerState: (await store.metadataReader.loadMetadata(conversation.id))?.providerState,
+    }], 'device');
+    const hydrated = await reopened.ensureHydrated(conversation.id);
+    const restored = (id: string) => hydrated?.messages.flatMap(message => message.toolCalls ?? [])
+      .find(toolCall => toolCall.id === id)?.subagent;
+    expect(restored('task-sync')).toMatchObject({
+      description: 'task-sync description', prompt: 'task-sync prompt', mode: 'sync', status: 'completed',
+      result: 'task-sync done', agentId: 'agent-sync',
+      toolCalls: [expect.objectContaining({
+        id: 'edit-1', name: 'Edit', input: editInput, status: 'completed', result: 'Edited',
+        diffData: expect.objectContaining({ stats: { added: 1, removed: 1 } }),
+      })],
+    });
+    expect(restored('task-local')?.toolCalls).toEqual(unsynced.toolCalls);
+    expect(restored('task-legacy')?.toolCalls).toEqual([expect.objectContaining({ id: 'grep-1', input: grepInput, result: 'a.md' })]);
+    expect(restored('task-bg')).toMatchObject({
+      description: 'task-bg description', prompt: 'task-bg prompt', mode: 'async', status: 'completed',
+      asyncStatus: 'completed', result: 'Background report',
+      toolCalls: [expect.objectContaining({ id: 'read-bg', input: readInput, result: 'b text' })],
+    });
+
+    expect(restored('task-old')).toMatchObject({ agentId: 'agent-old', result: 'task-old done',
+      toolCalls: [expect.objectContaining({ id: 'glob-1', result: 'a.md' })] });
+    expect(restored('task-fail')).toMatchObject({ status: 'error', result: 'Agent failed: quota exceeded' });
+
+    // Reopening adopted the legacy record's native identity, so the next save drops it too.
+    await reopened.rename(conversation.id, 'Renamed');
+    expect(await savedSubagents()).toEqual({
+      'task-local': unsynced,
+      'task-bg': { id: 'task-bg', mode: 'async', agentId: 'agent-bg', status: 'completed', asyncStatus: 'completed' },
+      'task-fail': failedOverlay,
+      'task-running': running,
+    });
+
+    // History rewound before every subagent leaves no stored copies to reattach.
+    await reopened.update(conversation.id, { messages: [] });
+    expect(await savedSubagents()).toBeUndefined();
+  } finally {
+    if (previousHome === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previousHome;
+  }
+});
+
+test('compacts stored subagent copies in the background after all metadata loads', async () => {
+  const claudeHome = path.join(root, 'claude-home');
+  const sessionDirectory = path.join(claudeHome, 'projects', encodeVaultPathForSDK(root), 'native-1');
+  await fs.mkdir(path.join(sessionDirectory, 'subagents'), { recursive: true });
+  await fs.writeFile(path.join(sessionDirectory, 'subagents', 'agent-agent-sync.jsonl'), '');
+  // Claude Code indexes each sidecar by its spawning tool call beside the transcript.
+  await fs.writeFile(path.join(sessionDirectory, 'subagents', 'agent-agent-legacy.jsonl'), '');
+  await fs.writeFile(path.join(sessionDirectory, 'subagents', 'agent-agent-legacy.meta.json'),
+    JSON.stringify({ toolUseId: 'task-agent-legacy' }));
+  const subagent = (agentId: string, storesAgentId = true): SubagentInfo => ({
+    id: `task-${agentId}`, description: 'Research', prompt: 'Look', mode: 'sync', status: 'completed',
+    result: 'Done', ...(storesAgentId ? { agentId } : {}), isExpanded: false,
+    toolCalls: [{ id: `read-${agentId}`, name: 'Read', input: { file_path: 'note.md' }, status: 'completed', result: 'text' }],
+  });
+  const stored = (id: string, subagents: SubagentInfo[]): SessionMetadata => ({
+    ...metadata, id, sessionId: 'native-1',
+    providerState: {
+      providerSessionId: 'native-1',
+      subagentData: Object.fromEntries(subagents.map(entry => [entry.id, entry])),
+    },
+  });
+  // The first record's subagents have native sidecars; the legacy one predates stored agent ids.
+  await store.saveMetadata(stored('redundant', [subagent('agent-sync'), subagent('agent-legacy', false)]));
+  await store.saveMetadata(stored('sole-copy', [subagent('agent-local'), subagent('agent-unindexed', false)]));
+  const read = (id: string) => fs.readFile(path.join(root, DEVICE_PATH, `${id}.meta.json`), 'utf8');
+  const soleCopy = await read('sole-copy');
+  const previousHome = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = claudeHome;
+  let atListPublication: string | undefined;
+  const loader = new SessionMetadataLoader({
+    sessions: store.metadataReader, conversations: createRepository(),
+    providerSettings: ProviderSettingsCoordinator,
+    runtimeSettings: {
+      getPendingProviderIds: () => [],
+      getCompletablePendingSessionInvalidations: () => new Map(),
+      completePendingSessionInvalidations: async () => undefined,
+    } as never,
+    isUnloading: () => false, whenLayoutReady: callback => callback(), onConversationListChanged: () => undefined,
+    onAllMetadataLoaded: () => { void read('redundant').then(content => { atListPublication = content; }); },
+  });
+  try {
+    loader.finishStartup(false, true);
+    loader.scheduleRemainingLoad();
+    let compacted: SessionMetadata | undefined;
+    for (let attempt = 0; attempt < 200 && !compacted; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      const current = JSON.parse(await read('redundant')) as SessionMetadata;
+      if (!current.providerState?.subagentData) compacted = current;
+    }
+
+    expect(atListPublication).toContain('read-agent-sync');
+    expect(compacted).toMatchObject({ id: 'redundant', title: metadata.title, sessionId: 'native-1' });
+    expect(compacted?.providerState).toEqual({ providerSessionId: 'native-1' });
+    expect(await read('sole-copy')).toBe(soleCopy);
+  } finally {
+    await loader.dispose();
+    if (previousHome === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previousHome;
+  }
 });
 
 test.each([

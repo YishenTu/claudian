@@ -13,7 +13,17 @@ export interface ClaudeProviderState {
   bindingRetired?: boolean;
   historyReplayPending?: boolean;
   forkSource?: ForkSource;
-  subagentData?: Record<string, SubagentInfo>;
+  /** Only what native history lacks: full records without a native sidecar, otherwise async overlays. */
+  subagentData?: Record<string, SubagentInfo | ClaudeSubagentOverlay>;
+}
+
+/** Async lifecycle state Claudian observed live; the transcript may lack the completion notice. */
+export type ClaudeSubagentOverlay = Pick<SubagentInfo, 'id' | 'mode' | 'agentId' | 'status' | 'asyncStatus' | 'result'>;
+
+export function isFullClaudeSubagent(
+  subagent: SubagentInfo | ClaudeSubagentOverlay,
+): subagent is SubagentInfo {
+  return Array.isArray((subagent as Partial<SubagentInfo>).toolCalls);
 }
 
 /** Extracts typed Claude provider state from the opaque bag. */

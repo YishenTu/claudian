@@ -30,19 +30,23 @@ import {
   parseTaskNotification,
 } from './sdkMessageParsing';
 import {
+  hasSubagentSidecar,
   isValidAgentId,
   loadSubagentFinalResult,
   loadSubagentToolCalls,
+  readSubagentToolUseIndex,
 } from './sdkSubagentSidecar';
 
 export { recoverSDKSessionIdByTime } from './ClaudeSessionRecovery';
 export {
   encodeVaultPathForSDK,
   getSDKProjectsPath,
+  hasSubagentSidecar,
   loadSubagentFinalResult,
   loadSubagentToolCalls,
   locateSDKSession,
   locateSDKSessions,
+  readSubagentToolUseIndex,
 };
 
 /**
@@ -220,6 +224,14 @@ export async function loadSDKSessionMessages(
   flushPendingAssistant(true);
 
   const taskResults = new ClaudeTaskResultInterpreter();
+  const sidecarLoads: Array<{ subagent: SubagentInfo; promise: Promise<ToolCallInfo[]> }> = [];
+  const loadSidecarToolCalls = (subagent: SubagentInfo): void => {
+    if (!subagent.agentId || !isValidAgentId(subagent.agentId)) return;
+    sidecarLoads.push({
+      subagent,
+      promise: loadSubagentToolCalls(vaultPath, sessionId, subagent.agentId, sessionPath, pathContext),
+    });
+  };
   for (const message of chatMessages) {
     for (const toolCall of message.toolCalls ?? []) {
       if (!isClaudeSubagentToolName(toolCall.name) || toolCall.input.run_in_background === true
@@ -229,17 +241,31 @@ export async function loadSDKSessionMessages(
       const mode = taskResults.describeTask(toolCall.input).mode
         ?? taskResults.interpretLaunch(toolCall.result, toolCall.status === 'error', payload).mode;
       if (mode === 'async') continue;
+      // Older results identify the agent only in the hand-back text, as live handling accepts.
+      const agentId = taskResults.interpretLaunch(toolCall.result, toolCall.status === 'error', payload).agentId;
       const result = taskResults.interpretResult(toolCall.result, toolCall.status === 'error',
         { mode: 'sync' }, payload);
       toolCall.result = result.result;
+      if (!toolCall.subagent && agentId) {
+        toolCall.subagent = {
+          id: toolCall.id,
+          description: (toolCall.input.description as string) || 'Subagent task',
+          prompt: (toolCall.input.prompt as string) || '',
+          mode: 'sync',
+          isExpanded: false,
+          status: result.status,
+          result: result.result,
+          toolCalls: [],
+          agentId,
+        };
+        loadSidecarToolCalls(toolCall.subagent);
+      }
     }
   }
   hydrateStructuredToolResults(chatMessages, toolUseResults);
 
   // Build SubagentInfo for async Agent tool calls from toolUseResult + queue-operation data
   if (toolUseResults.size > 0 || asyncSubagentResults.size > 0) {
-    const sidecarLoads: Array<{ subagent: SubagentInfo; promise: Promise<ToolCallInfo[]> }> = [];
-
     for (const msg of chatMessages) {
       if (msg.role !== 'assistant' || !msg.toolCalls) continue;
       for (const toolCall of msg.toolCalls) {
@@ -259,33 +285,17 @@ export async function loadSDKSessionMessages(
             toolCall.result = subagent.result;
           }
           toolCall.status = subagent.status;
-
-          // Load tool calls from subagent sidecar JSONL in parallel
-          if (subagent.agentId && isValidAgentId(subagent.agentId)) {
-            const promise = loadSubagentToolCalls(
-              vaultPath,
-              sessionId,
-              subagent.agentId,
-              sessionPath,
-              pathContext,
-            );
-            sidecarLoads.push({ subagent, promise });
-          }
-        }
-      }
-    }
-
-    // Hydrate subagent tool calls from sidecar files
-    if (sidecarLoads.length > 0) {
-      const results = await Promise.all(sidecarLoads.map(s => s.promise));
-      for (let i = 0; i < sidecarLoads.length; i++) {
-        const toolCalls = results[i];
-        if (toolCalls.length > 0) {
-          sidecarLoads[i].subagent.toolCalls = toolCalls;
+          loadSidecarToolCalls(subagent);
         }
       }
     }
   }
+
+  // Hydrate subagent tool calls from sidecar files in parallel
+  const sidecarToolCalls = await Promise.all(sidecarLoads.map(load => load.promise));
+  sidecarLoads.forEach(({ subagent }, index) => {
+    if (sidecarToolCalls[index].length > 0) subagent.toolCalls = sidecarToolCalls[index];
+  });
 
   // Notification timestamps record enqueue time, not consumption. Pin their
   // transcript boundaries while retaining timestamp ordering (e.g. /compact)

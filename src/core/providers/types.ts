@@ -497,9 +497,20 @@ export interface ProviderConversationHistoryService {
   /** Projects provider state for storage without changing live state or native history. */
   buildPersistedProviderState?(
     conversation: ProviderHistoryInput,
-    /** Preserve existing history state instead of rebuilding it from unloaded messages. */
-    options?: { preserveProviderState?: boolean },
+    options?: {
+      /** Preserve existing history state instead of rebuilding it from unloaded messages. */
+      preserveProviderState?: boolean;
+      /** Locates native history so the projection can omit what it already holds. */
+      vaultPath?: string | null;
+      pathContext?: ProviderHistoryPathContext;
+    },
   ): Record<string, unknown> | undefined;
+  /** Whether stored state duplicates native history, so rewriting its projection would shrink it. */
+  hasRedundantPersistedState?(
+    conversation: ProviderHistoryInput,
+    vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): boolean;
 }
 
 export interface ProviderSubagentHistoryRequest {

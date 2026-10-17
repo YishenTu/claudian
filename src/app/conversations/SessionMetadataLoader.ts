@@ -249,6 +249,12 @@ export class SessionMetadataLoader {
         );
       }
       if (!this.isStopped()) this.options.onAllMetadataLoaded?.();
+      if (!this.isStopped()) {
+        StartupProfiler.recordCount(
+          'compacted-session-metadata-count',
+          await conversations.compactPersistedProviderState(() => this.isStopped()),
+        );
+      }
     }
   }
 

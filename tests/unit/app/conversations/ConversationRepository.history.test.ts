@@ -85,7 +85,7 @@ test('releases cached history behind pending writes, preserves overlays, and rel
   expect(repository.getCachedConversation(conversation.id)?.messages).toEqual([]);
   await repository.rename(conversation.id, 'After eviction');
   expect(persistence.saveMetadata.mock.calls.at(-1)?.[0].providerState).toEqual({ overlay: ['Live client fragment'] });
-  expect(projection.mock.calls.at(-1)?.[1]).toEqual({ preserveProviderState: true });
+  expect(projection.mock.calls.at(-1)?.[1]).toMatchObject({ preserveProviderState: true });
   expect((await repository.getById(conversation.id))?.messages.map(message => message.content)).toEqual(['Native history']);
   expect(hydrate).toHaveBeenCalledTimes(1);
 });
