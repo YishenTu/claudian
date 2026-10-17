@@ -1,5 +1,6 @@
 import '@/providers';
 
+import { readFileSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -376,7 +377,8 @@ test('compacts stored subagent copies in the background after all metadata loads
       completePendingSessionInvalidations: async () => undefined,
     } as never,
     isUnloading: () => false, whenLayoutReady: callback => callback(), onConversationListChanged: () => undefined,
-    onAllMetadataLoaded: () => { void read('redundant').then(content => { atListPublication = content; }); },
+    // Read synchronously: the background pass starts after this callback returns.
+    onAllMetadataLoaded: () => { atListPublication = readFileSync(path.join(root, DEVICE_PATH, 'redundant.meta.json'), 'utf8'); },
   });
   try {
     loader.finishStartup(false, true);
