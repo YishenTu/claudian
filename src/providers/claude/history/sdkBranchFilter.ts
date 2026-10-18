@@ -100,7 +100,8 @@ export function filterActiveBranch(
   const activeChildOf = new Map<string, string>();
 
   let latestCurrent = latestLeaf;
-  while (latestCurrent?.uuid) {
+  // Compaction can link a preserved segment back to its own boundary.
+  while (latestCurrent?.uuid && !latestBranchUuids.has(latestCurrent.uuid)) {
     latestBranchUuids.add(latestCurrent.uuid);
     const parent = parentOf(latestCurrent);
     if (parent) {
@@ -169,7 +170,9 @@ export function filterActiveBranch(
     leaf = latestLeaf;
     if (resumeAtMessageId && leaf?.uuid && byUuid.has(resumeAtMessageId)) {
       let current: SDKNativeMessage | undefined = leaf;
-      while (current?.uuid) {
+      const visited = new Set<string>();
+      while (current?.uuid && !visited.has(current.uuid)) {
+        visited.add(current.uuid);
         if (current.uuid === resumeAtMessageId) {
           leaf = current;
           break;
@@ -190,7 +193,7 @@ export function filterActiveBranch(
 
   const activeUuids = new Set<string>();
   let current: SDKNativeMessage | undefined = leaf;
-  while (current?.uuid) {
+  while (current?.uuid && !activeUuids.has(current.uuid)) {
     activeUuids.add(current.uuid);
     const parent = parentOf(current);
     current = parent ? byUuid.get(parent) : undefined;
