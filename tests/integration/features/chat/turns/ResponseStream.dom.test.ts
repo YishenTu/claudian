@@ -319,10 +319,9 @@ it('leaves file-annotation-like assistant text from other providers unchanged', 
 
 it.each(['retired-provider', '', 'constructor'])('keeps cached historical presentation readable without a registered formatter (%s)', async providerId => {
   const messagesEl = document.body.createDiv();
-  const capabilities = { ...ProviderRegistry.getCapabilities('claude'), providerId };
   const plugin = {
     app: {}, settings: { mediaFolder: '', showMessageTimestamps: false },
-    getConversationSummary: () => ({ providerId, capabilities }),
+    getConversationSummary: () => ({ providerId }),
   } as unknown as Parameters<typeof getSessionCapabilities>[1];
   const identity = { conversationId: 'cached-session', providerId, draftModel: null };
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl, undefined, undefined,

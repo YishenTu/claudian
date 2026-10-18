@@ -5,12 +5,11 @@ import { Component } from 'obsidian';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import type { ProviderCapabilities, ProviderConversationHistoryService, ProviderRegistration } from '@/core/providers/types';
+import type { ProviderConversationHistoryService, ProviderRegistration } from '@/core/providers/types';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
 import { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
 import {
   captureLatestCompletedForkSource,
-  findLatestForkCheckpoint,
   type LiveForkSourceOwner,
 } from '@/features/chat/sessions/SessionForkSource';
 import { getSessionSelectedModel } from '@/features/chat/sessions/sessionSettings';

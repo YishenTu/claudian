@@ -1,10 +1,10 @@
-import { existsSync } from 'node:fs';
-
 import { createTurnStats, isTokenCount, type TurnStats } from '@/core/types';
 
-import { resolveExistingOpencodeDatabasePath } from '../runtime/OpencodePaths';
-import type { OpencodeProviderState } from '../types';
-import { loadOpencodeTurnRows, type OpencodeTurnSelector, type StoredRow } from './OpencodeSqliteReader';
+import { readOpencodeHTTPMessagesBackward } from '../http/OpencodeHTTPHistory';
+import type { OpencodeServerLease } from '../http/OpencodeServerService';
+
+/** A native message record, as stored or as served by the native message API. */
+type NativeRecord = Record<string, unknown>;
 
 /** Accumulates native metadata from a user entry through its assistant steps. */
 export class OpencodeTurnStats {
@@ -16,7 +16,7 @@ export class OpencodeTurnStats {
     this.outputTokens = 0;
   }
 
-  add(info: StoredRow): TurnStats | undefined {
+  add(info: NativeRecord): TurnStats | undefined {
     if (info.role === 'user') {
       this.reset();
       this.startedAt = getMessageCreatedAt(info);
@@ -37,44 +37,63 @@ export class OpencodeTurnStats {
   }
 }
 
-export async function loadOpencodeTurnStats(
-  sessionId: string,
-  state: OpencodeProviderState,
-  selector: OpencodeTurnSelector,
-  environment: NodeJS.ProcessEnv = process.env,
-): Promise<TurnStats | undefined> {
-  const databasePath = resolveExistingOpencodeDatabasePath(state.databasePath, environment);
-  // Missing optional metadata cannot be recovered by trying other SQLite runtimes.
-  if (!databasePath || databasePath === ':memory:' || !existsSync(databasePath)) return undefined;
-  const rows = await loadOpencodeTurnRows(databasePath, sessionId, selector, { environment });
+/** Selects a turn by its admitted user message, else the latest user entry since the prompt started. */
+export interface OpencodeTurnSelector {
+  userMessageId?: string | null;
+  startedAt: number;
+}
+
+function isTurnStart(message: NativeRecord, selector: OpencodeTurnSelector): boolean {
+  return selector.userMessageId
+    ? message.id === selector.userMessageId
+    : message.type === 'user' && (getMessageCreatedAt(message) ?? -Infinity) >= selector.startedAt;
+}
+
+/** Statistics for the selected turn of a native session's ordered messages. */
+export function selectOpencodeTurnStats(messages: readonly NativeRecord[], selector: OpencodeTurnSelector): TurnStats | undefined {
+  let start = messages.length - 1;
+  while (start >= 0 && !isTurnStart(messages[start], selector)) start -= 1;
+  if (start === -1) return undefined;
   const stats = new OpencodeTurnStats();
   let result: TurnStats | undefined;
-  for (const row of rows) {
-    if (row.data_valid === 0) {
-      stats.reset();
-      result = undefined;
-      continue;
-    }
+  for (const [index, message] of messages.slice(start).entries()) {
+    if (index > 0 && message.type === 'user') break;
     // Native control entries end the turn.
-    if (row.role !== 'user' && row.role !== 'assistant') return result;
-    result = stats.add({
-      ...row,
-      tokens: { output: row.output_tokens, reasoning: row.reasoning_tokens },
-    });
+    if (message.type !== 'user' && message.type !== 'assistant') break;
+    result = stats.add({ ...message, role: message.type });
   }
   return result;
 }
 
-export function getMessageCreatedAt(info: StoredRow): number | null {
-  return number(object(info.time)?.created) ?? number(info.data_time_created) ?? number(info.time_created);
+/**
+ * Reads the selected turn's statistics backward from the newest native message,
+ * stopping at the turn's user boundary or at the first message created before
+ * the prompt started, so earlier history is never requested.
+ */
+export async function readOpencodeTurnStats(
+  client: Pick<OpencodeServerLease, 'request'>,
+  sessionId: string,
+  selector: OpencodeTurnSelector,
+): Promise<TurnStats | undefined> {
+  const newestFirst: NativeRecord[] = [];
+  for await (const message of readOpencodeHTTPMessagesBackward(client, sessionId)) {
+    newestFirst.push(message);
+    if (isTurnStart(message, selector)) return selectOpencodeTurnStats(newestFirst.reverse(), selector);
+    if ((getMessageCreatedAt(message) ?? Infinity) < selector.startedAt) return undefined;
+  }
+  return undefined;
 }
 
-export function getMessageCompletedAt(info: StoredRow): number | null {
-  return number(object(info.time)?.completed) ?? number(info.data_time_completed);
+export function getMessageCreatedAt(info: NativeRecord): number | null {
+  return number(object(info.time)?.created) ?? number(info.time_created);
 }
 
-function object(value: unknown): StoredRow | undefined {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as StoredRow : undefined;
+export function getMessageCompletedAt(info: NativeRecord): number | null {
+  return number(object(info.time)?.completed);
+}
+
+function object(value: unknown): NativeRecord | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as NativeRecord : undefined;
 }
 
 function number(value: unknown): number | null {

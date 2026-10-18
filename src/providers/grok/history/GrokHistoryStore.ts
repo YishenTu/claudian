@@ -2,6 +2,7 @@ import * as path from 'node:path';
 
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import { resolveToolDiffData } from '@/core/tools/toolDiff';
+import { extractACPDiffResultDetails } from '@/providers/acp/ACPToolResultNormalization';
 import { forEachJSONLLine } from '@/utils/jsonlFile';
 
 import { isWriteEditTool, TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
@@ -14,7 +15,6 @@ import type {
   ToolCallInfo,
   ToolResultDetails,
 } from '../../../core/types';
-import { extractACPDiffResultDetails } from '../../acp/ACPToolResultNormalization';
 import {
   buildGrokToolProviderPayload,
   type GrokRawToolNameResolution,

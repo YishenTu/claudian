@@ -1,4 +1,4 @@
-import type { ACPUsage } from '../../acp';
+import type { ACPUsage } from '@/providers/acp';
 
 export function parseGrokUsage(value: unknown): ACPUsage | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;

@@ -83,7 +83,7 @@ describe('OpenCode provider state', () => {
       ],
     })).toEqual({
       previousSessions: [
-        { sessionId: 'first', databasePath: '/tmp/opencode.db', nativeVersion: 2 },
+        { sessionId: 'first', databasePath: '/tmp/opencode.db' },
         { sessionId: 'second' },
       ],
     });

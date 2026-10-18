@@ -6,7 +6,7 @@ import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { Component } from 'obsidian';
 
-import { type ProviderExecutionEvent, RequestedRunChannel } from '@/core/execution';
+import type { ProviderExecutionEvent } from '@/core/execution';
 import { getToolIcon } from '@/core/tools/toolIcons';
 import type { ChatMessage, StreamChunk, ToolCallInfo } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
@@ -16,12 +16,10 @@ import { renderStoredWriteEdit } from '@/features/chat/rendering/tools/WriteEdit
 import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
-import { ACPRequestedTurn } from '@/providers/acp/ACPRequestedTurn';
 import { OpencodeHTTPSessionKernel } from '@/providers/opencode/execution/OpencodeHTTPSessionKernel';
 import { OpencodeSessionPersistence } from '@/providers/opencode/execution/OpencodeSessionPersistence';
 import { mapOpencodeV2NativeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
 import type { OpencodeHTTPEvent } from '@/providers/opencode/http/OpencodeHTTPClient';
-import { createOpencodeToolStreamAdapter } from '@/providers/opencode/normalization/opencodeToolNormalization';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
@@ -58,9 +56,9 @@ async function restoreLiveV2(call: NativeToolCall): Promise<ToolCallInfo> {
     },
   };
   const config = { workingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: jest.fn() } } as any;
-  const kernel = new OpencodeHTTPSessionKernel({ config, getActiveTurnId: () => 'turn',
+  const kernel = new OpencodeHTTPSessionKernel({ config, host: { resolveCliPath: async () => '/opencode', environmentText: '' }, getActiveTurnId: () => 'turn',
     onNativeOutput: (event: ProviderExecutionEvent) => output.push(event), onNativeTurn: jest.fn(), onClosed: jest.fn(),
-  } as any, '/opencode', {}, { acquire: async () => lease } as any, new OpencodeSessionPersistence(config));
+  } as any, { acquire: async () => lease } as any, new OpencodeSessionPersistence(config));
   try {
     await kernel.connect({ profile: 'managed', systemPrompt: '' });
     await kernel.openSession();
@@ -223,52 +221,6 @@ describe.each(['live', 'history'] as const)('%s OpenCode V2 tool presentation', 
   });
 });
 
-describe.each(['live', 'history'] as const)('%s OpenCode V1 shell outcomes', mode => {
-  it.each([
-    ['bash', 0, 'completed', 'completed'],
-    ['bash', 2, 'completed', 'error'],
-    ['bash', undefined, 'completed', 'completed'],
-    ['bash', 0, 'error', 'error'],
-    ['custom', 2, 'completed', 'completed'],
-  ] as const)('preserves %s exit %s / native %s as %s', async (name, exit, nativeStatus, expectedStatus) => {
-    const input = { command: 'make check', description: 'Run checks' };
-    const output = 'check output mentions exit 2';
-    const metadata = { exit, output, description: 'Run checks' };
-    let tool: ToolCallInfo;
-    if (mode === 'live') {
-      const run = new RequestedRunChannel({ onCancel: () => {}, sessionInstanceId: 'session' });
-      const turn = new ACPRequestedTurn({
-        run,
-        toolStreamAdapter: createOpencodeToolStreamAdapter(),
-      });
-      turn.beginLiveOutput();
-      for (const update of [
-        { sessionUpdate: 'tool_call', toolCallId: 'bash', kind: name === 'bash' ? 'execute' : 'other', title: name, status: 'in_progress', rawInput: input },
-        { sessionUpdate: 'tool_call_update', toolCallId: 'bash', kind: name === 'bash' ? 'execute' : 'other', title: name === 'bash' ? 'Run checks' : name,
-          status: nativeStatus === 'error' ? 'failed' : 'completed', rawInput: input,
-          content: [{ type: 'content', content: { type: 'text', text: output } }], rawOutput: { output, metadata } },
-      ]) turn.handleUpdate(update);
-      run.finish({ reason: 'completed', type: 'turn_completed' });
-      const events: ProviderExecutionEvent[] = [];
-      for await (const event of run.events) events.push(event);
-      turn.dispose();
-      tool = await renderLiveEvents(events);
-    } else {
-      const [message] = mapOpencodeMessages([{
-        info: { id: 'assistant', role: 'assistant', time: { created: testDate().getTime() } },
-        parts: [{ type: 'tool', callID: 'bash', tool: name, state: {
-          status: nativeStatus, input, output, metadata,
-        } }],
-      }]);
-      tool = message.toolCalls![0];
-    }
-    expect(tool).toMatchObject({ name: name === 'bash' ? 'Bash' : name, status: expectedStatus, result: output });
-    const block = renderStoredToolCall(document.body.createDiv(), tool);
-    expand(block, name === 'bash' ? /^Bash: make check/ : /^custom/);
-    expect(block.textContent).toContain(output);
-    expect(await axe(block)).toHaveNoViolations();
-  });
-});
 
 it.each([
   { oldString: 'obsolete', newString: '', removed: ['obsolete'], added: [] },

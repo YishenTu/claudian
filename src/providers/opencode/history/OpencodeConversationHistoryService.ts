@@ -3,34 +3,29 @@ import { copyProviderHistoryState } from '@/core/providers/providerHistory';
 import { mergePersistedProviderState } from '../../../core/providers/providerState';
 import type {
   ProviderConversationHistoryService,
-  ProviderHistoryEnvironment,
   ProviderHistoryInput,
   ProviderHistoryPathContext,
   ProviderHistoryResult,
   ProviderHistoryState,
   ProviderHistoryUpdate,
 } from '../../../core/providers/types';
-import { isSamePath } from '../../../core/storage/pathContainment';
 import type { ChatMessage } from '../../../core/types';
 import { isRecord } from '../http/OpencodeHTTPClient';
 import { readOpencodeHTTPMessages } from '../http/OpencodeHTTPHistory';
 import { type OpencodeServerLease, type OpencodeServerService, withOpencodeServerLease } from '../http/OpencodeServerService';
 import { encodeOpencodeModelId } from '../models';
+import { type OpencodeBindingDatabase, resolveOpencodeBindingDatabase } from '../runtime/OpencodeBindingDatabase';
 import { resolveOpencodeHistoryLaunch } from '../runtime/OpencodeCLILaunch';
 import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
-import type { OpencodeNativeVersion } from '../runtime/OpencodeVersion';
 import {
   clearOpencodeResumeState,
   getOpencodeState,
   type OpencodePreviousSession,
   type OpencodeProviderState,
 } from '../types';
-import { resolveOpencodeDatabasePathHint } from './OpencodeHistoryPathResolver';
 import {
   createOpencodeHydrationDiagnosticMessage,
   isOpencodeSessionHydrationDiagnosticMessage,
-  loadOpencodeSessionMessages,
-  loadOpencodeSessionModel,
   mapOpencodeV2NativeMessages,
 } from './OpencodeHistoryStore';
 import { forkOpencodeSession } from './OpencodeSessionFork';
@@ -42,7 +37,6 @@ export interface OpencodeConversationHistoryServiceOptions {
 
 const OPENCODE_PROVIDER_STATE_KEYS = [
   'databasePath',
-  'nativeVersion',
   'sessionId',
   'nativeConversationContextEstablished',
   'previousSessions',
@@ -62,20 +56,15 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
   ): Promise<string | null> {
     const source = this.#resolveModelRecoverySession(conversation);
     if (!source) return null;
-    const { sessionId, current, ...state } = source;
-    const databasePath = current
-      ? resolveHistoryDatabase(state, pathContext)
-      : resolvePreviousSessionDatabase(state, pathContext);
+    const { sessionId, databasePath: recordedPath } = source;
+    const databasePath = resolveBindingDatabase(recordedPath, pathContext).accessible;
     if (!databasePath) return null;
-    if (state.nativeVersion === 2) {
-      return this.withHttp(databasePath, vaultPath, pathContext, async client => {
-        const result = await client.request(`/api/session/${encodeURIComponent(sessionId)}`);
-        const model = isRecord(result) && isRecord(result.data) && isRecord(result.data.model) ? result.data.model : null;
-        return typeof model?.providerID === 'string' && typeof model.id === 'string'
-          ? encodeOpencodeModelId(`${model.providerID}/${model.id}`) : null;
-      }).catch(() => null);
-    }
-    return loadOpencodeSessionModel(sessionId, { databasePath }, pathContext?.environment);
+    return this.withHttp(databasePath, vaultPath, pathContext, async client => {
+      const result = await client.request(`/api/session/${encodeURIComponent(sessionId)}`);
+      const model = isRecord(result) && isRecord(result.data) && isRecord(result.data.model) ? result.data.model : null;
+      return typeof model?.providerID === 'string' && typeof model.id === 'string'
+        ? encodeOpencodeModelId(`${model.providerID}/${model.id}`) : null;
+    }).catch(() => null);
   }
 
   async hydrateConversationHistory(
@@ -85,36 +74,19 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
   ): Promise<ProviderHistoryUpdate> {
     const conversation = copyProviderHistoryState(input);
     const state = getOpencodeState(conversation.providerState);
-    const databasePath = resolveHistoryDatabase(state, pathContext);
-    if (state.databasePath && state.databasePath !== databasePath) {
-      const providerState = { ...conversation.providerState };
-      if (databasePath) {
-        providerState.databasePath = databasePath;
-      } else {
-        delete providerState.databasePath;
-      }
-      conversation.providerState = Object.keys(providerState).length > 0
-        ? providerState
-        : undefined;
-    }
+    const database = resolveBindingDatabase(state.databasePath, pathContext);
     const sessionId = this.resolveSessionIdForConversation(conversation);
     // Retired sessions are history only; an unreadable one must not hide the rest.
     const previousMessages: ChatMessage[] = [];
     for (const previous of state.previousSessions ?? []) {
-      const previousDatabase = resolvePreviousSessionDatabase(previous, pathContext);
-      if (!previousDatabase) continue;
-      const messages = await this.#readSessionMessages(
-        previous.sessionId,
-        previous.nativeVersion,
-        previousDatabase,
-        vaultPath,
-        pathContext,
-      );
+      const previousDatabase = resolveBindingDatabase(previous.databasePath, pathContext);
+      if (!previousDatabase.accessible) continue;
+      const messages = await this.#readSessionMessages(previous.sessionId, previousDatabase, vaultPath, pathContext);
       // Native checkpoints in retired sessions are unreachable, so they cannot fork or rewind.
       if (!isSessionHydrationFailure(messages)) previousMessages.push(...messages.map(withoutNativeCheckpoints));
     }
     const currentMessages = sessionId
-      ? await this.#readSessionMessages(sessionId, state.nativeVersion, databasePath, vaultPath, pathContext)
+      ? await this.#readSessionMessages(sessionId, database, vaultPath, pathContext)
       : [];
     const messages = [...previousMessages, ...currentMessages];
     if (messages.length === 0) {
@@ -126,9 +98,9 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     if (currentMessages.length === 0 || isSessionHydrationFailure(currentMessages)) {
       return conversation;
     }
-    // Record the trusted database that holds the binding so a later retirement keeps it.
-    if (!state.databasePath && databasePath && databasePath !== ':memory:') {
-      conversation.providerState = { ...conversation.providerState, databasePath };
+    // Record the trusted database that holds the binding so a runtime change keeps it there.
+    if (!database.recorded && database.accessible && database.accessible !== ':memory:') {
+      conversation.providerState = { ...conversation.providerState, databasePath: database.accessible };
     }
 
     this.#markNativeConversationContextEstablished(conversation);
@@ -137,45 +109,30 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
 
   async #readSessionMessages(
     sessionId: string,
-    nativeVersion: OpencodeNativeVersion | undefined,
-    databasePath: string | null,
+    database: OpencodeBindingDatabase,
     vaultPath: string | null,
     pathContext: ProviderHistoryPathContext | undefined,
   ): Promise<ChatMessage[]> {
-    // Unstamped legacy bindings are read from the native database v2 migrated them into.
-    if (nativeVersion !== 2) {
-      return loadOpencodeSessionMessages(
-        sessionId,
-        { databasePath: databasePath ?? undefined },
-        pathContext?.environment,
-      );
+    const databasePath = database.recorded ?? database.accessible ?? undefined;
+    if (!database.accessible) {
+      return [createOpencodeHydrationDiagnosticMessage({ sessionId, databasePath, reason: 'The recorded OpenCode database is not accessible with the current settings.' })];
     }
-    return this.withHttp(databasePath, vaultPath, pathContext, async client => {
-      const read = async (id: string) => mapOpencodeV2NativeMessages(
-        await readOpencodeHTTPMessages(client, id), { sessionId: id, databasePath: databasePath ?? undefined },
-      );
+    return this.withHttp(database.accessible, vaultPath, pathContext, async client => {
+      const read = async (id: string) => mapOpencodeV2NativeMessages(await readOpencodeHTTPMessages(client, id));
       const messages = await read(sessionId);
       await hydrateOpencodeV2Subagents(messages, read);
       return messages;
-    }).catch(error => [createOpencodeHydrationDiagnosticMessage({ sessionId, databasePath: databasePath ?? undefined, reason: error instanceof Error ? error.message : String(error) })]);
+    }).catch(error => [createOpencodeHydrationDiagnosticMessage({ sessionId, databasePath, reason: error instanceof Error ? error.message : String(error) })]);
   }
 
   /** The latest session is authoritative; an older segment never stands in for it. */
   #resolveModelRecoverySession(
     conversation: ProviderHistoryInput,
-  ): (OpencodePreviousSession & { current: boolean }) | null {
+  ): OpencodePreviousSession | null {
     const state = getOpencodeState(conversation.providerState);
     const sessionId = this.resolveSessionIdForConversation(conversation);
-    if (sessionId) {
-      return {
-        current: true,
-        sessionId,
-        ...(state.databasePath ? { databasePath: state.databasePath } : {}),
-        ...(state.nativeVersion ? { nativeVersion: state.nativeVersion } : {}),
-      };
-    }
-    const previous = state.previousSessions?.at(-1);
-    return previous ? { ...previous, current: false } : null;
+    if (sessionId) return { sessionId, ...(state.databasePath ? { databasePath: state.databasePath } : {}) };
+    return state.previousSessions?.at(-1) ?? null;
   }
 
   async resolveMissingConversationSession(
@@ -216,7 +173,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     const cwd = vaultPath ?? pathContext?.vaultPath;
     if (!cwd) throw new Error('OpenCode fork requires a workspace directory.');
     const source = getOpencodeState(sourceProviderState);
-    const databasePath = resolveHistoryDatabase(source, pathContext);
+    const databasePath = resolveBindingDatabase(source.databasePath, pathContext).accessible;
     if (!databasePath || databasePath === ':memory:') {
       throw new Error('OpenCode fork requires a persistent native database.');
     }
@@ -225,7 +182,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       ? { previousSessions: source.previousSessions.map(previous => ({ ...previous })) }
       : {};
     if (options?.lifecycle === 'ephemeral') {
-      return { databasePath, nativeVersion: 2, forkSource: { sessionId: sourceSessionId, resumeAt }, nativeConversationContextEstablished: true, ...previousSessions };
+      return { databasePath, forkSource: { sessionId: sourceSessionId, resumeAt }, nativeConversationContextEstablished: true, ...previousSessions };
     }
     const { cliPath, environmentText } = resolveOpencodeHistoryLaunch(pathContext);
     const environment = buildOpencodeRuntimeEnv(environmentText, cliPath, databasePath, pathContext?.environment);
@@ -237,7 +194,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       resumeAt,
       resolveServerService: async () => this.options.getServerService?.(pathContext),
     });
-    return { sessionId, databasePath, nativeVersion: 2, nativeConversationContextEstablished: true, ...previousSessions };
+    return { sessionId, databasePath, nativeConversationContextEstablished: true, ...previousSessions };
   }
 
   buildPersistedProviderState(
@@ -245,7 +202,6 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
   ): Record<string, unknown> | undefined {
     const state = getOpencodeState(conversation.providerState);
     const providerState: OpencodeProviderState = {
-      ...(state.nativeVersion ? { nativeVersion: state.nativeVersion } : {}),
       ...(state.sessionId ? { sessionId: state.sessionId } : {}),
       ...(state.databasePath ? { databasePath: state.databasePath } : {}),
       ...(typeof state.nativeConversationContextEstablished === 'boolean'
@@ -293,25 +249,6 @@ function withoutNativeCheckpoints(message: ChatMessage): ChatMessage {
   return rest;
 }
 
-/**
- * A retired session with a recorded database is read only from that database,
- * never redirected. Without one, the current database is read; native session
- * ids are unique, so a session missing there reads as empty and is skipped.
- */
-function resolvePreviousSessionDatabase(
-  previous: Pick<OpencodePreviousSession, 'databasePath' | 'nativeVersion'>,
-  context?: ProviderHistoryEnvironment,
-): string | null {
-  const resolved = resolveHistoryDatabase(previous, context);
-  if (!resolved || resolved === ':memory:') return null;
-  return !previous.databasePath || isSamePath(resolved, previous.databasePath) ? resolved : null;
-}
-
-function resolveHistoryDatabase(
-  state: Pick<OpencodeProviderState, 'databasePath' | 'nativeVersion'>,
-  context?: ProviderHistoryEnvironment,
-): string | null {
-  // A v2 database is part of the native binding, not a relocatable history hint.
-  if (state.nativeVersion === 2 && state.databasePath) return state.databasePath;
-  return resolveOpencodeDatabasePathHint(state.databasePath, context);
+function resolveBindingDatabase(recordedPath: string | undefined, context?: ProviderHistoryPathContext): OpencodeBindingDatabase {
+  return resolveOpencodeBindingDatabase(recordedPath, context?.environment ?? process.env);
 }

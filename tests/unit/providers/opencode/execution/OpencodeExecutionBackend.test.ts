@@ -1,8 +1,3 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import * as path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
-
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
@@ -23,6 +18,7 @@ import {
   OpencodeSessionMissingError,
 } from '@/providers/opencode/execution/OpencodeSessionContract';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
+import type { OpencodePrompt } from '@/providers/opencode/runtime/buildOpencodePrompt';
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -48,7 +44,7 @@ class FakeKernel implements OpencodeSessionKernel {
   configError: unknown = null;
   openSessionError: unknown = null;
   onOpenSession: (() => void) | null = null;
-  onSetConfigOption: (() => void) | null = null;
+  onConfigure: (() => void) | null = null;
   promptResult: Awaited<ReturnType<OpencodeSessionKernel['prompt']>> = { userMessageId: 'native-user' };
   private resolvePrompt: ((value: typeof this.promptResult) => void) | null = null;
   private deferredOpenSession: Deferred<OpencodeNativeSessionInfo> | null = null;
@@ -56,31 +52,10 @@ class FakeKernel implements OpencodeSessionKernel {
   sessionInfo: OpencodeNativeSessionInfo = {
     sessionId: 'native-session',
     databasePath: '/native/opencode.db',
-    configOptions: [
-      {
-        category: 'model',
-        currentValue: 'anthropic/claude',
-        id: 'model',
-        name: 'Model',
-        options: [{ name: 'Claude', value: 'anthropic/claude' }],
-        type: 'select',
-      },
-      {
-        category: 'thought_level',
-        currentValue: 'low',
-        id: 'effort',
-        name: 'Effort',
-        options: [
-          { name: 'Low', value: 'low' },
-          { name: 'High', value: 'high' },
-        ],
-        type: 'select',
-      },
-    ],
-    models: {
-      availableModels: [{ id: 'anthropic/claude', name: 'Claude' }],
-      currentModelId: 'anthropic/claude',
-    },
+    models: [{
+      rawId: 'anthropic/claude', providerID: 'anthropic', id: 'claude', label: 'anthropic/Claude',
+      variants: ['low', 'high'], contextWindow: 0,
+    }],
   };
 
   readonly hasNativeWork = false;
@@ -105,24 +80,33 @@ class FakeKernel implements OpencodeSessionKernel {
     return this.sessionInfo;
   }
 
-  async setConfigOption(request: Record<string, unknown>): Promise<{
-    configOptions?: OpencodeNativeSessionInfo['configOptions'];
-  }> {
+  async setAgent(sessionId: string, agent: string): Promise<void> {
+    this.configure({ sessionId, agent });
+  }
+
+  async setModel(sessionId: string, rawModelId: string, variant?: string): Promise<void> {
+    this.configure({ sessionId, rawModelId, variant });
+  }
+
+  private configure(request: Record<string, unknown>): void {
     this.configCalls.push(request);
-    this.onSetConfigOption?.();
+    this.onConfigure?.();
     if (this.configError) throw this.configError;
-    return { configOptions: this.sessionInfo.configOptions };
   }
 
   setAutoApprove(enabled: boolean): void {
     this.autoApproveCalls.push(enabled);
   }
 
-  async prompt(request: unknown): Promise<typeof this.promptResult> {
-    this.prompts.push(request);
+  async prompt(sessionId: string, input: OpencodePrompt): Promise<typeof this.promptResult> {
+    this.prompts.push({ sessionId, ...input });
     return new Promise((resolve) => {
       this.resolvePrompt = resolve;
     });
+  }
+
+  async readTurnStats(): Promise<undefined> {
+    return undefined;
   }
 
   completePrompt(): void {
@@ -309,9 +293,8 @@ describe('OpencodeExecutionBackend', () => {
     await serverService.dispose();
   });
 
-  it('persists the native generation and reports provider cancellation', async () => {
+  it('reports provider cancellation', async () => {
     const harness = createHarness(createConfig(), kernel => {
-      kernel.sessionInfo = { ...kernel.sessionInfo, nativeVersion: 2 };
       kernel.promptResult = { stopReason: 'cancelled' };
     });
     const run = harness.session.execute(createRequest());
@@ -319,7 +302,6 @@ describe('OpencodeExecutionBackend', () => {
     await waitForPrompt(kernel);
     kernel.completePrompt();
     const events = await collect(run.events);
-    expect(harness.session.getSnapshot()).toMatchObject({ providerState: { nativeVersion: 2 } });
     expect(events).toContainEqual(expect.objectContaining({ type: 'cancelled', reason: 'provider-cancelled' }));
     await harness.session.dispose();
   });
@@ -386,34 +368,6 @@ describe('OpencodeExecutionBackend', () => {
     await collect(run.events);
   });
 
-  it('publishes finalized statistics from the current native session on completion', async () => {
-    const root = mkdtempSync(path.join(tmpdir(), 'opencode-throughput-'));
-    const databasePath = path.join(root, 'opencode.db');
-    const db = new DatabaseSync(databasePath);
-    db.exec(`CREATE TABLE session_v2(id TEXT);
-      CREATE TABLE session_message(id TEXT, session_id TEXT, seq INTEGER, type TEXT, time_created INTEGER, data TEXT);`);
-    const insert = db.prepare('INSERT INTO session_message VALUES(?, ?, ?, ?, ?, ?)');
-    insert.run('native-user', 'native-session', 1, 'user', 1000, JSON.stringify({ text: 'Work', time: { created: 1000 } }));
-    insert.run('answer', 'native-session', 2, 'assistant', 1200, JSON.stringify({
-      content: [{ type: 'text', text: 'Done' }], time: { created: 1200, completed: 3500 },
-      finish: 'stop', tokens: { output: 100, reasoning: 25 },
-    }));
-    db.close();
-    const harness = createHarness(createConfig(), kernel => {
-      kernel.sessionInfo = { ...kernel.sessionInfo, databasePath };
-    });
-    try {
-      const run = harness.session.execute(createRequest());
-      await waitForPrompt(await kernelAt(harness.kernels));
-      harness.kernels[0].completePrompt();
-      expect((await collect(run.events)).at(-1)).toMatchObject({ type: 'turn_completed',
-        turnStats: { outputTokens: 125, durationMs: 2500 } });
-    } finally {
-      await harness.session.dispose();
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
   it('encodes path-only Linked content without changing the Vault-root kernel CWD', async () => {
     const harness = createHarness();
     const run = harness.session.execute(createRequest({
@@ -426,10 +380,9 @@ describe('OpencodeExecutionBackend', () => {
 
     expect(harness.kernels[0].options.config.workingDirectory).toBe('/vault');
     expect(harness.kernels[0].prompts[0]).toEqual({
-      prompt: [{
-        text: 'Inspect linked content\n\n<linked_content path="Projects/Research" />\n\n' + capturedSelectionPrompt + '\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" />\n</context_sessions>',
-        type: 'text',
-      }],
+      text: 'Inspect linked content\n\n<linked_content path="Projects/Research" />\n\n' + capturedSelectionPrompt + '\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" />\n</context_sessions>',
+      files: [],
+      userText: { start: 0, end: 'Inspect linked content'.length },
       sessionId: 'native-session',
     });
     expect(JSON.stringify(harness.kernels[0].prompts[0])).not.toMatch(
@@ -438,7 +391,7 @@ describe('OpencodeExecutionBackend', () => {
   });
 
   it('bootstraps canonical history after invalidation while retaining retired sessions', async () => {
-    const previousSessions = [{ sessionId: 'retired-session', databasePath: '/old/opencode.db', nativeVersion: 2 }];
+    const previousSessions = [{ sessionId: 'retired-session', databasePath: '/old/opencode.db' }];
     const harness = createHarness(createConfig({
       resumeSeed: { providerState: { nativeConversationContextEstablished: false, previousSessions } },
     }));
@@ -454,9 +407,9 @@ describe('OpencodeExecutionBackend', () => {
     await collect(run.events);
 
     expect(harness.kernels[0].openedResumeIds).toEqual([undefined]);
-    const { prompt: [block] } = harness.kernels[0].prompts[0] as { prompt: Array<{ text?: string }> };
-    expect(decodeRecoveryPrompt(block.text ?? '')).toEqual({ currentInput: 'hello' });
-    expect(block.text).toContain('User: prior\n\nAssistant: answer');
+    const { text } = harness.kernels[0].prompts[0] as OpencodePrompt;
+    expect(decodeRecoveryPrompt(text)).toEqual({ currentInput: 'hello' });
+    expect(text).toContain('User: prior\n\nAssistant: answer');
     expect(harness.session.getSnapshot()).toMatchObject({
       providerSessionId: 'native-session',
       providerState: { nativeConversationContextEstablished: true, previousSessions },
@@ -603,7 +556,7 @@ describe('OpencodeExecutionBackend', () => {
       kernel.onOpenSession = () => {
         kernel.output('historic-load-output');
       };
-      kernel.onSetConfigOption = () => {
+      kernel.onConfigure = () => {
         kernel.output('historic-config-output');
       };
     });
@@ -840,11 +793,10 @@ describe('OpencodeExecutionBackend', () => {
     harness.kernels[0].completePrompt();
     await collect(run.events);
 
-    expect(harness.kernels[0].configCalls).toEqual(expect.arrayContaining([
-      expect.objectContaining({ configId: 'model', value: 'anthropic/claude' }),
-      expect.objectContaining({ configId: 'effort', value: 'high' }),
-      expect.objectContaining({ configId: 'mode', value: 'build' }),
-    ]));
+    expect(harness.kernels[0].configCalls).toEqual([
+      { sessionId: 'native-session', rawModelId: 'anthropic/claude', variant: 'high' },
+      { sessionId: 'native-session', agent: 'build' },
+    ]);
     expect(harness.kernels[0].autoApproveCalls).toEqual([autoApprove]);
   });
 
@@ -1106,26 +1058,4 @@ describe('OpencodeExecutionBackend', () => {
       }),
     ]);
   });
-});
-
-it('keeps native completion when cancellation arrives during stats acquisition', async () => {
-  const harness = createHarness();
-  try {
-    const run = harness.session.execute(createRequest());
-    const eventsPromise = (async () => {
-      const events: ProviderExecutionEvent[] = [];
-      for await (const event of run.events) {
-        events.push(event);
-        // With no streamed output, acceptance is published by the completed prompt response.
-        if (event.type === 'turn_started') run.cancel();
-      }
-      return events;
-    })();
-    await waitForCondition(() => harness.kernels.length > 0);
-    await waitForPrompt(await kernelAt(harness.kernels));
-    harness.kernels[0].completePrompt();
-    expect((await eventsPromise).at(-1)?.type).toBe('turn_completed');
-  } finally {
-    await harness.session.dispose();
-  }
 });

@@ -1,5 +1,3 @@
-import * as fs from 'node:fs';
-
 import {
   buildImageAttachmentFromBase64,
   parseImageDataUri,
@@ -13,81 +11,24 @@ import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolIn
 import { isWriteEditTool, TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo } from '../../../core/types';
 import { settleInterruptedTurn } from '../../../core/types';
-import { encodeOpencodeModelId } from '../models';
 import {
   normalizeOpencodeToolInput,
   normalizeOpencodeToolName,
   normalizeOpencodeToolResult,
   normalizeOpencodeToolResultDetails,
 } from '../normalization/opencodeToolNormalization';
-import { resolveExistingOpencodeDatabasePath } from '../runtime/OpencodePaths';
-import type { OpencodeProviderState } from '../types';
-import { loadOpencodeSessionRows, type StoredRow } from './OpencodeSqliteReader';
 import { getMessageCompletedAt, getMessageCreatedAt, OpencodeTurnStats } from './OpencodeTurnStats';
+
+type StoredRow = Record<string, unknown>;
 
 interface StoredMessage {
   info: StoredRow;
   parts: StoredRow[];
 }
 
-interface OpencodeHydrationDiagnosticContext {
-  databasePath?: string;
-  sessionId?: string;
-}
-
 const OPENCODE_HYDRATION_DIAGNOSTIC_ID_PREFIX = 'opencode-hydration-error';
 
-export async function loadOpencodeSessionMessages(
-  sessionId: string,
-  providerState?: OpencodeProviderState,
-  environment: NodeJS.ProcessEnv = process.env,
-): Promise<ChatMessage[]> {
-  const databasePath = resolveExistingOpencodeDatabasePath(providerState?.databasePath, environment);
-  if (!databasePath || databasePath === ':memory:' || !fs.existsSync(databasePath)) {
-    return [];
-  }
-
-  let rows: StoredRow[];
-  try {
-    rows = await loadOpencodeSessionRows(databasePath, sessionId, { environment });
-  } catch (error) {
-    return [createOpencodeHydrationDiagnosticMessage({
-      databasePath,
-      reason: formatUnknownError(error),
-      sessionId,
-    })];
-  }
-
-  return mapOpencodeV2Messages(rows, { databasePath, sessionId });
-}
-
-export async function loadOpencodeSessionModel(
-  sessionId: string,
-  providerState?: OpencodeProviderState,
-  environment: NodeJS.ProcessEnv = process.env,
-): Promise<string | null> {
-  const databasePath = resolveExistingOpencodeDatabasePath(providerState?.databasePath, environment);
-  if (!databasePath || databasePath === ':memory:' || !fs.existsSync(databasePath)) {
-    return null;
-  }
-
-  const rows = await loadOpencodeSessionRows(databasePath, sessionId, { environment }).catch(() => null);
-  let rawModelId: string | null = null;
-  for (const row of rows ?? []) {
-    const model = getObject(parseJSONObject(row.data)?.model);
-    const providerId = getString(model?.providerID);
-    const modelId = getString(model?.id);
-    if (providerId && modelId) {
-      rawModelId = `${providerId}/${modelId}`;
-    }
-  }
-  return rawModelId ? encodeOpencodeModelId(rawModelId) : null;
-}
-
-function mapStoredMessage(
-  message: StoredMessage,
-  context: OpencodeHydrationDiagnosticContext,
-): ChatMessage | null {
+function mapStoredMessage(message: StoredMessage): ChatMessage | null {
   const role = getString(message.info.role);
   const id = getString(message.info.id);
   if (!id) {
@@ -156,8 +97,6 @@ function mergeAdjacentAssistantMessages(messages: ChatMessage[]): ChatMessage[] 
       && !previous.isInterrupt
       && !message.contentBlocks?.some(block => block.type === 'context_compacted')
       && !previous.contentBlocks?.some(block => block.type === 'context_compacted')
-      && !isOpencodeHydrationDiagnosticMessage(message)
-      && !isOpencodeHydrationDiagnosticMessage(previous)
     ) {
       previous.content += message.content;
       previous.assistantMessageId = message.assistantMessageId ?? previous.assistantMessageId;
@@ -211,16 +150,14 @@ function getMessageCompletionTime(message: ChatMessage): number | null {
 
 export function createOpencodeHydrationDiagnosticMessage(params: {
   databasePath?: string;
-  messageId?: string;
   reason: string;
-  sessionId?: string;
+  sessionId: string;
 }): ChatMessage {
   const detailLines = [
     'Failed to hydrate OpenCode session.',
     'provider: OpenCode',
-    ...(params.sessionId ? [`sessionId: ${params.sessionId}`] : []),
+    `sessionId: ${params.sessionId}`,
     ...(params.databasePath ? [`databasePath: ${params.databasePath}`] : []),
-    ...(params.messageId ? [`messageId: ${params.messageId}`] : []),
     `reason: ${params.reason}`,
   ];
   const details = detailLines.join('\n');
@@ -232,32 +169,19 @@ export function createOpencodeHydrationDiagnosticMessage(params: {
     assistantMessageId: undefined,
     content,
     contentBlocks: [{ content, type: 'text' }],
-    id: buildOpencodeHydrationDiagnosticId(params),
+    id: buildOpencodeHydrationDiagnosticId(params.sessionId),
     role: 'assistant',
     timestamp: Date.now(),
   };
 }
 
-function buildOpencodeHydrationDiagnosticId(params: {
-  messageId?: string;
-  sessionId?: string;
-}): string {
-  const scope = params.messageId ? 'message' : 'session';
-  const rawId = params.messageId ?? params.sessionId ?? String(Date.now());
-  const safeId = rawId.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 120) || String(Date.now());
-  return `${OPENCODE_HYDRATION_DIAGNOSTIC_ID_PREFIX}-${scope}-${safeId}`;
+function buildOpencodeHydrationDiagnosticId(sessionId: string): string {
+  const safeId = sessionId.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 120) || String(Date.now());
+  return `${OPENCODE_HYDRATION_DIAGNOSTIC_ID_PREFIX}-session-${safeId}`;
 }
 
 export function isOpencodeSessionHydrationDiagnosticMessage(message: ChatMessage): boolean {
   return message.id.startsWith(`${OPENCODE_HYDRATION_DIAGNOSTIC_ID_PREFIX}-session-`);
-}
-
-function isOpencodeHydrationDiagnosticMessage(message: ChatMessage): boolean {
-  return message.id.startsWith(OPENCODE_HYDRATION_DIAGNOSTIC_ID_PREFIX);
-}
-
-function formatUnknownError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function buildAssistantContentBlocks(parts: StoredRow[]): ContentBlock[] {
@@ -432,19 +356,6 @@ function mapToolStatus(status: string | null): ToolCallInfo['status'] | null {
   }
 }
 
-function parseJSONObject(value: unknown): StoredRow | null {
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return isPlainObject(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -487,7 +398,7 @@ function getNestedNumber(
 function markInterruptedTurn(messages: ChatMessage[], turnStart: number, marker: ChatMessage): void {
   const turn = messages.slice(turnStart);
   const replies = turn.slice(turn.findLastIndex(message => message.role === 'user') + 1)
-    .filter(message => message.role === 'assistant' && !isOpencodeHydrationDiagnosticMessage(message));
+    .filter(message => message.role === 'assistant');
   settleInterruptedTurn(replies);
   const last = replies.at(-1);
   if (last) last.isInterrupt = true;
@@ -495,24 +406,7 @@ function markInterruptedTurn(messages: ChatMessage[], turnStart: number, marker:
 }
 
 /** v2 control entries delimit turns even when they have no chat presentation. */
-export function mapOpencodeV2Messages(
-  rows: StoredRow[],
-  context: OpencodeHydrationDiagnosticContext = {},
-): ChatMessage[] {
-  return mapV2Messages(rows.map(row => ({ row, data: parseJSONObject(row.data) })), context);
-}
-
-export function mapOpencodeV2NativeMessages(
-  messages: StoredRow[],
-  context: OpencodeHydrationDiagnosticContext = {},
-): ChatMessage[] {
-  return mapV2Messages(messages.map(data => ({ row: data, data })), context);
-}
-
-function mapV2Messages(
-  messages: Array<{ row: StoredRow; data: StoredRow | null }>,
-  context: OpencodeHydrationDiagnosticContext,
-): ChatMessage[] {
+export function mapOpencodeV2NativeMessages(messages: StoredRow[]): ChatMessage[] {
   const result: ChatMessage[] = [];
   let segment: ChatMessage[] = [];
   const stats = new OpencodeTurnStats();
@@ -525,34 +419,26 @@ function mapV2Messages(
     stats.reset();
     previousAssistant = undefined;
   };
-  for (const { row, data } of messages) {
-    if (!data) {
-      flush();
-      result.push(createOpencodeHydrationDiagnosticMessage({
-        ...context, messageId: getString(row.id) ?? undefined,
-        reason: 'OpenCode message metadata is not valid JSON.',
-      }));
-      continue;
-    }
+  for (const row of messages) {
     if (row.type !== 'user' && row.type !== 'assistant') {
       flush();
       if (row.type === 'idle') {
         // V2 rows carry no turn ID: an idle entry ends the turn, so the rows since the last one share it.
         for (const message of result.slice(turnStart)) if (message.role === 'assistant') message.turnId = `opencode-turn-${turnStart}`;
         // The idle entry's outcome is the turn's authority: a step can abort and still resume.
-        if (data.outcome === 'interrupted') {
+        if (row.outcome === 'interrupted') {
           markInterruptedTurn(result, turnStart, {
             id: getString(row.id) ?? `opencode-interrupt-${result.length}`, role: 'assistant', content: '',
-            timestamp: getMessageCreatedAt({ ...data, time_created: row.time_created }) ?? Date.now(), isInterrupt: true,
+            timestamp: getMessageCreatedAt(row) ?? Date.now(), isInterrupt: true,
             turnId: `opencode-turn-${turnStart}`,
           });
         }
         turnStart = result.length;
       }
-      if (row.type === 'compaction' && data.status === 'completed' && typeof row.id === 'string') {
+      if (row.type === 'compaction' && row.status === 'completed' && typeof row.id === 'string') {
         result.push({
           id: row.id, role: 'assistant', content: '',
-          timestamp: getMessageCreatedAt({ ...data, time_created: row.time_created }) ?? Date.now(),
+          timestamp: getMessageCreatedAt(row) ?? Date.now(),
           contentBlocks: [{ type: 'context_compacted' }],
         });
       }
@@ -560,15 +446,12 @@ function mapV2Messages(
     }
     const parts = row.type === 'user'
       ? [
-          { type: 'text', text: data.text },
-          ...(Array.isArray(data.files) ? data.files.filter(isPlainObject).map((file) => ({ ...file, type: 'file' })) : []),
+          { type: 'text', text: row.text },
+          ...(Array.isArray(row.files) ? row.files.filter(isPlainObject).map((file) => ({ ...file, type: 'file' })) : []),
         ]
-      : Array.isArray(data.content) ? data.content.filter(isPlainObject) : [];
-    const info = { ...data, id: row.id, role: row.type, time_created: row.time_created };
-    const message = mapStoredMessage({
-      info,
-      parts,
-    }, context);
+      : Array.isArray(row.content) ? row.content.filter(isPlainObject) : [];
+    const info = { ...row, role: row.type };
+    const message = mapStoredMessage({ info, parts });
     if (message) {
       if (message.role === 'user') previousAssistant = undefined;
       else {

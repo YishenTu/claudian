@@ -8,21 +8,20 @@ import { toAbortError } from '@/utils/abort';
 import { toError } from '@/utils/error';
 
 import { decodeOpencodeConfig } from '../config';
+import type { OpencodeNativeModel } from '../http/OpencodeNativeModelCatalog';
 import { OpencodeServerService } from '../http/OpencodeServerService';
 import { decodeOpencodeModelId } from '../models';
 import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
-import { detectOpencodeNativeVersion } from '../runtime/OpencodeVersion';
-import {
-  type OpencodeMetadataProjectionInput,
-  projectOpencodeMetadata,
-} from './OpencodeMetadataProjection';
+import { projectOpencodeMetadata } from './OpencodeMetadataProjection';
 import { OpencodeV2MetadataProbe } from './OpencodeV2MetadataProbe';
 
-export type OpencodeMetadataCatalogResult = OpencodeMetadataProjectionInput;
+export interface OpencodeMetadataCatalogResult {
+  readonly models: readonly OpencodeNativeModel[];
+}
 
-export interface OpencodeMetadataWarmResult
-  extends OpencodeMetadataProjectionInput {
+export interface OpencodeMetadataWarmResult extends OpencodeMetadataCatalogResult {
   readonly rawModelId: string;
+  readonly thinkingLevels: readonly string[];
 }
 
 export interface OpencodeMetadataProbe {
@@ -65,8 +64,6 @@ export class OpencodeMetadataService {
       ?? (async (signal) => {
         const cliPath = await host.resolveCliPath() ?? 'opencode';
         const environment = buildOpencodeRuntimeEnv(host.environmentText, cliPath);
-        await detectOpencodeNativeVersion(cliPath, environment);
-        signal.throwIfAborted();
         return new OpencodeV2MetadataProbe(await this.serverService.acquire(cliPath, resolveVaultPath(host), environment, signal));
       });
     this.probes = new OwnedProbeRegistry({
@@ -180,9 +177,9 @@ export class OpencodeMetadataService {
       const metadata = await probe.warmModel(rawModelId, signal);
       signal.throwIfAborted();
       await projectOpencodeMetadata(this.host, {
-        ...metadata,
+        models: metadata.models,
         selectedRawModelId: metadata.rawModelId,
-        reasoningMetadataResolved: true,
+        thinkingLevels: metadata.thinkingLevels,
       }, signal);
       signal.throwIfAborted();
       return true;
@@ -254,5 +251,6 @@ export class OpencodeMetadataService {
   }
 }
 
-import type { ProviderExecutionLifecycleRegistry } from '@/core/execution';
+function resolveVaultPath(host: Pick<ProviderRuntimeHost, 'workingDirectory'>): string {
+  return host.workingDirectory || process.cwd();
 }

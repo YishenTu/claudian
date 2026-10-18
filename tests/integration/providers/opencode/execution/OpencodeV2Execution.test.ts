@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
@@ -43,8 +43,10 @@ const waitForInteraction = async predicate => {
 };
 if (process.argv.includes('--version')) { console.log('opencode v2.0.12'); return; }
 if (!process.argv.includes('serve')) process.exit(3);
-let onSteer, selectedAgents = [], inbox = [], lateChild, feed, permission, grandApproval, form, mcpAnswer, settleInventory = false, cancelRace = false, ownedForms = [], idle = true, waiter, messages = [], turn = 0, modelRequests = 0, releaseModel;
+let onSteer, selectedAgents = [], selectedModels = [], inbox = [], lateChild, feed, permission, grandApproval, form, mcpAnswer, settleInventory = false, cancelRace = false, ownedForms = [], idle = true, waiter, messages = [], turn = 0, modelRequests = 0, releaseModel;
 let activated = !process.env.ACTIVATION_DELAY_MS, activation;
+// Earlier native turns, created before any prompt of this test.
+for (let index = 0; index < Number(process.env.SEED_HISTORY || 0); index += 1) messages.push({ id: 'msg_old_' + String(index).padStart(5, '0'), type: index % 2 ? 'assistant' : 'user', time: { created: Date.now() - 60000 + index } });
 const emit = (type, data) => {
   const send = () => feed.write('data: ' + JSON.stringify({ type, data: { sessionID: 'ses_test', ...data } }) + '\\n\\n');
   if (process.env.ECHO_EVENT_DELAY_MS && type.startsWith('session.')) setTimeout(send, Number(process.env.ECHO_EVENT_DELAY_MS));
@@ -55,6 +57,7 @@ const server = http.createServer(async (req, res) => {
   let raw = ''; for await (const c of req) raw += c;
   const body = raw ? JSON.parse(raw) : {};
   const route = new URL(req.url, 'http://localhost').pathname;
+  if (process.env.REQUEST_LOG) require('node:fs').appendFileSync(process.env.REQUEST_LOG, req.method + ' ' + req.url + '\\n');
   res.setHeader('Content-Type', 'application/json');
   if (route === '/api/event') { feed = res; res.setHeader('Content-Type', 'text/event-stream'); emit('server.connected', {}); return; }
   if (route === '/api/agent') {
@@ -66,7 +69,7 @@ const server = http.createServer(async (req, res) => {
     activation ??= new Promise(resolve => setTimeout(() => { activated = true; resolve(); }, Number(process.env.ACTIVATION_DELAY_MS || 0)));
     if (route === '/api/integration') { await activation; res.end(JSON.stringify({ data: [] })); return; }
     res.end(JSON.stringify({ data: activated
-      ? [{ id: 'chat', providerID: 'deepseek', name: 'Chat', enabled: true, variants: [], limit: { context: 1000 } }]
+      ? [{ id: 'chat', providerID: 'deepseek', name: 'Chat', enabled: true, variants: (process.env.MODEL_VARIANTS || '').split(',').filter(Boolean).map(id => ({ id })), limit: { context: 1000 } }]
       : [{ id: 'builtin', providerID: 'opencode', name: 'Builtin', enabled: true, variants: [] }] })); return;
   }
   if (route === '/api/command') { res.end(JSON.stringify({ data: [{ name: 'review', description: 'Review' }] })); return; }
@@ -105,11 +108,30 @@ const server = http.createServer(async (req, res) => {
     require('node:fs').writeFileSync(process.env.HOLD_SECOND_MODEL, '');
     await new Promise(resolve => { releaseModel = resolve; setTimeout(resolve, 1000); });
   }
-  if (route.endsWith('/model') || route.endsWith('/agent')) { if (body.agent) selectedAgents.push(body.agent); if (process.env.LATE_CHILD_STAGE === 'configuration') lateChild?.(); res.writeHead(204).end(); return; }
+  if (route.endsWith('/model') || route.endsWith('/agent')) { if (body.model) selectedModels.push(body.model); if (body.agent) selectedAgents.push(body.agent); if (process.env.LATE_CHILD_STAGE === 'configuration') lateChild?.(); res.writeHead(204).end(); return; }
   if (route === '/api/session/ses_grand/permission/per_grand/reply') { grandApproval = body.decision; interactions.emit('changed'); res.writeHead(204).end(); return; }
   if (route.endsWith('/permission/per_test/reply')) { permission = body.decision; interactions.emit('changed'); res.writeHead(204).end(); return; }
   if (route.endsWith('/form/frm_test/reply')) { form = body.answer; interactions.emit('changed'); res.writeHead(204).end(); return; }
-  if (route.endsWith('/message')) { res.end(JSON.stringify({ data: messages, cursor: {} })); return; }
+  // Paging as observed on v2.0.32: newest first by default, limit 1..200, order-bound cursors
+  // that cannot be combined with order, and a next cursor on every non-empty page.
+  if (route.endsWith('/message')) {
+    const query = new URL(req.url, 'http://localhost').searchParams;
+    const limit = Number(query.get('limit') ?? 50), raw = query.get('cursor');
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) { res.writeHead(400).end(JSON.stringify({ _tag: 'InvalidRequestError' })); return; }
+    if (raw && query.has('order')) { res.writeHead(400).end(JSON.stringify({ _tag: 'InvalidCursorError', message: 'Cursor cannot be combined with order' })); return; }
+    const cursor = raw ? JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) : null;
+    const order = cursor ? cursor.order : query.get('order') || 'desc';
+    const ordered = order === 'desc' ? [...messages].reverse() : messages;
+    const start = cursor ? ordered.findIndex(message => message.id === cursor.id) + 1 : 0;
+    const data = ordered.slice(start, start + limit);
+    const encode = (id, direction) => Buffer.from(JSON.stringify({ id, order, direction })).toString('base64url');
+    if (process.env.HOLD_HISTORY) {
+      if (process.env.CLOSE_EVENTS_ON_HOLD === '1') feed?.end();
+      require('node:fs').writeFileSync(process.env.HOLD_HISTORY, '');
+      while (require('node:fs').existsSync(process.env.HOLD_HISTORY)) await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    res.end(JSON.stringify({ data, cursor: { previous: data.length ? encode(data[0].id, 'previous') : null, next: data.length ? encode(data.at(-1).id, 'next') : null } })); return;
+  }
   if (route.endsWith('/wait')) { if (idle) res.writeHead(204).end(); else waiter = res; return; }
   if (route === '/api/session/ses_test/compact') {
     if (req.method !== 'POST' || Object.keys(body).some(key => key !== 'id')) { res.writeHead(400).end(); return; }
@@ -140,7 +162,7 @@ const server = http.createServer(async (req, res) => {
   if (route.endsWith('/prompt') || route.endsWith('/command')) {
     releaseModel?.();
     if (body.text.includes('Old local history')) { res.writeHead(400).end(); return; }
-    const assistantMessageID = 'msg_assistant_' + (++turn);
+    const assistantMessageID = 'msg_assistant_' + (++turn), userMessage = { id: body.id ?? 'msg_user', type: 'user', time: { created: Date.now() } };
     idle = false; res.end(JSON.stringify({ data: { id: body.id ?? 'msg_user' } }));
     if (process.env.COMPACT_QUEUED_FILE && require('node:fs').existsSync(process.env.COMPACT_QUEUED_FILE)) {
       require('node:fs').unlinkSync(process.env.COMPACT_QUEUED_FILE);
@@ -170,8 +192,8 @@ const server = http.createServer(async (req, res) => {
         emit('session.text.delta', { assistantMessageID, ordinal: 0, delta: 'Working' });
         return;
       }
-      if (process.env.ECHO_AGENTS === '1') {
-        emit('session.text.ended', { assistantMessageID, ordinal: 0, text: JSON.stringify(selectedAgents) });
+      if (process.env.ECHO_AGENTS === '1' || process.env.ECHO_MODELS === '1') {
+        emit('session.text.ended', { assistantMessageID, ordinal: 0, text: JSON.stringify(process.env.ECHO_MODELS === '1' ? selectedModels.at(-1) : selectedAgents) });
         emit('session.execution.succeeded', {}); idle = true; waiter?.writeHead(204).end();
         return;
       }
@@ -278,7 +300,8 @@ const server = http.createServer(async (req, res) => {
       emit('session.text.delta', { assistantMessageID, ordinal: 0, delta: 'Finished ' });
       emit('session.text.ended', { assistantMessageID, ordinal: 0, text: 'Finished review' });
       emit('session.step.ended', { tokens: { input: 100, output: 30, reasoning: 5, cache: { read: 20, write: 10 } } });
-      messages = [{ id: assistantMessageID, type: 'assistant', tokens: { input: 100, output: 30, reasoning: 5, cache: { read: 20, write: 10 } }, content: [{ type: 'text', text: 'Finished review' }] }];
+      // Native history keeps earlier turns; each turn completes 1234ms after its user entry.
+      messages.push(userMessage, { id: assistantMessageID, type: 'assistant', time: { created: userMessage.time.created + 1, completed: userMessage.time.created + 1234 }, finish: 'stop', tokens: { input: 100, output: 30, reasoning: 5, cache: { read: 20, write: 10 } }, content: [{ type: 'text', text: 'Finished review' }] });
       emit('session.execution.succeeded', {}); idle = true; waiter?.writeHead(204).end();
     }, 50); return;
   }
@@ -302,7 +325,7 @@ function createFixture(resume = false, approval?: (signal: AbortSignal) => Promi
   const approvals: unknown[] = [], questions: unknown[] = [];
   const serverService = new OpencodeServerService();
   const session = new OpencodeExecutionBackend(runtimeHostFor(plugin, 'opencode'), { serverService }).createSession({
-    ...(resume ? { resumeSeed: { providerSessionId: 'ses_test', providerState: { nativeVersion: 2 } } } : {}),
+    ...(resume ? { resumeSeed: { providerSessionId: 'ses_test' } } : {}),
     workingDirectory: root, lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported',
     interactionPort: {
       requestApproval: async (request, signal) => { approvals.push(request); await approval?.(signal); return { interactionId: request.interactionId, decision: 'allow' }; },
@@ -470,6 +493,26 @@ it('runs Ask and YOLO on a native build agent, changing only the approval policy
   } finally { await f.dispose(); }
 });
 
+it.each([
+  ['', 'default', { providerID: 'deepseek', id: 'chat' }, []],
+  ['high', 'high', { providerID: 'deepseek', id: 'chat', variant: 'high' }, [{ value: 'high', label: 'High' }, { value: 'default', label: 'Default' }]],
+])('selects native model variant %j and publishes the selected model thinking levels', async (variants, reasoning, model, thinking) => {
+  const f = createFixture(false, undefined, `ECHO_MODELS=1\nMODEL_VARIANTS=${variants}`);
+  try {
+    const turn = request('models');
+    const run = async (level: string) => {
+      const events: ProviderExecutionEvent[] = [];
+      for await (const event of f.session.execute({ ...turn, configuration: { ...turn.configuration, reasoning: level } }).events) events.push(event);
+      return events;
+    };
+    const events = await run(reasoning);
+    expect(events.at(-1)?.type).toBe('turn_completed');
+    expect(JSON.parse(events.flatMap(event => event.type === 'text_delta' ? [event.text] : []).join(''))).toEqual(model);
+    expect(f.plugin.settings.providerConfigs.opencode.thinkingOptionsByModel['deepseek/chat']).toEqual(thinking);
+    expect((await run('max')).at(-1)).toMatchObject({ message: expect.stringContaining('does not support thinking level "max"') });
+  } finally { await f.dispose(); }
+}, 15000);
+
 it('waits for account activation before replacing the catalog on a resumed first turn', async () => {
   const f = createFixture(true, undefined, 'ACTIVATION_DELAY_MS=250');
   try {
@@ -489,12 +532,55 @@ it('uses HTTP for v2 commands, waits for execution completion, and answers nativ
     expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'text_delta' })]));
     expect(events.filter(e => e.type === 'text_delta').map(e => e.text).join('')).toBe('Finished review');
     expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'usage_updated', usage: expect.objectContaining({ contextTokens: 165, contextWindow: 1000, percentage: 17 }) })]));
-    expect(events.at(-1)?.type).toBe('turn_completed');
+    // Statistics come from the native message API: output plus reasoning over the user-to-completion span.
+    expect(events.at(-1)).toEqual(expect.objectContaining({ type: 'turn_completed', turnStats: { outputTokens: 35, durationMs: 1234 } }));
     expect(approvals).toEqual([expect.objectContaining({ kind: 'approval' })]);
     expect(questions).toEqual([expect.objectContaining({ kind: 'question', input: expect.objectContaining({ questions: expect.any(Array) }) })]);
-    expect(session.getSnapshot()).toMatchObject({ providerSessionId: 'ses_test', providerState: { nativeVersion: 2 } });
+    expect(session.getSnapshot()).toMatchObject({ providerSessionId: 'ses_test' });
   } finally { await f.dispose(); }
 });
+
+it('reads turn statistics from the newest native page without fetching older history', async () => {
+  const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-http-history-')));
+  const log = path.join(root, 'requests');
+  // More earlier history than one native page can hold.
+  const f = createFixture(false, undefined, `SEED_HISTORY=450\nREQUEST_LOG=${log}`);
+  try {
+    const events: ProviderExecutionEvent[] = [];
+    for await (const event of f.session.execute(request('stats')).events) events.push(event);
+    expect(events.at(-1)).toEqual(expect.objectContaining({ type: 'turn_completed', turnStats: { outputTokens: 35, durationMs: 1234 } }));
+    const reads = readFileSync(log, 'utf8').split('\n').filter(line => line.includes('/message'));
+    expect(reads).toHaveLength(1);
+    expect(reads[0]).not.toContain('cursor=');
+  } finally { await f.dispose(); rmSync(root, { recursive: true, force: true }); }
+}, 15000);
+
+it.each([
+  // Native completion stands; cancellation cannot rewrite it while statistics load.
+  ['cancellation arrives', '', (run: { cancel(): void }) => run.cancel(), { turnStats: { outputTokens: 35, durationMs: 1234 } }, 'idle'],
+  // Statistics die with the stream, and the next turn must reopen the native runtime.
+  ['the native event stream closes', 'CLOSE_EVENTS_ON_HOLD=1', () => undefined, {}, 'invalidated'],
+] as const)('keeps native completion when %s while turn statistics load', async (_, environment, interrupt, stats, status) => {
+  const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-http-history-')));
+  const hold = path.join(root, 'history'), log = path.join(root, 'requests');
+  const f = createFixture(false, undefined, `HOLD_HISTORY=${hold}\nREQUEST_LOG=${log}\n${environment}`);
+  try {
+    const run = f.session.execute(request('stats'));
+    const events: ProviderExecutionEvent[] = [];
+    const consumed = (async () => { for await (const event of run.events) events.push(event); })();
+    // The history read starts only after native success.
+    const deadline = Date.now() + 3000;
+    while (!existsSync(hold) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+    expect(existsSync(hold)).toBe(true);
+    interrupt(run);
+    await new Promise(resolve => setTimeout(resolve, 50));
+    rmSync(hold);
+    await consumed;
+    expect(events.at(-1)).toEqual({ type: 'turn_completed', reason: 'completed', ...stats, scope: expect.any(Object) });
+    expect(readFileSync(log, 'utf8')).not.toContain('/interrupt');
+    expect(f.session.getStatus()).toBe(status);
+  } finally { await f.dispose(); rmSync(root, { recursive: true, force: true }); }
+}, 15000);
 
 it('delivers child completion and automatic parent replies after the requested turn', async () => {
   const f = createFixture();

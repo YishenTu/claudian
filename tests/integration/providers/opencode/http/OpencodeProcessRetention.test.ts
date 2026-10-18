@@ -8,6 +8,7 @@ test('disposing one lease ends only its native process across historical databas
   const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-audit-')));
   const cli = path.join(root, 'opencode.cjs');
   writeFileSync(cli, `#!/usr/bin/env node
+if (process.argv.includes('--version')) { console.log('2.0.14'); return; }
 const http = require('node:http');
 const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'application/json');
@@ -41,13 +42,16 @@ test('a repaired launch configuration can retry after creation fails', async () 
   const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-audit-retry-')));
   const config = path.join(root, 'opencode.json');
   const environment = { OPENCODE_DB: path.join(root, 'history.db'), OPENCODE_CONFIG: config };
+  // A verified CLI that is never spawned: the lease launches lazily on its first request.
+  const cli = path.join(root, 'opencode.cjs');
+  writeFileSync(cli, `#!/usr/bin/env node\nconsole.log('2.0.14');\n`, { mode: 0o700 });
   const servers = new OpencodeServerService();
   try {
-    await expect(servers.acquire('unused-cli', root, environment)).rejects.toThrow('Could not read OpenCode config');
+    await expect(servers.acquire(cli, root, environment)).rejects.toThrow('Could not read OpenCode config');
     writeFileSync(config, '{ "agent": ');
-    await expect(servers.acquire('unused-cli', root, environment)).rejects.toThrow(`Invalid OpenCode config: ${config}`);
+    await expect(servers.acquire(cli, root, environment)).rejects.toThrow(`Invalid OpenCode config: ${config}`);
     writeFileSync(config, '{}');
-    const lease = await servers.acquire('unused-cli', root, environment);
+    const lease = await servers.acquire(cli, root, environment);
     await lease.dispose();
   } finally {
     await servers.dispose();

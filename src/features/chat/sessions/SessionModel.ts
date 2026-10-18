@@ -392,6 +392,7 @@ export function createSessionSideChat(session: ChatSessionRuntime, plugin: ChatF
           state: model.state, executionCoordinator: session.executionCoordinator,
         }, plugin, () => !session.isDisposed);
         if (session.isDisposed) return { ok: false, reason: 'stale-binding' };
+        // The attached transcript is the source the user chose; only an evicted parent needs reloading.
         return session.peekModel ? capture(session.peekModel) : session.withModel(capture);
       },
     },

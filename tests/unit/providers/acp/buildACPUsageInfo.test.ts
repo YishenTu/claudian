@@ -1,4 +1,4 @@
-import { buildACPUsageInfo } from '../../../../src/providers/acp';
+import { buildACPUsageInfo } from '@/providers/acp';
 
 describe('buildACPUsageInfo', () => {
   it('combines prompt usage and context window updates', () => {

@@ -10,6 +10,20 @@ import { invokeSessionTool } from '@/core/session-tools/invokeSessionTool';
 import { SESSION_TOOL_ROUTE_HEADER, type SessionToolRoute } from '@/core/session-tools/SessionToolEndpoint';
 import { SESSION_TOOL_MCP_SERVER_NAME } from '@/core/session-tools/sessionToolMCP';
 import { isSessionTool } from '@/core/tools/toolNames';
+import {
+  type ACPContentBlock,
+  ACPInteractionController,
+  type ACPMCPServer,
+  type ACPPromptResponse,
+  ACPRequestedTurn,
+  type ACPSessionConfigOption,
+  type ACPSessionModelState,
+  type ACPSessionNotification,
+  ACPToolStreamAdapter,
+  type ACPUsage,
+  buildACPUsageInfo,
+  mapACPApprovalDecision,
+} from '@/providers/acp';
 
 import {
   type ChatRewindMode,
@@ -31,20 +45,6 @@ import {
 import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
 import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { ChatMessage } from '../../../core/types';
-import {
-  type ACPContentBlock,
-  ACPInteractionController,
-  type ACPMCPServer,
-  type ACPPromptResponse,
-  ACPRequestedTurn,
-  type ACPSessionConfigOption,
-  type ACPSessionModelState,
-  type ACPSessionNotification,
-  ACPToolStreamAdapter,
-  type ACPUsage,
-  buildACPUsageInfo,
-  mapACPApprovalDecision,
-} from '../../acp';
 import { decodeGrokConfig } from '../config';
 import {
   resolveGrokSessionCwd,

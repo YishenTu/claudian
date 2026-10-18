@@ -1,8 +1,8 @@
 import {
   buildACPApprovalDecisionOptions,
   mapACPApprovalDecision,
-} from '../../../../src/providers/acp/ACPPermissionAdapter';
-import type { ACPPermissionOption } from '../../../../src/providers/acp/types';
+} from '@/providers/acp/ACPPermissionAdapter';
+import type { ACPPermissionOption } from '@/providers/acp/types';
 
 const OPTIONS: ACPPermissionOption[] = [
   { kind: 'allow_once', name: 'Allow once', optionId: 'allow-once' },

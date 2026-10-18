@@ -1,7 +1,7 @@
 import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 
-/** The native stamp persisted with conversations bound by OpenCode v2. */
-export type OpencodeNativeVersion = 2;
+/** The only supported native major. */
+type OpencodeNativeVersion = 2;
 
 export function parseOpencodeNativeVersion(version: string | undefined | null): OpencodeNativeVersion | undefined {
   if (!version) return undefined;
@@ -11,19 +11,25 @@ export function parseOpencodeNativeVersion(version: string | undefined | null): 
   throw new Error(`Unsupported OpenCode version: ${version}. Use OpenCode v2.`);
 }
 
-/** Resolves `undefined` only when the CLI is not installed. */
-export async function detectOpencodeNativeVersion(
+/** The configured OpenCode CLI is absent, so no native server can launch. */
+export class OpencodeCLINotInstalledError extends Error {
+  readonly name = 'OpencodeCLINotInstalledError';
+  constructor() { super('OpenCode CLI was not found. Check the CLI path and installation.'); }
+}
+
+/** Rejects a missing CLI or any installed major other than v2. */
+export async function verifyOpencodeNativeVersion(
   cliPath: string,
   environment: NodeJS.ProcessEnv,
-): Promise<OpencodeNativeVersion | undefined> {
+): Promise<OpencodeNativeVersion> {
   const installation = await probeCLIInstallation({
     path: cliPath,
     configuredPath: cliPath,
     args: ['--version'],
     env: environment,
   });
-  if (installation.path && !installation.version) {
-    throw new Error('Could not determine the OpenCode version. Check the CLI path and installation.');
-  }
-  return parseOpencodeNativeVersion(installation.version);
+  if (!installation.path) throw new OpencodeCLINotInstalledError();
+  const version = parseOpencodeNativeVersion(installation.version);
+  if (!version) throw new Error('Could not determine the OpenCode version. Check the CLI path and installation.');
+  return version;
 }

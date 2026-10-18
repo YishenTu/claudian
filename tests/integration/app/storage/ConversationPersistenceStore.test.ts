@@ -441,7 +441,7 @@ test.each([
   { providerId: 'codex' as const, locator: { threadId: 'native', sessionFilePath: '/history/codex.jsonl' } },
   { providerId: 'grok' as const, locator: { sessionDirectory: '/history/grok', nativeConversationContextEstablished: true } },
   { providerId: 'pi' as const, locator: { sessionId: 'native', sessionFile: '/history/pi.jsonl', leafEntryId: 'leaf' } },
-  { providerId: 'opencode' as const, locator: { sessionId: 'native', databasePath: '/history/opencode.db', nativeVersion: 2 } },
+  { providerId: 'opencode' as const, locator: { sessionId: 'native', databasePath: '/history/opencode.db' } },
 ])('preserves $providerId native locators and opaque state in unloaded and recovery records', async ({ providerId, locator }) => {
   const state = { ...locator, futureField: { cursor: 'keep' } };
   const recoverySource = { sessionId: 'recovery-session', providerState: state, resumeAtMessageId: 'checkpoint' };

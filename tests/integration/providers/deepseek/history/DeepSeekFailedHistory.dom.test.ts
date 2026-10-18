@@ -17,7 +17,6 @@ import type { ProviderExecutionEvent, ProviderExecutionSession } from '@/core/ex
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
-import { findLatestForkCheckpoint } from '@/features/chat/sessions/SessionForkSource';
 import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSeekExecutionBackend';
 import { DeepSeekConversationHistoryService } from '@/providers/deepseek/history/DeepSeekConversationHistoryService';
 import type { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
@@ -118,7 +117,7 @@ it.each([
   expect(view.getByText('Committed partial reply').closest('[hidden]') !== null).toBe(interrupted);
   expect(view.queryByRole('button', { name: /^Interrupted/ }) !== null).toBe(interrupted);
   // Stop retains its native history checkpoint, but offers no final answer to fork.
-  expect(findLatestForkCheckpoint(messages)?.assistantMessageId ?? null)
+  expect(messages[1].assistantMessageId ?? null)
     .toBe(completed || interrupted ? 'deepseek:seq:7' : null);
   expect(messages[1].completedAt).toBe(completed ? time + 9_000 : undefined);
   expect(messages[1].turnStats).toEqual(completed ? { outputTokens: 7, durationMs: 9_000 } : undefined);

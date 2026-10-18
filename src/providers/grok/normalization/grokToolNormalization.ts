@@ -1,6 +1,7 @@
 import { SESSION_TOOL_MCP_SERVER_NAME } from '@/core/session-tools/sessionToolMCP';
 import { diffFromStructuredPatch } from '@/core/tools/toolDiff';
 import { isSessionTool, type SessionToolName } from '@/core/tools/toolNames';
+import type { ACPToolRawNameProvenance } from '@/providers/acp/ACPToolStreamAdapter';
 import { stringifyUnknown } from '@/utils/stringify';
 
 import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
@@ -36,7 +37,6 @@ import type {
   WebSearchResultItem,
 } from '../../../core/types';
 import type { StructuredPatchHunk } from '../../../core/types/diff';
-import type { ACPToolRawNameProvenance } from '../../acp/ACPToolStreamAdapter';
 import { GROK_SUBAGENT_LIFECYCLE_TOOL_NAMES } from './grokLifecycleToolNames';
 
 const GROK_TOOL_NAME_MAP: Readonly<Record<string, string>> = {

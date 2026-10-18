@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
@@ -15,6 +15,9 @@ it.each(['standalone', 'registered before workspace initialization'])('loads V2 
   const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-http-history-')));
   const cliPath = path.join(root, 'opencode.cjs');
   const databasePath = path.join(root, 'data', 'opencode', 'native.db');
+  // A recorded database is opened only while it exists in a trusted data root.
+  mkdirSync(path.dirname(databasePath), { recursive: true });
+  writeFileSync(databasePath, '');
   writeFileSync(cliPath, `#!/usr/bin/env node
 const http = require('node:http');
 if (process.argv.includes('--version')) { console.log('opencode v2.0.12'); return; }
@@ -70,7 +73,7 @@ server.listen(0, '127.0.0.1', () => console.log(JSON.stringify({ url: 'http://12
 process.stdin.resume(); process.stdin.on('end', () => server.close());
 `, { mode: 0o700 });
   const history = kind === 'standalone' ? new OpencodeConversationHistoryService() : opencodeProviderRegistration.historyService!;
-  const conversation = { id: 'local', sessionId: 'ses_parent', messages: [], providerState: { nativeVersion: 2, databasePath } } as unknown as Conversation;
+  const conversation = { id: 'local', sessionId: 'ses_parent', messages: [], providerState: { databasePath } } as unknown as Conversation;
   const settings = { providerConfigs: { opencode: { cliPath } } };
   const context = { config: settings.providerConfigs.opencode, environmentText: '', vaultPath: root, environment: { ...process.env, XDG_DATA_HOME: path.join(root, 'data'), OPENCODE_DB: path.join(root, 'untrusted.db') } };
   const registry = new ProviderExecutionLifecycleRegistry();
@@ -103,6 +106,6 @@ process.stdin.resume(); process.stdin.on('end', () => server.close());
       toolCalls: [{ id: 'call_read_b', result: 'B body' }],
     });
     await expect(history.buildForkProviderState('ses_parent', '', conversation.providerState, root, historyContext))
-      .resolves.toMatchObject({ sessionId: 'ses_child', databasePath, nativeVersion: 2 });
+      .resolves.toMatchObject({ sessionId: 'ses_child', databasePath });
   } finally { await ProviderWorkspaceRegistry.disposeInitialized(); ProviderWorkspaceRegistry.clear(); rmSync(root, { recursive: true, force: true }); }
 }, 15000);

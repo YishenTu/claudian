@@ -25,8 +25,7 @@ describe('buildOpencodePrompt text', () => {
       text: 'Summarize this',
     });
 
-    const [block] = result.blocks;
-    const prompt = block.type === 'text' ? block.text : '';
+    const prompt = result.text;
     expect(result.userText).toEqual({ start: 0, end: 'Summarize this'.length });
     expect(prompt).toContain('Summarize this');
     expect(prompt).toContain('<linked_content path="notes/&quot;today&quot; &amp; draft.md" />');
@@ -56,8 +55,7 @@ describe('buildOpencodePrompt text', () => {
       ],
     );
 
-    const [block] = result.blocks;
-    const prompt = block.type === 'text' ? block.text : '';
+    const prompt = result.text;
     expect(result.userText).toEqual({ start: prompt.length - 'Continue with the fix'.length, end: prompt.length });
     expect(prompt).toContain('User: Inspect the bug');
     expect(prompt).toContain('Assistant: I found the failing path');
@@ -71,8 +69,7 @@ describe('buildOpencodePrompt text', () => {
       [{ content: 'Retry this', id: 'user-1', role: 'user', timestamp: 1 }],
     );
 
-    const [block] = result.blocks;
-    const prompt = block.type === 'text' ? block.text : '';
+    const prompt = result.text;
     expect(result.userText).toBeNull();
     expect(prompt).toContain('User: Retry this');
     expect(decodeRecoveryPrompt(prompt)).toEqual({ currentInput: null });
@@ -80,8 +77,8 @@ describe('buildOpencodePrompt text', () => {
 });
 
 describe('buildOpencodePrompt images', () => {
-  it('includes image attachments after the main text block', () => {
-    const { blocks } = buildOpencodePrompt({
+  it('attaches images as native data URIs beside the text', () => {
+    const { text, files } = buildOpencodePrompt({
       images: [{
         data: 'base64-image',
         id: 'img-1',
@@ -93,9 +90,9 @@ describe('buildOpencodePrompt images', () => {
       text: 'Inspect this image',
     });
 
-    expect(blocks).toEqual([
-      { type: 'text', text: 'Inspect this image' },
-      { type: 'image', mimeType: 'image/png', data: 'base64-image' },
-    ]);
+    expect({ text, files }).toEqual({
+      text: 'Inspect this image',
+      files: [{ uri: 'data:image/png;base64,base64-image' }],
+    });
   });
 });

@@ -1,4 +1,5 @@
-import { ACPJSONRPCTransport, ACPSubprocess } from '../../acp';
+import { ACPJSONRPCTransport, ACPSubprocess } from '@/providers/acp';
+
 import {
   type NormalizedGrokSessionModels,
   normalizeGrokSessionModelMetadata,

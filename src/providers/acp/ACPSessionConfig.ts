@@ -21,12 +21,6 @@ export interface ACPResolvedSessionModelState {
   currentModelId: string | null;
 }
 
-export interface ACPResolvedSessionThoughtLevelState {
-  availableLevels: SelectItem[];
-  configId: string | null;
-  currentLevel: string | null;
-}
-
 type SelectItem = { description?: string; id: string; name: string };
 
 function flattenACPSessionConfigSelectOptions(
@@ -45,7 +39,7 @@ export function extractACPSessionModelState(params: {
   configOptions?: ACPSessionConfigOption[] | null;
   models?: ACPSessionModelState | null;
 }): ACPResolvedSessionModelState {
-  const { items, current } = resolveSelectItems(params.configOptions, 'model');
+  const { items, current } = resolveModelSelectItems(params.configOptions);
   const metadata = params.models && '_meta' in params.models
     ? { _meta: params.models._meta }
     : {};
@@ -59,27 +53,15 @@ export function extractACPSessionModelState(params: {
   };
 }
 
-export function extractACPSessionThoughtLevelState(params: {
-  configOptions?: ACPSessionConfigOption[] | null;
-}): ACPResolvedSessionThoughtLevelState {
-  const { configId, items, current } = resolveSelectItems(params.configOptions, 'thought_level');
-  return {
-    availableLevels: items ?? [],
-    configId,
-    currentLevel: current,
-  };
-}
-
 // `items` is null when the config option is missing or empty so callers fall back to
 // the session's own metadata. `current` is always the config option's `currentValue`
 // when one exists, so fallbacks can still seed a current id from it.
-function resolveSelectItems(
+function resolveModelSelectItems(
   configOptions: ACPSessionConfigOption[] | null | undefined,
-  category: 'model' | 'thought_level',
-): { configId: string | null; current: string | null; items: SelectItem[] | null } {
-  const selectOption = findSessionConfigSelectOption(configOptions, category);
+): { current: string | null; items: SelectItem[] | null } {
+  const selectOption = findSessionConfigSelectOption(configOptions, 'model');
   if (!selectOption) {
-    return { configId: null, current: null, items: null };
+    return { current: null, items: null };
   }
 
   const items = flattenACPSessionConfigSelectOptions(selectOption.options).map((option) => ({
@@ -89,7 +71,6 @@ function resolveSelectItems(
   }));
 
   return {
-    configId: selectOption.id,
     current: selectOption.currentValue,
     items: items.length > 0 ? items : null,
   };
@@ -97,7 +78,7 @@ function resolveSelectItems(
 
 function findSessionConfigSelectOption(
   configOptions: ACPSessionConfigOption[] | null | undefined,
-  category: 'model' | 'thought_level',
+  category: 'model',
 ): Extract<ACPSessionConfigOption, { type: 'select' }> | null {
   if (!configOptions) {
     return null;
