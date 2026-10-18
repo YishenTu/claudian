@@ -3,7 +3,7 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { OpencodeServerService } from '../http/OpencodeServerService';
 import { getOpencodeProviderSettings } from '../settings';
 import { buildOpencodeRuntimeEnv } from './OpencodeRuntimeEnvironment';
-import { detectOpencodeNativeVersion } from './OpencodeVersion';
+import { OpencodeCLINotInstalledError } from './OpencodeVersion';
 
 /** Provider-owned prewarm and launch transitions for the shared server. */
 export class OpencodeSharedRuntime {
@@ -63,16 +63,14 @@ export class OpencodeSharedRuntime {
       try {
         const launch = await this.#resolveLaunch();
         signal.throwIfAborted();
-        // A missing CLI has nothing to prewarm; an unsupported one rejects.
-        const version = await detectOpencodeNativeVersion(launch.cliPath, launch.environment);
-        signal.throwIfAborted();
-        if (!version) return;
         this.serverService.reconcileLaunch(launch.cliPath, launch.cwd, launch.environment);
         const lease = await this.serverService.acquire(launch.cliPath, launch.cwd, launch.environment, signal);
         try { await lease.request('/api/info', { signal }); }
         finally { await lease.dispose(); }
         return;
       } catch (error) {
+        // A missing CLI has nothing to prewarm; an unsupported one rejects.
+        if (error instanceof OpencodeCLINotInstalledError) return;
         // A transition overtook this attempt; retry against its committed settings.
         if (this.disposed || generation === this.generation) throw error;
       }

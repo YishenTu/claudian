@@ -73,7 +73,7 @@ describe('OpenCode v2 checkpoint forks', () => {
 
   async function openSource() {
     const conversation = await env.repository.create({ providerId: 'opencode' });
-    await env.repository.update(conversation.id, { sessionId: 'source', providerState: { sessionId: 'source', nativeVersion: 2, databasePath } });
+    await env.repository.update(conversation.id, { sessionId: 'source', providerState: { sessionId: 'source', databasePath } });
     const source = env.repository.getSync(conversation.id)!;
     const hydrated = await history.hydrateConversationHistory(source, env.root, context());
     await env.repository.update(source.id, hydrated);
@@ -98,7 +98,7 @@ describe('OpenCode v2 checkpoint forks', () => {
   }, 15000);
 
   it('rejects a missing checkpoint without creating a native child', async () => {
-    await expect(history.buildForkProviderState('source', 'missing', { nativeVersion: 2, databasePath }, env.root, context()))
+    await expect(history.buildForkProviderState('source', 'missing', { databasePath }, env.root, context()))
       .rejects.toThrow(/checkpoint/i);
     expect(state().requests).toEqual([]);
   });

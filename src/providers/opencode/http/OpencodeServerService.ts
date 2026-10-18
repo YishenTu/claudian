@@ -6,6 +6,7 @@ import type { SessionToolEndpoint, SessionToolRoute } from '@/core/session-tools
 
 import { prepareOpencodeLaunchArtifacts } from '../runtime/OpencodeLaunchArtifacts';
 import { resolveOpencodeDatabasePath } from '../runtime/OpencodePaths';
+import { verifyOpencodeNativeVersion } from '../runtime/OpencodeVersion';
 import { isRecord, OpencodeHTTPClient, type OpencodeHTTPEvent, pollOpencodeUntil } from './OpencodeHTTPClient';
 import { createOpencodeServerConfig, type OpencodeServerConfig } from './OpencodeServerConfig';
 
@@ -215,6 +216,9 @@ export class OpencodeServerService {
   }
 
   private async create(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, signal: AbortSignal): Promise<Server> {
+    // Every consumer of a launched process shares this one check of the binary it runs.
+    await verifyOpencodeNativeVersion(cliPath, environment);
+    signal.throwIfAborted();
     const subscribers = new Set<Subscriber>();
     const config = await createOpencodeServerConfig(cwd, environment, !!this.sessionToolEndpoint);
     let callRoute: SessionToolRoute | undefined;

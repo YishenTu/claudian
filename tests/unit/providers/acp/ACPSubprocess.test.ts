@@ -37,15 +37,15 @@ describe('ACPSubprocess', () => {
 
   it('spawns ACP runtimes directly on non-Windows commands', () => {
     const subprocess = new ACPSubprocess({
-      args: ['acp', '--cwd=/vault'],
-      command: '/opt/opencode/bin/opencode',
+      args: ['agent', '--no-leader', 'stdio'],
+      command: '/opt/grok/bin/grok',
       cwd: '/vault',
       env: { PATH: '/usr/bin' },
     });
 
     subprocess.start();
 
-    expect(mockSpawn).toHaveBeenCalledWith('/opt/opencode/bin/opencode', ['acp', '--cwd=/vault'], expect.objectContaining({
+    expect(mockSpawn).toHaveBeenCalledWith('/opt/grok/bin/grok', ['agent', '--no-leader', 'stdio'], expect.objectContaining({
       cwd: '/vault',
       stdio: 'pipe',
       windowsHide: true,
@@ -55,8 +55,8 @@ describe('ACPSubprocess', () => {
   it('passes Windows .cmd shims to cross-spawn', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const subprocess = new ACPSubprocess({
-      args: ['acp', '--cwd=C:\\Vault'],
-      command: 'C:\\Users\\R&D\\AppData\\Roaming\\npm\\opencode.cmd',
+      args: ['agent', '--no-leader', 'stdio'],
+      command: 'C:\\Users\\R&D\\AppData\\Roaming\\npm\\grok.cmd',
       cwd: 'C:\\Vault',
       env: { PATH: 'C:\\Windows\\System32' },
     });
@@ -64,8 +64,8 @@ describe('ACPSubprocess', () => {
     subprocess.start();
 
     expect(mockSpawn).toHaveBeenCalledWith(
-      'C:\\Users\\R&D\\AppData\\Roaming\\npm\\opencode.cmd',
-      ['acp', '--cwd=C:\\Vault'],
+      'C:\\Users\\R&D\\AppData\\Roaming\\npm\\grok.cmd',
+      ['agent', '--no-leader', 'stdio'],
       expect.objectContaining({
         cwd: 'C:\\Vault',
         windowsHide: true,
@@ -76,8 +76,8 @@ describe('ACPSubprocess', () => {
   it('kills the process tree when shutting down Windows .cmd shims', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const subprocess = new ACPSubprocess({
-      args: ['acp', '--cwd=C:\\Vault'],
-      command: 'C:\\Users\\R&D\\AppData\\Roaming\\npm\\opencode.cmd',
+      args: ['agent', '--no-leader', 'stdio'],
+      command: 'C:\\Users\\R&D\\AppData\\Roaming\\npm\\grok.cmd',
       cwd: 'C:\\Vault',
       env: { PATH: 'C:\\Windows\\System32' },
     });

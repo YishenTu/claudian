@@ -18,18 +18,17 @@ import {
 } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ChatMessage } from '@/core/types';
-import { extractACPSessionThoughtLevelState } from '@/providers/acp';
 
 import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
-import { loadOpencodeTurnStats } from '../history/OpencodeTurnStats';
+import { listOpencodeThinkingLevels } from '../http/OpencodeNativeModelCatalog';
 import type { OpencodeServerService } from '../http/OpencodeServerService';
 import { projectOpencodeMetadata } from '../metadata/OpencodeMetadataProjection';
-import { decodeOpencodeModelId } from '../models';
+import { decodeOpencodeModelId, OPENCODE_DEFAULT_THINKING_LEVEL } from '../models';
 import { buildOpencodePrompt } from '../runtime/buildOpencodePrompt';
 import { AUX_AGENT_IDS, OPENCODE_BUILD_AGENT_ID, resolveOpencodeSystemPrompt } from '../runtime/OpencodeExecutionAgents';
 import { assertOpencodeModelAvailable } from '../runtime/OpencodeModelAvailability';
-import type { OpencodeNativeVersion } from '../runtime/OpencodeVersion';
 import { getOpencodeState } from '../types';
+import { OpencodeHTTPSessionKernel } from './OpencodeHTTPSessionKernel';
 import {
   type OpencodeExecutionProfile,
   type OpencodeNativeOutput,
@@ -38,7 +37,6 @@ import {
   type OpencodeSessionKernelOptions,
   OpencodeSessionMissingError,
 } from './OpencodeSessionContract';
-import { DefaultOpencodeSessionKernel } from './OpencodeSessionKernel';
 import { OpencodeSessionPersistence } from './OpencodeSessionPersistence';
 
 export type OpencodeSessionKernelFactory = (
@@ -79,7 +77,6 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
   private nativeInfo: OpencodeNativeSessionInfo | null = null;
   private nativeSessionId: string | null;
   private nativeConversationContextEstablished: boolean;
-  private nativeVersion: OpencodeNativeVersion | undefined;
   private databasePath: string | null;
   private readonly seedProviderState: Readonly<Record<string, unknown>>;
   private readonly state: SessionSnapshotState;
@@ -96,12 +93,11 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
   ) {
     this.persistence = new OpencodeSessionPersistence(config);
     this.createKernel = options.createKernel
-      ?? ((kernelOptions) => new DefaultOpencodeSessionKernel(kernelOptions, options.serverService, this.persistence));
+      ?? ((kernelOptions) => new OpencodeHTTPSessionKernel(kernelOptions, options.serverService, this.persistence));
     const providerState = getOpencodeState(config.resumeSeed?.providerState);
     this.nativeSessionId = config.resumeSeed?.providerSessionId ?? providerState.sessionId ?? null;
     this.seedProviderState = Object.freeze({ ...providerState });
     this.databasePath = providerState.databasePath ?? null;
-    this.nativeVersion = providerState.nativeVersion;
     this.nativeConversationContextEstablished = typeof providerState
       .nativeConversationContextEstablished === 'boolean'
       ? providerState.nativeConversationContextEstablished
@@ -112,7 +108,6 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       readProviderSessionId: () => this.nativeSessionId,
       projectProviderState: state => ({
         ...state,
-        ...(this.nativeVersion ? { nativeVersion: this.nativeVersion } : {}),
         ...(this.databasePath ? { databasePath: this.databasePath } : {}),
         ...(
           this.nativeSessionId
@@ -191,11 +186,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       || !native
       || request.signal.aborted
     ) return false;
-    const prompt = buildPrompt(request, false);
-    return kernel.steer({
-      prompt: prompt.blocks,
-      sessionId: native.sessionId,
-    }, prompt.userText);
+    return kernel.steer(native.sessionId, buildPrompt(request, false));
   }
 
   getSnapshot(): ProviderSessionSnapshot {
@@ -344,19 +335,23 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
           sessionInstanceId: this.sessionInstanceId,
         });
         this.kernel = kernel;
-        await kernel.connect({ profile, systemPrompt });
+        resumeAttempt = this.nativeSessionId;
+        await kernel.connect({
+          profile,
+          systemPrompt,
+          ...(resumeAttempt ? { resumeSessionId: resumeAttempt } : {}),
+        });
         if (this.kernel === kernel) {
           this.kernelConfigurationKey = kernelConfigurationKey;
         }
         if (!this.#isRunCurrent(active, generation)) return;
         phase = 'open';
-        resumeAttempt = this.nativeSessionId;
         native = await kernel.openSession(resumeAttempt ?? undefined);
         this.#captureNativeSessionOwnership(native, active);
         if (!this.#isRunCurrent(active, generation)) return;
         phase = 'run';
         this.nativeInfo = native;
-        await projectOpencodeMetadata(this.plugin, native, this.kernelMetadataController.signal);
+        await projectOpencodeMetadata(this.plugin, { models: native.models }, this.kernelMetadataController.signal);
       } else {
         // Configuring a reused kernel is native work: cancellation must stop it.
         active.ownsNativeWork = true;
@@ -374,19 +369,19 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
         throw new Error('Send a normal message to restore the native conversation before using /compact.');
       }
       active.liveOutput = true;
-      const promptStartedAt = Date.now();
-      const prompt = compact ? null : buildPrompt(request, !this.nativeConversationContextEstablished);
-      const response = await kernel.prompt({
-        prompt: prompt?.blocks ?? [{ type: 'text', text: text.trim() }],
-        sessionId: native.sessionId,
-      }, prompt?.userText, request);
+      const prompt = compact
+        ? { text: text.trim(), files: [], userText: null }
+        : buildPrompt(request, !this.nativeConversationContextEstablished);
+      const startedAt = Date.now();
+      const response = await kernel.prompt(native.sessionId, prompt, request);
       this.#markNativeConversationContextEstablished(active);
       if (!this.#isRunCurrent(active, generation)) return;
       active.nativeCompleted = response.stopReason !== 'cancelled';
       this.#acceptRun(active, response.userMessageId);
-      const turnStats = response.stopReason !== 'cancelled' && native.databasePath
-        ? await loadOpencodeTurnStats(native.sessionId, { databasePath: native.databasePath },
-          { userMessageId: response.userMessageId, startedAt: promptStartedAt }).catch(() => undefined)
+      // Native completion is already authoritative: cancellation cannot rewrite the turn
+      // while optional statistics load, and a failed read never fails it.
+      const turnStats = active.nativeCompleted
+        ? await kernel.readTurnStats(native.sessionId, { userMessageId: response.userMessageId, startedAt }).catch(() => undefined)
         : undefined;
       if (!this.#isRunCurrent(active, generation)) return;
       this.state.setStatus(this.backgroundTurn || this.backgroundScopes.size ? 'executing' : 'idle');
@@ -398,7 +393,8 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       this.#releaseRetiredKernel();
     } catch (error) {
       if (!this.#isRunCurrent(active, generation)) return;
-      const missing = phase === 'open'
+      // Connection refuses a resume whose database is inaccessible; opening reports a missing session.
+      const missing = phase !== 'run'
         && resumeAttempt !== null
         && error instanceof OpencodeSessionMissingError
         && error.sessionId === resumeAttempt;
@@ -468,48 +464,27 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     const selectedModel = this.#resolveSelectedRawModelId(
       request.configuration.model,
     );
-    let configOptions = native.configOptions ?? [];
+    // `default` selects no native variant, which every selected model accepts.
+    const reasoning = request.configuration.reasoning;
+    const variant = reasoning && reasoning !== OPENCODE_DEFAULT_THINKING_LEVEL ? reasoning : undefined;
+    const model = selectedModel ? native.models.find(({ rawId }) => rawId === selectedModel) : undefined;
     if (selectedModel) {
-      const response = await kernel.setConfigOption({
-        configId: 'model',
-        sessionId: native.sessionId,
-        type: 'select',
-        value: selectedModel,
-      });
-      configOptions = response.configOptions ?? configOptions;
-      if (response.configOptions && this.nativeInfo === native) {
-        this.nativeInfo = {
-          ...native,
-          configOptions: response.configOptions,
-        };
-      }
       await projectOpencodeMetadata(this.plugin, {
-        configOptions,
         selectedRawModelId: selectedModel,
+        thinkingLevels: listOpencodeThinkingLevels(model),
       }, this.kernelMetadataController.signal);
     }
-
-    const thoughtState = extractACPSessionThoughtLevelState({ configOptions });
-    if (request.configuration.reasoning) {
-      if (!thoughtState.configId || !thoughtState.availableLevels.some(({ id }) => id === request.configuration.reasoning)) {
-        throw new Error(`OpenCode model "${selectedModel}" does not support thinking level "${request.configuration.reasoning}".`);
-      }
-      await kernel.setConfigOption({
-        configId: thoughtState.configId,
-        sessionId: native.sessionId,
-        type: 'select',
-        value: request.configuration.reasoning,
-      });
+    if (reasoning && (!selectedModel || (variant && !model?.variants.includes(variant)))) {
+      throw new Error(`OpenCode model "${selectedModel}" does not support thinking level "${reasoning}".`);
     }
+    if (selectedModel) await kernel.setModel(native.sessionId, selectedModel, variant);
 
     const profile = resolveProfile(request);
     // Resumed sessions may still name an agent clone from an earlier lease.
-    await kernel.setConfigOption({
-      configId: 'mode',
-      sessionId: native.sessionId,
-      type: 'select',
-      value: profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[profile],
-    });
+    await kernel.setAgent(
+      native.sessionId,
+      profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[profile],
+    );
     kernel.setAutoApprove(request.configuration.permissionMode === 'yolo');
   }
 
@@ -577,12 +552,15 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     this.lifecycleGeneration += 1;
     this.#invalidate('process-exited', true, error);
     this.#emitRunSnapshot(active);
-    active.run.finish({
-      category: 'process-exited',
-      message: formatError(error),
-      recoverable: true,
-      type: 'execution_error',
-    });
+    // Native success stands; only the optional statistics read dies with the runtime.
+    active.run.finish(active.nativeCompleted
+      ? { reason: 'completed', type: 'turn_completed' }
+      : {
+          category: 'process-exited',
+          message: formatError(error),
+          recoverable: true,
+          type: 'execution_error',
+        });
     this.activeRun = null;
     this.nativeInfo = null;
     void this.#disposeKernel();
@@ -595,7 +573,6 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     if (this.disposed) return;
     this.nativeSessionId = native.sessionId;
     this.databasePath = native.databasePath;
-    this.nativeVersion = native.nativeVersion ?? this.nativeVersion;
     this.#publishNativeOwnershipSnapshot(active);
   }
 

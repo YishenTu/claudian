@@ -1,4 +1,4 @@
-import type { ACPSessionNotification } from '../../acp';
+import type { ACPSessionNotification } from '@/providers/acp';
 
 export const GROK_SESSION_UPDATE_NOTIFICATION_METHODS = [
   'x.ai/session/update',

@@ -136,7 +136,7 @@ test('file naming accepts acronym conventions and non-acronym words', () => {
     'CloudAuthorityURLs.ts', 'SQLJSSnapshotStore.ts', 'LANTLSIdentity.ts',
     'cliBinaryLocator.ts', 'acpConnection.ts', 'sdkMessages.ts', 'urlParser.ts',
     'PiExtensionUIBridge.dom.test.ts', 'api-client.ts', 'index.ts', 'types.ts',
-    'OpencodeSqliteReader.ts', 'ManagedStdioProcess.ts', 'windowsCmdShim.ts',
+    'SqliteReader.ts', 'ManagedStdioProcess.ts', 'windowsCmdShim.ts',
     'NoopTaskResultInterpreter.ts', 'SQLWasmAsset.ts', 'Client.ts', 'Clipboard.ts',
   ]) assert.deepEqual(reportsFor('/repo/src/' + name), [], name);
 });

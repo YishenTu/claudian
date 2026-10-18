@@ -1,7 +1,4 @@
-import {
-  extractACPSessionModelState,
-  extractACPSessionThoughtLevelState,
-} from '../../../../src/providers/acp';
+import { extractACPSessionModelState } from '@/providers/acp';
 
 describe('AcpSessionConfig', () => {
   it('prefers grouped ACP config model options in order over session model metadata', () => {
@@ -171,33 +168,6 @@ describe('AcpSessionConfig', () => {
         { description: 'Fast', id: 'openai/gpt-5-mini', name: 'OpenAI/GPT-5 Mini' },
       ],
       currentModelId: 'openai/gpt-5-mini',
-    });
-  });
-
-  it('extracts detached thought-level options from ACP config options', () => {
-    expect(extractACPSessionThoughtLevelState({
-      configOptions: [
-        {
-          category: 'thought_level',
-          currentValue: 'low',
-          id: 'effort',
-          name: 'Effort',
-          options: [
-            { name: 'Low', value: 'low' },
-            { name: 'Medium', value: 'medium' },
-            { name: 'High', value: 'high' },
-          ],
-          type: 'select',
-        },
-      ],
-    })).toEqual({
-      availableLevels: [
-        { id: 'low', name: 'Low' },
-        { id: 'medium', name: 'Medium' },
-        { id: 'high', name: 'High' },
-      ],
-      configId: 'effort',
-      currentLevel: 'low',
     });
   });
 });

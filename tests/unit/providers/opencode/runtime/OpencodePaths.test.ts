@@ -3,7 +3,6 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import {
-  resolveExistingOpencodeDatabasePath,
   resolveOpencodeDatabasePath,
   resolveOpencodeDataDir,
 } from '@/providers/opencode/runtime/OpencodePaths';
@@ -57,7 +56,7 @@ describe('OpencodePaths', () => {
     })).toBe(path.join(xdgDataHome, 'opencode', 'opencode-work.db'));
   });
 
-  it('falls back to the existing resolved database when persisted metadata points at a missing path', () => {
+  it('resolves the existing database in the XDG data directory', () => {
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'claudian-opencode-paths-'));
     const xdgDataHome = path.join(tmpRoot, 'xdg-data');
     const dbDir = path.join(xdgDataHome, 'opencode');
@@ -71,6 +70,5 @@ describe('OpencodePaths', () => {
     } as NodeJS.ProcessEnv;
 
     expect(resolveOpencodeDatabasePath(env)).toBe(dbPath);
-    expect(resolveExistingOpencodeDatabasePath('/missing/opencode.db', env)).toBe(dbPath);
   });
 });

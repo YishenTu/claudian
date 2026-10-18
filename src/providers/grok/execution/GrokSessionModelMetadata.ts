@@ -4,7 +4,8 @@ import {
   type ACPSessionConfigOption,
   type ACPSessionModelState,
   extractACPSessionModelState,
-} from '../../acp';
+} from '@/providers/acp';
+
 import {
   type GrokDiscoveredModel,
   normalizeGrokDiscoveredModels,

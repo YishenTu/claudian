@@ -1,18 +1,13 @@
 import type { Conversation, ForkSource } from '@/core/types';
 
-import type { OpencodeNativeVersion } from '../runtime/OpencodeVersion';
-
 /** A retired native session that remains readable history but is never resumed. */
 export interface OpencodePreviousSession {
   sessionId: string;
   databasePath?: string;
-  nativeVersion?: OpencodeNativeVersion;
 }
 
 export interface OpencodeProviderState extends Record<string, unknown> {
   databasePath?: string;
-  /** Present only for bindings created by OpenCode v2; legacy v1-era bindings are unstamped. */
-  nativeVersion?: OpencodeNativeVersion;
   sessionId?: string;
   forkSource?: ForkSource;
   nativeConversationContextEstablished?: boolean;
@@ -36,7 +31,6 @@ export function getOpencodeState(
     Object.entries(record).filter(
       ([key, value]) => (
         key !== 'forkSource'
-        && key !== 'nativeVersion'
         && key !== 'sessionId'
         && key !== 'databasePath'
         && key !== 'nativeConversationContextEstablished'
@@ -45,7 +39,6 @@ export function getOpencodeState(
       ),
     ),
   ) as OpencodeProviderState;
-  if (record.nativeVersion === 2) parsed.nativeVersion = 2;
   const databasePath = typeof record.databasePath === 'string'
     ? record.databasePath.trim()
     : '';
@@ -79,8 +72,7 @@ export function clearOpencodeResumeState(
 ): boolean {
   const state = getOpencodeState(conversation.providerState);
   const sessionId = conversation.sessionId ?? state.sessionId;
-  const releasesDatabase = options.releaseDatabase
-    && (!!state.databasePath || !!state.nativeVersion);
+  const releasesDatabase = options.releaseDatabase && !!state.databasePath;
   if (!sessionId && !state.forkSource && !releasesDatabase) return false;
 
   const previousSessions = [...(state.previousSessions ?? [])];
@@ -91,7 +83,6 @@ export function clearOpencodeResumeState(
     previousSessions.push({
       sessionId,
       ...(state.databasePath ? { databasePath: state.databasePath } : {}),
-      ...(state.nativeVersion ? { nativeVersion: state.nativeVersion } : {}),
     });
   }
 
@@ -101,10 +92,7 @@ export function clearOpencodeResumeState(
   };
   delete providerState.sessionId;
   delete providerState.forkSource;
-  if (options.releaseDatabase) {
-    delete providerState.databasePath;
-    delete providerState.nativeVersion;
-  }
+  if (options.releaseDatabase) delete providerState.databasePath;
   if (previousSessions.length > 0) providerState.previousSessions = previousSessions;
   else delete providerState.previousSessions;
   conversation.sessionId = null;
@@ -123,7 +111,6 @@ function getPreviousSessions(value: unknown): OpencodePreviousSession[] {
     return [{
       sessionId,
       ...(databasePath ? { databasePath } : {}),
-      ...(record.nativeVersion === 2 ? { nativeVersion: 2 as const } : {}),
     }];
   });
 }

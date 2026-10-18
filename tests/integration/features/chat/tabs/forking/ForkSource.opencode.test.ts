@@ -58,7 +58,7 @@ describe('OpenCode fork integration', () => {
     return new OpencodeConversationHistoryService().buildForkProviderState(
       'ses-source',
       'msg-assistant',
-      { nativeVersion: 2, databasePath },
+      { databasePath },
       root,
       { settings: { providerConfigs: { opencode: { cliPath } } }, environment: { ...environment, OPENCODE_DB: databasePath } },
     );
@@ -69,7 +69,7 @@ describe('OpenCode fork integration', () => {
     // The sibling runtime is the one the CLI's `env node` shebang must resolve.
     copyFileSync(process.execPath, path.join(root, process.platform === 'win32' ? 'node.exe' : 'node'), constants.COPYFILE_FICLONE);
     await expect(fork(cliPath, { ...process.env, PATH: '/restricted' })).resolves.toMatchObject({
-      sessionId: 'ses-child', nativeVersion: 2,
+      sessionId: 'ses-child',
     });
     const launch = readNativeLog(root).find(entry => 'launch' in entry);
     expect(String(launch?.path).split(path.delimiter)).toContain(root);

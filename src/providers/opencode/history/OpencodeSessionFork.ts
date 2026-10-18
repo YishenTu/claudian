@@ -1,6 +1,5 @@
 import { readOpencodeHTTPMessages } from '../http/OpencodeHTTPHistory';
 import { type OpencodeServerLease, type OpencodeServerService, withOpencodeServerLease } from '../http/OpencodeServerService';
-import { detectOpencodeNativeVersion } from '../runtime/OpencodeVersion';
 
 export interface OpencodeSessionForkOptions {
   resolveServerService?: () => Promise<OpencodeServerService | null | undefined>;
@@ -13,7 +12,6 @@ export interface OpencodeSessionForkOptions {
 
 /** Fork immediately so subsequent source turns cannot enter the child's context. */
 export async function forkOpencodeSession(options: OpencodeSessionForkOptions): Promise<string> {
-  await detectOpencodeNativeVersion(options.cliPath, options.environment);
   return withOpencodeServerLease(await options.resolveServerService?.(), options.cliPath, options.cwd, options.environment, client => (
     forkOpencodeHTTPSession(client, options.sourceSessionId, options.resumeAt)
   ));

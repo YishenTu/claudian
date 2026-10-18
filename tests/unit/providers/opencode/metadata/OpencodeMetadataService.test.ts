@@ -1,3 +1,4 @@
+import type { OpencodeNativeModel } from '@/providers/opencode/http/OpencodeNativeModelCatalog';
 import type { OpencodeServerLease } from '@/providers/opencode/http/OpencodeServerService';
 import {
   type OpencodeMetadataProbe,
@@ -27,33 +28,20 @@ function createPlugin(): any {
   return plugin;
 }
 
+function nativeModel(rawId: string, label: string): OpencodeNativeModel {
+  const [providerID, id] = rawId.split('/');
+  return { rawId, providerID, id, label, variants: [], contextWindow: 0 };
+}
+
 function createProbe(overrides: Partial<OpencodeMetadataProbe> = {}): OpencodeMetadataProbe {
   return {
     dispose: jest.fn(async () => undefined),
-    loadCatalog: jest.fn(async () => ({
-      configOptions: [],
-      models: {
-        availableModels: [{
-          modelId: 'anthropic/claude',
-          name: 'Claude',
-        }],
-        currentModelId: 'anthropic/claude',
-      },
-    })),
-    loadCommands: jest.fn(async () => [{ id: 'acp:review', name: 'review', content: '' }]),
+    loadCatalog: jest.fn(async () => ({ models: [nativeModel('anthropic/claude', 'Claude')] })),
+    loadCommands: jest.fn(async () => [{ id: 'opencode-command:review', name: 'review', content: '' }]),
     warmModel: jest.fn(async (): Promise<OpencodeMetadataWarmResult> => ({
-      configOptions: [{
-        category: 'thought_level',
-        currentValue: 'high',
-        id: 'effort',
-        name: 'Effort',
-        options: [
-          { name: 'Low', value: 'low' },
-          { name: 'High', value: 'high' },
-        ],
-        type: 'select',
-      }],
+      models: [nativeModel('anthropic/claude', 'Claude')],
       rawModelId: 'anthropic/claude',
+      thinkingLevels: ['low', 'high'],
     })),
     ...overrides,
   };
@@ -63,14 +51,15 @@ describe('OpencodeMetadataService', () => {
   it('discovers selected model metadata with one probe and skips models deselected during the batch', async () => {
     const plugin = createPlugin();
     plugin.settings.providerConfigs.opencode.visibleModels = ['a/one', 'b/two', 'c/three'];
+    const catalog = ['a/one', 'b/two', 'c/three'].map(rawId => nativeModel(rawId, rawId));
     const probe = createProbe({
-      loadCatalog: jest.fn(async () => ({ models: { currentModelId: '', availableModels: ['a/one', 'b/two', 'c/three'].map(modelId => ({ modelId, name: modelId })) } })),
+      loadCatalog: jest.fn(async () => ({ models: catalog })),
       warmModel: jest.fn(async rawModelId => {
         if (rawModelId === 'a/one') {
           plugin.settings.providerConfigs.opencode.visibleModels = ['a/one', 'b/two'];
           throw new Error('First model unavailable');
         }
-        return { rawModelId, configOptions: [] };
+        return { rawModelId, models: catalog, thinkingLevels: [] };
       }),
     });
     const create = jest.fn(() => probe);
@@ -93,7 +82,7 @@ describe('OpencodeMetadataService', () => {
 
     await expect(service.loadCatalog()).resolves.toBe(true);
     await expect(service.discoverCommands()).resolves.toEqual({
-      commands: [{ id: 'acp:review', name: 'review', content: '' }],
+      commands: [{ id: 'opencode-command:review', name: 'review', content: '' }],
       loaded: true,
     });
 
@@ -288,7 +277,7 @@ it.each(['catalog', 'warm', 'discovery', 'batch'] as const)('does not publish ca
   await service.dispose();
 });
 
-it('publishes native models without reading the command catalog', async () => {
+it('publishes enabled native models without reading the command catalog', async () => {
   const host = createPlugin();
   const routes: string[] = [];
   const lease = {
@@ -297,14 +286,23 @@ it('publishes native models without reading the command catalog', async () => {
     request: async (route: string) => {
       routes.push(route);
       if (route !== '/api/model') throw new Error(`Unavailable route: ${route}`);
-      return { data: [{ id: 'chat', providerID: 'local', name: 'Chat', enabled: true }] };
+      return { data: [
+        { id: 'chat', providerID: 'local', name: 'Chat', enabled: true },
+        { id: 'bare', providerID: 'local', enabled: true },
+        { id: 'off', providerID: 'local', name: 'Off', enabled: false },
+        { id: {}, providerID: 'local', name: 'Malformed', enabled: true },
+      ] };
     },
     dispose: async () => undefined,
   } as unknown as OpencodeServerLease;
   const service = new OpencodeMetadataService(host, { createProbe: () => new OpencodeV2MetadataProbe(lease) });
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
-    expect(getOpencodeProviderSettings(host.settings).discoveredModels).toEqual([{ rawId: 'local/chat', label: 'local/Chat' }]);
+    // Disabled and malformed entries are not selectable; a missing name falls back to the native ID.
+    expect(getOpencodeProviderSettings(host.settings).discoveredModels).toEqual([
+      { rawId: 'local/chat', label: 'local/Chat' },
+      { rawId: 'local/bare', label: 'local/bare' },
+    ]);
     expect(routes).toEqual(['/api/model']);
   } finally { await service.dispose(); }
 });

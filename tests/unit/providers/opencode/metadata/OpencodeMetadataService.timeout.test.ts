@@ -21,7 +21,7 @@ function createPlugin(): any {
 function createProbe(loadCommands: OpencodeMetadataProbe['loadCommands']): OpencodeMetadataProbe {
   return {
     dispose: jest.fn(async () => undefined),
-    loadCatalog: jest.fn(async () => ({})),
+    loadCatalog: jest.fn(async () => ({ models: [] })),
     loadCommands,
     warmModel: jest.fn(),
   };

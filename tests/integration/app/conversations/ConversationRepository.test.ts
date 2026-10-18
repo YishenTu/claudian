@@ -302,7 +302,7 @@ test('provider invalidation keeps execution bindings the provider preserved', as
     id: 'preserved-conversation', providerId: 'opencode', title: 'Preserved',
     sessionId: 'ses_preserved', createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(),
     messages: [], isPinned: false,
-    providerState: { nativeVersion: 2, databasePath: '/data/opencode/opencode.db', sessionId: 'ses_preserved' },
+    providerState: { databasePath: '/data/opencode/opencode.db', sessionId: 'ses_preserved' },
   };
   repository.replaceAll([preserved]);
   repository.registerExecutionBinding(preserved.id, 'preserved-binding', 1);
@@ -338,7 +338,7 @@ test('provider invalidation keeps the binding of a shared-runtime first run that
     revision: 1,
     status: 'idle',
     providerSessionId: 'ses_first',
-    providerState: { nativeVersion: 2, databasePath: '/data/opencode/opencode.db', sessionId: 'ses_first' },
+    providerState: { databasePath: '/data/opencode/opencode.db', sessionId: 'ses_first' },
   })).resolves.toBe(true);
   expect(repository.getSync(fresh.id)?.sessionId).toBe('ses_first');
   expect(persistence.saveMetadata).toHaveBeenCalledTimes(1);

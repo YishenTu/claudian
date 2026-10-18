@@ -4,11 +4,11 @@ import { PassThrough } from 'node:stream';
 import type {
   ACPSessionNotification,
   JSONRPCRequestOptions,
-} from '../../../../src/providers/acp';
+} from '@/providers/acp';
 import {
   ACPClientConnection,
   ACPJSONRPCTransport
-} from '../../../../src/providers/acp';
+} from '@/providers/acp';
 
 interface ConnectionHarness {
   close: () => void;

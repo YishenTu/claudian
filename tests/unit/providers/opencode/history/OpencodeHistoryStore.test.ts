@@ -1,40 +1,52 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
-
 import { testDate } from '@test/helpers/testClock';
 
-import type * as environmentModule from '@/core/process/env';
 import { encodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import { encodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import {
-  loadOpencodeSessionMessages,
-  loadOpencodeSessionModel,
-  mapOpencodeV2Messages,
+  createOpencodeHydrationDiagnosticMessage,
   mapOpencodeV2NativeMessages,
 } from '@/providers/opencode/history/OpencodeHistoryStore';
 
-// Exercise real SQLite subprocesses without discovering the runner's other Node installations.
-jest.mock('@/core/process/env', () => ({
-  ...jest.requireActual<typeof environmentModule>('@/core/process/env'),
-  findNodeExecutables: () => [process.execPath],
-}));
+it('preserves Windows paths as literal code in hydration diagnostics', () => {
+  const message = createOpencodeHydrationDiagnosticMessage({
+    databasePath: String.raw`C:\Users\cylix\.local\share\opencode\opencode.db`,
+    reason: 'Invalid OpenCode history response.',
+    sessionId: 'ses-bad',
+  });
+  expect(message).toMatchObject({ id: 'opencode-hydration-error-session-ses-bad', role: 'assistant' });
+  expect(message.content).toBe([
+    '```text',
+    'Failed to hydrate OpenCode session.',
+    'provider: OpenCode',
+    'sessionId: ses-bad',
+    String.raw`databasePath: C:\Users\cylix\.local\share\opencode\opencode.db`,
+    'reason: Invalid OpenCode history response.',
+    '```',
+  ].join('\n'));
+});
 
 describe('mapOpencodeV2NativeMessages', () => {
-  it('preserves Windows paths as literal code in hydration diagnostics', () => {
-    const [message] = mapOpencodeV2Messages([
-      { id: 'msg-bad', type: 'user', time_created: 1_000, data: 'not json' },
-    ], { databasePath: String.raw`C:\Users\cylix\.local\share\opencode\opencode.db` });
-    expect(message.content).toBe([
-      '```text',
-      'Failed to hydrate OpenCode session.',
-      'provider: OpenCode',
-      String.raw`databasePath: C:\Users\cylix\.local\share\opencode\opencode.db`,
-      'messageId: msg-bad',
-      'reason: OpenCode message metadata is not valid JSON.',
-      '```',
-    ].join('\n'));
+  it('keeps native control entries as turn boundaries and file tool content as raw output', () => {
+    const fileContent = [{ type: 'text', text: '/vault' }, { type: 'file', uri: 'file:///vault/report.txt', mime: 'text/plain' }];
+    const messages = mapOpencodeV2NativeMessages([
+      { id: 'z-user', type: 'user', text: 'Current prompt', time: { created: 1000 } },
+      { id: 'a-assistant', type: 'assistant', time: { created: 2000, completed: 5000 }, content: [
+        { type: 'reasoning', text: 'Think', time: { created: 2000, completed: 3000 } },
+        { type: 'tool', id: 'call-shell', name: 'shell', state: { status: 'completed', input: { command: 'pwd' }, content: fileContent } },
+        { type: 'text', text: 'Done' },
+      ] },
+      { id: 'idle', type: 'idle', time: { created: 5000 } },
+      { id: 'b-assistant', type: 'assistant', time: { created: 6000 }, content: [{ type: 'text', text: 'Separate turn' }] },
+      { id: 'model', type: 'model-switched', model: { providerID: 'test', id: 'second' }, time: { created: 7000 } },
+    ]);
+    expect(messages.map(({ content }) => content)).toEqual(['Current prompt', 'Done', 'Separate turn']);
+    expect(messages[1]).toMatchObject({
+      durationSeconds: 3,
+      contentBlocks: [{ type: 'thinking', content: 'Think', durationSeconds: 1 }, { type: 'tool_use', toolId: 'call-shell' }, { type: 'text', content: 'Done' }],
+      toolCalls: [{ name: 'Bash', input: { command: 'pwd' }, status: 'completed', result: '/vault', providerPayload: {
+        rawOutput: { content: fileContent },
+      } }],
+    });
   });
 
   it('maps stored OpenCode messages into Claudian chat messages', () => {
@@ -314,114 +326,7 @@ describe('mapOpencodeV2NativeMessages', () => {
       },
     ]);
   });
-
-  it('keeps rendering surrounding messages when one message has invalid metadata', () => {
-    const messages = mapOpencodeV2Messages([
-      { id: 'msg-bad', type: 'user', time_created: 1_000, data: '{' },
-      {
-        id: 'msg-assistant',
-        type: 'assistant',
-        time_created: 2_000,
-        data: JSON.stringify({
-          time: { created: 2_000, completed: 3_000 },
-          content: [{ text: 'Still visible.', type: 'text' }],
-        }),
-      },
-    ]);
-
-    expect(messages).toEqual([
-      expect.objectContaining({
-        content: [
-          '```text',
-          'Failed to hydrate OpenCode session.',
-          'provider: OpenCode',
-          'messageId: msg-bad',
-          'reason: OpenCode message metadata is not valid JSON.',
-          '```',
-        ].join('\n'),
-        id: 'opencode-hydration-error-message-msg-bad',
-        role: 'assistant',
-      }),
-      {
-        assistantMessageId: 'msg-assistant',
-        content: 'Still visible.',
-        contentBlocks: [{ content: 'Still visible.', type: 'text' }],
-        durationSeconds: 1,
-        completedAt: 3_000,
-        id: 'msg-assistant',
-        role: 'assistant',
-        timestamp: 2_000,
-      },
-    ]);
-  });
 });
-
-describe('loadOpencodeSessionMessages', () => {
-  let tmpRoot: string;
-
-  beforeEach(() => {
-    tmpRoot = mkdtempSync(path.join(os.tmpdir(), 'claudian-opencode-history-'));
-  });
-
-  afterEach(() => {
-    rmSync(tmpRoot, { force: true, recursive: true });
-  });
-
-  // Both history queries exercise native fallback failures, whose process deadlines are 10 seconds.
-  it('shows the underlying SQLite failure as a history diagnostic', async () => {
-    const dbPath = path.join(tmpRoot, 'empty.db');
-    new DatabaseSync(dbPath).close();
-    const messages = await loadOpencodeSessionMessages('ses-empty', { databasePath: dbPath });
-    expect(messages).toEqual([expect.objectContaining({
-      id: 'opencode-hydration-error-session-ses-empty',
-      content: expect.stringContaining('no such table: session_message'),
-    })]);
-    await expect(loadOpencodeSessionModel('ses-empty', { databasePath: dbPath })).resolves.toBeNull();
-  }, 30_000);
-
-  it('loads conversation content from the native session messages', async () => {
-    const dbPath = path.join(tmpRoot, 'opencode.db');
-    const db = new DatabaseSync(dbPath);
-    try {
-      db.exec('CREATE TABLE session_message(id TEXT, session_id TEXT, seq INTEGER, type TEXT, time_created INTEGER, data TEXT)');
-      const sessionId = 'session-restored';
-      const insert = db.prepare('INSERT INTO session_message VALUES (?, ?, ?, ?, ?, ?)');
-      insert.run('msg-user', sessionId, 1, 'user', 1_000, JSON.stringify({
-        text: 'Restore this session',
-        time: { created: 1_000 },
-      }));
-      insert.run('msg-assistant', sessionId, 2, 'assistant', 2_000, JSON.stringify({
-        time: { completed: 4_000, created: 2_000 },
-        content: [{ text: 'Session restored.', type: 'text' }],
-      }));
-      insert.run('msg-other', 'other-session', 3, 'user', 3_000, JSON.stringify({ text: 'Other session' }));
-
-      await expect(loadOpencodeSessionMessages(sessionId, { databasePath: dbPath })).resolves.toEqual([
-        {
-          assistantMessageId: undefined,
-          content: 'Restore this session',
-          id: 'msg-user',
-          role: 'user',
-          timestamp: 1_000,
-          userMessageId: 'msg-user',
-        },
-        {
-          assistantMessageId: 'msg-assistant',
-          content: 'Session restored.',
-          contentBlocks: [{ content: 'Session restored.', type: 'text' }],
-          durationSeconds: 2,
-          completedAt: 4_000,
-          id: 'msg-assistant',
-          role: 'assistant',
-          timestamp: 2_000,
-        },
-      ]);
-    } finally {
-      db.close();
-    }
-  });
-});
-
 
 it('restores OpenCode output plus reasoning across tool steps', () => {
   const messages = mapOpencodeV2NativeMessages([
@@ -445,26 +350,7 @@ it('omits OpenCode throughput if any step lacks usage', () => {
 });
 
 
-it('reconstructs throughput from only the requested session in SQLite', async () => {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'opencode-throughput-'));
-  const databasePath = path.join(root, 'opencode.db');
-  const db = new DatabaseSync(databasePath);
-  db.exec('CREATE TABLE session_message(id TEXT, session_id TEXT, seq INTEGER, type TEXT, time_created INTEGER, data TEXT)');
-  const insert = db.prepare('INSERT INTO session_message VALUES(?, ?, ?, ?, ?, ?)');
-  insert.run('u', 'session', 1, 'user', 1000, JSON.stringify({ text: 'Work', time: { created: 1000 } }));
-  insert.run('child-answer', 'child', 2, 'assistant', 1200, JSON.stringify({ finish: 'stop',
-    time: { created: 1200, completed: 3500 }, tokens: { output: 900, reasoning: 0 }, content: [] }));
-  insert.run('a', 'session', 3, 'assistant', 1200, JSON.stringify({ finish: 'stop',
-    time: { created: 1200, completed: 3500 }, tokens: { output: 100, reasoning: 25 }, content: [{ type: 'text', text: 'Done' }] }));
-  db.close();
-  try {
-    const messages = await loadOpencodeSessionMessages('session', { databasePath });
-    expect(messages.at(-1)?.turnStats).toEqual({ outputTokens: 125, durationMs: 2500 });
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-
-it.each(['sqlite', 'http'] as const)('marks a v2 turn whose idle outcome is interrupted as interrupted from %s rows', source => {
+it('marks a v2 turn whose idle outcome is interrupted as interrupted', () => {
   const created = testDate().getTime();
   const entries = [
     { id: 'u1', type: 'user', time: { created }, text: 'Run the shell command' },
@@ -484,9 +370,7 @@ it.each(['sqlite', 'http'] as const)('marks a v2 turn whose idle outcome is inte
       content: [{ type: 'text', text: 'Hi' }], finish: 'stop' },
     { id: 'idle3', type: 'idle', time: { created: created + 33_500 }, outcome: 'succeeded' },
   ];
-  const messages = source === 'http'
-    ? mapOpencodeV2NativeMessages(entries)
-    : mapOpencodeV2Messages(entries.map(({ id, type, ...data }) => ({ id, type, time_created: data.time.created, data: JSON.stringify(data) })));
+  const messages = mapOpencodeV2NativeMessages(entries);
 
   expect(messages.map(({ role, content, isInterrupt, durationSeconds, completedAt, turnStats }) => (
     { role, content, isInterrupt, durationSeconds, completedAt, turnStats }))).toEqual([

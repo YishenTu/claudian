@@ -39,28 +39,6 @@ export function resolveOpencodeDatabasePath(
   return candidates[0] ?? null;
 }
 
-export function resolveExistingOpencodeDatabasePath(
-  preferredPath?: string | null,
-  env: NodeJS.ProcessEnv = process.env,
-): string | null {
-  const preferred = preferredPath?.trim();
-  if (preferred) {
-    if (preferred === ':memory:') {
-      return preferred;
-    }
-    if (fs.existsSync(preferred)) {
-      return preferred;
-    }
-  }
-
-  const resolved = resolveOpencodeDatabasePath(env);
-  if (resolved && (resolved === ':memory:' || fs.existsSync(resolved))) {
-    return resolved;
-  }
-
-  return preferred ?? resolved;
-}
-
 function getOpencodeDatabasePathCandidates(
   env: NodeJS.ProcessEnv,
 ): string[] {

@@ -221,7 +221,7 @@ describe('opencodeChatUIConfig', () => {
     expect(opencodeChatUIConfig.ownsModel('opencode:anthropic/claude-sonnet-4', {})).toBe(true);
   });
 
-  it('returns per-model thinking options from ACP thought-level discovery', () => {
+  it('returns per-model thinking options from discovered native variants', () => {
     const settings = {
       model: 'opencode:anthropic/claude-sonnet-4',
       providerConfigs: {
@@ -257,7 +257,7 @@ describe('opencodeChatUIConfig', () => {
     )).toBe('max');
   });
 
-  it('defaults ACP thought-level models to high without a saved preference', () => {
+  it('defaults models with discovered variants to high without a saved preference', () => {
     const settings = {
       providerConfigs: {
         opencode: {
