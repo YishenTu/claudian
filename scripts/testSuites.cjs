@@ -22,6 +22,7 @@ const crossPlatformTests = [
   'tests/integration/core/process/cliBinaryLocator.test.ts',
   'tests/integration/core/process/loginShellPath.test.ts',
   'tests/integration/core/session-tools/LoopbackSessionToolServer.test.ts',
+  'tests/integration/features/chat/tabs/forking/ForkSource.opencode.test.ts',
   'tests/integration/providers/opencode/http/OpencodeSharedServer.test.ts',
   'tests/integration/providers/pi/execution/PiExecutionKernel.test.ts',
 ];

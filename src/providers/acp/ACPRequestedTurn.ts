@@ -15,12 +15,8 @@ export interface ACPRequestedTurnOptions {
   readonly run: RequestedRunChannel;
   /** Provider-owned tool normalization. */
   readonly toolStreamAdapter?: ACPToolStreamAdapter;
-  /** Model attributed to live context-window usage. */
-  readonly resolveUsageModel?: () => string | undefined;
   /** Runs once, before `turn_started`, when the native turn is first accepted. */
   readonly onAccept?: () => void;
-  /** Whether a live update that yields no events still proves acceptance. */
-  readonly acceptsSilentUpdates?: boolean;
 }
 
 /**
@@ -42,10 +38,7 @@ export class ACPRequestedTurn {
     this.#normalizer = new ACPExecutionEventNormalizer({
       mapUsage: usage => {
         if (this.acceptingLiveOutput) this.#contextUsage = usage;
-        return buildACPUsageInfo({
-          contextWindow: usage,
-          model: options.resolveUsageModel?.(),
-        });
+        return buildACPUsageInfo({ contextWindow: usage });
       },
       scope: {
         executionId: run.executionId,
@@ -55,10 +48,6 @@ export class ACPRequestedTurn {
       },
       toolStreamAdapter: options.toolStreamAdapter,
     });
-  }
-
-  get accepted(): boolean {
-    return this.#accepted;
   }
 
   /** True between `beginLiveOutput()` and `endLiveOutput()` while the run is open. */
@@ -101,10 +90,8 @@ export class ACPRequestedTurn {
     if (result.metadata && isSessionMetadataUpdate(result.metadata)) {
       return result.metadata;
     }
+    // Any live update, even one that yields no events, proves acceptance.
     if (!this.acceptingLiveOutput) return undefined;
-    if (result.events.length === 0 && !this.#options.acceptsSilentUpdates) {
-      return undefined;
-    }
     this.accept();
     for (const event of result.events) {
       this.#options.run.emit(event);

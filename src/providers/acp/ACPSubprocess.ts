@@ -48,21 +48,12 @@ export class ACPSubprocess {
     return this.process.stdout;
   }
 
-  get stderr(): Readable {
-    this.#assertStarted();
-    return this.process.stderr;
-  }
-
   start(): void {
     this.process.start();
   }
 
   isAlive(): boolean {
     return this.process.isAlive();
-  }
-
-  getStderrSnapshot(): string {
-    return this.process.getStderrSnapshot();
   }
 
   onClose(listener: CloseListener): () => void {

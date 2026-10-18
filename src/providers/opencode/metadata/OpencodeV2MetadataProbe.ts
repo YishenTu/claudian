@@ -26,10 +26,7 @@ export class OpencodeV2MetadataProbe implements OpencodeMetadataProbe {
   async loadCatalog(signal?: AbortSignal): Promise<OpencodeMetadataCatalogResult> {
     const ownedSignal = this.client.signal(signal);
     const models = this.models = await this.loadModels(ownedSignal);
-    return {
-      commands: await this.readCommands(ownedSignal),
-      models: modelState(models),
-    };
+    return { models: modelState(models) };
   }
 
   async loadCommands(signal?: AbortSignal): Promise<SlashCommand[]> {

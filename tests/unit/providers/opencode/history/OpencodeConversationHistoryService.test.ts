@@ -68,28 +68,8 @@ describe('OpencodeConversationHistoryService', () => {
     const conversation = createConversation(sessionId, dbPath);
     const service = new OpencodeConversationHistoryService();
 
-    const db = new DatabaseSync(dbPath);
-    try {
-      db.exec(`
-        create table message (
-          id text primary key,
-          session_id text not null,
-          time_created integer not null,
-          data text not null
-        );
-      `);
-      db.prepare('insert into message (id, session_id, time_created, data) values (?, ?, ?, ?)').run(
-        'msg-user',
-        sessionId,
-        1_000,
-        JSON.stringify({
-          role: 'user',
-          time: { created: 1_000 },
-        }),
-      );
-    } finally {
-      db.close();
-    }
+    // A database v2 has not opened yet lacks the native message table.
+    new DatabaseSync(dbPath).close();
 
     Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
 
@@ -101,19 +81,14 @@ describe('OpencodeConversationHistoryService', () => {
 
     const repairedDb = new DatabaseSync(dbPath);
     try {
-      repairedDb.exec(`
-        create table part (
-          id text primary key,
-          session_id text not null,
-          message_id text not null,
-          data text not null
-        );
-      `);
-      repairedDb.prepare('insert into part (id, session_id, message_id, data) values (?, ?, ?, ?)').run(
-        'part-user',
-        sessionId,
+      repairedDb.exec('CREATE TABLE session_message(id TEXT, session_id TEXT, seq INTEGER, type TEXT, time_created INTEGER, data TEXT)');
+      repairedDb.prepare('INSERT INTO session_message VALUES (?, ?, ?, ?, ?, ?)').run(
         'msg-user',
-        JSON.stringify({ text: 'Recovered prompt', type: 'text' }),
+        sessionId,
+        1,
+        'user',
+        1_000,
+        JSON.stringify({ text: 'Recovered prompt', time: { created: 1_000 } }),
       );
     } finally {
       repairedDb.close();
@@ -138,29 +113,14 @@ describe('OpencodeConversationHistoryService', () => {
     const sessionId = 'session-model';
     const db = new DatabaseSync(dbPath);
     try {
-      db.exec(`
-        create table message (
-          id text primary key,
-          session_id text not null,
-          time_created integer not null,
-          data text not null
-        );
-        create table part (
-          id text primary key,
-          session_id text not null,
-          message_id text not null,
-          data text not null
-        );
-      `);
-      db.prepare('insert into message (id, session_id, time_created, data) values (?, ?, ?, ?)').run(
+      db.exec('CREATE TABLE session_message(id TEXT, session_id TEXT, seq INTEGER, type TEXT, time_created INTEGER, data TEXT)');
+      db.prepare('INSERT INTO session_message VALUES (?, ?, ?, ?, ?, ?)').run(
         'assistant-1',
         sessionId,
+        1,
+        'assistant',
         1_000,
-        JSON.stringify({
-          modelID: 'gemini-3.5-flash',
-          providerID: 'google',
-          role: 'assistant',
-        }),
+        JSON.stringify({ model: { id: 'gemini-3.5-flash', providerID: 'google' }, content: [] }),
       );
     } finally {
       db.close();
@@ -320,6 +280,25 @@ describe('OpencodeConversationHistoryService', () => {
     expect(conversation.messages.map(message => message.content)).toEqual(['Configured prompt']);
   });
 
+  it('defers an ephemeral fork of an unstamped legacy binding to its first v2 send', async () => {
+    const configuredPath = path.join(tmpRoot, 'custom', 'opencode.db');
+    seedDatabase(configuredPath, 'legacy-source', 'Legacy prompt');
+
+    await expect(new OpencodeConversationHistoryService().buildForkProviderState(
+      'legacy-source',
+      'msg-reply',
+      { databasePath: configuredPath, sessionId: 'legacy-source' },
+      tmpRoot,
+      { environment: { HOME: tmpRoot, OPENCODE_DB: configuredPath } },
+      { lifecycle: 'ephemeral' },
+    )).resolves.toEqual({
+      databasePath: configuredPath,
+      forkSource: { sessionId: 'legacy-source', resumeAt: 'msg-reply' },
+      nativeConversationContextEstablished: true,
+      nativeVersion: 2,
+    });
+  });
+
   it('sanitizes an untrusted database path before a session is assigned', async () => {
     const xdgDataHome = path.join(tmpRoot, 'xdg');
     const trustedPath = path.join(xdgDataHome, 'opencode', 'opencode.db');
@@ -343,31 +322,14 @@ function seedDatabase(databasePath: string, sessionId: string, text: string): vo
   mkdirSync(path.dirname(databasePath), { recursive: true });
   const db = new DatabaseSync(databasePath);
   try {
-    db.exec(`
-      create table message (
-        id text primary key,
-        session_id text not null,
-        time_created integer not null,
-        data text not null
-      );
-      create table part (
-        id text primary key,
-        session_id text not null,
-        message_id text not null,
-        data text not null
-      );
-    `);
-    db.prepare('insert into message (id, session_id, time_created, data) values (?, ?, ?, ?)').run(
+    db.exec('CREATE TABLE session_message(id TEXT, session_id TEXT, seq INTEGER, type TEXT, time_created INTEGER, data TEXT)');
+    db.prepare('INSERT INTO session_message VALUES (?, ?, ?, ?, ?, ?)').run(
       `message-${sessionId}`,
       sessionId,
+      1,
+      'user',
       1_000,
-      JSON.stringify({ role: 'user', time: { created: 1_000 } }),
-    );
-    db.prepare('insert into part (id, session_id, message_id, data) values (?, ?, ?, ?)').run(
-      `part-${sessionId}`,
-      sessionId,
-      `message-${sessionId}`,
-      JSON.stringify({ text, type: 'text' }),
+      JSON.stringify({ text, time: { created: 1_000 } }),
     );
   } finally {
     db.close();

@@ -6,7 +6,7 @@ import {
   maybeGetOpencodeWorkspaceServices,
   opencodeWorkspaceRegistration,
 } from './app/OpencodeWorkspaceServices';
-import { getOpencodeConversationCapabilities, OPENCODE_PROVIDER_CAPABILITIES } from './capabilities';
+import { OPENCODE_PROVIDER_CAPABILITIES } from './capabilities';
 import { opencodeSettingsReconciler } from './env/OpencodeSettingsReconciler';
 import { OpencodeExecutionBackend } from './execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from './history/OpencodeConversationHistoryService';
@@ -21,7 +21,6 @@ export const opencodeProviderRegistration: ProviderModule = {
   id: 'opencode',
   blankTabOrder: 10,
   capabilities: OPENCODE_PROVIDER_CAPABILITIES,
-  getConversationCapabilities: getOpencodeConversationCapabilities,
   modelPolicy: opencodeModelPolicy,
   chatUIConfig: opencodeChatUIConfig,
   createExecutionBackend: (plugin) => {

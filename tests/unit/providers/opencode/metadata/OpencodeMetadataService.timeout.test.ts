@@ -1,106 +1,44 @@
 import type { ProviderCommandLoaderContext } from '@/core/providers/types';
 import { OpencodeCommandLoader } from '@/providers/opencode/app/OpencodeCommandLoader';
-import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
-import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
-
-interface MockKernelOptions {
-  readonly onNotification: (notification: {
-    sessionId: string;
-    update: Record<string, unknown>;
-  }) => void;
-}
-
-const mockKernelOptions: MockKernelOptions[] = [];
-
-jest.mock('@/providers/opencode/execution/OpencodeACPSessionKernel', () => ({
-  DefaultOpencodeACPSessionKernel: jest.fn().mockImplementation((options) => {
-    mockKernelOptions.push(options);
-    return {
-      connect: jest.fn(async () => undefined),
-      dispose: jest.fn(async () => undefined),
-      openSession: jest.fn(async () => ({
-        configOptions: [],
-        databasePath: ':memory:',
-        models: {
-          availableModels: [{ modelId: 'anthropic/claude', name: 'Claude' }],
-          currentModelId: 'anthropic/claude',
-        },
-        sessionId: 'metadata-session',
-      })),
-      setConfigOption: jest.fn(),
-    };
-  }),
-}));
+import {
+  type OpencodeMetadataProbe,
+  OpencodeMetadataService,
+} from '@/providers/opencode/metadata/OpencodeMetadataService';
 
 function createPlugin(): any {
   const plugin: any = {
-    getResolvedProviderCliPath: async () => '/not-installed/opencode',
-    app: {
-      vault: {
-        adapter: { basePath: '/vault' },
-      },
-    },
     executionLifecycleRegistry: {
       registerTransitionHook: jest.fn(() => jest.fn()),
     },
-    mutateSettings: jest.fn(async (
-      mutation: (settings: Record<string, unknown>) => void,
-    ): Promise<void> => {
-      mutation(plugin.settings);
-    }),
-    mutateSettingsConditionally: jest.fn(async (mutation) => { await mutation(plugin.settings); }),
+    mutateSettings: jest.fn(async (mutation) => mutation(plugin.settings)),
+    mutateSettingsConditionally: jest.fn(async (mutation) => mutation(plugin.settings)),
     notifyProviderChatOptionsChanged: jest.fn(),
-    settings: {
-      providerConfigs: {
-        opencode: {
-          discoveredModels: [],
-          visibleModels: [],
-        },
-      },
-    },
+    settings: { providerConfigs: { opencode: { discoveredModels: [], visibleModels: [] } } },
   };
   return plugin;
 }
 
-function createContext(plugin: any): ProviderCommandLoaderContext {
+function createProbe(loadCommands: OpencodeMetadataProbe['loadCommands']): OpencodeMetadataProbe {
   return {
-    allowIsolatedMetadataCreation: true,
-    conversation: null,
-    plugin,
+    dispose: jest.fn(async () => undefined),
+    loadCatalog: jest.fn(async () => ({})),
+    loadCommands,
+    warmModel: jest.fn(),
   };
 }
 
-async function waitForKernel(): Promise<MockKernelOptions> {
-  for (let attempt = 0; attempt < 10 && mockKernelOptions.length === 0; attempt += 1) {
-    await Promise.resolve();
-  }
-  const options = mockKernelOptions[0];
-  if (!options) throw new Error('OpenCode metadata kernel was not created');
-  return options;
+function createContext(plugin: any): ProviderCommandLoaderContext {
+  return { allowIsolatedMetadataCreation: true, conversation: null, plugin };
 }
 
-describe('OpencodeMetadataService command update timeout', () => {
-  beforeEach(() => {
-    jest.useFakeTimers();
-    mockKernelOptions.length = 0;
-  });
-
-  afterEach(() => {
-    jest.useRealTimers();
-    jest.clearAllMocks();
-  });
-
-  it('reports retryable command discovery when no command update arrives', async () => {
+describe('OpencodeMetadataService command discovery outcomes', () => {
+  it('reports retryable command discovery when the native catalog cannot be read', async () => {
     const plugin = createPlugin();
-    const service = new OpencodeMetadataService(plugin);
-    const loader = new OpencodeCommandLoader(service);
-
+    const service = new OpencodeMetadataService(plugin, {
+      createProbe: () => createProbe(jest.fn(async () => { throw new Error('catalog unavailable'); })),
+    });
     try {
-      const result = loader.loadCommands(createContext(plugin));
-      await waitForKernel();
-      await jest.advanceTimersByTimeAsync(5_000);
-
-      await expect(result).resolves.toEqual({
+      await expect(new OpencodeCommandLoader(service).loadCommands(createContext(plugin))).resolves.toEqual({
         message: 'Could not load OpenCode commands.',
         retryable: true,
         status: 'error',
@@ -110,41 +48,14 @@ describe('OpencodeMetadataService command update timeout', () => {
     }
   });
 
-  it('still publishes model metadata when the command update is absent', async () => {
+  it('treats an observed empty command catalog as a valid empty catalog', async () => {
     const plugin = createPlugin();
-    const service = new OpencodeMetadataService(plugin);
-
+    const service = new OpencodeMetadataService(plugin, {
+      createProbe: () => createProbe(jest.fn(async () => [])),
+    });
     try {
-      const loaded = service.loadCatalog();
-      await waitForKernel();
-      await jest.advanceTimersByTimeAsync(5_000);
-
-      await expect(loaded).resolves.toBe(true);
-      expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([
-        { label: 'Claude', rawId: 'anthropic/claude' },
-      ]);
-    } finally {
-      await service.dispose();
-    }
-  });
-
-  it('treats an observed empty command update as a valid empty catalog', async () => {
-    const plugin = createPlugin();
-    const service = new OpencodeMetadataService(plugin);
-    const loader = new OpencodeCommandLoader(service);
-
-    try {
-      const result = loader.loadCommands(createContext(plugin));
-      const kernelOptions = await waitForKernel();
-      kernelOptions.onNotification({
-        sessionId: 'metadata-session',
-        update: {
-          availableCommands: [],
-          sessionUpdate: 'available_commands_update',
-        },
-      });
-
-      await expect(result).resolves.toEqual({ status: 'empty' });
+      await expect(new OpencodeCommandLoader(service).loadCommands(createContext(plugin)))
+        .resolves.toEqual({ status: 'empty' });
     } finally {
       await service.dispose();
     }

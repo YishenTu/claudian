@@ -7,19 +7,14 @@ import { pathToFileURL } from 'node:url';
 import { parse, type ParseError } from 'jsonc-parser';
 
 import { CLAUDIAN_STORAGE_PATH } from '../../../core/bootstrap/storagePaths';
-import type { SystemPromptSettings } from '../../../core/prompt/mainAgent';
 import { expandHomePath } from '../../../utils/path';
 import type { OpencodeExecutionProfile } from '../execution/OpencodeSessionContract';
-import { AUX_AGENT_IDS, buildAgentConfig, buildOpencodeSystemPrompt, OPENCODE_BUILD_AGENT_ID } from './OpencodeExecutionAgents';
+import { buildAgentConfig, buildOpencodeSystemPrompt, OPENCODE_BUILD_AGENT_ID } from './OpencodeExecutionAgents';
 import { resolveOpencodeDatabasePath } from './OpencodePaths';
 
 export interface OpencodeLaunchArtifacts {
-  configPath: string;
-  nativeConfigPath: string;
   configContent: string;
   databasePath: string | null;
-  launchKey: string;
-  systemPromptPath: string;
 }
 
 export interface OpencodeManagedAgentConfig {
@@ -34,75 +29,43 @@ const DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS: readonly OpencodeManagedAgentConfi
 
 export interface PrepareOpencodeLaunchArtifactsParams {
   sessionToolsPluginPath?: string;
-  profile?: OpencodeExecutionProfile;
-  titleLocale?: string;
-  nativeVersion?: 1 | 2;
   runtimeEnv: NodeJS.ProcessEnv;
-  settings?: SystemPromptSettings;
-  systemPromptText?: string;
-  /** Only create missing prompt files, for launches whose sessions supply their own instructions. */
-  preserveExistingPrompts?: boolean;
   workspaceRoot: string;
 }
 
+/** Shared-server layer; sessions supply their own instructions, so default prompts are only created when missing. */
 export async function prepareOpencodeLaunchArtifacts(
   params: PrepareOpencodeLaunchArtifactsParams,
 ): Promise<OpencodeLaunchArtifacts> {
-  const artifactsDir = path.join(params.workspaceRoot, CLAUDIAN_STORAGE_PATH, 'opencode');
-  const promptsDir = path.join(artifactsDir, 'prompts');
+  const promptsDir = path.join(params.workspaceRoot, CLAUDIAN_STORAGE_PATH, 'opencode', 'prompts');
   const promptPaths = {
     managed: path.join(promptsDir, 'main.md'),
     readonly: path.join(promptsDir, 'inline-edit.md'),
     passive: path.join(promptsDir, 'title.md'),
   };
-  const profile = params.profile ?? 'managed';
-  const systemPromptPath = promptPaths[profile];
-  const configPath = path.join(artifactsDir, 'config.json');
-  const promptParams = {
-    settings: params.settings,
-    titleLocale: params.titleLocale,
-    workspaceRoot: params.workspaceRoot,
-  };
-  const promptTexts = {
-    managed: buildOpencodeSystemPrompt('managed', promptParams),
-    readonly: buildOpencodeSystemPrompt('readonly', promptParams),
-    passive: buildOpencodeSystemPrompt('passive', promptParams),
-  };
-  if (params.systemPromptText !== undefined) promptTexts[profile] = params.systemPromptText;
-  const promptKey = promptTexts[profile];
-  const customConfigPath = resolveOpencodeConfigPath(params.runtimeEnv.OPENCODE_CONFIG, params.workspaceRoot);
-  const customConfigText = await readOpencodeConfig(customConfigPath, params.runtimeEnv);
   const inlineConfig = params.runtimeEnv.OPENCODE_CONFIG_CONTENT?.trim();
-  const serializeManagedConfig = (
-    config: Record<string, unknown>,
-    paths = promptPaths,
-    defaultAgentId = OPENCODE_BUILD_AGENT_ID,
-  ): string => `${JSON.stringify(buildOpencodeManagedConfig(
-    config,
-    paths.managed,
-    [
-      ...DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS,
-      { ...buildAgentConfig('readonly'), promptPath: paths.readonly },
-      { ...buildAgentConfig('passive'), promptPath: paths.passive },
-    ],
-    defaultAgentId,
-    params.nativeVersion,
-  ), null, 2)}\n`;
-  const fileContent = serializeManagedConfig({});
   // Preserve native user layers, protecting substituted user text from expansion
   // a second time. Only our prompt file references still need native expansion.
   const promptMarkers = { managed: randomUUID(), readonly: randomUUID(), passive: randomUUID() };
   const managedBase = inlineConfig
     ? await parseOpencodeConfig(inlineConfig, 'OPENCODE_CONFIG_CONTENT', params.runtimeEnv, params.workspaceRoot)
     : {};
-  if (params.nativeVersion === 2 && params.sessionToolsPluginPath) {
+  if (params.sessionToolsPluginPath) {
     managedBase.plugins = [
       ...(Array.isArray(managedBase.plugins) ? managedBase.plugins as unknown[] : []),
       { package: pathToFileURL(params.sessionToolsPluginPath).href },
     ];
   }
-  let configContent = serializeManagedConfig(managedBase, promptMarkers, profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[profile])
-    .replace(/\{(env|file):/g, '\\u007b$1:');
+  let configContent = `${JSON.stringify(buildOpencodeManagedConfig(
+    managedBase,
+    promptMarkers.managed,
+    [
+      ...DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS,
+      { ...buildAgentConfig('readonly'), promptPath: promptMarkers.readonly },
+      { ...buildAgentConfig('passive'), promptPath: promptMarkers.passive },
+    ],
+    OPENCODE_BUILD_AGENT_ID,
+  ), null, 2)}\n`.replace(/\{(env|file):/g, '\\u007b$1:');
   for (const key of Object.keys(promptPaths) as OpencodeExecutionProfile[]) {
     configContent = configContent.replaceAll(
       `"\\u007bfile:${promptMarkers[key]}}"`, JSON.stringify(`{file:${promptPaths[key]}}`),
@@ -112,29 +75,13 @@ export async function prepareOpencodeLaunchArtifacts(
 
   await fs.mkdir(promptsDir, { recursive: true });
   await ensureOpencodeDatabaseDirectory(databasePath);
-  // Every referenced file must exist before native config parsing, but auxiliary
-  // launches must not overwrite an existing main prompt (including dynamic context).
+  // Every referenced file must exist before native config parsing.
+  const promptParams = { workspaceRoot: params.workspaceRoot };
   for (const key of Object.keys(promptPaths) as OpencodeExecutionProfile[]) {
-    await writeIfChanged(promptPaths[key], normalizeSystemPrompt(promptTexts[key]), params.preserveExistingPrompts || key !== profile);
+    await writeIfChanged(promptPaths[key], normalizeSystemPrompt(buildOpencodeSystemPrompt(key, promptParams)), true);
   }
-  await writeIfChanged(configPath, fileContent);
 
-  return {
-    configPath,
-    nativeConfigPath: customConfigPath ?? configPath,
-    configContent,
-    databasePath,
-    launchKey: [
-      promptKey,
-      customConfigPath ?? '',
-      customConfigText ?? '',
-      fileContent,
-      configContent,
-      databasePath ?? '',
-      params.runtimeEnv.XDG_DATA_HOME ?? '',
-    ].join('::'),
-    systemPromptPath,
-  };
+  return { configContent, databasePath };
 }
 
 async function ensureOpencodeDatabaseDirectory(databasePath: string | null): Promise<void> {
@@ -150,7 +97,6 @@ export function buildOpencodeManagedConfig(
   systemPromptPath: string,
   managedAgents: readonly OpencodeManagedAgentConfig[] = DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS,
   defaultAgentId?: string,
-  nativeVersion: 1 | 2 = 1,
 ): Record<string, unknown> {
   const config: Record<string, unknown> = {
     ...baseConfig,
@@ -183,30 +129,28 @@ export function buildOpencodeManagedConfig(
     disable: true,
   };
   config.agent = nextAgents;
-  if (nativeVersion === 2) {
-    const nativeAgents = isPlainObject(baseConfig.agents) ? { ...baseConfig.agents } : {};
-    for (const { id, definition, promptPath } of agentConfigs) {
-      // A native entry replaces the entire migrated legacy entry within a document.
-      // Only override an existing native entry; otherwise let OpenCode migrate agent[id].
-      const existing = nativeAgents[id];
-      if (!isPlainObject(existing)) continue;
-      const managed = definition ?? {};
-      const permissions = nativePermissionRules(managed.permission);
-      nativeAgents[id] = {
-        ...existing,
-        ...(typeof managed.mode === 'string' ? { mode: managed.mode } : {}),
-        system: `{file:${promptPath ?? systemPromptPath}}`,
-        ...(permissions.length ? { permissions: [
-          ...(Array.isArray(existing.permissions) ? existing.permissions as unknown[] : []),
-          ...permissions,
-        ] } : {}),
-      };
-    }
-    if (isPlainObject(nativeAgents.plan)) {
-      nativeAgents.plan = { ...nativeAgents.plan, disabled: true };
-    }
-    if (Object.keys(nativeAgents).length) config.agents = nativeAgents;
+  const nativeAgents = isPlainObject(baseConfig.agents) ? { ...baseConfig.agents } : {};
+  for (const { id, definition, promptPath } of agentConfigs) {
+    // A native entry replaces the entire migrated legacy entry within a document.
+    // Only override an existing native entry; otherwise let OpenCode migrate agent[id].
+    const existing = nativeAgents[id];
+    if (!isPlainObject(existing)) continue;
+    const managed = definition ?? {};
+    const permissions = nativePermissionRules(managed.permission);
+    nativeAgents[id] = {
+      ...existing,
+      ...(typeof managed.mode === 'string' ? { mode: managed.mode } : {}),
+      system: `{file:${promptPath ?? systemPromptPath}}`,
+      ...(permissions.length ? { permissions: [
+        ...(Array.isArray(existing.permissions) ? existing.permissions as unknown[] : []),
+        ...permissions,
+      ] } : {}),
+    };
   }
+  if (isPlainObject(nativeAgents.plan)) {
+    nativeAgents.plan = { ...nativeAgents.plan, disabled: true };
+  }
+  if (Object.keys(nativeAgents).length) config.agents = nativeAgents;
   const trimmedDefaultAgentId = defaultAgentId?.trim();
   if (trimmedDefaultAgentId) {
     config.default_agent = trimmedDefaultAgentId;
@@ -268,18 +212,6 @@ export function resolveOpencodeConfigPath(configuredPath: string | undefined, wo
   if (!trimmedPath) return undefined;
   const expandedPath = expandHomePath(trimmedPath);
   return path.isAbsolute(expandedPath) ? expandedPath : path.resolve(workspaceRoot, expandedPath);
-}
-
-async function readOpencodeConfig(resolvedPath: string | undefined, environment: NodeJS.ProcessEnv): Promise<string | undefined> {
-  if (!resolvedPath) return undefined;
-  let rawConfig: string;
-  try {
-    rawConfig = await fs.readFile(resolvedPath, 'utf8');
-  } catch {
-    throw new Error(`Could not read OpenCode config: ${resolvedPath}`);
-  }
-  await parseOpencodeConfig(rawConfig, resolvedPath, environment, path.dirname(resolvedPath));
-  return rawConfig;
 }
 
 export async function parseOpencodeConfig(

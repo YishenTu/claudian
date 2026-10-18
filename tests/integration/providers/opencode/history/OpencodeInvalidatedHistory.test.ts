@@ -13,7 +13,7 @@ import { buildOpencodePrompt } from '@/providers/opencode/runtime/buildOpencodeP
 interface SeedMessage {
   role: 'user' | 'assistant';
   text: string;
-  model?: { providerID: string; modelID: string };
+  model?: { providerID: string; id: string };
 }
 
 describe('OpenCode history after runtime invalidation', () => {
@@ -38,7 +38,7 @@ describe('OpenCode history after runtime invalidation', () => {
     opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, []);
     seedSession('session-original', [
       { role: 'user', text: 'Original prompt' },
-      { role: 'assistant', text: 'Original reply', model: { providerID: 'google', modelID: 'gemini-3.5-flash' } },
+      { role: 'assistant', text: 'Original reply', model: { providerID: 'google', id: 'gemini-3.5-flash' } },
     ]);
   });
 
@@ -46,7 +46,7 @@ describe('OpenCode history after runtime invalidation', () => {
     rmSync(root, { force: true, recursive: true });
   });
 
-  it('keeps an invalidated v1 conversation readable without resuming its old session', async () => {
+  it('keeps an invalidated unstamped conversation readable without resuming its old session', async () => {
     const conversation = createConversation();
 
     expect(changeRuntime(conversation)).toEqual([conversation]);
@@ -78,7 +78,6 @@ describe('OpenCode history after runtime invalidation', () => {
     conversation.providerState = {
       ...conversation.providerState,
       databasePath,
-      nativeVersion: 1,
       nativeConversationContextEstablished: true,
     };
     conversation.messages = [];
@@ -102,8 +101,8 @@ describe('OpenCode history after runtime invalidation', () => {
     expect(history.buildPersistedProviderState(conversation)).toEqual({
       nativeConversationContextEstablished: false,
       previousSessions: [
-        { sessionId: 'session-original', databasePath, nativeVersion: 1 },
-        { sessionId: 'session-next', databasePath, nativeVersion: 1 },
+        { sessionId: 'session-original', databasePath },
+        { sessionId: 'session-next', databasePath },
       ],
     });
     const rehydrated = await history.hydrateConversationHistory(conversation, root, { environment });
@@ -117,18 +116,18 @@ describe('OpenCode history after runtime invalidation', () => {
     const oldDatabase = path.join(root, '.local', 'share', 'opencode', 'opencode.db');
     seedSession('session-old', [
       { role: 'user', text: 'Old prompt' },
-      { role: 'assistant', text: 'Old reply', model: { providerID: 'google', modelID: 'old-model' } },
+      { role: 'assistant', text: 'Old reply', model: { providerID: 'google', id: 'old-model' } },
     ], oldDatabase);
     // The new default database holds another session under the same id.
     seedSession('session-old', [
       { role: 'user', text: 'Unrelated prompt' },
-      { role: 'assistant', text: 'Unrelated reply', model: { providerID: 'google', modelID: 'unrelated-model' } },
+      { role: 'assistant', text: 'Unrelated reply', model: { providerID: 'google', id: 'unrelated-model' } },
     ]);
     startWithoutXdg();
     const conversation: Conversation = {
       ...createConversation(),
       sessionId: 'session-old',
-      providerState: { databasePath: oldDatabase, nativeVersion: 1 },
+      providerState: { databasePath: oldDatabase },
     };
 
     changeRuntime(conversation, `XDG_DATA_HOME=${environment.XDG_DATA_HOME}`);
@@ -140,7 +139,7 @@ describe('OpenCode history after runtime invalidation', () => {
   });
 
   it('reads a retired session without a recorded database from the current database', async () => {
-    const conversation: Conversation = { ...createConversation(), providerState: { nativeVersion: 1 } };
+    const conversation: Conversation = { ...createConversation(), providerState: {} };
 
     // Only launch configuration changes; the native store stays where it was.
     changeRuntime(conversation);
@@ -158,7 +157,7 @@ describe('OpenCode history after runtime invalidation', () => {
     const conversation: Conversation = {
       ...createConversation(),
       sessionId: 'session-old',
-      providerState: { nativeVersion: 1 },
+      providerState: {},
     };
 
     changeRuntime(conversation, `XDG_DATA_HOME=${environment.XDG_DATA_HOME}`);
@@ -168,7 +167,7 @@ describe('OpenCode history after runtime invalidation', () => {
   });
 
   it('records the trusted database a live binding was read from before retiring it', async () => {
-    const conversation: Conversation = { ...createConversation(), providerState: { nativeVersion: 1 } };
+    const conversation: Conversation = { ...createConversation(), providerState: {} };
     Object.assign(conversation, await history.hydrateConversationHistory(conversation, root, { environment }));
     expect(conversation.providerState?.databasePath).toBe(databasePath);
 
@@ -176,7 +175,7 @@ describe('OpenCode history after runtime invalidation', () => {
 
     expect(history.buildPersistedProviderState(conversation)).toEqual({
       nativeConversationContextEstablished: false,
-      previousSessions: [{ sessionId: 'session-original', databasePath, nativeVersion: 1 }],
+      previousSessions: [{ sessionId: 'session-original', databasePath }],
     });
   });
 
@@ -194,7 +193,7 @@ describe('OpenCode history after runtime invalidation', () => {
       lastActivityAt: startedAt,
       messages: [],
       providerId: 'opencode',
-      providerState: { databasePath, nativeVersion: 1, nativeConversationContextEstablished: true },
+      providerState: { databasePath, nativeConversationContextEstablished: true },
       sessionId: 'session-original',
       title: 'OpenCode conversation',
     };
@@ -215,19 +214,14 @@ describe('OpenCode history after runtime invalidation', () => {
     mkdirSync(path.dirname(target), { recursive: true });
     const db = new DatabaseSync(target);
     try {
-      db.exec(`
-        create table if not exists message (id text primary key, session_id text not null, time_created integer not null, data text not null);
-        create table if not exists part (id text primary key, session_id text not null, message_id text not null, data text not null);
-      `);
+      db.exec('CREATE TABLE IF NOT EXISTS session_message(id TEXT PRIMARY KEY, session_id TEXT, seq INTEGER, type TEXT, time_created INTEGER, data TEXT)');
       messages.forEach((message, index) => {
-        const id = `${sessionId}-message-${index}`;
         const created = startedAt + index;
-        db.prepare('insert into message (id, session_id, time_created, data) values (?, ?, ?, ?)').run(
-          id, sessionId, created,
-          JSON.stringify({ role: message.role, time: { created, completed: created }, ...message.model }),
-        );
-        db.prepare('insert into part (id, session_id, message_id, data) values (?, ?, ?, ?)').run(
-          `${id}-part`, sessionId, id, JSON.stringify({ type: 'text', text: message.text }),
+        const data = message.role === 'user'
+          ? { text: message.text, time: { created } }
+          : { content: [{ type: 'text', text: message.text }], time: { created, completed: created }, ...(message.model ? { model: message.model } : {}) };
+        db.prepare(`INSERT INTO session_message VALUES (?, ?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM session_message), ?, ?, ?)`).run(
+          `${sessionId}-message-${index}`, sessionId, message.role, created, JSON.stringify(data),
         );
       });
     } finally {

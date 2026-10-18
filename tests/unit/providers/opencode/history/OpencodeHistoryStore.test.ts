@@ -11,10 +11,8 @@ import { encodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelop
 import {
   loadOpencodeSessionMessages,
   loadOpencodeSessionModel,
-  mapOpencodeMessages,
   mapOpencodeV2Messages,
   mapOpencodeV2NativeMessages,
-  OPENCODE_MESSAGE_ROW_SQL,
 } from '@/providers/opencode/history/OpencodeHistoryStore';
 
 // Exercise real SQLite subprocesses without discovering the runner's other Node installations.
@@ -23,10 +21,10 @@ jest.mock('@/core/process/env', () => ({
   findNodeExecutables: () => [process.execPath],
 }));
 
-describe('mapOpencodeMessages', () => {
+describe('mapOpencodeV2NativeMessages', () => {
   it('preserves Windows paths as literal code in hydration diagnostics', () => {
-    const [message] = mapOpencodeMessages([
-      { info: { id: 'msg-bad', data_valid: 0 }, parts: [] },
+    const [message] = mapOpencodeV2Messages([
+      { id: 'msg-bad', type: 'user', time_created: 1_000, data: 'not json' },
     ], { databasePath: String.raw`C:\Users\cylix\.local\share\opencode\opencode.db` });
     expect(message.content).toBe([
       '```text',
@@ -40,47 +38,35 @@ describe('mapOpencodeMessages', () => {
   });
 
   it('maps stored OpenCode messages into Claudian chat messages', () => {
-    const messages = mapOpencodeMessages([
+    const toolState = {
+      input: { filePath: 'notes/today.md' },
+      output: 'read ok',
+      status: 'completed',
+    };
+    const messages = mapOpencodeV2NativeMessages([
       {
-        info: {
-          id: 'msg-user',
-          role: 'user',
-          time: { created: 1_000 },
-        },
-        parts: [
-          {
-            id: 'part-user',
-            text: 'Summarize this\n\n<current_note>\nnotes/today.md\n</current_note>',
-            type: 'text',
-          },
-        ],
+        id: 'msg-user',
+        type: 'user',
+        text: 'Summarize this\n\n<current_note>\nnotes/today.md\n</current_note>',
+        time: { created: 1_000 },
       },
       {
-        info: {
-          id: 'msg-assistant',
-          role: 'assistant',
-          time: { created: 2_000, completed: 4_000 },
-        },
-        parts: [
+        id: 'msg-assistant',
+        type: 'assistant',
+        time: { created: 2_000, completed: 4_000 },
+        content: [
           {
-            id: 'part-thinking',
             text: 'Thinking...',
             time: { start: 2_000, end: 3_000 },
             type: 'reasoning',
           },
           {
-            callID: 'tool-1',
-            id: 'part-tool',
-            state: {
-              input: { filePath: 'notes/today.md' },
-              output: 'read ok',
-              status: 'completed',
-            },
-            tool: 'read',
+            id: 'tool-1',
+            name: 'read',
+            state: toolState,
             type: 'tool',
           },
           {
-            id: 'part-text',
             text: 'Done.',
             type: 'text',
           },
@@ -114,6 +100,7 @@ describe('mapOpencodeMessages', () => {
           id: 'tool-1',
           input: { file_path: 'notes/today.md' },
           name: 'Read',
+          providerPayload: { rawInput: toolState.input, rawName: 'read', rawOutput: toolState },
           result: 'read ok',
           resultFormat: 'plain',
           status: 'completed',
@@ -123,30 +110,20 @@ describe('mapOpencodeMessages', () => {
   });
 
   it('replays a persisted late unknown tool title without remapping it', () => {
-    const messages = mapOpencodeMessages([
+    const messages = mapOpencodeV2NativeMessages([
+      { id: 'msg-user-future', type: 'user', text: 'Use future tool', time: { created: 1_000 } },
       {
-        info: {
-          id: 'msg-user-future',
-          role: 'user',
-          time: { created: 1_000 },
-        },
-        parts: [{ id: 'part-user-future', text: 'Use future tool', type: 'text' }],
-      },
-      {
-        info: {
-          id: 'msg-assistant-future',
-          role: 'assistant',
-          time: { created: 2_000, completed: 3_000 },
-        },
-        parts: [{
-          callID: 'tool-future',
-          id: 'part-tool-future',
+        id: 'msg-assistant-future',
+        type: 'assistant',
+        time: { created: 2_000, completed: 3_000 },
+        content: [{
+          id: 'tool-future',
+          name: 'future_tool',
           state: {
             input: { command: 'pwd', opaque: ['future'] },
             output: 'Concise result',
             status: 'completed',
           },
-          tool: 'future_tool',
           type: 'tool',
         }],
       },
@@ -162,27 +139,17 @@ describe('mapOpencodeMessages', () => {
   });
 
   it('rehydrates user file image parts', () => {
-    const messages = mapOpencodeMessages([
+    const messages = mapOpencodeV2NativeMessages([
       {
-        info: {
-          id: 'msg-user',
-          role: 'user',
-          time: { created: 1_000 },
-        },
-        parts: [
-          {
-            id: 'part-text',
-            text: 'What is in this image?',
-            type: 'text',
-          },
-          {
-            filename: 'screenshot.png',
-            id: 'part-image',
-            mime: 'image/png',
-            type: 'file',
-            url: 'data:image/png;base64,aGVsbG8=',
-          },
-        ],
+        id: 'msg-user',
+        type: 'user',
+        text: 'What is in this image?',
+        time: { created: 1_000 },
+        files: [{
+          filename: 'screenshot.png',
+          mime: 'image/png',
+          url: 'data:image/png;base64,aGVsbG8=',
+        }],
       },
     ]);
 
@@ -201,39 +168,30 @@ describe('mapOpencodeMessages', () => {
   });
 
   it('hydrates stored question tools with resolved answers', () => {
-    const messages = mapOpencodeMessages([
+    const toolState = {
+      input: {
+        questions: [{
+          header: 'Deploy',
+          id: 'deploy',
+          options: [
+            { description: 'Ship the change', label: 'Yes' },
+            { description: 'Hold the deploy', label: 'No' },
+          ],
+          question: 'Deploy now?',
+        }],
+      },
+      metadata: {
+        answers: [['Yes']],
+      },
+      output: 'User has answered your questions.',
+      status: 'completed',
+    };
+    const messages = mapOpencodeV2NativeMessages([
       {
-        info: {
-          id: 'msg-assistant',
-          role: 'assistant',
-          time: { created: 2_000, completed: 4_000 },
-        },
-        parts: [
-          {
-            callID: 'tool-question',
-            id: 'part-tool',
-            state: {
-              input: {
-                questions: [{
-                  header: 'Deploy',
-                  id: 'deploy',
-                  options: [
-                    { description: 'Ship the change', label: 'Yes' },
-                    { description: 'Hold the deploy', label: 'No' },
-                  ],
-                  question: 'Deploy now?',
-                }],
-              },
-              metadata: {
-                answers: [['Yes']],
-              },
-              output: 'User has answered your questions.',
-              status: 'completed',
-            },
-            tool: 'question',
-            type: 'tool',
-          },
-        ],
+        id: 'msg-assistant',
+        type: 'assistant',
+        time: { created: 2_000, completed: 4_000 },
+        content: [{ id: 'tool-question', name: 'question', state: toolState, type: 'tool' }],
       },
     ]);
 
@@ -264,6 +222,7 @@ describe('mapOpencodeMessages', () => {
             }],
           },
           name: 'AskUserQuestion',
+          providerPayload: { rawInput: toolState.input, rawName: 'question', rawOutput: toolState },
           resolvedAnswers: {
             deploy: 'Yes',
             'Deploy now?': 'Yes',
@@ -276,66 +235,41 @@ describe('mapOpencodeMessages', () => {
   });
 
   it('merges adjacent assistant fragments from one OpenCode turn', () => {
-    const messages = mapOpencodeMessages([
-      {
-        info: {
-          id: 'msg-user',
-          role: 'user',
-          time: { created: 1_000 },
+    const toolState = {
+      input: {
+        action: {
+          query: 'Apple stock price today',
         },
-        parts: [
-          {
-            id: 'part-user',
-            text: 'Search it',
-            type: 'text',
-          },
-        ],
       },
+      output: 'Search complete',
+      status: 'completed',
+    };
+    const messages = mapOpencodeV2NativeMessages([
+      { id: 'msg-user', type: 'user', text: 'Search it', time: { created: 1_000 } },
       {
-        info: {
-          id: 'msg-assistant-1',
-          role: 'assistant',
-          time: { created: 2_000, completed: 4_000 },
-        },
-        parts: [
+        id: 'msg-assistant-1',
+        type: 'assistant',
+        time: { created: 2_000, completed: 4_000 },
+        content: [
           {
-            id: 'part-thinking-1',
             text: 'Searching...',
             time: { start: 2_000, end: 3_000 },
             type: 'reasoning',
           },
-          {
-            callID: 'tool-websearch',
-            id: 'part-tool',
-            state: {
-              input: {
-                action: {
-                  query: 'Apple stock price today',
-                },
-              },
-              output: 'Search complete',
-              status: 'completed',
-            },
-            tool: 'websearch',
-            type: 'tool',
-          },
+          { id: 'tool-websearch', name: 'websearch', state: toolState, type: 'tool' },
         ],
       },
       {
-        info: {
-          id: 'msg-assistant-2',
-          role: 'assistant',
-          time: { created: 4_500, completed: 7_000 },
-        },
-        parts: [
+        id: 'msg-assistant-2',
+        type: 'assistant',
+        time: { created: 4_500, completed: 7_000 },
+        content: [
           {
-            id: 'part-thinking-2',
             text: 'Summarizing...',
             time: { start: 4_500, end: 5_000 },
             type: 'reasoning',
           },
           {
-            id: 'part-text',
             text: 'Apple is trading at $272.41.',
             type: 'text',
           },
@@ -373,6 +307,7 @@ describe('mapOpencodeMessages', () => {
             query: 'Apple stock price today',
           },
           name: 'WebSearch',
+          providerPayload: { rawInput: toolState.input, rawName: 'websearch', rawOutput: toolState },
           result: 'Search complete',
           status: 'completed',
         }],
@@ -381,27 +316,16 @@ describe('mapOpencodeMessages', () => {
   });
 
   it('keeps rendering surrounding messages when one message has invalid metadata', () => {
-    const messages = mapOpencodeMessages([
+    const messages = mapOpencodeV2Messages([
+      { id: 'msg-bad', type: 'user', time_created: 1_000, data: '{' },
       {
-        info: {
-          data_valid: 0,
-          id: 'msg-bad',
-        },
-        parts: [],
-      },
-      {
-        info: {
-          id: 'msg-assistant',
-          role: 'assistant',
+        id: 'msg-assistant',
+        type: 'assistant',
+        time_created: 2_000,
+        data: JSON.stringify({
           time: { created: 2_000, completed: 3_000 },
-        },
-        parts: [
-          {
-            id: 'part-text',
-            text: 'Still visible.',
-            type: 'text',
-          },
-        ],
+          content: [{ text: 'Still visible.', type: 'text' }],
+        }),
       },
     ]);
 
@@ -450,74 +374,27 @@ describe('loadOpencodeSessionMessages', () => {
     const messages = await loadOpencodeSessionMessages('ses-empty', { databasePath: dbPath });
     expect(messages).toEqual([expect.objectContaining({
       id: 'opencode-hydration-error-session-ses-empty',
-      content: expect.stringContaining('no such table: message'),
+      content: expect.stringContaining('no such table: session_message'),
     })]);
     await expect(loadOpencodeSessionModel('ses-empty', { databasePath: dbPath })).resolves.toBeNull();
   }, 30_000);
 
-  it('loads conversation content without selecting raw message metadata', async () => {
-    expect(OPENCODE_MESSAGE_ROW_SQL).toContain("json_extract(data, '$.role')");
-    expect(OPENCODE_MESSAGE_ROW_SQL).toContain("json_extract(data, '$.modelID')");
-    expect(OPENCODE_MESSAGE_ROW_SQL).not.toMatch(/\btime_created,\s*data\s+from\s+message\b/i);
-
+  it('loads conversation content from the native session messages', async () => {
     const dbPath = path.join(tmpRoot, 'opencode.db');
     const db = new DatabaseSync(dbPath);
     try {
-      db.exec(`
-        create table message (
-          id text primary key,
-          session_id text not null,
-          time_created integer not null,
-          data text not null
-        );
-        create table part (
-          id text primary key,
-          session_id text not null,
-          message_id text not null,
-          data text not null
-        );
-      `);
-
-      const sessionId = 'session-with-summary-diffs';
-      const largeMetadata = {
-        diffs: Array.from({ length: 64 }, (_, index) => ({
-          path: `src/file-${index}.ts`,
-          patch: `@@ -1 +1 @@\n-${'old'.repeat(1000)}\n+${'new'.repeat(1000)}`,
-        })),
-      };
-
-      db.prepare('insert into message (id, session_id, time_created, data) values (?, ?, ?, ?)').run(
-        'msg-user',
-        sessionId,
-        1_000,
-        JSON.stringify({
-          role: 'user',
-          summary: largeMetadata,
-          time: { created: 1_000 },
-        }),
-      );
-      db.prepare('insert into message (id, session_id, time_created, data) values (?, ?, ?, ?)').run(
-        'msg-assistant',
-        sessionId,
-        2_000,
-        JSON.stringify({
-          role: 'assistant',
-          summary: largeMetadata,
-          time: { completed: 4_000, created: 2_000 },
-        }),
-      );
-      db.prepare('insert into part (id, session_id, message_id, data) values (?, ?, ?, ?)').run(
-        'part-user',
-        sessionId,
-        'msg-user',
-        JSON.stringify({ text: 'Restore this session', type: 'text' }),
-      );
-      db.prepare('insert into part (id, session_id, message_id, data) values (?, ?, ?, ?)').run(
-        'part-assistant',
-        sessionId,
-        'msg-assistant',
-        JSON.stringify({ text: 'Session restored.', type: 'text' }),
-      );
+      db.exec('CREATE TABLE session_message(id TEXT, session_id TEXT, seq INTEGER, type TEXT, time_created INTEGER, data TEXT)');
+      const sessionId = 'session-restored';
+      const insert = db.prepare('INSERT INTO session_message VALUES (?, ?, ?, ?, ?, ?)');
+      insert.run('msg-user', sessionId, 1, 'user', 1_000, JSON.stringify({
+        text: 'Restore this session',
+        time: { created: 1_000 },
+      }));
+      insert.run('msg-assistant', sessionId, 2, 'assistant', 2_000, JSON.stringify({
+        time: { completed: 4_000, created: 2_000 },
+        content: [{ text: 'Session restored.', type: 'text' }],
+      }));
+      insert.run('msg-other', 'other-session', 3, 'user', 3_000, JSON.stringify({ text: 'Other session' }));
 
       await expect(loadOpencodeSessionMessages(sessionId, { databasePath: dbPath })).resolves.toEqual([
         {
@@ -533,7 +410,7 @@ describe('loadOpencodeSessionMessages', () => {
           content: 'Session restored.',
           contentBlocks: [{ content: 'Session restored.', type: 'text' }],
           durationSeconds: 2,
-        completedAt: 4_000,
+          completedAt: 4_000,
           id: 'msg-assistant',
           role: 'assistant',
           timestamp: 2_000,
@@ -546,43 +423,39 @@ describe('loadOpencodeSessionMessages', () => {
 });
 
 
-it.each([1, 2])('restores OpenCode v%s output plus reasoning across tool steps', (version) => {
-  const native = [
-    { id: 'u', role: 'user', time: { created: 1000 } },
-    { id: 'a', role: 'assistant', parentID: 'u', time: { created: 1200, completed: 2000 },
-      finish: 'tool-calls', tokens: { output: 20, reasoning: 80 } },
-    { id: 'final', role: 'assistant', parentID: 'u', time: { created: 2500, completed: 3500 },
-      finish: 'stop', tokens: { output: 10, reasoning: 15 } },
-  ];
-  const messages = version === 1
-    ? mapOpencodeMessages(native.map(info => ({ info, parts: [{ type: 'text', text: 'Text' }] })))
-    : mapOpencodeV2NativeMessages(native.map(({ role, ...data }) => ({ ...data, type: role, text: 'Work', content: [{ type: 'text', text: 'Text' }] })));
+it('restores OpenCode output plus reasoning across tool steps', () => {
+  const messages = mapOpencodeV2NativeMessages([
+    { id: 'u', type: 'user', text: 'Work', time: { created: 1000 } },
+    { id: 'a', type: 'assistant', time: { created: 1200, completed: 2000 },
+      finish: 'tool-calls', tokens: { output: 20, reasoning: 80 }, content: [{ type: 'text', text: 'Text' }] },
+    { id: 'final', type: 'assistant', time: { created: 2500, completed: 3500 },
+      finish: 'stop', tokens: { output: 10, reasoning: 15 }, content: [{ type: 'text', text: 'Text' }] },
+  ]);
   expect(messages.at(-1)?.turnStats).toEqual({ outputTokens: 125, durationMs: 2500 });
 });
 
 it('omits OpenCode throughput if any step lacks usage', () => {
-  const messages = mapOpencodeMessages([
-    { info: { id: 'u', role: 'user', time: { created: 1000 } }, parts: [{ type: 'text', text: 'Work' }] },
-    { info: { id: 'a', role: 'assistant', parentID: 'u', time: { created: 1200, completed: 2000 } }, parts: [] },
-    { info: { id: 'final', role: 'assistant', parentID: 'u', time: { created: 2500, completed: 3500 },
-      finish: 'stop', tokens: { output: 10, reasoning: 15 } }, parts: [{ type: 'text', text: 'Done' }] },
+  const messages = mapOpencodeV2NativeMessages([
+    { id: 'u', type: 'user', text: 'Work', time: { created: 1000 } },
+    { id: 'a', type: 'assistant', time: { created: 1200, completed: 2000 }, content: [] },
+    { id: 'final', type: 'assistant', time: { created: 2500, completed: 3500 },
+      finish: 'stop', tokens: { output: 10, reasoning: 15 }, content: [{ type: 'text', text: 'Done' }] },
   ]);
   expect(messages.at(-1)?.turnStats).toBeUndefined();
 });
 
 
-it('reconstructs throughput through the v1 SQLite projection without reading raw metadata', async () => {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'opencode-v1-throughput-'));
+it('reconstructs throughput from only the requested session in SQLite', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'opencode-throughput-'));
   const databasePath = path.join(root, 'opencode.db');
   const db = new DatabaseSync(databasePath);
-  db.exec(`CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, data TEXT);
-    CREATE TABLE part(id TEXT, session_id TEXT, message_id TEXT, data TEXT);`);
-  const insert = db.prepare('INSERT INTO message VALUES(?, ?, ?, ?)');
-  insert.run('u', 'session', 1000, JSON.stringify({ role: 'user', time: { created: 1000 } }));
-  insert.run('a', 'session', 1200, JSON.stringify({ role: 'assistant', parentID: 'u', finish: 'stop',
-    time: { created: 1200, completed: 3500 }, tokens: { output: 100, reasoning: 25 } }));
-  insert.run('child-answer', 'child', 1200, JSON.stringify({ role: 'assistant', parentID: 'u', finish: 'stop',
-    time: { created: 1200, completed: 3500 }, tokens: { output: 900, reasoning: 0 } }));
+  db.exec('CREATE TABLE session_message(id TEXT, session_id TEXT, seq INTEGER, type TEXT, time_created INTEGER, data TEXT)');
+  const insert = db.prepare('INSERT INTO session_message VALUES(?, ?, ?, ?, ?, ?)');
+  insert.run('u', 'session', 1, 'user', 1000, JSON.stringify({ text: 'Work', time: { created: 1000 } }));
+  insert.run('child-answer', 'child', 2, 'assistant', 1200, JSON.stringify({ finish: 'stop',
+    time: { created: 1200, completed: 3500 }, tokens: { output: 900, reasoning: 0 }, content: [] }));
+  insert.run('a', 'session', 3, 'assistant', 1200, JSON.stringify({ finish: 'stop',
+    time: { created: 1200, completed: 3500 }, tokens: { output: 100, reasoning: 25 }, content: [{ type: 'text', text: 'Done' }] }));
   db.close();
   try {
     const messages = await loadOpencodeSessionMessages('session', { databasePath });
@@ -655,23 +528,6 @@ describe('OpenCode compaction boundaries', () => {
       ? [{ content: '', role: 'assistant', contentBlocks: [{ type: 'context_compacted' }], timestamp: created + 1 }] : []);
     expect(JSON.stringify(messages)).not.toContain('Internal');
   });
-
-  it.each(['completed', 'running', 'failed'])('restores only successful V1 summaries (%s)', status => {
-    const messages = mapOpencodeMessages([
-      { info: { id: 'a1', role: 'assistant', time: { created } }, parts: [{ type: 'text', text: 'Before' }] },
-      { info: { id: 'trigger', role: 'user', time: { created: created + 1 } }, parts: [{ type: 'compaction', auto: false }] },
-      { info: { id: 'compact', role: 'assistant', summary: true,
-        ...(status === 'failed' ? { error: { name: 'AbortedError' } } : {}),
-        time: { created: created + 2, ...(status !== 'running' ? { completed: created + 3 } : {}) },
-      }, parts: [{ type: 'text', text: 'Internal summary' }] },
-      { info: { id: 'u2', role: 'user', time: { created: created + 4 } }, parts: [{ type: 'text', text: 'Continue' }] },
-    ]);
-    expect(messages.flatMap(message => message.contentBlocks ?? []).filter(block => block.type === 'context_compacted')).toHaveLength(status === 'completed' ? 1 : 0);
-    expect(messages.some(message => message.id === 'trigger')).toBe(false);
-    expect(JSON.stringify(messages)).not.toContain('Internal summary');
-    expect(messages.filter(message => message.id === 'compact')).toMatchObject(status === 'completed'
-      ? [{ contentBlocks: [{ type: 'context_compacted' }], timestamp: created + 2 }] : []);
-  });
 });
 
 
@@ -685,16 +541,11 @@ it('decodes v2 session-message attribution before stripping prompt tags and pres
   expect(messages[1].toolCalls?.[0]).toMatchObject({name:'claudian_send_message',providerPayload:{rawName:'claudian_send_message'}});
 });
 
-it.each([1, 2] as const)('hides replayed history in v%p user prompts', version => {
+it('hides replayed history in user prompts', () => {
   const replayed = encodeRecoveryPrompt('User: Earlier\n\nAssistant: Reply', 'Follow up\n\n<current_note>note.md</current_note>');
   const replayOnly = encodeRecoveryPrompt('User: Earlier', null);
-  const messages = version === 1
-    ? mapOpencodeMessages([replayed, replayOnly].map((text, index) => ({
-        info: { id: `user-${index}`, role: 'user', time: { created: 1_000 + index } },
-        parts: [{ id: `part-${index}`, type: 'text', text }],
-      })))
-    : mapOpencodeV2NativeMessages([replayed, replayOnly].map((text, index) => ({
-        id: `user-${index}`, type: 'user', text, time: { created: 1_000 + index },
-      })));
+  const messages = mapOpencodeV2NativeMessages([replayed, replayOnly].map((text, index) => ({
+    id: `user-${index}`, type: 'user', text, time: { created: 1_000 + index },
+  })));
   expect(messages.map(message => [message.id, message.content])).toEqual([['user-0', 'Follow up']]);
 });

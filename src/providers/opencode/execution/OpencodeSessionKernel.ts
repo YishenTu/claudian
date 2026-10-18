@@ -1,12 +1,11 @@
 import type { OpencodeServerService } from '../http/OpencodeServerService';
 import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
-import { assertOpencodeSessionCompatibility, detectOpencodeNativeVersion } from '../runtime/OpencodeVersion';
-import { DefaultOpencodeACPSessionKernel } from './OpencodeACPSessionKernel';
+import { detectOpencodeNativeVersion } from '../runtime/OpencodeVersion';
 import { OpencodeHTTPSessionKernel } from './OpencodeHTTPSessionKernel';
 import type { OpencodeKernelConnectOptions,OpencodeSessionKernel, OpencodeSessionKernelOptions } from './OpencodeSessionContract';
 import type { OpencodeSessionPersistence } from './OpencodeSessionPersistence';
 
-/** Chooses the native transport once per independent execution lease. */
+/** Verifies the native runtime once per independent execution lease before connecting. */
 export class DefaultOpencodeSessionKernel implements OpencodeSessionKernel {
   private kernel: OpencodeSessionKernel | null = null;
   private disposed = false;
@@ -21,28 +20,23 @@ export class DefaultOpencodeSessionKernel implements OpencodeSessionKernel {
   private async connectInternal(options: OpencodeKernelConnectOptions): Promise<void> {
     const cliPath = await this.options.plugin.getResolvedProviderCliPath('opencode') ?? 'opencode';
     const environment = buildOpencodeRuntimeEnv(this.options.plugin.settings, cliPath, this.options.databasePath);
-    const version = await detectOpencodeNativeVersion(cliPath, environment);
+    await detectOpencodeNativeVersion(cliPath, environment);
     if (this.disposed) throw new Error('OpenCode session is disposed');
-    assertOpencodeSessionCompatibility(this.options.nativeVersion, version);
-    const nativeOptions = { ...this.options, databasePath: this.persistence.databasePath(version, this.options.databasePath) };
-    const nativeEnvironment = { ...environment, ...(nativeOptions.databasePath ? { OPENCODE_DB: nativeOptions.databasePath } : {}) };
-    this.kernel = version === 2
-      ? new OpencodeHTTPSessionKernel(nativeOptions, cliPath, nativeEnvironment, this.serverService, this.persistence)
-      : new DefaultOpencodeACPSessionKernel(nativeOptions, { cliPath, environment: nativeEnvironment, version });
+    const nativeEnvironment = { ...environment, ...(this.options.databasePath ? { OPENCODE_DB: this.options.databasePath } : {}) };
+    this.kernel = new OpencodeHTTPSessionKernel(this.options, cliPath, nativeEnvironment, this.serverService, this.persistence);
     await this.kernel.connect(options);
   }
 
-  get usesSharedRuntime(): boolean | undefined { return this.kernel ? this.kernel instanceof OpencodeHTTPSessionKernel : undefined; }
   get hasNativeWork(): boolean { return this.kernel?.hasNativeWork ?? false; }
-  whenIdle(): Promise<void> { return this.kernel?.whenIdle?.() ?? Promise.resolve(); }
+  whenIdle(): Promise<void> { return this.kernel?.whenIdle() ?? Promise.resolve(); }
 
   openSession(...args: Parameters<OpencodeSessionKernel['openSession']>) { return this.requireKernel().openSession(...args); }
   setConfigOption(...args: Parameters<OpencodeSessionKernel['setConfigOption']>) { return this.requireKernel().setConfigOption(...args); }
   setAutoApprove(enabled: boolean): void { this.requireKernel().setAutoApprove(enabled); }
   prompt(...args: Parameters<OpencodeSessionKernel['prompt']>) { return this.requireKernel().prompt(...args); }
-  steer(...args: Parameters<NonNullable<OpencodeSessionKernel['steer']>>): Promise<boolean> {
+  steer(...args: Parameters<OpencodeSessionKernel['steer']>): Promise<boolean> {
     const kernel = this.disposed ? null : this.kernel;
-    return kernel?.steer ? kernel.steer(...args) : Promise.resolve(false);
+    return kernel ? kernel.steer(...args) : Promise.resolve(false);
   }
   cancel(sessionId: string): void { this.kernel?.cancel(sessionId); }
   async dispose(): Promise<void> {

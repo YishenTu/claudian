@@ -54,13 +54,6 @@ export class MessageActions {
     return !!this.callbacks.branches && !!this.getCapabilities().supportsConversationBranches;
   }
 
-  /** A full-session fork is offered only on the latest response. */
-  retireFullSessionForks(): void {
-    if (this.getCapabilities().forkMode === 'full-session') {
-      this.messagesEl.querySelectorAll('.claudian-message-fork-btn').forEach(button => button.remove());
-    }
-  }
-
   /**
    * Adds a user prompt's toolbar. Live prompts wait for their saved identity
    * (see `refreshActionButtons`); replayed prompts get rewind immediately.
@@ -99,7 +92,6 @@ export class MessageActions {
     msgEl: HTMLElement,
     contentEl: HTMLElement,
     msg: ChatMessage,
-    messages: ChatMessage[],
     answer: string | null,
   ): void {
     const toolbar = this.#getOrCreateToolbar(msgEl);
@@ -110,8 +102,7 @@ export class MessageActions {
       }
     }
     if (answer?.trim()) this.addTextCopyButton(toolbar, answer);
-    if (answer !== null && this.callbacks.fork && msg.assistantMessageId
-      && (this.getCapabilities().forkMode !== 'full-session' || messages.at(-1)?.id === msg.id)) {
+    if (answer !== null && this.callbacks.fork && msg.assistantMessageId) {
       this.#addForkButton(msgEl, msg.id);
     }
     const stats = msg.turnStats;

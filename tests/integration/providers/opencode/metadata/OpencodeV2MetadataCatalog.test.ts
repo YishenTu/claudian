@@ -54,10 +54,10 @@ it('refreshes the native catalog and commands without persisting the catalog or 
     fixture.writeCatalog('Updated Chat');
     await expect(service.loadCatalog()).resolves.toBe(true);
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels[0].label).toBe('deepseek/Updated Chat');
-    await expect(service.loadCommands()).resolves.toMatchObject([
+    await expect(service.discoverCommands()).resolves.toMatchObject({ loaded: true, commands: [
       { name: 'review', kind: 'command', description: 'Review changes' },
       { name: 'writing', kind: 'skill', description: 'Writing guide' },
-    ]);
+    ] });
     await expect(service.warmModelMetadata('opencode:deepseek/chat')).resolves.toBe(true);
     expect(getOpencodeProviderSettings(plugin.settings).thinkingOptionsByModel['deepseek/chat'])
       .toEqual(expect.arrayContaining([{ value: 'high', label: 'High' }, { value: 'default', label: 'Default' }]));

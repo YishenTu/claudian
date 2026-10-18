@@ -217,7 +217,6 @@ RewindableExecutionSession {
       request,
       run,
       turn: new ACPRequestedTurn({
-        acceptsSilentUpdates: true,
         onAccept: () => {
           if (this.nativeConversationContextEstablished) return;
           this.#setNativeConversationContextEstablished(true);

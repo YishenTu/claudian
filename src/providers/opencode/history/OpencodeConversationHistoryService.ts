@@ -17,6 +17,7 @@ import { type OpencodeServerLease, type OpencodeServerService, withOpencodeServe
 import { encodeOpencodeModelId } from '../models';
 import { OpencodeCLIResolver } from '../runtime/OpencodeCLIResolver';
 import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
+import type { OpencodeNativeVersion } from '../runtime/OpencodeVersion';
 import {
   clearOpencodeResumeState,
   getOpencodeState,
@@ -69,7 +70,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
           ? encodeOpencodeModelId(`${model.providerID}/${model.id}`) : null;
       }).catch(() => null);
     }
-    return loadOpencodeSessionModel(sessionId, { databasePath, nativeVersion: state.nativeVersion }, pathContext?.environment);
+    return loadOpencodeSessionModel(sessionId, { databasePath }, pathContext?.environment);
   }
 
   async hydrateConversationHistory(
@@ -131,15 +132,16 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
 
   async #readSessionMessages(
     sessionId: string,
-    nativeVersion: 1 | 2 | undefined,
+    nativeVersion: OpencodeNativeVersion | undefined,
     databasePath: string | null,
     vaultPath: string | null,
     pathContext: ProviderHistoryPathContext | undefined,
   ): Promise<ChatMessage[]> {
+    // Unstamped legacy bindings are read from the native database v2 migrated them into.
     if (nativeVersion !== 2) {
       return loadOpencodeSessionMessages(
         sessionId,
-        { databasePath: databasePath ?? undefined, nativeVersion },
+        { databasePath: databasePath ?? undefined },
         pathContext?.environment,
       );
     }
@@ -217,16 +219,13 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     const previousSessions = source.previousSessions?.length
       ? { previousSessions: source.previousSessions.map(previous => ({ ...previous })) }
       : {};
-    if (options?.lifecycle === 'ephemeral' && source.nativeVersion === 2) {
+    if (options?.lifecycle === 'ephemeral') {
       return { databasePath, nativeVersion: 2, forkSource: { sessionId: sourceSessionId, resumeAt }, nativeConversationContextEstablished: true, ...previousSessions };
     }
     const settings = pathContext?.settings ?? {};
     const cliPath = new OpencodeCLIResolver().resolveFromSettings(settings) ?? 'opencode';
     const environment = buildOpencodeRuntimeEnv(settings, cliPath, databasePath, pathContext?.environment);
-    let nativeVersion = source.nativeVersion;
     const sessionId = await forkOpencodeSession({
-      nativeVersion,
-      onNativeVersion: (version) => { nativeVersion = version ?? nativeVersion; },
       cliPath,
       cwd,
       environment,
@@ -234,7 +233,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       resumeAt,
       resolveServerService: async () => this.getServerService?.(pathContext),
     });
-    return { sessionId, databasePath, ...(nativeVersion ? { nativeVersion } : {}), nativeConversationContextEstablished: true, ...previousSessions };
+    return { sessionId, databasePath, nativeVersion: 2, nativeConversationContextEstablished: true, ...previousSessions };
   }
 
   buildPersistedProviderState(

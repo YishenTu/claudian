@@ -81,7 +81,7 @@ describe('ForkTarget', () => {
     });
   });
 
-  it.each(['checkpoint', 'full-session'] as const)('preserves linked content and provider state for a %s fork', async (forkMode) => {
+  it('preserves linked content and provider state for a fork', async () => {
     const sourceConversation = {
       id: 'source-conversation',
       linkedContentPath: 'Projects',
@@ -95,7 +95,6 @@ describe('ForkTarget', () => {
 
     source!.state.messages = [{ id: 'latest', role: 'assistant', content: 'Done', timestamp: 1 }];
     await forkRequestFrom(0)(forkContext({
-      forkMode,
       linkedContentPath: 'Projects',
       messages: [...source!.state.messages],
       sourceConversationId: 'source-conversation',
@@ -210,20 +209,17 @@ describe('ForkTarget', () => {
     ]);
   });
 
-  it('rejects a wide full-session fork if its source advances while the viewer hydrates it', async () => {
+  it('rejects a wide fork if its source shuts down while the viewer hydrates it', async () => {
     const { manager, plugin } = createManager(createPlugin({
       getCachedConversation: jest.fn((id: string) => ({ id, providerId: 'claude' })),
     }), {}, {}, VIEWER_FORKS);
     const source = await manager.createTab('conversation-a');
-    source!.state.messages = [{ id: 'latest', role: 'assistant', content: 'Done', timestamp: 1 }];
     const hydration = deferred<void>();
     const hydrate = mockNextHydration(() => hydration.promise);
 
-    const fork = forkRequestFrom(0)(forkContext({
-      forkMode: 'full-session', messages: [...source!.state.messages], sourceConversationId: 'conversation-a',
-    }));
+    const fork = forkRequestFrom(0)(forkContext({ sourceConversationId: 'conversation-a' }));
     await flushUntil(() => hydrate.mock.calls.length > 0);
-    source!.state.messages.push({ id: 'next', role: 'user', content: 'Continue', timestamp: 2 });
+    source!.session.runtime.beginShutdown();
     hydration.resolve(undefined);
     await fork;
 
@@ -256,25 +252,6 @@ describe('ForkTarget', () => {
     expect(onTabCreated).toHaveBeenCalledTimes(2);
     expect(manager.getAllTabs()).toHaveLength(2);
     expect(plugin.deleteConversation).not.toHaveBeenCalled();
-  });
-
-  it('rejects a full-session fork if its source advances during native startup', async () => {
-    const forkState = deferred<Record<string, unknown>>();
-    const buildForkProviderState = jest.fn(() => forkState.promise);
-    (ProviderRegistry.getConversationHistoryService as jest.Mock).mockReturnValueOnce({ buildForkProviderState });
-    const { manager, plugin } = createManager(createPlugin(), {}, {}, NEW_TAB_FORKS);
-    const source = await manager.createTab();
-    source!.state.messages = [{ id: 'latest', role: 'assistant', content: 'Done', timestamp: 1 }];
-    const fork = forkRequestFrom(0)(forkContext({
-      messages: [...source!.state.messages], providerId: 'opencode', resumeAt: 'native-latest', forkMode: 'full-session',
-    }));
-    await flushUntil(() => buildForkProviderState.mock.calls.length > 0);
-    expect(buildForkProviderState).toHaveBeenCalled();
-    source!.state.messages.push({ id: 'next', role: 'user', content: 'Continue', timestamp: 2 });
-    forkState.resolve({ sessionId: 'native-child' });
-    await fork;
-    expect(plugin.deleteConversation).toHaveBeenCalledWith('forked');
-    expect(manager.getAllTabs()).toEqual([source]);
   });
 
   it('deletes a fork conversation when manager destruction wins the race', async () => {

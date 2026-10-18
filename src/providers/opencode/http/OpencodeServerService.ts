@@ -232,7 +232,7 @@ export class OpencodeServerService {
         });
       });
       // Session instructions and the per-process route never enter the sharing key.
-      const artifacts = await prepareOpencodeLaunchArtifacts({ workspaceRoot: cwd, runtimeEnv: environment, nativeVersion: 2, preserveExistingPrompts: true, sessionToolsPluginPath: config.sessionToolsPluginPath });
+      const artifacts = await prepareOpencodeLaunchArtifacts({ workspaceRoot: cwd, runtimeEnv: environment, sessionToolsPluginPath: config.sessionToolsPluginPath });
       signal.throwIfAborted();
       client = new OpencodeHTTPClient(cliPath, cwd, {
         ...environment, OPENCODE_CONFIG: config.file, OPENCODE_CONFIG_CONTENT: artifacts.configContent,

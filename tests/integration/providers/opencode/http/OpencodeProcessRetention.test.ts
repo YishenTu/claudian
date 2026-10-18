@@ -44,6 +44,8 @@ test('a repaired launch configuration can retry after creation fails', async () 
   const servers = new OpencodeServerService();
   try {
     await expect(servers.acquire('unused-cli', root, environment)).rejects.toThrow('Could not read OpenCode config');
+    writeFileSync(config, '{ "agent": ');
+    await expect(servers.acquire('unused-cli', root, environment)).rejects.toThrow(`Invalid OpenCode config: ${config}`);
     writeFileSync(config, '{}');
     const lease = await servers.acquire('unused-cli', root, environment);
     await lease.dispose();

@@ -75,15 +75,15 @@ describe('OpenCode provider state', () => {
   it('normalizes history-only previous sessions and drops malformed entries', () => {
     expect(getOpencodeState({
       previousSessions: [
-        { sessionId: ' first ', databasePath: ' /tmp/opencode.db ', nativeVersion: 1 },
-        { sessionId: 'second', databasePath: 42, nativeVersion: 3 },
+        { sessionId: ' first ', databasePath: ' /tmp/opencode.db ', nativeVersion: 2 },
+        { sessionId: 'second', databasePath: 42, nativeVersion: 1 },
         { sessionId: '  ' },
         'third',
         null,
       ],
     })).toEqual({
       previousSessions: [
-        { sessionId: 'first', databasePath: '/tmp/opencode.db', nativeVersion: 1 },
+        { sessionId: 'first', databasePath: '/tmp/opencode.db', nativeVersion: 2 },
         { sessionId: 'second' },
       ],
     });
