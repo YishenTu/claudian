@@ -1,5 +1,4 @@
 import type {
-  ACPLoadSessionResponse,
   ACPMetadata,
   ACPModelInfo,
   ACPSessionConfigOption,
@@ -8,19 +7,6 @@ import type {
   ACPSessionConfigSelectOptions,
   ACPSessionModelState,
 } from './types';
-
-export function resolveACPLoadSessionId(
-  response: Pick<ACPLoadSessionResponse, 'sessionId'>,
-  requestedSessionId: string,
-): string {
-  const returnedSessionId = typeof response.sessionId === 'string' && response.sessionId.trim()
-    ? response.sessionId
-    : null;
-  if (returnedSessionId && returnedSessionId !== requestedSessionId) {
-    throw new Error('ACP session/load returned a different session id.');
-  }
-  return requestedSessionId;
-}
 
 export interface ACPResolvedModelInfo {
   _meta?: ACPMetadata | null;

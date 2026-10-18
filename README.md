@@ -50,13 +50,11 @@ Open Claudian interface from the ribbon icon or command palette. Everything work
   - [Codex](https://github.com/openai/codex)
   - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
   - [Grok Build](https://github.com/xai-org/grok-build)
-  - [OpenCode](https://github.com/anomalyco/opencode)
+  - [OpenCode V2](https://github.com/anomalyco/opencode)
   - [Pi](https://github.com/earendil-works/pi)
 - A compatible subscription or API provider
 - Obsidian v1.13.0+
 - Desktop only (macOS, Linux, Windows)
-
-Claudian now supports OpenCode v2, OpenCode v1 support will end on October 30, 2026. See the [OpenCode v2 migration guide](https://opencode.ai/v2/docs/migrate-v1).
 
 ## Installation
 
@@ -124,7 +122,7 @@ src/
 │   ├── codex/                   # Codex shared app-server adaptor, JSON-RPC, JSONL history
 │   ├── deepseek/                # DeepSeek Harness native Remote adaptor, presets, and history
 │   ├── grok/                    # Grok Build ACP adaptor, native history, models, and tools
-│   ├── opencode/                # OpenCode ACP and HTTP adaptors, shared server
+│   ├── opencode/                # OpenCode HTTP adaptor, shared server
 │   ├── pi/                      # Pi RPC adaptor, model discovery, JSONL history
 │   └── acp/                     # Agent Client Protocol shared mechanics
 ├── features/

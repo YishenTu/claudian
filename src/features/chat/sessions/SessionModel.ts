@@ -18,7 +18,7 @@ import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRun
 import { SessionComposer } from '@/features/chat/sessions/SessionComposer';
 import { SessionEvents } from '@/features/chat/sessions/SessionEvents';
 import { createConversationExecutionBinding } from '@/features/chat/sessions/sessionExecution';
-import { captureLatestCompletedForkSource, findLatestForkCheckpoint } from '@/features/chat/sessions/SessionForkSource';
+import { captureLatestCompletedForkSource } from '@/features/chat/sessions/SessionForkSource';
 import { requireSessionProviderId } from '@/features/chat/sessions/sessionProvider';
 import { getSessionChatUIConfig, getSessionSelectedModel, getSessionSettingsSnapshot, updateSessionProviderSettings } from '@/features/chat/sessions/sessionSettings';
 import { SessionTranscript } from '@/features/chat/sessions/SessionTranscript';
@@ -382,10 +382,7 @@ export function createSessionSideChat(session: ChatSessionRuntime, plugin: ChatF
       get conversationId() { return session.conversationId; },
       get providerId() { return session.providerId; },
       get isLive() { return !session.isDisposed; },
-      get isStreaming() { return session.turns.isInFlight; },
       getSettings: () => getSessionSettingsSnapshot(session, plugin),
-      // Transcript reads hold a hydrated model; an evicted parent must not answer from an empty one.
-      readLatestForkCheckpoint: () => session.withModel(async model => findLatestForkCheckpoint(model.state.messages)),
       captureForkSource: async () => {
         const capture = (model: SessionModel) => captureLatestCompletedForkSource({
           get conversationId() { return session.conversationId; },
@@ -395,7 +392,6 @@ export function createSessionSideChat(session: ChatSessionRuntime, plugin: ChatF
           state: model.state, executionCoordinator: session.executionCoordinator,
         }, plugin, () => !session.isDisposed);
         if (session.isDisposed) return { ok: false, reason: 'stale-binding' };
-        // The attached transcript is the source the user chose; only an evicted parent needs reloading.
         return session.peekModel ? capture(session.peekModel) : session.withModel(capture);
       },
     },

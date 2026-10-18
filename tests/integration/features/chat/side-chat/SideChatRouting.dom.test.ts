@@ -14,6 +14,7 @@ import { testDate } from '@test/helpers/testClock';
 import { waitFor } from '@testing-library/dom';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import type { ProviderExecutionContext } from '@/core/execution';
 import type { ChatMessage, ImageAttachment } from '@/core/types';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
 import { ChatExecutionPreHandoffError } from '@/features/chat/execution/ChatExecutionCoordinator';
@@ -441,13 +442,8 @@ it('uses saved native execution when the provider requires persistent forks', as
   expect(await started).toBe(true);
 });
 
-it('uses the captured conversation capabilities for ephemeral side execution', async () => {
-  const base = ProviderRegistry.getCapabilities('claude');
-  const state = { version: 'supports-ephemeral-forks' };
-  const harness = createHarness({
-    supportsEphemeralFork: false, providerState: state,
-    getConversationCapabilities: providerState => ({ ...base, supportsEphemeralFork: providerState?.version === state.version }),
-  });
+it('uses ephemeral side execution when the provider supports ephemeral forks', async () => {
+  const harness = createHarness({ supportsEphemeralFork: true });
   const { started } = await startSideChat(harness);
   expect(harness.backend.latest.config).toMatchObject({ lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported' });
   harness.backend.latest.complete();
@@ -468,24 +464,6 @@ it('uses the configured provider environment when preparing the native side fork
   harness.backend.latest.complete();
   await started;
   expect(database).toBe('/custom/chat.db');
-});
-
-it('rejects a full-session side fork when main advances during native preparation', async () => {
-  let finishFork: ((state: Record<string, unknown>) => void) | undefined;
-  const harness = createHarness({
-    forkMode: 'full-session', supportsEphemeralFork: false,
-    buildForkProviderState: () => new Promise(resolve => { finishFork = resolve; }),
-  });
-  const started = harness.controller.handleCommandSubmission('Explore the current reply', []);
-  await waitFor(() => expect(finishFork).toBeDefined());
-  harness.controller.collapse();
-  harness.tab.state.messages.push({ id: 'new-main-question', content: 'Main advances', role: 'user', timestamp: 3 });
-  finishFork!({ sessionId: 'native-child' });
-  await waitFor(() => expect(harness.controller.runtime?.status === 'error' || harness.backend.sessions.length > 0).toBe(true));
-  if (harness.backend.sessions.length > 0) harness.backend.latest.complete();
-  await started;
-  expect(harness.controller.runtime?.status).toBe('error');
-  expect(harness.controller.runtime?.lastError).toMatch(/source.*changed/i);
 });
 
 

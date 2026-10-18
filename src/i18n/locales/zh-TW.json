@@ -766,7 +766,7 @@
         "desc": "傳遞給 OpenCode 的額外環境變數。"
       },
       "migrationNotice": {
-        "text": "Claudian 現已支援 OpenCode v2。OpenCode v1 的支援將於 2026 年 10 月 30 日結束。",
+        "text": "OpenCode v1 已不再受支援。請更新至 OpenCode v2 以在 Claudian 中使用。",
         "link": "遷移至 OpenCode v2"
       }
     },

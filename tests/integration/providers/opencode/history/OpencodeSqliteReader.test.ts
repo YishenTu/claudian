@@ -15,10 +15,8 @@ it('reads history with the require function supplied by the Obsidian plugin load
     const db = new DatabaseSync(databasePath);
     try {
       db.exec(`
-        CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, data TEXT);
-        CREATE TABLE part(id TEXT, session_id TEXT, message_id TEXT, data TEXT);
-        INSERT INTO message VALUES('msg-1', 'ses-1', 1000, '{"role":"user"}');
-        INSERT INTO part VALUES('part-1', 'ses-1', 'msg-1', '{"type":"text","text":"Hello"}');
+        CREATE TABLE session_message(id TEXT, session_id TEXT, seq INTEGER, type TEXT, time_created INTEGER, data TEXT);
+        INSERT INTO session_message VALUES('msg-1', 'ses-1', 1, 'user', 1000, '{"text":"Hello"}');
       `);
     } finally {
       db.close();
@@ -37,30 +35,10 @@ it('reads history with the require function supplied by the Obsidian plugin load
       createRequire(__filename), pluginModule, pluginModule.exports,
     );
 
-    const modelRows = await pluginModule.exports.loadOpencodeSessionRows(databasePath, 'ses-1', {
-      includeParts: false,
-      findNodeExecutables: () => [],
-      spawn: () => { throw new Error('No external SQLite reader installed.'); },
-    });
-    expect(modelRows.messageRows).toHaveLength(1);
-    expect(modelRows.partRows).toEqual([]);
-
     await expect(pluginModule.exports.loadOpencodeSessionRows(databasePath, 'ses-1', {
       findNodeExecutables: () => [],
       spawn: () => { throw new Error('No external SQLite reader installed.'); },
-    })).resolves.toEqual({
-      messageRows: [{
-        id: 'msg-1',
-        time_created: 1000,
-        data_valid: 1,
-        role: 'user',
-        provider_id: null,
-        model_id: null,
-        data_time_created: null,
-        data_time_completed: null,
-      }],
-      partRows: [{ id: 'part-1', message_id: 'msg-1', data: '{"type":"text","text":"Hello"}' }],
-    });
+    })).resolves.toEqual([{ id: 'msg-1', type: 'user', time_created: 1000, data: '{"text":"Hello"}' }]);
   } finally {
     rmSync(tmpRoot, { recursive: true, force: true });
   }

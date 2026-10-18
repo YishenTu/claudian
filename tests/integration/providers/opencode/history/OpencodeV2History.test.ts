@@ -50,34 +50,11 @@ it('reads current v2 history in native sequence without replaying the retained v
       } }],
     });
     await expect(loadOpencodeSessionModel('session', { databasePath })).resolves.toBe('opencode:test/second');
-    await expect(loadOpencodeSessionMessages('session', { databasePath, nativeVersion: 1 }))
-      .resolves.toMatchObject([{ content: 'Current prompt' }, { content: 'Done' }, { content: 'Separate turn' }]);
     await expect(loadOpencodeSessionMessages('missing', { databasePath, nativeVersion: 2 })).resolves.toEqual([]);
     const childRows = await loadOpencodeSessionRows(databasePath, 'session', {
-      nativeVersion: 2, requireSqliteModule: () => null, findNodeExecutables: () => [process.execPath],
+      requireSqliteModule: () => null, findNodeExecutables: () => [process.execPath],
     });
-    expect(childRows.messageRows.map(({ id }) => id)).toEqual(['z-user', 'a-assistant', 'idle', 'b-assistant', 'model']);
-  } finally {
-    if (db.isOpen) db.close();
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-it('reads v1 history when its database already contains the empty future message table', async () => {
-  const root = mkdtempSync(path.join(tmpdir(), 'opencode-v1-history-'));
-  const databasePath = path.join(root, 'opencode.db');
-  const db = new DatabaseSync(databasePath);
-  try {
-    db.exec(`
-      CREATE TABLE message(id TEXT, session_id TEXT, time_created INTEGER, data TEXT);
-      CREATE TABLE part(id TEXT, session_id TEXT, message_id TEXT, data TEXT);
-      CREATE TABLE session_message(id TEXT, session_id TEXT, seq INTEGER, type TEXT, time_created INTEGER, data TEXT);
-      INSERT INTO message VALUES('user', 'session', 1, '{"role":"user"}');
-      INSERT INTO part VALUES('part', 'session', 'user', '{"type":"text","text":"Current v1 prompt"}');
-    `);
-    db.close();
-    await expect(loadOpencodeSessionMessages('session', { databasePath, nativeVersion: 1 }))
-      .resolves.toMatchObject([{ content: 'Current v1 prompt' }]);
+    expect(childRows.map(({ id }) => id)).toEqual(['z-user', 'a-assistant', 'idle', 'b-assistant', 'model']);
   } finally {
     if (db.isOpen) db.close();
     rmSync(root, { recursive: true, force: true });

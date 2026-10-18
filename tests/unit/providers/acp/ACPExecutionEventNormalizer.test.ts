@@ -62,17 +62,13 @@ describe('ACPExecutionEventNormalizer', () => {
     expect(eventTypes(second)).toEqual(['text_delta']);
   });
 
-  it('preserves tool identity, subagent scope, output, and raw ACP metadata', () => {
+  it('preserves tool identity, main tool scope, output, and raw ACP metadata', () => {
     const normalizer = new ACPExecutionEventNormalizer({
-      resolveToolScope: ({ toolCallId }) => (
-        toolCallId.startsWith('subagent-')
-          ? { kind: 'subagent', subagentId: 'agent-1' }
-          : { kind: 'main' }
-      ),
       scope: {
-        kind: 'background',
+        executionId: 'execution-1',
+        kind: 'requested',
         sessionInstanceId: 'session-instance-1',
-        turnId: 'background-turn-1',
+        turnId: 'turn-1',
       },
     });
 
@@ -94,7 +90,7 @@ describe('ACPExecutionEventNormalizer', () => {
         input: { path: 'README.md' },
         name: 'Read',
         toolCallId: 'subagent-tool-1',
-        toolScope: { kind: 'subagent', subagentId: 'agent-1' },
+        toolScope: { kind: 'main' },
         type: 'tool_started',
       }),
     ]);
@@ -102,14 +98,14 @@ describe('ACPExecutionEventNormalizer', () => {
       expect.objectContaining({
         content: expect.stringContaining('"bytes": 12'),
         toolCallId: 'subagent-tool-1',
-        toolScope: { kind: 'subagent', subagentId: 'agent-1' },
+        toolScope: { kind: 'main' },
         type: 'tool_output',
       }),
       expect.objectContaining({
         content: expect.stringContaining('"bytes": 12'),
         isError: false,
         toolCallId: 'subagent-tool-1',
-        toolScope: { kind: 'subagent', subagentId: 'agent-1' },
+        toolScope: { kind: 'main' },
         type: 'tool_completed',
       }),
     ]);
@@ -221,6 +217,6 @@ describe('ACPExecutionEventNormalizer', () => {
       sessionUpdate: 'agent_message_chunk',
     });
 
-    expect(result).toEqual({ events: [], ignored: true });
+    expect(result).toEqual({ events: [] });
   });
 });

@@ -1,176 +1,94 @@
-import * as fs from 'node:fs/promises';
+import { constants, copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 
-import spawn from 'cross-spawn';
-
-jest.mock('cross-spawn', () => jest.fn());
-
-import { createForkTestEnvironment, type ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
-import { createNativeRPCProcess, createNativeVersionProcess } from '@test/helpers/providers/NativeRPCTestProcess';
-
-import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
-import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 
-interface NativeMessage {
-  info: { id: string; role: string };
-  parts: Array<{ type: string; text: string }>;
+/** A loopback `opencode serve` stand-in that records its launch and every request. */
+function writeNativeOpencode(root: string, options: { version: string; failFork?: boolean }): string {
+  // A `.cjs` launcher runs through its shebang on every platform, as the shared-server suite's does.
+  const cliPath = path.join(root, 'opencode.cjs');
+  writeFileSync(cliPath, `#!/usr/bin/env node
+const fs = require('node:fs');
+const http = require('node:http');
+const log = (entry) => fs.appendFileSync(${JSON.stringify(path.join(root, 'native.log'))}, JSON.stringify(entry) + '\\n');
+if (process.argv.includes('--version')) { console.log(${JSON.stringify(`opencode v${options.version}`)}); return; }
+log({ launch: process.pid, path: process.env.PATH });
+let childMessages;
+const sourceMessages = [
+  { id: 'msg-user', type: 'user', time: { created: 1 }, text: 'Remember apples' },
+  { id: 'msg-assistant', type: 'assistant', time: { created: 2 }, content: [{ type: 'text', text: 'Reply' }] },
+];
+const server = http.createServer((req, res) => {
+  const route = new URL(req.url, 'http://127.0.0.1').pathname;
+  log({ method: req.method, route });
+  let data;
+  if (route === '/api/session/ses-source/message') data = sourceMessages;
+  else if (route === '/api/session/ses-child/message' && childMessages) data = childMessages;
+  else if (route === '/api/session/ses-source/fork' && req.method === 'POST') {
+    if (${options.failFork ? 'true' : 'false'}) { res.writeHead(500).end('Native fork failed'); return; }
+    childMessages = sourceMessages.map(message => ({ ...message, id: message.id + '-child' }));
+    data = { id: 'ses-child' };
+  } else { res.writeHead(404).end(); return; }
+  res.setHeader('Content-Type', 'application/json');
+  res.end(JSON.stringify({ data, cursor: {} }));
+});
+server.listen(0, '127.0.0.1', () => console.log(JSON.stringify({ url: 'http://127.0.0.1:' + server.address().port })));
+process.stdin.resume();
+process.stdin.on('end', () => process.exit(0));
+`, { mode: 0o700 });
+  return cliPath;
 }
 
-// OpenCode v1.18.31 ACP forks all messages and assigns new IDs to the copies.
-async function createNativeOpencode(env: ForkTestEnvironment) {
-  const sessions = new Map<string, NativeMessage[]>([['ses-source', []]]);
-  const prompts: Array<{ sessionId: string; context: string[] }> = [];
-  const processes: ReturnType<typeof createNativeRPCProcess>[] = [];
-  new DatabaseSync(path.join(env.root, 'opencode.db')).close();
-  let ordinal = 0;
-  let forkOrdinal = 0;
-  let rejectFork = false;
-  let supportsFork = true;
-  jest.mocked(spawn).mockImplementation((_command, args) => {
-    if (args?.includes('--version')) return createNativeVersionProcess('1.18.31');
-    const proc = createNativeRPCProcess((method, params, notify) => {
-      if (method === 'initialize') return { protocolVersion: 1, agentCapabilities: { loadSession: true, sessionCapabilities: supportsFork ? { fork: {} } : {} } };
-      if (method === 'session/fork') {
-        if (rejectFork) throw new Error('Native fork failed');
-        const messages = sessions.get(params.sessionId)!;
-        const sessionId = `ses-child-${++forkOrdinal}`;
-        sessions.set(sessionId, messages.map((message, index) => ({
-          ...message, info: { ...message.info, id: `msg-child-${forkOrdinal}-${index}` },
-        })));
-        const db = new DatabaseSync(path.join(env.root, 'opencode.db'));
-        try {
-          db.exec('CREATE TABLE IF NOT EXISTS message(id TEXT, session_id TEXT, time_created INTEGER, data TEXT); CREATE TABLE IF NOT EXISTS part(id TEXT, session_id TEXT, message_id TEXT, data TEXT);');
-          sessions.get(sessionId)!.forEach((message, index) => {
-            db.prepare('INSERT INTO message VALUES (?, ?, ?, ?)').run(message.info.id, sessionId, index, JSON.stringify(message.info));
-            message.parts.forEach((part, partIndex) => db.prepare('INSERT INTO part VALUES (?, ?, ?, ?)')
-              .run(`${message.info.id}-${partIndex}`, sessionId, message.info.id, JSON.stringify(part)));
-          });
-        } finally { db.close(); }
-        // Fork replay must not become live output or trigger a new prompt.
-        notify('session/update', { sessionId, update: {
-          sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Replayed history' },
-        } });
-        return { sessionId };
-      }
-      if (method === 'session/new') return { sessionId: 'ses-source' };
-      if (method === 'session/load') {
-        if (!sessions.has(params.sessionId)) throw new Error('Session not found');
-        return {};
-      }
-      if (method === 'session/set_config_option') return {};
-      if (method === 'session/prompt') {
-        const messages = sessions.get(params.sessionId)!;
-        prompts.push({ sessionId: params.sessionId, context: messages.flatMap(message => message.parts.map(part => part.text)) });
-        const id = ++ordinal;
-        messages.push(
-          { info: { id: `msg-user-${id}`, role: 'user' }, parts: [{ type: 'text', text: params.prompt[0].text }] },
-          { info: { id: `msg-assistant-${id}`, role: 'assistant' }, parts: [{ type: 'text', text: `Reply ${id}` }] },
-        );
-        notify('session/update', { sessionId: params.sessionId, update: {
-          sessionUpdate: 'agent_message_chunk', messageId: `msg-assistant-${id}`, content: { type: 'text', text: `Reply ${id}` },
-        } });
-        return { stopReason: 'end_turn' };
-      }
-      throw new Error(`Unexpected OpenCode method: ${method}`);
-    });
-    processes.push(proc);
-    return proc;
-  });
-  env.host.settings.providerConfigs.opencode = {
-    enabled: true, visibleModels: ['test/model'], discoveredModels: [{ rawId: 'test/model', label: 'Test' }],
-    environmentVariables: `OPENCODE_DB=${path.join(env.root, 'opencode.db')}`,
-  };
-  return {
-    backend: new OpencodeExecutionBackend(env.host.getRuntimeHost('opencode'), { serverService: new OpencodeServerService() }), sessions, prompts, processes,
-    rejectFork: () => { rejectFork = true; },
-    disableFork: () => { supportsFork = false; },
-  };
+function readNativeLog(root: string): Array<Record<string, unknown>> {
+  const file = path.join(root, 'native.log');
+  return existsSync(file)
+    ? readFileSync(file, 'utf8').trim().split('\n').map(line => JSON.parse(line) as Record<string, unknown>)
+    : [];
 }
 
 describe('OpenCode fork integration', () => {
-  let env: ForkTestEnvironment;
-  let native: Awaited<ReturnType<typeof createNativeOpencode>>;
-  beforeEach(async () => { env = await createForkTestEnvironment(); native = await createNativeOpencode(env); });
-  afterEach(async () => { await env.dispose(); jest.mocked(spawn).mockReset(); });
+  let root: string;
+  beforeEach(() => { root = realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-opencode-fork-'))); });
+  afterEach(() => { rmSync(root, { recursive: true, force: true }); });
 
-  it('forks the latest reply immediately and continues source and child independently', async () => {
-    const source = await env.open(native.backend);
-    await env.send(source, 'Remember apples');
-    const selected = await env.send(source, 'Remember pears');
-    const sourceHistory = structuredClone(native.sessions.get('ses-source'));
-    const child = await env.fork(source, selected);
-    expect(child).toBeDefined();
-    expect(child!.messages).toHaveLength(4);
-    const fork = await env.open(native.backend, child!);
-    await env.send(fork, 'Continue here');
-    expect(native.prompts.at(-1)).toEqual({ sessionId: 'ses-child-1', context: ['Remember apples', 'Reply 1', 'Remember pears', 'Reply 2'] });
-    expect(env.repository.getSync(child!.id)!.sessionId).toBe('ses-child-1');
-    expect(native.sessions.get('ses-source')).toEqual(sourceHistory);
-    await env.send(source, 'Keep original going');
-    expect(native.prompts.at(-1)?.context).toEqual(['Remember apples', 'Reply 1', 'Remember pears', 'Reply 2']);
-  });
-
-  it('forks an unsent child again after persistence', async () => {
-    const source = await env.open(native.backend);
-    const selected = await env.send(source, 'Remember apples');
-    const child = await env.fork(source, selected);
-    expect(child).toBeDefined();
-    const service = new OpencodeConversationHistoryService();
-    const restored = { ...child!, providerState: JSON.parse(JSON.stringify(service.buildPersistedProviderState(child!))) };
-    Object.assign(restored, await service.hydrateConversationHistory(restored, env.root));
-    expect(restored.messages[1].assistantMessageId).toBe('msg-child-1-1');
-    const fork = await env.open(native.backend, restored);
-    const nested = await env.fork(fork, restored.messages[1]);
-    expect(nested).toBeDefined();
-    const nestedTab = await env.open(native.backend, nested!);
-    await env.send(nestedTab, 'Continue nested');
-    expect(native.prompts.at(-1)).toEqual({ sessionId: 'ses-child-2', context: ['Remember apples', 'Reply 1'] });
-  });
-
-  it('declines older replies without creating a child', async () => {
-    const source = await env.open(native.backend);
-    const selected = await env.send(source, 'Remember apples');
-    await env.send(source, 'Remember pears');
-    expect(await env.fork(source, selected)).toBeUndefined();
-    expect([...native.sessions.keys()]).toEqual(['ses-source']);
-    expect(env.repository.list()).toHaveLength(1);
-  });
-
-  it('fails clearly on runtimes that do not advertise ACP forking', async () => {
-    const source = await env.open(native.backend);
-    const selected = await env.send(source, 'Remember apples');
-    native.disableFork();
-    await expect(env.fork(source, selected)).rejects.toThrow(/fork.*support|support.*fork/i);
-    expect([...native.sessions.keys()]).toEqual(['ses-source']);
-    expect(native.processes.at(-1)?.killed).toBe(true);
-  });
+  function fork(cliPath: string, environment: NodeJS.ProcessEnv = process.env) {
+    const databasePath = path.join(root, 'opencode.db');
+    writeFileSync(databasePath, '');
+    return new OpencodeConversationHistoryService().buildForkProviderState(
+      'ses-source',
+      'msg-assistant',
+      { nativeVersion: 2, databasePath },
+      root,
+      { settings: { providerConfigs: { opencode: { cliPath } } }, environment: { ...environment, OPENCODE_DB: databasePath } },
+    );
+  }
 
   it('keeps a configured CLI sibling Node directory on PATH when forking', async () => {
-    const source = await env.open(native.backend);
-    const selected = await env.send(source, 'Remember apples');
-    const cliPath = path.join(env.root, 'opencode');
-    await fs.writeFile(cliPath, '#!/usr/bin/env node\n');
-    const nodePath = path.join(env.root, process.platform === 'win32' ? 'node.exe' : 'node');
-    await fs.writeFile(nodePath, '');
-    if (process.platform !== 'win32') await fs.chmod(nodePath, 0o755);
-
-    const service = new OpencodeConversationHistoryService();
-    await service.buildForkProviderState('ses-source', selected.assistantMessageId!, source.conversation.providerState, env.root, {
-      config: { cliPath }, environment: { ...process.env, OPENCODE_DB: path.join(env.root, 'opencode.db'), PATH: '/restricted' }, environmentText: '',
+    const cliPath = writeNativeOpencode(root, { version: '2.0.12' });
+    // The sibling runtime is the one the CLI's `env node` shebang must resolve.
+    copyFileSync(process.execPath, path.join(root, process.platform === 'win32' ? 'node.exe' : 'node'), constants.COPYFILE_FICLONE);
+    await expect(fork(cliPath, { ...process.env, PATH: '/restricted' })).resolves.toMatchObject({
+      sessionId: 'ses-child', nativeVersion: 2,
     });
-    const launch = jest.mocked(spawn).mock.calls.at(-1)!;
-    expect(launch[0]).toBe(cliPath);
-    expect(launch[2]?.env?.PATH?.split(path.delimiter)).toContain(env.root);
+    const launch = readNativeLog(root).find(entry => 'launch' in entry);
+    expect(String(launch?.path).split(path.delimiter)).toContain(root);
+    expect(readNativeLog(root)).toContainEqual({ method: 'POST', route: '/api/session/ses-source/fork' });
   });
 
   it('reports native fork errors and shuts down the auxiliary server', async () => {
-    const source = await env.open(native.backend);
-    const selected = await env.send(source, 'Remember apples');
-    native.rejectFork();
-    await expect(env.fork(source, selected)).rejects.toThrow(/fork/i);
-    expect(native.processes.at(-1)?.killed).toBe(true);
-    expect(env.repository.list()).toHaveLength(1);
+    const cliPath = writeNativeOpencode(root, { version: '2.0.12', failFork: true });
+    await expect(fork(cliPath)).rejects.toThrow();
+    const log = readNativeLog(root);
+    const launch = log.find(entry => 'launch' in entry);
+    expect(log).toContainEqual({ method: 'POST', route: '/api/session/ses-source/fork' });
+    // Shutdown completes before the fork rejects, so the process is already gone.
+    expect(() => process.kill(Number(launch?.launch), 0)).toThrow();
+  });
+
+  it('rejects an OpenCode v1 CLI before starting a native server', async () => {
+    const cliPath = writeNativeOpencode(root, { version: '1.18.31' });
+    await expect(fork(cliPath)).rejects.toThrow('OpenCode v1 is no longer supported');
+    expect(readNativeLog(root)).toEqual([]);
   });
 });

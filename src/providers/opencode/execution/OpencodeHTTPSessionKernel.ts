@@ -36,7 +36,7 @@ interface NativeModel { providerID: string; id: string; variant?: string }
 interface NativeChild { sessionTools?: SessionToolInvocation; toolController: AbortController; outputSessionId: string; toolCallId: string; turnId: string; interactionTurnId: string; background: boolean; text: Map<string, string>; progress: { startedAt: number; toolUses: number; totalTokens: number; lastToolName?: string } }
 interface NativeTool { name: string; input: Record<string, unknown>; sessionId: string; output: string | null; shell?: OpencodeShellOutput }
 
-/** V2 uses native HTTP events and interactions; ACP is only the v1 wire protocol. */
+/** Native HTTP events and interactions; prompt input keeps the ACP-shaped content blocks. */
 export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private client: OpencodeServerLease | null = null;
   private disposed = false;

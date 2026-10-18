@@ -19,7 +19,7 @@ import { StreamController } from '@/features/chat/turns/StreamController';
 import { ACPRequestedTurn } from '@/providers/acp/ACPRequestedTurn';
 import { OpencodeHTTPSessionKernel } from '@/providers/opencode/execution/OpencodeHTTPSessionKernel';
 import { OpencodeSessionPersistence } from '@/providers/opencode/execution/OpencodeSessionPersistence';
-import { mapOpencodeMessages, mapOpencodeV2NativeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
+import { mapOpencodeV2NativeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
 import type { OpencodeHTTPEvent } from '@/providers/opencode/http/OpencodeHTTPClient';
 import { createOpencodeToolStreamAdapter } from '@/providers/opencode/normalization/opencodeToolNormalization';
 
@@ -273,15 +273,11 @@ describe.each(['live', 'history'] as const)('%s OpenCode V1 shell outcomes', mod
 it.each([
   { oldString: 'obsolete', newString: '', removed: ['obsolete'], added: [] },
   { oldString: '', newString: 'created', removed: [], added: ['created'] },
-])('restores V1 edit diffs with an empty side: %j', ({ oldString, newString, removed, added }) => {
-  const [message] = mapOpencodeMessages([{
-    info: { id: 'assistant', role: 'assistant', time: { created: testDate().getTime() } },
-    parts: [{ type: 'tool', callID: 'edit', tool: 'edit', state: {
-      status: 'completed', input: { filePath: 'notes.md', oldString, newString },
-      output: 'Edit applied successfully.',
-    } }],
-  }]);
-  const block = renderStoredWriteEdit(document.body.createDiv(), message.toolCalls![0], { initiallyExpanded: true });
+])('restores edit diffs with an empty side: %j', ({ oldString, newString, removed, added }) => {
+  const tool = restoreV2History({
+    name: 'edit', input: { path: 'notes.md', oldString, newString }, content: ['Edited notes.md (1 replacement)'],
+  });
+  const block = renderStoredWriteEdit(document.body.createDiv(), tool, { initiallyExpanded: true });
   expect(within(block).getByRole('button', { name: /Edit: notes.md/ })).toBeDefined();
   expect([...block.querySelectorAll('.claudian-diff-delete .claudian-diff-text')].map(line => line.textContent)).toEqual(removed);
   expect([...block.querySelectorAll('.claudian-diff-insert .claudian-diff-text')].map(line => line.textContent)).toEqual(added);

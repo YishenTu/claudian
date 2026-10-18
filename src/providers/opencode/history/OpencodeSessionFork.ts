@@ -1,18 +1,9 @@
-import {
-  ACPClientConnection,
-  ACPJSONRPCTransport,
-  ACPSubprocess,
-} from '@/providers/acp';
-
 import { readOpencodeHTTPMessages } from '../http/OpencodeHTTPHistory';
 import { type OpencodeServerLease, type OpencodeServerService, withOpencodeServerLease } from '../http/OpencodeServerService';
-import { assertOpencodeSessionCompatibility, detectOpencodeNativeVersion, parseOpencodeNativeVersion } from '../runtime/OpencodeVersion';
+import { detectOpencodeNativeVersion } from '../runtime/OpencodeVersion';
 
 export interface OpencodeSessionForkOptions {
-  /** Resolved only after detection confirms a v2 runtime, including for stored v1 sources. */
   resolveServerService?: () => Promise<OpencodeServerService | null | undefined>;
-  nativeVersion?: 1 | 2;
-  onNativeVersion?: (version: 1 | 2 | undefined) => void;
   cliPath: string;
   cwd: string;
   environment: NodeJS.ProcessEnv;
@@ -22,54 +13,10 @@ export interface OpencodeSessionForkOptions {
 
 /** Fork immediately so subsequent source turns cannot enter the child's context. */
 export async function forkOpencodeSession(options: OpencodeSessionForkOptions): Promise<string> {
-  const version = await detectOpencodeNativeVersion(options.cliPath, options.environment);
-  assertOpencodeSessionCompatibility(options.nativeVersion, version);
-  if (version === 2) {
-    return withOpencodeServerLease(await options.resolveServerService?.(), options.cliPath, options.cwd, options.environment, async client => {
-      const child = await forkOpencodeHTTPSession(client, options.sourceSessionId, options.resumeAt);
-      options.onNativeVersion?.(2);
-      return child;
-    });
-  }
-  const subprocess = new ACPSubprocess({
-    command: options.cliPath,
-    args: ['acp'],
-    cwd: options.cwd,
-    env: options.environment,
-  });
-  let transport: ACPJSONRPCTransport | undefined;
-  let connection: ACPClientConnection | undefined;
-  try {
-    subprocess.start();
-    transport = new ACPJSONRPCTransport({
-      input: subprocess.stdout,
-      output: subprocess.stdin,
-      onClose: listener => subprocess.onClose(listener),
-    });
-    // No live-output delegate: native fork replay belongs only to the new session.
-    connection = new ACPClientConnection({ transport });
-    transport.start();
-    const initialized = await connection.initialize();
-    const nativeVersion = parseOpencodeNativeVersion(initialized.agentInfo?.version);
-    assertOpencodeSessionCompatibility(options.nativeVersion, nativeVersion);
-    options.onNativeVersion?.(nativeVersion);
-    if (!initialized.agentCapabilities?.sessionCapabilities?.fork) {
-      throw new Error('This OpenCode version does not support ACP session forking. Update OpenCode to fork conversations.');
-    }
-    const child = await connection.forkSession({
-      cwd: options.cwd,
-      mcpServers: [],
-      sessionId: options.sourceSessionId,
-    });
-    if (typeof child.sessionId !== 'string' || !child.sessionId.trim() || child.sessionId === options.sourceSessionId) {
-      throw new Error('OpenCode fork returned an invalid child session.');
-    }
-    return child.sessionId;
-  } finally {
-    connection?.dispose();
-    transport?.dispose();
-    await subprocess.shutdown();
-  }
+  await detectOpencodeNativeVersion(options.cliPath, options.environment);
+  return withOpencodeServerLease(await options.resolveServerService?.(), options.cliPath, options.cwd, options.environment, client => (
+    forkOpencodeHTTPSession(client, options.sourceSessionId, options.resumeAt)
+  ));
 }
 
 /** Fork before the next native entry so the selected assistant reply is retained. */

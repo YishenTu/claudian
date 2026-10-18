@@ -14,64 +14,14 @@ import {
   type ProviderSessionConfig,
   type ProviderSessionEvent,
 } from '@/core/execution';
-
-const mockProcessStart = jest.fn();
-const mockProcessShutdown = jest.fn();
-const mockTransportStart = jest.fn();
-const mockTransportDispose = jest.fn();
-const mockTransportOnClose = jest.fn();
-const mockConnectionInitialize = jest.fn();
-const mockConnectionDispose = jest.fn();
-const mockPrepareLaunchArtifacts = jest.fn();
-
-const mockACPSubprocess = jest.fn().mockImplementation(() => ({
-  stdin: {},
-  stdout: {},
-  onClose: jest.fn().mockReturnValue(jest.fn()),
-  shutdown: mockProcessShutdown,
-  start: mockProcessStart,
-}));
-const mockACPJSONRPCTransport = jest.fn().mockImplementation(() => ({
-  dispose: mockTransportDispose,
-  onClose: mockTransportOnClose.mockReturnValue(jest.fn()),
-  start: mockTransportStart,
-}));
-const mockACPClientConnection = jest.fn().mockImplementation(() => ({
-  dispose: mockConnectionDispose,
-  initialize: mockConnectionInitialize,
-}));
-
-jest.mock('@/providers/acp', () => {
-  const actual = jest.requireActual('@/providers/acp');
-  return {
-    ...actual,
-    ACPClientConnection: mockACPClientConnection,
-    ACPJSONRPCTransport: mockACPJSONRPCTransport,
-    ACPSubprocess: mockACPSubprocess,
-  };
-});
-
-jest.mock('@/providers/opencode/runtime/OpencodeLaunchArtifacts', () => {
-  const actual = jest.requireActual(
-    '@/providers/opencode/runtime/OpencodeLaunchArtifacts',
-  );
-  return {
-    ...actual,
-    prepareOpencodeLaunchArtifacts: (...args: unknown[]) => (
-      mockPrepareLaunchArtifacts(...args)
-    ),
-  };
-});
-
 import { decodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
-import type { ACPSessionUpdate } from '@/providers/acp';
-import {
-  type OpencodeACPSessionKernel,
-  type OpencodeACPSessionKernelOptions,
-  type OpencodeNativeSessionInfo,
-  OpencodeSessionMissingError,
-} from '@/providers/opencode/execution/OpencodeACPSessionKernel';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
+import {
+  type OpencodeNativeSessionInfo,
+  type OpencodeSessionKernel,
+  type OpencodeSessionKernelOptions,
+  OpencodeSessionMissingError,
+} from '@/providers/opencode/execution/OpencodeSessionContract';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 
 interface Deferred<T> {
@@ -87,7 +37,7 @@ function createDeferred<T>(): Deferred<T> {
   return { promise, resolve };
 }
 
-class FakeKernel implements OpencodeACPSessionKernel {
+class FakeKernel implements OpencodeSessionKernel {
   readonly connectCalls: unknown[] = [];
   readonly openedResumeIds: Array<string | undefined> = [];
   readonly configCalls: Array<Record<string, unknown>> = [];
@@ -99,7 +49,7 @@ class FakeKernel implements OpencodeACPSessionKernel {
   openSessionError: unknown = null;
   onOpenSession: (() => void) | null = null;
   onSetConfigOption: (() => void) | null = null;
-  promptResult: Awaited<ReturnType<OpencodeACPSessionKernel['prompt']>> = { userMessageId: 'native-user' };
+  promptResult: Awaited<ReturnType<OpencodeSessionKernel['prompt']>> = { userMessageId: 'native-user' };
   private resolvePrompt: ((value: typeof this.promptResult) => void) | null = null;
   private deferredOpenSession: Deferred<OpencodeNativeSessionInfo> | null = null;
   private deferredDisposal: Deferred<void> | null = null;
@@ -133,7 +83,15 @@ class FakeKernel implements OpencodeACPSessionKernel {
     },
   };
 
-  constructor(readonly options: OpencodeACPSessionKernelOptions) {}
+  readonly hasNativeWork = false;
+
+  constructor(readonly options: OpencodeSessionKernelOptions) {}
+
+  async whenIdle(): Promise<void> {}
+
+  async steer(): Promise<boolean> {
+    return false;
+  }
 
   async connect(options: unknown): Promise<void> {
     this.connectCalls.push(options);
@@ -193,8 +151,8 @@ class FakeKernel implements OpencodeACPSessionKernel {
     return deferred;
   }
 
-  notify(update: ACPSessionUpdate, sessionId = this.sessionInfo.sessionId): void {
-    this.options.onNotification({ sessionId, update });
+  output(text: string): void {
+    this.options.onNativeOutput?.({ type: 'text_delta', text });
   }
 
   close(error = new Error('process closed')): void {
@@ -284,6 +242,11 @@ async function waitForPrompt(kernel: FakeKernel, count = 1): Promise<void> {
   expect(kernel.prompts).toHaveLength(count);
 }
 
+async function kernelAt(kernels: FakeKernel[], index = 0): Promise<FakeKernel> {
+  await waitForCondition(() => kernels.length > index);
+  return kernels[index];
+}
+
 async function waitForCondition(condition: () => boolean): Promise<void> {
   for (let attempt = 0; attempt < 100 && !condition(); attempt += 1) {
     await Promise.resolve();
@@ -291,13 +254,15 @@ async function waitForCondition(condition: () => boolean): Promise<void> {
   expect(condition()).toBe(true);
 }
 
-function createHarness(config = createConfig()) {
+/** `onKernel` configures each kernel before the session connects it. */
+function createHarness(config = createConfig(), onKernel?: (kernel: FakeKernel) => void) {
   const kernels: FakeKernel[] = [];
   const backend = new OpencodeExecutionBackend(runtimeHostFor(plugin, 'opencode'), {
     serverService: new OpencodeServerService(),
     createKernel: (options) => {
       const kernel = new FakeKernel(options);
       kernels.push(kernel);
+      onKernel?.(kernel);
       return kernel;
     },
   });
@@ -320,46 +285,15 @@ describe('OpencodeExecutionBackend', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockProcessShutdown.mockResolvedValue(undefined);
-    mockConnectionInitialize.mockResolvedValue({});
-    mockPrepareLaunchArtifacts.mockResolvedValue({
-      configContent: '{}',
-      configPath: '/vault/.claudian/opencode/config.json',
-      databasePath: '/native/opencode.db',
-      launchKey: 'launch-key',
-    });
   });
 
-  it('combines final prompt usage with the current turn context window', async () => {
-    const harness = createHarness();
-    try {
-      const eventsPromise = collect(harness.session.execute(createRequest()).events);
-      await waitForCondition(() => harness.kernels.length > 0);
-      const kernel = harness.kernels[0];
-      await waitForPrompt(kernel);
-      kernel.options.onNotification({
-        sessionId: 'native-session',
-        update: { sessionUpdate: 'usage_update', size: 1000, used: 100 },
-      });
-      await new Promise(resolve => setImmediate(resolve));
-      kernel.promptResult = { usage: {
-        inputTokens: 12, outputTokens: 3, totalTokens: 15, cachedReadTokens: 4,
-      } };
-      kernel.completePrompt();
-      const events = await eventsPromise;
-      expect(events.filter(event => event.type === 'usage_updated').at(-1)).toMatchObject({
-        usage: { inputTokens: 12, cacheReadInputTokens: 4, contextWindow: 1000, contextTokens: 100 },
-      });
-    } finally {
-      await harness.session.dispose();
-    }
-  });
-
-  it('does not start a process when a turn is cancelled during CLI resolution', async () => {
+  it('does not acquire a native server when a turn is cancelled during CLI resolution', async () => {
     const cliPath = createDeferred<string | null>();
     const host = createPlugin();
     host.getResolvedProviderCliPath = jest.fn(() => cliPath.promise);
-    const session = new OpencodeExecutionBackend(runtimeHostFor(host, 'opencode'), { serverService: new OpencodeServerService() }).createSession(createConfig());
+    const serverService = new OpencodeServerService();
+    const acquire = jest.spyOn(serverService, 'acquire');
+    const session = new OpencodeExecutionBackend(runtimeHostFor(host, 'opencode'), { serverService }).createSession(createConfig());
     const run = session.execute(createRequest());
     const events = collect(run.events);
     await waitForCondition(() => host.getResolvedProviderCliPath.mock.calls.length === 1);
@@ -370,113 +304,18 @@ describe('OpencodeExecutionBackend', () => {
     await expect(events).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'cancelled' }),
     ]));
-    expect(mockACPSubprocess).not.toHaveBeenCalled();
-    expect(mockProcessStart).not.toHaveBeenCalled();
+    expect(acquire).not.toHaveBeenCalled();
     await session.dispose();
+    await serverService.dispose();
   });
-
-  it('does not start a process when the session is disposed during artifact preparation', async () => {
-    const artifacts = createDeferred<{
-      configContent: string;
-      configPath: string;
-      databasePath: string | null;
-      launchKey: string;
-    }>();
-    mockPrepareLaunchArtifacts.mockReturnValueOnce(artifacts.promise);
-    const host = createPlugin();
-    const session = new OpencodeExecutionBackend(runtimeHostFor(host, 'opencode'), { serverService: new OpencodeServerService() }).createSession(createConfig());
-    const run = session.execute(createRequest());
-    const events = collect(run.events);
-    await waitForCondition(() => mockPrepareLaunchArtifacts.mock.calls.length === 1);
-
-    const disposal = session.dispose();
-    artifacts.resolve({
-      configContent: '{}',
-      configPath: '/vault/.claudian/opencode/config.json',
-      databasePath: '/native/opencode.db',
-      launchKey: 'launch-key',
-    });
-
-    await disposal;
-    await expect(events).resolves.toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'cancelled' }),
-    ]));
-    expect(mockACPSubprocess).not.toHaveBeenCalled();
-    expect(mockProcessStart).not.toHaveBeenCalled();
-  });
-
-  it('closes a partially connected process and transport when disposed during initialize', async () => {
-    const initialize = createDeferred<Record<string, never>>();
-    mockConnectionInitialize.mockReturnValueOnce(initialize.promise);
-    const host = createPlugin();
-    const session = new OpencodeExecutionBackend(runtimeHostFor(host, 'opencode'), { serverService: new OpencodeServerService() }).createSession(createConfig());
-    const run = session.execute(createRequest());
-    const events = collect(run.events);
-    await waitForCondition(() => mockConnectionInitialize.mock.calls.length === 1);
-
-    const disposal = session.dispose();
-    initialize.resolve({});
-
-    await disposal;
-    await expect(events).resolves.toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'cancelled' }),
-    ]));
-    expect(mockConnectionDispose).toHaveBeenCalledTimes(1);
-    expect(mockTransportDispose).toHaveBeenCalledTimes(1);
-    expect(mockProcessShutdown).toHaveBeenCalledTimes(1);
-  });
-
-  it.each([
-    ['process start', 'process-start', 0, 0],
-    ['transport construction', 'transport-construction', 0, 0],
-    ['connection construction', 'connection-construction', 1, 0],
-    ['transport start', 'transport-start', 1, 1],
-  ] as const)(
-    'closes all acquired resources when %s fails',
-    async (_label, failureBoundary, expectedTransportDisposals, expectedConnectionDisposals) => {
-      const failure = new Error(`Failed at ${failureBoundary}`);
-      if (failureBoundary === 'process-start') {
-        mockProcessStart.mockImplementationOnce(() => {
-          throw failure;
-        });
-      } else if (failureBoundary === 'transport-construction') {
-        mockACPJSONRPCTransport.mockImplementationOnce(() => {
-          throw failure;
-        });
-      } else if (failureBoundary === 'connection-construction') {
-        mockACPClientConnection.mockImplementationOnce(() => {
-          throw failure;
-        });
-      } else {
-        mockTransportStart.mockImplementationOnce(() => {
-          throw failure;
-        });
-      }
-
-      const host = createPlugin();
-      const session = new OpencodeExecutionBackend(runtimeHostFor(host, 'opencode'), { serverService: new OpencodeServerService() }).createSession(createConfig());
-      const events = await collect(session.execute(createRequest()).events);
-
-      expect(events).toEqual(expect.arrayContaining([
-        expect.objectContaining({ type: 'execution_error' }),
-      ]));
-      expect(mockProcessShutdown).toHaveBeenCalledTimes(1);
-      expect(mockTransportDispose).toHaveBeenCalledTimes(
-        expectedTransportDisposals,
-      );
-      expect(mockConnectionDispose).toHaveBeenCalledTimes(
-        expectedConnectionDisposals,
-      );
-      await session.dispose();
-    },
-  );
 
   it('persists the native generation and reports provider cancellation', async () => {
-    const harness = createHarness();
+    const harness = createHarness(createConfig(), kernel => {
+      kernel.sessionInfo = { ...kernel.sessionInfo, nativeVersion: 2 };
+      kernel.promptResult = { stopReason: 'cancelled' };
+    });
     const run = harness.session.execute(createRequest());
-    const kernel = harness.kernels[0];
-    kernel.sessionInfo = { ...kernel.sessionInfo, nativeVersion: 2 };
-    kernel.promptResult = { stopReason: 'cancelled' };
+    const kernel = await kernelAt(harness.kernels);
     await waitForPrompt(kernel);
     kernel.completePrompt();
     const events = await collect(run.events);
@@ -495,12 +334,9 @@ describe('OpencodeExecutionBackend', () => {
 
     expect(harness.kernels).toHaveLength(0);
     const run = harness.session.execute(createRequest());
-    const kernel = harness.kernels[0];
+    const kernel = await kernelAt(harness.kernels);
     await waitForPrompt(kernel);
-    kernel.notify({
-      content: { type: 'text', text: 'response' },
-      sessionUpdate: 'agent_message_chunk',
-    });
+    kernel.output('response');
     kernel.completePrompt();
     const events = await collect(run.events);
 
@@ -509,16 +345,14 @@ describe('OpencodeExecutionBackend', () => {
     expect(events.map(({ type }) => type)).toEqual([
       'session_state_changed',
       'turn_started',
-      'assistant_message_started',
       'text_delta',
       'session_state_changed',
       'turn_completed',
     ]);
-    expect(events.slice(0, 4).map(({ scope }) => scope.sequence)).toEqual([
+    expect(events.slice(0, 3).map(({ scope }) => scope.sequence)).toEqual([
       1,
       2,
       3,
-      4,
     ]);
     expect(harness.session.getSnapshot()).toMatchObject({
       providerSessionId: 'native-session',
@@ -530,7 +364,7 @@ describe('OpencodeExecutionBackend', () => {
   it('emits a newly established native-session snapshot before prompt completion', async () => {
     const harness = createHarness();
     const run = harness.session.execute(createRequest());
-    await waitForPrompt(harness.kernels[0]);
+    await waitForPrompt(await kernelAt(harness.kernels));
 
     const iterator = run.events[Symbol.asyncIterator]();
     await expect(iterator.next()).resolves.toEqual({
@@ -565,11 +399,12 @@ describe('OpencodeExecutionBackend', () => {
       finish: 'stop', tokens: { output: 100, reasoning: 25 },
     }));
     db.close();
-    const harness = createHarness();
+    const harness = createHarness(createConfig(), kernel => {
+      kernel.sessionInfo = { ...kernel.sessionInfo, databasePath };
+    });
     try {
       const run = harness.session.execute(createRequest());
-      harness.kernels[0].sessionInfo = { ...harness.kernels[0].sessionInfo, databasePath };
-      await waitForPrompt(harness.kernels[0]);
+      await waitForPrompt(await kernelAt(harness.kernels));
       harness.kernels[0].completePrompt();
       expect((await collect(run.events)).at(-1)).toMatchObject({ type: 'turn_completed',
         turnStats: { outputTokens: 125, durationMs: 2500 } });
@@ -585,7 +420,7 @@ describe('OpencodeExecutionBackend', () => {
       context: { ...capturedSelections, sessionReferences: [{ id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated' }], linkedContent: { path: 'Projects/Research' } },
       input: [{ text: 'Inspect linked content', type: 'text' }],
     }));
-    await waitForPrompt(harness.kernels[0]);
+    await waitForPrompt(await kernelAt(harness.kernels));
     harness.kernels[0].completePrompt();
     await collect(run.events);
 
@@ -603,7 +438,7 @@ describe('OpencodeExecutionBackend', () => {
   });
 
   it('bootstraps canonical history after invalidation while retaining retired sessions', async () => {
-    const previousSessions = [{ sessionId: 'retired-session', databasePath: '/old/opencode.db', nativeVersion: 1 }];
+    const previousSessions = [{ sessionId: 'retired-session', databasePath: '/old/opencode.db', nativeVersion: 2 }];
     const harness = createHarness(createConfig({
       resumeSeed: { providerState: { nativeConversationContextEstablished: false, previousSessions } },
     }));
@@ -613,11 +448,8 @@ describe('OpencodeExecutionBackend', () => {
         { id: 'a1', role: 'assistant', content: 'answer', timestamp: 2 },
       ],
     }));
-    await waitForPrompt(harness.kernels[0]);
-    harness.kernels[0].notify({
-      content: { type: 'text', text: 'ok' },
-      sessionUpdate: 'agent_message_chunk',
-    });
+    await waitForPrompt(await kernelAt(harness.kernels));
+    harness.kernels[0].output('ok');
     harness.kernels[0].completePrompt();
     await collect(run.events);
 
@@ -643,11 +475,8 @@ describe('OpencodeExecutionBackend', () => {
         { content: 'do-not-replay', id: 'u1', role: 'user', timestamp: 1 },
       ],
     }));
-    await waitForPrompt(harness.kernels[0]);
-    harness.kernels[0].notify({
-      content: { text: 'ok', type: 'text' },
-      sessionUpdate: 'agent_message_chunk',
-    });
+    await waitForPrompt(await kernelAt(harness.kernels));
+    harness.kernels[0].output('ok');
     harness.kernels[0].completePrompt();
     await collect(run.events);
 
@@ -662,9 +491,10 @@ describe('OpencodeExecutionBackend', () => {
         providerSessionId: 'valid-session',
         providerState: { databasePath: '/persisted/opencode.db' },
       },
-    }));
+    }), kernel => {
+      kernel.openSessionError = new Error('Authentication expired');
+    });
     const genericRun = generic.session.execute(createRequest());
-    generic.kernels[0].openSessionError = new Error('Authentication expired');
 
     await expect(collect(genericRun.events)).resolves.toEqual(
       expect.arrayContaining([
@@ -683,12 +513,13 @@ describe('OpencodeExecutionBackend', () => {
         providerSessionId: 'missing-session',
         providerState: { databasePath: '/persisted/opencode.db' },
       },
-    }));
+    }), kernel => {
+      kernel.openSessionError = new OpencodeSessionMissingError(
+        'missing-session',
+        new Error('Session not found'),
+      );
+    });
     const missingRun = missing.session.execute(createRequest());
-    missing.kernels[0].openSessionError = new OpencodeSessionMissingError(
-      'missing-session',
-      new Error('Session not found'),
-    );
 
     await expect(collect(missingRun.events)).resolves.toEqual(
       expect.arrayContaining([
@@ -704,7 +535,7 @@ describe('OpencodeExecutionBackend', () => {
   it('persists cold replay intent across a pre-prompt configuration failure', async () => {
     const first = createHarness();
     const firstRun = first.session.execute(createRequest());
-    first.kernels[0].configError = new Error('Configuration failed');
+    (await kernelAt(first.kernels)).configError = new Error('Configuration failed');
     await collect(firstRun.events);
 
     const failedSnapshot = first.session.getSnapshot();
@@ -734,7 +565,7 @@ describe('OpencodeExecutionBackend', () => {
     const recoveryRun = replacement.session.execute(createRequest({
       conversationHistory: history,
     }));
-    await waitForPrompt(replacement.kernels[0]);
+    await waitForPrompt(await kernelAt(replacement.kernels));
     expect(replacement.kernels[0].openedResumeIds).toEqual(['native-session']);
     expect(JSON.stringify(replacement.kernels[0].prompts[0])).toContain('replay-once');
     replacement.kernels[0].completePrompt();
@@ -750,7 +581,7 @@ describe('OpencodeExecutionBackend', () => {
     const continuedRun = replacement.session.execute(createRequest({
       conversationHistory: history,
     }));
-    await waitForPrompt(replacement.kernels[0], 2);
+    await waitForPrompt(await kernelAt(replacement.kernels), 2);
     expect(JSON.stringify(replacement.kernels[0].prompts[1])).not.toContain(
       'replay-once',
     );
@@ -764,35 +595,23 @@ describe('OpencodeExecutionBackend', () => {
         providerSessionId: 'resume-session',
         providerState: { databasePath: '/persisted/opencode.db' },
       },
-    }));
+    }), kernel => {
+      kernel.sessionInfo = {
+        ...kernel.sessionInfo,
+        sessionId: 'resume-session',
+      };
+      kernel.onOpenSession = () => {
+        kernel.output('historic-load-output');
+      };
+      kernel.onSetConfigOption = () => {
+        kernel.output('historic-config-output');
+      };
+    });
     const run = harness.session.execute(createRequest());
-    const kernel = harness.kernels[0];
-    kernel.sessionInfo = {
-      ...kernel.sessionInfo,
-      sessionId: 'resume-session',
-    };
-    kernel.onOpenSession = () => {
-      kernel.notify({
-        availableCommands: [{ name: 'review' }],
-        sessionUpdate: 'available_commands_update',
-      }, 'resume-session');
-      kernel.notify({
-        content: { text: 'historic-load-output', type: 'text' },
-        sessionUpdate: 'agent_message_chunk',
-      }, 'resume-session');
-    };
-    kernel.onSetConfigOption = () => {
-      kernel.notify({
-        content: { text: 'historic-config-output', type: 'text' },
-        sessionUpdate: 'agent_message_chunk',
-      }, 'resume-session');
-    };
+    const kernel = await kernelAt(harness.kernels);
 
     await waitForPrompt(kernel);
-    kernel.notify({
-      content: { text: 'live-output', type: 'text' },
-      sessionUpdate: 'agent_message_chunk',
-    }, 'resume-session');
+    kernel.output('live-output');
     kernel.completePrompt();
     const events = await collect(run.events);
 
@@ -823,7 +642,7 @@ describe('OpencodeExecutionBackend', () => {
         toolPolicy,
       }));
       await waitForCondition(() => harness.kernels.length === expectedKernelCount);
-      const kernel = harness.kernels[expectedKernelCount - 1];
+      const kernel = await kernelAt(harness.kernels, expectedKernelCount - 1);
       await waitForPrompt(kernel);
       kernel.completePrompt();
       await collect(run.events);
@@ -899,7 +718,7 @@ describe('OpencodeExecutionBackend', () => {
         },
       }));
       await waitForCondition(() => harness.kernels.length === expectedKernelCount);
-      const kernel = harness.kernels[expectedKernelCount - 1];
+      const kernel = await kernelAt(harness.kernels, expectedKernelCount - 1);
       await waitForPrompt(kernel, expectedPromptCount);
       kernel.completePrompt();
       await collect(run.events);
@@ -940,7 +759,7 @@ describe('OpencodeExecutionBackend', () => {
       }));
 
       const run = harness.session.execute(createRequest());
-      await waitForPrompt(harness.kernels[0]);
+      await waitForPrompt(await kernelAt(harness.kernels));
       harness.kernels[0].completePrompt();
       await collect(run.events);
 
@@ -953,20 +772,14 @@ describe('OpencodeExecutionBackend', () => {
   it('reuses a healthy native process and session across requested turns', async () => {
     const harness = createHarness();
     const first = harness.session.execute(createRequest());
-    await waitForPrompt(harness.kernels[0]);
-    harness.kernels[0].notify({
-      content: { text: 'one', type: 'text' },
-      sessionUpdate: 'agent_message_chunk',
-    });
+    await waitForPrompt(await kernelAt(harness.kernels));
+    harness.kernels[0].output('one');
     harness.kernels[0].completePrompt();
     await collect(first.events);
 
     const second = harness.session.execute(createRequest());
-    await waitForPrompt(harness.kernels[0], 2);
-    harness.kernels[0].notify({
-      content: { text: 'two', type: 'text' },
-      sessionUpdate: 'agent_message_chunk',
-    });
+    await waitForPrompt(await kernelAt(harness.kernels), 2);
+    harness.kernels[0].output('two');
     harness.kernels[0].completePrompt();
     await collect(second.events);
 
@@ -989,11 +802,8 @@ describe('OpencodeExecutionBackend', () => {
     const run = harness.session.execute(createRequest({
       toolPolicy: { kind },
     }));
-    await waitForPrompt(harness.kernels[0]);
-    harness.kernels[0].notify({
-      content: { type: 'text', text: 'ok' },
-      sessionUpdate: 'agent_message_chunk',
-    });
+    await waitForPrompt(await kernelAt(harness.kernels));
+    harness.kernels[0].output('ok');
     harness.kernels[0].completePrompt();
     await collect(run.events);
 
@@ -1008,11 +818,8 @@ describe('OpencodeExecutionBackend', () => {
     const run = harness.session.execute(createRequest({
       toolPolicy: { kind: 'allow-list', names: ['custom-approved-tool'] },
     }));
-    await waitForPrompt(harness.kernels[0]);
-    harness.kernels[0].notify({
-      content: { text: 'ok', type: 'text' },
-      sessionUpdate: 'agent_message_chunk',
-    });
+    await waitForPrompt(await kernelAt(harness.kernels));
+    harness.kernels[0].output('ok');
     harness.kernels[0].completePrompt();
     await collect(run.events);
 
@@ -1028,11 +835,8 @@ describe('OpencodeExecutionBackend', () => {
     const harness = createHarness();
     const request = createRequest();
     const run = harness.session.execute({ ...request, configuration: { ...request.configuration, permissionMode } });
-    await waitForPrompt(harness.kernels[0]);
-    harness.kernels[0].notify({
-      content: { type: 'text', text: 'ok' },
-      sessionUpdate: 'agent_message_chunk',
-    });
+    await waitForPrompt(await kernelAt(harness.kernels));
+    harness.kernels[0].output('ok');
     harness.kernels[0].completePrompt();
     await collect(run.events);
 
@@ -1044,62 +848,11 @@ describe('OpencodeExecutionBackend', () => {
     expect(harness.kernels[0].autoApproveCalls).toEqual([autoApprove]);
   });
 
-  it('applies OpenCode tool presentation to live ACP events', async () => {
-    const harness = createHarness();
-    const run = harness.session.execute(createRequest());
-    await waitForPrompt(harness.kernels[0]);
-
-    harness.kernels[0].notify({
-      kind: 'edit',
-      rawInput: {
-        filePath: '/vault/notes/today.md',
-        newString: 'after',
-        oldString: 'before',
-      },
-      sessionUpdate: 'tool_call',
-      status: 'in_progress',
-      title: 'edit',
-      toolCallId: 'tool-edit',
-    });
-    harness.kernels[0].notify({
-      kind: 'edit',
-      rawOutput: {
-        metadata: { filepath: '/vault/notes/today.md' },
-        output: 'Updated file',
-      },
-      sessionUpdate: 'tool_call_update',
-      status: 'completed',
-      title: 'notes/today.md',
-      toolCallId: 'tool-edit',
-    });
-    harness.kernels[0].completePrompt();
-
-    const events = await collect(run.events);
-    expect(events).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        input: {
-          file_path: '/vault/notes/today.md',
-          new_string: 'after',
-          old_string: 'before',
-        },
-        name: 'Edit',
-        toolCallId: 'tool-edit',
-        type: 'tool_started',
-      }),
-      expect.objectContaining({
-        content: expect.stringContaining('Updated file'),
-        isError: false,
-        toolCallId: 'tool-edit',
-        type: 'tool_completed',
-      }),
-    ]));
-  });
-
-  it('declines to steer a running turn whose native kernel cannot steer', async () => {
+  it('declines a steer that the native kernel does not admit', async () => {
     const harness = createHarness();
     if (!isSteerableExecutionSession(harness.session)) throw new Error('Missing steering');
     const run = harness.session.execute(createRequest());
-    await waitForPrompt(harness.kernels[0]);
+    await waitForPrompt(await kernelAt(harness.kernels));
 
     await expect(harness.session.steer(createRequest({
       input: [{ type: 'text', text: 'also this' }],
@@ -1127,15 +880,12 @@ describe('OpencodeExecutionBackend', () => {
   it('cancels, invalidates, fences late events, and resumes lazily on a fresh kernel', async () => {
     const harness = createHarness();
     const first = harness.session.execute(createRequest());
-    const firstKernel = harness.kernels[0];
+    const firstKernel = await kernelAt(harness.kernels);
     await waitForPrompt(firstKernel);
 
     first.cancel();
     const firstEvents = await collect(first.events);
-    firstKernel.notify({
-      content: { type: 'text', text: 'late' },
-      sessionUpdate: 'agent_message_chunk',
-    });
+    firstKernel.output('late');
 
     expect(firstKernel.cancelCalls).toBe(1);
     expect(firstKernel.disposeCalls).toBe(1);
@@ -1158,12 +908,9 @@ describe('OpencodeExecutionBackend', () => {
     });
 
     const second = harness.session.execute(createRequest());
-    await waitForPrompt(harness.kernels[1]);
+    await waitForPrompt(await kernelAt(harness.kernels, 1));
     expect(harness.kernels).toHaveLength(2);
-    harness.kernels[1].notify({
-      content: { type: 'text', text: 'again' },
-      sessionUpdate: 'agent_message_chunk',
-    });
+    harness.kernels[1].output('again');
     harness.kernels[1].completePrompt();
     await expect(collect(second.events)).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'text_delta', text: 'again' }),
@@ -1171,19 +918,19 @@ describe('OpencodeExecutionBackend', () => {
   });
 
   it('publishes a late native-session ownership ack after cancellation', async () => {
-    const harness = createHarness();
+    let nativeSession: Deferred<OpencodeNativeSessionInfo> | undefined;
+    const harness = createHarness(createConfig(), kernel => { nativeSession = kernel.deferOpenSession(); });
     const sessionEvents: ProviderSessionEvent[] = [];
     harness.session.onEvent((event) => {
       sessionEvents.push(event);
     });
     const run = harness.session.execute(createRequest());
-    const kernel = harness.kernels[0];
-    const nativeSession = kernel.deferOpenSession();
+    const kernel = await kernelAt(harness.kernels);
     await waitForCondition(() => kernel.openedResumeIds.length === 1);
 
     run.cancel();
     await collect(run.events);
-    nativeSession.resolve(kernel.sessionInfo);
+    nativeSession!.resolve(kernel.sessionInfo);
     await waitForCondition(() => (
       harness.session.getSnapshot().providerSessionId === 'native-session'
     ));
@@ -1217,7 +964,7 @@ describe('OpencodeExecutionBackend', () => {
         { content: 'cold-history', id: 'u1', role: 'user', timestamp: 1 },
       ],
     }));
-    const kernel = harness.kernels[0];
+    const kernel = await kernelAt(harness.kernels);
     await waitForPrompt(kernel);
 
     run.cancel();
@@ -1251,7 +998,7 @@ describe('OpencodeExecutionBackend', () => {
   it('awaits the cancellation kernel-disposal flight during immediate session disposal', async () => {
     const harness = createHarness();
     const run = harness.session.execute(createRequest());
-    const kernel = harness.kernels[0];
+    const kernel = await kernelAt(harness.kernels);
     await waitForPrompt(kernel);
     const kernelDisposal = kernel.deferDisposal();
 
@@ -1277,7 +1024,7 @@ describe('OpencodeExecutionBackend', () => {
   it('awaits an old kernel-disposal flight before retrying after process close', async () => {
     const harness = createHarness();
     const firstRun = harness.session.execute(createRequest());
-    const firstKernel = harness.kernels[0];
+    const firstKernel = await kernelAt(harness.kernels);
     await waitForPrompt(firstKernel);
     firstKernel.completePrompt();
     await expect(collect(firstRun.events)).resolves.toEqual(expect.arrayContaining([
@@ -1294,7 +1041,7 @@ describe('OpencodeExecutionBackend', () => {
 
     kernelDisposal.resolve();
     await waitForCondition(() => harness.kernels.length === 2);
-    await waitForPrompt(harness.kernels[1]);
+    await waitForPrompt(await kernelAt(harness.kernels, 1));
     harness.kernels[1].completePrompt();
     await expect(collect(secondRun.events)).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'turn_completed' }),
@@ -1305,7 +1052,7 @@ describe('OpencodeExecutionBackend', () => {
   it('normalizes process death as a terminal error and disposes idempotently', async () => {
     const harness = createHarness();
     const run = harness.session.execute(createRequest());
-    await waitForPrompt(harness.kernels[0]);
+    await waitForPrompt(await kernelAt(harness.kernels));
     harness.kernels[0].close();
 
     const events = await collect(run.events);
@@ -1336,7 +1083,7 @@ describe('OpencodeExecutionBackend', () => {
     const sessionEvents: unknown[] = [];
     harness.session.onEvent((event) => sessionEvents.push(event));
     const run = harness.session.execute(createRequest());
-    await waitForPrompt(harness.kernels[0]);
+    await waitForPrompt(await kernelAt(harness.kernels));
     harness.kernels[0].completePrompt();
     await collect(run.events);
 
@@ -1375,7 +1122,7 @@ it('keeps native completion when cancellation arrives during stats acquisition',
       return events;
     })();
     await waitForCondition(() => harness.kernels.length > 0);
-    await waitForPrompt(harness.kernels[0]);
+    await waitForPrompt(await kernelAt(harness.kernels));
     harness.kernels[0].completePrompt();
     expect((await eventsPromise).at(-1)?.type).toBe('turn_completed');
   } finally {

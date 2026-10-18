@@ -22,14 +22,8 @@ import {
 } from '../normalization/opencodeToolNormalization';
 import { resolveExistingOpencodeDatabasePath } from '../runtime/OpencodePaths';
 import type { OpencodeProviderState } from '../types';
-import {
-  loadOpencodeSessionRows,
-  type StoredRow,
-  type StoredSessionRows,
-} from './OpencodeSqliteReader';
+import { loadOpencodeSessionRows, type StoredRow } from './OpencodeSqliteReader';
 import { getMessageCompletedAt, getMessageCreatedAt, OpencodeTurnStats } from './OpencodeTurnStats';
-
-export { OPENCODE_MESSAGE_ROW_SQL } from './OpencodeSqliteReader';
 
 interface StoredMessage {
   info: StoredRow;
@@ -53,9 +47,9 @@ export async function loadOpencodeSessionMessages(
     return [];
   }
 
-  let rows: StoredSessionRows;
+  let rows: StoredRow[];
   try {
-    rows = await loadOpencodeSessionRows(databasePath, sessionId, { environment, nativeVersion: providerState?.nativeVersion === 2 ? 2 : 'auto' });
+    rows = await loadOpencodeSessionRows(databasePath, sessionId, { environment });
   } catch (error) {
     return [createOpencodeHydrationDiagnosticMessage({
       databasePath,
@@ -64,21 +58,7 @@ export async function loadOpencodeSessionMessages(
     })];
   }
 
-  if (rows.nativeVersion === 2) return mapOpencodeV2Messages(rows.messageRows, { databasePath, sessionId });
-
-  return mapOpencodeMessages(
-    hydrateStoredMessages(rows.messageRows, rows.partRows),
-    { databasePath, sessionId },
-  );
-}
-
-// V1 ACP does not publish compaction completion. Read the same successful
-// summary records used by history, without loading message parts.
-export async function loadOpencodeV1CompactionIds(databasePath: string, sessionId: string): Promise<Set<string>> {
-  const rows = await loadOpencodeSessionRows(databasePath, sessionId, { includeParts: false, nativeVersion: 1 });
-  return new Set(mapOpencodeMessages(hydrateStoredMessages(rows.messageRows, []))
-    .filter(message => message.contentBlocks?.some(block => block.type === 'context_compacted'))
-    .map(message => message.id));
+  return mapOpencodeV2Messages(rows, { databasePath, sessionId });
 }
 
 export async function loadOpencodeSessionModel(
@@ -91,13 +71,12 @@ export async function loadOpencodeSessionModel(
     return null;
   }
 
-  const rows = await loadOpencodeSessionRows(databasePath, sessionId, { includeParts: false, environment, nativeVersion: providerState?.nativeVersion === 2 ? 2 : 'auto' }).catch(() => null);
+  const rows = await loadOpencodeSessionRows(databasePath, sessionId, { environment }).catch(() => null);
   let rawModelId: string | null = null;
-  for (const row of rows?.messageRows ?? []) {
-    const data = parseJSONObject(row.data);
-    const model = rows?.nativeVersion === 2 ? getObject(data?.model) : null;
-    const providerId = getString(model?.providerID) ?? getString(row.provider_id) ?? getString(data?.providerID);
-    const modelId = getString(model?.id) ?? getString(row.model_id) ?? getString(data?.modelID);
+  for (const row of rows ?? []) {
+    const model = getObject(parseJSONObject(row.data)?.model);
+    const providerId = getString(model?.providerID);
+    const modelId = getString(model?.id);
     if (providerId && modelId) {
       rawModelId = `${providerId}/${modelId}`;
     }
@@ -105,109 +84,14 @@ export async function loadOpencodeSessionModel(
   return rawModelId ? encodeOpencodeModelId(rawModelId) : null;
 }
 
-export function mapOpencodeMessages(
-  messages: StoredMessage[],
-  context: OpencodeHydrationDiagnosticContext = {},
-): ChatMessage[] {
-  const mappedMessages: ChatMessage[] = [];
-  const stats = new OpencodeTurnStats();
-  let previousAssistant: ChatMessage | undefined;
-
-  for (const message of messages) {
-    try {
-      const mappedMessage = mapStoredMessage(message, context);
-      if (mappedMessage) {
-        if (mappedMessage.contentBlocks?.some(block => block.type === 'context_compacted')) {
-          stats.reset();
-          previousAssistant = undefined;
-          mappedMessages.push(mappedMessage);
-          continue;
-        }
-        if (mappedMessage.role === 'user') previousAssistant = undefined;
-        else {
-          if (previousAssistant) previousAssistant.turnStats = undefined;
-          previousAssistant = mappedMessage;
-        }
-        mappedMessage.turnStats = stats.add(message.info, 1);
-        mappedMessages.push(mappedMessage);
-      }
-    } catch (error) {
-      stats.reset();
-      previousAssistant = undefined;
-      mappedMessages.push(createOpencodeHydrationDiagnosticMessage({
-        ...context,
-        messageId: getString(message.info.id) ?? undefined,
-        reason: formatUnknownError(error),
-      }));
-    }
-  }
-
-  return mergeAdjacentAssistantMessages(mappedMessages);
-}
-
-function hydrateStoredMessages(
-  messageRows: StoredRow[],
-  partRows: StoredRow[],
-): StoredMessage[] {
-  const partsByMessage = new Map<string, StoredRow[]>();
-
-  for (const row of partRows) {
-    const messageId = getString(row.message_id);
-    const id = getString(row.id);
-    const data = parseJSONObject(row.data);
-    if (!messageId || !id || !data) {
-      continue;
-    }
-
-    const parts = partsByMessage.get(messageId) ?? [];
-    parts.push({ ...data, id });
-    partsByMessage.set(messageId, parts);
-  }
-
-  return messageRows.flatMap((row) => {
-    const id = getString(row.id);
-    if (!id) {
-      return [];
-    }
-
-    const data = parseJSONObject(row.data);
-    return [{
-      info: data
-        ? { ...data, id, time_created: row.time_created }
-        : {
-            summary: row.summary === 1 || row.summary === true,
-            data_time_completed: row.data_time_completed,
-            data_time_created: row.data_time_created,
-            data_valid: row.data_valid,
-            parentID: row.parent_id,
-            tokens: { output: row.output_tokens, reasoning: row.reasoning_tokens },
-            finish: row.finish,
-            error: row.error,
-            id,
-            role: row.role,
-            time_created: row.time_created,
-          },
-      parts: partsByMessage.get(id) ?? [],
-    }];
-  });
-}
-
 function mapStoredMessage(
   message: StoredMessage,
   context: OpencodeHydrationDiagnosticContext,
-  nativeVersion: 1 | 2 = 1,
 ): ChatMessage | null {
   const role = getString(message.info.role);
   const id = getString(message.info.id);
   if (!id) {
     return null;
-  }
-  if (isInvalidStoredMessageData(message.info)) {
-    return createOpencodeHydrationDiagnosticMessage({
-      ...context,
-      messageId: id,
-      reason: 'OpenCode message metadata is not valid JSON.',
-    });
   }
   if (role !== 'user' && role !== 'assistant') {
     return null;
@@ -217,7 +101,6 @@ function mapStoredMessage(
     ?? Date.now();
 
   if (role === 'user') {
-    if (message.parts.some(part => part.type === 'compaction')) return null;
     const nativePrompt = getJoinedTextParts(message.parts);
     // Replayed Claudian history is already shown from the sessions it came from.
     const recovery = decodeRecoveryPrompt(nativePrompt);
@@ -238,13 +121,8 @@ function mapStoredMessage(
     };
   }
 
-  if (nativeVersion === 1 && message.info.summary === true) {
-    if (message.info.error || !getMessageCompletedAt(message.info)) return null;
-    return { id, role: 'assistant', content: '', timestamp: createdAt, contentBlocks: [{ type: 'context_compacted' }] };
-  }
-
   const contentBlocks = buildAssistantContentBlocks(message.parts);
-  const toolCalls = buildAssistantToolCalls(message.parts, nativeVersion);
+  const toolCalls = buildAssistantToolCalls(message.parts);
   const completedAt = getMessageCompletedAt(message.info);
   const durationSeconds = completedAt && completedAt >= createdAt
     ? Math.max(0, (completedAt - createdAt) / 1_000)
@@ -329,10 +207,6 @@ function getMessageCompletionTime(message: ChatMessage): number | null {
   }
 
   return message.timestamp + (message.durationSeconds * 1_000);
-}
-
-function isInvalidStoredMessageData(info: StoredRow): boolean {
-  return getNumber(info.data_valid) === 0;
 }
 
 export function createOpencodeHydrationDiagnosticMessage(params: {
@@ -431,7 +305,7 @@ function buildAssistantContentBlocks(parts: StoredRow[]): ContentBlock[] {
   return blocks;
 }
 
-function buildAssistantToolCalls(parts: StoredRow[], nativeVersion: 1 | 2): ToolCallInfo[] {
+function buildAssistantToolCalls(parts: StoredRow[]): ToolCallInfo[] {
   return parts.flatMap((part) => {
     if (getString(part.type) !== 'tool') {
       return [];
@@ -469,11 +343,11 @@ function buildAssistantToolCalls(parts: StoredRow[], nativeVersion: 1 | 2): Tool
       result,
       resultFormat: details?.resultFormat,
       status,
-      ...(nativeVersion === 2 ? { providerPayload: {
+      providerPayload: {
         rawInput: state?.input,
         rawName,
         rawOutput: state,
-      } } : {}),
+      },
     };
 
     if (details?.webSearchResults) {
@@ -694,14 +568,14 @@ function mapV2Messages(
     const message = mapStoredMessage({
       info,
       parts,
-    }, context, 2);
+    }, context);
     if (message) {
       if (message.role === 'user') previousAssistant = undefined;
       else {
         if (previousAssistant) previousAssistant.turnStats = undefined;
         previousAssistant = message;
       }
-      message.turnStats = stats.add(info, 2);
+      message.turnStats = stats.add(info);
       segment.push(message);
     }
   }

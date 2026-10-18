@@ -3,9 +3,9 @@ import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { decodeOpencodeConfig } from '../config';
 import type { OpencodeServerService } from '../http/OpencodeServerService';
 import { buildOpencodeRuntimeEnv } from './OpencodeRuntimeEnvironment';
-import { detectOpencodeNativeVersion, type OpencodeNativeVersion } from './OpencodeVersion';
+import { detectOpencodeNativeVersion } from './OpencodeVersion';
 
-/** Provider-owned prewarm and launch transitions for the shared v2 server. */
+/** Provider-owned prewarm and launch transitions for the shared server. */
 export class OpencodeSharedRuntime {
   private requested = false;
   private disposed = false;
@@ -15,7 +15,6 @@ export class OpencodeSharedRuntime {
   constructor(
     private readonly host: ProviderRuntimeHost,
     private readonly serverService: OpencodeServerService,
-    private readonly onNativeVersion: (version: OpencodeNativeVersion | undefined) => void,
   ) {}
 
   /** Prewarms the committed launch without creating a native session. */
@@ -60,10 +59,10 @@ export class OpencodeSharedRuntime {
       try {
         const launch = await this.#resolveLaunch();
         signal.throwIfAborted();
+        // A missing CLI has nothing to prewarm; an unsupported one rejects.
         const version = await detectOpencodeNativeVersion(launch.cliPath, launch.environment);
         signal.throwIfAborted();
-        this.onNativeVersion(version);
-        if (version !== 2) return;
+        if (!version) return;
         this.serverService.reconcileLaunch(launch.cliPath, launch.cwd, launch.environment);
         const lease = await this.serverService.acquire(launch.cliPath, launch.cwd, launch.environment, signal);
         try { await lease.request('/api/info', { signal }); }

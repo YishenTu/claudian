@@ -11,7 +11,7 @@ import { Component, MarkdownRenderer } from 'obsidian';
 import type { ChatMessage } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
-import { mapOpencodeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
+import { mapOpencodeV2NativeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
 import { parsePiSessionContent } from '@/providers/pi/history/PiHistoryStore';
 
 const writeClaudeSession = useClaudeSessionFiles();
@@ -38,7 +38,7 @@ it.each(['claude', 'codex', 'opencode', 'pi', 'grok'] as const)('hides snapshot 
       messages = parseCodexSessionContent(JSON.stringify({ timestamp: testTime(), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: prompt }] } }));
       break;
     case 'opencode':
-      messages = mapOpencodeMessages([{ info: { id: 'u', role: 'user', time: { created: testDate().getTime() } }, parts: [{ id: 'p', type: 'text', text: prompt }] }]);
+      messages = mapOpencodeV2NativeMessages([{ id: 'u', type: 'user', time: { created: testDate().getTime() }, text: prompt }]);
       break;
     case 'pi':
       messages = parsePiSessionContent(JSON.stringify({ type: 'message', id: 'u', message: { role: 'user', content: prompt } }));

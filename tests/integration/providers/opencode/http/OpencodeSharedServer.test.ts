@@ -94,12 +94,19 @@ const server = http.createServer(async (req, res) => {
  if (!session) { res.writeHead(404).end(); return; }
  if (parts.length === 4 && req.method === 'DELETE') { sessions.delete(id); deleted.push(id); save(); res.writeHead(204).end(); return; }
  if (parts.length === 4) return reply(session);
- if (parts[4] === 'fork') { const child={...session,id:'ses_'+(++sequence)}; sessions.set(child.id,child); save(); if (held) { held.push(() => reply(child)); return; } return reply(child); }
+ // A native fork copies the source's stored context into an independent child.
+ if (parts[4] === 'fork') { const child={...session,id:'ses_'+(++sequence),context:[...(session.context||[])]}; sessions.set(child.id,child); save(); if (held) { held.push(() => reply(child)); return; } return reply(child); }
  if (parts[4] === 'message') { res.end(JSON.stringify({data:[{id:'msg_source',type:'assistant',content:[{type:'text',text:'Source reply'}]}],cursor:{}})); return; }
  if (parts[4] === 'agent') { session.agent=body.agent; res.writeHead(204).end(); return; }
  if (parts[4] === 'model') { session.model=body.model; save(); res.writeHead(204).end(); return; }
  if (parts[4] === 'interrupt') { emit('session.execution.interrupted',{sessionID:id}); res.writeHead(204).end(); return; }
  if (parts[4] === 'prompt' || parts[4] === 'command') {
+  if (parts[4] === 'prompt') {
+   // Record the native context each prompt sees before the turn joins it.
+   const context = session.context = session.context || [];
+   fs.appendFileSync(process.env.PROCESS_LOG + '.prompts', JSON.stringify({sessionID:id,context:[...context],text:body.text}) + '\\n');
+   context.push(body.text, 'Reply to ' + body.text); save();
+  }
   reply({id:'msg_user'});
   setTimeout(()=>{
    emit('session.execution.started',{sessionID:id});
@@ -189,7 +196,7 @@ it('retains the current server after launch changes while disabled and re-enabli
     const starts = f.processes().length;
     const pid = f.processes().at(-1)!.pid;
     await f.workspace.metadataService.loadCatalog();
-    await f.workspace.metadataService.loadCommands();
+    await f.workspace.metadataService.discoverCommands();
     expect(f.processes()).toHaveLength(starts);
     expect(isAlive(pid)).toBe(true);
   } finally { await f.dispose(); }
@@ -269,19 +276,11 @@ it('fences a new turn on a retained idle session until the settings transition c
   } finally { release(); await transition; await owned.release(); await second; await f.dispose(); }
 });
 
-it('invalidates v1 sessions independently while a retired v2 generation remains owned', async () => {
+it('rejects an installed OpenCode v1 CLI for chat, discovery and forks while the retired generation stays owned', async () => {
   const f = await createFixture();
   const cliV1 = path.join(f.root, 'opencode-v1.cjs');
   writeFileSync(cliV1, `#!/usr/bin/env node
-if (process.argv.includes('--version')) { console.log('1.2.27'); return; }
-require('node:readline').createInterface({input: process.stdin}).on('line', line => {
- const request = JSON.parse(line);
- if (request.id === undefined) return;
- const result = request.method === 'initialize' ? { protocolVersion: 1, agentCapabilities: {} }
-   : request.method === 'session/new' ? {sessionId:'v1-session',models:{currentModelId:'local/chat',availableModels:[{modelId:'local/chat',name:'Chat'}]}}
-   : request.method === 'session/prompt' ? {stopReason:'end_turn'} : {};
- console.log(JSON.stringify({jsonrpc:'2.0',id:request.id,result}));
-});
+if (process.argv.includes('--version')) console.log('1.2.27');
 `, { mode: 0o700 });
   let control, owned;
   try {
@@ -298,13 +297,17 @@ require('node:readline').createInterface({input: process.stdin}).on('line', line
     } satisfies ProviderSessionConfig, 'chat');
     const events: ProviderExecutionEvent[] = [];
     for await (const event of owned.session.execute(turn('v1')).events) events.push(event);
-    expect(events.filter(event => event.type === 'execution_error')).toEqual([]);
-    expect(events.at(-1)?.type).toBe('turn_completed');
-    await f.plugin.executionLifecycleRegistry.runTransition(['opencode'], async () => {
-      f.plugin.settings.providerConfigs.opencode.environmentVariables += '\nV1_CHANGE=next';
-    });
-    expect(owned.isCurrent()).toBe(false);
-    expect(owned.session.getStatus()).toBe('disposed');
+    expect(events.find(event => event.type === 'execution_error'))
+      .toMatchObject({ message: expect.stringContaining('OpenCode v1 is no longer supported') });
+    expect(events.some(event => event.type === 'turn_completed')).toBe(false);
+    await expect(f.workspace.metadataService.discoverModels())
+      .resolves.toMatchObject({ changed: false, diagnostics: expect.stringContaining('OpenCode v1 is no longer supported') });
+    await expect(forkOpencodeSession({
+      cliPath: cliV1, cwd: f.root, environment: f.environment, sourceSessionId: 'source',
+      resolveServerService: async () => f.workspace.serverService,
+    })).rejects.toThrow('OpenCode v1 is no longer supported');
+    // The v1 CLI never launched a server; the retired v2 generation remains owned by its lease.
+    expect(f.processes()).toHaveLength(1);
     expect(isAlive(f.processes()[0].pid)).toBe(true);
   } finally { await owned?.release(); await control?.dispose(); await f.dispose(); }
 });
@@ -465,7 +468,7 @@ it('shares native history and fork operations with catalog and chat transport', 
     const history = opencodeProviderRegistration.historyService!;
     const conversation: any = { sessionId: native.data.id, messages: [], providerState: { nativeVersion: 2, databasePath: f.environment.OPENCODE_DB } };
     expect(await history.recoverConversationModelSelection!(conversation, f.root, { ...createProviderHistoryPathContext(f.plugin.settings, 'opencode', f.root), environment: { ...f.environment, PATH: process.env.PATH }, vaultPath: f.root })).toBe('opencode:local/chat');
-    const child = await forkOpencodeSession({ cliPath: f.cli, cwd: f.root, environment: f.environment, nativeVersion: 2, sourceSessionId: native.data.id, resolveServerService: async () => service });
+    const child = await forkOpencodeSession({ cliPath: f.cli, cwd: f.root, environment: f.environment, sourceSessionId: native.data.id, resolveServerService: async () => service });
     expect(child).not.toBe(native.data.id);
     expect(await lease.request(`/api/session/${child}`)).toMatchObject({ data: { id: child } });
     expect(f.processes()).toHaveLength(1);
@@ -693,7 +696,7 @@ async function createSideFixture() {
   const control = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
   const source = await control.request<{ data: { id: string } }>('/api/session', { method: 'POST', body: {} });
   const sourceState = { nativeVersion: 2, sessionId: source.data.id, databasePath: f.environment.OPENCODE_DB };
-  const capabilities = opencodeProviderRegistration.getConversationCapabilities?.(sourceState) ?? opencodeProviderRegistration.capabilities;
+  const capabilities = opencodeProviderRegistration.capabilities;
   const history = opencodeProviderRegistration.historyService;
   ProviderWorkspaceRegistry.setServices('opencode', f.workspace);
   const side = new SideChatSession({
@@ -712,13 +715,27 @@ async function createSideFixture() {
 
 it('retains a v2 side fork across turns and connection replacement, then deletes only the child on discard', async () => {
   const f = await createSideFixture();
+  const prompts = () => readFileSync(path.join(f.root, 'processes.prompts'), 'utf8').trim().split('\n')
+    .map(line => JSON.parse(line) as { sessionID: string; context: string[]; text: string });
+  const promptText = (text: string) => expect.stringContaining(text);
   try {
+    // The source's native context exists before the side chat forks it.
+    await f.control.request(`/api/session/${f.sourceId}/prompt`, { method: 'POST', body: { text: 'Remember A' } });
     expect(await f.send('first side turn')).toMatchObject({ status: 'completed' });
     const childId = f.side.providerSessionId!;
     expect(childId).not.toBe(f.sourceId);
+    expect(prompts().at(-1)).toEqual({ sessionID: childId, text: promptText('first side turn'), context: ['Remember A', 'Reply to Remember A'] });
     // Changed instructions replace the kernel, but must not delete the side session.
     expect(await f.send('second side turn')).toMatchObject({ status: 'completed' });
     expect(f.side.providerSessionId).toBe(childId);
+    const firstSide = prompts().at(-2)!.text;
+    expect(prompts().at(-1)).toEqual({
+      sessionID: childId, text: promptText('second side turn'),
+      context: ['Remember A', 'Reply to Remember A', firstSide, `Reply to ${firstSide}`],
+    });
+    // Side turns never enter the parent's native context.
+    await f.control.request(`/api/session/${f.sourceId}/prompt`, { method: 'POST', body: { text: 'Continue main' } });
+    expect(prompts().at(-1)).toEqual({ sessionID: f.sourceId, text: 'Continue main', context: ['Remember A', 'Reply to Remember A'] });
     expect(await f.control.request(`/api/session/${childId}`)).toMatchObject({ data: { id: childId } });
     await f.side.dispose();
     await f.side.dispose();
@@ -776,7 +793,7 @@ it('initializes the provider-owned service for early history and reuses it for l
     environment: { ...f.environment, PATH: process.env.PATH },
     ensureWorkspace: () => ProviderWorkspaceRegistry.ensureInitialized(f.plugin, 'opencode', 'history'),
   };
-  const previousSessions = [{ sessionId: 'ses_invalidated', databasePath: f.environment.OPENCODE_DB, nativeVersion: 1 }];
+  const previousSessions = [{ sessionId: 'ses_invalidated', databasePath: f.environment.OPENCODE_DB }];
   const conversation: any = { sessionId: 'source', messages: [], providerState: { nativeVersion: 2, databasePath: f.environment.OPENCODE_DB, previousSessions } };
   try {
     const history = opencodeProviderRegistration.historyService;
@@ -940,11 +957,16 @@ it('owns a late ephemeral creation response on its original generation across a 
 }, 10000);
 
 
-it.each(['v1', 'disabled'])('does not prewarm a server for %s OpenCode', async mode => {
+it.each([
+  ['v1', [expect.stringContaining('OpenCode v1 is no longer supported')]],
+  ['disabled', []],
+] as const)('does not prewarm a server for %s OpenCode', async (mode, rejections) => {
   const f = await createFixture(mode === 'v1' ? '1.18.31' : undefined);
   if (mode === 'disabled') f.plugin.settings.providerConfigs.opencode.enabled = false;
   try {
-    await f.workspace.startRuntime?.();
+    // An unsupported CLI rejects the prewarm; a disabled provider skips it.
+    const outcome = await f.workspace.startRuntime?.().then(() => [], (error: Error) => [error.message]);
+    expect(outcome).toEqual(rejections);
     expect(existsSync(f.log)).toBe(false);
   } finally { await f.dispose(); }
 });

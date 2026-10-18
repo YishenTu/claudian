@@ -8,7 +8,6 @@ import { PassThrough } from 'node:stream';
 
 import {
   loadOpencodeSessionRows,
-  OPENCODE_MESSAGE_ROW_SQL,
   type OpencodeSqliteReaderDependencies,
 } from '@/providers/opencode/history/OpencodeSqliteReader';
 
@@ -48,7 +47,7 @@ describe('loadOpencodeSessionRows', () => {
       requireSqliteModule: () => null,
       findNodeExecutables: () => [nodeWithoutSqlite, process.execPath],
       spawn,
-    })).resolves.toMatchObject({ partRows: [{ id: 'part-user' }] });
+    })).resolves.toMatchObject([{ id: 'msg-user' }]);
   });
 
   it('reports backend errors when SQLite cannot read the database', async () => {
@@ -63,7 +62,7 @@ describe('loadOpencodeSessionRows', () => {
       requireSqliteModule: () => null,
       findNodeExecutables: () => [process.execPath],
       spawn,
-    })).rejects.toThrow('no such table: message');
+    })).rejects.toThrow('no such table: session_message');
   });
 
   it('uses the supplied environment for external SQLite readers', async () => {
@@ -87,42 +86,25 @@ describe('loadOpencodeSessionRows', () => {
     await expect(loadOpencodeSessionRows(dbPath, 'ses-child', {
       findNodeExecutables: () => [process.execPath],
       requireSqliteModule: () => null,
-    })).resolves.toEqual({
-      messageRows: [{
-        data_time_completed: null,
-        data_time_created: 1_000,
-        data_valid: 1,
-        id: 'msg-user',
-        model_id: null,
-        provider_id: null,
-        role: 'user',
-        time_created: 1_000,
-      }],
-      partRows: [{
-        data: JSON.stringify({ text: 'Hello from child process.', type: 'text' }),
-        id: 'part-user',
-        message_id: 'msg-user',
-      }],
-    });
+    })).resolves.toEqual([{
+      data: JSON.stringify({ text: 'Hello from child process.', time: { created: 1_000 } }),
+      id: 'msg-user',
+      time_created: 1_000,
+      type: 'user',
+    }]);
   });
 
   it('uses a discovered Node executable before the system sqlite3 fallback', async () => {
     const spawn = createSpawnMock([{
       status: 0,
-      stdout: JSON.stringify({
-        messageRows: [{ id: 'msg-user' }],
-        partRows: [{ id: 'part-user' }],
-      }),
+      stdout: JSON.stringify([{ id: 'msg-user' }]),
     }]);
 
     await expect(loadOpencodeSessionRows('/tmp/opencode.db', 'ses-node', {
       findNodeExecutables: () => ['/usr/local/bin/node'],
       requireSqliteModule: () => null,
       spawn,
-    })).resolves.toEqual({
-      messageRows: [{ id: 'msg-user' }],
-      partRows: [{ id: 'part-user' }],
-    });
+    })).resolves.toEqual([{ id: 'msg-user' }]);
 
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(spawn).toHaveBeenCalledWith(
@@ -132,8 +114,7 @@ describe('loadOpencodeSessionRows', () => {
         expect.stringContaining("require('node:sqlite')"),
         '/tmp/opencode.db',
         'ses-node',
-        OPENCODE_MESSAGE_ROW_SQL,
-        expect.stringContaining('from part'),
+        expect.stringContaining('FROM session_message WHERE session_id = ?'),
       ],
       expect.objectContaining({
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -143,49 +124,25 @@ describe('loadOpencodeSessionRows', () => {
   });
 
   it('keeps sqlite3 as a buffered compatibility fallback', async () => {
-    const spawn = createSpawnMock([
-      {
-        status: 0,
-        stdout: JSON.stringify([{ id: 'msg-user' }]),
-      },
-      {
-        status: 0,
-        stdout: JSON.stringify([{ id: 'part-user' }]),
-      },
-    ]);
+    const spawn = createSpawnMock([{
+      status: 0,
+      stdout: JSON.stringify([{ id: 'msg-user' }]),
+    }]);
 
     await expect(loadOpencodeSessionRows('/tmp/opencode.db', 'ses-with-quote\'s', {
       findNodeExecutables: () => [],
       requireSqliteModule: () => null,
       spawn,
-    })).resolves.toEqual({
-      messageRows: [{ id: 'msg-user' }],
-      partRows: [{ id: 'part-user' }],
-    });
+    })).resolves.toEqual([{ id: 'msg-user' }]);
 
-    expect(spawn).toHaveBeenCalledTimes(2);
-    expect(spawn).toHaveBeenNthCalledWith(
-      1,
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn).toHaveBeenCalledWith(
       'sqlite3',
       [
         '-readonly',
         '-json',
         '/tmp/opencode.db',
-        expect.stringContaining("where session_id = 'ses-with-quote''s'"),
-      ],
-      expect.objectContaining({
-        stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true,
-      }),
-    );
-    expect(spawn).toHaveBeenNthCalledWith(
-      2,
-      'sqlite3',
-      [
-        '-readonly',
-        '-json',
-        '/tmp/opencode.db',
-        expect.stringContaining("where session_id = 'ses-with-quote''s'"),
+        expect.stringContaining("WHERE session_id = 'ses-with-quote''s'"),
       ],
       expect.objectContaining({
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -216,35 +173,14 @@ function createFixtureDatabase(tmpRoot: string): string {
   const dbPath = path.join(tmpRoot, 'opencode.db');
   const db = new DatabaseSync(dbPath);
   try {
-    db.exec(`
-      create table message (
-        id text primary key,
-        session_id text not null,
-        time_created integer not null,
-        data text not null
-      );
-      create table part (
-        id text primary key,
-        session_id text not null,
-        message_id text not null,
-        data text not null
-      );
-    `);
-
-    db.prepare('insert into message (id, session_id, time_created, data) values (?, ?, ?, ?)').run(
+    db.exec('CREATE TABLE session_message(id TEXT, session_id TEXT, seq INTEGER, type TEXT, time_created INTEGER, data TEXT)');
+    db.prepare('INSERT INTO session_message VALUES (?, ?, ?, ?, ?, ?)').run(
       'msg-user',
       'ses-child',
+      1,
+      'user',
       1_000,
-      JSON.stringify({
-        role: 'user',
-        time: { created: 1_000 },
-      }),
-    );
-    db.prepare('insert into part (id, session_id, message_id, data) values (?, ?, ?, ?)').run(
-      'part-user',
-      'ses-child',
-      'msg-user',
-      JSON.stringify({ text: 'Hello from child process.', type: 'text' }),
+      JSON.stringify({ text: 'Hello from child process.', time: { created: 1_000 } }),
     );
   } finally {
     db.close();

@@ -1,18 +1,9 @@
 import {
   extractACPSessionModelState,
   extractACPSessionThoughtLevelState,
-  resolveACPLoadSessionId,
 } from '../../../../src/providers/acp';
 
 describe('AcpSessionConfig', () => {
-  it('uses the requested id when session/load omits its compatibility id', () => {
-    expect(resolveACPLoadSessionId({}, 'saved-session')).toBe('saved-session');
-    expect(resolveACPLoadSessionId({ sessionId: 'saved-session' }, 'saved-session'))
-      .toBe('saved-session');
-    expect(() => resolveACPLoadSessionId({ sessionId: 'different-session' }, 'saved-session'))
-      .toThrow(/different session id/i);
-  });
-
   it('prefers grouped ACP config model options in order over session model metadata', () => {
     expect(extractACPSessionModelState({
       configOptions: [

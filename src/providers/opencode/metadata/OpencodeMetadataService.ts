@@ -1,23 +1,13 @@
-import { randomUUID } from 'node:crypto';
-
-import type { ProviderExecutionLifecycleRegistry, ProviderInteractionPort } from '@/core/execution';
+import type { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { OwnedProbeRegistry } from '@/core/providers/metadata/OwnedProbeRegistry';
 import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTransitionFence';
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import type { ProviderModelCatalogRefreshResult } from '@/core/providers/types';
 import type { SlashCommand } from '@/core/types';
-import { ACPSessionUpdateNormalizer } from '@/providers/acp';
 import { toAbortError } from '@/utils/abort';
 import { toError } from '@/utils/error';
 
-import type { OpencodeCommandCatalog } from '../commands/OpencodeCommandCatalog';
 import { decodeOpencodeConfig } from '../config';
-import {
-  DefaultOpencodeACPSessionKernel,
-  type OpencodeACPSessionKernel,
-  type OpencodeLaunchContext,
-  type OpencodeNativeSessionInfo,
-} from '../execution/OpencodeACPSessionKernel';
 import { OpencodeServerService } from '../http/OpencodeServerService';
 import { decodeOpencodeModelId } from '../models';
 import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
@@ -28,10 +18,7 @@ import {
 } from './OpencodeMetadataProjection';
 import { OpencodeV2MetadataProbe } from './OpencodeV2MetadataProbe';
 
-export interface OpencodeMetadataCatalogResult
-  extends OpencodeMetadataProjectionInput {
-  readonly commands: readonly SlashCommand[] | null;
-}
+export type OpencodeMetadataCatalogResult = OpencodeMetadataProjectionInput;
 
 export interface OpencodeMetadataWarmResult
   extends OpencodeMetadataProjectionInput {
@@ -41,7 +28,7 @@ export interface OpencodeMetadataWarmResult
 export interface OpencodeMetadataProbe {
   dispose(): Promise<void>;
   loadCatalog(signal?: AbortSignal): Promise<OpencodeMetadataCatalogResult>;
-  loadCommands?(signal?: AbortSignal): Promise<SlashCommand[] | null>;
+  loadCommands(signal?: AbortSignal): Promise<SlashCommand[]>;
   warmModel(
     rawModelId: string,
     signal?: AbortSignal,
@@ -49,7 +36,6 @@ export interface OpencodeMetadataProbe {
 }
 
 export interface OpencodeMetadataServiceOptions {
-  readonly commandCatalog?: Pick<OpencodeCommandCatalog, 'setNativeVersion'>;
   readonly serverService?: OpencodeServerService;
   readonly createProbe?: () => OpencodeMetadataProbe;
 }
@@ -79,12 +65,8 @@ export class OpencodeMetadataService {
       ?? (async (signal) => {
         const cliPath = await host.resolveCliPath() ?? 'opencode';
         const environment = buildOpencodeRuntimeEnv(host.environmentText, cliPath);
-        const version = await detectOpencodeNativeVersion(cliPath, environment);
+        await detectOpencodeNativeVersion(cliPath, environment);
         signal.throwIfAborted();
-        options.commandCatalog?.setNativeVersion(version);
-        if (version !== 2) return new DefaultOpencodeMetadataProbe(host, {
-          cliPath, version, environment: buildOpencodeRuntimeEnv(host.environmentText, cliPath, ':memory:'),
-        });
         return new OpencodeV2MetadataProbe(await this.serverService.acquire(cliPath, resolveVaultPath(host), environment, signal));
       });
     this.probes = new OwnedProbeRegistry({
@@ -131,11 +113,6 @@ export class OpencodeMetadataService {
     return true;
   }
 
-  async loadCommands(signal?: AbortSignal): Promise<SlashCommand[]> {
-    const result = await this.discoverCommands(signal);
-    return result.commands;
-  }
-
   async discoverCommands(
     signal?: AbortSignal,
   ): Promise<{ commands: SlashCommand[]; loaded: boolean }> {
@@ -147,12 +124,9 @@ export class OpencodeMetadataService {
     if (!flight) {
       const controller = new AbortController();
       const promise = this.#runProbe(async (probe, ownedSignal) => {
-        const snapshot = probe.loadCommands
-          ? await probe.loadCommands(ownedSignal)
-          : (await probe.loadCatalog(ownedSignal)).commands;
+        const commands = await probe.loadCommands(ownedSignal);
         ownedSignal.throwIfAborted();
-        if (snapshot === null) return { commands: [], loaded: false };
-        return { commands: snapshot.map(command => ({ ...command })), loaded: true };
+        return { commands: commands.map(command => ({ ...command })), loaded: true };
       }, controller.signal).then(result => result ?? { commands: [], loaded: false });
       flight = { promise, controller, consumers: 0 };
       this.commandFlight = flight;
@@ -280,155 +254,5 @@ export class OpencodeMetadataService {
   }
 }
 
-class DefaultOpencodeMetadataProbe implements OpencodeMetadataProbe {
-  private readonly normalizer = new ACPSessionUpdateNormalizer();
-  private commands: SlashCommand[] | null = null;
-  private kernel: OpencodeACPSessionKernel | null = null;
-  private native: OpencodeNativeSessionInfo | null = null;
-  private commandWaiter: (() => void) | null = null;
-
-  constructor(private readonly host: ProviderRuntimeHost, private readonly launchContext: OpencodeLaunchContext) {}
-
-  async loadCatalog(signal?: AbortSignal): Promise<OpencodeMetadataCatalogResult> {
-    const native = await this.#ensureOpen(signal);
-    if (!this.commands) {
-      await waitForCommands(
-        () => this.commands !== null,
-        (resolve) => {
-          this.commandWaiter = resolve;
-          return () => {
-            if (this.commandWaiter === resolve) this.commandWaiter = null;
-          };
-        },
-        signal,
-      );
-    }
-    return {
-      commands: this.commands,
-      configOptions: native.configOptions,
-      models: native.models,
-    };
-  }
-
-  async warmModel(
-    rawModelId: string,
-    signal?: AbortSignal,
-  ): Promise<OpencodeMetadataWarmResult> {
-    try {
-      const native = await this.#ensureOpen(signal);
-      signal?.throwIfAborted();
-      const response = await this.#requireKernel().setConfigOption({
-        configId: 'model',
-        sessionId: native.sessionId,
-        type: 'select',
-        value: rawModelId,
-      });
-      signal?.throwIfAborted();
-      return {
-        configOptions: response.configOptions,
-        models: native.models,
-        rawModelId,
-      };
-    } catch (error) {
-      await this.dispose();
-      throw error;
-    }
-  }
-
-  async dispose(): Promise<void> {
-    const kernel = this.kernel;
-    this.kernel = null;
-    this.native = null;
-    this.commands = null;
-    this.commandWaiter?.();
-    this.commandWaiter = null;
-    await kernel?.dispose();
-  }
-
-  async #ensureOpen(
-    signal?: AbortSignal,
-  ): Promise<OpencodeNativeSessionInfo> {
-    signal?.throwIfAborted();
-    if (this.native) return this.native;
-    const kernel = new DefaultOpencodeACPSessionKernel({
-      config: {
-        interactionPort: DENY_INTERACTION_PORT,
-        lifecycle: 'ephemeral',
-        nativePersistence: 'disabled-if-supported',
-        workingDirectory: resolveVaultPath(this.host),
-      },
-      databasePath: ':memory:',
-      getActiveTurnId: () => null,
-      onClosed: () => undefined,
-      onNotification: (notification) => {
-        let normalized;
-        try {
-          normalized = this.normalizer.normalize(notification.update);
-        } catch {
-          return;
-        }
-        if (normalized.type !== 'commands') return;
-        this.commands = normalized.commands.map((command) => ({ ...command }));
-        this.commandWaiter?.();
-      },
-      host: this.host,
-      sessionInstanceId: `metadata-${randomUUID()}`,
-    }, this.launchContext);
-    this.kernel = kernel;
-    await kernel.connect({
-      profile: 'passive',
-      // Metadata probes open a session but never prompt the model, so they carry no instructions.
-      systemPrompt: '',
-    });
-    signal?.throwIfAborted();
-    this.native = await kernel.openSession();
-    signal?.throwIfAborted();
-    return this.native;
-  }
-
-  #requireKernel(): OpencodeACPSessionKernel {
-    if (!this.kernel) throw new Error('OpenCode metadata probe is not connected');
-    return this.kernel;
-  }
-}
-
-const DENY_INTERACTION_PORT: ProviderInteractionPort = {
-  askUserQuestion: async ({ interactionId }) => ({
-    answers: null,
-    interactionId,
-  }),
-  dismissInteraction: () => undefined,
-  requestApproval: async ({ interactionId }) => ({
-    decision: 'deny',
-    interactionId,
-  }),
-};
-
-function resolveVaultPath(host: Pick<ProviderRuntimeHost, 'workingDirectory'>): string {
-  return host.workingDirectory || process.cwd();
-}
-
-function waitForCommands(
-  isReady: () => boolean,
-  subscribe: (resolve: () => void) => () => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  if (isReady()) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const finish = (error?: Error): void => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeout);
-      unsubscribe();
-      signal?.removeEventListener('abort', onAbort);
-      if (error) reject(error);
-      else resolve();
-    };
-    const unsubscribe = subscribe(() => finish());
-    const timeout = window.setTimeout(() => finish(), 5_000);
-    const onAbort = () => finish(new Error('OpenCode metadata probe aborted'));
-    signal?.addEventListener('abort', onAbort, { once: true });
-    if (signal?.aborted) onAbort();
-  });
+import type { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 }

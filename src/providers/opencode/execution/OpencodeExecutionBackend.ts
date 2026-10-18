@@ -7,13 +7,13 @@ import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 
 import type { OpencodeServerService } from '../http/OpencodeServerService';
 import {
-  type OpencodeACPSessionKernelFactory,
   OpencodeExecutionSession,
+  type OpencodeSessionKernelFactory,
 } from './OpencodeExecutionSession';
 
 export interface OpencodeExecutionBackendOptions {
   readonly serverService: OpencodeServerService;
-  readonly createKernel?: OpencodeACPSessionKernelFactory;
+  readonly createKernel?: OpencodeSessionKernelFactory;
 }
 
 export class OpencodeExecutionBackend implements ProviderExecutionBackend {

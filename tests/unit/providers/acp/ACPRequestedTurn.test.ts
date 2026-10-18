@@ -30,7 +30,6 @@ describe('ACPRequestedTurn', () => {
     });
 
     expect(metadata).toMatchObject({ type: 'commands' });
-    expect(turn.accepted).toBe(false);
     expect((await finishAndCollect(run)).map(event => event.type)).toEqual(['turn_completed']);
   });
 
@@ -60,20 +59,17 @@ describe('ACPRequestedTurn', () => {
     expect(events[0]).not.toHaveProperty('nativeUserMessageId');
   });
 
-  it.each([
-    [false, ['turn_completed']],
-    [true, ['turn_started', 'turn_completed']],
-  ])('treats a live update without events as acceptance only when configured (%s)', async (acceptsSilentUpdates, types) => {
-    const { run, turn } = createTurn({ acceptsSilentUpdates });
+  it('treats a live update without events as acceptance', async () => {
+    const { run, turn } = createTurn();
+    turn.handleUpdate({ entries: [], sessionUpdate: 'plan' });
     turn.beginLiveOutput();
-
     turn.handleUpdate({ entries: [], sessionUpdate: 'plan' });
 
-    expect((await finishAndCollect(run)).map(event => event.type)).toEqual(types);
+    expect((await finishAndCollect(run)).map(event => event.type)).toEqual(['turn_started', 'turn_completed']);
   });
 
   it('records context usage only while live output is accepted', () => {
-    const { turn } = createTurn({ resolveUsageModel: () => 'model-1' });
+    const { turn } = createTurn();
 
     turn.handleUpdate({ sessionUpdate: 'usage_update', size: 1000, used: 10 });
     expect(turn.contextUsage).toBeNull();

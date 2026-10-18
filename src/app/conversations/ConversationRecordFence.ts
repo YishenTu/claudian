@@ -6,7 +6,7 @@ import type { Conversation } from '@/core/types';
 /** Provider catalog lookups the conversation repository depends on. */
 export type ConversationProviderCatalog = Pick<
   typeof ProviderRegistry,
-  'getCapabilities' | 'getConversationHistoryService' | 'getRegisteredProviderIds'
+  'getConversationHistoryService' | 'getRegisteredProviderIds'
 >;
 
 /** Provider settings policy the conversation repository depends on. */

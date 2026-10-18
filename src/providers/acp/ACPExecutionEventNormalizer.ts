@@ -18,30 +18,10 @@ import {
   ACPSessionUpdateNormalizer,
 } from './ACPSessionUpdateNormalizer';
 import type { ACPToolStreamAdapter } from './ACPToolStreamAdapter';
-import type {
-  ACPToolCall,
-  ACPToolCallUpdate,
-  ACPUsageUpdate,
-} from './types';
-
-export type ACPExecutionTurnScopeSeed =
-  | Omit<ProviderRequestedEventScope, 'sequence'>
-  | {
-      readonly kind: 'background';
-      readonly sessionInstanceId: string;
-      readonly turnId: string;
-    };
-
-export interface ACPToolScopeContext {
-  readonly toolCallId: string;
-  readonly update: ACPToolCall | ACPToolCallUpdate;
-}
+import type { ACPUsageUpdate } from './types';
 
 export interface ACPExecutionEventNormalizerOptions {
-  readonly scope: ACPExecutionTurnScopeSeed;
-  readonly resolveToolScope?: (
-    context: ACPToolScopeContext,
-  ) => ToolExecutionScope;
+  readonly scope: Omit<ProviderRequestedEventScope, 'sequence'>;
   readonly mapUsage?: (usage: ACPUsageUpdate) => UsageInfo | null;
   readonly toolStreamAdapter?: ACPToolStreamAdapter;
 }
@@ -59,7 +39,6 @@ export type ACPNormalizedExecutionEvent =
 
 export interface ACPExecutionNormalizationResult {
   readonly events: readonly ACPNormalizedExecutionEvent[];
-  readonly ignored?: boolean;
   readonly metadata?: ACPNormalizedUpdate;
 }
 
@@ -72,7 +51,7 @@ export class ACPExecutionEventNormalizer {
 
   normalize(update: unknown): ACPExecutionNormalizationResult {
     if (this.disposed) {
-      return { events: [], ignored: true };
+      return { events: [] };
     }
 
     const normalized = this.normalizer.normalizeUnknown(update);
@@ -157,13 +136,7 @@ export class ACPExecutionEventNormalizer {
         });
       case 'tool_call':
       case 'tool_call_update': {
-        const update = normalized.type === 'tool_call'
-          ? normalized.toolCall
-          : normalized.toolCallUpdate;
-        const toolScope = this.options.resolveToolScope?.({
-          toolCallId: update.toolCallId,
-          update,
-        }) ?? { kind: 'main' };
+        const toolScope: ToolExecutionScope = { kind: 'main' };
         const streamChunks = normalized.type === 'tool_call'
           ? this.options.toolStreamAdapter?.normalizeToolCall(
             normalized.toolCall,

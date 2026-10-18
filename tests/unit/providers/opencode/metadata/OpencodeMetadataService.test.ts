@@ -1,10 +1,12 @@
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
+import type { OpencodeServerLease } from '@/providers/opencode/http/OpencodeServerService';
 import {
   type OpencodeMetadataProbe,
   OpencodeMetadataService,
   type OpencodeMetadataWarmResult,
 } from '@/providers/opencode/metadata/OpencodeMetadataService';
+import { OpencodeV2MetadataProbe } from '@/providers/opencode/metadata/OpencodeV2MetadataProbe';
 import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 
 function createPlugin(): any {
@@ -27,7 +29,6 @@ function createProbe(overrides: Partial<OpencodeMetadataProbe> = {}): OpencodeMe
   return {
     dispose: jest.fn(async () => undefined),
     loadCatalog: jest.fn(async () => ({
-      commands: [{ id: 'acp:review', name: 'review', content: '' }],
       configOptions: [],
       models: {
         availableModels: [{
@@ -37,6 +38,7 @@ function createProbe(overrides: Partial<OpencodeMetadataProbe> = {}): OpencodeMe
         currentModelId: 'anthropic/claude',
       },
     })),
+    loadCommands: jest.fn(async () => [{ id: 'acp:review', name: 'review', content: '' }]),
     warmModel: jest.fn(async (): Promise<OpencodeMetadataWarmResult> => ({
       configOptions: [{
         category: 'thought_level',
@@ -60,7 +62,7 @@ describe('OpencodeMetadataService', () => {
     const plugin = createPlugin();
     plugin.settings.providerConfigs.opencode.visibleModels = ['a/one', 'b/two', 'c/three'];
     const probe = createProbe({
-      loadCatalog: jest.fn(async () => ({ commands: [], models: { currentModelId: '', availableModels: ['a/one', 'b/two', 'c/three'].map(modelId => ({ modelId, name: modelId })) } })),
+      loadCatalog: jest.fn(async () => ({ models: { currentModelId: '', availableModels: ['a/one', 'b/two', 'c/three'].map(modelId => ({ modelId, name: modelId })) } })),
       warmModel: jest.fn(async rawModelId => {
         if (rawModelId === 'a/one') {
           plugin.settings.providerConfigs.opencode.visibleModels = ['a/one', 'b/two'];
@@ -88,9 +90,10 @@ describe('OpencodeMetadataService', () => {
     });
 
     await expect(service.loadCatalog()).resolves.toBe(true);
-    await expect(service.loadCommands()).resolves.toEqual([
-      { id: 'acp:review', name: 'review', content: '' },
-    ]);
+    await expect(service.discoverCommands()).resolves.toEqual({
+      commands: [{ id: 'acp:review', name: 'review', content: '' }],
+      loaded: true,
+    });
 
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([
       { label: 'Claude', rawId: 'anthropic/claude' },
@@ -247,7 +250,7 @@ it('does not replace catalog rows during command warmup', async () => {
   const host = createPlugin();
   host.settings.providerConfigs.opencode.discoveredModels = [{ rawId: 'old/model', label: 'Old model' }];
   const service = new OpencodeMetadataService(host, host.executionLifecycleRegistry, { createProbe });
-  await expect(service.loadCommands()).resolves.toHaveLength(1);
+  expect((await service.discoverCommands()).commands).toHaveLength(1);
   expect(getOpencodeProviderSettings(host.settings).discoveredModels).toEqual([{ rawId: 'old/model', label: 'Old model' }]);
   expect(host.updateConfig).not.toHaveBeenCalled();
   await service.dispose();
@@ -280,4 +283,25 @@ it.each(['catalog', 'warm', 'discovery', 'batch'] as const)('does not publish ca
   expect(getOpencodeProviderSettings(host.settings).thinkingOptionsByModel).toEqual({});
   expect(host.notifyProviderChatOptionsChanged).not.toHaveBeenCalled();
   await service.dispose();
+});
+
+it('publishes native models without reading the command catalog', async () => {
+  const host = createPlugin();
+  const routes: string[] = [];
+  const lease = {
+    signal: (signal?: AbortSignal) => signal ?? new AbortController().signal,
+    waitForActivation: async () => undefined,
+    request: async (route: string) => {
+      routes.push(route);
+      if (route !== '/api/model') throw new Error(`Unavailable route: ${route}`);
+      return { data: [{ id: 'chat', providerID: 'local', name: 'Chat', enabled: true }] };
+    },
+    dispose: async () => undefined,
+  } as unknown as OpencodeServerLease;
+  const service = new OpencodeMetadataService(host, { createProbe: () => new OpencodeV2MetadataProbe(lease) });
+  try {
+    await expect(service.loadCatalog()).resolves.toBe(true);
+    expect(getOpencodeProviderSettings(host.settings).discoveredModels).toEqual([{ rawId: 'local/chat', label: 'local/Chat' }]);
+    expect(routes).toEqual(['/api/model']);
+  } finally { await service.dispose(); }
 });

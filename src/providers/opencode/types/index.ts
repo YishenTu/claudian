@@ -1,15 +1,18 @@
 import type { Conversation, ForkSource } from '@/core/types';
 
+import type { OpencodeNativeVersion } from '../runtime/OpencodeVersion';
+
 /** A retired native session that remains readable history but is never resumed. */
 export interface OpencodePreviousSession {
   sessionId: string;
   databasePath?: string;
-  nativeVersion?: 1 | 2;
+  nativeVersion?: OpencodeNativeVersion;
 }
 
 export interface OpencodeProviderState extends Record<string, unknown> {
   databasePath?: string;
-  nativeVersion?: 1 | 2;
+  /** Present only for bindings created by OpenCode v2; legacy v1-era bindings are unstamped. */
+  nativeVersion?: OpencodeNativeVersion;
   sessionId?: string;
   forkSource?: ForkSource;
   nativeConversationContextEstablished?: boolean;
@@ -42,7 +45,7 @@ export function getOpencodeState(
       ),
     ),
   ) as OpencodeProviderState;
-  if (record.nativeVersion === 1 || record.nativeVersion === 2) parsed.nativeVersion = record.nativeVersion;
+  if (record.nativeVersion === 2) parsed.nativeVersion = 2;
   const databasePath = typeof record.databasePath === 'string'
     ? record.databasePath.trim()
     : '';
@@ -117,13 +120,10 @@ function getPreviousSessions(value: unknown): OpencodePreviousSession[] {
     const sessionId = typeof record.sessionId === 'string' ? record.sessionId.trim() : '';
     if (!sessionId) return [];
     const databasePath = typeof record.databasePath === 'string' ? record.databasePath.trim() : '';
-    const nativeVersion = record.nativeVersion === 1 || record.nativeVersion === 2
-      ? record.nativeVersion
-      : undefined;
     return [{
       sessionId,
       ...(databasePath ? { databasePath } : {}),
-      ...(nativeVersion ? { nativeVersion } : {}),
+      ...(record.nativeVersion === 2 ? { nativeVersion: 2 as const } : {}),
     }];
   });
 }
