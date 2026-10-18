@@ -302,6 +302,11 @@ describe('Pi event normalization', () => {
     // Peeps' model-facing header is not part of the result.
     expect(custom({ content: '[Peeps automated result — run-1 — answer]\nLine one\nLine two' }))
       .toEqual([{ content: 'Line one\nLine two', type: 'task_notification' }]);
+    // Results that finish together share one notice, each under its own header.
+    expect(custom({
+      content: '[Peeps automated result — run-1 — answer]\nFirst\n\n[Peeps automated result — run-2 — failed]\nSecond',
+      details: { owner: 'parent', results: [{ runId: 'run-1', seq: 1, status: 'answer' }, { runId: 'run-2', seq: 1, status: 'failed' }] },
+    })).toEqual([{ content: 'First\n\nSecond', type: 'task_notification' }]);
     expect(custom({ content: '[Peeps automated result — run-1 — no-answer]' }))
       .toEqual([{ content: '[Peeps automated result — run-1 — no-answer]', type: 'task_notification' }]);
     expect(custom({ content: 'Preface\n[Peeps automated result — run-1 — answer]\nBody' }))

@@ -76,7 +76,9 @@ describe('ProviderRegistry', () => {
     expect(ProviderRegistry.getSubagentAdapter('codex')).toMatchObject({
       protocol: 'lifecycle',
     });
-    expect(ProviderRegistry.getSubagentAdapter('pi')).toBeNull();
+    expect(ProviderRegistry.getSubagentAdapter('pi')).toMatchObject({
+      protocol: 'lifecycle',
+    });
 
     expect(claudeAdapter?.isSpawnTool('Agent')).toBe(true);
     expect(claudeAdapter?.isSpawnTool('Task')).toBe(false);

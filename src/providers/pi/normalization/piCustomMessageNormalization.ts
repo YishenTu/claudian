@@ -1,3 +1,5 @@
+import { parsePiPeepsResults } from './PiPeepsSubagents';
+
 /**
  * Display text of an extension custom message (`pi.sendMessage`), shared by live output and
  * history replay so both render the same notification. Empty means nothing to display.
@@ -5,16 +7,9 @@
 export function getPiCustomMessageDisplayText(message: Record<string, unknown>): string {
   if (message.display === false) return '';
   const text = getCustomMessageText(message.content);
-  return message.customType === PEEPS_RESULT_TYPE ? stripPeepsResultHeader(text) : text;
-}
-
-const PEEPS_RESULT_TYPE = 'peeps-result';
-// Peeps prefixes results with a model-facing `[Peeps automated result — <runId> — <status>]` line.
-const PEEPS_RESULT_HEADER = /^\[Peeps automated result — [^\]\n]+ — [^\]\n]+\]\n/;
-
-function stripPeepsResultHeader(text: string): string {
-  const body = text.replace(PEEPS_RESULT_HEADER, '');
-  return body.trim() ? body : text;
+  // Peeps prefixes each result with a model-facing `[Peeps automated result — <runId> — <status>]` line.
+  const body = parsePiPeepsResults(message)?.map(result => result.text).join('\n\n');
+  return body?.trim() ? body : text;
 }
 
 /** Text of a string or block content, joined as session history joins it. */

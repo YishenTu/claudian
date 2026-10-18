@@ -79,6 +79,7 @@ import {
   normalizePiRPCEvent,
   type PiEventNormalizationState,
 } from '../normalization/piEventNormalization';
+import { PiPeepsSubagents } from '../normalization/PiPeepsSubagents';
 import { buildPiUsageInfo } from '../runtime/buildPiUsageInfo';
 import type { PiExtensionUIRenderer } from '../runtime/PiExtensionUIBridge';
 import {
@@ -202,6 +203,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   #backgroundCounter = 0;
   /** Settled background turns still syncing native state before they publish completion. */
   readonly #settlingBackgroundTurns = new Set<BackgroundTurn>();
+  /** Peeps child answers arrive as later custom messages, outside the turn that started the work. */
+  readonly #peeps = new PiPeepsSubagents();
   /** Pi before 1.0 answers prompts without a disposition and never sends agent_settled. */
   #kernelSettlement: PiSettlementSignal | null = null;
   #kernelModel: string | null = null;
@@ -1001,6 +1004,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       this.#handleRequestedRpcEvent(active, event);
     } else {
       this.#handleBackgroundRpcEvent(event);
+    }
+    for (const subagent of this.#peeps.rpcEvent(event)) {
+      this.#emitSession({ type: 'subagent_updated', subagent });
     }
   }
 

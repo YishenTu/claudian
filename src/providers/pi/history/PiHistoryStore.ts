@@ -17,8 +17,10 @@ import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo, TurnStat
 import { createTurnStats, isTokenCount } from '../../../core/types';
 import { encodePiModelId } from '../models';
 import { getPiCustomMessageDisplayText } from '../normalization/piCustomMessageNormalization';
+import { PI_PEEPS_RUN_ENTRY_TYPE, PiPeepsSubagents } from '../normalization/PiPeepsSubagents';
 import {
   extractPiToolResultText,
+  extractPiToolTextContent,
   normalizePiToolInput,
   normalizePiToolName,
   normalizePiToolResultDetails,
@@ -583,7 +585,39 @@ function mapPiSessionEntries(
     }
   }
 
+  applyPiPeepsSubagents(entries, messages);
   return messages;
+}
+
+/** Peeps answers arrive after the turn that started the work; attach them to its tool call. */
+function applyPiPeepsSubagents(entries: PiSessionEntry[], messages: ChatMessage[]): void {
+  const peeps = new PiPeepsSubagents();
+  for (const entry of entries) {
+    const message = entry.message ?? entry.raw;
+    const timestamp = parseTimestamp(entry.raw.timestamp);
+    if (entry.type === 'custom_message') {
+      peeps.customMessage(entry.raw, timestamp);
+    } else if (entry.type === 'custom' && entry.raw.customType === PI_PEEPS_RUN_ENTRY_TYPE) {
+      peeps.runEntry(entry.raw.data);
+    } else if (isToolResultEntry(entry)) {
+      const toolCallId = getToolResultCallId(entry);
+      if (toolCallId) {
+        peeps.toolEnded(toolCallId, {
+          details: message.details,
+          isError: message.isError === true,
+          text: extractPiToolTextContent(message.content),
+        });
+      }
+    } else if (isAssistantMessageEntry(entry)) {
+      for (const toolCall of extractAssistantToolCalls(message.content ?? message.parts ?? message.blocks)) {
+        peeps.toolStarted(toolCall.id, toolCall.name, toolCall.input, timestamp);
+      }
+    }
+  }
+  for (const toolCall of messages.flatMap(message => message.toolCalls ?? [])) {
+    const subagent = peeps.get(toolCall.id);
+    if (subagent) toolCall.subagent = subagent;
+  }
 }
 
 /** Account on the resolved native branch; tool results never contribute usage. */

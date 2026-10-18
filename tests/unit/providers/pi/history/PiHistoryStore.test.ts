@@ -120,6 +120,56 @@ describe('PiHistoryStore', () => {
     expect(messages[1].assistantMessageId).toBe('a2');
   });
 
+  it('attaches Peeps answers and closures to the tool calls that started the work', () => {
+    const launched = (id: string) => ({ id, status: 'starting' });
+    const toolCall = (id: string, name: string, args: Record<string, unknown>) => ({ type: 'toolCall', id, name, arguments: args });
+    const toolResult = (id: string, parentId: string, toolCallId: string, details: Record<string, unknown>) => ({
+      type: 'message', id, parentId,
+      message: { role: 'toolResult', toolCallId, toolName: 'peeps', content: [{ type: 'text', text: JSON.stringify(details) }], details },
+    });
+    const content = [
+      { type: 'message', id: 'u1', parentId: null, message: { role: 'user', content: 'Delegate' } },
+      { type: 'message', id: 'a1', parentId: 'u1', message: { role: 'assistant', stopReason: 'toolUse', content: [
+        toolCall('t1', 'peeps_spawn', { task: 'Read notes', label: 'reader' }),
+        toolCall('t2', 'peeps_spawn', { task: 'Count files' }),
+        toolCall('t3', 'peeps_inspect', { id: 'run-1' }),
+      ] } },
+      toolResult('r1', 'a1', 't1', launched('run-1')),
+      toolResult('r2', 'r1', 't2', { ...launched('run-2'), label: 'counter' }),
+      toolResult('r3', 'r2', 't3', { id: 'run-1', status: 'working' }),
+      { type: 'message', id: 'a2', parentId: 'r3', message: { role: 'assistant', content: 'Spawned', stopReason: 'stop' } },
+      { type: 'custom', id: 'm1', parentId: 'a2', customType: 'peeps/run', data: { run: { id: 'run-2', status: 'failed', error: 'Child exited' } } },
+      { type: 'custom_message', id: 'c1', parentId: 'm1', customType: 'peeps-result', display: true,
+        content: '[Peeps automated result — run-1 — answer]\nNotes read',
+        details: { owner: 'parent', results: [{ runId: 'run-1', seq: 1, status: 'answer' }] } },
+      { type: 'message', id: 'a3', parentId: 'c1', message: { role: 'assistant', stopReason: 'toolUse', content: [
+        toolCall('t4', 'peeps_send', { id: 'run-1', message: 'Summarize them' }),
+      ] } },
+      toolResult('r4', 'a3', 't4', { id: 'run-1', status: 'working' }),
+      { type: 'message', id: 'a4', parentId: 'r4', message: { role: 'assistant', content: 'Asked', stopReason: 'stop' } },
+      // A repeated notice of an applied report must not answer later work.
+      { type: 'custom_message', id: 'c2', parentId: 'a4', customType: 'peeps-result', display: true,
+        content: '[Peeps automated result — run-1 — answer]\nNotes read',
+        details: { owner: 'parent', results: [{ runId: 'run-1', seq: 1, status: 'answer' }] } },
+    ].map(entry => JSON.stringify(entry)).join('\n');
+
+    const subagents = Object.fromEntries(parsePiSessionContent(content)
+      .flatMap(message => message.toolCalls ?? [])
+      .map(tool => [tool.id, tool.subagent && {
+        agentId: tool.subagent.agentId,
+        description: tool.subagent.description,
+        prompt: tool.subagent.prompt,
+        result: tool.subagent.result,
+        status: tool.subagent.status,
+      }]));
+    expect(subagents).toEqual({
+      t1: { agentId: 'run-1', description: 'reader', prompt: 'Read notes', result: 'Notes read', status: 'completed' },
+      t2: { agentId: 'run-2', description: 'counter', prompt: 'Count files', result: 'Child exited', status: 'error' },
+      t3: undefined,
+      t4: { agentId: 'run-1', description: 'reader', prompt: 'Summarize them', result: undefined, status: 'running' },
+    });
+  });
+
   it('parses linear user and assistant messages', () => {
     const content = [
       JSON.stringify({ type: 'session', id: 's1' }),
