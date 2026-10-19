@@ -126,7 +126,7 @@ export function createPiSettingsTabRenderer(
         validate: validateCLIPath,
       });
 
-      new Setting(container).setName('Models').setHeading();
+      new Setting(container).setName('Models').setDesc(t('settings.pi.models.desc')).setHeading();
       const modelPicker = renderProviderModelsSection(container, 'pi', 'Pi', workspace.modelCatalog, () => modelWarning.refresh());
 
       renderEnvironmentSettingsSection({

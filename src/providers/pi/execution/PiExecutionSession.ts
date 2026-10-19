@@ -961,7 +961,16 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     if (!modelPayload || !this.kernel) {
       throw new PiConfigurationError('The selected Pi model is invalid.');
     }
-    await this.kernel.request('set_model', modelPayload, undefined, signal);
+    try {
+      await this.kernel.request('set_model', modelPayload, undefined, signal);
+    } catch (error) {
+      // Pi only offers models whose provider is authenticated in its current environment.
+      if (!(error instanceof PiRPCResponseError)) throw error;
+      throw new PiConfigurationError(
+        `Pi cannot use ${modelPayload.provider}/${modelPayload.modelId} in its current environment (${error.message}). `
+        + 'Open Claudian settings → Pi, click Discover, and choose an available model.',
+      );
+    }
     this.#kernelModel = encoded.model;
     if (encoded.thinkingLevel) {
       await this.kernel.request(

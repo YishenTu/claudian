@@ -701,6 +701,9 @@
       "environment": {
         "name": "Pi 환경 변수",
         "desc": "Pi에만 전달되는 환경 변수입니다."
+      },
+      "models": {
+        "desc": "Claudian은 Pi의 enabledModels와 별도로 자체 모델 목록을 유지합니다. Discover는 Pi가 현재 환경에서 인증할 수 있는 모든 모델을 Pi가 호출할 제공자 경로별로 표시합니다. 경로에 따라 자격 증명과 청구가 결정됩니다."
       }
     },
     "grok": {

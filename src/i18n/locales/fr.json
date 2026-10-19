@@ -701,6 +701,9 @@
       "environment": {
         "name": "Variables d'environnement Pi",
         "desc": "Variables d'environnement transmises uniquement à Pi."
+      },
+      "models": {
+        "desc": "Claudian conserve sa propre liste de modèles, distincte des enabledModels de Pi. Discover liste tous les modèles que Pi peut authentifier dans son environnement actuel, regroupés par la route de fournisseur que Pi appellera. La route détermine les identifiants et la facturation."
       }
     },
     "grok": {

@@ -701,6 +701,9 @@
       "environment": {
         "name": "Pi 环境变量",
         "desc": "仅传递给 Pi 的环境变量。"
+      },
+      "models": {
+        "desc": "Claudian 维护独立于 Pi enabledModels 的模型列表。Discover 会列出 Pi 在当前环境中可认证的所有模型，并按 Pi 实际调用的提供商路由分组。路由决定凭据和计费。"
       }
     },
     "grok": {

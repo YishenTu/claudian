@@ -701,6 +701,9 @@
       "environment": {
         "name": "Pi 環境変数",
         "desc": "Pi にのみ渡す環境変数。"
+      },
+      "models": {
+        "desc": "Claudian は Pi の enabledModels とは別に独自のモデル一覧を保持します。Discover は Pi が現在の環境で認証できるすべてのモデルを、Pi が呼び出すプロバイダールートごとに表示します。ルートによって認証情報と課金が決まります。"
       }
     },
     "grok": {

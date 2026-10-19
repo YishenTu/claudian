@@ -701,6 +701,9 @@
       "environment": {
         "name": "Pi-Umgebungsvariablen",
         "desc": "Umgebungsvariablen, die nur an Pi übergeben werden."
+      },
+      "models": {
+        "desc": "Claudian führt eine eigene Modellliste, getrennt von Pis enabledModels. „Discover“ listet alle Modelle, die Pi in seiner aktuellen Umgebung authentifizieren kann, gruppiert nach der Provider-Route, die Pi aufruft. Die Route bestimmt Zugangsdaten und Abrechnung."
       }
     },
     "grok": {

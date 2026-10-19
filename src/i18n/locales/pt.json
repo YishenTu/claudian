@@ -701,6 +701,9 @@
       "environment": {
         "name": "Variáveis de ambiente do Pi",
         "desc": "Variáveis de ambiente passadas somente ao Pi."
+      },
+      "models": {
+        "desc": "O Claudian mantém sua própria lista de modelos, separada dos enabledModels do Pi. Discover lista todos os modelos que o Pi consegue autenticar no ambiente atual, agrupados pela rota de provedor que o Pi chamará. A rota determina as credenciais e a cobrança."
       }
     },
     "grok": {

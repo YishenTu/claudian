@@ -701,6 +701,9 @@
       "environment": {
         "name": "Pi environment variables",
         "desc": "Environment variables passed only to Pi."
+      },
+      "models": {
+        "desc": "Claudian keeps its own model list, separate from Pi's enabledModels. Discover lists every model Pi can authenticate in its current environment, grouped by the provider route Pi will call. The route determines credentials and billing."
       }
     },
     "grok": {

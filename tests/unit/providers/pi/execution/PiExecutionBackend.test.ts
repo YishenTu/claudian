@@ -2069,6 +2069,23 @@ describe('PiExecutionBackend', () => {
     await harness.session.dispose();
   });
 
+  it('reports a saved model the current Pi environment rejects as an actionable configuration error', async () => {
+    const harness = createHarness(createConfig(), undefined, async <T>(type: string): Promise<T> => {
+      if (type === 'set_model') {
+        throw new PiRPCResponseError(type, 'Model not found: anthropic/claude-sonnet-4');
+      }
+      return harness.responses.get(type) as T;
+    });
+    const events = await collect(harness.session.execute(createRequest()).events);
+    expect(events.at(-1)).toMatchObject({
+      category: 'configuration',
+      message: expect.stringMatching(/anthropic\/claude-sonnet-4[\s\S]*Model not found[\s\S]*click Discover/),
+      type: 'execution_error',
+    });
+    expect(harness.kernels[0].requests.some(request => request.type === 'prompt')).toBe(false);
+    await harness.session.dispose();
+  });
+
   it('rejects steering after the active model is deselected', async () => {
     const harness = createHarness();
     const session = harness.session;
