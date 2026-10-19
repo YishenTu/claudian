@@ -3,7 +3,7 @@ import type {
   Thread,
   ThreadForkResult,
   ThreadResumeResult,
-  ThreadRollbackResult,
+  ThreadRevertResult,
   ThreadStartResult,
 } from '@/providers/codex/runtime/codexAppServerTypes';
 import type { CodexRPCTransport } from '@/providers/codex/runtime/CodexRPCTransport';
@@ -271,7 +271,7 @@ export class CodexThreadBinder {
         lastTurnId: fork.resumeAt,
         ...this.#threadConfig(request, withLegacyToolInstructions(request.baseInstructions)),
         persistExtendedHistory: false,
-      } : {});
+      } : { lastTurnId: fork.resumeAt });
     }
 
     if (!isCurrent()) {
@@ -305,20 +305,21 @@ export class CodexThreadBinder {
     if (checkpointIndex < 0) {
       throw new Error(`Fork checkpoint not found: ${fork.resumeAt}`);
     }
-    const rollbackCount = resumeResult.thread.turns.length - checkpointIndex - 1;
-    if (rollbackCount > 0) {
-      const rollbackResult = await transport.request<ThreadRollbackResult>(
-        'thread/rollback',
+    // Children adopted before thread/fork received lastTurnId still carry later turns.
+    const firstLaterTurn = resumeResult.thread.turns[checkpointIndex + 1];
+    if (firstLaterTurn) {
+      const revertResult = await transport.request<ThreadRevertResult>(
+        'thread/revert',
         {
           threadId: target.threadId,
-          numTurns: rollbackCount,
+          beforeTurnId: firstLaterTurn.id,
         },
       );
       if (!isCurrent()) {
-        throw new Error('Codex fork setup was interrupted while rolling back the child.');
+        throw new Error('Codex fork setup was interrupted while reverting the child.');
       }
-      if (rollbackResult.thread.id !== target.threadId) {
-        throw new Error('Codex rolled back a different thread than the owned fork target.');
+      if (revertResult.thread.id !== target.threadId) {
+        throw new Error('Codex reverted a different thread than the owned fork target.');
       }
     }
 

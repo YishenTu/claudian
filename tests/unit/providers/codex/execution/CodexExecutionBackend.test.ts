@@ -2638,7 +2638,7 @@ describe('CodexExecutionBackend', () => {
     });
   });
 
-  it('forks, resumes, and rolls back to the requested checkpoint before executing', async () => {
+  it('forks, resumes, and reverts an adopted child to the requested checkpoint before executing', async () => {
     let turnAttempt = 0;
     mockTransportRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
@@ -2661,7 +2661,7 @@ describe('CodexExecutionBackend', () => {
           { id: 'later-turn' },
         ]);
       }
-      if (method === 'thread/rollback') return createThreadResult('thread-fork');
+      if (method === 'thread/revert') return createThreadResult('thread-fork');
       if (method === 'turn/start') {
         turnAttempt += 1;
         if (turnAttempt === 2) {
@@ -2695,12 +2695,12 @@ describe('CodexExecutionBackend', () => {
       'initialize',
       'thread/fork',
       'thread/resume',
-      'thread/rollback',
+      'thread/revert',
       'turn/start',
     ]);
     expect(mockTransportRequest).toHaveBeenCalledWith(
-      'thread/rollback',
-      { threadId: 'thread-fork', numTurns: 1 },
+      'thread/revert',
+      { threadId: 'thread-fork', beforeTurnId: 'later-turn' },
     );
     // The child inherits a source thread whose dependency-tool generation is unknown.
     expect(mockTransportRequest).toHaveBeenCalledWith('thread/resume', expect.objectContaining({
@@ -2774,13 +2774,13 @@ describe('CodexExecutionBackend', () => {
   it.each([
     ['checkpoint validation', 'checkpoint'] as const,
     ['thread resume', 'resume'] as const,
-    ['thread rollback', 'rollback'] as const,
+    ['thread revert', 'revert'] as const,
   ])(
     'retains one fork target across %s failure and retries its materialization',
     async (_description, failureBoundary) => {
       let forkCount = 0;
       let resumeCount = 0;
-      let rollbackCount = 0;
+      let revertCount = 0;
       mockTransportRequest.mockImplementation(async (method: string) => {
         if (method === 'initialize') {
           return {
@@ -2809,15 +2809,15 @@ describe('CodexExecutionBackend', () => {
             'thread-fork-target',
             failureBoundary === 'checkpoint' && resumeCount === 1
               ? [{ id: 'different-checkpoint' }]
-              : failureBoundary === 'rollback' && resumeCount > 1
+              : failureBoundary === 'revert' && resumeCount > 1
               ? [{ id: 'checkpoint' }]
               : [{ id: 'checkpoint' }, { id: 'later-turn' }],
           );
         }
-        if (method === 'thread/rollback') {
-          rollbackCount += 1;
-          if (failureBoundary === 'rollback' && rollbackCount === 1) {
-            throw new Error('rollback response lost after apply');
+        if (method === 'thread/revert') {
+          revertCount += 1;
+          if (failureBoundary === 'revert' && revertCount === 1) {
+            throw new Error('revert response lost after apply');
           }
           return createThreadResult('thread-fork-target', [{ id: 'checkpoint' }]);
         }
@@ -2840,7 +2840,7 @@ describe('CodexExecutionBackend', () => {
             ? /checkpoint not found/i
             : failureBoundary === 'resume'
               ? /resume rejected/i
-          : /rollback response lost/i,
+          : /revert response lost/i,
         ),
       });
       expectPendingForkOwnershipEvent(failedEvents);
@@ -2864,7 +2864,7 @@ describe('CodexExecutionBackend', () => {
       expect(retryEvents.at(-1)).toMatchObject({ type: 'turn_completed' });
       expect(forkCount).toBe(1);
       expect(resumeCount).toBeGreaterThanOrEqual(1);
-      expect(rollbackCount).toBe(1);
+      expect(revertCount).toBe(1);
       expect(session.getSnapshot()).toMatchObject({
         providerSessionId: 'thread-fork-target',
         providerState: {
@@ -2915,7 +2915,7 @@ describe('CodexExecutionBackend', () => {
             { id: 'later-turn' },
           ]);
       }
-      if (method === 'thread/rollback') {
+      if (method === 'thread/revert') {
         return createThreadResult('thread-fork-target', [{ id: 'checkpoint' }]);
       }
       if (method === 'turn/start') {
@@ -2986,7 +2986,7 @@ describe('CodexExecutionBackend', () => {
             { id: 'later-turn' },
           ]);
       }
-      if (method === 'thread/rollback') {
+      if (method === 'thread/revert') {
         return createThreadResult('thread-fork-target', [{ id: 'checkpoint' }]);
       }
       if (method === 'turn/start') {
@@ -3066,7 +3066,7 @@ describe('CodexExecutionBackend', () => {
             { id: 'later-turn' },
           ]);
       }
-      if (method === 'thread/rollback') {
+      if (method === 'thread/revert') {
         return createThreadResult('thread-fork-target', [{ id: 'checkpoint' }]);
       }
       if (method === 'turn/start') {
@@ -3140,7 +3140,7 @@ describe('CodexExecutionBackend', () => {
             { id: 'later-turn' },
           ]);
         }
-        if (method === 'thread/rollback') {
+        if (method === 'thread/revert') {
           return createThreadResult('thread-fork-target', [{ id: 'checkpoint' }]);
         }
         if (method === 'turn/start') {

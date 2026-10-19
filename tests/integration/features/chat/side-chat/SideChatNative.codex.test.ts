@@ -42,11 +42,6 @@ function createNativeCodex(env: ForkTestEnvironment) {
       return result('codex-child');
     }
     if (method === 'thread/resume') return result(params.threadId);
-    if (method === 'thread/rollback') {
-      const turns = threads.get(params.threadId)!;
-      turns.splice(turns.length - params.numTurns);
-      return result(params.threadId);
-    }
     if (method === 'turn/start') {
       const id = `codex-turn-${++ordinal}`;
       const itemId = `msg_codex-${ordinal}`;

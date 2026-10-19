@@ -1,6 +1,7 @@
 // Local protocol subset for Codex app-server stdio JSON-RPC.
 // Field names match the wire format (camelCase).
 // Validated against the generated codex-cli 0.144.5 schema on 2026-07-16.
+// `thread/revert` (which replaced `thread/rollback`) validated against codex-cli 0.163.0 on 2026-10-19.
 
 // ---------------------------------------------------------------------------
 // JSON-RPC base
@@ -445,7 +446,7 @@ export type ThreadResumeResult = ThreadStartResult;
 
 export type ThreadForkResult = ThreadStartResult;
 
-export interface ThreadRollbackResult {
+export interface ThreadRevertResult {
   thread: Thread;
 }
 
