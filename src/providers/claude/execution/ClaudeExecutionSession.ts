@@ -13,6 +13,7 @@ import {
   type ChatRewindPreview,
   type ChatRewindResult,
   type ProviderBackgroundEventScope,
+  type ProviderBackgroundTurnCompletionReason,
   type ProviderExecutionEvent,
   type ProviderExecutionRequest,
   type ProviderExecutionRun,
@@ -1099,12 +1100,13 @@ ClaudeExecutionStrategySink {
   #finishCancelledBackground(queryToken: number): boolean {
     if (this.cancelledBackgroundQueryToken !== queryToken) return false;
     this.cancelledBackgroundQueryToken = null;
-    this.#finishBackgroundTurn('provider-ended');
+    // Native interrupt records `[Request interrupted by user]` after the reply, which history replays.
+    this.#finishBackgroundTurn('interrupted');
     return true;
   }
 
   #finishBackgroundTurn(
-    reason: 'completed' | 'provider-ended',
+    reason: ProviderBackgroundTurnCompletionReason,
   ): void {
     const background = this.backgroundTurn;
     if (!background) return;

@@ -12,6 +12,7 @@ import { resolveToolDiffData } from '@/core/tools/toolDiff';
 import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
 import { isWriteEditTool, TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo } from '../../../core/types';
+import { linkInterruptedTurnSegments } from '../../../core/types';
 import { encodeOpencodeModelId } from '../models';
 import {
   normalizeOpencodeToolInput,
@@ -604,6 +605,22 @@ function getNestedNumber(
   return getNumber(current);
 }
 
+/**
+ * A stopped turn is one response with no completion: its replies after the last
+ * prompt, across compaction, are chained as the shared layout groups them, lose
+ * their timing, and the last carries the interrupt; or the marker stands in for
+ * a reply that never started.
+ */
+function markInterruptedTurn(messages: ChatMessage[], turnStart: number, marker: ChatMessage): void {
+  const turn = messages.slice(turnStart);
+  const replies = turn.slice(turn.findLastIndex(message => message.role === 'user') + 1)
+    .filter(message => message.role === 'assistant' && !isOpencodeHydrationDiagnosticMessage(message));
+  linkInterruptedTurnSegments(replies);
+  const last = replies.at(-1);
+  if (last) last.isInterrupt = true;
+  else if (turn.some(message => message.role === 'user')) messages.push(marker);
+}
+
 /** v2 control entries delimit turns even when they have no chat presentation. */
 export function mapOpencodeV2Messages(
   rows: StoredRow[],
@@ -627,6 +644,8 @@ function mapV2Messages(
   let segment: ChatMessage[] = [];
   const stats = new OpencodeTurnStats();
   let previousAssistant: ChatMessage | undefined;
+  // Compaction flushes segments mid-turn; only an idle entry ends the turn.
+  let turnStart = 0;
   const flush = () => {
     result.push(...mergeAdjacentAssistantMessages(segment));
     segment = [];
@@ -644,6 +663,16 @@ function mapV2Messages(
     }
     if (row.type !== 'user' && row.type !== 'assistant') {
       flush();
+      if (row.type === 'idle') {
+        // The idle entry's outcome is the turn's authority: a step can abort and still resume.
+        if (data.outcome === 'interrupted') {
+          markInterruptedTurn(result, turnStart, {
+            id: getString(row.id) ?? `opencode-interrupt-${result.length}`, role: 'assistant', content: '',
+            timestamp: getMessageCreatedAt({ ...data, time_created: row.time_created }) ?? Date.now(), isInterrupt: true,
+          });
+        }
+        turnStart = result.length;
+      }
       if (row.type === 'compaction' && data.status === 'completed' && typeof row.id === 'string') {
         result.push({
           id: row.id, role: 'assistant', content: '',

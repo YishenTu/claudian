@@ -643,7 +643,9 @@ it.each(['error', 'blocked', 'aborted'])('withdraws a queued request retained af
   expect(peer.calls.filter(c => c.method === 'session/updateQueue')).toHaveLength(1);
   expect(inbox).toEqual([]);
   expect(peer.calls.some(c => c.method === 'session/cancel' || c.method === 'job/kill')).toBe(false);
-  expect(sessionEvents.filter(e => e.type === 'background_turn_completed')).toHaveLength(1);
+  // A stopped automatic turn ends interrupted, as its history replays it.
+  expect(sessionEvents.filter(e => e.type === 'background_turn_completed'))
+    .toMatchObject([{ reason: kind === 'aborted' ? 'interrupted' : 'provider-ended' }]);
   await until(() => session.getStatus() === 'idle');
   expect(session.hasBackgroundWork?.()).toBe(true);
   const retry = session.execute(request('retry')); const retried: ProviderExecutionEvent[] = [];

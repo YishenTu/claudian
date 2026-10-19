@@ -453,6 +453,7 @@ describe('MainTurnExecution', () => {
       await fixture.controller.handleExecutionEvent({
         type: 'text_delta',
         text: 'world',
+        scope: { kind: 'requested', sessionInstanceId: 'native', executionId: 'execution', turnId: 'turn', sequence: 1 },
       } as ProviderExecutionEvent);
       return { accepted: true, status: 'completed' };
     });

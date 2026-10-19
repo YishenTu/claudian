@@ -65,6 +65,8 @@ interface StoredTool {
 
 interface PendingTurn {
   assistantContent: string;
+  /** Native `stop_reason: cancelled`: the user stopped the turn. */
+  interrupted?: boolean;
   durationSeconds?: number;
   completedAt?: number;
   assistantId?: string;
@@ -273,6 +275,7 @@ export function createGrokHistoryParser(
     if (updateType === 'turn_completed') {
       const completedAt = normalizeTimestamp(record.timestamp);
       const stopReason = readString(update.stop_reason) ?? readString(update.stopReason);
+      pending.interrupted = stopReason === 'cancelled';
       if (stopReason !== 'cancelled' && stopReason !== 'error'
         && Number.isFinite(pending.startedAt) && pending.startedAt > 0
         && Number.isFinite(completedAt) && completedAt >= pending.startedAt) {
@@ -519,7 +522,10 @@ function finalizeTurn(
   };
 
   if (!turn.assistantContent && turn.blocks.length === 0 && turn.tools.size === 0) {
-    return [user];
+    // A turn stopped before any output keeps a bare marker, as the live Stop renders it.
+    return turn.interrupted
+      ? [user, { id: assistantId, role: 'assistant', content: '', timestamp: turn.startedAt, isInterrupt: true }]
+      : [user];
   }
   const toolCalls = turn.toolOrder.flatMap((id) => {
     const tool = turn.tools.get(id);
@@ -560,6 +566,7 @@ function finalizeTurn(
     content: turn.assistantContent,
     completedAt: turn.completedAt,
     ...(turn.durationSeconds !== undefined ? { durationSeconds: turn.durationSeconds } : {}),
+    ...(turn.interrupted ? { isInterrupt: true } : {}),
     ...(turn.blocks.length > 0 ? { contentBlocks: turn.blocks } : {}),
     id: assistantId,
     role: 'assistant',

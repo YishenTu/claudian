@@ -24,6 +24,7 @@ export {
   type ProviderBackgroundEventScope,
   type ProviderBackgroundOutputEvent,
   type ProviderBackgroundTurnCompletedEvent,
+  type ProviderBackgroundTurnCompletionReason,
   type ProviderBackgroundTurnStartedEvent,
   type ProviderCancelledEvent,
   type ProviderCitationsEvent,

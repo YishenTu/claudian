@@ -5,6 +5,7 @@ import { createTabSession } from '@test/helpers/ConversationPorts';
 import { enqueueTabSessionEvent } from '@test/helpers/features/chat/SessionEventsHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
+import { fireEvent, within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
@@ -19,6 +20,7 @@ import { StreamController } from '@/features/chat/turns/StreamController';
 import { CodexSubagentTracker } from '@/providers/codex/execution/CodexSubagentTracker';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 
+HTMLElement.prototype.appendText = function (text) { this.append(document.createTextNode(text)); };
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
 HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
@@ -239,4 +241,32 @@ it('flushes pending Codex child progress with the next direct save and does not 
   } finally {
     await view.dispose();
   }
+});
+
+it('keeps the next turn\'s notification out of a stopped automatic turn rendered after it through the session queue', async () => {
+  const view = await createCodexChildTab();
+  try {
+    const native = view.backend.latest;
+    native.emitSessionEvent({ type: 'task_notification', content: 'First job finished.' });
+    native.emitBackgroundEvent({ type: 'background_turn_started' }, 'first');
+    native.emitBackgroundEvent({ type: 'text_delta', text: 'First reply.' }, 'first');
+    native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'interrupted' }, 'first');
+    // Received after the stopped turn ended: notifications render ahead of its queued completion.
+    native.emitSessionEvent({ type: 'task_notification', content: 'Second job finished.' });
+    native.emitBackgroundEvent({ type: 'background_turn_started' }, 'second');
+    native.emitBackgroundEvent({ type: 'text_delta', text: 'Second reply.' }, 'second');
+    native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed' }, 'second');
+    await view.settle();
+
+    const second = view.state.messages.find(message => message.contentBlocks?.some(block =>
+      block.type === 'task_notification' && block.content === 'Second job finished.'))!;
+    expect(second.isInterrupt).toBeUndefined();
+    const header = within(view.messagesEl).getByRole('button', { name: 'Interrupted · What should Claudian do instead?' });
+    const history = document.getElementById(header.getAttribute('aria-controls')!)!;
+    fireEvent.click(header);
+    expect(history.textContent).toContain('First reply.');
+    expect(history.textContent).not.toContain('Task notification');
+    expect(within(view.messagesEl).getAllByRole('button', { name: 'Task notification' })).toHaveLength(2);
+    expect(within(view.messagesEl).getByText('Second reply.').closest('[hidden]')).toBeNull();
+  } finally { await view.dispose(); }
 });

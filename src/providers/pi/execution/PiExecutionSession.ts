@@ -21,6 +21,7 @@ import {
   type ConversationBranchState,
   type ProviderBackgroundEventScope,
   type ProviderBackgroundOutputEvent,
+  type ProviderBackgroundTurnCompletionReason,
   type ProviderExecutionErrorCategory,
   type ProviderExecutionRequest,
   type ProviderExecutionRun,
@@ -1327,12 +1328,13 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     if (usage && this.#settlingBackgroundTurns.has(background)) {
       this.#emitBackground(background, { type: 'usage_updated', usage });
     }
-    this.#completeBackgroundTurn(background, background.cancelling ? 'provider-ended' : 'completed');
+    // Pi settles a Stop as an `aborted` reply, which history replays as interrupted.
+    this.#completeBackgroundTurn(background, background.cancelling ? 'interrupted' : 'completed');
   }
 
   #completeBackgroundTurn(
     background: BackgroundTurn,
-    reason: 'completed' | 'provider-ended',
+    reason: ProviderBackgroundTurnCompletionReason,
   ): void {
     if (this.#backgroundTurn === background) {
       this.#backgroundTurn = null;

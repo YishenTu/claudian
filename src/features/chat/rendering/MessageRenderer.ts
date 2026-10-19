@@ -9,7 +9,13 @@ import { MarkdownContentRenderer, type RenderContentOptions } from '@/features/c
 import { type MessageActionCallbacks, MessageActions } from '@/features/chat/rendering/MessageActions';
 import { getResponseSegments } from '@/features/chat/rendering/NotificationBoundaries';
 import { ResponseFinalizer } from '@/features/chat/rendering/ResponseFinalizer';
-import { createResponseTextBlock } from '@/features/chat/rendering/ResponseLayout';
+import {
+  appendInterruptLabel,
+  createResponseTextBlock,
+  isFoldedByLaterInterrupt,
+  isInterruptedResponse,
+  markResponseElement,
+} from '@/features/chat/rendering/ResponseLayout';
 import { createSessionLink, registerSessionLinkHandler } from '@/features/chat/rendering/sessionLinks';
 import { renderStoredThinkingBlock } from '@/features/chat/rendering/ThinkingBlockRenderer';
 import { updateToolCallResult } from '@/features/chat/rendering/tools/ToolCallRenderer';
@@ -269,11 +275,14 @@ export class MessageRenderer {
     const open = !!scope && (scope.options.isResponseOpen(msg.id)
       || (msg.isAutomaticResponse === true && msg.completedAt === undefined && !this.#hasVisibleContent(msg)));
     const live = scope && { options: scope.options, open: scope.open || open };
-    // Bare interrupt marker: user-role interrupts (Claude bracket markers) always render
-    // as a standalone indicator. Assistant-role interrupts (Codex partial responses)
-    // only use the bare marker when there's no content to preserve.
+    // Bare interrupt marker: user-role interrupts (Claude bracket markers) and
+    // assistant-role interrupts without content (Codex aborted turns). The
+    // interrupted response it ends already shows it inside its disclosure.
     if (msg.isInterrupt && (msg.role === 'user' || !this.#hasVisibleContent(msg))) {
-      this.#renderInterruptMessage();
+      const previousIndex = (index ?? 0) - 1;
+      const previous = allMessages?.[previousIndex];
+      if (!previous || !isInterruptedResponse(previous, allMessages ?? [], previousIndex)
+        || !this.messageEls.get(previous.id)?.isConnected) this.#renderInterruptMessage();
       return;
     }
 
@@ -296,6 +305,7 @@ export class MessageRenderer {
     }
 
     const { msgEl, contentEl } = this.#createMessageEl(msg);
+    const interrupted = isInterruptedResponse(msg, allMessages ?? [msg], index);
     if (msg.role === 'assistant') {
       this.#renderAssistantContent(msg, contentEl, live);
       for (const card of contentEl.querySelectorAll<HTMLElement>('[data-subagent-id], [data-async-subagent-id]')) {
@@ -303,16 +313,17 @@ export class MessageRenderer {
         const info = msg.toolCalls?.find(tool => tool.id === id)?.subagent;
         if (info) renderSubagentHistory(card, info, allMessages ?? [msg]);
       }
-      if (msg.isInterrupt) {
+      if (msg.isInterrupt || interrupted) {
         this.appendInterruptIndicator(contentEl);
       }
     }
 
     this.#actions.appendTimestamp(msgEl, msg.completedAt);
     const next = index === undefined ? undefined : allMessages?.[index + 1];
-    if (msg.role === 'assistant' && !open && (msg.durationSeconds !== undefined || next?.role !== 'assistant'
-      || msg.contentBlocks?.some(block => block.type === 'task_notification'))) {
-      this.finalizeResponse(msg, allMessages ?? [msg], !next?.isInterrupt, index);
+    if (msg.role === 'assistant' && !open && !isFoldedByLaterInterrupt(msg, allMessages ?? [msg], index)
+      && (msg.durationSeconds !== undefined || next?.role !== 'assistant'
+      || interrupted || msg.contentBlocks?.some(block => block.type === 'task_notification'))) {
+      this.finalizeResponse(msg, allMessages ?? [msg], true, index);
     }
   }
 
@@ -363,9 +374,9 @@ export class MessageRenderer {
     const msgEl = this.findMessageEl(msg.id);
     const contentEl = msgEl?.querySelector<HTMLElement>('.claudian-message-content');
     if (!msgEl || !contentEl) return;
-    const copyText = this.#finalizer.finalize(msgEl, contentEl, msg, messages, collapse, index);
-    if (copyText === null) return;
-    this.#actions.decorateResponse(msgEl, contentEl, msg, messages, copyText);
+    const finalized = this.#finalizer.finalize(msgEl, contentEl, msg, messages, collapse, index);
+    if (finalized === null) return;
+    this.#actions.decorateResponse(msgEl, contentEl, msg, messages, finalized.answer);
   }
 
   #hasVisibleContent(msg: ChatMessage): boolean {
@@ -395,13 +406,7 @@ export class MessageRenderer {
   }
 
   appendInterruptIndicator(contentEl: HTMLElement): void {
-    const textEl = createResponseTextBlock(contentEl);
-    textEl.createSpan({ cls: 'claudian-interrupted', text: t('chat.zen.interrupted') });
-    textEl.appendText(' ');
-    textEl.createSpan({
-      cls: 'claudian-interrupted-hint',
-      text: t('chat.interruptedHint'),
-    });
+    appendInterruptLabel(markResponseElement(contentEl.createDiv({ cls: 'claudian-text-block' }), 'interrupt'));
   }
 
   renderTaskNotification(contentEl: HTMLElement, content: string): void {

@@ -248,7 +248,8 @@ const server = http.createServer(async (req, res) => {
           emit('session.execution.succeeded', { sessionID: 'ses_child' });
           emit('session.execution.started', {});
           emit('session.text.ended', { assistantMessageID: 'msg_background', ordinal: 0, text: 'Automatic reply' });
-          emit('session.execution.succeeded', {});
+          // A stopped automatic reply stays open until the client interrupts it.
+          if (body.text !== 'background-stop') emit('session.execution.succeeded', {});
         }, 50);
       }
       emit('session.tool.input.started', { assistantMessageID, id: 'reused_tool', name: 'read' });
@@ -822,6 +823,27 @@ it.each(['background-approval', 'background-nested', 'mcp-form-late'])('keeps %s
     expect(coordinator.hasBackgroundWork).toBe(false);
   } finally { release(); await coordinator.dispose(); await serverService.dispose(); await env.dispose(); }
 }, 15000);
+
+it('ends a stopped automatic reply as interrupted, as its native idle outcome replays it', async () => {
+  const f = createFixture();
+  const events: ProviderSessionEvent[] = [];
+  f.session.onEvent(event => events.push(event));
+  const waitForCondition = async (condition: () => boolean) => {
+    for (const deadline = Date.now() + 3000; !condition(); await new Promise(resolve => setTimeout(resolve, 10))) {
+      if (Date.now() > deadline) throw new Error('Timed out waiting for the automatic reply');
+    }
+  };
+  try {
+    for await (const event of f.session.execute(request('background-stop')).events) void event;
+    await waitForCondition(() => events.some(event => event.type === 'text_delta' && event.text === 'Automatic reply'));
+    f.session.cancel();
+    const turnOf = (event: ProviderSessionEvent | undefined) => event?.scope.kind === 'background' ? event.scope.turnId : undefined;
+    const reply = turnOf(events.find(event => event.type === 'text_delta' && event.text === 'Automatic reply'));
+    const completion = () => events.find(event => event.type === 'background_turn_completed' && turnOf(event) === reply);
+    await waitForCondition(() => completion() !== undefined);
+    expect(completion()).toMatchObject({ reason: 'interrupted' });
+  } finally { await f.dispose(); }
+});
 
 it('cancels a background child waiting for approval and can continue the native parent', async () => {
   let childAsked!: () => void;

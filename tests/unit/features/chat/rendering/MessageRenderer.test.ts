@@ -156,34 +156,6 @@ describe('MessageRenderer', () => {
     expect(interruptedEl.textContent).toBe('Interrupted');
   });
 
-  it('renders interrupted assistant message with content + interrupt indicator', () => {
-    const messagesEl = createMockEl();
-    const { renderer } = createRenderer(messagesEl);
-
-    const interruptMsg: ChatMessage = {
-      id: 'interrupt-codex-1',
-      role: 'assistant',
-      content: 'Starting to work on the feature...',
-      timestamp: Date.now(),
-      isInterrupt: true,
-      contentBlocks: [{ type: 'text', content: 'Starting to work on the feature...' }],
-    };
-
-    renderer.renderStoredMessage(interruptMsg);
-
-    // Should create an assistant message (not a bare interrupt marker)
-    expect(messagesEl.children.length).toBe(1);
-    const msgEl = messagesEl.children[0];
-    expect(msgEl.hasClass('claudian-message-assistant')).toBe(true);
-
-    // The content div should have both content rendering and an interrupt indicator
-    const contentEl = msgEl.children[0];
-    const lastChild = contentEl.children[contentEl.children.length - 1];
-    const interruptedEl = lastChild.children[0];
-    expect(interruptedEl.hasClass('claudian-interrupted')).toBe(true);
-    expect(interruptedEl.textContent).toBe('Interrupted');
-  });
-
   it('renders timestamps when the setting is enabled', () => {
     const messagesEl = createMockEl();
     const { renderer } = createRenderer(messagesEl, 'claude', { showMessageTimestamps: true });

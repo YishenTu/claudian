@@ -222,3 +222,33 @@ it.each([false, true])('counts each main response once across blocks and tools (
   const result = await loadSDKSessionMessages('/vault', 'session', undefined, sessionPath);
   expect(result.messages.at(-1)?.turnStats).toEqual(missing ? undefined : { outputTokens: 125, durationMs: 2500 });
 });
+
+// A native turn split for display (at compaction or a later notification) is still one turn:
+// only its interruption clears the completion the split gave earlier parts.
+it.each([
+  ['compaction', true], ['compaction', false], ['notification', true], ['notification', false],
+] as const)('clears completion of a %s-split turn only when it is interrupted (interrupted: %s)', async (split, interrupted) => {
+  const notification = (id: string) => `<task-notification><task-id>${id}</task-id><status>completed</status><result>${id} result</result></task-notification>`;
+  const entries = [
+    split === 'compaction'
+      ? { type: 'user', uuid: 'u', timestamp: testTime({ seconds: 10 }), message: { content: 'Long task' } }
+      : { type: 'user', uuid: 'u', timestamp: testTime({ seconds: 10 }), message: { content: notification('trigger') } },
+    { type: 'assistant', uuid: 'tool', parentUuid: 'u', timestamp: testTime({ seconds: 11 }),
+      message: { stop_reason: 'tool_use', content: [{ type: 'text', text: 'Before.' }, { type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }] } },
+    { type: 'user', uuid: 'read-result', parentUuid: 'tool', timestamp: testTime({ seconds: 12 }),
+      toolUseResult: { type: 'text', file: { content: 'The note.' } },
+      message: { content: [{ type: 'tool_result', tool_use_id: 'read', content: 'The note.' }] } },
+    split === 'compaction'
+      ? { type: 'system', subtype: 'compact_boundary', uuid: 'compact', parentUuid: 'read-result', timestamp: testTime({ seconds: 13 }), content: 'Conversation compacted', compactMetadata: { trigger: 'auto' } }
+      : { type: 'user', uuid: 'compact', parentUuid: 'read-result', timestamp: testTime({ seconds: 13 }), message: { content: notification('later') } },
+    { type: 'assistant', uuid: 'after', parentUuid: 'compact', timestamp: testTime({ seconds: 15 }),
+      message: { ...(!interrupted ? { stop_reason: 'end_turn' } : {}), content: [{ type: 'text', text: 'After.' }] } },
+    ...(interrupted ? [{ type: 'user', uuid: 'stop', parentUuid: 'after', timestamp: testTime({ seconds: 16 }),
+      message: { content: [{ type: 'text', text: '[Request interrupted by user]' }] } }] : []),
+  ];
+  const result = await loadSDKSessionMessages('/vault', 'session', undefined, writeSession(entries.map(entry => JSON.stringify(entry)).join('\n')));
+  const before = result.messages.find(message => message.content.includes('Before.'))!;
+  const cleared = before.durationSeconds === undefined && before.completedAt === undefined && before.turnStats === undefined;
+  expect(cleared).toBe(interrupted);
+  expect(result.messages.filter(message => message.role === 'assistant').length).toBeGreaterThan(1);
+});

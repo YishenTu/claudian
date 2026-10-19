@@ -14,7 +14,7 @@ import { forEachJSONLLine } from '@/utils/jsonlFile';
 
 import { isWriteEditTool } from '../../../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo, TurnStats } from '../../../core/types';
-import { createTurnStats, isTokenCount } from '../../../core/types';
+import { createTurnStats, isTokenCount, linkInterruptedTurnSegments } from '../../../core/types';
 import { encodePiModelId } from '../models';
 import { getPiCustomMessageDisplayText } from '../normalization/piCustomMessageNormalization';
 import { PI_PEEPS_RUN_ENTRY_TYPE, PiPeepsSubagents } from '../normalization/PiPeepsSubagents';
@@ -543,6 +543,9 @@ function mapPiSessionEntries(
   let turnStartedAt: number | undefined;
   // An extension message outside a prompted turn starts an automatic response.
   let promptedTurnOpen = false;
+  // The current native turn's first message and whether a tool call keeps it running.
+  let turnStart = 0;
+  let turnRunning = false;
   const stats = new PiTurnStats();
 
   for (const entry of entries) {
@@ -556,6 +559,10 @@ function mapPiSessionEntries(
       if (continuesResponse && canMergeAssistantContinuation(previous, mapped)) {
         mergeAssistantContinuation(previous, mapped);
       } else {
+        if (mapped.role === 'user' || (mapped.isAutomaticResponse && !turnRunning)) {
+          turnStart = messages.length + (mapped.role === 'user' ? 1 : 0);
+          turnRunning = true;
+        }
         messages.push(mapped);
       }
 
@@ -577,9 +584,12 @@ function mapPiSessionEntries(
           messages[messages.length - 1].completedAt = completedAt;
           messages[messages.length - 1].durationSeconds = Math.floor((completedAt - turnStartedAt) / 1_000);
         }
+        // A user Stop ends the turn as `aborted`; its `errorMessage` is not a failure to show.
+        if (stopReason === 'aborted') chainInterruptedTurn(messages.slice(turnStart));
         if (stopReason && stopReason !== 'toolUse') {
           promptedTurnOpen = false;
           turnStartedAt = undefined;
+          turnRunning = false;
         }
       }
     }
@@ -587,6 +597,17 @@ function mapPiSessionEntries(
 
   applyPiPeepsSubagents(entries, messages);
   return messages;
+}
+
+/**
+ * An interrupted turn is one response: chain the messages its notices and compaction
+ * split it into, as the shared layout groups them, and mark the last as interrupted.
+ */
+function chainInterruptedTurn(turn: ChatMessage[]): void {
+  const segments = turn.filter(message => message.role === 'assistant');
+  linkInterruptedTurnSegments(segments);
+  const last = segments.at(-1);
+  if (last) last.isInterrupt = true;
 }
 
 /** Peeps answers arrive after the turn that started the work; attach them to its tool call. */

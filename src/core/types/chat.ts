@@ -161,6 +161,24 @@ export function isCanonicalUserMessage(message: ChatMessage): boolean {
     && !message.isRebuiltContext;
 }
 
+/**
+ * Segments a history loader split one interrupted native turn into, in order: chained
+ * through `responseContinuationOf` as one response, carrying the turn's provenance
+ * (by default its first segment's), and without the completion their splits gave them.
+ */
+export function linkInterruptedTurnSegments(
+  segments: readonly ChatMessage[],
+  automatic = segments[0]?.isAutomaticResponse === true,
+): void {
+  segments.forEach((segment, index) => {
+    if (index > 0) segment.responseContinuationOf = segments[index - 1].id;
+    segment.isAutomaticResponse = automatic ? true : undefined;
+    segment.durationSeconds = undefined;
+    segment.completedAt = undefined;
+    segment.turnStats = undefined;
+  });
+}
+
 /** Persisted conversation with messages and session state. */
 export interface Conversation {
   id: string;

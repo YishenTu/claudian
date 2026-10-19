@@ -243,6 +243,43 @@ it('restores each completed turn\'s work duration so it renders as its own "Work
   expect(result.messages?.filter(message => message.role === 'assistant').map(message => message.durationSeconds)).toEqual([125, 7]);
 });
 
+it('marks user-aborted turns interrupted without work timing and keeps a following automatic turn normal', async () => {
+  const at = (seq: number, ms: number, type: string, data: unknown) => ({ type: 'event', event: { seq, type, time: time + ms, data, surfaceOp: 'append' } });
+  const aborted = { kind: 'aborted', reason: { kind: 'user' } };
+  records = [
+    at(1, 0, 'turn/start', { turn: 1 }),
+    at(2, 0, 'user/message', { source: { kind: 'user' }, content: [{ type: 'text', text: 'run the job' }] }),
+    at(3, 1_000, 'assistant/message', { turn: 1, step: 0, message: { content: [{ type: 'text', text: 'starting' }] }, usage: { outputTokens: 3 } }),
+    at(4, 2_000, 'tool/call', { callId: 'job', name: 'read', arguments: '{"path":"note.md"}' }),
+    at(5, 9_000, 'turn/end', { turn: 1, reason: aborted }),
+    at(6, 20_000, 'turn/start', { turn: 2 }),
+    at(7, 20_000, 'user/message', { source: { kind: 'tool-jobs' }, content: [{ type: 'text', text: 'job finished' }] }),
+    at(8, 21_000, 'assistant/message', { turn: 2, step: 0, message: { content: [{ type: 'text', text: 'the job finished' }] } }),
+    at(9, 23_000, 'turn/end', { turn: 2, reason: { kind: 'completed' } }),
+    at(10, 30_000, 'turn/start', { turn: 3 }),
+    at(11, 30_000, 'user/message', { source: { kind: 'user' }, content: [{ type: 'text', text: 'never mind' }] }),
+    at(12, 31_000, 'turn/end', { turn: 3, reason: aborted }),
+  ];
+  const onCall = peer.onCall;
+  peer.onCall = (method, args) => method === 'session/projections'
+    ? { ...onCall(method, args) as Record<string, unknown>, asOfSeq: 12 } : onCall(method, args);
+
+  const result = await history.hydrateConversationHistory(input, '/vault');
+
+  expect(result.messages?.map(({ role, content, isInterrupt, isAutomaticResponse, durationSeconds, turnStats, completedAt }) => (
+    { role, content, isInterrupt, isAutomaticResponse, durationSeconds, turnStats, completedAt }))).toEqual([
+    { role: 'user', content: 'run the job' },
+    { role: 'assistant', content: 'starting', isInterrupt: true },
+    { role: 'assistant', content: 'the job finished', isAutomaticResponse: true, durationSeconds: 3,
+      turnStats: { outputTokens: 0, durationMs: 3_000 }, completedAt: time + 23_000 },
+    { role: 'user', content: 'never mind' },
+    // A turn stopped before any output keeps a bare marker, as the live Stop renders it.
+    { role: 'assistant', content: '', isInterrupt: true },
+  ].map(message => Object.fromEntries(Object.entries({ isInterrupt: undefined, isAutomaticResponse: undefined,
+    durationSeconds: undefined, turnStats: undefined, completedAt: undefined, ...message }))));
+  expect(result.messages?.[1].toolCalls).toEqual([expect.objectContaining({ id: 'job', name: 'Read' })]);
+});
+
 it('hydrates a session-message sender and preserves neutral tool names without colliding with native send_message', async () => {
   records = [
     wire(0, 'turn/start', { turn: 0 }),

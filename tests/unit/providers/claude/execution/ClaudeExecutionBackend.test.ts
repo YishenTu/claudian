@@ -2492,7 +2492,10 @@ describe('ClaudeExecutionBackend', () => {
     releaseDeferredMessage();
     await query.finished;
     expect(events).not.toContainEqual(expect.objectContaining({ type: 'text_delta', text: 'Cancelled late output' }));
-    expect(events.filter(event => event.type === 'background_turn_completed')).toHaveLength(1);
+    // Native interrupt records `[Request interrupted by user]` after the reply, which history replays as interrupted.
+    expect(events.filter(event => event.type === 'background_turn_completed')).toEqual([
+      expect.objectContaining({ reason: 'interrupted' }),
+    ]);
     await session.dispose();
   });
 

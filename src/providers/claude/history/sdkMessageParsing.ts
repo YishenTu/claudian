@@ -337,6 +337,12 @@ export function isCanonicalSDKUserMessage(record: SDKNativeMessage): boolean {
   return !isInterruptSignalText(text) && !isRebuiltContextContent(text);
 }
 
+/** A blocking Stop hook's feedback, after which the same native turn continues. */
+export function isStopHookFeedback(sdkMsg: SDKNativeMessage): boolean {
+  return sdkMsg.type === 'user' && sdkMsg.isMeta === true
+    && extractClaudeTextContent(sdkMsg.message?.content)?.startsWith('Stop hook feedback:') === true;
+}
+
 export function isSystemInjectedMessage(sdkMsg: SDKNativeMessage): boolean {
   if (sdkMsg.type !== 'user') {
     return false;

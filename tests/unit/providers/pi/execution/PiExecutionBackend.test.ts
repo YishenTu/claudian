@@ -3200,7 +3200,7 @@ describe('PiExecutionBackend', () => {
       await harness.session.dispose();
     });
 
-    it('aborts a background turn on Stop and completes it when Pi settles without restarting Pi', async () => {
+    it('aborts a background turn on Stop and completes it as interrupted when Pi settles without restarting Pi', async () => {
       const harness = createHarness();
       const { events, kernel } = await startIdleSession(harness);
       emitWake(kernel);
@@ -3208,11 +3208,13 @@ describe('PiExecutionBackend', () => {
       harness.session.cancel();
       expect(kernel.sent).toContainEqual({ type: 'abort' });
       expect(harness.session.getStatus()).toBe('cancelling');
+      // Pi persists the stopped reply as `stopReason: aborted`, which history replays as interrupted.
+      kernel.emit({ type: 'message_end', message: { role: 'assistant', content: [], stopReason: 'aborted', errorMessage: 'Operation aborted' } });
       kernel.emit({ type: 'agent_end' });
       kernel.emit({ type: 'agent_settled' });
       await waitFor(() => events.some(event => event.type === 'background_turn_completed'));
 
-      expect(backgroundEvents(events).at(-1)).toMatchObject({ reason: 'provider-ended', type: 'background_turn_completed' });
+      expect(backgroundEvents(events).at(-1)).toMatchObject({ reason: 'interrupted', type: 'background_turn_completed' });
       expect(harness.session.getStatus()).toBe('idle');
       expect(kernel.shutdown).not.toHaveBeenCalled();
       await harness.session.dispose();

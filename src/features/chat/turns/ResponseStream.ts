@@ -3,7 +3,11 @@ import type { ChatMessage } from '@/core/types';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/providerOutputChunks';
 import type { ChatState } from '@/features/chat/state/ChatState';
-import { continueResponseAfterNotification } from '@/features/chat/turns/ResponseContinuation';
+import {
+  continueResponseAfterNotification,
+  markStoppedTurn,
+  type StoppedTurnEvents,
+} from '@/features/chat/turns/ResponseContinuation';
 import type { StreamController } from '@/features/chat/turns/StreamController';
 import type { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 
@@ -19,6 +23,8 @@ interface ResponseStreamHost {
 /** Requested-response presentation, independent of durable or temporary conversation ownership. */
 export class ResponseStream {
   #active: ChatMessage | null = null;
+  /** The run's provider events up to its terminal, which a Stop's notifications must follow. */
+  #received: StoppedTurnEvents | undefined;
 
   constructor(private readonly host: ResponseStreamHost) {}
 
@@ -47,12 +53,16 @@ export class ResponseStream {
 
   clear(): void {
     this.#active = null;
+    this.#received = undefined;
     this.host.state.response.messageId = null;
   }
 
   async handleEvent(event: ProviderExecutionEvent): Promise<void> {
     const assistant = this.#active;
     if (!assistant) return;
+    if (event.type !== 'turn_completed' && event.type !== 'cancelled' && event.type !== 'execution_error') {
+      this.#received = { scope: event.scope, through: event.scope.sequence };
+    }
     if (event.type === 'turn_completed') {
       assistant.turnStats = event.turnStats;
       return;
@@ -72,10 +82,7 @@ export class ResponseStream {
     const { state, renderer, stream } = this.host;
     state.clearFlavorTimerInterval();
     stream.thinkingIndicator.hide();
-    if (outcome.interrupted) {
-      message.isInterrupt = true;
-      if (state.currentContentEl) renderer?.appendInterruptIndicator(state.currentContentEl);
-    }
+    const last = outcome.interrupted ? markStoppedTurn(renderer, message, state.currentContentEl, state.messages, this.#received) : message;
     const successful = !outcome.interrupted && !outcome.failed;
     // Compaction continues the turn, so its time belongs to the completed response.
     if (successful && message.completedAt !== undefined) {
@@ -87,7 +94,7 @@ export class ResponseStream {
     state.currentContentEl = null;
     await this.flush(message);
     state.response.messageId = null;
-    this.host.renderer?.finalizeResponse(message, state.messages, successful);
+    this.host.renderer?.finalizeResponse(last, state.messages, successful);
     stream.subagents.releaseManaged();
   }
 }

@@ -74,6 +74,7 @@ export class BackgroundResponses {
     const visible = await renderAutoTriggeredTurn(this.host, {
       spans: response.spans,
       metadata: { assistantMessageId: event.nativeAssistantId },
+      ...(event.reason === 'interrupted' ? { interruptedAt: event.scope } : {}),
     }, isCurrent);
     return visible || response.spans.some(span => span.user !== undefined);
   }

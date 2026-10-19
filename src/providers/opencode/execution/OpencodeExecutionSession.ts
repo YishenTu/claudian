@@ -169,6 +169,11 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     if (this.disposed || (!this.backgroundTurn && this.backgroundScopes.size === 0)) return;
     this.lifecycleGeneration += 1;
     this.#interruptKernel();
+    if (this.backgroundTurn) {
+      // The native interrupt records the turn's `idle` outcome as interrupted, which history replays.
+      this.#emitBackground({ type: 'background_turn_completed', reason: 'interrupted', providerSessionId: this.nativeSessionId ?? undefined });
+      this.backgroundTurn = null;
+    }
     this.#invalidate('cancelled', true, new Error('Cancelled'));
     this.#emitSessionSnapshot();
     void this.#disposeKernel();

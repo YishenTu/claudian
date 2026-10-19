@@ -210,6 +210,9 @@ export type ProviderTurnCompletionReason =
   | 'tool-ended'
   | 'provider-ended';
 
+/** A background turn has no cancellation terminal, so a native stop ends it as interrupted. */
+export type ProviderBackgroundTurnCompletionReason = ProviderTurnCompletionReason | 'interrupted';
+
 export type ProviderTurnCompletedEvent = ProviderEventBase<
   'turn_completed',
   ProviderRequestedEventScope
@@ -290,7 +293,7 @@ export type ProviderBackgroundTurnCompletedEvent = ProviderEventBase<
     readonly nativeCheckpointId?: string;
     readonly providerSessionId?: string;
     readonly snapshotRevision?: number;
-    readonly reason: ProviderTurnCompletionReason;
+    readonly reason: ProviderBackgroundTurnCompletionReason;
   };
 
 export type ProviderAsyncSubagentCompletedEvent = ProviderEventBase<

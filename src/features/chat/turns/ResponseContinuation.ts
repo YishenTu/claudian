@@ -6,6 +6,51 @@ import { isStandaloneTaskNotification } from '@/features/chat/rendering/Response
 import type { ChatState } from '@/features/chat/state/ChatState';
 import type { StreamController } from '@/features/chat/turns/StreamController';
 
+/** The provider events a stopped turn received notifications after: its own, up to `through`. */
+export interface StoppedTurnEvents {
+  readonly scope: ProviderTurnEventScope;
+  readonly through: number;
+}
+
+/** Notifications render ahead of queued output, so only the event each followed tells its turn. */
+function arrivedDuring(notification: ChatMessage, turn: StoppedTurnEvents): boolean {
+  const predecessor = getNotificationPredecessor(notification, turn.scope.kind);
+  return predecessor !== undefined && predecessor.sessionInstanceId === turn.scope.sessionInstanceId
+    && predecessor.turnId === turn.scope.turnId && predecessor.sequence <= turn.through
+    && (predecessor.kind !== 'requested' || turn.scope.kind !== 'requested' || predecessor.executionId === turn.scope.executionId);
+}
+
+/** The last of the notifications the stopped turn received directly after `index`, or `index`. */
+export function getTrailingNotificationsEnd(messages: ChatMessage[], index: number, turn: StoppedTurnEvents | undefined): number {
+  while (turn && isStandaloneTaskNotification(messages[index + 1]) && arrivedDuring(messages[index + 1], turn)) index++;
+  return index;
+}
+
+/**
+ * A stopped turn ends with the notifications it received after its last output, as
+ * native history records them: they join its chain so the shared layout folds them
+ * with it, and its last message carries the interrupt and shows the indicator until
+ * finalization folds the turn. Returns that message.
+ */
+export function markStoppedTurn(
+  renderer: MessageRenderer | null,
+  reply: ChatMessage,
+  replyContentEl: HTMLElement | null,
+  messages: ChatMessage[],
+  turn: StoppedTurnEvents | undefined,
+): ChatMessage {
+  let owner = reply;
+  const start = messages.indexOf(reply);
+  for (const notification of messages.slice(start + 1, getTrailingNotificationsEnd(messages, start, turn) + 1)) {
+    recordResponseContinuation(notification, owner);
+    owner = notification;
+  }
+  owner.isInterrupt = true;
+  const contentEl = owner === reply ? replyContentEl : renderer?.getMessageContentEl(owner.id);
+  if (contentEl) renderer?.appendInterruptIndicator(contentEl);
+  return owner;
+}
+
 /** Latest independent notification that precedes this event but follows its reserved response. */
 export function findFollowingNotification(
   message: ChatMessage,

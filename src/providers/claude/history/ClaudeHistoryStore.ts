@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '../../../core/types';
+import { linkInterruptedTurnSegments } from '../../../core/types';
 import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
 import { ClaudeTaskResultInterpreter } from '../runtime/ClaudeTaskResultInterpreter';
 import { isClaudeSubagentToolName } from '../subagentToolNames';
@@ -26,6 +27,7 @@ import {
   hydrateStructuredToolResults,
   isCanonicalSDKUserMessage,
   isQueuedPromptAttachment,
+  isStopHookFeedback,
   isSystemInjectedMessage,
   mergeAssistantMessage,
   parseSDKMessageToChat,
@@ -139,6 +141,15 @@ export async function loadSDKSessionMessages(
   let turnStartedAt: number | undefined;
   let lastAssistantAt: number | undefined;
   let requestedResponsePending = false;
+  /**
+   * The native turn being read. A canonical prompt opens a requested turn, a notification
+   * while none runs an automatic one; the next prompt or an interrupt marker ends it.
+   * Every segment displayed in between belongs to it, whatever
+   * order its notifications, compactions and tool calls split it in. A finished reply only
+   * tentatively ends it: further assistant output or a blocking Stop hook continues the
+   * same turn, and only a notification directly after it shows it ended.
+   */
+  let turn: { readonly automatic: boolean; readonly segments: ChatMessage[]; finished: boolean } | null = null;
   let turnStats = new ClaudeTurnStats();
   const taskToolNormalizer = new ClaudeTaskToolNormalizer();
 
@@ -159,6 +170,7 @@ export async function loadSDKSessionMessages(
         pendingAssistant.turnStats = turnStats.finish(turnStartedAt, lastAssistantAt);
       }
       chatMessages.push(pendingAssistant);
+      turn?.segments.push(pendingAssistant);
     }
     pendingAssistant = null;
     lastAssistantAt = undefined;
@@ -189,6 +201,8 @@ export async function loadSDKSessionMessages(
       }
       const requestedStartedAt: number | undefined = pendingAssistant ? undefined : turnStartedAt;
       flushPendingAssistant(true);
+      if (turn?.finished) turn = null;
+      turn ??= { automatic: true, segments: [], finished: false };
       turnStartedAt = requestedStartedAt;
       requestedResponsePending = requestedStartedAt !== undefined;
       pendingAssistant = {
@@ -199,6 +213,10 @@ export async function loadSDKSessionMessages(
         timestamp: parseNativeTimestamp(sdkMsg.timestamp) ?? 0,
         contentBlocks: [{ type: 'task_notification', content: notification }],
       };
+      continue;
+    }
+    if (isStopHookFeedback(sdkMsg)) {
+      if (turn) turn.finished = false;
       continue;
     }
     if (isSystemInjectedMessage(sdkMsg)) continue;
@@ -216,6 +234,7 @@ export async function loadSDKSessionMessages(
       if (isCompactBoundary) {
         flushPendingAssistant(true);
         chatMessages.push(chatMsg);
+        turn?.segments.push(chatMsg);
       } else {
         if (pendingAssistant) {
           mergeAssistantMessage(pendingAssistant, chatMsg);
@@ -223,15 +242,22 @@ export async function loadSDKSessionMessages(
           pendingAssistant = chatMsg;
         }
         turnStats.add(sdkMsg);
+        const stopReason = sdkMsg.message?.stop_reason;
+        // Any later assistant output, a resumed reply or tool work, shows the turn continued.
+        if (turn) turn.finished = Boolean(stopReason) && stopReason !== 'tool_use';
         lastAssistantAt = parseNativeTimestamp(sdkMsg.timestamp);
         requestedResponsePending = turnStartedAt !== undefined
           && sdkMsg.message?.stop_reason === 'tool_use';
       }
     } else {
-      flushPendingAssistant(!chatMsg.isInterrupt);
-      if (isCanonicalSDKUserMessage(sdkMsg)) {
-        turnStartedAt = parseNativeTimestamp(sdkMsg.timestamp);
+      // An interrupted turn is one response, whichever splits displayed it in parts.
+      if (chatMsg.isInterrupt && turn) {
+        linkInterruptedTurnSegments(pendingAssistant ? [...turn.segments, pendingAssistant] : turn.segments, turn.automatic);
       }
+      flushPendingAssistant(!chatMsg.isInterrupt);
+      const prompt = isCanonicalSDKUserMessage(sdkMsg);
+      turn = prompt ? { automatic: false, segments: [], finished: false } : null;
+      if (prompt) turnStartedAt = parseNativeTimestamp(sdkMsg.timestamp);
       chatMessages.push(chatMsg);
     }
   }

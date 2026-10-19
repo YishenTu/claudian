@@ -47,6 +47,15 @@ const messages: ChatMessage[] = [
     ] },
 ];
 
+const INTERRUPTED = 'Interrupted · What should Claudian do instead?';
+
+/** The interrupted disclosure's header is the interrupt indicator itself, never repeated in its body. */
+function expectInterruptHeader(header: HTMLElement, history: HTMLElement): void {
+  expect([header.querySelector('.claudian-interrupted')?.textContent, header.querySelector('.claudian-interrupted-hint')?.textContent])
+    .toEqual(['Interrupted', '· What should Claudian do instead?']);
+  expect(history.querySelector('.claudian-interrupted, .claudian-interrupted-hint')).toBeNull();
+}
+
 beforeEach(() => {
   document.body.replaceChildren();
   jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
@@ -143,18 +152,39 @@ it('keeps live output in place until completion, then preserves the same content
   renderer.dispose();
 });
 
-it('leaves interrupted and unsuccessful output expanded', () => {
-  for (const interrupted of [true, false]) {
-    const { renderer } = setup();
-    const msg: ChatMessage = { id: `failed-${interrupted}`, role: 'assistant', content: 'Partial', timestamp: 4,
-      isInterrupt: interrupted, contentBlocks: [{ type: 'text', content: 'Partial' }] };
-    const el = renderer.addMessage(msg);
-    el.querySelector('.claudian-message-content')!.createDiv({ cls: 'claudian-text-block', text: 'Partial' });
-    renderer.finalizeResponse(msg, [msg], interrupted);
-    expect(within(el).queryByRole('button', { name: /Worked/ })).toBeNull();
-    expect(within(el).getByRole('button', { name: 'Copy message' })).toBeDefined();
-    renderer.dispose();
-  }
+it('leaves unsuccessful output expanded', () => {
+  const { renderer } = setup();
+  const msg: ChatMessage = { id: 'failed', role: 'assistant', content: 'Partial', timestamp: 4,
+    contentBlocks: [{ type: 'text', content: 'Partial' }] };
+  const el = renderer.addMessage(msg);
+  el.querySelector('.claudian-message-content')!.createDiv({ cls: 'claudian-text-block', text: 'Partial' });
+  renderer.finalizeResponse(msg, [msg], false);
+  expect(within(el).queryByRole('button', { name: /^(Worked|Interrupted)/ })).toBeNull();
+  expect(within(el).getByText('Partial').closest('[hidden]')).toBeNull();
+  expect(within(el).getByRole('button', { name: 'Copy message' })).toBeDefined();
+  renderer.dispose();
+});
+
+it('folds a partial-text interruption under a disclosure headed by the interrupt indicator', async () => {
+  const { renderer, messagesEl } = setup('codex');
+  renderer.renderMessages([
+    messages[0],
+    { id: 'partial', role: 'assistant', content: 'Partial answer', timestamp: 4, isInterrupt: true,
+      durationSeconds: 12, contentBlocks: [{ type: 'text', content: 'Partial answer' }] },
+  ], () => 'Hello');
+  await Promise.resolve();
+  const header = within(messagesEl).getByRole('button', { name: INTERRUPTED });
+  expect(within(messagesEl).queryByRole('button', { name: /^Worked/ })).toBeNull();
+  const history = document.getElementById(header.getAttribute('aria-controls')!)!;
+  const answer = within(messagesEl).getByText('Partial answer');
+  expectInterruptHeader(header, history);
+  expect(answer.closest('[hidden]')).toBe(history);
+  expect(within(messagesEl.querySelector<HTMLElement>('[data-message-id="partial"]')!)
+    .queryByRole('button', { name: 'Copy message' })).toBeNull();
+  fireEvent.click(header);
+  expect(answer.closest('[hidden]')).toBeNull();
+  expect((await axe(messagesEl)).violations).toEqual([]);
+  renderer.dispose();
 });
 
 it('copies retired interruption markup as ordinary message text', async () => {
@@ -209,17 +239,73 @@ it.each([true, false])('keeps the final answer visible with fallback tools (cont
   renderer.dispose();
 });
 
-it('keeps Claude replay output expanded when a user-role interrupt follows it', () => {
+it.each(['claude', 'codex'])('folds a replayed %s interruption under one disclosure headed by its marker', async provider => {
+  const { renderer, messagesEl } = setup(provider);
+  const read: ToolCallInfo = { id: 'read', name: 'Read', input: { file_path: 'note.md' }, status: 'completed', result: 'Note' };
+  const interrupted: ChatMessage = { id: 'interrupted', role: 'assistant', content: 'Partial answer', timestamp: 3,
+    assistantMessageId: 'native-interrupted', toolCalls: [read], contentBlocks: [
+      { type: 'thinking', content: 'Still working' },
+      { type: 'tool_use', toolId: 'read' },
+      { type: 'text', content: 'Partial answer' },
+    ] };
+  // Claude JSONL records a user-role bracket marker; Codex records an aborted turn as an empty assistant bubble.
+  const marker: ChatMessage = provider === 'claude'
+    ? { id: 'marker', role: 'user', content: '[Request interrupted by user]', timestamp: 4, isInterrupt: true }
+    : { id: 'marker', role: 'assistant', content: '', timestamp: 4, isInterrupt: true };
+  renderer.renderMessages([
+    messages[0],
+    provider === 'codex' ? { ...interrupted, durationSeconds: 9 } : interrupted,
+    marker,
+    { id: 'u2', role: 'user', content: 'Next prompt', timestamp: 5 },
+    { id: 'a3', role: 'assistant', content: 'Next answer', timestamp: 6, durationSeconds: 3, completedAt: 7,
+      assistantMessageId: 'native-a3',
+      contentBlocks: [{ type: 'thinking', content: 'Next work' }, { type: 'text', content: 'Next answer' }] },
+  ], () => 'Hello');
+  await Promise.resolve();
+
+  // An interrupted turn has no answer to copy or fork from; the completed turn keeps both.
+  const actions = (id: string) => within(messagesEl.querySelector<HTMLElement>(`[data-message-id="${id}"]`)!)
+    .queryAllByRole('button', { name: /^(Copy message|Fork conversation)$/ }).map(button => button.getAttribute('aria-label'));
+  expect(actions('interrupted')).toEqual([]);
+  expect(actions('a3')).toEqual(['Copy message', 'Fork conversation']);
+
+  expect(Array.from(messagesEl.querySelectorAll<HTMLElement>('.claudian-message'), el => el.dataset.messageId))
+    .toEqual(['u1', 'interrupted', 'u2', 'a3']);
+  const header = within(messagesEl).getByRole('button', { name: INTERRUPTED });
+  expect(header.getAttribute('type')).toBe('button');
+  expect(header.getAttribute('aria-expanded')).toBe('false');
+  const history = document.getElementById(header.getAttribute('aria-controls')!)!;
+  const turn = messagesEl.querySelector<HTMLElement>('[data-message-id="interrupted"] .claudian-message-content')!;
+  expect(Array.from(turn.querySelectorAll<HTMLElement>(':scope > * > :not([hidden])'))).toEqual([header]);
+  expect(messagesEl.querySelectorAll('.claudian-interrupted')).toHaveLength(1);
+  expectInterruptHeader(header, history);
+  expect(within(messagesEl).getByText('Partial answer').closest('[hidden]')).toBe(history);
+  expect(history.lastElementChild!.contains(within(messagesEl).getByText('Partial answer'))).toBe(true);
+  expect(within(messagesEl).getByRole('button', { name: 'Worked for 00:03' })).toBeDefined();
+  expect(within(messagesEl).getByText('Next answer').closest('[hidden]')).toBeNull();
+
+  header.focus();
+  expect(document.activeElement).toBe(header);
+  fireEvent.click(header);
+  expect(header.getAttribute('aria-expanded')).toBe('true');
+  expect(history.hidden).toBe(false);
+  const tool = within(history).getByRole('button', { name: /Read.*note\.md/ });
+  const thinking = within(history).getByRole('button', { name: 'Thought' });
+  expect(thinking.compareDocumentPosition(tool) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect((await axe(messagesEl)).violations).toEqual([]);
+  fireEvent.click(header);
+  expect(history.hidden).toBe(true);
+  renderer.dispose();
+});
+
+it('keeps a bare interrupt marker visible when its turn produced no output', () => {
   const { renderer, messagesEl } = setup();
   renderer.renderMessages([
     messages[0],
-    { ...messages[2], durationSeconds: undefined, content: 'Partial answer',
-      contentBlocks: [{ type: 'thinking', content: 'Still working' }, { type: 'text', content: 'Partial answer' }] },
-    { id: 'interrupt', role: 'user', content: '[Request interrupted by user]', timestamp: 4, isInterrupt: true },
+    { id: 'marker', role: 'user', content: '[Request interrupted by user]', timestamp: 4, isInterrupt: true },
   ], () => 'Hello');
-  expect(within(messagesEl).queryByRole('button', { name: /^Worked/ })).toBeNull();
-  expect(within(messagesEl).getByText('Partial answer').closest('[hidden]')).toBeNull();
-  expect(within(messagesEl).getByText('Interrupted')).toBeDefined();
+  expect(within(messagesEl).queryByRole('button', { name: /^Interrupted/ })).toBeNull();
+  expect(within(messagesEl).getByText('Interrupted').closest('[hidden]')).toBeNull();
   renderer.dispose();
 });
 

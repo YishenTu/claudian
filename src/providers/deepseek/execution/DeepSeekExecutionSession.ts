@@ -605,19 +605,21 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
         return;
       }
       const completion = reason.kind === 'max-tokens' ? 'max-tokens' : reason.kind === 'completed' ? 'completed' : 'provider-ended';
+      // A stopped turn is interrupted, as its journal's `turn/end` replays it.
+      const stopped = reason.kind === 'aborted' || reason.kind === 'cancelled';
       this.classify();
       const checkpoint = encodeDeepSeekCheckpoint(event.seq);
       this.binding = { ...this.binding!, checkpointSeq: event.seq }; this.saveBinding();
       if (turn.owner instanceof RequestedRunChannel) {
         turn.owner.emit({ type: 'session_state_changed', snapshot: this.getSnapshot() });
-        turn.owner.finish(turn.owner.isCancellationRequested || reason.kind === 'aborted' || reason.kind === 'cancelled' ? { type: 'cancelled' } : {
+        turn.owner.finish(turn.owner.isCancellationRequested || stopped ? { type: 'cancelled' } : {
           type: 'turn_completed', reason: completion, nativeUserMessageId: turn.nativeUserId,
           nativeAssistantId: checkpoint, nativeCheckpointId: checkpoint,
           turnStats: { outputTokens: turn.output.outputTokens, durationMs: Math.max(0, (typeof event.time === 'number' ? event.time : Date.now()) - turn.startedAt) },
         });
-      } else this.background(turn, { type: 'background_turn_completed', reason: completion, nativeAssistantId: checkpoint, nativeCheckpointId: checkpoint, providerSessionId: this.nativeId, snapshotRevision: this.snapshots.revision });
+      } else this.background(turn, { type: 'background_turn_completed', reason: stopped ? 'interrupted' : completion, nativeAssistantId: checkpoint, nativeCheckpointId: checkpoint, providerSessionId: this.nativeId, snapshotRevision: this.snapshots.revision });
       this.turn = undefined; this.publish();
-      if (reason.kind === 'aborted' || reason.kind === 'cancelled') this.recoverAfterAutomaticTurn(turn, 'an automatic turn was stopped');
+      if (stopped) this.recoverAfterAutomaticTurn(turn, 'an automatic turn was stopped');
       return;
     }
     if (event.type.startsWith('assistant/') || event.type.startsWith('tool/')) this.classify();

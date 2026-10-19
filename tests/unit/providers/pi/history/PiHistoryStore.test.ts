@@ -248,6 +248,57 @@ describe('PiHistoryStore', () => {
     expect(parsePiSessionContent(content)[1].durationSeconds).toBe(expected);
   });
 
+  it('marks user-stopped turns interrupted without timing or an error, and keeps errored turns as failures', () => {
+    const at = (seconds: number) => testTime({ days: 11, hours: 10, seconds });
+    const content = [
+      { type: 'message', id: 'u1', timestamp: at(0), message: { role: 'user', content: 'Run the build' } },
+      { type: 'message', id: 'a1', parentId: 'u1', timestamp: at(4), message: { role: 'assistant', content: [
+        { type: 'thinking', thinking: 'Build first.' },
+        { type: 'toolCall', id: 'bash', name: 'bash', arguments: { command: 'npm run build' } },
+      ], stopReason: 'aborted', errorMessage: 'Operation aborted', usage: { output: 12 } } },
+      { type: 'message', id: 'u2', parentId: 'a1', timestamp: at(10), message: { role: 'user', content: 'Never mind' } },
+      { type: 'message', id: 'a2', parentId: 'u2', timestamp: at(11), message: { role: 'assistant', content: [],
+        stopReason: 'aborted', errorMessage: 'Operation aborted' } },
+      { type: 'message', id: 'u3', parentId: 'a2', timestamp: at(20), message: { role: 'user', content: 'Try again' } },
+      { type: 'message', id: 'a3', parentId: 'u3', timestamp: at(25), message: { role: 'assistant', content: [{ type: 'text', text: 'Partial' }],
+        stopReason: 'error', errorMessage: 'Provider failed' } },
+    ].map(entry => JSON.stringify(entry)).join('\n');
+
+    const messages = parsePiSessionContent(content);
+
+    expect(messages.map(({ id, isInterrupt, durationSeconds, completedAt, turnStats }) => (
+      { id, isInterrupt, durationSeconds, completedAt, turnStats }))).toEqual([
+      { id: 'u1' }, { id: 'a1', isInterrupt: true }, { id: 'u2' }, { id: 'a2', isInterrupt: true }, { id: 'u3' }, { id: 'a3' },
+    ].map(message => ({ isInterrupt: undefined, durationSeconds: undefined, completedAt: undefined, turnStats: undefined, ...message })));
+    expect(messages[1].toolCalls).toEqual([expect.objectContaining({ id: 'bash' })]);
+    expect(messages[3]).toMatchObject({ content: '' });
+    expect(JSON.stringify(messages)).not.toContain('Operation aborted');
+  });
+
+  it('keeps an interrupted requested turn requested across notices and compaction', () => {
+    const content = [
+      { type: 'message', id: 'u1', message: { role: 'user', content: 'Delegate' } },
+      { type: 'custom_message', id: 'c1', parentId: 'u1', customType: 'peeps-result', display: true, content: 'Early result' },
+      { type: 'message', id: 'a1', parentId: 'c1', message: { role: 'assistant', stopReason: 'toolUse',
+        content: [{ type: 'toolCall', id: 'read', name: 'read', arguments: { path: 'README.md' } }] } },
+      { type: 'compaction', id: 'k1', parentId: 'a1', summary: 'Internal summary' },
+      { type: 'custom_message', id: 'c2', parentId: 'k1', customType: 'peeps-result', display: true, content: 'Later result' },
+      { type: 'message', id: 'a2', parentId: 'c2', message: { role: 'assistant', stopReason: 'aborted', errorMessage: 'Operation aborted',
+        content: [{ type: 'text', text: 'Partial' }] } },
+    ].map(entry => JSON.stringify(entry)).join('\n');
+
+    const assistants = parsePiSessionContent(content).filter(message => message.role === 'assistant');
+
+    // One requested native turn: chained in order, none of it automatic, the last interrupted.
+    expect(assistants.map(({ responseContinuationOf, isAutomaticResponse, isInterrupt }) => ({ responseContinuationOf, isAutomaticResponse, isInterrupt })))
+      .toEqual(assistants.map((message, index) => ({
+        responseContinuationOf: index > 0 ? assistants[index - 1].id : undefined,
+        isAutomaticResponse: undefined,
+        isInterrupt: index === assistants.length - 1 ? true : undefined,
+      })));
+    expect(assistants.length).toBeGreaterThan(1);
+  });
+
   it('starts timing again at the next user prompt', () => {
     const content = [
       { id: 'u1', type: 'message', timestamp: testTime({ days: 11, hours: 10 }),

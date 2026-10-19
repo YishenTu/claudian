@@ -1,6 +1,7 @@
 import type { ChatMessage } from '@/core/types';
 import { setupDisclosureButton } from '@/features/chat/rendering/collapsible';
 import {
+  appendInterruptLabel,
   formatWorkDuration,
   getResponseElementKind,
   getResponseLayout,
@@ -12,7 +13,8 @@ import { t } from '@/i18n/i18n';
 let nextHistoryId = 0;
 
 /**
- * Folds a completed response's work into a "Worked" disclosure and renders
+ * Folds a completed response's work into a "Worked" disclosure, an interrupted
+ * response entirely into an "Interrupted" one, and renders
  * task notifications as disclosures; each response collapses at most once.
  */
 export class ResponseFinalizer {
@@ -25,8 +27,8 @@ export class ResponseFinalizer {
 
   /**
    * Reparents completed output without replacing live tool or Markdown elements.
-   * Returns the text the response toolbar copies, or null when the response was
-   * already collapsed.
+   * Returns the answer the response toolbar acts on (null for an interrupted
+   * response, which has none), or null when the response was already collapsed.
    */
   finalize(
     msgEl: HTMLElement,
@@ -35,10 +37,10 @@ export class ResponseFinalizer {
     messages: ChatMessage[],
     collapse: boolean,
     index?: number,
-  ): string | null {
+  ): { answer: string | null } | null {
     if (this.#collapsedResponses.has(msgEl)) return null;
 
-    const { blocks, finalText, canCollapse, notificationPredecessor,
+    const { blocks, finalText, canCollapse, interrupted, automaticTurn, notificationPredecessor,
       automaticNotification, earlierMessages, hasContinuation, finalBlockCount } = getResponseLayout(msg, messages, collapse, index);
     const precedingNotificationHistory = notificationPredecessor
       ? this.findMessageEl(notificationPredecessor.id)?.querySelector<HTMLElement>(
@@ -55,7 +57,7 @@ export class ResponseFinalizer {
         }
       }
     }
-    if (canCollapse && !automaticNotification) {
+    if (interrupted || (canCollapse && !automaticNotification)) {
       // Keep the disclosure at the start of its response and fold consumed
       // notifications with the work around them, preserving transcript order.
       const workContentEl = hasContinuation && earlierMessages.length
@@ -67,26 +69,43 @@ export class ResponseFinalizer {
         return previousContent === workContentEl ? Array.from(previousContent.children) as HTMLElement[] : [el];
       });
       const children = Array.from(contentEl.children) as HTMLElement[];
-      const textEls = children.filter(child => getResponseElementKind(child) === 'text'
+      // An interrupted turn has no answer; its partial text and indicator fold too.
+      const textEls = interrupted ? [] : children.filter(child => getResponseElementKind(child) === 'text'
         || getResponseElementKind(child) === 'citations');
       const answerEls = new Set(textEls.slice(-finalBlockCount));
       // Fallback tool calls can follow the answer in the DOM without belonging to the answer.
-      const workEls = children.filter(child => !answerEls.has(child));
-      if (earlierEls.length || workEls.length || msg.durationSeconds !== undefined) {
+      let folded = [...earlierEls, ...children.filter(child => !answerEls.has(child))];
+      // An automatic turn's triggering notification stays outside its fold, like a prompt.
+      if (automaticTurn) {
+        const trigger = folded.findIndex(el => el.parentElement !== workContentEl || getResponseElementKind(el) !== 'notification');
+        folded = folded.slice(trigger < 0 ? folded.length : trigger);
+      }
+      // A lone indicator stays visible, as a replayed marker without output does.
+      const hasWork = interrupted
+        ? folded.some(el => getResponseElementKind(el) !== 'interrupt')
+        : folded.length > 0 || msg.durationSeconds !== undefined;
+      if (hasWork) {
         this.#collapsedResponses.add(msgEl);
         const wrapper = workContentEl.createDiv({
           cls: 'claudian-work', attr: { 'data-work-message-id': msg.id },
         });
-        workContentEl.insertBefore(wrapper, workContentEl.firstChild);
-        const label = msg.durationSeconds === undefined ? t('chat.worked')
-          : t('chat.zen.workedFor', { duration: formatWorkDuration(msg.durationSeconds) });
+        workContentEl.insertBefore(wrapper, automaticTurn
+          ? folded.find(el => el.parentElement === workContentEl) ?? null : workContentEl.firstChild);
+        // An interrupted turn's header is its interrupt indicator, which the body no longer repeats.
+        const label = interrupted ? appendInterruptLabel
+          : msg.durationSeconds === undefined ? t('chat.worked')
+            : t('chat.zen.workedFor', { duration: formatWorkDuration(msg.durationSeconds) });
         const history = this.#createDisclosure(wrapper, 'claudian-work-history', label);
-        for (const el of [...earlierEls, ...workEls]) history.appendChild(el);
+        for (const el of folded) {
+          if (getResponseElementKind(el) === 'interrupt') el.remove();
+          else history.appendChild(el);
+        }
       }
     }
 
-    return canCollapse ? finalText
-      : blocks.filter(block => block.type === 'text').map(block => block.content).join('\n\n') || msg.content;
+    if (interrupted) return { answer: null };
+    return { answer: canCollapse ? finalText
+      : blocks.filter(block => block.type === 'text').map(block => block.content).join('\n\n') || msg.content };
   }
 
   /** A collapsed notification whose Markdown renders on first expansion. */
@@ -101,10 +120,12 @@ export class ResponseFinalizer {
   #createDisclosure(
     wrapper: HTMLElement,
     idPrefix: string,
-    label: string,
+    label: string | ((header: HTMLElement) => void),
     onFirstExpand?: () => void,
   ): HTMLElement {
-    const header = wrapper.createEl('button', { cls: 'claudian-work-header', text: label });
+    const header = wrapper.createEl('button', { cls: 'claudian-work-header' });
+    if (typeof label === 'string') header.setText(label);
+    else label(header);
     const history = wrapper.createDiv({
       cls: 'claudian-work-history', attr: { id: `${idPrefix}-${nextHistoryId++}` },
     });

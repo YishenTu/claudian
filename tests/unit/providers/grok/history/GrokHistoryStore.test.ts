@@ -64,8 +64,10 @@ describe('GrokHistoryStore', () => {
       { content: 'Done.', type: 'text' },
     ]);
     expect(parsed.messages[2]).toMatchObject({ content: 'Stop now.', role: 'user' });
-    expect(parsed.messages[3]).toMatchObject({ content: 'Stopping.', role: 'assistant' });
+    expect(parsed.messages[3]).toMatchObject({ content: 'Stopping.', role: 'assistant', isInterrupt: true });
     expect(parsed.messages[3].durationSeconds).toBeUndefined();
+    expect(parsed.messages[3].completedAt).toBeUndefined();
+    expect(parsed.messages[1].isInterrupt).toBeUndefined();
     expect(parsed.messages.some(message => message.content.includes('Incomplete'))).toBe(false);
     expect(parsed.lastUsage).toEqual(expect.objectContaining({
       inputTokens: 10,
@@ -92,6 +94,34 @@ describe('GrokHistoryStore', () => {
     })).join('\n');
 
     expect(parseGrokHistoryContent(content, 'timing').messages[1].durationSeconds).toBe(expected);
+  });
+
+  it('marks a turn cancelled mid-tool interrupted, and keeps a bare marker when it produced no output', () => {
+    const lines = [
+      [0, { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Run the build' } }],
+      [1, { sessionUpdate: 'tool_call', toolCallId: 'build', title: 'run_terminal_cmd', kind: 'execute', status: 'in_progress',
+        rawInput: { command: 'npm run build' } }],
+      [9, { sessionUpdate: 'turn_completed', prompt_id: 'prompt-cancelled', stop_reason: 'cancelled',
+        usage: { inputTokens: 12, outputTokens: 3, totalTokens: 15 } }],
+      [10, { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Never mind' } }],
+      [11, { sessionUpdate: 'turn_completed', prompt_id: 'prompt-empty', stop_reason: 'cancelled' }],
+    ] as const;
+    const content = lines.map(([seconds, update]) => JSON.stringify({
+      timestamp: testDate().getTime() + seconds * 1_000, method: 'session/update',
+      params: { sessionId: 'cancelled', update, _meta: { cancellationCategory: 'MidTurnAbort' } },
+    })).join('\n');
+
+    const { messages } = parseGrokHistoryContent(content, 'cancelled');
+
+    expect(messages.map(({ role, content: text, isInterrupt, durationSeconds, completedAt }) => (
+      { role, text, isInterrupt, durationSeconds, completedAt }))).toEqual([
+      { role: 'user', text: 'Run the build', isInterrupt: undefined, durationSeconds: undefined, completedAt: undefined },
+      { role: 'assistant', text: '', isInterrupt: true, durationSeconds: undefined, completedAt: undefined },
+      { role: 'user', text: 'Never mind', isInterrupt: undefined, durationSeconds: undefined, completedAt: undefined },
+      { role: 'assistant', text: '', isInterrupt: true, durationSeconds: undefined, completedAt: undefined },
+    ]);
+    expect(messages[1].toolCalls).toEqual([expect.objectContaining({ id: 'build' })]);
+    expect(messages[3].toolCalls).toBeUndefined();
   });
 
   it('rehydrates only the active branch after a native rewind marker', () => {

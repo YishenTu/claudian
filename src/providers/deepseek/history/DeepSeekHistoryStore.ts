@@ -64,13 +64,21 @@ export async function loadDeepSeekHistory(client: DeepSeekReader, sessionId: str
       continue;
     }
     if (record.type === 'turn/end') {
-      if (pendingNotices.length) ensureAssistant(record);
+      const reason = isRecord(record.data.reason) ? record.data.reason.kind : undefined;
+      // A stopped turn is interrupted, as live execution treats it: no completion timing or stats.
+      const stopped = reason === 'aborted' || reason === 'cancelled';
+      // Unconsumed notices, or requested input stopped before any output, still end in a reply.
+      if (pendingNotices.length || (stopped && !automatic)) ensureAssistant(record);
       if (assistant) {
         assistant.assistantMessageId = encodeDeepSeekCheckpoint(record.seq);
-        assistant.completedAt = record.time;
-        const durationMs = Math.max(0, record.time - turnStart);
-        assistant.durationSeconds = Math.floor(durationMs / 1000);
-        assistant.turnStats = { outputTokens: output?.outputTokens ?? 0, durationMs };
+        if (stopped) {
+          assistant.isInterrupt = true;
+        } else {
+          assistant.completedAt = record.time;
+          const durationMs = Math.max(0, record.time - turnStart);
+          assistant.durationSeconds = Math.floor(durationMs / 1000);
+          assistant.turnStats = { outputTokens: output?.outputTokens ?? 0, durationMs };
+        }
       }
       output = undefined; assistant = undefined;
       continue;

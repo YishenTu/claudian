@@ -20,6 +20,7 @@ export {
   type ImageAttachment,
   type ImageMediaType,
   isCanonicalUserMessage,
+  linkInterruptedTurnSegments,
   type SessionMessageSender,
   type SessionMetadata,
   type StreamChunk,
