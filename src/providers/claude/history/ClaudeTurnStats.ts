@@ -6,7 +6,12 @@ import { createTurnStats, isTokenCount, type TurnStats } from '@/core/types';
 import { getSDKSessionPath } from './ClaudeHistoryPathResolver';
 import { filterActiveBranch } from './sdkBranchFilter';
 import type { SDKNativeMessage } from './sdkHistoryTypes';
-import { isCanonicalSDKUserMessage, isSystemInjectedMessage } from './sdkMessageParsing';
+import {
+  getSDKUserMessageTimestamp,
+  isCanonicalSDKUserMessage,
+  isQueuedPromptAttachment,
+  isSystemInjectedMessage,
+} from './sdkMessageParsing';
 
 /** Finalized JSONL response IDs may occur in several content-block records. */
 export class ClaudeTurnStats {
@@ -41,8 +46,19 @@ export async function loadClaudeTurnStats(
   try {
     const records: SDKNativeMessage[] = [];
     let foundAssistant = false;
+    let measure: ((followedAt: string | undefined) => TurnStats | undefined) | null = null;
+    // A folded queued prompt is timed from the record it follows, through any consecutive folds.
+    const queuedPrompts: SDKNativeMessage[] = [];
     for await (const record of readBackwards(file)) {
       if (record.isSidechain) continue;
+      if (measure) {
+        if (record.uuid !== queuedPrompts.at(-1)?.parentUuid) continue;
+        if (isQueuedPromptAttachment(record) && record.parentUuid) {
+          queuedPrompts.push(record);
+          continue;
+        }
+        return measure(record.timestamp);
+      }
       if (record.uuid === assistantId) foundAssistant = true;
       const isUser = (record.type === 'user' && !isSystemInjectedMessage(record))
         || (record.type === 'attachment' && record.attachment?.commandMode === 'prompt');
@@ -59,10 +75,16 @@ export async function loadClaudeTurnStats(
           stats.add(entry);
           completedAt = timestamp(entry.timestamp);
         }
-        return stats.finish(timestamp(record.timestamp), completedAt);
+        measure = followedAt => {
+          let startedAt = followedAt;
+          for (const queued of queuedPrompts.reverse()) startedAt = getSDKUserMessageTimestamp(queued, startedAt);
+          return stats.finish(timestamp(startedAt), completedAt);
+        };
+        if (!isQueuedPromptAttachment(record) || !record.parentUuid) return stats.finish(timestamp(record.timestamp), completedAt);
+        queuedPrompts.push(record);
       }
     }
-    return undefined;
+    return measure?.(undefined);
   } finally {
     await file.close();
   }

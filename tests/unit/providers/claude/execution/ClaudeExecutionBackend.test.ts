@@ -3127,6 +3127,10 @@ describe('ClaudeExecutionSession steering', () => {
     return { session, run, events, done, sessionEvents, loadQuery, getQuery: () => query };
   }
 
+  function sessionState(state: 'idle' | 'running') {
+    return { type: 'system', subtype: 'session_state_changed', state, session_id: 'session-1' };
+  }
+
   function steerRequest(text: string): ProviderExecutionRequest {
     return createRequest({ input: [{ type: 'text', text }] });
   }
@@ -3170,19 +3174,23 @@ describe('ClaudeExecutionSession steering', () => {
     }
   });
 
-  it('keeps the run open when Claude runs a late steer as its next native turn', async () => {
+  // Claude Code 2.1.302 reports no queued turns while a steer waits, and signals turn-over by going idle.
+  it.each(['queued-count', 'session-state'] as const)('keeps the run open when Claude runs a late steer as its next native turn (%s)', async wire => {
     const { session, events, done, sessionEvents } = await startSteerableSession(async function* (nextInput, keepOpen) {
       const prompt = await nextInput();
+      if (wire === 'session-state') yield sessionState('running');
       yield { type: 'system', subtype: 'init', session_id: 'session-1' };
       yield replayOf(prompt);
       yield assistantText('assistant-1', 'Parser refactored.');
       const steer = await nextInput();
-      yield { type: 'result', subtype: 'success', user_message_uuids: [prompt.uuid], queued_turn_count: 1 };
+      yield { type: 'result', subtype: 'success', user_message_uuids: [prompt.uuid], queued_turn_count: wire === 'queued-count' ? 1 : 0 };
+      if (wire === 'session-state') yield { type: 'system', subtype: 'init', session_id: 'session-1' };
       yield replayOf(steer);
       yield { type: 'stream_event', parent_tool_use_id: null, user_message_uuid: steer.uuid,
         event: { type: 'message_start', message: { id: 'message-2', usage: {} } } };
       yield assistantText('assistant-2', 'Also added tests.');
       yield { type: 'result', subtype: 'success', user_message_uuids: [steer.uuid], queued_turn_count: 0 };
+      if (wire === 'session-state') yield sessionState('idle');
       await keepOpen;
     });
     try {
@@ -3192,6 +3200,7 @@ describe('ClaudeExecutionSession steering', () => {
 
       expect(events.filter(event => event.type === 'text_delta').map(event => event.text))
         .toEqual(['Parser refactored.', 'Also added tests.']);
+      expect(events).toContainEqual(expect.objectContaining({ type: 'user_message_started', content: 'Add tests too' }));
       expect(events.filter(event => event.type === 'turn_completed')).toEqual([
         expect.objectContaining({ nativeAssistantId: 'assistant-2' }),
       ]);
@@ -3221,13 +3230,15 @@ describe('ClaudeExecutionSession steering', () => {
     }
   });
 
-  it('rejects a handed-off steer whose delivery ends unknown', async () => {
+  it.each(['queued-count', 'session-state'] as const)('rejects a handed-off steer whose delivery ends unknown (%s)', async wire => {
     const { session, events, done } = await startSteerableSession(async function* (nextInput, keepOpen) {
       const prompt = await nextInput();
+      if (wire === 'session-state') yield sessionState('running');
       yield { type: 'system', subtype: 'init', session_id: 'session-1' };
       yield assistantText('assistant-1', 'Working.');
       await nextInput();
       yield { type: 'result', subtype: 'success', user_message_uuids: [prompt.uuid], queued_turn_count: 0 };
+      if (wire === 'session-state') yield sessionState('idle');
       await keepOpen;
     });
     try {
@@ -3235,6 +3246,29 @@ describe('ClaudeExecutionSession steering', () => {
       await expect(session.steer(steerRequest('Be brief'))).rejects.toThrow('before the steer was delivered');
       await done;
       expect(events.at(-1)?.type).toBe('turn_completed');
+    } finally {
+      await session.dispose();
+    }
+  });
+
+  // Failed-delivery and session-scoped error results omit or narrow consumption echoes.
+  it.each(['no-echo', 'single-echo'] as const)('does not confirm a queued steer from an error result (%s)', async echo => {
+    const { session, events, done } = await startSteerableSession(async function* (nextInput, keepOpen) {
+      await nextInput();
+      yield { type: 'system', subtype: 'init', session_id: 'session-1' };
+      yield assistantText('assistant-1', 'Working.');
+      const steer = await nextInput();
+      yield {
+        type: 'result', subtype: 'error_during_execution', is_error: true, errors: ['Worker crashed'],
+        ...(echo === 'single-echo' ? { user_message_uuid: steer.uuid } : {}),
+      };
+      await keepOpen;
+    });
+    try {
+      await waitFor(() => events.some(event => event.type === 'text_delta'));
+      await expect(session.steer(steerRequest('Be brief'))).rejects.toThrow('before the steer was delivered');
+      await done;
+      expect(events.at(-1)?.type).not.toBe('turn_completed');
     } finally {
       await session.dispose();
     }

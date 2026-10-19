@@ -1,4 +1,5 @@
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
+import { testTime } from '@test/helpers/testClock';
 
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
 
@@ -106,6 +107,35 @@ it('keeps a user response active across a notification received between its nati
       { type: 'text', content: 'The requested answer.' },
     ],
   });
+});
+
+// The attachment timestamp records enqueue time; its file position records where Claude folded it.
+it('replays a steer folded mid-turn after the tool call it followed', async () => {
+  const entries = [
+    { type: 'user', uuid: 'u', timestamp: testTime(), message: { content: 'Refactor the parser' } },
+    { type: 'assistant', uuid: 'a1', parentUuid: 'u', timestamp: testTime({ seconds: 2 }),
+      message: { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'bash', name: 'Bash', input: { command: 'sleep 8' } }] } },
+    { type: 'queue-operation', operation: 'enqueue', timestamp: testTime({ seconds: 1 }), content: 'Use tabs instead' },
+    { type: 'user', uuid: 'r1', parentUuid: 'a1', timestamp: testTime({ seconds: 10 }), toolUseResult: { stdout: 'done' },
+      message: { content: [{ type: 'tool_result', tool_use_id: 'bash', content: 'done' }] } },
+    { type: 'attachment', uuid: 'steer-attachment', parentUuid: 'r1', timestamp: testTime({ seconds: 1 }),
+      attachment: { type: 'queued_command', prompt: 'Use tabs instead', source_uuid: 'steer', commandMode: 'prompt', timestamp: testTime({ seconds: 1 }) } },
+    { type: 'queue-operation', operation: 'remove', timestamp: testTime({ seconds: 10 }), content: 'Use tabs instead' },
+    { type: 'assistant', uuid: 'a2', parentUuid: 'steer-attachment', timestamp: testTime({ seconds: 12 }),
+      message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Switched to tabs.' }] } },
+  ];
+  const sessionPath = writeSession(entries.map(entry => JSON.stringify(entry)).join('\n'));
+
+  const result = await loadSDKSessionMessages('/vault', 'session', undefined, sessionPath);
+
+  expect(result.messages.map(message => [message.role, message.content || message.contentBlocks?.[0]?.type])).toEqual([
+    ['user', 'Refactor the parser'],
+    ['assistant', 'tool_use'],
+    ['user', 'Use tabs instead'],
+    ['assistant', 'Switched to tabs.'],
+  ]);
+  expect(result.messages[2]).toMatchObject({ id: 'steer', timestamp: Date.parse(testTime({ seconds: 10 })) });
+  expect(result.messages[3]).toMatchObject({ durationSeconds: 2 });
 });
 
 it('replays a user prompt absorbed into an automatic response from its queued-command attachment', async () => {

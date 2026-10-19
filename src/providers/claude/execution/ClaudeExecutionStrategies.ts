@@ -17,7 +17,7 @@ import {
   type ClaudeSDKUserMessage,
 } from '../runtime/ClaudeUserMessageFactory';
 import type { ClaudeEncodedExecutionRequest } from './ClaudeExecutionRequestEncoder';
-import { ClaudeTurnInputs } from './ClaudeTurnInputs';
+import { type ClaudeSteerDelivery, ClaudeTurnInputs } from './ClaudeTurnInputs';
 
 export interface ClaudeCommandUpdate {
   readonly commands?: SlashCommand[];
@@ -48,10 +48,10 @@ export interface ClaudeExecutionStrategy {
     queryToken: number,
   ): Promise<void>;
   /**
-   * Hands a steer to the live native turn for `queryToken`. Returns false only
-   * when nothing was handed off.
+   * Hands a steer to the live native turn for `queryToken`; its turn inputs
+   * settle `delivery`. Returns false only when nothing was handed off.
    */
-  steerTurn(message: ClaudeSDKUserMessage, queryToken: number): boolean;
+  steerTurn(message: ClaudeSDKUserMessage, queryToken: number, delivery: ClaudeSteerDelivery): boolean;
   cancel(queryToken: number | null, nativeTurnHandedOff: boolean): void;
   getRewindQuery(): Query | null;
   ensureReadyForRewind(
@@ -133,7 +133,7 @@ implements ClaudeExecutionStrategy {
     }
   }
 
-  steerTurn(message: ClaudeSDKUserMessage, queryToken: number): boolean {
+  steerTurn(message: ClaudeSDKUserMessage, queryToken: number, delivery: ClaudeSteerDelivery): boolean {
     const nativeTurn = this.activeNativeTurn;
     if (
       this.disposed
@@ -147,7 +147,7 @@ implements ClaudeExecutionStrategy {
     ) {
       return false;
     }
-    nativeTurn.inputs.addSteer(message.uuid);
+    nativeTurn.inputs.addSteer(message.uuid, delivery);
     // 'next' folds at the next native boundary; 'now' would abort the running tool.
     this.messageChannel.enqueue({ ...message, priority: 'next' });
     return true;
@@ -325,7 +325,7 @@ implements ClaudeExecutionStrategy {
           message,
           nativeTurn?.queryToken ?? queryToken,
         );
-        if (message.type === 'result' && nativeTurn?.inputs.settled) {
+        if (nativeTurn?.inputs.settled) {
           this.#finishNativeTurn(query, { type: 'completed' });
         }
       }

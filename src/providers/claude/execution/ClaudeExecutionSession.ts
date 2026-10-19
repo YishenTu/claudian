@@ -59,7 +59,7 @@ import {
 import { ClaudeResponseOwnership } from './ClaudeResponseOwnership';
 import { ClaudeResumeState } from './ClaudeResumeState';
 import { ClaudeTaskNotificationQueue } from './ClaudeTaskNotificationQueue';
-import { type ClaudeTurnInputs, getReplayedUserMessageId } from './ClaudeTurnInputs';
+import { type ClaudeSteerDelivery, type ClaudeTurnInputs, getReplayedUserMessageId } from './ClaudeTurnInputs';
 
 export interface ClaudeExecutionSessionOptions {
   /** Receives the catalog each native query reports at init; persistence stays with the catalog owner. */
@@ -77,15 +77,14 @@ interface ActiveRequestedRun {
   nativeCompleted?: boolean;
   historyReplayGeneration: number | null;
   inputs: ClaudeTurnInputs | null;
-  readonly steers: Map<string, PendingClaudeSteer>;
   nativeAssistantId?: string;
+  /** The latest result Claude reported for this run, kept while a queued steer holds it open. */
+  lastResult?: ClaudeNativeRunResult;
 }
 
-/** A steer handed to native input whose delivery into the run is not yet known. */
-interface PendingClaudeSteer {
-  readonly content: string;
-  resolve(accepted: boolean): void;
-  reject(error: Error): void;
+interface ClaudeNativeRunResult {
+  readonly turnStats: TurnStats | undefined;
+  readonly succeeded: boolean;
 }
 
 interface BackgroundTurn {
@@ -216,7 +215,6 @@ ClaudeExecutionStrategySink {
       nativeHandedOff: false,
       historyReplayGeneration: null,
       inputs: null,
-      steers: new Map(),
     };
     this.activeRun = active;
     this.state.setStatus('executing');
@@ -290,18 +288,11 @@ ClaudeExecutionStrategySink {
       this.resume.providerSessionId ?? '',
       encoded.images,
     );
+    let delivery!: ClaudeSteerDelivery;
     const acceptance = new Promise<boolean>((resolve, reject) => {
-      active.steers.set(message.uuid, {
-        content: getRequestInputText(request),
-        resolve,
-        reject,
-      });
+      delivery = { content: getRequestInputText(request), resolve, reject };
     });
-    if (!this.strategy.steerTurn(message, active.queryToken)) {
-      active.steers.delete(message.uuid);
-      return false;
-    }
-    return acceptance;
+    return this.strategy.steerTurn(message, active.queryToken, delivery) ? acceptance : false;
   }
 
   getSnapshot(): ProviderSessionSnapshot {
@@ -479,6 +470,11 @@ ClaudeExecutionStrategySink {
     this.nativeQueryToken = queryToken;
     this.taskNotifications.observe(message);
     const active = this.activeRun;
+    if (message.type === 'system' && message.subtype === 'session_state_changed') {
+      // Going idle settles a run whose queued steer Claude never ran.
+      if (message.state === 'idle' && active) await this.#completeIfSettled(active);
+      return;
+    }
     const intendedModel = this.lastEncodedRequest?.model;
     const reportedContextWindow = intendedModel
       && this.knownContextWindow?.model === intendedModel
@@ -624,32 +620,41 @@ ClaudeExecutionStrategySink {
       if (normalized.type === 'result') {
         this.#finishBackgroundTurn('completed');
         const active = this.activeRun;
-        if (active?.nativeHandedOff && inputMatch !== false) {
+        if (active?.nativeHandedOff && inputMatch !== false && message.type === 'result') {
+          active.lastResult = {
+            turnStats: normalized.turnStats,
+            succeeded: message.subtype === 'success' && !message.is_error,
+          };
           // A steer Claude queued behind this result keeps the run open.
-          if (active.inputs && !active.inputs.settled) continue;
-          this.#settleConsumedSteers(active);
-          active.nativeCompleted = true;
-          let turnStats = normalized.turnStats;
-          if (turnStats && this.lastEncodedRequest?.options.persistSession !== false) {
-            // Persisted timestamps define the rate both now and on replay. SDK result
-            // duration ends later and cannot be reconstructed from every JSONL version.
-            turnStats = undefined;
-            const sessionId = this.resume.providerSessionId;
-            if (sessionId && active.nativeAssistantId) {
-              turnStats = await loadClaudeTurnStats(
-                this.config.vaultWorkingDirectory, sessionId, active.nativeAssistantId,
-                { environment: this.lastEncodedRequest?.options.env ?? process.env },
-              ).catch(() => undefined);
-            }
-          }
-          if (this.activeRun === active && !active.run.isTerminal) {
-            this.suggestionTurnId = message.type === 'result' && message.subtype === 'success'
-              && !message.is_error && this.lastEncodedRequest?.options.promptSuggestions
-              ? active.run.turnId : null;
-            this.#finishCompleted(active, 'completed', turnStats);
-          }
+          await this.#completeIfSettled(active);
         }
       }
+    }
+  }
+
+  /** Completes the run once its inputs settled after a result it owns. */
+  async #completeIfSettled(active: ActiveRequestedRun): Promise<void> {
+    const result = active.lastResult;
+    if (!result || !active.nativeHandedOff || active.nativeCompleted
+      || (active.inputs && !active.inputs.settled)) return;
+    active.nativeCompleted = true;
+    let turnStats = result.turnStats;
+    if (turnStats && this.lastEncodedRequest?.options.persistSession !== false) {
+      // Persisted timestamps define the rate both now and on replay. SDK result
+      // duration ends later and cannot be reconstructed from every JSONL version.
+      turnStats = undefined;
+      const sessionId = this.resume.providerSessionId;
+      if (sessionId && active.nativeAssistantId) {
+        turnStats = await loadClaudeTurnStats(
+          this.config.vaultWorkingDirectory, sessionId, active.nativeAssistantId,
+          { environment: this.lastEncodedRequest?.options.env ?? process.env },
+        ).catch(() => undefined);
+      }
+    }
+    if (this.activeRun === active && !active.run.isTerminal) {
+      this.suggestionTurnId = result.succeeded && this.lastEncodedRequest?.options.promptSuggestions
+        ? active.run.turnId : null;
+      this.#finishCompleted(active, 'completed', turnStats);
     }
   }
 
@@ -944,25 +949,15 @@ ClaudeExecutionStrategySink {
   }
 
   #acceptDeliveredSteer(active: ActiveRequestedRun, nativeUserMessageId: string): void {
-    const steer = active.steers.get(nativeUserMessageId);
-    if (!steer || active.run.isTerminal) return;
-    active.steers.delete(nativeUserMessageId);
+    if (active.run.isTerminal) return;
+    const content = active.inputs?.deliver(nativeUserMessageId);
+    if (content === undefined) return;
     this.eventNormalizer.beginUserBoundary('requested');
     this.#emitRequested(active, {
       type: 'user_message_started',
-      content: steer.content,
+      content,
       nativeUserMessageId,
     });
-    steer.resolve(true);
-  }
-
-  /** Consumption without a replay is still definite; history supplies the message. */
-  #settleConsumedSteers(active: ActiveRequestedRun): void {
-    for (const [id, steer] of active.steers) {
-      if (!active.inputs?.wasConsumed(id)) continue;
-      active.steers.delete(id);
-      steer.resolve(true);
-    }
   }
 
   #emitTurnOutput(
@@ -1139,11 +1134,7 @@ ClaudeExecutionStrategySink {
     const scope = active.run.finish(event);
     if (!scope) return;
     this.lastRequestedEventScope = scope;
-    for (const steer of active.steers.values()) {
-      // Handed-off input with unknown delivery must not be resent as unsent.
-      steer.reject(new Error('Claude Code run ended before the steer was delivered.'));
-    }
-    active.steers.clear();
+    active.inputs?.abandon();
     if (this.activeRun === active) {
       this.activeRun = null;
     }

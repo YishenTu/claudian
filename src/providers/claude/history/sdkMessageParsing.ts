@@ -308,9 +308,28 @@ export function collectAsyncSubagentResults(
   return results;
 }
 
+export function isQueuedPromptAttachment(record: SDKNativeMessage): boolean {
+  return record.type === 'attachment' && record.attachment?.type === 'queued_command'
+    && record.attachment.commandMode === 'prompt';
+}
+
+/**
+ * A queued prompt Claude folds into a running turn keeps its enqueue timestamp,
+ * while the record it follows marks consumption, where the live transcript shows it.
+ * `followedAt` is that record's own effective timestamp, so consecutive folds stay ordered.
+ */
+export function getSDKUserMessageTimestamp(
+  record: SDKNativeMessage,
+  followedAt: string | undefined,
+): string | undefined {
+  if (!isQueuedPromptAttachment(record)) return record.timestamp;
+  const enqueuedAt = Date.parse(record.timestamp ?? '');
+  const consumedAt = Date.parse(followedAt ?? '');
+  return Number.isFinite(consumedAt) && !(enqueuedAt >= consumedAt) ? followedAt : record.timestamp;
+}
+
 export function isCanonicalSDKUserMessage(record: SDKNativeMessage): boolean {
-  const queuedPrompt = record.type === 'attachment'
-    && record.attachment?.type === 'queued_command' && record.attachment.commandMode === 'prompt';
+  const queuedPrompt = isQueuedPromptAttachment(record);
   if ((!queuedPrompt && record.type !== 'user') || isSystemInjectedMessage(record)) return false;
   const content = queuedPrompt ? record.attachment?.prompt : record.message?.content;
   const text = extractClaudeTextContent(content);

@@ -2,6 +2,8 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
+
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
 import { loadClaudeTurnStats } from '@/providers/claude/history/ClaudeTurnStats';
 import type { SDKNativeMessage } from '@/providers/claude/history/sdkHistoryTypes';
@@ -70,6 +72,39 @@ it.each([
   try {
     expect(await loadClaudeTurnStats('/vault', 'session', 'a', { environment: { CLAUDE_CONFIG_DIR: home } })).toBeUndefined();
     expect((await loadSDKSessionMessages('/vault', 'session', 'a', filePath)).messages.at(-1)?.turnStats).toBeUndefined();
+  } finally {
+    await fs.rm(home, { recursive: true, force: true });
+  }
+});
+
+it.each([1, 2])('times a turn resumed by %i folded queued prompts from their consumption, matching replay', async count => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-turn-queued-'));
+  const vaultPath = path.resolve('/vault');
+  const directory = path.join(home, 'projects', vaultPath.replace(/[^a-zA-Z0-9]/g, '-'));
+  await fs.mkdir(directory, { recursive: true });
+  const filePath = path.join(directory, 'session.jsonl');
+  // The attachment keeps its enqueue time; Claude folded it after the tool result.
+  await fs.writeFile(filePath, [
+    { type: 'user', uuid: 'u', timestamp: testTime(), message: { content: 'Work' } },
+    { type: 'assistant', uuid: 'a1', parentUuid: 'u', timestamp: testTime({ seconds: 1 }),
+      message: { id: 'r1', stop_reason: 'tool_use', usage: { output_tokens: 100 }, content: [{ type: 'tool_use', id: 'bash', name: 'Bash', input: {} }] } },
+    { type: 'user', uuid: 'tool', parentUuid: 'a1', timestamp: testTime({ seconds: 10 }), toolUseResult: {},
+      message: { content: [{ type: 'tool_result', tool_use_id: 'bash', content: 'done' }] } },
+    ...Array.from({ length: count }, (_, index) => ({
+      type: 'attachment', uuid: `steer-${index}`, parentUuid: index === 0 ? 'tool' : `steer-${index - 1}`,
+      timestamp: testTime({ milliseconds: 500 * (index + 1) }),
+      attachment: { type: 'queued_command', prompt: `Steer ${index}`, source_uuid: `steer-input-${index}`, commandMode: 'prompt' },
+    })),
+    { type: 'assistant', uuid: 'final', parentUuid: `steer-${count - 1}`, timestamp: testTime({ seconds: 12, milliseconds: 500 }),
+      message: { id: 'r2', stop_reason: 'end_turn', usage: { output_tokens: 25 }, content: [{ type: 'text', text: 'Done' }] } },
+  ].map(record => JSON.stringify(record)).join('\n'));
+  try {
+    const stats = await loadClaudeTurnStats('/vault', 'session', 'final', { environment: { CLAUDE_CONFIG_DIR: home } });
+    expect(stats).toEqual({ outputTokens: 25, durationMs: 2500 });
+    const replay = await loadSDKSessionMessages('/vault', 'session', 'final', filePath);
+    expect(replay.messages.at(-1)?.turnStats).toEqual(stats);
+    expect(replay.messages.map(message => message.content || message.contentBlocks?.[0]?.type))
+      .toEqual(['Work', 'tool_use', ...Array.from({ length: count }, (_, index) => `Steer ${index}`), 'Done']);
   } finally {
     await fs.rm(home, { recursive: true, force: true });
   }

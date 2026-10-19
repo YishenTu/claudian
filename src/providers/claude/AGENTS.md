@@ -9,4 +9,4 @@
 - Resolve native history through configured Claude home, not hardcoded default paths. Branch replay must retain relevant sibling tool results.
 - Missing authoritative checkpoint/latest-segment model evidence cannot fall back to an older segment or make a recovery-only locator resumable.
 - A returned session differing from the resume target triggers history recovery, except initial fork session initialization. Late automatic turns may arrive without a handler.
-- A steer belongs to the requested run until a result consumes it, whether Claude folds it mid-turn or runs it as the next native turn. Queued sends survive a native interrupt, so cancelling with an undelivered steer must replace the process.
+- A steer belongs to the requested run until a result consumes it, whether Claude folds it mid-turn or runs it as the next native turn. `queued_turn_count` reads 0 while a steer waits for the next native turn; when Claude reports session state, only `idle` ends a run with unconsumed steers. Queued sends survive a native interrupt, so cancelling with an undelivered steer must replace the process.

@@ -22,6 +22,7 @@ import {
   collectAsyncSubagentResults,
   collectStructuredPatchResults,
   collectToolResults,
+  getSDKUserMessageTimestamp,
   hydrateStructuredToolResults,
   isCanonicalSDKUserMessage,
   isSystemInjectedMessage,
@@ -165,8 +166,13 @@ export async function loadSDKSessionMessages(
     turnStats = new ClaudeTurnStats();
   };
 
+  // Parents precede their children in file order, so each effective timestamp is known when needed.
+  const effectiveTimestamps = new Map<string, string | undefined>();
   // Preserve task notification boundaries without ending an unfinished requested response.
-  for (const sdkMsg of filteredEntries) {
+  for (const entry of filteredEntries) {
+    const timestamp = getSDKUserMessageTimestamp(entry, entry.parentUuid ? effectiveTimestamps.get(entry.parentUuid) : undefined);
+    if (entry.uuid) effectiveTimestamps.set(entry.uuid, timestamp);
+    const sdkMsg = timestamp === entry.timestamp ? entry : { ...entry, timestamp };
     const notification = parseTaskNotification(sdkMsg);
     if (notification !== null) {
       if (pendingAssistant && requestedResponsePending) {
