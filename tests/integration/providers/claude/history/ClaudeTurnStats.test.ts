@@ -77,7 +77,12 @@ it.each([
   }
 });
 
-it.each([1, 2])('times a turn resumed by %i folded queued prompts from their consumption, matching replay', async count => {
+// The active branch drops progress records, which a fold can still follow.
+it.each([
+  [1, 'tool result', 2500],
+  [2, 'tool result', 2500],
+  [1, 'progress record', 2000],
+] as const)('times a turn resumed by %i folded queued prompts after a %s from their consumption, matching replay', async (count, followed, durationMs) => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-turn-queued-'));
   const vaultPath = path.resolve('/vault');
   const directory = path.join(home, 'projects', vaultPath.replace(/[^a-zA-Z0-9]/g, '-'));
@@ -90,8 +95,12 @@ it.each([1, 2])('times a turn resumed by %i folded queued prompts from their con
       message: { id: 'r1', stop_reason: 'tool_use', usage: { output_tokens: 100 }, content: [{ type: 'tool_use', id: 'bash', name: 'Bash', input: {} }] } },
     { type: 'user', uuid: 'tool', parentUuid: 'a1', timestamp: testTime({ seconds: 10 }), toolUseResult: {},
       message: { content: [{ type: 'tool_result', tool_use_id: 'bash', content: 'done' }] } },
+    ...(followed === 'progress record'
+      ? [{ type: 'progress', uuid: 'progress', parentUuid: 'tool', timestamp: testTime({ seconds: 10, milliseconds: 500 }) }]
+      : []),
     ...Array.from({ length: count }, (_, index) => ({
-      type: 'attachment', uuid: `steer-${index}`, parentUuid: index === 0 ? 'tool' : `steer-${index - 1}`,
+      type: 'attachment', uuid: `steer-${index}`,
+      parentUuid: index > 0 ? `steer-${index - 1}` : followed === 'progress record' ? 'progress' : 'tool',
       timestamp: testTime({ milliseconds: 500 * (index + 1) }),
       attachment: { type: 'queued_command', prompt: `Steer ${index}`, source_uuid: `steer-input-${index}`, commandMode: 'prompt' },
     })),
@@ -100,7 +109,7 @@ it.each([1, 2])('times a turn resumed by %i folded queued prompts from their con
   ].map(record => JSON.stringify(record)).join('\n'));
   try {
     const stats = await loadClaudeTurnStats('/vault', 'session', 'final', { environment: { CLAUDE_CONFIG_DIR: home } });
-    expect(stats).toEqual({ outputTokens: 25, durationMs: 2500 });
+    expect(stats).toEqual({ outputTokens: 25, durationMs });
     const replay = await loadSDKSessionMessages('/vault', 'session', 'final', filePath);
     expect(replay.messages.at(-1)?.turnStats).toEqual(stats);
     expect(replay.messages.map(message => message.content || message.contentBlocks?.[0]?.type))

@@ -25,6 +25,7 @@ import {
   getSDKUserMessageTimestamp,
   hydrateStructuredToolResults,
   isCanonicalSDKUserMessage,
+  isQueuedPromptAttachment,
   isSystemInjectedMessage,
   mergeAssistantMessage,
   parseSDKMessageToChat,
@@ -166,12 +167,19 @@ export async function loadSDKSessionMessages(
     turnStats = new ClaudeTurnStats();
   };
 
-  // Parents precede their children in file order, so each effective timestamp is known when needed.
+  // Resolve over every record, as live turn stats do: the active branch drops the progress
+  // records a fold can follow. Parents precede their children in file order.
   const effectiveTimestamps = new Map<string, string | undefined>();
+  for (const entry of result.messages) {
+    if (entry.isSidechain || !entry.uuid) continue;
+    effectiveTimestamps.set(entry.uuid, getSDKUserMessageTimestamp(
+      entry, entry.parentUuid ? effectiveTimestamps.get(entry.parentUuid) : undefined,
+    ));
+  }
   // Preserve task notification boundaries without ending an unfinished requested response.
   for (const entry of filteredEntries) {
-    const timestamp = getSDKUserMessageTimestamp(entry, entry.parentUuid ? effectiveTimestamps.get(entry.parentUuid) : undefined);
-    if (entry.uuid) effectiveTimestamps.set(entry.uuid, timestamp);
+    const timestamp = isQueuedPromptAttachment(entry) && entry.uuid && effectiveTimestamps.has(entry.uuid)
+      ? effectiveTimestamps.get(entry.uuid) : entry.timestamp;
     const sdkMsg = timestamp === entry.timestamp ? entry : { ...entry, timestamp };
     const notification = parseTaskNotification(sdkMsg);
     if (notification !== null) {
