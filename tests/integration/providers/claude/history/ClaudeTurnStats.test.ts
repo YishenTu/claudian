@@ -8,7 +8,8 @@ import type { SDKNativeMessage } from '@/providers/claude/history/sdkHistoryType
 
 it('matches replay across tool-result ancestry and reads a bounded suffix of a long session', async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-turn-'));
-  const directory = path.join(home, 'projects', '-vault');
+  const vaultPath = path.resolve('/vault');
+  const directory = path.join(home, 'projects', vaultPath.replace(/[^a-zA-Z0-9]/g, '-'));
   await fs.mkdir(directory, { recursive: true });
   const filePath = path.join(directory, 'session.jsonl');
   const records: SDKNativeMessage[] = [
@@ -57,7 +58,8 @@ it.each([
   'User: Earlier question\n\nAssistant: Earlier answer',
 ])('does not start native timing from an interrupt or rebuilt context: %s', async content => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-turn-boundary-'));
-  const directory = path.join(home, 'projects', '-vault');
+  const vaultPath = path.resolve('/vault');
+  const directory = path.join(home, 'projects', vaultPath.replace(/[^a-zA-Z0-9]/g, '-'));
   await fs.mkdir(directory, { recursive: true });
   const filePath = path.join(directory, 'session.jsonl');
   await fs.writeFile(filePath, [

@@ -179,19 +179,26 @@ describe('CodexBinaryLocator', () => {
   });
 
   it.each(['darwin', 'linux'] as const)('prefers inherited PATH over automatic %s installations', (platform) => {
-    process.env.HOME = tempDir;
+    // A POSIX PATH cannot contain the drive colon of a Windows temporary directory.
+    // Model only the filesystem boundary while retaining the real PATH parsing and lookup order.
+    process.env.HOME = '/mock/home';
     const automaticDir = platform === 'darwin'
-      ? path.join(tempDir, 'Applications', 'Codex.app', 'Contents', 'Resources')
-      : path.join(tempDir, '.local', 'bin');
-    const pathDir = path.join(tempDir, 'chosen-cli');
-    fs.mkdirSync(automaticDir, { recursive: true });
-    fs.mkdirSync(pathDir);
-    fs.writeFileSync(path.join(automaticDir, 'codex'), '');
+      ? path.join('/mock/home', 'Applications', 'Codex.app', 'Contents', 'Resources')
+      : path.join('/mock/home', '.local', 'bin');
+    const pathDir = '/mock/chosen-cli';
     const pathBinary = path.join(pathDir, 'codex');
-    fs.writeFileSync(pathBinary, '');
+    const nativeFile = path.join(tempDir, 'codex');
+    fs.writeFileSync(nativeFile, '');
+    const fileStat = fs.statSync(nativeFile);
+    jest.spyOn(jest.requireActual<typeof fs>('fs'), 'statSync').mockImplementation(candidate => {
+      if ([pathBinary, path.join(automaticDir, 'codex')].includes(path.normalize(String(candidate)))) return fileStat;
+      throw Object.assign(new Error('No fixture'), { code: 'ENOENT' });
+    });
     process.env.PATH = pathDir;
 
     expect(findCodexBinaryPath('', platform)).toBe(pathBinary);
+    process.env.PATH = '';
+    expect(findCodexBinaryPath('', platform)).toBe(path.join(automaticDir, 'codex'));
   });
 
   it('falls back from an incomplete install override to a complete desktop runtime', () => {

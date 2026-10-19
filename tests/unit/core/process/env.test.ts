@@ -909,8 +909,8 @@ describe('getExtraBinaryPaths (Windows branches)', () => {
       '/mock/fnm/aliases/default',
       '/mock/AppData/Roaming/fnm/aliases/default',
       '/mock/AppData/Local/fnm/aliases/default',
-    ]));
-    expect(entries).not.toContain('/mock/fnm/aliases/default/bin');
+    ].map(entry => path.normalize(entry))));
+    expect(entries).not.toContain(path.join('/mock/fnm', 'aliases', 'default', 'bin'));
   });
 
   it('includes pnpm, proto, nvs, Yarn, and WinGet locations', () => {
@@ -926,14 +926,14 @@ describe('getExtraBinaryPaths (Windows branches)', () => {
       '/mock/AppData/Local/nvs/default',
       '/mock/AppData/Local/Yarn/bin',
       '/mock/AppData/Local/Microsoft/WinGet/Links',
-    ]));
+    ].map(entry => path.normalize(entry))));
 
     process.env.PNPM_HOME = '/custom/pnpm';
     process.env.PROTO_HOME = '/custom/proto';
     process.env.NVS_HOME = '/custom/nvs';
     entries = loadWithWindowsPlatform().getEnhancedPath().split(';');
     expect(entries).toEqual(expect.arrayContaining([
-      '/custom/pnpm', '/custom/proto/shims', '/custom/proto/bin', '/custom/nvs/default',
+      '/custom/pnpm', path.join('/custom/proto', 'shims'), path.join('/custom/proto', 'bin'), path.join('/custom/nvs', 'default'),
     ]));
   });
 

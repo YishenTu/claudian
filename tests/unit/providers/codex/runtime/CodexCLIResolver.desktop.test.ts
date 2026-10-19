@@ -23,8 +23,8 @@ it.each(['user', 'system'])('discovers the nested ChatGPT macOS runtime in the %
     fs.writeFileSync(fixturePath, '');
     // Isolate system app installations without writing into /Applications.
     jest.spyOn(actualFs, 'statSync').mockImplementation((candidate, options) => {
-      const filePath = String(candidate);
-      if (filePath.startsWith('/Applications/')) {
+      const filePath = path.normalize(String(candidate));
+      if (filePath.startsWith(path.join('/Applications') + path.sep)) {
         if (filePath === expectedPath) return statSync(fixturePath, options);
         throw Object.assign(new Error('No system app fixture'), { code: 'ENOENT' });
       }

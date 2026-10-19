@@ -44,7 +44,7 @@ describe('DeepSeek additional preset plugins', () => {
     // Claudian's own rows (bridge, tool policy and interactive tools Claudian renders) cannot be replaced or shadowed.
     ['Claudian\'s compatibility bridge', '- { id: claudian-compatibility, name: x }\n', /"claudian-compatibility".*Claudian/],
     ['Claudian sessions bridge', '- { id: claudian-sessions, name: x }\n', /"claudian-sessions".*Claudian/],
-    ['a built-in tool row', '- { id: tool-bash, name: "@deepseek-ai/dsh-tool-bash" }\n', /"tool-bash".*Claudian/],
+    ['a built-in tool row', '- { id: tool-fs, name: "@deepseek-ai/dsh-tool-fs" }\n', /"tool-fs".*Claudian/],
     ['a row nested in Claudian\'s compaction group', '- { id: compaction, name: "cordis:group" }\n', /"compaction".*Claudian/],
   ])('rejects %s with an actionable message', (_case, text, message) => {
     expect(() => parseDeepSeekPresetPlugins(text)).toThrow(message);
@@ -72,7 +72,8 @@ describe('DeepSeek additional preset plugins', () => {
     const preview = parse(text.replace('!!js 1 > 2', 'false')) as Array<Record<string, unknown>>;
     expect(preview[0]).toEqual({ id: 'claudian-compatibility', name: '<claudian-compatibility.mjs>', config: { promptFile: '<system prompt>', codeModeFile: '<code mode>' } });
     expect(preview.at(-1)).toEqual({ id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo', disabled: false });
-    expect(preview.map(row => row.id)).toEqual(expect.arrayContaining(['tool-bash', 'tool-ask-user', 'compaction']));
+    const shell = process.platform === 'win32' ? 'tool-pwsh' : 'tool-bash';
+    expect(preview.map(row => row.id)).toEqual(expect.arrayContaining([shell, 'tool-ask-user', 'compaction']));
     expect(text).not.toMatch(/claudian-deepseek-|\/tmp\/|\\\\/);
     expect((parse(renderDeepSeekPresetPreview([])) as Array<{ id: string }>).at(-1)!.id).toBe('compaction');
   });

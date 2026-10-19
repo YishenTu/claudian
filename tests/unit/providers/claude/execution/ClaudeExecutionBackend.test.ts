@@ -267,7 +267,8 @@ describe('ClaudeExecutionBackend', () => {
 
   it('keeps native success when cancellation arrives during stats loading', async () => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-throughput-'));
-    const directory = path.join(home, 'projects', '-vault');
+    const vaultPath = path.resolve('/vault');
+    const directory = path.join(home, 'projects', vaultPath.replace(/[^a-zA-Z0-9]/g, '-'));
     await fs.mkdir(directory, { recursive: true });
     const sessionFile = path.join(directory, 'session-1.jsonl');
     await fs.writeFile(sessionFile, [

@@ -61,7 +61,9 @@ describe('ClaudeSkillSync', () => {
       const result = await sync.execute(plan, resolutions());
 
       expect(result.linked).toBe(true);
-      expect(await vault.readlink(CLAUDE_SKILLS_ROOT)).toBe('../.agents/skills');
+      expect(await vault.readlink(CLAUDE_SKILLS_ROOT)).toBe(
+        process.platform === 'win32' ? vault.resolve(AGENT_SKILLS_ROOT) : '../.agents/skills',
+      );
       await expect(sync.readState()).resolves.toBe('linked');
     });
 

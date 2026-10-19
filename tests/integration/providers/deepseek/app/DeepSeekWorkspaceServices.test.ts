@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 import { NativePeer } from '@test/helpers/deepseek/NativePeer';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
@@ -111,8 +113,10 @@ it('lists vault skills for the dropdown from saved native sessions without activ
 });
 
 it('stops the shared Host before a provider transition and restarts it lazily with the new CLI, environment and preset plugins', async () => {
+  const beforeHome = resolve('/homes/before');
+  const afterHome = resolve('/homes/after');
   const peer = new NativePeer(); await peer.open();
-  const settings: any = { providerConfigs: { deepseek: { enabled: true, environmentVariables: 'DSH_HOME=/homes/before', presetPlugins: '- id: tool-todo\n  name: "@deepseek-ai/dsh-tool-todo"\n' } } };
+  const settings: any = { providerConfigs: { deepseek: { enabled: true, environmentVariables: `DSH_HOME=${beforeHome}`, presetPlugins: '- id: tool-todo\n  name: "@deepseek-ai/dsh-tool-todo"\n' } } };
   const registry = new ProviderExecutionLifecycleRegistry();
   let cliPath = '/bin/dsh-before';
   const host = { settings, app: { vault: { adapter: { basePath: '/vault' } } }, executionLifecycleRegistry: registry,
@@ -133,7 +137,7 @@ it('stops the shared Host before a provider transition and restarts it lazily wi
     let disposedBeforeMutation: number | undefined;
     await registry.runTransition(['deepseek'], async () => {
       disposedBeforeMutation = disposed;
-      settings.providerConfigs.deepseek.environmentVariables = 'DSH_HOME=/homes/after';
+      settings.providerConfigs.deepseek.environmentVariables = `DSH_HOME=${afterHome}`;
       settings.providerConfigs.deepseek.presetPlugins = '';
       cliPath = '/bin/dsh-after';
     });
@@ -141,10 +145,10 @@ it('stops the shared Host before a provider transition and restarts it lazily wi
     expect(disposedBeforeMutation).toBe(1);
     expect(start).toHaveBeenCalledTimes(1);
     expect(await workspace.deepseek.read(async (reader, home) => ({ home, value: await reader.call('session/modelCatalog') })))
-      .toEqual({ home: '/homes/after', value: 'session/modelCatalog answered' });
+      .toEqual({ home: afterHome, value: 'session/modelCatalog answered' });
     expect(launches).toEqual([
-      { cliPath: '/bin/dsh-before', home: '/homes/before', presetPlugins: [{ id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo' }] },
-      { cliPath: '/bin/dsh-after', home: '/homes/after', presetPlugins: [] },
+      { cliPath: '/bin/dsh-before', home: beforeHome, presetPlugins: [{ id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo' }] },
+      { cliPath: '/bin/dsh-after', home: afterHome, presetPlugins: [] },
     ]);
   } finally { await workspace?.dispose?.(); await registry.dispose(); await peer.close(); }
 });

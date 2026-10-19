@@ -20,7 +20,11 @@ if (process.argv.includes('--version')) { console.log('opencode v2.0.12'); retur
 if (!process.argv.includes('serve')) process.exit(3);
 let onSteer, selectedAgents = [], inbox = [], lateChild, feed, permission, grandApproval, form, mcpAnswer, settleInventory = false, cancelRace = false, ownedForms = [], idle = true, waiter, messages = [], turn = 0, modelRequests = 0, releaseModel;
 let activated = !process.env.ACTIVATION_DELAY_MS, activation;
-const emit = (type, data) => feed.write('data: ' + JSON.stringify({ type, data: { sessionID: 'ses_test', ...data } }) + '\\n\\n');
+const emit = (type, data) => {
+  const send = () => feed.write('data: ' + JSON.stringify({ type, data: { sessionID: 'ses_test', ...data } }) + '\\n\\n');
+  if (process.env.ECHO_EVENT_DELAY_MS && type.startsWith('session.')) setTimeout(send, Number(process.env.ECHO_EVENT_DELAY_MS));
+  else send();
+};
 const server = http.createServer(async (req, res) => {
   if (req.headers.authorization !== 'Basic ' + Buffer.from('opencode:' + process.env.OPENCODE_PASSWORD).toString('base64')) { res.writeHead(403).end(); return; }
   let raw = ''; for await (const c of req) raw += c;
@@ -147,6 +151,8 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       if (process.env.ECHO_PROMPT === '1') {
+        // Native history is committed before idle; HTTP may arrive before the corresponding SSE events.
+        messages = [{ id: assistantMessageID, type: 'assistant', content: [{ type: 'text', text: JSON.stringify({ route, body }) }] }];
         emit('session.text.ended', { assistantMessageID, ordinal: 0, text: JSON.stringify({ route, body }) });
         emit('session.execution.succeeded', {}); idle = true; waiter?.writeHead(204).end();
         return;
@@ -313,7 +319,8 @@ it.each([
   ] }],
   ['/unknown these images', 'prompt', '/unknown these images', {}],
 ])('sends images through the native HTTP boundary for %j', async (text, route, nativeText, attachments) => {
-  const f = createFixture(false, undefined, 'ECHO_PROMPT=1');
+  // Exercise the command idle/history fallback while its SSE start and output are still in flight.
+  const f = createFixture(false, undefined, `ECHO_PROMPT=1\nECHO_EVENT_DELAY_MS=${route === 'command' ? 100 : 0}`);
   try {
     const events: ProviderExecutionEvent[] = [];
     for await (const event of f.session.execute({

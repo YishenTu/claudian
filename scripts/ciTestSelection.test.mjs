@@ -58,6 +58,22 @@ test('mocked process policies remain in the ordinary suite without native jobs',
   assert.equal(result.crossPlatform, false);
 });
 
+test('platform-sensitive unit tests retain native checks for both direct and source changes', () => {
+  for (const [source, consumer] of [
+    ['src/core/process/env.ts', 'tests/unit/core/process/env.test.ts'],
+    ['src/core/storage/VaultFileAdapter.ts', 'tests/unit/core/storage/VaultFileAdapter.test.ts'],
+    ['src/providers/codex/history/CodexHistoryStore.ts', 'tests/unit/providers/codex/history/CodexHistoryStore.test.ts'],
+    ['src/providers/deepseek/ui/DeepSeekSettingsTab.ts', 'tests/unit/providers/deepseek/ui/DeepSeekSettingsTab.test.ts'],
+  ]) {
+    for (const eventName of ['pull_request', 'push']) {
+      const result = select([source], [consumer], eventName);
+      assert.deepEqual(result.crossPlatformTests, [consumer]);
+      assert.equal(result.crossPlatform, true);
+      assert.deepEqual(select([consumer], [], eventName).crossPlatformTests, [consumer]);
+    }
+  }
+});
+
 test('real dependency discovery retains native launch checks for shared process changes', () => {
   const result = selectRelatedCiTests({
     changes: [{ status: 'M', path: 'src/core/process/windowsCmdShim.ts' }],
@@ -66,9 +82,16 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/core/process/ManagedStdioProcess.test.ts',
     'tests/integration/core/process/ProcessProbe.test.ts',
     'tests/integration/core/process/loginShellPath.test.ts',
+    'tests/integration/providers/deepseek/app/DeepSeekWorkspaceServices.test.ts',
     'tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts',
+    'tests/integration/providers/opencode/execution/OpencodeV2Execution.test.ts',
     'tests/integration/providers/opencode/http/OpencodeSharedServer.test.ts',
     'tests/integration/providers/pi/execution/PiExecutionKernel.test.ts',
+    'tests/unit/providers/claude/execution/ClaudeExecutionBackend.test.ts',
+    'tests/unit/providers/codex/execution/CodexExecutionBackend.test.ts',
+    'tests/unit/providers/deepseek/runtime/DeepSeekCLIResolver.test.ts',
+    'tests/unit/providers/deepseek/runtime/DeepSeekInstallation.test.ts',
+    'tests/unit/providers/deepseek/ui/DeepSeekSettingsTab.test.ts',
   ]);
   assert.equal(result.piWindows, true);
   assert.ok(result.testFiles.includes('tests/unit/core/process/windowsCmdShim.test.ts'));

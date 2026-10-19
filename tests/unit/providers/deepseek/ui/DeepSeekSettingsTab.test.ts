@@ -112,8 +112,9 @@ describe('DeepSeekSettingsTab', () => {
   afterEach(() => { document.body.replaceChildren(); });
 
   it('identifies an explicitly selected Desktop app and explains installation selection', async () => {
-    const app = '/test/DeepSeek Harness.app';
-    const { ui, container } = render(true, `${app}/Contents/Resources/runtime/cli/bin/dsh`, app);
+    const app = process.platform === 'win32' ? 'C:\\test\\DeepSeek Harness.exe' : '/test/DeepSeek Harness.app';
+    const cli = process.platform === 'win32' ? 'C:\\test\\resources\\runtime\\cli\\bin\\dsh.cmd' : `${app}/Contents/Resources/runtime/cli/bin/dsh`;
+    const { ui, container } = render(true, cli, app);
     await waitFor(() => expect(ui.getByText('Using your native Desktop profile.')).toBeTruthy());
     expect(ui.getByText(/Auto prefers dsh/)).toBeTruthy();
     fireEvent.click(ui.getByRole('button', { name: 'DeepSeek Harness installation' }));
@@ -165,11 +166,11 @@ describe('DeepSeekSettingsTab', () => {
   it('keeps invalid additional plugin rows out of settings and explains why', async () => {
     const { host, transitions, container, ui } = render();
     const field = ui.getByRole('textbox', { name: 'Additional preset plugins' }) as HTMLTextAreaElement;
-    fireEvent.input(field, { target: { value: '- id: tool-bash\n  name: "@deepseek-ai/dsh-tool-bash"\n' } });
+    fireEvent.input(field, { target: { value: '- id: tool-fs\n  name: "@deepseek-ai/dsh-tool-fs"\n' } });
     fireEvent.change(field);
-    expect((await ui.findByRole('alert')).textContent).toMatch(/"tool-bash"/);
+    expect((await ui.findByRole('alert')).textContent).toMatch(/"tool-fs"/);
     expect(field.getAttribute('aria-invalid')).toBe('true');
-    expect(field.value).toContain('tool-bash');
+    expect(field.value).toContain('tool-fs');
     expect(getDeepSeekProviderSettings(host.settings).presetPlugins).toBe('');
     expect(transitions).toEqual([]);
     expect(await axe(container)).toHaveNoViolations();

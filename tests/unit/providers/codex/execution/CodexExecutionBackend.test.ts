@@ -1,7 +1,7 @@
 import type * as fsType from 'node:fs';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, normalize } from 'node:path';
 
 import pair from '@test/fixtures/providers/codex/turn-stats-pair.json';
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
@@ -2548,7 +2548,7 @@ describe('CodexExecutionBackend', () => {
 
     function countTranscriptRootProbes(): number {
       return probes.reduce(
-        (count, probe) => count + probe.mock.calls.filter(([target]) => String(target) === sessionsRoot).length,
+        (count, probe) => count + probe.mock.calls.filter(([target]) => normalize(String(target)) === sessionsRoot).length,
         0,
       );
     }

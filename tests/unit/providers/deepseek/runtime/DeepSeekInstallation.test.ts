@@ -16,7 +16,8 @@ describe('DeepSeek installation layout', () => {
 
   it('maps the macOS bundle to its wrapper, Electron executable and install anchor', () => {
     onPlatform('darwin');
-    const app = join(root, 'DeepSeek Harness.app');
+    // This is a missing macOS installation, so keep its input syntax POSIX even on a Windows host.
+    const app = `${root.replace(/\\/g, '/')}/DeepSeek Harness.app`;
     const resources = join(app, 'Contents', 'Resources');
     const installation = {
       cliPath: join(resources, 'runtime', 'cli', 'bin', 'dsh'),
@@ -24,7 +25,7 @@ describe('DeepSeek installation layout', () => {
       installAnchor: join(resources, ...PACKAGES, 'dsh', 'package.json'),
     };
     expect(getDeepSeekDesktopInstallation(app)).toEqual(installation);
-    expect(getDeepSeekDesktopInstallation(installation.cliPath)).toEqual(installation);
+    expect(getDeepSeekDesktopInstallation(installation.cliPath.replace(/\\/g, '/'))).toEqual(installation);
   });
 
   describe('on Windows', () => {

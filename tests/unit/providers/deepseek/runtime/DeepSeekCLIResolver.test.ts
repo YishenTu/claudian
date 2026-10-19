@@ -13,6 +13,8 @@ jest.mock('@/core/process/cliBinaryLocator', () => ({
 
 describe('DeepSeek installation selection', () => {
   const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  const windows = process.platform === 'win32';
+  const localAppData = process.env.LOCALAPPDATA;
   let root: string;
   let app: string;
   let cli: string;
@@ -21,19 +23,28 @@ describe('DeepSeek installation selection', () => {
 
   beforeEach(() => {
     root = realpathSync(mkdtempSync(join(os.tmpdir(), 'deepseek discovery ')));
-    app = join(root, 'Applications', 'DeepSeek Harness.app');
-    cli = join(app, 'Contents', 'Resources', 'runtime', 'cli', 'bin', 'dsh');
+    // Real filesystem discovery must use the host's desktop layout and path semantics together.
+    app = windows ? join(root, 'AppData', 'Local', 'Programs', 'DeepSeek Harness') : join(root, 'Applications', 'DeepSeek Harness.app');
+    cli = windows ? join(app, 'resources', 'runtime', 'cli', 'bin', 'dsh.cmd') : join(app, 'Contents', 'Resources', 'runtime', 'cli', 'bin', 'dsh');
     mkdirSync(dirname(cli), { recursive: true });
     writeFileSync(cli, '#!/bin/sh\n');
+    if (windows) {
+      writeFileSync(join(app, 'DeepSeek Harness.exe'), '');
+      process.env.LOCALAPPDATA = join(root, 'AppData', 'Local');
+    }
     jest.mocked(resolveConfiguredCLIPath).mockImplementation(path => path?.startsWith(root)
       ? jest.requireActual('@/core/process/cliBinaryLocator').resolveConfiguredCLIPath(path) : null);
     jest.mocked(os.homedir).mockReturnValue(root);
-    Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' });
+    Object.defineProperty(process, 'platform', { ...platform, value: windows ? 'win32' : 'darwin' });
     jest.mocked(findCLIBinaryPath).mockReturnValue(null);
     resolver = new DeepSeekCLIResolver();
   });
 
-  afterEach(() => { Object.defineProperty(process, 'platform', platform); rmSync(root, { recursive: true, force: true }); });
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', platform);
+    if (localAppData === undefined) delete process.env.LOCALAPPDATA; else process.env.LOCALAPPDATA = localAppData;
+    rmSync(root, { recursive: true, force: true });
+  });
 
   it('discovers Desktop without a registered dsh command and notices removal and reinstall', () => {
     expect(resolver.resolveFromSettings(settings())).toBe(cli);
@@ -41,6 +52,7 @@ describe('DeepSeek installation selection', () => {
     expect(resolver.resolveFromSettings(settings())).toBeNull();
     mkdirSync(dirname(cli), { recursive: true });
     writeFileSync(cli, '#!/bin/sh\n');
+    if (windows) writeFileSync(join(app, 'DeepSeek Harness.exe'), '');
     expect(resolver.resolveFromSettings(settings())).toBe(cli);
   });
 
@@ -50,8 +62,8 @@ describe('DeepSeek installation selection', () => {
     jest.mocked(findCLIBinaryPath).mockReturnValue(npm);
     expect(resolver.resolveFromSettings(settings())).toBe(npm);
     expect(resolver.resolveFromSettings(settings(app))).toBe(cli);
-    const alias = join(root, '深度 求索.app');
-    symlinkSync(app, alias, 'dir');
+    const alias = join(root, windows ? '深度 求索' : '深度 求索.app');
+    symlinkSync(app, alias, windows ? 'junction' : 'dir');
     expect(resolver.resolveFromSettings(settings(alias))).toBe(cli);
     const command = join(root, 'registered-dsh');
     symlinkSync(cli, command);
@@ -59,6 +71,7 @@ describe('DeepSeek installation selection', () => {
   });
 
   it('discovers the per-user Windows Desktop under LOCALAPPDATA, else the profile\'s AppData\\Local, and maps an explicit install directory', () => {
+    rmSync(app, { recursive: true });
     Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
     const localAppData = process.env.LOCALAPPDATA;
     const install = (local: string): string => {

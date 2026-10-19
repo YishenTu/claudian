@@ -1,6 +1,7 @@
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import { testDate, testTime } from '@test/helpers/testClock';
 import * as path from 'path';
+import { pathToFileURL } from 'url';
 
 import { encodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import { encodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
@@ -609,6 +610,7 @@ describe('CodexHistoryStore', () => {
     });
 
     it('withholds script output that cannot be separated from hidden internal values, keeping native command output', () => {
+      const cwd = path.resolve('/workspace');
       const scriptOutput = (status: string, ...texts: string[]) => [
         { type: 'input_text', text: `Script ${status}\nWall time 0.1 seconds\nOutput:\n` },
         ...texts.map(text => ({ type: 'input_text', text })),
@@ -628,14 +630,14 @@ describe('CodexHistoryStore', () => {
       const failing = mixed('failing', '{cmd:"check"}');
       const elsewhere = mixed('elsewhere', '{cmd:"pwd",workdir:"sub"}');
       const records = [
-        { type: 'turn_context', payload: { cwd: '/workspace' } },
+        { type: 'turn_context', payload: { cwd } },
         // Part count matches the calls, but emission order differs from call order.
         // The native command item still identifies the visible call's own output.
-        reversed[0], nativeCommand('exec-public', 'public', 'file:///workspace'), reversed[1],
+        reversed[0], nativeCommand('exec-public', 'public', pathToFileURL(cwd).href), reversed[1],
         // Script completion must not override the native command failure.
-        failing[0], nativeCommand('exec-check', 'check', '/workspace', 7), failing[1],
+        failing[0], nativeCommand('exec-check', 'check', cwd, 7), failing[1],
         // The same command run in another directory is a different request.
-        elsewhere[0], nativeCommand('exec-pwd', 'pwd', '/workspace'), elsewhere[1],
+        elsewhere[0], nativeCommand('exec-pwd', 'pwd', cwd), elsewhere[1],
         ...script('failed-internal', 'text(await tools.get_context_remaining({})); throw new Error("later failure");',
           scriptOutput('failed', 'opaque-internal-payload\nlater failure')),
         ...script('failed-mixed', 'text(await tools.get_context_remaining({})); text(await tools.exec_command({cmd:"public"})); throw new Error("later failure");',

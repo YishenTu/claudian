@@ -816,13 +816,15 @@ describe('VaultFileAdapter', () => {
       await fs.rm(vaultPath, { recursive: true, force: true });
     });
 
-    it('creates a relative folder link and reports it as linked to the target', async () => {
+    it('creates a native folder link and reports it as linked to the target', async () => {
       await fs.mkdir(path.join(vaultPath, '.agents/skills'), { recursive: true });
 
       await files.createFolderLink('.claude/skills', '.agents/skills');
 
       expect(await fs.readlink(path.join(vaultPath, '.claude/skills'))).toBe(
-        path.join('..', '.agents', 'skills'),
+        process.platform === 'win32'
+          ? path.join(vaultPath, '.agents', 'skills')
+          : path.join('..', '.agents', 'skills'),
       );
       await expect(files.inspectFolderLink('.claude/skills', '.agents/skills')).resolves.toBe('linked');
     });
