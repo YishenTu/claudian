@@ -177,7 +177,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       if (channel.isCancellationRequested && requested.delivery === 'unsent') { channel.finish({ type: 'cancelled' }); return; }
       if (error instanceof AdmissionError) {
         channel.finish({ type: 'execution_error', category: 'configuration', recoverable: true, message: error.message });
-      } else void this.fail(error, error instanceof DeepSeekRemoteError && error.code === 'session/missing' ? 'provider-session-missing' : requested.delivery === 'unsent' ? 'configuration' : 'transport');
+      } else void this.fail(error, isMissingSession(error) ? 'provider-session-missing' : requested.delivery === 'unsent' ? 'configuration' : 'transport');
     });
     return channel;
   }
@@ -377,7 +377,10 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
         // Claudian archive state is authoritative: a native archive left by a failed restore or dsh web would gate every turn.
         // A pending fork's source is another conversation, and its fork is an independent native root.
         // Native never archives an ephemeral session.
-        if (this.nativeId && this.ephemeralGeneration === undefined) await lease.client.call('workspace/unarchiveSession', { request: { sessionId: this.nativeId } });
+        if (this.nativeId && this.ephemeralGeneration === undefined) {
+          await this.assertNativeDirectory(lease, this.nativeId, signal);
+          await lease.client.call('workspace/unarchiveSession', { request: { sessionId: this.nativeId } });
+        }
         this.assertRequest(requested);
       }
       // A new ephemeral identity is chosen once; without the Host's plugin it falls back to a stored session.
@@ -433,15 +436,30 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     }
   }
 
+  /** Native resumes a saved session in its own directory, so one copied with another vault must not run here. */
+  private async assertNativeDirectory(lease: DeepSeekHostLease, sessionId: string, signal: AbortSignal): Promise<void> {
+    const listed = await lease.client.call('session/list', { _request: {} }, { signal });
+    if (!isRecord(listed) || !Array.isArray(listed.items)) throw new Error('Malformed DeepSeek session roster.');
+    const cwd = listed.items.filter(isRecord).find(item => item.sessionId === sessionId)?.cwd;
+    if (cwd !== this.config.vaultWorkingDirectory) {
+      throw new AdmissionError(`This DeepSeek conversation belongs to ${typeof cwd === 'string' ? `another directory (${cwd})` : 'an unknown directory'}. Open it from that vault, or start a new conversation.`);
+    }
+  }
+
   /** Creates or resumes the native session; a reloaded Claudian may still be releasing its writer. */
   private async createNative(lease: DeepSeekHostLease, signal: AbortSignal, ephemeralId?: string): Promise<string> {
-    const sessionId = this.nativeId ?? ephemeralId;
-    const request = { cwd: this.config.vaultWorkingDirectory, agentPreset: this.binding!.preset, ...(sessionId ? { sessionId } : {}) };
+    const resumed = this.nativeId;
+    const request = { cwd: this.config.vaultWorkingDirectory, agentPreset: this.binding!.preset, ...(ephemeralId ? { sessionId: ephemeralId } : {}) };
     const deadline = Date.now() + WRITER_HANDOFF_MS;
     for (let delay = 100; ; delay = Math.min(delay * 2, 1_000)) {
       try {
+        // Native create reuses a named session only while it is blank; any call addressing a saved session resumes it.
+        if (resumed) {
+          await lease.client.call('commands/list', { agentId: resumed }, { signal });
+          return resumed;
+        }
         const created = await lease.client.call('session/create', { request }, { signal });
-        if (!isRecord(created) || typeof created.sessionId !== 'string' || (sessionId && sessionId !== created.sessionId)) throw new Error('DeepSeek session identity changed during resume.');
+        if (!isRecord(created) || typeof created.sessionId !== 'string' || (ephemeralId && ephemeralId !== created.sessionId)) throw new Error('DeepSeek session identity changed during creation.');
         return created.sessionId;
       } catch (error) {
         // Only chat presets carry the user's additional rows; anything else native cannot mount is Claudian's own fault.
@@ -1143,4 +1161,9 @@ function questionAnswers(request: Record<string, unknown>, answers: Record<strin
     const custom = values.filter(value => !options.includes(value)).join('\n');
     return { id, selected, ...(custom ? { custom } : {}) };
   }) : [] };
+}
+
+/** Projections report a missing session as `session/missing`; resolving one to resume it reports `session/not-found`. */
+function isMissingSession(error: unknown): boolean {
+  return error instanceof DeepSeekRemoteError && (error.code === 'session/missing' || error.code === 'session/not-found');
 }

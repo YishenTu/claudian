@@ -7,6 +7,7 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { SessionToolRoute,SessionToolRoutedCallHandler } from '@/core/session-tools/SessionToolEndpoint';
 import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSeekExecutionBackend';
 import { DeepSeekRemoteError } from '@/providers/deepseek/remote/DeepSeekRemoteClient';
+import { DEEPSEEK_EPHEMERAL_PREFIX } from '@/providers/deepseek/runtime/DeepSeekCompatibility';
 import { getDeepSeekHome } from '@/providers/deepseek/runtime/DeepSeekHome';
 import { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
 
@@ -20,29 +21,44 @@ let deepseek: DeepSeekHost;
 let lifecycle: NativePeerLifecycle;
 let sessions: ProviderExecutionSession[];
 let created: string[];
+/** Saved conversations native lists before any activation. */
+let stored: string[];
 let seq: number;
 let jobs: Record<string, unknown[]>;
-/** Native refusal of `session/create`; `sessionId` is absent for a new session. */
-let createFailures: (sessionId: string | undefined, agentPreset: string) => Error | undefined;
+/**
+ * Native refusal to activate a session: `session/create` (`sessionId` absent for a new session) or the first addressed
+ * call to a saved one (`agentPreset` absent: native resumes its stored preset).
+ */
+let activationFailures: (sessionId: string | undefined, agentPreset: string | undefined) => Error | undefined;
 let permissions: Record<string, string>;
 
 beforeEach(async () => {
-  sessions = []; created = []; seq = 3; jobs = {}; createFailures = () => undefined; permissions = {};
+  sessions = []; created = []; stored = []; seq = 3; jobs = {}; activationFailures = () => undefined; permissions = {};
   peer = new NativePeer();
   const native = nativeDefaults({
-    seq: () => seq, roster: () => created, jobs: sessionId => jobs[sessionId] ?? [],
+    seq: () => seq, roster: () => [...new Set([...stored, ...created])], jobs: sessionId => jobs[sessionId] ?? [],
     permission: sessionId => permissions[sessionId] ?? 'workspace-write', setPermission: (sessionId, value) => { permissions[sessionId] = value; },
   });
+  const activate = (id: string): void => {
+    if (!created.includes(id)) created.push(id);
+    // Native announces every activated session on the shared event stream.
+    peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: id, agentAvailable: true, running: false }] });
+  };
   peer.onCall = (method, args) => {
     if (method === 'session/create') {
-      const resumed = args.request.sessionId as string | undefined;
-      const failure = createFailures(resumed, args.request.agentPreset);
+      const named = args.request.sessionId as string | undefined;
+      const failure = activationFailures(named, args.request.agentPreset);
       if (failure) throw failure;
-      const id = resumed ?? ['alpha', 'beta', 'gamma'][created.length];
-      if (!created.includes(id)) created.push(id);
-      // Native announces every activated session on the shared event stream.
-      peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: id, agentAvailable: true, running: false }] });
+      // Native reuses a named session only while no turn has started: a fresh ephemeral identity, never a saved conversation.
+      const id = named?.startsWith(DEEPSEEK_EPHEMERAL_PREFIX) ? named : named ? `minted-${created.length}` : ['alpha', 'beta', 'gamma'][created.length];
+      activate(id);
       return { sessionId: id, agentPreset: args.request.agentPreset };
+    }
+    if (method === 'commands/list' && !created.includes(args.agentId)) {
+      // Any call addressing a saved session resumes it.
+      const failure = activationFailures(args.agentId, undefined);
+      if (failure) throw failure;
+      activate(args.agentId);
     }
     if (method === 'job/kill') {
       const sessionId = args.request.sessionId as string;
@@ -67,6 +83,7 @@ function port(): ProviderInteractionPort & { askUserQuestion: jest.Mock } {
 }
 
 function open(interactionPort = port(), resume?: string, lifecycle: ProviderSessionConfig['lifecycle'] = 'persistent', sessionTools?: ProviderSessionConfig['sessionTools']): ProviderExecutionSession {
+  if (resume && !stored.includes(resume)) stored.push(resume);
   const config: ProviderSessionConfig = {
     sessionTools, lifecycle, nativePersistence: lifecycle === 'ephemeral' ? 'disabled-if-supported' : 'enabled', vaultWorkingDirectory: '/vault', interactionPort,
     ...(resume ? { resumeSeed: { providerSessionId: resume, providerState: { schemaVersion: 1, home: getDeepSeekHome(process.env, process.cwd()), profile: 'web', preset: 'claudian' } } } : {}),
@@ -196,7 +213,7 @@ it('refuses a second live view of the same native conversation', async () => {
   const second = open(port(), 'alpha');
   const events = await run(second, request('Prompt'));
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'configuration', message: expect.stringContaining('already open in another Claudian view') });
-  expect(peer.calls.filter(c => c.method === 'session/create')).toHaveLength(1);
+  expect(peer.calls.filter(c => c.method === 'session/prompt')).toHaveLength(1);
 });
 
 it('waits for a reloaded Host to release the writer, then names the other process', async () => {
@@ -204,14 +221,15 @@ it('waits for a reloaded Host to release the writer, then names the other proces
   const backoff = elapseWaitsUpTo(1_000);
   const held = new DeepSeekRemoteError('session "alpha" is already owned by an active write handle', 'session/writer-held');
   let attempts = 0;
-  createFailures = id => (id && ++attempts <= 2 ? held : undefined);
+  activationFailures = id => (id && ++attempts <= 2 ? held : undefined);
   const recovered = open(port(), 'alpha');
   expect(texts(await run(recovered, request('Prompt'), 'resumed after handoff'))).toBe('resumed after handoff');
   expect(attempts).toBe(3);
   await recovered.dispose();
 
-  createFailures = id => (id ? held : undefined);
-  const blocked = open(port(), 'alpha');
+  // A process other than this Host holds a different saved conversation.
+  activationFailures = id => (id ? held : undefined);
+  const blocked = open(port(), 'beta');
   const started = Date.now();
   const events = await run(blocked, request('Prompt'));
   backoff();
@@ -224,7 +242,7 @@ it('waits for a reloaded Host to release the writer, then names the other proces
 it('points a chat preset that native cannot mount at the additional preset plugins setting', async () => {
   const config = (host.settings as any).providerConfigs.deepseek;
   config.presetPlugins = '[{ "id": "nope", "name": "@example/missing" }]';
-  createFailures = (_id, preset) => preset === 'claudian' ? new DeepSeekRemoteError('nope (@example/missing): never started', 'agent-preset/invalid') : undefined;
+  activationFailures = (_id, preset) => preset === 'claudian' ? new DeepSeekRemoteError('nope (@example/missing): never started', 'agent-preset/invalid') : undefined;
   try {
     const chat = open();
     const events = await run(chat, request('Prompt'));

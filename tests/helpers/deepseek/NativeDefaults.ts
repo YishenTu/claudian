@@ -7,6 +7,8 @@ export interface NativeDefaultsOptions {
   readonly seq: () => number;
   /** Sessions native lists, each idle with its agent available. */
   readonly roster: () => readonly string[];
+  /** Directory native recorded when it created a listed session; defaults to `/vault`. */
+  readonly cwd?: (sessionId: string) => string;
   /** Permission preset native reports for a session; defaults to `workspace-write`. */
   readonly permission?: (sessionId: string) => string;
   /** Records a successful `/permission <value>` command. Without it native rejects `commands/execute` as unexpected. */
@@ -33,7 +35,7 @@ export function nativeDefaults(options: NativeDefaultsOptions): { call: (...args
   const time = testDate().getTime();
   const permission = (sessionId: string): string => options.permission?.(sessionId) ?? 'workspace-write';
   const call = (method: string, args: Record<string, any>): unknown => {
-    if (method === 'session/list') return { items: options.roster().map(sessionId => ({ sessionId, agentAvailable: true, running: false })) };
+    if (method === 'session/list') return { items: options.roster().map(sessionId => ({ sessionId, agentAvailable: true, running: false, cwd: options.cwd?.(sessionId) ?? '/vault' })) };
     if (method === 'permissionPresets/catalog') return { options: [{ value: 'workspace-write' }, { value: 'read-only' }, { value: 'danger-full-access' }] };
     if (method === 'commands/list') return options.commands ?? [{ name: 'permission' }];
     if (method === 'skills/list') return { skills: options.skills ?? [] };

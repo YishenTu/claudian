@@ -58,7 +58,8 @@ beforeEach(async () => {
     projections: () => ({ inbox: { 'next-turn': inbox } }),
   });
   peer.onCall = (method, args) => {
-    if (method === 'session/create') return { sessionId: 'root', agentPreset: 'claudian' };
+    // Native reuses a named session only while no turn has started; the saved root these tests resume has history.
+    if (method === 'session/create') return { sessionId: args.request.sessionId ? 'minted' : 'root', agentPreset: 'claudian' };
     if (method === 'session/updateQueue') {
       inbox = inbox.filter((item: any) => item.id !== args.request.itemId);
       peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'inbox', seq: ++seq, value: { 'next-turn': inbox } });
@@ -1146,7 +1147,7 @@ it('recovers the saved native preset before resuming an unbound conversation', a
   });
   const run = session.execute(request()); const events: ProviderExecutionEvent[] = []; const done = collect(run.events, events);
   await until(() => peer.calls.some(c => c.method === 'session/prompt'));
-  expect(peer.calls.find(c => c.method === 'session/create')?.args.request.agentPreset).toBe('claudian-code');
+  expect(peer.calls.find(c => c.method === 'session/prompt')?.args.request.sessionId).toBe('root');
   // Claudian archive state is authoritative: a resumed conversation is never left gated by a native archive.
   const methods = peer.calls.map(c => c.method);
   expect(peer.calls.filter(c => c.method === 'workspace/unarchiveSession')).toEqual([{ method: 'workspace/unarchiveSession', args: { request: { sessionId: 'root' } } }]);
@@ -1482,7 +1483,8 @@ it.each(['root', 'child'])('closes %s background scope on process exit and waits
     release(); await retry;
     expect(chat.start).toHaveBeenCalledTimes(2);
     await until(() => !chat.coordinator.hasBackgroundWork);
-    expect(peer.calls.filter(c => c.method === 'session/create')).toMatchObject([{ args: { request: {} } }, { args: { request: { sessionId: 'root' } } }]);
+    expect(peer.calls.filter(c => c.method === 'session/create')).toMatchObject([{ args: { request: {} } }]);
+    expect(peer.calls.filter(c => c.method === 'session/prompt').map(c => c.args.request.sessionId)).toEqual(['root', 'root']);
     expect(chat.fixture.state.messages.filter(m => m.role === 'user')).toHaveLength(2);
   } finally { release(); await chat.dispose(); }
 });
@@ -1656,8 +1658,14 @@ it.each<AdmissionCase>([
     native: { 'session/projections': resumedProjection({ agentPreset: 'claudian-passive' }) },
     error: { category: 'configuration', message: expect.stringContaining('tool policy differs') }, sends: 0, status: 'invalidated' },
   { name: 'a resumed native session that no longer exists', resume: { providerSessionId: 'root', providerState: savedState() }, input: input => input,
-    native: { 'session/create': () => { throw nativeError('session/missing', 'Session root was not found.'); } },
+    native: { 'session/projections': () => null },
     error: { category: 'provider-session-missing', missingProviderSessionId: 'root' }, sends: 0, status: 'invalidated' },
+  { name: 'a resumed native session removed before activation', resume: { providerSessionId: 'root', providerState: savedState() }, input: input => input,
+    native: { 'commands/list': () => { throw nativeError('session/not-found', 'session "root" not found'); } },
+    error: { category: 'provider-session-missing', missingProviderSessionId: 'root' }, sends: 0, status: 'invalidated' },
+  { name: 'a resumed native session from another directory', resume: { providerSessionId: 'root', providerState: savedState() }, input: input => input,
+    native: { 'session/list': (_args, ordinary) => ({ items: (ordinary() as any).items.map((row: any) => ({ ...row, cwd: '/copied-from' })) }) },
+    error: { category: 'configuration', message: expect.stringContaining('another directory (/copied-from)') }, sends: 0, status: 'idle' },
   { name: 'a prompt native did not acknowledge', input: input => input, native: { 'session/prompt': () => ({ accepted: false }) },
     error: { category: 'transport', message: expect.stringContaining('did not acknowledge') }, sends: 1, status: 'invalidated' },
 ])('rejects $name with its recoverable error and no unintended native send', async ({ resume, native = {}, prepare, input, error, sends, status }) => {
