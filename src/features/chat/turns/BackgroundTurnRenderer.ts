@@ -4,7 +4,7 @@ import type { ChatMessage, StreamChunk } from '@/core/types';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { recordNotificationPredecessors, recordResponseContinuation } from '@/features/chat/rendering/NotificationBoundaries';
 import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/providerOutputChunks';
-import { getAutomaticNotificationPredecessor, isStandaloneTaskNotification } from '@/features/chat/rendering/ResponseLayout';
+import { getAutomaticNotificationPredecessor, hasResponseOutput, isStandaloneTaskNotification } from '@/features/chat/rendering/ResponseLayout';
 import { ChatState } from '@/features/chat/state/ChatState';
 import {
   continueResponseAfterNotification,
@@ -121,14 +121,6 @@ function isVisibleAutoTurnChunk(chunk: StreamChunk, hiddenToolIds: Set<string>):
   }
 }
 
-function hasVisibleAutoTurnMessageContent(message: ChatMessage): boolean {
-  if (message.content.trim().length > 0) return true;
-  if (message.toolCalls && message.toolCalls.length > 0) return true;
-  return message.contentBlocks?.some(block =>
-    block.type !== 'text' || block.content.trim().length > 0
-  ) ?? false;
-}
-
 /**
  * The stopped input span's last message carries the interrupt: its last reply, or a
  * notification that trailed it; a span without output keeps a bare marker after its
@@ -148,6 +140,7 @@ function markInterruptedTurn(
   if (!reply) {
     const marker: ChatMessage = {
       id: host.createMessageId(), role: 'assistant', content: '', timestamp: Date.now(), isInterrupt: true,
+      turnId: getTurnIdentity(terminal),
     };
     const index = getTrailingNotificationsEnd(messages, anchor ? messages.indexOf(anchor) : -1, turn);
     messages.splice(index + 1, 0, marker);
@@ -241,7 +234,7 @@ export async function renderAutoTriggeredTurn(
       if (!isCurrent()) return false;
       stream.thinkingIndicator.hide();
       assistantMessage.completedAt = Date.now();
-      if (!hasVisibleAutoTurnMessageContent(assistantMessage) && host.state.messages.includes(assistantMessage)) {
+      if (!hasResponseOutput(assistantMessage) && host.state.messages.includes(assistantMessage)) {
         host.state.messages = host.state.messages.filter(message => message !== assistantMessage);
         host.renderer?.removeMessage(assistantMessage.id);
       }

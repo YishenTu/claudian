@@ -12,8 +12,10 @@ import { ResponseFinalizer } from '@/features/chat/rendering/ResponseFinalizer';
 import {
   appendInterruptLabel,
   createResponseTextBlock,
+  isConsumedInterruptMarker,
   isFoldedByLaterInterrupt,
   isInterruptedResponse,
+  isInterruptMarker,
   markResponseElement,
 } from '@/features/chat/rendering/ResponseLayout';
 import { createSessionLink, registerSessionLinkHandler } from '@/features/chat/rendering/sessionLinks';
@@ -278,10 +280,9 @@ export class MessageRenderer {
     // Bare interrupt marker: user-role interrupts (Claude bracket markers) and
     // assistant-role interrupts without content (Codex aborted turns). The
     // interrupted response it ends already shows it inside its disclosure.
-    if (msg.isInterrupt && (msg.role === 'user' || !this.#hasVisibleContent(msg))) {
-      const previousIndex = (index ?? 0) - 1;
-      const previous = allMessages?.[previousIndex];
-      if (!previous || !isInterruptedResponse(previous, allMessages ?? [], previousIndex)
+    if (isInterruptMarker(msg)) {
+      const previous = allMessages?.[(index ?? 0) - 1];
+      if (!previous || !isConsumedInterruptMarker(msg, allMessages ?? [], index)
         || !this.messageEls.get(previous.id)?.isConnected) this.#renderInterruptMessage();
       return;
     }
@@ -296,7 +297,9 @@ export class MessageRenderer {
       this.#renderUserMessage(msg, { live: false, allMessages, index });
       return;
     }
-    if (msg.role === 'assistant' && !this.#hasVisibleContent(msg) && !open) {
+    const interrupted = isInterruptedResponse(msg, allMessages ?? [msg], index);
+    // An interrupted reply whose output is all hidden still ends its turn's fold.
+    if (msg.role === 'assistant' && !this.#hasVisibleContent(msg) && !open && !interrupted) {
       // A pre-output notification can leave an empty first segment that still
       // anchors its continuation's work disclosure when the transcript rerenders.
       const anchorsContinuation = allMessages?.some(message => message !== msg
@@ -305,7 +308,6 @@ export class MessageRenderer {
     }
 
     const { msgEl, contentEl } = this.#createMessageEl(msg);
-    const interrupted = isInterruptedResponse(msg, allMessages ?? [msg], index);
     if (msg.role === 'assistant') {
       this.#renderAssistantContent(msg, contentEl, live);
       for (const card of contentEl.querySelectorAll<HTMLElement>('[data-subagent-id], [data-async-subagent-id]')) {

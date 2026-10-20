@@ -235,7 +235,7 @@ export async function loadSDKSessionMessages(
     const chatMsg = parseSDKMessageToChat(sdkMsg, toolResults);
     if (!chatMsg) continue;
     normalizeTaskToolCalls(chatMsg, taskToolNormalizer, toolUseResults);
-    if (chatMsg.role === 'assistant') chatMsg.turnId = turnId;
+    if (chatMsg.role === 'assistant' || chatMsg.isInterrupt) chatMsg.turnId = turnId;
 
     if (chatMsg.role === 'assistant') {
       // context_compacted must not merge with previous assistant (it's a standalone separator)

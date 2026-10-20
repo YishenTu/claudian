@@ -578,6 +578,80 @@ it('keeps a reply before a steer intact and ends the steered input in an indicat
   } finally { session.dispose(); }
 });
 
+// A bare marker belongs to the turn that stopped: an automatic turn with no visible trigger
+// that stops before output ends in a plain indicator and leaves the completed answer before it alone.
+it('keeps a completed answer intact when the automatic turn after it stops before output', async () => {
+  const session = createBackgroundSession();
+  const { messagesEl, renderer, state, background } = session;
+  const inspect = () => ({
+    transcript: Array.from(messagesEl.querySelectorAll<HTMLElement>('.claudian-message'), visibleText).filter(Boolean),
+    interrupted: within(messagesEl).queryAllByRole('button', { name: /^Interrupted/ }).length,
+  });
+  try {
+    const prompt: ChatMessage = { id: 'prompt', role: 'user', content: 'Do the work', timestamp: testDate().getTime() };
+    const answer: ChatMessage = { id: 'answer', role: 'assistant', content: 'Completed answer.', timestamp: testDate().getTime(),
+      completedAt: testDate().getTime(), contentBlocks: [{ type: 'text', content: 'Completed answer.' }] };
+    state.addMessage(prompt);
+    state.addMessage(answer);
+    renderer.renderMessages(state.messages, () => 'Welcome');
+    background.reserve('binding', 'automatic');
+    await session.stop();
+    await Promise.resolve();
+    const expected = { transcript: ['Do the work', 'Completed answer.', 'Interrupted · What should Claudian do instead?'], interrupted: 0 };
+    expect(inspect()).toEqual(expected);
+    renderer.renderMessages(state.messages, () => 'Welcome');
+    await Promise.resolve();
+    expect(inspect()).toEqual(expected);
+  } finally { session.dispose(); }
+});
+
+// The interrupted reply before a marker only shows the marker of its own turn.
+it('keeps the indicator of an automatic turn stopped before output after an interrupted requested reply', async () => {
+  const session = createBackgroundSession();
+  const { messagesEl, renderer, state, background } = session;
+  const indicators = () => within(messagesEl).getAllByText('Interrupted').length;
+  try {
+    const prompt: ChatMessage = { id: 'prompt', role: 'user', content: 'Do the work', timestamp: testDate().getTime() };
+    state.addMessage(prompt);
+    renderer.renderMessages(state.messages, () => 'Welcome');
+    const requested = new ResponseStream({ ...session.host, turns: new TurnCoordinator() });
+    requested.start();
+    await requested.handleEvent({ type: 'text_delta', text: 'Requested partial.',
+      scope: { kind: 'requested', sessionInstanceId: 'native', executionId: 'execution', turnId: 'requested', sequence: 1 } });
+    await requested.finish(requested.active!, { interrupted: true, failed: false });
+    background.reserve('binding', 'automatic');
+    await session.stop();
+    await Promise.resolve();
+    expect(indicators()).toBe(2);
+    renderer.renderMessages(state.messages, () => 'Welcome');
+    await Promise.resolve();
+    expect(indicators()).toBe(2);
+  } finally { session.dispose(); }
+});
+
+// Blank thinking is no output: the stop ends the reply before it, as the shared layout reads it.
+it.each([true, false])('folds a background turn stopped after blank thinking like rerender (earlier reply: %s)', async earlier => {
+  const session = createBackgroundSession();
+  const { messagesEl, renderer, state, background } = session;
+  const inspect = () => ({ transcript: visibleTranscript(messagesEl),
+    headers: within(messagesEl).queryAllByRole('button', { name: /^Interrupted/ }).length });
+  try {
+    background.reserve('binding', 'automatic');
+    if (earlier) {
+      await session.text('Earlier reply.');
+      renderSessionTaskNotification(session.host, 'Job finished.', undefined, session.next());
+    }
+    await background.handle('binding', { type: 'thinking_delta', text: '   ', scope: session.next() }, () => true);
+    await session.stop();
+    await Promise.resolve();
+    const expected = { transcript: 'Interrupted · What should Claudian do instead?', headers: earlier ? 1 : 0 };
+    expect(inspect()).toEqual(expected);
+    renderer.renderMessages(state.messages, () => 'Welcome');
+    await Promise.resolve();
+    expect(inspect()).toEqual(expected);
+  } finally { session.dispose(); }
+});
+
 it('folds a stopped automatic turn across a later notification once, live and on Claude reload', async () => {
   const session = createBackgroundSession();
   const { messagesEl, renderer, state, background } = session;

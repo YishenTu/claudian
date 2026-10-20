@@ -63,15 +63,34 @@ export function formatWorkDuration(durationSeconds: number): string {
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-/** A bare interrupt record: Claude's user-role bracket entry or an output-free assistant interrupt. */
-function isInterruptMarker(message: ChatMessage): boolean {
-  return message.isInterrupt === true && (message.role === 'user'
-    || (!message.content.trim() && !message.contentBlocks?.length && !message.toolCalls?.length));
+/** Output beyond blank text: any tool call, non-text block, or text with content. */
+export function hasResponseOutput(message: ChatMessage): boolean {
+  return message.content.trim().length > 0 || (message.toolCalls?.length ?? 0) > 0
+    || message.contentBlocks?.some(block => (block.type !== 'text' && block.type !== 'thinking') || block.content.trim()) === true;
 }
 
+/** A bare interrupt record: Claude's user-role bracket entry or an output-free assistant interrupt. */
+export function isInterruptMarker(message: ChatMessage): boolean {
+  return message.isInterrupt === true && (message.role === 'user' || !hasResponseOutput(message));
+}
+
+/** A marker records its own turn's stop; one without a turn predates turn identity. */
+function isMarkerOf(marker: ChatMessage, message: ChatMessage): boolean {
+  return marker.turnId === undefined || marker.turnId === message.turnId;
+}
+
+/** Ended by its own interrupt, or by a bare marker of its turn. */
 function endsWithInterrupt(message: ChatMessage, messages: ChatMessage[], index: number): boolean {
   const next = messages[index + 1];
-  return message.isInterrupt === true || (next !== undefined && isInterruptMarker(next));
+  return message.isInterrupt === true || (next !== undefined && isInterruptMarker(next) && isMarkerOf(next, message));
+}
+
+/** A bare marker the interrupted reply before it shows inside its own fold, so it renders nothing itself. */
+export function isConsumedInterruptMarker(message: ChatMessage, messages: ChatMessage[], index?: number): boolean {
+  const previousIndex = (index ?? messages.indexOf(message)) - 1;
+  const previous = messages[previousIndex];
+  return isInterruptMarker(message) && previous !== undefined && isMarkerOf(message, previous)
+    && isInterruptedResponse(previous, messages, previousIndex);
 }
 
 /**

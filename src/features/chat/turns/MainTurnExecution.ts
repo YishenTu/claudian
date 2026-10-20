@@ -1,7 +1,7 @@
 import { Notice } from 'obsidian';
 
 import { parseCompactCommand } from '@/core/commands/compactCommand';
-import type { ProviderExecutionEvent } from '@/core/execution';
+import type { ProviderExecutionEvent, ProviderTurnEventScope } from '@/core/execution';
 import { captureSelectionSnapshots } from '@/core/prompt/promptContext';
 import type { ProviderId } from '@/core/providers/types';
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
@@ -99,12 +99,13 @@ export class MainTurnExecution {
     if (event.type === 'turn_started' && event.accepted) this.activeDelivery?.(true);
     const assistant = this.responseStream.active;
     if (!assistant) return;
+    if (event.type === 'user_message_started' || event.type === 'assistant_message_started') this.responseStream.observe(event);
     if (event.type === 'user_message_started') {
-      await this.#handleProviderUserMessageStart(event.content ?? '', event.nativeUserMessageId, event.inputId);
+      await this.#handleProviderUserMessageStart(event.content ?? '', event.nativeUserMessageId, event.inputId, event.scope);
       return;
     }
     if (event.type === 'assistant_message_started') {
-      await this.#handleProviderAssistantMessageStart();
+      await this.#handleProviderAssistantMessageStart(event.scope);
       return;
     }
     await this.responseStream.handleEvent(event);
@@ -514,7 +515,12 @@ export class MainTurnExecution {
     this.awaitingProviderAssistantStart = false;
   }
 
-  async #handleProviderUserMessageStart(content: string, nativeUserMessageId: string | undefined, inputId?: string): Promise<void> {
+  async #handleProviderUserMessageStart(
+    content: string,
+    nativeUserMessageId: string | undefined,
+    inputId: string | undefined,
+    scope: ProviderTurnEventScope,
+  ): Promise<void> {
     // The turn's own input echo is already projected.
     if (!this.sawInitialProviderUserMessage) {
       this.sawInitialProviderUserMessage = true;
@@ -558,14 +564,14 @@ export class MainTurnExecution {
     }
     echo.settle();
 
-    this.responseStream.start();
+    this.responseStream.start(scope);
     this.deps.streamController.thinkingIndicator.show();
     this.deps.state.responseStartTime = performance.now();
     this.awaitingProviderAssistantStart = true;
     if (acceptanceError) throw toError(acceptanceError, 'Provider user message failed');
   }
 
-  async #handleProviderAssistantMessageStart(): Promise<void> {
+  async #handleProviderAssistantMessageStart(scope: ProviderTurnEventScope): Promise<void> {
     if (this.awaitingProviderAssistantStart) {
       this.awaitingProviderAssistantStart = false;
       return;
@@ -576,7 +582,7 @@ export class MainTurnExecution {
       await this.responseStream.flush(previousAssistant);
     }
 
-    this.responseStream.start();
+    this.responseStream.start(scope);
     this.deps.streamController.thinkingIndicator.show();
   }
 
