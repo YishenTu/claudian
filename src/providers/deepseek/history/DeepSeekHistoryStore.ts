@@ -19,6 +19,8 @@ export async function loadDeepSeekHistory(client: DeepSeekReader, sessionId: str
   let turnStart = 0;
   let output: DeepSeekOutput | undefined;
   let automatic = true;
+  // The journal's turn number; records before any `turn/start` belong to no turn.
+  let turnId: string | undefined;
   // Output events belong to the record being replayed; a steer starts a new reply mid-turn.
   let current: DeepSeekRecord | undefined;
   const pendingNotices: Array<{ type: 'task_notification'; content: string }> = [];
@@ -27,6 +29,7 @@ export async function loadDeepSeekHistory(client: DeepSeekReader, sessionId: str
     if (!assistant) {
       assistant = { id: `deepseek:${sessionId}:assistant:${record.seq}`, role: 'assistant', content: '', timestamp: record.time,
         contentBlocks: pendingNotices.splice(0), toolCalls: [], ...(automatic ? { isAutomaticResponse: true } : {}),
+        ...(turnId !== undefined ? { turnId } : {}),
       };
       messages.push(assistant);
     }
@@ -40,6 +43,7 @@ export async function loadDeepSeekHistory(client: DeepSeekReader, sessionId: str
     if (record.type === 'assistant/attempt') continue;
     if (record.type === 'turn/start') {
       assistant = undefined; automatic = true; turnStart = record.time; pendingNotices.length = 0;
+      turnId = `deepseek:${sessionId}:turn:${typeof record.data.turn === 'number' ? record.data.turn : record.seq}`;
       output = new DeepSeekOutput(event => applyOutput(ensureAssistant(current!), tools, event));
       continue;
     }

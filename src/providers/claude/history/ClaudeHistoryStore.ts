@@ -2,7 +2,7 @@ import * as fs from 'fs/promises';
 
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '../../../core/types';
-import { linkInterruptedTurnSegments } from '../../../core/types';
+import { settleInterruptedTurn } from '../../../core/types';
 import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
 import { ClaudeTaskResultInterpreter } from '../runtime/ClaudeTaskResultInterpreter';
 import { isClaudeSubagentToolName } from '../subagentToolNames';
@@ -142,14 +142,18 @@ export async function loadSDKSessionMessages(
   let lastAssistantAt: number | undefined;
   let requestedResponsePending = false;
   /**
-   * The native turn being read. A canonical prompt opens a requested turn, a notification
-   * while none runs an automatic one; the next prompt or an interrupt marker ends it.
-   * Every segment displayed in between belongs to it, whatever
-   * order its notifications, compactions and tool calls split it in. A finished reply only
-   * tentatively ends it: further assistant output or a blocking Stop hook continues the
-   * same turn, and only a notification directly after it shows it ended.
+   * The native turn being read. Claude Code (2.1.274+) stamps every user-type record of a
+   * turn with its `promptId`: the prompt or the notification that starts it, tool results,
+   * Stop-hook and `max_tokens` continuations, compaction summaries and the interrupt marker.
+   * Assistant, attachment and compaction records sit among their turn's records. Older
+   * transcripts lack it; there a canonical prompt starts the next turn, and a notification
+   * one after the running turn ended: a reply stopping for anything but tool use tentatively
+   * ends it, further output or a blocking Stop hook's feedback continues it.
    */
-  let turn: { readonly automatic: boolean; readonly segments: ChatMessage[]; finished: boolean } | null = null;
+  let turnId = 'transcript-start';
+  let turnAutomatic = true;
+  let nativeTurn = false;
+  let legacyTurnEnded = true;
   let turnStats = new ClaudeTurnStats();
   const taskToolNormalizer = new ClaudeTaskToolNormalizer();
 
@@ -170,7 +174,6 @@ export async function loadSDKSessionMessages(
         pendingAssistant.turnStats = turnStats.finish(turnStartedAt, lastAssistantAt);
       }
       chatMessages.push(pendingAssistant);
-      turn?.segments.push(pendingAssistant);
     }
     pendingAssistant = null;
     lastAssistantAt = undefined;
@@ -194,6 +197,15 @@ export async function loadSDKSessionMessages(
       ? effectiveTimestamps.get(entry.uuid) : entry.timestamp;
     const sdkMsg = timestamp === entry.timestamp ? entry : { ...entry, timestamp };
     const notification = parseTaskNotification(sdkMsg);
+    if (entry.promptId !== undefined && entry.promptId !== turnId) {
+      turnId = entry.promptId;
+      turnAutomatic = notification !== null;
+      nativeTurn = true;
+    } else if (notification !== null && !nativeTurn && legacyTurnEnded) {
+      turnId = `notification:${sdkMsg.uuid ?? chatMessages.length}`;
+      turnAutomatic = true;
+      legacyTurnEnded = false;
+    }
     if (notification !== null) {
       if (pendingAssistant && requestedResponsePending) {
         pendingAssistant.contentBlocks?.push({ type: 'task_notification', content: notification });
@@ -201,24 +213,20 @@ export async function loadSDKSessionMessages(
       }
       const requestedStartedAt: number | undefined = pendingAssistant ? undefined : turnStartedAt;
       flushPendingAssistant(true);
-      if (turn?.finished) turn = null;
-      turn ??= { automatic: true, segments: [], finished: false };
       turnStartedAt = requestedStartedAt;
       requestedResponsePending = requestedStartedAt !== undefined;
       pendingAssistant = {
         id: sdkMsg.uuid ?? `task-notification-${chatMessages.length}`,
         role: 'assistant',
         isAutomaticResponse: requestedStartedAt === undefined,
+        turnId,
         content: '',
         timestamp: parseNativeTimestamp(sdkMsg.timestamp) ?? 0,
         contentBlocks: [{ type: 'task_notification', content: notification }],
       };
       continue;
     }
-    if (isStopHookFeedback(sdkMsg)) {
-      if (turn) turn.finished = false;
-      continue;
-    }
+    if (isStopHookFeedback(sdkMsg)) legacyTurnEnded = false;
     if (isSystemInjectedMessage(sdkMsg)) continue;
 
     // Skip synthetic assistant messages (e.g., "No response requested." after /compact)
@@ -227,6 +235,7 @@ export async function loadSDKSessionMessages(
     const chatMsg = parseSDKMessageToChat(sdkMsg, toolResults);
     if (!chatMsg) continue;
     normalizeTaskToolCalls(chatMsg, taskToolNormalizer, toolUseResults);
+    if (chatMsg.role === 'assistant') chatMsg.turnId = turnId;
 
     if (chatMsg.role === 'assistant') {
       // context_compacted must not merge with previous assistant (it's a standalone separator)
@@ -234,7 +243,6 @@ export async function loadSDKSessionMessages(
       if (isCompactBoundary) {
         flushPendingAssistant(true);
         chatMessages.push(chatMsg);
-        turn?.segments.push(chatMsg);
       } else {
         if (pendingAssistant) {
           mergeAssistantMessage(pendingAssistant, chatMsg);
@@ -243,21 +251,28 @@ export async function loadSDKSessionMessages(
         }
         turnStats.add(sdkMsg);
         const stopReason = sdkMsg.message?.stop_reason;
-        // Any later assistant output, a resumed reply or tool work, shows the turn continued.
-        if (turn) turn.finished = Boolean(stopReason) && stopReason !== 'tool_use';
+        legacyTurnEnded = Boolean(stopReason) && stopReason !== 'tool_use';
         lastAssistantAt = parseNativeTimestamp(sdkMsg.timestamp);
         requestedResponsePending = turnStartedAt !== undefined
           && sdkMsg.message?.stop_reason === 'tool_use';
       }
     } else {
-      // An interrupted turn is one response, whichever splits displayed it in parts.
-      if (chatMsg.isInterrupt && turn) {
-        linkInterruptedTurnSegments(pendingAssistant ? [...turn.segments, pendingAssistant] : turn.segments, turn.automatic);
+      // An interrupted turn displays as one response, whichever splits showed it in parts.
+      if (chatMsg.isInterrupt) {
+        settleInterruptedTurn([...chatMessages, ...(pendingAssistant ? [pendingAssistant] : [])]
+          .filter(message => message.turnId === turnId), turnAutomatic);
       }
       flushPendingAssistant(!chatMsg.isInterrupt);
       const prompt = isCanonicalSDKUserMessage(sdkMsg);
-      turn = prompt ? { automatic: false, segments: [], finished: false } : null;
-      if (prompt) turnStartedAt = parseNativeTimestamp(sdkMsg.timestamp);
+      legacyTurnEnded = !prompt;
+      if (prompt) {
+        turnStartedAt = parseNativeTimestamp(sdkMsg.timestamp);
+        if (sdkMsg.type === 'user' && sdkMsg.promptId === undefined) {
+          turnId = `prompt:${sdkMsg.uuid ?? chatMessages.length}`;
+          turnAutomatic = false;
+          nativeTurn = false;
+        }
+      }
       chatMessages.push(chatMsg);
     }
   }

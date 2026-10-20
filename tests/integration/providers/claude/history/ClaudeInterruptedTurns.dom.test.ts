@@ -162,24 +162,33 @@ async function renderLive(turn: Turn): Promise<HTMLElement> {
   return messagesEl;
 }
 
-/** The same turn as Claude Code records it, stopped with `[Request interrupted by user]`. */
-async function renderClaudeReload(turn: Turn): Promise<HTMLElement> {
+/**
+ * The same turn as Claude Code records it, stopped with `[Request interrupted by user]`.
+ * Since 2.1.274 every user-type record of a native turn carries its `promptId`, and a
+ * notification consumed mid-turn is a `queued_command` attachment without one;
+ * earlier transcripts have neither.
+ */
+async function renderClaudeReload(turn: Turn, promptIds = false): Promise<HTMLElement> {
   let seconds = 0;
   const at = () => new Date(testDate().getTime() + ++seconds * 1_000).toISOString();
+  const promptId = promptIds ? { promptId: 'native-turn' } : {};
   const notification = (summary: string) => `<task-notification><task-id>${summary}</task-id><status>completed</status><summary>${summary}</summary></task-notification>`;
   const records: unknown[] = [turn.automatic
-    ? { type: 'user', uuid: 'start', timestamp: at(), message: { content: notification('Trigger finished.') } }
-    : { type: 'user', uuid: 'start', timestamp: at(), message: { content: 'Do the work' } }];
+    ? { type: 'user', uuid: 'start', timestamp: at(), ...promptId, message: { content: notification('Trigger finished.') } }
+    : { type: 'user', uuid: 'start', timestamp: at(), ...promptId, message: { content: 'Do the work' } }];
   if (turn.afterTool) {
     records.push(
       { type: 'assistant', uuid: 'tool', timestamp: at(), message: { stop_reason: 'tool_use',
         content: [{ type: 'text', text: 'Before.' }, { type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }] } },
-      { type: 'user', uuid: 'result', timestamp: at(), toolUseResult: { content: 'The note.' },
+      { type: 'user', uuid: 'result', timestamp: at(), ...promptId, toolUseResult: { content: 'The note.' },
         message: { content: [{ type: 'tool_result', tool_use_id: 'read', content: 'The note.' }] } },
     );
   }
   turn.boundaries.forEach((boundary, index) => records.push(...{
-    notification: [{ type: 'user', uuid: `boundary-${index}`, timestamp: at(), message: { content: notification('Job finished.') } }],
+    notification: [promptIds
+      ? { type: 'attachment', uuid: `boundary-${index}`, timestamp: at(),
+        attachment: { type: 'queued_command', commandMode: 'task-notification', prompt: notification('Job finished.') } }
+      : { type: 'user', uuid: `boundary-${index}`, timestamp: at(), message: { content: notification('Job finished.') } }],
     compaction: [{ type: 'system', subtype: 'compact_boundary', uuid: `boundary-${index}`, timestamp: at(),
       content: 'Conversation compacted', compactMetadata: { trigger: 'auto' } }],
     'max-tokens': [{ type: 'assistant', uuid: `boundary-${index}`, timestamp: at(), message: { stop_reason: 'max_tokens',
@@ -188,12 +197,12 @@ async function renderClaudeReload(turn: Turn): Promise<HTMLElement> {
     tool: [
       { type: 'assistant', uuid: `boundary-${index}`, timestamp: at(), message: { stop_reason: 'tool_use',
         content: [{ type: 'tool_use', id: 'more', name: 'Read', input: { file_path: 'more.md' } }] } },
-      { type: 'user', uuid: `boundary-${index}-result`, timestamp: at(), toolUseResult: { content: 'More.' },
+      { type: 'user', uuid: `boundary-${index}-result`, timestamp: at(), ...promptId, toolUseResult: { content: 'More.' },
         message: { content: [{ type: 'tool_result', tool_use_id: 'more', content: 'More.' }] } },
     ],
   }[boundary]));
   if (turn.output) records.push({ type: 'assistant', uuid: 'after', timestamp: at(), message: { content: [{ type: 'text', text: 'After.' }] } });
-  records.push({ type: 'user', uuid: 'interrupt', timestamp: at(), message: { content: [{ type: 'text', text: '[Request interrupted by user]' }] } });
+  records.push({ type: 'user', uuid: 'interrupt', timestamp: at(), ...promptId, message: { content: [{ type: 'text', text: '[Request interrupted by user]' }] } });
   const replay = await loadSDKSessionMessages('/vault', 'session', undefined, writeSession(records));
   expect(replay.error).toBeUndefined();
   // Every segment of the stopped turn keeps the provenance the turn opened with.
@@ -222,10 +231,12 @@ it.each(turns.map(turn => [
 ] as const))('folds a stopped Claude turn identically live and on reload (%s)', async (_name, turn) => {
   const live = inspect(await renderLive(turn));
   expect(live).toEqual(expected(turn));
-  const reload = inspect(await renderClaudeReload(turn));
-  expect(reload).toEqual(expected(turn));
-  // Tool cards may word a result differently on reload; the transcript a reader sees is the same.
-  expect(reload.collapsed).toBe(live.collapsed);
+  for (const promptIds of [false, true]) {
+    const reload = inspect(await renderClaudeReload(turn, promptIds));
+    expect(reload).toEqual(expected(turn));
+    // Tool cards may word a result differently on reload; the transcript a reader sees is the same.
+    expect(reload.collapsed).toBe(live.collapsed);
+  }
 });
 
 // Claude Code 2.1.303 records a blocking Stop hook as an `end_turn` reply, a meta user
@@ -266,4 +277,66 @@ it.each([true, false])('folds a turn a Stop hook continued after end_turn identi
   const reload = inspect(messagesEl);
   expect(reload).toEqual(expectedTurn);
   expect(reload.collapsed).toBe(live.collapsed);
+});
+
+async function renderTranscript(records: unknown[]): Promise<HTMLElement> {
+  const replay = await loadSDKSessionMessages('/vault', 'session', undefined, writeSession(records));
+  expect(replay.error).toBeUndefined();
+  const messagesEl = document.body.createDiv();
+  const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any,
+    new Component(), messagesEl);
+  cleanups.push(() => renderer.dispose());
+  renderer.renderMessages(replay.messages, () => 'Welcome');
+  await Promise.resolve();
+  return messagesEl;
+}
+
+const notificationContent = '<task-notification><task-id>job</task-id><status>completed</status><summary>Job finished.</summary></task-notification>';
+
+// A notification after a finished turn starts the next, automatic turn: a new `promptId` alone
+// tells, whatever the previous reply recorded; older transcripts show it by the finished reply.
+it.each([
+  ['promptId, no stop reason', true, undefined],
+  ['promptId, end_turn', true, 'end_turn'],
+  ['no promptId, end_turn', false, 'end_turn'],
+] as const)('starts a new automatic turn at a notification after a finished reply (%s)', async (_name, promptIds, stopReason) => {
+  let seconds = 0;
+  const at = () => new Date(testDate().getTime() + ++seconds * 1_000).toISOString();
+  const first = promptIds ? { promptId: 'first' } : {};
+  const second = promptIds ? { promptId: 'second' } : {};
+  const messagesEl = await renderTranscript([
+    { type: 'user', uuid: 'prompt', ...first, timestamp: at(), message: { content: 'Do the work' } },
+    { type: 'assistant', uuid: 'reply', timestamp: at(), message: { ...(stopReason ? { stop_reason: stopReason } : {}),
+      content: [{ type: 'text', text: 'Requested reply.' }] } },
+    { type: 'user', uuid: 'notification', ...second, timestamp: at(), message: { content: notificationContent } },
+    { type: 'assistant', uuid: 'automatic', timestamp: at(), message: { content: [{ type: 'text', text: 'Automatic reply.' }] } },
+    { type: 'user', uuid: 'interrupt', ...second, timestamp: at(), message: { content: [{ type: 'text', text: '[Request interrupted by user]' }] } },
+  ]);
+  // The first turn completed: it renders as any completed reply does.
+  expect(inspect(messagesEl)).toEqual({ headers: 1, collapsed: `Do the work Worked for 00:01 Requested reply. Task notification ${INTERRUPTED}`,
+    body: 'Automatic reply.' });
+});
+
+// Claude records an interrupt as a user-role marker; it ends the stopped turn and prompts nothing,
+// so the automatic turn after it keeps its trigger outside its own fold.
+it.each([true, false])('keeps an automatic turn\'s trigger visible after an interrupted turn (promptIds: %s)', async promptIds => {
+  let seconds = 0;
+  const at = () => new Date(testDate().getTime() + ++seconds * 1_000).toISOString();
+  const first = promptIds ? { promptId: 'first' } : {};
+  const second = promptIds ? { promptId: 'second' } : {};
+  const interrupt = { message: { content: [{ type: 'text', text: '[Request interrupted by user]' }] } };
+  const messagesEl = await renderTranscript([
+    { type: 'user', uuid: 'prompt', ...first, timestamp: at(), message: { content: 'Do the work' } },
+    { type: 'assistant', uuid: 'requested', timestamp: at(), message: { content: [{ type: 'text', text: 'Requested partial.' }] } },
+    { type: 'user', uuid: 'first-interrupt', ...first, timestamp: at(), ...interrupt },
+    { type: 'user', uuid: 'notification', ...second, timestamp: at(), message: { content: notificationContent } },
+    { type: 'assistant', uuid: 'automatic', timestamp: at(), message: { content: [{ type: 'text', text: 'Automatic partial.' }] } },
+    { type: 'user', uuid: 'second-interrupt', ...second, timestamp: at(), ...interrupt },
+  ]);
+  const headers = within(messagesEl).getAllByRole('button', { name: INTERRUPTED });
+  expect(inspect(messagesEl).collapsed).toBe(`Do the work ${INTERRUPTED} Task notification ${INTERRUPTED}`);
+  expect(headers.map(header => {
+    fireEvent.click(header);
+    return visibleText(document.getElementById(header.getAttribute('aria-controls')!)!);
+  })).toEqual(['Requested partial.', 'Automatic partial.']);
 });

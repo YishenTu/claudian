@@ -1,10 +1,12 @@
 import type { ProviderExecutionEvent } from '@/core/execution';
 import type { ChatMessage } from '@/core/types';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { getResponseSegments } from '@/features/chat/rendering/NotificationBoundaries';
 import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/providerOutputChunks';
 import type { ChatState } from '@/features/chat/state/ChatState';
 import {
   continueResponseAfterNotification,
+  getTurnIdentity,
   markStoppedTurn,
   type StoppedTurnEvents,
 } from '@/features/chat/turns/ResponseContinuation';
@@ -82,7 +84,13 @@ export class ResponseStream {
     const { state, renderer, stream } = this.host;
     state.clearFlavorTimerInterval();
     stream.thinkingIndicator.hide();
-    const last = outcome.interrupted ? markStoppedTurn(renderer, message, state.currentContentEl, state.messages, this.#received) : message;
+    let last = message;
+    if (outcome.interrupted) {
+      // Its segments are one native turn, which the shared layout folds whole.
+      const turnId = this.#received ? getTurnIdentity(this.#received.scope) : message.id;
+      for (const segment of getResponseSegments(message, state.messages)) segment.turnId = turnId;
+      last = markStoppedTurn(renderer, message, state.currentContentEl, state.messages, this.#received);
+    }
     const successful = !outcome.interrupted && !outcome.failed;
     // Compaction continues the turn, so its time belongs to the completed response.
     if (successful && message.completedAt !== undefined) {

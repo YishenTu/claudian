@@ -30,7 +30,7 @@ import type {
   SubagentInfo,
   ToolCallInfo,
 } from '../../../core/types';
-import { createTurnStats, isTokenCount, linkInterruptedTurnSegments } from '../../../core/types';
+import { createTurnStats, isTokenCount, settleInterruptedTurn } from '../../../core/types';
 import {
   normalizeCodexMemoryCitation,
   stripCodexMemoryCitationMarkup,
@@ -1424,8 +1424,9 @@ function flushBubbleTurnMessages(
     const lastMsg = assistantMessages[assistantMessages.length - 1];
     lastMsg.durationSeconds = Math.round(durationMs / 1000);
   }
-  // An interrupted turn is one response: chain its bubbles as the shared layout groups them.
-  if (turn.assistantBubbles.some(bubble => bubble.interrupted)) linkInterruptedTurnSegments(assistantMessages);
+  // A turn's bubbles share its native turn ID; an interrupted one has no completion.
+  for (const message of messages) if (message.role === 'assistant') message.turnId = turn.id;
+  if (turn.assistantBubbles.some(bubble => bubble.interrupted)) settleInterruptedTurn(assistantMessages);
 
   if (turn.completed && assistantMessages.length > 0) {
     const lastNonInterrupt = [...assistantMessages].reverse().find(m => !m.isInterrupt);

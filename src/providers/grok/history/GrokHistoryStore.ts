@@ -524,7 +524,7 @@ function finalizeTurn(
   if (!turn.assistantContent && turn.blocks.length === 0 && turn.tools.size === 0) {
     // A turn stopped before any output keeps a bare marker, as the live Stop renders it.
     return turn.interrupted
-      ? [user, { id: assistantId, role: 'assistant', content: '', timestamp: turn.startedAt, isInterrupt: true }]
+      ? [user, { id: assistantId, role: 'assistant', content: '', timestamp: turn.startedAt, isInterrupt: true, turnId: promptId ?? assistantId }]
       : [user];
   }
   const toolCalls = turn.toolOrder.flatMap((id) => {
@@ -563,6 +563,8 @@ function finalizeTurn(
   });
   const assistant: ChatMessage = {
     assistantMessageId: assistantId,
+    // The native prompt ID its `turn_completed` reports.
+    turnId: promptId ?? assistantId,
     content: turn.assistantContent,
     completedAt: turn.completedAt,
     ...(turn.durationSeconds !== undefined ? { durationSeconds: turn.durationSeconds } : {}),

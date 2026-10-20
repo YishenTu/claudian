@@ -9,6 +9,7 @@ import { ChatState } from '@/features/chat/state/ChatState';
 import {
   continueResponseAfterNotification,
   getTrailingNotificationsEnd,
+  getTurnIdentity,
   markStoppedTurn,
   type StoppedTurnEvents,
 } from '@/features/chat/turns/ResponseContinuation';
@@ -155,14 +156,10 @@ function markInterruptedTurn(
     if (contentEl) host.renderer?.appendInterruptIndicator(contentEl);
     return undefined;
   }
-  // Like a stopped requested reply, none of it has a completion.
-  for (const segment of stopped) segment.completedAt = undefined;
-  // The span is one native turn: chain its segments and the notifications between and after them.
-  let previous: ChatMessage | undefined;
-  for (const message of messages.slice(messages.indexOf(stopped[0]), messages.indexOf(reply) + 1)) {
-    if (!stopped.includes(message) && !isStandaloneTaskNotification(message)) continue;
-    if (previous) recordResponseContinuation(message, previous);
-    previous = message;
+  // The span is one native turn with no completion, like a stopped requested reply.
+  for (const segment of stopped) {
+    segment.turnId = getTurnIdentity(terminal);
+    segment.completedAt = undefined;
   }
   return markStoppedTurn(host.renderer, reply, host.renderer?.getMessageContentEl(reply.id) ?? null, messages, turn);
 }

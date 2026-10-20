@@ -6,6 +6,11 @@ import { isStandaloneTaskNotification } from '@/features/chat/rendering/Response
 import type { ChatState } from '@/features/chat/state/ChatState';
 import type { StreamController } from '@/features/chat/turns/StreamController';
 
+/** One native turn's identity, as its live output events carry it. */
+export function getTurnIdentity(scope: ProviderTurnEventScope): string {
+  return `${scope.kind}:${scope.sessionInstanceId}:${scope.turnId}`;
+}
+
 /** The provider events a stopped turn received notifications after: its own, up to `through`. */
 export interface StoppedTurnEvents {
   readonly scope: ProviderTurnEventScope;
@@ -28,9 +33,9 @@ export function getTrailingNotificationsEnd(messages: ChatMessage[], index: numb
 
 /**
  * A stopped turn ends with the notifications it received after its last output, as
- * native history records them: they join its chain so the shared layout folds them
- * with it, and its last message carries the interrupt and shows the indicator until
- * finalization folds the turn. Returns that message.
+ * native history records them: they take its turn identity so the shared layout folds
+ * them with it, and its last message carries the interrupt and shows the indicator
+ * until finalization folds the turn. Returns that message.
  */
 export function markStoppedTurn(
   renderer: MessageRenderer | null,
@@ -42,7 +47,7 @@ export function markStoppedTurn(
   let owner = reply;
   const start = messages.indexOf(reply);
   for (const notification of messages.slice(start + 1, getTrailingNotificationsEnd(messages, start, turn) + 1)) {
-    recordResponseContinuation(notification, owner);
+    notification.turnId = reply.turnId;
     owner = notification;
   }
   owner.isInterrupt = true;

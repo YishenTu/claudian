@@ -289,13 +289,14 @@ describe('PiHistoryStore', () => {
 
     const assistants = parsePiSessionContent(content).filter(message => message.role === 'assistant');
 
-    // One requested native turn: chained in order, none of it automatic, the last interrupted.
-    expect(assistants.map(({ responseContinuationOf, isAutomaticResponse, isInterrupt }) => ({ responseContinuationOf, isAutomaticResponse, isInterrupt })))
-      .toEqual(assistants.map((message, index) => ({
-        responseContinuationOf: index > 0 ? assistants[index - 1].id : undefined,
+    // One requested native turn: one turn identity, none of it automatic, the last interrupted.
+    expect(assistants.map(({ turnId, isAutomaticResponse, isInterrupt }) => ({ turnId, isAutomaticResponse, isInterrupt })))
+      .toEqual(assistants.map((_message, index) => ({
+        turnId: assistants[0].turnId,
         isAutomaticResponse: undefined,
         isInterrupt: index === assistants.length - 1 ? true : undefined,
       })));
+    expect(assistants[0].turnId).toEqual(expect.any(String));
     expect(assistants.length).toBeGreaterThan(1);
   });
 

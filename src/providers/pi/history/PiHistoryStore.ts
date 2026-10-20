@@ -14,7 +14,7 @@ import { forEachJSONLLine } from '@/utils/jsonlFile';
 
 import { isWriteEditTool } from '../../../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo, TurnStats } from '../../../core/types';
-import { createTurnStats, isTokenCount, linkInterruptedTurnSegments } from '../../../core/types';
+import { createTurnStats, isTokenCount, settleInterruptedTurn } from '../../../core/types';
 import { encodePiModelId } from '../models';
 import { getPiCustomMessageDisplayText } from '../normalization/piCustomMessageNormalization';
 import { PI_PEEPS_RUN_ENTRY_TYPE, PiPeepsSubagents } from '../normalization/PiPeepsSubagents';
@@ -543,7 +543,8 @@ function mapPiSessionEntries(
   let turnStartedAt: number | undefined;
   // An extension message outside a prompted turn starts an automatic response.
   let promptedTurnOpen = false;
-  // The current native turn's first message and whether a tool call keeps it running.
+  // Pi records no turn ID: a prompt, or a notice while no turn runs, starts the next turn,
+  // which a tool call keeps running. `turnStart` is its first message.
   let turnStart = 0;
   let turnRunning = false;
   const stats = new PiTurnStats();
@@ -563,6 +564,7 @@ function mapPiSessionEntries(
           turnStart = messages.length + (mapped.role === 'user' ? 1 : 0);
           turnRunning = true;
         }
+        if (mapped.role === 'assistant') mapped.turnId = `pi-turn-${turnStart}`;
         messages.push(mapped);
       }
 
@@ -585,7 +587,7 @@ function mapPiSessionEntries(
           messages[messages.length - 1].durationSeconds = Math.floor((completedAt - turnStartedAt) / 1_000);
         }
         // A user Stop ends the turn as `aborted`; its `errorMessage` is not a failure to show.
-        if (stopReason === 'aborted') chainInterruptedTurn(messages.slice(turnStart));
+        if (stopReason === 'aborted') settleAbortedTurn(messages.slice(turnStart));
         if (stopReason && stopReason !== 'toolUse') {
           promptedTurnOpen = false;
           turnStartedAt = undefined;
@@ -599,13 +601,10 @@ function mapPiSessionEntries(
   return messages;
 }
 
-/**
- * An interrupted turn is one response: chain the messages its notices and compaction
- * split it into, as the shared layout groups them, and mark the last as interrupted.
- */
-function chainInterruptedTurn(turn: ChatMessage[]): void {
+/** The messages a stopped turn displayed as settle as one interrupted response. */
+function settleAbortedTurn(turn: ChatMessage[]): void {
   const segments = turn.filter(message => message.role === 'assistant');
-  linkInterruptedTurnSegments(segments);
+  settleInterruptedTurn(segments);
   const last = segments.at(-1);
   if (last) last.isInterrupt = true;
 }

@@ -1,7 +1,7 @@
 import {
   type ChatMessage,
   isCanonicalUserMessage,
-  linkInterruptedTurnSegments,
+  settleInterruptedTurn,
 } from '@/core/types';
 
 function createMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
@@ -25,8 +25,8 @@ describe('isCanonicalUserMessage', () => {
   });
 });
 
-describe('linkInterruptedTurnSegments', () => {
-  it.each([true, false])('chains one interrupted turn with the provenance of its first segment (automatic: %s)', automatic => {
+describe('settleInterruptedTurn', () => {
+  it.each([true, false])('gives one interrupted turn the provenance of its first segment and no completion (automatic: %s)', automatic => {
     const segment = (id: string, extra: Partial<ChatMessage> = {}): ChatMessage => ({
       id, role: 'assistant', content: id, timestamp: 1, durationSeconds: 3, completedAt: 4,
       turnStats: { outputTokens: 5, durationMs: 6 }, ...extra,
@@ -35,13 +35,11 @@ describe('linkInterruptedTurnSegments', () => {
     const segments = [segment('first', automatic ? { isAutomaticResponse: true } : {}),
       segment('compaction', { isAutomaticResponse: !automatic }), segment('last', { isAutomaticResponse: !automatic })];
 
-    linkInterruptedTurnSegments(segments);
+    settleInterruptedTurn(segments);
 
-    expect(segments.map(({ id, responseContinuationOf, isAutomaticResponse, durationSeconds, completedAt, turnStats }) =>
-      ({ id, responseContinuationOf, isAutomaticResponse, durationSeconds, completedAt, turnStats }))).toEqual([
-      { id: 'first', responseContinuationOf: undefined },
-      { id: 'compaction', responseContinuationOf: 'first' },
-      { id: 'last', responseContinuationOf: 'compaction' },
+    expect(segments.map(({ id, isAutomaticResponse, durationSeconds, completedAt, turnStats }) =>
+      ({ id, isAutomaticResponse, durationSeconds, completedAt, turnStats }))).toEqual([
+      { id: 'first' }, { id: 'compaction' }, { id: 'last' },
     ].map(expected => ({ ...expected, isAutomaticResponse: automatic ? true : undefined,
       durationSeconds: undefined, completedAt: undefined, turnStats: undefined })));
   });

@@ -42,6 +42,8 @@ export interface SDKNativeMessage {
   sourceToolAssistantUUID?: string;
   sourceToolUseID?: string;
   isMeta?: boolean;
+  /** Native turn of a user-type record (Claude Code 2.1.274+). */
+  promptId?: string;
   isSidechain?: boolean;
   operation?: string;
   content?: string;
