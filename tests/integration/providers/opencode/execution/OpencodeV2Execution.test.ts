@@ -42,6 +42,11 @@ const waitForInteraction = async predicate => {
 };
 if (process.argv.includes('--version')) { console.log('opencode v2.0.12'); return; }
 if (!process.argv.includes('serve')) process.exit(3);
+// Like the native server, create the database it was launched with.
+if (process.env.OPENCODE_DB && process.env.OPENCODE_DB !== ':memory:' && !require('node:fs').existsSync(process.env.OPENCODE_DB)) {
+  require('node:fs').mkdirSync(require('node:path').dirname(process.env.OPENCODE_DB), { recursive: true });
+  require('node:fs').writeFileSync(process.env.OPENCODE_DB, '');
+}
 let onSteer, selectedAgents = [], selectedModels = [], inbox = [], lateChild, feed, permission, grandApproval, form, mcpAnswer, settleInventory = false, cancelRace = false, ownedForms = [], idle = true, waiter, messages = [], turn = 0, modelRequests = 0, releaseModel;
 let activated = !process.env.ACTIVATION_DELAY_MS, activation;
 // Earlier native turns, created before any prompt of this test.
@@ -315,7 +320,7 @@ function createFixture(resume = false, approval?: (signal: AbortSignal) => Promi
   const cliPath = path.join(root, 'opencode.cjs');
   writeFileSync(cliPath, fixture, { mode: 0o700 });
   const plugin: any = {
-    settings: { model: 'opencode:deepseek/chat', providerConfigs: { opencode: { enabled: true, visibleModels: ['deepseek/chat'], discoveredModels: [{ rawId: 'deepseek/chat', label: 'DeepSeek' }], environmentVariables: [resume ? 'EXPECT_RESUME=1' : '', environmentVariables].join('\n') } } },
+    settings: { model: 'opencode:deepseek/chat', providerConfigs: { opencode: { enabled: true, visibleModels: ['deepseek/chat'], discoveredModels: [{ rawId: 'deepseek/chat', label: 'DeepSeek' }], environmentVariables: [`XDG_DATA_HOME=${path.join(root, 'data')}`, resume ? 'EXPECT_RESUME=1' : '', environmentVariables].join('\n') } } },
     getResolvedProviderCliPath: async () => cliPath,
     mutateSettings: async (fn: (settings: unknown) => void) => fn(plugin.settings),
     mutateSettingsConditionally: async (fn: (settings: unknown) => void) => fn(plugin.settings),
