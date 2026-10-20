@@ -94,7 +94,9 @@
       "toolRunning": "{tool} · 실행 중",
       "toolCompleted": "{tool} · 완료",
       "toolFailed": "{tool} · 실패",
-      "toolBlocked": "{tool} · 차단됨"
+      "toolBlocked": "{tool} · 차단됨",
+      "enabledNotice": "젠 모드를 활성화했습니다. 사이드바가 숨겨져 있을 때 표시됩니다.",
+      "disabledNotice": "젠 모드를 비활성화했습니다."
     },
     "composer": {
       "placeholder": "변경 요청, @로 파일 언급, /명령 실행",

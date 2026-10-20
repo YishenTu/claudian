@@ -10,7 +10,7 @@ import { FakeSideSession } from '@test/helpers/features/chat/SideChatSessionHarn
 import { modelCatalogCases } from '@test/helpers/providerModelCatalogs';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
-import { App, Component, Scope, setIcon } from 'obsidian';
+import { App, Component, Notice, Platform, Scope, setIcon } from 'obsidian';
 
 import { ChatModelSelectionCoordinator } from '@/app/settings/ChatModelSelectionCoordinator';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
@@ -139,6 +139,7 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
     savePosition: (position) => {
       void settingsCoordinator.mutate((draft) => { draft.zenModePosition = position; });
     },
+    toggleEnabled: () => settingsCoordinator.mutate((draft) => { draft.enableZenMode = !draft.enableZenMode; }),
   });
   const settingsCoordinator: SettingsCoordinator<ClaudianSettings> = new SettingsCoordinator(
     settings,
@@ -994,6 +995,62 @@ it('toggles history through its hotkey command while preserving focus and the ac
 
   setCollapsed(rightSplit, false);
   expect(command.checkCallback!(false)).toBe(false);
+});
+
+it('toggles the setting through its hotkey command and reports only changes zen cannot show', async () => {
+  const fixture = await createZenFixture();
+  const { zen, tab, sessions, rightSplit, setCollapsed, settingsCoordinator } = fixture;
+  const command = zen.createToggleCommand();
+  const notices = jest.mocked(Notice);
+  notices.mockClear();
+  const enabled = () => settingsCoordinator.getCommittedSettings().enableZenMode;
+  // Settings writes are serialized, so a later write settles after the command's toggle.
+  const press = async () => {
+    expect(command.checkCallback!(false)).toBe(true);
+    await settingsCoordinator.mutate(() => undefined);
+  };
+
+  setCollapsed(rightSplit, true);
+  tab.dom.inputEl.value = 'Unsent draft';
+  expect(zenPanel()!.contains(tab.dom.inputComposerEl)).toBe(true);
+  expect(command.checkCallback!(true)).toBe(true);
+  expect(enabled()).toBe(true);
+  await press();
+  expect(enabled()).toBe(false);
+  expect(zenPanel()).toBeNull();
+  expect(tab.dom.inputComposerEl.parentElement).toBe(fixture.activeInputSlotEl);
+  expect(rightSplit.collapsed).toBe(true);
+  await press();
+  expect(enabled()).toBe(true);
+  expect(zenPanel()!.contains(tab.dom.inputComposerEl)).toBe(true);
+  expect(tab.dom.inputEl.value).toBe('Unsent draft');
+  expect(notices).not.toHaveBeenCalled();
+
+  // With the sidebar open nothing visible changes, so the command reports the new setting.
+  setCollapsed(rightSplit, false);
+  await press();
+  expect(enabled()).toBe(false);
+  expect(notices).toHaveBeenLastCalledWith('Zen mode disabled.');
+  setCollapsed(rightSplit, true);
+  expect(zenPanel()).toBeNull();
+  setCollapsed(rightSplit, false);
+  await press();
+  expect(enabled()).toBe(true);
+  expect(notices).toHaveBeenLastCalledWith('Zen mode enabled. It appears when the sidebar is hidden.');
+  expect(notices).toHaveBeenCalledTimes(2);
+  expect(sessions).toHaveLength(0);
+
+  const platform = Platform as { isMobile?: boolean };
+  platform.isMobile = true;
+  try {
+    expect(command.checkCallback!(true)).toBe(false);
+    expect(command.checkCallback!(false)).toBe(false);
+  } finally {
+    delete platform.isMobile;
+  }
+  await settingsCoordinator.mutate(() => undefined);
+  expect(enabled()).toBe(true);
+  expect(notices).toHaveBeenCalledTimes(2);
 });
 
 it('discloses the existing transcript accessibly and remembers the choice for the view lifetime', async () => {

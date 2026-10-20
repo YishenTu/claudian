@@ -94,7 +94,9 @@
       "toolRunning": "{tool} · выполняется",
       "toolCompleted": "{tool} · готово",
       "toolFailed": "{tool} · ошибка",
-      "toolBlocked": "{tool} · заблокировано"
+      "toolBlocked": "{tool} · заблокировано",
+      "enabledNotice": "Режим дзен включён. Он появляется, когда боковая панель скрыта.",
+      "disabledNotice": "Режим дзен выключен."
     },
     "composer": {
       "placeholder": "Запросите изменения, укажите файлы через @, выполните /команды",

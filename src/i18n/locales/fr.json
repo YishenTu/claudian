@@ -94,7 +94,9 @@
       "toolRunning": "{tool} · en cours",
       "toolCompleted": "{tool} · terminé",
       "toolFailed": "{tool} · échec",
-      "toolBlocked": "{tool} · bloqué"
+      "toolBlocked": "{tool} · bloqué",
+      "enabledNotice": "Mode zen activé. Il apparaît lorsque la barre latérale est masquée.",
+      "disabledNotice": "Mode zen désactivé."
     },
     "composer": {
       "placeholder": "Demandez des modifications, mentionnez des fichiers avec @, lancez des /commandes",

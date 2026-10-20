@@ -1,10 +1,11 @@
 import type { App, Command, EventRef, WorkspaceLeaf } from 'obsidian';
-import { Platform } from 'obsidian';
+import { Notice, Platform } from 'obsidian';
 
 import { VIEW_TYPE_CLAUDIAN, type ZenModePosition } from '@/core/types';
 import { scheduleAnimationFrame } from '@/features/chat/utils/animationFrame';
 import type { ZenModeSource, ZenPresentationPort, ZenScrollSnapshot } from '@/features/chat/zen/types';
 import { ZenModePanel } from '@/features/chat/zen/ZenModePanel';
+import { t } from '@/i18n/i18n';
 
 export interface ZenModeControllerDeps {
   readonly app: App;
@@ -14,6 +15,8 @@ export interface ZenModeControllerDeps {
   getPosition(): ZenModePosition | null;
   /** Remembers where the user moved the panel. */
   savePosition(position: ZenModePosition | null): void;
+  /** Flips the setting from its latest pending value, so repeated presses never reuse a stale read. */
+  toggleEnabled(): Promise<void>;
 }
 
 interface ZenAttachment {
@@ -55,6 +58,19 @@ export class ZenModeController {
 
   getActiveLeaf(): WorkspaceLeaf | null {
     return this.#attachment?.source.leaf ?? null;
+  }
+
+  createToggleCommand(): Command {
+    return {
+      id: 'toggle-zen-mode',
+      name: 'Toggle zen mode',
+      checkCallback: (checking: boolean) => {
+        // Zen presents only on desktop; elsewhere the setting has no visible effect.
+        if (Platform.isMobile) return false;
+        if (!checking) void this.#toggleEnabled();
+        return true;
+      },
+    };
   }
 
   createToggleHistoryCommand(): Command {
@@ -134,6 +150,19 @@ export class ZenModeController {
     for (const unsubscribe of this.#sources.values()) unsubscribe();
     this.#sources.clear();
     this.#focusOrder = [];
+  }
+
+  async #toggleEnabled(): Promise<void> {
+    const wasPresented = this.#attachment !== null;
+    try {
+      await this.deps.toggleEnabled();
+    } catch {
+      // Only a settled toggle has a state worth reporting.
+      return;
+    }
+    // A panel appearing or leaving is its own feedback; otherwise report the new setting.
+    if (this.#disposed || wasPresented || this.#attachment) return;
+    new Notice(t(this.deps.isEnabled() ? 'chat.zen.enabledNotice' : 'chat.zen.disabledNotice'));
   }
 
   #unregister(source: ZenModeSource): void {

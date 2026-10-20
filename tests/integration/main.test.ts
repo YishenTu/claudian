@@ -2696,6 +2696,22 @@ describe('ClaudianPlugin', () => {
     expect(command.checkCallback(true)).toBe(false);
   });
 
+  it('registers toggle-zen-mode to flip the persisted setting from its latest pending value', async () => {
+    await plugin.onload();
+    const command = getRegisteredCommand('toggle-zen-mode');
+    expect(command.name).toBe('Toggle zen mode');
+    const persist = jest.spyOn(storageOf(plugin), 'saveClaudianSettings');
+    expect(plugin.settings.enableZenMode).toBe(true);
+
+    // Both presses run before the first write commits; neither may reuse the stale committed value.
+    expect(command.checkCallback(false)).toBe(true);
+    expect(command.checkCallback(false)).toBe(true);
+    // Settings writes are serialized, so a later write settles after both toggles.
+    await chatHostOf(plugin).mutateSettings(() => undefined);
+    expect(persist.mock.calls.slice(0, 2).map(([settings]) => settings.enableZenMode)).toEqual([false, true]);
+    expect(plugin.settings.enableZenMode).toBe(true);
+  });
+
   describe('new-tab command', () => {
     it('routes current-tab commands to the focused view when several leaves exist', async () => {
       await plugin.onload();

@@ -94,7 +94,9 @@
       "toolRunning": "{tool} · en curso",
       "toolCompleted": "{tool} · completado",
       "toolFailed": "{tool} · falló",
-      "toolBlocked": "{tool} · bloqueado"
+      "toolBlocked": "{tool} · bloqueado",
+      "enabledNotice": "Modo zen activado. Aparece cuando la barra lateral está oculta.",
+      "disabledNotice": "Modo zen desactivado."
     },
     "composer": {
       "placeholder": "Pide cambios, menciona archivos con @, ejecuta /comandos",

@@ -94,7 +94,9 @@
       "toolRunning": "{tool} · running",
       "toolCompleted": "{tool} · done",
       "toolFailed": "{tool} · failed",
-      "toolBlocked": "{tool} · blocked"
+      "toolBlocked": "{tool} · blocked",
+      "enabledNotice": "Zen mode enabled. It appears when the sidebar is hidden.",
+      "disabledNotice": "Zen mode disabled."
     },
     "composer": {
       "placeholder": "Ask to make changes, @mention files, run /commands",

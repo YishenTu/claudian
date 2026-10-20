@@ -94,7 +94,9 @@
       "toolRunning": "{tool} · 実行中",
       "toolCompleted": "{tool} · 完了",
       "toolFailed": "{tool} · 失敗",
-      "toolBlocked": "{tool} · ブロック"
+      "toolBlocked": "{tool} · ブロック",
+      "enabledNotice": "Zen モードを有効にしました。サイドバーが非表示のときに表示されます。",
+      "disabledNotice": "Zen モードを無効にしました。"
     },
     "composer": {
       "placeholder": "変更を依頼、@でファイルを指定、/コマンドを実行",

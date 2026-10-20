@@ -94,7 +94,9 @@
       "toolRunning": "{tool} · läuft",
       "toolCompleted": "{tool} · fertig",
       "toolFailed": "{tool} · fehlgeschlagen",
-      "toolBlocked": "{tool} · blockiert"
+      "toolBlocked": "{tool} · blockiert",
+      "enabledNotice": "Zen-Modus aktiviert. Er erscheint, wenn die Seitenleiste ausgeblendet ist.",
+      "disabledNotice": "Zen-Modus deaktiviert."
     },
     "composer": {
       "placeholder": "Änderungen anfragen, Dateien mit @ erwähnen, /Befehle ausführen",

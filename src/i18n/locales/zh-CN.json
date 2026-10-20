@@ -94,7 +94,9 @@
       "toolRunning": "{tool} · 运行中",
       "toolCompleted": "{tool} · 已完成",
       "toolFailed": "{tool} · 失败",
-      "toolBlocked": "{tool} · 已阻止"
+      "toolBlocked": "{tool} · 已阻止",
+      "enabledNotice": "已启用禅模式，侧边栏隐藏时显示。",
+      "disabledNotice": "已停用禅模式。"
     },
     "composer": {
       "placeholder": "请求修改、@提及文件、运行 /命令",

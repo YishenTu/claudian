@@ -81,6 +81,7 @@ export default class ClaudianPlugin extends Plugin {
       // A failed write restores the committed position; the panel stays where it was dropped.
       void this.settingsCoordinator.mutate((draft) => { draft.zenModePosition = position; }).catch(() => undefined);
     },
+    toggleEnabled: () => this.settingsCoordinator.mutate((draft) => { draft.enableZenMode = !draft.enableZenMode; }),
   });
   private readonly chatViews = new ChatViewPublisher({
     views: this.views,
@@ -138,6 +139,7 @@ export default class ClaudianPlugin extends Plugin {
       this.addCommand(createChatFocusCommand(
         () => this.views.getInputFocusView(this.zenMode.getActiveLeaf())?.getActiveTab()?.composer ?? null,
       ));
+      this.addCommand(this.zenMode.createToggleCommand());
       this.addCommand(this.zenMode.createToggleHistoryCommand());
 
       this.addCommand({
