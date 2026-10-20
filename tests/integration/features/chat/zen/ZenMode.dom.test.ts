@@ -49,21 +49,34 @@ afterEach(async () => {
   await releaseSideChatHarnesses();
 });
 
-type Split = { collapsed: boolean; containerEl: HTMLElement };
-type Leaf = { view: unknown; getRoot: () => unknown; isDeferred?: boolean; loadIfDeferred?: () => Promise<void> };
+type Split = { collapsed: boolean; containerEl: HTMLElement; collapse: () => void };
+type Tabs = { selected: Leaf | null };
+type Leaf = {
+  view: unknown;
+  getRoot: () => unknown;
+  parent?: Tabs;
+  isDeferred?: boolean;
+  loadIfDeferred?: () => Promise<void>;
+};
 
 /** Narrow stand-in for Obsidian's desktop workspace layout, events and keymap. */
 function createWorkspace() {
   const containerEl = document.body.createDiv({ cls: 'workspace' });
-  const leftSplit: Split = { collapsed: false, containerEl: containerEl.createDiv({ cls: 'workspace-split mod-left-split' }) };
+  const createSplit = (cls: string): Split => {
+    const split: Split = { collapsed: false, containerEl: containerEl.createDiv({ cls }), collapse: () => setCollapsed(split, true) };
+    return split;
+  };
+  const leftSplit = createSplit('workspace-split mod-left-split');
   const rootEl = containerEl.createDiv({ cls: 'workspace-split mod-vertical mod-root' });
-  const rightSplit: Split = { collapsed: false, containerEl: containerEl.createDiv({ cls: 'workspace-split mod-right-split' }) };
+  const rightSplit = createSplit('workspace-split mod-right-split');
   const rootSplit = {};
   const noteEditor = rootEl.createDiv({ cls: 'workspace-leaf' }).createEl('textarea', {
     attr: { 'aria-label': 'Note editor' },
   }) as HTMLTextAreaElement;
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
   const leaves: Leaf[] = [];
+  // Non-chat leaves sharing a sidebar's tab group, such as Outline.
+  const otherLeaves: Leaf[] = [];
   const workspace = {
     containerEl,
     leftSplit,
@@ -84,11 +97,13 @@ function createWorkspace() {
     },
     listenerCount: () => [...listeners.values()].reduce((total, set) => total + set.size, 0),
     getLeavesOfType: () => leaves,
+    iterateAllLeaves: (callback: (leaf: Leaf) => void) => [...leaves, ...otherLeaves].forEach(callback),
     getActiveViewOfType: jest.fn(),
     getActiveFile: () => null,
     revealLeaf: jest.fn(async (leaf: Leaf) => {
       const root = leaf.getRoot() as Split;
       root.collapsed = false;
+      if (leaf.parent) leaf.parent.selected = leaf;
       workspace.trigger('resize');
     }),
   };
@@ -102,7 +117,7 @@ function createWorkspace() {
     split.containerEl.hidden = collapsed;
     workspace.trigger('resize');
   };
-  return { workspace, keymap, scopes, rootEl, rootSplit, leftSplit, rightSplit, noteEditor, leaves, setCollapsed };
+  return { workspace, keymap, scopes, rootEl, rootSplit, leftSplit, rightSplit, noteEditor, leaves, otherLeaves, setCollapsed };
 }
 
 function createSettings(enabled: boolean): ClaudianSettings {
@@ -170,6 +185,16 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
 
   installSessionRuntimePool(plugin);
 
+  const tabGroups: Record<'left' | 'right' | 'main', Tabs> = {
+    left: { selected: null }, right: { selected: null }, main: { selected: null },
+  };
+  const addSiblingLeaf = (placement: 'left' | 'right') => {
+    const split = placement === 'left' ? layout.leftSplit : layout.rightSplit;
+    const leaf: Leaf = { view: {}, getRoot: () => split, parent: tabGroups[placement] };
+    layout.otherLeaves.push(leaf);
+    return leaf;
+  };
+
   const addView = async (placement: 'left' | 'right' | 'main', ready = true) => {
     const conversation = {
       id: `conversation-${conversations.length + 1}`,
@@ -181,7 +206,11 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
     conversations.push(conversation);
     const split = placement === 'left' ? layout.leftSplit : placement === 'right' ? layout.rightSplit : null;
     const viewContainerEl = (split?.containerEl ?? layout.rootEl).createDiv({ cls: 'claudian-container' });
-    const leaf: Leaf = { getRoot: () => split ?? layout.rootSplit, view: null };
+    const parent = tabGroups[placement];
+    const leaf: Leaf = { getRoot: () => split ?? layout.rootSplit, parent, view: null };
+    parent.selected ??= leaf;
+    // Obsidian hides unselected tabs of a group.
+    viewContainerEl.isShown = () => parent.selected === leaf;
     const view = createClaudianView({
       host: plugin,
       app,
@@ -237,7 +266,10 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
   const focusCommand = createChatFocusCommand(
     () => views.getInputFocusView(zen.getActiveLeaf())?.getActiveTab()?.composer ?? null,
   );
-  return { ...layout, ...primary, app, zen, focusCommand, sessions, settingsCoordinator, addView };
+  return {
+    ...layout, ...primary, app, zen, views, focusCommand, sessions, settingsCoordinator, addView, addSiblingLeaf,
+    toggleChat: () => views.toggleView(zen),
+  };
 }
 
 function zenPanel(): HTMLElement | null {
@@ -1450,6 +1482,77 @@ it('presents one source across multiple views and hands over when it reopens', a
   fixture.workspace.trigger('active-leaf-change', left.leaf);
   fixture.setCollapsed(fixture.leftSplit, true);
   expect(zenPanel()!.contains(fixture.tab.dom.inputComposerEl)).toBe(true);
+});
+
+describe('toggle chat view hotkey', () => {
+  it('swaps a shown sidebar chat with its sibling tab while the sidebar stays open', async () => {
+    const { toggleChat, addSiblingLeaf, leaf, rightSplit, tab } = await createZenFixture();
+    const outline = addSiblingLeaf('right');
+
+    await toggleChat();
+
+    expect(leaf.parent!.selected).toBe(outline);
+    expect(rightSplit.collapsed).toBe(false);
+    expect(zenPanel()).toBeNull();
+
+    await toggleChat();
+
+    expect(leaf.parent!.selected).toBe(leaf);
+    expect(document.activeElement).toBe(within(tab.dom.inputComposerEl).getByRole('textbox', { name: 'Message' }));
+  });
+
+  it('hides and re-shows the zen panel while the sidebar stays collapsed', async () => {
+    const { toggleChat, rightSplit, setCollapsed, tab, activeInputSlotEl, workspace } = await createZenFixture();
+    tab.dom.inputEl.value = 'Unsent draft';
+    setCollapsed(rightSplit, true);
+    expect(zenPanel()!.contains(tab.dom.inputComposerEl)).toBe(true);
+
+    await toggleChat();
+
+    expect(zenPanel()).toBeNull();
+    expect(rightSplit.collapsed).toBe(true);
+    expect(tab.dom.inputComposerEl.parentElement).toBe(activeInputSlotEl);
+    workspace.trigger('resize');
+    expect(zenPanel()).toBeNull();
+
+    await toggleChat();
+
+    expect(zenPanel()!.contains(tab.dom.inputComposerEl)).toBe(true);
+    expect(rightSplit.collapsed).toBe(true);
+    expect(tab.dom.inputEl.value).toBe('Unsent draft');
+
+    // Hiding lasts only until the sidebar reopens.
+    await toggleChat();
+    setCollapsed(rightSplit, false);
+    setCollapsed(rightSplit, true);
+    expect(zenPanel()!.contains(tab.dom.inputComposerEl)).toBe(true);
+  });
+
+  it('collapses the sidebar of a lone sidebar chat without presenting zen, then shows zen', async () => {
+    const { toggleChat, rightSplit, workspace } = await createZenFixture();
+
+    await toggleChat();
+
+    expect(rightSplit.collapsed).toBe(true);
+    workspace.trigger('layout-change');
+    expect(zenPanel()).toBeNull();
+
+    await toggleChat();
+
+    expect(zenPanel()).not.toBeNull();
+    expect(rightSplit.collapsed).toBe(true);
+  });
+
+  it('reveals a sidebar chat when zen mode is off', async () => {
+    const { toggleChat, rightSplit, setCollapsed, workspace, leaf } = await createZenFixture({ enabled: false });
+    setCollapsed(rightSplit, true);
+
+    await toggleChat();
+
+    expect(workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+    expect(rightSplit.collapsed).toBe(false);
+    expect(zenPanel()).toBeNull();
+  });
 });
 
 it('releases every moved node and subscription on close and disposal', async () => {

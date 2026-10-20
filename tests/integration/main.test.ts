@@ -2668,21 +2668,39 @@ describe('ClaudianPlugin', () => {
     });
   });
 
-  describe('command callback', () => {
-    it('reveals existing view when command is executed', async () => {
+  describe('toggle chat view command', () => {
+    async function runToggle() {
+      const command = getRegisteredCommand('open-view');
+      expect(command.name).toBe('Toggle chat view');
+      await command.callback();
+    }
+
+    it('reveals and focuses a chat in the main area instead of closing it', async () => {
       await plugin.onload();
-      const mockLeaf = { id: 'existing' };
-      mockApp.workspace.getLeavesOfType.mockReturnValue([mockLeaf]);
+      const rootSplit = {};
+      Object.assign(mockApp.workspace, { leftSplit: { collapsed: false }, rightSplit: { collapsed: false }, rootSplit });
+      const leaf = {
+        getRoot: () => rootSplit,
+        view: { getTabManager: jest.fn(), focusActiveInput: jest.fn(), containerEl: { isShown: () => true } },
+      };
+      mockApp.workspace.getLeavesOfType.mockReturnValue([leaf]);
 
-      expect(plugin.addCommand).toHaveBeenCalledWith({
-        id: 'open-view',
-        name: 'Open chat view',
-        callback: expect.any(Function),
-      });
-      const commandConfig = getRegisteredCommand('open-view');
-      await commandConfig.callback();
+      await runToggle();
 
-      expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(mockLeaf);
+      expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+      expect(leaf.view.focusActiveInput).toHaveBeenCalledTimes(1);
+      expect(mockApp.workspace.detachLeavesOfType).not.toHaveBeenCalled();
+    });
+
+    it('opens a chat when none exists', async () => {
+      await plugin.onload();
+      const rightLeaf = { setViewState: jest.fn().mockResolvedValue(undefined) };
+      mockApp.workspace.getRightLeaf.mockReturnValue(rightLeaf);
+
+      await runToggle();
+
+      expect(rightLeaf.setViewState).toHaveBeenCalledWith({ type: VIEW_TYPE_CLAUDIAN, active: true });
+      expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(rightLeaf);
     });
   });
 

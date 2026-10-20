@@ -120,9 +120,9 @@ export default class ClaudianPlugin extends Plugin {
 
       this.addCommand({
         id: 'open-view',
-        name: 'Open chat view',
+        name: 'Toggle chat view',
         callback: () => {
-          void this.views.activateView();
+          void this.views.toggleView(this.zenMode);
         },
       });
 

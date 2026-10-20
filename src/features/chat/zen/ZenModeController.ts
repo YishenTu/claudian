@@ -46,6 +46,8 @@ export class ZenModeController {
   #focusOrder: ZenModeSource[] = [];
   #eventRefs: EventRef[] = [];
   #attachment: ZenAttachment | null = null;
+  /** Set by the user until no chat sits in a collapsed sidebar. */
+  #hidden = false;
   #listening = false;
   #reconciling = false;
   #reconcileAgain = false;
@@ -68,6 +70,24 @@ export class ZenModeController {
         return true;
       },
     };
+  }
+
+  /** Hides or re-shows the panel; false when there is no panel to toggle. */
+  toggleVisibility(): boolean {
+    if (this.#attachment) {
+      this.hide();
+      return true;
+    }
+    if (!this.#hidden) return false;
+    this.#hidden = false;
+    this.reconcile();
+    return !!this.#attachment;
+  }
+
+  /** Keeps the panel hidden until a chat's sidebar is expanded again. */
+  hide(): void {
+    this.#hidden = true;
+    this.reconcile();
   }
 
   start(): void {
@@ -113,7 +133,10 @@ export class ZenModeController {
   }
 
   #reconcileOnce(): void {
-    const target = this.#selectSource();
+    if (this.#hidden && ![...this.#sources.keys()].some(source => this.#isInCollapsedSidebar(source.leaf))) {
+      this.#hidden = false;
+    }
+    const target = this.#hidden ? null : this.#selectSource();
     const attachment = this.#attachment;
     if (attachment && attachment.source === target) {
       // The source already placed a replaced runtime; only the bound state changes.
