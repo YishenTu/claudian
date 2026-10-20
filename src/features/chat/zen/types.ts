@@ -1,4 +1,4 @@
-import type { WorkspaceLeaf } from 'obsidian';
+import type { Scope, WorkspaceLeaf } from 'obsidian';
 
 import type { ProviderId } from '@/core/providers/types';
 import type { ChatMessage } from '@/core/types';
@@ -18,6 +18,8 @@ export interface ZenModeSlots {
  */
 export interface ZenModeSource {
   readonly leaf: WorkspaceLeaf;
+  /** The view's key scope; zen focus inherits its hotkeys, such as Escape closing composer menus. */
+  readonly scope: Scope | null;
   /** The committed active runtime, or null while the view is not ready. */
   getZenPresentation(): ZenPresentationPort | null;
   /** The provider whose brand color the view currently shows. */

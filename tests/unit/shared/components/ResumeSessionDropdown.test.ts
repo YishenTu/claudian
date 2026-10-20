@@ -1,6 +1,9 @@
 /** @jest-environment jsdom */
 
+import '@test/helpers/ObsidianSettingsDOM';
+
 import { createMockEl } from '@test/helpers/MockElement';
+import { fireEvent, screen } from '@testing-library/dom';
 
 import type { ConversationMeta } from '@/core/types';
 import {
@@ -371,6 +374,60 @@ describe('ResumeSessionDropdown', () => {
       expect(callbacks.onDismiss).toHaveBeenCalled();
 
       dropdown.destroy();
+    });
+  });
+
+  // In zen mode the picker floats over the scrollable workspace, which scrollIntoView would also scroll.
+  describe('scrolling', () => {
+    const rowHeight = 50;
+    let list: HTMLElement;
+    let scrollIntoView: jest.Mock;
+    let dropdown: ResumeSessionDropdown;
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+
+    beforeEach(() => {
+      scrollIntoView = jest.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+      const container = document.body.createDiv();
+      const input = container.appendChild(document.createElement('textarea'));
+      dropdown = new ResumeSessionDropdown(container, input, conversations, null, callbacks);
+      list = screen.getByRole('listbox');
+
+      // A list two rows tall; option rects follow its scroll offset as rendered layout would.
+      let scrollTop = 0;
+      Object.defineProperty(list, 'scrollTop', { get: () => scrollTop, set: (value: number) => { scrollTop = value; } });
+      list.getBoundingClientRect = () => new DOMRect(0, 0, 300, 2 * rowHeight);
+      screen.getAllByRole('option').forEach((option, index) => {
+        option.getBoundingClientRect = () => new DOMRect(0, index * rowHeight - scrollTop, 300, rowHeight);
+      });
+    });
+
+    afterEach(() => {
+      dropdown.destroy();
+      document.body.replaceChildren();
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    });
+
+    it('selects a hovered edge item without scrolling the list or anything behind it', () => {
+      const options = screen.getAllByRole('option');
+      fireEvent.mouseEnter(options[2]);
+      fireEvent.mouseEnter(options[0]);
+
+      expect(options.map(option => option.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false']);
+      expect(list.scrollTop).toBe(0);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    });
+
+    it('keeps the keyboard selection visible by scrolling only the list', () => {
+      const arrow = (key: string) => dropdown.handleKeydown(new KeyboardEvent('keydown', { key }));
+      arrow('ArrowDown');
+      expect(list.scrollTop).toBe(0);
+      arrow('ArrowDown');
+      expect(list.scrollTop).toBe(rowHeight);
+      arrow('ArrowUp');
+      arrow('ArrowUp');
+      expect(list.scrollTop).toBe(0);
+      expect(scrollIntoView).not.toHaveBeenCalled();
     });
   });
 });

@@ -214,7 +214,7 @@ export class ZenModeController {
 
     const panel = new ZenModePanel(hostEl, {
       keymap: this.deps.app.keymap ?? null,
-      parentScope: this.deps.app.scope,
+      parentScope: source.scope ?? this.deps.app.scope,
       historyExpanded: this.#historyExpanded.get(source) ?? false,
       onHistoryExpandedChange: expanded => this.#historyExpanded.set(source, expanded),
       position: this.deps.getPosition(),

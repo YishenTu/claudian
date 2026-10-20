@@ -1,6 +1,7 @@
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
 HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
+HTMLElement.prototype.hasClass = function (name) { return this.classList.contains(name); };
 HTMLElement.prototype.setText = function (value) { this.replaceChildren(value); };
 HTMLElement.prototype.toggleClass = function (classes, value) {
   for (const name of [classes].flat()) this.classList.toggle(name, value);

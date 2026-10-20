@@ -6,14 +6,18 @@
   left: 0;
   right: 0;
   margin-bottom: 4px;
-  background: var(--background-secondary);
-  backdrop-filter: blur(20px);
+  /* Backdrop blur can corrupt translucent Obsidian windows on macOS. */
+  background-color: #fff;
+  background-image: linear-gradient(var(--background-secondary), var(--background-secondary));
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
-  box-shadow: 0 -4px 16px rgb(0 0 0 / 20%);
   z-index: 1000;
   max-height: 400px;
   overflow: hidden;
+}
+
+body.theme-dark .claudian-resume-dropdown {
+  background-color: #1e1e1e;
 }
 
 .claudian-resume-dropdown.visible {

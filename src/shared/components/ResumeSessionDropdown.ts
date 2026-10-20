@@ -139,9 +139,7 @@ export class ResumeSessionDropdown {
         item.addClass('selected');
         item.setAttribute('aria-selected', 'true');
         activeOptionId = item.getAttribute('id');
-        if (scrollSelectedIntoView) {
-          (item as HTMLElement).scrollIntoView({ block: 'nearest' });
-        }
+        if (scrollSelectedIntoView) this.#revealInList(item as HTMLElement);
       } else {
         item.removeClass('selected');
         item.setAttribute('aria-selected', 'false');
@@ -152,6 +150,19 @@ export class ResumeSessionDropdown {
       this.#textbox.setAttribute('aria-activedescendant', activeOptionId);
     } else {
       this.#textbox.removeAttribute('aria-activedescendant');
+    }
+  }
+
+  /** Scrolls only the list; scrollIntoView would also scroll the workspace behind a floating composer. */
+  #revealInList(item: HTMLElement): void {
+    const list = item.parentElement;
+    if (!list) return;
+    const listRect = list.getBoundingClientRect();
+    const itemRect = item.getBoundingClientRect();
+    if (itemRect.top < listRect.top) {
+      list.scrollTop -= listRect.top - itemRect.top;
+    } else if (itemRect.bottom > listRect.bottom) {
+      list.scrollTop += itemRect.bottom - listRect.bottom;
     }
   }
 
@@ -207,9 +218,10 @@ export class ResumeSessionDropdown {
         this.callbacks.onSelect(conv.id);
       });
 
+      // The pointer already shows the item, so hover never scrolls.
       item.addEventListener('mouseenter', () => {
         this.selectedIndex = i;
-        this.#updateSelection();
+        this.#updateSelection(false);
       });
     }
 

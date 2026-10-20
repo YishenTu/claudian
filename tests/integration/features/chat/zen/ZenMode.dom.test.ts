@@ -16,8 +16,10 @@ import { ChatModelSelectionCoordinator } from '@/app/settings/ChatModelSelection
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { ClaudianViews } from '@/composition/ClaudianViews';
+import { BUILT_IN_COMMANDS } from '@/core/commands/builtInCommands';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import type { ProviderCapabilities } from '@/core/providers/types';
 import { getToolIcon } from '@/core/tools/toolIcons';
 import type { ClaudianSettings, Conversation, StreamChunk } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
@@ -923,6 +925,48 @@ it('ignores removed focus targets and retains the return target across normal an
   setCollapsed(rightSplit, true);
   command.checkCallback!(false);
   expect(document.activeElement).toBe(noteEditor);
+});
+
+it('closes the resume picker with Escape through the Obsidian keymap', async () => {
+  const { app, view, tab, rightSplit, setCollapsed, scopes } = await createZenFixture();
+  Object.assign(app, { metadataCache: { on: () => ({}), offref: () => undefined } });
+  view.wireEventHandlers();
+  // Obsidian answers Escape at the app scope when no nearer scope consumes it.
+  const appEscape = jest.fn(() => false);
+  app.scope.register([], 'Escape', appEscape);
+  // The keymap resolves unmodified keys through the active scope chain during window capture and
+  // stops a key a handler consumes before it reaches the focused element.
+  type MockKeyScope = {
+    parent?: MockKeyScope;
+    handlers: Array<{ key: string | null; modifiers: string[] | null; func: (event: KeyboardEvent) => unknown }>;
+  };
+  const dispatch = (event: KeyboardEvent) => {
+    for (let scope = (scopes.at(-1) ?? app.scope) as MockKeyScope | undefined; scope; scope = scope.parent) {
+      const handler = scope.handlers.find(entry => entry.key === event.key && !entry.modifiers?.length);
+      if (handler?.func(event) === false) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+    }
+  };
+  window.addEventListener('keydown', dispatch, true);
+  cleanups.push(() => window.removeEventListener('keydown', dispatch, true));
+  setCollapsed(rightSplit, true);
+  const input = tab.dom.inputEl as unknown as HTMLElement;
+  input.focus();
+  // Command detection is covered elsewhere; this opens the picker the command opens.
+  const sessionsCommand = BUILT_IN_COMMANDS.find(command => command.name === 'sessions')!;
+  await tab.controllers.builtInCommandController.execute(
+    sessionsCommand, { supportsNativeHistory: true } as ProviderCapabilities,
+  );
+  const picker = screen.getByRole('listbox', { name: 'Resume conversation' });
+  expect(zenPanel()!.contains(picker)).toBe(true);
+
+  fireEvent.keyDown(input, { key: 'Escape' });
+
+  expect(screen.queryByRole('listbox', { name: 'Resume conversation' })).toBeNull();
+  expect(appEscape).not.toHaveBeenCalled();
 });
 
 it('sends with the existing keyboard rules and leaves note input alone', async () => {
