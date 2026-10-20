@@ -46,8 +46,8 @@ export class ZenModeController {
   #focusOrder: ZenModeSource[] = [];
   #eventRefs: EventRef[] = [];
   #attachment: ZenAttachment | null = null;
-  /** Set by the user until no chat sits in a collapsed sidebar. */
-  #hidden = false;
+  /** The collapsed sidebar whose chat the user hid; zen stays hidden until it expands. */
+  #hiddenSidebar: CollapsibleSplit | null = null;
   #listening = false;
   #reconciling = false;
   #reconcileAgain = false;
@@ -75,18 +75,18 @@ export class ZenModeController {
   /** Hides or re-shows the panel; false when there is no panel to toggle. */
   toggleVisibility(): boolean {
     if (this.#attachment) {
-      this.hide();
+      this.hide(this.#attachment.source.leaf);
       return true;
     }
-    if (!this.#hidden) return false;
-    this.#hidden = false;
+    if (!this.#hiddenSidebar) return false;
+    this.#hiddenSidebar = null;
     this.reconcile();
     return !!this.#attachment;
   }
 
-  /** Keeps the panel hidden until a chat's sidebar is expanded again. */
-  hide(): void {
-    this.#hidden = true;
+  /** Keeps the panel hidden until the sidebar holding this chat is expanded again. */
+  hide(leaf: WorkspaceLeaf): void {
+    this.#hiddenSidebar = leaf.getRoot() as CollapsibleSplit;
     this.reconcile();
   }
 
@@ -133,10 +133,8 @@ export class ZenModeController {
   }
 
   #reconcileOnce(): void {
-    if (this.#hidden && ![...this.#sources.keys()].some(source => this.#isInCollapsedSidebar(source.leaf))) {
-      this.#hidden = false;
-    }
-    const target = this.#hidden ? null : this.#selectSource();
+    if (this.#hiddenSidebar?.collapsed !== true) this.#hiddenSidebar = null;
+    const target = this.#hiddenSidebar ? null : this.#selectSource();
     const attachment = this.#attachment;
     if (attachment && attachment.source === target) {
       // The source already placed a replaced runtime; only the bound state changes.

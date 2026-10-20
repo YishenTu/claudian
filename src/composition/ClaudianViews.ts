@@ -88,12 +88,14 @@ export class ClaudianViews {
    */
   async toggleView(zen: Pick<ZenModeController, 'toggleVisibility' | 'hide'>): Promise<void> {
     if (zen.toggleVisibility()) return;
-    const leaf = this.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
     // Main-area chats are revealed rather than closed, since closing shuts down their sessions.
-    const sidebar = leaf && isClaudianView(leaf.view) && leaf.view.containerEl.isShown()
-      ? this.#getExpandedSidebar(leaf)
-      : null;
-    if (!sidebar) {
+    const shown = this.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN).filter(candidate => (
+      isClaudianView(candidate.view) && candidate.view.containerEl.isShown() && this.#getExpandedSidebar(candidate)
+    ));
+    const preferred = this.getView();
+    const leaf = shown.find(candidate => candidate.view === preferred) ?? shown[0];
+    const sidebar = leaf ? this.#getExpandedSidebar(leaf) : null;
+    if (!leaf || !sidebar) {
       await this.activateView();
       return;
     }
@@ -104,7 +106,7 @@ export class ClaudianViews {
     }
     // A lone sidebar chat can only hide with its sidebar; zen must not replace it.
     sidebar.collapse();
-    zen.hide();
+    zen.hide(leaf);
   }
 
   async activateView(): Promise<void> {

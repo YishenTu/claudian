@@ -1543,6 +1543,33 @@ describe('toggle chat view hotkey', () => {
     expect(rightSplit.collapsed).toBe(true);
   });
 
+  it('hides the shown sidebar chat even when a main-area chat comes first', async () => {
+    const { toggleChat, addView, addSiblingLeaf, leaves, leaf, rightSplit, workspace } = await createZenFixture();
+    const central = await addView('main');
+    leaves.unshift(leaves.pop()!);
+    const outline = addSiblingLeaf('right');
+
+    await toggleChat();
+
+    expect(leaf.parent!.selected).toBe(outline);
+    expect(rightSplit.collapsed).toBe(false);
+    expect(workspace.revealLeaf).not.toHaveBeenCalledWith(central.leaf);
+  });
+
+  it('ends hiding when the hidden chat\'s sidebar reopens while the other stays collapsed', async () => {
+    const { toggleChat, addView, leftSplit, rightSplit, setCollapsed, tab } = await createZenFixture();
+    const left = await addView('left');
+    setCollapsed(leftSplit, true);
+    expect(zenPanel()!.contains(left.tab.dom.inputComposerEl)).toBe(true);
+
+    await toggleChat();
+    setCollapsed(rightSplit, true);
+    expect(zenPanel()).toBeNull();
+
+    setCollapsed(leftSplit, false);
+    expect(zenPanel()!.contains(tab.dom.inputComposerEl)).toBe(true);
+  });
+
   it('reveals a sidebar chat when zen mode is off', async () => {
     const { toggleChat, rightSplit, setCollapsed, workspace, leaf } = await createZenFixture({ enabled: false });
     setCollapsed(rightSplit, true);
