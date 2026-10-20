@@ -525,6 +525,31 @@ describe('ImageContextManager - Private Helpers', () => {
       addImageSpy.mockRestore();
     });
 
+    it('paste handler should attach every pasted image', async () => {
+      const addImageSpy = jest.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
+      const first = { name: 'first.jpg', type: 'image/jpeg', size: 1024 };
+      const second = { name: 'second.png', type: 'image/png', size: 2048 };
+      const pasteEvent = {
+        type: 'paste',
+        preventDefault: jest.fn(),
+        clipboardData: {
+          items: {
+            length: 3,
+            0: { type: 'image/jpeg', getAsFile: () => first },
+            1: { type: 'text/plain', getAsFile: () => null },
+            2: { type: 'image/png', getAsFile: () => second },
+          },
+        },
+      };
+
+      manager['inputEl'].dispatchEvent(pasteEvent);
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(pasteEvent.preventDefault).toHaveBeenCalledTimes(1);
+      expect(addImageSpy.mock.calls).toEqual([[first, 'paste'], [second, 'paste']]);
+      addImageSpy.mockRestore();
+    });
+
     it('paste handler should ignore non-image items', async () => {
       const addImageSpy = jest.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
       const pasteEvent = {
