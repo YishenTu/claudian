@@ -241,6 +241,13 @@ export async function renderAutoTriggeredTurn(
       checkpointMessage = segments.slice(start).reverse().find(segment => host.state.messages.includes(segment));
     }
 
+    if (result.interruptedAt) {
+      // A stopped span ends at its output: output-free segments on either side of its notifications show nothing.
+      const empty = segments.slice(finalSpanStart).filter(segment => !hasResponseOutput(segment));
+      host.state.messages = host.state.messages.filter(message => !empty.includes(message));
+      for (const segment of empty) host.renderer?.removeMessage(segment.id);
+      checkpointMessage = segments.slice(finalSpanStart).reverse().find(segment => host.state.messages.includes(segment));
+    }
     const visible = segments.filter(segment => host.state.messages.includes(segment));
     if (checkpointMessage && metadata.assistantMessageId) checkpointMessage.assistantMessageId = metadata.assistantMessageId;
     const stopped = result.interruptedAt ? segments.slice(finalSpanStart).filter(segment => visible.includes(segment)) : [];

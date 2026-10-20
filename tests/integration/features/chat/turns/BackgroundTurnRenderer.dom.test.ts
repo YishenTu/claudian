@@ -652,6 +652,29 @@ it.each([true, false])('folds a background turn stopped after blank thinking lik
   } finally { session.dispose(); }
 });
 
+// Output-free segments on either side of a notification show nothing: a turn stopped without
+// output keeps its notification visible and ends in a plain indicator.
+it('keeps a notification visible when blank thinking surrounds it in a stopped background turn', async () => {
+  const session = createBackgroundSession();
+  const { messagesEl, renderer, state, background } = session;
+  const blankThinking = () => background.handle('binding', { type: 'thinking_delta', text: '   ', scope: session.next() }, () => true);
+  const inspect = () => ({ transcript: visibleTranscript(messagesEl),
+    headers: within(messagesEl).queryAllByRole('button', { name: /^Interrupted/ }).length });
+  try {
+    background.reserve('binding', 'automatic');
+    await blankThinking();
+    renderSessionTaskNotification(session.host, 'Job finished.', undefined, session.next());
+    await blankThinking();
+    await session.stop();
+    await Promise.resolve();
+    const expected = { transcript: 'Task notification Interrupted · What should Claudian do instead?', headers: 0 };
+    expect(inspect()).toEqual(expected);
+    renderer.renderMessages(state.messages, () => 'Welcome');
+    await Promise.resolve();
+    expect(inspect()).toEqual(expected);
+  } finally { session.dispose(); }
+});
+
 it('folds a stopped automatic turn across a later notification once, live and on Claude reload', async () => {
   const session = createBackgroundSession();
   const { messagesEl, renderer, state, background } = session;
