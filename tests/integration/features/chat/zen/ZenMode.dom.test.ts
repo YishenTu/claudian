@@ -1543,8 +1543,8 @@ describe('toggle chat view hotkey', () => {
     expect(rightSplit.collapsed).toBe(true);
   });
 
-  it('hides the shown sidebar chat even when a main-area chat comes first', async () => {
-    const { toggleChat, addView, addSiblingLeaf, leaves, leaf, rightSplit, workspace } = await createZenFixture();
+  it('hides and restores the shown sidebar chat even when a main-area chat comes first', async () => {
+    const { toggleChat, addView, addSiblingLeaf, leaves, leaf, rightSplit, workspace, tab } = await createZenFixture();
     const central = await addView('main');
     leaves.unshift(leaves.pop()!);
     const outline = addSiblingLeaf('right');
@@ -1553,6 +1553,11 @@ describe('toggle chat view hotkey', () => {
 
     expect(leaf.parent!.selected).toBe(outline);
     expect(rightSplit.collapsed).toBe(false);
+
+    await toggleChat();
+
+    expect(leaf.parent!.selected).toBe(leaf);
+    expect(document.activeElement).toBe(within(tab.dom.inputComposerEl).getByRole('textbox', { name: 'Message' }));
     expect(workspace.revealLeaf).not.toHaveBeenCalledWith(central.leaf);
   });
 
@@ -1568,6 +1573,21 @@ describe('toggle chat view hotkey', () => {
 
     setCollapsed(leftSplit, false);
     expect(zenPanel()!.contains(tab.dom.inputComposerEl)).toBe(true);
+  });
+
+  it('collapses and restores a lone sidebar chat when zen mode is off and a main-area chat comes first', async () => {
+    const { toggleChat, addView, leaves, leaf, rightSplit, workspace } = await createZenFixture({ enabled: false });
+    const central = await addView('main');
+    leaves.unshift(leaves.pop()!);
+
+    await toggleChat();
+    expect(rightSplit.collapsed).toBe(true);
+
+    await toggleChat();
+
+    expect(rightSplit.collapsed).toBe(false);
+    expect(workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+    expect(workspace.revealLeaf).not.toHaveBeenCalledWith(central.leaf);
   });
 
   it('reveals a sidebar chat when zen mode is off', async () => {

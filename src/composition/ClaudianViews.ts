@@ -20,6 +20,9 @@ export function isClaudianView(value: unknown): value is ClaudianView {
 
 /** Locates and opens the chat views mounted in the Obsidian workspace. */
 export class ClaudianViews {
+  /** The chat the toggle last hid, restored by its next show; only a preference, never a guard. */
+  #toggleHiddenLeaf: WorkspaceLeaf | null = null;
+
   constructor(
     private readonly workspace: Workspace,
     private readonly getPlacement: () => ChatViewPlacement,
@@ -88,17 +91,21 @@ export class ClaudianViews {
    */
   async toggleView(zen: Pick<ZenModeController, 'toggleVisibility' | 'hide'>): Promise<void> {
     if (zen.toggleVisibility()) return;
+    const leaves = this.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
     // Main-area chats are revealed rather than closed, since closing shuts down their sessions.
-    const shown = this.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN).filter(candidate => (
+    const shown = leaves.filter(candidate => (
       isClaudianView(candidate.view) && candidate.view.containerEl.isShown() && this.#getExpandedSidebar(candidate)
     ));
     const preferred = this.getView();
     const leaf = shown.find(candidate => candidate.view === preferred) ?? shown[0];
     const sidebar = leaf ? this.#getExpandedSidebar(leaf) : null;
     if (!leaf || !sidebar) {
-      await this.activateView();
+      const hidden = this.#toggleHiddenLeaf;
+      this.#toggleHiddenLeaf = null;
+      await this.activateView(hidden && leaves.includes(hidden) ? hidden : undefined);
       return;
     }
+    this.#toggleHiddenLeaf = leaf;
     const sibling = this.#findMostRecentSibling(leaf);
     if (sibling) {
       await revealWorkspaceLeaf(this.workspace, sibling);
@@ -109,9 +116,10 @@ export class ClaudianViews {
     zen.hide(leaf);
   }
 
-  async activateView(): Promise<void> {
+  /** Reveals and focuses the preferred chat leaf, else the first one, else opens one. */
+  async activateView(preferred?: WorkspaceLeaf): Promise<void> {
     const { workspace } = this;
-    const existingLeaf = workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
+    const existingLeaf = preferred ?? workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)[0];
     const leaf = existingLeaf
       ?? this.#getLeafForPlacement(this.getPlacement());
     if (!leaf) return;
