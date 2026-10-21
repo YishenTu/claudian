@@ -8,6 +8,7 @@ import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRu
 import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { FakeSideSession } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { modelCatalogCases } from '@test/helpers/providerModelCatalogs';
+import { testDate } from '@test/helpers/testClock';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { App, Component, Scope, setIcon } from 'obsidian';
@@ -1529,13 +1530,21 @@ it('presents one source across multiple views and hands over when it reopens', a
 });
 
 describe('toggle chat view hotkey', () => {
-  it('swaps a shown sidebar chat with its sibling tab while the sidebar stays open', async () => {
-    const { toggleChat, addSiblingLeaf, leaf, rightSplit, tab } = await createZenFixture();
+  it.each(['none', 'mounted', 'deferred'])('swaps chat with a non-chat sibling when the other chat is %s', async (otherChat) => {
+    const { toggleChat, addView, addSiblingLeaf, leaf, rightSplit, tab } = await createZenFixture();
+    const olderSibling = addSiblingLeaf('right');
+    Object.assign(olderSibling, { activeTime: testDate({ minutes: -2 }).getTime() });
     const outline = addSiblingLeaf('right');
+    Object.assign(outline, { activeTime: testDate({ minutes: -1 }).getTime() });
+    if (otherChat !== 'none') {
+      const other = await addView('right');
+      Object.assign(other.leaf, { activeTime: testDate().getTime() });
+      if (otherChat === 'deferred') Object.assign(other.leaf, { view: {}, isDeferred: true });
+    }
 
     await toggleChat();
 
-    expect(leaf.parent!.selected).toBe(outline);
+    expect(leaf.parent!.selected === outline).toBe(true);
     expect(rightSplit.collapsed).toBe(false);
     expect(zenPanel()).toBeNull();
 
@@ -1546,7 +1555,7 @@ describe('toggle chat view hotkey', () => {
   });
 
   it('hides and re-shows the zen panel while the sidebar stays collapsed', async () => {
-    const { toggleChat, rightSplit, setCollapsed, tab, activeInputSlotEl, workspace } = await createZenFixture();
+    const { toggleChat, rightSplit, setCollapsed, tab, activeInputSlotEl, workspace, noteEditor } = await createZenFixture();
     tab.dom.inputEl.value = 'Unsent draft';
     setCollapsed(rightSplit, true);
     expect(zenPanel()!.contains(tab.dom.inputComposerEl)).toBe(true);
@@ -1559,11 +1568,15 @@ describe('toggle chat view hotkey', () => {
     workspace.trigger('resize');
     expect(zenPanel()).toBeNull();
 
+    noteEditor.focus();
+    expect(document.activeElement).toBe(noteEditor);
     await toggleChat();
 
     expect(zenPanel()!.contains(tab.dom.inputComposerEl)).toBe(true);
     expect(rightSplit.collapsed).toBe(true);
     expect(tab.dom.inputEl.value).toBe('Unsent draft');
+    expect(document.activeElement).toBe(within(tab.dom.inputComposerEl).getByRole('textbox', { name: 'Message' }));
+    expect(workspace.revealLeaf).not.toHaveBeenCalled();
 
     // Hiding lasts only until the sidebar reopens.
     await toggleChat();
@@ -1572,8 +1585,9 @@ describe('toggle chat view hotkey', () => {
     expect(zenPanel()!.contains(tab.dom.inputComposerEl)).toBe(true);
   });
 
-  it('collapses the sidebar of a lone sidebar chat without presenting zen, then shows zen', async () => {
-    const { toggleChat, rightSplit, workspace } = await createZenFixture();
+  it.each([false, true])('collapses a chat-only group with another chat=%s, then shows zen', async (anotherChat) => {
+    const { toggleChat, addView, rightSplit, workspace, tab, noteEditor } = await createZenFixture();
+    if (anotherChat) await addView('right');
 
     await toggleChat();
 
@@ -1581,10 +1595,12 @@ describe('toggle chat view hotkey', () => {
     workspace.trigger('layout-change');
     expect(zenPanel()).toBeNull();
 
+    noteEditor.focus();
     await toggleChat();
 
     expect(zenPanel()).not.toBeNull();
     expect(rightSplit.collapsed).toBe(true);
+    expect(document.activeElement).toBe(within(tab.dom.inputComposerEl).getByRole('textbox', { name: 'Message' }));
   });
 
   it('hides and restores the shown sidebar chat even when a main-area chat comes first', async () => {

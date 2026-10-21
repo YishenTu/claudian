@@ -89,8 +89,12 @@ export class ClaudianViews {
    * Hides a chat the user can see, else shows one. A shown zen panel hides itself; a
    * sidebar chat yields to a sibling tab so the sidebar stays open.
    */
-  async toggleView(zen: Pick<ZenModeController, 'toggleVisibility' | 'hide'>): Promise<void> {
-    if (zen.toggleVisibility()) return;
+  async toggleView(zen: Pick<ZenModeController, 'toggleVisibility' | 'hide' | 'getActiveLeaf'>): Promise<void> {
+    if (zen.toggleVisibility()) {
+      const leaf = zen.getActiveLeaf();
+      if (leaf && isClaudianView(leaf.view)) leaf.view.focusActiveInput();
+      return;
+    }
     const leaves = this.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
     // Main-area chats are revealed rather than closed, since closing shuts down their sessions.
     const shown = leaves.filter(candidate => (
@@ -111,7 +115,7 @@ export class ClaudianViews {
       await revealWorkspaceLeaf(this.workspace, sibling);
       return;
     }
-    // A lone sidebar chat can only hide with its sidebar; zen must not replace it.
+    // A chat-only tab group can only hide with its sidebar; zen must not replace it.
     sidebar.collapse();
     zen.hide(leaf);
   }
@@ -158,8 +162,10 @@ export class ClaudianViews {
 
   #findMostRecentSibling(leaf: WorkspaceLeaf): WorkspaceLeaf | null {
     const siblings: WorkspaceLeaf[] = [];
+    // The workspace identifies deferred chat leaves before their views are mounted.
+    const chatLeaves = this.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
     this.workspace.iterateAllLeaves((candidate) => {
-      if (candidate !== leaf && candidate.parent === leaf.parent) siblings.push(candidate);
+      if (candidate !== leaf && candidate.parent === leaf.parent && !chatLeaves.includes(candidate)) siblings.push(candidate);
     });
     // activeTime is Obsidian's unexposed focus timestamp; without it, tab order decides.
     const activeTime = (candidate: WorkspaceLeaf) => (candidate as { activeTime?: number }).activeTime ?? 0;
