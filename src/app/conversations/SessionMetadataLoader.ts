@@ -24,6 +24,7 @@ export interface SessionMetadataLoaderOptions {
   whenLayoutReady(callback: () => void): void;
   onConversationListChanged(): void;
   onAllMetadataLoaded?(): void;
+  onInvalidMetadata?(count: number): void;
 }
 
 /**
@@ -49,8 +50,10 @@ export class SessionMetadataLoader {
 
   async readInitialMetadata(): Promise<InitialSessionMetadataScan> {
     const scan = await this.options.sessions.scan();
+    const records = await this.options.sessions.revalidate(scan.records);
+    this.reportInvalidMetadata(scan);
     return {
-      records: await this.options.sessions.revalidate(scan.records),
+      records,
       complete: scan.complete,
       invalidMetadataCount: scan.invalidMetadataCount,
     };
@@ -97,6 +100,12 @@ export class SessionMetadataLoader {
 
   private isStopped(): boolean {
     return this.stopped || this.options.isUnloading();
+  }
+
+  private reportInvalidMetadata(scan: InitialSessionMetadataScan): void {
+    if (!this.isStopped() && scan.complete && scan.invalidMetadataCount > 0) {
+      this.options.onInvalidMetadata?.(scan.invalidMetadataCount);
+    }
   }
 
   private async loadRemaining(): Promise<void> {
@@ -154,6 +163,7 @@ export class SessionMetadataLoader {
       return;
     }
 
+    this.reportInvalidMetadata(scan);
     StartupProfiler.recordCount('session-metadata-count', scan.records.length);
     StartupProfiler.recordCount(
       'invalid-session-metadata-count',

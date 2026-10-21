@@ -163,6 +163,10 @@ Use `ANTHROPIC_AUTH_TOKEN=` instead when that is the inherited credential. Overr
 
 When asking for help, share the variable names involved rather than their secret values.
 
+### A saved conversation is missing
+
+If Claudian reports skipped invalid conversation metadata, some chats could not be listed. Back up the vault's `.claudian/sessions` folder, including its device subfolders, before inspecting or restoring `.meta.json` files from a known-good backup. Claudian leaves invalid metadata untouched; the warning does not repair or recover conversations.
+
 ### More help
 
 For provider-specific installation and configuration guidance, refer to the provider documentation linked in the [Requirements](#requirements) section. If you have a feature request or run into a bug, please [submit a GitHub issue](https://github.com/YishenTu/claudian/issues).

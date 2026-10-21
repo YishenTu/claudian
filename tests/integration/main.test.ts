@@ -553,6 +553,78 @@ describe('ClaudianPlugin', () => {
       expect(afterBackgroundLoad?.title).toBe(backgroundMetadata.title);
     });
 
+    it.each([
+      { invalidCount: 0, unload: false },
+      { invalidCount: 2, unload: false },
+      { invalidCount: 2, unload: true },
+    ])('reports invalid metadata only after the deferred scan finishes: %j', async ({ invalidCount, unload }) => {
+      const timestamp = testClock()().getTime();
+      const validPath = '.claudian/sessions/valid.meta.json';
+      const invalidPaths = Array.from({ length: invalidCount }, (_, index) => (
+        `.claudian/sessions/broken-${index}.meta.json`
+      ));
+      const files = installVaultFiles({
+        [validPath]: JSON.stringify({
+          id: 'valid',
+          providerId: 'claude',
+          title: 'Valid chat',
+          createdAt: timestamp,
+          lastActivityAt: timestamp,
+          sessionId: null,
+          selectedModel: 'sonnet',
+        }),
+        ...Object.fromEntries(invalidPaths.map(path => [path, '{"id":"broken'])),
+      });
+      await mockApp.vault.adapter.mkdir('.claudian/sessions');
+      mockApp.vault.adapter.list.mockImplementation(async (path: string) => ({
+        files: path === '.claudian/sessions' ? [...files.keys()] : [],
+        folders: [],
+      }));
+      const blockedPath = invalidPaths.at(-1) ?? validPath;
+      let entered!: () => void;
+      const reading = new Promise<void>(resolve => { entered = resolve; });
+      let release!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
+        if (path === blockedPath) {
+          entered();
+          await gate;
+        }
+        return files.get(path) ?? '';
+      });
+
+      await plugin.onload();
+      expect(Notice).not.toHaveBeenCalled();
+      for (const [ready] of mockApp.workspace.onLayoutReady.mock.calls) { ready(); ready(); }
+      try {
+        await reading;
+        expect(Notice).not.toHaveBeenCalled();
+        if (unload) plugin.onunload();
+      } finally {
+        release();
+      }
+      if (unload) {
+        await (plugin as any).applicationShutdownPromise;
+      } else {
+        await waitForCondition(() => (
+          (plugin as any).sessionMetadata.hasLoadedAll
+          && (plugin as any).sessionMetadata.remainingLoad === null
+        ));
+      }
+      expect(chatHostOf(plugin).getConversationList().map(({ id }) => id)).toEqual(unload ? [] : ['valid']);
+
+      for (const path of invalidPaths) {
+        expect(files.get(path)).toBe('{"id":"broken');
+        expect(mockApp.vault.adapter.write).not.toHaveBeenCalledWith(path, expect.anything());
+        expect(mockApp.vault.adapter.remove).not.toHaveBeenCalledWith(path);
+      }
+      expect((Notice as jest.Mock).mock.calls).toEqual(unload || invalidCount === 0 ? [] : [[
+        'Claudian skipped 2 invalid conversation metadata files. '
+        + 'The conversation list may be incomplete. Back up .claudian/sessions before inspecting or restoring its .meta.json files.',
+        10_000,
+      ]]);
+    });
+
     it('does not start the background metadata scan when unloaded before the scheduled load runs', async () => {
       const layoutCallbacks: Array<() => void> = [];
       mockApp.workspace.onLayoutReady = jest.fn((callback: () => void) => {

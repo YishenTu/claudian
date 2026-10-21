@@ -132,6 +132,13 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
     },
     onConversationListChanged: () => options.onConversationListChanged(),
     onAllMetadataLoaded: () => options.onAllMetadataLoaded(),
+    onInvalidMetadata: (count) => {
+      new Notice(
+        `Claudian skipped ${count} invalid conversation metadata ${count === 1 ? 'file' : 'files'}. `
+        + 'The conversation list may be incomplete. Back up .claudian/sessions before inspecting or restoring its .meta.json files.',
+        10_000,
+      );
+    },
   });
   const nativeSessionArchives = new NativeSessionArchiveSync({
     getConversation: id => conversationRepository.getSync(id),

@@ -1,4 +1,6 @@
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+import { testClock } from '@test/helpers/testClock';
+import { Notice } from 'obsidian';
 
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { type ApplicationDomains, startApplication } from '@/app/startup/ApplicationStartup';
@@ -154,6 +156,53 @@ describe('startApplication', () => {
   });
 
   describe('session metadata', () => {
+    it.each([0, 1, 2])('reports %i invalid metadata files without altering them or hiding valid chats', async invalidCount => {
+      const timestamp = testClock()().getTime();
+      const validPath = '.claudian/sessions/valid.meta.json';
+      const invalidPaths = Array.from({ length: invalidCount }, (_, index) => (
+        `.claudian/sessions/broken-${index}.meta.json`
+      ));
+      const files = new Map([
+        [validPath, JSON.stringify({
+          id: 'valid',
+          providerId: 'claude',
+          title: 'Valid chat',
+          createdAt: timestamp,
+          lastActivityAt: timestamp,
+          sessionId: null,
+          selectedModel: 'sonnet',
+        })],
+        ...invalidPaths.map(path => [path, '{"id":"broken'] as [string, string]),
+      ]);
+      mockApp.vault.adapter.exists.mockImplementation(async (path: string) => (
+        path === '.claudian/sessions' || files.has(path)
+      ));
+      mockApp.vault.adapter.list.mockImplementation(async (path: string) => ({
+        files: path === '.claudian/sessions' ? [...files.keys()] : [],
+        folders: [],
+      }));
+      mockApp.vault.adapter.read.mockImplementation(async (path: string) => files.get(path) ?? '');
+      mockApp.vault.adapter.write.mockImplementation(async (path: string, content: string) => {
+        files.set(path, content);
+      });
+      mockApp.vault.adapter.remove.mockImplementation(async (path: string) => { files.delete(path); });
+
+      const domains = await loadApplication();
+
+      expect(domains.sessionMetadata.hasLoadedAll).toBe(true);
+      expect(domains.conversations.getConversationList().map(({ id }) => id)).toEqual(['valid']);
+      for (const path of invalidPaths) {
+        expect(files.get(path)).toBe('{"id":"broken');
+        expect(mockApp.vault.adapter.write).not.toHaveBeenCalledWith(path, expect.anything());
+        expect(mockApp.vault.adapter.remove).not.toHaveBeenCalledWith(path);
+      }
+      expect((Notice as jest.Mock).mock.calls).toEqual(invalidCount === 0 ? [] : [[
+        `Claudian skipped ${invalidCount} invalid conversation metadata ${invalidCount === 1 ? 'file' : 'files'}. `
+        + 'The conversation list may be incomplete. Back up .claudian/sessions before inspecting or restoring its .meta.json files.',
+        10_000,
+      ]]);
+    });
+
     it('migrates a legacy Codex fingerprint before reconciling persisted sessions', async () => {
       const timestamp = Date.now();
       const metadataPath = '.claudian/sessions/conv-codex-legacy.meta.json';
