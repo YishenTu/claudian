@@ -41,6 +41,11 @@ export interface ProviderExecutionContext {
   readonly canvasSelection?: CanvasSelectionContext | null;
 }
 
+/**
+ * Resolved per request, so they may differ between sessions and change between turns: a change applies from the
+ * session's next turn, never mid-turn. A provider may refuse a change for a non-persistent session (a side chat) whose
+ * context a restart would lose; keep such a session's instructions fixed for its lifetime.
+ */
 export type ProviderSystemInstructions =
   | { readonly kind: 'provider-default' }
   | {
