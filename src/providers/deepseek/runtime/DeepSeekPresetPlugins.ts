@@ -18,7 +18,7 @@ export interface DeepSeekPresetPaths {
   readonly codeModeFile: string;
   readonly sessions: string;
   readonly sessionToolsFile: string;
-  promptFile(preset: DeepSeekPreset): string;
+  readonly promptDirectory: string;
 }
 
 /**
@@ -50,7 +50,7 @@ function assertEntryValue(value: unknown, path: string): void {
 
 const PREVIEW_PATHS: DeepSeekPresetPaths = {
   sessions: '<claudian-sessions.mjs>', sessionToolsFile: '<session tools endpoint>',
-  compatibility: '<claudian-compatibility.mjs>', codeModeFile: '<code mode>', promptFile: () => '<system prompt>',
+  compatibility: '<claudian-compatibility.mjs>', codeModeFile: '<code mode>', promptDirectory: '<session prompts>',
 };
 
 /**
@@ -68,7 +68,7 @@ export function buildDeepSeekPresetPlugins(
   return [
     {
       id: 'claudian-compatibility', name: paths.compatibility,
-      config: { promptFile: paths.promptFile(preset), ...(auxiliary ? { allow } : { codeModeFile: paths.codeModeFile }) },
+      config: { promptDirectory: paths.promptDirectory, ...(auxiliary ? { allow } : { codeModeFile: paths.codeModeFile }) },
     },
     // Chat presets present tools per agent from the live code-mode preference instead.
     ...(auxiliary ? [plugin('agent-tool-presentation', { mode: 'native' })] : []),

@@ -147,12 +147,7 @@ export class DefaultOpencodeACPSessionKernel
         titleLocale: resolveTitleGenerationLocale(this.options.plugin.settings),
         runtimeEnv,
         nativeVersion: this.nativeVersion,
-        ...(options.systemInstructions.kind === 'explicit'
-          ? {
-            systemPromptKey: options.systemInstructions.instructions,
-            systemPromptText: options.systemInstructions.instructions,
-          }
-          : {}),
+        systemPromptText: options.systemPrompt,
         workspaceRoot: this.options.config.vaultWorkingDirectory,
       });
       this.#assertNotDisposed();

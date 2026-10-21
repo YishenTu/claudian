@@ -1,3 +1,9 @@
+import { spawn } from 'node:child_process';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createInterface } from 'node:readline';
+
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { childFollow, jobsOf, NativePeer, type NativePeerLifecycle, rootFollow } from '@test/helpers/deepseek/NativePeer';
 import { testDate } from '@test/helpers/testClock';
@@ -10,6 +16,7 @@ import { DeepSeekRemoteError } from '@/providers/deepseek/remote/DeepSeekRemoteC
 import { DEEPSEEK_EPHEMERAL_PREFIX } from '@/providers/deepseek/runtime/DeepSeekCompatibility';
 import { getDeepSeekHome } from '@/providers/deepseek/runtime/DeepSeekHome';
 import { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
+import { type DeepSeekLaunchArtifacts, prepareDeepSeekLaunchArtifacts } from '@/providers/deepseek/runtime/DeepSeekLaunchArtifacts';
 
 const time = testDate().getTime();
 // Fixture polling keeps the real clock while tests drive native deadlines on the fake one.
@@ -124,7 +131,7 @@ async function run(session: ProviderExecutionSession, input: ProviderExecutionRe
 
 const texts = (events: ProviderExecutionEvent[]) => events.filter(e => e.type === 'text_delta').map(e => e.text).join('');
 
-it('serves concurrent conversations and auxiliary tasks from one native process with per-preset prompts', async () => {
+it('serves concurrent conversations and auxiliary tasks from one native process with per-session prompts', async () => {
   const main = open(); const title = open();
   const [mainEvents, titleEvents] = await Promise.all([
     run(main, request('Main prompt {literal}'), 'main answer'),
@@ -133,9 +140,11 @@ it('serves concurrent conversations and auxiliary tasks from one native process 
   expect(texts(mainEvents)).toBe('main answer');
   expect(texts(titleEvents)).toBe('title answer');
   expect(lifecycle.starts).toBe(1);
-  expect(peer.calls.filter(c => c.method === 'session/create').map(c => c.args.request.agentPreset).sort()).toEqual(['claudian', 'claudian-passive']);
+  const creates = peer.calls.filter(c => c.method === 'session/create').map(c => c.args.request.agentPreset);
+  expect([...creates].sort()).toEqual(['claudian', 'claudian-passive']);
+  const native = Object.fromEntries(creates.map((preset, index) => [preset, created[index]]));
   expect(lifecycle.prompts).toEqual(expect.arrayContaining([
-    { preset: 'claudian', text: 'Main prompt {literal}' }, { preset: 'claudian-passive', text: 'Title prompt' },
+    { sessionId: native.claudian, text: 'Main prompt {literal}' }, { sessionId: native['claudian-passive'], text: 'Title prompt' },
   ]));
 });
 
@@ -169,13 +178,78 @@ it('ends an ephemeral auxiliary task with the process that held it instead of re
   expect(texts(await run(open(), request('Prompt'), 'served'))).toBe('served');
 });
 
-it('applies a changed prompt on the next turn without restarting the shared process', async () => {
-  const session = open();
-  await run(session, request('First prompt'), 'one');
-  await run(session, request('Edited prompt'), 'two');
-  expect(lifecycle.prompts.filter(p => p.preset === 'claudian').map(p => p.text)).toEqual(['First prompt', 'Edited prompt']);
-  expect(lifecycle.starts).toBe(1);
-  expect(peer.calls.filter(c => c.method === 'session/create')).toHaveLength(1);
+/**
+ * Applies the chat preset's bundled compatibility plugin as native composes it, in its own process. Each call assembles
+ * one model step of a native session at its current turn and returns the persona text.
+ */
+async function nativePersona(artifacts: DeepSeekLaunchArtifacts) {
+  const patch = JSON.parse(await readFile(artifacts.patchPath, 'utf8'));
+  const row = patch.find((entry: any) => entry.insert).insert.find((entry: any) => entry.config?.id === 'claudian')
+    .config.plugins.find((plugin: any) => plugin.id === 'claudian-compatibility');
+  const script = String.raw`
+    import { createInterface } from 'node:readline';
+    const plugin = await import(process.argv[1]);
+    const sections = [], sessions = new Map(), turns = new Map();
+    plugin.apply({
+      effect: fn => fn(), on: () => () => {},
+      systemPrompt: { section: section => { sections.push(section); return () => {}; }, getSectionOrder: name => name },
+      sessionProjections: { stateOf: (session, key) => key === 'turnBoundary' ? { lastTurn: turns.get(session) } : undefined },
+    }, JSON.parse(process.argv[2]));
+    const persona = sections.find(section => section.name === 'deployment:persona-prefix');
+    for await (const line of createInterface({ input: process.stdin })) {
+      const step = JSON.parse(line);
+      if (!sessions.has(step.session)) sessions.set(step.session, { id: step.session, header: { id: step.session, ...(step.parent ? { parentSession: step.parent } : {}) } });
+      const session = sessions.get(step.session);
+      turns.set(session, step.turn);
+      const agent = { id: session.id, session };
+      process.stdout.write(JSON.stringify(typeof persona.text === 'function' ? persona.text({ agent, scope: agent }) : persona.text) + '\n');
+    }
+  `;
+  const child = spawn(process.execPath, ['--input-type=module', '-e', script, row.name, JSON.stringify(row.config)], { stdio: ['pipe', 'pipe', 'inherit'] });
+  const replies: Array<(text: string) => void> = [];
+  createInterface({ input: child.stdout }).on('line', line => replies.shift()?.(JSON.parse(line)));
+  child.once('exit', code => { for (const reply of replies.splice(0)) reply(`native plugin exited with ${code}`); });
+  return {
+    assemble: (session: string, turn: number, parent?: string) => new Promise<string>(resolve => {
+      replies.push(resolve);
+      child.stdin.write(`${JSON.stringify({ session, turn, parent })}\n`);
+    }),
+    close: () => { child.stdin.end(); },
+  };
+}
+
+it('gives each conversation on the shared process its own prompt and applies an edit at its next native turn', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'deepseek session prompts '));
+  const artifacts = await prepareDeepSeekLaunchArtifacts(root);
+  await deepseek.dispose();
+  ({ deepseek, lifecycle } = peer.host({ launchArtifacts: artifacts }));
+  const native = await nativePersona(artifacts);
+  try {
+    const alpha = open(), beta = open();
+    await run(alpha, request('Alpha prompt'), 'one');
+    await run(beta, request('Beta prompt'), 'two');
+    expect(created).toEqual(['alpha', 'beta']);
+    expect(await native.assemble('alpha', 1)).toBe('Alpha prompt');
+    expect(await native.assemble('beta', 1)).toBe('Beta prompt');
+    // A subagent runs on its parent's instructions.
+    expect(await native.assemble('alpha-child', 1, 'alpha')).toBe('Alpha prompt');
+
+    await run(alpha, request('Alpha edited'), 'three');
+    // The running turn keeps its prompt; the edit applies from the conversation's next native turn.
+    expect(await native.assemble('alpha', 1)).toBe('Alpha prompt');
+    expect(await native.assemble('alpha', 2)).toBe('Alpha edited');
+    expect(await native.assemble('alpha-child', 2, 'alpha')).toBe('Alpha edited');
+    expect(await native.assemble('beta', 2)).toBe('Beta prompt');
+    // Prompt edits never restart the shared process or recreate a conversation's native session.
+    expect(lifecycle.starts).toBe(1);
+    expect(peer.calls.filter(c => c.method === 'session/create')).toHaveLength(2);
+
+    // Closing a conversation removes its prompt; native keeps a turn already running.
+    await beta.dispose();
+    await until(() => lifecycle.prompts.some(p => p.sessionId === 'beta' && p.text === null));
+    expect(await native.assemble('beta', 2)).toBe('Beta prompt');
+    expect(await native.assemble('beta', 3)).toBe('');
+  } finally { native.close(); await artifacts.dispose(); await rm(root, { recursive: true, force: true }); }
 });
 
 it('applies a changed code-mode preference on the next turn of the same conversation and preset', async () => {
@@ -356,7 +430,7 @@ function sessionToolEndpoint() {
     starts(options);
     const client = await peer.connect();
     return { client, profile: 'web', onExit: () => () => {}, dispose: async () => client.dispose(),
-      writePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false,
+      writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false,
       offerEphemeralFork: async () => async () => {},
     };
   }, undefined, { registerCallRoute, registerMCPRoute: jest.fn() });

@@ -5,6 +5,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 
 import { DeepSeekRemoteClient } from '@/providers/deepseek/remote/DeepSeekRemoteClient';
 import { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
+import type { DeepSeekLaunchArtifacts } from '@/providers/deepseek/runtime/DeepSeekLaunchArtifacts';
 
 export interface NativePeerHostOptions {
   readonly profile?: 'web' | 'desktop';
@@ -17,12 +18,15 @@ export interface NativePeerHostOptions {
   readonly ephemeralReady?: boolean;
   /** Fails every fork-token withdrawal, as a full or read-only launch directory would. */
   readonly failWithdrawals?: boolean;
+  /** Real launch files that receive every prompt write, for driving the bundled native plugins. */
+  readonly launchArtifacts?: Pick<DeepSeekLaunchArtifacts, 'writePrompt' | 'removePrompt'>;
 }
 
 export interface NativePeerLifecycle {
   starts: number;
   disposed: number;
-  readonly prompts: Array<{ preset: string; text: string }>;
+  /** Prompt writes and removals (`text: null`) per native session. */
+  readonly prompts: Array<{ sessionId: string; text: string | null }>;
   /** Code-mode preferences written to the Host, with how many prompts native had received at that point. */
   readonly codeModes: Array<{ enabled: boolean; promptsSent: number }>;
   /** Ephemeral fork tokens offered to the Host, with how many forks native had received at offer and at withdrawal. */
@@ -107,7 +111,8 @@ export class NativePeer {
       return {
         client, profile: options.profile ?? 'web',
         onExit: listener => { exits.add(listener); return () => exits.delete(listener); },
-        writePrompt: async (preset, text) => { lifecycle.prompts.push({ preset, text }); },
+        writePrompt: async (sessionId, text) => { lifecycle.prompts.push({ sessionId, text }); await options.launchArtifacts?.writePrompt(sessionId, text); },
+        removePrompt: async sessionId => { await options.launchArtifacts?.removePrompt(sessionId); lifecycle.prompts.push({ sessionId, text: null }); },
         writeCodeMode: async enabled => { lifecycle.codeModes.push({ enabled, promptsSent: this.calls.filter(call => call.method === 'session/prompt').length }); },
         readEphemeralReady: async () => options.ephemeralReady ?? true,
         offerEphemeralFork: async (parent, atSeq) => {

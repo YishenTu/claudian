@@ -838,15 +838,15 @@ describe('OpencodeExecutionBackend', () => {
     expect(harness.kernels.map(kernel => kernel.connectCalls[0])).toEqual([
       expect.objectContaining({
         profile: 'managed',
-        systemInstructions: { instructions: 'instructions-a', kind: 'explicit' },
+        systemPrompt: 'instructions-a',
       }),
       expect.objectContaining({
         profile: 'managed',
-        systemInstructions: { instructions: 'instructions-b', kind: 'explicit' },
+        systemPrompt: 'instructions-b',
       }),
       expect.objectContaining({
         profile: 'readonly',
-        systemInstructions: { instructions: 'instructions-b', kind: 'explicit' },
+        systemPrompt: 'instructions-b',
       }),
     ]);
     expect(harness.kernels.slice(1).map(kernel => kernel.openedResumeIds)).toEqual([
@@ -882,10 +882,10 @@ describe('OpencodeExecutionBackend', () => {
 
     expect(harness.kernels.map(kernel => kernel.connectCalls[0])).toEqual([
       expect.objectContaining({
-        systemInstructions: { kind: 'explicit', instructions: 'instructions-a' },
+        systemPrompt: 'instructions-a',
       }),
       expect.objectContaining({
-        systemInstructions: { kind: 'explicit', instructions: 'instructions-b' },
+        systemPrompt: 'instructions-b',
       }),
     ]);
   });

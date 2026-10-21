@@ -81,6 +81,7 @@ const server = http.createServer(async (req, res) => {
  if (route === '/api/command') { commandReads++; return setTimeout(() => reply(fs.existsSync(process.env.PROCESS_LOG + '.commands') ? JSON.parse(fs.readFileSync(process.env.PROCESS_LOG + '.commands','utf8')) : [{ name: 'init' }]), 30); }
  if (route === '/api/agent') return reply(agents());
  if (route === '/fixture/sessions') return reply({ ids:[...sessions.keys()], held:held?.length ?? 0, deleted });
+ if (route === '/fixture/system') return reply({ sessions:Object.fromEntries([...sessions].map(([id,s]) => [id, agents().find(a => a.id === s.agent)?.system ?? null])), agents:agents().map(a => a.id) });
  if (route === '/fixture/hold-sessions') { held = []; res.writeHead(204).end(); return; }
  if (route === '/fixture/release-sessions') { const pending = held ?? []; held = null; for (const send of pending) send(); res.writeHead(204).end(); return; }
  if (route === '/api/session') { const id = 'ses_' + (++sequence); const session = {id, agent:body.agent}; sessions.set(id,session); save(); if (held) { held.push(() => reply(session)); return; } return reply(session); }
@@ -365,6 +366,48 @@ it('shares discovery and independent chat sessions, retaining the server after o
   } finally { await a.dispose(); await b.dispose(); await f.dispose(); }
 }, 20000);
 
+
+it('gives each conversation its own resolved system prompt and applies a change at its next turn', async () => {
+  const f = await createFixture();
+  const explicit = f.createSession(), defaults = f.createSession();
+  const providerDefault = (text: string): ProviderExecutionRequest => ({ ...turn(text), configuration: { ...turn(text).configuration, systemInstructions: { kind: 'provider-default' } } });
+  const control = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
+  const native = async () => (await control.request<{ data: { sessions: Record<string, string | null>; agents: string[] } }>('/fixture/system')).data;
+  const complete = async (session: typeof explicit, request: ProviderExecutionRequest) => {
+    const events: ProviderExecutionEvent[] = [];
+    for await (const event of session.execute(request).events) events.push(event);
+    expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
+  };
+  try {
+    expect(await f.workspace.metadataService.loadCatalog()).toBe(true);
+    await complete(explicit, turn('alpha'));
+    f.plugin.settings.systemPrompt = 'First project paragraph';
+    await complete(defaults, providerDefault('beta'));
+    expect((await native()).sessions.ses_1).toBe('Instructions for alpha');
+    expect((await native()).sessions.ses_2).toContain('First project paragraph');
+    f.plugin.settings.systemPrompt = 'Second project paragraph';
+    await complete(defaults, providerDefault('beta edited'));
+    expect((await native()).sessions.ses_2).toContain('Second project paragraph');
+
+    // A running turn keeps the prompt it started with.
+    const run = defaults.execute(providerDefault('hold'));
+    let started!: () => void;
+    const active = new Promise<void>(resolve => { started = resolve; });
+    const consume = (async () => { for await (const event of run.events) if (event.type === 'text_delta') started(); })();
+    await active;
+    f.plugin.settings.systemPrompt = 'Third project paragraph';
+    expect((await native()).sessions.ses_2).toContain('Second project paragraph');
+    run.cancel(); await consume;
+
+    await complete(defaults, providerDefault('beta again'));
+    const after = await native();
+    expect(after.sessions.ses_2).toContain('Third project paragraph');
+    expect(after.sessions.ses_2).not.toContain('Second project paragraph');
+    expect(after.sessions.ses_1).toBe('Instructions for alpha');
+    // The replaced conversation agent is unregistered; only the two live conversations keep one each.
+    expect(after.agents.filter(id => id.startsWith('build-'))).toHaveLength(2);
+  } finally { await control.dispose(); await explicit.dispose(); await defaults.dispose(); await f.dispose(); }
+}, 20000);
 
 it('runs auxiliary sessions with saved credentials without persisting them or replacing the catalog', async () => {
   const f = await createFixture();

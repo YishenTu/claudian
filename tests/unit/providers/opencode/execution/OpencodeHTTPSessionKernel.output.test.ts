@@ -49,7 +49,7 @@ beforeEach(async () => {
   kernel = new OpencodeHTTPSessionKernel({ config, getActiveTurnId: () => 'turn',
     onNativeOutput: (event: OpencodeNativeOutput, session?: string) => output.push({ event, session }), onNativeTurn: jest.fn(), onClosed: jest.fn(),
   } as any, '/opencode', {}, { acquire: async () => lease } as any, new OpencodeSessionPersistence(config));
-  await kernel.connect({ profile: 'managed', systemInstructions: { kind: 'explicit', instructions: '' } } as any);
+  await kernel.connect({ profile: 'managed', systemPrompt: '' });
   await kernel.openSession();
 });
 

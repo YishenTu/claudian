@@ -1,4 +1,4 @@
-import type { ProviderAsyncSubagentCompletedEvent, ProviderBackgroundOutputEvent, ProviderExecutionRequest,ProviderSessionConfig, ProviderSystemInstructions } from '@/core/execution';
+import type { ProviderAsyncSubagentCompletedEvent, ProviderBackgroundOutputEvent, ProviderExecutionRequest,ProviderSessionConfig } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ForkSource, SubagentProgress } from '@/core/types';
 import type { ACPPromptRequest, ACPPromptResponse, ACPSessionConfigOption, ACPSessionModelState, ACPSessionNotification } from '@/providers/acp';
@@ -12,7 +12,8 @@ export type OpencodeExecutionProfile = 'managed' | 'passive' | 'readonly';
 
 export interface OpencodeKernelConnectOptions {
   readonly profile: OpencodeExecutionProfile;
-  readonly systemInstructions: ProviderSystemInstructions;
+  /** Literal instructions, fixed for the kernel's lifetime. */
+  readonly systemPrompt: string;
 }
 
 export interface OpencodeNativeSessionInfo {

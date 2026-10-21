@@ -39,7 +39,6 @@ export interface PrepareOpencodeLaunchArtifactsParams {
   nativeVersion?: 1 | 2;
   runtimeEnv: NodeJS.ProcessEnv;
   settings?: SystemPromptSettings;
-  systemPromptKey?: string;
   systemPromptText?: string;
   /** Only create missing prompt files, for launches whose sessions supply their own instructions. */
   preserveExistingPrompts?: boolean;
@@ -70,7 +69,7 @@ export async function prepareOpencodeLaunchArtifacts(
     passive: buildOpencodeSystemPrompt('passive', promptParams),
   };
   if (params.systemPromptText !== undefined) promptTexts[profile] = params.systemPromptText;
-  const promptKey = params.systemPromptKey ?? promptTexts[profile];
+  const promptKey = promptTexts[profile];
   const customConfigPath = resolveOpencodeConfigPath(params.runtimeEnv.OPENCODE_CONFIG, params.workspaceRoot);
   const customConfigText = await readOpencodeConfig(customConfigPath, params.runtimeEnv);
   const inlineConfig = params.runtimeEnv.OPENCODE_CONFIG_CONTENT?.trim();

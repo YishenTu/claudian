@@ -1,5 +1,5 @@
 import { realpathSync } from 'node:fs';
-import { access, chmod, copyFile, link, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, copyFile, link, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import type { Writable } from 'node:stream';
@@ -152,8 +152,12 @@ describe('native Host process', () => {
       expect(realpathSync.native(invocation.cwd)).toBe(realpathSync.native(root));
       expect(invocation.args).toEqual(['--profile', 'web', '--patch', expect.any(String), '--no-open', '--port', '0']);
       expect(await hostProcess.client.call('session/modelCatalog')).toBe('session/modelCatalog answered');
-      await hostProcess.writePrompt('claudian', 'Live prompt');
-      expect(await readFile(join(artifactRoot(invocation), 'prompts', 'claudian.txt'), 'utf8')).toBe('Live prompt');
+      await hostProcess.writePrompt('native-session', 'Live prompt');
+      const prompts = join(artifactRoot(invocation), 'prompts');
+      const [promptFile] = await readdir(prompts);
+      expect(await readFile(join(prompts, promptFile), 'utf8')).toBe('Live prompt');
+      await hostProcess.removePrompt('native-session');
+      expect(await readdir(prompts)).toEqual([]);
       await hostProcess.writeCodeMode(true);
       expect(await readFile(join(artifactRoot(invocation), 'code-mode'), 'utf8')).toBe('both');
       const patch = JSON.parse(await readFile(invocation.args[invocation.args.indexOf('--patch') + 1], 'utf8'));

@@ -1,6 +1,7 @@
+import type { ProviderSystemInstructions } from '@/core/execution';
 import { getInlineEditSystemPrompt } from '@/core/prompt/inlineEdit';
 import { buildSystemPrompt, type SystemPromptSettings } from '@/core/prompt/mainAgent';
-import { buildTitleGenerationSystemPrompt } from '@/core/prompt/titleGeneration';
+import { buildTitleGenerationSystemPrompt, resolveTitleGenerationLocale } from '@/core/prompt/titleGeneration';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 
 import type { OpencodeExecutionProfile } from '../execution/OpencodeSessionContract';
@@ -67,6 +68,21 @@ export function buildOpencodeSystemPrompt(profile: OpencodeExecutionProfile, par
   if (profile === 'readonly') return getInlineEditSystemPrompt(params.workspaceRoot);
   if (profile === 'passive') return buildTitleGenerationSystemPrompt(params.titleLocale);
   return buildSystemPrompt(params.settings ?? {});
+}
+
+/** The literal instructions one execution runs with, read from the current settings. */
+export function resolveOpencodeSystemPrompt(
+  plugin: Pick<ProviderHost, 'settings'>,
+  workspaceRoot: string,
+  profile: OpencodeExecutionProfile,
+  instructions: ProviderSystemInstructions,
+): string {
+  if (instructions.kind === 'explicit') return instructions.instructions;
+  return buildOpencodeSystemPrompt(profile, {
+    settings: getSystemPromptSettings(plugin, workspaceRoot),
+    titleLocale: resolveTitleGenerationLocale(plugin.settings),
+    workspaceRoot,
+  });
 }
 
 export function getSystemPromptSettings(

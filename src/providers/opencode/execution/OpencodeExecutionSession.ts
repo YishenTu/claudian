@@ -32,7 +32,7 @@ import { projectOpencodeMetadata } from '../metadata/OpencodeMetadataProjection'
 import { decodeOpencodeModelId } from '../models';
 import { createOpencodeToolStreamAdapter } from '../normalization/opencodeToolNormalization';
 import { buildOpencodePrompt } from '../runtime/buildOpencodePrompt';
-import { AUX_AGENT_IDS, OPENCODE_BUILD_AGENT_ID } from '../runtime/OpencodeExecutionAgents';
+import { AUX_AGENT_IDS, OPENCODE_BUILD_AGENT_ID, resolveOpencodeSystemPrompt } from '../runtime/OpencodeExecutionAgents';
 import { assertOpencodeModelAvailable } from '../runtime/OpencodeModelAvailability';
 import { getOpencodeState } from '../types';
 import {
@@ -257,7 +257,10 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
         await pendingDisposal;
         if (!this.#isRunCurrent(active, generation)) return;
       }
-      const kernelConfigurationKey = buildKernelConfigurationKey(request);
+      const profile = resolveProfile(request);
+      // Instructions are fixed per kernel: a changed prompt reopens the native session on a new one at this turn.
+      const systemPrompt = resolveOpencodeSystemPrompt(this.plugin, this.config.vaultWorkingDirectory, profile, request.configuration.systemInstructions);
+      const kernelConfigurationKey = JSON.stringify([profile, systemPrompt]);
       let kernel = this.kernel;
       let native = this.nativeInfo;
       if (
@@ -365,10 +368,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
           sessionInstanceId: this.sessionInstanceId,
         });
         this.kernel = kernel;
-        await kernel.connect({
-          profile: resolveProfile(request),
-          systemInstructions: request.configuration.systemInstructions,
-        });
+        await kernel.connect({ profile, systemPrompt });
         if (this.kernel === kernel) {
           this.kernelConfigurationKey = kernelConfigurationKey;
         }
@@ -785,19 +785,6 @@ function resolveProfile(request: ProviderExecutionRequest): OpencodeExecutionPro
   ) return 'passive';
   if (request.toolPolicy.kind === 'read-only') return 'readonly';
   return 'managed';
-}
-
-function buildKernelConfigurationKey(
-  request: ProviderExecutionRequest,
-): string {
-  const instructions = request.configuration.systemInstructions;
-  return JSON.stringify([
-    resolveProfile(request),
-    instructions.kind,
-    instructions.kind === 'explicit'
-      ? instructions.instructions
-      : null,
-  ]);
 }
 
 function getInputText(request: ProviderExecutionRequest): string {

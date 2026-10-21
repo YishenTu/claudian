@@ -308,7 +308,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       }
       return;
     }
-    await lease.writePrompt(this.binding!.preset, prompt);
+    await lease.writePrompt(this.nativeId!, prompt);
     if (!isDeepSeekAuxiliaryPreset(this.binding!.preset)) await lease.writeCodeMode(getDeepSeekProviderSettings(this.host.settings).codeMode);
     this.assertRequest(requested);
     requested.delivery = 'sending';
@@ -326,7 +326,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     if (requested.delivery === 'sending') requested.delivery = 'queued';
   }
 
-  /** Binds this conversation to its native session in the shared Host; returns the preset's literal prompt. */
+  /** Binds this conversation to its native session in the shared Host; returns the session's literal prompt. */
   private async bind(requested: Request): Promise<string> {
     const settings = this.host.settings;
     const input = requested.input;

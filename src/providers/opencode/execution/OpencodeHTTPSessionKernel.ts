@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 
 import { parseCompactCommand } from '@/core/commands/compactCommand';
 import { PendingInteractionLedger } from '@/core/execution';
-import { resolveTitleGenerationLocale } from '@/core/prompt/titleGeneration';
 import type { SessionToolInvocation } from '@/core/session-tools/invokeSessionTool';
 import { isSessionTool } from '@/core/tools/toolNames';
 import type { ACPPromptRequest, ACPSessionConfigOption } from '@/providers/acp';
@@ -15,7 +14,7 @@ import type { OpencodeServerLease, OpencodeServerService } from '../http/Opencod
 import { OpencodeShellOutput } from '../http/OpencodeShellOutput';
 import { normalizeOpencodeToolInput, normalizeOpencodeToolName, normalizeOpencodeToolResult, normalizeOpencodeToolResultDetails } from '../normalization/opencodeToolNormalization';
 import type { OpencodeTextRange } from '../runtime/buildOpencodePrompt';
-import { AUX_AGENT_IDS, buildOpencodeSystemPrompt, getSystemPromptSettings, OPENCODE_BUILD_AGENT_ID } from '../runtime/OpencodeExecutionAgents';
+import { AUX_AGENT_IDS, OPENCODE_BUILD_AGENT_ID } from '../runtime/OpencodeExecutionAgents';
 import {
   type OpencodeKernelConnectOptions,
   type OpencodeNativeOutput,
@@ -94,7 +93,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     await this.client.subscribe(event => this.handleEvent(event), error => this.fail(error), () => !this.disposed && !!this.sessionId && !!this.options.openNativeInteraction, id => this.resolveSessionTools(id));
     this.agents = await this.client.registerAgents(
       [options.profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[options.profile]],
-      this.resolveSystemPrompt(options),
+      options.systemPrompt,
     );
     const client = this.client;
     await client.waitForActivation(this.controller.signal);
@@ -663,15 +662,6 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private requireClient(): OpencodeServerLease {
     if (!this.client || this.disposed) throw new Error('OpenCode HTTP session is not connected.');
     return this.client;
-  }
-  private resolveSystemPrompt({ profile, systemInstructions }: OpencodeKernelConnectOptions): string {
-    if (systemInstructions.kind === 'explicit') return systemInstructions.instructions;
-    const workspaceRoot = this.options.config.vaultWorkingDirectory;
-    return buildOpencodeSystemPrompt(profile, {
-      settings: getSystemPromptSettings(this.options.plugin, workspaceRoot),
-      titleLocale: resolveTitleGenerationLocale(this.options.plugin.settings),
-      workspaceRoot,
-    });
   }
 }
 

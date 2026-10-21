@@ -56,7 +56,7 @@ describe('DeepSeek additional preset plugins', () => {
       const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
       Object.defineProperty(process, 'platform', { value: platform });
       try {
-        const paths = { sessions: '/s.mjs', sessionToolsFile: '/endpoint', compatibility: '/c.mjs', codeModeFile: '/code-mode', promptFile: () => '/prompt.txt' };
+        const paths = { sessions: '/s.mjs', sessionToolsFile: '/endpoint', compatibility: '/c.mjs', codeModeFile: '/code-mode', promptDirectory: '/prompts' };
         const ids = buildDeepSeekPresetPlugins('claudian', paths).map(row => row.id);
         expect(ids).toContain(shell);
         expect(ids).not.toContain(other);
@@ -70,7 +70,7 @@ describe('DeepSeek additional preset plugins', () => {
     // Expressions read back in dsh's own notation.
     expect(text).toContain('disabled: !!js 1 > 2');
     const preview = parse(text.replace('!!js 1 > 2', 'false')) as Array<Record<string, unknown>>;
-    expect(preview[0]).toEqual({ id: 'claudian-compatibility', name: '<claudian-compatibility.mjs>', config: { promptFile: '<system prompt>', codeModeFile: '<code mode>' } });
+    expect(preview[0]).toEqual({ id: 'claudian-compatibility', name: '<claudian-compatibility.mjs>', config: { promptDirectory: '<session prompts>', codeModeFile: '<code mode>' } });
     expect(preview.at(-1)).toEqual({ id: 'tool-todo', name: '@deepseek-ai/dsh-tool-todo', disabled: false });
     const shell = process.platform === 'win32' ? 'tool-pwsh' : 'tool-bash';
     expect(preview.map(row => row.id)).toEqual(expect.arrayContaining([shell, 'tool-ask-user', 'compaction']));
@@ -80,7 +80,7 @@ describe('DeepSeek additional preset plugins', () => {
 });
 
 it.each(['claudian', 'claudian-code'] as const)('places the sessions bridge in %s before user plugins', preset => {
-  const paths = { compatibility: '/c.mjs', codeModeFile: '/mode', promptFile: () => '/prompt', sessions: '/sessions.mjs', sessionToolsFile: '/endpoint.json' };
+  const paths = { compatibility: '/c.mjs', codeModeFile: '/mode', promptDirectory: '/prompts', sessions: '/sessions.mjs', sessionToolsFile: '/endpoint.json' };
   const rows = buildDeepSeekPresetPlugins(preset, paths, [{ id: 'custom', name: 'custom' }]);
   const sessions = rows.find(row => row.id === 'claudian-sessions');
   expect(sessions).toEqual({ id: 'claudian-sessions', name: '/sessions.mjs', config: expect.objectContaining({ endpointFile: '/endpoint.json' }) });
@@ -88,13 +88,13 @@ it.each(['claudian', 'claudian-code'] as const)('places the sessions bridge in %
 });
 
 it.each(['claudian-passive', 'claudian-read-only'] as const)('keeps session tools out of %s', preset => {
-  const paths = { compatibility: '/c.mjs', codeModeFile: '/mode', promptFile: () => '/prompt', sessions: '/sessions.mjs', sessionToolsFile: '/endpoint.json' };
+  const paths = { compatibility: '/c.mjs', codeModeFile: '/mode', promptDirectory: '/prompts', sessions: '/sessions.mjs', sessionToolsFile: '/endpoint.json' };
   expect(buildDeepSeekPresetPlugins(preset, paths).map(row => row.id)).not.toContain('claudian-sessions');
 });
 
 // Native tool-skill injects a user's `/name` gesture in its pre-step; Inline Edit (read-only) offers skills like chat.
 it.each([['claudian', true], ['claudian-read-only', true], ['claudian-passive', false]] as const)('mounts user-invocable skills in %s: %s', (preset, mounted) => {
-  const paths = { compatibility: '/c.mjs', codeModeFile: '/mode', promptFile: () => '/prompt', sessions: '/sessions.mjs', sessionToolsFile: '/endpoint.json' };
+  const paths = { compatibility: '/c.mjs', codeModeFile: '/mode', promptDirectory: '/prompts', sessions: '/sessions.mjs', sessionToolsFile: '/endpoint.json' };
   const ids = buildDeepSeekPresetPlugins(preset, paths).map(row => row.id);
   expect(ids.includes('skill-filesystem') && ids.includes('tool-skill')).toBe(mounted);
 });

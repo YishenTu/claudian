@@ -19,6 +19,7 @@ import {
 } from '../execution/OpencodeACPSessionKernel';
 import { OpencodeServerService } from '../http/OpencodeServerService';
 import { decodeOpencodeModelId } from '../models';
+import { resolveOpencodeSystemPrompt } from '../runtime/OpencodeExecutionAgents';
 import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
 import { detectOpencodeNativeVersion } from '../runtime/OpencodeVersion';
 import { getOpencodeProviderSettings } from '../settings';
@@ -376,7 +377,7 @@ class DefaultOpencodeMetadataProbe implements OpencodeMetadataProbe {
     this.kernel = kernel;
     await kernel.connect({
       profile: 'passive',
-      systemInstructions: { kind: 'provider-default' },
+      systemPrompt: resolveOpencodeSystemPrompt(this.plugin, resolveVaultPath(this.plugin), 'passive', { kind: 'provider-default' }),
     });
     signal?.throwIfAborted();
     this.native = await kernel.openSession();

@@ -4,13 +4,13 @@ import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTrans
 import type { SessionToolEndpoint } from '@/core/session-tools/SessionToolEndpoint';
 
 import { type DeepSeekReader, type DeepSeekRemoteClient, DeepSeekRemoteError, isRecord } from '../remote/DeepSeekRemoteClient';
-import type { DeepSeekPreset, DeepSeekProfile } from '../types';
+import type { DeepSeekProfile } from '../types';
 import { DEEPSEEK_EPHEMERAL_PREFIX } from './DeepSeekCompatibility';
 import { getDeepSeekHome } from './DeepSeekHome';
 import type { DeepSeekHostProcess, DeepSeekLaunchOptions } from './DeepSeekHostProcess';
 import { DeepSeekRoster, type DeepSeekSessionToolCapture } from './DeepSeekRoster';
 
-export type DeepSeekProcess = Pick<DeepSeekHostProcess, 'client' | 'profile' | 'onExit' | 'dispose' | 'writePrompt' | 'writeCodeMode' | 'offerEphemeralFork' | 'readEphemeralReady'>;
+export type DeepSeekProcess = Pick<DeepSeekHostProcess, 'client' | 'profile' | 'onExit' | 'dispose' | 'writePrompt' | 'removePrompt' | 'writeCodeMode' | 'offerEphemeralFork' | 'readEphemeralReady'>;
 export type DeepSeekProcessFactory = (options: DeepSeekLaunchOptions, signal: AbortSignal) => Promise<DeepSeekProcess>;
 export type DeepSeekHostLoss = 'process-exited' | 'transport';
 
@@ -31,7 +31,8 @@ export interface DeepSeekHostLease {
    * signal only stops the caller waiting: native forks cannot be cancelled, so the Host keeps the token until it settles.
    */
   fork(request: { readonly sessionId: string; readonly atSeq: number }, ephemeral: boolean, signal?: AbortSignal): Promise<string>;
-  writePrompt(preset: DeepSeekPreset, text: string): Promise<void>;
+  /** Literal prompt of a session this lease claims, from its next native turn; releasing the claim removes it. */
+  writePrompt(sessionId: string, text: string): Promise<void>;
   /** Shared by every chat agent of this generation; each applies it at its next turn. */
   writeCodeMode(enabled: boolean): Promise<void>;
   /** Exclusive claim of a native session; its interactions are delivered here until release. */
@@ -98,7 +99,7 @@ export class DeepSeekHost {
     // Loss can land between startup and this continuation; its listeners have already run.
     if (generation.retirement) { this.leave(generation); throw new Error('DeepSeek process exited during startup.'); }
     const { process, roster, home, ephemeral } = ready;
-    const claims: Array<() => void> = [];
+    const claims = new Map<string, () => void>();
     const lost = new Set<(loss: DeepSeekHostLoss, error: Error) => void>();
     const relay = (loss: DeepSeekHostLoss, error: Error): void => { for (const listener of [...lost]) listener(loss, error); lost.clear(); };
     generation.lost.add(relay);
@@ -156,17 +157,21 @@ export class DeepSeekHost {
         generation.forks = run.catch(() => undefined);
         return abortable(run, signal);
       },
-      writePrompt: (preset, text) => process.writePrompt(preset, text),
+      writePrompt: (sessionId, text) => {
+        if (released || !claims.has(sessionId)) return Promise.reject(new Error('DeepSeek can only write the prompt of a claimed session.'));
+        return process.writePrompt(sessionId, text);
+      },
       writeCodeMode: enabled => process.writeCodeMode(enabled),
       claim: (sessionId, deliver, sessionTools) => {
         if (released) throw new Error('DeepSeek Host lease is released.');
-        claims.push(roster.claim(sessionId, deliver, sessionTools));
+        claims.set(sessionId, roster.claim(sessionId, deliver, sessionTools));
       },
       onLost: listener => { lost.add(listener); return () => lost.delete(listener); },
       release: () => {
         if (released) return;
         released = true;
-        for (const off of claims.splice(0)) off();
+        for (const [sessionId, off] of claims) { off(); void process.removePrompt(sessionId).catch(() => undefined); }
+        claims.clear();
         lost.clear(); generation.lost.delete(relay);
         this.leave(generation);
       },

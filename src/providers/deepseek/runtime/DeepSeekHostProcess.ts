@@ -6,7 +6,7 @@ import { ManagedStdioProcess, type ManagedStdioProcessOptions } from '@/core/pro
 import type { SessionToolRoute } from '@/core/session-tools/SessionToolEndpoint';
 
 import { DeepSeekRemoteClient } from '../remote/DeepSeekRemoteClient';
-import type { DeepSeekPreset, DeepSeekProfile } from '../types';
+import type { DeepSeekProfile } from '../types';
 import { getDeepSeekHome } from './DeepSeekHome';
 import { getDeepSeekDesktopInstallation, resolveDeepSeekNodeEntry } from './DeepSeekInstallation';
 import { type DeepSeekLaunchArtifacts, prepareDeepSeekLaunchArtifacts } from './DeepSeekLaunchArtifacts';
@@ -85,7 +85,9 @@ export class DeepSeekHostProcess {
     }
   }
 
-  writePrompt(preset: DeepSeekPreset, text: string): Promise<void> { return this.artifacts.writePrompt(preset, text); }
+  writePrompt(sessionId: string, text: string): Promise<void> { return this.artifacts.writePrompt(sessionId, text); }
+
+  removePrompt(sessionId: string): Promise<void> { return this.artifacts.removePrompt(sessionId); }
 
   writeCodeMode(enabled: boolean): Promise<void> { return this.artifacts.writeCodeMode(enabled); }
 

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 
 import type { SessionToolRoute } from '@/core/session-tools/SessionToolEndpoint';
 
-import { DEEPSEEK_PRESETS, type DeepSeekPreset } from '../types';
+import { DEEPSEEK_PRESETS } from '../types';
 import { DEEPSEEK_COMPATIBILITY_SOURCE, DEEPSEEK_EPHEMERAL_SOURCE, DEEPSEEK_LIFECYCLE_SOURCE, DEEPSEEK_SESSIONS_SOURCE } from './DeepSeekCompatibility';
 import { buildDeepSeekPresetPlugins, type DeepSeekPresetPlugin } from './DeepSeekPresetPlugins';
 
@@ -14,8 +14,10 @@ import { buildDeepSeekPresetPlugins, type DeepSeekPresetPlugin } from './DeepSee
 export interface DeepSeekLaunchArtifacts {
   readonly patchPath: string;
   readonly desktopRunnerPath: string;
-  /** Replaces a preset's literal prompt; native applies it at the next prompt assembly. */
-  writePrompt(preset: DeepSeekPreset, text: string): Promise<void>;
+  /** Replaces one native session's literal prompt; native applies it from that session's next turn. */
+  writePrompt(sessionId: string, text: string): Promise<void>;
+  /** Removes a released session's prompt; a turn already running keeps the prompt it started with. */
+  removePrompt(sessionId: string): Promise<void>;
   /** Chat agents read it at creation and at each turn start, so a change never lands mid-turn. */
   writeCodeMode(enabled: boolean): Promise<void>;
   /** Atomically publishes an endpoint replacement without restarting the native Host. */
@@ -39,7 +41,8 @@ export async function prepareDeepSeekLaunchArtifacts(
   const sessionsPath = join(root, 'claudian-sessions.mjs');
   const sessionToolsFile = join(root, 'session-tools.json');
   const lifecyclePath = join(root, 'claudian-lifecycle.mjs');
-  const promptPath = (preset: DeepSeekPreset): string => join(root, 'prompts', `${preset}.txt`);
+  const promptDirectory = join(root, 'prompts');
+  const promptPath = (sessionId: string): string => join(promptDirectory, deepseekPromptFileName(sessionId));
   const codeModePath = join(root, 'code-mode');
   const ephemeralPath = join(root, 'claudian-ephemeral.mjs');
   const ephemeralStatePath = join(root, 'ephemeral-forks.json');
@@ -62,7 +65,16 @@ export async function prepareDeepSeekLaunchArtifacts(
     writes = task.catch(() => {});
     return task;
   };
-  const writePrompt = (preset: DeepSeekPreset, text: string): Promise<void> => replace(promptPath(preset), text);
+  const remove = (path: string): Promise<void> => {
+    const task = writes.then(async () => {
+      await rm(path, { force: true, maxRetries: 5 });
+      written.delete(path);
+    });
+    writes = task.catch(() => {});
+    return task;
+  };
+  const writePrompt = (sessionId: string, text: string): Promise<void> => replace(promptPath(sessionId), text);
+  const removePrompt = (sessionId: string): Promise<void> => remove(promptPath(sessionId));
   const writeCodeMode = (enabled: boolean): Promise<void> => replace(codeModePath, enabled ? 'both' : 'native');
   const writeSessionToolRoute = (route: Pick<SessionToolRoute, 'url' | 'routeId'>): Promise<void> =>
     replace(sessionToolsFile, JSON.stringify({ url: route.url, routeId: route.routeId }));
@@ -82,9 +94,9 @@ export async function prepareDeepSeekLaunchArtifacts(
         && ready.spillGuard === true && ready.attachmentGuard === true;
     } catch { return false; }
   };
-  const paths = { sessions: sessionsPath, sessionToolsFile, compatibility: compatibilityPath, codeModeFile: codeModePath, promptFile: promptPath };
+  const paths = { sessions: sessionsPath, sessionToolsFile, compatibility: compatibilityPath, codeModeFile: codeModePath, promptDirectory };
   try {
-    await mkdir(join(root, 'prompts'), { mode: 0o700 });
+    await mkdir(promptDirectory, { mode: 0o700 });
     const patch = [
       { id: 'config-editor', disabled: true },
       { id: 'settings', disabled: true },
@@ -108,14 +120,18 @@ export async function prepareDeepSeekLaunchArtifacts(
       writeOffers(),
       writeFile(patchPath, JSON.stringify(patch), { mode: 0o600 }),
       writeFile(desktopRunnerPath, DESKTOP_RUNNER_SOURCE, { mode: 0o600 }),
-      ...DEEPSEEK_PRESETS.map(preset => writePrompt(preset, '')),
       writeCodeMode(false),
     ]);
   } catch (error) {
     await removeRoot(root);
     throw error;
   }
-  return { patchPath, desktopRunnerPath, writeSessionToolRoute, writePrompt, writeCodeMode, offerEphemeralFork, readEphemeralReady, dispose: () => removeRoot(root) };
+  return { patchPath, desktopRunnerPath, writeSessionToolRoute, writePrompt, removePrompt, writeCodeMode, offerEphemeralFork, readEphemeralReady, dispose: () => removeRoot(root) };
+}
+
+/** Native session ids are not file names on every platform; the compatibility plugin derives the same name. */
+function deepseekPromptFileName(sessionId: string): string {
+  return `${createHash('sha256').update(sessionId).digest('hex')}.txt`;
 }
 
 /**

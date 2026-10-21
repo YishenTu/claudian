@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { access, mkdir, mkdtemp, readFile, rename, rm, stat } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -15,7 +15,7 @@ jest.mock('node:fs/promises', () => {
   return { __esModule: true, ...actual, rename: jest.fn(actual.rename) };
 });
 
-it('gives every preset a live prompt file and its tool policy while keeping prompt text out of code', async () => {
+it('gives every preset the session prompt directory and its tool policy while keeping prompt text out of code', async () => {
   const root = await mkdtemp(join(tmpdir(), 'deepseek packaged # 文档 '));
   const artifacts = await prepareDeepSeekLaunchArtifacts(root);
   try {
@@ -24,15 +24,14 @@ it('gives every preset a live prompt file and its tool policy while keeping prom
     expect(inserted[0]).toMatchObject({ id: 'claudian-lifecycle' });
     const presets = Object.fromEntries(inserted.slice(1).map((entry: any) => [entry.config.id, entry.config.plugins.find((plugin: any) => plugin.id === 'claudian-compatibility')]));
     expect(Object.keys(presets)).toEqual(['claudian', 'claudian-code', 'claudian-passive', 'claudian-read-only']);
-    expect(new Set(Object.values(presets).map((plugin: any) => plugin.config.promptFile)).size).toBe(4);
+    expect(new Set(Object.values(presets).map((plugin: any) => plugin.config.promptDirectory)).size).toBe(1);
     expect(presets['claudian-passive'].config.allow).toEqual([]);
     expect(presets['claudian-read-only'].config.allow).toEqual(['read', 'read_image', 'glob', 'grep']);
     expect(presets.claudian.config.allow).toBeUndefined();
     // One chat preset: the legacy code-mode id stays declared for saved conversations with identical content, and code
     // mode is a live per-agent presentation rather than a preset row. Auxiliary presets keep their fixed native policy.
     const plugins = Object.fromEntries(inserted.slice(1).map((entry: any) => [entry.config.id, entry.config.plugins]));
-    const withoutPrompt = (rows: any[]) => rows.map(row => row.id === 'claudian-compatibility' ? { ...row, config: { ...row.config, promptFile: undefined } } : row);
-    expect(withoutPrompt(plugins['claudian-code'])).toEqual(withoutPrompt(plugins.claudian));
+    expect(plugins['claudian-code']).toEqual(plugins.claudian);
     expect(plugins.claudian.some((row: any) => row.id === 'agent-tool-presentation')).toBe(false);
     expect(presets.claudian.config.codeModeFile).toEqual(expect.any(String));
     expect(presets['claudian-code'].config.codeModeFile).toBe(presets.claudian.config.codeModeFile);
@@ -42,35 +41,34 @@ it('gives every preset a live prompt file and its tool policy while keeping prom
     }
 
     const first = 'Literal {{title}} ${process.exit(99)} `quotes`\\n Unicode 笔记';
-    const edited = 'Edited prompt';
-    await artifacts.writePrompt('claudian', first);
+    // Native session ids need not be valid file names.
+    const sessionId = 'C:\\session/../# 文档';
+    await artifacts.writePrompt(sessionId, first);
     const pluginPath = presets.claudian.name;
     // Native imports preset plugin names literally, so the test must not repair Windows paths or URL fragments.
-    // Its prompt section must read the file at each assembly.
     const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', `
-      import { writeFileSync } from 'node:fs';
       const plugin = await import(process.argv[1]);
       const config = JSON.parse(process.argv[2]);
       const sections = [];
-      plugin.apply({ effect: fn => fn(), on: () => () => {}, systemPrompt: {
+      plugin.apply({ effect: fn => fn(), on: () => () => {}, sessionProjections: { stateOf: () => ({ lastTurn: 1 }) }, systemPrompt: {
         section: section => { sections.push(section); return () => {}; },
         getSectionOrder: name => name,
       } }, config);
-      for (const bad of [{}, { promptFile: 1 }, { promptFile: 'x', allow: ['write'] }, { promptFile: 'x', codeModeFile: 1 }, { promptFile: 'x', allow: [], codeModeFile: 'mode' }]) {
+      for (const bad of [{}, { promptDirectory: 1 }, { promptDirectory: 'x', allow: ['write'] }, { promptDirectory: 'x', codeModeFile: 1 }, { promptDirectory: 'x', allow: [], codeModeFile: 'mode' }]) {
         let rejected = false;
         try { plugin.apply({}, bad); } catch { rejected = true; }
         if (!rejected) throw new Error('Unsafe bridge configuration accepted');
       }
       const persona = sections[0];
-      const before = persona.text();
-      writeFileSync(config.promptFile, process.argv[3]);
-      process.stdout.write(JSON.stringify({ persona, before, after: persona.text(), webSurface: sections.find(section => section.name === 'app:web-surface').text }));
-    `, pluginPath, JSON.stringify(presets.claudian.config), edited], { cwd: root });
+      const session = { id: process.argv[3], header: { id: process.argv[3] } };
+      process.stdout.write(JSON.stringify({ persona, text: persona.text({ agent: { id: session.id, session } }), agentless: persona.text({}), webSurface: sections.find(section => section.name === 'app:web-surface').text }));
+    `, pluginPath, JSON.stringify(presets.claudian.config), sessionId], { cwd: root });
     const result = JSON.parse(stdout);
-    expect(result).toMatchObject({ persona: { interpolate: false, complete: false }, before: first, after: edited, webSurface: '' });
+    expect(result).toMatchObject({ persona: { interpolate: false, complete: false }, text: first, agentless: '', webSurface: '' });
     expect(await readFile(new URL(pluginPath), 'utf8')).not.toContain(first);
 
-    const modes = await Promise.all([artifacts.patchPath, new URL(pluginPath), inserted[0].name, presets.claudian.config.promptFile].map(path => stat(path)));
+    const [promptFile] = await readdir(presets.claudian.config.promptDirectory);
+    const modes = await Promise.all([artifacts.patchPath, new URL(pluginPath), inserted[0].name, join(presets.claudian.config.promptDirectory, promptFile)].map(path => stat(path)));
     expect(process.platform === 'win32' || modes.every(mode => (mode.mode & 0o777) === 0o600)).toBe(true);
     await artifacts.dispose();
     await expect(access(artifacts.patchPath)).rejects.toThrow();
@@ -80,22 +78,35 @@ it('gives every preset a live prompt file and its tool policy while keeping prom
   }
 });
 
-it('applies concurrent prompt edits in call order and leaves an unchanged prompt file in place', async () => {
+/** The one prompt file a session's writes produced. */
+async function sessionPromptFile(artifacts: Awaited<ReturnType<typeof prepareDeepSeekLaunchArtifacts>>): Promise<string> {
+  const patch = JSON.parse(await readFile(artifacts.patchPath, 'utf8'));
+  const directory = patch.find((entry: { insert?: unknown }) => entry.insert).insert
+    .find((entry: any) => entry.config?.id === 'claudian').config.plugins[0].config.promptDirectory;
+  const files = await readdir(directory);
+  expect(files).toHaveLength(1);
+  return join(directory, files[0]);
+}
+
+it('applies concurrent prompt edits and removals in call order and leaves an unchanged prompt file in place', async () => {
   const root = await mkdtemp(join(tmpdir(), 'deepseek prompts '));
   const artifacts = await prepareDeepSeekLaunchArtifacts(root);
   try {
-    const patch = JSON.parse(await readFile(artifacts.patchPath, 'utf8'));
-    const promptFile = patch.find((entry: { insert?: unknown }) => entry.insert).insert
-      .find((entry: any) => entry.config?.id === 'claudian').config.plugins[0].config.promptFile;
     const edits = Array.from({ length: 12 }, (_, index) => `edit ${index}`);
-    await Promise.all(edits.map(text => artifacts.writePrompt('claudian', text)));
+    await Promise.all(edits.map(text => artifacts.writePrompt('alpha', text)));
+    const promptFile = await sessionPromptFile(artifacts);
     expect(await readFile(promptFile, 'utf8')).toBe(edits.at(-1));
     const written = await stat(promptFile);
-    // Native re-reads the file at each assembly; an identical edit must not replace it.
-    await artifacts.writePrompt('claudian', edits.at(-1)!);
+    // An identical edit must not replace the file native reads.
+    await artifacts.writePrompt('alpha', edits.at(-1)!);
     expect((await stat(promptFile)).ino).toBe(written.ino);
-    await artifacts.writePrompt('claudian', 'changed');
+    await artifacts.writePrompt('alpha', 'changed');
     expect((await stat(promptFile)).ino).not.toBe(written.ino);
+    expect(await readFile(promptFile, 'utf8')).toBe('changed');
+    // A released session's prompt goes; claiming it again writes the same text anew.
+    await Promise.all([artifacts.removePrompt('alpha'), artifacts.writePrompt('alpha', 'changed'), artifacts.removePrompt('alpha')]);
+    await expect(access(promptFile)).rejects.toThrow();
+    await artifacts.writePrompt('alpha', 'changed');
     expect(await readFile(promptFile, 'utf8')).toBe('changed');
   } finally {
     await artifacts.dispose();
@@ -107,17 +118,15 @@ it('retries a replacement refused by a transient Windows file lock', async () =>
   const root = await mkdtemp(join(tmpdir(), 'deepseek locked prompt '));
   const artifacts = await prepareDeepSeekLaunchArtifacts(root);
   try {
-    const patch = JSON.parse(await readFile(artifacts.patchPath, 'utf8'));
-    const promptFile = patch.find((entry: { insert?: unknown }) => entry.insert).insert
-      .find((entry: any) => entry.config?.id === 'claudian').config.plugins[0].config.promptFile;
     for (const code of ['EPERM', 'EACCES', 'EBUSY']) {
       jest.mocked(rename).mockRejectedValueOnce(Object.assign(new Error(`${code}: file in use`), { code }));
-      await artifacts.writePrompt('claudian', `after ${code}`);
-      expect(await readFile(promptFile, 'utf8')).toBe(`after ${code}`);
+      await artifacts.writePrompt('alpha', `after ${code}`);
+      expect(await readFile(await sessionPromptFile(artifacts), 'utf8')).toBe(`after ${code}`);
     }
+    const promptFile = await sessionPromptFile(artifacts);
     // Other failures are not locks and surface at once.
     jest.mocked(rename).mockRejectedValueOnce(Object.assign(new Error('ENOSPC: no space left'), { code: 'ENOSPC' }));
-    await expect(artifacts.writePrompt('claudian', 'full disk')).rejects.toThrow('ENOSPC');
+    await expect(artifacts.writePrompt('alpha', 'full disk')).rejects.toThrow('ENOSPC');
     expect(await readFile(promptFile, 'utf8')).toBe('after EBUSY');
   } finally {
     await artifacts.dispose();

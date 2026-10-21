@@ -1,17 +1,19 @@
 /**
  * Static native plugins, bundled as text and written beside the launch patch. They import only Node
- * built-ins. Prompts never appear in code: each preset reads its own prompt file at every assembly, and chat agents
+ * built-ins. Prompts never appear in code: each native session reads its own prompt file once per turn, and chat agents
  * read the code-mode file at creation and at each turn start.
  */
 export const DEEPSEEK_COMPATIBILITY_SOURCE = String.raw`
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 export const name = 'claudian-compatibility';
-export const inject = ['systemPrompt', 'tools'];
+export const inject = ['systemPrompt', 'tools', 'sessionProjections'];
 
 export function apply(ctx, config) {
-  if (typeof config?.promptFile !== 'string' || !config.promptFile) {
-    throw new TypeError('Claudian compatibility requires a prompt file.');
+  if (typeof config?.promptDirectory !== 'string' || !config.promptDirectory) {
+    throw new TypeError('Claudian compatibility requires a prompt directory.');
   }
   const allowed = ['read', 'read_image', 'glob', 'grep'];
   if (config.allow !== undefined && (!Array.isArray(config.allow)
@@ -22,7 +24,24 @@ export function apply(ctx, config) {
   if (config.codeModeFile !== undefined && (typeof config.codeModeFile !== 'string' || !config.codeModeFile || config.allow !== undefined)) {
     throw new TypeError('Claudian code mode requires a chat preset and a mode file.');
   }
-  const prompt = () => readFileSync(config.promptFile, 'utf8');
+  // Claudian writes one prompt per claimed native session. A session without its own (a subagent) runs on its parent's,
+  // and every session keeps the prompt its current turn started with.
+  const own = id => {
+    try { return readFileSync(join(config.promptDirectory, createHash('sha256').update(id).digest('hex') + '.txt'), 'utf8'); }
+    catch { return undefined; }
+  };
+  const turnPrompts = new Map();
+  const prompt = context => {
+    const session = context?.agent?.session;
+    if (!session) return '';
+    const turn = ctx.sessionProjections.stateOf(session, 'turnBoundary')?.lastTurn;
+    const current = turnPrompts.get(session.id);
+    if (current && turn !== undefined && current.turn === turn) return current.text;
+    const parent = session.header?.parentSession;
+    const text = own(session.id) ?? (parent === undefined ? undefined : turnPrompts.get(parent)?.text) ?? '';
+    turnPrompts.set(session.id, { turn, text });
+    return text;
+  };
   for (const [name, order, text] of [
     ['deployment:persona-prefix', 'DEPLOYMENT_PERSONA_PREFIX', prompt],
     ['deployment:persona-suffix', 'DEPLOYMENT_PERSONA_SUFFIX', ''],
