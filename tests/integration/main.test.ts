@@ -40,6 +40,11 @@ import {
 // Mock fs for ClaudianService
 jest.mock('fs');
 
+// The real probe spawns the developer's interactive login shell, which can outlast the test timeout.
+jest.mock('@/core/process/loginShellPath', () => ({
+  resolveLoginShellPath: async () => {},
+}));
+
 // Now import the plugin after mocking
 import ClaudianPlugin from '@/main';
 
