@@ -773,6 +773,18 @@ export class TabManager implements TabManagerInterface {
     }
   }
 
+  /** Reorders tabs without switching, hydrating, or restarting their sessions. */
+  moveTab(tabId: TabId, targetTabId: TabId, after: boolean): boolean {
+    if (!this.isTabLive(tabId) || !this.isTabLive(targetTabId)) return false;
+    if (!this.membership.move(tabId, targetTabId, after)) return false;
+    try {
+      this.callbacks.onTabReordered?.();
+    } catch {
+      // The order is committed; an observer failure must not roll it back.
+    }
+    return true;
+  }
+
   // ============================================
   // Tab Bar Data
   // ============================================
