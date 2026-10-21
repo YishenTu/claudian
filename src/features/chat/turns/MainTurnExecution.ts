@@ -83,6 +83,8 @@ export class MainTurnExecution {
   private sawInitialProviderUserMessage = false;
   private awaitingProviderAssistantStart = false;
   private activeDelivery: MainTurn['onDelivery'];
+  #running = false;
+  #activeTurnStart: ChatMessage | null = null;
   private deferredReviewableSettlement: {
     conversationId: string | null;
     report: () => void;
@@ -111,7 +113,27 @@ export class MainTurnExecution {
     await this.responseStream.handleEvent(event);
   }
 
+  /**
+   * Where settled history ends in `messages`: before this turn's submission, or everything when no turn
+   * runs here yet. Null while a running turn may still rewrite the transcript before placing its submission.
+   */
+  settledTranscriptEnd(messages: readonly ChatMessage[]): number | null {
+    if (!this.#running) return messages.length;
+    const start = this.#activeTurnStart ? messages.indexOf(this.#activeTurnStart) : -1;
+    return start < 0 ? null : start;
+  }
+
   async run(turn: MainTurn, signal: AbortSignal): Promise<void> {
+    this.#running = true;
+    try {
+      await this.#run(turn, signal);
+    } finally {
+      this.#running = false;
+      this.#activeTurnStart = null;
+    }
+  }
+
+  async #run(turn: MainTurn, signal: AbortSignal): Promise<void> {
     const { plugin, state, streamController, conversationController } = this.deps;
     const { displayContent, request: turnRequest, images: imagesForMessage } = turn;
     const isCompact = parseCompactCommand(turnRequest.text) !== null;
@@ -168,6 +190,7 @@ export class MainTurnExecution {
       images: imagesForMessage,
     };
     state.addMessage(userMsg);
+    this.#activeTurnStart = userMsg;
     state.hasPendingConversationSave = true;
     this.deps.renderer?.addMessage(userMsg);
 

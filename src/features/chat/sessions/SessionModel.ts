@@ -385,6 +385,7 @@ export function createSessionSideChat(session: ChatSessionRuntime, plugin: ChatF
           get conversationId() { return session.conversationId; },
           get providerId() { return session.providerId; },
           get draftModel() { return session.draftModel; },
+          settledTranscriptEnd: messages => model.inputController.settledTranscriptEnd(messages),
           state: model.state, executionCoordinator: session.executionCoordinator,
         }, plugin, () => !session.isDisposed);
         if (session.isDisposed) return { ok: false, reason: 'stale-binding' };

@@ -8,6 +8,8 @@ export const DEEPSEEK_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Ob
   supportsEphemeralFork: true,
   supportsRewind: false,
   supportsFork: true,
+  // An unresolved fork retires the shared Host, which would end the source's running turn.
+  supportsForkDuringTurn: false,
   supportsConversationBranches: false,
   supportsProviderCommands: true,
   supportsImageAttachments: true,

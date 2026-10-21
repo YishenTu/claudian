@@ -34,6 +34,8 @@ export interface ProviderCapabilities {
   supportsEphemeralFork?: boolean;
   /** Omitted means checkpoint forking; full-session providers can fork only the latest reply. */
   forkMode?: 'checkpoint' | 'full-session';
+  /** Whether a checkpoint fork may start while the source runs a turn; defaults to true. Full-session forks never may. */
+  supportsForkDuringTurn?: boolean;
   supportsProviderCommands: boolean;
   supportsImageAttachments: boolean;
   supportsTurnSteer?: boolean;

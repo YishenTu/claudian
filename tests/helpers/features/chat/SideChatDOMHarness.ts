@@ -6,7 +6,11 @@ import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderConversationHistoryService, ProviderRegistration } from '@/core/providers/types';
 import { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
-import { captureLatestCompletedForkSource, findLatestForkCheckpoint } from '@/features/chat/sessions/SessionForkSource';
+import {
+  captureLatestCompletedForkSource,
+  findLatestForkCheckpoint,
+  type LiveForkSourceOwner,
+} from '@/features/chat/sessions/SessionForkSource';
 import { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
@@ -58,6 +62,7 @@ export function createHarness(options: {
   checkpoint?: string | null;
   settings?: Record<string, unknown>;
   supportsEphemeralFork?: boolean;
+  supportsForkDuringTurn?: boolean;
   forkMode?: ProviderCapabilities['forkMode'];
   buildForkProviderState?: ProviderConversationHistoryService['buildForkProviderState'];
 } = {}) {
@@ -67,7 +72,7 @@ export function createHarness(options: {
   ProviderRegistry.register('claude', {
     formatQuestionReply: options.formatQuestionReply,
     getConversationCapabilities: options.getConversationCapabilities,
-    capabilities: { providerId: 'claude', supportsFork: options.supportsFork ?? true, supportsEphemeralSessions: true, supportsEphemeralFork: options.supportsEphemeralFork, forkMode: options.forkMode },
+    capabilities: { providerId: 'claude', supportsFork: options.supportsFork ?? true, supportsEphemeralSessions: true, supportsEphemeralFork: options.supportsEphemeralFork, supportsForkDuringTurn: options.supportsForkDuringTurn, forkMode: options.forkMode },
     modelPolicy: ProviderRegistry.getModelPolicy('claude'),
     chatUIConfig: ProviderRegistry.getChatUIConfig('claude'),
     createExecutionBackend: () => backend,
@@ -108,13 +113,14 @@ export function createHarness(options: {
     },
   ];
   const tab = {
+    settledTranscriptEnd: (messages: readonly unknown[]) => messages.length,
     conversationId: 'conversation-1',
     controllers: {},
     executionCoordinator: { resolveForkSource: async () => ({ resumeAt: checkpoint, sessionId: 'main-session' }) },
     id: 'tab-1',
     providerId: 'claude',
     state: { isRewinding: false, isStreaming: false, messages },
-  } as unknown as AssembledTabRuntime;
+  } as unknown as AssembledTabRuntime & LiveForkSourceOwner;
 
   const app = { vault: { adapter: { basePath: '/vault' }, getFiles: () => [] } };
   const settings = options.settings ?? {};

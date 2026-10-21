@@ -483,6 +483,125 @@ it('rejects a full-session side fork when main advances during native preparatio
 });
 
 
+/** Routes the side parent to a real main turn whose provider assigns the reply's native id before it completes. */
+function createRunningMainRouting(harness: SideChatDOMHarness, settled: ChatMessage[], mainText = 'Long main work') {
+  const releaseMain = deferred<void>();
+  const mainStarted = deferred<void>();
+  const routing = createRouting(harness, {}, undefined, deps => {
+    deps.getExecutionCoordinator = () => ({
+      cancel: () => undefined,
+      execute: async (submission: { messages: { assistant: ChatMessage } }) => {
+        submission.messages.assistant.assistantMessageId = 'checkpoint-running';
+        mainStarted.resolve();
+        await releaseMain.promise;
+        return { accepted: true, nativeAssistantMessageId: 'checkpoint-running', status: 'completed' };
+      },
+    }) as never;
+  });
+  delete (routing.state as Partial<ChatState>).addMessage;
+  routing.state.messages = settled;
+  Object.assign(harness.tab, {
+    state: routing.state,
+    settledTranscriptEnd: (messages: readonly ChatMessage[]) => routing.controller.settledTranscriptEnd(messages),
+  });
+  harness.inputEl.value = mainText;
+  const mainSent = routing.controller.sendMessage();
+  return { mainSent, mainStarted: mainStarted.promise, releaseMain: releaseMain.resolve, routing };
+}
+
+it.each([false, true])('forks from the last completed reply while main runs, main settling during preparation=%s', async mainSettlesFirst => {
+  const fork = deferred<Record<string, unknown>>();
+  const forkedAt: string[] = [];
+  const harness = createHarness({ buildForkProviderState: (_session, checkpoint) => {
+    forkedAt.push(checkpoint);
+    return fork.promise;
+  } });
+  const settled = harness.tab.state.messages.map(message => ({ ...message }));
+  const main = createRunningMainRouting(harness, harness.tab.state.messages);
+  await main.mainStarted;
+  expect(main.routing.state.isStreaming).toBe(true);
+
+  harness.inputEl.value = '/side Explore B';
+  const sideSent = main.routing.controller.sendMessage();
+  await waitFor(() => expect(forkedAt).toEqual(['checkpoint-1']));
+  if (mainSettlesFirst) {
+    main.releaseMain();
+    await main.mainSent;
+  }
+  fork.resolve({ forkSource: { resumeAt: 'checkpoint-1', sessionId: 'main-session' } });
+  await waitFor(() => expect(harness.backend.sessions).toHaveLength(1));
+  expect(harness.backend.latest.requests[0].conversationHistory).toEqual(settled);
+
+  harness.backend.latest.complete();
+  await sideSent;
+  await harness.controller.discard();
+  expect(main.routing.state.isStreaming).toBe(!mainSettlesFirst);
+  main.releaseMain();
+  await main.mainSent;
+  expect(main.routing.state.messages.at(-1)).toMatchObject({ assistantMessageId: 'checkpoint-running', role: 'assistant' });
+});
+
+it('forks the settled transcript while the admitted main turn is still preparing session references', async () => {
+  const harness = createHarness();
+  const hydration = deferred<unknown>();
+  const entered = deferred<void>();
+  Object.assign(harness.plugin, {
+    getConversationById: () => { entered.resolve(); return hydration.promise; },
+    findConversationAcrossViews: () => null,
+  });
+  const settled = harness.tab.state.messages.map(message => ({ ...message }));
+  const main = createRunningMainRouting(harness, harness.tab.state.messages, 'Compare @[Old](claudian-session:conv-1-source)');
+  await entered.promise;
+  expect(main.routing.state.isStreaming).toBe(true);
+
+  harness.inputEl.value = '/side Explore B';
+  const sideSent = main.routing.controller.sendMessage();
+  await waitFor(() => expect(harness.backend.sessions).toHaveLength(1));
+  expect(harness.backend.latest.requests[0].conversationHistory).toEqual(settled);
+  harness.backend.latest.complete();
+  await sideSent;
+
+  hydration.resolve({
+    id: 'conv-1-source', title: 'Old', providerId: 'claude', createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(),
+    messages: [{ id: 'u', role: 'user', content: 'source prompt', timestamp: testDate().getTime() }],
+  });
+  await main.mainStarted;
+  main.releaseMain();
+  await main.mainSent;
+  expect(main.routing.state.messages.at(-1)).toMatchObject({ assistantMessageId: 'checkpoint-running', role: 'assistant' });
+});
+
+it('refuses a side chat while main runs when the provider cannot fork beside a running turn', async () => {
+  const harness = createHarness({ supportsForkDuringTurn: false });
+  const main = createRunningMainRouting(harness, harness.tab.state.messages);
+  await main.mainStarted;
+
+  harness.inputEl.value = '/side Explore B';
+  await main.routing.controller.sendMessage();
+  expect(harness.backend.sessions).toHaveLength(0);
+  expect(harness.controller.runtime).toBeNull();
+  main.releaseMain();
+  await main.mainSent;
+
+  const { started } = await startSideChat(harness);
+  harness.backend.latest.complete();
+  expect(await started).toBe(true);
+});
+
+it('refuses a side chat while the first main reply runs even though it already has a native id', async () => {
+  const harness = createHarness();
+  const main = createRunningMainRouting(harness, []);
+  await main.mainStarted;
+  expect(main.routing.state.messages.at(-1)?.assistantMessageId).toBe('checkpoint-running');
+
+  harness.inputEl.value = '/side Explore B';
+  await main.routing.controller.sendMessage();
+  expect(harness.backend.sessions).toHaveLength(0);
+  expect(harness.controller.runtime).toBeNull();
+  main.releaseMain();
+  await main.mainSent;
+});
+
 it('protects parked main drafts and cancels branch previews when switching to side chat', async () => {
   const harness = createHarness({ onDestinationChanged: () => {
     if (harness.controller.destination === 'side') conversation.cancelBranchDraft();

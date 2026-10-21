@@ -307,6 +307,10 @@ export class InputController {
     }, signal);
   }
 
+  settledTranscriptEnd(messages: readonly ChatMessage[]): number | null {
+    return this.execution.settledTranscriptEnd(messages);
+  }
+
   get isPreparingMainTurn(): boolean {
     return this.preparations.isPreparing('main');
   }
