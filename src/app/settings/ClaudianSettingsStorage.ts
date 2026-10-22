@@ -23,7 +23,6 @@ import {
   type EnvSnippet,
   type ProviderConfigMap,
   type SessionManagerOrganization,
-  type SessionManagerSort,
   type StoredChatModelSelection,
   type StoredInlineEditModelSelection,
   type ZenModePosition,
@@ -104,12 +103,6 @@ function normalizeSessionManagerOrganization(
   return value === 'linked-content' || value === 'list'
     ? value
     : DEFAULT_CLAUDIAN_SETTINGS.sessionManagerOrganization ?? 'list';
-}
-
-function normalizeProjectSort(value: unknown): SessionManagerSort {
-  return value === 'created' || value === 'last-updated'
-    ? value
-    : DEFAULT_CLAUDIAN_SETTINGS.projectSort ?? 'last-updated';
 }
 
 function normalizePinnedLinkedContentPaths(value: unknown): string[] {
@@ -502,7 +495,6 @@ export class ClaudianSettingsStorage {
     const sessionManagerOrganization = normalizeSessionManagerOrganization(
       stored.sessionManagerOrganization,
     );
-    const projectSort = normalizeProjectSort(stored.projectSort);
     const normalizedProviderSettings = {
       ...stored,
       hiddenCommands,
@@ -526,7 +518,6 @@ export class ClaudianSettingsStorage {
       restoreTabsOnStartup,
       skillsSynced,
       sessionManagerOrganization,
-      projectSort,
       pinnedLinkedContentPaths,
       lastSelectedChatModel,
       inlineEditModel: normalizeStoredInlineEditModelSelection(stored.inlineEditModel),
@@ -568,7 +559,6 @@ export class ClaudianSettingsStorage {
         'sessionManagerOrganization' in stored
         && stored.sessionManagerOrganization !== sessionManagerOrganization
       )
-      || ('projectSort' in stored && stored.projectSort !== projectSort)
       || 'pinnedLinkedNotePaths' in stored
       || (
         'pinnedLinkedContentPaths' in stored
@@ -603,7 +593,6 @@ export class ClaudianSettingsStorage {
         sessionManagerOrganization: normalizeSessionManagerOrganization(
           settings.sessionManagerOrganization,
         ),
-        projectSort: normalizeProjectSort(settings.projectSort),
         pinnedLinkedContentPaths: normalizePinnedLinkedContentPaths(
           settings.pinnedLinkedContentPaths,
         ),

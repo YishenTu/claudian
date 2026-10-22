@@ -36,14 +36,13 @@ const MEMBER_TEXT = [
 describe('project prompt renderers', () => {
   it('renders the member variant', () => {
     expect(renderProjectMemberInstructions(
-      { name: 'Alpha & Beta', instructions: 'Ship the importer.\n\nKeep the old format readable.' },
-      MEMORY_PATH,
+      { name: 'Alpha & Beta', instructions: 'Ship the importer.\n\nKeep the old format readable.', memoryPath: MEMORY_PATH },
     )).toBe(MEMBER_TEXT);
   });
 
   it('substitutes "None." for empty instructions and trims surrounding whitespace', () => {
     const render = renderProjectMemberInstructions;
-    expect(render({ name: 'Alpha', instructions: '' }, MEMORY_PATH)).toContain('### Project Instructions\n\nNone.\n\n### Project Memory');
-    expect(render({ name: 'Alpha', instructions: '\n  Do X.  \n' }, MEMORY_PATH)).toContain('### Project Instructions\n\nDo X.\n\n### Project Memory');
+    expect(render({ name: 'Alpha', instructions: '', memoryPath: MEMORY_PATH })).toContain('### Project Instructions\n\nNone.\n\n### Project Memory');
+    expect(render({ name: 'Alpha', instructions: '\n  Do X.  \n', memoryPath: MEMORY_PATH })).toContain('### Project Instructions\n\nDo X.\n\n### Project Memory');
   });
 });

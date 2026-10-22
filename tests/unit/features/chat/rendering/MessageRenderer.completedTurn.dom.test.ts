@@ -3,6 +3,7 @@
 import '@/providers';
 
 import { createConversationPorts } from '@test/helpers/ConversationPorts';
+import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
@@ -627,7 +628,7 @@ it.each([true, false])('enables branches after switching and native history corr
     treeBranches: ['native-u2'], ...(hasNativeId ? { userMessageId: 'native-u2' } : {}) };
   const plugin = { app: {}, settings: { mediaFolder: '' }, updateConversation: jest.fn(),
     getConversationById: jest.fn().mockResolvedValue({ id: 'pi-chat', messages: [first, second] }),
-    getConversationSummary: jest.fn().mockReturnValue(null) };
+    getConversationSummary: jest.fn().mockReturnValue(null), projects: createProjectsFake() };
   const navigateConversationBranch = jest.fn().mockResolvedValue({ status: 'committed', messages: [first] });
   const coordinator = { navigateConversationBranch, supportsConversationBranches: true,
     getConversationBranches: jest.fn().mockResolvedValue({ branches: { 'native-u1': ['native-u1'], 'native-u2': ['native-u2'] },

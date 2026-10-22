@@ -1,3 +1,5 @@
+import { Notice } from 'obsidian';
+
 import type { ChatRewindMode, ConversationBranchResult } from '@/core/execution';
 import type {
   ChatMessage,
@@ -9,7 +11,7 @@ import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ConversationBranching } from '@/features/chat/conversation/ConversationBranching';
 import { ConversationRewind, type ConversationSaveOptions } from '@/features/chat/conversation/ConversationRewind';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
-import { resolveLiveProjectId, resolveSessionInstructions } from '@/features/chat/execution/projectInstructions';
+import { resolveSessionInstructions } from '@/features/chat/execution/projectInstructions';
 import type { LinkedContentController, LinkedContentSubmissionToken } from '@/features/chat/linked-content';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import {
@@ -20,6 +22,7 @@ import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRun
 import type { SessionComposerPort } from '@/features/chat/sessions/SessionComposer';
 import type { ChatState } from '@/features/chat/state/ChatState';
 import type { SubagentManager } from '@/features/chat/subagents/SubagentManager';
+import { t } from '@/i18n/i18n';
 
 /** Longest a progress-only change waits for its coalesced save. */
 const PROGRESS_SAVE_DELAY_MS = 1_000;
@@ -27,7 +30,7 @@ const PROGRESS_SAVE_DELAY_MS = 1_000;
 export interface ConversationCreationOptions {
   providerId: ProviderId;
   selectedModel?: string;
-  /** Kept only when it still names a live project at creation. */
+  /** The frozen draft seed; the repository drops it if it no longer names a live project at creation. */
   projectId?: string;
 }
 
@@ -192,14 +195,36 @@ export class ConversationController {
     return this.#branching.commitDraft(signal);
   }
 
-  /** The project seeded into this blank draft; first-turn admission captures it for creation. */
-  get draftProjectId(): string | null {
-    return this.#draftProject.projectId;
+  /**
+   * The project the composer shows: the bound conversation's raw membership, or the blank draft's seed, and whether
+   * it can change now (first-turn admission freezes the seed while creation is pending). Reads the session's own
+   * conversation id, so it is right before any presentation publishes the runtime (draft handoff).
+   */
+  get project(): { projectId: string | undefined; changeable: boolean } {
+    const { plugin, state } = this.deps;
+    const conversationId = state.currentConversationId;
+    if (conversationId) return { projectId: plugin.getConversationSummary(conversationId)?.projectId, changeable: true };
+    return { projectId: this.#draftProject.projectId ?? undefined, changeable: !this.#draftProject.frozen };
   }
 
-  /** True while a first-turn admission holds the captured seed for its pending creation. */
-  get isDraftProjectFrozen(): boolean {
-    return this.#draftProject.frozen;
+  /**
+   * Moves the bound conversation into a project, or out of any with null; a blank draft reseeds instead unless its
+   * seed is frozen. Resolved when chosen: the draft may have become a conversation, or frozen its seed, meanwhile.
+   */
+  selectProject(projectId: string | null): void {
+    const conversationId = this.deps.state.currentConversationId;
+    if (!conversationId) {
+      if (!this.#draftProject.frozen) this.seedDraftProject(projectId);
+      return;
+    }
+    const failure = projectId ? t('chat.projects.errors.move') : t('chat.projects.errors.remove');
+    void (async () => {
+      try {
+        await this.deps.plugin.conversationLifecycle.setPlacement([conversationId], { projectId });
+      } catch {
+        new Notice(failure);
+      }
+    })();
   }
 
   /** Seeds the project a blank draft joins when its first input creates the Conversation. */
@@ -243,12 +268,11 @@ export class ConversationController {
     options: ConversationCreationOptions,
   ): Promise<void> {
     const { plugin, state } = this.deps;
-    const projectId = resolveLiveProjectId(plugin.projects, options.projectId);
     const conversation = await plugin.createConversation({
       providerId: options.providerId,
       ...(options.selectedModel ? { selectedModel: options.selectedModel } : {}),
       ...(token.path ? { linkedContentPath: token.path } : {}),
-      ...(projectId ? { projectId } : {}),
+      ...(options.projectId ? { projectId: options.projectId } : {}),
     });
     state.currentConversationId = conversation.id;
     this.#setDraftProject({ projectId: null, frozen: false });

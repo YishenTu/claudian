@@ -281,7 +281,7 @@ describe('SessionActions', () => {
     let findItem = render();
     expect(findItem('seen').querySelector('.claudian-session-status-indicator')).toBeNull();
     let menu = openMenu(findItem('seen'));
-    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Mark as unread', 'Rename', 'Copy session ID', 'Move to project…', 'Archive']);
+    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Mark as unread', 'Rename', 'Copy session ID', 'Archive']);
     menu.items[1].clickHandler?.();
 
     expect(onChanged).toHaveBeenCalled();
@@ -291,7 +291,7 @@ describe('SessionActions', () => {
     expect(badge.getAttribute('aria-label')).toBe('Unread');
     expect(findItem('seen').hasClass('claudian-history-item--attention')).toBe(true);
     menu = openMenu(findItem('seen'));
-    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Mark as read', 'Rename', 'Copy session ID', 'Move to project…', 'Archive']);
+    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Mark as read', 'Rename', 'Copy session ID', 'Archive']);
     menu.items[1].clickHandler?.();
 
     findItem = render();
@@ -301,7 +301,7 @@ describe('SessionActions', () => {
     // A session not loaded since startup gets its session without loading history.
     expect(pool.get('never-opened')).toBeNull();
     menu = openMenu(findItem('never-opened'));
-    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Mark as unread', 'Rename', 'Copy session ID', 'Move to project…', 'Archive']);
+    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Mark as unread', 'Rename', 'Copy session ID', 'Archive']);
     menu.items[1].clickHandler?.();
     expect(pool.get('never-opened')?.providerId).toBe('codex');
     expect(pool.get('never-opened')?.peekModel).toBeNull();
@@ -312,7 +312,7 @@ describe('SessionActions', () => {
     pool.get('never-opened')!.attention.markReviewRequired('error');
     findItem = render();
     expect(findItem('never-opened').querySelector('.claudian-session-status-indicator--error')).not.toBeNull();
-    expect(openMenu(findItem('never-opened')).items.map(item => item.title)).toEqual(['Pin', 'Rename', 'Copy session ID', 'Move to project…', 'Archive']);
+    expect(openMenu(findItem('never-opened')).items.map(item => item.title)).toEqual(['Pin', 'Rename', 'Copy session ID', 'Archive']);
     await pool.dispose();
   });
 
@@ -632,7 +632,6 @@ describe('SessionActions', () => {
       'Pin',
       'Rename',
       'Copy session ID',
-      'Move to project…',
       'Archive',
     ]);
   });
@@ -663,7 +662,7 @@ describe('SessionActions', () => {
     let menu = (Menu as typeof Menu & {
       instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }>;
     }).instances.at(-1)!;
-    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Rename', 'Copy session ID', 'Move to project…', 'Archive']);
+    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Rename', 'Copy session ID', 'Archive']);
     menu.items[0].clickHandler?.();
     await Promise.resolve();
     expect(onSetConversationPinned).toHaveBeenCalledWith(['normal'], true);
@@ -678,7 +677,7 @@ describe('SessionActions', () => {
     menu = (Menu as typeof Menu & {
       instances: Array<{ items: Array<{ title: string; clickHandler: (() => void) | null }> }>;
     }).instances.at(-1)!;
-    expect(menu.items.map(item => item.title)).toEqual(['Unpin', 'Rename', 'Copy session ID', 'Move to project…', 'Archive']);
+    expect(menu.items.map(item => item.title)).toEqual(['Unpin', 'Rename', 'Copy session ID', 'Archive']);
     menu.items[0].clickHandler?.();
     await Promise.resolve();
     expect(onSetConversationPinned).toHaveBeenCalledWith(['pinned'], false);
@@ -715,7 +714,6 @@ describe('SessionActions', () => {
       'Pin',
       'Rename',
       'Copy session ID',
-      'Move to project…',
       'Archive',
     ]);
   });
@@ -746,7 +744,7 @@ describe('SessionActions', () => {
       }>;
     }).instances.at(-1)!;
     expect(menu.useNativeMenu).toBe(false);
-    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Rename', 'Copy session ID', 'Move to project…', 'Archive']);
+    expect(menu.items.map(item => item.title)).toEqual(['Pin', 'Rename', 'Copy session ID', 'Archive']);
 
     const archivedContainer = createMockEl();
     (deps.plugin.getConversationList as jest.Mock).mockReturnValue([

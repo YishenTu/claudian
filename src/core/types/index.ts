@@ -8,6 +8,7 @@ export {
   type ConversationMeta,
   type ConversationModelRecoverySource,
   type ConversationMutablePatch,
+  type ConversationPlacement,
   type ConversationSummary,
   type ExecutionInputBrowserSnapshot,
   type ExecutionInputCanvasSnapshot,
@@ -30,7 +31,6 @@ export {
 } from './chat';
 export {
   type ProjectCreateInput,
-  type ProjectMembership,
   ProjectMemoryConflictError,
   type ProjectMemoryContent,
   type ProjectMemoryOperations,

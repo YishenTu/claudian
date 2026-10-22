@@ -1,3 +1,5 @@
+import { type Menu, Notice } from 'obsidian';
+
 import type { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import type { HistoryConversationStatus } from '@/features/chat/session-manager/SessionStatusPresentation';
 import { scheduleAnimationFrame } from '@/features/chat/utils/animationFrame';
@@ -35,6 +37,31 @@ export interface SessionSurfaceShared {
 export interface InlineRenameRequest {
   beginRename: (item: HTMLElement) => void;
   conversationId: string;
+}
+
+/** Runs a session or project action, reporting any failure once as a notice. */
+export function runSessionAction(action: () => unknown, failureMessage: string): void {
+  void (async () => {
+    try {
+      await action();
+    } catch {
+      new Notice(failureMessage);
+    }
+  })();
+}
+
+/**
+ * Opens a menu at the pointer, or under `anchorEl` for keyboard use, in the window that shows the anchor so a
+ * popped-out view's menu stays there. A keyboard-chosen menu item's target is the closing menu, so the anchor is
+ * the element the follow-up acts on.
+ */
+export function showMenuAt(menu: Menu, anchorEl: HTMLElement, event?: MouseEvent | KeyboardEvent): void {
+  if (event && 'clientX' in event) {
+    menu.showAtMouseEvent(event);
+    return;
+  }
+  const rect = anchorEl.getBoundingClientRect();
+  menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchorEl.ownerDocument);
 }
 
 /** Shows or hides a New control while keeping it out of the accessibility tree when hidden. */

@@ -18,7 +18,9 @@
 }
 
 .claudian-session-sidebar .claudian-session-project-empty {
-  padding: 4px 12px 6px 34px;
+  /* The label lines up with project and session titles: inset, icon, gap. */
+  padding: 4px var(--claudian-session-inline-inset) 6px
+    calc(var(--claudian-session-inline-inset) + var(--claudian-session-icon-size) + var(--claudian-session-icon-gap));
   color: var(--text-faint);
   font-size: var(--font-ui-smaller);
 }
@@ -34,10 +36,8 @@
   cursor: default;
 }
 
-/* Obsidian restores native button chrome on these states. */
-.claudian-session-sidebar .claudian-session-group-toggle,
-.claudian-session-sidebar .claudian-session-group-toggle:is(:hover, :focus, :focus-visible, :active) {
-  appearance: none;
+/* The native button reset is shared with the other sidebar buttons in history.css. */
+.claudian-session-sidebar .claudian-session-group-toggle {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
@@ -46,17 +46,13 @@
   height: auto;
   margin: 0;
   padding: 6px 8px;
-  border: 0;
   border-radius: 6px;
-  background: transparent;
-  box-shadow: none;
   color: inherit;
   font: inherit;
   text-align: start;
-  cursor: pointer;
 }
 
-.claudian-session-sidebar .claudian-session-group-toggle:focus-visible {
-  outline: 2px solid var(--interactive-accent);
+/* An inset ring, so the scrolling projects list cannot clip it. */
+.claudian-session-sidebar .claudian-session-group-header .claudian-session-group-toggle:focus-visible {
   outline-offset: -2px;
 }

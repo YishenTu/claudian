@@ -187,6 +187,7 @@ function createPlugin(overrides: Record<string, unknown> = {}) {
     providerHost: {
       executionLifecycleRegistry: new ProviderExecutionLifecycleRegistry(),
     },
+    projects: createProjectsFake([]),
     chatModelSelection: {
       beginIntent: jest.fn(() => {
         nextModelSelectionIntent += 1;

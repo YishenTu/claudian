@@ -168,7 +168,7 @@ describe('projects section', () => {
   const folderIcon = (toggle: HTMLElement) => jest.mocked(setIcon).mock.calls
     .filter(([element]) => toggle.contains(element)).at(-1)?.[1];
 
-  function createProjectSurface() {
+  function createProjectSurface({ wide = true } = {}) {
     const conversations = [
       conversation('member', { title: 'Member session', projectId: 'launch', lastActivityAt: testDate({ hours: -1 }).getTime() }),
       conversation('loose', { title: 'Loose session' }),
@@ -200,7 +200,7 @@ describe('projects section', () => {
         startProjectConversation: jest.fn().mockResolvedValue(undefined),
       },
       getActiveTab: () => null,
-      isWide: () => true,
+      isWide: () => wide,
       canCreateTab: () => true,
       requestNew: jest.fn(),
       notifyOtherViews: jest.fn(),
@@ -248,6 +248,30 @@ describe('projects section', () => {
     const sessionMenu = menus().at(-1)!;
     expect(sessionMenu.items.map(entry => entry.title)).toEqual(expect.arrayContaining(['In one list', 'By linked content']));
     expect(sessionMenu.items.map(entry => entry.title)).not.toContain('By project');
+  });
+
+  it('keeps project membership actions out of the compact history menu', () => {
+    const { host, surface } = createProjectSurface({ wide: false });
+    surface.mountHistoryControl(host);
+    fireEvent.click(within(host).getByRole('button', { name: 'Chat history' }));
+    const history = within(host.querySelector<HTMLElement>('.claudian-history-menu')!);
+    const titles = () => menus().at(-1)!.items.map(entry => entry.title);
+    const projectActions = [
+      t('chat.projects.menu.moveTo'),
+      t('chat.projects.menu.removeFrom'),
+      t('chat.projects.menu.moveSelectionTo', { count: 2 }),
+      t('chat.projects.menu.removeSelectionFrom', { count: 1 }),
+    ];
+
+    fireEvent.contextMenu(history.getByText('Member session'));
+    expect(titles()).toContain('Rename');
+    for (const title of projectActions) expect(titles()).not.toContain(title);
+
+    fireEvent.click(history.getByRole('button', { name: /^Member session/ }), { altKey: true });
+    fireEvent.click(history.getByRole('button', { name: /^Loose session/ }), { altKey: true });
+    fireEvent.contextMenu(history.getByText('Member session'));
+    expect(titles()).toContain('Archive 2 sessions');
+    for (const title of projectActions) expect(titles()).not.toContain(title);
   });
 
   it('keeps a project expanded across re-renders and the archive, which hides the section', () => {

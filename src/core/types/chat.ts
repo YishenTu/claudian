@@ -226,6 +226,15 @@ export type ConversationMutablePatch = Partial<Omit<
   'id' | 'providerId' | 'createdAt' | 'linkedContentPath' | 'projectId'
 >>;
 
+/**
+ * Where a conversation sits in the session list. `projectId: null` leaves any project; a string joins that live
+ * project (an unknown id throws at the write). Omitted fields stay unchanged.
+ */
+export interface ConversationPlacement {
+  readonly projectId?: string | null;
+  readonly isPinned?: boolean;
+}
+
 /** Native session locator that must never make an invalidated session resumable. */
 export interface ConversationModelRecoverySource {
   sessionId: string | null;

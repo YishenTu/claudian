@@ -23,7 +23,7 @@ export interface SessionDragDeps {
 
 /**
  * The single owner of a session drag in one rendered list: the dragged sessions, the hovered drop target,
- * and the temporary Pinned drop zone. Rows and targets re-rendered during a drag keep working because they
+ * and when the Pinned placeholder shows. Rows and targets re-rendered during a drag keep working because they
  * read this state; highlights live only on the current DOM.
  */
 export class SessionDrag {
@@ -98,19 +98,14 @@ export class SessionDrag {
     });
   }
 
-  /** A Pinned drop zone for a list with nothing pinned, shown only while a drag is in progress. */
-  renderPinnedDropZone(list: HTMLElement, label: string): HTMLElement {
-    const zone = list.createDiv({
-      cls: `claudian-history-section ${PINNED_DROP_ZONE_CLASS}`,
-      attr: { role: 'region' },
-    });
-    const header = zone.createDiv({ cls: 'claudian-history-header claudian-session-section-header' });
-    const labelEl = header.createSpan({ cls: 'claudian-history-section-label', text: label });
-    labelEl.setAttribute('id', `claudian-session-pinned-drop-label-${++dropZoneSequence}`);
-    zone.setAttribute('aria-labelledby', labelEl.id);
-    zone.hidden = !this.isDragging || this.#revealTimer !== null;
-    this.attachTarget(zone, { kind: 'pinned' });
-    return zone;
+  /**
+   * Makes the Pinned section of a list with nothing pinned a drop target that shows only while a drag is in
+   * progress, from a task after the drag starts until it ends.
+   */
+  attachPinnedPlaceholder(section: HTMLElement): void {
+    section.addClass(PINNED_DROP_ZONE_CLASS);
+    section.hidden = !this.isDragging || this.#revealTimer !== null;
+    this.attachTarget(section, { kind: 'pinned' });
   }
 
   /** Ends any drag: drops its sessions, highlight, and temporary zone. */
@@ -165,5 +160,3 @@ export class SessionDrag {
     });
   }
 }
-
-let dropZoneSequence = 0;

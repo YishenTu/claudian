@@ -720,7 +720,7 @@ describe('SessionBrowser', () => {
           organization: 'linked-content',
           sort: 'created',
           pageSize: 25,
-          collapsedGroupKeys,
+          isGroupCollapsed: groupKey => collapsedGroupKeys.has(groupKey),
           onGroupCollapseChange: (groupKey, collapsed) => {
             if (collapsed) {
               collapsedGroupKeys.add(groupKey);

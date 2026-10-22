@@ -182,12 +182,44 @@
 }
 
 /*
- * A section header's label is a native toggle that collapses the section. It keeps the
- * header's look: Obsidian restores button chrome on these states.
+ * Native buttons in the sidebar take the look of the header or row they sit in. Obsidian
+ * restores button chrome on these states, so the reset covers them; each control sets its
+ * own box below.
  */
-.claudian-session-sidebar .claudian-history-section-toggle,
-.claudian-session-sidebar .claudian-history-section-toggle:is(:hover, :focus, :focus-visible, :active, .mobile-tap) {
+.claudian-session-sidebar :is(
+  .claudian-history-section-toggle,
+  .claudian-session-header-btn,
+  .claudian-session-group-toggle,
+  .claudian-session-group-menu-action,
+  .claudian-session-group-new-action
+),
+.claudian-session-sidebar :is(
+  .claudian-history-section-toggle,
+  .claudian-session-header-btn,
+  .claudian-session-group-toggle,
+  .claudian-session-group-menu-action,
+  .claudian-session-group-new-action
+):is(:hover, :focus, :focus-visible, :active, .mobile-tap) {
   appearance: none;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.claudian-session-sidebar :is(
+  .claudian-history-section-toggle,
+  .claudian-session-header-btn,
+  .claudian-session-group-toggle,
+  .claudian-session-group-menu-action,
+  .claudian-session-group-new-action
+):focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+/* A section header's label is a native toggle that collapses the section. */
+.claudian-session-sidebar .claudian-history-section-toggle {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
@@ -197,21 +229,12 @@
   height: auto;
   margin: 0;
   padding: 0;
-  border: 0;
   border-radius: 4px;
-  background: transparent;
-  box-shadow: none;
   color: inherit;
   font: inherit;
   letter-spacing: inherit;
   text-align: start;
   text-transform: inherit;
-  cursor: pointer;
-}
-
-.claudian-session-sidebar .claudian-history-section-toggle:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 1px;
 }
 
 .claudian-session-header-actions {
@@ -221,10 +244,7 @@
   margin-inline-start: auto;
 }
 
-/* A native button; Obsidian restores button chrome on these states. */
-.claudian-session-header-actions .claudian-session-header-btn,
-.claudian-session-header-actions .claudian-session-header-btn:is(:hover, :focus, :focus-visible, :active, .mobile-tap) {
-  appearance: none;
+.claudian-session-sidebar .claudian-session-header-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -232,16 +252,7 @@
   height: var(--claudian-session-action-size);
   margin: 0;
   padding: 0;
-  border: 0;
   border-radius: 4px;
-  background: transparent;
-  box-shadow: none;
-  cursor: pointer;
-}
-
-.claudian-session-header-btn:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 1px;
 }
 
 .claudian-session-header-icon {
@@ -512,14 +523,11 @@
 }
 
 /*
- * Group row actions mirror the section header buttons. Project rows use native buttons,
- * so Obsidian's chrome is reset across every state. Hidden actions keep their space and
+ * Group row actions mirror the section header buttons. Hidden actions keep their space and
  * stay focusable, so revealing them never reflows the row; the negative block margin
  * keeps a 24px box from growing a 17px-line row.
  */
-.claudian-session-sidebar .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action),
-.claudian-session-sidebar .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action):is(:hover, :focus, :focus-visible, :active, .mobile-tap) {
-  appearance: none;
+.claudian-session-sidebar .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action) {
   display: flex;
   flex: 0 0 var(--claudian-session-action-size);
   align-items: center;
@@ -528,17 +536,10 @@
   height: var(--claudian-session-action-size);
   margin: -4px 0;
   padding: 0;
-  border: 0;
   border-radius: 4px;
-  background: transparent;
-  box-shadow: none;
   color: var(--text-faint);
-  cursor: pointer;
-  transition: color 0.15s ease;
-}
-
-.claudian-session-sidebar .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action) {
   opacity: 0;
+  transition: color 0.15s ease;
 }
 
 .claudian-session-sidebar .claudian-session-group-header:is(:hover, :focus-within) :is(.claudian-session-group-menu-action, .claudian-session-group-new-action) {
@@ -547,11 +548,6 @@
 
 .claudian-session-sidebar .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action):is(:hover, :focus-visible) {
   color: var(--text-normal);
-}
-
-.claudian-session-sidebar .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action):focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 1px;
 }
 
 .claudian-session-sidebar .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action) svg {

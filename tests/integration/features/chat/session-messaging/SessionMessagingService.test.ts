@@ -137,11 +137,12 @@ describe('project scope', () => {
     await expect(h.binding.port.list({ ...listArgs(), project: true }, signal())).rejects.toThrow('This session is not in a project.');
   });
 
-  it.each([true, false])('starts a new session in the caller\'s project only while it is live (live: %s)', async live => {
-    const h = setup({ members, projects: createProjectsFake(live ? [projectRecord({ id: 'project-1' })] : []) });
+  // Creation keeps the id only while the project is live (ConversationRepository project membership tests).
+  it('starts a new session in the caller\'s project', async () => {
+    const h = setup({ members });
     await h.binding.port.send({ text: 'Take this over' }, signal());
     expect(h.host.createConversation).toHaveBeenCalledTimes(1);
-    expect(jest.mocked(h.host.createConversation).mock.calls[0][0]?.projectId).toBe(live ? 'project-1' : undefined);
+    expect(jest.mocked(h.host.createConversation).mock.calls[0][0]?.projectId).toBe('project-1');
   });
 });
 

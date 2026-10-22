@@ -3,6 +3,7 @@ import '@/providers';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { createTestSession, holdResponse } from '@test/helpers/ConversationPorts';
+import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import {
   createHarness,
   releaseSideChatHarnesses,
@@ -649,7 +650,7 @@ it.each([false, true])('keeps side drafts separate while a branch submission set
   let conversation!: ConversationController;
   const routing = createRouting(harness, {}, undefined, deps => {
     conversation = new ConversationController({
-      ...deps, plugin: { settings: {}, updateConversation: jest.fn(), getConversationSummary: () => null },
+      ...deps, plugin: { settings: {}, updateConversation: jest.fn(), getConversationSummary: () => null, projects: createProjectsFake() },
       renderer: { renderMessages: jest.fn(), refreshBranchButtonState: jest.fn() },
       setWelcomeEl: jest.fn(), getExecutionCoordinator: () => coordinator,
     } as any);

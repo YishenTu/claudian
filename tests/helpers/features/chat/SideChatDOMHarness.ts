@@ -1,3 +1,4 @@
+import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { waitFor } from '@testing-library/dom';
 import { Component } from 'obsidian';
@@ -128,6 +129,7 @@ export function createHarness(options: {
     app,
     getConversationSummary(id: string) { return (this as unknown as { getConversationSync: (id: string) => any }).getConversationSync(id); },
     getConversationSync: () => options.providerState ? { id: 'conversation-1', providerId: 'claude', providerState: options.providerState } : null,
+    projects: createProjectsFake(),
     providerHost: { app, settings, executionLifecycleRegistry: lifecycleRegistry },
     settings,
   } as never;

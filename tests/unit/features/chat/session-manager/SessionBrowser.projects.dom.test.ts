@@ -47,6 +47,8 @@ function setup(options: {
   conversations?: ConversationMeta[];
   records?: ProjectRecord[];
   render?: Record<string, unknown>;
+  /** The document showing the list, such as a popped-out window's. */
+  doc?: Document;
 } = {}) {
   const conversations = options.conversations ?? [
     session('alpha', { projectId: 'launch', lastActivityAt: testDate({ hours: -1 }).getTime() }),
@@ -62,10 +64,13 @@ function setup(options: {
     update: jest.fn().mockResolvedValue(undefined),
     setPinned: jest.fn().mockResolvedValue(undefined),
     delete: jest.fn().mockResolvedValue(undefined),
-    setConversationsProject: jest.fn().mockResolvedValue(undefined),
     readMemory: jest.fn(), saveMemory: jest.fn(), recreateMemory: jest.fn(),
   };
-  const lifecycle = { archive: jest.fn().mockResolvedValue(undefined), setPinned: jest.fn() };
+  const lifecycle = {
+    archive: jest.fn().mockResolvedValue(undefined),
+    setPinned: jest.fn(),
+    setPlacement: jest.fn().mockResolvedValue(undefined),
+  };
   const browser = new SessionBrowser({
     plugin: {
       app: {}, settings: { enableAutoTitleGeneration: false }, getConversationList: () => conversations,
@@ -75,10 +80,10 @@ function setup(options: {
     getTitleGenerationService: () => null,
     onListChanged: () => undefined,
   } as unknown as SessionBrowserDeps);
-  const container = document.body.createDiv();
+  const container = (options.doc ?? document).body.createDiv();
   const onStartProjectConversation = jest.fn().mockResolvedValue(undefined);
-  const onProjectExpandedChange = jest.fn();
-  const expandedProjectIds = new Set<string>(['launch', 'research', 'idle']);
+  const onGroupCollapseChange = jest.fn();
+  const collapsedGroupKeys = new Set<string>();
   const render = (): void => browser.renderHistoryDropdown(container, {
     onSelectConversation: jest.fn().mockResolvedValue(undefined),
     onRerender: render,
@@ -87,10 +92,10 @@ function setup(options: {
     showProjectsSection: true,
     sessionScope: 'active',
     sessionActionMode: 'active',
-    isProjectExpanded: (projectId: string) => expandedProjectIds.has(projectId),
-    onProjectExpandedChange: (projectId: string, expanded: boolean) => {
-      onProjectExpandedChange(projectId, expanded);
-      if (expanded) expandedProjectIds.add(projectId); else expandedProjectIds.delete(projectId);
+    isGroupCollapsed: (groupKey: string) => collapsedGroupKeys.has(groupKey),
+    onGroupCollapseChange: (groupKey: string, collapsed: boolean) => {
+      onGroupCollapseChange(groupKey, collapsed);
+      if (collapsed) collapsedGroupKeys.add(groupKey); else collapsedGroupKeys.delete(groupKey);
     },
     onStartProjectConversation,
     getConversationStatus: (id: string): HistoryConversationStatus => ({ openState: 'closed', isRunning: id === 'busy' }),
@@ -98,7 +103,7 @@ function setup(options: {
   });
   render();
   return {
-    browser, container, expandedProjectIds, lifecycle, onProjectExpandedChange, onStartProjectConversation, projects,
+    browser, collapsedGroupKeys, container, lifecycle, onGroupCollapseChange, onStartProjectConversation, projects,
     render, view: within(container),
   };
 }
@@ -167,20 +172,20 @@ it('shows the projects header without rows when there are no projects, and no se
 });
 
 it('expands and collapses a project from its native toggle', () => {
-  const { container, expandedProjectIds, onProjectExpandedChange, render, view } = setup();
-  expandedProjectIds.clear();
+  const { collapsedGroupKeys, container, onGroupCollapseChange, render, view } = setup();
+  collapsedGroupKeys.add('project:launch');
   render();
   const toggle = () => view.getByRole('button', { name: sectionName('Launch', 2) });
 
   expect(toggle().getAttribute('aria-expanded')).toBe('false');
   expect(within(projectsRegion(container)).queryByText('alpha session')).toBeNull();
   fireEvent.click(toggle());
-  expect(onProjectExpandedChange).toHaveBeenLastCalledWith('launch', true);
+  expect(onGroupCollapseChange).toHaveBeenLastCalledWith('project:launch', false);
   expect(toggle().getAttribute('aria-expanded')).toBe('true');
   expect(within(projectsRegion(container)).getByText('alpha session')).toBeTruthy();
 
   fireEvent.click(toggle());
-  expect(onProjectExpandedChange).toHaveBeenLastCalledWith('launch', false);
+  expect(onGroupCollapseChange).toHaveBeenLastCalledWith('project:launch', true);
   expect(within(projectsRegion(container)).queryByText('alpha session')).toBeNull();
 });
 
@@ -250,7 +255,7 @@ it('keeps the project when deletion is not confirmed', async () => {
 });
 
 it('moves a session between projects and removes it from its project from the row menu', async () => {
-  const { projects, view } = setup();
+  const { lifecycle, view } = setup();
 
   fireEvent.contextMenu(view.getByText('alpha session'));
   const rowMenu = menus().at(-1)!;
@@ -265,7 +270,10 @@ it('moves a session between projects and removes it from its project from the ro
   item(rowMenu, t('chat.projects.menu.removeFrom')).clickHandler!();
   await new Promise(resolve => setTimeout(resolve, 0));
 
-  expect(projects.setConversationsProject.mock.calls).toEqual([[['alpha'], 'research'], [['alpha'], null]]);
+  expect(lifecycle.setPlacement.mock.calls).toEqual([
+    [['alpha'], { projectId: 'research' }],
+    [['alpha'], { projectId: null }],
+  ]);
 
   // A stale project id offers moving, but nothing to remove from.
   fireEvent.contextMenu(view.getByText('stale session'));
@@ -274,7 +282,7 @@ it('moves a session between projects and removes it from its project from the ro
 });
 
 it('moves and removes a multi-selection', async () => {
-  const { projects, view } = setup();
+  const { lifecycle, view } = setup();
 
   fireEvent.click(view.getByRole('button', { name: /^alpha session/ }), { altKey: true });
   fireEvent.click(view.getByRole('button', { name: /^loose session/ }), { altKey: true });
@@ -291,20 +299,33 @@ it('moves and removes a multi-selection', async () => {
   await new Promise(resolve => setTimeout(resolve, 0));
 
   // One batched write per action, so the list republishes once for the whole selection.
-  expect(projects.setConversationsProject.mock.calls).toEqual([[['alpha', 'loose'], 'idle'], [['alpha'], null]]);
+  expect(lifecycle.setPlacement.mock.calls).toEqual([
+    [['alpha', 'loose'], { projectId: 'idle' }],
+    [['alpha'], { projectId: null }],
+  ]);
 });
 
-it('anchors the keyboard-invoked project picker to the session row', () => {
-  const { view } = setup();
+it('opens keyboard-invoked menus under their anchor in the window that shows the list', () => {
+  const popout = document.implementation.createHTMLDocument('popout');
+  const { container, view } = setup({ doc: popout });
   const row = view.getByText('alpha session').closest('.claudian-history-item') as HTMLElement;
   jest.spyOn(row, 'getBoundingClientRect').mockReturnValue({ left: 40, bottom: 120 } as DOMRect);
 
-  fireEvent.contextMenu(row);
+  // Testing Library's fireEvent needs the node's window, which a detached popout document lacks.
+  row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
   // Keyboard activation closes the menu; its event target is no longer anything near the row.
   item(menus().at(-1)!, t('chat.projects.menu.moveTo'))
     .clickHandler!(new KeyboardEvent('keydown', { key: 'Enter' }));
 
   const picker = menus().at(-1)!;
   expect(titles(picker)).toContain(t('chat.projects.menu.newProject'));
-  expect(picker.showAtPosition).toHaveBeenCalledWith({ x: 40, y: 120 });
+  expect(picker.showAtPosition).toHaveBeenCalledWith({ x: 40, y: 120 }, popout);
+
+  // Accessible-name queries also need the node's window.
+  const actions = container.querySelector<HTMLElement>(
+    `[aria-label="${t('chat.projects.actionsFor', { name: 'Launch' })}"]`,
+  )!;
+  jest.spyOn(actions, 'getBoundingClientRect').mockReturnValue({ left: 10, bottom: 30 } as DOMRect);
+  actions.click();
+  expect(menus().at(-1)!.showAtPosition).toHaveBeenCalledWith({ x: 10, y: 30 }, popout);
 });

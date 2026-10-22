@@ -3,6 +3,7 @@ import '@/providers';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
+import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
@@ -60,6 +61,7 @@ function setup() {
     renameConversation: (id: string, title: string) => repository.rename(id, title),
     updateConversation: jest.fn((id: string, patch: ConversationMutablePatch) => repository.update(id, patch)),
     executionPersistence: repository,
+    projects: createProjectsFake(),
   } as unknown as ChatFeatureHost;
   const pool = installSessionRuntimePool(host);
   const refreshModelControls = jest.fn();

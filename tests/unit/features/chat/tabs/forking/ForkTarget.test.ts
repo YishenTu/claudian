@@ -1,4 +1,3 @@
-import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import {
   commandCatalog,
   commandLoader,
@@ -111,12 +110,12 @@ describe('ForkTarget', () => {
     );
   });
 
-  it.each([true, false])('inherits only a live source project into the fork (live: %s)', async live => {
+  // Creation keeps the id only while the project is live (ConversationRepository project membership tests).
+  it('hands the source project to fork creation', async () => {
     const sourceConversation = { id: 'source-conversation', providerId: 'claude', projectId: 'project-1' };
     const { manager, plugin } = createManager(createPlugin({
       getCachedConversation: jest.fn().mockReturnValue(sourceConversation),
       getConversationSync: jest.fn().mockReturnValue(sourceConversation),
-      projects: createProjectsFake(live ? [projectRecord({ id: 'project-1' })] : []),
     }), {}, {}, NEW_TAB_FORKS);
     const source = await manager.createTab('source-conversation');
     source!.state.messages = [{ id: 'latest', role: 'assistant', content: 'Done', timestamp: 1 }];
@@ -128,7 +127,7 @@ describe('ForkTarget', () => {
     }));
 
     expect(plugin.createConversation).toHaveBeenCalledTimes(1);
-    expect(jest.mocked(plugin.createConversation).mock.calls[0][0]?.projectId).toBe(live ? 'project-1' : undefined);
+    expect(jest.mocked(plugin.createConversation).mock.calls[0][0]?.projectId).toBe('project-1');
   });
 
   it.each(['rebind', 'shutdown'] as const)('aborts a fork when its source is invalidated during provider-state creation (%s)', async invalidation => {

@@ -5,7 +5,7 @@ import type {
   SessionManagerOrganization,
   SessionManagerSort,
 } from '@/core/types';
-import { resolveLiveProject } from '@/features/chat/execution/projectInstructions';
+import { compareProjectNames } from '@/features/chat/projects/projectOrder';
 import { isProvisionalNotePath } from '@/features/chat/session-manager/ProvisionalNoteNames';
 
 export type SessionListSectionKind = 'list' | 'recency' | 'content' | 'ungrouped' | 'missing' | 'project';
@@ -15,8 +15,13 @@ export interface SessionListSection {
   kind: SessionListSectionKind;
   label?: string;
   contentPath?: string;
-  projectId?: string;
   conversations: ConversationMeta[];
+}
+
+/** A live project with its listed members. */
+export interface ProjectListSection extends SessionListSection {
+  kind: 'project';
+  project: ProjectRecord;
 }
 
 /** Live project records; a conversation's `projectId` counts only when `get` resolves it. */
@@ -116,8 +121,14 @@ function compareSections(
     });
 }
 
+const PROJECT_SECTION_KEY_PREFIX = 'project:';
+
 export function projectSectionKey(projectId: string): string {
-  return `project:${projectId}`;
+  return `${PROJECT_SECTION_KEY_PREFIX}${projectId}`;
+}
+
+export function isProjectSectionKey(key: string): boolean {
+  return key.startsWith(PROJECT_SECTION_KEY_PREFIX);
 }
 
 /** Collapse key of a whole session-manager section; kept with the group keys so search expands it too. */
@@ -127,35 +138,24 @@ export function sessionManagerSectionKey(section: 'projects' | 'sessions' | 'arc
 
 /**
  * Pinned projects first, then by the project sort: latest member activity (creation for a project without
- * members) or creation. Each section holds its members in session order.
+ * members) or creation.
  */
-function organizeProjects(
+function sortProjects(
   records: readonly ProjectRecord[],
   membersByProject: ReadonlyMap<string, readonly ConversationMeta[]>,
   projectSort: SessionManagerSort,
-  sort: SessionManagerSort,
-  visibleMembers: (record: ProjectRecord, members: readonly ConversationMeta[]) => readonly ConversationMeta[],
-): SessionListSection[] {
+): ProjectRecord[] {
   const timestamp = (record: ProjectRecord): number => {
     const members = membersByProject.get(record.id) ?? [];
     if (projectSort === 'created' || members.length === 0) return record.createdAt;
     return Math.max(...members.map(getLastActivityTimestamp));
   };
-  return [...records]
-    .sort((left, right) => (
-      Number(right.isPinned) - Number(left.isPinned)
-      || timestamp(right) - timestamp(left)
-      || left.name.localeCompare(right.name, undefined, { sensitivity: 'base', numeric: true })
-      || left.id.localeCompare(right.id)
-    ))
-    .map(record => ({
-      key: projectSectionKey(record.id),
-      kind: 'project',
-      label: record.name,
-      projectId: record.id,
-      conversations: [...visibleMembers(record, membersByProject.get(record.id) ?? [])]
-        .sort((left, right) => compareConversations(left, right, sort)),
-    }));
+  return [...records].sort((left, right) => (
+    Number(right.isPinned) - Number(left.isPinned)
+    || timestamp(right) - timestamp(left)
+    || compareProjectNames(left, right)
+    || left.id.localeCompare(right.id)
+  ));
 }
 
 export function getLinkedContentTitle(contentPath: string): string {
@@ -248,8 +248,8 @@ export interface SessionListModelOptions {
    * the session list.
    */
   projects?: SessionListProjects;
-  projectSort?: SessionManagerSort;
-  collapsedGroupKeys?: ReadonlySet<string>;
+  projectSort: SessionManagerSort;
+  isGroupCollapsed?: (groupKey: string) => boolean;
   contentExists?: (contentPath: string) => boolean;
   contentIsNote?: (contentPath: string) => boolean;
   /** Divides an unpinned flat list into recency groups relative to `now`. */
@@ -265,14 +265,14 @@ export interface SessionListModel {
    * Every live project matching the search, pinned first, with its matching members (pinned members are listed
    * under Pinned instead); null without the section.
    */
-  readonly projectSections: readonly SessionListSection[] | null;
+  readonly projectSections: readonly ProjectListSection[] | null;
   readonly pinnedContentSections: readonly SessionListSection[];
   /** Pinned sessions outside pinned Linked content groups, in list order. */
   readonly pinnedConversations: readonly ConversationMeta[];
   readonly sections: readonly SessionListSection[];
   /** Group keys in display order for Linked content organization; null for flat lists. */
   readonly groupKeys: readonly string[] | null;
-  /** Every in-scope session per Linked content path, ignoring search, for group actions. */
+  /** Every in-scope session per Linked content path outside a live project, ignoring search, for group actions. */
   readonly conversationsByLinkedContent: ReadonlyMap<string, readonly ConversationMeta[]>;
   /** Every in-scope session per live project, ignoring search, for project actions and counts. */
   readonly conversationsByProject: ReadonlyMap<string, readonly ConversationMeta[]>;
@@ -317,16 +317,15 @@ export function deriveSessionListModel(
     return searchTerms.every(term => searchableText.includes(term));
   };
   const projects = options.scope === 'archived' ? undefined : options.projects;
-  const liveProjectId = (conversation: ConversationMeta): string | undefined => (
-    projects ? resolveLiveProject(projects, conversation.projectId)?.id : undefined
-  );
-  const conversationsByProject = groupBy(scopedConversations, liveProjectId);
+  const conversationsByProject = groupBy(scopedConversations, conversation => (
+    projects?.get(conversation.projectId)?.id
+  ));
   // Pinning keeps the membership, but a pinned member is listed under Pinned instead of its project.
   const isListedAsPinned = (conversation: ConversationMeta): boolean => (
     !!options.showPinnedSection && conversation.isPinned === true
   );
   const listedConversations = projects
-    ? scopedConversations.filter(conversation => !liveProjectId(conversation) || isListedAsPinned(conversation))
+    ? scopedConversations.filter(conversation => !projects.get(conversation.projectId) || isListedAsPinned(conversation))
     : scopedConversations;
   const matchesConversation = (conversation: ConversationMeta): boolean => (
     matchesSearch([conversation.title, conversation.linkedContentPath ?? ''].join('\n'))
@@ -334,21 +333,22 @@ export function deriveSessionListModel(
   const filteredConversations = searchTerms.length === 0
     ? listedConversations
     : listedConversations.filter(matchesConversation);
+  // A project matching the search lists all its members; otherwise it lists only matching members, if any.
   const projectSections = projects
-    ? organizeProjects(
-        projects.list(),
-        conversationsByProject,
-        options.projectSort ?? 'last-updated',
-        sort,
-        (record, members) => {
-          const unpinnedMembers = members.filter(conversation => !isListedAsPinned(conversation));
-          return searchTerms.length === 0 || matchesSearch(record.name)
-            ? unpinnedMembers
-            : unpinnedMembers.filter(matchesConversation);
-        },
-      ).filter(section => (
-        searchTerms.length === 0 || section.conversations.length > 0 || matchesSearch(section.label ?? '')
-      ))
+    ? sortProjects(projects.list(), conversationsByProject, options.projectSort).flatMap((project) => {
+        const nameMatches = matchesSearch(project.name);
+        const members = (conversationsByProject.get(project.id) ?? []).filter(conversation => (
+          !isListedAsPinned(conversation) && (nameMatches || matchesConversation(conversation))
+        ));
+        if (!nameMatches && members.length === 0) return [];
+        const section: ProjectListSection = {
+          key: projectSectionKey(project.id),
+          kind: 'project',
+          project,
+          conversations: members.sort((left, right) => compareConversations(left, right, sort)),
+        };
+        return [section];
+      })
     : null;
   const conversationsByLinkedContent = groupBy(
     listedConversations,
@@ -423,7 +423,7 @@ export function deriveSessionListModel(
   });
   const countExpanded = (groupSections: readonly SessionListSection[]): number => (
     groupSections.reduce((total, section) => (
-      options.collapsedGroupKeys?.has(section.key) ? total : total + section.conversations.length
+      options.isGroupCollapsed?.(section.key) ? total : total + section.conversations.length
     ), 0)
   );
   const visibleSessionConversationTotal = isGrouped

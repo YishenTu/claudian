@@ -80,7 +80,7 @@ export function restoreSessionListPosition(
   position: SessionListPosition,
   sessionList: HTMLElement,
   pinnedList: HTMLElement | null,
-  projectsList: HTMLElement | null = null,
+  projectsList: HTMLElement | null,
 ): void {
   if (projectsList) projectsList.scrollTop = position.projectsScrollTop;
   if (pinnedList) pinnedList.scrollTop = position.pinnedScrollTop;

@@ -2,6 +2,7 @@
 import '@/providers';
 
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
+import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
@@ -62,6 +63,7 @@ function setup() {
     providerHost: { app, settings, executionLifecycleRegistry: registry },
     getCommittedSettings: () => settings, getActiveEnvironmentVariables: () => '',
     getConversationSummary: () => conversation, getConversationSync: () => conversation,
+    projects: createProjectsFake(),
     getCachedConversation: () => conversation,
     getConversationById: async () => structuredClone(conversation),
     getConversationList: () => [conversation],

@@ -199,7 +199,9 @@ describe('deriveSessionListModel', () => {
     createConversation('loose', { title: 'Loose chat', lastActivityAt: 2 }),
     createConversation('archived', { title: 'Old chat', isArchived: true, lastActivityAt: 1 }),
   ];
-  const base = { organization: 'linked-content', sort: 'last-updated', language: 'en', scope: 'active' } as const;
+  const base = {
+    organization: 'linked-content', sort: 'last-updated', projectSort: 'last-updated', language: 'en', scope: 'active',
+  } as const;
 
   it('partitions pinned sessions and pinned Linked content out of the session groups', () => {
     const model = deriveSessionListModel(conversations, {
@@ -228,7 +230,7 @@ describe('deriveSessionListModel', () => {
   it('excludes collapsed groups from the paged total', () => {
     const model = deriveSessionListModel(conversations, {
       ...base,
-      collapsedGroupKeys: new Set(['content:Projects/Plan.md']),
+      isGroupCollapsed: (groupKey: string) => groupKey === 'content:Projects/Plan.md',
     });
 
     expect(model.visibleConversationTotal).toBe(2);
@@ -280,13 +282,14 @@ describe('deriveSessionListModel with a projects section', () => {
     createConversation('archived', { title: 'Old', projectId: 'alpha', isArchived: true, lastActivityAt: 50 }),
   ];
   const base = {
-    organization: 'list', sort: 'last-updated', language: 'en', scope: 'active', projects: reader(records),
+    organization: 'list', sort: 'last-updated', projectSort: 'last-updated', language: 'en', scope: 'active',
+    projects: reader(records),
   } as const;
   const ids = (sections: readonly { conversations: readonly ConversationMeta[] }[]) => (
     sections.flatMap(section => section.conversations.map(({ id }) => id))
   );
   const projectRows = (model: ReturnType<typeof deriveSessionListModel>) => (
-    (model.projectSections ?? []).map(section => [section.projectId, section.conversations.map(({ id }) => id)])
+    (model.projectSections ?? []).map(section => [section.project.id, section.conversations.map(({ id }) => id)])
   );
 
   it('lists pinned projects first, then by last member activity falling back to creation', () => {
@@ -309,7 +312,7 @@ describe('deriveSessionListModel with a projects section', () => {
   it('orders projects by creation for the created project sort', () => {
     const model = deriveSessionListModel(conversations, { ...base, projectSort: 'created' });
 
-    expect(model.projectSections?.map(section => section.projectId)).toEqual(['beta', 'quiet', 'empty', 'alpha']);
+    expect(model.projectSections?.map(section => section.project.id)).toEqual(['beta', 'quiet', 'empty', 'alpha']);
   });
 
   it('keeps unpinned members out of the session list, but lists pinned members only under Pinned', () => {
@@ -342,7 +345,7 @@ describe('deriveSessionListModel with a projects section', () => {
   it('shows empty projects while there are no sessions', () => {
     const model = deriveSessionListModel([], base);
 
-    expect(model.projectSections?.map(section => section.projectId)).toEqual(['beta', 'quiet', 'empty', 'alpha']);
+    expect(model.projectSections?.map(section => section.project.id)).toEqual(['beta', 'quiet', 'empty', 'alpha']);
     expect(model.isEmpty).toBe(true);
   });
 

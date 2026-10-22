@@ -3,6 +3,7 @@ import type {
   Conversation,
   ConversationMeta,
   ConversationMutablePatch,
+  ConversationPlacement,
   ConversationSummary,
 } from '@/core/types';
 
@@ -92,17 +93,9 @@ export class ConversationService {
     return committed;
   }
 
-  async setConversationsProject(ids: readonly string[], projectId: string | null): Promise<void> {
-    await this.#mutateConversations(ids, id => this.deps.repository.setProject(id, projectId));
-  }
-
-  /** Clears a deleted project from loaded members that still carry it. */
-  async clearProjectMembership(projectId: string): Promise<void> {
-    try {
-      await this.deps.repository.clearProject(projectId);
-    } finally {
-      this.notifyConversationListChanged();
-    }
+  /** One write per conversation and one list refresh; see `ConversationRepository.setPlacement`. */
+  async setConversationsPlacement(ids: readonly string[], placement: ConversationPlacement): Promise<void> {
+    await this.#mutateConversations(ids, id => this.deps.repository.setPlacement(id, placement));
   }
 
   async setConversationsPinned(ids: readonly string[], isPinned: boolean): Promise<void> {

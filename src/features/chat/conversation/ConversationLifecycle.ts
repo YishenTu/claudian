@@ -1,6 +1,6 @@
 import { Notice } from 'obsidian';
 
-import type { Conversation, ConversationMeta } from '@/core/types';
+import type { Conversation, ConversationMeta, ConversationPlacement } from '@/core/types';
 import type { ChatTabManagerHost, ChatViewHost } from '@/features/chat/ChatFeatureHost';
 import type { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 import type { TabId } from '@/features/chat/tabs/ChatTab';
@@ -11,6 +11,7 @@ export interface ConversationLifecycleStore {
   deleteConversation(id: string): Promise<void>;
   setConversationArchived(id: string, isArchived: boolean): Promise<void>;
   setConversationsPinned(ids: readonly string[], isPinned: boolean): Promise<void>;
+  setConversationsPlacement(ids: readonly string[], placement: ConversationPlacement): Promise<void>;
   restoreConversations(ids: readonly string[]): Promise<void>;
   archiveConversationsIf(
     ids: readonly string[],
@@ -32,7 +33,7 @@ interface BoundTab {
 export type ArchivableConversation = Readonly<Pick<Conversation, 'id' | 'isPinned' | 'lastActivityAt'>>;
 
 /**
- * The single owner of archive, restore, pin, and delete across every chat view. A session
+ * The single owner of archive, restore, pin, project placement, and delete across every chat view. A session
  * counts as running while its runtime has foreground or background work, including without a view.
  */
 export class ConversationLifecycle {
@@ -46,6 +47,14 @@ export class ConversationLifecycle {
   /** Pins or unpins sessions in one batch; pinning affects only the session list. */
   async setPinned(conversationIds: readonly string[], isPinned: boolean): Promise<void> {
     await this.deps.conversations.setConversationsPinned(conversationIds, isPinned);
+  }
+
+  /**
+   * Moves sessions into a live project (`projectId`), out of any (`null`), and pins or unpins them, in one write per
+   * session and one list refresh. Omitted fields stay; an unknown project rejects.
+   */
+  async setPlacement(conversationIds: readonly string[], placement: ConversationPlacement): Promise<void> {
+    await this.deps.conversations.setConversationsPlacement(conversationIds, placement);
   }
 
   /** Archives after closing the session's idle tabs, or restores it without opening one. */

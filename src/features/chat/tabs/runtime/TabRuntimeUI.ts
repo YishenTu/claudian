@@ -24,7 +24,6 @@ import { MainChatComposerDropdown } from '@/features/chat/composer/MainChatCompo
 import { installTextareaSizing } from '@/features/chat/composer/textareaSizing';
 import { createInputToolbar } from '@/features/chat/composer/toolbar/InputToolbar';
 import { NavigationSidebar } from '@/features/chat/navigation/NavigationSidebar';
-import { runProjectAction } from '@/features/chat/projects/projectActions';
 import { ProjectChip } from '@/features/chat/projects/ProjectChip';
 import { getSessionProviderId } from '@/features/chat/sessions/sessionProvider';
 import { getSessionCapabilities, getSessionChatUIConfig, getSessionSelectedModel, getSessionSettingsSnapshot, type SessionSettingsSnapshot, updateSessionProviderSettings, updateSessionReasoning } from '@/features/chat/sessions/sessionSettings';
@@ -42,7 +41,6 @@ import type {
   ProviderCatalogInfo,
   TabUIComponents,
 } from '@/features/chat/tabs/types';
-import { t } from '@/i18n/i18n';
 
 function buildContextManagers(
   options: TabRuntimeConstructionContext,
@@ -385,29 +383,10 @@ export function buildTabRuntimeUI(
   options.registerCleanup('tab composer context tray', () => contextTray.destroy());
   const infoRow = new ComposerInfoRow(dom.infoRowEl);
   options.registerCleanup('tab composer info row', () => infoRow.destroy());
-  // Read from the session's own owners, so the chip is right before the runtime is published (draft handoff).
-  const { conversationController } = core.session.runtime.model;
+  // The session's own conversation owner, so the chip is right before the runtime is published (draft handoff).
   const projectChip = new ProjectChip(infoRow, {
     projects: plugin.projects,
-    getProjectId: () => {
-      const conversationId = core.conversationId;
-      return conversationId
-        ? { projectId: plugin.getConversationSummary(conversationId)?.projectId, changeable: true }
-        : {
-          projectId: conversationController.draftProjectId ?? undefined,
-          changeable: !conversationController.isDraftProjectFrozen,
-        };
-    },
-    // Resolved when chosen: the draft may have become a conversation, or frozen its seed, while the menu was open.
-    selectProject: (projectId) => {
-      const conversationId = core.conversationId;
-      if (conversationId) {
-        const failure = projectId ? t('chat.projects.errors.move') : t('chat.projects.errors.remove');
-        runProjectAction(() => plugin.projects.setConversationsProject([conversationId], projectId), failure);
-        return;
-      }
-      if (!conversationController.isDraftProjectFrozen) conversationController.seedDraftProject(projectId);
-    },
+    conversation: core.session.runtime.model.conversationController,
   });
   options.registerCleanup('tab project chip', () => projectChip.destroy());
   projectChip.refresh();

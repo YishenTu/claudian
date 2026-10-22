@@ -38,15 +38,7 @@ async function fixture(options: { memory?: MemoryDataAdapter; conversations?: Co
     assignMetadataToDevice: jest.fn().mockResolvedValue(undefined),
   };
   const onConversationListChanged = jest.fn();
-  // Constructed first; the member port is reached only after the conversation service exists.
-  const projects: ProjectService = new ProjectService(loaded.records, {
-    store,
-    memory: files,
-    members: {
-      setConversationsProject: (ids, projectId) => conversations.setConversationsProject(ids, projectId),
-      clearProject: projectId => conversations.clearProjectMembership(projectId),
-    },
-  });
+  const projects = new ProjectService(loaded.records, { store, memory: files });
   const repository = new ConversationRepository({
     providers: ProviderRegistry,
     providerSettings: ProviderSettingsCoordinator,
@@ -57,14 +49,14 @@ async function fixture(options: { memory?: MemoryDataAdapter; conversations?: Co
     projects,
   });
   repository.replaceAll(options.conversations ?? []);
-  const conversations: ConversationService = new ConversationService({
+  const conversations = new ConversationService({
     repository,
     sessionMetadata: { ensureLoaded: async () => undefined },
     pinnedLinkedContentPaths: {} as never,
     nativeSessionArchives: { sync: async () => undefined },
     onConversationListChanged,
   });
-  return { memory, settings, store, loaded, projects, repository, conversations, onConversationListChanged };
+  return { memory, settings, store, loaded, projects, repository, conversations, persistence, onConversationListChanged };
 }
 
 function readFile(memory: MemoryDataAdapter, path: string): string | undefined {
@@ -348,13 +340,12 @@ describe('ProjectService', () => {
     expect(kept.content).toBe('# Restored by sync\n');
   });
 
-  it('deletes the record first, keeps the memory file, and clears only members still in the project', async () => {
-    const { memory, projects, repository } = await fixture();
+  it('deletes the record first, keeps the memory file, and leaves member ids that resolve to no project', async () => {
+    const { memory, projects, repository, conversations } = await fixture();
     const deleted = await projects.create({ name: 'Deleted', instructions: '', memoryPath: 'Deleted.md' });
     const other = await projects.create({ name: 'Other', instructions: '', memoryPath: 'Other.md' });
     repository.replaceAll([
       conversation('stays', deleted.id),
-      conversation('moves', deleted.id),
       conversation('outsider', other.id),
     ]);
     const seenAtPublish: Array<string | undefined> = [];
@@ -362,49 +353,56 @@ describe('ProjectService', () => {
       seenAtPublish.push(repository.getSync('stays')?.projectId);
     });
 
-    const move = projects.setConversationsProject(['moves'], other.id);
-    const removal = projects.delete(deleted.id);
-    await Promise.all([move, removal]);
+    await projects.delete(deleted.id);
 
     expect(projects.get(deleted.id)).toBeNull();
-    // Published while the member still carried the raw id: readers resolve through the live record.
     expect(seenAtPublish).toEqual([deleted.id]);
     expect(readFile(memory, `${PROJECTS_PATH}/${deleted.id}.json`)).toBeUndefined();
     expect(readFile(memory, deleted.memoryPath)).toContain('# Deleted');
-    expect(repository.getSync('stays')?.projectId).toBeUndefined();
-    expect(repository.getSync('moves')?.projectId).toBe(other.id);
+    // The raw id stays on the member; every reader resolves it through the live records, where it is gone.
+    const staleId = repository.getSync('stays')?.projectId;
+    expect(staleId).toBe(deleted.id);
+    expect(projects.get(staleId)).toBeNull();
+    expect(projects.get(repository.getSync('outsider')?.projectId)).toEqual(other);
+    await expect(conversations.setConversationsPlacement(['outsider'], { projectId: deleted.id }))
+      .rejects.toThrow(`Unknown project: ${deleted.id}`);
     expect(repository.getSync('outsider')?.projectId).toBe(other.id);
-    await expect(projects.setConversationsProject(['stays'], deleted.id)).rejects.toThrow('project');
   });
 
   it('joins, moves, and leaves through the conversation owner and publishes the list change', async () => {
-    const { projects, repository, onConversationListChanged } = await fixture({
+    const { projects, repository, conversations, onConversationListChanged } = await fixture({
       conversations: [conversation('member')],
     });
     const first = await projects.create({ name: 'First', instructions: '', memoryPath: 'First.md' });
     const second = await projects.create({ name: 'Second', instructions: '', memoryPath: 'Second.md' });
 
-    await projects.setConversationsProject(['member'], first.id);
+    await conversations.setConversationsPlacement(['member'], { projectId: first.id });
     expect(repository.getSync('member')?.projectId).toBe(first.id);
-    await projects.setConversationsProject(['member'], second.id);
+    await conversations.setConversationsPlacement(['member'], { projectId: second.id });
     expect(repository.getSync('member')?.projectId).toBe(second.id);
-    await projects.setConversationsProject(['member'], null);
+    await conversations.setConversationsPlacement(['member'], { projectId: null });
 
     expect(repository.getSync('member')?.projectId).toBeUndefined();
     expect(onConversationListChanged).toHaveBeenCalledTimes(3);
   });
 
-  it('moves several sessions with one list change, and publishes once when the move is refused', async () => {
-    const { projects, repository, onConversationListChanged } = await fixture({
-      conversations: [conversation('first'), conversation('second'), conversation('third')],
+  it('moves and unpins several sessions with one write each and one list change, and publishes once when refused', async () => {
+    const { projects, repository, conversations, persistence, onConversationListChanged } = await fixture({
+      conversations: ['first', 'second', 'third'].map(id => ({ ...conversation(id), isPinned: true })),
     });
     const target = await projects.create({ name: 'Target', instructions: '', memoryPath: 'Target.md' });
 
-    await projects.setConversationsProject(['first', 'second', 'third'], target.id);
-    expect(['first', 'second', 'third'].map(id => repository.getSync(id)?.projectId)).toEqual([target.id, target.id, target.id]);
+    await conversations.setConversationsPlacement(['first', 'second', 'third'], { projectId: target.id, isPinned: false });
+    expect(['first', 'second', 'third'].map(id => repository.getSync(id))).toEqual([
+      expect.objectContaining({ projectId: target.id, isPinned: false }),
+      expect.objectContaining({ projectId: target.id, isPinned: false }),
+      expect.objectContaining({ projectId: target.id, isPinned: false }),
+    ]);
+    expect(persistence.saveMetadata).toHaveBeenCalledTimes(3);
     expect(onConversationListChanged).toHaveBeenCalledTimes(1);
 
-    await expect(projects.setConversationsProject(['first', 'second'], 'deleted-project')).rejects.toThrow('project');
+    await expect(conversations.setConversationsPlacement(['first', 'second'], { projectId: 'deleted-project' }))
+      .rejects.toThrow('Unknown project: deleted-project');
     expect(repository.getSync('first')?.projectId).toBe(target.id);
     expect(onConversationListChanged).toHaveBeenCalledTimes(2);
   });

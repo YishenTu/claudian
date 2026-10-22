@@ -1,13 +1,13 @@
 import type { ProjectRecord } from '@/core/types/project';
 
-type ProjectPromptRecord = Pick<ProjectRecord, 'name' | 'instructions'>;
+type ProjectPromptRecord = Pick<ProjectRecord, 'name' | 'instructions' | 'memoryPath'>;
 
 function formatInstructions(instructions: string): string {
   return instructions.trim() || 'None.';
 }
 
 /** Session instructions for a project member; appended after Custom Instructions. */
-export function renderProjectMemberInstructions(record: ProjectPromptRecord, memoryPath: string): string {
+export function renderProjectMemberInstructions(record: ProjectPromptRecord): string {
   return `## Project
 
 This session is a member of the Claudian project **${record.name}**. A project is a group of sessions working toward one goal.
@@ -18,7 +18,7 @@ ${formatInstructions(record.instructions)}
 
 ### Project Memory
 
-\`${memoryPath}\` (Vault-relative) is the project's shared memory file. Read it first and use it to guide your work and to assess whether the work meets the intended outcome. Treat the user's latest instructions as authoritative.
+\`${record.memoryPath}\` (Vault-relative) is the project's shared memory file. Read it first and use it to guide your work and to assess whether the work meets the intended outcome. Treat the user's latest instructions as authoritative.
 
 Keep it current as the user clarifies their intent: the project's goal, expected behavior, scope, constraints, acceptance criteria, and unresolved questions. Keep it concise. Distinguish explicit requirements from assumptions.
 

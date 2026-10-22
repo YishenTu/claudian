@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
+import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { waitFor, within } from '@testing-library/dom';
 import { App, Component, MarkdownRenderer } from 'obsidian';
@@ -148,6 +149,7 @@ async function createPiView() {
     getCommittedSettings: () => settings,
     getActiveEnvironmentVariables: () => '',
     getConversationSummary: () => conversation,
+    projects: createProjectsFake(),
     getConversationSync: () => conversation,
     getConversationById: async () => conversation,
     getConversationList: () => [conversation],

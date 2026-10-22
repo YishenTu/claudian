@@ -1,4 +1,7 @@
-/** A group of sessions working toward one goal; membership lives on each conversation's `projectId`. */
+/**
+ * A group of sessions working toward one goal; membership lives on each conversation's `projectId` and is written
+ * through the conversation owner. Deleting a record leaves member ids in place; they resolve to no project.
+ */
 export interface ProjectRecord {
   /** Names the record file, so it passes the same safe-segment check as session ids (`isValidSessionMetadataId`). */
   readonly id: string;
@@ -36,7 +39,8 @@ export interface ProjectUpdatePatch {
  */
 export interface ProjectReader {
   list(): readonly ProjectRecord[];
-  get(id: string): ProjectRecord | null;
+  /** Undefined (no project id) resolves to null, like a missing or deleted project. */
+  get(id: string | undefined): ProjectRecord | null;
   /** Returns an unsubscribe function. */
   onChanged(listener: () => void): () => void;
 }
@@ -45,13 +49,8 @@ export interface ProjectMutations {
   create(input: ProjectCreateInput): Promise<ProjectRecord>;
   update(id: string, patch: ProjectUpdatePatch): Promise<void>;
   setPinned(id: string, pinned: boolean): Promise<void>;
-  /** Removes the record; member sessions stay and the memory file is kept. */
+  /** Removes the record and keeps the memory file; member sessions stay and their stale ids resolve to no project. */
   delete(id: string): Promise<void>;
-}
-
-export interface ProjectMembership {
-  /** Joins or moves the conversations into a live project, or out of any with null; views refresh once. */
-  setConversationsProject(conversationIds: readonly string[], projectId: string | null): Promise<void>;
 }
 
 export interface ProjectMemoryContent {

@@ -21,7 +21,7 @@ export function createProjectsFake(records: readonly ProjectRecord[] = []): Proj
   const live = new Map(records.map(record => [record.id, record]));
   return {
     list: () => [...live.values()],
-    get: id => live.get(id) ?? null,
+    get: id => (id === undefined ? null : live.get(id) ?? null),
     onChanged: () => () => undefined,
     put: record => { live.set(record.id, record); },
     remove: id => { live.delete(id); },

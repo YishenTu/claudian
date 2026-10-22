@@ -121,7 +121,7 @@ export function createMockTab(options: Record<string, any>): any {
         cancelBranchDraft: jest.fn(),
         // The project seed belongs to the session's model, so a reattached session keeps it.
         seedDraftProject: jest.fn((projectId: string | null) => { mockDraftProjects.set(tab.session.runtime, projectId); }),
-        get draftProjectId() { return mockDraftProjects.get(tab.session.runtime) ?? null; },
+        get project() { return { projectId: mockDraftProjects.get(tab.session.runtime) ?? undefined, changeable: true }; },
       },
       inputController: {
       },

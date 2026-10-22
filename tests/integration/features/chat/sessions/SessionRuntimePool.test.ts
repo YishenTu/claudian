@@ -39,6 +39,7 @@ describe('session ownership across presentations', () => {
       deleteConversation: jest.fn(async () => undefined),
       setConversationArchived: jest.fn(async () => undefined),
       setConversationsPinned: jest.fn(async () => undefined),
+      setConversationsPlacement: jest.fn(async () => undefined),
       restoreConversations: jest.fn(async () => undefined),
       archiveConversationsIf: jest.fn(async () => 1),
     };

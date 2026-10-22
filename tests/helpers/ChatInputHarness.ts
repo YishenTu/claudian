@@ -1,4 +1,5 @@
 import { createConversationPorts, createTestSession, holdResponse } from '@test/helpers/ConversationPorts';
+import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { createMockEl } from '@test/helpers/MockElement';
 
 import type { ProviderExecutionEvent } from '@/core/execution';
@@ -113,6 +114,7 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
       id: 'conversation-1',
       providerId: 'claude',
     }),
+    projects: createProjectsFake([]),
     renameConversation: jest.fn().mockResolvedValue(undefined),
     rewriteLinkedContentPaths: jest.fn().mockResolvedValue(undefined),
     settings: {

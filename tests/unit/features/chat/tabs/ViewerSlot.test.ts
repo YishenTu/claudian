@@ -564,7 +564,7 @@ describe('ViewerSlot', () => {
       await manager.createTab(null);
       await manager.viewerSlot.enter();
       const blankSession = manager.getActiveTab()!.session.runtime;
-      const draftProject = () => (manager.getActiveTab()!.controllers.conversationController as any).draftProjectId;
+      const draftProject = () => (manager.getActiveTab()!.controllers.conversationController as any).project.projectId;
 
       await manager.viewerSlot.startDraft({ projectId: 'project-1' });
       const session = manager.getActiveTab()!.session.runtime;

@@ -4,7 +4,6 @@ import type {
   ConversationMeta,
   ConversationMutablePatch,
   ConversationSummary,
-  ProjectMembership,
   ProjectMemoryOperations,
   ProjectMutations,
   ProjectReader,
@@ -76,8 +75,8 @@ export interface ChatViewHost extends ChatViewRefreshHost, TabManagerViewHost {
 /** Session attachment and lookup; retirement and shutdown stay with the pool's main-owned callers. */
 export type ChatSessionRuntimes = Pick<SessionRuntimePool, 'awaitConversationCreations' | 'acquire' | 'ensure' | 'release' | 'get' | 'getAttachment' | 'holdDraft'>;
 
-/** Live project records, their mutations and docs, and conversation membership. */
-export type ChatProjects = ProjectReader & ProjectMutations & ProjectMembership & ProjectMemoryOperations;
+/** Live project records, their mutations and memory; membership is written through `ConversationLifecycle`. */
+export type ChatProjects = ProjectReader & ProjectMutations & ProjectMemoryOperations;
 
 /** Application capabilities chat needs on top of the feature-neutral `FeatureHost`. */
 export interface ChatFeatureHost extends FeatureHost {

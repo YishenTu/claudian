@@ -1,18 +1,10 @@
 import { PROJECTS_PATH } from '@/core/bootstrap/storagePaths';
+import { normalizeLinkedContentPath } from '@/core/path/LinkedContentPath';
 
 const MEMORY_EXTENSION = '.md';
 const SLUG_MAX_LENGTH = 48;
-const WINDOWS_DRIVE_PATTERN = /^[A-Za-z]:/;
-const WINDOWS_UNC_PATTERN = /^(?:\\\\|\/\/)/;
 // Characters that are invalid in file names on at least one supported platform.
 const INVALID_SEGMENT_CHARACTERS = /[*"<>:|?]/;
-
-function hasControlCharacter(value: string): boolean {
-  return [...value].some((character) => {
-    const codePoint = character.codePointAt(0) ?? 0;
-    return codePoint <= 0x1f || codePoint === 0x7f;
-  });
-}
 
 /**
  * A vault-relative path to a project memory file. A leading `/` is read from the vault root, `\` separates like `/`,
@@ -21,28 +13,16 @@ function hasControlCharacter(value: string): boolean {
  */
 export function normalizeProjectMemoryPath(value: string): string | null {
   const trimmed = value.trim();
-  if (
-    !trimmed
-    || hasControlCharacter(trimmed)
-    || WINDOWS_DRIVE_PATTERN.test(trimmed)
-    || WINDOWS_UNC_PATTERN.test(trimmed)
-  ) {
-    return null;
-  }
-  const rawSegments = trimmed.replace(/\\/g, '/').split('/');
-  const last = rawSegments[rawSegments.length - 1];
+  const last = trimmed.split(/[\\/]/).pop();
   if (last === '' || last === '.') return null;
-
-  const segments: string[] = [];
-  for (const segment of rawSegments) {
-    if (segment === '' || segment === '.') continue;
-    if (segment === '..' || INVALID_SEGMENT_CHARACTERS.test(segment)) return null;
-    segments.push(segment);
-  }
-  const fileName = segments[segments.length - 1];
-  if (fileName.toLowerCase() === MEMORY_EXTENSION) return null;
-  if (!fileName.toLowerCase().endsWith(MEMORY_EXTENSION)) segments[segments.length - 1] = `${fileName}${MEMORY_EXTENSION}`;
-  return segments.join('/');
+  // One leading separator names the vault root; a doubled one stays a UNC path, which the Linked content rules reject.
+  const path = normalizeLinkedContentPath(trimmed.replace(/^[\\/](?![\\/])/, ''));
+  if (path === null) return null;
+  const segments = path.split('/');
+  if (segments.some(segment => INVALID_SEGMENT_CHARACTERS.test(segment))) return null;
+  const fileName = segments[segments.length - 1].toLowerCase();
+  if (fileName === MEMORY_EXTENSION) return null;
+  return fileName.endsWith(MEMORY_EXTENSION) ? path : `${path}${MEMORY_EXTENSION}`;
 }
 
 /** The memory path offered for a new project: `.claudian/projects/<name-slug>/MEMORY.md`. */

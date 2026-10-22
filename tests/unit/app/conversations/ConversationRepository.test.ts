@@ -52,7 +52,7 @@ function createRepository(
     persistence,
     onConversationDeleted,
     projects: {
-      get: id => (liveProjectIds.has(id) ? { id } as ProjectRecord : null),
+      get: id => (id !== undefined && liveProjectIds.has(id) ? { id } as ProjectRecord : null),
     },
   });
   repository.replaceAll([conversation]);
@@ -1185,44 +1185,59 @@ describe('ConversationRepository project membership', () => {
     const conversation = createConversation();
     const { repository, persistence } = createRepository(conversation, live);
 
-    await repository.setProject(conversation.id, 'project-a');
+    await repository.setPlacement(conversation.id, { projectId: 'project-a' });
     expect(persistence.saveMetadata.mock.calls.at(-1)?.[0].projectId).toBe('project-a');
     expect(repository.list()[0].projectId).toBe('project-a');
 
-    await repository.setProject(conversation.id, 'project-b');
+    await repository.setPlacement(conversation.id, { projectId: 'project-b' });
     expect(persistence.saveMetadata.mock.calls.at(-1)?.[0].projectId).toBe('project-b');
     expect(repository.getSync(conversation.id)!.projectId).toBe('project-b');
 
-    await repository.setProject(conversation.id, null);
+    await repository.setPlacement(conversation.id, { projectId: null });
     expect(persistence.saveMetadata.mock.calls.at(-1)?.[0].projectId).toBeUndefined();
     expect(repository.list()[0].projectId).toBeUndefined();
   });
 
-  it('rejects joining a project that is not live and keeps the current membership', async () => {
-    const conversation = { ...createConversation(), projectId: 'project-a' };
+  it('rejects joining a project that is not live and keeps the current placement', async () => {
+    const conversation = { ...createConversation(), projectId: 'project-a', isPinned: true };
     const { repository, persistence } = createRepository(conversation, live);
 
-    await expect(repository.setProject(conversation.id, 'project-deleted')).rejects.toThrow('project');
+    await expect(repository.setPlacement(conversation.id, { projectId: 'project-deleted', isPinned: false }))
+      .rejects.toThrow('Unknown project: project-deleted');
 
-    expect(repository.getSync(conversation.id)!.projectId).toBe('project-a');
+    expect(repository.getSync(conversation.id)).toMatchObject({ projectId: 'project-a', isPinned: true });
     expect(persistence.saveMetadata).not.toHaveBeenCalled();
   });
 
-  it('clears a deleted project only from conversations still in it', async () => {
-    const stillMember = { ...createConversation('still-member'), projectId: 'project-a' };
-    const moved = { ...createConversation('moved'), projectId: 'project-a' };
-    const { repository, persistence } = createRepository(stillMember, live);
-    repository.replaceAll([stillMember, moved]);
+  it('writes nothing when the conversation is already in place', async () => {
+    const conversation = { ...createConversation(), projectId: 'project-a', isPinned: false };
+    const { repository, persistence } = createRepository(conversation, live);
 
-    // The move is queued before the deleted project's clear reaches the same conversation.
-    const move = repository.setProject(moved.id, 'project-b');
-    const clear = repository.clearProject('project-a');
-    await Promise.all([move, clear]);
+    await repository.setPlacement(conversation.id, { projectId: 'project-a', isPinned: false });
+    await repository.setPlacement(conversation.id, {});
 
-    expect(repository.getSync(stillMember.id)!.projectId).toBeUndefined();
-    expect(repository.getSync(moved.id)!.projectId).toBe('project-b');
-    expect(persistence.saveMetadata.mock.calls
-      .filter(([metadata]) => metadata.id === moved.id)
-      .map(([metadata]) => metadata.projectId)).toEqual(['project-b']);
+    expect(persistence.saveMetadata).not.toHaveBeenCalled();
+  });
+
+  it('moves into a project and unpins in one metadata write', async () => {
+    const conversation = { ...createConversation(), isPinned: true };
+    const { repository, persistence } = createRepository(conversation, live);
+
+    await repository.setPlacement(conversation.id, { projectId: 'project-a', isPinned: false });
+
+    expect(persistence.saveMetadata).toHaveBeenCalledTimes(1);
+    expect(persistence.saveMetadata.mock.calls[0][0]).toMatchObject({ projectId: 'project-a', isPinned: false });
+    expect(repository.list()[0]).toMatchObject({ projectId: 'project-a', isPinned: false });
+  });
+
+  it('leaves the other placement field unchanged when it is omitted', async () => {
+    const conversation = { ...createConversation(), projectId: 'project-a', isPinned: true };
+    const { repository } = createRepository(conversation, live);
+
+    await repository.setPlacement(conversation.id, { projectId: 'project-b' });
+    expect(repository.getSync(conversation.id)).toMatchObject({ projectId: 'project-b', isPinned: true });
+
+    await repository.setPlacement(conversation.id, { isPinned: false });
+    expect(repository.getSync(conversation.id)).toMatchObject({ projectId: 'project-b', isPinned: false });
   });
 });

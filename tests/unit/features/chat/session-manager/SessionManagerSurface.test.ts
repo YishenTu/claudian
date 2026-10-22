@@ -577,7 +577,7 @@ describe('SessionManagerSurface session column rendering', () => {
       container,
       expect.objectContaining({
         getConversationStatus: expect.any(Function),
-        collapsedGroupKeys: expect.any(Set),
+        isGroupCollapsed: expect.any(Function),
         onGroupCollapseChange: expect.any(Function),
 
         onSetLinkedContentPinned: expect.any(Function),
@@ -621,7 +621,7 @@ describe('SessionManagerSurface session column rendering', () => {
     expect(sessionOptions.getModelLabel(historicalProviderConversation))
       .toBe('removed-provider/opaque-model');
     sessionOptions.onGroupCollapseChange('content:Projects/Plan.md', true);
-    expect(sessionOptions.collapsedGroupKeys.has('content:Projects/Plan.md')).toBe(true);
+    expect(sessionOptions.isGroupCollapsed('content:Projects/Plan.md')).toBe(true);
 
     sessionOptions.onRerender();
     expect(render).toHaveBeenCalledTimes(2);
@@ -656,7 +656,7 @@ describe('SessionManagerSurface session column rendering', () => {
         sessionScope: 'archived',
         sessionActionMode: 'archived',
         allowConversationSelection: false,
-        collapsedGroupKeys: expect.any(Set),
+        isGroupCollapsed: expect.any(Function),
       }),
     );
     expect(renderedIds(container)).toEqual(['old-roadmap']);

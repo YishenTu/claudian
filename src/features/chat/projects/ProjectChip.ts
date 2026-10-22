@@ -2,18 +2,14 @@ import { Menu } from 'obsidian';
 
 import type { ProjectReader } from '@/core/types';
 import type { ComposerInfoRow } from '@/features/chat/composer/ComposerInfoRow';
-import { resolveLiveProject } from '@/features/chat/execution/projectInstructions';
+import type { ConversationController } from '@/features/chat/conversation/ConversationController';
+import { compareProjectNames } from '@/features/chat/projects/projectOrder';
 import { t } from '@/i18n/i18n';
 
 export interface ProjectChipDeps {
   projects: Pick<ProjectReader, 'get' | 'list'>;
-  /**
-   * The raw project id of the shown conversation, or of the blank draft's seed, and whether it can change now:
-   * first-turn admission freezes the seed while creation is pending.
-   */
-  getProjectId: () => { projectId: string | undefined; changeable: boolean };
-  /** Moves the conversation, or the draft's seed, into a project or out of any with null. */
-  selectProject: (projectId: string | null) => void;
+  /** The session's conversation or blank draft, which owns what the chip shows and what choosing does. */
+  conversation: Pick<ConversationController, 'project' | 'selectProject'>;
 }
 
 /**
@@ -28,8 +24,8 @@ export class ProjectChip {
 
   /** Re-reads membership, the draft seed and its freeze, and the project record; callers refresh after any changes. */
   refresh(): void {
-    const { projectId, changeable } = this.deps.getProjectId();
-    const project = resolveLiveProject(this.deps.projects, projectId);
+    const { projectId, changeable } = this.deps.conversation.project;
+    const project = this.deps.projects.get(projectId);
     if (!project) {
       this.infoRow.setProject(null);
       return;
@@ -51,21 +47,20 @@ export class ProjectChip {
 
   private showMenu(anchorEl: HTMLElement, currentProjectId: string): void {
     const projects = [...this.deps.projects.list()].sort((left, right) => (
-      Number(right.isPinned) - Number(left.isPinned)
-      || left.name.localeCompare(right.name, undefined, { sensitivity: 'base', numeric: true })
+      Number(right.isPinned) - Number(left.isPinned) || compareProjectNames(left, right)
     ));
     const menu = new Menu().setUseNativeMenu(false);
     for (const project of projects) {
       menu.addItem((item) => {
         item.setTitle(project.name);
         if (project.id === currentProjectId) item.setChecked(true);
-        item.onClick(() => this.deps.selectProject(project.id));
+        item.onClick(() => this.deps.conversation.selectProject(project.id));
       });
     }
     menu.addSeparator();
     menu.addItem(item => item
       .setTitle(t('chat.projects.noProject'))
-      .onClick(() => this.deps.selectProject(null)));
+      .onClick(() => this.deps.conversation.selectProject(null)));
     const rect = anchorEl.getBoundingClientRect();
     menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchorEl.ownerDocument);
   }

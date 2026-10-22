@@ -1,5 +1,5 @@
 import { createFixture, deferred, waitForCall } from '@test/helpers/ChatInputHarness';
-import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
+import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ChatExecutionPreHandoffError, type ChatTurnSubmission } from '@/features/chat/execution/ChatExecutionCoordinator';
@@ -128,9 +128,10 @@ describe('FirstTurnAdmission', () => {
     expect(fixture.input.value).toBe('Start linked session');
   });
 
-  it.each([true, false])('creates a project-seeded draft in its project only while it is live, keeping the seed across failed creation (live: %s)', async live => {
+  it('creates a project-seeded draft with its raw frozen seed, keeping the seed across failed creation', async () => {
     const fixture = createFixture();
-    Object.assign(fixture.plugin, { projects: createProjectsFake(live ? [projectRecord({ id: 'project-1' })] : []) });
+    // No live record: whether the seed still names a project is the repository's decision at creation, not admission's.
+    Object.assign(fixture.plugin, { projects: createProjectsFake([]) });
     fixture.state.currentConversationId = null;
     fixture.deps.conversationController.seedDraftProject('project-1');
     fixture.plugin.createConversation
@@ -140,7 +141,7 @@ describe('FirstTurnAdmission', () => {
     await expect(fixture.controller.sendMessage({ content: 'First attempt' })).rejects.toThrow('storage unavailable');
     await fixture.controller.sendMessage({ content: 'Retry' });
 
-    const expected = { providerId: 'claude', selectedModel: 'claude-model', ...(live ? { projectId: 'project-1' } : {}) };
+    const expected = { providerId: 'claude', selectedModel: 'claude-model', projectId: 'project-1' };
     expect(fixture.plugin.createConversation.mock.calls).toEqual([[expected], [expected]]);
     expect(fixture.state.currentConversationId).toBe('project-conversation');
   });

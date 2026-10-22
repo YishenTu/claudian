@@ -111,11 +111,6 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
   const projects = new ProjectService(loadedProjects.records, {
     store: storage.projects,
     memory: storage.getAdapter(),
-    // Reached only after startup, once the conversation service below exists.
-    members: {
-      setConversationsProject: (ids, projectId) => conversations.setConversationsProject(ids, projectId),
-      clearProject: projectId => conversations.clearProjectMembership(projectId),
-    },
   });
   const conversationRepository = new ConversationRepository({
     providers,
@@ -159,7 +154,7 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
       new Notice(`${providers.getProviderDisplayName(providerId)} could not archive or restore its sessions: ${reason}`);
     },
   });
-  const conversations: ConversationService = new ConversationService({
+  const conversations = new ConversationService({
     repository: conversationRepository,
     sessionMetadata,
     pinnedLinkedContentPaths,

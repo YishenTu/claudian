@@ -4,7 +4,6 @@ import { normalizeProjectMemoryPath, projectMemoryFolderOf } from '@/core/path/P
 import { ManagedResourceCollisionError, type VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import {
   type ProjectCreateInput,
-  type ProjectMembership,
   ProjectMemoryConflictError,
   type ProjectMemoryContent,
   type ProjectMemoryOperations,
@@ -19,12 +18,6 @@ import {
 
 import type { ProjectStore } from './ProjectStore';
 
-/** Conversation-owned membership writes; the conversation owner checks liveness at its serialized write. */
-export interface ProjectMemberPort {
-  setConversationsProject(conversationIds: readonly string[], projectId: string | null): Promise<void>;
-  clearProject(projectId: string): Promise<void>;
-}
-
 export interface ProjectServiceDeps {
   readonly store: Pick<ProjectStore, 'save' | 'remove'>;
   readonly memory: Pick<
@@ -36,14 +29,13 @@ export interface ProjectServiceDeps {
     | 'verifyManagedPath'
     | 'writeManagedFile'
   >;
-  readonly members: ProjectMemberPort;
 }
 
 /**
  * Sole owner of project records and their memory files. Record and memory writes serialize per project;
  * membership stays on each conversation and is written through the conversation owner.
  */
-export class ProjectService implements ProjectReader, ProjectMutations, ProjectMembership, ProjectMemoryOperations {
+export class ProjectService implements ProjectReader, ProjectMutations, ProjectMemoryOperations {
   readonly #records = new Map<string, ProjectRecord>();
   readonly #listeners = new Set<() => void>();
   readonly #queues = new Map<string, Promise<void>>();
@@ -56,8 +48,8 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
     return Array.from(this.#records.values());
   }
 
-  get(id: string): ProjectRecord | null {
-    return this.#records.get(id) ?? null;
+  get(id: string | undefined): ProjectRecord | null {
+    return id === undefined ? null : this.#records.get(id) ?? null;
   }
 
   onChanged(listener: () => void): () => void {
@@ -132,21 +124,14 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
     return this.#commit(id, record => (record.isPinned === pinned ? record : { ...record, isPinned: pinned }));
   }
 
-  async delete(id: string): Promise<void> {
-    const removed = await this.#enqueue(id, async () => {
-      if (!this.#records.has(id)) return false;
+  /** Member ids stay on their conversations; readers resolve them through `get`, so they become no project. */
+  delete(id: string): Promise<void> {
+    return this.#enqueue(id, async () => {
+      if (!this.#records.has(id)) return;
       await this.deps.store.remove(id);
       this.#records.delete(id);
       this.#publish();
-      return true;
     });
-    if (!removed) return;
-    // Best effort: readers already treat the stale id as no project, including unloaded and remote metadata.
-    await this.deps.members.clearProject(id).catch(() => undefined);
-  }
-
-  setConversationsProject(conversationIds: readonly string[], projectId: string | null): Promise<void> {
-    return this.deps.members.setConversationsProject(conversationIds, projectId);
   }
 
   async readMemory(id: string): Promise<ProjectMemoryReadResult> {

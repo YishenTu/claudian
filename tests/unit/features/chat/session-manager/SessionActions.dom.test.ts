@@ -98,8 +98,8 @@ describe('SessionActions selection menu', () => {
     fireEvent.click(button('Running session'), { altKey: true });
     fireEvent.contextMenu(button('Alpha session'));
     const menu = lastMenu();
-    expect(menu.items.map(menuItem => menuItem.title)).toEqual(['Pin 2 sessions', 'Move 2 sessions to project…', 'Archive 1 session']);
-    menu.items[2].clickHandler?.();
+    expect(menu.items.map(menuItem => menuItem.title)).toEqual(['Pin 2 sessions', 'Archive 1 session']);
+    menu.items[1].clickHandler?.();
 
     expect(onSetConversationsArchived).toHaveBeenCalledWith(['alpha']);
   });
@@ -205,7 +205,8 @@ describe('SessionActions recency divider groups', () => {
 
     fireEvent.click(actions);
     const menu = lastMenu() as MockMenu & { showAtPosition: jest.Mock };
-    expect(menu.showAtPosition).toHaveBeenCalled();
+    // Under the button, in the window that shows it, which may be a popout.
+    expect(menu.showAtPosition).toHaveBeenCalledWith(expect.anything(), actions.ownerDocument);
     expect(menu.items.map(item => item.title)).toEqual(['Archive all sessions']);
     menu.items[0].clickHandler?.();
     expect(onSetConversationsArchived).toHaveBeenCalledWith(['stale']);

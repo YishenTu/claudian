@@ -5,7 +5,7 @@ import type { ConversationMeta, SessionManagerOrganization, SessionManagerSort }
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { createProject } from '@/features/chat/projects/projectActions';
 import { getObsidianLanguage } from '@/features/chat/session-manager/ProvisionalNoteNames';
-import { projectSectionKey } from '@/features/chat/session-manager/SessionListOrganizer';
+import { isProjectSectionKey } from '@/features/chat/session-manager/SessionListOrganizer';
 import { renderSessionGroupToggleIcon } from '@/features/chat/session-manager/SessionManagerIcons';
 import {
   archiveScopeOptions,
@@ -13,6 +13,7 @@ import {
   type SessionSurfaceNavigation,
   type SessionSurfaceShared,
   setControlAvailability,
+  showMenuAt,
 } from '@/features/chat/session-manager/SessionSurfaceShared';
 import { t } from '@/i18n/i18n';
 
@@ -55,10 +56,11 @@ export class SessionSidebar {
   private searchQuery = '';
   private searchRestoreState: SessionSearchScrollState | null = null;
   private searchDismissCleanup: (() => void) | null = null;
+  /** Search starts every group and section expanded, matching projects included. */
   private searchCollapsedGroupKeys = new Set<string>();
   private readonly collapsedGroupKeys = new Set<string>();
-  /** Projects start collapsed; search shows matching projects expanded unless collapsed during it. */
-  private readonly expandedProjectIds = new Set<string>();
+  /** Projects start collapsed, so outside search their keys record the expanded ones. */
+  private readonly expandedProjectKeys = new Set<string>();
   private groupKeys = new Set<string>();
 
   constructor(private readonly deps: SessionSidebarDeps) {}
@@ -176,14 +178,9 @@ export class SessionSidebar {
       showPinnedSection: !isArchiveView,
       pinnedLinkedContentPaths: new Set(plugin.settings.pinnedLinkedContentPaths ?? []),
       showArchivedSection: isArchiveView,
-      collapsedGroupKeys: this.getDisplayedCollapsedGroupKeys(),
+      isGroupCollapsed: (groupKey: string) => this.isGroupCollapsed(groupKey),
       onGroupCollapseChange: (groupKey: string, collapsed: boolean) => {
-        const collapsedGroupKeys = this.getDisplayedCollapsedGroupKeys();
-        if (collapsed) {
-          collapsedGroupKeys.add(groupKey);
-        } else {
-          collapsedGroupKeys.delete(groupKey);
-        }
+        this.setGroupCollapsed(groupKey, collapsed);
         this.updateGroupToggleButton();
       },
       onGroupKeysChange: (groupKeys: readonly string[]) => {
@@ -196,13 +193,9 @@ export class SessionSidebar {
         shared.setArchiveView(false);
         return navigation.startLinkedContentConversation(contentPath);
       },
-      showProjectsSection: !isArchiveView,
-      allowSessionDrag: !isArchiveView,
+      // The archive lists no projects; its members stay among the archived sessions.
+      showProjectsSection: true,
       projectSort: this.getProjectSort(),
-      isProjectExpanded: (projectId: string) => this.isProjectExpanded(projectId),
-      onProjectExpandedChange: (projectId: string, expanded: boolean) => {
-        this.setProjectExpanded(projectId, expanded);
-      },
       onStartProjectConversation: (projectId: string) => {
         shared.setArchiveView(false);
         return navigation.startProjectConversation(projectId);
@@ -576,19 +569,18 @@ export class SessionSidebar {
     return this.deps.plugin.settings.projectSort === 'created' ? 'created' : 'last-updated';
   }
 
-  private isProjectExpanded(projectId: string): boolean {
-    return this.isSearchFiltering()
-      ? !this.searchCollapsedGroupKeys.has(projectSectionKey(projectId))
-      : this.expandedProjectIds.has(projectId);
+  private isGroupCollapsed(groupKey: string): boolean {
+    if (!this.isSearchFiltering() && isProjectSectionKey(groupKey)) return !this.expandedProjectKeys.has(groupKey);
+    return this.getDisplayedCollapsedGroupKeys().has(groupKey);
   }
 
-  private setProjectExpanded(projectId: string, expanded: boolean): void {
-    if (this.isSearchFiltering()) {
-      const key = projectSectionKey(projectId);
-      if (expanded) this.searchCollapsedGroupKeys.delete(key); else this.searchCollapsedGroupKeys.add(key);
+  private setGroupCollapsed(groupKey: string, collapsed: boolean): void {
+    if (!this.isSearchFiltering() && isProjectSectionKey(groupKey)) {
+      if (collapsed) this.expandedProjectKeys.delete(groupKey); else this.expandedProjectKeys.add(groupKey);
       return;
     }
-    if (expanded) this.expandedProjectIds.add(projectId); else this.expandedProjectIds.delete(projectId);
+    const collapsedGroupKeys = this.getDisplayedCollapsedGroupKeys();
+    if (collapsed) collapsedGroupKeys.add(groupKey); else collapsedGroupKeys.delete(groupKey);
   }
 
   private getDisplayedCollapsedGroupKeys(): Set<string> {
@@ -657,12 +649,7 @@ export class SessionSidebar {
       .setChecked(sort === 'created')
       .onClick(() => this.setSort('created')));
 
-    if (event) {
-      menu.showAtMouseEvent(event);
-      return;
-    }
-    const rect = anchor.getBoundingClientRect();
-    menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument);
+    showMenuAt(menu, anchor, event);
   }
 
   private showProjectOptionsMenu(anchor: HTMLElement, event?: MouseEvent): void {
@@ -680,12 +667,7 @@ export class SessionSidebar {
       .setChecked(sort === 'created')
       .onClick(() => this.setProjectSort('created')));
 
-    if (event) {
-      menu.showAtMouseEvent(event);
-      return;
-    }
-    const rect = anchor.getBoundingClientRect();
-    menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument);
+    showMenuAt(menu, anchor, event);
   }
 
   private setProjectSort(sort: SessionManagerSort): void {

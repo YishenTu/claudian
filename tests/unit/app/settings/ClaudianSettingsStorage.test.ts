@@ -1089,21 +1089,6 @@ describe('ClaudianSettingsStorage project settings', () => {
     expect(written.sessionManagerOrganization).toBe('list');
   });
 
-  it.each([
-    ['created', 'created'],
-    ['last-updated', 'last-updated'],
-    ['title', 'last-updated'],
-    [7, 'last-updated'],
-  ])('normalizes and persists the stored project sort %p as %p', async (stored, expected) => {
-    const adapter = createAdapter({ projectSort: stored });
-
-    const settings = await new ClaudianSettingsStorage(adapter, DEFAULT_SETTINGS).load();
-    await new ClaudianSettingsStorage(adapter, DEFAULT_SETTINGS).save(settings);
-
-    expect(settings.projectSort).toBe(expected);
-    expect(JSON.parse(adapter.write.mock.calls.at(-1)![1]).projectSort).toBe(expected);
-  });
-
   it('defaults the project sort to last activity', async () => {
     const settings = await new ClaudianSettingsStorage(createAdapter({}), DEFAULT_SETTINGS).load();
 

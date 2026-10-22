@@ -20,6 +20,7 @@ import {
   type Conversation,
   type ConversationMeta,
   type ConversationMutablePatch,
+  type ConversationPlacement,
   type ConversationSummary,
   type ProjectReader,
   type SessionMetadata,
@@ -644,12 +645,8 @@ export class ConversationRepository {
     });
   }
 
-  async setPinned(id: string, isPinned: boolean): Promise<void> {
-    await this.#mutateMetadata(id, conversation => (
-      (isPinned && conversation.isArchived) || conversation.isPinned === isPinned
-        ? null
-        : { isPinned }
-    ));
+  setPinned(id: string, isPinned: boolean): Promise<void> {
+    return this.setPlacement(id, { isPinned });
   }
 
   /** Resolves true when the archive state changed. */
@@ -679,27 +676,28 @@ export class ConversationRepository {
     return didArchive;
   }
 
-  /** Joins or moves into a live project, or leaves with null; the project is checked at the serialized write. */
-  async setProject(id: string, projectId: string | null): Promise<void> {
+  /**
+   * Joins, moves, or leaves a project and pins or unpins in one write; omitted fields stay. The project is checked
+   * at the serialized write, and pinning an archived conversation is ignored like `setPinned`.
+   */
+  async setPlacement(id: string, placement: ConversationPlacement): Promise<void> {
+    const { projectId, isPinned } = placement;
     await this.#mutateMetadata(id, (conversation) => {
-      if (projectId !== null && !this.#isLiveProject(projectId)) {
+      if (typeof projectId === 'string' && !this.#isLiveProject(projectId)) {
         throw new Error(`Unknown project: ${projectId}`);
       }
-      const next = projectId ?? undefined;
-      return conversation.projectId === next ? null : { projectId: next };
+      const patch: ConversationMetadataPatch = {};
+      const nextProjectId = projectId ?? undefined;
+      if (projectId !== undefined && conversation.projectId !== nextProjectId) patch.projectId = nextProjectId;
+      if (
+        isPinned !== undefined
+        && conversation.isPinned !== isPinned
+        && !(isPinned && conversation.isArchived)
+      ) {
+        patch.isPinned = isPinned;
+      }
+      return Object.keys(patch).length > 0 ? patch : null;
     });
-  }
-
-  /** Clears a deleted project from loaded conversations that still belong to it at their serialized write. */
-  async clearProject(projectId: string): Promise<void> {
-    const memberIds = this.conversations
-      .filter(conversation => conversation.projectId === projectId)
-      .map(({ id }) => id);
-    const results = await Promise.allSettled(memberIds.map(id => this.#mutateMetadata(id, conversation => (
-      conversation.projectId === projectId ? { projectId: undefined } : null
-    ))));
-    const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
-    if (failure) throw failure.reason;
   }
 
   #isLiveProject(projectId: string): boolean {

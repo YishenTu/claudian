@@ -58,7 +58,7 @@ it.each([true, false])('freezes the parent project side-chat text at start (live
   await second;
 
   const expected = live
-    ? { kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(record, record.memoryPath) }
+    ? { kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(record) }
     : { kind: 'provider-default' };
   expect(harness.backend.latest.requests.map(request => request.configuration.systemInstructions)).toEqual([expected, expected]);
 });

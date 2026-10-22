@@ -1,25 +1,13 @@
-import { Notice } from 'obsidian';
-
 import type { ProjectRecord } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ProjectEditorModal } from '@/features/chat/projects/ProjectEditorModal';
 import { ProjectMemoryModal } from '@/features/chat/projects/ProjectMemoryModal';
+import { runSessionAction } from '@/features/chat/session-manager/SessionSurfaceShared';
 import { t } from '@/i18n/i18n';
 import { confirm } from '@/shared/modals/ConfirmModal';
 
 /** What project UI needs from the chat host: modals and the project owner. */
 export type ProjectUIHost = Pick<ChatFeatureHost, 'app' | 'projects'>;
-
-/** Runs a project action, reporting any failure once as a notice. */
-export function runProjectAction(action: () => unknown, failureMessage: string): void {
-  void (async () => {
-    try {
-      await action();
-    } catch {
-      new Notice(failureMessage);
-    }
-  })();
-}
 
 export function openProjectMemory(host: ProjectUIHost, project: ProjectRecord): void {
   new ProjectMemoryModal(host.app, { project, memory: host.projects }).open();
@@ -45,7 +33,7 @@ export function createProject(
     project: null,
     save: async (input) => {
       const project = await host.projects.create(input);
-      if (afterCreate) runProjectAction(() => afterCreate.run(project), afterCreate.failureMessage);
+      if (afterCreate) runSessionAction(() => afterCreate.run(project), afterCreate.failureMessage);
     },
   }).open();
 }
