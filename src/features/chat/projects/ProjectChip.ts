@@ -36,7 +36,8 @@ export class ProjectChip {
     }
     this.infoRow.setProject({
       label: project.name,
-      icon: 'folder',
+      // Obsidian aliases the legacy `folder` id to an open folder.
+      icon: 'lucide-folder',
       ariaLabel: t('chat.projects.chipLabel', { name: project.name }),
       hasPopup: 'menu',
       disabled: !changeable,

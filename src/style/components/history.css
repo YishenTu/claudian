@@ -288,6 +288,27 @@
   overflow-anchor: none;
 }
 
+/*
+ * Session drag and drop: a temporary Pinned header while nothing is pinned, and the hovered
+ * drop target. The highlight paints only background and an inset ring, so hovering never
+ * changes layout.
+ */
+.claudian-session-sidebar .claudian-session-pinned-drop-zone {
+  flex: 0 0 auto;
+}
+
+.claudian-session-sidebar .claudian-session-pinned-drop-zone[hidden] {
+  display: none;
+}
+
+/* One ring per destination, on its header: a project's row, or the Pinned/Sessions header. */
+.claudian-session-sidebar .claudian-session-group-header.claudian-session-drop-target--active,
+.claudian-session-sidebar .claudian-session-drop-target--active > .claudian-session-section-header {
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-hover);
+  box-shadow: inset 0 0 0 1px var(--interactive-accent);
+}
+
 .claudian-session-sidebar .claudian-history-section--sessions,
 .claudian-session-sidebar .claudian-history-section--archived {
   display: flex;

@@ -9,6 +9,7 @@ import {
   editProject,
   openProjectMemory,
 } from '@/features/chat/projects/projectActions';
+import type { SessionDropTarget } from '@/features/chat/session-manager/SessionDrag';
 import type { SessionListSectionKind } from '@/features/chat/session-manager/SessionListOrganizer';
 import type { SessionMultiSelection } from '@/features/chat/session-manager/SessionMultiSelection';
 import {
@@ -513,6 +514,49 @@ export class SessionActions {
           t('chat.projects.errors.pin'),
         );
       }));
+  }
+
+  /**
+   * Places dragged sessions where they were dropped. Pinned pins and keeps the project; a project joins it
+   * and unpins; the session list leaves any project and unpins. Sessions already there are left alone.
+   * Membership changes first, so the list never shows a session in a place it was not dragged to.
+   */
+  placeSessions(conversationIds: readonly string[], target: SessionDropTarget): void {
+    const { plugin, selection } = this.deps;
+    selection.clear();
+    const conversations = plugin.getConversationList()
+      .filter(conversation => !conversation.isArchived && conversationIds.includes(conversation.id));
+    const idsOf = (predicate: (conversation: ConversationMeta) => boolean): string[] => (
+      conversations.filter(predicate).map(conversation => conversation.id)
+    );
+    if (target.kind === 'pinned') {
+      const pinIds = idsOf(conversation => conversation.isPinned !== true);
+      if (pinIds.length > 0) {
+        runSessionAction(() => plugin.conversationLifecycle.setPinned(pinIds, true), 'Failed to pin sessions');
+      }
+      return;
+    }
+    const projectId = target.kind === 'project' ? target.projectId : null;
+    const moveIds = idsOf(conversation => (this.#liveProject(conversation)?.id ?? null) !== projectId);
+    const unpinIds = idsOf(conversation => conversation.isPinned === true);
+    if (moveIds.length === 0 && unpinIds.length === 0) return;
+    void (async () => {
+      if (moveIds.length > 0) {
+        try {
+          await plugin.projects.setConversationsProject(moveIds, projectId);
+        } catch {
+          new Notice(projectId ? t('chat.projects.errors.move') : t('chat.projects.errors.remove'));
+          return;
+        }
+      }
+      if (unpinIds.length > 0) {
+        try {
+          await plugin.conversationLifecycle.setPinned(unpinIds, false);
+        } catch {
+          new Notice('Failed to unpin sessions');
+        }
+      }
+    })();
   }
 
   /** Projects to move the sessions into, plus creating one for them. */

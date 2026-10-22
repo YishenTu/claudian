@@ -56,6 +56,9 @@ export class SessionMetadataPopover {
   private sequence = 0;
   private view: SessionMetadataView | null = null;
 
+  /** `isSuppressed` keeps the popover closed, such as while a session is being dragged. */
+  constructor(private readonly isSuppressed: () => boolean = () => false) {}
+
   dispose(): void {
     this.close();
     this.view = null;
@@ -100,6 +103,7 @@ export class SessionMetadataPopover {
     conversation: ConversationMeta,
     options: SessionMetadataOptions,
   ): void {
+    if (this.isSuppressed()) return;
     if (this.popoverEl && this.target === item) {
       this.#cancelClose();
       return;

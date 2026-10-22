@@ -244,7 +244,8 @@ export interface SessionListModelOptions {
   pinnedLinkedContentPaths?: ReadonlySet<string>;
   /**
    * Live project records for a projects section outside the archive. Members of a live project are listed
-   * only there; without it, or in the archive, every session stays in the session list.
+   * only there, unless pinned with a Pinned section; without it, or in the archive, every session stays in
+   * the session list.
    */
   projects?: SessionListProjects;
   projectSort?: SessionManagerSort;
@@ -260,7 +261,10 @@ export interface SessionListModel {
   readonly hasSearchTerms: boolean;
   /** No session or pinned Linked content group matches the scope and search; projects do not count. */
   readonly isEmpty: boolean;
-  /** Every live project matching the search, pinned first, with its matching members; null without the section. */
+  /**
+   * Every live project matching the search, pinned first, with its matching members (pinned members are listed
+   * under Pinned instead); null without the section.
+   */
   readonly projectSections: readonly SessionListSection[] | null;
   readonly pinnedContentSections: readonly SessionListSection[];
   /** Pinned sessions outside pinned Linked content groups, in list order. */
@@ -317,8 +321,12 @@ export function deriveSessionListModel(
     projects ? resolveLiveProject(projects, conversation.projectId)?.id : undefined
   );
   const conversationsByProject = groupBy(scopedConversations, liveProjectId);
+  // Pinning keeps the membership, but a pinned member is listed under Pinned instead of its project.
+  const isListedAsPinned = (conversation: ConversationMeta): boolean => (
+    !!options.showPinnedSection && conversation.isPinned === true
+  );
   const listedConversations = projects
-    ? scopedConversations.filter(conversation => !liveProjectId(conversation))
+    ? scopedConversations.filter(conversation => !liveProjectId(conversation) || isListedAsPinned(conversation))
     : scopedConversations;
   const matchesConversation = (conversation: ConversationMeta): boolean => (
     matchesSearch([conversation.title, conversation.linkedContentPath ?? ''].join('\n'))
@@ -332,9 +340,12 @@ export function deriveSessionListModel(
         conversationsByProject,
         options.projectSort ?? 'last-updated',
         sort,
-        (record, members) => (
-          searchTerms.length === 0 || matchesSearch(record.name) ? members : members.filter(matchesConversation)
-        ),
+        (record, members) => {
+          const unpinnedMembers = members.filter(conversation => !isListedAsPinned(conversation));
+          return searchTerms.length === 0 || matchesSearch(record.name)
+            ? unpinnedMembers
+            : unpinnedMembers.filter(matchesConversation);
+        },
       ).filter(section => (
         searchTerms.length === 0 || section.conversations.length > 0 || matchesSearch(section.label ?? '')
       ))

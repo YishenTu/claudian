@@ -37,7 +37,7 @@ export interface SessionSidebarDeps {
  * The wide layout's persistent session column: New/Search/Archive navigation,
  * IME-aware search with outside dismissal, the projects section with its sorting
  * and expansion, session organization, sorting, section and group collapse, pinned
- * Linked content, inline pins, and the metadata popover.
+ * Linked content, inline pins, session drag and drop, and the metadata popover.
  */
 export class SessionSidebar {
   private sidebarEl: HTMLElement | null = null;
@@ -197,6 +197,7 @@ export class SessionSidebar {
         return navigation.startLinkedContentConversation(contentPath);
       },
       showProjectsSection: !isArchiveView,
+      allowSessionDrag: !isArchiveView,
       projectSort: this.getProjectSort(),
       isProjectExpanded: (projectId: string) => this.isProjectExpanded(projectId),
       onProjectExpandedChange: (projectId: string, expanded: boolean) => {

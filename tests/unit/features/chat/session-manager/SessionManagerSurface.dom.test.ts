@@ -254,15 +254,15 @@ describe('projects section', () => {
     const { host, region, surface, view } = createProjectSurface();
 
     const emptyToggle = () => within(region()).getByRole('button', { name: sectionName('Empty', 0) });
-    expect(folderIcon(emptyToggle())).toBe('folder');
+    expect(folderIcon(emptyToggle())).toBe('lucide-folder');
     fireEvent.click(emptyToggle());
     expect(within(region()).getByText(t('chat.projects.noSessions'))).toBeTruthy();
-    expect(folderIcon(emptyToggle())).toBe('folder-open');
+    expect(folderIcon(emptyToggle())).toBe('lucide-folder-open');
     surface.invalidate();
     expect(emptyToggle().getAttribute('aria-expanded')).toBe('true');
-    expect(folderIcon(emptyToggle())).toBe('folder-open');
+    expect(folderIcon(emptyToggle())).toBe('lucide-folder-open');
     fireEvent.click(emptyToggle());
-    expect(folderIcon(emptyToggle())).toBe('folder');
+    expect(folderIcon(emptyToggle())).toBe('lucide-folder');
     fireEvent.click(emptyToggle());
 
     fireEvent.click(host.querySelector('.claudian-session-archive-control')!);
@@ -281,12 +281,12 @@ describe('projects section', () => {
     expect(within(region()).getAllByRole('button', { expanded: true }).map(toggle => toggle.textContent))
       .toEqual(['Projects', sectionName('Launch', 1)]);
     expect(within(region()).getByText('Member session')).toBeTruthy();
-    expect(folderIcon(within(region()).getByRole('button', { name: sectionName('Launch', 1) }))).toBe('folder-open');
+    expect(folderIcon(within(region()).getByRole('button', { name: sectionName('Launch', 1) }))).toBe('lucide-folder-open');
     expect(within(region()).queryByRole('button', { name: sectionName('Empty', 0) })).toBeNull();
 
     fireEvent.keyDown(view.getByRole('searchbox', { name: 'Search sessions' }), { key: 'Escape' });
     expect(within(region()).getAllByRole('button', { expanded: false })).toHaveLength(2);
-    expect(folderIcon(within(region()).getByRole('button', { name: sectionName('Launch', 1) }))).toBe('folder');
+    expect(folderIcon(within(region()).getByRole('button', { name: sectionName('Launch', 1) }))).toBe('lucide-folder');
   });
 
   it('collapses the projects and sessions sections from their headers, across re-renders', async () => {

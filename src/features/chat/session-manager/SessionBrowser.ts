@@ -16,6 +16,7 @@ import {
   SessionActions,
   type SessionRow,
 } from '@/features/chat/session-manager/SessionActions';
+import { SessionDrag } from '@/features/chat/session-manager/SessionDrag';
 import { SessionInlineRename } from '@/features/chat/session-manager/SessionInlineRename';
 import {
   deriveSessionListModel,
@@ -74,6 +75,8 @@ type HistoryRenderOptions = SessionActionOptions & SessionStatusDisplay & Sessio
   onGroupCollapseChange?: (groupKey: string, collapsed: boolean) => void;
   onGroupKeysChange?: (groupKeys: readonly string[]) => void;
   onStartLinkedContentConversation?: (contentPath: string) => Promise<void>;
+  /** Active sessions can be dragged to Pinned, a project, or the session list. */
+  allowSessionDrag?: boolean;
   /** Lists live projects above the sessions, outside the archive; their members leave the session list. */
   showProjectsSection?: boolean;
   projectSort?: SessionManagerSort;
@@ -110,9 +113,13 @@ function isNewTabModifierClick(event: MouseEvent): boolean {
 }
 
 export class SessionBrowser {
-  private readonly metadataPopover = new SessionMetadataPopover();
+  private readonly metadataPopover = new SessionMetadataPopover(() => this.drag.isDragging);
   private readonly selection = new SessionMultiSelection();
   private readonly inlineRename = new SessionInlineRename();
+  private readonly drag = new SessionDrag({
+    onDragStart: () => this.metadataPopover.close(),
+    onDrop: (conversationIds, target) => this.actions.placeSessions(conversationIds, target),
+  });
   private readonly actions: SessionActions;
   private readonly titles: ConversationTitleGeneration;
 
@@ -126,6 +133,7 @@ export class SessionBrowser {
   }
 
   dispose(): void {
+    this.drag.end();
     this.selection.clear();
     this.inlineRename.cancel();
     this.metadataPopover.dispose();
@@ -157,6 +165,8 @@ export class SessionBrowser {
       this.metadataPopover.close();
     }
     this.selection.beginRender(container, options.searchQuery ?? '', canMultiSelect(options));
+    const canDrag = this.#canDrag(options);
+    if (canDrag) this.drag.beginRender(container); else this.drag.end();
 
     const previousPosition = options.preserveListState
       ? captureSessionListPosition(container)
@@ -206,6 +216,9 @@ export class SessionBrowser {
         pinnedList = pinnedSection.createDiv({
           cls: 'claudian-history-section-items',
         });
+        if (canDrag) this.drag.attachTarget(pinnedSection, { kind: 'pinned' });
+      } else if (canDrag) {
+        this.drag.renderPinnedDropZone(list, 'Pinned');
       }
       if (model.projectSections) {
         projectsList = this.#renderProjectsSection(list, model.projectSections, model.conversationsByProject, options);
@@ -231,6 +244,7 @@ export class SessionBrowser {
       sessionList = sessionsSection.createDiv({
         cls: 'claudian-history-section-items claudian-session-list-items',
       });
+      if (canDrag) this.drag.attachTarget(sessionsSection, { kind: 'sessions' });
       this.#renderSectionToggle(
         sessionsSection,
         sessionsHeader,
@@ -605,6 +619,8 @@ export class SessionBrowser {
     });
     groupHeader.setAttribute('data-group-kind', section.kind);
     groupHeader.setAttribute('data-project-id', project.id);
+    const dropTarget = { kind: 'project', projectId: project.id } as const;
+    if (this.#canDrag(options)) this.drag.attachTarget(groupHeader, dropTarget);
 
     // Named by its visible label: an aria-label would show Obsidian's hover tooltip.
     const toggle = groupHeader.createEl('button', {
@@ -616,7 +632,8 @@ export class SessionBrowser {
     });
     const icon = toggle.createSpan({ cls: 'claudian-session-group-icon' });
     icon.setAttribute('aria-hidden', 'true');
-    setIcon(icon, isCollapsed ? 'folder' : 'folder-open');
+    // Obsidian aliases the legacy `folder` id to an open folder; explicit Lucide ids keep the states distinct.
+    setIcon(icon, isCollapsed ? 'lucide-folder' : 'lucide-folder-open');
     toggle.createSpan({ cls: 'claudian-session-group-label', text: label });
 
     if (groupStatusKind !== null) {
@@ -674,6 +691,7 @@ export class SessionBrowser {
     if (isCollapsed) return;
     const groupBody = list.createDiv({ cls: 'claudian-session-group-body' });
     groupBody.setAttribute('data-group-key', section.key);
+    if (this.#canDrag(options)) this.drag.attachTarget(groupBody, dropTarget);
     if (section.conversations.length === 0) {
       groupBody.createDiv({ cls: 'claudian-session-project-empty', text: t('chat.projects.noSessions') });
       return;
@@ -752,6 +770,9 @@ export class SessionBrowser {
     if (canMultiSelect(options)) {
       this.selection.attach(item, conversation.id);
     }
+    if (this.#canDrag(options)) {
+      this.drag.attachSource(item, () => this.#draggedConversationIds(conversation.id));
+    }
 
     const row = (status: HistoryConversationStatus): SessionRow => ({
       conversation,
@@ -784,6 +805,21 @@ export class SessionBrowser {
     if (sessionStatusKind) {
       this.#createSessionStatusIndicator(item, sessionStatusKind);
     }
+  }
+
+  /** Drag and drop places sessions in the persistent sidebar's active view only. */
+  #canDrag(options: HistoryRenderOptions): boolean {
+    return options.allowSessionDrag === true
+      && options.sessionActionMode === 'active'
+      && options.showPinnedSection === true;
+  }
+
+  /** A selected row drags the whole multi-selection of active sessions; any other row drags itself. */
+  #draggedConversationIds(conversationId: string): readonly string[] {
+    if (!this.selection.isPartOfMultiple(conversationId)) return [conversationId];
+    return this.deps.plugin.getConversationList()
+      .filter(conversation => !conversation.isArchived && this.selection.has(conversation.id))
+      .map(conversation => conversation.id);
   }
 
   #attachConversationOpening(
