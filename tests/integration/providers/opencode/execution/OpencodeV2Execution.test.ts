@@ -6,12 +6,29 @@ import { createForkTestEnvironment } from '@test/helpers/features/chat/ProviderF
 import { testDate } from '@test/helpers/testClock';
 
 import { isSteerableExecutionSession, type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderSessionEvent } from '@/core/execution';
+import type { ManagedStdioProcessOptions } from '@/core/process/ManagedStdioProcess';
+import type * as ProcessProbe from '@/core/process/ProcessProbe';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { AskUserAnswers, ChatMessage } from '@/core/types';
 import { ChatExecutionCoordinator, type ChatSteerOutcome } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/providerOutputChunks';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
+
+// Real CLI probing, server startup and cleanup can exceed Jest's default on Windows runners.
+jest.setTimeout(45_000);
+// A cold first turn includes the version probe and the HTTP server's 10-second readiness budget.
+const NATIVE_STARTUP_TIMEOUT_MS = 40_000;
+
+// Keep the native probe real, with the same cold-launch allowance as OpencodeSharedServer.
+// Explicit probe deadlines still apply; this suite does not test the production default deadline.
+jest.mock('@/core/process/ProcessProbe', () => {
+  const actual: typeof ProcessProbe = jest.requireActual('@/core/process/ProcessProbe');
+  return {
+    ...actual,
+    runProcessProbe: (options: ManagedStdioProcessOptions, timeoutMs = 30_000) => actual.runProcessProbe(options, timeoutMs),
+  };
+});
 
 // Native HTTP boundary, based on v2.0.12 event and route contracts.
 const fixture = `#!/usr/bin/env node
@@ -401,7 +418,7 @@ it('cancels native compaction, declines steering, and can continue the session',
     const run = f.session.execute(request('/compact'));
     const events: ProviderExecutionEvent[] = [];
     const consumed = (async () => { for await (const event of run.events) events.push(event); })();
-    const deadline = Date.now() + 3000;
+    const deadline = Date.now() + NATIVE_STARTUP_TIMEOUT_MS;
     while (!existsSync(started) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
     expect(existsSync(started)).toBe(true);
     if (!isSteerableExecutionSession(f.session)) throw new Error('Missing steering');
@@ -430,7 +447,7 @@ it('runs YOLO with automatic native approvals while still answering questions, t
     }
     expect(f.questions).toEqual([expect.objectContaining({ kind: 'question' }), expect.objectContaining({ kind: 'question' })]);
   } finally { await f.dispose(); }
-}, 15000);
+});
 
 it('runs Ask and YOLO on a native build agent, changing only the approval policy', async () => {
   const f = createFixture(false, undefined, 'ECHO_AGENTS=1');
@@ -448,7 +465,7 @@ it('runs Ask and YOLO on a native build agent, changing only the approval policy
     expect(agents.every(agent => /^build-/.test(agent))).toBe(true);
     expect(new Set(agents).size).toBe(1);
   } finally { await f.dispose(); }
-}, 15000);
+});
 
 it('waits for account activation before replacing the catalog on a resumed first turn', async () => {
   const f = createFixture(true, undefined, 'ACTIVATION_DELAY_MS=250');
@@ -474,7 +491,7 @@ it('uses HTTP for v2 commands, waits for execution completion, and answers nativ
     expect(questions).toEqual([expect.objectContaining({ kind: 'question', input: expect.objectContaining({ questions: expect.any(Array) }) })]);
     expect(session.getSnapshot()).toMatchObject({ providerSessionId: 'ses_test', providerState: { nativeVersion: 2 } });
   } finally { await f.dispose(); }
-}, 15000);
+});
 
 it('delivers child completion and automatic parent replies after the requested turn', async () => {
   const f = createFixture();
@@ -503,7 +520,7 @@ it('delivers child completion and automatic parent replies after the requested t
       expect.objectContaining({ type: 'text_delta', text: 'Automatic reply', scope: expect.objectContaining({ kind: 'background' }) }),
     ]));
   } finally { await f.dispose(); }
-}, 15000);
+});
 
 it('interrupts HTTP execution and continues the same native session on the next turn', async () => {
   const f = createFixture();
@@ -520,7 +537,7 @@ it('interrupts HTTP execution and continues the same native session on the next 
     expect(continued.at(-1)?.type).toBe('turn_completed');
     expect(f.session.getSnapshot()).toMatchObject({ providerSessionId: 'ses_test' });
   } finally { await f.dispose(); }
-}, 15000);
+});
 
 it('keeps a turn cancelled during configuration from changing the next turn approval policy', async () => {
   const hold = path.join(realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-http-hold-'))), 'model');
@@ -543,7 +560,7 @@ it('keeps a turn cancelled during configuration from changing the next turn appr
     expect(events.at(-1)?.type).toBe('turn_completed');
     expect(f.approvals).toHaveLength(2);
   } finally { await f.dispose(); rmSync(path.dirname(hold), { recursive: true, force: true }); }
-}, 15000);
+});
 
 describe('native steering', () => {
   it.each(['/compact', '/COMPACT'])('preserves captures and images when steering literal %j text', async text => {
@@ -637,7 +654,7 @@ describe('native steering', () => {
       expect(events.filter(event => event.type === 'text_delta').map(event => event.text)).toEqual(['Working', 'Saw Also check tests']);
       expect(background.filter(event => event.type === 'background_turn_started')).toEqual([]);
     } finally { await f.dispose(); }
-  }, 15000);
+  });
 
   it('recalls an undelivered steer on cancel so it cannot leak into the next turn', async () => {
     const f = createFixture();
@@ -650,7 +667,7 @@ describe('native steering', () => {
       expect(continued.at(-1)?.type).toBe('turn_completed');
       expect(continued.filter(event => event.type === 'text_delta').map(event => event.text).join('')).toBe('Finished review');
     } finally { await f.dispose(); }
-  }, 15000);
+  });
 
   it('reports a natively refused steer as definitely unsent and lets the run finish', async () => {
     const f = createFixture(false, undefined, 'STEER_ADMISSION=reject');
@@ -661,7 +678,7 @@ describe('native steering', () => {
       expect(events.filter(event => event.type === 'user_message_started' && event.content)).toEqual([]);
       expect(events.at(-1)?.type).toBe('turn_completed');
     } finally { await f.dispose(); }
-  }, 15000);
+  });
 
   it.each(['steer', 'steer-late'])('keeps the submitted pair bound to the prompt across a %s delivery', async text => {
     const env = await createForkTestEnvironment();
@@ -705,7 +722,7 @@ describe('native steering', () => {
       expect(user.userMessageId).not.toBe(steer.nativeUserMessageId);
       expect(assistant.assistantMessageId).toMatch(/^msg_assistant_/);
     } finally { await coordinator.dispose(); await serverService.dispose(); await env.dispose(); }
-  }, 15000);
+  });
 });
 
 it('loads a bound native session without injecting old conversation history into its prompt', async () => {
@@ -716,7 +733,7 @@ it('loads a bound native session without injecting old conversation history into
     expect(events.filter(event => event.type === 'text_delta').map(event => event.text).join('')).toBe('Finished review');
     expect(events.at(-1)?.type).toBe('turn_completed');
   } finally { await f.dispose(); }
-}, 15000);
+});
 
 it('reports a disconnected event stream as a failed turn instead of successful completion', async () => {
   const f = createFixture();
@@ -726,7 +743,7 @@ it('reports a disconnected event stream as a failed turn instead of successful c
     expect(events.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true });
     expect(f.session.getStatus()).toBe('invalidated');
   } finally { await f.dispose(); }
-}, 15000);
+});
 
 it('allows a slash command to wait for approval beyond the ordinary HTTP deadline', async () => {
   jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'clearImmediate', 'performance'] });
@@ -743,7 +760,7 @@ it('allows a slash command to wait for approval beyond the ordinary HTTP deadlin
     await done;
     expect(events.at(-1)?.type).toBe('turn_completed');
   } finally { release(); jest.useRealTimers(); await f.dispose(); }
-}, 15000);
+});
 
 it('keeps repeated native tool IDs distinct across assistant messages and turns', async () => {
   const f = createFixture();
@@ -754,7 +771,7 @@ it('keeps repeated native tool IDs distinct across assistant messages and turns'
       expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'tool_completed', toolCallId: 'reused_tool', content: 'Read result' })]));
     }
   } finally { await f.dispose(); }
-}, 15000);
+});
 
 it.each(['background-approval', 'background-nested', 'mcp-form-late'])('keeps %s interactions current and protects execution from cooling after the parent finishes', async text => {
   const env = await createForkTestEnvironment();
@@ -822,7 +839,7 @@ it.each(['background-approval', 'background-nested', 'mcp-form-late'])('keeps %s
     expect(new Set(completions.map(event => event.originatingTurnId)).size).toBe(text === 'mcp-form-late' ? 0 : 1);
     expect(coordinator.hasBackgroundWork).toBe(false);
   } finally { release(); await coordinator.dispose(); await serverService.dispose(); await env.dispose(); }
-}, 15000);
+});
 
 it('ends a stopped automatic reply as interrupted, as its native idle outcome replays it', async () => {
   const f = createFixture();
@@ -872,7 +889,7 @@ it('cancels a background child waiting for approval and can continue the native 
     expect(continued.at(-1)?.type).toBe('turn_completed');
     expect(f.session.getSnapshot().providerSessionId).toBe('ses_test');
   } finally { await f.dispose(); }
-}, 15000);
+});
 
 it('preserves native question-tool wording and per-question headers', async () => {
   const f = createFixture();
@@ -884,7 +901,7 @@ it('preserves native question-tool wording and per-question headers', async () =
       header: 'Color', question: 'Which color should the report use?',
     })] } })]);
   } finally { await f.dispose(); }
-}, 15000);
+});
 
 it('routes grandchild approvals and tools through the owning descendant chain', async () => {
   const f = createFixture();
@@ -898,7 +915,7 @@ it('routes grandchild approvals and tools through the owning descendant chain', 
       toolScope: { kind: 'subagent', subagentId: 'ses_worker:tool_nested' },
     })]));
   } finally { await f.dispose(); }
-}, 15000);
+});
 
 it('answers location-owned global MCP forms through the native global endpoint', async () => {
   const f = createFixture();
@@ -909,7 +926,7 @@ it('answers location-owned global MCP forms through the native global endpoint',
     expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'text_delta', text: '{"q0":"blue"}' })]));
     expect(f.questions).toEqual([expect.objectContaining({ interactionId: 'frm_mcp', input: { questions: [expect.objectContaining({ question: 'Choose a color\n\nColor' })] } })]);
   } finally { await f.dispose(); }
-}, 15000);
+});
 
 it.each(['unsupported', 'optional', 'default', 'constrained', 'empty-multi', 'cancel-race'])('reports and cancels an owned form with unsupported %s semantics', async kind => {
   const f = createFixture();
@@ -919,7 +936,7 @@ it.each(['unsupported', 'optional', 'default', 'constrained', 'empty-multi', 'ca
     expect(events.at(-1)).toMatchObject({ type: 'execution_error', message: expect.stringContaining('Unsupported OpenCode form') });
     expect(f.questions).toEqual([]);
   } finally { await f.dispose(); }
-}, 15000);
+});
 
 it('does not reopen a global form settled while its location inventory was in flight', async () => {
   const f = createFixture();
@@ -929,7 +946,7 @@ it('does not reopen a global form settled while its location inventory was in fl
     expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
     expect(f.questions).toEqual([]);
   } finally { await f.dispose(); }
-}, 15000);
+});
 
 it('replies with a selected native value even when it matches another option label', async () => {
   const f = createFixture();
@@ -939,7 +956,7 @@ it('replies with a selected native value even when it matches another option lab
     expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
     expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'text_delta', text: '{"q0":"Blue"}' })]));
   } finally { await f.dispose(); }
-}, 15000);
+});
 
 it('serializes an own __proto__ form answer and omits inherited-only fields in the native reply body', async () => {
   const f = createFixture(false, undefined, '', () => JSON.parse('{"__proto__":"Blue"}'));
@@ -949,7 +966,7 @@ it('serializes an own __proto__ form answer and omits inherited-only fields in t
     expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
     expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'text_delta', text: '{"__proto__":"Blue"}' })]));
   } finally { await f.dispose(); }
-}, 15000);
+});
 
 it.each(['configuration', 'prompt'])('keeps an earlier child in its own scope during a later turn %s', async stage => {
   const f = createFixture(false, undefined, `LATE_CHILD_STAGE=${stage}`);
@@ -978,7 +995,7 @@ it.each(['configuration', 'prompt'])('keeps an earlier child in its own scope du
     })]));
     expect(foreground.filter(event => event.type === 'tool_completed' && event.content === 'Late child result')).toEqual([]);
   } finally { await f.dispose(); }
-}, 15000);
+});
 
 it('executes a selected title model through the real resolver and native backend', async () => {
   const f = createFixture();
@@ -1061,7 +1078,7 @@ it.each([0, 150])('recalls a queued compact before continuing after cancellation
     const run = f.session.execute(request('/compact'));
     const events: ProviderExecutionEvent[] = [];
     const consumed = (async () => { for await (const event of run.events) events.push(event); })();
-    const deadline = Date.now() + 3000;
+    const deadline = Date.now() + NATIVE_STARTUP_TIMEOUT_MS;
     while (!existsSync(queued) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
     expect(existsSync(queued)).toBe(true);
     // For the zero-delay case let the HTTP admission response arrive before cancelling.
