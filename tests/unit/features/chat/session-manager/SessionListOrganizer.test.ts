@@ -390,4 +390,11 @@ describe('deriveSessionListModel with a projects section', () => {
     expect(projectRows(byName)).toEqual([['empty', []]]);
     expect(byName.isEmpty).toBe(true);
   });
+
+  it('finds a member listed under Pinned by its project name, as its unpinned siblings are', () => {
+    const model = deriveSessionListModel(conversations, { ...base, showPinnedSection: true, searchQuery: 'alpha project' });
+
+    expect(projectRows(model)).toEqual([['alpha', ['alpha-new']]]);
+    expect(model.pinnedConversations.map(({ id }) => id)).toEqual(['alpha-old']);
+  });
 });

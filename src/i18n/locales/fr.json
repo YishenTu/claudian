@@ -404,7 +404,7 @@
         "memoryPathDesc": "Chemin dans le coffre du fichier de mémoire du projet. L’extension .md est ajoutée si elle manque. Le modifier déplace le fichier.",
         "memoryPathPlaceholder": "Dossier/MEMORY.md",
         "memoryPathInvalid": "Saisissez un chemin de fichier situé dans le coffre, par exemple Projects/MEMORY.md.",
-        "memoryPathTaken": "Un fichier existe déjà à l’emplacement {path}.",
+        "memoryPathTaken": "{path} est déjà utilisé par un fichier ou un autre projet.",
         "openMemory": "Ouvrir",
         "nameRequired": "Saisissez un nom de projet."
       },

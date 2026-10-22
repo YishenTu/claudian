@@ -404,7 +404,7 @@
         "memoryPathDesc": "项目记忆文件在库中的路径。缺少 .md 扩展名时会自动添加。更改后会移动该文件。",
         "memoryPathPlaceholder": "文件夹/MEMORY.md",
         "memoryPathInvalid": "请输入库内的文件路径，例如 Projects/MEMORY.md。",
-        "memoryPathTaken": "{path} 已存在文件。",
+        "memoryPathTaken": "{path} 已被某个文件或其他项目使用。",
         "openMemory": "打开",
         "nameRequired": "请输入项目名称。"
       },

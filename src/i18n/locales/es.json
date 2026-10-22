@@ -404,7 +404,7 @@
         "memoryPathDesc": "Ruta en la bóveda del archivo de memoria del proyecto. Si falta la extensión .md, se añade. Cambiarla mueve el archivo.",
         "memoryPathPlaceholder": "Carpeta/MEMORY.md",
         "memoryPathInvalid": "Introduce una ruta de archivo dentro de la bóveda, como Projects/MEMORY.md.",
-        "memoryPathTaken": "Ya existe un archivo en {path}.",
+        "memoryPathTaken": "{path} ya lo usa un archivo u otro proyecto.",
         "openMemory": "Abrir",
         "nameRequired": "Introduce un nombre de proyecto."
       },

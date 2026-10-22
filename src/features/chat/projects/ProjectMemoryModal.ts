@@ -187,7 +187,7 @@ export class ProjectMemoryModal extends Modal {
     this.cancelButton.hidden = !changing;
     this.saveButton.hidden = !changing;
     this.saveButton.disabled = this.busy || !dirty;
-    this.contentArea.disabled = this.busy || this.baseline === null;
+    this.contentArea.disabled = this.busy || this.reading || this.baseline === null;
     this.updatedEl.setText(this.modifiedAt === null
       ? ''
       : t('chat.projects.memory.updated', { time: formatRelativeTime(this.modifiedAt, Date.now()) }));
@@ -250,7 +250,9 @@ export class ProjectMemoryModal extends Modal {
 
   private async load(): Promise<void> {
     const generation = ++this.readGeneration;
+    // The read replaces the editor text when it lands, so nothing may be typed meanwhile.
     this.reading = true;
+    this.sync();
     if (this.baseline === null && !this.missing) this.showNotice(t('chat.projects.memory.loading'));
     try {
       const result = await this.options.memory.readMemory(this.options.project.id);
@@ -262,7 +264,10 @@ export class ProjectMemoryModal extends Modal {
       const retryButton = actions.createEl('button', { text: t('common.retry'), attr: { type: 'button' } });
       retryButton.addEventListener('click', () => { void this.load(); });
     } finally {
-      if (generation === this.readGeneration) this.reading = false;
+      if (generation === this.readGeneration) {
+        this.reading = false;
+        this.sync();
+      }
     }
   }
 

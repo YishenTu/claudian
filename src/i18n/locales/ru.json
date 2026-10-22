@@ -404,7 +404,7 @@
         "memoryPathDesc": "Путь к файлу памяти проекта в хранилище. Отсутствующее расширение .md будет добавлено. Изменение перемещает файл.",
         "memoryPathPlaceholder": "Папка/MEMORY.md",
         "memoryPathInvalid": "Укажите путь к файлу внутри хранилища, например Projects/MEMORY.md.",
-        "memoryPathTaken": "По пути {path} уже есть файл.",
+        "memoryPathTaken": "Путь {path} уже занят файлом или другим проектом.",
         "openMemory": "Открыть",
         "nameRequired": "Введите название проекта."
       },

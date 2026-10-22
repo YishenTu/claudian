@@ -18,7 +18,8 @@ export interface ProjectCreateInput {
   readonly instructions: string;
   /**
    * Vault-relative path for the new memory file, normalized by `normalizeProjectMemoryPath` (a missing `.md` is
-   * appended); missing folders are created. Throws `ProjectMemoryPathTakenError` when a file is already there.
+   * appended); missing folders are created. Throws `ProjectMemoryPathTakenError` when a file is already there or
+   * another project records the path.
    */
   readonly memoryPath: string;
 }
@@ -29,7 +30,7 @@ export interface ProjectUpdatePatch {
   /**
    * Moves or renames the memory file to this vault-relative path (normalized like `ProjectCreateInput.memoryPath`).
    * A missing memory file is only repointed; throws `ProjectMemoryPathTakenError` and changes nothing when a file is
-   * already there.
+   * already there or another project records the path.
    */
   readonly memoryPath?: string;
 }
@@ -91,7 +92,10 @@ export class ProjectMemoryConflictError extends Error {
   }
 }
 
-/** A file already exists where a project memory file would be created or moved; nothing was changed. */
+/**
+ * A file already exists, or another project records the path, where a project memory file would be created or
+ * moved; nothing was changed.
+ */
 export class ProjectMemoryPathTakenError extends Error {
   constructor(readonly path: string, options?: ErrorOptions) {
     super(`A file already exists at the project memory path: ${path}`, options);

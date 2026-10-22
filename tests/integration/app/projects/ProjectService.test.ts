@@ -236,6 +236,41 @@ describe('ProjectService', () => {
     expect(changed).not.toHaveBeenCalled();
   });
 
+  it('treats a path another live project records as taken, even while its file is missing', async () => {
+    const { memory, projects } = await fixture();
+    const first = await projects.create({ name: 'First', instructions: '', memoryPath: 'Shared/MEMORY.md' });
+    memory.nodes.delete(first.memoryPath);
+
+    // Case differences name the same file on case-insensitive vaults.
+    await expect(projects.create({ name: 'Second', instructions: '', memoryPath: 'shared/memory.md' }))
+      .rejects.toBeInstanceOf(ProjectMemoryPathTakenError);
+    const second = await projects.create({ name: 'Second', instructions: '', memoryPath: 'Second/MEMORY.md' });
+    await expect(projects.update(second.id, { memoryPath: 'Shared/MEMORY.md' }))
+      .rejects.toMatchObject({ path: 'Shared/MEMORY.md' });
+    expect(projects.get(second.id)?.memoryPath).toBe('Second/MEMORY.md');
+    expect(readFile(memory, second.memoryPath)).toBe(`# Second\n\n${TEMPLATE_SECTIONS}`);
+
+    // Deleting the claim frees the path.
+    await projects.delete(first.id);
+    await projects.update(second.id, { memoryPath: 'Shared/MEMORY.md' });
+    expect(readFile(memory, 'Shared/MEMORY.md')).toBe(`# Second\n\n${TEMPLATE_SECTIONS}`);
+  });
+
+  it('never trashes a memory file another live project still records', async () => {
+    const { memory, projects, store } = await fixture();
+    const first = await projects.create({ name: 'First', instructions: '', memoryPath: 'Shared/MEMORY.md' });
+    const second = await projects.create({ name: 'Second', instructions: '', memoryPath: 'Second/MEMORY.md' });
+    // Overlapping records can come from an earlier version or another synced device.
+    await store.save({ ...second, memoryPath: first.memoryPath });
+    const reloaded = await fixture({ memory });
+
+    await reloaded.projects.delete(first.id);
+
+    expect(reloaded.projects.list().map(({ id }) => id)).toEqual([second.id]);
+    expect(memory.trashed).toEqual([]);
+    expect(readFile(memory, first.memoryPath)).toBe(`# First\n\n${TEMPLATE_SECTIONS}`);
+  });
+
   it('rejects an invalid memory path on update without changing anything', async () => {
     const { memory, projects } = await fixture();
     const record = await projects.create({ name: 'Keep', instructions: '', memoryPath: 'Keep.md' });

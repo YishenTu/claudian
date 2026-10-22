@@ -404,7 +404,7 @@
         "memoryPathDesc": "프로젝트 메모리 파일의 볼트 경로입니다. .md 확장자가 없으면 추가됩니다. 변경하면 파일이 이동됩니다.",
         "memoryPathPlaceholder": "폴더/MEMORY.md",
         "memoryPathInvalid": "볼트 안의 파일 경로를 입력하세요(예: Projects/MEMORY.md).",
-        "memoryPathTaken": "{path}에 이미 파일이 있습니다.",
+        "memoryPathTaken": "{path}은(는) 이미 파일 또는 다른 프로젝트에서 사용 중입니다.",
         "openMemory": "열기",
         "nameRequired": "프로젝트 이름을 입력하세요."
       },

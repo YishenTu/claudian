@@ -404,7 +404,7 @@
         "memoryPathDesc": "Vault path of the project memory file. A missing .md extension is added. Changing it moves the file.",
         "memoryPathPlaceholder": "Folder/MEMORY.md",
         "memoryPathInvalid": "Enter a file path inside the vault, such as Projects/MEMORY.md.",
-        "memoryPathTaken": "A file already exists at {path}.",
+        "memoryPathTaken": "{path} is already used by a file or another project.",
         "openMemory": "Open",
         "nameRequired": "Enter a project name."
       },

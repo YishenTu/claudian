@@ -341,9 +341,12 @@ export function deriveSessionListModel(
         return !project || isListedAsPinned(conversation, project);
       })
     : scopedConversations;
-  const matchesConversation = (conversation: ConversationMeta): boolean => (
-    matchesSearch([conversation.title, conversation.linkedContentPath ?? ''].join('\n'))
-  );
+  // A member also matches by its live project's name, so one listed under Pinned is found like its project.
+  const matchesConversation = (conversation: ConversationMeta): boolean => matchesSearch([
+    conversation.title,
+    conversation.linkedContentPath ?? '',
+    projects?.get(conversation.projectId)?.name ?? '',
+  ].join('\n'));
   const filteredConversations = searchTerms.length === 0
     ? listedConversations
     : listedConversations.filter(matchesConversation);

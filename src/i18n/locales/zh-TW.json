@@ -404,7 +404,7 @@
         "memoryPathDesc": "專案記憶檔案在儲存庫中的路徑。缺少 .md 副檔名時會自動加上。變更後會移動該檔案。",
         "memoryPathPlaceholder": "資料夾/MEMORY.md",
         "memoryPathInvalid": "請輸入儲存庫內的檔案路徑，例如 Projects/MEMORY.md。",
-        "memoryPathTaken": "{path} 已有檔案。",
+        "memoryPathTaken": "{path} 已被某個檔案或其他專案使用。",
         "openMemory": "開啟",
         "nameRequired": "請輸入專案名稱。"
       },

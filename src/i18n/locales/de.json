@@ -404,7 +404,7 @@
         "memoryPathDesc": "Vault-Pfad der Gedächtnisdatei des Projekts. Eine fehlende Endung .md wird ergänzt. Eine Änderung verschiebt die Datei.",
         "memoryPathPlaceholder": "Ordner/MEMORY.md",
         "memoryPathInvalid": "Gib einen Dateipfad innerhalb des Vaults ein, z. B. Projects/MEMORY.md.",
-        "memoryPathTaken": "Unter {path} existiert bereits eine Datei.",
+        "memoryPathTaken": "{path} wird bereits von einer Datei oder einem anderen Projekt verwendet.",
         "openMemory": "Öffnen",
         "nameRequired": "Gib einen Projektnamen ein."
       },

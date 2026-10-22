@@ -73,6 +73,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
       createdAt: Date.now(),
     };
     return this.#enqueue(id, async () => {
+      if (this.#isClaimed(record.memoryPath, id)) throw new ProjectMemoryPathTakenError(record.memoryPath);
       if (!await this.#createMemory(record.memoryPath, renderProjectMemoryTemplate(name))) {
         throw new ProjectMemoryPathTakenError(record.memoryPath);
       }
@@ -108,6 +109,9 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
       ) {
         return;
       }
+      if (updated.memoryPath !== record.memoryPath && this.#isClaimed(updated.memoryPath, id)) {
+        throw new ProjectMemoryPathTakenError(updated.memoryPath);
+      }
       const moved = updated.memoryPath !== record.memoryPath
         && await this.#moveMemory(record.memoryPath, updated.memoryPath);
       try {
@@ -140,6 +144,9 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
       await this.deps.store.remove(id);
       this.#records.delete(id);
       this.#publish();
+      // Another live project may still record the same file, as overlapping records from an earlier version or a
+      // synced device can; it keeps the file.
+      if (this.#isClaimed(record.memoryPath, id)) return;
       // Best effort: the project is gone either way, and a leftover file blocks nothing.
       try {
         await this.deps.memory.trash(record.memoryPath);
@@ -203,6 +210,18 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
       this.#records.set(id, updated);
       this.#publish();
     });
+  }
+
+  /**
+   * Whether another live project records this memory path. Its file may be missing, but recreating it there would
+   * give two projects one file. Paths compare case-insensitively, as they name one file on most vaults.
+   */
+  #isClaimed(memoryPath: string, exceptId: string): boolean {
+    const path = memoryPath.toLowerCase();
+    for (const record of this.#records.values()) {
+      if (record.id !== exceptId && record.memoryPath.toLowerCase() === path) return true;
+    }
+    return false;
   }
 
   #require(id: string): ProjectRecord {

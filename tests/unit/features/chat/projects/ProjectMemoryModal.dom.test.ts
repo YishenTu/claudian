@@ -298,6 +298,31 @@ it('keeps the user text on a conflicting save and overwrites or reloads only whe
   expect(memory.content).toBe('Second edits');
 });
 
+it('locks the editor while Reload after a conflict reads the file, so no new typing is overwritten', async () => {
+  const memory = new InMemoryProjectMemory(FILLED);
+  const { dialog, controls, textarea } = await open(memory);
+  await waitFor(() => expect(textarea.value).toBe(FILLED));
+  type(dialog, textarea, 'My edits');
+  memory.writeExternally('Agent edits');
+  fireEvent.click(controls.getByRole('button', { name: t('common.save') }));
+  await controls.findByRole('alert');
+
+  const read = memory.readMemory.getMockImplementation()!;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  memory.readMemory.mockImplementationOnce(async () => {
+    await gate;
+    return read();
+  });
+  fireEvent.click(controls.getByRole('button', { name: t('chat.projects.memory.reload') }));
+
+  expect(textarea.disabled).toBe(true);
+  release();
+  await waitFor(() => expect(textarea.value).toBe('Agent edits'));
+  expect(textarea.disabled).toBe(false);
+  expect(hasDirtyMark(dialog)).toBe(false);
+});
+
 it('locks the text while a save is in flight and unlocks it when the save conflicts', async () => {
   const memory = new InMemoryProjectMemory(FILLED);
   const { dialog, controls, textarea } = await open(memory);

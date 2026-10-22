@@ -404,7 +404,7 @@
         "memoryPathDesc": "プロジェクトメモリファイルの保管庫内のパス。拡張子 .md がなければ追加されます。変更するとファイルを移動します。",
         "memoryPathPlaceholder": "フォルダー/MEMORY.md",
         "memoryPathInvalid": "保管庫内のファイルパスを入力してください（例: Projects/MEMORY.md）。",
-        "memoryPathTaken": "{path} には既にファイルがあります。",
+        "memoryPathTaken": "{path} は既にファイルまたは別のプロジェクトで使われています。",
         "openMemory": "開く",
         "nameRequired": "プロジェクト名を入力してください。"
       },

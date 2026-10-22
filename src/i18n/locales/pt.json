@@ -404,7 +404,7 @@
         "memoryPathDesc": "Caminho no cofre do arquivo de memória do projeto. A extensão .md é adicionada se faltar. Alterá-lo move o arquivo.",
         "memoryPathPlaceholder": "Pasta/MEMORY.md",
         "memoryPathInvalid": "Digite um caminho de arquivo dentro do cofre, como Projects/MEMORY.md.",
-        "memoryPathTaken": "Já existe um arquivo em {path}.",
+        "memoryPathTaken": "{path} já está em uso por um arquivo ou outro projeto.",
         "openMemory": "Abrir",
         "nameRequired": "Digite um nome para o projeto."
       },
