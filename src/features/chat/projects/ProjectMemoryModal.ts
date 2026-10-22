@@ -1,23 +1,23 @@
 import { type App, Modal, Notice } from 'obsidian';
 
 import {
-  ProjectDocConflictError,
-  type ProjectDocContent,
-  type ProjectDocOperations,
+  ProjectMemoryConflictError,
+  type ProjectMemoryContent,
+  type ProjectMemoryOperations,
   type ProjectRecord,
 } from '@/core/types';
 import { t } from '@/i18n/i18n';
 
-export interface ProjectDocModalOptions {
+export interface ProjectMemoryModalOptions {
   project: ProjectRecord;
-  docs: ProjectDocOperations;
+  memory: ProjectMemoryOperations;
 }
 
 /**
- * Edits the project doc as plain text. Saving compares against the revision last loaded; when the
- * doc changed meanwhile, the user's text stays and they choose Reload or Overwrite.
+ * Edits the project memory file as plain text. Saving compares against the revision last loaded; when the
+ * file changed meanwhile, the user's text stays and they choose Reload or Overwrite.
  */
-export class ProjectDocModal extends Modal {
+export class ProjectMemoryModal extends Modal {
   private contentArea!: HTMLTextAreaElement;
   private noticeEl!: HTMLElement;
   private saveButton!: HTMLButtonElement;
@@ -26,40 +26,40 @@ export class ProjectDocModal extends Modal {
   private loadGeneration = 0;
   private busy = false;
 
-  constructor(app: App, private readonly options: ProjectDocModalOptions) {
+  constructor(app: App, private readonly options: ProjectMemoryModalOptions) {
     super(app);
   }
 
   onOpen(): void {
     const { project } = this.options;
-    this.setTitle(t('chat.projects.doc.title', { name: project.name }));
-    this.modalEl.addClass('claudian-project-doc-modal');
+    this.setTitle(t('chat.projects.memory.title', { name: project.name }));
+    this.modalEl.addClass('claudian-project-memory-modal');
 
-    const pathRow = this.contentEl.createDiv({ cls: 'claudian-project-doc-path' });
-    pathRow.createSpan({ cls: 'claudian-project-doc-path-label', text: t('chat.projects.doc.path') });
-    pathRow.createEl('code', { cls: 'claudian-project-doc-path-value', text: project.docPath });
+    const pathRow = this.contentEl.createDiv({ cls: 'claudian-project-memory-path' });
+    pathRow.createSpan({ cls: 'claudian-project-memory-path-label', text: t('chat.projects.memory.path') });
+    pathRow.createEl('code', { cls: 'claudian-project-memory-path-value', text: project.memoryPath });
     const copyButton = pathRow.createEl('button', {
-      cls: 'claudian-project-doc-copy',
-      text: t('chat.projects.doc.copyPath'),
+      cls: 'claudian-project-memory-copy',
+      text: t('chat.projects.memory.copyPath'),
       attr: { type: 'button' },
     });
     copyButton.addEventListener('click', () => {
-      void navigator.clipboard.writeText(project.docPath).then(
-        () => { new Notice(t('chat.projects.doc.pathCopied')); },
-        () => { new Notice(t('chat.projects.doc.copyFailed')); },
+      void navigator.clipboard.writeText(project.memoryPath).then(
+        () => { new Notice(t('chat.projects.memory.pathCopied')); },
+        () => { new Notice(t('chat.projects.memory.copyFailed')); },
       );
     });
 
-    this.noticeEl = this.contentEl.createDiv({ cls: 'claudian-project-doc-notice' });
+    this.noticeEl = this.contentEl.createDiv({ cls: 'claudian-project-memory-notice' });
     this.contentArea = this.contentEl.createEl('textarea', {
-      cls: 'claudian-project-doc-content',
-      attr: { rows: '20', spellcheck: 'false', 'aria-label': t('chat.projects.doc.content') },
+      cls: 'claudian-project-memory-content',
+      attr: { rows: '20', spellcheck: 'false', 'aria-label': t('chat.projects.memory.content') },
     });
 
     const actions = this.contentEl.createDiv({ cls: 'claudian-project-modal-actions' });
     this.reloadButton = actions.createEl('button', {
-      cls: 'claudian-project-doc-reload',
-      text: t('chat.projects.doc.reload'),
+      cls: 'claudian-project-memory-reload',
+      text: t('chat.projects.memory.reload'),
       attr: { type: 'button' },
     });
     this.reloadButton.addEventListener('click', () => { void this.load(); });
@@ -87,9 +87,9 @@ export class ProjectDocModal extends Modal {
   private async load(): Promise<void> {
     const generation = ++this.loadGeneration;
     this.setEditable(false);
-    this.showNotice(t('chat.projects.doc.loading'));
+    this.showNotice(t('chat.projects.memory.loading'));
     try {
-      const result = await this.options.docs.readDoc(this.options.project.id);
+      const result = await this.options.memory.readMemory(this.options.project.id);
       if (generation !== this.loadGeneration) return;
       if ('missing' in result) {
         this.revision = null;
@@ -100,7 +100,7 @@ export class ProjectDocModal extends Modal {
       this.apply(result);
     } catch {
       if (generation !== this.loadGeneration) return;
-      this.showNotice(t('chat.projects.doc.loadFailed'), 'alert');
+      this.showNotice(t('chat.projects.memory.loadFailed'), 'alert');
     }
   }
 
@@ -110,21 +110,21 @@ export class ProjectDocModal extends Modal {
     this.setBusy(true);
     this.setEditable(false);
     try {
-      await this.options.docs.saveDoc(
+      await this.options.memory.saveMemory(
         this.options.project.id,
         this.contentArea.value,
         this.revision ?? '',
         overwrite ? { overwrite: true } : undefined,
       );
-      new Notice(t('chat.projects.doc.saved'));
+      new Notice(t('chat.projects.memory.saved'));
       this.close();
     } catch (error) {
       this.setBusy(false);
       this.setEditable(true);
-      if (error instanceof ProjectDocConflictError) {
+      if (error instanceof ProjectMemoryConflictError) {
         this.showConflict();
       } else {
-        new Notice(t('chat.projects.doc.saveFailed'));
+        new Notice(t('chat.projects.memory.saveFailed'));
       }
     }
   }
@@ -133,26 +133,26 @@ export class ProjectDocModal extends Modal {
     if (this.busy) return;
     this.setBusy(true);
     try {
-      const doc = await this.options.docs.recreateDoc(this.options.project.id);
+      const memory = await this.options.memory.recreateMemory(this.options.project.id);
       this.setBusy(false);
-      this.apply(doc);
+      this.apply(memory);
     } catch {
       this.setBusy(false);
-      new Notice(t('chat.projects.doc.saveFailed'));
+      new Notice(t('chat.projects.memory.saveFailed'));
     }
   }
 
-  /** While a write is in flight, nothing else may reload or write the doc. */
+  /** While a write is in flight, nothing else may reload or write the memory file. */
   private setBusy(busy: boolean): void {
     this.busy = busy;
     this.reloadButton.disabled = busy;
     this.noticeEl.querySelectorAll('button').forEach((button) => { button.disabled = busy; });
   }
 
-  private apply(doc: ProjectDocContent): void {
+  private apply(memory: ProjectMemoryContent): void {
     this.loadGeneration += 1;
-    this.revision = doc.revision;
-    this.contentArea.value = doc.content;
+    this.revision = memory.revision;
+    this.contentArea.value = memory.content;
     this.clearNotice();
     this.setEditable(true);
   }
@@ -164,21 +164,21 @@ export class ProjectDocModal extends Modal {
 
   private clearNotice(): void {
     this.noticeEl.empty();
-    this.noticeEl.removeClass('claudian-project-doc-notice--visible');
+    this.noticeEl.removeClass('claudian-project-memory-notice--visible');
   }
 
   private showNotice(message: string, role: 'status' | 'alert' = 'status'): HTMLElement {
     this.clearNotice();
-    this.noticeEl.addClass('claudian-project-doc-notice--visible');
-    const messageEl = this.noticeEl.createEl('p', { cls: 'claudian-project-doc-notice-text', text: message });
+    this.noticeEl.addClass('claudian-project-memory-notice--visible');
+    const messageEl = this.noticeEl.createEl('p', { cls: 'claudian-project-memory-notice-text', text: message });
     messageEl.setAttribute('role', role);
-    return this.noticeEl.createDiv({ cls: 'claudian-project-doc-notice-actions' });
+    return this.noticeEl.createDiv({ cls: 'claudian-project-memory-notice-actions' });
   }
 
   private showMissing(): void {
-    const actions = this.showNotice(t('chat.projects.doc.missing'), 'alert');
+    const actions = this.showNotice(t('chat.projects.memory.missing'), 'alert');
     const recreateButton = actions.createEl('button', {
-      text: t('chat.projects.doc.recreate'),
+      text: t('chat.projects.memory.recreate'),
       attr: { type: 'button' },
     });
     recreateButton.addEventListener('click', () => { void this.recreate(); });
@@ -186,10 +186,10 @@ export class ProjectDocModal extends Modal {
 
   /** The user's text stays in place; Reload discards it, Overwrite writes it anyway. */
   private showConflict(): void {
-    const actions = this.showNotice(t('chat.projects.doc.conflict'), 'alert');
+    const actions = this.showNotice(t('chat.projects.memory.conflict'), 'alert');
     const overwriteButton = actions.createEl('button', {
       cls: 'mod-warning',
-      text: t('chat.projects.doc.overwrite'),
+      text: t('chat.projects.memory.overwrite'),
       attr: { type: 'button' },
     });
     overwriteButton.addEventListener('click', () => { void this.save(true); });

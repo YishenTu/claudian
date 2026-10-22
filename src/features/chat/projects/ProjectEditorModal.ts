@@ -1,30 +1,30 @@
 import { type App, Modal, Notice, Setting } from 'obsidian';
 
-import {
-  DEFAULT_PROJECT_DOC_FOLDER,
-  normalizeProjectDocFolder,
-  projectDocFolderOf,
-} from '@/core/path/ProjectDocFolder';
-import { type ProjectCreateInput, ProjectDocMoveConflictError, type ProjectRecord } from '@/core/types';
+import { defaultProjectMemoryPath, normalizeProjectMemoryPath } from '@/core/path/ProjectMemoryPath';
+import { type ProjectCreateInput, ProjectMemoryPathTakenError, type ProjectRecord } from '@/core/types';
 import { t } from '@/i18n/i18n';
 
-const DOC_FOLDER_ERROR_ID = 'claudian-project-doc-folder-error';
+const MEMORY_PATH_ERROR_ID = 'claudian-project-memory-path-error';
 
 export interface ProjectEditorOptions {
   /** The project being edited; null creates one. */
   project: ProjectRecord | null;
-  /** Persists the input with a normalized doc folder; a rejection keeps the modal open. */
+  /** Persists the input with a normalized memory path; a rejection keeps the modal open. */
   save(input: ProjectCreateInput): Promise<void>;
-  /** Opens the edited project's doc. */
-  openDoc?: () => void;
+  /** Opens the edited project's memory file. */
+  openMemory?: () => void;
 }
 
-/** Edits a project's name, instructions and doc folder; instructions have no length limit. */
+/**
+ * Edits a project's name, instructions and memory file path; instructions have no length limit. A new project's
+ * path follows the name until the user edits the path.
+ */
 export class ProjectEditorModal extends Modal {
   private nameInput!: HTMLInputElement;
   private instructionsArea!: HTMLTextAreaElement;
-  private docFolderInput!: HTMLInputElement;
-  private docFolderError!: HTMLElement;
+  private memoryPathInput!: HTMLInputElement;
+  private memoryPathError!: HTMLElement;
+  private memoryPathEdited = false;
   private saveButton!: HTMLButtonElement;
   private saving = false;
 
@@ -45,7 +45,12 @@ export class ProjectEditorModal extends Modal {
         text.inputEl.setAttribute('aria-label', t('chat.projects.editor.name'));
         text
           .setValue(project?.name ?? '')
-          .setPlaceholder(t('chat.projects.editor.namePlaceholder'));
+          .setPlaceholder(t('chat.projects.editor.namePlaceholder'))
+          .onChange((name) => {
+            if (project || this.memoryPathEdited) return;
+            this.memoryPathInput.value = defaultProjectMemoryPath(name);
+            this.showMemoryPathError(null);
+          });
         text.inputEl.addEventListener('keydown', (event) => {
           if (event.key !== 'Enter' || event.isComposing) return;
           event.preventDefault();
@@ -62,43 +67,42 @@ export class ProjectEditorModal extends Modal {
     });
     this.instructionsArea.value = project?.instructions ?? '';
 
-    const docFolderSetting = new Setting(this.contentEl)
-      .setName(t('chat.projects.editor.docFolder'))
-      .setDesc(t('chat.projects.editor.docFolderDesc'))
+    const memoryPathSetting = new Setting(this.contentEl)
+      .setName(t('chat.projects.editor.memoryPath'))
+      .setDesc(t('chat.projects.editor.memoryPathDesc'))
       .addText((text) => {
-        this.docFolderInput = text.inputEl;
-        text.inputEl.setAttribute('aria-label', t('chat.projects.editor.docFolder'));
+        this.memoryPathInput = text.inputEl;
+        text.inputEl.setAttribute('aria-label', t('chat.projects.editor.memoryPath'));
         text
-          .setValue(project ? projectDocFolderOf(project.docPath) : DEFAULT_PROJECT_DOC_FOLDER)
-          .setPlaceholder(t('chat.projects.editor.docFolderPlaceholder'))
-          .onChange(() => this.showDocFolderError(false));
+          .setValue(project ? project.memoryPath : defaultProjectMemoryPath(''))
+          .setPlaceholder(t('chat.projects.editor.memoryPathPlaceholder'))
+          .onChange(() => {
+            this.memoryPathEdited = true;
+            this.showMemoryPathError(null);
+          });
         text.inputEl.addEventListener('keydown', (event) => {
           if (event.key !== 'Enter' || event.isComposing) return;
           event.preventDefault();
           void this.save();
         });
       });
-    this.docFolderError = docFolderSetting.controlEl.createDiv({
-      cls: 'claudian-setting-validation claudian-setting-validation-error claudian-hidden',
-      text: t('chat.projects.editor.docFolderInvalid'),
-      attr: { id: DOC_FOLDER_ERROR_ID },
-    });
-
-    const { openDoc } = this.options;
-    if (project && openDoc) {
-      const docRow = this.contentEl.createDiv({ cls: 'claudian-project-doc-row' });
-      docRow.createSpan({ cls: 'claudian-project-doc-row-label', text: t('chat.projects.editor.docPath') });
-      docRow.createEl('code', { cls: 'claudian-project-doc-row-path', text: project.docPath });
-      const openButton = docRow.createEl('button', {
-        cls: 'claudian-project-doc-row-open',
-        text: t('chat.projects.editor.openDoc'),
+    memoryPathSetting.settingEl.addClass('claudian-project-memory-setting');
+    const { openMemory } = this.options;
+    if (project && openMemory) {
+      const openButton = memoryPathSetting.controlEl.createEl('button', {
+        cls: 'claudian-project-memory-open',
+        text: t('chat.projects.editor.openMemory'),
         attr: { type: 'button' },
       });
       openButton.addEventListener('click', () => {
         this.close();
-        openDoc();
+        openMemory();
       });
     }
+    this.memoryPathError = memoryPathSetting.controlEl.createDiv({
+      cls: 'claudian-setting-validation claudian-setting-validation-error claudian-hidden',
+      attr: { id: MEMORY_PATH_ERROR_ID },
+    });
 
     const actions = this.contentEl.createDiv({ cls: 'claudian-project-modal-actions' });
     const cancelButton = actions.createEl('button', {
@@ -128,37 +132,40 @@ export class ProjectEditorModal extends Modal {
       this.nameInput.focus();
       return;
     }
-    const docFolder = normalizeProjectDocFolder(this.docFolderInput.value);
-    if (docFolder === null) {
-      this.showDocFolderError(true);
-      this.docFolderInput.focus();
+    const memoryPath = normalizeProjectMemoryPath(this.memoryPathInput.value);
+    if (memoryPath === null) {
+      this.showMemoryPathError(t('chat.projects.editor.memoryPathInvalid'));
+      this.memoryPathInput.focus();
       return;
     }
     // The saved input is captured now, so the fields stay locked until the write settles.
     this.setSaving(true);
     try {
-      await this.options.save({ name, instructions: this.instructionsArea.value, docFolder });
+      await this.options.save({ name, instructions: this.instructionsArea.value, memoryPath });
       this.close();
     } catch (error) {
       this.setSaving(false);
-      if (error instanceof ProjectDocMoveConflictError) {
-        new Notice(t('chat.projects.errors.docMoveConflict', { path: error.targetPath }));
+      if (error instanceof ProjectMemoryPathTakenError) {
+        this.showMemoryPathError(t('chat.projects.editor.memoryPathTaken', { path: error.path }));
+        this.memoryPathInput.focus();
         return;
       }
       new Notice(this.options.project ? t('chat.projects.errors.update') : t('chat.projects.errors.create'));
     }
   }
 
-  private showDocFolderError(visible: boolean): void {
-    this.docFolderError.toggleClass('claudian-hidden', !visible);
-    if (visible) {
-      this.docFolderError.setAttribute('role', 'alert');
-      this.docFolderInput.setAttribute('aria-invalid', 'true');
-      this.docFolderInput.setAttribute('aria-describedby', DOC_FOLDER_ERROR_ID);
+  /** Shows the message on the memory path field, or clears it with null. */
+  private showMemoryPathError(message: string | null): void {
+    this.memoryPathError.toggleClass('claudian-hidden', message === null);
+    this.memoryPathError.setText(message ?? '');
+    if (message !== null) {
+      this.memoryPathError.setAttribute('role', 'alert');
+      this.memoryPathInput.setAttribute('aria-invalid', 'true');
+      this.memoryPathInput.setAttribute('aria-describedby', MEMORY_PATH_ERROR_ID);
     } else {
-      this.docFolderError.removeAttribute('role');
-      this.docFolderInput.removeAttribute('aria-invalid');
-      this.docFolderInput.removeAttribute('aria-describedby');
+      this.memoryPathError.removeAttribute('role');
+      this.memoryPathInput.removeAttribute('aria-invalid');
+      this.memoryPathInput.removeAttribute('aria-describedby');
     }
   }
 
@@ -166,7 +173,7 @@ export class ProjectEditorModal extends Modal {
     this.saving = saving;
     this.nameInput.disabled = saving;
     this.instructionsArea.disabled = saving;
-    this.docFolderInput.disabled = saving;
+    this.memoryPathInput.disabled = saving;
     this.saveButton.disabled = saving;
   }
 }

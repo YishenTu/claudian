@@ -1,16 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { normalizeProjectDocFolder, projectDocFolderOf } from '@/core/path/ProjectDocFolder';
+import { normalizeProjectMemoryPath, projectMemoryFolderOf } from '@/core/path/ProjectMemoryPath';
 import { ManagedResourceCollisionError, type VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import {
   type ProjectCreateInput,
-  ProjectDocConflictError,
-  type ProjectDocContent,
-  ProjectDocMoveConflictError,
-  type ProjectDocOperations,
-  type ProjectDocReadResult,
-  type ProjectDocSaveOptions,
   type ProjectMembership,
+  ProjectMemoryConflictError,
+  type ProjectMemoryContent,
+  type ProjectMemoryOperations,
+  ProjectMemoryPathTakenError,
+  type ProjectMemoryReadResult,
+  type ProjectMemorySaveOptions,
   type ProjectMutations,
   type ProjectReader,
   type ProjectRecord,
@@ -27,20 +27,23 @@ export interface ProjectMemberPort {
 
 export interface ProjectServiceDeps {
   readonly store: Pick<ProjectStore, 'save' | 'remove'>;
-  readonly docs: Pick<
+  readonly memory: Pick<
     VaultFileAdapter,
-    'ensureManagedFolder' | 'moveManagedFileNoReplace' | 'readManagedFile' | 'verifyManagedPath' | 'writeManagedFile'
+    | 'ensureManagedFolder'
+    | 'moveManagedFileNoReplace'
+    | 'readManagedFile'
+    | 'removeManagedFile'
+    | 'verifyManagedPath'
+    | 'writeManagedFile'
   >;
   readonly members: ProjectMemberPort;
 }
 
-const DOC_SLUG_MAX_LENGTH = 48;
-
 /**
- * Sole owner of project records and the project doc. Record and doc writes serialize per project;
+ * Sole owner of project records and their memory files. Record and memory writes serialize per project;
  * membership stays on each conversation and is written through the conversation owner.
  */
-export class ProjectService implements ProjectReader, ProjectMutations, ProjectMembership, ProjectDocOperations {
+export class ProjectService implements ProjectReader, ProjectMutations, ProjectMembership, ProjectMemoryOperations {
   readonly #records = new Map<string, ProjectRecord>();
   readonly #listeners = new Set<() => void>();
   readonly #queues = new Map<string, Promise<void>>();
@@ -65,21 +68,25 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
   async create(input: ProjectCreateInput): Promise<ProjectRecord> {
     const name = requireName(input.name);
     const id = randomUUID();
-    const folder = requireDocFolder(input.docFolder);
     const record: ProjectRecord = {
       id,
       name,
       instructions: input.instructions,
-      docPath: joinDocPath(folder, `${slugify(name)}-${id.slice(0, 8)}.md`),
+      memoryPath: requireMemoryPath(input.memoryPath),
       isPinned: false,
       createdAt: Date.now(),
     };
     return this.#enqueue(id, async () => {
-      // The id prefix keeps the name unique; a doc already at that path is never replaced.
-      if (!await this.deps.docs.verifyManagedPath(record.docPath, { expectedType: 'file', allowMissing: true })) {
-        await this.#writeDoc(record.docPath, renderProjectDocTemplate(name));
+      if (!await this.#createMemory(record.memoryPath, renderProjectMemoryTemplate(name))) {
+        throw new ProjectMemoryPathTakenError(record.memoryPath);
       }
-      await this.deps.store.save(record);
+      try {
+        await this.deps.store.save(record);
+      } catch (error) {
+        // Best effort: the file is this attempt's own, and leaving it would block a retry at the same path.
+        await this.deps.memory.removeManagedFile(record.memoryPath).catch(() => undefined);
+        throw error;
+      }
       this.#records.set(id, record);
       this.#publish();
       return record;
@@ -88,32 +95,32 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
 
   async update(id: string, patch: ProjectUpdatePatch): Promise<void> {
     const name = patch.name !== undefined ? requireName(patch.name) : undefined;
-    const folder = patch.docFolder !== undefined ? requireDocFolder(patch.docFolder) : undefined;
+    const requestedPath = patch.memoryPath !== undefined ? requireMemoryPath(patch.memoryPath) : undefined;
     return this.#enqueue(id, async () => {
       const record = this.#records.get(id);
       if (!record) return;
-      const docPath = folder === undefined || folder === projectDocFolderOf(record.docPath)
-        ? record.docPath
-        : joinDocPath(folder, record.docPath.slice(record.docPath.lastIndexOf('/') + 1));
       const updated: ProjectRecord = {
         ...record,
         ...(name !== undefined ? { name } : {}),
         ...(patch.instructions !== undefined ? { instructions: patch.instructions } : {}),
-        docPath,
+        ...(requestedPath !== undefined ? { memoryPath: requestedPath } : {}),
       };
       if (
         updated.name === record.name
         && updated.instructions === record.instructions
-        && updated.docPath === record.docPath
+        && updated.memoryPath === record.memoryPath
       ) {
         return;
       }
-      const moved = docPath !== record.docPath && await this.#moveDoc(id, record.docPath, docPath);
+      const moved = updated.memoryPath !== record.memoryPath
+        && await this.#moveMemory(record.memoryPath, updated.memoryPath);
       try {
         await this.deps.store.save(updated);
       } catch (error) {
-        // Best effort: put the doc back so the recorded path still finds it.
-        if (moved) await this.deps.docs.moveManagedFileNoReplace(docPath, record.docPath).catch(() => undefined);
+        // Best effort: put the memory file back so the recorded path still finds it.
+        if (moved) {
+          await this.deps.memory.moveManagedFileNoReplace(updated.memoryPath, record.memoryPath).catch(() => undefined);
+        }
         throw error;
       }
       this.#records.set(id, updated);
@@ -142,38 +149,39 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
     return this.deps.members.setConversationsProject(conversationIds, projectId);
   }
 
-  async readDoc(id: string): Promise<ProjectDocReadResult> {
-    return this.#readDoc(this.#require(id).docPath);
+  async readMemory(id: string): Promise<ProjectMemoryReadResult> {
+    return this.#readMemory(this.#require(id).memoryPath);
   }
 
-  saveDoc(
+  saveMemory(
     id: string,
     content: string,
     expectedRevision: string,
-    options: ProjectDocSaveOptions = {},
-  ): Promise<ProjectDocContent> {
+    options: ProjectMemorySaveOptions = {},
+  ): Promise<ProjectMemoryContent> {
     return this.#enqueue(id, async () => {
-      const { docPath } = this.#require(id);
+      const { memoryPath } = this.#require(id);
       if (!options.overwrite) {
-        const current = await this.#readDoc(docPath);
+        const current = await this.#readMemory(memoryPath);
         if ('missing' in current || current.revision !== expectedRevision) {
-          throw new ProjectDocConflictError(id);
+          throw new ProjectMemoryConflictError(id);
         }
       }
-      await this.#writeDoc(docPath, content);
-      return toDocContent(content);
+      await this.#ensureFolderOf(memoryPath);
+      await this.deps.memory.writeManagedFile(memoryPath, content);
+      return toMemoryContent(content);
     });
   }
 
-  recreateDoc(id: string): Promise<ProjectDocContent> {
+  recreateMemory(id: string): Promise<ProjectMemoryContent> {
     return this.#enqueue(id, async () => {
       const record = this.#require(id);
-      // The doc may have reappeared (sync, undo) since it was reported missing; never replace it.
-      const current = await this.#readDoc(record.docPath);
-      if (!('missing' in current)) return current;
-      const content = renderProjectDocTemplate(record.name);
-      await this.#writeDoc(record.docPath, content);
-      return toDocContent(content);
+      const content = renderProjectMemoryTemplate(record.name);
+      // The file may have reappeared (sync, undo) since it was reported missing; never replace it.
+      if (await this.#createMemory(record.memoryPath, content)) return toMemoryContent(content);
+      const current = await this.#readMemory(record.memoryPath);
+      if ('missing' in current) throw new Error(`Could not recreate project memory: ${record.memoryPath}`);
+      return current;
     });
   }
 
@@ -201,36 +209,56 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
     return record;
   }
 
-  /** Moves the doc when it exists and reports whether it did; a missing doc is only repointed. */
-  async #moveDoc(id: string, source: string, target: string): Promise<boolean> {
-    if (await this.deps.docs.verifyManagedPath(target, { expectedType: 'file', allowMissing: true })) {
-      throw new ProjectDocMoveConflictError(id, target);
-    }
-    if (!await this.deps.docs.verifyManagedPath(source, { expectedType: 'file', allowMissing: true })) return false;
-    const folder = projectDocFolderOf(target);
-    // A doc at the vault root has no folder to create.
-    if (folder) await this.deps.docs.ensureManagedFolder(folder);
+  /**
+   * Writes a new memory file, creating its folders, and reports false when a file is already at the path. The content
+   * goes to a hidden sibling first and is moved without replacing, so a racing writer's file is never overwritten.
+   */
+  async #createMemory(memoryPath: string, content: string): Promise<boolean> {
+    if (await this.#memoryExists(memoryPath)) return false;
+    const folder = await this.#ensureFolderOf(memoryPath);
+    const fileName = memoryPath.slice(folder ? folder.length + 1 : 0);
+    const temp = `${folder ? `${folder}/` : ''}.${fileName}.${randomUUID()}.tmp`;
+    await this.deps.memory.writeManagedFile(temp, content);
     try {
-      await this.deps.docs.moveManagedFileNoReplace(source, target);
+      await this.deps.memory.moveManagedFileNoReplace(temp, memoryPath);
+      return true;
     } catch (error) {
-      if (error instanceof ManagedResourceCollisionError) throw new ProjectDocMoveConflictError(id, target, { cause: error });
+      if (error instanceof ManagedResourceCollisionError) return false;
+      throw error;
+    } finally {
+      // A no-op once the move succeeded.
+      await this.deps.memory.removeManagedFile(temp).catch(() => undefined);
+    }
+  }
+
+  /** Moves the memory file when it exists and reports whether it did; a missing file is only repointed. */
+  async #moveMemory(source: string, target: string): Promise<boolean> {
+    if (await this.#memoryExists(target)) throw new ProjectMemoryPathTakenError(target);
+    if (!await this.#memoryExists(source)) return false;
+    await this.#ensureFolderOf(target);
+    try {
+      await this.deps.memory.moveManagedFileNoReplace(source, target);
+    } catch (error) {
+      if (error instanceof ManagedResourceCollisionError) throw new ProjectMemoryPathTakenError(target, { cause: error });
       throw error;
     }
     return true;
   }
 
-  async #readDoc(docPath: string): Promise<ProjectDocReadResult> {
-    if (!await this.deps.docs.verifyManagedPath(docPath, { expectedType: 'file', allowMissing: true })) {
-      return { missing: true };
-    }
-    return toDocContent(await this.deps.docs.readManagedFile(docPath));
+  #memoryExists(memoryPath: string): Promise<boolean> {
+    return this.deps.memory.verifyManagedPath(memoryPath, { expectedType: 'file', allowMissing: true });
   }
 
-  async #writeDoc(docPath: string, content: string): Promise<void> {
-    const folder = projectDocFolderOf(docPath);
-    // A doc at the vault root has no folder to create.
-    if (folder) await this.deps.docs.ensureManagedFolder(folder);
-    await this.deps.docs.writeManagedFile(docPath, content);
+  /** Creates the folder holding the memory file and returns it; `''` at the vault root, which needs none. */
+  async #ensureFolderOf(memoryPath: string): Promise<string> {
+    const folder = projectMemoryFolderOf(memoryPath);
+    if (folder) await this.deps.memory.ensureManagedFolder(folder);
+    return folder;
+  }
+
+  async #readMemory(memoryPath: string): Promise<ProjectMemoryReadResult> {
+    if (!await this.#memoryExists(memoryPath)) return { missing: true };
+    return toMemoryContent(await this.deps.memory.readManagedFile(memoryPath));
   }
 
   #publish(): void {
@@ -254,11 +282,11 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
   }
 }
 
-export function renderProjectDocTemplate(name: string): string {
+export function renderProjectMemoryTemplate(name: string): string {
   return `# ${name}\n\n## Goal\n\n## Requirements\n\n## Decisions\n\n## State\n\n## Open questions\n\n## Dead ends\n`;
 }
 
-function toDocContent(content: string): ProjectDocContent {
+function toMemoryContent(content: string): ProjectMemoryContent {
   return { content, revision: createHash('sha256').update(content, 'utf8').digest('hex') };
 }
 
@@ -268,22 +296,8 @@ function requireName(value: string): string {
   return name;
 }
 
-function requireDocFolder(value: string): string {
-  const folder = normalizeProjectDocFolder(value);
-  if (folder === null) throw new Error(`Invalid project doc folder: ${JSON.stringify(value)}`);
-  return folder;
-}
-
-function joinDocPath(folder: string, fileName: string): string {
-  return folder ? `${folder}/${fileName}` : fileName;
-}
-
-function slugify(name: string): string {
-  const slug = name
-    .normalize('NFKC')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '-')
-    .slice(0, DOC_SLUG_MAX_LENGTH)
-    .replace(/^-+|-+$/g, '');
-  return slug || 'project';
+function requireMemoryPath(value: string): string {
+  const memoryPath = normalizeProjectMemoryPath(value);
+  if (memoryPath === null) throw new Error(`Invalid project memory path: ${JSON.stringify(value)}`);
+  return memoryPath;
 }

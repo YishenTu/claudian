@@ -251,7 +251,7 @@ describe('deriveSessionListModel', () => {
 describe('deriveSessionListModel with a projects section', () => {
   function project(id: string, overrides: Partial<ProjectRecord> = {}): ProjectRecord {
     return {
-      id, name: `${id} project`, instructions: '', docPath: `.claudian/projects/${id}.md`,
+      id, name: `${id} project`, instructions: '', memoryPath: `.claudian/projects/${id}.md`,
       isPinned: false, createdAt: 1, ...overrides,
     };
   }

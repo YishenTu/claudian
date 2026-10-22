@@ -371,7 +371,7 @@
       "menu": {
         "newSession": "在项目中新建会话",
         "edit": "编辑项目",
-        "openDoc": "打开项目文档",
+        "openMemory": "打开项目记忆",
         "pin": "固定项目",
         "unpin": "取消固定项目",
         "archiveIdle": "归档空闲会话",
@@ -382,7 +382,7 @@
         "removeSelectionFrom": "从项目中移除 {count} 个会话",
         "newProject": "新建项目…"
       },
-      "deleteConfirm": "删除项目“{name}”？会话会保留，项目文档也会保留。",
+      "deleteConfirm": "删除项目“{name}”？会话会保留，项目记忆文件也会保留。",
       "errors": {
         "create": "创建项目失败",
         "update": "更新项目失败",
@@ -391,8 +391,7 @@
         "move": "将会话移动到项目失败",
         "remove": "从项目中移除会话失败",
         "start": "在此项目中新建会话失败",
-        "sort": "无法更新项目排序",
-        "docMoveConflict": "无法移动项目文档：{path} 已存在。"
+        "sort": "无法更新项目排序"
       },
       "editor": {
         "titleNew": "新建项目",
@@ -402,16 +401,16 @@
         "namePlaceholder": "项目名称",
         "instructions": "指令",
         "instructionsDesc": "从下一轮起添加到每个成员会话的系统提示词中。",
-        "docFolder": "文档文件夹",
-        "docFolderDesc": "项目文档所在的库文件夹。留空使用库根目录。更改后会移动文档。",
-        "docFolderPlaceholder": "库根目录",
-        "docFolderInvalid": "请输入库内的文件夹。",
-        "docPath": "项目文档",
-        "openDoc": "打开",
+        "memoryPath": "记忆文件",
+        "memoryPathDesc": "项目记忆文件在库中的路径。缺少 .md 扩展名时会自动添加。更改后会移动该文件。",
+        "memoryPathPlaceholder": "文件夹/MEMORY.md",
+        "memoryPathInvalid": "请输入库内的文件路径，例如 Projects/MEMORY.md。",
+        "memoryPathTaken": "{path} 已存在文件。",
+        "openMemory": "打开",
         "nameRequired": "请输入项目名称。"
       },
-      "doc": {
-        "title": "项目文档：{name}",
+      "memory": {
+        "title": "项目记忆：{name}",
         "path": "路径",
         "copyPath": "复制路径",
         "pathCopied": "路径已复制",
@@ -419,12 +418,12 @@
         "reload": "重新加载",
         "overwrite": "覆盖",
         "recreate": "从模板重新创建",
-        "content": "项目文档内容",
-        "missing": "项目文档不存在。",
-        "conflict": "文档在加载后已被修改。重新加载将丢弃你的编辑，覆盖则保留你的编辑。",
-        "loadFailed": "加载项目文档失败",
-        "saveFailed": "保存项目文档失败",
-        "saved": "项目文档已保存",
+        "content": "项目记忆内容",
+        "missing": "项目记忆文件不存在。",
+        "conflict": "记忆文件在加载后已被修改。重新加载将丢弃你的编辑，覆盖则保留你的编辑。",
+        "loadFailed": "加载项目记忆失败",
+        "saveFailed": "保存项目记忆失败",
+        "saved": "项目记忆已保存",
         "loading": "加载中…"
       }
     }

@@ -6,7 +6,7 @@ export function projectRecord(overrides: Partial<ProjectRecord> & Pick<ProjectRe
   return {
     name: `Project ${overrides.id}`,
     instructions: `Instructions for ${overrides.id}`,
-    docPath: `.claudian/projects/${overrides.id}.md`,
+    memoryPath: `.claudian/projects/${overrides.id}.md`,
     isPinned: false,
     createdAt: testDate().getTime(),
     ...overrides,

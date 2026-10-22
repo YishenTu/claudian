@@ -4,8 +4,8 @@ import type {
   ConversationMeta,
   ConversationMutablePatch,
   ConversationSummary,
-  ProjectDocOperations,
   ProjectMembership,
+  ProjectMemoryOperations,
   ProjectMutations,
   ProjectReader,
   StoredChatModelSelection,
@@ -77,7 +77,7 @@ export interface ChatViewHost extends ChatViewRefreshHost, TabManagerViewHost {
 export type ChatSessionRuntimes = Pick<SessionRuntimePool, 'awaitConversationCreations' | 'acquire' | 'ensure' | 'release' | 'get' | 'getAttachment' | 'holdDraft'>;
 
 /** Live project records, their mutations and docs, and conversation membership. */
-export type ChatProjects = ProjectReader & ProjectMutations & ProjectMembership & ProjectDocOperations;
+export type ChatProjects = ProjectReader & ProjectMutations & ProjectMembership & ProjectMemoryOperations;
 
 /** Application capabilities chat needs on top of the feature-neutral `FeatureHost`. */
 export interface ChatFeatureHost extends FeatureHost {

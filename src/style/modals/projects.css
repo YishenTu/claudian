@@ -1,6 +1,6 @@
-/* Project editor and project doc modals. */
+/* Project editor and project memory modals. */
 .claudian-project-instructions,
-.claudian-project-doc-content {
+.claudian-project-memory-content {
   box-sizing: border-box;
   width: 100%;
   margin-top: 8px;
@@ -12,14 +12,13 @@
   max-height: 50vh;
 }
 
-.claudian-project-doc-content {
+.claudian-project-memory-content {
   min-height: 320px;
   max-height: 70vh;
   font-family: var(--font-monospace);
 }
 
-.claudian-project-doc-row,
-.claudian-project-doc-path {
+.claudian-project-memory-path {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -29,8 +28,7 @@
   font-size: var(--font-ui-small);
 }
 
-.claudian-project-doc-row-path,
-.claudian-project-doc-path-value {
+.claudian-project-memory-path-value {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -39,11 +37,11 @@
   user-select: text;
 }
 
-.claudian-project-doc-notice {
+.claudian-project-memory-notice {
   display: none;
 }
 
-.claudian-project-doc-notice--visible {
+.claudian-project-memory-notice--visible {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -51,12 +49,12 @@
   margin-top: 12px;
 }
 
-.claudian-project-doc-notice-text {
+.claudian-project-memory-notice-text {
   flex: 1 1 240px;
   margin: 0;
 }
 
-.claudian-project-doc-notice-actions {
+.claudian-project-memory-notice-actions {
   display: flex;
   gap: 8px;
 }
@@ -66,4 +64,30 @@
   justify-content: flex-end;
   gap: 8px;
   margin-top: 16px;
+}
+
+/*
+ * The memory path takes the modal's full width under its label; the Open button shares its row and
+ * validation wraps below them.
+ */
+.claudian-project-modal .claudian-project-memory-setting {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.claudian-project-modal .claudian-project-memory-setting .setting-item-control {
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.claudian-project-modal .claudian-project-memory-setting .setting-item-control input[type="text"] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.claudian-project-modal .claudian-project-memory-setting .claudian-setting-validation {
+  flex-basis: 100%;
 }

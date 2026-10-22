@@ -371,7 +371,7 @@
       "menu": {
         "newSession": "Nova sessão no projeto",
         "edit": "Editar projeto",
-        "openDoc": "Abrir documento do projeto",
+        "openMemory": "Abrir memória do projeto",
         "pin": "Fixar projeto",
         "unpin": "Desafixar projeto",
         "archiveIdle": "Arquivar sessões inativas",
@@ -382,7 +382,7 @@
         "removeSelectionFrom": "Remover {count} sessões do projeto",
         "newProject": "Novo projeto…"
       },
-      "deleteConfirm": "Excluir o projeto “{name}”? As sessões permanecem. O documento do projeto é mantido.",
+      "deleteConfirm": "Excluir o projeto “{name}”? As sessões permanecem. O arquivo de memória do projeto é mantido.",
       "errors": {
         "create": "Falha ao criar o projeto",
         "update": "Falha ao atualizar o projeto",
@@ -391,8 +391,7 @@
         "move": "Falha ao mover as sessões para o projeto",
         "remove": "Falha ao remover as sessões do projeto",
         "start": "Falha ao iniciar uma sessão neste projeto",
-        "sort": "Falha ao atualizar a ordenação dos projetos",
-        "docMoveConflict": "Não foi possível mover o documento do projeto: {path} já existe."
+        "sort": "Falha ao atualizar a ordenação dos projetos"
       },
       "editor": {
         "titleNew": "Novo projeto",
@@ -402,16 +401,16 @@
         "namePlaceholder": "Nome do projeto",
         "instructions": "Instruções",
         "instructionsDesc": "Adicionadas ao prompt do sistema de cada sessão membro a partir do próximo turno.",
-        "docFolder": "Pasta do documento",
-        "docFolderDesc": "Pasta do cofre para o documento do projeto. Deixe vazio para a raiz do cofre. Alterá-la move o documento.",
-        "docFolderPlaceholder": "Raiz do cofre",
-        "docFolderInvalid": "Digite uma pasta dentro do cofre.",
-        "docPath": "Documento do projeto",
-        "openDoc": "Abrir",
+        "memoryPath": "Arquivo de memória",
+        "memoryPathDesc": "Caminho no cofre do arquivo de memória do projeto. A extensão .md é adicionada se faltar. Alterá-lo move o arquivo.",
+        "memoryPathPlaceholder": "Pasta/MEMORY.md",
+        "memoryPathInvalid": "Digite um caminho de arquivo dentro do cofre, como Projects/MEMORY.md.",
+        "memoryPathTaken": "Já existe um arquivo em {path}.",
+        "openMemory": "Abrir",
         "nameRequired": "Digite um nome para o projeto."
       },
-      "doc": {
-        "title": "Documento do projeto: {name}",
+      "memory": {
+        "title": "Memória do projeto: {name}",
         "path": "Caminho",
         "copyPath": "Copiar caminho",
         "pathCopied": "Caminho copiado",
@@ -419,12 +418,12 @@
         "reload": "Recarregar",
         "overwrite": "Sobrescrever",
         "recreate": "Recriar a partir do modelo",
-        "content": "Conteúdo do documento do projeto",
-        "missing": "O documento do projeto não existe.",
-        "conflict": "O documento mudou desde que foi carregado. Recarregue para descartar suas edições ou sobrescreva para mantê-las.",
-        "loadFailed": "Falha ao carregar o documento do projeto",
-        "saveFailed": "Falha ao salvar o documento do projeto",
-        "saved": "Documento do projeto salvo",
+        "content": "Conteúdo da memória do projeto",
+        "missing": "O arquivo de memória do projeto não existe.",
+        "conflict": "O arquivo de memória mudou desde que foi carregado. Recarregue para descartar suas edições ou sobrescreva para mantê-las.",
+        "loadFailed": "Falha ao carregar a memória do projeto",
+        "saveFailed": "Falha ao salvar a memória do projeto",
+        "saved": "Memória do projeto salva",
         "loading": "Carregando…"
       }
     }

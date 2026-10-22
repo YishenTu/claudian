@@ -371,7 +371,7 @@
       "menu": {
         "newSession": "프로젝트에서 새 세션",
         "edit": "프로젝트 편집",
-        "openDoc": "프로젝트 문서 열기",
+        "openMemory": "프로젝트 메모리 열기",
         "pin": "프로젝트 고정",
         "unpin": "프로젝트 고정 해제",
         "archiveIdle": "유휴 세션 보관",
@@ -382,7 +382,7 @@
         "removeSelectionFrom": "세션 {count}개를 프로젝트에서 제거",
         "newProject": "새 프로젝트…"
       },
-      "deleteConfirm": "“{name}” 프로젝트를 삭제할까요? 세션은 유지되며 프로젝트 문서도 보존됩니다.",
+      "deleteConfirm": "“{name}” 프로젝트를 삭제할까요? 세션은 유지되며 프로젝트 메모리 파일도 보존됩니다.",
       "errors": {
         "create": "프로젝트를 만들지 못했습니다",
         "update": "프로젝트를 업데이트하지 못했습니다",
@@ -391,8 +391,7 @@
         "move": "세션을 프로젝트로 이동하지 못했습니다",
         "remove": "세션을 프로젝트에서 제거하지 못했습니다",
         "start": "이 프로젝트에서 세션을 시작하지 못했습니다",
-        "sort": "프로젝트 정렬을 업데이트하지 못했습니다",
-        "docMoveConflict": "프로젝트 문서를 이동하지 못했습니다: {path}이(가) 이미 있습니다."
+        "sort": "프로젝트 정렬을 업데이트하지 못했습니다"
       },
       "editor": {
         "titleNew": "새 프로젝트",
@@ -402,16 +401,16 @@
         "namePlaceholder": "프로젝트 이름",
         "instructions": "지침",
         "instructionsDesc": "다음 턴부터 모든 멤버 세션의 시스템 프롬프트에 추가됩니다.",
-        "docFolder": "문서 폴더",
-        "docFolderDesc": "프로젝트 문서를 저장할 볼트 폴더입니다. 비워두면 볼트 루트를 사용합니다. 변경하면 문서가 이동합니다.",
-        "docFolderPlaceholder": "볼트 루트",
-        "docFolderInvalid": "볼트 안의 폴더를 입력하세요.",
-        "docPath": "프로젝트 문서",
-        "openDoc": "열기",
+        "memoryPath": "메모리 파일",
+        "memoryPathDesc": "프로젝트 메모리 파일의 볼트 경로입니다. .md 확장자가 없으면 추가됩니다. 변경하면 파일이 이동됩니다.",
+        "memoryPathPlaceholder": "폴더/MEMORY.md",
+        "memoryPathInvalid": "볼트 안의 파일 경로를 입력하세요(예: Projects/MEMORY.md).",
+        "memoryPathTaken": "{path}에 이미 파일이 있습니다.",
+        "openMemory": "열기",
         "nameRequired": "프로젝트 이름을 입력하세요."
       },
-      "doc": {
-        "title": "프로젝트 문서: {name}",
+      "memory": {
+        "title": "프로젝트 메모리: {name}",
         "path": "경로",
         "copyPath": "경로 복사",
         "pathCopied": "경로를 복사했습니다",
@@ -419,12 +418,12 @@
         "reload": "다시 불러오기",
         "overwrite": "덮어쓰기",
         "recreate": "템플릿에서 다시 만들기",
-        "content": "프로젝트 문서 내용",
-        "missing": "프로젝트 문서가 없습니다.",
-        "conflict": "불러온 뒤 문서가 변경되었습니다. 다시 불러오면 편집 내용이 사라지고, 덮어쓰면 편집 내용이 유지됩니다.",
-        "loadFailed": "프로젝트 문서를 불러오지 못했습니다",
-        "saveFailed": "프로젝트 문서를 저장하지 못했습니다",
-        "saved": "프로젝트 문서를 저장했습니다",
+        "content": "프로젝트 메모리 내용",
+        "missing": "프로젝트 메모리 파일이 없습니다.",
+        "conflict": "불러온 뒤 메모리 파일이 변경되었습니다. 다시 불러오면 편집 내용이 사라지고, 덮어쓰면 편집 내용이 유지됩니다.",
+        "loadFailed": "프로젝트 메모리를 불러오지 못했습니다",
+        "saveFailed": "프로젝트 메모리를 저장하지 못했습니다",
+        "saved": "프로젝트 메모리를 저장했습니다",
         "loading": "불러오는 중…"
       }
     }

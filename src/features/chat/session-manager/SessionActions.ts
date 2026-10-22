@@ -7,7 +7,7 @@ import {
   createProject,
   deleteProject,
   editProject,
-  openProjectDoc,
+  openProjectMemory,
 } from '@/features/chat/projects/projectActions';
 import type { SessionListSectionKind } from '@/features/chat/session-manager/SessionListOrganizer';
 import type { SessionMultiSelection } from '@/features/chat/session-manager/SessionMultiSelection';
@@ -503,8 +503,8 @@ export class SessionActions {
       .setTitle(t('chat.projects.menu.edit'))
       .onClick(() => editProject(plugin, project)));
     menu.addItem(menuItem => menuItem
-      .setTitle(t('chat.projects.menu.openDoc'))
-      .onClick(() => openProjectDoc(plugin, project)));
+      .setTitle(t('chat.projects.menu.openMemory'))
+      .onClick(() => openProjectMemory(plugin, project)));
     menu.addItem(menuItem => menuItem
       .setTitle(project.isPinned ? t('chat.projects.menu.unpin') : t('chat.projects.menu.pin'))
       .onClick(() => {

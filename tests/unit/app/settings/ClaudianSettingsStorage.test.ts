@@ -1079,19 +1079,14 @@ describe('ClaudianSettingsStorage Linked content migration', () => {
 });
 
 describe('ClaudianSettingsStorage project settings', () => {
-  it('drops the retired project doc folder and replaces the retired projects organization with the default', async () => {
-    const adapter = createAdapter({
-      sessionManagerOrganization: 'projects',
-      projectDocFolder: 'Work/Projects',
-    });
+  it('replaces the retired projects organization with the default', async () => {
+    const adapter = createAdapter({ sessionManagerOrganization: 'projects' });
 
     const settings = await new ClaudianSettingsStorage(adapter, DEFAULT_SETTINGS).load();
 
     expect(settings.sessionManagerOrganization).toBe('list');
-    expect(settings).not.toHaveProperty('projectDocFolder');
     const written = JSON.parse(adapter.write.mock.calls.at(-1)![1]);
     expect(written.sessionManagerOrganization).toBe('list');
-    expect(written).not.toHaveProperty('projectDocFolder');
   });
 
   it.each([

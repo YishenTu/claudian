@@ -147,7 +147,7 @@ it('carries the live project paragraph on branch navigation and recovery, and dr
   await controller.commitBranchDraft();
 
   const member = { model: 'model-a', systemInstructions: {
-    kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(record, record.docPath),
+    kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(record, record.memoryPath),
   } };
   expect(coordinator.navigateConversationBranch).toHaveBeenCalledWith(expect.objectContaining({ configuration: member }));
   // Each recovery attempt resolves the project again: the first follows navigation, the later two the deletion.

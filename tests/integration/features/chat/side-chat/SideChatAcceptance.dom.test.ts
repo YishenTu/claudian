@@ -11,7 +11,7 @@ import {
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, screen, waitFor } from '@testing-library/dom';
 
-import { renderProjectSideChatInstructions } from '@/core/prompt/projectPrompt';
+import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { buildTabRuntimePorts } from '@/features/chat/tabs/runtime/TabRuntimePorts';
 
@@ -58,7 +58,7 @@ it.each([true, false])('freezes the parent project side-chat text at start (live
   await second;
 
   const expected = live
-    ? { kind: 'provider-default', sessionInstructions: renderProjectSideChatInstructions(record, record.docPath) }
+    ? { kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(record, record.memoryPath) }
     : { kind: 'provider-default' };
   expect(harness.backend.latest.requests.map(request => request.configuration.systemInstructions)).toEqual([expected, expected]);
 });

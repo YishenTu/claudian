@@ -143,9 +143,9 @@ describe('MainTurnExecution', () => {
       await fixture.controller.sendMessage({ content: 'after edit' });
 
       expect([0, 1, 2].map(call => systemInstructions(fixture, call))).toEqual([
-        { kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(record, record.docPath) },
-        { kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(record, record.docPath) },
-        { kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(edited, edited.docPath) },
+        { kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(record, record.memoryPath) },
+        { kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(record, record.memoryPath) },
+        { kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(edited, edited.memoryPath) },
       ]);
       expect(fixture.plugin.getConversationSync).not.toHaveBeenCalled();
     });

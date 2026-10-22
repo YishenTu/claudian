@@ -420,7 +420,7 @@ describe('startApplication', () => {
       const timestamp = Date.now();
       const files = new Map<string, string>([
         ['.claudian/projects/project-a.json', JSON.stringify({
-          id: 'project-a', name: 'Launch', instructions: 'Ship.', docPath: '.claudian/projects/launch-project.md',
+          id: 'project-a', name: 'Launch', instructions: 'Ship.', memoryPath: '.claudian/projects/launch-project.md',
           isPinned: true, createdAt: timestamp,
         })],
         ['.claudian/projects/broken.json', '{"id": "broken"'],

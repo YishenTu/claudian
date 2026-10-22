@@ -10,7 +10,7 @@ import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
 import type { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
 import type { ForkSourceUnavailableReason } from '@/features/chat/conversation/forkSourceTypes';
-import { resolveSideChatInstructions } from '@/features/chat/execution/projectInstructions';
+import { resolveSessionInstructions } from '@/features/chat/execution/projectInstructions';
 import { findLatestForkCheckpoint, type ForkCheckpoint } from '@/features/chat/sessions/SessionForkSource';
 import { SideChatCommandSubmission } from '@/features/chat/side-chat/SideChatCommandSubmission';
 import { SideChatPanel } from '@/features/chat/side-chat/SideChatPanel';
@@ -283,7 +283,7 @@ export class SideChatController {
         resumeAt: capture.context.resumeAt,
         selectedModel: capture.context.sourceSelectedModel,
         sessionId: capture.context.sourceSessionId,
-        sessionInstructions: resolveSideChatInstructions(this.deps.plugin.projects, capture.context.projectId),
+        sessionInstructions: resolveSessionInstructions(this.deps.plugin.projects, capture.context),
       };
 
       this.deps.drafts.changeDestination(() => this.#createRuntime(source));

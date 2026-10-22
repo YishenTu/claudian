@@ -110,7 +110,7 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
   const pinnedLinkedContentPaths = new PinnedLinkedContentPathCoordinator(settingsCoordinator);
   const projects = new ProjectService(loadedProjects.records, {
     store: storage.projects,
-    docs: storage.getAdapter(),
+    memory: storage.getAdapter(),
     // Reached only after startup, once the conversation service below exists.
     members: {
       setConversationsProject: (ids, projectId) => conversations.setConversationsProject(ids, projectId),

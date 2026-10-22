@@ -2,8 +2,8 @@ import { Notice } from 'obsidian';
 
 import type { ProjectRecord } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import { ProjectDocModal } from '@/features/chat/projects/ProjectDocModal';
 import { ProjectEditorModal } from '@/features/chat/projects/ProjectEditorModal';
+import { ProjectMemoryModal } from '@/features/chat/projects/ProjectMemoryModal';
 import { t } from '@/i18n/i18n';
 import { confirm } from '@/shared/modals/ConfirmModal';
 
@@ -21,15 +21,15 @@ export function runProjectAction(action: () => unknown, failureMessage: string):
   })();
 }
 
-export function openProjectDoc(host: ProjectUIHost, project: ProjectRecord): void {
-  new ProjectDocModal(host.app, { project, docs: host.projects }).open();
+export function openProjectMemory(host: ProjectUIHost, project: ProjectRecord): void {
+  new ProjectMemoryModal(host.app, { project, memory: host.projects }).open();
 }
 
 export function editProject(host: ProjectUIHost, project: ProjectRecord): void {
   new ProjectEditorModal(host.app, {
     project,
     save: input => host.projects.update(project.id, input),
-    openDoc: () => openProjectDoc(host, project),
+    openMemory: () => openProjectMemory(host, project),
   }).open();
 }
 
@@ -50,7 +50,7 @@ export function createProject(
   }).open();
 }
 
-/** Deletes the project after confirmation; member sessions stay and the doc is kept. */
+/** Deletes the project after confirmation; member sessions stay and the memory file is kept. */
 export async function deleteProject(host: ProjectUIHost, project: ProjectRecord): Promise<void> {
   const confirmed = await confirm(
     host.app,

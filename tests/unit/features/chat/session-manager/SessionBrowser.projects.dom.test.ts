@@ -63,7 +63,7 @@ function setup(options: {
     setPinned: jest.fn().mockResolvedValue(undefined),
     delete: jest.fn().mockResolvedValue(undefined),
     setConversationsProject: jest.fn().mockResolvedValue(undefined),
-    readDoc: jest.fn(), saveDoc: jest.fn(), recreateDoc: jest.fn(),
+    readMemory: jest.fn(), saveMemory: jest.fn(), recreateMemory: jest.fn(),
   };
   const lifecycle = { archive: jest.fn().mockResolvedValue(undefined), setPinned: jest.fn() };
   const browser = new SessionBrowser({
@@ -212,7 +212,7 @@ it('starts a session in a project and manages the project from its section menu'
   expect(titles(menu)).toEqual([
     t('chat.projects.menu.newSession'),
     t('chat.projects.menu.edit'),
-    t('chat.projects.menu.openDoc'),
+    t('chat.projects.menu.openMemory'),
     t('chat.projects.menu.pin'),
     t('chat.projects.menu.archiveIdle'),
     t('chat.projects.menu.delete'),

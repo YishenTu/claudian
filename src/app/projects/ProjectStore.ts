@@ -1,5 +1,5 @@
 import { isValidSessionMetadataId, PROJECTS_PATH } from '@/core/bootstrap/storagePaths';
-import { normalizeLinkedContentPath } from '@/core/path/LinkedContentPath';
+import { normalizeProjectMemoryPath } from '@/core/path/ProjectMemoryPath';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { ProjectRecord } from '@/core/types';
 
@@ -54,7 +54,7 @@ export class ProjectStore {
       id: record.id,
       name: record.name,
       instructions: record.instructions,
-      docPath: record.docPath,
+      memoryPath: record.memoryPath,
       isPinned: record.isPinned,
       createdAt: record.createdAt,
     };
@@ -83,12 +83,12 @@ export class ProjectStore {
 function decodeProjectRecord(value: unknown, expectedId: string): ProjectRecord | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
-  const docPath = normalizeLinkedContentPath(raw.docPath);
+  const memoryPath = typeof raw.memoryPath === 'string' ? normalizeProjectMemoryPath(raw.memoryPath) : null;
   if (
     raw.id !== expectedId
     || typeof raw.name !== 'string'
     || typeof raw.instructions !== 'string'
-    || docPath === null
+    || memoryPath === null
     || typeof raw.createdAt !== 'number'
     || !Number.isFinite(raw.createdAt)
   ) {
@@ -98,7 +98,7 @@ function decodeProjectRecord(value: unknown, expectedId: string): ProjectRecord 
     id: expectedId,
     name: raw.name,
     instructions: raw.instructions,
-    docPath,
+    memoryPath,
     isPinned: raw.isPinned === true,
     createdAt: raw.createdAt,
   };

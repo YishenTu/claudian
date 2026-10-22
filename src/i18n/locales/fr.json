@@ -371,7 +371,7 @@
       "menu": {
         "newSession": "Nouvelle session dans le projet",
         "edit": "Modifier le projet",
-        "openDoc": "Ouvrir le document du projet",
+        "openMemory": "Ouvrir la mémoire du projet",
         "pin": "Épingler le projet",
         "unpin": "Désépingler le projet",
         "archiveIdle": "Archiver les sessions inactives",
@@ -382,7 +382,7 @@
         "removeSelectionFrom": "Retirer {count} sessions du projet",
         "newProject": "Nouveau projet…"
       },
-      "deleteConfirm": "Supprimer le projet « {name} » ? Les sessions sont conservées. Le document du projet est conservé.",
+      "deleteConfirm": "Supprimer le projet « {name} » ? Les sessions sont conservées. Le fichier de mémoire du projet est conservé.",
       "errors": {
         "create": "Impossible de créer le projet",
         "update": "Impossible de mettre à jour le projet",
@@ -391,8 +391,7 @@
         "move": "Impossible de déplacer les sessions vers le projet",
         "remove": "Impossible de retirer les sessions du projet",
         "start": "Impossible de démarrer une session dans ce projet",
-        "sort": "Impossible de mettre à jour le tri des projets",
-        "docMoveConflict": "Impossible de déplacer le document du projet : {path} existe déjà."
+        "sort": "Impossible de mettre à jour le tri des projets"
       },
       "editor": {
         "titleNew": "Nouveau projet",
@@ -402,16 +401,16 @@
         "namePlaceholder": "Nom du projet",
         "instructions": "Instructions",
         "instructionsDesc": "Ajoutées au prompt système de chaque session membre à partir de son prochain tour.",
-        "docFolder": "Dossier du document",
-        "docFolderDesc": "Dossier du coffre pour le document du projet. Laisser vide pour la racine du coffre. Le modifier déplace le document.",
-        "docFolderPlaceholder": "Racine du coffre",
-        "docFolderInvalid": "Saisissez un dossier situé dans le coffre.",
-        "docPath": "Document du projet",
-        "openDoc": "Ouvrir",
+        "memoryPath": "Fichier de mémoire",
+        "memoryPathDesc": "Chemin dans le coffre du fichier de mémoire du projet. L’extension .md est ajoutée si elle manque. Le modifier déplace le fichier.",
+        "memoryPathPlaceholder": "Dossier/MEMORY.md",
+        "memoryPathInvalid": "Saisissez un chemin de fichier situé dans le coffre, par exemple Projects/MEMORY.md.",
+        "memoryPathTaken": "Un fichier existe déjà à l’emplacement {path}.",
+        "openMemory": "Ouvrir",
         "nameRequired": "Saisissez un nom de projet."
       },
-      "doc": {
-        "title": "Document du projet : {name}",
+      "memory": {
+        "title": "Mémoire du projet : {name}",
         "path": "Chemin",
         "copyPath": "Copier le chemin",
         "pathCopied": "Chemin copié",
@@ -419,12 +418,12 @@
         "reload": "Recharger",
         "overwrite": "Écraser",
         "recreate": "Recréer à partir du modèle",
-        "content": "Contenu du document du projet",
-        "missing": "Le document du projet est introuvable.",
-        "conflict": "Le document a changé depuis son chargement. Rechargez pour abandonner vos modifications, ou écrasez pour les conserver.",
-        "loadFailed": "Impossible de charger le document du projet",
-        "saveFailed": "Impossible d’enregistrer le document du projet",
-        "saved": "Document du projet enregistré",
+        "content": "Contenu de la mémoire du projet",
+        "missing": "Le fichier de mémoire du projet est introuvable.",
+        "conflict": "Le fichier de mémoire a changé depuis son chargement. Rechargez pour abandonner vos modifications, ou écrasez pour les conserver.",
+        "loadFailed": "Impossible de charger la mémoire du projet",
+        "saveFailed": "Impossible d’enregistrer la mémoire du projet",
+        "saved": "Mémoire du projet enregistrée",
         "loading": "Chargement…"
       }
     }

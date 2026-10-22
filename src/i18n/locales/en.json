@@ -371,7 +371,7 @@
       "menu": {
         "newSession": "New session in project",
         "edit": "Edit project",
-        "openDoc": "Open project doc",
+        "openMemory": "Open project memory",
         "pin": "Pin project",
         "unpin": "Unpin project",
         "archiveIdle": "Archive idle sessions",
@@ -382,7 +382,7 @@
         "removeSelectionFrom": "Remove {count} sessions from project",
         "newProject": "New project…"
       },
-      "deleteConfirm": "Delete project “{name}”? Sessions stay. The project doc is kept.",
+      "deleteConfirm": "Delete project “{name}”? Sessions stay. The project memory file is kept.",
       "errors": {
         "create": "Failed to create project",
         "update": "Failed to update project",
@@ -391,8 +391,7 @@
         "move": "Failed to move sessions to project",
         "remove": "Failed to remove sessions from project",
         "start": "Failed to start a session in this project",
-        "sort": "Failed to update project sorting",
-        "docMoveConflict": "Could not move the project doc: {path} already exists."
+        "sort": "Failed to update project sorting"
       },
       "editor": {
         "titleNew": "New project",
@@ -402,16 +401,16 @@
         "namePlaceholder": "Project name",
         "instructions": "Instructions",
         "instructionsDesc": "Added to the system prompt of every member session from its next turn.",
-        "docFolder": "Doc folder",
-        "docFolderDesc": "Vault folder for the project doc. Leave empty for the vault root. Changing it moves the doc.",
-        "docFolderPlaceholder": "Vault root",
-        "docFolderInvalid": "Enter a folder inside the vault.",
-        "docPath": "Project doc",
-        "openDoc": "Open",
+        "memoryPath": "Memory file",
+        "memoryPathDesc": "Vault path of the project memory file. A missing .md extension is added. Changing it moves the file.",
+        "memoryPathPlaceholder": "Folder/MEMORY.md",
+        "memoryPathInvalid": "Enter a file path inside the vault, such as Projects/MEMORY.md.",
+        "memoryPathTaken": "A file already exists at {path}.",
+        "openMemory": "Open",
         "nameRequired": "Enter a project name."
       },
-      "doc": {
-        "title": "Project doc: {name}",
+      "memory": {
+        "title": "Project memory: {name}",
         "path": "Path",
         "copyPath": "Copy path",
         "pathCopied": "Path copied",
@@ -419,12 +418,12 @@
         "reload": "Reload",
         "overwrite": "Overwrite",
         "recreate": "Recreate from template",
-        "content": "Project doc content",
-        "missing": "The project doc is missing.",
-        "conflict": "The doc changed since it was loaded. Reload to discard your edits, or overwrite to keep them.",
-        "loadFailed": "Failed to load the project doc",
-        "saveFailed": "Failed to save the project doc",
-        "saved": "Project doc saved",
+        "content": "Project memory content",
+        "missing": "The project memory file is missing.",
+        "conflict": "The memory file changed since it was loaded. Reload to discard your edits, or overwrite to keep them.",
+        "loadFailed": "Failed to load the project memory",
+        "saveFailed": "Failed to save the project memory",
+        "saved": "Project memory saved",
         "loading": "Loading…"
       }
     }

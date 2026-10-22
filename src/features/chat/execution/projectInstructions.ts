@@ -1,4 +1,4 @@
-import { renderProjectMemberInstructions, renderProjectSideChatInstructions } from '@/core/prompt/projectPrompt';
+import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
 import type { Conversation, ProjectReader, ProjectRecord } from '@/core/types';
 
 type ProjectLookup = Pick<ProjectReader, 'get'>;
@@ -13,17 +13,14 @@ export function resolveLiveProjectId(projects: ProjectLookup, projectId: string 
   return resolveLiveProject(projects, projectId)?.id;
 }
 
-/** Member instructions for the conversation's live project, resolved for each turn; otherwise none. */
+/**
+ * Member instructions for the conversation's live project; otherwise none. Main turns resolve them each
+ * turn; a side chat renders its parent's once at start, since its ephemeral session cannot change prompt.
+ */
 export function resolveSessionInstructions(
   projects: ProjectLookup,
   conversation: Pick<Conversation, 'projectId'> | null | undefined,
 ): string | undefined {
   const project = resolveLiveProject(projects, conversation?.projectId);
-  return project ? renderProjectMemberInstructions(project, project.docPath) : undefined;
-}
-
-/** Side-chat instructions for the parent's live project, rendered once when the side chat starts. */
-export function resolveSideChatInstructions(projects: ProjectLookup, projectId: string | undefined): string | undefined {
-  const project = resolveLiveProject(projects, projectId);
-  return project ? renderProjectSideChatInstructions(project, project.docPath) : undefined;
+  return project ? renderProjectMemberInstructions(project, project.memoryPath) : undefined;
 }

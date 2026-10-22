@@ -4,8 +4,8 @@ export interface ProjectRecord {
   readonly id: string;
   readonly name: string;
   readonly instructions: string;
-  /** Vault-relative path of the project doc; its file name is fixed at creation, its folder moves with `docFolder`. */
-  readonly docPath: string;
+  /** Vault-relative path of the project memory file (`.md`); editing the project can move or rename it. */
+  readonly memoryPath: string;
   readonly isPinned: boolean;
   readonly createdAt: number;
 }
@@ -13,20 +13,23 @@ export interface ProjectRecord {
 export interface ProjectCreateInput {
   readonly name: string;
   readonly instructions: string;
-  /** Vault-relative folder for the new doc; `''` is the vault root. */
-  readonly docFolder: string;
+  /**
+   * Vault-relative path for the new memory file, normalized by `normalizeProjectMemoryPath` (a missing `.md` is
+   * appended); missing folders are created. Throws `ProjectMemoryPathTakenError` when a file is already there.
+   */
+  readonly memoryPath: string;
 }
 
 export interface ProjectUpdatePatch {
   readonly name?: string;
   readonly instructions?: string;
   /**
-   * Moves the doc into this vault-relative folder (`''` is the vault root), keeping its file name. A missing doc is
-   * only repointed; throws `ProjectDocMoveConflictError` and changes nothing when a file is already there.
+   * Moves or renames the memory file to this vault-relative path (normalized like `ProjectCreateInput.memoryPath`).
+   * A missing memory file is only repointed; throws `ProjectMemoryPathTakenError` and changes nothing when a file is
+   * already there.
    */
-  readonly docFolder?: string;
+  readonly memoryPath?: string;
 }
-
 /**
  * Live project records. A conversation's `projectId` is meaningful only when `get` resolves it; null means no
  * project, so consumers never trust a raw id.
@@ -42,7 +45,7 @@ export interface ProjectMutations {
   create(input: ProjectCreateInput): Promise<ProjectRecord>;
   update(id: string, patch: ProjectUpdatePatch): Promise<void>;
   setPinned(id: string, pinned: boolean): Promise<void>;
-  /** Removes the record; member sessions stay and the project doc is kept. */
+  /** Removes the record; member sessions stay and the memory file is kept. */
   delete(id: string): Promise<void>;
 }
 
@@ -51,42 +54,43 @@ export interface ProjectMembership {
   setConversationsProject(conversationIds: readonly string[], projectId: string | null): Promise<void>;
 }
 
-export interface ProjectDocContent {
+export interface ProjectMemoryContent {
   readonly content: string;
   /** Opaque content digest used for optimistic conflict detection. */
   readonly revision: string;
 }
 
-export type ProjectDocReadResult = ProjectDocContent | { readonly missing: true };
+export type ProjectMemoryReadResult = ProjectMemoryContent | { readonly missing: true };
 
-export interface ProjectDocSaveOptions {
-  /** Write even when the doc changed since `expectedRevision`. */
+export interface ProjectMemorySaveOptions {
+  /** Write even when the memory file changed since `expectedRevision`. */
   readonly overwrite?: boolean;
 }
 
-export interface ProjectDocOperations {
-  readDoc(id: string): Promise<ProjectDocReadResult>;
-  /** Throws `ProjectDocConflictError` when the current doc no longer matches `expectedRevision`, unless `overwrite`. */
-  saveDoc(
+export interface ProjectMemoryOperations {
+  readMemory(id: string): Promise<ProjectMemoryReadResult>;
+  /** Throws `ProjectMemoryConflictError` when the current memory file no longer matches `expectedRevision`, unless `overwrite`. */
+  saveMemory(
     id: string,
     content: string,
     expectedRevision: string,
-    options?: ProjectDocSaveOptions,
-  ): Promise<ProjectDocContent>;
-  /** Writes the template to the record's `docPath` unless a doc is there again; returns the doc either way. */
-  recreateDoc(id: string): Promise<ProjectDocContent>;
+    options?: ProjectMemorySaveOptions,
+  ): Promise<ProjectMemoryContent>;
+  /** Writes the template to the record's `memoryPath` unless a file is there again; returns the memory either way. */
+  recreateMemory(id: string): Promise<ProjectMemoryContent>;
 }
 
-export class ProjectDocConflictError extends Error {
+export class ProjectMemoryConflictError extends Error {
   constructor(readonly projectId: string, options?: ErrorOptions) {
-    super(`Project doc changed since it was read: ${projectId}`, options);
-    this.name = 'ProjectDocConflictError';
+    super(`Project memory changed since it was read: ${projectId}`, options);
+    this.name = 'ProjectMemoryConflictError';
   }
 }
 
-export class ProjectDocMoveConflictError extends Error {
-  constructor(readonly projectId: string, readonly targetPath: string, options?: ErrorOptions) {
-    super(`A file already exists where the project doc would move: ${targetPath}`, options);
-    this.name = 'ProjectDocMoveConflictError';
+/** A file already exists where a project memory file would be created or moved; nothing was changed. */
+export class ProjectMemoryPathTakenError extends Error {
+  constructor(readonly path: string, options?: ErrorOptions) {
+    super(`A file already exists at the project memory path: ${path}`, options);
+    this.name = 'ProjectMemoryPathTakenError';
   }
 }
