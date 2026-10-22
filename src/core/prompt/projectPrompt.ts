@@ -22,7 +22,7 @@ ${formatInstructions(record.instructions)}
 
 Keep it current as the user clarifies their intent: the project's goal, expected behavior, scope, constraints, acceptance criteria, and unresolved questions. Keep it concise. Distinguish explicit requirements from assumptions.
 
-Record decisions with their reasons; mark superseded ones rather than deleting them. Keep a State section on progress toward the goal: what is done and verified, what remains, and any blockers. Keep a Dead ends section listing failed approaches and why. Update State at milestones and before stopping.
+Record decisions with their reasons; mark superseded ones rather than deleting them. Keep a State section on progress toward the goal: what is done and verified, what remains, and any blockers. Keep a Dead ends section listing failed approaches and why. Update it when something durable changes: a requirement, a decision, a milestone, a dead end, or a handoff. Leave it alone on turns that change none of these.
 
 Other sessions in the project read and edit this file too. Re-read it right before editing, and make targeted edits to the part you are changing rather than rewriting the file.
 
