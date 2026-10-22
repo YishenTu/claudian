@@ -48,14 +48,16 @@ function setup(conversations: ConversationMeta[] = [
   conversation('loose'),
   conversation('pinned', { isPinned: true }),
   conversation('pinned-member', { isPinned: true, projectId: 'launch' }),
-]) {
+], options: { launchPinned?: boolean } = {}) {
   const lifecycle = {
     setPinned: jest.fn().mockResolvedValue(undefined),
     setPlacement: jest.fn().mockResolvedValue(undefined),
     archive: jest.fn(),
   };
   const projects = createProjectsFake([
-    projectRecord({ id: 'launch', name: 'Launch', createdAt: testDate({ days: -10 }).getTime() }),
+    projectRecord({
+      id: 'launch', name: 'Launch', createdAt: testDate({ days: -10 }).getTime(), isPinned: options.launchPinned ?? false,
+    }),
     projectRecord({ id: 'empty', name: 'Empty', createdAt: testDate({ days: -2 }).getTime() }),
   ]);
   const plugin = {
@@ -135,6 +137,23 @@ it('moves a loose session into a project by dropping it on the project row, high
   expect(lifecycle.setPlacement).toHaveBeenCalledWith(['loose'], { projectId: 'launch', isPinned: false });
   expect(lifecycle.setPinned).not.toHaveBeenCalled();
   expect(document.querySelector(`.${ACTIVE_TARGET}`)).toBeNull();
+});
+
+it('drops on a pinned project listed under Pinned, highlighting the project rather than Pinned', async () => {
+  const { dataTransfer, hover, lifecycle, projectToggle, region, settle, startDrag } = setup(undefined, {
+    launchPinned: true,
+  });
+  await startDrag('loose session');
+
+  const projectRow = projectToggle('Launch').closest<HTMLElement>('.claudian-session-group-header')!;
+  expect(region('Pinned').contains(projectRow)).toBe(true);
+  expect(hover(projectToggle('Launch'))).toBe(true);
+  expect(projectRow.classList.contains(ACTIVE_TARGET)).toBe(true);
+  expect(region('Pinned').classList.contains(ACTIVE_TARGET)).toBe(false);
+  fireEvent.drop(projectToggle('Launch'), { dataTransfer });
+  await settle();
+
+  expect(lifecycle.setPlacement).toHaveBeenCalledWith(['loose'], { projectId: 'launch', isPinned: false });
 });
 
 it('joins the project and unpins a pinned session in one placement write', async () => {

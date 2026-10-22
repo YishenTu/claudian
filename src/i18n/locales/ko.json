@@ -369,12 +369,11 @@
       "chipLabel": "프로젝트: {name}",
       "noProject": "프로젝트 없음",
       "menu": {
-        "newSession": "프로젝트에서 새 세션",
         "edit": "프로젝트 편집",
         "openMemory": "프로젝트 메모리 열기",
+        "archiveAll": "모든 세션 보관",
         "pin": "프로젝트 고정",
         "unpin": "프로젝트 고정 해제",
-        "archiveIdle": "유휴 세션 보관",
         "delete": "프로젝트 삭제",
         "moveTo": "프로젝트로 이동…",
         "moveSelectionTo": "세션 {count}개를 프로젝트로 이동…",

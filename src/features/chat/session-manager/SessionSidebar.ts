@@ -3,19 +3,19 @@ import { Menu, Notice, setIcon, TFile } from 'obsidian';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ConversationMeta, SessionManagerOrganization, SessionManagerSort } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import { createProject } from '@/features/chat/projects/projectActions';
+import { buildProjectsHeaderActions, getProjectSort } from '@/features/chat/session-manager/ProjectsHeaderActions';
 import { getObsidianLanguage } from '@/features/chat/session-manager/ProvisionalNoteNames';
-import { isProjectSectionKey } from '@/features/chat/session-manager/SessionListOrganizer';
+import { SessionGroupCollapse } from '@/features/chat/session-manager/SessionGroupCollapse';
 import { renderSessionGroupToggleIcon } from '@/features/chat/session-manager/SessionManagerIcons';
 import {
   archiveScopeOptions,
   beginInlineRenameNextFrame,
+  createSessionHeaderAction,
   type SessionSurfaceNavigation,
   type SessionSurfaceShared,
   setControlAvailability,
   showMenuAt,
 } from '@/features/chat/session-manager/SessionSurfaceShared';
-import { t } from '@/i18n/i18n';
 
 type SessionSearchScrollState = {
   pinnedScrollTop: number;
@@ -57,10 +57,8 @@ export class SessionSidebar {
   private searchRestoreState: SessionSearchScrollState | null = null;
   private searchDismissCleanup: (() => void) | null = null;
   /** Search starts every group and section expanded, matching projects included. */
-  private searchCollapsedGroupKeys = new Set<string>();
-  private readonly collapsedGroupKeys = new Set<string>();
-  /** Projects start collapsed, so outside search their keys record the expanded ones. */
-  private readonly expandedProjectKeys = new Set<string>();
+  private searchCollapse = new SessionGroupCollapse({ projectsStartExpanded: true });
+  private readonly collapse = new SessionGroupCollapse();
   private groupKeys = new Set<string>();
 
   constructor(private readonly deps: SessionSidebarDeps) {}
@@ -130,7 +128,7 @@ export class SessionSidebar {
     this.searchFieldEl = null;
     this.searchInputEl = null;
     this.searchRestoreState = null;
-    this.searchCollapsedGroupKeys = new Set<string>();
+    this.searchCollapse = new SessionGroupCollapse({ projectsStartExpanded: true });
   }
 
   refreshNewAvailability(): void {
@@ -155,6 +153,8 @@ export class SessionSidebar {
       showOpenStateLabels: false,
       showOpenStateActions: false,
       preserveListState: true,
+      // The sidebar stylesheet scrolls Pinned, Projects, and Sessions separately.
+      scrollLayout: 'sections',
       showInlinePinAction: true,
       onRequestInlineRename: (request) => {
         if (this.isSearchActive) {
@@ -178,9 +178,9 @@ export class SessionSidebar {
       showPinnedSection: !isArchiveView,
       pinnedLinkedContentPaths: new Set(plugin.settings.pinnedLinkedContentPaths ?? []),
       showArchivedSection: isArchiveView,
-      isGroupCollapsed: (groupKey: string) => this.isGroupCollapsed(groupKey),
+      isGroupCollapsed: (groupKey: string) => this.getDisplayedCollapse().isCollapsed(groupKey),
       onGroupCollapseChange: (groupKey: string, collapsed: boolean) => {
-        this.setGroupCollapsed(groupKey, collapsed);
+        this.getDisplayedCollapse().setCollapsed(groupKey, collapsed);
         this.updateGroupToggleButton();
       },
       onGroupKeysChange: (groupKeys: readonly string[]) => {
@@ -195,7 +195,7 @@ export class SessionSidebar {
       },
       // The archive lists no projects; its members stay among the archived sessions.
       showProjectsSection: true,
-      projectSort: this.getProjectSort(),
+      projectSort: getProjectSort(plugin),
       onStartProjectConversation: (projectId: string) => {
         shared.setArchiveView(false);
         return navigation.startProjectConversation(projectId);
@@ -277,26 +277,11 @@ export class SessionSidebar {
     });
     container.insertBefore(archiveControl, list);
 
-    const projectsHeader = container.querySelector<HTMLElement>('.claudian-session-projects-header');
-    if (projectsHeader) {
-      const projectActions = projectsHeader.createDiv({ cls: 'claudian-session-header-actions' });
-      const projectOptionsButton = this.createHeaderAction(
-        projectActions,
-        'ellipsis',
-        t('chat.projects.options'),
-        (event) => this.showProjectOptionsMenu(projectOptionsButton, event),
-      );
-      this.createHeaderAction(
-        projectActions,
-        'plus',
-        t('chat.projects.newProjectAction'),
-        () => createProject(this.deps.plugin),
-      );
-    }
+    buildProjectsHeaderActions(container, this.deps.plugin);
 
     this.groupToggleButtonEl = null;
     const actions = header.createDiv({ cls: 'claudian-session-header-actions' });
-    const optionsButton = this.createHeaderAction(
+    const optionsButton = createSessionHeaderAction(
       actions,
       'ellipsis',
       'Session options',
@@ -304,7 +289,7 @@ export class SessionSidebar {
     );
     if (this.getOrganization() === 'linked-content' && this.groupKeys.size > 0) {
       const allCollapsed = this.areAllGroupsCollapsed();
-      this.groupToggleButtonEl = this.createHeaderAction(
+      this.groupToggleButtonEl = createSessionHeaderAction(
         actions,
         icon => renderSessionGroupToggleIcon(icon, allCollapsed ? 'expand' : 'collapse'),
         allCollapsed ? 'Expand all groups' : 'Collapse all groups',
@@ -379,7 +364,7 @@ export class SessionSidebar {
     this.isSearchActive = true;
     this.isSearchComposing = false;
     this.searchQuery = '';
-    this.searchCollapsedGroupKeys = new Set<string>();
+    this.searchCollapse = new SessionGroupCollapse({ projectsStartExpanded: true });
     this.dirty = true;
     this.render();
     this.focusSearchInput();
@@ -406,7 +391,7 @@ export class SessionSidebar {
     this.searchQuery = '';
     this.searchFieldEl = null;
     this.searchInputEl = null;
-    this.searchCollapsedGroupKeys = new Set<string>();
+    this.searchCollapse = new SessionGroupCollapse({ projectsStartExpanded: true });
     this.dirty = true;
     this.render();
     this.restoreSearchScrollState();
@@ -531,29 +516,6 @@ export class SessionSidebar {
     return target instanceof TFile && target.extension.toLocaleLowerCase() === 'md';
   }
 
-  private createHeaderAction(
-    parent: HTMLElement,
-    icon: string | ((container: HTMLElement) => void),
-    label: string,
-    action: (event?: MouseEvent) => void,
-  ): HTMLElement {
-    const control = parent.createEl('button', {
-      cls: 'claudian-session-header-btn',
-      attr: { type: 'button', 'aria-label': label },
-    });
-
-    const iconEl = control.createDiv({ cls: 'claudian-session-header-icon' });
-    if (typeof icon === 'string') {
-      setIcon(iconEl, icon);
-    } else {
-      icon(iconEl);
-    }
-
-    // Keyboard activation clicks with zero coordinates; anchor its menu to the button instead.
-    control.addEventListener('click', (event) => action(event.detail === 0 ? undefined : event));
-    return control;
-  }
-
   private getOrganization(): SessionManagerOrganization {
     return this.deps.plugin.settings.sessionManagerOrganization === 'linked-content'
       ? 'linked-content'
@@ -565,32 +527,14 @@ export class SessionSidebar {
     return sort === 'created' ? sort : 'last-updated';
   }
 
-  private getProjectSort(): SessionManagerSort {
-    return this.deps.plugin.settings.projectSort === 'created' ? 'created' : 'last-updated';
-  }
-
-  private isGroupCollapsed(groupKey: string): boolean {
-    if (!this.isSearchFiltering() && isProjectSectionKey(groupKey)) return !this.expandedProjectKeys.has(groupKey);
-    return this.getDisplayedCollapsedGroupKeys().has(groupKey);
-  }
-
-  private setGroupCollapsed(groupKey: string, collapsed: boolean): void {
-    if (!this.isSearchFiltering() && isProjectSectionKey(groupKey)) {
-      if (collapsed) this.expandedProjectKeys.delete(groupKey); else this.expandedProjectKeys.add(groupKey);
-      return;
-    }
-    const collapsedGroupKeys = this.getDisplayedCollapsedGroupKeys();
-    if (collapsed) collapsedGroupKeys.add(groupKey); else collapsedGroupKeys.delete(groupKey);
-  }
-
-  private getDisplayedCollapsedGroupKeys(): Set<string> {
-    return this.isSearchFiltering() ? this.searchCollapsedGroupKeys : this.collapsedGroupKeys;
+  private getDisplayedCollapse(): SessionGroupCollapse {
+    return this.isSearchFiltering() ? this.searchCollapse : this.collapse;
   }
 
   private areAllGroupsCollapsed(): boolean {
-    const collapsedGroupKeys = this.getDisplayedCollapsedGroupKeys();
+    const collapse = this.getDisplayedCollapse();
     return this.groupKeys.size > 0
-      && [...this.groupKeys].every(groupKey => collapsedGroupKeys.has(groupKey));
+      && [...this.groupKeys].every(groupKey => collapse.isCollapsed(groupKey));
   }
 
   private updateGroupToggleButton(): void {
@@ -608,14 +552,10 @@ export class SessionSidebar {
   private toggleAllGroups(): void {
     if (this.groupKeys.size === 0) return;
 
-    const collapsedGroupKeys = this.getDisplayedCollapsedGroupKeys();
+    const collapse = this.getDisplayedCollapse();
     const shouldExpand = this.areAllGroupsCollapsed();
     for (const groupKey of this.groupKeys) {
-      if (shouldExpand) {
-        collapsedGroupKeys.delete(groupKey);
-      } else {
-        collapsedGroupKeys.add(groupKey);
-      }
+      collapse.setCollapsed(groupKey, !shouldExpand);
     }
     this.refreshPresentation();
   }
@@ -650,31 +590,6 @@ export class SessionSidebar {
       .onClick(() => this.setSort('created')));
 
     showMenuAt(menu, anchor, event);
-  }
-
-  private showProjectOptionsMenu(anchor: HTMLElement, event?: MouseEvent): void {
-    const menu = new Menu().setUseNativeMenu(false);
-    const sort = this.getProjectSort();
-    menu.addItem(item => item
-      .setTitle(t('chat.projects.sortBy'))
-      .setIsLabel(true));
-    menu.addItem(item => item
-      .setTitle(t('chat.projects.sort.lastActivity'))
-      .setChecked(sort === 'last-updated')
-      .onClick(() => this.setProjectSort('last-updated')));
-    menu.addItem(item => item
-      .setTitle(t('chat.projects.sort.created'))
-      .setChecked(sort === 'created')
-      .onClick(() => this.setProjectSort('created')));
-
-    showMenuAt(menu, anchor, event);
-  }
-
-  private setProjectSort(sort: SessionManagerSort): void {
-    void this.deps.plugin.mutateSettings((settings) => {
-      settings.projectSort = sort;
-    })
-      .catch(() => new Notice(t('chat.projects.errors.sort')));
   }
 
   private setOrganization(organization: SessionManagerOrganization): void {

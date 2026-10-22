@@ -1,4 +1,4 @@
-import { type Menu, Notice } from 'obsidian';
+import { type Menu, Notice, setIcon } from 'obsidian';
 
 import type { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import type { HistoryConversationStatus } from '@/features/chat/session-manager/SessionStatusPresentation';
@@ -62,6 +62,30 @@ export function showMenuAt(menu: Menu, anchorEl: HTMLElement, event?: MouseEvent
   }
   const rect = anchorEl.getBoundingClientRect();
   menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchorEl.ownerDocument);
+}
+
+/** A section header's icon button; keyboard activation passes no event, so its menu opens under the button. */
+export function createSessionHeaderAction(
+  parent: HTMLElement,
+  icon: string | ((container: HTMLElement) => void),
+  label: string,
+  action: (event?: MouseEvent) => void,
+): HTMLElement {
+  const control = parent.createEl('button', {
+    cls: 'claudian-session-header-btn',
+    attr: { type: 'button', 'aria-label': label },
+  });
+
+  const iconEl = control.createDiv({ cls: 'claudian-session-header-icon' });
+  if (typeof icon === 'string') {
+    setIcon(iconEl, icon);
+  } else {
+    icon(iconEl);
+  }
+
+  // Keyboard activation clicks with zero coordinates; anchor its menu to the button instead.
+  control.addEventListener('click', (event) => action(event.detail === 0 ? undefined : event));
+  return control;
 }
 
 /** Shows or hides a New control while keeping it out of the accessibility tree when hidden. */

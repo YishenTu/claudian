@@ -132,7 +132,7 @@ it('places the Pinned section above the projects', () => {
   expect(pinned.compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
-it('lists projects above the sessions, pinned first, with their members only under them', async () => {
+it('lists projects above the sessions, with their members only under them', async () => {
   const { container, view } = setup();
   const region = projectsRegion(container);
   const sessions = view.getByRole('region', { name: 'Sessions' });
@@ -140,7 +140,6 @@ it('lists projects above the sessions, pinned first, with their members only und
 
   const toggles = expandedProjectToggles(region);
   expect(toggles.map(toggle => toggle.textContent)).toEqual([
-    sectionName('Research', 1),
     sectionName('Launch', 2),
     sectionName('Idle', 0),
   ]);
@@ -154,6 +153,32 @@ it('lists projects above the sessions, pinned first, with their members only und
   const alphaRow = view.getByText('alpha session').closest('.claudian-history-item') as HTMLElement;
   expect(alphaRow.querySelector('.claudian-history-item-content')?.textContent).toBe('alpha session');
   expect((await axe(container)).violations).toEqual([]);
+});
+
+it('lists a pinned project with its header and members under Pinned', async () => {
+  const { container, view } = setup({
+    conversations: [
+      session('notes', { projectId: 'research' }),
+      session('starred', { projectId: 'research', isPinned: true }),
+      session('alpha', { projectId: 'launch' }),
+    ],
+  });
+  const pinned = view.getByRole('region', { name: 'Pinned' });
+  expect(within(pinned).getByRole('button', { name: sectionName('Research', 2) })).toBeTruthy();
+  expect(within(pinned).getByRole('button', { name: t('chat.projects.actionsFor', { name: 'Research' }) })).toBeTruthy();
+  expect(within(pinned).getByText('notes session')).toBeTruthy();
+  expect(within(pinned).getByText('starred session')).toBeTruthy();
+  expect(within(projectsRegion(container)).queryByText('Research')).toBeNull();
+  expect(within(projectsRegion(container)).getByText('alpha session')).toBeTruthy();
+  expect((await axe(container)).violations).toEqual([]);
+});
+
+it('keeps a pinned project first among the projects in a list without a Pinned section', () => {
+  const { container, view } = setup({ render: { showPinnedSection: false } });
+  expect(view.queryByRole('region', { name: 'Pinned' })).toBeNull();
+  expect(expandedProjectToggles(projectsRegion(container)).map(toggle => toggle.textContent)).toEqual([
+    sectionName('Research', 1), sectionName('Launch', 2), sectionName('Idle', 0),
+  ]);
 });
 
 it('shows the projects header without rows when there are no projects, and no section in the archive', () => {
@@ -190,9 +215,9 @@ it('expands and collapses a project from its native toggle', () => {
 });
 
 it.each([
-  ['last-updated', ['Research', 'Launch', 'Idle']],
-  // Launch was created ten days ago, Idle twelve hours ago; pinned Research stays first.
-  ['created', ['Research', 'Idle', 'Launch']],
+  ['last-updated', ['Launch', 'Idle']],
+  // Launch was created ten days ago, Idle twelve hours ago.
+  ['created', ['Idle', 'Launch']],
 ])('orders projects by the %s project sort', (projectSort, names) => {
   const recentIdle = projectRecord({ id: 'idle', name: 'Idle', createdAt: testDate({ hours: -12 }).getTime() });
   const { container } = setup({ records: [launch, research, recentIdle], render: { projectSort } });
@@ -215,16 +240,15 @@ it('starts a session in a project and manages the project from its section menu'
   const menu = menus().at(-1)!;
   expect(menu.showAtPosition).toHaveBeenCalled();
   expect(titles(menu)).toEqual([
-    t('chat.projects.menu.newSession'),
+    t('chat.projects.menu.pin'),
     t('chat.projects.menu.edit'),
     t('chat.projects.menu.openMemory'),
-    t('chat.projects.menu.pin'),
-    t('chat.projects.menu.archiveIdle'),
+    t('chat.projects.menu.archiveAll'),
     t('chat.projects.menu.delete'),
   ]);
 
   item(menu, t('chat.projects.menu.pin')).clickHandler!();
-  item(menu, t('chat.projects.menu.archiveIdle')).clickHandler!();
+  item(menu, t('chat.projects.menu.archiveAll')).clickHandler!();
   jest.mocked(confirm).mockResolvedValue(true);
   item(menu, t('chat.projects.menu.delete')).clickHandler!();
   await new Promise(resolve => setTimeout(resolve, 0));

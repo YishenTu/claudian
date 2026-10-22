@@ -369,12 +369,11 @@
       "chipLabel": "项目：{name}",
       "noProject": "无项目",
       "menu": {
-        "newSession": "在项目中新建会话",
         "edit": "编辑项目",
         "openMemory": "打开项目记忆",
+        "archiveAll": "归档所有会话",
         "pin": "固定项目",
         "unpin": "取消固定项目",
-        "archiveIdle": "归档空闲会话",
         "delete": "删除项目",
         "moveTo": "移动到项目…",
         "moveSelectionTo": "将 {count} 个会话移动到项目…",

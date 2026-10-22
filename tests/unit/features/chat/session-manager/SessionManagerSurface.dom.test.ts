@@ -24,6 +24,9 @@ HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
 HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
 HTMLElement.prototype.hasClass = function (className) { return this.classList.contains(className); };
+HTMLElement.prototype.setCssProps = function (props) {
+  for (const [name, value] of Object.entries(props)) this.style.setProperty(name, value);
+};
 HTMLElement.prototype.toggleClass = function (classes, value) {
   for (const name of [classes].flat()) this.classList.toggle(name, value);
 };
@@ -189,16 +192,17 @@ describe('projects section', () => {
         views.surface?.invalidate();
       }),
     };
+    const navigation = {
+      contentExists: () => true,
+      getConversationStatus: () => ({ openState: 'closed', isRunning: false }) as const,
+      openConversation: jest.fn().mockResolvedValue(undefined),
+      openSessionConversation: jest.fn().mockResolvedValue(undefined),
+      startLinkedContentConversation: jest.fn().mockResolvedValue(undefined),
+      startProjectConversation: jest.fn().mockResolvedValue(undefined),
+    };
     const surface = new SessionManagerSurface({
       plugin: plugin as unknown as ChatFeatureHost,
-      navigation: {
-        contentExists: () => true,
-        getConversationStatus: () => ({ openState: 'closed', isRunning: false }),
-        openConversation: jest.fn().mockResolvedValue(undefined),
-        openSessionConversation: jest.fn().mockResolvedValue(undefined),
-        startLinkedContentConversation: jest.fn().mockResolvedValue(undefined),
-        startProjectConversation: jest.fn().mockResolvedValue(undefined),
-      },
+      navigation,
       getActiveTab: () => null,
       isWide: () => wide,
       canCreateTab: () => true,
@@ -210,7 +214,7 @@ describe('projects section', () => {
     surface.mountSidebar(host);
     surface.renderSidebar();
     const region = () => within(host).getByRole('region', { name: t('chat.projects.header') });
-    return { host, plugin, region, settings, surface, view: within(host) };
+    return { host, navigation, plugin, region, settings, surface, view: within(host) };
   }
 
   afterEach(() => {
@@ -250,28 +254,80 @@ describe('projects section', () => {
     expect(sessionMenu.items.map(entry => entry.title)).not.toContain('By project');
   });
 
-  it('keeps project membership actions out of the compact history menu', () => {
+  it('lists projects in the compact history menu as the sidebar does, with membership moves and New in a project', async () => {
+    const { host, navigation, plugin, surface } = createProjectSurface({ wide: false });
+    surface.mountHistoryControl(host);
+    // The view dismisses the drop-up on any click that reaches the document.
+    const dismissOnDocumentClick = (event: Event) => surface.dismissDropdownFor(event);
+    document.addEventListener('click', dismissOnDocumentClick);
+    fireEvent.click(within(host).getByRole('button', { name: 'Chat history' }));
+    const menuEl = host.querySelector<HTMLElement>('.claudian-history-menu')!;
+    const history = () => within(menuEl);
+    const projects = () => within(history().getByRole('region', { name: t('chat.projects.header') }));
+    const titles = () => menus().at(-1)!.items.map(entry => entry.title);
+
+    // Same header actions and collapsed project rows as the sidebar.
+    expect(projects().getAllByRole('button', { expanded: false }).map(toggle => toggle.textContent))
+      .toEqual([sectionName('Launch', 1), sectionName('Empty', 0)]);
+    fireEvent.click(projects().getByRole('button', { name: t('chat.projects.newProjectAction') }));
+    expect(createProject).toHaveBeenCalledWith(plugin);
+    fireEvent.click(projects().getByRole('button', { name: t('chat.projects.options') }));
+    expect(titles()[0]).toBe(t('chat.projects.sortBy'));
+    // Members leave the session list; without a Pinned section, pinned sessions stay in it.
+    const sessions = within(history().getByRole('region', { name: 'Sessions' }));
+    expect(sessions.queryByText('Member session')).toBeNull();
+    expect(sessions.getByText('Pinned session')).toBeTruthy();
+    expect((await axe(menuEl)).violations).toEqual([]);
+
+    fireEvent.click(projects().getByRole('button', { name: sectionName('Launch', 1) }));
+    expect(projects().getByRole('button', { name: sectionName('Launch', 1) }).getAttribute('aria-expanded')).toBe('true');
+    // Toggles inside the drop-up keep it open; only a click outside dismisses it.
+    expect(menuEl.hasClass('visible')).toBe(true);
+    fireEvent.click(history().getByRole('button', { name: 'Sessions' }));
+    fireEvent.click(history().getByRole('button', { name: 'Sessions' }));
+    expect(menuEl.hasClass('visible')).toBe(true);
+    fireEvent.contextMenu(projects().getByText('Member session'));
+    expect(titles()).toEqual(expect.arrayContaining([t('chat.projects.menu.moveTo'), t('chat.projects.menu.removeFrom')]));
+    fireEvent.contextMenu(sessions.getByText('Loose session'));
+    expect(titles()).toContain(t('chat.projects.menu.moveTo'));
+
+    fireEvent.click(projects().getByRole('button', { name: t('chat.projects.newSessionIn', { name: 'Launch' }) }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(navigation.startProjectConversation).toHaveBeenCalledWith('launch');
+    expect(menuEl.hasClass('visible')).toBe(false);
+
+    fireEvent.click(within(host).getByRole('button', { name: 'Chat history' }));
+    expect(menuEl.hasClass('visible')).toBe(true);
+    fireEvent.click(document.body);
+    expect(menuEl.hasClass('visible')).toBe(false);
+    document.removeEventListener('click', dismissOnDocumentClick);
+  });
+
+  it('keeps an expanded project header in place in the compact menu, which scrolls as one list', () => {
     const { host, surface } = createProjectSurface({ wide: false });
     surface.mountHistoryControl(host);
     fireEvent.click(within(host).getByRole('button', { name: 'Chat history' }));
-    const history = within(host.querySelector<HTMLElement>('.claudian-history-menu')!);
-    const titles = () => menus().at(-1)!.items.map(entry => entry.title);
-    const projectActions = [
-      t('chat.projects.menu.moveTo'),
-      t('chat.projects.menu.removeFrom'),
-      t('chat.projects.menu.moveSelectionTo', { count: 2 }),
-      t('chat.projects.menu.removeSelectionFrom', { count: 1 }),
-    ];
-
-    fireEvent.contextMenu(history.getByText('Member session'));
-    expect(titles()).toContain('Rename');
-    for (const title of projectActions) expect(titles()).not.toContain(title);
-
-    fireEvent.click(history.getByRole('button', { name: /^Member session/ }), { altKey: true });
-    fireEvent.click(history.getByRole('button', { name: /^Loose session/ }), { altKey: true });
-    fireEvent.contextMenu(history.getByText('Member session'));
-    expect(titles()).toContain('Archive 2 sessions');
-    for (const title of projectActions) expect(titles()).not.toContain(title);
+    const menuEl = host.querySelector<HTMLElement>('.claudian-history-menu')!;
+    // jsdom has no layout: stack every row 40px tall in document order inside a 400px list.
+    const rowSelector = '.claudian-history-item, .claudian-session-group-header, .claudian-history-header, .claudian-history-archive-control';
+    const rect = (top: number, height: number) => ({ top, bottom: top + height, height, left: 0, right: 300, width: 300 }) as DOMRect;
+    const layout = jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const list = menuEl.querySelector<HTMLElement>('.claudian-history-list')!;
+      if (this === list) return rect(0, 400);
+      const rows = Array.from(list.querySelectorAll<HTMLElement>(rowSelector));
+      const index = rows.indexOf(this);
+      return index < 0 ? rect(0, 0) : rect(index * 40 - list.scrollTop, 40);
+    });
+    try {
+      const launchHeader = () => menuEl.querySelector<HTMLElement>('[data-project-id="launch"]')!;
+      const before = launchHeader().getBoundingClientRect().top;
+      fireEvent.click(within(menuEl).getByRole('button', { name: sectionName('Launch', 1) }));
+      expect(within(menuEl).getByText('Member session')).toBeTruthy();
+      expect(launchHeader().getBoundingClientRect().top).toBe(before);
+    } finally {
+      layout.mockRestore();
+    }
   });
 
   it('keeps a project expanded across re-renders and the archive, which hides the section', () => {

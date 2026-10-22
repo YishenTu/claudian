@@ -17,7 +17,7 @@
   overflow-anchor: none;
 }
 
-.claudian-session-sidebar .claudian-session-project-empty {
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-project-empty {
   /* The label lines up with project and session titles: inset, icon, gap. */
   padding: 4px var(--claudian-session-inline-inset) 6px
     calc(var(--claudian-session-inline-inset) + var(--claudian-session-icon-size) + var(--claudian-session-icon-gap));
@@ -31,13 +31,13 @@
  * owns hover like a session row. The toggle's padding is taken out of the row's inline
  * start so its icon still sits at the sidebar inset.
  */
-.claudian-session-sidebar .claudian-session-group-header--with-toggle {
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-header--with-toggle {
   padding: 2px var(--claudian-session-inline-inset) 2px calc(var(--claudian-session-inline-inset) - 8px);
   cursor: default;
 }
 
-/* The native button reset is shared with the other sidebar buttons in history.css. */
-.claudian-session-sidebar .claudian-session-group-toggle {
+/* The native button reset is shared with the other session-manager buttons in history.css. */
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-toggle {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
@@ -53,6 +53,6 @@
 }
 
 /* An inset ring, so the scrolling projects list cannot clip it. */
-.claudian-session-sidebar .claudian-session-group-header .claudian-session-group-toggle:focus-visible {
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-header .claudian-session-group-toggle:focus-visible {
   outline-offset: -2px;
 }

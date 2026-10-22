@@ -12,6 +12,9 @@ import { SessionManagerSurface } from '@/features/chat/session-manager/SessionMa
 import type { SessionSurfaceNavigation } from '@/features/chat/session-manager/SessionSurfaceShared';
 import { ChatViewPublisher } from '@/features/chat/workspace/ChatViewPublisher';
 
+/** A document click whose dispatch path never entered the history control. */
+const outsideClick = () => ({ composedPath: () => [] }) as unknown as Event;
+
 type MockMenuItem = { title: string; checked: boolean | null; clickHandler: (() => void) | null };
 type MockMenu = { items: MockMenuItem[] };
 
@@ -774,7 +777,7 @@ describe('SessionManagerSurface history dropdown', () => {
     expect(item.querySelector('.claudian-pin-btn')).toBeNull();
 
     // An outside click hides the menu without abandoning the rendered list.
-    h.surface.dismissDropdown();
+    h.surface.dismissDropdownFor(outsideClick());
     expect(h.historyMenu.hasClass('visible')).toBe(false);
     const beginRename = jest.fn();
     options.onRequestInlineRename({ beginRename, conversationId: 'conversation-1' });
@@ -872,7 +875,7 @@ describe('SessionManagerSurface history dropdown', () => {
     expect(signalOf(2).aborted).toBe(false);
 
     // Dismissing keeps the current render, so reopening does not rebuild the list.
-    h.surface.dismissDropdown();
+    h.surface.dismissDropdownFor(outsideClick());
     h.historyButton.click();
     expect(h.historyMenu.hasClass('visible')).toBe(true);
     expect(render).toHaveBeenCalledTimes(3);

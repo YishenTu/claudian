@@ -1,6 +1,8 @@
 import { setIcon } from 'obsidian';
 
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { buildProjectsHeaderActions, getProjectSort } from '@/features/chat/session-manager/ProjectsHeaderActions';
+import { SessionGroupCollapse } from '@/features/chat/session-manager/SessionGroupCollapse';
 import {
   archiveScopeOptions,
   beginInlineRenameNextFrame,
@@ -8,20 +10,25 @@ import {
   type SessionSurfaceShared,
 } from '@/features/chat/session-manager/SessionSurfaceShared';
 
+const VIEW_HEIGHT_SHARE = 0.6;
+
 export interface HistoryDropdownDeps {
   plugin: ChatFeatureHost;
-  navigation: Pick<SessionSurfaceNavigation, 'getConversationStatus' | 'openConversation'>;
+  navigation: Pick<SessionSurfaceNavigation, 'getConversationStatus' | 'openConversation' | 'startProjectConversation'>;
   shared: SessionSurfaceShared;
 }
 
 /**
  * The compact layout's history button and drop-up session menu: tab-aware open
- * states, open-in-new-tab, close-on-select, and in-list archive navigation.
+ * states, open-in-new-tab, close-on-select, in-list archive navigation, and the
+ * same projects section as the sidebar.
  */
 export class HistoryDropdown {
+  private containerEl: HTMLElement | null = null;
   private menuEl: HTMLElement | null = null;
   private renderAbortController: AbortController | null = null;
   private dirty = true;
+  private readonly collapse = new SessionGroupCollapse();
 
   constructor(private readonly deps: HistoryDropdownDeps) {}
 
@@ -30,6 +37,7 @@ export class HistoryDropdown {
     const historyContainer = parentEl.createDiv({
       cls: 'claudian-history-container claudian-nav-dropup-container',
     });
+    this.containerEl = historyContainer;
     const historyBtn = historyContainer.createEl('button', {
       cls: 'claudian-input-nav-btn',
       attr: { type: 'button' },
@@ -62,9 +70,20 @@ export class HistoryDropdown {
     if (this.menuEl.hasClass('visible')) {
       this.close();
     } else {
+      this.fitToView(this.menuEl);
       this.menuEl.addClass('visible');
       this.render();
     }
+  }
+
+  /** Caps the drop-up at 60% of the chat view's height, measured as it opens. */
+  private fitToView(menuEl: HTMLElement): void {
+    const viewEl = menuEl.closest<HTMLElement>('.claudian-container');
+    const height = viewEl?.clientHeight ?? 0;
+    // An unmeasured view keeps the stylesheet's fallback cap.
+    menuEl.setCssProps({
+      '--claudian-history-menu-max-height': height > 0 ? `${Math.round(height * VIEW_HEIGHT_SHARE)}px` : '',
+    });
   }
 
   /** Hides the menu and abandons its in-flight render. */
@@ -73,8 +92,12 @@ export class HistoryDropdown {
     this.cancelRendering();
   }
 
-  /** Hides the menu for an outside click, keeping its rendered list. */
-  dismiss(): void {
+  /**
+   * Hides the menu for a click outside it, keeping its rendered list. The click's dispatch path decides, since a
+   * toggle inside the menu may already be detached by the rerender it caused.
+   */
+  dismissFor(event: Event): void {
+    if (this.containerEl && event.composedPath().includes(this.containerEl)) return;
     this.menuEl?.removeClass('visible');
   }
 
@@ -124,8 +147,19 @@ export class HistoryDropdown {
         await plugin.assignConversationToCurrentDevice(id);
       },
       onBeforeRestoreListState: (target: HTMLElement) => this.buildArchiveNavigation(target),
+      // The archive lists no projects; its members stay among the archived sessions.
+      showProjectsSection: true,
+      projectSort: getProjectSort(plugin),
+      isGroupCollapsed: groupKey => this.collapse.isCollapsed(groupKey),
+      onGroupCollapseChange: (groupKey, collapsed) => this.collapse.setCollapsed(groupKey, collapsed),
+      onStartProjectConversation: async (projectId: string) => {
+        shared.setArchiveView(false);
+        await navigation.startProjectConversation(projectId);
+        this.close();
+      },
       signal,
     });
+    if (!signal.aborted) buildProjectsHeaderActions(container, plugin);
   }
 
   private async openConversation(

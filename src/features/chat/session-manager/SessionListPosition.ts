@@ -1,10 +1,22 @@
 const LIST_SELECTOR = '.claudian-history-list';
 const ITEM_SELECTOR = '.claudian-history-item';
+/**
+ * Rows a rerender keeps in place: sessions, and project headers, so expanding a project in a list that scrolls as
+ * one keeps its header still instead of a session below it.
+ */
+const ANCHOR_SELECTOR = '.claudian-history-item[data-conversation-id], .claudian-session-group-header[data-project-id]';
 
 type ScrollAnchor = {
-  conversationId: string;
+  key: string;
   viewportOffset: number;
 };
+
+function anchorKey(element: HTMLElement): string | null {
+  const conversationId = element.getAttribute('data-conversation-id');
+  if (conversationId) return `conversation:${conversationId}`;
+  const projectId = element.getAttribute('data-project-id');
+  return projectId ? `project:${projectId}` : null;
+}
 
 /**
  * Scroll and pagination state of a rendered session list, carried across a rerender so the
@@ -31,18 +43,18 @@ function captureScrollAnchors(list: HTMLElement): ScrollAnchor[] {
   const listRect = list.getBoundingClientRect();
   if (listRect.height <= 0) return [];
 
-  return Array.from(list.querySelectorAll<HTMLElement>(ITEM_SELECTOR))
+  return Array.from(list.querySelectorAll<HTMLElement>(ANCHOR_SELECTOR))
     .map((item): ScrollAnchor | null => {
-      const conversationId = item.getAttribute('data-conversation-id');
+      const key = anchorKey(item);
       const itemRect = item.getBoundingClientRect();
       if (
-        !conversationId
+        !key
         || itemRect.height <= 0
         || itemRect.bottom <= listRect.top
         || itemRect.top >= listRect.bottom
       ) return null;
       return {
-        conversationId,
+        key,
         viewportOffset: itemRect.top - listRect.top,
       };
     })
@@ -54,11 +66,16 @@ export function captureSessionListPosition(container: HTMLElement): SessionListP
   const list = container.querySelector<HTMLElement>(LIST_SELECTOR);
   if (!list) return INITIAL_SESSION_LIST_POSITION;
 
-  const sessionList = list.querySelector<HTMLElement>('.claudian-session-list-items') ?? list;
+  // Only the persistent sidebar scrolls its sections separately; the compact menu scrolls the whole list.
+  const sessionList = isSectionScrolling(list)
+    ? list.querySelector<HTMLElement>('.claudian-session-list-items') ?? list
+    : list;
   const pinnedList = list
     .querySelector<HTMLElement>('.claudian-history-section--pinned')
     ?.querySelector<HTMLElement>('.claudian-history-section-items');
-  const projectsList = list.querySelector<HTMLElement>('.claudian-session-project-items');
+  const projectsList = isSectionScrolling(list)
+    ? list.querySelector<HTMLElement>('.claudian-session-project-items')
+    : null;
   const recordedVisibleCount = Number(list.dataset.visibleCount);
   return {
     visibleCount: Number.isFinite(recordedVisibleCount) && recordedVisibleCount > 0
@@ -75,6 +92,15 @@ export function recordVisibleCount(list: HTMLElement, visibleCount: number): voi
   list.dataset.visibleCount = String(visibleCount);
 }
 
+/** Records whether the list's sections scroll on their own, so the next capture reads the elements that scroll. */
+export function recordSectionScrolling(list: HTMLElement, sectionScrolling: boolean): void {
+  list.dataset.sectionScrolling = String(sectionScrolling);
+}
+
+function isSectionScrolling(list: HTMLElement): boolean {
+  return list.dataset.sectionScrolling === 'true';
+}
+
 /** Restores scroll after the new rows and any surface controls above them are in place. */
 export function restoreSessionListPosition(
   position: SessionListPosition,
@@ -87,12 +113,10 @@ export function restoreSessionListPosition(
   sessionList.scrollTop = position.sessionScrollTop;
   if (position.anchors.length === 0) return;
 
-  const items = Array.from(sessionList.querySelectorAll<HTMLElement>(ITEM_SELECTOR));
+  const items = Array.from(sessionList.querySelectorAll<HTMLElement>(ANCHOR_SELECTOR));
   const listTop = sessionList.getBoundingClientRect().top;
   for (const anchor of position.anchors) {
-    const item = items.find(candidate => (
-      candidate.getAttribute('data-conversation-id') === anchor.conversationId
-    ));
+    const item = items.find(candidate => anchorKey(candidate) === anchor.key);
     if (!item) continue;
 
     const itemRect = item.getBoundingClientRect();

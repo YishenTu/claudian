@@ -7,13 +7,18 @@
  * One icon system for every sidebar row: leading glyphs sit in an icon-size slot at the
  * inline inset, so labels after them share one x; trailing controls are action-size
  * boxes whose inline end is the inset, so they line up with the section header buttons.
+ * The compact drop-up shares it for its section headers and project rows.
  */
-.claudian-session-sidebar {
+.claudian-session-sidebar,
+.claudian-history-menu {
   --claudian-session-icon-size: 14px;
   --claudian-session-icon-gap: 8px;
   --claudian-session-action-size: 24px;
   --claudian-session-action-gap: 4px;
   --claudian-session-inline-inset: 12px;
+}
+
+.claudian-session-sidebar {
   display: none;
   flex: 0 0 var(--claudian-session-sidebar-width, 240px);
   flex-direction: column;
@@ -162,7 +167,8 @@
   height: var(--claudian-session-icon-size, 16px);
 }
 
-.claudian-session-sidebar .claudian-history-header {
+.claudian-session-sidebar .claudian-history-header,
+.claudian-history-menu .claudian-session-section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -181,19 +187,24 @@
   min-height: 40px;
 }
 
+.claudian-history-menu .claudian-session-section-header {
+  min-height: 32px;
+  padding-block: 0;
+}
+
 /*
- * Native buttons in the sidebar take the look of the header or row they sit in. Obsidian
+ * Native buttons in the sidebar and drop-up sections take the look of the header or row they sit in. Obsidian
  * restores button chrome on these states, so the reset covers them; each control sets its
  * own box below.
  */
-.claudian-session-sidebar :is(
+:is(.claudian-session-sidebar, .claudian-history-menu) :is(
   .claudian-history-section-toggle,
   .claudian-session-header-btn,
   .claudian-session-group-toggle,
   .claudian-session-group-menu-action,
   .claudian-session-group-new-action
 ),
-.claudian-session-sidebar :is(
+:is(.claudian-session-sidebar, .claudian-history-menu) :is(
   .claudian-history-section-toggle,
   .claudian-session-header-btn,
   .claudian-session-group-toggle,
@@ -207,7 +218,7 @@
   cursor: pointer;
 }
 
-.claudian-session-sidebar :is(
+:is(.claudian-session-sidebar, .claudian-history-menu) :is(
   .claudian-history-section-toggle,
   .claudian-session-header-btn,
   .claudian-session-group-toggle,
@@ -219,7 +230,7 @@
 }
 
 /* A section header's label is a native toggle that collapses the section. */
-.claudian-session-sidebar .claudian-history-section-toggle {
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-history-section-toggle {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
@@ -244,7 +255,7 @@
   margin-inline-start: auto;
 }
 
-.claudian-session-sidebar .claudian-session-header-btn {
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-header-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -501,23 +512,23 @@
 }
 
 /*
- * Sidebar group rows (projects, linked content, unlinked, missing). Leading icons take
+ * Sidebar and drop-up group rows (projects, linked content, unlinked, missing). Leading icons take
  * the icon slot; the gap between trailing controls matches the section header actions.
  */
-.claudian-session-sidebar .claudian-session-group-header {
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-header {
   gap: var(--claudian-session-action-gap);
   padding-inline: var(--claudian-session-inline-inset);
 }
 
-.claudian-session-sidebar .claudian-session-group-icon {
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-icon {
   flex-basis: var(--claudian-session-icon-size);
 }
 
-.claudian-session-sidebar .claudian-session-group-header > .claudian-session-group-icon {
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-header > .claudian-session-group-icon {
   margin-inline-end: calc(var(--claudian-session-icon-gap) - var(--claudian-session-action-gap));
 }
 
-.claudian-session-sidebar .claudian-session-group-icon svg {
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-icon svg {
   width: var(--claudian-session-icon-size);
   height: var(--claudian-session-icon-size);
 }
@@ -527,7 +538,7 @@
  * stay focusable, so revealing them never reflows the row; the negative block margin
  * keeps a 24px box from growing a 17px-line row.
  */
-.claudian-session-sidebar .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action) {
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action) {
   display: flex;
   flex: 0 0 var(--claudian-session-action-size);
   align-items: center;
@@ -542,15 +553,15 @@
   transition: color 0.15s ease;
 }
 
-.claudian-session-sidebar .claudian-session-group-header:is(:hover, :focus-within) :is(.claudian-session-group-menu-action, .claudian-session-group-new-action) {
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-header:is(:hover, :focus-within) :is(.claudian-session-group-menu-action, .claudian-session-group-new-action) {
   opacity: 1;
 }
 
-.claudian-session-sidebar .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action):is(:hover, :focus-visible) {
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action):is(:hover, :focus-visible) {
   color: var(--text-normal);
 }
 
-.claudian-session-sidebar .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action) svg {
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action) svg {
   width: var(--claudian-session-icon-size);
   height: var(--claudian-session-icon-size);
   color: inherit;
@@ -667,6 +678,10 @@
 }
 
 /* Grouped sessions start at their group's label. */
+.claudian-history-menu .claudian-session-group-label {
+  line-height: 17px;
+}
+
 .claudian-session-sidebar .claudian-session-group-body .claudian-history-item {
   padding-inline-start: calc(
     var(--claudian-session-inline-inset) + var(--claudian-session-icon-size) + var(--claudian-session-icon-gap)
@@ -875,6 +890,68 @@ body.theme-dark .claudian-nav-dropup-menu {
 
 .claudian-nav-dropup-menu.visible {
   display: block;
+}
+
+/*
+ * The history drop-up grows to 60% of the view (measured when it opens) and scrolls its
+ * projects and sessions as one list.
+ */
+.claudian-history-menu.visible {
+  display: flex;
+  flex-direction: column;
+  max-height: var(--claudian-history-menu-max-height, 400px);
+}
+
+.claudian-history-menu .claudian-history-list {
+  flex: 1 1 auto;
+  max-height: none;
+  min-height: 0;
+}
+
+/*
+ * Drop-up project rows take the drop-up's session row look (padding, title type, 16px icon,
+ * divider), so its list reads as one design; the sidebar keeps its compact rows. Members keep
+ * the session row inset, and the empty hint starts at the project label, where titles do.
+ */
+.claudian-history-menu {
+  --claudian-history-menu-label-start: calc(12px + 16px + 10px);
+}
+
+.claudian-history-menu .claudian-session-group-header.claudian-session-group-header--project {
+  padding-block: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  border-radius: 0;
+  color: var(--text-normal);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.claudian-history-menu .claudian-session-group-header--project .claudian-session-group-toggle {
+  gap: 10px;
+}
+
+.claudian-history-menu .claudian-session-group-header--project .claudian-session-group-icon {
+  flex-basis: 16px;
+  color: var(--text-muted);
+}
+
+.claudian-history-menu .claudian-session-group-header--project .claudian-session-group-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* A project's last member still divides it from the next project row. */
+.claudian-history-menu .claudian-session-group-body .claudian-history-item:last-child {
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.claudian-history-menu .claudian-session-project-empty.claudian-session-project-empty {
+  padding-inline-start: var(--claudian-history-menu-label-start);
+}
+
+.claudian-history-menu .claudian-history-section--sessions:not(:first-child),
+.claudian-history-menu .claudian-history-archive-control + .claudian-history-section--sessions {
+  margin-top: 4px;
 }
 
 .claudian-history-header {
@@ -1103,4 +1180,19 @@ body.theme-dark .claudian-nav-dropup-menu {
 .claudian-history-load-more:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
+}
+
+/*
+ * Touch has no hover: row, group, and divider actions that reveal on hover stay visible on
+ * mobile, in the sidebar and the drop-up.
+ */
+body.is-mobile .claudian-history-item-actions,
+body.is-mobile .claudian-session-recency-divider-action,
+body.is-mobile :is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action) {
+  opacity: 1;
+}
+
+body.is-mobile .claudian-session-sidebar .claudian-history-item-actions,
+body.is-mobile .claudian-session-group-header .claudian-session-group-new-action {
+  display: flex;
 }

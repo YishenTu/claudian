@@ -9,7 +9,7 @@ import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarn
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
-import { App, Component, MarkdownRenderer, Menu, Notice, TFile, TFolder } from 'obsidian';
+import { App, Component, MarkdownRenderer, Menu, TFile, TFolder } from 'obsidian';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
@@ -549,7 +549,9 @@ describe('composer project chip', () => {
 
     await sendFirst(tab, h);
     expect(created.projectId).toBe(launch.id);
-    expect(row.getByRole('button', { name: chipName })).toBeTruthy();
+    // Once the session starts, the chip is a fixed label rather than a selector.
+    const fixedChip = row.getByRole('button', { name: chipName }) as HTMLButtonElement;
+    expect([fixedChip.disabled, fixedChip.hasAttribute('aria-haspopup')]).toEqual([true, false]);
 
     // Project deletion reaches each composer through the view's list-change fan-out.
     projects.remove(launch.id);
@@ -577,6 +579,19 @@ describe('composer project chip', () => {
   function choose(menu: MockMenu, title: string): void {
     menu.items.find(item => item.title === title)!.clickHandler!();
   }
+
+  it('shows no chip for a draft outside any project, including after choosing No project', async () => {
+    const { h } = projectSetup();
+    const tab = await h.attach({ blank: true });
+    const row = within(tab.dom.infoRowEl);
+    expect(tab.dom.infoRowEl.isConnected).toBe(true);
+    expect(row.queryByRole('button', { name: /^Project:/ })).toBeNull();
+
+    tab.controllers.conversationController.seedDraftProject(launch.id);
+    choose(openChipMenu(row), t('chat.projects.noProject'));
+    expect(row.queryByRole('button', { name: /^Project:/ })).toBeNull();
+    await destroyTab(tab);
+  });
 
   it('lists live projects pinned first with the current one checked, then No project', async () => {
     const { h, projects } = projectSetup();
@@ -606,7 +621,7 @@ describe('composer project chip', () => {
     const row = within(tab.dom.infoRowEl);
 
     choose(openChipMenu(row), projectId ? 'Ops' : t('chat.projects.noProject'));
-    expect(tab.controllers.conversationController.project).toEqual({ projectId, changeable: true });
+    expect(tab.controllers.conversationController.project).toEqual({ projectId, isDraft: true, changeable: true });
     expect(row.queryByRole('button', { name: /^Project:/ })?.getAttribute('aria-label')).toBe(
       projectId ? 'Project: Ops' : undefined,
     );
@@ -617,30 +632,23 @@ describe('composer project chip', () => {
     await destroyTab(tab);
   });
 
-  it('changes an existing conversation\'s membership from the chip menu, reporting a failed write', async () => {
-    const { h, projects, created } = projectSetup();
-    projects.put(projectRecord({ id: 'ops', name: 'Ops' }));
-    const setPlacement = jest.fn(async (_ids: readonly string[], _placement: { projectId?: string | null }) => undefined);
-    Object.assign(h.plugin, { conversationLifecycle: { setPlacement } });
+  it('shows a started session\'s project as a fixed chip, and none outside a project', async () => {
+    const { h, created } = projectSetup();
     Object.assign(created, { projectId: launch.id });
-    jest.mocked(Notice).mockClear();
     const tab = await h.attach();
     const row = within(tab.dom.infoRowEl);
 
     // Membership is the conversation's: the draft seed cannot be written once a conversation is bound.
-    expect(() => tab.controllers.conversationController.seedDraftProject('ops')).toThrow();
-    choose(openChipMenu(row), 'Ops');
-    choose(openChipMenu(row), t('chat.projects.noProject'));
-    await waitFor(() => expect(setPlacement).toHaveBeenCalledTimes(2));
-    expect(setPlacement.mock.calls).toEqual([[['conversation'], { projectId: 'ops' }], [['conversation'], { projectId: null }]]);
-    expect(Notice).not.toHaveBeenCalled();
+    expect(() => tab.controllers.conversationController.seedDraftProject(null)).toThrow();
+    const chip = row.getByRole('button', { name: chipName }) as HTMLButtonElement;
+    expect([chip.disabled, chip.hasAttribute('aria-haspopup')]).toEqual([true, false]);
+    const menuCount = menus().length;
+    fireEvent.click(chip);
+    expect(menus()).toHaveLength(menuCount);
 
-    setPlacement.mockRejectedValueOnce(new Error('write failed'));
-    choose(openChipMenu(row), 'Ops');
-    await waitFor(() => expect(Notice).toHaveBeenCalledWith(t('chat.projects.errors.move')));
-    setPlacement.mockRejectedValueOnce(new Error('write failed'));
-    choose(openChipMenu(row), t('chat.projects.noProject'));
-    await waitFor(() => expect(Notice).toHaveBeenCalledWith(t('chat.projects.errors.remove')));
+    Object.assign(created, { projectId: undefined });
+    tab.composer.refreshProject();
+    expect(row.queryByRole('button', { name: /^Project:/ })).toBeNull();
     await destroyTab(tab);
   });
 
@@ -668,14 +676,14 @@ describe('composer project chip', () => {
     expect(menus()).toHaveLength(menuCount);
     expect(() => conversationController.seedDraftProject(null)).toThrow();
     choose(staleMenu, t('chat.projects.noProject'));
-    expect(conversationController.project).toEqual({ projectId: launch.id, changeable: false });
+    expect(conversationController.project).toEqual({ projectId: launch.id, isDraft: true, changeable: false });
 
     creating.reject(new Error('Disk full'));
     await sending.catch(() => undefined);
 
     choose(openChipMenu(row), t('chat.projects.noProject'));
     expect(row.queryByRole('button', { name: chipName })).toBeNull();
-    expect(conversationController.project).toEqual({ projectId: undefined, changeable: true });
+    expect(conversationController.project).toEqual({ projectId: undefined, isDraft: true, changeable: true });
     await destroyTab(tab);
   });
 

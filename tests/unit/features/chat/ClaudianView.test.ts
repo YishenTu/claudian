@@ -221,7 +221,7 @@ describe('ClaudianView tab controls', () => {
     const focus = jest.fn();
     const tab = { composer: { focus } };
     const view = createClaudianView({
-      tabManager: { createTab: jest.fn().mockResolvedValue(tab) },
+      tabManager: { createTab: jest.fn().mockResolvedValue(tab), getActiveTab: () => null },
     });
 
     await expect(view.createNewTab()).resolves.toBe(tab);

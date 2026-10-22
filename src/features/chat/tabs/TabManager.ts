@@ -1,4 +1,4 @@
-import { Notice } from 'obsidian';
+import { type App, Notice } from 'obsidian';
 
 import { type AppTabManagerState, normalizeTabLabel } from '@/core/bootstrap/tabManagerState';
 import type { ProviderId } from '@/core/providers/types';
@@ -6,6 +6,7 @@ import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { type DraftSessionHold, SessionAlreadyAttached } from '@/features/chat/sessions/SessionRuntimePool';
 import type { TabBarItem, TabId, TabManagerInterface, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
+import { inheritedDraftSeed } from '@/features/chat/tabs/draftSeed';
 import type { ForkTargetHost } from '@/features/chat/tabs/forking/ForkTarget';
 import { ParkedDrafts } from '@/features/chat/tabs/ParkedDrafts';
 import { TabActivation } from '@/features/chat/tabs/TabActivation';
@@ -36,10 +37,11 @@ import { createTabRuntimeCallbacks, type TabRuntimeCallbackHost } from '@/featur
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import type {
   AssembledTabRuntime,
+  DraftSeed,
   TabLayoutPolicy,
   TabManagerCallbacks,
 } from '@/features/chat/tabs/types';
-import { ViewerSlot } from '@/features/chat/tabs/ViewerSlot';
+import { linkedContentExists, ViewerSlot } from '@/features/chat/tabs/ViewerSlot';
 import type { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 import { revealWorkspaceLeaf } from '@/utils/obsidianCompat';
 
@@ -47,12 +49,27 @@ type CreateTabOptions = {
   activate?: boolean;
   draftModel?: string;
   providerId?: ProviderId | null;
+  /** Applied to a blank draft before it is published. */
+  seed?: DraftSeed;
 };
 
 type AdmissionOptions = CreateTabOptions & {
   lifecycleState?: Extract<AssembledTabRuntime['lifecycleState'], 'provisional' | 'open'>;
   draftSessionKey?: string;
 };
+
+/**
+ * Seeds a blank draft before publication; the caller rolls back the unpublished tab if this throws, including for
+ * Linked content deleted while the draft was assembled.
+ */
+function applyDraftSeed(app: Pick<App, 'vault'>, tab: AssembledTabRuntime, seed: DraftSeed | undefined): void {
+  if (!seed || tab.conversationId) return;
+  if (seed.linkedContentPath !== undefined) {
+    if (!linkedContentExists(app, seed.linkedContentPath)) throw new Error('Linked content is no longer available');
+    tab.linkedContent.selectExplicit(seed.linkedContentPath);
+  }
+  if (seed.projectId !== undefined) tab.controllers.conversationController.seedDraftProject(seed.projectId);
+}
 
 /** In the narrow layout a saved preview of a session that has a narrow tab returns to that tab. */
 function returnPreviewToNarrowTab(state: AppTabManagerState): AppTabManagerState {
@@ -173,15 +190,19 @@ export class TabManager implements TabManagerInterface {
       layoutPolicy,
       forkTargetHost,
       isShutdownSnapshotOpen: () => this.shutdownSnapshotOpen,
-      startNew: tab => this.navigation.enqueue(tab, async isCurrent => { await this.rebindTab(tab, null, isCurrent); }),
+      inheritedSeed: tab => inheritedDraftSeed(this.plugin.projects, tab),
+      startNew: (tab, seed) => this.navigation.enqueue(tab, async (isCurrent) => {
+        await this.rebindTab(tab, null, isCurrent, { seed });
+      }),
     };
     this.viewerSlot = new ViewerSlot({
       app: plugin.app,
       membership,
       navigation: this.navigation,
       // A held session keeps its own selection; only a new draft takes the saved one.
-      createPreview: (conversationId, draft) => this.#createTab(conversationId, undefined, {
+      createPreview: (conversationId, draft, seed) => this.#createTab(conversationId, undefined, {
         lifecycleState: 'provisional',
+        ...(seed ? { seed } : {}),
         ...(draft?.draftSessionKey ? { draftSessionKey: draft.draftSessionKey }
           : draft?.draftModel ? { draftModel: draft.draftModel, providerId: draft.providerId ?? null }
             : {}),
@@ -267,6 +288,7 @@ export class TabManager implements TabManagerInterface {
       providerId,
       lifecycleState = 'open',
       draftSessionKey,
+      seed,
     } = options;
 
     const conversation = conversationId
@@ -319,6 +341,8 @@ export class TabManager implements TabManagerInterface {
       if (restoredIdentity) tab.session.setLabel(restoredIdentity.label ?? null);
       this.commandDiscovery.registerTab(tab.id);
       this.parkedDrafts.restoreInto(tab);
+      // A reattached held draft keeps its own seed, which its pending first turn may have frozen.
+      if (!draftSessionKey) applyDraftSeed(this.plugin.app, tab, seed);
     } catch (error) {
       const rollbackErrors = await this.#discardUnpublished(tab, runtimeTabId);
       if (rollbackErrors.length > 0) {
@@ -442,7 +466,7 @@ export class TabManager implements TabManagerInterface {
     source: AssembledTabRuntime,
     conversationId: string | null,
     isCurrent: () => boolean = () => this.membership.isTabAlive(source),
-    options: { parkSourceDrafts?: boolean } = {},
+    options: { parkSourceDrafts?: boolean; seed?: DraftSeed } = {},
   ): Promise<AssembledTabRuntime | null> {
     if (!isCurrent() || !this.membership.isTabStateMutable(source)) return null;
     if (conversationId && source.conversationId === conversationId) return source;
@@ -476,6 +500,7 @@ export class TabManager implements TabManagerInterface {
         }
       }
       this.parkedDrafts.restoreInto(target);
+      applyDraftSeed(this.plugin.app, target, options.seed);
       const wasActive = this.membership.getActiveTabId() === source.id;
       if (wasActive) deactivateTab(source);
       this.membership.install(target);
@@ -813,12 +838,13 @@ export class TabManager implements TabManagerInterface {
   }
 
   /**
-   * Creates a new conversation in the active tab.
+   * Creates a new conversation in the active tab; its blank draft carries `seed` from before it is published. By
+   * default New stays in the active session's project.
    */
-  async createNewConversation(): Promise<void> {
+  async createNewConversation(seed?: DraftSeed): Promise<void> {
     const activeTab = this.getActiveTab();
     if (activeTab) {
-      await this.runtimeCallbackHost.startNew(activeTab);
+      await this.runtimeCallbackHost.startNew(activeTab, seed ?? inheritedDraftSeed(this.plugin.projects, activeTab));
     }
   }
 

@@ -191,8 +191,8 @@ export interface TabLayoutPolicy {
   forkTarget(): 'ask' | 'viewer';
   /** Opens a session picked from `sourceTab`'s command; false leaves the pick to the source tab. */
   openPicked(conversationId: string, sourceTab: AssembledTabRuntime): Promise<boolean>;
-  /** Starts a new conversation requested from `sourceTab`; false clears the source tab in place. */
-  startNew(sourceTab: AssembledTabRuntime): Promise<boolean>;
+  /** Starts a new conversation requested from `sourceTab` with `seed`; false clears the source tab in place. */
+  startNew(sourceTab: AssembledTabRuntime, seed: DraftSeed): Promise<boolean>;
   /** Whether a viewer slot shows previews; a restored draft preview stays provisional only then. */
   showsPreviews(): boolean;
 }
@@ -239,4 +239,13 @@ export interface TabManagerCallbacks {
 
   /** Called when the active provider changes within a tab (blank tab model selection). */
   onTabProviderChanged?: (tabId: TabId, providerId: ProviderId | null) => void;
+}
+
+/**
+ * What a new blank draft starts with; its session's model owns both until first input freezes them. Tab assembly
+ * applies it before publishing the draft, so no first input can be admitted without it.
+ */
+export interface DraftSeed {
+  linkedContentPath?: string;
+  projectId?: string;
 }

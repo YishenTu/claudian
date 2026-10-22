@@ -369,12 +369,11 @@
       "chipLabel": "プロジェクト: {name}",
       "noProject": "プロジェクトなし",
       "menu": {
-        "newSession": "プロジェクトで新しいセッション",
         "edit": "プロジェクトを編集",
         "openMemory": "プロジェクトメモリを開く",
+        "archiveAll": "すべてのセッションをアーカイブ",
         "pin": "プロジェクトをピン留め",
         "unpin": "プロジェクトのピン留めを解除",
-        "archiveIdle": "アイドル中のセッションをアーカイブ",
         "delete": "プロジェクトを削除",
         "moveTo": "プロジェクトへ移動…",
         "moveSelectionTo": "{count} 件のセッションをプロジェクトへ移動…",

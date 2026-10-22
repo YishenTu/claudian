@@ -4,7 +4,7 @@ import type { TabConversationNavigation } from '@/features/chat/tabs/TabConversa
 import type { TabMembership } from '@/features/chat/tabs/TabMembership';
 import type { TabProviderPresence } from '@/features/chat/tabs/TabProviderPresence';
 import type { TabRuntimeFactoryOptions } from '@/features/chat/tabs/TabRuntimeFactory';
-import type { AssembledTabRuntime, TabLayoutPolicy, TabManagerCallbacks } from '@/features/chat/tabs/types';
+import type { AssembledTabRuntime, DraftSeed, TabLayoutPolicy, TabManagerCallbacks } from '@/features/chat/tabs/types';
 
 /** Manager collaborators that runtime events reach; liveness is revalidated through `membership`. */
 export interface TabRuntimeCallbackHost {
@@ -17,7 +17,10 @@ export interface TabRuntimeCallbackHost {
   readonly forkTargetHost: ForkTargetHost;
   /** Shutdown has begun but the final identity snapshot is not sealed yet. */
   isShutdownSnapshotOpen(): boolean;
-  startNew(tab: AssembledTabRuntime): Promise<void>;
+  /** Rebinds the tab to a new blank draft carrying `seed`. */
+  startNew(tab: AssembledTabRuntime, seed?: DraftSeed): Promise<void>;
+  /** What New started from `tab` begins with: its project, if any. */
+  inheritedSeed(tab: AssembledTabRuntime): DraftSeed;
 }
 
 export type TabRuntimeCallbacks = Omit<
@@ -58,9 +61,10 @@ export function createTabRuntimeCallbacks(
     startNewConversation: async () => {
       const sourceTab = liveRuntime();
       if (!sourceTab) return;
-      if (await host.layoutPolicy.startNew(sourceTab)) return;
+      const seed = host.inheritedSeed(sourceTab);
+      if (await host.layoutPolicy.startNew(sourceTab, seed)) return;
       if (!membership.isTabAlive(sourceTab)) return;
-      await host.startNew(sourceTab);
+      await host.startNew(sourceTab, seed);
     },
     onStreamingChanged: (runtime, isStreaming) => {
       if (membership.isTabStateMutable(runtime)) callbacks.onTabStreamingChanged?.(runtime.id, isStreaming);

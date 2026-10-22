@@ -10,6 +10,7 @@ import { SessionManagerSurface, setControlAvailability } from '@/features/chat/s
 import { SessionNavigation } from '@/features/chat/session-manager/SessionNavigation';
 import { getSessionProviderId } from '@/features/chat/sessions/sessionProvider';
 import type { ChatTab, TabId } from '@/features/chat/tabs/ChatTab';
+import { inheritedDraftSeed } from '@/features/chat/tabs/draftSeed';
 import { TabWorkspaceLifecycle } from '@/features/chat/tabs/persistence/TabWorkspaceLifecycle';
 import { TabBar } from '@/features/chat/tabs/TabBar';
 import {
@@ -18,7 +19,7 @@ import {
   sendTabInputMessageFromExplicitEnterShortcut,
 } from '@/features/chat/tabs/TabInputEvents';
 import { TabManager } from '@/features/chat/tabs/TabManager';
-import type { AssembledTabRuntime, TabLayoutPolicy } from '@/features/chat/tabs/types';
+import type { AssembledTabRuntime, DraftSeed, TabLayoutPolicy } from '@/features/chat/tabs/types';
 import {
   cancelScheduledAnimationFrame,
   scheduleAnimationFrame,
@@ -84,8 +85,14 @@ export class ClaudianView extends ItemView implements ZenModeSource {
           await this.tabManager.viewerSlot.startDraft({ linkedContentPath: contentPath });
         },
         startProjectConversation: async (projectId) => {
-          if (!this.tabManager) throw new Error('Chat tabs are unavailable');
-          await this.tabManager.viewerSlot.startDraft({ projectId });
+          const tabManager = this.tabManager;
+          if (!tabManager) throw new Error('Chat tabs are unavailable');
+          if (this.layout.isWide) {
+            await tabManager.viewerSlot.startDraft({ projectId });
+            return;
+          }
+          // Compact: the active tab starts a new conversation, as New does there, and its draft joins the project.
+          await tabManager.createNewConversation({ projectId });
         },
         contentExists: contentPath => this.sessionNavigation.contentExists(contentPath),
       },
@@ -479,21 +486,26 @@ export class ClaudianView extends ItemView implements ZenModeSource {
         await getTabManager().viewerSlot.show(conversationId, { sourceTab });
         return true;
       },
-      startNew: async (sourceTab) => {
+      startNew: async (sourceTab, seed) => {
         if (!this.layout.isWide) return false;
-        await getTabManager().viewerSlot.startDraft({ sourceTab });
+        await getTabManager().viewerSlot.startDraft({ sourceTab, ...seed });
         return true;
       },
       showsPreviews: () => this.layout.isWide,
     };
   }
 
+  /** New from the view (sidebar New, compact New tab) stays in the shown session's project. */
   async startNewConversation(): Promise<void> {
     if (this.layout.isWide) {
-      await this.tabManager?.viewerSlot.startDraft();
+      await this.tabManager?.viewerSlot.startDraft(this.inheritedDraftSeed());
       return;
     }
     await this.createNewTab();
+  }
+
+  private inheritedDraftSeed(): DraftSeed {
+    return inheritedDraftSeed(this.plugin.projects, this.tabManager?.getActiveTab());
   }
 
   getCompactTabManager(): TabManager | null {
@@ -543,7 +555,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   }
 
   async createNewTab(): Promise<AssembledTabRuntime | null> {
-    const tab = await this.tabManager?.createTab();
+    const tab = await this.tabManager?.createTab(null, undefined, { seed: this.inheritedDraftSeed() });
     if (!tab) return null;
     this.updateTabBarVisibility();
     tab.composer.focus();
@@ -617,8 +629,8 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     const activeDocument = this.containerEl.ownerDocument;
 
     // Document-level click to close dropdowns
-    this.registerDomEvent(activeDocument, 'click', () => {
-      this.sessions.dismissDropdown();
+    this.registerDomEvent(activeDocument, 'click', (event) => {
+      this.sessions.dismissDropdownFor(event);
     });
 
     // View scopes are the Obsidian-owned boundary for main-area tab hotkeys.

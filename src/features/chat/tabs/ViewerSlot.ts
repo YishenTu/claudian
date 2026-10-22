@@ -1,12 +1,14 @@
 import type { App } from 'obsidian';
 
+import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import type { DraftSessionHold } from '@/features/chat/sessions/SessionRuntimePool';
 import type { TabId } from '@/features/chat/tabs/ChatTab';
+import { sessionProjectId } from '@/features/chat/tabs/draftSeed';
 import type { ParkedDrafts } from '@/features/chat/tabs/ParkedDrafts';
 import type { NavigationRequestCheck, TabConversationNavigation } from '@/features/chat/tabs/TabConversationNavigation';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import { commitProvisionalTab } from '@/features/chat/tabs/TabLifecycle';
-import type { AssembledTabRuntime, TabMembershipView } from '@/features/chat/tabs/types';
+import type { AssembledTabRuntime, DraftSeed, TabMembershipView } from '@/features/chat/tabs/types';
 
 /** Whether Linked content still exists; vaults without path lookup accept every path. */
 export function linkedContentExists(app: Pick<App, 'vault'>, contentPath: string): boolean {
@@ -27,7 +29,8 @@ export interface ViewerSlotHost {
    * Creates and activates a provisional tab: reattaching a held draft session by key, or
    * seeding a new draft with a saved selection.
    */
-  createPreview(conversationId: string | null, draft?: DraftSource): Promise<AssembledTabRuntime | null>;
+  /** A seed is applied before the preview is published, so no first input can be admitted without it. */
+  createPreview(conversationId: string | null, draft?: DraftSource, seed?: DraftSeed): Promise<AssembledTabRuntime | null>;
   /** Keeps a draft session alive while nothing shows it. */
   holdDraft(tab: AssembledTabRuntime): DraftSessionHold;
   /** The key of the draft session an unloaded blank tab holds, if any. */
@@ -47,12 +50,6 @@ export interface ViewerSlotHost {
 
 /** Where a blank preview's draft session comes from: a held session, or a saved selection. */
 export type DraftSource = { draftSessionKey?: string } & Partial<Pick<TabIdentity, 'draftModel' | 'providerId'>>;
-
-/** What a new draft starts with; its session's model owns both until first input freezes them. */
-export interface DraftSeed {
-  linkedContentPath?: string;
-  projectId?: string;
-}
 
 export interface ViewerSlotRequest {
   /** The tab whose command issued the request; the request lapses once it stops being live. */
@@ -185,8 +182,9 @@ export class ViewerSlot {
   }
 
   /**
-   * Shows a blank draft: the given held draft session, else the wide layout's last new session
-   * unless a seed asks for a fresh one, else a new draft. Resolves to the shown draft.
+   * Shows a blank draft: the given held draft session, else the shown blank draft or the wide layout's last new
+   * session when it already matches the seed's project (a Linked content seed always starts fresh), else a new
+   * draft. Resolves to the shown draft.
    */
   async #startDraft(
     isCurrent: NavigationRequestCheck,
@@ -195,21 +193,25 @@ export class ViewerSlot {
   ): Promise<AssembledTabRuntime | null> {
     const { membership, parkedDrafts } = this.host;
     const { linkedContentPath, projectId } = seed;
-    const seeded = linkedContentPath !== undefined || projectId !== undefined;
     this.#assertLinkedContentExists(linkedContentPath);
+    const matchesSeed = (runtime: ChatSessionRuntime): boolean => (
+      linkedContentPath === undefined && sessionProjectId(runtime) === projectId
+    );
     const active = this.#activePreview();
     // The shown blank draft already is the new session.
-    if (active && !active.conversationId && !seeded && source === undefined) {
+    if (active && !active.conversationId && source === undefined && matchesSeed(active.session.runtime)) {
       active.composer.focus();
       return active;
     }
-    const newSession = seeded ? null : this.#currentNewSession();
+    const held = this.#currentNewSession();
+    const newSession = held && matchesSeed(held.runtime) ? held : null;
     const draft = source ?? (newSession ? { draftSessionKey: newSession.key } : undefined);
     for (const preview of this.#livePreviews()) {
-      if (!preview.conversationId && seeded) this.#rememberNewSession(preview);
+      // A blank draft this one replaces becomes the new session New can return to, unless one is being reused.
+      if (!preview.conversationId && !newSession && source === undefined) this.#rememberNewSession(preview);
       parkedDrafts.park(preview);
     }
-    const tab = await this.host.createPreview(null, draft);
+    const tab = await this.host.createPreview(null, draft, seed);
     if (!tab) throw new Error('Failed to create a provisional chat tab');
     // Attached again, the new session no longer needs the slot's hold.
     if (this.#newSession?.key === tab.session.runtime.sessionKey) {
@@ -221,11 +223,7 @@ export class ViewerSlot {
       return null;
     }
     try {
-      if (linkedContentPath !== undefined) {
-        this.#assertLinkedContentExists(linkedContentPath);
-        tab.linkedContent.selectExplicit(linkedContentPath);
-      }
-      if (projectId !== undefined) tab.controllers.conversationController.seedDraftProject(projectId);
+      // Assembly applied the seed before publishing the draft.
       if (membership.getActiveTabId() === tab.id) tab.composer.focus();
     } catch (error) {
       await this.host.closeTab(tab.id).catch(() => false);

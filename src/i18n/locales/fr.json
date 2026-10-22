@@ -369,12 +369,11 @@
       "chipLabel": "Projet : {name}",
       "noProject": "Aucun projet",
       "menu": {
-        "newSession": "Nouvelle session dans le projet",
         "edit": "Modifier le projet",
         "openMemory": "Ouvrir la mémoire du projet",
+        "archiveAll": "Archiver toutes les sessions",
         "pin": "Épingler le projet",
         "unpin": "Désépingler le projet",
-        "archiveIdle": "Archiver les sessions inactives",
         "delete": "Supprimer le projet",
         "moveTo": "Déplacer vers un projet…",
         "moveSelectionTo": "Déplacer {count} sessions vers un projet…",

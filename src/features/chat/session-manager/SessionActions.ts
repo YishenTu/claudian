@@ -446,25 +446,10 @@ export class SessionActions {
   projectMenu(
     project: ProjectRecord,
     conversations: readonly ConversationMeta[],
-    options: SessionActionOptions,
     isRunning: (conversation: ConversationMeta) => boolean,
   ): Menu {
     const { plugin } = this.deps;
-    const { onStartProjectConversation } = options;
     const menu = new Menu().setUseNativeMenu(false);
-    if (onStartProjectConversation) {
-      menu.addItem(menuItem => menuItem
-        .setTitle(t('chat.projects.menu.newSession'))
-        .onClick(() => {
-          runSessionAction(() => onStartProjectConversation(project.id), t('chat.projects.errors.start'));
-        }));
-    }
-    menu.addItem(menuItem => menuItem
-      .setTitle(t('chat.projects.menu.edit'))
-      .onClick(() => editProject(plugin, project)));
-    menu.addItem(menuItem => menuItem
-      .setTitle(t('chat.projects.menu.openMemory'))
-      .onClick(() => openProjectMemory(plugin, project)));
     menu.addItem(menuItem => menuItem
       .setTitle(project.isPinned ? t('chat.projects.menu.unpin') : t('chat.projects.menu.pin'))
       .onClick(() => {
@@ -473,12 +458,18 @@ export class SessionActions {
           t('chat.projects.errors.pin'),
         );
       }));
+    menu.addItem(menuItem => menuItem
+      .setTitle(t('chat.projects.menu.edit'))
+      .onClick(() => editProject(plugin, project)));
+    menu.addItem(menuItem => menuItem
+      .setTitle(t('chat.projects.menu.openMemory'))
+      .onClick(() => openProjectMemory(plugin, project)));
     menu.addSeparator();
     this.#addArchiveIdle(
       menu,
       conversations,
       isRunning,
-      t('chat.projects.menu.archiveIdle'),
+      t('chat.projects.menu.archiveAll'),
       'Failed to archive sessions',
     );
     menu.addSeparator();

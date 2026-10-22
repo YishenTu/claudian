@@ -263,9 +263,11 @@ export interface SessionListModel {
   readonly isEmpty: boolean;
   /**
    * Every live project matching the search, pinned first, with its matching members (pinned members are listed
-   * under Pinned instead); null without the section.
+   * under Pinned instead); null without the section. With a Pinned section, pinned projects move there.
    */
   readonly projectSections: readonly ProjectListSection[] | null;
+  /** Pinned projects listed under Pinned with all their matching members, pinned or not. */
+  readonly pinnedProjectSections: readonly ProjectListSection[];
   readonly pinnedContentSections: readonly SessionListSection[];
   /** Pinned sessions outside pinned Linked content groups, in list order. */
   readonly pinnedConversations: readonly ConversationMeta[];
@@ -274,7 +276,7 @@ export interface SessionListModel {
   readonly groupKeys: readonly string[] | null;
   /** Every in-scope session per Linked content path outside a live project, ignoring search, for group actions. */
   readonly conversationsByLinkedContent: ReadonlyMap<string, readonly ConversationMeta[]>;
-  /** Every in-scope session per live project, ignoring search, for project actions and counts. */
+  /** Every in-scope session per live project, ignoring search and pinning, for project actions. */
   readonly conversationsByProject: ReadonlyMap<string, readonly ConversationMeta[]>;
   /** Session list rows shown when every expanded group is fully paged in. */
   readonly visibleConversationTotal: number;
@@ -299,7 +301,14 @@ function groupBy(
   return groups;
 }
 
-/** Scopes, searches, partitions, and organizes sessions for one list render. */
+/**
+ * Scopes, searches, partitions, and organizes sessions for one list render.
+ *
+ * Sessions group by live project (its own section, active scope only) or, with Linked content organization, by
+ * Linked content; project membership wins. Pinning only moves a session, project, or Linked content group to
+ * Pinned, where a pinned group keeps all its members. Archive is a session state: the archive view lists archived
+ * sessions without projects, and a project stays listed until deleted.
+ */
 export function deriveSessionListModel(
   conversations: readonly ConversationMeta[],
   options: SessionListModelOptions,
@@ -320,12 +329,17 @@ export function deriveSessionListModel(
   const conversationsByProject = groupBy(scopedConversations, conversation => (
     projects?.get(conversation.projectId)?.id
   ));
-  // Pinning keeps the membership, but a pinned member is listed under Pinned instead of its project.
-  const isListedAsPinned = (conversation: ConversationMeta): boolean => (
-    !!options.showPinnedSection && conversation.isPinned === true
+  // A pinned project moves to Pinned whole. Otherwise pinning keeps the membership, but a pinned member is
+  // listed under Pinned instead of its project.
+  const isPinnedProject = (project: ProjectRecord): boolean => !!options.showPinnedSection && project.isPinned;
+  const isListedAsPinned = (conversation: ConversationMeta, project: ProjectRecord): boolean => (
+    !!options.showPinnedSection && conversation.isPinned === true && !isPinnedProject(project)
   );
   const listedConversations = projects
-    ? scopedConversations.filter(conversation => !projects.get(conversation.projectId) || isListedAsPinned(conversation))
+    ? scopedConversations.filter((conversation) => {
+        const project = projects.get(conversation.projectId);
+        return !project || isListedAsPinned(conversation, project);
+      })
     : scopedConversations;
   const matchesConversation = (conversation: ConversationMeta): boolean => (
     matchesSearch([conversation.title, conversation.linkedContentPath ?? ''].join('\n'))
@@ -338,7 +352,7 @@ export function deriveSessionListModel(
     ? sortProjects(projects.list(), conversationsByProject, options.projectSort).flatMap((project) => {
         const nameMatches = matchesSearch(project.name);
         const members = (conversationsByProject.get(project.id) ?? []).filter(conversation => (
-          !isListedAsPinned(conversation) && (nameMatches || matchesConversation(conversation))
+          !isListedAsPinned(conversation, project) && (nameMatches || matchesConversation(conversation))
         ));
         if (!nameMatches && members.length === 0) return [];
         const section: ProjectListSection = {
@@ -350,6 +364,8 @@ export function deriveSessionListModel(
         return [section];
       })
     : null;
+  const pinnedProjectSections = projectSections?.filter(section => isPinnedProject(section.project)) ?? [];
+  const unpinnedProjectSections = projectSections?.filter(section => !isPinnedProject(section.project)) ?? null;
   const conversationsByLinkedContent = groupBy(
     listedConversations,
     conversation => conversation.linkedContentPath,
@@ -397,7 +413,8 @@ export function deriveSessionListModel(
     return {
       hasSearchTerms: searchTerms.length > 0,
       isEmpty,
-      projectSections,
+      projectSections: unpinnedProjectSections,
+      pinnedProjectSections,
       pinnedContentSections,
       pinnedConversations: [],
       sections: [],
@@ -432,7 +449,8 @@ export function deriveSessionListModel(
   return {
     hasSearchTerms: searchTerms.length > 0,
     isEmpty,
-    projectSections,
+    projectSections: unpinnedProjectSections,
+    pinnedProjectSections,
     pinnedContentSections,
     pinnedConversations: sortedPinnedConversations,
     sections,

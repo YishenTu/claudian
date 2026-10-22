@@ -292,21 +292,38 @@ describe('deriveSessionListModel with a projects section', () => {
     (model.projectSections ?? []).map(section => [section.project.id, section.conversations.map(({ id }) => id)])
   );
 
-  it('lists pinned projects first, then by last member activity falling back to creation', () => {
-    const model = deriveSessionListModel(conversations, { ...base, showPinnedSection: true });
+  it('orders projects pinned first, then by last member activity falling back to creation', () => {
+    const model = deriveSessionListModel(conversations, base);
 
     expect(projectRows(model)).toEqual([
       ['beta', ['beta-chat']],
-      // Activity of active members only: the archived member does not lift alpha. Its pinned member
-      // is listed under Pinned instead.
-      ['alpha', ['alpha-new']],
+      // Activity of active members only: the archived member does not lift alpha.
+      ['alpha', ['alpha-new', 'alpha-old']],
       ['empty', []],
       ['quiet', ['quiet-chat']],
     ]);
+    expect(model.pinnedProjectSections).toEqual([]);
     expect(model.projectSections?.every(section => section.kind === 'project')).toBe(true);
     expect(model.projectSections?.map(section => section.key)).toEqual([
       'project:beta', 'project:alpha', 'project:empty', 'project:quiet',
     ]);
+  });
+
+  it('lists a pinned project under Pinned with all its members', () => {
+    const pinnedAlpha = records.map(record => (
+      record.id === 'alpha' ? { ...record, isPinned: true } : { ...record, isPinned: false }
+    ));
+    const model = deriveSessionListModel(conversations, {
+      ...base, projects: reader(pinnedAlpha), showPinnedSection: true,
+    });
+
+    expect(projectRows({ ...model, projectSections: model.pinnedProjectSections })).toEqual([
+      // Its pinned member stays with the project instead of joining the pinned sessions.
+      ['alpha', ['alpha-new', 'alpha-old']],
+    ]);
+    expect(projectRows(model).map(([id]) => id)).toEqual(['beta', 'empty', 'quiet']);
+    expect(model.pinnedConversations.map(({ id }) => id)).toEqual(['pinned']);
+    expect(model.isEmpty).toBe(false);
   });
 
   it('orders projects by creation for the created project sort', () => {
@@ -318,6 +335,7 @@ describe('deriveSessionListModel with a projects section', () => {
   it('keeps unpinned members out of the session list, but lists pinned members only under Pinned', () => {
     const list = deriveSessionListModel(conversations, { ...base, showPinnedSection: true });
     expect(list.pinnedConversations.map(({ id }) => id)).toEqual(['alpha-old', 'pinned']);
+    expect(projectRows(list).find(([id]) => id === 'alpha')).toEqual(['alpha', ['alpha-new']]);
     expect(ids(list.sections)).toEqual(['stale', 'loose']);
     // Pinning keeps the membership: project actions still cover the pinned member.
     expect(list.conversationsByProject.get('alpha')?.map(({ id }) => id)).toEqual(['alpha-new', 'alpha-old']);

@@ -559,7 +559,85 @@ describe('ViewerSlot', () => {
       expect(shownDraft(manager)).toBe('follow-up');
     });
 
-    it('starts a fresh project-seeded draft whose seed follows its session through browsing and leaving wide', async () => {
+    it('publishes a wide project draft already seeded, so a first input cannot outrun the seed', async () => {
+      const seedsWhenActivated: unknown[] = [];
+      const { manager } = createManager(conversationPlugin(), {
+        onActiveTabChanged: () => {
+          const tab = manager.getActiveTab();
+          if (tab && !tab.conversationId) {
+            seedsWhenActivated.push((tab.controllers.conversationController as any).project.projectId);
+          }
+        },
+      });
+      await manager.createTab(null);
+      await manager.viewerSlot.enter();
+      seedsWhenActivated.length = 0;
+
+      await manager.viewerSlot.startDraft({ projectId: 'project-1' });
+      expect(seedsWhenActivated).toEqual(['project-1']);
+    });
+
+    it('starts a project-seeded draft in the compact active tab, as New does there', async () => {
+      const { manager } = createManager(conversationPlugin());
+      const bound = await manager.createTab('conversation-1');
+      const draftProject = () => (manager.getActiveTab()!.controllers.conversationController as any).project.projectId;
+
+      await manager.createNewConversation({ projectId: 'project-1' });
+      const tab = manager.getActiveTab()!;
+      expect([manager.getTabCount(), tab.conversationId, draftProject()]).toEqual([1, null, 'project-1']);
+      expect(tab.session.runtime === bound!.session.runtime).toBe(false);
+    });
+
+    it('publishes a compact project draft already seeded, so a first input cannot outrun the seed', async () => {
+      const seedsWhenActivated: unknown[] = [];
+      const { manager } = createManager(conversationPlugin(), {
+        onActiveTabChanged: () => {
+          const tab = manager.getActiveTab();
+          if (tab && !tab.conversationId) {
+            seedsWhenActivated.push((tab.controllers.conversationController as any).project.projectId);
+          }
+        },
+      });
+      await manager.createTab('conversation-1');
+
+      await manager.createNewConversation({ projectId: 'project-1' });
+      expect(seedsWhenActivated).toEqual(['project-1']);
+    });
+
+    it('seeds the draft its request created even when another tab becomes active during hydration', async () => {
+      const { manager } = createManager(conversationPlugin());
+      const bound = await manager.createTab('conversation-1');
+      const other = await manager.createTab(null, undefined, { activate: false });
+      await manager.switchToTab(bound!.id);
+      const draftProject = (tab: typeof other) => (tab!.controllers.conversationController as any).project.projectId;
+      const hydration = deferred<void>();
+      mockNextHydration(async () => hydration.promise);
+
+      const starting = manager.createNewConversation({ projectId: 'project-1' });
+      await Promise.resolve();
+      await manager.switchToTab(other!.id);
+      hydration.resolve(undefined);
+      await starting;
+
+      const draft = manager.getAllTabs().find(tab => tab.id === bound!.id)!;
+      expect([draft.conversationId, draftProject(draft), draftProject(manager.getActiveTab())]).toEqual([null, 'project-1', undefined]);
+    });
+
+    it('reattaches a remembered project draft without reseeding it, since its first turn may have frozen the seed', async () => {
+      const { manager } = createManager(conversationPlugin());
+      await manager.createTab(null);
+      await manager.viewerSlot.enter();
+      await manager.viewerSlot.startDraft({ projectId: 'project-1' });
+      const session = manager.getActiveTab()!.session.runtime;
+      await manager.viewerSlot.show('conversation-1');
+
+      await manager.viewerSlot.startDraft({ projectId: 'project-1' });
+      const reattached = manager.getActiveTab()!;
+      expect(reattached.session.runtime).toBe(session);
+      expect(reattached.controllers.conversationController.seedDraftProject).not.toHaveBeenCalled();
+    });
+
+    it('returns to a blank draft only for the same project, and the seed follows its session leaving wide', async () => {
       const { manager } = createManager(conversationPlugin());
       await manager.createTab(null);
       await manager.viewerSlot.enter();
@@ -570,8 +648,11 @@ describe('ViewerSlot', () => {
       const session = manager.getActiveTab()!.session.runtime;
       expect([session === blankSession, draftProject()]).toEqual([false, 'project-1']);
 
+      // New for the same project returns to its blank draft; New outside it never brings that draft back.
       await manager.viewerSlot.show('conversation-1');
       await manager.viewerSlot.startDraft();
+      expect([manager.getActiveTab()!.session.runtime === session, draftProject()]).toEqual([false, undefined]);
+      await manager.viewerSlot.startDraft({ projectId: 'project-1' });
       expect([manager.getActiveTab()!.session.runtime === session, draftProject()]).toEqual([true, 'project-1']);
 
       await manager.viewerSlot.release();
@@ -792,6 +873,34 @@ describe('ViewerSlot', () => {
       expect(draft.conversationId).toBeNull();
       expect(draft.lifecycleState).toBe('provisional');
       expect(source.conversationId).toBe('conversation-1');
+    });
+
+    it.each([
+      ['wide', true],
+      ['compact', false],
+    ])('starts /new in the source session\'s project, or in none (%s)', async (_layout, wide) => {
+      let slotManager: any = null;
+      const { manager } = createManager(conversationPlugin(), {}, {}, {
+        // As the view's policy does: the wide layout starts the draft in its slot with the inherited seed.
+        startNew: async (sourceTab, seed) => {
+          if (!wide) return false;
+          await slotManager.viewerSlot.startDraft({ sourceTab, ...seed });
+          return true;
+        },
+      });
+      slotManager = manager;
+      const draftProject = () => (manager.getActiveTab()!.controllers.conversationController as any).project.projectId;
+      const source = await manager.createTab(null) as any;
+      source.controllers.conversationController.seedDraftProject('project-1');
+
+      await runtimeOptions(0).startNewConversation();
+      const projectDraft = manager.getActiveTab()!;
+      expect([projectDraft.session.runtime === source.session.runtime, draftProject()]).toEqual([false, 'project-1']);
+
+      projectDraft.controllers.conversationController.seedDraftProject(null);
+      await runtimeOptions(mockCreateTabRuntime.mock.calls.length - 1).startNewConversation();
+      expect([manager.getActiveTab()!.session.runtime === projectDraft.session.runtime, draftProject()])
+        .toEqual([wide, undefined]);
     });
 
     it('clears the source tab in place for /new in the compact layout', async () => {

@@ -1,5 +1,3 @@
-import { Notice } from 'obsidian';
-
 import type { ChatRewindMode, ConversationBranchResult } from '@/core/execution';
 import type {
   ChatMessage,
@@ -22,7 +20,6 @@ import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRun
 import type { SessionComposerPort } from '@/features/chat/sessions/SessionComposer';
 import type { ChatState } from '@/features/chat/state/ChatState';
 import type { SubagentManager } from '@/features/chat/subagents/SubagentManager';
-import { t } from '@/i18n/i18n';
 
 /** Longest a progress-only change waits for its coalesced save. */
 const PROGRESS_SAVE_DELAY_MS = 1_000;
@@ -196,35 +193,26 @@ export class ConversationController {
   }
 
   /**
-   * The project the composer shows: the bound conversation's raw membership, or the blank draft's seed, and whether
-   * it can change now (first-turn admission freezes the seed while creation is pending). Reads the session's own
-   * conversation id, so it is right before any presentation publishes the runtime (draft handoff).
+   * The project the composer shows: the bound conversation's raw membership, or the blank draft's seed. Only a
+   * draft's project can change, and not while first-turn admission holds it for the pending creation. Reads the
+   * session's own conversation id, so it is right before any presentation publishes the runtime (draft handoff).
    */
-  get project(): { projectId: string | undefined; changeable: boolean } {
+  get project(): { projectId: string | undefined; isDraft: boolean; changeable: boolean } {
     const { plugin, state } = this.deps;
     const conversationId = state.currentConversationId;
-    if (conversationId) return { projectId: plugin.getConversationSummary(conversationId)?.projectId, changeable: true };
-    return { projectId: this.#draftProject.projectId ?? undefined, changeable: !this.#draftProject.frozen };
+    if (conversationId) {
+      return { projectId: plugin.getConversationSummary(conversationId)?.projectId, isDraft: false, changeable: false };
+    }
+    return { projectId: this.#draftProject.projectId ?? undefined, isDraft: true, changeable: !this.#draftProject.frozen };
   }
 
   /**
-   * Moves the bound conversation into a project, or out of any with null; a blank draft reseeds instead unless its
-   * seed is frozen. Resolved when chosen: the draft may have become a conversation, or frozen its seed, meanwhile.
+   * Reseeds the blank draft's project, or clears it with null. Resolved when chosen: the draft may have become a
+   * conversation, or frozen its seed, meanwhile; a started session keeps its project here.
    */
   selectProject(projectId: string | null): void {
-    const conversationId = this.deps.state.currentConversationId;
-    if (!conversationId) {
-      if (!this.#draftProject.frozen) this.seedDraftProject(projectId);
-      return;
-    }
-    const failure = projectId ? t('chat.projects.errors.move') : t('chat.projects.errors.remove');
-    void (async () => {
-      try {
-        await this.deps.plugin.conversationLifecycle.setPlacement([conversationId], { projectId });
-      } catch {
-        new Notice(failure);
-      }
-    })();
+    if (this.deps.state.currentConversationId || this.#draftProject.frozen) return;
+    this.seedDraftProject(projectId);
   }
 
   /** Seeds the project a blank draft joins when its first input creates the Conversation. */

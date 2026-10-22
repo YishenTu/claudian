@@ -73,6 +73,7 @@ describe('SessionListPosition', () => {
     const options = {
       onSelectConversation: jest.fn(),
       showPinnedSection: true,
+      scrollLayout: 'sections' as const,
       showProjectsSection: true,
       sessionScope: 'active' as const,
       preserveListState: true,
@@ -83,6 +84,29 @@ describe('SessionListPosition', () => {
     controller.renderHistoryDropdown(container, options);
 
     expect(container.querySelector('.claudian-session-project-items')!.scrollTop).toBe(180);
+  });
+
+  it('preserves the compact menu scroll, which moves its projects and sessions as one list', () => {
+    const container = createMockEl();
+    deps.plugin.projects.put(projectRecord({ id: 'project-1', name: 'Project 1' }));
+    (deps.plugin.getConversationList as jest.Mock).mockReturnValue(
+      Array.from({ length: 40 }, (_, index) => ({ id: `conv-${index}`, title: `Conversation ${index}`, createdAt: 40 - index })),
+    );
+    // The drop-up lists projects without the sidebar's Pinned section.
+    const options = {
+      onSelectConversation: jest.fn(),
+      showProjectsSection: true,
+      sessionScope: 'active' as const,
+      preserveListState: true,
+    };
+
+    controller.renderHistoryDropdown(container, options);
+    container.querySelector('.claudian-history-list')!.scrollTop = 220;
+    controller.renderHistoryDropdown(container, options);
+
+    const list = container.querySelector('.claudian-history-list')!;
+    expect(list.querySelector('.claudian-session-list-items')).not.toBeNull();
+    expect(list.scrollTop).toBe(220);
   });
 
   it('preserves flat session-list position and loaded count across an external rerender', () => {
@@ -128,6 +152,7 @@ describe('SessionListPosition', () => {
       pageSize: 25,
       preserveListState: true,
       showPinnedSection: true,
+      scrollLayout: 'sections' as const,
     };
 
     controller.renderHistoryDropdown(container, options);
@@ -158,6 +183,7 @@ describe('SessionListPosition', () => {
     const options = {
       onSelectConversation: jest.fn(),
       showPinnedSection: true,
+      scrollLayout: 'sections' as const,
       pageSize: 50,
       preserveListState: true,
     };

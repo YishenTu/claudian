@@ -21,6 +21,7 @@ import {
 import {
   captureSessionListPosition,
   INITIAL_SESSION_LIST_POSITION,
+  recordSectionScrolling,
   recordVisibleCount,
   restoreSessionListPosition,
 } from '@/features/chat/session-manager/SessionListPosition';
@@ -77,6 +78,11 @@ type HistoryRenderOptions = SessionActionOptions & SessionStatusDisplay & Sessio
   projectSort?: SessionManagerSort;
   pinnedLinkedContentPaths?: ReadonlySet<string>;
   preserveListState?: boolean;
+  /**
+   * Which elements the surface's stylesheet scrolls: each section on its own (the persistent sidebar), or the whole
+   * list (the default, as the compact menu does). Scroll capture and restoration follow it.
+   */
+  scrollLayout?: 'sections' | 'list';
   showPinnedSection?: boolean;
   showArchivedSection?: boolean;
   historyHeaderLabel?: string;
@@ -185,7 +191,7 @@ export class SessionBrowser {
       groupByRecency: options.groupByRecency ? { now: Date.now() } : undefined,
     });
     const { conversationsByLinkedContent, pinnedContentSections, sections } = model;
-    const showSessionSections = options.showPinnedSection || options.showArchivedSection;
+    const showSessionSections = options.showPinnedSection || options.showArchivedSection || model.projectSections !== null;
 
     let list: HTMLElement;
     let sessionList: HTMLElement;
@@ -193,7 +199,9 @@ export class SessionBrowser {
     let projectsList: HTMLElement | null = null;
     if (showSessionSections) {
       list = container.createDiv({ cls: 'claudian-history-list' });
-      const hasPinned = model.pinnedConversations.length > 0 || pinnedContentSections.length > 0;
+      const hasPinned = model.pinnedProjectSections.length > 0
+        || model.pinnedConversations.length > 0
+        || pinnedContentSections.length > 0;
       // With nothing pinned, the header alone is a drop target that shows only while a drag is in progress.
       if (hasPinned || canDrag) {
         const pinnedSection = list.createDiv({
@@ -212,12 +220,16 @@ export class SessionBrowser {
             cls: 'claudian-history-section-items',
           });
           if (canDrag) this.drag.attachTarget(pinnedSection, { kind: 'pinned' });
+          // Like the Projects section, pinned projects show even when no session matches.
+          for (const projectSection of model.pinnedProjectSections) {
+            this.#renderProjectSection(pinnedList, projectSection, options, model.conversationsByProject);
+          }
         } else {
           this.drag.attachPinnedPlaceholder(pinnedSection);
         }
       }
       if (model.projectSections) {
-        projectsList = this.#renderProjectsSection(list, model.projectSections, model.conversationsByProject, options);
+        projectsList = this.#renderProjectsSection(list, model.projectSections, options, model.conversationsByProject);
       }
 
       const sessionsLabel = options.showArchivedSection ? 'Archived' : 'Sessions';
@@ -262,9 +274,16 @@ export class SessionBrowser {
       options.visibleCount ?? previousPosition.visibleCount,
     );
     recordVisibleCount(list, visibleCount);
+    const sectionScrolling = options.scrollLayout === 'sections';
+    recordSectionScrolling(list, sectionScrolling);
     const restorePosition = (): void => {
       options.onBeforeRestoreListState?.(container);
-      restoreSessionListPosition(previousPosition, sessionList, pinnedList, projectsList);
+      restoreSessionListPosition(
+        previousPosition,
+        sectionScrolling ? sessionList : list,
+        pinnedList,
+        sectionScrolling ? projectsList : null,
+      );
     };
 
     if (model.groupKeys) options.onGroupKeysChange?.(model.groupKeys);
@@ -581,8 +600,8 @@ export class SessionBrowser {
   #renderProjectsSection(
     list: HTMLElement,
     projectSections: readonly ProjectListSection[],
-    conversationsByProject: ReadonlyMap<string, readonly ConversationMeta[]>,
     options: HistoryRenderOptions,
+    conversationsByProject: ReadonlyMap<string, readonly ConversationMeta[]>,
   ): HTMLElement {
     const label = t('chat.projects.header');
     const section = list.createDiv({
@@ -595,12 +614,7 @@ export class SessionBrowser {
     const items = section.createDiv({ cls: 'claudian-history-section-items claudian-session-project-items' });
     this.#renderSectionToggle(section, header, label, items, sessionManagerSectionKey('projects'), options);
     for (const projectSection of projectSections) {
-      this.#renderProjectSection(
-        items,
-        projectSection,
-        options,
-        conversationsByProject.get(projectSection.project.id) ?? [],
-      );
+      this.#renderProjectSection(items, projectSection, options, conversationsByProject);
     }
     return items;
   }
@@ -613,7 +627,7 @@ export class SessionBrowser {
     list: HTMLElement,
     section: ProjectListSection,
     options: HistoryRenderOptions,
-    memberConversations: readonly ConversationMeta[],
+    conversationsByProject: ReadonlyMap<string, readonly ConversationMeta[]>,
   ): void {
     const { project } = section;
     const label = project.name;
@@ -649,8 +663,7 @@ export class SessionBrowser {
 
     const buildMenu = (): Menu => this.actions.projectMenu(
       project,
-      memberConversations,
-      options,
+      conversationsByProject.get(project.id) ?? [],
       conversation => this.#statusOf(conversation, options).isRunning,
     );
     const actionsButton = groupHeader.createEl('button', {

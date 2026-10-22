@@ -53,7 +53,7 @@
   color: var(--text-normal);
 }
 
-/* A chip that cannot change right now (the project seed while the first turn creates its session). */
+/* A chip that cannot change: a started session's project, or a draft's seed while its first turn creates the session. */
 .claudian-input-info-linked > button.claudian-input-info-linked-main:disabled {
   opacity: 1;
   cursor: default;

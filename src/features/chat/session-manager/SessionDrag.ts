@@ -77,6 +77,8 @@ export class SessionDrag {
     const accept = (event: DragEvent): boolean => {
       if (!this.isDragging || !event.dataTransfer?.types.includes(SESSION_DRAG_MIME)) return false;
       event.preventDefault();
+      // The innermost target owns the drag, such as a pinned project row inside the Pinned section.
+      event.stopPropagation();
       event.dataTransfer.dropEffect = 'move';
       this.#highlight(key);
       return true;

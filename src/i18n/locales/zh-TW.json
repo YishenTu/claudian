@@ -369,12 +369,11 @@
       "chipLabel": "專案：{name}",
       "noProject": "無專案",
       "menu": {
-        "newSession": "在專案中新增工作階段",
         "edit": "編輯專案",
         "openMemory": "開啟專案記憶",
+        "archiveAll": "封存所有工作階段",
         "pin": "釘選專案",
         "unpin": "取消釘選專案",
-        "archiveIdle": "封存閒置工作階段",
         "delete": "刪除專案",
         "moveTo": "移動到專案…",
         "moveSelectionTo": "將 {count} 個工作階段移動到專案…",
