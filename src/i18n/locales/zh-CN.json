@@ -353,13 +353,83 @@
       "nextMessage": "下一条消息",
       "scrollToBottom": "滚动到底部",
       "emptyDirectory": "此对话中暂无用户提示词"
+    },
+    "projects": {
+      "header": "项目",
+      "options": "项目选项",
+      "sortBy": "项目排序方式",
+      "sort": {
+        "lastActivity": "最近活动",
+        "created": "创建时间"
+      },
+      "noSessions": "暂无会话",
+      "newSessionIn": "在 {name} 中新建会话",
+      "actionsFor": "{name} 的操作",
+      "newProjectAction": "新建项目",
+      "chipLabel": "项目：{name}",
+      "noProject": "无项目",
+      "menu": {
+        "newSession": "在项目中新建会话",
+        "edit": "编辑项目",
+        "openDoc": "打开项目文档",
+        "pin": "固定项目",
+        "unpin": "取消固定项目",
+        "archiveIdle": "归档空闲会话",
+        "delete": "删除项目",
+        "moveTo": "移动到项目…",
+        "moveSelectionTo": "将 {count} 个会话移动到项目…",
+        "removeFrom": "从项目中移除",
+        "removeSelectionFrom": "从项目中移除 {count} 个会话",
+        "newProject": "新建项目…"
+      },
+      "deleteConfirm": "删除项目“{name}”？会话会保留，项目文档也会保留。",
+      "errors": {
+        "create": "创建项目失败",
+        "update": "更新项目失败",
+        "delete": "删除项目失败",
+        "pin": "更新项目固定状态失败",
+        "move": "将会话移动到项目失败",
+        "remove": "从项目中移除会话失败",
+        "start": "在此项目中新建会话失败",
+        "sort": "无法更新项目排序"
+      },
+      "editor": {
+        "titleNew": "新建项目",
+        "titleEdit": "编辑项目",
+        "name": "名称",
+        "nameDesc": "显示在会话管理器和成员会话中。",
+        "namePlaceholder": "项目名称",
+        "instructions": "指令",
+        "instructionsDesc": "从下一轮起添加到每个成员会话的系统提示词中。",
+        "docPath": "项目文档",
+        "openDoc": "打开",
+        "nameRequired": "请输入项目名称。"
+      },
+      "doc": {
+        "title": "项目文档：{name}",
+        "path": "路径",
+        "copyPath": "复制路径",
+        "pathCopied": "路径已复制",
+        "copyFailed": "复制路径失败",
+        "reload": "重新加载",
+        "overwrite": "覆盖",
+        "recreate": "从模板重新创建",
+        "content": "项目文档内容",
+        "missing": "项目文档不存在。",
+        "conflict": "文档在加载后已被修改。重新加载将丢弃你的编辑，覆盖则保留你的编辑。",
+        "loadFailed": "加载项目文档失败",
+        "saveFailed": "保存项目文档失败",
+        "saved": "项目文档已保存",
+        "loading": "加载中…"
+      }
     }
   },
   "settings": {
     "tabs": {
       "general": "通用",
       "providers": "提供商",
-      "skills": "技能"
+      "skills": "技能",
+      "projects": "项目"
     },
     "providerSettings": {
       "unavailable": "提供商设置不可用。",
@@ -814,6 +884,12 @@
         "partial": "同步在创建链接前停止。请修复以下项目后重新同步。",
         "failed": "同步失败:{message}",
         "summary": "已移动 {moved},已转换 {converted},已移到回收站 {trashed},已移除 {unlinked} 个链接。"
+      }
+    },
+    "projects": {
+      "docFolder": {
+        "name": "项目文档文件夹",
+        "desc": "新项目文档所在的库文件夹。留空使用库根目录。现有项目的文档保持原位置不变。"
       }
     }
   }

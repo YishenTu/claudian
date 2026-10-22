@@ -2,6 +2,7 @@
 import '@/providers';
 
 import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
+import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import {
   createHarness,
   releaseSideChatHarnesses,
@@ -10,6 +11,7 @@ import {
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, screen, waitFor } from '@testing-library/dom';
 
+import { renderProjectSideChatInstructions } from '@/core/prompt/projectPrompt';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { buildTabRuntimePorts } from '@/features/chat/tabs/runtime/TabRuntimePorts';
 
@@ -32,6 +34,33 @@ it('delivers an admitted prompt to the child even when the panel collapses durin
   expect(harness.controller.destination).toBe('main');
   expect(harness.composerEl.classList.contains('claudian-side-chat-expanded')).toBe(false);
   expect(screen.getByRole('button', { name: 'Side chat' })).toBeTruthy();
+});
+
+it.each([true, false])('freezes the parent project side-chat text at start (live project: %s)', async live => {
+  const harness = createHarness();
+  const record = projectRecord({ id: 'project-1', name: 'Launch', instructions: 'Ship the beta.' });
+  const projects = createProjectsFake(live ? [record] : []);
+  Object.assign(harness.plugin, {
+    projects,
+    getConversationSync: (id: string) => ({ id, providerId: 'claude', projectId: record.id }),
+  });
+  const { started } = await startSideChat(harness);
+  harness.backend.latest.establishChild('child-session');
+  harness.backend.latest.complete();
+  await started;
+
+  // Later project edits, deletion or the parent leaving never reach the started side chat.
+  projects.put({ ...record, name: 'Renamed', instructions: 'Changed.' });
+  Object.assign(harness.plugin, { getConversationSync: (id: string) => ({ id, providerId: 'claude' }) });
+  const second = harness.controller.runtime!.submit({ content: 'Explore C' });
+  await waitFor(() => expect(harness.backend.latest.requests).toHaveLength(2));
+  harness.backend.latest.complete();
+  await second;
+
+  const expected = live
+    ? { kind: 'provider-default', sessionInstructions: renderProjectSideChatInstructions(record, record.docPath) }
+    : { kind: 'provider-default' };
+  expect(harness.backend.latest.requests.map(request => request.configuration.systemInstructions)).toEqual([expected, expected]);
 });
 
 it('admits only one child per main conversation while startup is pending', async () => {

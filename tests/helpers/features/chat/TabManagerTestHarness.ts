@@ -72,6 +72,7 @@ function createMockLinkedContent() {
 
 const mockDraftSessions = new Map<string, ChatSessionRuntime>();
 const mockLinkedContent = new WeakMap<ChatSessionRuntime, ReturnType<typeof createMockLinkedContent>>();
+const mockDraftProjects = new WeakMap<ChatSessionRuntime, string | null>();
 
 export function createMockTab(options: Record<string, any>): any {
   const review = new ChatState();
@@ -118,6 +119,9 @@ export function createMockTab(options: Record<string, any>): any {
         initializeWelcome: jest.fn(),
         save: jest.fn().mockResolvedValue(undefined),
         cancelBranchDraft: jest.fn(),
+        // The project seed belongs to the session's model, so a reattached session keeps it.
+        seedDraftProject: jest.fn((projectId: string | null) => { mockDraftProjects.set(tab.session.runtime, projectId); }),
+        get draftProjectId() { return mockDraftProjects.get(tab.session.runtime) ?? null; },
       },
       inputController: {
       },

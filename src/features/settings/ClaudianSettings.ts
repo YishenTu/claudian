@@ -22,7 +22,7 @@ import { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSettingsWrit
 import { renderEnvironmentSettingsSection } from '@/shared/settings/EnvironmentSettingsSection';
 import { frameSettingsGroups } from '@/shared/settings/SettingsGroups';
 
-type SettingsTabId = 'general' | 'providers' | 'skills';
+type SettingsTabId = 'general' | 'providers' | 'skills' | 'projects';
 
 export class ClaudianSettingTab extends PluginSettingTab {
   private readonly host: FeatureHost;
@@ -67,7 +67,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
     setLocale(this.host.settings.locale as Locale);
 
     const providerTabs = ProviderRegistry.getRegisteredProviderIds();
-    const tabIds: SettingsTabId[] = ['general', 'providers', 'skills'];
+    const tabIds: SettingsTabId[] = ['general', 'providers', 'skills', 'projects'];
     const preferredProvider = providerTabs.includes(this.host.settings.settingsProvider)
       ? this.host.settings.settingsProvider
       : providerTabs[0] ?? null;
@@ -179,6 +179,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     this.renderGeneralTab(tabContents.get('general')!);
     frameSettingsGroups(tabContents.get('general')!);
+    this.renderProjectsTab(tabContents.get('projects')!);
 
     // Rendered on first activation so opening settings never touches skill folders.
     const renderSkillsTab = (): void => {
@@ -232,6 +233,24 @@ export class ClaudianSettingTab extends PluginSettingTab {
       this.refreshTitleModelOptions = null;
       this.syncProviderEnablement = null;
     };
+  }
+
+  /** Changing the folder affects new projects only; each project keeps its recorded doc path. */
+  private renderProjectsTab(container: HTMLElement): void {
+    new Setting(container)
+      .setName(t('settings.projects.docFolder.name'))
+      .setDesc(t('settings.projects.docFolder.desc'))
+      .addText((text) => {
+        // Empty is the vault root, so the default folder is not shown as a placeholder.
+        text
+          .setValue(this.host.settings.projectDocFolder)
+          .onChange((value) => {
+            this.textEdits.schedule('projectDocFolder', (settings) => {
+              settings.projectDocFolder = value.trim();
+            });
+          });
+        text.inputEl.addEventListener('blur', () => { void this.textEdits.flush(); });
+      });
   }
 
   private renderGeneralTab(container: HTMLElement): void {

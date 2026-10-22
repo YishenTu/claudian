@@ -1,8 +1,10 @@
 import { createFixture, deferred, waitForCall } from '@test/helpers/ChatInputHarness';
+import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { testDate } from '@test/helpers/testClock';
 import { Notice } from 'obsidian';
 
 import type { ProviderExecutionErrorEvent, ProviderExecutionEvent } from '@/core/execution';
+import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ImageAttachment } from '@/core/types';
 import { ChatExecutionPreHandoffError, type ChatTurnSubmission } from '@/features/chat/execution/ChatExecutionCoordinator';
@@ -110,6 +112,57 @@ describe('MainTurnExecution', () => {
       rawDisplayText: 'list my projects',
     });
     expect(fixture.state.messages[0]?.content).toBe('list my projects');
+  });
+
+  describe('project session instructions', () => {
+    const message = { from: 'Sender', sessionId: 'sender', text: 'Please inspect this' };
+    const systemInstructions = (fixture: ReturnType<typeof createFixture>, call: number) => (
+      (fixture.coordinator.execute.mock.calls[call][0] as ChatTurnSubmission).configuration.systemInstructions
+    );
+
+    function memberFixture() {
+      const record = projectRecord({ id: 'project-1', name: 'Launch', instructions: 'Ship the beta.' });
+      const projects = createProjectsFake([record]);
+      const fixture = createFixture();
+      let projectId: string | undefined = record.id;
+      // Membership is read from the detached summary, never by cloning the transcript each turn.
+      Object.assign(fixture.plugin, {
+        projects,
+        getConversationSummary: (id: string) => ({ id, providerId: 'claude', projectId }),
+      });
+      return { fixture, projects, record, leave: () => { projectId = undefined; } };
+    }
+
+    it('resolves the live project paragraph for user and session-message turns, applying edits at the next turn', async () => {
+      const { fixture, projects, record } = memberFixture();
+
+      await fixture.controller.sendMessage({ content: 'user turn' });
+      await fixture.controller.sendSessionMessage(message, { assertBeforeHandoff: () => undefined, onUnsent: () => undefined });
+      const edited = { ...record, instructions: 'Ship the stable release.' };
+      projects.put(edited);
+      await fixture.controller.sendMessage({ content: 'after edit' });
+
+      expect([0, 1, 2].map(call => systemInstructions(fixture, call))).toEqual([
+        { kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(record, record.docPath) },
+        { kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(record, record.docPath) },
+        { kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(edited, edited.docPath) },
+      ]);
+      expect(fixture.plugin.getConversationSync).not.toHaveBeenCalled();
+    });
+
+    it.each(['removed', 'deleted'] as const)('sends the normal prompt once the session is %s from its project', async change => {
+      const { fixture, projects, record, leave } = memberFixture();
+      await fixture.controller.sendMessage({ content: 'member turn' });
+
+      if (change === 'removed') leave();
+      else projects.remove(record.id);
+      await fixture.controller.sendMessage({ content: 'normal turn' });
+      await fixture.controller.sendSessionMessage(message, { assertBeforeHandoff: () => undefined, onUnsent: () => undefined });
+
+      expect(systemInstructions(fixture, 0)).toHaveProperty('sessionInstructions');
+      expect(systemInstructions(fixture, 1)).toEqual({ kind: 'provider-default' });
+      expect(systemInstructions(fixture, 2)).toEqual({ kind: 'provider-default' });
+    });
   });
 
   it('numbers canonical submissions without counting interrupt markers', async () => {

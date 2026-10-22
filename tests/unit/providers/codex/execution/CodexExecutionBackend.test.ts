@@ -1145,7 +1145,10 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
-  it('reapplies changed system instructions to a loaded thread', async () => {
+  it.each([
+    ['explicit', (instructions: string) => ({ kind: 'explicit' as const, instructions })],
+    ['provider-default session', (sessionInstructions: string) => ({ kind: 'provider-default' as const, sessionInstructions })],
+  ])('reapplies changed %s instructions to a loaded thread', async (_label, systemInstructionsFor) => {
     let turnIndex = 0;
     mockTransportRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
@@ -1170,7 +1173,7 @@ describe('CodexExecutionBackend', () => {
       .createSession(createSessionConfig());
     const requestWithInstructions = (instructions: string) => createRequest(undefined, {
       configuration: {
-        systemInstructions: { kind: 'explicit', instructions },
+        systemInstructions: systemInstructionsFor(instructions),
         model: TEST_CODEX_MODEL,
         permissionMode: 'normal',
         reasoning: 'high',

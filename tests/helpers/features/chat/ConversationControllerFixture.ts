@@ -49,6 +49,7 @@ export function createConversationControllerDeps(
         lastActivityAt: Date.now(),
       }),
       getConversationById: jest.fn().mockResolvedValue(null),
+      getConversationSummary: jest.fn().mockReturnValue(null),
       updateConversation: jest.fn().mockResolvedValue(undefined),
       settings: {
         userName: '',

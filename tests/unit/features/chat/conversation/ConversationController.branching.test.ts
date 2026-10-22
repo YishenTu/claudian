@@ -1,6 +1,8 @@
 import { createConversationControllerDeps } from '@test/helpers/features/chat/ConversationControllerFixture';
+import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { testDate } from '@test/helpers/testClock';
 
+import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
 
 jest.mock('@/shared/modals/ConfirmModal', () => ({
@@ -119,4 +121,36 @@ it.each(['conversation', 'coordinator'])('does not publish recovery after its %s
   expect(await controller.commitBranchDraft()).toMatchObject({ status: 'failed' });
   expect(deps.state.messages).toEqual([first, prompt]);
   expect(deps.plugin.updateConversation).not.toHaveBeenCalled();
+});
+
+it('carries the live project paragraph on branch navigation and recovery, and drops it once the project is deleted', async () => {
+  const record = projectRecord({ id: 'project-1', name: 'Launch' });
+  const projects = createProjectsFake([record]);
+  const first = { id: 'first', role: 'user' as const, content: 'First', timestamp: testDate().getTime() };
+  const prompt = { id: 'second', role: 'user' as const, content: 'Second', timestamp: testDate().getTime(), userMessageId: 'native-second' };
+  const coordinator = {
+    navigateConversationBranch: jest.fn().mockResolvedValue({ status: 'recovery-required', error: 'Moved' }),
+    reconcileConversationBranch: jest.fn().mockResolvedValue({ status: 'recovery-required', error: 'Still moving' }),
+  };
+  const deps = createConversationControllerDeps({ getExecutionCoordinator: () => coordinator, getSelectedModel: () => 'model-a' });
+  Object.assign(deps.plugin, {
+    projects,
+    getConversationSummary: (id: string) => ({ id, providerId: 'claude', projectId: record.id }),
+  });
+  deps.state.currentConversationId = 'conversation';
+  deps.state.messages = [first, prompt];
+  const controller = new ConversationController(deps);
+  await controller.navigateBranch('second');
+  deps.getInputEl().value = 'Edited';
+  await controller.commitBranchDraft();
+  projects.remove(record.id);
+  await controller.commitBranchDraft();
+
+  const member = { model: 'model-a', systemInstructions: {
+    kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(record, record.docPath),
+  } };
+  expect(coordinator.navigateConversationBranch).toHaveBeenCalledWith(expect.objectContaining({ configuration: member }));
+  // Each recovery attempt resolves the project again: the first follows navigation, the later two the deletion.
+  const normal = { model: 'model-a', systemInstructions: { kind: 'provider-default' } };
+  expect(coordinator.reconcileConversationBranch.mock.calls.map(([request]) => request.configuration)).toEqual([member, normal, normal]);
 });

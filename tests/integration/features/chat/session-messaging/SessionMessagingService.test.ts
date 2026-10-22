@@ -3,6 +3,7 @@ import '@/providers';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
+import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
@@ -16,12 +17,12 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
-import type { ClaudianSettings, Conversation, ConversationMutablePatch } from '@/core/types';
+import type { ClaudianSettings, Conversation, ConversationMutablePatch, ProjectReader } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { getSessionSettingsSnapshot } from '@/features/chat/sessions/sessionSettings';
 
-function setup() {
+function setup(options: { projects?: ProjectReader; members?: Record<string, string> } = {}) {
   const app = new App();
   Object.assign(app.vault.adapter, { basePath: '/vault' });
   const backend = new FakeSideBackend();
@@ -42,6 +43,9 @@ function setup() {
   // The recipient is the most recently active session; the caller is older.
   const records = new Map([['sender', -1], ['recipient', 0], ['archived', 1]].map(([id, offset]) => [id, record(id as string, offset as number)]));
   records.get('archived')!.isArchived = true;
+  for (const [id, projectId] of Object.entries(options.members ?? {})) {
+    records.set(id, { ...(records.get(id) ?? record(id, -2)), projectId });
+  }
   const repository = new ConversationRepository({
     providers: ProviderRegistry, providerSettings: ProviderSettingsCoordinator,
     getSettings: () => settings, getVaultPath: () => '/vault', onConversationDeleted: async () => undefined,
@@ -56,6 +60,7 @@ function setup() {
   const host = {
     app, settings, providerHost: { app, settings, executionLifecycleRegistry: registry },
     getCommittedSettings: () => settings, getActiveEnvironmentVariables: () => '',
+    projects: options.projects ?? createProjectsFake(),
     getConversationSummary: (id: string) => repository.getSync(id),
     getConversationSync: (id: string) => repository.getSync(id),
     getCachedConversation: (id: string) => repository.getSync(id),
@@ -107,6 +112,37 @@ it('lists recent sessions first without creating runtimes, omitting archived rec
   ]);
   expect(h.pool.getAll()).toHaveLength(0);
   expect(h.backend.sessions).toHaveLength(0);
+});
+
+describe('project scope', () => {
+  const members = { sender: 'project-1', recipient: 'project-1', archived: 'project-1', outsider: 'project-2' };
+  const sessionIds = (result: { readonly sessions: readonly { sessionId: string }[] }) => result.sessions.map(session => session.sessionId);
+
+  it('lists only the caller\'s non-archived fellow members of its live project, leaving unscoped listing unchanged', async () => {
+    const h = setup({ members, projects: createProjectsFake([projectRecord({ id: 'project-1' }), projectRecord({ id: 'project-2' })]) });
+    const scoped = await h.binding.port.list({ ...listArgs(), project: true }, signal());
+    expect(scoped.sessions).toEqual([
+      { sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'idle', active: false },
+      { sessionId: 'sender', title: 'Research', provider: 'claude', status: 'idle', active: true, self: true },
+    ]);
+    expect(sessionIds(await h.binding.port.list({ ...listArgs(), project: false }, signal()))).toEqual(['recipient', 'sender', 'outsider']);
+    expect(sessionIds(await h.binding.port.list(listArgs(), signal()))).toEqual(['recipient', 'sender', 'outsider']);
+  });
+
+  it.each([
+    ['not a member', {}],
+    ['a member of a deleted project', members],
+  ])('rejects a project listing from a caller that is %s', async (_case, callerMembers) => {
+    const h = setup({ members: callerMembers, projects: createProjectsFake([projectRecord({ id: 'project-2' })]) });
+    await expect(h.binding.port.list({ ...listArgs(), project: true }, signal())).rejects.toThrow('This session is not in a project.');
+  });
+
+  it.each([true, false])('starts a new session in the caller\'s project only while it is live (live: %s)', async live => {
+    const h = setup({ members, projects: createProjectsFake(live ? [projectRecord({ id: 'project-1' })] : []) });
+    await h.binding.port.send({ text: 'Take this over' }, signal());
+    expect(h.host.createConversation).toHaveBeenCalledTimes(1);
+    expect(jest.mocked(h.host.createConversation).mock.calls[0][0]?.projectId).toBe(live ? 'project-1' : undefined);
+  });
 });
 
 it('lists enabled providers with available models, new-session defaults and reasoning, read fresh', async () => {

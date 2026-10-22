@@ -416,8 +416,9 @@ export class VaultFileAdapter {
 
   async writeManagedFile(filePath: string, content: string): Promise<void> {
     const normalized = normalizeManagedPath(filePath);
-    const parent = normalized.slice(0, normalized.lastIndexOf('/'));
-    await this.verifyManagedPath(parent, { expectedType: 'folder' });
+    const separator = normalized.lastIndexOf('/');
+    // The vault root itself needs no verification.
+    if (separator !== -1) await this.verifyManagedPath(normalized.slice(0, separator), { expectedType: 'folder' });
     await this.verifyManagedPath(normalized, { expectedType: 'file', allowMissing: true });
     try {
       const desktopAdapter = this.#getDesktopAdapter();

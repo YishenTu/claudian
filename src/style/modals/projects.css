@@ -1,0 +1,69 @@
+/* Project editor and project doc modals. */
+.claudian-project-instructions,
+.claudian-project-doc-content {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 8px;
+  resize: vertical;
+}
+
+.claudian-project-instructions {
+  min-height: 180px;
+  max-height: 50vh;
+}
+
+.claudian-project-doc-content {
+  min-height: 320px;
+  max-height: 70vh;
+  font-family: var(--font-monospace);
+}
+
+.claudian-project-doc-row,
+.claudian-project-doc-path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-project-doc-row-path,
+.claudian-project-doc-path-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+
+.claudian-project-doc-notice {
+  display: none;
+}
+
+.claudian-project-doc-notice--visible {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.claudian-project-doc-notice-text {
+  flex: 1 1 240px;
+  margin: 0;
+}
+
+.claudian-project-doc-notice-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.claudian-project-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}

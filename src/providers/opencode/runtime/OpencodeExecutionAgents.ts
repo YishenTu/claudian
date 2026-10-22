@@ -79,7 +79,8 @@ export function resolveOpencodeSystemPrompt(
 ): string {
   if (instructions.kind === 'explicit') return instructions.instructions;
   return buildOpencodeSystemPrompt(profile, {
-    settings: getSystemPromptSettings(plugin, workspaceRoot),
+    // Only the managed chat profile reads these settings; auxiliary profiles keep their fixed prompts.
+    settings: { ...getSystemPromptSettings(plugin, workspaceRoot), sessionInstructions: instructions.sessionInstructions },
     titleLocale: resolveTitleGenerationLocale(plugin.settings),
     workspaceRoot,
   });

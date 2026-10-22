@@ -10,6 +10,7 @@
 /* Components */
 @import url("./components/tabs.css");
 @import url("./components/history.css");
+@import url("./components/session-projects.css");
 @import url("./components/messages.css");
 @import url("./components/nav-sidebar.css");
 @import url("./components/code.css");
@@ -47,6 +48,7 @@
 
 /* Modals */
 @import url("./modals/fork-target.css");
+@import url("./modals/projects.css");
 
 /* Settings */
 @import url("./settings/base.css");

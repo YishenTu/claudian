@@ -83,6 +83,10 @@ export class ClaudianView extends ItemView implements ZenModeSource {
           if (!this.tabManager) throw new Error('Chat tabs are unavailable');
           await this.tabManager.viewerSlot.startDraft({ linkedContentPath: contentPath });
         },
+        startProjectConversation: async (projectId) => {
+          if (!this.tabManager) throw new Error('Chat tabs are unavailable');
+          await this.tabManager.viewerSlot.startDraft({ projectId });
+        },
         contentExists: contentPath => this.sessionNavigation.contentExists(contentPath),
       },
       getActiveTab: () => this.getActiveTab(),
@@ -696,7 +700,10 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   }
 
   notifyConversationListChanged(): void {
-    for (const tab of this.tabManager?.getAllTabs() ?? []) tab.composer.invalidateSessionMentions();
+    for (const tab of this.tabManager?.getAllTabs() ?? []) {
+      tab.composer.invalidateSessionMentions();
+      tab.composer.refreshProject();
+    }
     // A held draft session may have created its conversation while its blank tab was unloaded.
     this.tabManager?.reconcileUnloadedSessions();
     this.sessions.invalidate();

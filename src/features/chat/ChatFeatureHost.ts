@@ -1,5 +1,15 @@
 import type { ProviderId } from '@/core/providers/types';
-import type { Conversation, ConversationMeta, ConversationMutablePatch, ConversationSummary, StoredChatModelSelection } from '@/core/types';
+import type {
+  Conversation,
+  ConversationMeta,
+  ConversationMutablePatch,
+  ConversationSummary,
+  ProjectDocOperations,
+  ProjectMembership,
+  ProjectMutations,
+  ProjectReader,
+  StoredChatModelSelection,
+} from '@/core/types';
 import type { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
 import type { ChatExecutionPersistence } from '@/features/chat/execution/ChatExecutionCoordinator';
 import type { SessionToolBinding } from '@/features/chat/session-messaging/SessionMessagingService';
@@ -66,6 +76,9 @@ export interface ChatViewHost extends ChatViewRefreshHost, TabManagerViewHost {
 /** Session attachment and lookup; retirement and shutdown stay with the pool's main-owned callers. */
 export type ChatSessionRuntimes = Pick<SessionRuntimePool, 'awaitConversationCreations' | 'acquire' | 'ensure' | 'release' | 'get' | 'getAttachment' | 'holdDraft'>;
 
+/** Live project records, their mutations and docs, and conversation membership. */
+export type ChatProjects = ProjectReader & ProjectMutations & ProjectMembership & ProjectDocOperations;
+
 /** Application capabilities chat needs on top of the feature-neutral `FeatureHost`. */
 export interface ChatFeatureHost extends FeatureHost {
   readonly sessionRuntimes: ChatSessionRuntimes;
@@ -76,6 +89,8 @@ export interface ChatFeatureHost extends FeatureHost {
     sessionId?: string;
     selectedModel?: string;
     linkedContentPath?: string;
+    /** Kept only when it names a live project at creation. */
+    projectId?: string;
   }): Promise<Conversation>;
   switchConversation(id: string): Promise<Conversation | null>;
   assignConversationToCurrentDevice(id: string): Promise<boolean>;
@@ -107,6 +122,8 @@ export interface ChatFeatureHost extends FeatureHost {
   ensureConversationMetadataLoaded(conversationIds: readonly string[]): Promise<void>;
 
   readonly executionPersistence: ChatExecutionPersistence;
+  /** Resolve a conversation's raw `projectId` through `projects.get`; null means no project. */
+  readonly projects: ChatProjects;
 
   /** Offers a view's presentation to the single zen workspace owner; returns its unregistration. */
   registerZenModeSource(source: ZenModeSource): () => void;

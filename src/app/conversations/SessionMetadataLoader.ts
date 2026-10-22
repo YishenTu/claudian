@@ -316,6 +316,7 @@ export class SessionMetadataLoader {
       modelRecoverySource: meta.modelRecoverySource,
       messages: [],
       linkedContentPath: meta.linkedContentPath,
+      projectId: meta.projectId,
       isPinned: meta.isPinned,
       isArchived: meta.isArchived,
       usage: meta.usage,

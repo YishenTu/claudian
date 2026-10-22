@@ -559,6 +559,26 @@ describe('ViewerSlot', () => {
       expect(shownDraft(manager)).toBe('follow-up');
     });
 
+    it('starts a fresh project-seeded draft whose seed follows its session through browsing and leaving wide', async () => {
+      const { manager } = createManager(conversationPlugin());
+      await manager.createTab(null);
+      await manager.viewerSlot.enter();
+      const blankSession = manager.getActiveTab()!.session.runtime;
+      const draftProject = () => (manager.getActiveTab()!.controllers.conversationController as any).draftProjectId;
+
+      await manager.viewerSlot.startDraft({ projectId: 'project-1' });
+      const session = manager.getActiveTab()!.session.runtime;
+      expect([session === blankSession, draftProject()]).toEqual([false, 'project-1']);
+
+      await manager.viewerSlot.show('conversation-1');
+      await manager.viewerSlot.startDraft();
+      expect([manager.getActiveTab()!.session.runtime === session, draftProject()]).toEqual([true, 'project-1']);
+
+      await manager.viewerSlot.release();
+      const narrow = manager.getActiveTab()!;
+      expect([narrow.lifecycleState, narrow.session.runtime === session, draftProject()]).toEqual(['open', true, 'project-1']);
+    });
+
     it('returns to the same new session when New follows browsing another session', async () => {
       const { manager } = createManager(conversationPlugin());
       await manager.viewerSlot.startDraft();

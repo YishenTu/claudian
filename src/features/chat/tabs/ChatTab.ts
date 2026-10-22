@@ -79,6 +79,8 @@ export interface TabComposerPort {
   setHiddenCommands(commands: ReadonlySet<string>): void;
   /** Invalidates session mentions after the conversation list changes. */
   invalidateSessionMentions(): void;
+  /** Re-reads the project chip after membership, the project records, or the draft seed change. */
+  refreshProject(): void;
 }
 
 /** Restores a transcript moved by `TabPlacementPort.placeTranscript`. */

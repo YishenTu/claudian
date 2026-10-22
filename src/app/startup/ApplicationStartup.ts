@@ -14,6 +14,7 @@ import { ConversationRepository } from '../conversations/ConversationRepository'
 import { ConversationService } from '../conversations/ConversationService';
 import { NativeSessionArchiveSync } from '../conversations/NativeSessionArchiveSync';
 import { SessionMetadataLoader } from '../conversations/SessionMetadataLoader';
+import { ProjectService } from '../projects/ProjectService';
 import { ChatModelSelectionCoordinator } from '../settings/ChatModelSelectionCoordinator';
 import { PinnedLinkedContentPathCoordinator } from '../settings/PinnedLinkedContentPathCoordinator';
 import { RuntimeSettingsCoordinator } from '../settings/RuntimeSettingsCoordinator';
@@ -73,6 +74,7 @@ export interface ApplicationDomains {
   readonly nativeSessionArchives: NativeSessionArchiveSync;
   readonly runtimeSettings: RuntimeSettingsCoordinator;
   readonly sessionMetadata: SessionMetadataLoader;
+  readonly projects: ProjectService;
 }
 
 /**
@@ -84,7 +86,13 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
   const { plugin, providers, providerSettings } = options;
   const workspace = plugin.app.workspace;
   const storage = new SharedStorageService(plugin, options.defaultSettings);
-  const { claudian } = await storage.initialize();
+  // Projects load before any chat turn can resolve a member's project.
+  const [{ claudian }, loadedProjects] = await Promise.all([
+    storage.initialize(),
+    storage.projects.load(),
+  ]);
+  StartupProfiler.recordCount('project-count', loadedProjects.records.length);
+  StartupProfiler.recordCount('invalid-project-count', loadedProjects.invalidCount);
   const settings: ClaudianSettings = {
     ...structuredClone(options.defaultSettings),
     ...claudian,
@@ -100,6 +108,16 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
   );
   const chatModelSelection = new ChatModelSelectionCoordinator(settingsCoordinator);
   const pinnedLinkedContentPaths = new PinnedLinkedContentPathCoordinator(settingsCoordinator);
+  const projects = new ProjectService(loadedProjects.records, {
+    store: storage.projects,
+    docs: storage.getAdapter(),
+    getProjectDocFolder: () => settings.projectDocFolder,
+    // Reached only after startup, once the conversation service below exists.
+    members: {
+      setConversationsProject: (ids, projectId) => conversations.setConversationsProject(ids, projectId),
+      clearProject: projectId => conversations.clearProjectMembership(projectId),
+    },
+  });
   const conversationRepository = new ConversationRepository({
     providers,
     providerSettings,
@@ -108,6 +126,7 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
     getVaultPath: () => getVaultPath(plugin.app),
     persistence: storage.conversationPersistence,
     onConversationDeleted: conversationId => options.onConversationDeleted(conversationId),
+    projects,
   });
   const runtimeSettings: RuntimeSettingsCoordinator = new RuntimeSettingsCoordinator({
     settings: settingsCoordinator,
@@ -141,7 +160,7 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
       new Notice(`${providers.getProviderDisplayName(providerId)} could not archive or restore its sessions: ${reason}`);
     },
   });
-  const conversations = new ConversationService({
+  const conversations: ConversationService = new ConversationService({
     repository: conversationRepository,
     sessionMetadata,
     pinnedLinkedContentPaths,
@@ -231,5 +250,6 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
     nativeSessionArchives,
     runtimeSettings,
     sessionMetadata,
+    projects,
   };
 }

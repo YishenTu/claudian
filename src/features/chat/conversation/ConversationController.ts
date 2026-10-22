@@ -9,6 +9,7 @@ import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ConversationBranching } from '@/features/chat/conversation/ConversationBranching';
 import { ConversationRewind, type ConversationSaveOptions } from '@/features/chat/conversation/ConversationRewind';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
+import { resolveLiveProjectId, resolveSessionInstructions } from '@/features/chat/execution/projectInstructions';
 import type { LinkedContentController, LinkedContentSubmissionToken } from '@/features/chat/linked-content';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import {
@@ -22,6 +23,13 @@ import type { SubagentManager } from '@/features/chat/subagents/SubagentManager'
 
 /** Longest a progress-only change waits for its coalesced save. */
 const PROGRESS_SAVE_DELAY_MS = 1_000;
+
+export interface ConversationCreationOptions {
+  providerId: ProviderId;
+  selectedModel?: string;
+  /** Kept only when it still names a live project at creation. */
+  projectId?: string;
+}
 
 export interface ConversationCallbacks {
   onConversationLoaded?: () => void;
@@ -56,6 +64,8 @@ export interface ConversationControllerDeps {
   onConversationHydrated?: () => void;
   onPersistenceChanged?: () => void;
   onBranchPreviewCancelled?: () => void;
+  /** The blank draft's project seed or its freeze changed; its presentation re-reads them. */
+  onDraftProjectChanged?: () => void;
 }
 
 export class ConversationController {
@@ -64,6 +74,11 @@ export class ConversationController {
   private pendingProgressSave: { supersede: () => void } | null = null;
   private pendingSaves = 0;
   private creation: Promise<void> | null = null;
+  /**
+   * The project a blank draft's Conversation joins at creation; same owner and lifetime as its Linked content.
+   * First-turn admission freezes it until creation settles, so the captured seed and the shown seed cannot diverge.
+   */
+  #draftProject: { readonly projectId: string | null; readonly frozen: boolean } = { projectId: null, frozen: false };
   get hasPendingPersistence(): boolean { return this.pendingSaves > 0 || !!this.pendingProgressSave || !!this.creation; }
   awaitCreation(): Promise<void> { return this.creation ?? Promise.resolve(); }
   readonly #setTransition: ReturnType<ChatState['claimTransitionWriter']>;
@@ -87,6 +102,11 @@ export class ConversationController {
       getExecutionCoordinator: () => this.#getExecutionCoordinator(),
       ensureExecutionInitialized,
       getSelectedModel: () => this.deps.getSelectedModel?.() ?? null,
+      getSessionInstructions: () => {
+        const { plugin, state } = this.deps;
+        const id = state.currentConversationId;
+        return resolveSessionInstructions(plugin.projects, id ? plugin.getConversationSummary(id) : null);
+      },
       isClosing,
       save: () => this.save(),
       renderTranscript: (messages, syncWelcomeVisibility) => (
@@ -172,10 +192,45 @@ export class ConversationController {
     return this.#branching.commitDraft(signal);
   }
 
-  /** Creates the Conversation for its first admitted turn and freezes that turn's Linked content. */
+  /** The project seeded into this blank draft; first-turn admission captures it for creation. */
+  get draftProjectId(): string | null {
+    return this.#draftProject.projectId;
+  }
+
+  /** True while a first-turn admission holds the captured seed for its pending creation. */
+  get isDraftProjectFrozen(): boolean {
+    return this.#draftProject.frozen;
+  }
+
+  /** Seeds the project a blank draft joins when its first input creates the Conversation. */
+  seedDraftProject(projectId: string | null): void {
+    if (this.deps.state.currentConversationId) throw new Error('Only a blank draft can be seeded with a project');
+    if (this.#draftProject.frozen) throw new Error('The project seed cannot change while the Conversation is being created');
+    this.#setDraftProject({ projectId, frozen: false });
+  }
+
+  /** Captures the seed for the first turn's creation; it stays frozen until creation or `releaseDraftProject`. */
+  freezeDraftProject(): string | null {
+    this.#setDraftProject({ projectId: this.#draftProject.projectId, frozen: true });
+    return this.#draftProject.projectId;
+  }
+
+  /** Returns the seed to the draft after its first turn failed before creating the Conversation. */
+  releaseDraftProject(): void {
+    this.#setDraftProject({ projectId: this.#draftProject.projectId, frozen: false });
+  }
+
+  #setDraftProject(next: { projectId: string | null; frozen: boolean }): void {
+    const current = this.#draftProject;
+    if (current.projectId === next.projectId && current.frozen === next.frozen) return;
+    this.#draftProject = next;
+    this.deps.onDraftProjectChanged?.();
+  }
+
+  /** Creates the Conversation for its first admitted turn and freezes that turn's Linked content and project. */
   async createConversation(
     token: LinkedContentSubmissionToken,
-    options: { providerId: ProviderId; selectedModel?: string },
+    options: ConversationCreationOptions,
   ): Promise<void> {
     const pending = this.createConversationShell(token, options);
     this.creation = pending;
@@ -185,15 +240,18 @@ export class ConversationController {
 
   private async createConversationShell(
     token: LinkedContentSubmissionToken,
-    options: { providerId: ProviderId; selectedModel?: string },
+    options: ConversationCreationOptions,
   ): Promise<void> {
     const { plugin, state } = this.deps;
+    const projectId = resolveLiveProjectId(plugin.projects, options.projectId);
     const conversation = await plugin.createConversation({
       providerId: options.providerId,
       ...(options.selectedModel ? { selectedModel: options.selectedModel } : {}),
       ...(token.path ? { linkedContentPath: token.path } : {}),
+      ...(projectId ? { projectId } : {}),
     });
     state.currentConversationId = conversation.id;
+    this.#setDraftProject({ projectId: null, frozen: false });
 
     const settlement = this.deps.getLinkedContentController().commitSubmission(token);
     for (const event of settlement.queuedEvents) {

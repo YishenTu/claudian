@@ -14,6 +14,8 @@ export interface ForkContext {
   /** 1-based index used for fork title suffix (counts only canonical user messages). */
   forkAtUserMessage?: number;
   linkedContentPath?: string;
+  /** The source's raw project id; a fork or side chat resolves it through the live project reader. */
+  projectId?: string;
 }
 
 export type ForkSourceUnavailableReason =

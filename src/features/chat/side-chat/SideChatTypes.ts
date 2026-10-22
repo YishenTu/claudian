@@ -26,6 +26,8 @@ export interface SideChatSource {
   readonly selectedModel?: string;
   readonly linkedContentPath?: string;
   readonly messages: readonly ChatMessage[];
+  /** Side-chat project instructions rendered from the parent's live project at start; never re-resolved. */
+  readonly sessionInstructions?: string;
 }
 
 /** In-memory provider settings projection owned by one side chat. */

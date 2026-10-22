@@ -3,6 +3,7 @@ import { setIcon } from 'obsidian';
 import type { TitleGenerationService } from '@/core/providers/types';
 import type {
   ConversationMeta,
+  ProjectRecord,
   SessionManagerOrganization,
   SessionManagerSort,
 } from '@/core/types';
@@ -16,7 +17,11 @@ import {
   type SessionRow,
 } from '@/features/chat/session-manager/SessionActions';
 import { SessionInlineRename } from '@/features/chat/session-manager/SessionInlineRename';
-import { deriveSessionListModel, type SessionListSection } from '@/features/chat/session-manager/SessionListOrganizer';
+import {
+  deriveSessionListModel,
+  type SessionListSection,
+  sessionManagerSectionKey,
+} from '@/features/chat/session-manager/SessionListOrganizer';
 import {
   captureSessionListPosition,
   INITIAL_SESSION_LIST_POSITION,
@@ -42,6 +47,18 @@ import { t } from '@/i18n/i18n';
 
 const DEFAULT_HISTORY_PAGE_SIZE = 100;
 
+let sectionLabelSequence = 0;
+
+/**
+ * Names a section region by its visible header label. An `aria-label` on the region would make Obsidian show
+ * it as a hover tooltip over every row inside.
+ */
+function labelSectionBy(section: HTMLElement, labelEl: HTMLElement): void {
+  const id = `claudian-session-section-label-${++sectionLabelSequence}`;
+  labelEl.setAttribute('id', id);
+  section.setAttribute('aria-labelledby', id);
+}
+
 type HistoryRenderOptions = SessionActionOptions & SessionStatusDisplay & SessionMetadataOptions & {
   getConversationOpenState?: (id: string) => HistoryConversationOpenState;
   getConversationStatus?: (id: string) => HistoryConversationStatus;
@@ -52,10 +69,17 @@ type HistoryRenderOptions = SessionActionOptions & SessionStatusDisplay & Sessio
   /** Divides an unpinned flat list into recency groups. */
   groupByRecency?: boolean;
   sort?: SessionManagerSort;
+  /** Collapsed Linked content groups and whole sections (`sessionManagerSectionKey`). */
   collapsedGroupKeys?: ReadonlySet<string>;
   onGroupCollapseChange?: (groupKey: string, collapsed: boolean) => void;
   onGroupKeysChange?: (groupKeys: readonly string[]) => void;
   onStartLinkedContentConversation?: (contentPath: string) => Promise<void>;
+  /** Lists live projects above the sessions, outside the archive; their members leave the session list. */
+  showProjectsSection?: boolean;
+  projectSort?: SessionManagerSort;
+  /** Projects start collapsed; the surface owns which are expanded. */
+  isProjectExpanded?: (projectId: string) => boolean;
+  onProjectExpandedChange?: (projectId: string, expanded: boolean) => void;
   pinnedLinkedContentPaths?: ReadonlySet<string>;
   preserveListState?: boolean;
   showPinnedSection?: boolean;
@@ -138,6 +162,7 @@ export class SessionBrowser {
       ? captureSessionListPosition(container)
       : INITIAL_SESSION_LIST_POSITION;
     const organization = options.organization ?? 'list';
+    const isGrouped = organization === 'linked-content';
 
     this.inlineRename.releaseWithin(container);
     container.empty();
@@ -150,6 +175,8 @@ export class SessionBrowser {
       searchQuery: options.searchQuery,
       showPinnedSection: options.showPinnedSection,
       pinnedLinkedContentPaths: options.pinnedLinkedContentPaths,
+      projects: options.showProjectsSection ? plugin.projects : undefined,
+      projectSort: options.projectSort,
       collapsedGroupKeys: options.collapsedGroupKeys,
       contentExists: options.contentExists,
       contentIsNote: options.contentIsNote,
@@ -161,24 +188,30 @@ export class SessionBrowser {
     let list: HTMLElement;
     let sessionList: HTMLElement;
     let pinnedList: HTMLElement | null = null;
+    let projectsList: HTMLElement | null = null;
     if (showSessionSections) {
       list = container.createDiv({ cls: 'claudian-history-list' });
       if (model.pinnedConversations.length > 0 || pinnedContentSections.length > 0) {
         const pinnedSection = list.createDiv({
           cls: 'claudian-history-section claudian-history-section--pinned',
+          attr: { role: 'region' },
         });
         const pinnedHeader = pinnedSection.createDiv({
           cls: 'claudian-history-header claudian-session-section-header',
         });
-        pinnedHeader.createSpan({
+        labelSectionBy(pinnedSection, pinnedHeader.createSpan({
           cls: 'claudian-history-section-label',
           text: 'Pinned',
-        });
+        }));
         pinnedList = pinnedSection.createDiv({
           cls: 'claudian-history-section-items',
         });
       }
+      if (model.projectSections) {
+        projectsList = this.#renderProjectsSection(list, model.projectSections, model.conversationsByProject, options);
+      }
 
+      const sessionsLabel = options.showArchivedSection ? 'Archived' : 'Sessions';
       const sessionsSection = list.createDiv({
         cls: [
           'claudian-history-section',
@@ -186,6 +219,7 @@ export class SessionBrowser {
             ? 'claudian-history-section--archived'
             : 'claudian-history-section--sessions',
         ].join(' '),
+        attr: { role: 'region' },
       });
       const sessionsHeader = sessionsSection.createDiv({
         cls: [
@@ -194,13 +228,17 @@ export class SessionBrowser {
           'claudian-session-list-header',
         ].join(' '),
       });
-      sessionsHeader.createSpan({
-        cls: 'claudian-history-section-label',
-        text: options.showArchivedSection ? 'Archived' : 'Sessions',
-      });
       sessionList = sessionsSection.createDiv({
         cls: 'claudian-history-section-items claudian-session-list-items',
       });
+      this.#renderSectionToggle(
+        sessionsSection,
+        sessionsHeader,
+        sessionsLabel,
+        sessionList,
+        sessionManagerSectionKey(options.showArchivedSection ? 'archived' : 'sessions'),
+        options,
+      );
     } else {
       const dropdownHeader = container.createDiv({ cls: 'claudian-history-header' });
       dropdownHeader.createSpan({ text: options.historyHeaderLabel ?? 'Sessions' });
@@ -216,7 +254,7 @@ export class SessionBrowser {
     recordVisibleCount(list, visibleCount);
     const restorePosition = (): void => {
       options.onBeforeRestoreListState?.(container);
-      restoreSessionListPosition(previousPosition, sessionList, pinnedList);
+      restoreSessionListPosition(previousPosition, sessionList, pinnedList, projectsList);
     };
 
     if (model.groupKeys) options.onGroupKeysChange?.(model.groupKeys);
@@ -267,14 +305,14 @@ export class SessionBrowser {
 
     for (const section of sections) {
       const remainingVisibleCount = visibleCount - renderedConversationCount;
-      const isCollapsed = organization === 'linked-content'
+      const isCollapsed = isGrouped
         && (options.collapsedGroupKeys?.has(section.key) ?? false);
       const visibleConversations = isCollapsed || remainingVisibleCount <= 0
         ? []
         : section.conversations.slice(0, remainingVisibleCount);
-      if (organization !== 'linked-content' && visibleConversations.length === 0) break;
+      if (!isGrouped && visibleConversations.length === 0) break;
 
-      if (organization === 'linked-content') {
+      if (isGrouped) {
         this.#renderLinkedContentSection(
           sessionList,
           section,
@@ -474,6 +512,177 @@ export class SessionBrowser {
     }
   }
 
+  /**
+   * A section header's label as a native toggle that hides the section's items in place, so keyboard focus
+   * stays on it; the surface keeps the state with its group collapse. The header actions are its siblings.
+   */
+  #renderSectionToggle(
+    section: HTMLElement,
+    header: HTMLElement,
+    label: string,
+    items: HTMLElement,
+    key: string,
+    options: HistoryRenderOptions,
+  ): void {
+    const isCollapsed = options.collapsedGroupKeys?.has(key) ?? false;
+    const toggle = header.createEl('button', {
+      cls: 'claudian-history-section-toggle',
+      attr: { type: 'button', 'aria-expanded': isCollapsed ? 'false' : 'true' },
+    });
+    labelSectionBy(section, toggle.createSpan({ cls: 'claudian-history-section-label', text: label }));
+    items.hidden = isCollapsed;
+    toggle.addEventListener('click', () => {
+      const collapsed = !items.hidden;
+      items.hidden = collapsed;
+      toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      options.onGroupCollapseChange?.(key, collapsed);
+    });
+  }
+
+  /** The projects section: its header (the surface adds actions) and one collapsible row per project. */
+  #renderProjectsSection(
+    list: HTMLElement,
+    projectSections: readonly SessionListSection[],
+    conversationsByProject: ReadonlyMap<string, readonly ConversationMeta[]>,
+    options: HistoryRenderOptions,
+  ): HTMLElement {
+    const label = t('chat.projects.header');
+    const section = list.createDiv({
+      cls: 'claudian-history-section claudian-history-section--projects',
+      attr: { role: 'region' },
+    });
+    const header = section.createDiv({
+      cls: 'claudian-history-header claudian-session-section-header claudian-session-projects-header',
+    });
+    const items = section.createDiv({ cls: 'claudian-history-section-items claudian-session-project-items' });
+    this.#renderSectionToggle(section, header, label, items, sessionManagerSectionKey('projects'), options);
+    for (const projectSection of projectSections) {
+      const project = projectSection.projectId ? this.deps.plugin.projects.get(projectSection.projectId) : null;
+      if (!project) continue;
+      this.#renderProjectSection(
+        items,
+        project,
+        projectSection,
+        options.isProjectExpanded?.(project.id) ?? false,
+        options,
+        conversationsByProject.get(project.id) ?? [],
+      );
+    }
+    return items;
+  }
+
+  /**
+   * One project: a header of native buttons (the toggle, New session, and the actions menu, so each stays
+   * reachable by keyboard without nesting) over its member rows.
+   */
+  #renderProjectSection(
+    list: HTMLElement,
+    project: ProjectRecord,
+    section: SessionListSection,
+    isExpanded: boolean,
+    options: HistoryRenderOptions,
+    memberConversations: readonly ConversationMeta[],
+  ): void {
+    const label = project.name;
+    const isCollapsed = !isExpanded;
+    const conversationStatuses = section.conversations.map(conversation => (
+      this.#statusOf(conversation, options)
+    ));
+    const groupStatusKind = groupIndicatorKind(conversationStatuses, options);
+    const hasReviewConversation = canShowAttention(options)
+      && conversationStatuses.some(({ attention }) => isCompletedReview(attention));
+    const showGroupReviewState = (groupStatusKind === null || groupStatusKind === 'unread')
+      && hasReviewConversation;
+    const groupHeader = list.createDiv({
+      cls: [
+        'claudian-session-group-header',
+        'claudian-session-group-header--with-toggle',
+        'claudian-session-group-header--project',
+        showGroupReviewState && isCollapsed
+          ? 'claudian-session-group-header--attention'
+          : '',
+      ].filter(Boolean).join(' '),
+    });
+    groupHeader.setAttribute('data-group-kind', section.kind);
+    groupHeader.setAttribute('data-project-id', project.id);
+
+    // Named by its visible label: an aria-label would show Obsidian's hover tooltip.
+    const toggle = groupHeader.createEl('button', {
+      cls: 'claudian-session-group-toggle',
+      attr: {
+        type: 'button',
+        'aria-expanded': isCollapsed ? 'false' : 'true',
+      },
+    });
+    const icon = toggle.createSpan({ cls: 'claudian-session-group-icon' });
+    icon.setAttribute('aria-hidden', 'true');
+    setIcon(icon, isCollapsed ? 'folder' : 'folder-open');
+    toggle.createSpan({ cls: 'claudian-session-group-label', text: label });
+
+    if (groupStatusKind !== null) {
+      this.#createSessionStatusIndicator(groupHeader, groupStatusKind, true, isCollapsed);
+    }
+
+    const buildGroupMenu = this.actions.groupMenu(
+      { conversations: memberConversations, project },
+      options,
+      conversation => this.#statusOf(conversation, options).isRunning,
+    );
+    if (buildGroupMenu) {
+      const actionsButton = groupHeader.createEl('button', {
+        cls: 'claudian-session-group-menu-action',
+        attr: {
+          type: 'button',
+          'aria-label': t('chat.projects.actionsFor', { name: label }),
+          'aria-haspopup': 'menu',
+        },
+      });
+      setIcon(actionsButton, 'more-horizontal');
+      actionsButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const rect = actionsButton.getBoundingClientRect();
+        buildGroupMenu().showAtPosition({ x: rect.left, y: rect.bottom });
+      });
+      groupHeader.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        buildGroupMenu().showAtMouseEvent(event);
+      });
+    }
+
+    const startProjectConversation = options.onStartProjectConversation;
+    if (startProjectConversation && options.sessionActionMode !== 'archived') {
+      const newButton = groupHeader.createEl('button', {
+        cls: 'claudian-session-group-new-action',
+        attr: { type: 'button', 'aria-label': t('chat.projects.newSessionIn', { name: label }) },
+      });
+      setIcon(newButton, 'square-pen');
+      newButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        runSessionAction(
+          () => startProjectConversation(project.id),
+          t('chat.projects.errors.start'),
+        );
+      });
+    }
+
+    toggle.addEventListener('click', () => {
+      options.onProjectExpandedChange?.(project.id, isCollapsed);
+      options.onRerender();
+    });
+
+    if (isCollapsed) return;
+    const groupBody = list.createDiv({ cls: 'claudian-session-group-body' });
+    groupBody.setAttribute('data-group-key', section.key);
+    if (section.conversations.length === 0) {
+      groupBody.createDiv({ cls: 'claudian-session-project-empty', text: t('chat.projects.noSessions') });
+      return;
+    }
+    for (const conversation of section.conversations) {
+      this.#renderHistoryConversationItem(groupBody, conversation, options);
+    }
+  }
+
   #renderHistoryConversationItem(
     list: HTMLElement,
     conversation: ConversationMeta,
@@ -519,12 +728,13 @@ export class SessionBrowser {
       cls: 'claudian-history-item-title',
       text: conversation.title,
     });
-    titleEl.setAttribute('title', conversation.title);
     if (options.showMetadataPopover) {
       const focusTarget = isSelectable ? content : item;
       focusTarget.setAttribute('tabindex', '0');
       this.metadataPopover.attach(item, focusTarget, conversation, options);
     } else {
+      // Without the metadata popover, a native tooltip shows the full title.
+      titleEl.setAttribute('title', conversation.title);
       content.createDiv({
         cls: 'claudian-history-item-date',
         text: sessionStatusText(
@@ -557,13 +767,14 @@ export class SessionBrowser {
         this.actions.selectionMenu(
           options,
           candidate => this.#statusOf(candidate, options).isRunning,
+          item,
         ).showAtMouseEvent(event);
         return;
       }
       this.selection.clear();
       // The menu reflects the session's status when it opens, not when the row rendered.
       const menuStatus = this.#lookUpStatus(conversation.id, isCurrent ? 'current' : 'closed', options);
-      this.actions.rowMenu(row(menuStatus), options).showAtMouseEvent(event);
+      this.actions.rowMenu(row(menuStatus), options, item).showAtMouseEvent(event);
     });
 
     const actionsEl = item.createDiv({ cls: 'claudian-history-item-actions' });

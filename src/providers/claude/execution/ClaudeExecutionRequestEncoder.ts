@@ -139,6 +139,7 @@ export class ClaudeExecutionRequestEncoder {
         customPrompt: settings.systemPrompt,
         vaultPath: sessionConfig.vaultWorkingDirectory,
         userName: settings.userName,
+        sessionInstructions: request.configuration.systemInstructions.sessionInstructions,
       });
     const promptSuggestions = Boolean(
       request.configuration.promptSuggestions && claudeSettings.promptSuggestions,

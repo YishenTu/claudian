@@ -1077,3 +1077,76 @@ describe('ClaudianSettingsStorage Linked content migration', () => {
     expect(persisted).not.toHaveProperty('pinnedLinkedNotePaths');
   });
 });
+
+describe('ClaudianSettingsStorage project settings', () => {
+  it('keeps a valid project doc folder and replaces the retired projects organization with the default', async () => {
+    const adapter = createAdapter({
+      sessionManagerOrganization: 'projects',
+      projectDocFolder: 'Work/Projects',
+    });
+
+    const settings = await new ClaudianSettingsStorage(adapter, DEFAULT_SETTINGS).load();
+
+    expect(settings.sessionManagerOrganization).toBe('list');
+    expect(settings.projectDocFolder).toBe('Work/Projects');
+    expect(JSON.parse(adapter.write.mock.calls.at(-1)![1]).sessionManagerOrganization).toBe('list');
+  });
+
+  it.each([
+    ['created', 'created'],
+    ['last-updated', 'last-updated'],
+    ['title', 'last-updated'],
+    [7, 'last-updated'],
+  ])('normalizes and persists the stored project sort %p as %p', async (stored, expected) => {
+    const adapter = createAdapter({ projectSort: stored });
+
+    const settings = await new ClaudianSettingsStorage(adapter, DEFAULT_SETTINGS).load();
+    await new ClaudianSettingsStorage(adapter, DEFAULT_SETTINGS).save(settings);
+
+    expect(settings.projectSort).toBe(expected);
+    expect(JSON.parse(adapter.write.mock.calls.at(-1)![1]).projectSort).toBe(expected);
+  });
+
+  it('defaults the project sort to last activity', async () => {
+    const settings = await new ClaudianSettingsStorage(createAdapter({}), DEFAULT_SETTINGS).load();
+
+    expect(settings.projectSort).toBe('last-updated');
+  });
+
+  it('defaults the project doc folder to the Claudian projects folder', async () => {
+    const settings = await new ClaudianSettingsStorage(createAdapter({}), DEFAULT_SETTINGS).load();
+
+    expect(settings.projectDocFolder).toBe('.claudian/projects');
+  });
+
+  it.each([
+    ['Work\\Projects//Docs/', 'Work/Projects/Docs'],
+    ['  Docs/Projects  ', 'Docs/Projects'],
+    ['/Docs', 'Docs'],
+    ['', ''],
+    ['  ', ''],
+    ['/', ''],
+    ['.', ''],
+    ['./', ''],
+    ['../outside', '.claudian/projects'],
+    ['Docs/./Plans', 'Docs/Plans'],
+    ['C:/Docs', '.claudian/projects'],
+    [42, '.claudian/projects'],
+  ])('normalizes the stored project doc folder %p to a vault-relative folder (empty is the vault root)', async (stored, expected) => {
+    const adapter = createAdapter({ projectDocFolder: stored });
+
+    const settings = await new ClaudianSettingsStorage(adapter, DEFAULT_SETTINGS).load();
+
+    expect(settings.projectDocFolder).toBe(expected);
+    expect(JSON.parse(adapter.write.mock.calls.at(-1)![1]).projectDocFolder).toBe(expected);
+  });
+
+  it('normalizes the project doc folder when saving in-memory edits', async () => {
+    const adapter = createAdapter({});
+    const storage = new ClaudianSettingsStorage(adapter, DEFAULT_SETTINGS);
+
+    await storage.save({ ...DEFAULT_SETTINGS, projectDocFolder: 'Docs//Projects/' });
+
+    expect(JSON.parse(adapter.write.mock.calls.at(-1)![1]).projectDocFolder).toBe('Docs/Projects');
+  });
+});

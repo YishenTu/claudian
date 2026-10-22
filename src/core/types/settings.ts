@@ -125,6 +125,8 @@ export interface ClaudianSettings {
   excludedTags: string[];
   mediaFolder: string;
   systemPrompt: string;
+  /** Vault-relative folder for docs of new projects (`''` is the vault root); existing projects keep their recorded doc path. */
+  projectDocFolder: string;
 
   // Environment
   sharedEnvironmentVariables: string;
@@ -175,6 +177,8 @@ export interface ClaudianSettings {
   skillsSynced: boolean;
   sessionManagerOrganization?: SessionManagerOrganization;
   sessionManagerSort?: SessionManagerSort;
+  /** Order of the session manager's projects section; pinned projects always come first. */
+  projectSort?: SessionManagerSort;
   pinnedLinkedContentPaths?: string[];
   sessionAutoArchiveAfter?: SessionAutoArchiveAfter;
 

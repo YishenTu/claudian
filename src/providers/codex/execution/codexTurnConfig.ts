@@ -109,7 +109,10 @@ export function resolveCodexBaseInstructions(
 ): string {
   const base = request.configuration.systemInstructions.kind === 'explicit'
     ? request.configuration.systemInstructions.instructions
-    : buildSystemPrompt(promptSettings);
+    : buildSystemPrompt({
+      ...promptSettings,
+      sessionInstructions: request.configuration.systemInstructions.sessionInstructions,
+    });
   return request.toolPolicy.kind === 'passive'
     ? `${base}\n\n${PASSIVE_INSTRUCTIONS}`
     : base;

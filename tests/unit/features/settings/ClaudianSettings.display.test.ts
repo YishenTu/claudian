@@ -540,3 +540,22 @@ it('batches a burst of text edits into one settings mutation and flushes on tear
     expect(plugin.mutateSettings).toHaveBeenCalledTimes(2);
   } finally { cleanup(); jest.useRealTimers(); }
 });
+
+it('saves the project doc folder from the Projects tab', async () => {
+  jest.useFakeTimers();
+  const { tab, plugin } = createTab(false);
+  const container = createContainer();
+  const cleanup = (tab as any).renderSettings(container);
+  try {
+    expect(findContainer(container, t('settings.tabs.projects'))).not.toBeNull();
+    expect(findByClass(container, 'claudian-settings-projects')).not.toBeNull();
+    const change = mockTextChanges.get(t('settings.projects.docFolder.name'))!;
+    expect(change).toBeDefined();
+
+    await change('  Work/Projects  ');
+    await jest.advanceTimersByTimeAsync(500);
+
+    expect(plugin.mutateSettings).toHaveBeenCalledTimes(1);
+    expect(plugin.settings.projectDocFolder).toBe('Work/Projects');
+  } finally { cleanup(); jest.useRealTimers(); }
+});

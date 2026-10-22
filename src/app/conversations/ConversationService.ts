@@ -37,6 +37,8 @@ export class ConversationService {
     sessionId?: string;
     selectedModel?: string;
     linkedContentPath?: string;
+    /** Kept only when it names a live project at creation. */
+    projectId?: string;
   }): Promise<Conversation> {
     const conversation = await this.deps.repository.create(options);
     this.notifyConversationListChanged();
@@ -88,6 +90,19 @@ export class ConversationService {
       try { this.notifyConversationListChanged(); } catch { /* Metadata and admission already committed. */ }
     }
     return committed;
+  }
+
+  async setConversationsProject(ids: readonly string[], projectId: string | null): Promise<void> {
+    await this.#mutateConversations(ids, id => this.deps.repository.setProject(id, projectId));
+  }
+
+  /** Clears a deleted project from loaded members that still carry it. */
+  async clearProjectMembership(projectId: string): Promise<void> {
+    try {
+      await this.deps.repository.clearProject(projectId);
+    } finally {
+      this.notifyConversationListChanged();
+    }
   }
 
   async setConversationsPinned(ids: readonly string[], isPinned: boolean): Promise<void> {

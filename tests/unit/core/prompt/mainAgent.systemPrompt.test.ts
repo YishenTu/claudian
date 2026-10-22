@@ -42,6 +42,31 @@ describe('systemPrompt', () => {
       expect(prompt).not.toContain('# Custom Instructions');
     });
 
+    it('should append session instructions verbatim as the last section', () => {
+      const sessionInstructions = '## Project\n\nThis session is a member of the Claudian project **Alpha**.\n\n  Keep   spacing.';
+      const prompt = buildSystemPrompt({ customPrompt: 'Prefer short answers.', sessionInstructions });
+
+      expect(prompt.endsWith(`\n\n${sessionInstructions}`)).toBe(true);
+      expect(prompt.indexOf('## Custom Instructions')).toBeLessThan(prompt.indexOf('## Project'));
+      expect(prompt.match(/## Project/g)).toHaveLength(1);
+    });
+
+    it('should append session instructions after the media section when no custom prompt is set', () => {
+      const prompt = buildSystemPrompt({ sessionInstructions: '## Project\n\nBody' });
+
+      expect(prompt).not.toContain('## Custom Instructions');
+      expect(prompt.endsWith('use its absolute path for file operations.\n\n## Project\n\nBody')).toBe(true);
+    });
+
+    it.each([
+      ['undefined', undefined],
+      ['empty', ''],
+      ['whitespace only', '  \n '],
+    ])('should omit session instructions when %s', (_label, sessionInstructions) => {
+      const withoutField = buildSystemPrompt({ customPrompt: 'Prefer short answers.' });
+      expect(buildSystemPrompt({ customPrompt: 'Prefer short answers.', sessionInstructions })).toBe(withoutField);
+    });
+
     it('should include base system prompt elements', () => {
       const prompt = buildSystemPrompt();
       expect(prompt).toContain('Use `bash: date` to get the current date and time. Never guess or assume.');

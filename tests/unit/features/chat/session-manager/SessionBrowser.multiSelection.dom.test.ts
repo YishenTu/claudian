@@ -106,8 +106,8 @@ describe('SessionBrowser multi-select archive', () => {
 
     fireEvent.contextMenu(button('Gamma session'));
     const menu = lastMenu();
-    expect(menu.items.map(menuItem => menuItem.title)).toEqual(['Pin 2 sessions', 'Archive 2 sessions']);
-    menu.items[1].clickHandler?.();
+    expect(menu.items.map(menuItem => menuItem.title)).toEqual(['Pin 2 sessions', 'Move 2 sessions to project…', 'Archive 2 sessions']);
+    menu.items[2].clickHandler?.();
     await Promise.resolve();
 
     expect(onSetConversationsArchived).toHaveBeenCalledWith(['alpha', 'gamma']);

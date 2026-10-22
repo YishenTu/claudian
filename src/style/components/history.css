@@ -3,7 +3,17 @@
   position: static;
 }
 
+/*
+ * One icon system for every sidebar row: leading glyphs sit in an icon-size slot at the
+ * inline inset, so labels after them share one x; trailing controls are action-size
+ * boxes whose inline end is the inset, so they line up with the section header buttons.
+ */
 .claudian-session-sidebar {
+  --claudian-session-icon-size: 14px;
+  --claudian-session-icon-gap: 8px;
+  --claudian-session-action-size: 24px;
+  --claudian-session-action-gap: 4px;
+  --claudian-session-inline-inset: 12px;
   display: none;
   flex: 0 0 var(--claudian-session-sidebar-width, 240px);
   flex-direction: column;
@@ -80,7 +90,7 @@
   gap: 8px;
   flex-shrink: 0;
   margin: 1px 0;
-  padding: 8px;
+  padding: 8px var(--claudian-session-inline-inset);
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 500;
@@ -105,7 +115,7 @@
   gap: 8px;
   flex-shrink: 0;
   margin: 1px 0;
-  padding: 6px 8px;
+  padding: 6px var(--claudian-session-inline-inset);
   border-radius: 6px;
   color: var(--text-muted);
 }
@@ -143,13 +153,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 16px;
+  flex: 0 0 var(--claudian-session-icon-size, 16px);
 }
 
 .claudian-session-new-icon svg,
 .claudian-session-nav-icon svg {
-  width: 16px;
-  height: 16px;
+  width: var(--claudian-session-icon-size, 16px);
+  height: var(--claudian-session-icon-size, 16px);
 }
 
 .claudian-session-sidebar .claudian-history-header {
@@ -158,6 +168,7 @@
   justify-content: space-between;
   gap: 8px;
   flex-shrink: 0;
+  padding-inline: var(--claudian-session-inline-inset);
   border-bottom: none;
 }
 
@@ -170,28 +181,75 @@
   min-height: 40px;
 }
 
+/*
+ * A section header's label is a native toggle that collapses the section. It keeps the
+ * header's look: Obsidian restores button chrome on these states.
+ */
+.claudian-session-sidebar .claudian-history-section-toggle,
+.claudian-session-sidebar .claudian-history-section-toggle:is(:hover, :focus, :focus-visible, :active, .mobile-tap) {
+  appearance: none;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: flex-start;
+  align-self: stretch;
+  min-width: 0;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: start;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.claudian-session-sidebar .claudian-history-section-toggle:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
 .claudian-session-header-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--claudian-session-action-gap);
   margin-inline-start: auto;
 }
 
-.claudian-session-header-btn {
+/* A native button; Obsidian restores button chrome on these states. */
+.claudian-session-header-actions .claudian-session-header-btn,
+.claudian-session-header-actions .claudian-session-header-btn:is(:hover, :focus, :focus-visible, :active, .mobile-tap) {
+  appearance: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: var(--claudian-session-action-size);
+  height: var(--claudian-session-action-size);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
   cursor: pointer;
+}
+
+.claudian-session-header-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
 }
 
 .claudian-session-header-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: var(--claudian-session-action-size);
+  height: var(--claudian-session-action-size);
   color: var(--text-faint);
   transition: color 0.15s ease;
 }
@@ -202,13 +260,8 @@
 }
 
 .claudian-session-header-icon svg {
-  width: 16px;
-  height: 16px;
-}
-
-.claudian-session-header-icon[data-icon-state] svg {
-  width: 14px;
-  height: 14px;
+  width: var(--claudian-session-icon-size);
+  height: var(--claudian-session-icon-size);
 }
 
 .claudian-session-sidebar .claudian-history-list {
@@ -415,8 +468,104 @@
   color: var(--text-error);
 }
 
+/*
+ * Sidebar group rows (projects, linked content, unlinked, missing). Leading icons take
+ * the icon slot; the gap between trailing controls matches the section header actions.
+ */
+.claudian-session-sidebar .claudian-session-group-header {
+  gap: var(--claudian-session-action-gap);
+  padding-inline: var(--claudian-session-inline-inset);
+}
+
+.claudian-session-sidebar .claudian-session-group-icon {
+  flex-basis: var(--claudian-session-icon-size);
+}
+
+.claudian-session-sidebar .claudian-session-group-header > .claudian-session-group-icon {
+  margin-inline-end: calc(var(--claudian-session-icon-gap) - var(--claudian-session-action-gap));
+}
+
+.claudian-session-sidebar .claudian-session-group-icon svg {
+  width: var(--claudian-session-icon-size);
+  height: var(--claudian-session-icon-size);
+}
+
+/*
+ * Group row actions mirror the section header buttons. Project rows use native buttons,
+ * so Obsidian's chrome is reset across every state. Hidden actions keep their space and
+ * stay focusable, so revealing them never reflows the row; the negative block margin
+ * keeps a 24px box from growing a 17px-line row.
+ */
+.claudian-session-sidebar .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action),
+.claudian-session-sidebar .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action):is(:hover, :focus, :focus-visible, :active, .mobile-tap) {
+  appearance: none;
+  display: flex;
+  flex: 0 0 var(--claudian-session-action-size);
+  align-items: center;
+  justify-content: center;
+  width: var(--claudian-session-action-size);
+  height: var(--claudian-session-action-size);
+  margin: -4px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.claudian-session-sidebar .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action) {
+  opacity: 0;
+}
+
+.claudian-session-sidebar .claudian-session-group-header:is(:hover, :focus-within) :is(.claudian-session-group-menu-action, .claudian-session-group-new-action) {
+  opacity: 1;
+}
+
+.claudian-session-sidebar .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action):is(:hover, :focus-visible) {
+  color: var(--text-normal);
+}
+
+.claudian-session-sidebar .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action):focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+.claudian-session-sidebar .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action) svg {
+  width: var(--claudian-session-icon-size);
+  height: var(--claudian-session-icon-size);
+  color: inherit;
+  transition: none;
+}
+
+/* Status indicators take a trailing action slot, so they share the header button column. */
+.claudian-session-sidebar :is(
+  .claudian-session-status-indicator,
+  .claudian-session-running-indicator,
+  .claudian-session-group-running-indicator
+) {
+  flex: 0 0 var(--claudian-session-action-size);
+  width: var(--claudian-session-action-size);
+  height: var(--claudian-session-action-size);
+  margin: -4px 0;
+}
+
+.claudian-session-sidebar :is(
+  .claudian-session-status-indicator,
+  .claudian-session-running-indicator,
+  .claudian-session-group-running-indicator
+) svg {
+  width: var(--claudian-session-icon-size);
+  height: var(--claudian-session-icon-size);
+  stroke-width: 2;
+}
+
 .claudian-session-sidebar .claudian-history-item {
   position: relative;
+  gap: var(--claudian-session-action-gap);
+  padding-inline: var(--claudian-session-inline-inset);
   border-bottom: none;
   border-radius: 6px;
 }
@@ -427,6 +576,15 @@
 
 .claudian-session-sidebar .claudian-history-item-title {
   color: var(--text-muted);
+}
+
+/*
+ * Whole-pixel line boxes keep every row on whole-pixel offsets; fractional rows (13px at
+ * Obsidian's 1.3 line height) make hover backgrounds and the gaps between them shift by a
+ * pixel from row to row.
+ */
+.claudian-session-sidebar :is(.claudian-history-item-title, .claudian-session-group-label) {
+  line-height: 17px;
 }
 
 .claudian-session-sidebar .claudian-history-item.active,
@@ -440,8 +598,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
-  padding: 8px 8px 2px 12px;
+  gap: var(--claudian-session-action-gap);
+  padding: 8px var(--claudian-session-inline-inset) 2px;
   color: var(--text-faint);
   font-size: var(--font-ui-smaller);
 }
@@ -453,11 +611,13 @@
 .claudian-session-recency-divider-action:focus,
 .claudian-session-recency-divider-action:focus-visible {
   display: flex;
-  flex: 0 0 18px;
-  width: 18px;
-  height: 18px;
+  flex: 0 0 var(--claudian-session-action-size);
+  width: var(--claudian-session-action-size);
+  height: var(--claudian-session-action-size);
   align-items: center;
   justify-content: center;
+  /* Keeps the divider's height: the box overhangs its padding instead of growing it. */
+  margin: -3px 0;
   padding: 0;
   border: 0;
   background: transparent;
@@ -485,12 +645,15 @@
 }
 
 .claudian-session-recency-divider-action svg {
-  width: 14px;
-  height: 14px;
+  width: var(--claudian-session-icon-size);
+  height: var(--claudian-session-icon-size);
 }
 
+/* Grouped sessions start at their group's label. */
 .claudian-session-sidebar .claudian-session-group-body .claudian-history-item {
-  padding-inline-start: 32px;
+  padding-inline-start: calc(
+    var(--claudian-session-inline-inset) + var(--claudian-session-icon-size) + var(--claudian-session-icon-gap)
+  );
 }
 
 .claudian-session-sidebar .claudian-history-item.active:hover,
@@ -512,8 +675,8 @@
 .claudian-session-sidebar .claudian-history-item-actions {
   display: none;
   flex-shrink: 0;
-  gap: 6px;
-  margin-inline-start: 0;
+  gap: var(--claudian-session-action-gap);
+  margin: -4px 0;
 }
 
 .claudian-session-metadata-popover {
@@ -601,16 +764,29 @@ body.theme-dark .claudian-session-metadata-popover {
 
 .claudian-session-sidebar .claudian-history-item-actions .claudian-action-btn {
   display: flex;
+  flex: 0 0 var(--claudian-session-action-size);
   align-items: center;
   justify-content: center;
-  width: 14px;
+  width: var(--claudian-session-action-size);
   min-width: 0;
-  height: 14px;
+  height: var(--claudian-session-action-size);
+  margin: 0;
   padding: 0;
+  border: 0;
   background: transparent;
-  border-radius: 0;
+  border-radius: 4px;
   box-shadow: none;
   color: var(--text-muted);
+}
+
+.claudian-session-sidebar .claudian-history-item-actions .claudian-action-btn svg {
+  width: var(--claudian-session-icon-size);
+  height: var(--claudian-session-icon-size);
+}
+
+.claudian-session-sidebar .claudian-history-item-actions .claudian-action-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
 }
 
 .claudian-session-sidebar .claudian-history-item-actions .claudian-action-btn:hover,

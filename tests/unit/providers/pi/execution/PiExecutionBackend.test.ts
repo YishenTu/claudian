@@ -2026,6 +2026,36 @@ describe('PiExecutionBackend', () => {
     expect(systemPrompt).toContain('## Vault Media');
   });
 
+  it('appends session instructions to the provider-default prompt and relaunches when they change', async () => {
+    const harness = createHarness();
+    const promptOf = (kernel: { launchSpec: { args: string[] } }) =>
+      kernel.launchSpec.args[kernel.launchSpec.args.indexOf('--system-prompt') + 1] ?? '';
+    const send = async (sessionInstructions: string, expectedKernels: number) => {
+      const run = harness.session.execute(createRequest({
+        configuration: {
+          model: 'pi:anthropic/claude-sonnet-4',
+          reasoning: 'high',
+          systemInstructions: { kind: 'provider-default', sessionInstructions },
+        },
+      }));
+      const eventsPromise = collect(run.events);
+      await waitFor(() => harness.kernels.length === expectedKernels);
+      completeTurn(harness.kernels.at(-1)!);
+      await eventsPromise;
+    };
+
+    await send('## Project\nAlpha', 1);
+    expect(harness.kernels).toHaveLength(1);
+    expect(promptOf(harness.kernels[0])).toContain('## Runtime Context');
+    expect(promptOf(harness.kernels[0]).endsWith('## Project\nAlpha')).toBe(true);
+
+    await send('## Project\nBeta', 2);
+    expect(harness.kernels).toHaveLength(2);
+    expect(promptOf(harness.kernels[1]).endsWith('## Project\nBeta')).toBe(true);
+    expect(promptOf(harness.kernels[1])).not.toContain('Alpha');
+    await harness.session.dispose();
+  });
+
   it('maps an explicit allow-list exactly and falls back to provider model settings', async () => {
     const harness = createHarness();
     const run = harness.session.execute(createRequest({

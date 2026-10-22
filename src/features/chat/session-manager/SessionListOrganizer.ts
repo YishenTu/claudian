@@ -1,19 +1,26 @@
 import type {
   ConversationMeta,
+  ProjectReader,
+  ProjectRecord,
   SessionManagerOrganization,
   SessionManagerSort,
 } from '@/core/types';
+import { resolveLiveProject } from '@/features/chat/execution/projectInstructions';
 import { isProvisionalNotePath } from '@/features/chat/session-manager/ProvisionalNoteNames';
 
-export type SessionListSectionKind = 'list' | 'recency' | 'content' | 'ungrouped' | 'missing';
+export type SessionListSectionKind = 'list' | 'recency' | 'content' | 'ungrouped' | 'missing' | 'project';
 
 export interface SessionListSection {
   key: string;
   kind: SessionListSectionKind;
   label?: string;
   contentPath?: string;
+  projectId?: string;
   conversations: ConversationMeta[];
 }
+
+/** Live project records; a conversation's `projectId` counts only when `get` resolves it. */
+export type SessionListProjects = Pick<ProjectReader, 'list' | 'get'>;
 
 interface OrganizeSessionListOptions {
   organization: SessionManagerOrganization;
@@ -109,6 +116,48 @@ function compareSections(
     });
 }
 
+export function projectSectionKey(projectId: string): string {
+  return `project:${projectId}`;
+}
+
+/** Collapse key of a whole session-manager section; kept with the group keys so search expands it too. */
+export function sessionManagerSectionKey(section: 'projects' | 'sessions' | 'archived'): string {
+  return `section:${section}`;
+}
+
+/**
+ * Pinned projects first, then by the project sort: latest member activity (creation for a project without
+ * members) or creation. Each section holds its members in session order.
+ */
+function organizeProjects(
+  records: readonly ProjectRecord[],
+  membersByProject: ReadonlyMap<string, readonly ConversationMeta[]>,
+  projectSort: SessionManagerSort,
+  sort: SessionManagerSort,
+  visibleMembers: (record: ProjectRecord, members: readonly ConversationMeta[]) => readonly ConversationMeta[],
+): SessionListSection[] {
+  const timestamp = (record: ProjectRecord): number => {
+    const members = membersByProject.get(record.id) ?? [];
+    if (projectSort === 'created' || members.length === 0) return record.createdAt;
+    return Math.max(...members.map(getLastActivityTimestamp));
+  };
+  return [...records]
+    .sort((left, right) => (
+      Number(right.isPinned) - Number(left.isPinned)
+      || timestamp(right) - timestamp(left)
+      || left.name.localeCompare(right.name, undefined, { sensitivity: 'base', numeric: true })
+      || left.id.localeCompare(right.id)
+    ))
+    .map(record => ({
+      key: projectSectionKey(record.id),
+      kind: 'project',
+      label: record.name,
+      projectId: record.id,
+      conversations: [...visibleMembers(record, membersByProject.get(record.id) ?? [])]
+        .sort((left, right) => compareConversations(left, right, sort)),
+    }));
+}
+
 export function getLinkedContentTitle(contentPath: string): string {
   const filename = contentPath.replace(/\\/g, '/').split('/').pop() ?? contentPath;
   return filename.replace(/\.md$/i, '');
@@ -193,6 +242,12 @@ export interface SessionListModelOptions {
   /** Partitions pinned sessions and pinned Linked content into their own section. */
   showPinnedSection?: boolean;
   pinnedLinkedContentPaths?: ReadonlySet<string>;
+  /**
+   * Live project records for a projects section outside the archive. Members of a live project are listed
+   * only there; without it, or in the archive, every session stays in the session list.
+   */
+  projects?: SessionListProjects;
+  projectSort?: SessionManagerSort;
   collapsedGroupKeys?: ReadonlySet<string>;
   contentExists?: (contentPath: string) => boolean;
   contentIsNote?: (contentPath: string) => boolean;
@@ -203,8 +258,10 @@ export interface SessionListModelOptions {
 /** What a session list shows, derived from the conversation list without any DOM. */
 export interface SessionListModel {
   readonly hasSearchTerms: boolean;
-  /** No session or pinned Linked content group matches the scope and search. */
+  /** No session or pinned Linked content group matches the scope and search; projects do not count. */
   readonly isEmpty: boolean;
+  /** Every live project matching the search, pinned first, with its matching members; null without the section. */
+  readonly projectSections: readonly SessionListSection[] | null;
   readonly pinnedContentSections: readonly SessionListSection[];
   /** Pinned sessions outside pinned Linked content groups, in list order. */
   readonly pinnedConversations: readonly ConversationMeta[];
@@ -213,12 +270,29 @@ export interface SessionListModel {
   readonly groupKeys: readonly string[] | null;
   /** Every in-scope session per Linked content path, ignoring search, for group actions. */
   readonly conversationsByLinkedContent: ReadonlyMap<string, readonly ConversationMeta[]>;
-  /** Sessions shown when every expanded group is fully paged in. */
+  /** Every in-scope session per live project, ignoring search, for project actions and counts. */
+  readonly conversationsByProject: ReadonlyMap<string, readonly ConversationMeta[]>;
+  /** Session list rows shown when every expanded group is fully paged in. */
   readonly visibleConversationTotal: number;
 }
 
 function getSearchTerms(searchQuery: string | undefined): string[] {
   return (searchQuery ?? '').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+}
+
+function groupBy(
+  conversations: readonly ConversationMeta[],
+  keyOf: (conversation: ConversationMeta) => string | undefined,
+): Map<string, ConversationMeta[]> {
+  const groups = new Map<string, ConversationMeta[]>();
+  for (const conversation of conversations) {
+    const key = keyOf(conversation);
+    if (!key) continue;
+    const group = groups.get(key) ?? [];
+    group.push(conversation);
+    groups.set(key, group);
+  }
+  return groups;
 }
 
 /** Scopes, searches, partitions, and organizes sessions for one list render. */
@@ -227,28 +301,49 @@ export function deriveSessionListModel(
   options: SessionListModelOptions,
 ): SessionListModel {
   const { organization, sort, language } = options;
+  const isGrouped = organization === 'linked-content';
   const scopedConversations = options.scope === 'archived'
     ? conversations.filter(conversation => conversation.isArchived)
     : options.scope === 'active'
       ? conversations.filter(conversation => !conversation.isArchived)
       : conversations;
   const searchTerms = getSearchTerms(options.searchQuery);
+  const matchesSearch = (text: string): boolean => {
+    const searchableText = text.toLocaleLowerCase();
+    return searchTerms.every(term => searchableText.includes(term));
+  };
+  const projects = options.scope === 'archived' ? undefined : options.projects;
+  const liveProjectId = (conversation: ConversationMeta): string | undefined => (
+    projects ? resolveLiveProject(projects, conversation.projectId)?.id : undefined
+  );
+  const conversationsByProject = groupBy(scopedConversations, liveProjectId);
+  const listedConversations = projects
+    ? scopedConversations.filter(conversation => !liveProjectId(conversation))
+    : scopedConversations;
+  const matchesConversation = (conversation: ConversationMeta): boolean => (
+    matchesSearch([conversation.title, conversation.linkedContentPath ?? ''].join('\n'))
+  );
   const filteredConversations = searchTerms.length === 0
-    ? scopedConversations
-    : scopedConversations.filter((conversation) => {
-        const searchableText = [conversation.title, conversation.linkedContentPath ?? '']
-          .join('\n')
-          .toLocaleLowerCase();
-        return searchTerms.every(term => searchableText.includes(term));
-      });
-  const conversationsByLinkedContent = new Map<string, ConversationMeta[]>();
-  for (const conversation of scopedConversations) {
-    if (!conversation.linkedContentPath) continue;
-    const contentConversations = conversationsByLinkedContent.get(conversation.linkedContentPath) ?? [];
-    contentConversations.push(conversation);
-    conversationsByLinkedContent.set(conversation.linkedContentPath, contentConversations);
-  }
-  const pinnedLinkedContentPaths = organization === 'linked-content'
+    ? listedConversations
+    : listedConversations.filter(matchesConversation);
+  const projectSections = projects
+    ? organizeProjects(
+        projects.list(),
+        conversationsByProject,
+        options.projectSort ?? 'last-updated',
+        sort,
+        (record, members) => (
+          searchTerms.length === 0 || matchesSearch(record.name) ? members : members.filter(matchesConversation)
+        ),
+      ).filter(section => (
+        searchTerms.length === 0 || section.conversations.length > 0 || matchesSearch(section.label ?? '')
+      ))
+    : null;
+  const conversationsByLinkedContent = groupBy(
+    listedConversations,
+    conversation => conversation.linkedContentPath,
+  );
+  const pinnedLinkedContentPaths = isGrouped
     && options.showPinnedSection
     && options.scope !== 'archived'
     ? options.pinnedLinkedContentPaths ?? new Set<string>()
@@ -276,7 +371,7 @@ export function deriveSessionListModel(
   const visiblePinnedContentPaths = [...pinnedLinkedContentPaths].filter(contentPath => (
     searchTerms.length === 0
     || pinnedPathsWithMatchingSessions.has(contentPath)
-    || searchTerms.every(term => contentPath.toLocaleLowerCase().includes(term))
+    || matchesSearch(contentPath)
   ));
   const pinnedContentSections = organizeSessionList(pinnedContentConversations, {
     organization: 'linked-content',
@@ -291,11 +386,13 @@ export function deriveSessionListModel(
     return {
       hasSearchTerms: searchTerms.length > 0,
       isEmpty,
+      projectSections,
       pinnedContentSections,
       pinnedConversations: [],
       sections: [],
-      groupKeys: organization === 'linked-content' ? [] : null,
+      groupKeys: isGrouped ? [] : null,
       conversationsByLinkedContent,
+      conversationsByProject,
       visibleConversationTotal: 0,
     };
   }
@@ -318,19 +415,21 @@ export function deriveSessionListModel(
       options.collapsedGroupKeys?.has(section.key) ? total : total + section.conversations.length
     ), 0)
   );
-  const visibleSessionConversationTotal = organization === 'linked-content'
+  const visibleSessionConversationTotal = isGrouped
     ? countExpanded(sections)
     : sessionConversations.length;
   return {
     hasSearchTerms: searchTerms.length > 0,
     isEmpty,
+    projectSections,
     pinnedContentSections,
     pinnedConversations: sortedPinnedConversations,
     sections,
-    groupKeys: organization === 'linked-content'
+    groupKeys: isGrouped
       ? [...pinnedContentSections.map(({ key }) => key), ...sections.map(({ key }) => key)]
       : null,
     conversationsByLinkedContent,
+    conversationsByProject,
     visibleConversationTotal: countExpanded(pinnedContentSections)
       + sortedPinnedConversations.length
       + visibleSessionConversationTotal,

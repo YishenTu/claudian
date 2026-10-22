@@ -21,6 +21,7 @@ import {
   type ConversationMeta,
   type ConversationMutablePatch,
   type ConversationSummary,
+  type ProjectReader,
   type SessionMetadata,
 } from '../../core/types';
 import { rewriteVaultPathAfterRename } from '../../utils/path';
@@ -52,6 +53,8 @@ export interface ConversationRepositoryDeps {
   persistence: ConversationPersistence;
   providers: ConversationProviderCatalog;
   providerSettings: ConversationProviderSettings;
+  /** Live projects; membership writes accept only ids it resolves. Without it no project is live. */
+  projects?: Pick<ProjectReader, 'get'>;
 }
 
 interface ConversationDeletionState {
@@ -71,7 +74,11 @@ const IMMUTABLE_CONVERSATION_PATCH_FIELDS = [
   'providerId',
   'createdAt',
   'linkedContentPath',
+  'projectId',
 ] as const;
+
+/** Mutable fields plus repository-owned membership, which only dedicated methods write. */
+type ConversationMetadataPatch = ConversationMutablePatch & { projectId?: string };
 
 type MutableLinkedContentConversation = Omit<
   Conversation,
@@ -324,6 +331,7 @@ export class ConversationRepository {
     sessionId?: string;
     selectedModel?: string;
     linkedContentPath?: string;
+    projectId?: string;
   }): Promise<Conversation> {
     const settings = this.deps.getSettings();
     const providerId = options?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
@@ -354,6 +362,9 @@ export class ConversationRepository {
       linkedContentPath: options?.linkedContentPath === undefined
         ? undefined
         : assertLinkedContentPath(options.linkedContentPath),
+      ...(options?.projectId !== undefined && this.#isLiveProject(options.projectId)
+        ? { projectId: options.projectId }
+        : {}),
     };
 
     this.metadataTargets.set(conversation.id, 'device');
@@ -668,13 +679,40 @@ export class ConversationRepository {
     return didArchive;
   }
 
+  /** Joins or moves into a live project, or leaves with null; the project is checked at the serialized write. */
+  async setProject(id: string, projectId: string | null): Promise<void> {
+    await this.#mutateMetadata(id, (conversation) => {
+      if (projectId !== null && !this.#isLiveProject(projectId)) {
+        throw new Error(`Unknown project: ${projectId}`);
+      }
+      const next = projectId ?? undefined;
+      return conversation.projectId === next ? null : { projectId: next };
+    });
+  }
+
+  /** Clears a deleted project from loaded conversations that still belong to it at their serialized write. */
+  async clearProject(projectId: string): Promise<void> {
+    const memberIds = this.conversations
+      .filter(conversation => conversation.projectId === projectId)
+      .map(({ id }) => id);
+    const results = await Promise.allSettled(memberIds.map(id => this.#mutateMetadata(id, conversation => (
+      conversation.projectId === projectId ? { projectId: undefined } : null
+    ))));
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failure) throw failure.reason;
+  }
+
+  #isLiveProject(projectId: string): boolean {
+    return this.deps.projects?.get(projectId) != null;
+  }
+
   /**
    * Serializes a metadata decision through persistence and committed publication.
    * `createPatch` must return a repository-owned patch; it is committed without another copy.
    */
   #mutateMetadata(
     id: string,
-    createPatch: (conversation: Conversation) => ConversationMutablePatch | null,
+    createPatch: (conversation: Conversation) => ConversationMetadataPatch | null,
   ): Promise<void> {
     const conversation = this.#getRecord(id);
     if (!conversation) return Promise.resolve();
@@ -969,6 +1007,7 @@ export class ConversationRepository {
     return record ? {
       id: record.id, providerId: record.providerId, title: record.title,
       selectedModel: record.selectedModel, isPinned: record.isPinned,
+      ...(record.projectId ? { projectId: record.projectId } : {}),
       capabilities: { ...this.deps.providers.getCapabilities(record.providerId, record.providerState) },
       ...(record.usage ? { usage: { model: record.usage.model } } : {}),
     } : null;
@@ -1015,6 +1054,7 @@ export class ConversationRepository {
       messageCount: conversation.messages.length,
       preview: this.#getPreview(conversation),
       linkedContentPath: conversation.linkedContentPath,
+      projectId: conversation.projectId,
       isPinned: conversation.isPinned,
       isArchived: conversation.isArchived,
       titleGenerationStatus: conversation.titleGenerationStatus,
@@ -1319,6 +1359,7 @@ export class ConversationRepository {
           : undefined,
       ...(modelRecoverySource ? { modelRecoverySource } : {}),
       linkedContentPath,
+      projectId: conversation.projectId,
       isPinned: conversation.isPinned,
       isArchived: conversation.isArchived,
       usage: conversation.usage,

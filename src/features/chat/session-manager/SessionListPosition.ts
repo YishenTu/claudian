@@ -15,6 +15,7 @@ export interface SessionListPosition {
   readonly visibleCount: number;
   readonly sessionScrollTop: number;
   readonly pinnedScrollTop: number;
+  readonly projectsScrollTop: number;
   readonly anchors: readonly ScrollAnchor[];
 }
 
@@ -22,6 +23,7 @@ export const INITIAL_SESSION_LIST_POSITION: SessionListPosition = {
   visibleCount: 0,
   sessionScrollTop: 0,
   pinnedScrollTop: 0,
+  projectsScrollTop: 0,
   anchors: [],
 };
 
@@ -56,6 +58,7 @@ export function captureSessionListPosition(container: HTMLElement): SessionListP
   const pinnedList = list
     .querySelector<HTMLElement>('.claudian-history-section--pinned')
     ?.querySelector<HTMLElement>('.claudian-history-section-items');
+  const projectsList = list.querySelector<HTMLElement>('.claudian-session-project-items');
   const recordedVisibleCount = Number(list.dataset.visibleCount);
   return {
     visibleCount: Number.isFinite(recordedVisibleCount) && recordedVisibleCount > 0
@@ -63,6 +66,7 @@ export function captureSessionListPosition(container: HTMLElement): SessionListP
       : list.querySelectorAll(ITEM_SELECTOR).length,
     sessionScrollTop: sessionList.scrollTop,
     pinnedScrollTop: pinnedList?.scrollTop ?? 0,
+    projectsScrollTop: projectsList?.scrollTop ?? 0,
     anchors: captureScrollAnchors(sessionList),
   };
 }
@@ -76,7 +80,9 @@ export function restoreSessionListPosition(
   position: SessionListPosition,
   sessionList: HTMLElement,
   pinnedList: HTMLElement | null,
+  projectsList: HTMLElement | null = null,
 ): void {
+  if (projectsList) projectsList.scrollTop = position.projectsScrollTop;
   if (pinnedList) pinnedList.scrollTop = position.pinnedScrollTop;
   sessionList.scrollTop = position.sessionScrollTop;
   if (position.anchors.length === 0) return;

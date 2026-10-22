@@ -47,7 +47,11 @@ export interface ProviderExecutionContext {
  * context a restart would lose; keep such a session's instructions fixed for its lifetime.
  */
 export type ProviderSystemInstructions =
-  | { readonly kind: 'provider-default' }
+  | {
+      readonly kind: 'provider-default';
+      /** Appended verbatim as the last section of the default Main Agent prompt (for example, a project paragraph). */
+      readonly sessionInstructions?: string;
+    }
   | {
       readonly kind: 'explicit';
       readonly instructions: string;

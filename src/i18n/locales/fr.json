@@ -353,13 +353,83 @@
       "nextMessage": "Message suivant",
       "scrollToBottom": "Défiler vers le bas",
       "emptyDirectory": "Aucun prompt utilisateur dans cette conversation"
+    },
+    "projects": {
+      "header": "Projets",
+      "options": "Options des projets",
+      "sortBy": "Trier les projets par",
+      "sort": {
+        "lastActivity": "Dernière activité",
+        "created": "Création"
+      },
+      "noSessions": "Aucune session",
+      "newSessionIn": "Nouvelle session dans {name}",
+      "actionsFor": "Actions pour {name}",
+      "newProjectAction": "Nouveau projet",
+      "chipLabel": "Projet : {name}",
+      "noProject": "Aucun projet",
+      "menu": {
+        "newSession": "Nouvelle session dans le projet",
+        "edit": "Modifier le projet",
+        "openDoc": "Ouvrir le document du projet",
+        "pin": "Épingler le projet",
+        "unpin": "Désépingler le projet",
+        "archiveIdle": "Archiver les sessions inactives",
+        "delete": "Supprimer le projet",
+        "moveTo": "Déplacer vers un projet…",
+        "moveSelectionTo": "Déplacer {count} sessions vers un projet…",
+        "removeFrom": "Retirer du projet",
+        "removeSelectionFrom": "Retirer {count} sessions du projet",
+        "newProject": "Nouveau projet…"
+      },
+      "deleteConfirm": "Supprimer le projet « {name} » ? Les sessions sont conservées. Le document du projet est conservé.",
+      "errors": {
+        "create": "Impossible de créer le projet",
+        "update": "Impossible de mettre à jour le projet",
+        "delete": "Impossible de supprimer le projet",
+        "pin": "Impossible de modifier l’épinglage du projet",
+        "move": "Impossible de déplacer les sessions vers le projet",
+        "remove": "Impossible de retirer les sessions du projet",
+        "start": "Impossible de démarrer une session dans ce projet",
+        "sort": "Impossible de mettre à jour le tri des projets"
+      },
+      "editor": {
+        "titleNew": "Nouveau projet",
+        "titleEdit": "Modifier le projet",
+        "name": "Nom",
+        "nameDesc": "Affiché dans le gestionnaire de sessions et dans les sessions membres.",
+        "namePlaceholder": "Nom du projet",
+        "instructions": "Instructions",
+        "instructionsDesc": "Ajoutées au prompt système de chaque session membre à partir de son prochain tour.",
+        "docPath": "Document du projet",
+        "openDoc": "Ouvrir",
+        "nameRequired": "Saisissez un nom de projet."
+      },
+      "doc": {
+        "title": "Document du projet : {name}",
+        "path": "Chemin",
+        "copyPath": "Copier le chemin",
+        "pathCopied": "Chemin copié",
+        "copyFailed": "Impossible de copier le chemin",
+        "reload": "Recharger",
+        "overwrite": "Écraser",
+        "recreate": "Recréer à partir du modèle",
+        "content": "Contenu du document du projet",
+        "missing": "Le document du projet est introuvable.",
+        "conflict": "Le document a changé depuis son chargement. Rechargez pour abandonner vos modifications, ou écrasez pour les conserver.",
+        "loadFailed": "Impossible de charger le document du projet",
+        "saveFailed": "Impossible d’enregistrer le document du projet",
+        "saved": "Document du projet enregistré",
+        "loading": "Chargement…"
+      }
     }
   },
   "settings": {
     "tabs": {
       "general": "Général",
       "providers": "Fournisseurs",
-      "skills": "Skills"
+      "skills": "Skills",
+      "projects": "Projets"
     },
     "providerSettings": {
       "unavailable": "Les réglages du fournisseur ne sont pas disponibles.",
@@ -814,6 +884,12 @@
         "partial": "La synchronisation s'est arrêtée avant la création du lien. Corrigez les éléments ci-dessous et relancez-la.",
         "failed": "Échec de la synchronisation : {message}",
         "summary": "Déplacés {moved}, convertis {converted}, à la corbeille {trashed}, {unlinked} lien(s) supprimé(s)."
+      }
+    },
+    "projects": {
+      "docFolder": {
+        "name": "Dossier des documents de projet",
+        "desc": "Dossier du coffre pour les documents des nouveaux projets. Laisser vide pour la racine du coffre. Les projets existants gardent leurs documents à leur emplacement."
       }
     }
   }

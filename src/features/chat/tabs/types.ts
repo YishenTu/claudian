@@ -22,6 +22,7 @@ import type { SessionInteractions } from '@/features/chat/interactions/SessionIn
 import type { LinkedContentController } from '@/features/chat/linked-content';
 import type { NavigationController } from '@/features/chat/navigation/NavigationController';
 import type { NavigationSidebar } from '@/features/chat/navigation/NavigationSidebar';
+import type { ProjectChip } from '@/features/chat/projects/ProjectChip';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import type { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import type { ChatState } from '@/features/chat/state/ChatState';
@@ -112,6 +113,8 @@ export interface TabUIComponents {
   /** Toolbar menus; Escape closes an open one before it can cancel a turn. */
   readonly toolbarMenus: ToolbarMenus;
   readonly navigationSidebar: NavigationSidebar;
+  /** The conversation's project in the composer info row. */
+  readonly projectChip: ProjectChip;
 }
 
 /**

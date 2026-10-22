@@ -4,6 +4,7 @@ import type { ConversationBranchResult } from '@/core/execution';
 import { getUserDisplayText } from '@/core/prompt/promptContext';
 import type { ChatMessage } from '@/core/types';
 import type { ComposerDraft, ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
+import { buildChatExecutionConfiguration } from '@/features/chat/execution/chatExecutionConfiguration';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
@@ -19,6 +20,8 @@ export interface ConversationBranchingDeps {
   getExecutionCoordinator: () => ChatExecutionCoordinator | null;
   ensureExecutionInitialized?: () => Promise<boolean>;
   getSelectedModel?: () => string | null;
+  /** The bound conversation's live project instructions, resolved for each branch operation. */
+  getSessionInstructions?: () => string | undefined;
   isClosing?: () => boolean;
   /** Persists the current conversation state. */
   save: () => Promise<void>;
@@ -154,8 +157,11 @@ export class ConversationBranching {
       if (this.deps.ensureExecutionInitialized && !await this.deps.ensureExecutionInitialized()) return result;
       coordinator = this.deps.getExecutionCoordinator();
       if (!coordinator || !isCurrent()) return result;
-      const request = { configuration: { model: this.deps.getSelectedModel?.() ?? undefined,
-        systemInstructions: { kind: 'provider-default' as const } }, signal };
+      const configuration = buildChatExecutionConfiguration(
+        { model: this.deps.getSelectedModel?.() ?? undefined },
+        this.deps.getSessionInstructions?.(),
+      );
+      const request = { configuration, signal };
       result = message
         ? await coordinator.navigateConversationBranch({ ...request, userMessageId: message.userMessageId!, branchMessageId })
         : await coordinator.reconcileConversationBranch(request);

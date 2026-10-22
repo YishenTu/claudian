@@ -284,9 +284,11 @@ describe('LinkedContentController DOM', () => {
     const harness = createHarness({ entries: [note, folder] });
     const rowEl = createMockEl();
     harness.controller.mountInfoRow(new ComposerInfoRow(rowEl as unknown as HTMLElement));
+    const linkedSlot = () => Array.from(rowEl.querySelectorAll('.claudian-input-info-linked') as any[])
+      .find(el => !el.hasClass('claudian-input-info-project'));
 
     harness.controller.selectExplicit(note.path);
-    let item = rowEl.querySelector('.claudian-input-info-linked')!;
+    let item = linkedSlot();
     expect(item.querySelector('.claudian-input-info-linked-remove')).not.toBeNull();
     const noteButton = item.querySelector('.claudian-input-info-linked-main');
     expect(noteButton?.getAttribute('aria-label')).toBe('Linked content: Notes/Plan.md');
@@ -297,14 +299,14 @@ describe('LinkedContentController DOM', () => {
     expect(harness.openFile).toHaveBeenCalledWith(note);
 
     harness.controller.selectExplicit(folder.path);
-    item = rowEl.querySelector('.claudian-input-info-linked')!;
+    item = linkedSlot();
     item.querySelector('.claudian-input-info-linked-main')?.click();
     await flushPromises();
     expect(harness.app.workspace.revealLeaf).toHaveBeenCalledWith(harness.explorerLeaf);
     expect(harness.revealInFolder).toHaveBeenCalledWith(folder);
 
     harness.controller.selectExplicit('Missing/Plan.md');
-    item = rowEl.querySelector('.claudian-input-info-linked')!;
+    item = linkedSlot();
     expect(item.hasClass('claudian-input-info-linked--missing')).toBe(true);
     expect(item.querySelector('.claudian-input-info-linked-label')?.textContent)
       .toContain('Missing content');

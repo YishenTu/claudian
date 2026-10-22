@@ -25,6 +25,7 @@ describe('session tool specs', () => {
     expect(list.inputSchema.properties).toEqual({
       includeProviders: expect.objectContaining({ type: 'boolean' }),
       limit: expect.objectContaining({ type: 'integer' }),
+      project: expect.objectContaining({ type: 'boolean' }),
     });
     expect(list.inputSchema.required).toBeUndefined();
     // The caller can recognize its own row, and a send result names its recipient.
@@ -47,7 +48,11 @@ describe('decodeSessionToolCall', () => {
       { tool: 'claudian_list_destinations', args: { includeProviders: false, limit: 50 } }],
     ['list with providers and a limit', 'claudian_list_destinations', { includeProviders: true, limit: 200 },
       { tool: 'claudian_list_destinations', args: { includeProviders: true, limit: 200 } }],
-    ['list treating null optionals as omitted', 'claudian_list_destinations', { includeProviders: null, limit: null },
+    ['list treating null optionals as omitted', 'claudian_list_destinations', { includeProviders: null, limit: null, project: null },
+      { tool: 'claudian_list_destinations', args: { includeProviders: false, limit: 50 } }],
+    ['list scoped to the caller\'s project', 'claudian_list_destinations', { project: true },
+      { tool: 'claudian_list_destinations', args: { includeProviders: false, limit: 50, project: true } }],
+    ['list with an explicit unscoped project flag', 'claudian_list_destinations', { project: false },
       { tool: 'claudian_list_destinations', args: { includeProviders: false, limit: 50 } }],
     ['send to a session', 'claudian_send_message', { sessionId: 'conv-1', text: 'Hi' },
       { tool: 'claudian_send_message', args: { sessionId: 'conv-1', text: 'Hi' } }],
@@ -90,6 +95,8 @@ describe('decodeSessionToolCall', () => {
     ['an oversized limit', 'claudian_list_destinations', { limit: 201 }, /"limit" must be an integer from 1 to 200/],
     ['a fractional limit', 'claudian_list_destinations', { limit: 2.5 }, /"limit" must be an integer from 1 to 200/],
     ['a string limit', 'claudian_list_destinations', { limit: '10' }, /"limit" must be an integer from 1 to 200/],
+    ['a non-boolean project', 'claudian_list_destinations', { project: 'true' }, /"project" must be a boolean/],
+    ['a numeric project', 'claudian_list_destinations', { project: 1 }, /"project" must be a boolean/],
     ['unexpected send arguments', 'claudian_send_message', { text: 'Hi', to: 'x' }, /unexpected argument "to"/i],
     ['missing text', 'claudian_send_message', { sessionId: 'conv-1' }, /"text" must be a non-empty string/],
     ['blank text', 'claudian_send_message', { text: '  \n' }, /"text" must be a non-empty string/],

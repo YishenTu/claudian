@@ -2022,14 +2022,16 @@ function resolveSystemPrompt(
   settings: Record<string, unknown>,
   vaultPath: string,
 ): string {
-  if (request.configuration.systemInstructions.kind === 'explicit') {
-    return request.configuration.systemInstructions.instructions;
+  const instructions = request.configuration.systemInstructions;
+  if (instructions.kind === 'explicit') {
+    return instructions.instructions;
   }
   return buildSystemPrompt({
     customPrompt: getString(settings.systemPrompt) ?? undefined,
     mediaFolder: getString(settings.mediaFolder) ?? undefined,
     userName: getString(settings.userName) ?? undefined,
     vaultPath,
+    sessionInstructions: instructions.sessionInstructions,
   } satisfies SystemPromptSettings);
 }
 

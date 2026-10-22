@@ -353,13 +353,83 @@
       "nextMessage": "Nächste Nachricht",
       "scrollToBottom": "Nach unten scrollen",
       "emptyDirectory": "Keine Benutzer-Prompts in dieser Unterhaltung"
+    },
+    "projects": {
+      "header": "Projekte",
+      "options": "Projektoptionen",
+      "sortBy": "Projekte sortieren nach",
+      "sort": {
+        "lastActivity": "Letzte Aktivität",
+        "created": "Erstellt"
+      },
+      "noSessions": "Keine Sitzungen",
+      "newSessionIn": "Neue Sitzung in {name}",
+      "actionsFor": "Aktionen für {name}",
+      "newProjectAction": "Neues Projekt",
+      "chipLabel": "Projekt: {name}",
+      "noProject": "Kein Projekt",
+      "menu": {
+        "newSession": "Neue Sitzung im Projekt",
+        "edit": "Projekt bearbeiten",
+        "openDoc": "Projektdokument öffnen",
+        "pin": "Projekt anheften",
+        "unpin": "Projekt lösen",
+        "archiveIdle": "Inaktive Sitzungen archivieren",
+        "delete": "Projekt löschen",
+        "moveTo": "In Projekt verschieben…",
+        "moveSelectionTo": "{count} Sitzungen in Projekt verschieben…",
+        "removeFrom": "Aus Projekt entfernen",
+        "removeSelectionFrom": "{count} Sitzungen aus Projekt entfernen",
+        "newProject": "Neues Projekt…"
+      },
+      "deleteConfirm": "Projekt „{name}“ löschen? Die Sitzungen bleiben erhalten. Das Projektdokument wird behalten.",
+      "errors": {
+        "create": "Projekt konnte nicht erstellt werden",
+        "update": "Projekt konnte nicht aktualisiert werden",
+        "delete": "Projekt konnte nicht gelöscht werden",
+        "pin": "Anheften des Projekts konnte nicht geändert werden",
+        "move": "Sitzungen konnten nicht in das Projekt verschoben werden",
+        "remove": "Sitzungen konnten nicht aus dem Projekt entfernt werden",
+        "start": "Sitzung in diesem Projekt konnte nicht gestartet werden",
+        "sort": "Projektsortierung konnte nicht aktualisiert werden"
+      },
+      "editor": {
+        "titleNew": "Neues Projekt",
+        "titleEdit": "Projekt bearbeiten",
+        "name": "Name",
+        "nameDesc": "Wird in der Sitzungsverwaltung und in den Mitgliedssitzungen angezeigt.",
+        "namePlaceholder": "Projektname",
+        "instructions": "Anweisungen",
+        "instructionsDesc": "Wird ab dem nächsten Zug zum Systemprompt jeder Mitgliedssitzung hinzugefügt.",
+        "docPath": "Projektdokument",
+        "openDoc": "Öffnen",
+        "nameRequired": "Gib einen Projektnamen ein."
+      },
+      "doc": {
+        "title": "Projektdokument: {name}",
+        "path": "Pfad",
+        "copyPath": "Pfad kopieren",
+        "pathCopied": "Pfad kopiert",
+        "copyFailed": "Pfad konnte nicht kopiert werden",
+        "reload": "Neu laden",
+        "overwrite": "Überschreiben",
+        "recreate": "Aus Vorlage neu erstellen",
+        "content": "Inhalt des Projektdokuments",
+        "missing": "Das Projektdokument fehlt.",
+        "conflict": "Das Dokument wurde seit dem Laden geändert. Neu laden verwirft deine Änderungen, Überschreiben behält sie.",
+        "loadFailed": "Projektdokument konnte nicht geladen werden",
+        "saveFailed": "Projektdokument konnte nicht gespeichert werden",
+        "saved": "Projektdokument gespeichert",
+        "loading": "Wird geladen…"
+      }
     }
   },
   "settings": {
     "tabs": {
       "general": "Allgemein",
       "providers": "Anbieter",
-      "skills": "Skills"
+      "skills": "Skills",
+      "projects": "Projekte"
     },
     "providerSettings": {
       "unavailable": "Anbietereinstellungen sind nicht verfügbar.",
@@ -814,6 +884,12 @@
         "partial": "Die Synchronisierung wurde vor dem Verlinken beendet. Behebe die folgenden Elemente und synchronisiere erneut.",
         "failed": "Synchronisierung fehlgeschlagen: {message}",
         "summary": "Verschoben {moved}, umgewandelt {converted}, im Papierkorb {trashed}, {unlinked} Link(s) entfernt."
+      }
+    },
+    "projects": {
+      "docFolder": {
+        "name": "Ordner für Projektdokumente",
+        "desc": "Vault-Ordner für die Dokumente neuer Projekte. Leer lassen für das Vault-Stammverzeichnis. Bestehende Projekte behalten ihre Dokumente am bisherigen Ort."
       }
     }
   }

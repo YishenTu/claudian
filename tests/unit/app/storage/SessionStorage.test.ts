@@ -164,6 +164,28 @@ describe('SessionStorage', () => {
       });
     });
 
+    it.each([
+      ['project-a', 'project-a', false],
+      [42, undefined, true],
+      ['../outside', undefined, true],
+    ])('keeps only a safe project id %p and migrates malformed ones', async (stored, expected, needsMigration) => {
+      mockAdapter.exists.mockImplementation(async (path: string) => (
+        path === `${SESSIONS_PATH}/session-project.meta.json`
+      ));
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        id: 'session-project',
+        title: 'Project member',
+        createdAt: 100,
+        lastActivityAt: 200,
+        projectId: stored,
+      }));
+
+      const result = await storage.load('session-project');
+
+      expect('projectId' in result!.metadata ? result!.metadata.projectId : 'absent').toBe(expected ?? 'absent');
+      expect(result?.needsMigration).toBe(needsMigration);
+    });
+
     it('loads a durable model recovery locator without making it active session state', async () => {
       mockAdapter.exists.mockImplementation(async (path: string) => (
         path === `${SESSIONS_PATH}/session-model-retry.meta.json`

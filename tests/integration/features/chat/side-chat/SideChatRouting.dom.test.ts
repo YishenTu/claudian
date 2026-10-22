@@ -649,7 +649,7 @@ it.each([false, true])('keeps side drafts separate while a branch submission set
   let conversation!: ConversationController;
   const routing = createRouting(harness, {}, undefined, deps => {
     conversation = new ConversationController({
-      ...deps, plugin: { settings: {}, updateConversation: jest.fn() },
+      ...deps, plugin: { settings: {}, updateConversation: jest.fn(), getConversationSummary: () => null },
       renderer: { renderMessages: jest.fn(), refreshBranchButtonState: jest.fn() },
       setWelcomeEl: jest.fn(), getExecutionCoordinator: () => coordinator,
     } as any);

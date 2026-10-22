@@ -312,7 +312,7 @@ describe('Codex shared runtime', () => {
     expect(specs.filter((spec: any) => spec.namespace === 'claudian_sessions').map((spec: any) => spec.name))
       .toEqual(ported ? ['claudian_list_destinations', 'claudian_send_message', 'claudian_read_session'] : []);
     expect(specs.every((spec: any) => !('type' in spec))).toBe(true);
-    expect(session.getSnapshot().providerState?.sessionToolVersion).toBe(ported ? 3 : undefined);
+    expect(session.getSnapshot().providerState?.sessionToolVersion).toBe(ported ? 4 : undefined);
     expect(await sessionToolCall(process, 'thread-1')).toMatchObject({ result: { success: ported } });
     expect(port.list.mock.calls).toHaveLength(ported ? 1 : 0);
     complete(process, 'thread-1');

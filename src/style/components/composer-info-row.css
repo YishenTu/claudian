@@ -30,7 +30,7 @@
 
 /* Obsidian restores native button chrome on these states. */
 .claudian-input-info-linked > button.claudian-input-info-linked-main,
-.claudian-input-info-linked > button.claudian-input-info-linked-main:is(:hover, :focus, :focus-visible, :active) {
+.claudian-input-info-linked > button.claudian-input-info-linked-main:is(:hover, :focus, :focus-visible, :active, :disabled) {
   appearance: none;
   display: inline-flex;
   align-items: center;
@@ -49,8 +49,14 @@
   cursor: pointer;
 }
 
-.claudian-input-info-linked > button.claudian-input-info-linked-main:is(:hover, :focus-visible) {
+.claudian-input-info-linked > button.claudian-input-info-linked-main:not(:disabled):is(:hover, :focus-visible) {
   color: var(--text-normal);
+}
+
+/* A chip that cannot change right now (the project seed while the first turn creates its session). */
+.claudian-input-info-linked > button.claudian-input-info-linked-main:disabled {
+  opacity: 1;
+  cursor: default;
 }
 
 .claudian-input-info-linked-icon {

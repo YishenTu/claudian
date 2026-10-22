@@ -252,6 +252,21 @@ it('gives each conversation on the shared process its own prompt and applies an 
   } finally { native.close(); await artifacts.dispose(); await rm(root, { recursive: true, force: true }); }
 });
 
+it('writes provider-default session instructions into the session prompt and rewrites it when they change', async () => {
+  const session = open();
+  const withSession = (sessionInstructions: string): ProviderExecutionRequest => ({
+    ...request(''), configuration: { systemInstructions: { kind: 'provider-default', sessionInstructions }, permissionMode: 'normal' },
+  });
+  await run(session, withSession('## Project\nAlpha'), 'one');
+  await run(session, withSession('## Project\nBeta'), 'two');
+  const written = lifecycle.prompts.filter(p => p.sessionId === 'alpha').map(p => p.text ?? '');
+  expect(written[0]).toContain('## Runtime Context');
+  expect(written[0]!.endsWith('## Project\nAlpha')).toBe(true);
+  expect(written.at(-1)!.endsWith('## Project\nBeta')).toBe(true);
+  expect(written.at(-1)).not.toContain('Alpha');
+  expect(lifecycle.starts).toBe(1);
+});
+
 it('applies a changed code-mode preference on the next turn of the same conversation and preset', async () => {
   const config = (host.settings as any).providerConfigs.deepseek;
   config.codeMode = true;

@@ -53,7 +53,7 @@ export function buildTabRuntimePorts(
 /** Composer operations over a tab's own input and toolbar controls. */
 export function createTabComposerPort(
   inputEl: TabDOMElements['inputEl'],
-  ui: Pick<TabUIComponents, 'toolbarMenus' | 'composerDropdown' | 'fileContextManager'>,
+  ui: Pick<TabUIComponents, 'toolbarMenus' | 'composerDropdown' | 'fileContextManager' | 'projectChip'>,
 ): TabComposerPort {
   let previousFocus: HTMLElement | null = null;
   const isFocused = () => inputEl.contains(inputEl.ownerDocument.activeElement);
@@ -93,6 +93,7 @@ export function createTabComposerPort(
     },
     setHiddenCommands: commands => ui.composerDropdown.setHiddenCommands(commands),
     invalidateSessionMentions: () => ui.fileContextManager.getMentionSource().invalidate(),
+    refreshProject: () => ui.projectChip.refresh(),
   };
 }
 

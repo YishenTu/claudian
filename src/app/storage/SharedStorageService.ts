@@ -5,6 +5,7 @@ import { getInstallationKey, type InstallationKey } from '@/core/device/Installa
 import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { ClaudianSettings } from '@/core/types';
 
+import { ProjectStore } from '../projects/ProjectStore';
 import { ClaudianSettingsStorage, type StoredClaudianSettings } from '../settings/ClaudianSettingsStorage';
 import { ConversationPersistenceStore } from './ConversationPersistenceStore';
 import { migrateSessionSidecars } from './migrateSessionSidecars';
@@ -15,6 +16,7 @@ export class SharedStorageService implements SharedAppStorage {
   readonly claudianSettings: ClaudianSettingsStorage;
   readonly sessions: SessionStorage;
   readonly conversationPersistence: ConversationPersistenceStore;
+  readonly projects: ProjectStore;
 
   private adapter: VaultFileAdapter;
   private obsoleteSessionInputs: string[] = [];
@@ -25,6 +27,7 @@ export class SharedStorageService implements SharedAppStorage {
     this.claudianSettings = new ClaudianSettingsStorage(this.adapter, defaultSettings);
     this.sessions = new SessionStorage(this.adapter, deviceKey);
     this.conversationPersistence = new ConversationPersistenceStore(this.adapter, deviceKey);
+    this.projects = new ProjectStore(this.adapter);
   }
 
   async initialize(): Promise<{ claudian: Record<string, unknown> }> {

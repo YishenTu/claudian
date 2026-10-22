@@ -1,0 +1,62 @@
+/*
+ * The projects section above the sessions in the session sidebar. Like the pinned
+ * section it takes only the height it needs, up to a cap, and scrolls its own rows,
+ * so the session list below always keeps room.
+ */
+.claudian-session-sidebar .claudian-history-section--projects {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  max-height: 40%;
+  min-height: 0;
+}
+
+.claudian-session-sidebar .claudian-session-project-items {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-anchor: none;
+}
+
+.claudian-session-sidebar .claudian-session-project-empty {
+  padding: 4px 12px 6px 34px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+/*
+ * A project row's header holds native buttons (toggle, actions, New session), so the
+ * header itself is not interactive; the toggle fills it and owns focus, while the row
+ * owns hover like a session row. The toggle's padding is taken out of the row's inline
+ * start so its icon still sits at the sidebar inset.
+ */
+.claudian-session-sidebar .claudian-session-group-header--with-toggle {
+  padding: 2px var(--claudian-session-inline-inset) 2px calc(var(--claudian-session-inline-inset) - 8px);
+  cursor: default;
+}
+
+/* Obsidian restores native button chrome on these states. */
+.claudian-session-sidebar .claudian-session-group-toggle,
+.claudian-session-sidebar .claudian-session-group-toggle:is(:hover, :focus, :focus-visible, :active) {
+  appearance: none;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--claudian-session-icon-gap);
+  min-width: 0;
+  height: auto;
+  margin: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.claudian-session-sidebar .claudian-session-group-toggle:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}

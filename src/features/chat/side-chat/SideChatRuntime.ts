@@ -395,7 +395,7 @@ export class SideChatRuntime {
       const result = await this.#session.execute({
         assertBeforeHandoff: submission.assertBeforeHandoff,
         ...(submission.context ? { context: submission.context } : {}),
-        configuration: buildChatExecutionConfiguration(this.#settings),
+        configuration: buildChatExecutionConfiguration(this.#settings, this.deps.source.sessionInstructions),
         conversationHistory: [
           ...this.deps.source.messages,
           ...this.state.messages.slice(0, -2),

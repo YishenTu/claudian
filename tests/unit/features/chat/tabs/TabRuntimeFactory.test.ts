@@ -1,4 +1,5 @@
 import { holdResponse } from '@test/helpers/ConversationPorts';
+import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { createMockEl } from '@test/helpers/MockElement';
 import { within } from '@testing-library/dom';
 import { JSDOM } from 'jsdom';
@@ -2421,10 +2422,11 @@ describe('Tab provider execution ownership', () => {
     } finally { await release(); }
   });
 
-  it('numbers a fork from canonical user turns while retaining non-canonical history', async () => {
-    const conversation = createConversation();
+  it('numbers a fork from canonical user turns while retaining non-canonical history and the source project', async () => {
+    const conversation = { ...createConversation(), projectId: 'project-1' };
     const plugin = createPlugin({
-    getConversationSync: jest.fn().mockReturnValue(conversation),
+      getConversationSync: jest.fn().mockReturnValue(conversation),
+      projects: createProjectsFake([projectRecord({ id: 'project-1' })]),
     });
     const forkRequest = jest.fn().mockResolvedValue(undefined);
     const tab = await createTestTab({
@@ -2493,6 +2495,7 @@ describe('Tab provider execution ownership', () => {
     );
     expect(forkRequest).toHaveBeenCalledWith(expect.objectContaining({
       forkAtUserMessage: 3,
+      projectId: 'project-1',
       messages: expect.arrayContaining([
         expect.objectContaining({ id: 'interrupt-a', isInterrupt: true }),
         expect.objectContaining({ id: 'rebuilt-a', isRebuiltContext: true }),

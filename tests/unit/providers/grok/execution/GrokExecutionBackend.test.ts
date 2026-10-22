@@ -1251,6 +1251,37 @@ describe('GrokExecutionBackend', () => {
     expect(systemPrompt).toContain('Keep the shared instruction.');
   });
 
+  it('appends session instructions to the provider-default replacement and reloads when they change', async () => {
+    const firstNative = new FakeNativeConnection();
+    const secondNative = new FakeNativeConnection();
+    const nativeFactory: GrokExecutionNativeFactory = {
+      create: jest.fn()
+        .mockReturnValueOnce(firstNative)
+        .mockReturnValueOnce(secondNative),
+    };
+    const session = new GrokExecutionBackend(createGrokHost(), { nativeFactory }).createSession(sessionConfig);
+    const withSession = (text: string, sessionInstructions: string): ProviderExecutionRequest => {
+      const base = executionRequest(text);
+      return {
+        ...base,
+        configuration: { ...base.configuration, systemInstructions: { kind: 'provider-default', sessionInstructions } },
+      };
+    };
+
+    await collect(session.execute(withSession('first', '## Project\nAlpha')).events);
+    await collect(session.execute(withSession('second', '## Project\nAlpha')).events);
+    expect(nativeFactory.create).toHaveBeenCalledTimes(1);
+    const firstPrompt = String(firstNative.loadRequests[0]?._meta?.systemPromptOverride);
+    expect(firstPrompt).toContain('## Runtime Context');
+    expect(firstPrompt.endsWith('## Project\nAlpha')).toBe(true);
+
+    await collect(session.execute(withSession('third', '## Project\nBeta')).events);
+    expect(nativeFactory.create).toHaveBeenCalledTimes(2);
+    const secondPrompt = String(secondNative.loadRequests[0]?._meta?.systemPromptOverride);
+    expect(secondPrompt.endsWith('## Project\nBeta')).toBe(true);
+    expect(secondPrompt).not.toContain('Alpha');
+  });
+
   it('bootstraps canonical history only when creating a new native session', async () => {
     const native = new FakeNativeConnection();
     const session = new GrokExecutionBackend(

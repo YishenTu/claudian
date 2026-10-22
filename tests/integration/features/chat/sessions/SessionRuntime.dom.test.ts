@@ -3,11 +3,13 @@ import '@/providers';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
+import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { App, Component, MarkdownRenderer, TFile, TFolder } from 'obsidian';
+import { axe } from 'jest-axe';
+import { App, Component, MarkdownRenderer, Menu, TFile, TFolder } from 'obsidian';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
@@ -16,6 +18,7 @@ import type { ClaudianSettings, Conversation, ConversationMutablePatch } from '@
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { activateTab, destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
+import { t } from '@/i18n/i18n';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 const originalResizeObserver = globalThis.ResizeObserver;
@@ -72,6 +75,7 @@ function setup() {
       assertConversationExecutionAuthority: async () => undefined,
       persistExecutionSnapshot: async () => true, recordConversationActivity: async () => undefined,
     },
+    projects: createProjectsFake(),
   } as unknown as ChatFeatureHost;
   const statusChanges = jest.fn();
   const pool = installSessionRuntimePool(plugin, { onChanged: statusChanges });
@@ -505,6 +509,183 @@ it('releases a closed blank tab whose conversation creation failed with no prese
   await waitFor(() => expect(runtime.isDisposed).toBe(true));
   expect(h.pool.getAll()).not.toContain(runtime);
   expect(h.backend.sessions.flatMap(session => session.requests)).toEqual([]);
+});
+
+describe('composer project chip', () => {
+  const launch = projectRecord({ id: 'launch', name: 'Launch' });
+  const chipName = 'Project: Launch';
+
+  function projectSetup() {
+    const h = setup();
+    const projects = createProjectsFake([launch]);
+    Object.assign(h.plugin.app.workspace, { getActiveFile: () => null });
+    const created = h.plugin.getConversationSummary('conversation') as Conversation;
+    // The record keeps whatever project the first-turn creation asked for.
+    const createConversation = jest.fn(async (options: { projectId?: string } = {}) => {
+      Object.assign(created, { messages: [] }, options.projectId ? { projectId: options.projectId } : {});
+      return created;
+    });
+    Object.assign(h.plugin, { projects, createConversation });
+    return { h, projects, created, createConversation };
+  }
+
+  async function sendFirst(tab: Awaited<ReturnType<ReturnType<typeof setup>['attach']>>, h: ReturnType<typeof setup>) {
+    tab.controllers.drafts.restore('main', { content: 'First prompt' });
+    const sending = tab.controllers.inputController.sendMessage();
+    await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+    h.backend.latest.complete();
+    await sending;
+  }
+
+  it('follows the draft seed, then membership, until the project is deleted', async () => {
+    const { h, projects, created } = projectSetup();
+    const tab = await h.attach({ blank: true });
+    const row = within(tab.dom.infoRowEl);
+    expect(row.queryByRole('button', { name: chipName })).toBeNull();
+
+    tab.controllers.conversationController.seedDraftProject(launch.id);
+    expect(row.getByRole('button', { name: chipName }).getAttribute('type')).toBe('button');
+    expect((await axe(tab.dom.infoRowEl)).violations).toEqual([]);
+
+    await sendFirst(tab, h);
+    expect(created.projectId).toBe(launch.id);
+    expect(row.getByRole('button', { name: chipName })).toBeTruthy();
+
+    // Project deletion reaches each composer through the view's list-change fan-out.
+    projects.remove(launch.id);
+    tab.composer.refreshProject();
+    expect(row.queryByRole('button', { name: chipName })).toBeNull();
+    await destroyTab(tab);
+  });
+
+  type MenuEntry = { title: string; checked: boolean | null; clickHandler: (() => void) | null };
+  type MockMenu = { items: MenuEntry[]; showAtPosition: jest.Mock };
+  const menus = () => (Menu as unknown as { instances: MockMenu[] }).instances;
+  afterEach(() => { menus().length = 0; });
+
+  function openChipMenu(row: ReturnType<typeof within>, name = chipName): MockMenu {
+    const before = menus().length;
+    const chip = row.getByRole('button', { name });
+    expect(chip.getAttribute('aria-haspopup')).toBe('menu');
+    fireEvent.click(chip);
+    expect(menus()).toHaveLength(before + 1);
+    const menu = menus().at(-1)!;
+    expect(menu.showAtPosition).toHaveBeenCalledTimes(1);
+    return menu;
+  }
+
+  function choose(menu: MockMenu, title: string): void {
+    menu.items.find(item => item.title === title)!.clickHandler!();
+  }
+
+  it('lists live projects pinned first with the current one checked, then No project', async () => {
+    const { h, projects } = projectSetup();
+    projects.put(projectRecord({ id: 'ops', name: 'Ops', isPinned: true }));
+    projects.put(projectRecord({ id: 'alpha', name: 'Alpha' }));
+    const tab = await h.attach({ blank: true });
+    tab.controllers.conversationController.seedDraftProject(launch.id);
+    const row = within(tab.dom.infoRowEl);
+
+    const menu = openChipMenu(row);
+    expect(menu.items.map(item => [item.title, item.checked === true])).toEqual([
+      ['Ops', false], ['Alpha', false], ['Launch', true], [t('chat.projects.noProject'), false],
+    ]);
+    expect(row.queryByRole('button', { name: `Remove ${chipName}` })).toBeNull();
+    expect((await axe(tab.dom.infoRowEl)).violations).toEqual([]);
+    await destroyTab(tab);
+  });
+
+  it.each([
+    ['switches', 'ops'],
+    ['drops', undefined],
+  ])('%s the draft seed from the chip menu for the first input\'s creation', async (_case, projectId) => {
+    const { h, projects, created, createConversation } = projectSetup();
+    projects.put(projectRecord({ id: 'ops', name: 'Ops' }));
+    const tab = await h.attach({ blank: true });
+    tab.controllers.conversationController.seedDraftProject(launch.id);
+    const row = within(tab.dom.infoRowEl);
+
+    choose(openChipMenu(row), projectId ? 'Ops' : t('chat.projects.noProject'));
+    expect(tab.controllers.conversationController.draftProjectId).toBe(projectId ?? null);
+    expect(row.queryByRole('button', { name: /^Project:/ })?.getAttribute('aria-label')).toBe(
+      projectId ? 'Project: Ops' : undefined,
+    );
+
+    await sendFirst(tab, h);
+    expect(createConversation.mock.calls[0]?.[0]?.projectId).toBe(projectId);
+    expect(created.projectId).toBe(projectId);
+    await destroyTab(tab);
+  });
+
+  it('changes an existing conversation\'s membership from the chip menu', async () => {
+    const { h, projects, created } = projectSetup();
+    projects.put(projectRecord({ id: 'ops', name: 'Ops' }));
+    const setConversationsProject = jest.fn(async () => undefined);
+    Object.assign(projects, { setConversationsProject });
+    Object.assign(created, { projectId: launch.id });
+    const tab = await h.attach();
+    const row = within(tab.dom.infoRowEl);
+
+    choose(openChipMenu(row), 'Ops');
+    choose(openChipMenu(row), t('chat.projects.noProject'));
+    await waitFor(() => expect(setConversationsProject).toHaveBeenCalledTimes(2));
+    expect(setConversationsProject.mock.calls).toEqual([[['conversation'], 'ops'], [['conversation'], null]]);
+    // Membership is the conversation's, never the draft seed.
+    expect(tab.controllers.conversationController.draftProjectId).toBeNull();
+    await destroyTab(tab);
+  });
+
+  it('freezes the seed while first-turn creation is pending and releases it when creation fails', async () => {
+    const { h, createConversation } = projectSetup();
+    const creating = deferred<Conversation>();
+    createConversation.mockImplementationOnce(() => creating.promise);
+    const tab = await h.attach({ blank: true });
+    const { conversationController } = tab.controllers;
+    conversationController.seedDraftProject(launch.id);
+    const row = within(tab.dom.infoRowEl);
+    expect((row.getByRole('button', { name: chipName }) as HTMLButtonElement).disabled).toBe(false);
+
+    tab.controllers.drafts.restore('main', { content: 'First prompt' });
+    const sending = tab.controllers.inputController.sendMessage();
+    await waitFor(() => expect(createConversation).toHaveBeenCalledWith(expect.objectContaining({ projectId: launch.id })));
+
+    // The captured seed is what creation uses, so the chip offers no menu to change it.
+    const frozenChip = row.getByRole('button', { name: chipName }) as HTMLButtonElement;
+    expect(frozenChip.disabled).toBe(true);
+    const menuCount = menus().length;
+    fireEvent.click(frozenChip);
+    expect(menus()).toHaveLength(menuCount);
+    expect(() => conversationController.seedDraftProject(null)).toThrow();
+    expect(conversationController.draftProjectId).toBe(launch.id);
+
+    creating.reject(new Error('Disk full'));
+    await sending.catch(() => undefined);
+
+    choose(openChipMenu(row), t('chat.projects.noProject'));
+    expect(row.queryByRole('button', { name: chipName })).toBeNull();
+    expect(conversationController.draftProjectId).toBeNull();
+    await destroyTab(tab);
+  });
+
+  it('shows a held seeded draft\'s project as soon as the next presentation attaches', async () => {
+    const { h } = projectSetup();
+    const first = await h.attach({ blank: true });
+    first.controllers.conversationController.seedDraftProject(launch.id);
+    const hold = h.pool.holdDraft(first.session.runtime);
+    await destroyTab(first);
+
+    const second = await createTabRuntime({
+      plugin: h.plugin, component: new Component(), containerEl: document.body.createDiv(),
+      mentionDataProvider: new VaultMentionDataProvider(h.plugin.app), getProviderCatalogConfig: () => null,
+      isRuntimeLive: () => true, openConversation: async () => undefined, startNewConversation: async () => undefined,
+      draftSessionKey: hold.key,
+    });
+    hold.release();
+
+    expect(second.session.runtime).toBe(first.session.runtime);
+    expect(within(second.dom.infoRowEl).getByRole('button', { name: chipName })).toBeTruthy();
+    await destroyTab(second);
+  });
 });
 
 function branchHistory(): Conversation['messages'] {

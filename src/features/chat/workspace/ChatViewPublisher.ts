@@ -27,7 +27,8 @@ export class ChatViewPublisher {
     const commandsChanged = JSON.stringify(settings.hiddenCommands) !== JSON.stringify(previous.hiddenCommands);
     const contextChanged = JSON.stringify(settings.customContextLimits) !== JSON.stringify(previous.customContextLimits);
     const sessionsChanged = settings.sessionManagerOrganization !== previous.sessionManagerOrganization
-      || settings.sessionManagerSort !== previous.sessionManagerSort;
+      || settings.sessionManagerSort !== previous.sessionManagerSort
+      || settings.projectSort !== previous.projectSort;
     if (timestampsChanged || layoutChanged || commandsChanged || contextChanged || sessionsChanged) {
       for (const view of this.deps.views.getAllViews()) {
         if (timestampsChanged) publish(() => view.refreshMessageTimestamps());

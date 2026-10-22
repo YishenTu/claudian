@@ -1,3 +1,4 @@
+import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { createMockEl } from '@test/helpers/MockElement';
 import { testDate } from '@test/helpers/testClock';
 import { Menu, setIcon } from 'obsidian';
@@ -49,6 +50,7 @@ function createHarness(options: HarnessOptions = {}) {
     app: { vault: { getAbstractFileByPath: jest.fn(() => null) } },
     settings,
     getConversationList: () => conversations,
+    projects: createProjectsFake(),
     conversationLifecycle: options.conversationLifecycle ?? {
       archive: jest.fn().mockResolvedValue(undefined),
       delete: jest.fn().mockResolvedValue(undefined),
@@ -71,6 +73,7 @@ function createHarness(options: HarnessOptions = {}) {
     openConversation: jest.fn().mockResolvedValue(undefined),
     openSessionConversation: jest.fn().mockResolvedValue(undefined),
     startLinkedContentConversation: jest.fn().mockResolvedValue(undefined),
+    startProjectConversation: jest.fn().mockResolvedValue(undefined),
   } satisfies SessionSurfaceNavigation;
   const state = {
     wide: options.wide ?? true,
@@ -146,7 +149,8 @@ function typeSearch(container: any, value: string): void {
 }
 
 function headerActions(container: any): any {
-  return container.querySelector('.claudian-session-header-actions');
+  return container.querySelector('.claudian-session-list-header')
+    ?.querySelector('.claudian-session-header-actions');
 }
 
 afterEach(() => {
@@ -370,7 +374,7 @@ describe('SessionManagerSurface session header', () => {
     });
     h.surface.renderSidebar();
     const container = h.sessionSurfaceEl;
-    const toggleButton = () => headerActions(container).children[0];
+    const toggleButton = () => headerActions(container).children[1];
     const groupHeader = (kind: string) => container.querySelectorAll('.claudian-session-group-header')
       .find((header: any) => header.getAttribute('data-group-kind') === kind);
     const collapsedBodies = () => container.querySelectorAll('.claudian-session-group-body')
@@ -417,13 +421,13 @@ describe('SessionManagerSurface session header', () => {
     const container = h.sessionSurfaceEl;
     container.querySelector('.claudian-session-search-control').click();
     searchInput(container).dispatchEvent('compositionstart');
-    const toggleButton = headerActions(container).children[0];
+    const toggleButton = headerActions(container).children[1];
 
     for (const header of container.querySelectorAll('.claudian-session-group-header')) {
       header.click();
     }
 
-    expect(headerActions(container).children[0]).toBe(toggleButton);
+    expect(headerActions(container).children[1]).toBe(toggleButton);
     expect(toggleButton.getAttribute('aria-label')).toBe('Expand all groups');
     expect(toggleButton.querySelector('.claudian-session-header-icon').dataset.iconState)
       .toBe('expand');

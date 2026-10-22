@@ -353,13 +353,83 @@
       "nextMessage": "下一則訊息",
       "scrollToBottom": "捲動至底端",
       "emptyDirectory": "此對話中尚無使用者提示詞"
+    },
+    "projects": {
+      "header": "專案",
+      "options": "專案選項",
+      "sortBy": "專案排序方式",
+      "sort": {
+        "lastActivity": "最近活動",
+        "created": "建立時間"
+      },
+      "noSessions": "沒有工作階段",
+      "newSessionIn": "在 {name} 中新增工作階段",
+      "actionsFor": "{name} 的操作",
+      "newProjectAction": "新增專案",
+      "chipLabel": "專案：{name}",
+      "noProject": "無專案",
+      "menu": {
+        "newSession": "在專案中新增工作階段",
+        "edit": "編輯專案",
+        "openDoc": "開啟專案文件",
+        "pin": "釘選專案",
+        "unpin": "取消釘選專案",
+        "archiveIdle": "封存閒置工作階段",
+        "delete": "刪除專案",
+        "moveTo": "移動到專案…",
+        "moveSelectionTo": "將 {count} 個工作階段移動到專案…",
+        "removeFrom": "從專案中移除",
+        "removeSelectionFrom": "從專案中移除 {count} 個工作階段",
+        "newProject": "新增專案…"
+      },
+      "deleteConfirm": "刪除專案「{name}」？工作階段會保留，專案文件也會保留。",
+      "errors": {
+        "create": "建立專案失敗",
+        "update": "更新專案失敗",
+        "delete": "刪除專案失敗",
+        "pin": "更新專案釘選狀態失敗",
+        "move": "將工作階段移動到專案失敗",
+        "remove": "從專案中移除工作階段失敗",
+        "start": "在此專案中新增工作階段失敗",
+        "sort": "無法更新專案排序"
+      },
+      "editor": {
+        "titleNew": "新增專案",
+        "titleEdit": "編輯專案",
+        "name": "名稱",
+        "nameDesc": "顯示在工作階段管理器和成員工作階段中。",
+        "namePlaceholder": "專案名稱",
+        "instructions": "指示",
+        "instructionsDesc": "從下一輪起加入每個成員工作階段的系統提示詞。",
+        "docPath": "專案文件",
+        "openDoc": "開啟",
+        "nameRequired": "請輸入專案名稱。"
+      },
+      "doc": {
+        "title": "專案文件：{name}",
+        "path": "路徑",
+        "copyPath": "複製路徑",
+        "pathCopied": "已複製路徑",
+        "copyFailed": "複製路徑失敗",
+        "reload": "重新載入",
+        "overwrite": "覆寫",
+        "recreate": "從範本重新建立",
+        "content": "專案文件內容",
+        "missing": "專案文件不存在。",
+        "conflict": "文件在載入後已被修改。重新載入會捨棄你的編輯，覆寫則保留你的編輯。",
+        "loadFailed": "載入專案文件失敗",
+        "saveFailed": "儲存專案文件失敗",
+        "saved": "專案文件已儲存",
+        "loading": "載入中…"
+      }
     }
   },
   "settings": {
     "tabs": {
       "general": "一般",
       "providers": "提供者",
-      "skills": "技能"
+      "skills": "技能",
+      "projects": "專案"
     },
     "providerSettings": {
       "unavailable": "無法使用提供者設定。",
@@ -814,6 +884,12 @@
         "partial": "同步在建立連結前停止。請修正以下項目後重新同步。",
         "failed": "同步失敗:{message}",
         "summary": "已移動 {moved},已轉換 {converted},已移至垃圾桶 {trashed},已移除 {unlinked} 個連結。"
+      }
+    },
+    "projects": {
+      "docFolder": {
+        "name": "專案文件資料夾",
+        "desc": "新專案文件所在的儲存庫資料夾。留空使用儲存庫根目錄。現有專案的文件會保留在原位置。"
       }
     }
   }

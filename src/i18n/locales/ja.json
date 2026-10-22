@@ -353,13 +353,83 @@
       "nextMessage": "次のメッセージ",
       "scrollToBottom": "最下部へスクロール",
       "emptyDirectory": "この会話にはユーザープロンプトがありません"
+    },
+    "projects": {
+      "header": "プロジェクト",
+      "options": "プロジェクトのオプション",
+      "sortBy": "プロジェクトの並べ替え",
+      "sort": {
+        "lastActivity": "最終アクティビティ",
+        "created": "作成日"
+      },
+      "noSessions": "セッションはありません",
+      "newSessionIn": "{name} で新しいセッション",
+      "actionsFor": "{name} の操作",
+      "newProjectAction": "新規プロジェクト",
+      "chipLabel": "プロジェクト: {name}",
+      "noProject": "プロジェクトなし",
+      "menu": {
+        "newSession": "プロジェクトで新しいセッション",
+        "edit": "プロジェクトを編集",
+        "openDoc": "プロジェクトドキュメントを開く",
+        "pin": "プロジェクトをピン留め",
+        "unpin": "プロジェクトのピン留めを解除",
+        "archiveIdle": "アイドル中のセッションをアーカイブ",
+        "delete": "プロジェクトを削除",
+        "moveTo": "プロジェクトへ移動…",
+        "moveSelectionTo": "{count} 件のセッションをプロジェクトへ移動…",
+        "removeFrom": "プロジェクトから外す",
+        "removeSelectionFrom": "{count} 件のセッションをプロジェクトから外す",
+        "newProject": "新規プロジェクト…"
+      },
+      "deleteConfirm": "プロジェクト「{name}」を削除しますか？セッションは残り、プロジェクトドキュメントも保持されます。",
+      "errors": {
+        "create": "プロジェクトの作成に失敗しました",
+        "update": "プロジェクトの更新に失敗しました",
+        "delete": "プロジェクトの削除に失敗しました",
+        "pin": "プロジェクトのピン留めの更新に失敗しました",
+        "move": "セッションをプロジェクトへ移動できませんでした",
+        "remove": "セッションをプロジェクトから外せませんでした",
+        "start": "このプロジェクトでセッションを開始できませんでした",
+        "sort": "プロジェクトの並べ替えを更新できませんでした"
+      },
+      "editor": {
+        "titleNew": "新規プロジェクト",
+        "titleEdit": "プロジェクトを編集",
+        "name": "名前",
+        "nameDesc": "セッションマネージャーとメンバーのセッションに表示されます。",
+        "namePlaceholder": "プロジェクト名",
+        "instructions": "指示",
+        "instructionsDesc": "次のターンから、各メンバーセッションのシステムプロンプトに追加されます。",
+        "docPath": "プロジェクトドキュメント",
+        "openDoc": "開く",
+        "nameRequired": "プロジェクト名を入力してください。"
+      },
+      "doc": {
+        "title": "プロジェクトドキュメント: {name}",
+        "path": "パス",
+        "copyPath": "パスをコピー",
+        "pathCopied": "パスをコピーしました",
+        "copyFailed": "パスをコピーできませんでした",
+        "reload": "再読み込み",
+        "overwrite": "上書き",
+        "recreate": "テンプレートから再作成",
+        "content": "プロジェクトドキュメントの内容",
+        "missing": "プロジェクトドキュメントが見つかりません。",
+        "conflict": "読み込み後にドキュメントが変更されました。再読み込みすると編集内容は破棄され、上書きすると編集内容が保存されます。",
+        "loadFailed": "プロジェクトドキュメントの読み込みに失敗しました",
+        "saveFailed": "プロジェクトドキュメントの保存に失敗しました",
+        "saved": "プロジェクトドキュメントを保存しました",
+        "loading": "読み込み中…"
+      }
     }
   },
   "settings": {
     "tabs": {
       "general": "一般",
       "providers": "プロバイダー",
-      "skills": "スキル"
+      "skills": "スキル",
+      "projects": "プロジェクト"
     },
     "providerSettings": {
       "unavailable": "プロバイダー設定を利用できません。",
@@ -814,6 +884,12 @@
         "partial": "リンクの作成前に同期が停止しました。以下の項目を修正して、もう一度同期してください。",
         "failed": "同期に失敗しました: {message}",
         "summary": "移動 {moved}、変換 {converted}、ゴミ箱 {trashed}、リンク削除 {unlinked}。"
+      }
+    },
+    "projects": {
+      "docFolder": {
+        "name": "プロジェクトドキュメントのフォルダー",
+        "desc": "新しいプロジェクトのドキュメントを置く保管庫内のフォルダー。空欄で保管庫のルートを使用。既存のプロジェクトのドキュメントは移動しません。"
       }
     }
   }

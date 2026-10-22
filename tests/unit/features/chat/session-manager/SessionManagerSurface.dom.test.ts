@@ -2,14 +2,23 @@
 
 import '@/providers';
 
+import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
+import { Menu, setIcon } from 'obsidian';
 
 import type { ConversationMeta } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { createProject } from '@/features/chat/projects/projectActions';
 import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import { SessionManagerSurface } from '@/features/chat/session-manager/SessionManagerSurface';
+import { t } from '@/i18n/i18n';
+
+jest.mock('@/features/chat/projects/projectActions', () => ({
+  ...jest.requireActual('@/features/chat/projects/projectActions'),
+  createProject: jest.fn(),
+}));
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
@@ -40,6 +49,7 @@ function createSurface() {
     app: { vault: { getAbstractFileByPath: () => null } },
     settings: { enableAutoTitleGeneration: false },
     getConversationList: () => conversations,
+    projects: createProjectsFake(),
   };
   const requestNew = jest.fn();
   const surface = new SessionManagerSurface({
@@ -50,6 +60,7 @@ function createSurface() {
       openConversation: jest.fn().mockResolvedValue(undefined),
       openSessionConversation: jest.fn().mockResolvedValue(undefined),
       startLinkedContentConversation: jest.fn().mockResolvedValue(undefined),
+      startProjectConversation: jest.fn().mockResolvedValue(undefined),
     },
     getActiveTab: () => null,
     isWide: () => true,
@@ -147,4 +158,207 @@ it.each([false, true])('keeps session navigation named and operable without tool
   expect(sidebar.getByRole('button', { name: 'Archive' })).toBeTruthy();
 
   surface.dispose();
+});
+
+describe('projects section', () => {
+  type MenuEntry = { title: string; checked: boolean | null; isLabel?: boolean; clickHandler: (() => void) | null };
+  const menus = (): Array<{ items: MenuEntry[] }> => (Menu as unknown as { instances: Array<{ items: MenuEntry[] }> }).instances;
+  const sectionName = (name: string, _count: number) => name;
+  /** The icon most recently drawn inside a project toggle. */
+  const folderIcon = (toggle: HTMLElement) => jest.mocked(setIcon).mock.calls
+    .filter(([element]) => toggle.contains(element)).at(-1)?.[1];
+
+  function createProjectSurface() {
+    const conversations = [
+      conversation('member', { title: 'Member session', projectId: 'launch', lastActivityAt: testDate({ hours: -1 }).getTime() }),
+      conversation('loose', { title: 'Loose session' }),
+      conversation('pinned', { title: 'Pinned session', isPinned: true }),
+    ];
+    const settings: Record<string, unknown> = { enableAutoTitleGeneration: false, sessionManagerOrganization: 'list' };
+    const views: { surface?: SessionManagerSurface } = {};
+    const plugin = {
+      app: { vault: { getAbstractFileByPath: () => null } },
+      settings,
+      getConversationList: () => conversations,
+      projects: createProjectsFake([
+        projectRecord({ id: 'launch', name: 'Launch', createdAt: testDate({ days: -10 }).getTime() }),
+        projectRecord({ id: 'empty', name: 'Empty', createdAt: testDate({ days: -2 }).getTime() }),
+      ]),
+      mutateSettings: jest.fn(async (mutation: (value: Record<string, unknown>) => void) => {
+        mutation(settings);
+        views.surface?.invalidate();
+      }),
+    };
+    const surface = new SessionManagerSurface({
+      plugin: plugin as unknown as ChatFeatureHost,
+      navigation: {
+        contentExists: () => true,
+        getConversationStatus: () => ({ openState: 'closed', isRunning: false }),
+        openConversation: jest.fn().mockResolvedValue(undefined),
+        openSessionConversation: jest.fn().mockResolvedValue(undefined),
+        startLinkedContentConversation: jest.fn().mockResolvedValue(undefined),
+        startProjectConversation: jest.fn().mockResolvedValue(undefined),
+      },
+      getActiveTab: () => null,
+      isWide: () => true,
+      canCreateTab: () => true,
+      requestNew: jest.fn(),
+      notifyOtherViews: jest.fn(),
+    });
+    views.surface = surface;
+    const host = document.body.createDiv();
+    surface.mountSidebar(host);
+    surface.renderSidebar();
+    const region = () => within(host).getByRole('region', { name: t('chat.projects.header') });
+    return { host, plugin, region, settings, surface, view: within(host) };
+  }
+
+  afterEach(() => {
+    menus().length = 0;
+    jest.mocked(createProject).mockReset();
+  });
+
+  it('heads the projects with New project and a sort menu, without a By project organization', async () => {
+    const { host, plugin, region, settings, view } = createProjectSurface();
+    const projectToggles = () => within(region()).getAllByRole('button', { expanded: false })
+      .map(toggle => toggle.textContent);
+    // Projects start collapsed, above the sessions.
+    expect(projectToggles()).toEqual([sectionName('Launch', 1), sectionName('Empty', 0)]);
+    expect(within(view.getByRole('region', { name: 'Sessions' })).queryByText('Member session')).toBeNull();
+
+    const newProject = within(region()).getByRole('button', { name: t('chat.projects.newProjectAction') });
+    expect(newProject.tagName).toBe('BUTTON');
+    expect(newProject.getAttribute('type')).toBe('button');
+    fireEvent.click(newProject);
+    expect(createProject).toHaveBeenCalledWith(plugin);
+    expect((await axe(host)).violations).toEqual([]);
+
+    fireEvent.click(within(region()).getByRole('button', { name: t('chat.projects.options') }));
+    const sortMenu = menus().at(-1)!;
+    expect(sortMenu.items.map(entry => entry.title)).toEqual([
+      t('chat.projects.sortBy'), t('chat.projects.sort.lastActivity'), t('chat.projects.sort.created'),
+    ]);
+    expect(sortMenu.items.find(entry => entry.title === t('chat.projects.sort.lastActivity'))!.checked).toBe(true);
+    sortMenu.items.find(entry => entry.title === t('chat.projects.sort.created'))!.clickHandler!();
+    await Promise.resolve();
+    expect(settings.projectSort).toBe('created');
+    expect(projectToggles()).toEqual([sectionName('Empty', 0), sectionName('Launch', 1)]);
+
+    fireEvent.click(view.getByRole('button', { name: 'Session options' }));
+    const sessionMenu = menus().at(-1)!;
+    expect(sessionMenu.items.map(entry => entry.title)).toEqual(expect.arrayContaining(['In one list', 'By linked content']));
+    expect(sessionMenu.items.map(entry => entry.title)).not.toContain('By project');
+  });
+
+  it('keeps a project expanded across re-renders and the archive, which hides the section', () => {
+    const { host, region, surface, view } = createProjectSurface();
+
+    const emptyToggle = () => within(region()).getByRole('button', { name: sectionName('Empty', 0) });
+    expect(folderIcon(emptyToggle())).toBe('folder');
+    fireEvent.click(emptyToggle());
+    expect(within(region()).getByText(t('chat.projects.noSessions'))).toBeTruthy();
+    expect(folderIcon(emptyToggle())).toBe('folder-open');
+    surface.invalidate();
+    expect(emptyToggle().getAttribute('aria-expanded')).toBe('true');
+    expect(folderIcon(emptyToggle())).toBe('folder-open');
+    fireEvent.click(emptyToggle());
+    expect(folderIcon(emptyToggle())).toBe('folder');
+    fireEvent.click(emptyToggle());
+
+    fireEvent.click(host.querySelector('.claudian-session-archive-control')!);
+    expect(view.queryByRole('region', { name: t('chat.projects.header') })).toBeNull();
+    fireEvent.click(host.querySelector('.claudian-session-archive-control')!);
+    expect(within(region()).getByRole('button', { name: sectionName('Empty', 0) }).getAttribute('aria-expanded'))
+      .toBe('true');
+  });
+
+  it('finds project members by search under their expanded project, then restores the collapsed projects', () => {
+    const { host, region, view } = createProjectSurface();
+    fireEvent.click(host.querySelector('.claudian-session-search-control')!);
+    const searchBox = view.getByRole('searchbox', { name: 'Search sessions' });
+
+    fireEvent.input(searchBox, { target: { value: 'member' } });
+    expect(within(region()).getAllByRole('button', { expanded: true }).map(toggle => toggle.textContent))
+      .toEqual(['Projects', sectionName('Launch', 1)]);
+    expect(within(region()).getByText('Member session')).toBeTruthy();
+    expect(folderIcon(within(region()).getByRole('button', { name: sectionName('Launch', 1) }))).toBe('folder-open');
+    expect(within(region()).queryByRole('button', { name: sectionName('Empty', 0) })).toBeNull();
+
+    fireEvent.keyDown(view.getByRole('searchbox', { name: 'Search sessions' }), { key: 'Escape' });
+    expect(within(region()).getAllByRole('button', { expanded: false })).toHaveLength(2);
+    expect(folderIcon(within(region()).getByRole('button', { name: sectionName('Launch', 1) }))).toBe('folder');
+  });
+
+  it('collapses the projects and sessions sections from their headers, across re-renders', async () => {
+    const { host, region, settings, surface, view } = createProjectSurface();
+    settings.sessionManagerOrganization = 'linked-content';
+    surface.invalidate();
+    const sessions = () => view.getByRole('region', { name: 'Sessions' });
+    // Named by their visible header labels: an aria-label would make Obsidian show it as a hover tooltip over every row.
+    const pinned = view.getByRole('region', { name: 'Pinned' });
+    for (const named of [region(), sessions(), pinned]) expect(named.hasAttribute('aria-label')).toBe(false);
+    const projectsToggle = () => within(region()).getByRole('button', { name: t('chat.projects.header') });
+    const sessionsToggle = () => within(sessions()).getByRole('button', { name: 'Sessions' });
+    const projectRow = () => within(region()).queryByRole('button', { name: sectionName('Launch', 1) });
+    const sessionRow = () => within(sessions()).queryByRole('button', { name: /^Loose session/ });
+    for (const toggle of [projectsToggle(), sessionsToggle()]) {
+      expect(toggle.tagName).toBe('BUTTON');
+      expect(toggle.getAttribute('type')).toBe('button');
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    }
+    expect(projectRow()).not.toBeNull();
+    expect(sessionRow()).not.toBeNull();
+
+    // The header actions sit beside the toggle and never collapse their section.
+    fireEvent.click(within(region()).getByRole('button', { name: t('chat.projects.options') }));
+    fireEvent.click(within(region()).getByRole('button', { name: t('chat.projects.newProjectAction') }));
+    fireEvent.click(within(sessions()).getByRole('button', { name: 'Session options' }));
+    fireEvent.click(within(sessions()).getByRole('button', { name: 'Collapse all groups' }));
+    expect(projectsToggle().getAttribute('aria-expanded')).toBe('true');
+    expect(sessionsToggle().getAttribute('aria-expanded')).toBe('true');
+    expect(projectRow()).not.toBeNull();
+    fireEvent.click(within(sessions()).getByRole('button', { name: 'Expand all groups' }));
+    expect(sessionRow()).not.toBeNull();
+
+    fireEvent.click(projectsToggle());
+    expect(projectsToggle().getAttribute('aria-expanded')).toBe('false');
+    expect(projectRow()).toBeNull();
+    expect(sessionRow()).not.toBeNull();
+
+    fireEvent.click(sessionsToggle());
+    expect(sessionsToggle().getAttribute('aria-expanded')).toBe('false');
+    expect(sessionRow()).toBeNull();
+    expect(within(sessions()).getByRole('button', { name: 'Collapse all groups' })).toBeTruthy();
+    expect((await axe(host)).violations).toEqual([]);
+
+    surface.invalidate();
+    expect(projectsToggle().getAttribute('aria-expanded')).toBe('false');
+    expect(sessionsToggle().getAttribute('aria-expanded')).toBe('false');
+    expect(projectRow()).toBeNull();
+    expect(sessionRow()).toBeNull();
+
+    fireEvent.click(sessionsToggle());
+    expect(sessionRow()).not.toBeNull();
+    // The archive keeps its own section state.
+    fireEvent.click(host.querySelector('.claudian-session-archive-control')!);
+    const archived = view.getByRole('region', { name: 'Archived' });
+    expect(archived.hasAttribute('aria-label')).toBe(false);
+    expect(within(archived).getByRole('button', { name: 'Archived' }).getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('shows matches in collapsed sections while searching, then restores the collapse', () => {
+    const { host, region, view } = createProjectSurface();
+    fireEvent.click(within(region()).getByRole('button', { name: t('chat.projects.header') }));
+    fireEvent.click(host.querySelector('.claudian-session-search-control')!);
+
+    fireEvent.input(view.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'member' } });
+    expect(within(region()).getByRole('button', { name: t('chat.projects.header') }).getAttribute('aria-expanded'))
+      .toBe('true');
+    expect(within(region()).getByRole('button', { name: sectionName('Launch', 1) })).toBeTruthy();
+
+    fireEvent.keyDown(view.getByRole('searchbox', { name: 'Search sessions' }), { key: 'Escape' });
+    expect(within(region()).getByRole('button', { name: t('chat.projects.header') }).getAttribute('aria-expanded'))
+      .toBe('false');
+    expect(within(region()).queryByRole('button', { name: sectionName('Launch', 1) })).toBeNull();
+  });
 });

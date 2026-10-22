@@ -353,13 +353,83 @@
       "nextMessage": "Mensaje siguiente",
       "scrollToBottom": "Desplazarse al final",
       "emptyDirectory": "No hay prompts de usuario en esta conversación"
+    },
+    "projects": {
+      "header": "Proyectos",
+      "options": "Opciones de proyectos",
+      "sortBy": "Ordenar proyectos por",
+      "sort": {
+        "lastActivity": "Última actividad",
+        "created": "Creación"
+      },
+      "noSessions": "Sin sesiones",
+      "newSessionIn": "Nueva sesión en {name}",
+      "actionsFor": "Acciones de {name}",
+      "newProjectAction": "Nuevo proyecto",
+      "chipLabel": "Proyecto: {name}",
+      "noProject": "Sin proyecto",
+      "menu": {
+        "newSession": "Nueva sesión en el proyecto",
+        "edit": "Editar proyecto",
+        "openDoc": "Abrir documento del proyecto",
+        "pin": "Fijar proyecto",
+        "unpin": "Desfijar proyecto",
+        "archiveIdle": "Archivar sesiones inactivas",
+        "delete": "Eliminar proyecto",
+        "moveTo": "Mover a un proyecto…",
+        "moveSelectionTo": "Mover {count} sesiones a un proyecto…",
+        "removeFrom": "Quitar del proyecto",
+        "removeSelectionFrom": "Quitar {count} sesiones del proyecto",
+        "newProject": "Nuevo proyecto…"
+      },
+      "deleteConfirm": "¿Eliminar el proyecto «{name}»? Las sesiones se mantienen. El documento del proyecto se conserva.",
+      "errors": {
+        "create": "No se pudo crear el proyecto",
+        "update": "No se pudo actualizar el proyecto",
+        "delete": "No se pudo eliminar el proyecto",
+        "pin": "No se pudo cambiar la fijación del proyecto",
+        "move": "No se pudieron mover las sesiones al proyecto",
+        "remove": "No se pudieron quitar las sesiones del proyecto",
+        "start": "No se pudo iniciar una sesión en este proyecto",
+        "sort": "No se pudo actualizar el orden de los proyectos"
+      },
+      "editor": {
+        "titleNew": "Nuevo proyecto",
+        "titleEdit": "Editar proyecto",
+        "name": "Nombre",
+        "nameDesc": "Se muestra en el gestor de sesiones y en las sesiones miembro.",
+        "namePlaceholder": "Nombre del proyecto",
+        "instructions": "Instrucciones",
+        "instructionsDesc": "Se añaden al prompt del sistema de cada sesión miembro a partir de su siguiente turno.",
+        "docPath": "Documento del proyecto",
+        "openDoc": "Abrir",
+        "nameRequired": "Introduce un nombre de proyecto."
+      },
+      "doc": {
+        "title": "Documento del proyecto: {name}",
+        "path": "Ruta",
+        "copyPath": "Copiar ruta",
+        "pathCopied": "Ruta copiada",
+        "copyFailed": "No se pudo copiar la ruta",
+        "reload": "Recargar",
+        "overwrite": "Sobrescribir",
+        "recreate": "Volver a crear desde la plantilla",
+        "content": "Contenido del documento del proyecto",
+        "missing": "Falta el documento del proyecto.",
+        "conflict": "El documento cambió desde que se cargó. Recarga para descartar tus cambios o sobrescribe para conservarlos.",
+        "loadFailed": "No se pudo cargar el documento del proyecto",
+        "saveFailed": "No se pudo guardar el documento del proyecto",
+        "saved": "Documento del proyecto guardado",
+        "loading": "Cargando…"
+      }
     }
   },
   "settings": {
     "tabs": {
       "general": "General",
       "providers": "Proveedores",
-      "skills": "Skills"
+      "skills": "Skills",
+      "projects": "Proyectos"
     },
     "providerSettings": {
       "unavailable": "Los ajustes del proveedor no están disponibles.",
@@ -814,6 +884,12 @@
         "partial": "La sincronización se detuvo antes de enlazar. Corrige los elementos siguientes y vuelve a sincronizar.",
         "failed": "Error de sincronización: {message}",
         "summary": "Movidos {moved}, convertidos {converted}, a la papelera {trashed}, {unlinked} enlace(s) eliminado(s)."
+      }
+    },
+    "projects": {
+      "docFolder": {
+        "name": "Carpeta de documentos de proyecto",
+        "desc": "Carpeta de la bóveda para los documentos de los nuevos proyectos. Dejar vacío para la raíz de la bóveda. Los proyectos existentes mantienen sus documentos donde están."
       }
     }
   }

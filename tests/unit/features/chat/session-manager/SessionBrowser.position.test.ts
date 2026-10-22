@@ -1,3 +1,4 @@
+import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { createMockEl } from '@test/helpers/MockElement';
 
 import { SessionBrowser, type SessionBrowserDeps } from '@/features/chat/session-manager/SessionBrowser';
@@ -10,6 +11,7 @@ function createFixture() {
       renameConversation: jest.fn().mockResolvedValue(undefined),
       conversationLifecycle: { delete: jest.fn().mockResolvedValue(undefined) },
       settings: { enableAutoTitleGeneration: true },
+      projects: createProjectsFake(),
     },
     state: { currentConversationId: null as string | null },
   };
@@ -61,6 +63,26 @@ describe('SessionListPosition', () => {
     const rerenderedList = container.querySelector('.claudian-history-list')!;
     expect(rerenderedList.querySelectorAll('.claudian-history-item')).toHaveLength(50);
     expect(rerenderedList.scrollTop).toBe(320);
+  });
+
+  it('preserves the projects section scroll across a rerender, such as expanding a project', () => {
+    const container = createMockEl();
+    for (let index = 0; index < 30; index += 1) {
+      deps.plugin.projects.put(projectRecord({ id: `project-${index}`, name: `Project ${index}` }));
+    }
+    const options = {
+      onSelectConversation: jest.fn(),
+      showPinnedSection: true,
+      showProjectsSection: true,
+      sessionScope: 'active' as const,
+      preserveListState: true,
+    };
+
+    controller.renderHistoryDropdown(container, options);
+    container.querySelector('.claudian-session-project-items')!.scrollTop = 180;
+    controller.renderHistoryDropdown(container, options);
+
+    expect(container.querySelector('.claudian-session-project-items')!.scrollTop).toBe(180);
   });
 
   it('preserves flat session-list position and loaded count across an external rerender', () => {

@@ -4,7 +4,7 @@ import { ConversationRepository } from '@/app/conversations/ConversationReposito
 import type { ConversationPersistence } from '@/app/storage/ConversationPersistenceStore';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
-import type { Conversation } from '@/core/types';
+import type { Conversation, ProjectRecord } from '@/core/types';
 
 function createConversation(id = 'conversation-1'): Conversation {
   return {
@@ -18,7 +18,10 @@ function createConversation(id = 'conversation-1'): Conversation {
   };
 }
 
-function createRepository(conversation = createConversation()) {
+function createRepository(
+  conversation = createConversation(),
+  liveProjectIds: ReadonlySet<string> = new Set(),
+) {
   const persistence: jest.Mocked<ConversationPersistence> = {
     metadataReader: {
       revalidate: jest.fn().mockResolvedValue([]),
@@ -48,6 +51,9 @@ function createRepository(conversation = createConversation()) {
     getVaultPath: () => '/vault',
     persistence,
     onConversationDeleted,
+    projects: {
+      get: id => (liveProjectIds.has(id) ? { id } as ProjectRecord : null),
+    },
   });
   repository.replaceAll([conversation]);
   return { repository, persistence, onConversationDeleted };
@@ -708,6 +714,12 @@ describe('ConversationRepository hydration', () => {
     await expect(untypedUpdate(conversation.id, {
       linkedContentPath: undefined,
     })).rejects.toThrow('immutable');
+    await expect(untypedUpdate(conversation.id, {
+      projectId: 'project-a',
+    })).rejects.toThrow('immutable');
+    await expect(untypedUpdate(conversation.id, {
+      projectId: undefined,
+    })).rejects.toThrow('immutable');
 
     expect(repository.getSync(conversation.id)!.linkedContentPath).toBe('Notes/Current.md');
     expect(repository.getSync(conversation.id)!.lastActivityAt).toBe(42);
@@ -1150,4 +1162,67 @@ it('adopts already-published shells without repeated linear record lookup', asyn
   expect(find).not.toHaveBeenCalled();
   expect(repository.getSync('indexed-511')?.id).toBe('indexed-511');
   expect(repository.list()).toHaveLength(512);
+});
+
+describe('ConversationRepository project membership', () => {
+  const live = new Set(['project-a', 'project-b']);
+
+  it('creates a member of a live project and omits an unknown project', async () => {
+    const { repository, persistence } = createRepository(createConversation(), live);
+
+    const member = await repository.create({ projectId: 'project-a' });
+    const stray = await repository.create({ projectId: 'project-deleted' });
+
+    expect(repository.getSync(member.id)!.projectId).toBe('project-a');
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({ id: member.id, projectId: 'project-a' }),
+    );
+    expect(repository.getSync(stray.id)).not.toHaveProperty('projectId');
+    expect(persistence.saveMetadata.mock.calls.at(-1)?.[0].projectId).toBeUndefined();
+  });
+
+  it('joins, moves, and leaves a project through persisted metadata and the list projection', async () => {
+    const conversation = createConversation();
+    const { repository, persistence } = createRepository(conversation, live);
+
+    await repository.setProject(conversation.id, 'project-a');
+    expect(persistence.saveMetadata.mock.calls.at(-1)?.[0].projectId).toBe('project-a');
+    expect(repository.list()[0].projectId).toBe('project-a');
+
+    await repository.setProject(conversation.id, 'project-b');
+    expect(persistence.saveMetadata.mock.calls.at(-1)?.[0].projectId).toBe('project-b');
+    expect(repository.getSync(conversation.id)!.projectId).toBe('project-b');
+
+    await repository.setProject(conversation.id, null);
+    expect(persistence.saveMetadata.mock.calls.at(-1)?.[0].projectId).toBeUndefined();
+    expect(repository.list()[0].projectId).toBeUndefined();
+  });
+
+  it('rejects joining a project that is not live and keeps the current membership', async () => {
+    const conversation = { ...createConversation(), projectId: 'project-a' };
+    const { repository, persistence } = createRepository(conversation, live);
+
+    await expect(repository.setProject(conversation.id, 'project-deleted')).rejects.toThrow('project');
+
+    expect(repository.getSync(conversation.id)!.projectId).toBe('project-a');
+    expect(persistence.saveMetadata).not.toHaveBeenCalled();
+  });
+
+  it('clears a deleted project only from conversations still in it', async () => {
+    const stillMember = { ...createConversation('still-member'), projectId: 'project-a' };
+    const moved = { ...createConversation('moved'), projectId: 'project-a' };
+    const { repository, persistence } = createRepository(stillMember, live);
+    repository.replaceAll([stillMember, moved]);
+
+    // The move is queued before the deleted project's clear reaches the same conversation.
+    const move = repository.setProject(moved.id, 'project-b');
+    const clear = repository.clearProject('project-a');
+    await Promise.all([move, clear]);
+
+    expect(repository.getSync(stillMember.id)!.projectId).toBeUndefined();
+    expect(repository.getSync(moved.id)!.projectId).toBe('project-b');
+    expect(persistence.saveMetadata.mock.calls
+      .filter(([metadata]) => metadata.id === moved.id)
+      .map(([metadata]) => metadata.projectId)).toEqual(['project-b']);
+  });
 });

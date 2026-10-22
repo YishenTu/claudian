@@ -40,6 +40,7 @@ describe('startApplication', () => {
     disposals.push(async () => {
       await domains.sessionMetadata.dispose();
       await domains.nativeSessionArchives.dispose();
+      await domains.projects?.dispose();
     });
     return domains;
   }
@@ -412,6 +413,44 @@ describe('startApplication', () => {
       const loaded = await domains.conversations.getConversationById('conv-multi-session');
       expect((loaded?.providerState as any)?.previousProviderSessionIds).toEqual(['session-A']);
       expect((loaded?.providerState as any)?.providerSessionId).toBe('session-B');
+    });
+  });
+  describe('projects', () => {
+    it('loads project records and member metadata before startup completes, preserving unparsable files', async () => {
+      const timestamp = Date.now();
+      const files = new Map<string, string>([
+        ['.claudian/projects/project-a.json', JSON.stringify({
+          id: 'project-a', name: 'Launch', instructions: 'Ship.', docPath: '.claudian/projects/launch-project.md',
+          isPinned: true, createdAt: timestamp,
+        })],
+        ['.claudian/projects/broken.json', '{"id": "broken"'],
+        ['.claudian/sessions/conv-member.meta.json', JSON.stringify({
+          id: 'conv-member', title: 'Member', createdAt: timestamp, lastActivityAt: timestamp,
+          sessionId: null, projectId: 'project-a',
+        })],
+      ]);
+      const folders = new Set(['.claudian', '.claudian/projects', '.claudian/sessions']);
+      const { adapter } = mockApp.vault;
+      adapter.exists.mockImplementation(async (path: string) => files.has(path) || folders.has(path));
+      adapter.stat.mockImplementation(async (path: string) => {
+        if (folders.has(path)) return { type: 'folder', ctime: 0, mtime: 0, size: 0 };
+        const content = files.get(path);
+        return content === undefined ? null : { type: 'file', ctime: 0, mtime: 0, size: content.length };
+      });
+      adapter.list.mockImplementation(async (path: string) => ({
+        files: [...files.keys()].filter(file => file.slice(0, file.lastIndexOf('/')) === path),
+        folders: [],
+      }));
+      adapter.read.mockImplementation(async (path: string) => files.get(path) ?? '');
+
+      const domains = await loadApplication();
+
+      expect(domains.projects.list()).toEqual([expect.objectContaining({ id: 'project-a', name: 'Launch' })]);
+      expect(domains.conversations.getConversationList()).toEqual([
+        expect.objectContaining({ id: 'conv-member', projectId: 'project-a' }),
+      ]);
+      const writtenPaths = adapter.write.mock.calls.map(([path]: [string]) => path);
+      expect(writtenPaths.filter((path: string) => path.startsWith('.claudian/projects/'))).toEqual([]);
     });
   });
 });

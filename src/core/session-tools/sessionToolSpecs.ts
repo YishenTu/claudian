@@ -22,6 +22,8 @@ export interface SessionToolListDestinationsArgs {
   readonly includeProviders: boolean;
   /** Maximum number of sessions, 1 to 200. */
   readonly limit: number;
+  /** List only the calling session's live project members; the decoder sets it only when true. */
+  readonly project?: boolean;
 }
 
 export interface SessionToolReasoningDestination {
@@ -171,6 +173,10 @@ const LIST_DESTINATIONS_PROPERTIES = {
     type: 'integer',
     description: `Maximum number of sessions to return, from 1 to ${LIST_LIMIT_MAX}. Defaults to ${LIST_LIMIT_DEFAULT}.`,
   },
+  project: {
+    type: 'boolean',
+    description: 'Return only sessions in the calling session\'s Claudian project, excluding archived ones. Fails when the calling session is not in a project. Defaults to false.',
+  },
 } as const satisfies Record<string, SessionToolProperty>;
 
 const SEND_MESSAGE_PROPERTIES = {
@@ -298,7 +304,11 @@ export function decodeSessionToolCall(name: string, args: unknown): SessionToolC
     if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > LIST_LIMIT_MAX) {
       return { ok: false, error: `"limit" must be an integer from 1 to ${LIST_LIMIT_MAX}.` };
     }
-    return { ok: true, call: { tool: name, args: { includeProviders, limit } } };
+    const project = record.project ?? false;
+    if (typeof project !== 'boolean') {
+      return { ok: false, error: '"project" must be a boolean.' };
+    }
+    return { ok: true, call: { tool: name, args: { includeProviders, limit, ...(project ? { project } : {}) } } };
   }
   if (name === TOOL_CLAUDIAN_READ_SESSION) {
     const { sessionId } = record;

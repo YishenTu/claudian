@@ -11,6 +11,8 @@ export interface SessionSurfaceNavigation {
   ): Promise<void>;
   openSessionConversation(conversationId: string): Promise<void>;
   startLinkedContentConversation(contentPath: string): Promise<void>;
+  /** Starts a draft that joins the project when it becomes a session. */
+  startProjectConversation(projectId: string): Promise<void>;
   contentExists(contentPath: string): boolean;
 }
 

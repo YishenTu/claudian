@@ -3,6 +3,8 @@ export interface SystemPromptSettings {
   customPrompt?: string;
   vaultPath?: string;
   userName?: string;
+  /** Per-session section appended verbatim after Custom Instructions (for example, a project paragraph). */
+  sessionInstructions?: string;
 }
 
 function getRuntimeContext(
@@ -100,5 +102,6 @@ export function buildSystemPrompt(settings: SystemPromptSettings = {}): string {
     getReferenceConventions(),
     getVaultMediaContext(settings.mediaFolder || ''),
     getCustomInstructions(settings.customPrompt),
+    settings.sessionInstructions?.trim() ? settings.sessionInstructions : '',
   ].filter(Boolean).join('\n\n');
 }

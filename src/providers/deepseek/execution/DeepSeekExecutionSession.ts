@@ -331,8 +331,9 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     const settings = this.host.settings;
     const input = requested.input;
     const policy: DeepSeekPreset | undefined = input.toolPolicy.kind === 'passive' ? 'claudian-passive' : input.toolPolicy.kind === 'read-only' ? 'claudian-read-only' : undefined;
-    const prompt = input.configuration.systemInstructions.kind === 'explicit' ? input.configuration.systemInstructions.instructions
-      : buildSystemPrompt({ customPrompt: settings.systemPrompt, mediaFolder: settings.mediaFolder, userName: settings.userName, vaultPath: this.config.vaultWorkingDirectory });
+    const instructions = input.configuration.systemInstructions;
+    const prompt = instructions.kind === 'explicit' ? instructions.instructions
+      : buildSystemPrompt({ customPrompt: settings.systemPrompt, mediaFolder: settings.mediaFolder, userName: settings.userName, vaultPath: this.config.vaultWorkingDirectory, sessionInstructions: instructions.sessionInstructions });
     // A retained binding only serves Stop and closing; sending rebinds with fresh native baselines. Its conversation
     // state already ended with the failure, so releasing it leaves this request alone.
     if (this.retained) this.release();

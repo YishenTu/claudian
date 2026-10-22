@@ -855,6 +855,40 @@ describe('OpencodeExecutionBackend', () => {
     ]);
   });
 
+  it('appends session instructions only to the managed default prompt and reconnects when they change', async () => {
+    const harness = createHarness();
+    const execute = async (
+      sessionInstructions: string,
+      toolPolicy: ProviderExecutionRequest['toolPolicy'],
+      expectedKernelCount: number,
+    ): Promise<void> => {
+      const base = createRequest();
+      const run = harness.session.execute(createRequest({
+        configuration: {
+          ...base.configuration,
+          systemInstructions: { kind: 'provider-default', sessionInstructions },
+        },
+        toolPolicy,
+      }));
+      await waitForCondition(() => harness.kernels.length === expectedKernelCount);
+      const kernel = harness.kernels[expectedKernelCount - 1];
+      await waitForPrompt(kernel);
+      kernel.completePrompt();
+      await collect(run.events);
+    };
+
+    await execute('## Project\nAlpha', { kind: 'provider-default' }, 1);
+    await execute('## Project\nBeta', { kind: 'provider-default' }, 2);
+    await execute('## Project\nBeta', { kind: 'read-only' }, 3);
+
+    const prompts = harness.kernels.map(kernel => String((kernel.connectCalls[0] as { systemPrompt?: string } | undefined)?.systemPrompt));
+    expect(prompts[0]).toContain('## Runtime Context');
+    expect(prompts[0]!.endsWith('## Project\nAlpha')).toBe(true);
+    expect(prompts[1]!.endsWith('## Project\nBeta')).toBe(true);
+    expect(prompts[1]).not.toContain('Alpha');
+    expect(prompts[2]).not.toContain('## Project');
+  });
+
   it('reconnects when explicit system instructions change', async () => {
     const harness = createHarness();
     const execute = async (

@@ -2,6 +2,7 @@ import type { App } from 'obsidian';
 
 import type { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import type { ConversationService } from '@/app/conversations/ConversationService';
+import type { ProjectService } from '@/app/projects/ProjectService';
 import type { ChatModelSelectionCoordinator } from '@/app/settings/ChatModelSelectionCoordinator';
 import type { EnvironmentSettingsService } from '@/app/settings/EnvironmentSettingsService';
 import type { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
@@ -17,7 +18,7 @@ import type {
   ConversationSummary,
   StoredChatModelSelection,
 } from '@/core/types';
-import type { ChatFeatureHost, ChatSessionRuntimes } from '@/features/chat/ChatFeatureHost';
+import type { ChatFeatureHost, ChatProjects, ChatSessionRuntimes } from '@/features/chat/ChatFeatureHost';
 import type { ClaudianView } from '@/features/chat/ClaudianView';
 import type { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
 import type { SessionMessagingService, SessionToolBinding } from '@/features/chat/session-messaging/SessionMessagingService';
@@ -49,6 +50,7 @@ export interface ChatFeatureHostDomains extends FeatureHostDomains {
   readonly chatModelSelection: ChatModelSelectionCoordinator;
   readonly conversationLifecycle: ConversationLifecycle;
   readonly zenMode: Pick<ZenModeController, 'register'>;
+  readonly projects: ProjectService;
 }
 
 /** Feature-neutral application capabilities for settings, inline edit, and chat. */
@@ -112,6 +114,7 @@ export class ClaudianChatFeatureHost extends ClaudianFeatureHost implements Chat
   readonly chatModelSelection: ChatModelSelectionCoordinator;
   readonly executionPersistence: ConversationRepository;
   readonly conversationLifecycle: ConversationLifecycle;
+  readonly projects: ChatProjects;
 
   constructor(protected readonly domains: ChatFeatureHostDomains) {
     super(domains);
@@ -119,6 +122,7 @@ export class ClaudianChatFeatureHost extends ClaudianFeatureHost implements Chat
     this.chatModelSelection = domains.chatModelSelection;
     this.executionPersistence = domains.executionPersistence;
     this.conversationLifecycle = domains.conversationLifecycle;
+    this.projects = domains.projects;
   }
 
   bindSessionTools(conversationId: string): SessionToolBinding {
@@ -130,6 +134,7 @@ export class ClaudianChatFeatureHost extends ClaudianFeatureHost implements Chat
     sessionId?: string;
     selectedModel?: string;
     linkedContentPath?: string;
+    projectId?: string;
   }): Promise<Conversation> {
     return this.domains.conversations.createConversation(options);
   }

@@ -626,7 +626,8 @@ it.each([true, false])('enables branches after switching and native history corr
   const second: ChatMessage = { id: 'u2', role: 'user', content: 'Second prompt', timestamp: 2,
     treeBranches: ['native-u2'], ...(hasNativeId ? { userMessageId: 'native-u2' } : {}) };
   const plugin = { app: {}, settings: { mediaFolder: '' }, updateConversation: jest.fn(),
-    getConversationById: jest.fn().mockResolvedValue({ id: 'pi-chat', messages: [first, second] }) };
+    getConversationById: jest.fn().mockResolvedValue({ id: 'pi-chat', messages: [first, second] }),
+    getConversationSummary: jest.fn().mockReturnValue(null) };
   const navigateConversationBranch = jest.fn().mockResolvedValue({ status: 'committed', messages: [first] });
   const coordinator = { navigateConversationBranch, supportsConversationBranches: true,
     getConversationBranches: jest.fn().mockResolvedValue({ branches: { 'native-u1': ['native-u1'], 'native-u2': ['native-u2'] },

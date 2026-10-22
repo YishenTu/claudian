@@ -353,13 +353,83 @@
       "nextMessage": "다음 메시지",
       "scrollToBottom": "맨 아래로 스크롤",
       "emptyDirectory": "이 대화에는 사용자 프롬프트가 없습니다"
+    },
+    "projects": {
+      "header": "프로젝트",
+      "options": "프로젝트 옵션",
+      "sortBy": "프로젝트 정렬 기준",
+      "sort": {
+        "lastActivity": "마지막 활동",
+        "created": "생성일"
+      },
+      "noSessions": "세션 없음",
+      "newSessionIn": "{name}에서 새 세션",
+      "actionsFor": "{name} 작업",
+      "newProjectAction": "새 프로젝트",
+      "chipLabel": "프로젝트: {name}",
+      "noProject": "프로젝트 없음",
+      "menu": {
+        "newSession": "프로젝트에서 새 세션",
+        "edit": "프로젝트 편집",
+        "openDoc": "프로젝트 문서 열기",
+        "pin": "프로젝트 고정",
+        "unpin": "프로젝트 고정 해제",
+        "archiveIdle": "유휴 세션 보관",
+        "delete": "프로젝트 삭제",
+        "moveTo": "프로젝트로 이동…",
+        "moveSelectionTo": "세션 {count}개를 프로젝트로 이동…",
+        "removeFrom": "프로젝트에서 제거",
+        "removeSelectionFrom": "세션 {count}개를 프로젝트에서 제거",
+        "newProject": "새 프로젝트…"
+      },
+      "deleteConfirm": "“{name}” 프로젝트를 삭제할까요? 세션은 유지되며 프로젝트 문서도 보존됩니다.",
+      "errors": {
+        "create": "프로젝트를 만들지 못했습니다",
+        "update": "프로젝트를 업데이트하지 못했습니다",
+        "delete": "프로젝트를 삭제하지 못했습니다",
+        "pin": "프로젝트 고정 상태를 업데이트하지 못했습니다",
+        "move": "세션을 프로젝트로 이동하지 못했습니다",
+        "remove": "세션을 프로젝트에서 제거하지 못했습니다",
+        "start": "이 프로젝트에서 세션을 시작하지 못했습니다",
+        "sort": "프로젝트 정렬을 업데이트하지 못했습니다"
+      },
+      "editor": {
+        "titleNew": "새 프로젝트",
+        "titleEdit": "프로젝트 편집",
+        "name": "이름",
+        "nameDesc": "세션 관리자와 멤버 세션에 표시됩니다.",
+        "namePlaceholder": "프로젝트 이름",
+        "instructions": "지침",
+        "instructionsDesc": "다음 턴부터 모든 멤버 세션의 시스템 프롬프트에 추가됩니다.",
+        "docPath": "프로젝트 문서",
+        "openDoc": "열기",
+        "nameRequired": "프로젝트 이름을 입력하세요."
+      },
+      "doc": {
+        "title": "프로젝트 문서: {name}",
+        "path": "경로",
+        "copyPath": "경로 복사",
+        "pathCopied": "경로를 복사했습니다",
+        "copyFailed": "경로를 복사하지 못했습니다",
+        "reload": "다시 불러오기",
+        "overwrite": "덮어쓰기",
+        "recreate": "템플릿에서 다시 만들기",
+        "content": "프로젝트 문서 내용",
+        "missing": "프로젝트 문서가 없습니다.",
+        "conflict": "불러온 뒤 문서가 변경되었습니다. 다시 불러오면 편집 내용이 사라지고, 덮어쓰면 편집 내용이 유지됩니다.",
+        "loadFailed": "프로젝트 문서를 불러오지 못했습니다",
+        "saveFailed": "프로젝트 문서를 저장하지 못했습니다",
+        "saved": "프로젝트 문서를 저장했습니다",
+        "loading": "불러오는 중…"
+      }
     }
   },
   "settings": {
     "tabs": {
       "general": "일반",
       "providers": "제공자",
-      "skills": "스킬"
+      "skills": "스킬",
+      "projects": "프로젝트"
     },
     "providerSettings": {
       "unavailable": "제공자 설정을 사용할 수 없습니다.",
@@ -814,6 +884,12 @@
         "partial": "링크를 만들기 전에 동기화가 중단되었습니다. 아래 항목을 수정하고 다시 동기화하세요.",
         "failed": "동기화 실패: {message}",
         "summary": "이동 {moved}, 변환 {converted}, 휴지통 {trashed}, 링크 제거 {unlinked}."
+      }
+    },
+    "projects": {
+      "docFolder": {
+        "name": "프로젝트 문서 폴더",
+        "desc": "새 프로젝트의 문서를 저장할 볼트 폴더입니다. 비워두면 볼트 루트를 사용합니다. 기존 프로젝트의 문서는 그대로 유지됩니다."
       }
     }
   }

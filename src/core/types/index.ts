@@ -28,6 +28,19 @@ export {
   type UsageInfo,
   VIEW_TYPE_CLAUDIAN,
 } from './chat';
+export {
+  type ProjectCreateInput,
+  ProjectDocConflictError,
+  type ProjectDocContent,
+  type ProjectDocOperations,
+  type ProjectDocReadResult,
+  type ProjectDocSaveOptions,
+  type ProjectMembership,
+  type ProjectMutations,
+  type ProjectReader,
+  type ProjectRecord,
+  type ProjectUpdatePatch,
+} from './project';
 export { type ProviderId } from './provider';
 
 // Settings and command types

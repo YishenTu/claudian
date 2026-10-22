@@ -21,6 +21,7 @@ import type {
 import type { Conversation, ConversationMeta } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
+import { resolveLiveProjectId } from '@/features/chat/execution/projectInstructions';
 import { formatSessionSnapshot } from '@/features/chat/session-messaging/formatSessionSnapshot';
 import { prepareSessionReasoningSelection } from '@/features/chat/sessions/sessionSettings';
 import { throwIfAborted } from '@/utils/abort';
@@ -96,11 +97,16 @@ export class SessionMessagingService {
     args: SessionToolListDestinationsArgs,
     signal: AbortSignal,
   ): Promise<SessionToolDestinations> {
-    await this.resolve(callerId, signal);
+    const caller = await this.resolve(callerId, signal);
     const host = this.deps.getHost();
     const activeId = this.deps.getActiveConversationId();
-    const records = host.getConversationList().filter(record => !record.isArchived)
-      .sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+    let records = host.getConversationList().filter(record => !record.isArchived);
+    if (args.project) {
+      const projectId = resolveLiveProjectId(host.projects, caller.projectId);
+      if (!projectId) throw new Error('This session is not in a project.');
+      records = records.filter(record => record.projectId === projectId);
+    }
+    records.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
     const sessions = records.slice(0, args.limit).map((record): SessionToolSessionSummary => {
       return {
         sessionId: record.id,
@@ -160,8 +166,12 @@ export class SessionMessagingService {
       const choice = resolveNewSessionChoice(args, host.getCommittedSettings());
       reasoning = choice.reasoning;
       throwIfAborted(signal, 'Session tool call was cancelled');
-      // Creation publishes the shell. Cancellation after this point never rolls it back.
-      const created = await host.createConversation({ providerId: choice.providerId, selectedModel: choice.model });
+      // A spawned session joins the caller's live project. Creation publishes the shell; cancellation after
+      // this point never rolls it back.
+      const projectId = resolveLiveProjectId(host.projects, caller.projectId);
+      const created = await host.createConversation({
+        providerId: choice.providerId, selectedModel: choice.model, ...(projectId ? { projectId } : {}),
+      });
       throwIfAborted(signal, 'Session tool call was cancelled');
       target = await this.resolve(created.id, signal);
     }

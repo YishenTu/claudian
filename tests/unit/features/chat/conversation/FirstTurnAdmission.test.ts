@@ -1,4 +1,5 @@
 import { createFixture, deferred, waitForCall } from '@test/helpers/ChatInputHarness';
+import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ChatExecutionPreHandoffError, type ChatTurnSubmission } from '@/features/chat/execution/ChatExecutionCoordinator';
@@ -125,6 +126,23 @@ describe('FirstTurnAdmission', () => {
     expect(fixture.state.currentConversationId).toBeNull();
     expect(fixture.state.messages).toEqual([]);
     expect(fixture.input.value).toBe('Start linked session');
+  });
+
+  it.each([true, false])('creates a project-seeded draft in its project only while it is live, keeping the seed across failed creation (live: %s)', async live => {
+    const fixture = createFixture();
+    Object.assign(fixture.plugin, { projects: createProjectsFake(live ? [projectRecord({ id: 'project-1' })] : []) });
+    fixture.state.currentConversationId = null;
+    fixture.deps.conversationController.seedDraftProject('project-1');
+    fixture.plugin.createConversation
+      .mockRejectedValueOnce(new Error('storage unavailable'))
+      .mockResolvedValue({ id: 'project-conversation' });
+
+    await expect(fixture.controller.sendMessage({ content: 'First attempt' })).rejects.toThrow('storage unavailable');
+    await fixture.controller.sendMessage({ content: 'Retry' });
+
+    const expected = { providerId: 'claude', selectedModel: 'claude-model', ...(live ? { projectId: 'project-1' } : {}) };
+    expect(fixture.plugin.createConversation.mock.calls).toEqual([[expected], [expected]]);
+    expect(fixture.state.currentConversationId).toBe('project-conversation');
   });
 
   it('keeps a created zero-message Conversation locked and retries ordinal one', async () => {

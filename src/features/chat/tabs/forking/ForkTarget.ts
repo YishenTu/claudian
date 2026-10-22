@@ -4,6 +4,7 @@ import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnviron
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ForkContext } from '@/features/chat/conversation/forkSourceTypes';
+import { resolveLiveProjectId } from '@/features/chat/execution/projectInstructions';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import type { TabId } from '@/features/chat/tabs/ChatTab';
 import { chooseForkTarget } from '@/features/chat/tabs/forking/ForkTargetModal';
@@ -197,10 +198,12 @@ async function createForkConversation(
   sourceLease: ForkSourceLease,
 ): Promise<string | null> {
   const { plugin } = host;
+  const projectId = resolveLiveProjectId(plugin.projects, context.projectId);
   const conversation = await plugin.createConversation({
     providerId: context.providerId,
     ...(context.sourceSelectedModel ? { selectedModel: context.sourceSelectedModel } : {}),
     ...(context.linkedContentPath ? { linkedContentPath: context.linkedContentPath } : {}),
+    ...(projectId ? { projectId } : {}),
   });
 
   if (!isForkRequestCurrent(host, sourceLease)) {

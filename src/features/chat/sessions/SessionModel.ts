@@ -31,7 +31,7 @@ import { StreamController } from '@/features/chat/turns/StreamController';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 import { getVaultPath } from '@/utils/path';
 
-export type SessionChange = 'streaming' | 'rewinding' | 'attention' | 'conversation' | 'identity' | 'usage' | 'scroll' | 'work' | 'commands' | 'settings' | 'destination';
+export type SessionChange = 'streaming' | 'rewinding' | 'attention' | 'conversation' | 'identity' | 'usage' | 'scroll' | 'work' | 'commands' | 'settings' | 'destination' | 'project';
 
 /** The current view only. No execution dependency may retain an earlier instance. */
 export interface SessionPresentation {
@@ -165,6 +165,8 @@ export class SessionModel {
       onConversationHydrated: () => { this.hydrationState = 'ready'; },
       onPersistenceChanged: () => session.notifyChanged(),
       onBranchPreviewCancelled: () => this.publish('work'),
+      // Presentation-only: the seed is no session status, so only the attached composer hears it.
+      onDraftProjectChanged: () => this.presentation?.onChanged('project'),
       ensureExecutionForConversation: async conversation => {
         this.publish('commands');
         const sameIdentity = session.conversationId === (conversation?.id ?? null);

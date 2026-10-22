@@ -353,13 +353,83 @@
       "nextMessage": "Next message",
       "scrollToBottom": "Scroll to bottom",
       "emptyDirectory": "No user prompts in this conversation"
+    },
+    "projects": {
+      "header": "Projects",
+      "options": "Project options",
+      "sortBy": "Sort projects by",
+      "sort": {
+        "lastActivity": "Last activity",
+        "created": "Created"
+      },
+      "noSessions": "No sessions",
+      "newSessionIn": "New session in {name}",
+      "actionsFor": "Actions for {name}",
+      "newProjectAction": "New project",
+      "chipLabel": "Project: {name}",
+      "noProject": "No project",
+      "menu": {
+        "newSession": "New session in project",
+        "edit": "Edit project",
+        "openDoc": "Open project doc",
+        "pin": "Pin project",
+        "unpin": "Unpin project",
+        "archiveIdle": "Archive idle sessions",
+        "delete": "Delete project",
+        "moveTo": "Move to project…",
+        "moveSelectionTo": "Move {count} sessions to project…",
+        "removeFrom": "Remove from project",
+        "removeSelectionFrom": "Remove {count} sessions from project",
+        "newProject": "New project…"
+      },
+      "deleteConfirm": "Delete project “{name}”? Sessions stay. The project doc is kept.",
+      "errors": {
+        "create": "Failed to create project",
+        "update": "Failed to update project",
+        "delete": "Failed to delete project",
+        "pin": "Failed to update project pin",
+        "move": "Failed to move sessions to project",
+        "remove": "Failed to remove sessions from project",
+        "start": "Failed to start a session in this project",
+        "sort": "Failed to update project sorting"
+      },
+      "editor": {
+        "titleNew": "New project",
+        "titleEdit": "Edit project",
+        "name": "Name",
+        "nameDesc": "Shown in the session manager and in member sessions.",
+        "namePlaceholder": "Project name",
+        "instructions": "Instructions",
+        "instructionsDesc": "Added to the system prompt of every member session from its next turn.",
+        "docPath": "Project doc",
+        "openDoc": "Open",
+        "nameRequired": "Enter a project name."
+      },
+      "doc": {
+        "title": "Project doc: {name}",
+        "path": "Path",
+        "copyPath": "Copy path",
+        "pathCopied": "Path copied",
+        "copyFailed": "Failed to copy path",
+        "reload": "Reload",
+        "overwrite": "Overwrite",
+        "recreate": "Recreate from template",
+        "content": "Project doc content",
+        "missing": "The project doc is missing.",
+        "conflict": "The doc changed since it was loaded. Reload to discard your edits, or overwrite to keep them.",
+        "loadFailed": "Failed to load the project doc",
+        "saveFailed": "Failed to save the project doc",
+        "saved": "Project doc saved",
+        "loading": "Loading…"
+      }
     }
   },
   "settings": {
     "tabs": {
       "general": "General",
       "providers": "Providers",
-      "skills": "Skills"
+      "skills": "Skills",
+      "projects": "Projects"
     },
     "providerSettings": {
       "unavailable": "Provider settings are unavailable.",
@@ -814,6 +884,12 @@
         "partial": "Sync stopped before linking. Fix the items below and run Sync again.",
         "failed": "Sync failed: {message}",
         "summary": "Moved {moved}, converted {converted}, trashed {trashed}, removed {unlinked} link(s)."
+      }
+    },
+    "projects": {
+      "docFolder": {
+        "name": "Project doc folder",
+        "desc": "Vault folder for the docs of new projects. Leave empty for vault root. Existing projects keep their docs where they are."
       }
     }
   }

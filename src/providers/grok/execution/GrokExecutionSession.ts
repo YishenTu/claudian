@@ -706,10 +706,14 @@ RewindableExecutionSession {
   #buildSessionMeta(
     request: ProviderExecutionRequest | undefined,
   ): Record<string, unknown> {
+    const instructions = request?.configuration.systemInstructions;
     return buildSessionMeta(
       request,
-      request?.configuration.systemInstructions.kind === 'provider-default'
-        ? buildGrokSystemPrompt(this.#getSystemPromptSettings())
+      instructions?.kind === 'provider-default'
+        ? buildGrokSystemPrompt({
+          ...this.#getSystemPromptSettings(),
+          sessionInstructions: instructions.sessionInstructions,
+        })
         : undefined,
     );
   }

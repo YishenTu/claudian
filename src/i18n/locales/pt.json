@@ -353,13 +353,83 @@
       "nextMessage": "Próxima mensagem",
       "scrollToBottom": "Rolar até o fim",
       "emptyDirectory": "Não há prompts do usuário nesta conversa"
+    },
+    "projects": {
+      "header": "Projetos",
+      "options": "Opções de projetos",
+      "sortBy": "Ordenar projetos por",
+      "sort": {
+        "lastActivity": "Última atividade",
+        "created": "Criação"
+      },
+      "noSessions": "Nenhuma sessão",
+      "newSessionIn": "Nova sessão em {name}",
+      "actionsFor": "Ações de {name}",
+      "newProjectAction": "Novo projeto",
+      "chipLabel": "Projeto: {name}",
+      "noProject": "Sem projeto",
+      "menu": {
+        "newSession": "Nova sessão no projeto",
+        "edit": "Editar projeto",
+        "openDoc": "Abrir documento do projeto",
+        "pin": "Fixar projeto",
+        "unpin": "Desafixar projeto",
+        "archiveIdle": "Arquivar sessões inativas",
+        "delete": "Excluir projeto",
+        "moveTo": "Mover para um projeto…",
+        "moveSelectionTo": "Mover {count} sessões para um projeto…",
+        "removeFrom": "Remover do projeto",
+        "removeSelectionFrom": "Remover {count} sessões do projeto",
+        "newProject": "Novo projeto…"
+      },
+      "deleteConfirm": "Excluir o projeto “{name}”? As sessões permanecem. O documento do projeto é mantido.",
+      "errors": {
+        "create": "Falha ao criar o projeto",
+        "update": "Falha ao atualizar o projeto",
+        "delete": "Falha ao excluir o projeto",
+        "pin": "Falha ao alterar a fixação do projeto",
+        "move": "Falha ao mover as sessões para o projeto",
+        "remove": "Falha ao remover as sessões do projeto",
+        "start": "Falha ao iniciar uma sessão neste projeto",
+        "sort": "Falha ao atualizar a ordenação dos projetos"
+      },
+      "editor": {
+        "titleNew": "Novo projeto",
+        "titleEdit": "Editar projeto",
+        "name": "Nome",
+        "nameDesc": "Exibido no gerenciador de sessões e nas sessões membros.",
+        "namePlaceholder": "Nome do projeto",
+        "instructions": "Instruções",
+        "instructionsDesc": "Adicionadas ao prompt do sistema de cada sessão membro a partir do próximo turno.",
+        "docPath": "Documento do projeto",
+        "openDoc": "Abrir",
+        "nameRequired": "Digite um nome para o projeto."
+      },
+      "doc": {
+        "title": "Documento do projeto: {name}",
+        "path": "Caminho",
+        "copyPath": "Copiar caminho",
+        "pathCopied": "Caminho copiado",
+        "copyFailed": "Falha ao copiar o caminho",
+        "reload": "Recarregar",
+        "overwrite": "Sobrescrever",
+        "recreate": "Recriar a partir do modelo",
+        "content": "Conteúdo do documento do projeto",
+        "missing": "O documento do projeto não existe.",
+        "conflict": "O documento mudou desde que foi carregado. Recarregue para descartar suas edições ou sobrescreva para mantê-las.",
+        "loadFailed": "Falha ao carregar o documento do projeto",
+        "saveFailed": "Falha ao salvar o documento do projeto",
+        "saved": "Documento do projeto salvo",
+        "loading": "Carregando…"
+      }
     }
   },
   "settings": {
     "tabs": {
       "general": "Geral",
       "providers": "Provedores",
-      "skills": "Skills"
+      "skills": "Skills",
+      "projects": "Projetos"
     },
     "providerSettings": {
       "unavailable": "As configurações do provedor não estão disponíveis.",
@@ -814,6 +884,12 @@
         "partial": "A sincronização parou antes de criar o link. Corrija os itens abaixo e sincronize novamente.",
         "failed": "Falha na sincronização: {message}",
         "summary": "Movidos {moved}, convertidos {converted}, na lixeira {trashed}, {unlinked} link(s) removido(s)."
+      }
+    },
+    "projects": {
+      "docFolder": {
+        "name": "Pasta de documentos de projeto",
+        "desc": "Pasta do cofre para os documentos de novos projetos. Deixe vazio para a raiz do cofre. Projetos existentes mantêm seus documentos onde estão."
       }
     }
   }

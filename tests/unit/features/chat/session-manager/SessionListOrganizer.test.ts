@@ -1,6 +1,6 @@
 import { testClock } from '@test/helpers/testClock';
 
-import type { ConversationMeta } from '@/core/types';
+import type { ConversationMeta, ProjectReader, ProjectRecord } from '@/core/types';
 import {
   deriveSessionListModel,
   organizeSessionList,
@@ -245,5 +245,111 @@ describe('deriveSessionListModel', () => {
     expect(model.isEmpty).toBe(true);
     expect(model.hasSearchTerms).toBe(true);
     expect(model.groupKeys).toBeNull();
+  });
+});
+
+describe('deriveSessionListModel with a projects section', () => {
+  function project(id: string, overrides: Partial<ProjectRecord> = {}): ProjectRecord {
+    return {
+      id, name: `${id} project`, instructions: '', docPath: `.claudian/projects/${id}.md`,
+      isPinned: false, createdAt: 1, ...overrides,
+    };
+  }
+  function reader(records: readonly ProjectRecord[]): Pick<ProjectReader, 'list' | 'get'> {
+    return {
+      list: () => records,
+      get: id => records.find(record => record.id === id) ?? null,
+    };
+  }
+  const records = [
+    project('alpha', { createdAt: 3 }),
+    project('beta', { createdAt: 2, isPinned: true }),
+    project('empty', { createdAt: 15 }),
+    project('quiet', { createdAt: 40 }),
+  ];
+  const conversations = [
+    createConversation('alpha-new', { title: 'Alpha new', projectId: 'alpha', lastActivityAt: 30, createdAt: 8 }),
+    createConversation('beta-chat', { title: 'Beta chat', projectId: 'beta', lastActivityAt: 20 }),
+    createConversation('alpha-old', {
+      title: 'Alpha old', projectId: 'alpha', lastActivityAt: 10, linkedContentPath: 'Notes/Plan.md', isPinned: true,
+    }),
+    createConversation('quiet-chat', { title: 'Quiet chat', projectId: 'quiet', lastActivityAt: 12, createdAt: 2 }),
+    createConversation('stale', { title: 'Stale member', projectId: 'deleted', lastActivityAt: 25 }),
+    createConversation('loose', { title: 'Loose chat', lastActivityAt: 5, linkedContentPath: 'Notes/Plan.md' }),
+    createConversation('pinned', { title: 'Pinned chat', isPinned: true, lastActivityAt: 4 }),
+    createConversation('archived', { title: 'Old', projectId: 'alpha', isArchived: true, lastActivityAt: 50 }),
+  ];
+  const base = {
+    organization: 'list', sort: 'last-updated', language: 'en', scope: 'active', projects: reader(records),
+  } as const;
+  const ids = (sections: readonly { conversations: readonly ConversationMeta[] }[]) => (
+    sections.flatMap(section => section.conversations.map(({ id }) => id))
+  );
+  const projectRows = (model: ReturnType<typeof deriveSessionListModel>) => (
+    (model.projectSections ?? []).map(section => [section.projectId, section.conversations.map(({ id }) => id)])
+  );
+
+  it('lists pinned projects first, then by last member activity falling back to creation', () => {
+    const model = deriveSessionListModel(conversations, { ...base, showPinnedSection: true });
+
+    expect(projectRows(model)).toEqual([
+      ['beta', ['beta-chat']],
+      // Activity of active members only: the archived member does not lift alpha.
+      ['alpha', ['alpha-new', 'alpha-old']],
+      ['empty', []],
+      ['quiet', ['quiet-chat']],
+    ]);
+    expect(model.projectSections?.every(section => section.kind === 'project')).toBe(true);
+    expect(model.projectSections?.map(section => section.key)).toEqual([
+      'project:beta', 'project:alpha', 'project:empty', 'project:quiet',
+    ]);
+  });
+
+  it('orders projects by creation for the created project sort', () => {
+    const model = deriveSessionListModel(conversations, { ...base, projectSort: 'created' });
+
+    expect(model.projectSections?.map(section => section.projectId)).toEqual(['beta', 'quiet', 'empty', 'alpha']);
+  });
+
+  it('keeps members out of the pinned and session lists, but not members of a deleted project', () => {
+    const list = deriveSessionListModel(conversations, { ...base, showPinnedSection: true });
+    expect(list.pinnedConversations.map(({ id }) => id)).toEqual(['pinned']);
+    expect(ids(list.sections)).toEqual(['stale', 'loose']);
+
+    const linked = deriveSessionListModel(conversations, { ...base, organization: 'linked-content' });
+    expect(linked.sections.map(section => [section.key, section.conversations.map(({ id }) => id)])).toEqual([
+      ['ungrouped', ['stale', 'pinned']],
+      ['content:Notes/Plan.md', ['loose']],
+    ]);
+    expect(linked.conversationsByLinkedContent.get('Notes/Plan.md')?.map(({ id }) => id)).toEqual(['loose']);
+    expect(linked.conversationsByProject.get('alpha')?.map(({ id }) => id)).toEqual(['alpha-new', 'alpha-old']);
+  });
+
+  it('keeps every session in the list without a projects section or in the archive', () => {
+    const { projects: _projects, ...withoutProjects } = base;
+    const flat = deriveSessionListModel(conversations, withoutProjects);
+    expect(flat.projectSections).toBeNull();
+    expect(ids(flat.sections)).toHaveLength(conversations.length - 1);
+
+    const archived = deriveSessionListModel(conversations, { ...base, scope: 'archived' });
+    expect(archived.projectSections).toBeNull();
+    expect(ids(archived.sections)).toEqual(['archived']);
+  });
+
+  it('shows empty projects while there are no sessions', () => {
+    const model = deriveSessionListModel([], base);
+
+    expect(model.projectSections?.map(section => section.projectId)).toEqual(['beta', 'quiet', 'empty', 'alpha']);
+    expect(model.isEmpty).toBe(true);
+  });
+
+  it('keeps projects with matching members or a matching name while searching', () => {
+    const byMember = deriveSessionListModel(conversations, { ...base, searchQuery: 'old' });
+    expect(projectRows(byMember)).toEqual([['alpha', ['alpha-old']]]);
+    expect(byMember.conversationsByProject.get('alpha')?.map(({ id }) => id)).toEqual(['alpha-new', 'alpha-old']);
+
+    const byName = deriveSessionListModel(conversations, { ...base, searchQuery: 'empty project' });
+    expect(projectRows(byName)).toEqual([['empty', []]]);
+    expect(byName.isEmpty).toBe(true);
   });
 });

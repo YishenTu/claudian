@@ -16,6 +16,7 @@ import {
   ChatExecutionPreHandoffError,
   type ChatTurnSubmission,
 } from '@/features/chat/execution/ChatExecutionCoordinator';
+import { resolveSessionInstructions } from '@/features/chat/execution/projectInstructions';
 import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { SessionMessageDeferredError, type SessionMessageUnsentReason } from '@/features/chat/session-messaging/SessionMailbox';
 import type { SessionComposerPort } from '@/features/chat/sessions/SessionComposer';
@@ -442,13 +443,20 @@ export class MainTurnExecution {
     user?: ChatMessage,
     assistant?: ChatMessage,
   ): ChatTurnSubmission {
+    const { plugin, state } = this.deps;
     const settings = this.deps.getSettings();
     const images = [...(request.images ?? [])];
+    // Membership and project edits apply from the next submission; a steer joins with the same prompt.
+    const conversationId = state.currentConversationId;
+    const sessionInstructions = resolveSessionInstructions(
+      plugin.projects,
+      conversationId ? plugin.getConversationSummary(conversationId) : null,
+    );
 
     return {
       canonicalText: request.text,
       configuration: {
-        ...buildChatExecutionConfiguration(settings),
+        ...buildChatExecutionConfiguration(settings, sessionInstructions),
         promptSuggestions: true,
       },
       context: {

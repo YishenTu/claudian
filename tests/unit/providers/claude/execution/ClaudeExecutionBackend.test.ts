@@ -953,6 +953,31 @@ describe('ClaudeExecutionBackend', () => {
     });
   });
 
+  it('appends session instructions to the default prompt and restarts the query when they change', async () => {
+    const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
+    const withSessionInstructions = (sessionInstructions?: string) => createRequest({
+      configuration: {
+        ...createRequest().configuration,
+        systemInstructions: { kind: 'provider-default', sessionInstructions },
+      },
+    });
+    try {
+      await collectEvents(session.execute(withSessionInstructions('## Project\nAlpha')).events);
+      const firstPrompt = (sdkMock.getLastOptions()?.systemPrompt as { prompt: string }).prompt;
+      expect(firstPrompt).toContain('## Runtime Context');
+      expect(firstPrompt.endsWith('## Project\nAlpha')).toBe(true);
+
+      await collectEvents(session.execute(withSessionInstructions('## Project\nAlpha')).events);
+      expect(sdkMock.getQueryCallCount()).toBe(1);
+
+      await collectEvents(session.execute(withSessionInstructions('## Project\nBeta')).events);
+      expect(sdkMock.getQueryCallCount()).toBe(2);
+      const secondPrompt = (sdkMock.getLastOptions()?.systemPrompt as { prompt: string }).prompt;
+      expect(secondPrompt).toContain('## Project\nBeta');
+      expect(secondPrompt).not.toContain('Alpha');
+    } finally { await session.dispose(); }
+  });
+
   it('encodes structured context with escaped XML paths and bodies', async () => {
     sdkMock.setMockMessages([
       { type: 'result', subtype: 'success' },
