@@ -35,6 +35,8 @@ Open Claudian interface from the ribbon icon or command palette. Everything work
 
 **MCP Servers** — Connect external tools through each coding agent's native CLI-managed MCP configuration.
 
+**Projects** — Group sessions that work toward one goal. Every member, on any provider, shares the project's instructions and a memory file in the vault that the agents keep current. Members can find and message each other, and new sessions join the current session's project.
+
 **Tabs & Session Management** — Use multiple tabs in [single-pane mode](assets/main-chat-single-pane.png) or a persistent session manager beside the chat in [dual-pane mode](assets/main-chat-dual-pane.png).
 
 **Collaboration** — Collab is now a standalone plugin. See [Claudian Collab](https://github.com/YishenTu/claudian-collab).
