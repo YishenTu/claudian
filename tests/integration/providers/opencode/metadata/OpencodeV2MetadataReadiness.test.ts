@@ -73,4 +73,4 @@ it('bounds the readiness wait and aborts its request without stopping the retain
     await waitUntil(() => existsSync(fixture.environment.ENDPOINT_FILE! + '.integration-aborted'));
     expect((await fetch(readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8'))).status).toBe(403);
   } finally { await service.dispose(); }
-}, 12_000);
+});

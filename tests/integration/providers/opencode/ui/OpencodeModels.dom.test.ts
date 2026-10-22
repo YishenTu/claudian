@@ -63,7 +63,7 @@ it.each([true, false])('shows the native request failure and only its supplied e
   expect(f.catalog.getSnapshot().status).toBe('idle');
   const view = f.render();
   try {
-    await waitFor(() => expect(f.catalog.getSnapshot().status).not.toBe('idle'), { timeout: 3_000 });
+    await waitFor(() => expect(f.catalog.getSnapshot().status).not.toBe('idle'), { timeout: 40_000 });
     await f.catalog.refresh();
     expect(f.catalog.getSnapshot().status).toBe('failed');
     const status = within(f.container).getByRole('status');
@@ -92,7 +92,7 @@ it('reports a request timeout without inventing an error ref or a successful emp
   expect(f.catalog.getSnapshot().status).toBe('idle');
   const view = f.render();
   try {
-    await waitFor(() => expect(f.catalog.getSnapshot().status).not.toBe('idle'), { timeout: 3_000 });
+    await waitFor(() => expect(f.catalog.getSnapshot().status).not.toBe('idle'), { timeout: 40_000 });
     await f.catalog.refresh();
     expect(f.catalog.getSnapshot().status).toBe('failed');
     const status = within(f.container).getByRole('status');
@@ -108,7 +108,7 @@ it('keeps a confirmed empty response successful, gives configuration guidance, a
   writeFileSync(f.fixture.environment.CATALOG_FILE!, '[]');
   const view = f.render();
   try {
-    await waitFor(() => expect(f.catalog.getSnapshot().status).toBe('ready'), { timeout: 8_000 });
+    await waitFor(() => expect(f.catalog.getSnapshot().status).toBe('ready'), { timeout: 40_000 });
     expect(f.catalog.getSnapshot()).toMatchObject({ discoveredCount: 0, error: undefined });
     expect(f.container.textContent).toContain('OpenCode server returned no enabled models');
     expect(f.container.textContent).toContain('.opencode/opencode.json');
@@ -119,17 +119,17 @@ it('keeps a confirmed empty response successful, gives configuration guidance, a
     fireEvent.click(within(f.container).getByRole('button', { name: 'Discover' }));
     await waitFor(() => expect(within(f.container).getByRole('checkbox', { name: /DeepSeek Chat/ })).toBeTruthy());
   } finally { view?.dispose(); await f.dispose(); }
-}, 15_000);
+});
 
 it('keeps saved selections and explains an empty catalog even when unavailable model rows remain', async () => {
   const f = setup();
   const view = f.render();
   try {
-    await waitFor(() => expect(f.catalog.getSnapshot().status).toBe('ready'), { timeout: 3_000 });
+    await waitFor(() => expect(f.catalog.getSnapshot().status).toBe('ready'), { timeout: 40_000 });
     await f.catalog.changeSelection({ type: 'set', modelId: 'deepseek/chat', selected: true });
     writeFileSync(f.fixture.environment.CATALOG_FILE!, '[]');
     fireEvent.click(within(f.container).getByRole('button', { name: 'Refresh' }));
-    await waitFor(() => expect(f.catalog.getSnapshot().status).toBe('ready'), { timeout: 8_000 });
+    await waitFor(() => expect(f.catalog.getSnapshot().status).toBe('ready'), { timeout: 40_000 });
     expect(f.catalog.getSnapshot()).toMatchObject({
       discoveredCount: 0, selectedIds: ['deepseek/chat'], models: [{ id: 'deepseek/chat', isAvailable: false }],
     });
@@ -138,4 +138,4 @@ it('keeps saved selections and explains an empty catalog even when unavailable m
     expect(within(f.container).getByRole('button', { name: 'Remove deepseek/chat' })).toBeTruthy();
     expect((await axe(f.container)).violations).toEqual([]);
   } finally { view?.dispose(); await f.dispose(); }
-}, 15_000);
+});

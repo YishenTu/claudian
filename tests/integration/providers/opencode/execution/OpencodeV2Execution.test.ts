@@ -33,6 +33,13 @@ jest.mock('@/core/process/ProcessProbe', () => {
 // Native HTTP boundary, based on v2.0.12 event and route contracts.
 const fixture = `#!/usr/bin/env node
 const http = require('node:http');
+const { EventEmitter, once } = require('node:events');
+const interactions = new EventEmitter();
+// Replies synchronize the fixture; this deadline only bounds a missing reply after a regression.
+const waitForInteraction = async predicate => {
+  const signal = AbortSignal.timeout(30_000);
+  while (!predicate()) await once(interactions, 'changed', { signal });
+};
 if (process.argv.includes('--version')) { console.log('opencode v2.0.12'); return; }
 if (!process.argv.includes('serve')) process.exit(3);
 let onSteer, selectedAgents = [], inbox = [], lateChild, feed, permission, grandApproval, form, mcpAnswer, settleInventory = false, cancelRace = false, ownedForms = [], idle = true, waiter, messages = [], turn = 0, modelRequests = 0, releaseModel;
@@ -66,13 +73,13 @@ const server = http.createServer(async (req, res) => {
   if (route === '/api/form') {
     const snapshot = [...ownedForms];
     if (settleInventory) {
-      emit('form.cancelled', { sessionID: 'global', id: 'frm_mcp' }); mcpAnswer = 'cancelled';
+      emit('form.cancelled', { sessionID: 'global', id: 'frm_mcp' }); mcpAnswer = 'cancelled'; interactions.emit('changed');
       await new Promise(resolve => setTimeout(resolve, 20));
     }
     res.end(JSON.stringify({ data: snapshot })); return;
   }
-  if (route === '/api/session/global/form/frm_mcp/reply') { mcpAnswer = body.answer; emit('form.replied', { sessionID: 'global', id: 'frm_mcp' }); res.writeHead(204).end(); return; }
-  if (route === '/api/session/global/form/frm_mcp' && req.method === 'DELETE') { mcpAnswer = 'cancelled'; emit('form.cancelled', { sessionID: 'global', id: 'frm_mcp' }); if (cancelRace) await new Promise(resolve => setTimeout(resolve, 30)); res.writeHead(204).end(); return; }
+  if (route === '/api/session/global/form/frm_mcp/reply') { mcpAnswer = body.answer; interactions.emit('changed'); emit('form.replied', { sessionID: 'global', id: 'frm_mcp' }); res.writeHead(204).end(); return; }
+  if (route === '/api/session/global/form/frm_mcp' && req.method === 'DELETE') { mcpAnswer = 'cancelled'; interactions.emit('changed'); emit('form.cancelled', { sessionID: 'global', id: 'frm_mcp' }); if (cancelRace) await new Promise(resolve => setTimeout(resolve, 30)); res.writeHead(204).end(); return; }
   if (route === '/api/mcp') { res.end(JSON.stringify({ data: [] })); return; }
   if (route === '/api/session' && process.env.EXPECT_RESUME === '1') { res.writeHead(409).end(); return; }
   if (route === '/api/session' || (route === '/api/session/ses_test' && req.method === 'GET')) { if (body.agent) selectedAgents.push(body.agent); res.end(JSON.stringify({ data: { id: 'ses_test' } })); return; }
@@ -98,9 +105,9 @@ const server = http.createServer(async (req, res) => {
     await new Promise(resolve => { releaseModel = resolve; setTimeout(resolve, 1000); });
   }
   if (route.endsWith('/model') || route.endsWith('/agent')) { if (body.agent) selectedAgents.push(body.agent); if (process.env.LATE_CHILD_STAGE === 'configuration') lateChild?.(); res.writeHead(204).end(); return; }
-  if (route === '/api/session/ses_grand/permission/per_grand/reply') { grandApproval = body.decision; res.writeHead(204).end(); return; }
-  if (route.endsWith('/permission/per_test/reply')) { permission = body.decision; res.writeHead(204).end(); return; }
-  if (route.endsWith('/form/frm_test/reply')) { form = body.answer; res.writeHead(204).end(); return; }
+  if (route === '/api/session/ses_grand/permission/per_grand/reply') { grandApproval = body.decision; interactions.emit('changed'); res.writeHead(204).end(); return; }
+  if (route.endsWith('/permission/per_test/reply')) { permission = body.decision; interactions.emit('changed'); res.writeHead(204).end(); return; }
+  if (route.endsWith('/form/frm_test/reply')) { form = body.answer; interactions.emit('changed'); res.writeHead(204).end(); return; }
   if (route.endsWith('/message')) { res.end(JSON.stringify({ data: messages, cursor: {} })); return; }
   if (route.endsWith('/wait')) { if (idle) res.writeHead(204).end(); else waiter = res; return; }
   if (route === '/api/session/ses_test/compact') {
@@ -187,8 +194,7 @@ const server = http.createServer(async (req, res) => {
         ownedForms = [nativeForm];
         emit('form.created', { form: { ...nativeForm, id: 'frm_other_location' } });
         emit('form.created', { form: nativeForm });
-        const deadline = Date.now() + 500;
-        while (!mcpAnswer && Date.now() < deadline) await new Promise(r => setTimeout(r, 10));
+        await waitForInteraction(() => mcpAnswer !== undefined);
         if (settleInventory || cancelRace) await new Promise(resolve => setTimeout(resolve, 70));
         if (!mcpAnswer) emit('session.execution.failed', { error: { message: 'MCP form never settled' } });
         else { if (body.text === 'mcp-form-late') emit('session.execution.started', {}); emit('session.text.ended', { assistantMessageID, ordinal: 0, text: body.text === 'mcp-form-late' ? 'Automatic reply' : JSON.stringify(mcpAnswer) }); emit('session.execution.succeeded', {}); }
@@ -203,8 +209,7 @@ const server = http.createServer(async (req, res) => {
         emit('session.tool.input.started', { sessionID: 'ses_grand', assistantMessageID, id: 'tool_shell', name: 'shell' });
         emit('session.tool.called', { sessionID: 'ses_grand', assistantMessageID, id: 'tool_shell', input: { command: 'pwd' } });
         emit('permission.asked', { sessionID: 'ses_grand', id: 'per_grand', action: 'shell', resources: ['pwd'] });
-        const deadline = Date.now() + 500;
-        while (!grandApproval && Date.now() < deadline) await new Promise(r => setTimeout(r, 10));
+        await waitForInteraction(() => grandApproval !== undefined);
         emit(grandApproval === 'once' ? 'session.execution.succeeded' : 'session.execution.failed', { error: { message: 'Nested approval was not answered' } });
         return;
       }
@@ -212,8 +217,7 @@ const server = http.createServer(async (req, res) => {
       if (body.text === 'disconnect') { feed.end(); return; }
       if (body.text === 'proto-form') {
         emit('form.created', { form: { id: 'frm_test', sessionID: 'ses_test', title: 'Color', fields: [{ key: '__proto__', type: 'string', title: 'Pick a color', options: [{ value: 'Blue', label: 'Blue' }] }, { key: 'toString', type: 'number', title: 'Count' }] } });
-        const protoStart = Date.now();
-        while (!form && Date.now() - protoStart < 1500) await new Promise(r => setTimeout(r, 10));
+        await waitForInteraction(() => form !== undefined);
         emit('session.text.ended', { assistantMessageID, ordinal: 0, text: JSON.stringify(form === undefined ? null : form) });
         emit('session.execution.succeeded', {}); idle = true;
         return;
@@ -223,8 +227,7 @@ const server = http.createServer(async (req, res) => {
         emit('form.created', { form: { id: 'frm_test', sessionID: 'ses_test', title: 'Questions', metadata: { kind: 'question' }, fields: [{ key: 'q0', type: 'string', title: 'Color', description: 'Which color should the report use?', custom: true, options: [{ value: 'blue', label: 'Blue' }] }] } });
       }
       if (body.text !== 'slow' && body.text !== 'question-wording') emit('form.created', { form: { id: 'frm_test', sessionID: 'ses_test', title: 'Color', fields: [{ key: 'q0', type: 'string', title: 'Pick a color', options: [{ value: 'blue', label: 'Blue' }] }] } });
-      const start = Date.now();
-      while ((!permission || (!form && body.text !== 'slow')) && Date.now() - start < 1500) await new Promise(r => setTimeout(r, 10));
+      await waitForInteraction(() => permission !== undefined && (form !== undefined || body.text === 'slow'));
       if (permission !== 'once' || (body.text !== 'slow' && form?.q0 !== 'blue')) { emit('session.execution.failed', { error: { message: 'Interactions not answered' } }); return; }
       if (body.text.startsWith('background')) {
         emit('session.tool.input.started', { assistantMessageID, id: 'tool_child', name: 'subagent' });
@@ -256,8 +259,7 @@ const server = http.createServer(async (req, res) => {
             permission = undefined; form = undefined;
             emit('permission.asked', { sessionID: interactionSession, id: 'per_test', action: 'shell', resources: ['echo child'] });
             emit('form.created', { form: { id: 'frm_test', sessionID: interactionSession, title: 'Child color', fields: [{ key: 'q0', type: 'string', title: 'Pick a child color', options: [{ value: 'blue', label: 'Blue' }] }] } });
-            const deadline = Date.now() + 3000;
-            while ((!permission || !form) && Date.now() < deadline) await new Promise(r => setTimeout(r, 10));
+            await waitForInteraction(() => permission !== undefined && form !== undefined);
             if (permission !== 'once' || form?.q0 !== 'blue') return;
             if (body.text === 'background-nested') emit('session.execution.succeeded', { sessionID: 'ses_grand' });
           }

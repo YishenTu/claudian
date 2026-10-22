@@ -78,7 +78,7 @@ it('retains initialization after a missing-model timeout so warmup can be retrie
     await expect(service.warmModelMetadata('opencode:acme/slow-model')).resolves.toBe(true);
     expect(readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8')).toBe(endpoint);
   } finally { await service.dispose(); }
-}, 10_000);
+});
 
 it('clears removed models when the retained server reports an empty catalog', async () => {
   const plugin = fixture.createPlugin();
@@ -89,4 +89,4 @@ it('clears removed models when the retained server reports an empty catalog', as
     await expect(service.loadCatalog()).resolves.toBe(true);
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([]);
   } finally { await service.dispose(); }
-}, 10_000);
+});

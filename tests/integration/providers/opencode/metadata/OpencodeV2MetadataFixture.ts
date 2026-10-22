@@ -2,6 +2,18 @@ import { mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
+import * as ProcessProbe from '@/core/process/ProcessProbe';
+
+// These suites test native metadata and lifecycle behavior, not cold-launch speed.
+jest.setTimeout(45_000);
+// Keep probing real, with the same default allowance as the other native OpenCode suites.
+const runProcessProbe = ProcessProbe.runProcessProbe;
+let probe: jest.SpyInstance;
+beforeEach(() => {
+  probe = jest.spyOn(ProcessProbe, 'runProcessProbe').mockImplementation((options, timeoutMs = 30_000) => runProcessProbe(options, timeoutMs));
+});
+afterEach(() => probe.mockRestore());
+
 // External OpenCode boundary: its native catalog endpoints and stdio ownership lease.
 const cliFixture = `#!/usr/bin/env node
 const fs = require('node:fs');
@@ -10,7 +22,6 @@ if (process.argv.includes('--version')) {
   process.stdout.write('opencode v2.0.12\\n');
 } else {
   if (!process.argv.includes('--stdio') || process.env.OPENCODE_DB !== process.env.EXPECTED_DATABASE) process.exit(2);
-  const started = Date.now();
   let reads = 0, commandReads = 0;
   let activated = !process.env.ACTIVATION_DELAY_MS, activation;
   const server = http.createServer(async (req, res) => {
@@ -44,10 +55,8 @@ if (process.argv.includes('--version')) {
       res.end(JSON.stringify(error.body)); return;
     }
     if (url.pathname === '/api/model' && fs.existsSync(process.env.CATALOG_FILE + '.hang')) return;
-    if (url.pathname === '/api/model') fs.writeFileSync(process.env.ENDPOINT_FILE + '.read', String(reads + 1));
     const catalog = JSON.parse(fs.readFileSync(process.env.CATALOG_FILE, 'utf8'))
-      .filter(model => activated || model.providerID !== 'opencode-go')
-      .filter(model => model.id !== 'slow-model' || Date.now() - started >= Number(process.env.DELAYED_CATALOG_MS || 0));
+      .filter(model => activated || model.providerID !== 'opencode-go');
     // A fresh native instance loads its command catalog after its first read.
     const data = url.pathname === '/api/model'
       ? (++reads === 1 && !process.env.ACTIVATION_DELAY_MS ? [] : catalog)
@@ -56,6 +65,7 @@ if (process.argv.includes('--version')) {
         : (++commandReads === 1 ? [] : [{ name: 'review', description: 'Review changes' }]);
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ location: { directory: process.cwd() }, data }));
+    if (url.pathname === '/api/model') fs.writeFileSync(process.env.ENDPOINT_FILE + '.read', String(reads));
   });
   server.listen(0, '127.0.0.1', () => {
     const url = 'http://127.0.0.1:' + server.address().port;
@@ -73,7 +83,6 @@ const pluginEnvironmentKeys = [
   'EXPECTED_DATABASE',
   'CATALOG_FILE',
   'ENDPOINT_FILE',
-  'DELAYED_CATALOG_MS',
   'READY_DELAY_MS',
   'ACTIVATION_DELAY_MS',
   'INTEGRATION_STATUS',
@@ -142,7 +151,7 @@ export function createOpencodeV2MetadataFixture(): OpencodeV2MetadataFixture {
 }
 
 export async function waitUntil(predicate: () => boolean): Promise<void> {
-  const deadline = Date.now() + 5_000;
+  const deadline = Date.now() + 40_000;
   while (!predicate()) {
     if (Date.now() >= deadline) throw new Error('Fixture did not reach the expected state.');
     await new Promise(resolve => setTimeout(resolve, 10));

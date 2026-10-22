@@ -15,6 +15,9 @@ interface Invocation { pid: number; cwd: string; args: string[] }
 
 const WINDOWS = process.platform === 'win32';
 
+// Launch, transport setup and process cleanup are real; their speed is not the assertion.
+jest.setTimeout(45_000);
+
 describe('native Host process', () => {
   let root: string;
   let home: string;
@@ -49,7 +52,7 @@ describe('native Host process', () => {
   };
 
   const launched = async (): Promise<Invocation> => {
-    for (const deadline = Date.now() + 5000; Date.now() < deadline; await new Promise(resolve => setTimeout(resolve, 10))) {
+    for (const deadline = Date.now() + 30_000; Date.now() < deadline; await new Promise(resolve => setTimeout(resolve, 10))) {
       const [host] = await invocations();
       if (host) return host;
     }

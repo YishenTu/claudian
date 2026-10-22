@@ -530,12 +530,19 @@ it('dispatches global forms once and fans out stream failure before replacing th
     const b = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
     let failed!: () => void;
     const disconnected = new Promise<void>(resolve => { failed = resolve; });
-    await a.subscribe(event => eventsA.push(event.type), () => { failures.push('a'); }, () => true);
+    let reachedBarrier!: () => void;
+    const eventsDrained = new Promise<void>(resolve => { reachedBarrier = resolve; });
+    await a.subscribe(event => {
+      eventsA.push(event.type);
+      if (event.type === 'fixture.barrier') reachedBarrier();
+    }, () => { failures.push('a'); }, () => true);
     await b.subscribe(event => eventsB.push(event.type), () => { failures.push('b'); failed(); }, () => true);
     const form = { type: 'form.created', data: { form: { id: 'form_owned', sessionID: 'global', metadata: { kind: 'mcp-elicitation' } } } };
     await a.request('/fixture/event', { method: 'POST', body: form });
     await a.request('/fixture/event', { method: 'POST', body: form });
-    await new Promise(resolve => setTimeout(resolve, 20));
+    // A marker after both creates proves delivery completed while the form remains active.
+    await a.request('/fixture/event', { method: 'POST', body: { type: 'fixture.barrier', data: {} } });
+    await eventsDrained;
     expect(eventsA.filter(type => type === 'form.created')).toHaveLength(1);
     expect(eventsB.filter(type => type === 'form.created')).toHaveLength(0);
     await a.request('/fixture/disconnect', { method: 'POST' }).catch(() => undefined);

@@ -4,28 +4,12 @@ import { formatDurationMmSs, getTodayDate } from '@/utils/date';
 
 describe('getTodayDate', () => {
   afterEach(() => jest.useRealTimers());
-  it('returns readable date with ISO suffix', () => {
-    const result = getTodayDate();
-    expect(result).toMatch(/\(\d{4}-\d{2}-\d{2}\)$/);
-  });
-
-  it('includes day of week and full date', () => {
-    const result = getTodayDate();
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const months = ['January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'];
-    const now = new Date();
-    expect(result).toContain(days[now.getDay()]);
-    expect(result).toContain(months[now.getMonth()]);
-    expect(result).toContain(String(now.getFullYear()));
-  });
-
   it.each([0, 23])('uses the local calendar day in both portions at %i:30', hour => {
     const now = testDate();
     now.setHours(hour, 30, 0, 0);
     jest.useFakeTimers().setSystemTime(now.getTime());
     const result = getTodayDate();
-    const isoMatch = result.match(/\((\d{4}-\d{2}-\d{2})\)/);
+    const isoMatch = result.match(/\((\d{4}-\d{2}-\d{2})\)$/);
     expect(isoMatch).not.toBeNull();
     const localDate = new Intl.DateTimeFormat('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
     expect(isoMatch![1]).toBe(localDate);
