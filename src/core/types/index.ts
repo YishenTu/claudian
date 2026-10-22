@@ -32,6 +32,7 @@ export {
   type ProjectCreateInput,
   ProjectDocConflictError,
   type ProjectDocContent,
+  ProjectDocMoveConflictError,
   type ProjectDocOperations,
   type ProjectDocReadResult,
   type ProjectDocSaveOptions,

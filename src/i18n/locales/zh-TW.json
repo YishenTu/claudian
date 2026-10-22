@@ -391,7 +391,8 @@
         "move": "將工作階段移動到專案失敗",
         "remove": "從專案中移除工作階段失敗",
         "start": "在此專案中新增工作階段失敗",
-        "sort": "無法更新專案排序"
+        "sort": "無法更新專案排序",
+        "docMoveConflict": "無法移動專案文件：{path} 已存在。"
       },
       "editor": {
         "titleNew": "新增專案",
@@ -401,6 +402,10 @@
         "namePlaceholder": "專案名稱",
         "instructions": "指示",
         "instructionsDesc": "從下一輪起加入每個成員工作階段的系統提示詞。",
+        "docFolder": "文件資料夾",
+        "docFolderDesc": "專案文件所在的儲存庫資料夾。留空使用儲存庫根目錄。變更後會移動文件。",
+        "docFolderPlaceholder": "儲存庫根目錄",
+        "docFolderInvalid": "請輸入儲存庫內的資料夾。",
         "docPath": "專案文件",
         "openDoc": "開啟",
         "nameRequired": "請輸入專案名稱。"
@@ -428,8 +433,7 @@
     "tabs": {
       "general": "一般",
       "providers": "提供者",
-      "skills": "技能",
-      "projects": "專案"
+      "skills": "技能"
     },
     "providerSettings": {
       "unavailable": "無法使用提供者設定。",
@@ -884,12 +888,6 @@
         "partial": "同步在建立連結前停止。請修正以下項目後重新同步。",
         "failed": "同步失敗:{message}",
         "summary": "已移動 {moved},已轉換 {converted},已移至垃圾桶 {trashed},已移除 {unlinked} 個連結。"
-      }
-    },
-    "projects": {
-      "docFolder": {
-        "name": "專案文件資料夾",
-        "desc": "新專案文件所在的儲存庫資料夾。留空使用儲存庫根目錄。現有專案的文件會保留在原位置。"
       }
     }
   }

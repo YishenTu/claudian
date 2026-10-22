@@ -391,7 +391,8 @@
         "move": "Failed to move sessions to project",
         "remove": "Failed to remove sessions from project",
         "start": "Failed to start a session in this project",
-        "sort": "Failed to update project sorting"
+        "sort": "Failed to update project sorting",
+        "docMoveConflict": "Could not move the project doc: {path} already exists."
       },
       "editor": {
         "titleNew": "New project",
@@ -401,6 +402,10 @@
         "namePlaceholder": "Project name",
         "instructions": "Instructions",
         "instructionsDesc": "Added to the system prompt of every member session from its next turn.",
+        "docFolder": "Doc folder",
+        "docFolderDesc": "Vault folder for the project doc. Leave empty for the vault root. Changing it moves the doc.",
+        "docFolderPlaceholder": "Vault root",
+        "docFolderInvalid": "Enter a folder inside the vault.",
         "docPath": "Project doc",
         "openDoc": "Open",
         "nameRequired": "Enter a project name."
@@ -428,8 +433,7 @@
     "tabs": {
       "general": "General",
       "providers": "Providers",
-      "skills": "Skills",
-      "projects": "Projects"
+      "skills": "Skills"
     },
     "providerSettings": {
       "unavailable": "Provider settings are unavailable.",
@@ -884,12 +888,6 @@
         "partial": "Sync stopped before linking. Fix the items below and run Sync again.",
         "failed": "Sync failed: {message}",
         "summary": "Moved {moved}, converted {converted}, trashed {trashed}, removed {unlinked} link(s)."
-      }
-    },
-    "projects": {
-      "docFolder": {
-        "name": "Project doc folder",
-        "desc": "Vault folder for the docs of new projects. Leave empty for vault root. Existing projects keep their docs where they are."
       }
     }
   }

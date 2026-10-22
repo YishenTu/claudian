@@ -1,4 +1,3 @@
-import { PROJECTS_PATH } from '../../core/bootstrap/storagePaths';
 import { DEFAULT_REASONING_VALUE } from '../../core/providers/reasoning';
 import type { ClaudianSettings, ProviderConfigMap } from '../../core/types/settings';
 
@@ -26,7 +25,6 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   excludedTags: [],
   mediaFolder: '',
   systemPrompt: '',
-  projectDocFolder: PROJECTS_PATH,
 
   sharedEnvironmentVariables: '',
   envSnippets: [],

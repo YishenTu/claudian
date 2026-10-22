@@ -13,8 +13,9 @@ import { PROJECTS_PATH } from '@/core/bootstrap/storagePaths';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
-import { type Conversation, ProjectDocConflictError } from '@/core/types';
+import { type Conversation, ProjectDocConflictError, ProjectDocMoveConflictError } from '@/core/types';
 
+const DOC_FOLDER = '.claudian/projects';
 const TEMPLATE_SECTIONS = '## Goal\n\n## Requirements\n\n## Decisions\n\n## State\n\n## Open questions\n\n## Dead ends\n';
 
 function conversation(id: string, projectId?: string): Conversation {
@@ -28,7 +29,7 @@ function conversation(id: string, projectId?: string): Conversation {
 async function fixture(options: { memory?: MemoryDataAdapter; conversations?: Conversation[] } = {}) {
   const memory = options.memory ?? new MemoryDataAdapter();
   const files = new VaultFileAdapter({ vault: { adapter: memory } } as unknown as App);
-  const settings = { ...structuredClone(DEFAULT_CLAUDIAN_SETTINGS), projectDocFolder: '.claudian/projects' };
+  const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
   const store = new ProjectStore(files);
   const loaded = await store.load();
   const persistence = {
@@ -42,7 +43,6 @@ async function fixture(options: { memory?: MemoryDataAdapter; conversations?: Co
   const projects: ProjectService = new ProjectService(loaded.records, {
     store,
     docs: files,
-    getProjectDocFolder: () => settings.projectDocFolder,
     members: {
       setConversationsProject: (ids, projectId) => conversations.setConversationsProject(ids, projectId),
       clearProject: projectId => conversations.clearProjectMembership(projectId),
@@ -79,7 +79,7 @@ describe('ProjectService', () => {
     const changed = jest.fn();
     projects.onChanged(changed);
 
-    const record = await projects.create({ name: 'Q3 Launch: Plan!', instructions: 'Ship it.' });
+    const record = await projects.create({ name: 'Q3 Launch: Plan!', instructions: 'Ship it.', docFolder: DOC_FOLDER });
 
     expect(record.docPath).toBe(`.claudian/projects/q3-launch-plan-${record.id.slice(0, 8)}.md`);
     expect(readFile(memory, record.docPath)).toBe(`# Q3 Launch: Plan!\n\n${TEMPLATE_SECTIONS}`);
@@ -96,38 +96,115 @@ describe('ProjectService', () => {
     expect(changed).toHaveBeenCalledTimes(1);
   });
 
-  it('applies a changed doc folder setting to new projects only, across reloads', async () => {
-    const { memory, settings, projects } = await fixture();
-    const before = await projects.create({ name: 'Before', instructions: '' });
-    settings.projectDocFolder = 'Work/Projects';
+  it('creates each doc in the folder given at creation, including the vault root', async () => {
+    const { memory, projects } = await fixture();
 
-    const after = await projects.create({ name: 'After', instructions: '' });
-    await projects.update(before.id, { name: 'Before renamed' });
+    const work = await projects.create({ name: 'Work Plan', instructions: '', docFolder: 'Work/Projects' });
+    const root = await projects.create({ name: 'Root Plan', instructions: '', docFolder: '' });
 
-    expect(after.docPath).toBe(`Work/Projects/after-${after.id.slice(0, 8)}.md`);
-    expect(readFile(memory, after.docPath)).toContain('# After');
+    expect(work.docPath).toBe(`Work/Projects/work-plan-${work.id.slice(0, 8)}.md`);
+    expect(readFile(memory, work.docPath)).toBe(`# Work Plan\n\n${TEMPLATE_SECTIONS}`);
+    expect(root.docPath).toBe(`root-plan-${root.id.slice(0, 8)}.md`);
+    expect(readFile(memory, root.docPath)).toBe(`# Root Plan\n\n${TEMPLATE_SECTIONS}`);
     const reloaded = await fixture({ memory });
-    expect(reloaded.projects.get(before.id)).toMatchObject({
-      name: 'Before renamed',
-      docPath: `.claudian/projects/before-${before.id.slice(0, 8)}.md`,
-    });
-    expect(reloaded.projects.get(after.id)?.docPath).toBe(after.docPath);
+    expect(reloaded.projects.get(work.id)?.docPath).toBe(work.docPath);
+    expect(reloaded.projects.get(root.id)?.docPath).toBe(root.docPath);
+    const doc = await reloaded.projects.readDoc(root.id);
+    if ('missing' in doc) throw new Error('Expected the root-level doc to load');
+    await reloaded.projects.saveDoc(root.id, '# Root Plan\n\nUpdated\n', doc.revision);
+    expect(readFile(memory, root.docPath)).toBe('# Root Plan\n\nUpdated\n');
   });
 
-  it('creates the doc of a project at the vault root and reads it again after reload', async () => {
-    const { memory, settings, projects } = await fixture();
-    settings.projectDocFolder = '';
+  it('rejects an invalid doc folder without creating a project', async () => {
+    const { memory, projects } = await fixture();
+    const before = new Map(memory.nodes);
 
-    const record = await projects.create({ name: 'Root Plan', instructions: '' });
+    await expect(projects.create({ name: 'Escape', instructions: '', docFolder: '../outside' }))
+      .rejects.toThrow('doc folder');
+    await expect(projects.create({ name: 'Drive', instructions: '', docFolder: 'C:/Docs' }))
+      .rejects.toThrow('doc folder');
 
-    expect(record.docPath).toBe(`root-plan-${record.id.slice(0, 8)}.md`);
-    expect(readFile(memory, record.docPath)).toBe(`# Root Plan\n\n${TEMPLATE_SECTIONS}`);
+    expect(projects.list()).toEqual([]);
+    expect(memory.nodes).toEqual(before);
+  });
+
+  it.each([
+    ['another folder', 'Work/Projects', 'Work/Projects/'],
+    ['the vault root', '/', ''],
+  ])('moves the existing doc with its edits into %s and persists the new path', async (_label, docFolder, prefix) => {
+    const { memory, projects } = await fixture();
+    const record = await projects.create({ name: 'Launch', instructions: '', docFolder: DOC_FOLDER });
+    const read = await projects.readDoc(record.id);
+    if ('missing' in read) throw new Error('doc should exist');
+    await projects.saveDoc(record.id, '# Launch\n\nEdited\n', read.revision);
+    const changed = jest.fn();
+    projects.onChanged(changed);
+    const fileName = record.docPath.slice(record.docPath.lastIndexOf('/') + 1);
+
+    await projects.update(record.id, { name: 'Launch v2', docFolder });
+
+    const docPath = `${prefix}${fileName}`;
+    expect(projects.get(record.id)).toMatchObject({ name: 'Launch v2', docPath });
+    expect(readFile(memory, docPath)).toBe('# Launch\n\nEdited\n');
+    expect(memory.nodes.has(record.docPath)).toBe(false);
+    expect(changed).toHaveBeenCalledTimes(1);
     const reloaded = await fixture({ memory });
-    expect(reloaded.projects.get(record.id)?.docPath).toBe(record.docPath);
-    const doc = await reloaded.projects.readDoc(record.id);
-    if ('missing' in doc) throw new Error('Expected the root-level doc to load');
-    await reloaded.projects.saveDoc(record.id, '# Root Plan\n\nUpdated\n', doc.revision);
-    expect(readFile(memory, record.docPath)).toBe('# Root Plan\n\nUpdated\n');
+    expect(reloaded.projects.get(record.id)).toMatchObject({ name: 'Launch v2', docPath });
+    await expect(reloaded.projects.readDoc(record.id)).resolves.toMatchObject({ content: '# Launch\n\nEdited\n' });
+  });
+
+  it('repoints a project whose doc is missing to the new folder without creating a doc', async () => {
+    const { memory, projects } = await fixture();
+    const record = await projects.create({ name: 'Lost', instructions: '', docFolder: DOC_FOLDER });
+    memory.nodes.delete(record.docPath);
+
+    await projects.update(record.id, { docFolder: 'Elsewhere' });
+
+    const docPath = `Elsewhere/${record.docPath.slice(record.docPath.lastIndexOf('/') + 1)}`;
+    expect(projects.get(record.id)?.docPath).toBe(docPath);
+    expect(memory.nodes.has(docPath)).toBe(false);
+    await expect(projects.readDoc(record.id)).resolves.toEqual({ missing: true });
+    const reloaded = await fixture({ memory });
+    expect(reloaded.projects.get(record.id)?.docPath).toBe(docPath);
+  });
+
+  it('refuses to move onto an existing file and changes neither the record nor any file', async () => {
+    const { memory, projects } = await fixture();
+    const record = await projects.create({ name: 'Taken', instructions: 'Keep.', docFolder: DOC_FOLDER });
+    const target = `Work/${record.docPath.slice(record.docPath.lastIndexOf('/') + 1)}`;
+    memory.addFolder('Work');
+    memory.addFile(target, '# Someone else\n');
+    const recordFile = readFile(memory, `${PROJECTS_PATH}/${record.id}.json`);
+    const changed = jest.fn();
+    projects.onChanged(changed);
+
+    await expect(projects.update(record.id, { name: 'Renamed', instructions: 'New.', docFolder: 'Work' }))
+      .rejects.toBeInstanceOf(ProjectDocMoveConflictError);
+
+    expect(projects.get(record.id)).toEqual(record);
+    expect(readFile(memory, `${PROJECTS_PATH}/${record.id}.json`)).toBe(recordFile);
+    expect(readFile(memory, record.docPath)).toBe(`# Taken\n\n${TEMPLATE_SECTIONS}`);
+    expect(readFile(memory, target)).toBe('# Someone else\n');
+    expect(changed).not.toHaveBeenCalled();
+  });
+
+  it('keeps the doc in place when the folder is unchanged', async () => {
+    const { memory, projects } = await fixture();
+    const record = await projects.create({ name: 'Stay', instructions: '', docFolder: DOC_FOLDER });
+    const recordFile = readFile(memory, `${PROJECTS_PATH}/${record.id}.json`);
+    const changed = jest.fn();
+    projects.onChanged(changed);
+    const rename = jest.spyOn(memory, 'rename');
+
+    await projects.update(record.id, { docFolder: `/${DOC_FOLDER}/` });
+    expect(changed).not.toHaveBeenCalled();
+    expect(readFile(memory, `${PROJECTS_PATH}/${record.id}.json`)).toBe(recordFile);
+
+    await projects.update(record.id, { name: 'Stay put', docFolder: DOC_FOLDER });
+    expect(projects.get(record.id)).toMatchObject({ name: 'Stay put', docPath: record.docPath });
+    expect(readFile(memory, record.docPath)).toContain('# Stay');
+    expect(rename).not.toHaveBeenCalled();
+    expect(changed).toHaveBeenCalledTimes(1);
   });
 
   it('skips an unparsable project file on load and never rewrites or deletes it', async () => {
@@ -143,7 +220,7 @@ describe('ProjectService', () => {
     }));
 
     const { loaded, projects } = await fixture({ memory });
-    const created = await projects.create({ name: 'New', instructions: '' });
+    const created = await projects.create({ name: 'New', instructions: '', docFolder: DOC_FOLDER });
     await projects.setPinned('valid', false);
     await projects.delete(created.id);
 
@@ -155,7 +232,7 @@ describe('ProjectService', () => {
 
   it('detects a concurrent doc change, keeps it, and writes only with overwrite', async () => {
     const { memory, projects } = await fixture();
-    const record = await projects.create({ name: 'Doc', instructions: '' });
+    const record = await projects.create({ name: 'Doc', instructions: '', docFolder: DOC_FOLDER });
     const read = await projects.readDoc(record.id);
     if ('missing' in read) throw new Error('doc should exist');
     memory.addFile(record.docPath, '# Agent edit\n');
@@ -171,7 +248,7 @@ describe('ProjectService', () => {
 
   it('re-reads the doc inside the project queue so two saves from one revision cannot both win', async () => {
     const { memory, projects } = await fixture();
-    const record = await projects.create({ name: 'Doc', instructions: '' });
+    const record = await projects.create({ name: 'Doc', instructions: '', docFolder: DOC_FOLDER });
     const read = await projects.readDoc(record.id);
     if ('missing' in read) throw new Error('doc should exist');
 
@@ -186,7 +263,7 @@ describe('ProjectService', () => {
 
   it('reports a missing doc and recreates it from the template at the recorded path', async () => {
     const { memory, projects } = await fixture();
-    const record = await projects.create({ name: 'Recover', instructions: '' });
+    const record = await projects.create({ name: 'Recover', instructions: '', docFolder: DOC_FOLDER });
     await projects.update(record.id, { name: 'Recovered' });
     memory.nodes.delete(record.docPath);
 
@@ -207,8 +284,8 @@ describe('ProjectService', () => {
 
   it('deletes the record first, keeps the doc, and clears only members still in the project', async () => {
     const { memory, projects, repository } = await fixture();
-    const deleted = await projects.create({ name: 'Deleted', instructions: '' });
-    const other = await projects.create({ name: 'Other', instructions: '' });
+    const deleted = await projects.create({ name: 'Deleted', instructions: '', docFolder: DOC_FOLDER });
+    const other = await projects.create({ name: 'Other', instructions: '', docFolder: DOC_FOLDER });
     repository.replaceAll([
       conversation('stays', deleted.id),
       conversation('moves', deleted.id),
@@ -238,8 +315,8 @@ describe('ProjectService', () => {
     const { projects, repository, onConversationListChanged } = await fixture({
       conversations: [conversation('member')],
     });
-    const first = await projects.create({ name: 'First', instructions: '' });
-    const second = await projects.create({ name: 'Second', instructions: '' });
+    const first = await projects.create({ name: 'First', instructions: '', docFolder: DOC_FOLDER });
+    const second = await projects.create({ name: 'Second', instructions: '', docFolder: DOC_FOLDER });
 
     await projects.setConversationsProject(['member'], first.id);
     expect(repository.getSync('member')?.projectId).toBe(first.id);
@@ -255,7 +332,7 @@ describe('ProjectService', () => {
     const { projects, repository, onConversationListChanged } = await fixture({
       conversations: [conversation('first'), conversation('second'), conversation('third')],
     });
-    const target = await projects.create({ name: 'Target', instructions: '' });
+    const target = await projects.create({ name: 'Target', instructions: '', docFolder: DOC_FOLDER });
 
     await projects.setConversationsProject(['first', 'second', 'third'], target.id);
     expect(['first', 'second', 'third'].map(id => repository.getSync(id)?.projectId)).toEqual([target.id, target.id, target.id]);

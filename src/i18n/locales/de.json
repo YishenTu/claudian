@@ -391,7 +391,8 @@
         "move": "Sitzungen konnten nicht in das Projekt verschoben werden",
         "remove": "Sitzungen konnten nicht aus dem Projekt entfernt werden",
         "start": "Sitzung in diesem Projekt konnte nicht gestartet werden",
-        "sort": "Projektsortierung konnte nicht aktualisiert werden"
+        "sort": "Projektsortierung konnte nicht aktualisiert werden",
+        "docMoveConflict": "Projektdokument konnte nicht verschoben werden: {path} existiert bereits."
       },
       "editor": {
         "titleNew": "Neues Projekt",
@@ -401,6 +402,10 @@
         "namePlaceholder": "Projektname",
         "instructions": "Anweisungen",
         "instructionsDesc": "Wird ab dem nächsten Zug zum Systemprompt jeder Mitgliedssitzung hinzugefügt.",
+        "docFolder": "Dokumentordner",
+        "docFolderDesc": "Vault-Ordner für das Projektdokument. Leer lassen für das Vault-Stammverzeichnis. Eine Änderung verschiebt das Dokument.",
+        "docFolderPlaceholder": "Vault-Stammverzeichnis",
+        "docFolderInvalid": "Gib einen Ordner innerhalb des Vaults ein.",
         "docPath": "Projektdokument",
         "openDoc": "Öffnen",
         "nameRequired": "Gib einen Projektnamen ein."
@@ -428,8 +433,7 @@
     "tabs": {
       "general": "Allgemein",
       "providers": "Anbieter",
-      "skills": "Skills",
-      "projects": "Projekte"
+      "skills": "Skills"
     },
     "providerSettings": {
       "unavailable": "Anbietereinstellungen sind nicht verfügbar.",
@@ -884,12 +888,6 @@
         "partial": "Die Synchronisierung wurde vor dem Verlinken beendet. Behebe die folgenden Elemente und synchronisiere erneut.",
         "failed": "Synchronisierung fehlgeschlagen: {message}",
         "summary": "Verschoben {moved}, umgewandelt {converted}, im Papierkorb {trashed}, {unlinked} Link(s) entfernt."
-      }
-    },
-    "projects": {
-      "docFolder": {
-        "name": "Ordner für Projektdokumente",
-        "desc": "Vault-Ordner für die Dokumente neuer Projekte. Leer lassen für das Vault-Stammverzeichnis. Bestehende Projekte behalten ihre Dokumente am bisherigen Ort."
       }
     }
   }

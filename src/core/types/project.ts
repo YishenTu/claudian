@@ -4,7 +4,7 @@ export interface ProjectRecord {
   readonly id: string;
   readonly name: string;
   readonly instructions: string;
-  /** Vault-relative path of the project doc, fixed at creation. */
+  /** Vault-relative path of the project doc; its file name is fixed at creation, its folder moves with `docFolder`. */
   readonly docPath: string;
   readonly isPinned: boolean;
   readonly createdAt: number;
@@ -13,11 +13,18 @@ export interface ProjectRecord {
 export interface ProjectCreateInput {
   readonly name: string;
   readonly instructions: string;
+  /** Vault-relative folder for the new doc; `''` is the vault root. */
+  readonly docFolder: string;
 }
 
 export interface ProjectUpdatePatch {
   readonly name?: string;
   readonly instructions?: string;
+  /**
+   * Moves the doc into this vault-relative folder (`''` is the vault root), keeping its file name. A missing doc is
+   * only repointed; throws `ProjectDocMoveConflictError` and changes nothing when a file is already there.
+   */
+  readonly docFolder?: string;
 }
 
 /**
@@ -74,5 +81,12 @@ export class ProjectDocConflictError extends Error {
   constructor(readonly projectId: string, options?: ErrorOptions) {
     super(`Project doc changed since it was read: ${projectId}`, options);
     this.name = 'ProjectDocConflictError';
+  }
+}
+
+export class ProjectDocMoveConflictError extends Error {
+  constructor(readonly projectId: string, readonly targetPath: string, options?: ErrorOptions) {
+    super(`A file already exists where the project doc would move: ${targetPath}`, options);
+    this.name = 'ProjectDocMoveConflictError';
   }
 }

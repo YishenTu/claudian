@@ -800,6 +800,54 @@ describe('VaultFileAdapter', () => {
     });
   });
 
+  describe('managed file moves on desktop', () => {
+    let vaultPath: string;
+    let files: VaultFileAdapter;
+
+    beforeEach(async () => {
+      vaultPath = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-vault-')));
+      files = new VaultFileAdapter({
+        vault: { adapter: createDesktopFsAdapter(vaultPath) },
+      } as unknown as App);
+      await fs.mkdir(path.join(vaultPath, 'Docs/Old'), { recursive: true });
+      await fs.mkdir(path.join(vaultPath, 'Docs/New'), { recursive: true });
+      await fs.writeFile(path.join(vaultPath, 'Docs/Old/plan.md'), 'plan');
+    });
+
+    afterEach(async () => {
+      await fs.rm(vaultPath, { recursive: true, force: true });
+    });
+
+    it.each([
+      ['another folder', 'Docs/New/plan.md'],
+      ['the vault root', 'plan.md'],
+    ])('moves a file into %s', async (_label, target) => {
+      await files.moveManagedFileNoReplace('Docs/Old/plan.md', target);
+
+      expect(await fs.readFile(path.join(vaultPath, ...target.split('/')), 'utf8')).toBe('plan');
+      await expect(fs.access(path.join(vaultPath, 'Docs/Old/plan.md'))).rejects.toThrow();
+    });
+
+    it('moves a file out of the vault root', async () => {
+      await fs.writeFile(path.join(vaultPath, 'root.md'), 'root');
+
+      await files.moveManagedFileNoReplace('root.md', 'Docs/New/root.md');
+
+      expect(await fs.readFile(path.join(vaultPath, 'Docs/New/root.md'), 'utf8')).toBe('root');
+      await expect(fs.access(path.join(vaultPath, 'root.md'))).rejects.toThrow();
+    });
+
+    it('never replaces an existing target and keeps both files', async () => {
+      await fs.writeFile(path.join(vaultPath, 'Docs/New/plan.md'), 'other');
+
+      await expect(files.moveManagedFileNoReplace('Docs/Old/plan.md', 'Docs/New/plan.md'))
+        .rejects.toBeInstanceOf(ManagedResourceCollisionError);
+
+      expect(await fs.readFile(path.join(vaultPath, 'Docs/Old/plan.md'), 'utf8')).toBe('plan');
+      expect(await fs.readFile(path.join(vaultPath, 'Docs/New/plan.md'), 'utf8')).toBe('other');
+    });
+  });
+
   describe('folder links', () => {
     let vaultPath: string;
     let files: VaultFileAdapter;

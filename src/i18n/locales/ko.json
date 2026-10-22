@@ -391,7 +391,8 @@
         "move": "세션을 프로젝트로 이동하지 못했습니다",
         "remove": "세션을 프로젝트에서 제거하지 못했습니다",
         "start": "이 프로젝트에서 세션을 시작하지 못했습니다",
-        "sort": "프로젝트 정렬을 업데이트하지 못했습니다"
+        "sort": "프로젝트 정렬을 업데이트하지 못했습니다",
+        "docMoveConflict": "프로젝트 문서를 이동하지 못했습니다: {path}이(가) 이미 있습니다."
       },
       "editor": {
         "titleNew": "새 프로젝트",
@@ -401,6 +402,10 @@
         "namePlaceholder": "프로젝트 이름",
         "instructions": "지침",
         "instructionsDesc": "다음 턴부터 모든 멤버 세션의 시스템 프롬프트에 추가됩니다.",
+        "docFolder": "문서 폴더",
+        "docFolderDesc": "프로젝트 문서를 저장할 볼트 폴더입니다. 비워두면 볼트 루트를 사용합니다. 변경하면 문서가 이동합니다.",
+        "docFolderPlaceholder": "볼트 루트",
+        "docFolderInvalid": "볼트 안의 폴더를 입력하세요.",
         "docPath": "프로젝트 문서",
         "openDoc": "열기",
         "nameRequired": "프로젝트 이름을 입력하세요."
@@ -428,8 +433,7 @@
     "tabs": {
       "general": "일반",
       "providers": "제공자",
-      "skills": "스킬",
-      "projects": "프로젝트"
+      "skills": "스킬"
     },
     "providerSettings": {
       "unavailable": "제공자 설정을 사용할 수 없습니다.",
@@ -884,12 +888,6 @@
         "partial": "링크를 만들기 전에 동기화가 중단되었습니다. 아래 항목을 수정하고 다시 동기화하세요.",
         "failed": "동기화 실패: {message}",
         "summary": "이동 {moved}, 변환 {converted}, 휴지통 {trashed}, 링크 제거 {unlinked}."
-      }
-    },
-    "projects": {
-      "docFolder": {
-        "name": "프로젝트 문서 폴더",
-        "desc": "새 프로젝트의 문서를 저장할 볼트 폴더입니다. 비워두면 볼트 루트를 사용합니다. 기존 프로젝트의 문서는 그대로 유지됩니다."
       }
     }
   }

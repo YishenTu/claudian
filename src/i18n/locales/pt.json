@@ -391,7 +391,8 @@
         "move": "Falha ao mover as sessões para o projeto",
         "remove": "Falha ao remover as sessões do projeto",
         "start": "Falha ao iniciar uma sessão neste projeto",
-        "sort": "Falha ao atualizar a ordenação dos projetos"
+        "sort": "Falha ao atualizar a ordenação dos projetos",
+        "docMoveConflict": "Não foi possível mover o documento do projeto: {path} já existe."
       },
       "editor": {
         "titleNew": "Novo projeto",
@@ -401,6 +402,10 @@
         "namePlaceholder": "Nome do projeto",
         "instructions": "Instruções",
         "instructionsDesc": "Adicionadas ao prompt do sistema de cada sessão membro a partir do próximo turno.",
+        "docFolder": "Pasta do documento",
+        "docFolderDesc": "Pasta do cofre para o documento do projeto. Deixe vazio para a raiz do cofre. Alterá-la move o documento.",
+        "docFolderPlaceholder": "Raiz do cofre",
+        "docFolderInvalid": "Digite uma pasta dentro do cofre.",
         "docPath": "Documento do projeto",
         "openDoc": "Abrir",
         "nameRequired": "Digite um nome para o projeto."
@@ -428,8 +433,7 @@
     "tabs": {
       "general": "Geral",
       "providers": "Provedores",
-      "skills": "Skills",
-      "projects": "Projetos"
+      "skills": "Skills"
     },
     "providerSettings": {
       "unavailable": "As configurações do provedor não estão disponíveis.",
@@ -884,12 +888,6 @@
         "partial": "A sincronização parou antes de criar o link. Corrija os itens abaixo e sincronize novamente.",
         "failed": "Falha na sincronização: {message}",
         "summary": "Movidos {moved}, convertidos {converted}, na lixeira {trashed}, {unlinked} link(s) removido(s)."
-      }
-    },
-    "projects": {
-      "docFolder": {
-        "name": "Pasta de documentos de projeto",
-        "desc": "Pasta do cofre para os documentos de novos projetos. Deixe vazio para a raiz do cofre. Projetos existentes mantêm seus documentos onde estão."
       }
     }
   }

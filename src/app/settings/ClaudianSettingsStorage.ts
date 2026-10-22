@@ -42,6 +42,7 @@ const RETIRED_SHARED_SETTING_FIELDS = [
   'persistentExternalContextPaths',
   'hiddenProviderCommands',
   'maxWarmAgentProcesses',
+  'projectDocFolder',
 ] as const;
 
 function getProviderSettingsAdapters() {
@@ -110,17 +111,6 @@ function normalizeProjectSort(value: unknown): SessionManagerSort {
   return value === 'created' || value === 'last-updated'
     ? value
     : DEFAULT_CLAUDIAN_SETTINGS.projectSort ?? 'last-updated';
-}
-
-/**
- * A vault-relative folder, where `''` is the vault root (empty input, `/` or `.`). A leading `/` is read
- * from the vault root; anything else invalid falls back to the default projects folder.
- */
-export function normalizeProjectDocFolder(value: unknown): string {
-  if (typeof value !== 'string') return DEFAULT_CLAUDIAN_SETTINGS.projectDocFolder;
-  const relative = value.trim().replace(/^\/+/, '');
-  if (relative.split('/').every(segment => segment === '' || segment === '.')) return '';
-  return normalizeLinkedContentPath(relative) ?? DEFAULT_CLAUDIAN_SETTINGS.projectDocFolder;
 }
 
 function normalizePinnedLinkedContentPaths(value: unknown): string[] {
@@ -514,7 +504,6 @@ export class ClaudianSettingsStorage {
       stored.sessionManagerOrganization,
     );
     const projectSort = normalizeProjectSort(stored.projectSort);
-    const projectDocFolder = normalizeProjectDocFolder(stored.projectDocFolder);
     const normalizedProviderSettings = {
       ...stored,
       hiddenCommands,
@@ -539,7 +528,6 @@ export class ClaudianSettingsStorage {
       skillsSynced,
       sessionManagerOrganization,
       projectSort,
-      projectDocFolder,
       pinnedLinkedContentPaths,
       lastSelectedChatModel,
       inlineEditModel: normalizeStoredInlineEditModelSelection(stored.inlineEditModel),
@@ -582,7 +570,6 @@ export class ClaudianSettingsStorage {
         && stored.sessionManagerOrganization !== sessionManagerOrganization
       )
       || ('projectSort' in stored && stored.projectSort !== projectSort)
-      || ('projectDocFolder' in stored && stored.projectDocFolder !== projectDocFolder)
       || 'pinnedLinkedNotePaths' in stored
       || (
         'pinnedLinkedContentPaths' in stored
@@ -618,7 +605,6 @@ export class ClaudianSettingsStorage {
           settings.sessionManagerOrganization,
         ),
         projectSort: normalizeProjectSort(settings.projectSort),
-        projectDocFolder: normalizeProjectDocFolder(settings.projectDocFolder),
         pinnedLinkedContentPaths: normalizePinnedLinkedContentPaths(
           settings.pinnedLinkedContentPaths,
         ),

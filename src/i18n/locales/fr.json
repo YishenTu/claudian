@@ -391,7 +391,8 @@
         "move": "Impossible de déplacer les sessions vers le projet",
         "remove": "Impossible de retirer les sessions du projet",
         "start": "Impossible de démarrer une session dans ce projet",
-        "sort": "Impossible de mettre à jour le tri des projets"
+        "sort": "Impossible de mettre à jour le tri des projets",
+        "docMoveConflict": "Impossible de déplacer le document du projet : {path} existe déjà."
       },
       "editor": {
         "titleNew": "Nouveau projet",
@@ -401,6 +402,10 @@
         "namePlaceholder": "Nom du projet",
         "instructions": "Instructions",
         "instructionsDesc": "Ajoutées au prompt système de chaque session membre à partir de son prochain tour.",
+        "docFolder": "Dossier du document",
+        "docFolderDesc": "Dossier du coffre pour le document du projet. Laisser vide pour la racine du coffre. Le modifier déplace le document.",
+        "docFolderPlaceholder": "Racine du coffre",
+        "docFolderInvalid": "Saisissez un dossier situé dans le coffre.",
         "docPath": "Document du projet",
         "openDoc": "Ouvrir",
         "nameRequired": "Saisissez un nom de projet."
@@ -428,8 +433,7 @@
     "tabs": {
       "general": "Général",
       "providers": "Fournisseurs",
-      "skills": "Skills",
-      "projects": "Projets"
+      "skills": "Skills"
     },
     "providerSettings": {
       "unavailable": "Les réglages du fournisseur ne sont pas disponibles.",
@@ -884,12 +888,6 @@
         "partial": "La synchronisation s'est arrêtée avant la création du lien. Corrigez les éléments ci-dessous et relancez-la.",
         "failed": "Échec de la synchronisation : {message}",
         "summary": "Déplacés {moved}, convertis {converted}, à la corbeille {trashed}, {unlinked} lien(s) supprimé(s)."
-      }
-    },
-    "projects": {
-      "docFolder": {
-        "name": "Dossier des documents de projet",
-        "desc": "Dossier du coffre pour les documents des nouveaux projets. Laisser vide pour la racine du coffre. Les projets existants gardent leurs documents à leur emplacement."
       }
     }
   }

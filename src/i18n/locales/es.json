@@ -391,7 +391,8 @@
         "move": "No se pudieron mover las sesiones al proyecto",
         "remove": "No se pudieron quitar las sesiones del proyecto",
         "start": "No se pudo iniciar una sesión en este proyecto",
-        "sort": "No se pudo actualizar el orden de los proyectos"
+        "sort": "No se pudo actualizar el orden de los proyectos",
+        "docMoveConflict": "No se pudo mover el documento del proyecto: {path} ya existe."
       },
       "editor": {
         "titleNew": "Nuevo proyecto",
@@ -401,6 +402,10 @@
         "namePlaceholder": "Nombre del proyecto",
         "instructions": "Instrucciones",
         "instructionsDesc": "Se añaden al prompt del sistema de cada sesión miembro a partir de su siguiente turno.",
+        "docFolder": "Carpeta del documento",
+        "docFolderDesc": "Carpeta de la bóveda para el documento del proyecto. Dejar vacío para la raíz de la bóveda. Cambiarla mueve el documento.",
+        "docFolderPlaceholder": "Raíz de la bóveda",
+        "docFolderInvalid": "Introduce una carpeta dentro de la bóveda.",
         "docPath": "Documento del proyecto",
         "openDoc": "Abrir",
         "nameRequired": "Introduce un nombre de proyecto."
@@ -428,8 +433,7 @@
     "tabs": {
       "general": "General",
       "providers": "Proveedores",
-      "skills": "Skills",
-      "projects": "Proyectos"
+      "skills": "Skills"
     },
     "providerSettings": {
       "unavailable": "Los ajustes del proveedor no están disponibles.",
@@ -884,12 +888,6 @@
         "partial": "La sincronización se detuvo antes de enlazar. Corrige los elementos siguientes y vuelve a sincronizar.",
         "failed": "Error de sincronización: {message}",
         "summary": "Movidos {moved}, convertidos {converted}, a la papelera {trashed}, {unlinked} enlace(s) eliminado(s)."
-      }
-    },
-    "projects": {
-      "docFolder": {
-        "name": "Carpeta de documentos de proyecto",
-        "desc": "Carpeta de la bóveda para los documentos de los nuevos proyectos. Dejar vacío para la raíz de la bóveda. Los proyectos existentes mantienen sus documentos donde están."
       }
     }
   }

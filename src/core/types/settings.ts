@@ -125,8 +125,6 @@ export interface ClaudianSettings {
   excludedTags: string[];
   mediaFolder: string;
   systemPrompt: string;
-  /** Vault-relative folder for docs of new projects (`''` is the vault root); existing projects keep their recorded doc path. */
-  projectDocFolder: string;
 
   // Environment
   sharedEnvironmentVariables: string;

@@ -1,10 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
+import { normalizeProjectDocFolder, projectDocFolderOf } from '@/core/path/ProjectDocFolder';
+import { ManagedResourceCollisionError, type VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import {
   type ProjectCreateInput,
   ProjectDocConflictError,
   type ProjectDocContent,
+  ProjectDocMoveConflictError,
   type ProjectDocOperations,
   type ProjectDocReadResult,
   type ProjectDocSaveOptions,
@@ -15,7 +17,6 @@ import {
   type ProjectUpdatePatch,
 } from '@/core/types';
 
-import { normalizeProjectDocFolder } from '../settings/ClaudianSettingsStorage';
 import type { ProjectStore } from './ProjectStore';
 
 /** Conversation-owned membership writes; the conversation owner checks liveness at its serialized write. */
@@ -26,9 +27,10 @@ export interface ProjectMemberPort {
 
 export interface ProjectServiceDeps {
   readonly store: Pick<ProjectStore, 'save' | 'remove'>;
-  readonly docs: Pick<VaultFileAdapter, 'ensureManagedFolder' | 'readManagedFile' | 'verifyManagedPath' | 'writeManagedFile'>;
-  /** Read at creation only, so a changed setting never moves existing docs. */
-  getProjectDocFolder(): string;
+  readonly docs: Pick<
+    VaultFileAdapter,
+    'ensureManagedFolder' | 'moveManagedFileNoReplace' | 'readManagedFile' | 'verifyManagedPath' | 'writeManagedFile'
+  >;
   readonly members: ProjectMemberPort;
 }
 
@@ -63,12 +65,12 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
   async create(input: ProjectCreateInput): Promise<ProjectRecord> {
     const name = requireName(input.name);
     const id = randomUUID();
-    const folder = normalizeProjectDocFolder(this.deps.getProjectDocFolder());
+    const folder = requireDocFolder(input.docFolder);
     const record: ProjectRecord = {
       id,
       name,
       instructions: input.instructions,
-      docPath: `${folder ? `${folder}/` : ''}${slugify(name)}-${id.slice(0, 8)}.md`,
+      docPath: joinDocPath(folder, `${slugify(name)}-${id.slice(0, 8)}.md`),
       isPinned: false,
       createdAt: Date.now(),
     };
@@ -84,12 +86,39 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
     });
   }
 
-  update(id: string, patch: ProjectUpdatePatch): Promise<void> {
-    return this.#commit(id, record => ({
-      ...record,
-      ...(patch.name !== undefined ? { name: requireName(patch.name) } : {}),
-      ...(patch.instructions !== undefined ? { instructions: patch.instructions } : {}),
-    }));
+  async update(id: string, patch: ProjectUpdatePatch): Promise<void> {
+    const name = patch.name !== undefined ? requireName(patch.name) : undefined;
+    const folder = patch.docFolder !== undefined ? requireDocFolder(patch.docFolder) : undefined;
+    return this.#enqueue(id, async () => {
+      const record = this.#records.get(id);
+      if (!record) return;
+      const docPath = folder === undefined || folder === projectDocFolderOf(record.docPath)
+        ? record.docPath
+        : joinDocPath(folder, record.docPath.slice(record.docPath.lastIndexOf('/') + 1));
+      const updated: ProjectRecord = {
+        ...record,
+        ...(name !== undefined ? { name } : {}),
+        ...(patch.instructions !== undefined ? { instructions: patch.instructions } : {}),
+        docPath,
+      };
+      if (
+        updated.name === record.name
+        && updated.instructions === record.instructions
+        && updated.docPath === record.docPath
+      ) {
+        return;
+      }
+      const moved = docPath !== record.docPath && await this.#moveDoc(id, record.docPath, docPath);
+      try {
+        await this.deps.store.save(updated);
+      } catch (error) {
+        // Best effort: put the doc back so the recorded path still finds it.
+        if (moved) await this.deps.docs.moveManagedFileNoReplace(docPath, record.docPath).catch(() => undefined);
+        throw error;
+      }
+      this.#records.set(id, updated);
+      this.#publish();
+    });
   }
 
   setPinned(id: string, pinned: boolean): Promise<void> {
@@ -172,6 +201,24 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
     return record;
   }
 
+  /** Moves the doc when it exists and reports whether it did; a missing doc is only repointed. */
+  async #moveDoc(id: string, source: string, target: string): Promise<boolean> {
+    if (await this.deps.docs.verifyManagedPath(target, { expectedType: 'file', allowMissing: true })) {
+      throw new ProjectDocMoveConflictError(id, target);
+    }
+    if (!await this.deps.docs.verifyManagedPath(source, { expectedType: 'file', allowMissing: true })) return false;
+    const folder = projectDocFolderOf(target);
+    // A doc at the vault root has no folder to create.
+    if (folder) await this.deps.docs.ensureManagedFolder(folder);
+    try {
+      await this.deps.docs.moveManagedFileNoReplace(source, target);
+    } catch (error) {
+      if (error instanceof ManagedResourceCollisionError) throw new ProjectDocMoveConflictError(id, target, { cause: error });
+      throw error;
+    }
+    return true;
+  }
+
   async #readDoc(docPath: string): Promise<ProjectDocReadResult> {
     if (!await this.deps.docs.verifyManagedPath(docPath, { expectedType: 'file', allowMissing: true })) {
       return { missing: true };
@@ -180,9 +227,9 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
   }
 
   async #writeDoc(docPath: string, content: string): Promise<void> {
-    const separator = docPath.lastIndexOf('/');
+    const folder = projectDocFolderOf(docPath);
     // A doc at the vault root has no folder to create.
-    if (separator > 0) await this.deps.docs.ensureManagedFolder(docPath.slice(0, separator));
+    if (folder) await this.deps.docs.ensureManagedFolder(folder);
     await this.deps.docs.writeManagedFile(docPath, content);
   }
 
@@ -219,6 +266,16 @@ function requireName(value: string): string {
   const name = value.trim();
   if (!name) throw new Error('Project name is required');
   return name;
+}
+
+function requireDocFolder(value: string): string {
+  const folder = normalizeProjectDocFolder(value);
+  if (folder === null) throw new Error(`Invalid project doc folder: ${JSON.stringify(value)}`);
+  return folder;
+}
+
+function joinDocPath(folder: string, fileName: string): string {
+  return folder ? `${folder}/${fileName}` : fileName;
 }
 
 function slugify(name: string): string {
