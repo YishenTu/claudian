@@ -3,7 +3,11 @@ import { Menu, Notice } from 'obsidian';
 import type { SessionManagerSort } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { createProject } from '@/features/chat/projects/projectActions';
-import { createSessionHeaderAction, showMenuAt } from '@/features/chat/session-manager/SessionSurfaceShared';
+import {
+  createSessionHeaderAction,
+  createSessionHeaderMenuAction,
+  showMenuAt,
+} from '@/features/chat/session-manager/SessionSurfaceShared';
 import { t } from '@/i18n/i18n';
 
 type ProjectsHeaderHost = Pick<ChatFeatureHost, 'app' | 'projects' | 'settings' | 'mutateSettings'>;
@@ -12,21 +16,19 @@ export function getProjectSort(host: Pick<ChatFeatureHost, 'settings'>): Session
   return host.settings.projectSort === 'created' ? 'created' : 'last-updated';
 }
 
-/** Adds the Projects header's options and New project buttons to a rendered list, in either presentation. */
-export function buildProjectsHeaderActions(container: HTMLElement, host: ProjectsHeaderHost): void {
-  const header = container.querySelector<HTMLElement>('.claudian-session-projects-header');
-  if (!header) return;
+/** Renders the Projects section header's options (project sort) and New project buttons. */
+export function renderProjectsHeaderActions(header: HTMLElement, host: ProjectsHeaderHost): void {
   const actions = header.createDiv({ cls: 'claudian-session-header-actions' });
-  const optionsButton = createSessionHeaderAction(
+  createSessionHeaderMenuAction(
     actions,
     'ellipsis',
     t('chat.projects.options'),
-    event => showProjectOptionsMenu(host, optionsButton, event),
+    (anchor, event) => showProjectOptionsMenu(host, anchor, event),
   );
   createSessionHeaderAction(actions, 'plus', t('chat.projects.newProjectAction'), () => createProject(host));
 }
 
-function showProjectOptionsMenu(host: ProjectsHeaderHost, anchor: HTMLElement, event?: MouseEvent): void {
+function showProjectOptionsMenu(host: ProjectsHeaderHost, anchor: HTMLElement, event?: MouseEvent): Menu {
   const menu = new Menu().setUseNativeMenu(false);
   const sort = getProjectSort(host);
   menu.addItem(item => item
@@ -41,6 +43,7 @@ function showProjectOptionsMenu(host: ProjectsHeaderHost, anchor: HTMLElement, e
     .setChecked(sort === 'created')
     .onClick(() => setProjectSort(host, 'created')));
   showMenuAt(menu, anchor, event);
+  return menu;
 }
 
 function setProjectSort(host: ProjectsHeaderHost, sort: SessionManagerSort): void {

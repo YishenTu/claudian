@@ -381,7 +381,7 @@
         "removeSelectionFrom": "Quitar {count} sesiones del proyecto",
         "newProject": "Nuevo proyecto…"
       },
-      "deleteConfirm": "¿Eliminar el proyecto «{name}»? Las sesiones se mantienen. El archivo de memoria del proyecto se conserva.",
+      "deleteConfirm": "¿Eliminar el proyecto «{name}» y mover su archivo de memoria a la papelera? Las sesiones se mantienen, fuera de cualquier proyecto.",
       "errors": {
         "create": "No se pudo crear el proyecto",
         "update": "No se pudo actualizar el proyecto",
@@ -410,20 +410,23 @@
       },
       "memory": {
         "title": "Memoria del proyecto: {name}",
-        "path": "Ruta",
-        "copyPath": "Copiar ruta",
-        "pathCopied": "Ruta copiada",
-        "copyFailed": "No se pudo copiar la ruta",
         "reload": "Recargar",
         "overwrite": "Sobrescribir",
         "recreate": "Volver a crear desde la plantilla",
-        "content": "Contenido de la memoria del proyecto",
+        "edit": "Editar",
+        "preview": "Vista previa",
         "missing": "Falta el archivo de memoria del proyecto.",
         "conflict": "El archivo de memoria cambió desde que se cargó. Recarga para descartar tus cambios o sobrescribe para conservarlos.",
         "loadFailed": "No se pudo cargar la memoria del proyecto",
         "saveFailed": "No se pudo guardar la memoria del proyecto",
         "saved": "Memoria del proyecto guardada",
-        "loading": "Cargando…"
+        "loading": "Cargando…",
+        "updated": "Actualizado {time}",
+        "changedOutside": "El archivo de memoria se actualizó fuera de esta ventana, probablemente por un agente.",
+        "keepMine": "Conservar mis cambios",
+        "discardConfirm": "¿Descartar los cambios sin guardar en la memoria del proyecto?",
+        "discard": "Descartar",
+        "emptyHint": "Los agentes lo completan a medida que avanza el proyecto."
       }
     }
   },

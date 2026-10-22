@@ -318,6 +318,18 @@ export class Menu {
     this.useNativeMenu = useNativeMenu;
     return this;
   });
+
+  private hideCallbacks: Array<() => void> = [];
+
+  onHide = jest.fn((callback: () => void) => {
+    this.hideCallbacks.push(callback);
+  });
+
+  /** Runs the hide callbacks once, as Obsidian does when a shown menu closes. */
+  hide = jest.fn(() => {
+    for (const callback of this.hideCallbacks.splice(0)) callback();
+    return this;
+  });
 }
 
 const renderMarkdownMock = jest.fn<Promise<void>, [string, unknown, string, unknown]>().mockResolvedValue(undefined);

@@ -2,6 +2,7 @@ import '@/providers';
 
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { createConversationPorts, createTestSession, holdResponse } from '@test/helpers/ConversationPorts';
+import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { createMockEl } from '@test/helpers/MockElement';
 import { testDate } from '@test/helpers/testClock';
 import { Menu, setIcon } from 'obsidian';
@@ -1307,6 +1308,8 @@ describe('SessionBrowser', () => {
         const container = createMockEl();
         const onRerender = jest.fn();
         const onRequestInlineRename = jest.fn();
+        // The active row menu offers project membership actions.
+        Object.assign(deps.plugin, { projects: createProjectsFake() });
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
           { id: 'active', title: 'Original title', createdAt: 2 },
         ]);

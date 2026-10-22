@@ -462,45 +462,6 @@
   content: "";
 }
 
-.claudian-session-group-new-action {
-  display: none;
-  flex: 0 0 18px;
-  width: 18px;
-  height: 18px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  box-shadow: none;
-}
-
-.claudian-session-group-header:hover .claudian-session-group-new-action,
-.claudian-session-group-header:focus-within .claudian-session-group-new-action {
-  display: flex;
-}
-
-.claudian-session-group-new-action:hover,
-.claudian-session-group-new-action:focus-visible {
-  border: 0;
-  background: transparent;
-  color: var(--text-normal);
-  box-shadow: none;
-}
-
-.claudian-session-group-new-action svg {
-  width: 14px;
-  height: 14px;
-  color: var(--text-muted);
-  transition: color 0.15s ease;
-}
-
-.claudian-session-group-new-action:hover svg,
-.claudian-session-group-new-action:focus-visible svg {
-  color: var(--text-normal);
-}
-
 .claudian-session-group-body--collapsed {
   display: none;
 }
@@ -611,7 +572,8 @@
  * Obsidian's 1.3 line height) make hover backgrounds and the gaps between them shift by a
  * pixel from row to row.
  */
-.claudian-session-sidebar :is(.claudian-history-item-title, .claudian-session-group-label) {
+.claudian-session-sidebar .claudian-history-item-title,
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-label {
   line-height: 17px;
 }
 
@@ -678,10 +640,6 @@
 }
 
 /* Grouped sessions start at their group's label. */
-.claudian-history-menu .claudian-session-group-label {
-  line-height: 17px;
-}
-
 .claudian-session-sidebar .claudian-session-group-body .claudian-history-item {
   padding-inline-start: calc(
     var(--claudian-session-inline-inset) + var(--claudian-session-icon-size) + var(--claudian-session-icon-gap)
@@ -1192,7 +1150,6 @@ body.is-mobile :is(.claudian-session-sidebar, .claudian-history-menu) .claudian-
   opacity: 1;
 }
 
-body.is-mobile .claudian-session-sidebar .claudian-history-item-actions,
-body.is-mobile .claudian-session-group-header .claudian-session-group-new-action {
+body.is-mobile .claudian-session-sidebar .claudian-history-item-actions {
   display: flex;
 }

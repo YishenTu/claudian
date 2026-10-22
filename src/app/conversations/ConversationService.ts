@@ -98,10 +98,6 @@ export class ConversationService {
     await this.#mutateConversations(ids, id => this.deps.repository.setPlacement(id, placement));
   }
 
-  async setConversationsPinned(ids: readonly string[], isPinned: boolean): Promise<void> {
-    await this.#mutateConversations(ids, id => this.deps.repository.setPinned(id, isPinned));
-  }
-
   async setLinkedContentPinned(contentPath: string, isPinned: boolean): Promise<void> {
     const changed = await this.deps.pinnedLinkedContentPaths.setPinned(contentPath, isPinned);
     if (changed) {

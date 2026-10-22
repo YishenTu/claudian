@@ -8,7 +8,7 @@ import {
   editProject,
   openProjectMemory,
 } from '@/features/chat/projects/projectActions';
-import { compareProjectNames } from '@/features/chat/projects/projectOrder';
+import { compareProjectsForPicker } from '@/features/chat/projects/projectOrder';
 import type { SessionDropTarget } from '@/features/chat/session-manager/SessionDrag';
 import type { SessionListSectionKind } from '@/features/chat/session-manager/SessionListOrganizer';
 import type { SessionMultiSelection } from '@/features/chat/session-manager/SessionMultiSelection';
@@ -33,11 +33,6 @@ export interface SessionActionOptions {
   sessionActionMode?: 'active' | 'archived';
   showOpenStateActions?: boolean;
   showInlinePinAction?: boolean;
-  /**
-   * Lists live projects above the sessions, outside the archive; their members leave the session list, and rows
-   * and selections offer moving between projects.
-   */
-  showProjectsSection?: boolean;
   onSelectConversation: (id: string) => Promise<void>;
   onOpenConversationInNewTab?: (id: string, activate?: boolean) => Promise<void>;
   onAssignConversationToDevice?: (id: string) => Promise<void>;
@@ -205,7 +200,7 @@ export function resolveRowActions(
   }
   // The ID lets the user point an agent's claudian_send_message at this session.
   actions.push(action('rename'), action('copy-session-id'));
-  if (mode === 'active' && options.showProjectsSection) {
+  if (mode === 'active') {
     actions.push(action('move-to-project'));
     if (input.project) actions.push(action('remove-from-project'));
   }
@@ -275,8 +270,7 @@ export class SessionActions {
   rowMenu(row: SessionRow, options: SessionActionOptions & SessionStatusDisplay, anchorEl: HTMLElement): Menu {
     const menu = new Menu().setUseNativeMenu(false);
     const tracksAttention = canShowAttention(options);
-    // Only a surface listing projects offers membership actions.
-    const project = options.showProjectsSection ? this.deps.plugin.projects.get(row.conversation.projectId) : null;
+    const project = this.deps.plugin.projects.get(row.conversation.projectId);
     for (const rowAction of resolveRowActions('menu', { ...row, tracksAttention, project }, options)) {
       menu.addItem((menuItem) => {
         menuItem.setTitle(actionText(ROW_ACTION_TITLES[rowAction.kind]));
@@ -343,9 +337,7 @@ export class SessionActions {
             isPinning ? 'Failed to pin sessions' : 'Failed to unpin sessions',
           );
         }));
-    }
 
-    if (options.sessionActionMode === 'active' && options.showProjectsSection) {
       const { projects } = this.deps.plugin;
       const ids = selected.map(conversation => conversation.id);
       const projectIds = new Set(selected.map(conversation => projects.get(conversation.projectId)?.id ?? null));
@@ -532,7 +524,7 @@ export class SessionActions {
   ): void {
     const { plugin, selection } = this.deps;
     const moveFailure = t('chat.projects.errors.move');
-    const projects = [...plugin.projects.list()].sort(compareProjectNames);
+    const projects = [...plugin.projects.list()].sort(compareProjectsForPicker);
     const menu = new Menu().setUseNativeMenu(false);
     for (const project of projects) {
       menu.addItem((menuItem) => {

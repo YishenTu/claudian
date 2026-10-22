@@ -71,21 +71,83 @@ export function createSessionHeaderAction(
   label: string,
   action: (event?: MouseEvent) => void,
 ): HTMLElement {
+  const control = createSessionHeaderButton(parent, icon, label);
+  // Keyboard activation clicks with zero coordinates; anchor its menu to the button instead.
+  control.addEventListener('click', (event) => action(event.detail === 0 ? undefined : event));
+  return control;
+}
+
+/** A section header's icon button that opens the menu `show` returns, and closes it when pressed again. */
+export function createSessionHeaderMenuAction(
+  parent: HTMLElement,
+  icon: string,
+  label: string,
+  show: (anchorEl: HTMLElement, event?: MouseEvent) => Menu,
+): HTMLElement {
+  const control = createSessionHeaderButton(parent, icon, label);
+  control.setAttribute('aria-haspopup', 'menu');
+  bindMenuToggle(control, event => show(control, event));
+  return control;
+}
+
+function createSessionHeaderButton(
+  parent: HTMLElement,
+  icon: string | ((container: HTMLElement) => void),
+  label: string,
+): HTMLElement {
   const control = parent.createEl('button', {
     cls: 'claudian-session-header-btn',
     attr: { type: 'button', 'aria-label': label },
   });
-
   const iconEl = control.createDiv({ cls: 'claudian-session-header-icon' });
   if (typeof icon === 'string') {
     setIcon(iconEl, icon);
   } else {
     icon(iconEl);
   }
-
-  // Keyboard activation clicks with zero coordinates; anchor its menu to the button instead.
-  control.addEventListener('click', (event) => action(event.detail === 0 ? undefined : event));
   return control;
+}
+
+/**
+ * Makes `button` open the menu `show` returns and close it when pressed while that menu is open. Obsidian hides
+ * an open menu on any press outside it before the click arrives, so the press that hid this button's menu does
+ * not reopen it. Keyboard activation passes no event, so the menu opens under the button.
+ */
+export function bindMenuToggle(button: HTMLElement, show: (event?: MouseEvent) => Menu): void {
+  let open: Menu | null = null;
+  // The press on this button that hid its open menu; the click that ends it must not reopen the menu.
+  let closingPress: Event | null = null;
+  button.addEventListener('pointerdown', (event) => {
+    if (event !== closingPress) closingPress = null;
+  });
+  button.addEventListener('click', (event) => {
+    if (closingPress) {
+      closingPress = null;
+      return;
+    }
+    if (open) {
+      open.hide();
+      closingPress = null;
+      return;
+    }
+    const menu = show(event.detail === 0 ? undefined : event);
+    open = menu;
+    button.setAttribute('aria-expanded', 'true');
+    const win = button.ownerDocument.defaultView ?? window;
+    let press: Event | null = null;
+    // A window capture listener sees the press before Obsidian's own handlers hide the menu for it.
+    const watchPress = (pressEvent: Event): void => {
+      press = button.contains(pressEvent.target as Node) ? pressEvent : null;
+    };
+    win.addEventListener('pointerdown', watchPress, true);
+    menu.onHide(() => {
+      win.removeEventListener('pointerdown', watchPress, true);
+      if (open !== menu) return;
+      open = null;
+      closingPress = press;
+      button.removeAttribute('aria-expanded');
+    });
+  });
 }
 
 /** Shows or hides a New control while keeping it out of the accessibility tree when hidden. */

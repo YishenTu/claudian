@@ -29,7 +29,6 @@ function createStore(): jest.Mocked<ConversationLifecycleStore> {
     getConversationList: jest.fn(() => []),
     deleteConversation: jest.fn().mockResolvedValue(undefined),
     setConversationArchived: jest.fn().mockResolvedValue(undefined),
-    setConversationsPinned: jest.fn().mockResolvedValue(undefined),
     setConversationsPlacement: jest.fn().mockResolvedValue(undefined),
     restoreConversations: jest.fn().mockResolvedValue(undefined),
     archiveConversationsIf: jest.fn(async (ids, shouldArchive) => (
@@ -100,8 +99,9 @@ describe('ConversationLifecycle', () => {
 
       await lifecycle.setPinned(['conversation-1', 'conversation-2'], true);
 
-      expect(conversations.setConversationsPinned).toHaveBeenCalledTimes(1);
-      expect(conversations.setConversationsPinned).toHaveBeenCalledWith(['conversation-1', 'conversation-2'], true);
+      expect(conversations.setConversationsPlacement).toHaveBeenCalledTimes(1);
+      expect(conversations.setConversationsPlacement)
+        .toHaveBeenCalledWith(['conversation-1', 'conversation-2'], { isPinned: true });
       expect(local.resetConversationTabs).not.toHaveBeenCalled();
       expect(local.closeTab).not.toHaveBeenCalled();
     });

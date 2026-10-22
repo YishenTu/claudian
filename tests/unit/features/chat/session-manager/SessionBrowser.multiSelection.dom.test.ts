@@ -1,5 +1,6 @@
 /** @jest-environment jsdom */
 
+import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
@@ -54,7 +55,7 @@ function renderList(options: {
   const onSetConversationsArchived = options.onSetConversationsArchived
     ?? jest.fn().mockResolvedValue(undefined);
   const controller = new SessionBrowser({
-    plugin: { getConversationList: () => conversations, settings: {}, conversationLifecycle: {
+    plugin: { getConversationList: () => conversations, settings: {}, projects: createProjectsFake(), conversationLifecycle: {
       archive: onSetConversationsArchived, setPinned: onSetConversationsPinned,
     } },
     getCurrentConversationId: () => null,
@@ -106,8 +107,8 @@ describe('SessionBrowser multi-select archive', () => {
 
     fireEvent.contextMenu(button('Gamma session'));
     const menu = lastMenu();
-    expect(menu.items.map(menuItem => menuItem.title)).toEqual(['Pin 2 sessions', 'Archive 2 sessions']);
-    menu.items[1].clickHandler?.();
+    expect(menu.items.map(menuItem => menuItem.title)).toEqual(['Pin 2 sessions', 'Move 2 sessions to project…', 'Archive 2 sessions']);
+    menu.items[2].clickHandler?.();
     await Promise.resolve();
 
     expect(onSetConversationsArchived).toHaveBeenCalledWith(['alpha', 'gamma']);
@@ -162,7 +163,7 @@ describe('SessionBrowser multi-select archive', () => {
       }
     }
     const controller = new SessionBrowser({
-      plugin: { getConversationList: () => conversations, settings: {} },
+      plugin: { getConversationList: () => conversations, settings: {}, projects: createProjectsFake() },
       getCurrentConversationId: () => null,
       getTitleGenerationService: () => null,
       onListChanged: () => undefined,

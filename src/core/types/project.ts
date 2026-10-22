@@ -49,7 +49,10 @@ export interface ProjectMutations {
   create(input: ProjectCreateInput): Promise<ProjectRecord>;
   update(id: string, patch: ProjectUpdatePatch): Promise<void>;
   setPinned(id: string, pinned: boolean): Promise<void>;
-  /** Removes the record and keeps the memory file; member sessions stay and their stale ids resolve to no project. */
+  /**
+   * Removes the record and moves its memory file to the trash (best effort). Member sessions stay; their ids
+   * resolve to no project until the caller clears them through the conversation owner.
+   */
   delete(id: string): Promise<void>;
 }
 
@@ -57,6 +60,8 @@ export interface ProjectMemoryContent {
   readonly content: string;
   /** Opaque content digest used for optimistic conflict detection. */
   readonly revision: string;
+  /** When the memory file was last written (epoch ms), or null when the platform cannot tell. */
+  readonly modifiedAt: number | null;
 }
 
 export type ProjectMemoryReadResult = ProjectMemoryContent | { readonly missing: true };

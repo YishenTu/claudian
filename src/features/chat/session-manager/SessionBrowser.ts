@@ -4,6 +4,7 @@ import type { TitleGenerationService } from '@/core/providers/types';
 import type { ConversationMeta, SessionManagerOrganization, SessionManagerSort } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ConversationTitleGeneration } from '@/features/chat/conversation/ConversationTitleGeneration';
+import { getProjectSort, renderProjectsHeaderActions } from '@/features/chat/session-manager/ProjectsHeaderActions';
 import {
   canMultiSelect,
   type SessionActionOptions,
@@ -21,7 +22,6 @@ import {
 import {
   captureSessionListPosition,
   INITIAL_SESSION_LIST_POSITION,
-  recordSectionScrolling,
   recordVisibleCount,
   restoreSessionListPosition,
 } from '@/features/chat/session-manager/SessionListPosition';
@@ -40,7 +40,7 @@ import {
   type SessionStatusIndicatorKind,
   sessionStatusText,
 } from '@/features/chat/session-manager/SessionStatusPresentation';
-import { runSessionAction, showMenuAt } from '@/features/chat/session-manager/SessionSurfaceShared';
+import { bindMenuToggle, runSessionAction, showMenuAt } from '@/features/chat/session-manager/SessionSurfaceShared';
 import { t } from '@/i18n/i18n';
 
 const DEFAULT_HISTORY_PAGE_SIZE = 100;
@@ -75,7 +75,6 @@ type HistoryRenderOptions = SessionActionOptions & SessionStatusDisplay & Sessio
   onGroupCollapseChange?: (groupKey: string, collapsed: boolean) => void;
   onGroupKeysChange?: (groupKeys: readonly string[]) => void;
   onStartLinkedContentConversation?: (contentPath: string) => Promise<void>;
-  projectSort?: SessionManagerSort;
   pinnedLinkedContentPaths?: ReadonlySet<string>;
   preserveListState?: boolean;
   /**
@@ -166,8 +165,9 @@ export class SessionBrowser {
     const canDrag = this.#canDrag(options);
     if (canDrag) this.drag.beginRender(container); else this.drag.end();
 
+    const sectionScrolling = options.scrollLayout === 'sections';
     const previousPosition = options.preserveListState
-      ? captureSessionListPosition(container)
+      ? captureSessionListPosition(container, sectionScrolling)
       : INITIAL_SESSION_LIST_POSITION;
     const organization = options.organization ?? 'list';
     const isGrouped = organization === 'linked-content';
@@ -183,8 +183,8 @@ export class SessionBrowser {
       searchQuery: options.searchQuery,
       showPinnedSection: options.showPinnedSection,
       pinnedLinkedContentPaths: options.pinnedLinkedContentPaths,
-      projects: options.showProjectsSection ? plugin.projects : undefined,
-      projectSort: options.projectSort ?? 'last-updated',
+      projects: plugin.projects,
+      projectSort: getProjectSort(plugin),
       isGroupCollapsed: options.isGroupCollapsed,
       contentExists: options.contentExists,
       contentIsNote: options.contentIsNote,
@@ -274,8 +274,6 @@ export class SessionBrowser {
       options.visibleCount ?? previousPosition.visibleCount,
     );
     recordVisibleCount(list, visibleCount);
-    const sectionScrolling = options.scrollLayout === 'sections';
-    recordSectionScrolling(list, sectionScrolling);
     const restorePosition = (): void => {
       options.onBeforeRestoreListState?.(container);
       restoreSessionListPosition(
@@ -596,7 +594,7 @@ export class SessionBrowser {
     });
   }
 
-  /** The projects section: its header (the surface adds actions) and one collapsible row per project. */
+  /** The projects section: its header with the project actions, and one collapsible row per project. */
   #renderProjectsSection(
     list: HTMLElement,
     projectSections: readonly ProjectListSection[],
@@ -613,6 +611,7 @@ export class SessionBrowser {
     });
     const items = section.createDiv({ cls: 'claudian-history-section-items claudian-session-project-items' });
     this.#renderSectionToggle(section, header, label, items, sessionManagerSectionKey('projects'), options);
+    renderProjectsHeaderActions(header, this.deps.plugin);
     for (const projectSection of projectSections) {
       this.#renderProjectSection(items, projectSection, options, conversationsByProject);
     }
@@ -637,7 +636,7 @@ export class SessionBrowser {
       section,
       isCollapsed,
       options,
-      ['claudian-session-group-header--with-toggle', 'claudian-session-group-header--project'],
+      ['claudian-session-group-header--project'],
     );
     groupHeader.setAttribute('data-project-id', project.id);
     const dropTarget = { kind: 'project', projectId: project.id } as const;
@@ -675,9 +674,11 @@ export class SessionBrowser {
       },
     });
     setIcon(actionsButton, 'more-horizontal');
-    actionsButton.addEventListener('click', (event) => {
-      event.stopPropagation();
-      showMenuAt(buildMenu(), actionsButton);
+    actionsButton.addEventListener('click', event => event.stopPropagation());
+    bindMenuToggle(actionsButton, () => {
+      const menu = buildMenu();
+      showMenuAt(menu, actionsButton);
+      return menu;
     });
     this.#openMenuOnContextMenu(groupHeader, buildMenu);
 
@@ -795,6 +796,11 @@ export class SessionBrowser {
       beginRename: () => this.#beginRename(item, conversation, options),
     });
 
+    // A right-press must not focus the row: Obsidian returns focus there when Esc closes the menu, and focus
+    // arriving by key draws the focus ring.
+    item.addEventListener('mousedown', (event) => {
+      if (event.button === 2) event.preventDefault();
+    });
     item.addEventListener('contextmenu', (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -986,9 +992,11 @@ export class SessionBrowser {
       attr: { type: 'button', 'aria-label': `Actions for ${section.label}`, 'aria-haspopup': 'menu' },
     });
     setIcon(actionsButton, 'more-horizontal');
-    actionsButton.addEventListener('click', (event) => {
-      event.stopPropagation();
-      showMenuAt(buildMenu(), actionsButton);
+    actionsButton.addEventListener('click', event => event.stopPropagation());
+    bindMenuToggle(actionsButton, () => {
+      const menu = buildMenu();
+      showMenuAt(menu, actionsButton);
+      return menu;
     });
     this.#openMenuOnContextMenu(divider, buildMenu);
   }

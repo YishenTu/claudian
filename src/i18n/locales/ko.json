@@ -381,7 +381,7 @@
         "removeSelectionFrom": "세션 {count}개를 프로젝트에서 제거",
         "newProject": "새 프로젝트…"
       },
-      "deleteConfirm": "“{name}” 프로젝트를 삭제할까요? 세션은 유지되며 프로젝트 메모리 파일도 보존됩니다.",
+      "deleteConfirm": "“{name}” 프로젝트를 삭제하고 메모리 파일을 휴지통으로 옮길까요? 세션은 프로젝트 없이 유지됩니다.",
       "errors": {
         "create": "프로젝트를 만들지 못했습니다",
         "update": "프로젝트를 업데이트하지 못했습니다",
@@ -410,20 +410,23 @@
       },
       "memory": {
         "title": "프로젝트 메모리: {name}",
-        "path": "경로",
-        "copyPath": "경로 복사",
-        "pathCopied": "경로를 복사했습니다",
-        "copyFailed": "경로를 복사하지 못했습니다",
         "reload": "다시 불러오기",
         "overwrite": "덮어쓰기",
         "recreate": "템플릿에서 다시 만들기",
-        "content": "프로젝트 메모리 내용",
+        "edit": "편집",
+        "preview": "미리보기",
         "missing": "프로젝트 메모리 파일이 없습니다.",
         "conflict": "불러온 뒤 메모리 파일이 변경되었습니다. 다시 불러오면 편집 내용이 사라지고, 덮어쓰면 편집 내용이 유지됩니다.",
         "loadFailed": "프로젝트 메모리를 불러오지 못했습니다",
         "saveFailed": "프로젝트 메모리를 저장하지 못했습니다",
         "saved": "프로젝트 메모리를 저장했습니다",
-        "loading": "불러오는 중…"
+        "loading": "불러오는 중…",
+        "updated": "{time} 업데이트됨",
+        "changedOutside": "메모리 파일이 이 창 밖에서 업데이트되었습니다. 에이전트가 수정했을 가능성이 높습니다.",
+        "keepMine": "내 편집 유지",
+        "discardConfirm": "프로젝트 메모리의 저장되지 않은 변경 사항을 버릴까요?",
+        "discard": "버리기",
+        "emptyHint": "프로젝트가 진행되면서 에이전트가 채워 넣습니다."
       }
     }
   },

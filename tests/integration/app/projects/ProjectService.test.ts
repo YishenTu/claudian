@@ -10,6 +10,7 @@ import { ConversationService } from '@/app/conversations/ConversationService';
 import { ProjectService } from '@/app/projects/ProjectService';
 import { ProjectStore } from '@/app/projects/ProjectStore';
 import { PROJECTS_PATH } from '@/core/bootstrap/storagePaths';
+import { defaultProjectMemoryPath, projectMemoryFolderOf } from '@/core/path/ProjectMemoryPath';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
@@ -340,30 +341,26 @@ describe('ProjectService', () => {
     expect(kept.content).toBe('# Restored by sync\n');
   });
 
-  it('deletes the record first, keeps the memory file, and leaves member ids that resolve to no project', async () => {
+  it('deletes the record first, trashes the memory file and its emptied default folder, and blocks new joins', async () => {
     const { memory, projects, repository, conversations } = await fixture();
-    const deleted = await projects.create({ name: 'Deleted', instructions: '', memoryPath: 'Deleted.md' });
+    const deleted = await projects.create({ name: 'Deleted', instructions: '', memoryPath: defaultProjectMemoryPath('Deleted') });
+    const custom = await projects.create({ name: 'Custom', instructions: '', memoryPath: 'Notes/Custom.md' });
     const other = await projects.create({ name: 'Other', instructions: '', memoryPath: 'Other.md' });
-    repository.replaceAll([
-      conversation('stays', deleted.id),
-      conversation('outsider', other.id),
-    ]);
-    const seenAtPublish: Array<string | undefined> = [];
-    projects.onChanged(() => {
-      seenAtPublish.push(repository.getSync('stays')?.projectId);
-    });
+    repository.replaceAll([conversation('outsider', other.id)]);
+    const seenAtPublish: Array<boolean> = [];
+    projects.onChanged(() => { seenAtPublish.push(readFile(memory, `${PROJECTS_PATH}/${deleted.id}.json`) === undefined); });
 
     await projects.delete(deleted.id);
+    await projects.delete(custom.id);
 
-    expect(projects.get(deleted.id)).toBeNull();
-    expect(seenAtPublish).toEqual([deleted.id]);
+    expect(projects.list()).toEqual([other]);
+    expect(seenAtPublish).toEqual([true, true]);
     expect(readFile(memory, `${PROJECTS_PATH}/${deleted.id}.json`)).toBeUndefined();
-    expect(readFile(memory, deleted.memoryPath)).toContain('# Deleted');
-    // The raw id stays on the member; every reader resolves it through the live records, where it is gone.
-    const staleId = repository.getSync('stays')?.projectId;
-    expect(staleId).toBe(deleted.id);
-    expect(projects.get(staleId)).toBeNull();
-    expect(projects.get(repository.getSync('outsider')?.projectId)).toEqual(other);
+    expect(memory.trashed).toEqual([deleted.memoryPath, custom.memoryPath]);
+    // Only a folder inside the projects folder is removed, and only once empty.
+    expect(memory.nodes.has(projectMemoryFolderOf(deleted.memoryPath))).toBe(false);
+    expect(memory.nodes.has('Notes')).toBe(true);
+    expect(readFile(memory, other.memoryPath)).toContain('# Other');
     await expect(conversations.setConversationsPlacement(['outsider'], { projectId: deleted.id }))
       .rejects.toThrow(`Unknown project: ${deleted.id}`);
     expect(repository.getSync('outsider')?.projectId).toBe(other.id);

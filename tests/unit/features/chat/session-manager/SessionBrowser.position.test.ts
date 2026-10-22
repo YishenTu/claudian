@@ -74,7 +74,6 @@ describe('SessionListPosition', () => {
       onSelectConversation: jest.fn(),
       showPinnedSection: true,
       scrollLayout: 'sections' as const,
-      showProjectsSection: true,
       sessionScope: 'active' as const,
       preserveListState: true,
     };
@@ -95,7 +94,6 @@ describe('SessionListPosition', () => {
     // The drop-up lists projects without the sidebar's Pinned section.
     const options = {
       onSelectConversation: jest.fn(),
-      showProjectsSection: true,
       sessionScope: 'active' as const,
       preserveListState: true,
     };

@@ -1,5 +1,6 @@
 /** @jest-environment jsdom */
 
+import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
@@ -53,7 +54,7 @@ function renderList(options: {
   const onSetConversationsArchived = options.onSetConversationsArchived
     ?? jest.fn().mockResolvedValue(undefined);
   const controller = new SessionBrowser({
-    plugin: { getConversationList: () => conversations, settings: {}, conversationLifecycle: {
+    plugin: { getConversationList: () => conversations, settings: {}, projects: createProjectsFake(), conversationLifecycle: {
       archive: onSetConversationsArchived, setPinned: onSetConversationsPinned,
     } },
     getCurrentConversationId: () => null,
@@ -98,8 +99,8 @@ describe('SessionActions selection menu', () => {
     fireEvent.click(button('Running session'), { altKey: true });
     fireEvent.contextMenu(button('Alpha session'));
     const menu = lastMenu();
-    expect(menu.items.map(menuItem => menuItem.title)).toEqual(['Pin 2 sessions', 'Archive 1 session']);
-    menu.items[1].clickHandler?.();
+    expect(menu.items.map(menuItem => menuItem.title)).toEqual(['Pin 2 sessions', 'Move 2 sessions to project…', 'Archive 1 session']);
+    menu.items[2].clickHandler?.();
 
     expect(onSetConversationsArchived).toHaveBeenCalledWith(['alpha']);
   });
@@ -143,7 +144,7 @@ describe('SessionActions recency divider groups', () => {
     extra: Record<string, unknown> = {},
   ): HTMLElement {
     const controller = new SessionBrowser({
-      plugin: { getConversationList: () => items, settings: {}, conversationLifecycle: { archive: extra.archive } },
+      plugin: { getConversationList: () => items, settings: {}, projects: createProjectsFake(), conversationLifecycle: { archive: extra.archive } },
       getCurrentConversationId: () => null,
       getTitleGenerationService: () => null,
       onListChanged: () => undefined,

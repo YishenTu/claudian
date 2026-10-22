@@ -645,10 +645,6 @@ export class ConversationRepository {
     });
   }
 
-  setPinned(id: string, isPinned: boolean): Promise<void> {
-    return this.setPlacement(id, { isPinned });
-  }
-
   /** Resolves true when the archive state changed. */
   async setArchived(id: string, isArchived: boolean): Promise<boolean> {
     let archiveChanged = false;
@@ -678,7 +674,7 @@ export class ConversationRepository {
 
   /**
    * Joins, moves, or leaves a project and pins or unpins in one write; omitted fields stay. The project is checked
-   * at the serialized write, and pinning an archived conversation is ignored like `setPinned`.
+   * at the serialized write, and pinning an archived conversation is ignored.
    */
   async setPlacement(id: string, placement: ConversationPlacement): Promise<void> {
     const { projectId, isPinned } = placement;

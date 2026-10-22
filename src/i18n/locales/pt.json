@@ -381,7 +381,7 @@
         "removeSelectionFrom": "Remover {count} sessões do projeto",
         "newProject": "Novo projeto…"
       },
-      "deleteConfirm": "Excluir o projeto “{name}”? As sessões permanecem. O arquivo de memória do projeto é mantido.",
+      "deleteConfirm": "Excluir o projeto “{name}” e mover o arquivo de memória para a lixeira? As sessões permanecem, fora de qualquer projeto.",
       "errors": {
         "create": "Falha ao criar o projeto",
         "update": "Falha ao atualizar o projeto",
@@ -410,20 +410,23 @@
       },
       "memory": {
         "title": "Memória do projeto: {name}",
-        "path": "Caminho",
-        "copyPath": "Copiar caminho",
-        "pathCopied": "Caminho copiado",
-        "copyFailed": "Falha ao copiar o caminho",
         "reload": "Recarregar",
         "overwrite": "Sobrescrever",
         "recreate": "Recriar a partir do modelo",
-        "content": "Conteúdo da memória do projeto",
+        "edit": "Editar",
+        "preview": "Pré-visualizar",
         "missing": "O arquivo de memória do projeto não existe.",
         "conflict": "O arquivo de memória mudou desde que foi carregado. Recarregue para descartar suas edições ou sobrescreva para mantê-las.",
         "loadFailed": "Falha ao carregar a memória do projeto",
         "saveFailed": "Falha ao salvar a memória do projeto",
         "saved": "Memória do projeto salva",
-        "loading": "Carregando…"
+        "loading": "Carregando…",
+        "updated": "Atualizado {time}",
+        "changedOutside": "O arquivo de memória foi atualizado fora desta janela, provavelmente por um agente.",
+        "keepMine": "Manter minhas edições",
+        "discardConfirm": "Descartar as alterações não salvas na memória do projeto?",
+        "discard": "Descartar",
+        "emptyHint": "Os agentes preenchem isto conforme o projeto avança."
       }
     }
   },

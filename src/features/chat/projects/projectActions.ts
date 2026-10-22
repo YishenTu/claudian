@@ -9,6 +9,9 @@ import { confirm } from '@/shared/modals/ConfirmModal';
 /** What project UI needs from the chat host: modals and the project owner. */
 export type ProjectUIHost = Pick<ChatFeatureHost, 'app' | 'projects'>;
 
+/** Deletion also moves the project's members out through the conversation owner. */
+export type ProjectDeletionHost = ProjectUIHost & Pick<ChatFeatureHost, 'conversationLifecycle' | 'getConversationList'>;
+
 export function openProjectMemory(host: ProjectUIHost, project: ProjectRecord): void {
   new ProjectMemoryModal(host.app, { project, memory: host.projects }).open();
 }
@@ -38,12 +41,20 @@ export function createProject(
   }).open();
 }
 
-/** Deletes the project after confirmation; member sessions stay and the memory file is kept. */
-export async function deleteProject(host: ProjectUIHost, project: ProjectRecord): Promise<void> {
+/**
+ * Deletes the project after confirmation, with its memory file. Its sessions stay and leave the project once it can
+ * no longer be joined.
+ */
+export async function deleteProject(host: ProjectDeletionHost, project: ProjectRecord): Promise<void> {
   const confirmed = await confirm(
     host.app,
     t('chat.projects.deleteConfirm', { name: project.name }),
     t('common.delete'),
   );
-  if (confirmed) await host.projects.delete(project.id);
+  if (!confirmed) return;
+  await host.projects.delete(project.id);
+  const memberIds = host.getConversationList()
+    .filter(conversation => conversation.projectId === project.id)
+    .map(conversation => conversation.id);
+  if (memberIds.length > 0) await host.conversationLifecycle.setPlacement(memberIds, { projectId: null });
 }

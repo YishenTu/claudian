@@ -61,19 +61,21 @@ function captureScrollAnchors(list: HTMLElement): ScrollAnchor[] {
     .filter((anchor): anchor is ScrollAnchor => anchor !== null);
 }
 
-/** Reads the position of the list currently rendered in `container`, before it is replaced. */
-export function captureSessionListPosition(container: HTMLElement): SessionListPosition {
+/**
+ * Reads the position of the list currently rendered in `container`, before it is replaced. `sectionScrolling` says
+ * whether its sections scroll on their own (the persistent sidebar) rather than the whole list (the compact menu).
+ */
+export function captureSessionListPosition(container: HTMLElement, sectionScrolling: boolean): SessionListPosition {
   const list = container.querySelector<HTMLElement>(LIST_SELECTOR);
   if (!list) return INITIAL_SESSION_LIST_POSITION;
 
-  // Only the persistent sidebar scrolls its sections separately; the compact menu scrolls the whole list.
-  const sessionList = isSectionScrolling(list)
+  const sessionList = sectionScrolling
     ? list.querySelector<HTMLElement>('.claudian-session-list-items') ?? list
     : list;
   const pinnedList = list
     .querySelector<HTMLElement>('.claudian-history-section--pinned')
     ?.querySelector<HTMLElement>('.claudian-history-section-items');
-  const projectsList = isSectionScrolling(list)
+  const projectsList = sectionScrolling
     ? list.querySelector<HTMLElement>('.claudian-session-project-items')
     : null;
   const recordedVisibleCount = Number(list.dataset.visibleCount);
@@ -90,15 +92,6 @@ export function captureSessionListPosition(container: HTMLElement): SessionListP
 
 export function recordVisibleCount(list: HTMLElement, visibleCount: number): void {
   list.dataset.visibleCount = String(visibleCount);
-}
-
-/** Records whether the list's sections scroll on their own, so the next capture reads the elements that scroll. */
-export function recordSectionScrolling(list: HTMLElement, sectionScrolling: boolean): void {
-  list.dataset.sectionScrolling = String(sectionScrolling);
-}
-
-function isSectionScrolling(list: HTMLElement): boolean {
-  return list.dataset.sectionScrolling === 'true';
 }
 
 /** Restores scroll after the new rows and any surface controls above them are in place. */

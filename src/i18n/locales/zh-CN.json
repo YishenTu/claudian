@@ -381,7 +381,7 @@
         "removeSelectionFrom": "从项目中移除 {count} 个会话",
         "newProject": "新建项目…"
       },
-      "deleteConfirm": "删除项目“{name}”？会话会保留，项目记忆文件也会保留。",
+      "deleteConfirm": "删除项目“{name}”并将其记忆文件移到废纸篓？会话会保留，但不再属于任何项目。",
       "errors": {
         "create": "创建项目失败",
         "update": "更新项目失败",
@@ -410,20 +410,23 @@
       },
       "memory": {
         "title": "项目记忆：{name}",
-        "path": "路径",
-        "copyPath": "复制路径",
-        "pathCopied": "路径已复制",
-        "copyFailed": "复制路径失败",
         "reload": "重新加载",
         "overwrite": "覆盖",
         "recreate": "从模板重新创建",
-        "content": "项目记忆内容",
+        "edit": "编辑",
+        "preview": "预览",
         "missing": "项目记忆文件不存在。",
         "conflict": "记忆文件在加载后已被修改。重新加载将丢弃你的编辑，覆盖则保留你的编辑。",
         "loadFailed": "加载项目记忆失败",
         "saveFailed": "保存项目记忆失败",
         "saved": "项目记忆已保存",
-        "loading": "加载中…"
+        "loading": "加载中…",
+        "updated": "{time}更新",
+        "changedOutside": "记忆文件已在此窗口之外被更新，可能是代理所为。",
+        "keepMine": "保留我的编辑",
+        "discardConfirm": "放弃对项目记忆的未保存更改？",
+        "discard": "放弃",
+        "emptyHint": "代理会随着项目推进填写这里。"
       }
     }
   },

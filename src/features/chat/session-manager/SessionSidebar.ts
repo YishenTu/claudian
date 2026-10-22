@@ -3,7 +3,6 @@ import { Menu, Notice, setIcon, TFile } from 'obsidian';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ConversationMeta, SessionManagerOrganization, SessionManagerSort } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import { buildProjectsHeaderActions, getProjectSort } from '@/features/chat/session-manager/ProjectsHeaderActions';
 import { getObsidianLanguage } from '@/features/chat/session-manager/ProvisionalNoteNames';
 import { SessionGroupCollapse } from '@/features/chat/session-manager/SessionGroupCollapse';
 import { renderSessionGroupToggleIcon } from '@/features/chat/session-manager/SessionManagerIcons';
@@ -11,6 +10,7 @@ import {
   archiveScopeOptions,
   beginInlineRenameNextFrame,
   createSessionHeaderAction,
+  createSessionHeaderMenuAction,
   type SessionSurfaceNavigation,
   type SessionSurfaceShared,
   setControlAvailability,
@@ -193,9 +193,6 @@ export class SessionSidebar {
         shared.setArchiveView(false);
         return navigation.startLinkedContentConversation(contentPath);
       },
-      // The archive lists no projects; its members stay among the archived sessions.
-      showProjectsSection: true,
-      projectSort: getProjectSort(plugin),
       onStartProjectConversation: (projectId: string) => {
         shared.setArchiveView(false);
         return navigation.startProjectConversation(projectId);
@@ -277,15 +274,13 @@ export class SessionSidebar {
     });
     container.insertBefore(archiveControl, list);
 
-    buildProjectsHeaderActions(container, this.deps.plugin);
-
     this.groupToggleButtonEl = null;
     const actions = header.createDiv({ cls: 'claudian-session-header-actions' });
-    const optionsButton = createSessionHeaderAction(
+    createSessionHeaderMenuAction(
       actions,
       'ellipsis',
       'Session options',
-      (event) => this.showOptionsMenu(optionsButton, event),
+      (anchor, event) => this.showOptionsMenu(anchor, event),
     );
     if (this.getOrganization() === 'linked-content' && this.groupKeys.size > 0) {
       const allCollapsed = this.areAllGroupsCollapsed();
@@ -560,7 +555,7 @@ export class SessionSidebar {
     this.refreshPresentation();
   }
 
-  private showOptionsMenu(anchor: HTMLElement, event?: MouseEvent): void {
+  private showOptionsMenu(anchor: HTMLElement, event?: MouseEvent): Menu {
     const menu = new Menu().setUseNativeMenu(false);
     const organization = this.getOrganization();
     const sort = this.getSort();
@@ -590,6 +585,7 @@ export class SessionSidebar {
       .onClick(() => this.setSort('created')));
 
     showMenuAt(menu, anchor, event);
+    return menu;
   }
 
   private setOrganization(organization: SessionManagerOrganization): void {

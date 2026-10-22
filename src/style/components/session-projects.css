@@ -31,7 +31,7 @@
  * owns hover like a session row. The toggle's padding is taken out of the row's inline
  * start so its icon still sits at the sidebar inset.
  */
-:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-header--with-toggle {
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-header--project {
   padding: 2px var(--claudian-session-inline-inset) 2px calc(var(--claudian-session-inline-inset) - 8px);
   cursor: default;
 }

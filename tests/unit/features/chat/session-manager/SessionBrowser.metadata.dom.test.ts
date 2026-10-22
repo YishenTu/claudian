@@ -109,6 +109,24 @@ describe('SessionBrowser session metadata popover', () => {
     controller.dispose();
   });
 
+  it('keeps focus off the row on a right-press, so closing its menu with Esc leaves no focus ring', () => {
+    const controller = createController();
+    const container = document.createElement('div');
+    document.body.append(container);
+    controller.renderHistoryDropdown(container, {
+      onSelectConversation: jest.fn().mockResolvedValue(undefined), showMetadataPopover: true,
+      getProviderIcon: () => OPENAI_PROVIDER_ICON, getModelLabel: () => 'GPT-5.1 Codex',
+    });
+    const content = container.querySelector<HTMLElement>('.claudian-history-item-content')!;
+    expect(content.getAttribute('tabindex')).toBe('0');
+
+    // A prevented press keeps the browser from focusing the row; Obsidian's menu then has no row to return focus to.
+    expect(fireEvent.mouseDown(content, { button: 2 })).toBe(false);
+    // A primary press still focuses and opens the row as before.
+    expect(fireEvent.mouseDown(content, { button: 0 })).toBe(true);
+    controller.dispose();
+  });
+
   it('reuses popover rows and icons across keyboard activation while updating content and ARIA', async () => {
     const first: ConversationMeta = { id: 'one', providerId: 'claude', title: 'First session', messageCount: 1, preview: '',
       createdAt: testDate({ days: -2 }).getTime(), lastActivityAt: testDate().getTime(), linkedContentPath: 'First.md' };

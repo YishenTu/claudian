@@ -67,7 +67,6 @@ export class SessionDrag {
         this.#setPinnedZonesVisible(true);
       }, 0) ?? null;
     });
-    item.addEventListener('dragend', () => this.end());
   }
 
   /** Accepts session drops on `el`. Several elements may share one target, such as a project row and body. */

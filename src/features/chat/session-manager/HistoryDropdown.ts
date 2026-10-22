@@ -1,7 +1,6 @@
 import { setIcon } from 'obsidian';
 
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import { buildProjectsHeaderActions, getProjectSort } from '@/features/chat/session-manager/ProjectsHeaderActions';
 import { SessionGroupCollapse } from '@/features/chat/session-manager/SessionGroupCollapse';
 import {
   archiveScopeOptions,
@@ -147,9 +146,6 @@ export class HistoryDropdown {
         await plugin.assignConversationToCurrentDevice(id);
       },
       onBeforeRestoreListState: (target: HTMLElement) => this.buildArchiveNavigation(target),
-      // The archive lists no projects; its members stay among the archived sessions.
-      showProjectsSection: true,
-      projectSort: getProjectSort(plugin),
       isGroupCollapsed: groupKey => this.collapse.isCollapsed(groupKey),
       onGroupCollapseChange: (groupKey, collapsed) => this.collapse.setCollapsed(groupKey, collapsed),
       onStartProjectConversation: async (projectId: string) => {
@@ -159,7 +155,6 @@ export class HistoryDropdown {
       },
       signal,
     });
-    if (!signal.aborted) buildProjectsHeaderActions(container, plugin);
   }
 
   private async openConversation(

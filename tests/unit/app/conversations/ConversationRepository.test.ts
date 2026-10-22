@@ -594,7 +594,7 @@ describe('ConversationRepository hydration', () => {
     conversation.lastActivityAt = 42;
     const { repository, persistence } = createRepository(conversation);
 
-    await repository.setPinned(conversation.id, true);
+    await repository.setPlacement(conversation.id, { isPinned: true });
 
     expect(repository.list()[0].isPinned).toBe(true);
     expect(repository.getSync(conversation.id)!.lastActivityAt).toBe(42);
@@ -645,7 +645,7 @@ describe('ConversationRepository hydration', () => {
       isPinned: false,
     }));
 
-    await repository.setPinned(conversation.id, true);
+    await repository.setPlacement(conversation.id, { isPinned: true });
     expect(repository.getSync(conversation.id)!.isPinned).toBe(false);
 
     await repository.setArchived(conversation.id, false);
@@ -769,7 +769,7 @@ describe('ConversationRepository hydration', () => {
 
     const firstSave = repository.rename(conversation.id, 'First');
     await firstSaveStarted;
-    const secondSave = repository.setPinned(conversation.id, true);
+    const secondSave = repository.setPlacement(conversation.id, { isPinned: true });
     (conversation as { linkedContentPath?: string }).linkedContentPath = 'Projects/Leaked';
     releaseFirstSave();
 

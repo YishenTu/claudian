@@ -55,9 +55,9 @@ function fixture() {
 test('failed pin persistence preserves committed state and allows a real retry', async () => {
   const { repository, persistence, conversation } = fixture();
   persistence.saveMetadata.mockRejectedValueOnce(new Error('disk unavailable'));
-  await expect(repository.setPinned(conversation.id, true)).rejects.toThrow('disk unavailable');
+  await expect(repository.setPlacement(conversation.id, { isPinned: true })).rejects.toThrow('disk unavailable');
   const publishedAfterFailure = repository.list()[0].isPinned;
-  await repository.setPinned(conversation.id, true);
+  await repository.setPlacement(conversation.id, { isPinned: true });
   expect({ publishedAfterFailure, writes: persistence.saveMetadata.mock.calls.length })
     .toEqual({ publishedAfterFailure: false, writes: 2 });
 });
@@ -153,7 +153,7 @@ test('queued archive and pin decisions use the committed result of the preceding
   persistence.saveMetadata.mockImplementationOnce(() => new Promise<void>(resolve => { finishWrite = resolve; }));
   const archive = repository.setArchived(conversation.id, true);
   await waitFor(() => Boolean(finishWrite));
-  const pin = repository.setPinned(conversation.id, true);
+  const pin = repository.setPlacement(conversation.id, { isPinned: true });
   expect(conversation.isArchived).toBeUndefined();
   finishWrite();
   await Promise.all([archive, pin]);

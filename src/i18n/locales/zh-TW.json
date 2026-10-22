@@ -381,7 +381,7 @@
         "removeSelectionFrom": "從專案中移除 {count} 個工作階段",
         "newProject": "新增專案…"
       },
-      "deleteConfirm": "刪除專案「{name}」？工作階段會保留，專案記憶檔案也會保留。",
+      "deleteConfirm": "刪除專案「{name}」並將其記憶檔案移到垃圾桶？工作階段會保留，但不再屬於任何專案。",
       "errors": {
         "create": "建立專案失敗",
         "update": "更新專案失敗",
@@ -410,20 +410,23 @@
       },
       "memory": {
         "title": "專案記憶：{name}",
-        "path": "路徑",
-        "copyPath": "複製路徑",
-        "pathCopied": "已複製路徑",
-        "copyFailed": "複製路徑失敗",
         "reload": "重新載入",
         "overwrite": "覆寫",
         "recreate": "從範本重新建立",
-        "content": "專案記憶內容",
+        "edit": "編輯",
+        "preview": "預覽",
         "missing": "專案記憶檔案不存在。",
         "conflict": "記憶檔案在載入後已被修改。重新載入會捨棄你的編輯，覆寫則保留你的編輯。",
         "loadFailed": "載入專案記憶失敗",
         "saveFailed": "儲存專案記憶失敗",
         "saved": "專案記憶已儲存",
-        "loading": "載入中…"
+        "loading": "載入中…",
+        "updated": "{time}更新",
+        "changedOutside": "記憶檔案已在此視窗之外被更新，可能是代理所為。",
+        "keepMine": "保留我的編輯",
+        "discardConfirm": "放棄對專案記憶的未儲存變更？",
+        "discard": "放棄",
+        "emptyHint": "代理會隨著專案推進填寫這裡。"
       }
     }
   },

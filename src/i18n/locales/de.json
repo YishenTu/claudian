@@ -381,7 +381,7 @@
         "removeSelectionFrom": "{count} Sitzungen aus Projekt entfernen",
         "newProject": "Neues Projekt…"
       },
-      "deleteConfirm": "Projekt „{name}“ löschen? Die Sitzungen bleiben erhalten. Die Gedächtnisdatei des Projekts wird behalten.",
+      "deleteConfirm": "Projekt „{name}“ löschen und seine Gedächtnisdatei in den Papierkorb verschieben? Die Sitzungen bleiben erhalten, ohne Projekt.",
       "errors": {
         "create": "Projekt konnte nicht erstellt werden",
         "update": "Projekt konnte nicht aktualisiert werden",
@@ -410,20 +410,23 @@
       },
       "memory": {
         "title": "Projektgedächtnis: {name}",
-        "path": "Pfad",
-        "copyPath": "Pfad kopieren",
-        "pathCopied": "Pfad kopiert",
-        "copyFailed": "Pfad konnte nicht kopiert werden",
         "reload": "Neu laden",
         "overwrite": "Überschreiben",
         "recreate": "Aus Vorlage neu erstellen",
-        "content": "Inhalt des Projektgedächtnisses",
+        "edit": "Bearbeiten",
+        "preview": "Vorschau",
         "missing": "Die Gedächtnisdatei des Projekts fehlt.",
         "conflict": "Die Gedächtnisdatei wurde seit dem Laden geändert. Neu laden verwirft deine Änderungen, Überschreiben behält sie.",
         "loadFailed": "Projektgedächtnis konnte nicht geladen werden",
         "saveFailed": "Projektgedächtnis konnte nicht gespeichert werden",
         "saved": "Projektgedächtnis gespeichert",
-        "loading": "Wird geladen…"
+        "loading": "Wird geladen…",
+        "updated": "Aktualisiert {time}",
+        "changedOutside": "Die Gedächtnisdatei wurde außerhalb dieses Fensters aktualisiert, vermutlich von einem Agenten.",
+        "keepMine": "Meine Änderungen behalten",
+        "discardConfirm": "Ungespeicherte Änderungen am Projektgedächtnis verwerfen?",
+        "discard": "Verwerfen",
+        "emptyHint": "Agenten füllen dies im Laufe des Projekts aus."
       }
     }
   },

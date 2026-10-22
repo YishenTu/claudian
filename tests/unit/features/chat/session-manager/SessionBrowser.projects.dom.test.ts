@@ -6,7 +6,7 @@ import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { Menu } from 'obsidian';
 
-import type { ConversationMeta, ProjectRecord } from '@/core/types';
+import type { ConversationMeta, ProjectRecord, SessionManagerSort } from '@/core/types';
 import { SessionBrowser, type SessionBrowserDeps } from '@/features/chat/session-manager/SessionBrowser';
 import type { HistoryConversationStatus } from '@/features/chat/session-manager/SessionStatusPresentation';
 import { t } from '@/i18n/i18n';
@@ -46,6 +46,7 @@ const idle = projectRecord({ id: 'idle', name: 'Idle', createdAt: testDate({ day
 function setup(options: {
   conversations?: ConversationMeta[];
   records?: ProjectRecord[];
+  projectSort?: SessionManagerSort;
   render?: Record<string, unknown>;
   /** The document showing the list, such as a popped-out window's. */
   doc?: Document;
@@ -73,7 +74,9 @@ function setup(options: {
   };
   const browser = new SessionBrowser({
     plugin: {
-      app: {}, settings: { enableAutoTitleGeneration: false }, getConversationList: () => conversations,
+      app: {},
+      settings: { enableAutoTitleGeneration: false, projectSort: options.projectSort ?? 'last-updated' },
+      getConversationList: () => conversations,
       conversationLifecycle: lifecycle, projects,
     },
     getCurrentConversationId: () => null,
@@ -89,7 +92,6 @@ function setup(options: {
     onRerender: render,
     showMetadataPopover: true,
     showPinnedSection: true,
-    showProjectsSection: true,
     sessionScope: 'active',
     sessionActionMode: 'active',
     isGroupCollapsed: (groupKey: string) => collapsedGroupKeys.has(groupKey),
@@ -183,8 +185,12 @@ it('keeps a pinned project first among the projects in a list without a Pinned s
 
 it('shows the projects header without rows when there are no projects, and no section in the archive', () => {
   const empty = setup({ records: [] });
-  expect(within(projectsRegion(empty.container)).queryAllByRole('button').map(button => button.textContent))
-    .toEqual([t('chat.projects.header')]);
+  const region = projectsRegion(empty.container);
+  expect(within(region).queryAllByRole('button')).toEqual([
+    within(region).getByRole('button', { name: t('chat.projects.header') }),
+    within(region).getByRole('button', { name: t('chat.projects.options') }),
+    within(region).getByRole('button', { name: t('chat.projects.newProjectAction') }),
+  ]);
   expect(within(projectsRegion(empty.container)).queryByText(t('chat.projects.noSessions'))).toBeNull();
   document.body.replaceChildren();
 
@@ -214,13 +220,13 @@ it('expands and collapses a project from its native toggle', () => {
   expect(within(projectsRegion(container)).queryByText('alpha session')).toBeNull();
 });
 
-it.each([
+it.each<[SessionManagerSort, string[]]>([
   ['last-updated', ['Launch', 'Idle']],
   // Launch was created ten days ago, Idle twelve hours ago.
   ['created', ['Idle', 'Launch']],
 ])('orders projects by the %s project sort', (projectSort, names) => {
   const recentIdle = projectRecord({ id: 'idle', name: 'Idle', createdAt: testDate({ hours: -12 }).getTime() });
-  const { container } = setup({ records: [launch, research, recentIdle], render: { projectSort } });
+  const { container } = setup({ records: [launch, research, recentIdle], projectSort });
 
   expect(expandedProjectToggles(projectsRegion(container))
     .map(toggle => toggle.textContent)).toEqual(names.map(name => (
@@ -262,6 +268,10 @@ it('starts a session in a project and manages the project from its section menu'
     t('common.delete'),
   );
   expect(projects.delete).toHaveBeenCalledWith('launch');
+  // Members stay as sessions but leave the deleted project, after it can no longer be joined.
+  expect(lifecycle.setPlacement).toHaveBeenCalledWith(['alpha', 'busy'], { projectId: null });
+  expect(projects.delete.mock.invocationCallOrder[0])
+    .toBeLessThan(lifecycle.setPlacement.mock.invocationCallOrder[0]);
 
   fireEvent.contextMenu(view.getByRole('button', { name: sectionName('Research', 1) }));
   expect(titles(menus().at(-1)!)).toContain(t('chat.projects.menu.unpin'));
@@ -288,7 +298,8 @@ it('moves a session between projects and removes it from its project from the ro
   ]));
   item(rowMenu, t('chat.projects.menu.moveTo')).clickHandler!();
   const picker = menus().at(-1)!;
-  expect(titles(picker)).toEqual(['Idle', 'Launch', 'Research', t('chat.projects.menu.newProject')]);
+  // Like the composer's project chip, pinned projects come first.
+  expect(titles(picker)).toEqual(['Research', 'Idle', 'Launch', t('chat.projects.menu.newProject')]);
   expect(item(picker, 'Launch').checked).toBe(true);
   item(picker, 'Research').clickHandler!();
   item(rowMenu, t('chat.projects.menu.removeFrom')).clickHandler!();

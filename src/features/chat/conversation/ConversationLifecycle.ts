@@ -10,7 +10,6 @@ export interface ConversationLifecycleStore {
   getConversationList(): readonly Pick<ConversationMeta, 'id' | 'isArchived'>[];
   deleteConversation(id: string): Promise<void>;
   setConversationArchived(id: string, isArchived: boolean): Promise<void>;
-  setConversationsPinned(ids: readonly string[], isPinned: boolean): Promise<void>;
   setConversationsPlacement(ids: readonly string[], placement: ConversationPlacement): Promise<void>;
   restoreConversations(ids: readonly string[]): Promise<void>;
   archiveConversationsIf(
@@ -46,7 +45,7 @@ export class ConversationLifecycle {
 
   /** Pins or unpins sessions in one batch; pinning affects only the session list. */
   async setPinned(conversationIds: readonly string[], isPinned: boolean): Promise<void> {
-    await this.deps.conversations.setConversationsPinned(conversationIds, isPinned);
+    await this.deps.conversations.setConversationsPlacement(conversationIds, { isPinned });
   }
 
   /**

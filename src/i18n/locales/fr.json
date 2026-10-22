@@ -381,7 +381,7 @@
         "removeSelectionFrom": "Retirer {count} sessions du projet",
         "newProject": "Nouveau projet…"
       },
-      "deleteConfirm": "Supprimer le projet « {name} » ? Les sessions sont conservées. Le fichier de mémoire du projet est conservé.",
+      "deleteConfirm": "Supprimer le projet « {name} » et placer son fichier de mémoire dans la corbeille ? Les sessions sont conservées, hors de tout projet.",
       "errors": {
         "create": "Impossible de créer le projet",
         "update": "Impossible de mettre à jour le projet",
@@ -410,20 +410,23 @@
       },
       "memory": {
         "title": "Mémoire du projet : {name}",
-        "path": "Chemin",
-        "copyPath": "Copier le chemin",
-        "pathCopied": "Chemin copié",
-        "copyFailed": "Impossible de copier le chemin",
         "reload": "Recharger",
         "overwrite": "Écraser",
         "recreate": "Recréer à partir du modèle",
-        "content": "Contenu de la mémoire du projet",
+        "edit": "Modifier",
+        "preview": "Aperçu",
         "missing": "Le fichier de mémoire du projet est introuvable.",
         "conflict": "Le fichier de mémoire a changé depuis son chargement. Rechargez pour abandonner vos modifications, ou écrasez pour les conserver.",
         "loadFailed": "Impossible de charger la mémoire du projet",
         "saveFailed": "Impossible d’enregistrer la mémoire du projet",
         "saved": "Mémoire du projet enregistrée",
-        "loading": "Chargement…"
+        "loading": "Chargement…",
+        "updated": "Mis à jour {time}",
+        "changedOutside": "Le fichier de mémoire a été modifié hors de cette fenêtre, probablement par un agent.",
+        "keepMine": "Garder mes modifications",
+        "discardConfirm": "Abandonner les modifications non enregistrées de la mémoire du projet ?",
+        "discard": "Abandonner",
+        "emptyHint": "Les agents le complètent au fil du projet."
       }
     }
   },

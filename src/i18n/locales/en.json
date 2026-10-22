@@ -381,7 +381,7 @@
         "removeSelectionFrom": "Remove {count} sessions from project",
         "newProject": "New project…"
       },
-      "deleteConfirm": "Delete project “{name}”? Sessions stay. The project memory file is kept.",
+      "deleteConfirm": "Delete project “{name}” and move its memory file to the trash? Its sessions stay, outside any project.",
       "errors": {
         "create": "Failed to create project",
         "update": "Failed to update project",
@@ -410,20 +410,23 @@
       },
       "memory": {
         "title": "Project memory: {name}",
-        "path": "Path",
-        "copyPath": "Copy path",
-        "pathCopied": "Path copied",
-        "copyFailed": "Failed to copy path",
         "reload": "Reload",
         "overwrite": "Overwrite",
         "recreate": "Recreate from template",
-        "content": "Project memory content",
+        "edit": "Edit",
+        "preview": "Preview",
         "missing": "The project memory file is missing.",
         "conflict": "The memory file changed since it was loaded. Reload to discard your edits, or overwrite to keep them.",
         "loadFailed": "Failed to load the project memory",
         "saveFailed": "Failed to save the project memory",
         "saved": "Project memory saved",
-        "loading": "Loading…"
+        "loading": "Loading…",
+        "updated": "Updated {time}",
+        "changedOutside": "The memory file was updated outside this window, probably by an agent.",
+        "keepMine": "Keep my edits",
+        "discardConfirm": "Discard your unsaved changes to the project memory?",
+        "discard": "Discard",
+        "emptyHint": "Agents fill this in as the project progresses."
       }
     }
   },

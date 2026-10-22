@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
+import { PROJECTS_PATH } from '@/core/bootstrap/storagePaths';
 import { normalizeProjectMemoryPath, projectMemoryFolderOf } from '@/core/path/ProjectMemoryPath';
 import { ManagedResourceCollisionError, type VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import {
@@ -26,6 +27,9 @@ export interface ProjectServiceDeps {
     | 'moveManagedFileNoReplace'
     | 'readManagedFile'
     | 'removeManagedFile'
+    | 'removeManagedFolderIfEmpty'
+    | 'stat'
+    | 'trash'
     | 'verifyManagedPath'
     | 'writeManagedFile'
   >;
@@ -124,13 +128,26 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
     return this.#commit(id, record => (record.isPinned === pinned ? record : { ...record, isPinned: pinned }));
   }
 
-  /** Member ids stay on their conversations; readers resolve them through `get`, so they become no project. */
+  /**
+   * Removes the record, then moves its memory file to the trash and removes its folder inside the projects folder
+   * once empty. Member ids stay on their conversations until cleared; readers resolve them through `get`, so they
+   * already count as no project.
+   */
   delete(id: string): Promise<void> {
     return this.#enqueue(id, async () => {
-      if (!this.#records.has(id)) return;
+      const record = this.#records.get(id);
+      if (!record) return;
       await this.deps.store.remove(id);
       this.#records.delete(id);
       this.#publish();
+      // Best effort: the project is gone either way, and a leftover file blocks nothing.
+      try {
+        await this.deps.memory.trash(record.memoryPath);
+        const folder = projectMemoryFolderOf(record.memoryPath);
+        if (folder.startsWith(`${PROJECTS_PATH}/`)) await this.deps.memory.removeManagedFolderIfEmpty(folder);
+      } catch {
+        // Kept in place.
+      }
     });
   }
 
@@ -154,7 +171,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
       }
       await this.#ensureFolderOf(memoryPath);
       await this.deps.memory.writeManagedFile(memoryPath, content);
-      return toMemoryContent(content);
+      return this.#snapshot(memoryPath, content);
     });
   }
 
@@ -163,7 +180,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
       const record = this.#require(id);
       const content = renderProjectMemoryTemplate(record.name);
       // The file may have reappeared (sync, undo) since it was reported missing; never replace it.
-      if (await this.#createMemory(record.memoryPath, content)) return toMemoryContent(content);
+      if (await this.#createMemory(record.memoryPath, content)) return this.#snapshot(record.memoryPath, content);
       const current = await this.#readMemory(record.memoryPath);
       if ('missing' in current) throw new Error(`Could not recreate project memory: ${record.memoryPath}`);
       return current;
@@ -243,7 +260,16 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
 
   async #readMemory(memoryPath: string): Promise<ProjectMemoryReadResult> {
     if (!await this.#memoryExists(memoryPath)) return { missing: true };
-    return toMemoryContent(await this.deps.memory.readManagedFile(memoryPath));
+    return this.#snapshot(memoryPath, await this.deps.memory.readManagedFile(memoryPath));
+  }
+
+  async #snapshot(memoryPath: string, content: string): Promise<ProjectMemoryContent> {
+    const stat = await this.deps.memory.stat(memoryPath);
+    return {
+      content,
+      revision: createHash('sha256').update(content, 'utf8').digest('hex'),
+      modifiedAt: stat?.mtime ?? null,
+    };
   }
 
   #publish(): void {
@@ -269,10 +295,6 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
 
 export function renderProjectMemoryTemplate(name: string): string {
   return `# ${name}\n\n## Goal\n\n## Requirements\n\n## Decisions\n\n## State\n\n## Open questions\n\n## Dead ends\n`;
-}
-
-function toMemoryContent(content: string): ProjectMemoryContent {
-  return { content, revision: createHash('sha256').update(content, 'utf8').digest('hex') };
 }
 
 function requireName(value: string): string {

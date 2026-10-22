@@ -1,40 +1,226 @@
 /* Project editor and project memory modals. */
-.claudian-project-instructions,
-.claudian-project-memory-content {
+.claudian-project-instructions {
   box-sizing: border-box;
   width: 100%;
+  min-height: 180px;
+  max-height: 50vh;
   margin-top: 8px;
   resize: vertical;
 }
 
-.claudian-project-instructions {
-  min-height: 180px;
-  max-height: 50vh;
+/* The memory reads like a document: a tall modal whose content fills the space between header and footer. */
+.claudian-project-memory-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(960px, 92vw);
+  height: 80vh;
 }
 
-.claudian-project-memory-content {
-  min-height: 320px;
-  max-height: 70vh;
-  font-family: var(--font-monospace);
+.claudian-project-memory-modal .modal-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
 }
 
-.claudian-project-memory-path {
+/* Obsidian's modal button and display rules would otherwise show hidden controls. */
+.claudian-project-memory-modal [hidden] {
+  display: none;
+}
+
+/* Obsidian's close button, moved in from its corner, ends the title row. */
+.claudian-project-memory-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
-  margin-top: 12px;
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
+  gap: var(--size-4-1);
 }
 
-.claudian-project-memory-path-value {
+.claudian-project-memory-title-text {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.claudian-project-memory-dirty {
+  color: var(--text-accent);
+}
+
+/* Leaves its corner for the title row. */
+.claudian-project-memory-modal .modal-close-button {
+  position: static;
+  inset: auto;
+}
+
+/*
+ * The close button and the mode switch look like the session panel's header buttons: a faint icon that turns
+ * normal on hover, without button chrome. Obsidian restores chrome on interaction states, so the reset covers them.
+ */
+.claudian-project-memory-modal .claudian-project-memory-icon-btn,
+.claudian-project-memory-modal .claudian-project-memory-icon-btn:is(:hover, :focus, :focus-visible, :active, .mobile-tap) {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  appearance: none;
+  transition: color 0.15s ease;
+}
+
+.claudian-project-memory-modal .claudian-project-memory-icon-btn:is(:hover, :focus-visible) {
+  color: var(--text-normal);
+}
+
+.claudian-project-memory-modal .claudian-project-memory-icon-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+.claudian-project-memory-modal .claudian-project-memory-icon-btn:disabled {
+  color: var(--text-faint);
+  cursor: default;
+  opacity: 0.5;
+}
+
+.claudian-project-memory-modal .claudian-project-memory-icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-project-memory-body,
+.claudian-project-memory-missing {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  margin-top: 8px;
+}
+
+/* The rendered view or the editor fills the display area; the mode switch floats in its top right corner. */
+.claudian-project-memory-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.claudian-project-memory-content,
+.claudian-project-memory-preview {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  padding-inline-end: calc(var(--size-4-6) + var(--icon-size, 18px));
+}
+
+/* The content sits directly in the modal, without an inner frame in either mode. */
+.claudian-project-memory-content,
+.claudian-project-memory-content:is(:hover, :focus, :focus-visible, :active) {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.claudian-project-memory-content {
+  font-family: var(--font-monospace);
+  resize: none;
+}
+
+.claudian-project-memory-modal .claudian-project-memory-mode {
+  position: absolute;
+  top: var(--size-4-1);
+  right: var(--size-4-1);
+}
+
+.claudian-project-memory-preview {
+  padding-block: var(--size-4-4);
+  padding-inline-start: var(--size-4-6);
+  overflow-y: auto;
   user-select: text;
+}
+
+.claudian-project-memory-preview > * {
+  max-width: var(--file-line-width, 700px);
+  margin-inline: auto;
+}
+
+.claudian-project-memory-preview:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+/* A heading opens the editor at its line. */
+.claudian-project-memory-preview :is(h1, h2, h3, h4, h5, h6) {
+  cursor: pointer;
+}
+
+.claudian-project-memory-preview > div > :first-child {
+  margin-top: 0;
+}
+
+.claudian-project-memory-empty {
+  color: var(--text-faint);
+  font-style: italic;
+  text-align: center;
+}
+
+.claudian-project-memory-missing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-muted);
+}
+
+.claudian-project-memory-missing p {
+  margin: 0;
+}
+
+/* Path and last update on the left, actions on the right. */
+.claudian-project-memory-footer {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 12px;
+}
+
+.claudian-project-memory-info {
+  display: flex;
+  flex: 1 1 240px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-project-memory-path-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+
+.claudian-project-memory-updated {
+  flex: none;
+  white-space: nowrap;
+}
+
+.claudian-project-memory-footer .claudian-project-modal-actions {
+  margin-top: 0;
 }
 
 .claudian-project-memory-notice {
@@ -43,6 +229,7 @@
 
 .claudian-project-memory-notice--visible {
   display: flex;
+  flex: none;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
