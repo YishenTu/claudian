@@ -349,6 +349,20 @@ describe('deriveSessionListModel with a projects section', () => {
     expect(linked.conversationsByProject.get('alpha')?.map(({ id }) => id)).toEqual(['alpha-new', 'alpha-old']);
   });
 
+  it.each([
+    ['unpinned', new Set<string>(), []],
+    ['pinned', new Set(['Notes/Plan.md']), ['loose']],
+  ])('keeps a pinned project member out of its %s Linked content group', (_case, pinnedLinkedContentPaths, pinnedGroupIds) => {
+    const model = deriveSessionListModel(conversations, {
+      ...base, organization: 'linked-content', showPinnedSection: true, pinnedLinkedContentPaths,
+    });
+
+    // The project wins: the member is listed under Pinned on its own, and only project actions cover it.
+    expect(model.pinnedConversations.map(({ id }) => id)).toEqual(['alpha-old', 'pinned']);
+    expect(ids(model.pinnedContentSections)).toEqual(pinnedGroupIds);
+    expect(model.conversationsByLinkedContent.get('Notes/Plan.md')?.map(({ id }) => id)).toEqual(['loose']);
+  });
+
   it('keeps every session in the list without a projects section or in the archive', () => {
     const { projects: _projects, ...withoutProjects } = base;
     const flat = deriveSessionListModel(conversations, withoutProjects);

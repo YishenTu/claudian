@@ -366,19 +366,20 @@ export function deriveSessionListModel(
     : null;
   const pinnedProjectSections = projectSections?.filter(section => isPinnedProject(section.project)) ?? [];
   const unpinnedProjectSections = projectSections?.filter(section => !isPinnedProject(section.project)) ?? null;
-  const conversationsByLinkedContent = groupBy(
-    listedConversations,
-    conversation => conversation.linkedContentPath,
+  // Project membership wins over Linked content, so a pinned member listed under Pinned joins no Linked content group.
+  const linkedContentPathOf = (conversation: ConversationMeta): string | undefined => (
+    projects?.get(conversation.projectId) ? undefined : conversation.linkedContentPath
   );
+  const conversationsByLinkedContent = groupBy(listedConversations, linkedContentPathOf);
   const pinnedLinkedContentPaths = isGrouped
     && options.showPinnedSection
     && options.scope !== 'archived'
     ? options.pinnedLinkedContentPaths ?? new Set<string>()
     : new Set<string>();
-  const isInPinnedContentGroup = (conversation: ConversationMeta): boolean => (
-    !!conversation.linkedContentPath
-    && pinnedLinkedContentPaths.has(conversation.linkedContentPath)
-  );
+  const isInPinnedContentGroup = (conversation: ConversationMeta): boolean => {
+    const contentPath = linkedContentPathOf(conversation);
+    return !!contentPath && pinnedLinkedContentPaths.has(contentPath);
+  };
   const pinnedContentConversations = filteredConversations.filter(isInPinnedContentGroup);
   const pinnedConversations = options.showPinnedSection
     ? filteredConversations.filter(conversation => (
