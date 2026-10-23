@@ -48,6 +48,34 @@ interface MessageLiveScope {
   open: boolean;
 }
 
+/** Messages a transcript renders at once, counted back from its end; earlier ones render on request. */
+const RENDER_WINDOW = 40;
+
+/** Where the reader is: the first message showing at the top, and its offset from the viewport top. */
+export interface ReadingAnchor {
+  readonly messageId: string;
+  readonly offset: number;
+}
+
+/** Messages before `start` are not rendered yet; `messages` is the transcript the window was cut from. */
+interface EarlierMessages {
+  readonly messages: ChatMessage[];
+  readonly live?: LiveTranscriptOptions;
+  readonly control: HTMLElement;
+  start: number;
+}
+
+/**
+ * The window's first message at or before `index`: a prompt, so every response it renders is
+ * whole. A bare interrupt marker belongs to the response before it and never starts a window.
+ */
+function findWindowStart(messages: ChatMessage[], index: number): number {
+  for (let i = index; i > 0; i--) {
+    if (messages[i].role === 'user' && !isInterruptMarker(messages[i])) return i;
+  }
+  return 0;
+}
+
 /**
  * Renders a tab's transcript: live and replayed messages, assistant content
  * blocks and stored tool/subagent cards. Markdown scopes, message actions and
@@ -69,6 +97,7 @@ export class MessageRenderer {
   readonly #markdown: MarkdownContentRenderer;
   readonly #actions: MessageActions;
   readonly #finalizer: ResponseFinalizer;
+  #earlier: EarlierMessages | null = null;
 
   updateQuestionTool(tool: ToolCallInfo): void {
     for (const element of this.messagesEl.querySelectorAll<HTMLElement>('[data-tool-id]')) {
@@ -112,7 +141,7 @@ export class MessageRenderer {
       rewind: rewindCallback,
       fork: forkCallback,
       branches: branchActions,
-    });
+    }, () => this.#earlier !== null);
     this.#finalizer = new ResponseFinalizer(
       id => this.findMessageEl(id),
       (el, markdown) => this.renderContent(el, markdown),
@@ -164,6 +193,7 @@ export class MessageRenderer {
     this.removeSessionLinkHandler = () => {};
     this.#actions.clear();
     this.messageEls.clear();
+    this.#earlier = null;
   }
 
   /** Session links may outlive their session; a missing one is reported rather than opened. */
@@ -206,6 +236,7 @@ export class MessageRenderer {
       return this.messagesEl;
     }
     this.#actions.retireFullSessionForks();
+    if (afterMessageId !== undefined) this.#revealThrough(afterMessageId);
     const previous = this.messagesEl.lastChild;
     let element: HTMLElement;
     if (msg.role === 'user') {
@@ -232,6 +263,7 @@ export class MessageRenderer {
   }
 
   removeMessage(messageId: string): void {
+    this.#forgetEarlier(messageId);
     this.messagesEl.querySelector(`[data-user-message-id="${messageId}"]`)?.remove();
     const msgEl = this.findMessageEl(messageId);
     if (!msgEl) {
@@ -245,7 +277,8 @@ export class MessageRenderer {
   }
 
   /**
-   * Renders all messages for conversation load/switch.
+   * Renders a transcript for conversation load/switch: its latest messages, below a control
+   * that renders earlier ones on request.
    * @param messages Array of messages to render
    * @param getGreeting Function to get greeting text
    * @returns The newly created welcome element
@@ -259,18 +292,109 @@ export class MessageRenderer {
     this.messagesEl.empty();
     this.#actions.clear();
     this.messageEls.clear();
+    this.#earlier = null;
 
     // Recreate welcome element after clearing
     const newWelcomeEl = createWelcomeElement(this.messagesEl, getGreeting());
-    const openIds = live ? new Set(messages.filter(message => live.isResponseOpen(message.id))
-      .flatMap(message => getResponseSegments(message, messages).map(segment => segment.id))) : undefined;
-
-    for (let i = 0; i < messages.length; i++) {
-      this.renderStoredMessage(messages[i], messages, i, live && { options: live, open: openIds?.has(messages[i].id) === true });
+    const start = findWindowStart(messages, messages.length - RENDER_WINDOW);
+    if (start > 0) {
+      // A copy, so later appends cannot shift the window; `removeMessage` keeps it in sync.
+      this.#earlier = { messages: messages.slice(), live, control: this.#createEarlierControl(), start };
     }
+    this.#renderRange(messages, start, messages.length, live);
 
     this.#scrollToBottomOnceLaidOut();
     return newWelcomeEl;
+  }
+
+  /** Renders the window's earlier messages above it, the next block or all, keeping the reading position. */
+  revealEarlierMessages(all = false): void {
+    const earlier = this.#earlier;
+    if (earlier) this.#revealFrom(all ? 0 : findWindowStart(earlier.messages, earlier.start - RENDER_WINDOW));
+  }
+
+  #revealFrom(start: number): void {
+    const earlier = this.#earlier;
+    if (!earlier || start >= earlier.start || this.#markdown.isDisposed) return;
+    const { messages, live, control } = earlier;
+    const end = earlier.start;
+    const firstPromptId = this.messagesEl.querySelector<HTMLElement>('[data-role="user"]')?.dataset.messageId;
+    const fromBottom = this.messagesEl.scrollHeight - this.messagesEl.scrollTop;
+    const last = this.messagesEl.lastChild;
+    this.#renderRange(messages, start, end, live);
+    const added: ChildNode[] = [];
+    for (let node = last ? last.nextSibling : null; node; node = node.nextSibling) added.push(node);
+    control.after(...added);
+    earlier.start = start;
+    if (start === 0) {
+      this.#earlier = null;
+      // Keep keyboard focus in the transcript when its focused control goes away.
+      if (control.contains(control.ownerDocument.activeElement)) {
+        if (!this.messagesEl.hasAttribute('tabindex')) this.messagesEl.tabIndex = -1;
+        this.messagesEl.focus({ preventScroll: true });
+      }
+      control.remove();
+    }
+    // Only the transcript's first prompt lacks branch controls; the old and new first prompts change role.
+    const newFirstPromptId = this.messagesEl.querySelector<HTMLElement>('[data-role="user"]')?.dataset.messageId;
+    this.#actions.refreshBranchButtons(messages.filter(message => message.id === firstPromptId || message.id === newFirstPromptId));
+    this.messagesEl.scrollTop = this.messagesEl.scrollHeight - fromBottom;
+  }
+
+  /** The reading position by message, which survives rerendering and messages added below it. */
+  captureReadingAnchor(): ReadingAnchor | null {
+    if (this.messagesEl.clientHeight === 0) return null;
+    const top = this.messagesEl.getBoundingClientRect().top;
+    for (const child of Array.from(this.messagesEl.children) as HTMLElement[]) {
+      const messageId = child.dataset.messageId;
+      if (!messageId) continue;
+      const rect = child.getBoundingClientRect();
+      if (rect.bottom > top) return { messageId, offset: rect.top - top };
+    }
+    return null;
+  }
+
+  /** Renders the window down to the anchor's message if needed, then shows it where the reader left it. */
+  restoreReadingAnchor(anchor: ReadingAnchor): void {
+    if (this.messagesEl.clientHeight === 0) return;
+    this.#revealThrough(anchor.messageId);
+    const el = this.findMessageEl(anchor.messageId);
+    if (!el) return;
+    const offset = el.getBoundingClientRect().top - this.messagesEl.getBoundingClientRect().top;
+    this.messagesEl.scrollTop += offset - anchor.offset;
+  }
+
+  /** A removed message must not come back when its earlier block is revealed. */
+  #forgetEarlier(messageId: string): void {
+    const earlier = this.#earlier;
+    const index = earlier?.messages.findIndex(message => message.id === messageId) ?? -1;
+    if (!earlier || index < 0) return;
+    earlier.messages.splice(index, 1);
+    if (index < earlier.start) earlier.start--;
+  }
+
+  /** Renders the window down to an unrendered earlier message, e.g. before inserting beside it. */
+  #revealThrough(messageId: string): void {
+    const earlier = this.#earlier;
+    const index = earlier?.messages.findIndex(message => message.id === messageId) ?? -1;
+    if (earlier && index >= 0) this.#revealFrom(findWindowStart(earlier.messages, index));
+  }
+
+  #createEarlierControl(): HTMLElement {
+    const control = this.messagesEl.createDiv({ cls: 'claudian-earlier-messages' });
+    const button = control.createEl('button', {
+      cls: 'claudian-earlier-messages-btn', text: t('chat.showEarlierMessages'), attr: { type: 'button' },
+    });
+    button.addEventListener('click', () => this.revealEarlierMessages());
+    return control;
+  }
+
+  #renderRange(messages: ChatMessage[], start: number, end: number, live?: LiveTranscriptOptions): void {
+    const openIds = live ? new Set(messages.filter(message => live.isResponseOpen(message.id))
+      .flatMap(message => getResponseSegments(message, messages).map(segment => segment.id))) : undefined;
+    for (let i = start; i < end; i++) {
+      this.renderStoredMessage(messages[i], messages, i, live && { options: live, open: openIds?.has(messages[i].id) === true });
+    }
   }
 
   renderStoredMessage(msg: ChatMessage, allMessages?: ChatMessage[], index?: number, scope?: MessageLiveScope): void {

@@ -98,7 +98,6 @@ export class ConversationController {
       get renderer() { return deps.renderer; },
       drafts: deps.drafts,
       session: deps.session,
-      getMessagesEl: () => this.deps.getMessagesEl(),
       getExecutionCoordinator: () => this.#getExecutionCoordinator(),
       ensureExecutionInitialized,
       getSelectedModel: () => this.deps.getSelectedModel?.() ?? null,
@@ -173,9 +172,9 @@ export class ConversationController {
     return this.#branching.navigate(messageId, branchMessageId);
   }
 
-  cancelBranchDraft(): void {
+  cancelBranchDraft(options?: { render?: boolean }): void {
     const hadDraft = this.#branching.hasDraft;
-    this.#branching.cancelDraft();
+    this.#branching.cancelDraft(options);
     if (hadDraft && !this.#branching.hasDraft) this.deps.onBranchPreviewCancelled?.();
   }
 

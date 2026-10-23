@@ -172,12 +172,15 @@ export class SubagentStreamRouter {
   /** Applies a provider session update; returns whether a lifecycle subagent card was placed. */
   handleSubagentUpdate(info: SubagentInfo): boolean {
     this.deps.subagentManager.applySessionUpdate(info);
-    for (const message of this.deps.state.messages) {
+    const { messages } = this.deps.state;
+    for (const [index, message] of messages.entries()) {
       const tool = message.toolCalls?.find(candidate => candidate.id === info.id);
       if (!tool) continue;
       const adapter = this.#getAdapter(tool.name);
       if (adapter?.protocol !== 'lifecycle') return false;
-      this.#placeLifecycleSubagent(tool, message, adapter);
+      // An earlier turn's unrendered message (outside the transcript window) never places into the current reply.
+      const earlierTurn = messages.slice(index + 1).some(item => item.role === 'user');
+      this.#placeLifecycleSubagent(tool, message, adapter, !earlierTurn);
       return true;
     }
     return false;
@@ -229,10 +232,10 @@ export class SubagentStreamRouter {
     return resolveSubagentAdapter(this.deps.getProviderId(), toolName);
   }
 
-  #getMessageContentEl(message: ChatMessage): HTMLElement | null {
+  #getMessageContentEl(message: ChatMessage, inCurrentReply = true): HTMLElement | null {
     return this.deps.getMessagesEl()?.querySelector<HTMLElement>(
       `[data-message-id="${message.id}"] .claudian-message-content`,
-    ) ?? this.deps.state.currentContentEl;
+    ) ?? (inCurrentReply ? this.deps.state.currentContentEl : null);
   }
 
   // ============================================
@@ -427,10 +430,11 @@ export class SubagentStreamRouter {
     toolCall: ToolCallInfo,
     msg: ChatMessage,
     adapter: ProviderSubagentLifecycleAdapter,
+    inCurrentReply = true,
   ): void {
     const { state, subagentManager, tools } = this.deps;
     const id = toolCall.id;
-    const content = this.#getMessageContentEl(msg);
+    const content = this.#getMessageContentEl(msg, inCurrentReply);
     const restored = content ? [...content.querySelectorAll<HTMLElement>('[data-subagent-id]')]
       .find(element => element.dataset.subagentId === id) : undefined;
     const previous = restored ?? subagentManager.getLifecycleElement(id) ?? state.toolCallElements.get(id);

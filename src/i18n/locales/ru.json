@@ -107,6 +107,7 @@
     "worked": "Работа выполнена",
     "taskNotification": "Уведомление о задаче",
     "copyMessage": "Копировать сообщение",
+    "showEarlierMessages": "Показать предыдущие сообщения",
     "renderFailed": "Не удалось отобразить содержимое сообщения.",
     "interruptedHint": "· Что Claudian следует сделать вместо этого?",
     "sessions": {

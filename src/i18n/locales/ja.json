@@ -107,6 +107,7 @@
     "worked": "作業完了",
     "taskNotification": "タスク通知",
     "copyMessage": "メッセージをコピー",
+    "showEarlierMessages": "以前のメッセージを表示",
     "renderFailed": "メッセージの表示に失敗しました。",
     "interruptedHint": "· Claudian は代わりに何をすべきですか？",
     "sessions": {

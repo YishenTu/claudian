@@ -190,6 +190,24 @@ it('opens a reattached conversation at its latest message after rendering it in 
   await destroyTab(second);
 });
 
+it('lists every prompt of a long transcript in the directory, including prompts not rendered yet', async () => {
+  const h = setup();
+  const start = testDate().getTime();
+  h.setNativeHistory(Array.from({ length: 30 }, (_, index) => [
+    { id: `u${index}`, role: 'user' as const, content: `Prompt ${index}`, timestamp: start + index },
+    { id: `a${index}`, role: 'assistant' as const, content: `Answer ${index}`, timestamp: start + index, durationSeconds: 1 },
+  ]).flat());
+  const tab = await h.attach();
+  const view = within(tab.dom.messagesWrapperEl);
+  expect(view.getByRole('button', { name: 'Show earlier messages' })).toBeTruthy();
+
+  fireEvent.click(view.getByRole('button', { name: 'Conversation directory' }));
+  const entries = view.getAllByRole('button').filter(button => button.classList.contains('claudian-nav-toc-item'));
+  expect(entries.map(entry => entry.textContent)).toEqual(Array.from({ length: 30 }, (_, index) => `${index + 1}. Prompt ${index}`));
+  expect(view.queryByRole('button', { name: 'Show earlier messages' })).toBeNull();
+  await destroyTab(tab);
+});
+
 it('hydrates an evicted model for a late native notification without replacing the provider binding', async () => {
   const h = setup();
   const first = await h.attach();
@@ -731,6 +749,8 @@ it('leaves a branch preview when its presentation detaches from a retained model
   const saving = first.controllers.conversationController.save();
   const model = first.session.runtime.model;
   await destroyTab(first);
+  // The departing presentation is not rendered again; reattachment renders the full transcript.
+  expect(first.dom.messagesEl.textContent).not.toContain('Second answer');
   const second = await h.attach();
   expect(second.session.runtime.peekModel).toBe(model);
   held.resolve();

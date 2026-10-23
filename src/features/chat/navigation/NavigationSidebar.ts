@@ -32,6 +32,8 @@ export class NavigationSidebar {
   constructor(
     private parentEl: HTMLElement,
     private messagesEl: HTMLElement,
+    /** Renders a windowed transcript's earlier messages, so the directory lists every prompt. */
+    private readonly revealEarlierMessages: () => void = () => undefined,
   ) {
     this.container = this.parentEl.createDiv({ cls: 'claudian-nav-sidebar' });
 
@@ -195,6 +197,7 @@ export class NavigationSidebar {
       this.#closeDirectory();
       return;
     }
+    this.revealEarlierMessages();
     this.#openDirectory();
   }
 

@@ -413,6 +413,7 @@ export function buildTabRuntimeUI(
   const navigationSidebar = new NavigationSidebar(
     dom.messagesWrapperEl,
     dom.messagesEl,
+    () => runtimeRef.current()?.renderer.revealEarlierMessages(true),
   );
   options.registerCleanup('tab navigation sidebar', () => navigationSidebar.destroy());
 

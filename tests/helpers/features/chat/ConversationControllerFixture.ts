@@ -64,6 +64,8 @@ export function createConversationControllerDeps(
       renderMessages: jest.fn().mockReturnValue(createMockEl()),
       refreshBranchButtons: jest.fn(),
       refreshBranchButtonState: jest.fn(),
+      captureReadingAnchor: jest.fn(() => null),
+      restoreReadingAnchor: jest.fn(),
     } as any,
     subagentManager: {
       clear: jest.fn(),

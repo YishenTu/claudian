@@ -687,6 +687,39 @@ button.claudian-work-header:disabled {
   white-space: nowrap;
 }
 
+.claudian-earlier-messages {
+  display: flex;
+  justify-content: center;
+  margin: 4px 0 12px;
+}
+
+.claudian-earlier-messages > button.claudian-earlier-messages-btn,
+.claudian-earlier-messages > button.claudian-earlier-messages-btn:hover,
+.claudian-earlier-messages > button.claudian-earlier-messages-btn:focus-visible,
+.claudian-earlier-messages > button.claudian-earlier-messages-btn:active {
+  appearance: none;
+  width: auto;
+  height: auto;
+  padding: 4px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+.claudian-earlier-messages > button.claudian-earlier-messages-btn:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.claudian-earlier-messages > button.claudian-earlier-messages-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
 .claudian-tab-hydration {
   min-height: 160px;
   display: flex;

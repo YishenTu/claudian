@@ -39,6 +39,8 @@ interface SessionRecord {
   /** Holders that will reattach this session by its key; a held draft is never disposed as idle. */
   holds: number;
   settledWaiters: Array<(settled: boolean) => void>;
+  /** When a presentation last detached it; 0 if none ever has. Orders retention of viewed sessions. */
+  viewedAt: number;
   unsubscribe(): void;
 }
 
@@ -54,10 +56,13 @@ export class SessionRuntimePool {
   private readonly draining = new Set<Promise<void>>();
   private closing = false;
   private disposal: Promise<void> | null = null;
+  private viewSequence = 0;
 
   constructor(private readonly deps: {
     createRuntime(identity: SessionIdentity): ChatSessionRuntime;
     releaseHistory(id: string, canRelease: () => boolean): Promise<boolean>;
+    /** Recently viewed idle conversation sessions that keep their loaded history; 0 when omitted. */
+    retainedDetachedSessions?: number;
     onChanged(): void;
     onError(error: unknown): void;
   }) {}
@@ -102,7 +107,8 @@ export class SessionRuntimePool {
     const runtime = this.deps.createRuntime(identity);
     const record: SessionRecord = {
       runtime, status: readStatus(runtime),
-      attachment: null, eviction: null, retired: false, holds: 0, settledWaiters: [], unsubscribe: () => undefined,
+      attachment: null, eviction: null, retired: false, holds: 0, settledWaiters: [], viewedAt: 0,
+      unsubscribe: () => undefined,
     };
     this.records.set(runtime, record);
     this.keys.set(runtime.sessionKey, record);
@@ -137,6 +143,7 @@ export class SessionRuntimePool {
     if (!record || record.attachment !== attachment) return;
     record.runtime.peekModel?.detach();
     record.attachment = null;
+    record.viewedAt = ++this.viewSequence;
     this.changed(record);
   }
 
@@ -159,6 +166,20 @@ export class SessionRuntimePool {
       return;
     }
     if (record.eviction || !this.canEvict(record)) return;
+    if (record.viewedAt > 0 && this.deps.retainedDetachedSessions) {
+      // A newly retained session can push the least recently viewed one past the limit. A session with
+      // a pending save retries it on its own changes, not on every other session's detach.
+      for (const other of this.records.values()) {
+        if (other !== record && !other.runtime.peekModel?.state.hasPendingConversationSave) this.scheduleEviction(other);
+      }
+    }
+    this.scheduleEviction(record);
+  }
+
+  private scheduleEviction(record: SessionRecord): void {
+    if (record.eviction || !this.canEvict(record)) return;
+    // Retention keeps history loaded; a pending save is still flushed on detach.
+    if (this.isRetained(record) && !record.runtime.peekModel?.state.hasPendingConversationSave) return;
     // Let the initiating operation publish all of its state before examining retention.
     record.eviction = Promise.resolve().then(() => this.evict(record))
       .then(interrupted => {
@@ -178,6 +199,18 @@ export class SessionRuntimePool {
       && runtime.isIdle && (!runtime.peekModel || runtime.peekModel.canEvict);
   }
 
+  /** Among loaded, evictable conversation sessions, only the most recently viewed keep their history. */
+  private isRetained(record: SessionRecord): boolean {
+    const limit = this.deps.retainedDetachedSessions ?? 0;
+    if (limit <= 0 || record.viewedAt === 0 || !record.runtime.conversationId || !record.runtime.peekModel) return false;
+    let newer = 0;
+    for (const other of this.records.values()) {
+      if (other !== record && other.viewedAt > record.viewedAt && other.runtime.conversationId
+        && other.runtime.peekModel && this.canEvict(other) && ++newer >= limit) return false;
+    }
+    return true;
+  }
+
   /** Returns true when changing retention conditions interrupted the attempt. */
   private async evict(record: SessionRecord): Promise<boolean> {
     const { runtime } = record;
@@ -195,8 +228,10 @@ export class SessionRuntimePool {
       await model.conversationController.save(false);
       if (!eligible()) return true;
     }
-    const released = await this.deps.releaseHistory(runtime.conversationId, eligible);
-    if (!eligible()) return true;
+    if (this.isRetained(record)) return false;
+    const releasable = () => eligible() && !this.isRetained(record);
+    const released = await this.deps.releaseHistory(runtime.conversationId, releasable);
+    if (!releasable()) return true;
     if (released) runtime.releaseModel(model);
     return false;
   }

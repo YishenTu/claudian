@@ -805,9 +805,13 @@ it('reuses created message elements instead of searching the growing history for
   const history: ChatMessage[] = Array.from({ length: 100 }, (_, index) => ({
     id: `indexed-${index}`, role: index % 2 ? 'assistant' : 'user', content: `Message ${index}`, timestamp: testDate().getTime(),
   }));
-  const positionLookup = jest.spyOn(history, 'indexOf');
+  // The renderer may search copies of the history too, so watch every array of its length.
+  const positionLookup = jest.spyOn(Array.prototype, 'indexOf');
   renderer.renderMessages(history, () => 'Hello');
-  expect(positionLookup).not.toHaveBeenCalled();
+  renderer.revealEarlierMessages(true);
+  const historyLookups = positionLookup.mock.contexts.filter(context => Array.isArray(context) && context.length === history.length);
+  positionLookup.mockRestore();
+  expect(historyLookups).toHaveLength(0);
   expect(query.mock.calls.filter(([selector]) => selector.includes('data-message-id') || selector.includes('data-work-message-id'))).toHaveLength(0);
   expect(messagesEl.querySelectorAll('.claudian-message')).toHaveLength(100);
   renderer.dispose();

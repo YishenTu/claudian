@@ -303,8 +303,8 @@ export class SessionModel {
 
   detach(expected?: SessionPresentation): void {
     if (expected && this.presentation !== expected) return;
-    // A branch preview exists only in the presentation showing it; reattachment shows the full transcript.
-    if (this.presentation) this.conversationController.cancelBranchDraft();
+    // A branch preview exists only in the presentation showing it; reattachment renders the full transcript.
+    if (this.presentation) this.conversationController.cancelBranchDraft({ render: false });
     this.session.sideChat.detachPresentation();
     this.inlinePrompts.detachPresentation();
     this.linkedContentController.unmountWelcome();

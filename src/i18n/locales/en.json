@@ -107,6 +107,7 @@
     "worked": "Worked",
     "taskNotification": "Task notification",
     "copyMessage": "Copy message",
+    "showEarlierMessages": "Show earlier messages",
     "renderFailed": "Failed to render message content.",
     "interruptedHint": "· What should Claudian do instead?",
     "sessions": {

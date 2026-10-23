@@ -43,7 +43,7 @@ function createSession(providerId?: ProviderCapabilities['providerId']) {
   const subagents = new SubagentManager(info => stream.subagents.onAsyncSubagentStateChange(info), new ClaudeTaskResultInterpreter());
   const stream: StreamController = new StreamController({ plugin, state, subagentManager: subagents,
     get renderer() { return transcript.renderer; }, getMessagesEl: () => transcript.messagesEl,
-    getProviderId: () => 'claude', updateQueueIndicator: () => undefined });
+    getProviderId: () => providerId ?? 'claude', updateQueueIndicator: () => undefined });
   const transcript: SessionTranscript = new SessionTranscript(state, stream, subagents);
   let nextId = 0;
   const host = { state, stream, turns, get renderer() { return transcript.renderer; }, createMessageId: () => `message-${++nextId}` };
@@ -187,6 +187,36 @@ it.each<[string, ProviderCapabilities['providerId'], Pick<ChatMessage, 'toolCall
   const transcript = (root: HTMLElement) => [...root.querySelectorAll('.claudian-message')].map(el => el.outerHTML);
   expect(transcript(reattached)).toEqual(transcript(hydrated));
   expect(within(reattached).getAllByRole('button', { name: /Zeno|Research/ })).toHaveLength(1);
+});
+
+it('keeps a lifecycle update for an unrendered earlier turn out of the streaming reply', async () => {
+  const clock = testClock();
+  const session = createSession('codex');
+  const filler = Array.from({ length: 25 }, (_, index): ChatMessage[] => [
+    { id: `u${index}`, role: 'user', content: `Prompt ${index}`, timestamp: clock().getTime() },
+    { id: `a${index}`, role: 'assistant', content: `Answer ${index}`, timestamp: clock().getTime(), durationSeconds: 1 },
+  ]).flat();
+  session.state.messages = [
+    { id: 'prompt', role: 'user', content: 'Spawn.', timestamp: clock().getTime() },
+    { id: 'answer', role: 'assistant', content: '', timestamp: clock().getTime(), durationSeconds: 1,
+      toolCalls: [{ id: 'spawn', name: TOOL_SPAWN_AGENT, input: { message: 'Inspect utils.ts.' }, status: 'running' }],
+      contentBlocks: [{ type: 'tool_use', toolId: 'spawn' }] },
+    ...filler,
+  ];
+  const root = session.attach();
+  session.response.start();
+  await session.emit({ type: 'text_delta', text: 'Working.' } as Omit<ProviderExecutionEvent, 'scope'>);
+  expect(root.querySelector('[data-message-id="answer"]')).toBeNull();
+
+  expect(session.stream.subagents.handleSubagentUpdate({ id: 'spawn', description: 'Zeno', prompt: 'Inspect utils.ts.',
+    status: 'completed', result: 'Patched utils.ts.', toolCalls: [], isExpanded: false })).toBe(true);
+  expect(within(root).queryAllByRole('button', { name: /Subagent task/ })).toHaveLength(0);
+  session.transcript.renderer!.revealEarlierMessages(true);
+  // The update still reaches the earlier message it belongs to.
+  expect(session.state.messages[1].toolCalls?.[0].subagent).toMatchObject({ status: 'completed', result: 'Patched utils.ts.' });
+  expect(within(root.querySelector<HTMLElement>('[data-message-id="answer"]')!).getAllByRole('button', { name: /Subagent task/ })).toHaveLength(1);
+  expect(within(root).getAllByRole('button', { name: /Subagent task/ })).toHaveLength(1);
+  await session.finish();
 });
 
 it('keeps a background task from a settled response connected across reattachment', async () => {

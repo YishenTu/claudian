@@ -613,7 +613,7 @@ it('protects parked main drafts and cancels branch previews when switching to si
   routing.state.messages = history;
   const conversation = new ConversationController({
     state: routing.state, drafts: harness.drafts, session: routing.session, plugin: harness.plugin,
-    renderer: { renderMessages: jest.fn(), refreshBranchButtonState: jest.fn() },
+    renderer: { renderMessages: jest.fn(), refreshBranchButtonState: jest.fn(), captureReadingAnchor: () => null, restoreReadingAnchor: jest.fn() },
     getInputEl: () => harness.inputEl, getMessagesEl: () => document.body,
     getImageContextManager: () => harness.imageContextManager,
     getWelcomeEl: () => null, setWelcomeEl: jest.fn(),
@@ -651,7 +651,7 @@ it.each([false, true])('keeps side drafts separate while a branch submission set
   const routing = createRouting(harness, {}, undefined, deps => {
     conversation = new ConversationController({
       ...deps, plugin: { settings: {}, updateConversation: jest.fn(), getConversationSummary: () => null, projects: createProjectsFake() },
-      renderer: { renderMessages: jest.fn(), refreshBranchButtonState: jest.fn() },
+      renderer: { renderMessages: jest.fn(), refreshBranchButtonState: jest.fn(), captureReadingAnchor: () => null, restoreReadingAnchor: jest.fn() },
       setWelcomeEl: jest.fn(), getExecutionCoordinator: () => coordinator,
     } as any);
     deps.conversationController = conversation;

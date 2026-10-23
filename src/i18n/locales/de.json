@@ -107,6 +107,7 @@
     "worked": "Gearbeitet",
     "taskNotification": "Aufgabenbenachrichtigung",
     "copyMessage": "Nachricht kopieren",
+    "showEarlierMessages": "Frühere Nachrichten anzeigen",
     "renderFailed": "Nachrichteninhalt konnte nicht angezeigt werden.",
     "interruptedHint": "· Was soll Claudian stattdessen tun?",
     "sessions": {

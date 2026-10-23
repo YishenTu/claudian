@@ -11,6 +11,7 @@
 - Blank-tab provider transitions serialize and roll back to the last stable draft. Model-picker intents affect only the selected tab/conversation and the future-tab seed; existing tabs must not subscribe to that seed.
 - A provider-reported missing session can delete its record from inside its own turn. Retire that session only after the turn settles, so queued and unsent input reaches the attached composer before the tab resets. The pool disposes a deleted conversation's session once it is detached and idle; unreachable detached recovery is discarded with it.
 - A steer or async answer returns to the composer or queue only when definitely unsent; accepted or uncertain delivery is reconciled from provider echo/history and never resent.
+- A transcript renders only a suffix that starts at a prompt; earlier messages render on request through `MessageRenderer`. A DOM lookup miss can mean an unrendered earlier message: reveal it through the renderer or skip presentation, never fall back to the current reply.
 - Open response blocks, tool/subagent records, and pending interaction answers must survive absent presentation. Detach cancels view jobs and releases DOM; it does not finalize blocks or settle requests.
 - Deferred presentation work (indicators, prompt resumes, scheduled renders) is fenced by the stream generation that scheduled it; never apply it to whichever turn is current.
 - Conversation authority is revalidated after session preparation immediately before provider handoff. Superseded preparation cannot install or publish resources.

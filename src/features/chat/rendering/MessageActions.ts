@@ -45,6 +45,8 @@ export class MessageActions {
     private readonly messagesEl: HTMLElement,
     private readonly getCapabilities: () => ProviderCapabilities,
     private readonly callbacks: MessageActionCallbacks,
+    /** Whether prompts precede the first rendered one, so it is not the conversation's first. */
+    private readonly hasEarlierMessages: () => boolean,
   ) {}
 
   /** Image-only prompts keep a bubble only when it can carry branch controls. */
@@ -245,7 +247,7 @@ export class MessageActions {
     element.querySelectorAll('[data-branch-action], .claudian-branch-position, .claudian-branch-marker').forEach(child => child.remove());
     element.classList.remove('claudian-message-branched');
     const toolbar = this.#getOrCreateToolbar(element);
-    if (element === this.messagesEl.querySelector('[data-role="user"]')) return;
+    if (element === this.messagesEl.querySelector('[data-role="user"]') && !this.hasEarlierMessages()) return;
     const anchor = toolbar.querySelector('.claudian-user-msg-copy-btn, .claudian-message-timestamp');
     const addButton = (label: string, icon: string, target?: string, unavailable = false, reason = '') => {
       const button = toolbar.createEl('button', {

@@ -107,6 +107,7 @@
     "worked": "Travail effectué",
     "taskNotification": "Notification de tâche",
     "copyMessage": "Copier le message",
+    "showEarlierMessages": "Afficher les messages précédents",
     "renderFailed": "Impossible d’afficher le contenu du message.",
     "interruptedHint": "· Que doit faire Claudian à la place ?",
     "sessions": {

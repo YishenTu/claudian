@@ -6,13 +6,18 @@ import { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime'
 import { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 
 describe('session ownership across presentations', () => {
-  function setup() {
+  function setup(options: {
+    retainedDetachedSessions?: number;
+    releaseHistory?: (id: string) => Promise<boolean>;
+    onError?: (error: unknown) => void;
+  } = {}) {
     const harness = createHarness();
     const pool = new SessionRuntimePool({
       createRuntime: identity => new ChatSessionRuntime(identity, harness.coordinator, session => createSessionModelStub(session)),
-      releaseHistory: async () => true,
+      releaseHistory: options.releaseHistory ?? (async () => true),
+      retainedDetachedSessions: options.retainedDetachedSessions,
       onChanged: () => undefined,
-      onError: error => { throw error; },
+      onError: options.onError ?? (error => { throw error; }),
     });
     return { pool, harness };
   }
@@ -142,5 +147,76 @@ describe('session ownership across presentations', () => {
     expect(unheld.runtime.isDisposed).toBe(true);
     expect(pool.acquire({ conversationId: null, providerId: 'claude', draftModel: 'model', draftSessionKey: released.key }, owner)
       .attachment.runtime).not.toBe(unheld.runtime);
+  });
+
+  it('keeps the most recently viewed idle sessions loaded and releases the least recent beyond the limit', async () => {
+    const released: string[] = [];
+    const { pool } = setup({ retainedDetachedSessions: 2, releaseHistory: async id => { released.push(id); return true; } });
+    const owner = { reveal: jest.fn() };
+    const flush = async () => { for (let i = 0; i < 10; i += 1) await Promise.resolve(); };
+    const view = (id: string) => {
+      const { attachment } = pool.acquire({ conversationId: id, providerId: 'claude', draftModel: null }, owner);
+      const model = attachment.runtime.model;
+      return { attachment, model };
+    };
+
+    const a = view('a');
+    pool.release(a.attachment);
+    const b = view('b');
+    pool.release(b.attachment);
+    await flush();
+    expect(released).toEqual([]);
+    expect(a.attachment.runtime.peekModel).toBe(a.model);
+
+    // Viewing a third session pushes the least recently viewed one out.
+    const c = view('c');
+    pool.release(c.attachment);
+    await flush();
+    expect(released).toEqual(['a']);
+    expect(a.attachment.runtime.peekModel).toBeNull();
+
+    // Returning to a retained session reuses its loaded model and refreshes its recency.
+    const again = view('b');
+    expect(again.model).toBe(b.model);
+    pool.release(again.attachment);
+    const d = view('d');
+    pool.release(d.attachment);
+    await flush();
+    expect(released).toEqual(['a', 'c']);
+    expect(b.attachment.runtime.peekModel).toBe(b.model);
+    expect(d.attachment.runtime.peekModel).toBe(d.model);
+    await pool.dispose();
+  });
+
+  it('flushes a retained session\'s pending save on detach and reports a failed retry, keeping its history', async () => {
+    const released: string[] = [];
+    const onError = jest.fn();
+    const { pool } = setup({ retainedDetachedSessions: 2, onError, releaseHistory: async id => { released.push(id); return true; } });
+    const flush = async () => { for (let i = 0; i < 10; i += 1) await Promise.resolve(); };
+    const { attachment } = pool.acquire({ conversationId: 'unsaved', providerId: 'claude', draftModel: null }, { reveal: jest.fn() });
+    const model = attachment.runtime.model;
+    // A save that failed at the end of a turn left the conversation dirty.
+    const state = { isRewinding: false, hasPendingConversationSave: true };
+    Object.defineProperty(model, 'state', { get: () => state });
+    const failure = new Error('Vault unavailable');
+    const save = jest.spyOn(model.conversationController, 'save').mockRejectedValueOnce(failure);
+
+    pool.release(attachment);
+    await flush();
+    expect(save).toHaveBeenCalledWith(false);
+    expect(onError).toHaveBeenCalledWith(failure);
+    expect(released).toEqual([]);
+    expect(attachment.runtime.peekModel).toBe(model);
+
+    // Viewing another session does not retry this session's failing save again.
+    save.mockRejectedValue(failure);
+    const other = pool.acquire({ conversationId: 'other', providerId: 'claude', draftModel: null }, { reveal: jest.fn() });
+    void other.attachment.runtime.model;
+    pool.release(other.attachment);
+    await flush();
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+    save.mockResolvedValue(undefined);
+    await pool.dispose();
   });
 });

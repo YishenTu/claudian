@@ -750,7 +750,8 @@ describe('branch draft submission', () => {
     const navigation = deferred<{ status: string; messages?: typeof first[] }>();
     const navigateConversationBranch = jest.fn().mockReturnValue(navigation.promise);
     Object.assign(fixture.coordinator, { navigateConversationBranch });
-    Object.assign(fixture.deps.renderer, { renderMessages: jest.fn(), refreshBranchButtonState: jest.fn() });
+    Object.assign(fixture.deps.renderer, { renderMessages: jest.fn(), refreshBranchButtonState: jest.fn(),
+      captureReadingAnchor: () => null, restoreReadingAnchor: jest.fn() });
     // The harness conversation owner is real; turn admission is wired to it at construction.
     const conversation = fixture.deps.conversationController;
     await conversation.navigateBranch('second');

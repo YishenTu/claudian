@@ -107,6 +107,7 @@
     "worked": "已完成工作",
     "taskNotification": "任务通知",
     "copyMessage": "复制消息",
+    "showEarlierMessages": "显示更早的消息",
     "renderFailed": "消息内容渲染失败。",
     "interruptedHint": "· 你希望 Claudian 改做什么？",
     "sessions": {

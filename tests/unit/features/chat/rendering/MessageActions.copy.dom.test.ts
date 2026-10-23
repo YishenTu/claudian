@@ -18,7 +18,7 @@ const USER_MESSAGE: ChatMessage = { id: 'u1', role: 'user', content: 'user promp
 function setup() {
   const messagesEl = document.body.createDiv();
   const actions = new MessageActions(
-    { settings: {} } as never, messagesEl, () => ({}) as ProviderCapabilities, {},
+    { settings: {} } as never, messagesEl, () => ({}) as ProviderCapabilities, {}, () => false,
   );
   return { messagesEl, actions };
 }
