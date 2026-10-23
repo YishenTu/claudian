@@ -16,7 +16,7 @@ body:
       options:
         - label: I searched existing issues and did not find the same problem.
           required: true
-        - label: I have read the relevant documentation (e.g., the README) but could not resolve this issue.
+        - label: I have read the relevant documentation (the README, the [Troubleshooting guide](https://github.com/YishenTu/claudian/blob/main/docs/troubleshooting.md) and the other [guides](https://github.com/YishenTu/claudian/tree/main/docs)) but could not resolve this issue.
           required: true
 
   - type: textarea
