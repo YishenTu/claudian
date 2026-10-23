@@ -254,6 +254,28 @@ it('follows agent edits on disk while reading, and offers Reload or Keep my edit
   expect(screen.queryByRole('dialog')).toBeNull();
 });
 
+it('after Keep my edits, measures unsaved changes against the agent version now on disk', async () => {
+  jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] });
+  const memory = new InMemoryProjectMemory(FILLED);
+  const { dialog, controls, textarea } = await open(memory);
+  await jest.advanceTimersByTimeAsync(0);
+
+  type(dialog, textarea, 'Mine');
+  memory.writeExternally('Agent');
+  await jest.advanceTimersByTimeAsync(2_000);
+  fireEvent.click(controls.getByRole('button', { name: t('chat.projects.memory.keepMine') }));
+
+  // Back to the opening text, which no longer matches the file: still unsaved.
+  type(dialog, textarea, FILLED);
+  expect(hasDirtyMark(dialog)).toBe(true);
+  const save = controls.getByRole('button', { name: t('common.save') }) as HTMLButtonElement;
+  expect(save.disabled).toBe(false);
+  // Matching the file again leaves nothing to save.
+  type(dialog, textarea, 'Agent');
+  expect(hasDirtyMark(dialog)).toBe(false);
+  expect(save.disabled).toBe(true);
+});
+
 it('reloads the agent version from the on-disk change notice, discarding the edits', async () => {
   jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] });
   const memory = new InMemoryProjectMemory(FILLED);

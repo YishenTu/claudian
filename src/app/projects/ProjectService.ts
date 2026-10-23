@@ -36,13 +36,14 @@ export interface ProjectServiceDeps {
 }
 
 /**
- * Sole owner of project records and their memory files. Record and memory writes serialize per project;
- * membership stays on each conversation and is written through the conversation owner.
+ * Sole owner of project records and their memory files. Record and memory writes serialize across all projects, since
+ * memory paths are owned across projects: a path one project claims is taken for the others. Membership stays on each
+ * conversation and is written through the conversation owner.
  */
 export class ProjectService implements ProjectReader, ProjectMutations, ProjectMemoryOperations {
   readonly #records = new Map<string, ProjectRecord>();
   readonly #listeners = new Set<() => void>();
-  readonly #queues = new Map<string, Promise<void>>();
+  #queue: Promise<void> = Promise.resolve();
 
   constructor(records: readonly ProjectRecord[], private readonly deps: ProjectServiceDeps) {
     for (const record of records) this.#records.set(record.id, record);
@@ -72,7 +73,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
       isPinned: false,
       createdAt: Date.now(),
     };
-    return this.#enqueue(id, async () => {
+    return this.#enqueue(async () => {
       if (this.#isClaimed(record.memoryPath, id)) throw new ProjectMemoryPathTakenError(record.memoryPath);
       if (!await this.#createMemory(record.memoryPath, renderProjectMemoryTemplate(name))) {
         throw new ProjectMemoryPathTakenError(record.memoryPath);
@@ -93,7 +94,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
   async update(id: string, patch: ProjectUpdatePatch): Promise<void> {
     const name = patch.name !== undefined ? requireName(patch.name) : undefined;
     const requestedPath = patch.memoryPath !== undefined ? requireMemoryPath(patch.memoryPath) : undefined;
-    return this.#enqueue(id, async () => {
+    return this.#enqueue(async () => {
       const record = this.#records.get(id);
       if (!record) return;
       const updated: ProjectRecord = {
@@ -138,7 +139,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
    * already count as no project.
    */
   delete(id: string): Promise<void> {
-    return this.#enqueue(id, async () => {
+    return this.#enqueue(async () => {
       const record = this.#records.get(id);
       if (!record) return;
       await this.deps.store.remove(id);
@@ -168,7 +169,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
     expectedRevision: string,
     options: ProjectMemorySaveOptions = {},
   ): Promise<ProjectMemoryContent> {
-    return this.#enqueue(id, async () => {
+    return this.#enqueue(async () => {
       const { memoryPath } = this.#require(id);
       if (!options.overwrite) {
         const current = await this.#readMemory(memoryPath);
@@ -183,7 +184,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
   }
 
   recreateMemory(id: string): Promise<ProjectMemoryContent> {
-    return this.#enqueue(id, async () => {
+    return this.#enqueue(async () => {
       const record = this.#require(id);
       const content = renderProjectMemoryTemplate(record.name);
       // The file may have reappeared (sync, undo) since it was reported missing; never replace it.
@@ -197,11 +198,11 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
   /** Waits for queued writes; later notifications reach no listener. */
   async dispose(): Promise<void> {
     this.#listeners.clear();
-    await Promise.all(this.#queues.values());
+    await this.#queue;
   }
 
   #commit(id: string, next: (record: ProjectRecord) => ProjectRecord): Promise<void> {
-    return this.#enqueue(id, async () => {
+    return this.#enqueue(async () => {
       const record = this.#records.get(id);
       if (!record) return;
       const updated = next(record);
@@ -301,13 +302,9 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
     }
   }
 
-  #enqueue<T>(id: string, operation: () => Promise<T>): Promise<T> {
-    const result = (this.#queues.get(id) ?? Promise.resolve()).then(operation);
-    const barrier = result.then(() => undefined, () => undefined);
-    this.#queues.set(id, barrier);
-    void barrier.then(() => {
-      if (this.#queues.get(id) === barrier) this.#queues.delete(id);
-    });
+  #enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.#queue.then(operation);
+    this.#queue = result.then(() => undefined, () => undefined);
     return result;
   }
 }

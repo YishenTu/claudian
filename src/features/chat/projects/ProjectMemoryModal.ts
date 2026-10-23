@@ -424,7 +424,8 @@ export class ProjectMemoryModal extends Modal {
     reloadButton.addEventListener('click', () => this.accept(result));
     const keepButton = actions.createEl('button', { text: t('chat.projects.memory.keepMine'), attr: { type: 'button' } });
     keepButton.addEventListener('click', () => {
-      // Saving now replaces the version the user has seen and declined.
+      // Saving now replaces the version the user has seen and declined, and unsaved changes count against it.
+      this.baseline = result.content;
       this.revision = result.revision;
       this.modifiedAt = result.modifiedAt;
       this.dismissedRevision = result.revision;

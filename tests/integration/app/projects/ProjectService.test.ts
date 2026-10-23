@@ -256,6 +256,23 @@ describe('ProjectService', () => {
     expect(readFile(memory, 'Shared/MEMORY.md')).toBe(`# Second\n\n${TEMPLATE_SECTIONS}`);
   });
 
+  it('lets only one of two concurrent moves claim the same missing-file path', async () => {
+    const { memory, projects } = await fixture();
+    const first = await projects.create({ name: 'First', instructions: '', memoryPath: 'First.md' });
+    const second = await projects.create({ name: 'Second', instructions: '', memoryPath: 'Second.md' });
+    memory.nodes.delete(first.memoryPath);
+    memory.nodes.delete(second.memoryPath);
+
+    const results = await Promise.allSettled([
+      projects.update(first.id, { memoryPath: 'Shared.md' }),
+      projects.update(second.id, { memoryPath: 'Shared.md' }),
+    ]);
+
+    expect(results.map(result => result.status)).toEqual(['fulfilled', 'rejected']);
+    expect((results[1] as PromiseRejectedResult).reason).toBeInstanceOf(ProjectMemoryPathTakenError);
+    expect(projects.list().map(record => record.memoryPath)).toEqual(['Shared.md', 'Second.md']);
+  });
+
   it('never trashes a memory file another live project still records', async () => {
     const { memory, projects, store } = await fixture();
     const first = await projects.create({ name: 'First', instructions: '', memoryPath: 'Shared/MEMORY.md' });
@@ -340,7 +357,7 @@ describe('ProjectService', () => {
     await expect(projects.readMemory(record.id)).resolves.toEqual(saved);
   });
 
-  it('re-reads the memory file inside the project queue so two saves from one revision cannot both win', async () => {
+  it('re-reads the memory file inside the write queue so two saves from one revision cannot both win', async () => {
     const { memory, projects } = await fixture();
     const record = await projects.create({ name: 'Memo', instructions: '', memoryPath: 'Memo.md' });
     const read = await projects.readMemory(record.id);
