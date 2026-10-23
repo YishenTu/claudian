@@ -55,8 +55,8 @@ export function createChatSessionRuntime(plugin: ChatFeatureHost, identity: Sess
       record => record.id === runtime.conversationId && !record.isArchived,
     ),
     onDiscard: messages => {
-      const senders = [...new Set(messages.map(message => message.from))].join(', ');
-      new Notice(t('chat.sessionMessage.undelivered', { senders }));
+      const senders = [...new Set(messages.flatMap(message => message.from ?? []))].join(', ');
+      if (senders) new Notice(t('chat.sessionMessage.undelivered', { senders }));
     },
   }));
   runtime.installSideChat(createSessionSideChat(runtime, plugin));

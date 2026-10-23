@@ -64,6 +64,8 @@ export class SessionRuntimePool {
     /** Recently viewed idle conversation sessions that keep their loaded history; 0 when omitted. */
     retainedDetachedSessions?: number;
     onChanged(): void;
+    /** A conversation's session finished its work: running turns, background work and side chat. */
+    onSessionSettled?(conversationId: string): void;
     onError(error: unknown): void;
   }) {}
 
@@ -160,6 +162,7 @@ export class SessionRuntimePool {
     record.status = status;
     // Streaming, usage and presentation changes leave session lists untouched.
     if (promoted || status.isWorking !== previous.isWorking || status.attention !== previous.attention) this.deps.onChanged();
+    if (previous.isWorking && !status.isWorking && status.conversationId) this.deps.onSessionSettled?.(status.conversationId);
     if (!status.isWorking) this.settleWaiters(record, true);
     if (record.retired) {
       if (this.isReleasable(record)) void this.disposeRecord(record).catch(error => this.deps.onError(error));

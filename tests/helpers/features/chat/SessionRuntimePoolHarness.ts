@@ -5,11 +5,15 @@ import { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool'
 const pools: SessionRuntimePool[] = [];
 
 /** Real session ownership for view fixtures; persistence remains their supplied application port. */
-export function installSessionRuntimePool(plugin: ChatFeatureHost, options: { onChanged?: () => void } = {}): SessionRuntimePool {
+export function installSessionRuntimePool(
+  plugin: ChatFeatureHost,
+  options: { onChanged?: () => void; onSessionSettled?: (conversationId: string) => void } = {},
+): SessionRuntimePool {
   const pool = new SessionRuntimePool({
     createRuntime: identity => createChatSessionRuntime(plugin, identity),
     releaseHistory: async (_id, canRelease) => canRelease(),
     onChanged: options.onChanged ?? (() => undefined),
+    ...(options.onSessionSettled ? { onSessionSettled: options.onSessionSettled } : {}),
     onError: () => undefined,
   });
   Object.assign(plugin, { sessionRuntimes: pool });

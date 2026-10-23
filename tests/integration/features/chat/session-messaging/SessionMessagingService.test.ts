@@ -19,6 +19,7 @@ import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceReg
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import type { ClaudianSettings, Conversation, ConversationMutablePatch, ProjectReader } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { createClaudianAPI } from '@/features/chat/session-messaging/ClaudianAPI';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { getSessionSettingsSnapshot } from '@/features/chat/sessions/sessionSettings';
 
@@ -80,14 +81,15 @@ function setup(options: { projects?: ProjectReader; members?: Record<string, str
       persistExecutionSnapshot: async () => true, recordConversationActivity: async () => undefined,
     },
   } as unknown as ChatFeatureHost;
-  const pool = installSessionRuntimePool(host);
+  const settled: string[] = [];
+  const pool = installSessionRuntimePool(host, { onSessionSettled: id => settled.push(id) });
   const refreshModelControls = jest.fn();
   const service = new SessionMessagingService({ getHost: () => host, getActiveConversationId: () => 'sender', refreshModelControls,
     commitSelection: (...args) => repository.updateSelectedModelIf(...args),
   });
   Object.assign(host, { bindSessionTools: (id: string) => service.bindSessionTools(id) });
   const binding = service.bindSessionTools('sender');
-  return { host, pool, service, binding, records, repository, backend, saves, record, refreshModelControls };
+  return { host, pool, service, binding, records, repository, backend, saves, record, refreshModelControls, settled };
 }
 const requestText = (request: ProviderExecutionRequest) => request.input.filter(block => block.type === 'text').map(block => block.text).join('');
 const signal = () => new AbortController().signal;
@@ -548,4 +550,66 @@ it('applies no switch when the call is cancelled before admission', async () => 
   await expect(h.binding.port.send({ sessionId: 'recipient', text: 'Hello', model: 'claude-haiku-4-5' }, cancelled.signal)).rejects.toThrow();
   expect(h.records.get('recipient')!.selectedModel).toBe('claude-sonnet-4-5');
   expect(h.pool.get('recipient')).toBeNull();
+});
+
+describe('outside-client API', () => {
+  it('delivers client text as the user\'s own prompt, reports the active session, and reads the finished reply', async () => {
+    const h = setup();
+    const api = createClaudianAPI(h.service);
+    expect(api.version).toBe(1);
+    expect(api.getActiveSessionId()).toBe('sender');
+    expect(await api.send('recipient', { text: 'What is next?' })).toBe('started');
+    await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+    // No session envelope: the provider receives exactly what the user said.
+    expect(requestText(h.backend.latest.requests[0])).toBe('What is next?');
+    h.backend.latest.emitText('Ship the release.');
+    h.backend.latest.complete();
+    await h.pool.get('recipient')!.turns.drain();
+    await waitFor(() => expect(h.settled).toEqual(['recipient']));
+    expect(await api.read('recipient')).toBe('Ship the release.');
+    // Persisted as an ordinary user prompt, so history shows no session sender.
+    const prompt = await waitFor(() => {
+      const saved = h.saves.flatMap(patch => patch.messages ?? []).find(message => message.role === 'user');
+      expect(saved).toBeDefined();
+      return saved!;
+    });
+    expect(prompt).toMatchObject({ content: 'What is next?', displayContent: 'What is next?' });
+    expect(prompt.sessionMessage).toBeUndefined();
+  });
+
+  it('reads no reply from a first turn that is still running after a steer', async () => {
+    const h = setup();
+    const api = createClaudianAPI(h.service);
+    await api.send('recipient', { text: 'Inspect the note' });
+    await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+    const native = h.backend.latest;
+    const steers: ProviderExecutionRequest[] = [];
+    Object.assign(native, { steer: async (request: ProviderExecutionRequest) => { steers.push(request); return true; } });
+    native.emitText('I am still inspecting.');
+    expect(await api.send('recipient', { text: 'Also check the links', mode: 'steer' })).toBe('steered');
+    native.emitOutput({ type: 'user_message_started', content: requestText(native.requests[0]), nativeUserMessageId: 'native-start' });
+    native.emitOutput({ type: 'user_message_started', content: requestText(steers[0]), nativeUserMessageId: 'native-steer' });
+    const model = h.pool.get('recipient')!.peekModel!;
+    await waitFor(() => expect(model.state.messages.some(message => message.userMessageId === 'native-steer')).toBe(true));
+    expect(await api.read('recipient')).toBe('');
+    native.emitText('Both look fine.');
+    native.complete();
+    await h.pool.get('recipient')!.turns.drain();
+    expect(await api.read('recipient')).toBe('Both look fine.');
+  });
+
+  it('stops a running session through send without text, and requires text otherwise', async () => {
+    const h = setup();
+    const api = createClaudianAPI(h.service);
+    await expect(api.send('recipient', {})).rejects.toThrow('"text" is required unless mode is "interrupt"');
+    await expect(api.send('recipient', { mode: 'steer' })).rejects.toThrow('"text" is required unless mode is "interrupt"');
+    await api.send('recipient', { text: 'Long task' });
+    await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+    expect(h.settled).toEqual([]);
+    expect(await api.send('recipient', { mode: 'interrupt' })).toBe('interrupted');
+    expect(h.backend.latest.cancelCalls).toBe(1);
+    await h.pool.get('recipient')!.turns.drain();
+    await waitFor(() => expect(h.settled).toEqual(['recipient']));
+    expect(await api.send('recipient', { mode: 'interrupt' })).toBe('idle');
+  });
 });

@@ -15,13 +15,15 @@ import type {
   SessionToolReasoningDestination,
   SessionToolSendMessageArgs,
   SessionToolSendMessageResult,
+  SessionToolSendMode,
+  SessionToolSendStatus,
   SessionToolSessionStatus,
   SessionToolSessionSummary,
 } from '@/core/session-tools/sessionToolSpecs';
-import type { Conversation, ConversationMeta } from '@/core/types';
+import type { ChatMessage, Conversation, ConversationMeta } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
-import { formatSessionSnapshot } from '@/features/chat/session-messaging/formatSessionSnapshot';
+import { formatLastReply, formatSessionSnapshot } from '@/features/chat/session-messaging/formatSessionSnapshot';
 import { prepareSessionReasoningSelection } from '@/features/chat/sessions/sessionSettings';
 import { throwIfAborted } from '@/utils/abort';
 
@@ -32,12 +34,18 @@ interface NewSessionChoice {
   readonly reasoning?: string;
 }
 
+export interface ClientSendOptions {
+  /** Required unless `mode` is `interrupt`, which without text only stops the session. */
+  readonly text?: string;
+  readonly mode?: 'queue' | SessionToolSendMode;
+}
+
 export interface SessionToolBinding {
   readonly port: ProviderSessionToolPort;
   dispose(): void;
 }
 
-/** Owns caller-bound tool operations; recipient execution belongs to its session runtime. */
+/** Owns caller-bound tool and outside-client operations; recipient execution belongs to its session runtime. */
 export class SessionMessagingService {
   private readonly shutdown = new AbortController();
   private readonly pending = new Set<Promise<unknown>>();
@@ -55,16 +63,8 @@ export class SessionMessagingService {
 
   bindSessionTools(conversationId: string): SessionToolBinding {
     const binding = new AbortController();
-    const invoke = <T>(signal: AbortSignal, operation: (signal: AbortSignal) => Promise<T>): Promise<T> => {
-      const combined = AbortSignal.any([signal, binding.signal, this.shutdown.signal]);
-      const pending = Promise.resolve().then(() => {
-        throwIfAborted(combined, 'Session tool call was cancelled');
-        return operation(combined);
-      });
-      this.pending.add(pending);
-      void pending.finally(() => this.pending.delete(pending)).catch(() => undefined);
-      return pending;
-    };
+    const invoke = <T>(signal: AbortSignal, operation: (signal: AbortSignal) => Promise<T>): Promise<T> =>
+      this.track(AbortSignal.any([signal, binding.signal]), operation);
     return {
       port: {
         list: (args, signal) => invoke(signal, current => this.list(conversationId, args, current)),
@@ -73,6 +73,43 @@ export class SessionMessagingService {
       },
       dispose: () => binding.abort(new Error('The caller session binding was released')),
     };
+  }
+
+  getActiveSessionId(): string | null { return this.deps.getActiveConversationId(); }
+
+  /** An outside client's send: plain user input, or a stop when an interrupt has no text. */
+  sendAsUser(sessionId: string, options: ClientSendOptions): Promise<SessionToolSendStatus> {
+    const { text, mode = 'queue' } = options;
+    if (text === undefined ? mode !== 'interrupt' : typeof text !== 'string' || !text.trim()) {
+      return Promise.reject(new Error('"text" is required unless mode is "interrupt"'));
+    }
+    return this.track(this.shutdown.signal, async signal => {
+      const host = this.deps.getHost();
+      if (!host.sessionRuntimes.get(sessionId)) await host.sessionRuntimes.awaitConversationCreations();
+      const target = await this.resolve(sessionId, signal);
+      const mailbox = host.sessionRuntimes.ensure({ conversationId: target.id, providerId: target.providerId, draftModel: null }).mailbox;
+      if (!mailbox) throw new Error('The target session cannot receive messages');
+      return mailbox.deliver({ message: text === undefined ? null : { text }, ...(mode === 'queue' ? {} : { mode }), signal });
+    });
+  }
+
+  /** The last finished turn's final reply as Markdown; empty when none has finished. */
+  readLastReply(sessionId: string): Promise<string> {
+    return this.track(this.shutdown.signal, async signal => {
+      const transcript = await this.loadTranscript(sessionId, signal);
+      return formatLastReply(transcript.messages, transcript.running);
+    });
+  }
+
+  private track<T>(signal: AbortSignal, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const combined = AbortSignal.any([signal, this.shutdown.signal]);
+    const pending = Promise.resolve().then(() => {
+      throwIfAborted(combined, 'Session tool call was cancelled');
+      return operation(combined);
+    });
+    this.pending.add(pending);
+    void pending.finally(() => this.pending.delete(pending)).catch(() => undefined);
+    return pending;
   }
 
   beginShutdown(): void { this.shutdown.abort(new Error('Session messaging is shutting down')); }
@@ -125,18 +162,8 @@ export class SessionMessagingService {
 
   /** Archived sessions and the caller itself are readable: reading changes nothing. */
   private async read(args: SessionToolReadSessionArgs, signal: AbortSignal): Promise<SessionToolReadSessionResult> {
-    const host = this.deps.getHost();
-    // Ids can come from earlier messages, before the deferred metadata scan admits them.
-    await host.ensureConversationMetadataLoaded([args.sessionId]);
-    throwIfAborted(signal, 'Session tool call was cancelled');
-    const conversation = await host.getConversationById(args.sessionId);
-    throwIfAborted(signal, 'Session tool call was cancelled');
-    if (!conversation) throw new Error('The session does not exist');
-    // A hydrated runtime holds turns storage may not have yet, including headless sessions.
-    const runtime = host.sessionRuntimes.get(conversation.id);
-    const model = runtime?.conversationId === conversation.id ? runtime.peekModel : null;
-    const live = model?.hydrationState === 'ready' ? model.state : null;
-    const page = formatSessionSnapshot(conversation, live?.messages ?? conversation.messages, live?.isStreaming ?? false,
+    const { conversation, messages, running } = await this.loadTranscript(args.sessionId, signal);
+    const page = formatSessionSnapshot(conversation, messages, running,
       args.beforeTurn !== undefined ? { beforeTurn: args.beforeTurn } : {});
     return {
       sessionId: conversation.id,
@@ -145,6 +172,28 @@ export class SessionMessagingService {
       status: this.status(conversation.id),
       ...page,
     };
+  }
+
+  private async loadTranscript(id: string, signal: AbortSignal): Promise<{
+    conversation: Conversation; messages: readonly ChatMessage[]; running: boolean;
+  }> {
+    const host = this.deps.getHost();
+    // Ids can come from earlier messages, before the deferred metadata scan admits them.
+    await host.ensureConversationMetadataLoaded([id]);
+    throwIfAborted(signal, 'Session tool call was cancelled');
+    const conversation = await host.getConversationById(id);
+    throwIfAborted(signal, 'Session tool call was cancelled');
+    if (!conversation) throw new Error('The session does not exist');
+    // A hydrated runtime holds turns storage may not have yet, including headless sessions.
+    const runtime = host.sessionRuntimes.get(conversation.id);
+    const model = runtime?.conversationId === conversation.id ? runtime.peekModel : null;
+    const live = model?.hydrationState === 'ready' ? model.state : null;
+    if (!model || !live) return { conversation, messages: conversation.messages, running: false };
+    // The running turn's boundary also covers prompts steered into it; null until its submission is placed.
+    const end = model.inputController.settledTranscriptEnd(live.messages);
+    return end === null
+      ? { conversation, messages: live.messages, running: live.isStreaming }
+      : { conversation, messages: live.messages.slice(0, end), running: false };
   }
 
   private status(id: string): SessionToolSessionStatus {

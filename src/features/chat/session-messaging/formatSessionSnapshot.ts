@@ -1,5 +1,6 @@
 import { getUserDisplayText } from '@/core/prompt/promptContext';
 import { type ChatMessage, type Conversation, isCanonicalUserMessage } from '@/core/types';
+import { getResponseSegments } from '@/features/chat/rendering/NotificationBoundaries';
 import { getFinalResponseText } from '@/features/chat/rendering/ResponseLayout';
 
 /** Keeps one read within what native tool results accept. */
@@ -14,14 +15,14 @@ export interface SessionSnapshotPage {
   readonly totalTurns: number;
 }
 
-/** Each turn's prompt and final reply, latest turns first to fit `maxChars`. */
-export function formatSessionSnapshot(
-  metadata: Pick<Conversation, 'id' | 'title' | 'providerId' | 'createdAt' | 'lastActivityAt'>,
-  messages: readonly ChatMessage[],
-  running: boolean,
-  options: { beforeTurn?: number; maxChars?: number } = {},
-): SessionSnapshotPage {
-  const turns: { user: ChatMessage; responses: ChatMessage[] }[] = [];
+interface Turn {
+  readonly user: ChatMessage;
+  readonly responses: ChatMessage[];
+}
+
+/** Turns in order, without one still running. */
+function splitFinishedTurns(messages: readonly ChatMessage[], running: boolean): Turn[] {
+  const turns: Turn[] = [];
   for (const message of messages) {
     if (message.isRebuiltContext) continue;
     if (isCanonicalUserMessage(message)) turns.push({ user: message, responses: [] });
@@ -29,15 +30,46 @@ export function formatSessionSnapshot(
   }
   const tail = turns.at(-1)?.responses.at(-1);
   if (running && tail?.completedAt === undefined && !tail?.isInterrupt) turns.pop();
+  return turns;
+}
+
+function formatReply(responses: readonly ChatMessage[]): string {
+  const final = responses.filter(message => message.role === 'assistant')
+    .map(getFinalResponseText).filter(text => text.trim()).join('\n\n');
+  return final || (responses.some(message => message.isInterrupt) ? '(interrupted)'
+    : responses.some(message => message.toolCalls?.some(tool => tool.status === 'error')) ? '(error)' : '(no reply)');
+}
+
+/**
+ * The last finished turn's final answer as Markdown: the trailing text of its last response with text,
+ * across that response's continuation segments. Empty when no turn has finished.
+ */
+export function formatLastReply(messages: readonly ChatMessage[], running: boolean): string {
+  const turn = splitFinishedTurns(messages, running).at(-1);
+  if (!turn) return '';
+  let last: ChatMessage | undefined;
+  for (const message of turn.responses) {
+    if (message.role === 'assistant' && getFinalResponseText(message).trim()) last = message;
+  }
+  if (!last) return formatReply(turn.responses);
+  const segments = getResponseSegments(last, turn.responses);
+  const blocks = segments.flatMap(segment => segment.contentBlocks?.length
+    ? segment.contentBlocks : [{ type: 'text' as const, content: segment.content }]);
+  return getFinalResponseText({ ...last, contentBlocks: blocks });
+}
+
+/** Each turn's prompt and final reply, latest turns first to fit `maxChars`. */
+export function formatSessionSnapshot(
+  metadata: Pick<Conversation, 'id' | 'title' | 'providerId' | 'createdAt' | 'lastActivityAt'>,
+  messages: readonly ChatMessage[],
+  running: boolean,
+  options: { beforeTurn?: number; maxChars?: number } = {},
+): SessionSnapshotPage {
+  const turns = splitFinishedTurns(messages, running);
   const header = `# ${metadata.title}\n\nID: ${metadata.id}\nProvider: ${metadata.providerId}\nCreated: ${new Date(metadata.createdAt).toISOString()}\nUpdated: ${new Date(metadata.lastActivityAt).toISOString()}`;
   const formatTurn = (index: number): string => {
     const { user, responses } = turns[index];
-    const prompt = getUserDisplayText(user);
-    const final = responses.filter(message => message.role === 'assistant')
-      .map(getFinalResponseText).filter(text => text.trim()).join('\n\n');
-    const placeholder = responses.some(message => message.isInterrupt) ? '(interrupted)'
-      : responses.some(message => message.toolCalls?.some(tool => tool.status === 'error')) ? '(error)' : '(no reply)';
-    return `## T${index + 1} user\n${prompt}\n\n## T${index + 1} assistant\n${final || placeholder}`;
+    return `## T${index + 1} user\n${getUserDisplayText(user)}\n\n## T${index + 1} assistant\n${formatReply(responses)}`;
   };
 
   const maxChars = options.maxChars ?? DEFAULT_MAX_CHARS;

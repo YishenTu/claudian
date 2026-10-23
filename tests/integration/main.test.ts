@@ -215,6 +215,7 @@ describe('ClaudianPlugin', () => {
         detachLeavesOfType: jest.fn(),
         on: jest.fn().mockReturnValue({ id: 'workspace-event' }),
         offref: jest.fn(),
+        trigger: jest.fn(),
         onLayoutReady: jest.fn(),
         getLeavesOfType: jest.fn().mockReturnValue([]),
         getMostRecentLeaf: jest.fn().mockReturnValue(null),
@@ -4619,6 +4620,26 @@ describe('ClaudianPlugin', () => {
       );
 
       loadSpy.mockRestore();
+    });
+  });
+
+  describe('outside-client API', () => {
+    it('publishes the API and fires the turn-ended workspace event once a session settles', async () => {
+      await plugin.onload();
+      expect(plugin.api.version).toBe(1);
+      expect(plugin.api.getActiveSessionId()).toBeNull();
+      const host = chatHostOf();
+      const conversation = await host.createConversation();
+      const runtime = host.sessionRuntimes.ensure({ conversationId: conversation.id, providerId: conversation.providerId, draftModel: null });
+      let finish!: () => void;
+      const turn = runtime.turns.run(() => new Promise<void>(resolve => { finish = resolve; }));
+      await Promise.resolve();
+      expect(runtime.isWorking).toBe(true);
+      expect(mockApp.workspace.trigger).not.toHaveBeenCalled();
+      finish();
+      await turn;
+      expect(mockApp.workspace.trigger).toHaveBeenCalledTimes(1);
+      expect(mockApp.workspace.trigger).toHaveBeenCalledWith('claudian:turn-ended', { sessionId: conversation.id });
     });
   });
 

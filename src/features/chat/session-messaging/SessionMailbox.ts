@@ -1,4 +1,4 @@
-import type { SessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
+import type { MailboxMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import type { SessionToolSendMode, SessionToolSendStatus } from '@/core/session-tools/sessionToolSpecs';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import type { SessionModel } from '@/features/chat/sessions/SessionModel';
@@ -10,7 +10,7 @@ export type SessionMessageUnsentReason = TurnCancelReason | 'failed' | 'deferred
 export class SessionMessageDeferredError extends Error {}
 
 interface MailboxEntry {
-  readonly message: SessionMessage;
+  readonly message: MailboxMessage;
   /** Holds its place without dispatching until admitted and, for an interrupt, stopped. */
   held: boolean;
   /** Queue order: interrupts first, newest first, then ordinary entries in admission order. */
@@ -27,7 +27,7 @@ export interface SessionMessageAdmission {
 
 export interface SessionMessageDelivery {
   /** Null only for an interrupt that just stops the recipient. */
-  readonly message: SessionMessage | null;
+  readonly message: MailboxMessage | null;
   /** Omitted for a queued message. */
   readonly mode?: SessionToolSendMode;
   readonly signal: AbortSignal;
@@ -51,7 +51,7 @@ export class SessionMailbox {
   constructor(private readonly deps: {
     runtime: ChatSessionRuntime;
     isTargetAvailable(): boolean;
-    onDiscard(messages: readonly SessionMessage[]): void;
+    onDiscard(messages: readonly MailboxMessage[]): void;
   }) {}
 
   get hasPending(): boolean { return this.pending.length > 0; }

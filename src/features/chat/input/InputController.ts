@@ -12,7 +12,7 @@ import type { CanvasSelectionContext } from '@/core/prompt/canvasContext';
 import type { EditorSelectionContext } from '@/core/prompt/editorContext';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderId, TitleGenerationService } from '@/core/providers/types';
-import { encodeSessionMessage, type SessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
+import { encodeSessionMessage, type MailboxMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import type { AskUserAnswers, ChatMessage, ToolCallInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ChatSettings } from '@/features/chat/ChatSettings';
@@ -221,7 +221,7 @@ export class InputController {
       && !this.deps.conversationController.hasBranchDraft;
   }
 
-  async sendSessionMessage(message: SessionMessage, options: {
+  async sendSessionMessage(message: MailboxMessage, options: {
     assertBeforeHandoff(): void;
     onUnsent(reason: SessionMessageUnsentReason): void;
   }): Promise<void> {
@@ -244,7 +244,7 @@ export class InputController {
   }
 
   /** Joins another session's message to the running turn; an unsent steer is dropped, never returned to the composer. */
-  async steerSessionMessage(message: SessionMessage, signal: AbortSignal): Promise<'accepted' | 'uncertain' | 'not-sent'> {
+  async steerSessionMessage(message: MailboxMessage, signal: AbortSignal): Promise<'accepted' | 'uncertain' | 'not-sent'> {
     // A turn waiting on the user's answer is not steered by another session; the message waits its turn.
     if (!this.steering.canSteer || this.deps.inlinePrompts.pendingCount > 0) return 'not-sent';
     const request: ChatTurnRequest = {

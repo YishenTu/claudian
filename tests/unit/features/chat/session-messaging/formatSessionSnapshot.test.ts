@@ -1,7 +1,7 @@
 import { testDate } from '@test/helpers/testClock';
 
 import type { ChatMessage } from '@/core/types';
-import { formatSessionSnapshot } from '@/features/chat/session-messaging/formatSessionSnapshot';
+import { formatLastReply, formatSessionSnapshot } from '@/features/chat/session-messaging/formatSessionSnapshot';
 
 const time = testDate().getTime();
 const metadata = { id: 'conv-1-abc', title: 'Review', providerId: 'codex' as const, createdAt: time, lastActivityAt: time };
@@ -84,5 +84,30 @@ describe('paging', () => {
     expect(formatSessionSnapshot(metadata, source, false, { beforeTurn })).toEqual({
       content: `${header}\n`, fromTurn: 0, toTurn: 0, totalTurns: source.length / 2,
     });
+  });
+});
+
+describe('formatLastReply', () => {
+  const text = (content: string) => ({ type: 'text' as const, content });
+  const tool = { type: 'tool_use' as const, toolId: 't' };
+
+  it.each<[string, ChatMessage[], string]>([
+    ['no finished turn', [], ''],
+    ['progress commentary before the answer', [
+      user('go'), assistant({ id: 'a1', contentBlocks: [text('I will inspect the note.')] }),
+      assistant({ id: 'a2', contentBlocks: [tool, text('The answer is 42.')] }),
+    ], 'The answer is 42.'],
+    ['an answer split across continuation segments', [
+      user('go'), assistant({ id: 'a1', contentBlocks: [tool, text('Part one.')] }),
+      assistant({ id: 'a2', responseContinuationOf: 'a1', contentBlocks: [text('Part two.')] }),
+    ], 'Part one.\n\nPart two.'],
+    ['work after a segment\'s text', [
+      user('go'), assistant({ id: 'a1', contentBlocks: [text('Looking.')] }),
+      assistant({ id: 'a2', responseContinuationOf: 'a1', contentBlocks: [tool, text('Done.')] }),
+    ], 'Done.'],
+    ['a turn without text', [user('go'), assistant({ isInterrupt: true })], '(interrupted)'],
+    ['the latest turn only', [user('one'), assistant({ content: 'first' }), user('two'), assistant({ content: 'second' })], 'second'],
+  ])('returns %s', (_case, messages, expected) => {
+    expect(formatLastReply(messages, false)).toBe(expected);
   });
 });

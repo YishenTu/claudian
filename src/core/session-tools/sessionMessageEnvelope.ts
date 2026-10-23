@@ -10,6 +10,15 @@ export interface SessionMessage {
   readonly text: string;
 }
 
+/** Text from a client outside Claudian's sessions, delivered as the user's own prompt without an envelope. */
+export interface ClientMessage {
+  readonly text: string;
+  readonly from?: undefined;
+  readonly sessionId?: undefined;
+}
+
+export type MailboxMessage = SessionMessage | ClientMessage;
+
 const REPLY_HINT = `Replying is optional. If a response is needed, call ${TOOL_CLAUDIAN_SEND_MESSAGE} with this session_id.`;
 
 /**
@@ -25,7 +34,8 @@ const XML_ATTRIBUTE_ENTITIES: Record<string, string> = {
   amp: '&', quot: '"', lt: '<', gt: '>', '#9': '\t', '#10': '\n', '#13': '\r',
 };
 
-export function encodeSessionMessage(envelope: SessionMessage): string {
+export function encodeSessionMessage(envelope: MailboxMessage): string {
+  if (envelope.sessionId === undefined) return envelope.text;
   const from = escapePromptXMLAttribute(envelope.from);
   const sessionId = escapePromptXMLAttribute(envelope.sessionId);
   return `<session_message from="${from}" session_id="${sessionId}">\n`
