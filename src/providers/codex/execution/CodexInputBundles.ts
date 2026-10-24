@@ -106,7 +106,13 @@ function toAttachmentFilename(
   const sourceName = attachment.name.trim();
   const base = sourceName.replace(/[^A-Za-z0-9._-]/g, '_')
     || `image-${index + 1}`;
-  if (base.includes('.')) return base;
   const subtype = attachment.mediaType.split('/')[1] ?? 'img';
-  return `${base}.${subtype === 'jpeg' ? 'jpg' : subtype}`;
+  const defaultExtension = `.${subtype === 'jpeg' ? 'jpg' : subtype}`;
+  // The native input path is temporary; leave room for its index on 255-byte filesystems.
+  if (base.length > 200) {
+    const originalExtension = path.extname(base);
+    const extension = originalExtension && originalExtension.length <= 16 ? originalExtension : defaultExtension;
+    return `${base.slice(0, 200 - extension.length)}${extension}`;
+  }
+  return base.includes('.') ? base : `${base}${defaultExtension}`;
 }

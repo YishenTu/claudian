@@ -1,7 +1,7 @@
 import type * as fsType from 'node:fs';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, normalize } from 'node:path';
+import { basename, dirname, join, normalize } from 'node:path';
 
 import pair from '@test/fixtures/providers/codex/turn-stats-pair.json';
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
@@ -888,6 +888,34 @@ describe('CodexExecutionBackend', () => {
       }
     },
   );
+
+  it('submits an image with a filesystem-limit basename and cleans up its bytes', async () => {
+    configureSteerTransport('thread-image', 'turn-image', () => ({}));
+    const session = createBackend(createPlugin()).createSession(createSessionConfig());
+    const request = createImageRequest();
+    const image = request.input.find(block => block.type === 'image')!;
+    if (image.type !== 'image') throw new Error('Expected image request');
+    image.image.name = `${'a'.repeat(251)}.png`;
+    expect(Buffer.byteLength(image.image.name)).toBe(255);
+    let filePath: string | undefined;
+    try {
+      const run = session.execute(request);
+      let settled = false;
+      const events = collectEvents(run.events).then(result => { settled = true; return result; });
+      await waitForCondition(() => mockTransportRequest.mock.calls.some(([method]) => method === 'turn/start') || settled);
+      const nativeInput = mockTransportRequest.mock.calls.find(([method]) => method === 'turn/start')?.[1].input;
+      expect(nativeInput).toEqual([{ type: 'localImage', path: expect.any(String) }]);
+      filePath = nativeInput[0].path;
+      expect(Buffer.byteLength(basename(filePath!))).toBeLessThanOrEqual(255);
+      expect(filePath).toMatch(/\.png$/);
+      expect(readFileSync(filePath!)).toEqual(Buffer.from('hello'));
+      completeTurn('thread-image', 'turn-image');
+      expect((await events).at(-1)?.type).toBe('turn_completed');
+      await waitForCondition(() => !existsSync(dirname(filePath!)));
+    } finally {
+      await session.dispose();
+    }
+  });
 
   it.each([false, true])('steers session references with target-visible paths (WSL: %s)', async wsl => {
     if (wsl) {
