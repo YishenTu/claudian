@@ -20,6 +20,7 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { Conversation, SessionMetadata, SubagentInfo } from '@/core/types';
+import { organizeSessionList } from '@/features/chat/session-manager/SessionListOrganizer';
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
 import { encodeVaultPathForSDK } from '@/providers/claude/history/ClaudeHistoryPathResolver';
 
@@ -728,3 +729,21 @@ test.each(['list', 'read', 'rename'] as const)(
     expect(JSON.parse(await adapter.read(`${DEVICE_PATH}/${metadata.id}.meta.json`))).toEqual(metadata);
   },
 );
+
+
+test.each([null, 42, {}, [], undefined])('leaves a malformed title record untouched and keeps the session list usable (%p)', async title => {
+  const invalid = { ...metadata, id: 'zz-bad-title', title };
+  const invalidPath = `${DEVICE_PATH}/${invalid.id}.meta.json`;
+  await store.saveMetadata(metadata);
+  await adapter.write(invalidPath, JSON.stringify(invalid));
+  const before = await adapter.read(invalidPath);
+  const scan = await store.metadataReader.scanMetadata();
+  const repository = createRepository();
+  repository.mergeMetadataConversations(scan.metadata.map(record => ({
+    ...record, providerId: record.providerId ?? 'claude', messages: [], sessionId: null,
+  })));
+  const sections = organizeSessionList(repository.list(), { organization: 'list', sort: 'last-updated', language: 'en' });
+  expect(sections[0].conversations.map(record => record.id)).toEqual([metadata.id]);
+  expect(scan).toMatchObject({ complete: true, invalidMetadataCount: 1 });
+  expect(await adapter.read(invalidPath)).toBe(before);
+});

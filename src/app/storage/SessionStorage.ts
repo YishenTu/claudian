@@ -255,6 +255,7 @@ export class SessionStorage implements SessionMetadataReader {
     const rawMetadata = parsed as Record<string, unknown>;
     if (
       rawMetadata.id !== expectedId
+      || typeof rawMetadata.title !== 'string'
       || typeof rawMetadata.id !== 'string'
       || !isValidSessionMetadataId(rawMetadata.id)
     ) {
