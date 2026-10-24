@@ -165,7 +165,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
   }
 
   async readMemory(id: string): Promise<ProjectMemoryReadResult> {
-    return this.#readMemory(this.#require(id).memoryPath);
+    return this.#enqueue(() => this.#readMemory(this.#require(id).memoryPath));
   }
 
   saveMemory(

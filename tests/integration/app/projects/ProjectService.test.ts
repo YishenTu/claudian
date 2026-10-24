@@ -525,3 +525,37 @@ describe('ProjectService', () => {
     expect(onConversationListChanged).toHaveBeenCalledTimes(2);
   });
 });
+
+
+it.each([false, true])('reads committed project memory after a pending relocation settles (save fails: %s)', async failSave => {
+  const { projects, store, memory } = await fixture();
+  const project = await projects.create({ name: 'Release', instructions: '', memoryPath: 'Release/MEMORY.md' });
+  const original = await projects.readMemory(project.id);
+  if ('missing' in original) throw new Error('Expected the newly created memory file');
+  await projects.saveMemory(project.id, 'Release notes', original.revision);
+  let finishSave!: () => void;
+  let enteredSave!: () => void;
+  const saving = new Promise<void>(resolve => { enteredSave = resolve; });
+  const save = store.save.bind(store);
+  jest.spyOn(store, 'save').mockImplementationOnce(async record => {
+    enteredSave();
+    await new Promise<void>(resolve => { finishSave = resolve; });
+    if (failSave) throw new Error('Record save failed');
+    await save(record);
+  });
+  const relocation = projects.update(project.id, { memoryPath: 'Archive/MEMORY.md' });
+  const outcome = relocation.then(() => undefined, error => error);
+  await saving;
+  expect(readFile(memory, 'Release/MEMORY.md')).toBeUndefined();
+  let readSettled = false;
+  const read = projects.readMemory(project.id).then(value => { readSettled = true; return value; });
+  // Join an actual event-loop turn while the record commit is still blocked.
+  await new Promise<void>(resolve => setTimeout(resolve, 0));
+  const settledBeforeCommit = readSettled;
+  finishSave();
+  await outcome;
+  const result = await read;
+  expect(settledBeforeCommit).toBe(false);
+  expect(result).toMatchObject({ content: 'Release notes' });
+  expect(projects.get(project.id)?.memoryPath).toBe(failSave ? 'Release/MEMORY.md' : 'Archive/MEMORY.md');
+});
