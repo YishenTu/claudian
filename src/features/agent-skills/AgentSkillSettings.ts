@@ -439,15 +439,18 @@ export class AgentSkillSettings {
     this.#actionButton(actions, t('settings.agentSkills.fix'), 'wrench', () => {
       void this.#openRepairEditor(name);
     });
-    this.#actionButton(actions, t('common.delete'), 'trash-2', () => {
-      this.#openDelete({
-        title: t('settings.agentSkills.delete.title'),
-        description: t('settings.agentSkills.delete.description'),
-        path: diagnostic.directoryPath,
-        remove: () => this.coordinator.trashBroken(name),
-        successMessage: t('settings.agentSkills.deleted', { name }),
-      });
-    }, 'claudian-settings-delete-btn');
+    const revision = diagnostic.repairRevision;
+    if (revision !== undefined) {
+      this.#actionButton(actions, t('common.delete'), 'trash-2', () => {
+        this.#openDelete({
+          title: t('settings.agentSkills.delete.title'),
+          description: t('settings.agentSkills.delete.description'),
+          path: diagnostic.directoryPath,
+          remove: () => this.coordinator.trashBroken(name, revision),
+          successMessage: t('settings.agentSkills.deleted', { name }),
+        });
+      }, 'claudian-settings-delete-btn');
+    }
   }
 
   async #openRepairEditor(name: string): Promise<void> {

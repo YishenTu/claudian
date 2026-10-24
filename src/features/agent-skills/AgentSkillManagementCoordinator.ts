@@ -84,8 +84,8 @@ export class AgentSkillManagementCoordinator {
     return this.#completeMutation(value);
   }
 
-  async trashBroken(name: string): Promise<AgentSkillMutationResult<void>> {
-    await this.repository.trashBroken(name);
+  async trashBroken(name: string, expectedRevision: string): Promise<AgentSkillMutationResult<void>> {
+    await this.repository.trashBroken(name, expectedRevision);
     return this.#completeMutation(undefined);
   }
 

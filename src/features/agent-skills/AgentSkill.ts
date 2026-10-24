@@ -19,6 +19,8 @@ export interface AgentSkillDiagnostic {
   message: string;
   /** Set when the package folder is safe to rewrite from the editor or move to trash. */
   repairName?: string;
+  /** Digest read with repairName; deletion must still target this document. */
+  repairRevision?: string;
 }
 
 /** Best-effort editor values for a package that does not parse as a valid skill. */
