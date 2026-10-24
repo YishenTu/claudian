@@ -7,6 +7,7 @@ import { normalizeLinkedContentPath } from '../../core/path/LinkedContentPath';
 import {
   migrateHiddenCommands,
 } from '../../core/providers/commands/hiddenCommands';
+import { decodeModelAliases } from '../../core/providers/models/modelAliases';
 import { decodeProviderModelSelectionId, toProviderRuntimeModelId } from '../../core/providers/modelSelection';
 import {
   getSharedEnvironmentVariables
@@ -313,35 +314,10 @@ function normalizeContextLimits(value: unknown): Record<string, number> | undefi
     return undefined;
   }
 
-  const result: Record<string, number> = {};
-  for (const [key, entry] of Object.entries(value)) {
-    if (typeof entry === 'number' && Number.isFinite(entry) && entry > 0) {
-      result[key] = entry;
-    }
-  }
-
-  return Object.keys(result).length > 0 ? result : undefined;
-}
-
-function normalizeModelAliases(value: unknown): Record<string, string> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-
-  const result: Record<string, string> = {};
-  for (const [key, alias] of Object.entries(value)) {
-    if (typeof alias !== 'string') {
-      continue;
-    }
-
-    const modelId = key.trim();
-    const normalizedAlias = alias.trim();
-    if (modelId && normalizedAlias) {
-      result[modelId] = normalizedAlias;
-    }
-  }
-
-  return result;
+  const entries = Object.entries(value).filter((entry): entry is [string, number] => (
+    typeof entry[1] === 'number' && Number.isFinite(entry[1]) && entry[1] > 0
+  ));
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 function normalizeEnvSnippets(value: unknown): EnvSnippet[] {
@@ -366,7 +342,7 @@ function normalizeEnvSnippets(value: unknown): EnvSnippet[] {
     }
 
     const modelAliases = 'modelAliases' in candidate
-      ? normalizeModelAliases(candidate.modelAliases)
+      ? decodeModelAliases(candidate.modelAliases)
       : undefined;
 
     snippets.push({

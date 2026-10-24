@@ -65,7 +65,7 @@ export class EnvSnippetModal extends Modal {
         return;
       }
 
-      const contextLimits: Record<string, number> = {};
+      const contextLimits = new Map<string, number>();
       for (const [modelId, input] of contextLimitInputs) {
         const value = input.value.trim();
         if (value) {
@@ -74,15 +74,15 @@ export class EnvSnippetModal extends Modal {
             new Notice(t('settings.customContextLimits.invalid'));
             return;
           }
-          contextLimits[modelId] = parsed;
+          contextLimits.set(modelId, parsed);
         }
       }
 
-      const modelAliases: Record<string, string> = {};
+      const modelAliases = new Map<string, string>();
       for (const [modelId, input] of modelAliasInputs) {
         const value = input.value.trim();
         if (value) {
-          modelAliases[modelId] = value;
+          modelAliases.set(modelId, value);
         }
       }
 
@@ -95,8 +95,8 @@ export class EnvSnippetModal extends Modal {
           envVarsEl.value,
           this.snippet?.scope ?? this.snippetScope,
         ),
-        contextLimits: Object.keys(contextLimits).length > 0 ? contextLimits : undefined,
-        modelAliases: modelAliasInputs.size > 0 ? modelAliases : undefined,
+        contextLimits: contextLimits.size > 0 ? Object.fromEntries(contextLimits) : undefined,
+        modelAliases: modelAliasInputs.size > 0 ? Object.fromEntries(modelAliases) : undefined,
       };
 
       this.onSave(snippet);
@@ -143,7 +143,8 @@ export class EnvSnippetModal extends Modal {
           placeholder: t('settings.customModelAliases.placeholder'),
           cls: 'claudian-snippet-alias-input',
         });
-        aliasInput.value = draftAliases.get(modelId) ?? existingAliases[modelId] ?? '';
+        aliasInput.value = draftAliases.get(modelId)
+          ?? (Object.prototype.hasOwnProperty.call(existingAliases, modelId) ? existingAliases[modelId] : '');
         aliasInput.setAttribute('aria-label', `Alias for ${modelId}`);
         aliasInput.setAttribute('aria-description', t('settings.customModelAliases.ariaDescription'));
         modelAliasInputs.set(modelId, aliasInput);
@@ -154,7 +155,7 @@ export class EnvSnippetModal extends Modal {
           cls: 'claudian-snippet-limit-input',
         });
         input.value = draftLimits.get(modelId)
-          ?? (existingLimits[modelId] ? formatContextLimit(existingLimits[modelId]) : '');
+          ?? (Object.prototype.hasOwnProperty.call(existingLimits, modelId) ? formatContextLimit(existingLimits[modelId]) : '');
         input.setAttribute('aria-label', `Context window for ${modelId}`);
         contextLimitInputs.set(modelId, input);
       }
@@ -384,16 +385,17 @@ export class EnvSnippetManager {
       if (snippet.modelAliases) {
         const modelIds = ProviderRegistry.getCustomModelIds(parseEnvironmentVariables(snippet.envVars));
         const modelAliases = ProviderRegistry.getChatUIConfig('claude').customModelAliases;
-        const nextAliases = modelAliases?.get(settings) ?? {};
+        const nextAliases = new Map(Object.entries(modelAliases?.get(settings) ?? {}));
         for (const modelId of modelIds) {
-          const alias = snippet.modelAliases[modelId]?.trim();
+          const alias = Object.prototype.hasOwnProperty.call(snippet.modelAliases, modelId)
+            ? snippet.modelAliases[modelId].trim() : undefined;
           if (alias) {
-            nextAliases[modelId] = alias;
+            nextAliases.set(modelId, alias);
           } else {
-            delete nextAliases[modelId];
+            nextAliases.delete(modelId);
           }
         }
-        modelAliases?.update(settings, nextAliases);
+        modelAliases?.update(settings, Object.fromEntries(nextAliases));
       }
     });
 
