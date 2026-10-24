@@ -322,7 +322,11 @@ export class ManagedStdioProcess {
 
   #appendStderr(text: string): void {
     const limit = this.options.stderrBufferLimit ?? DEFAULT_STDERR_BUFFER_LIMIT;
-    this.stderrBuffer = `${this.stderrBuffer}${text}`.slice(-limit);
+    const content = `${this.stderrBuffer}${text}`;
+    const tail = content.slice(-limit);
+    const cut = content.length - tail.length;
+    // If the cut splits a valid surrogate pair, omit its remaining half too.
+    this.stderrBuffer = cut > 0 && (content.codePointAt(cut - 1) ?? 0) > 0xffff ? tail.slice(1) : tail;
   }
 
   #finalizeStderr(): void {
