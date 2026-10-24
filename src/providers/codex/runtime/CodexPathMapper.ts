@@ -40,7 +40,7 @@ function maybeMapWindowsDriveToWsl(hostPath: string): string | null {
 
 function maybeMapWslUncToLinux(hostPath: string, distroName?: string): string | null {
   const normalized = normalizeWindowsPath(hostPath);
-  const match = normalized.match(/^\\\\wsl\$\\([^\\]+)(?:\\(.*))?$/i);
+  const match = normalized.match(/^\\\\(?:wsl\$|wsl\.localhost)\\([^\\]+)(?:\\(.*))?$/i);
   if (!match) {
     return null;
   }

@@ -53,7 +53,7 @@ export function buildCodexLaunchSpec(
   const targetCwd = pathMapper.toTargetPath(spawnCwd);
 
   if (!targetCwd) {
-    throw new Error('WSL mode only supports Windows drive paths and \\\\wsl$ workspace paths');
+    throw new Error('WSL mode only supports Windows drive paths and \\\\wsl$ or \\\\wsl.localhost workspace paths');
   }
 
   const resolvedCliCommand = options.resolvedCliCommand?.trim() || 'codex';

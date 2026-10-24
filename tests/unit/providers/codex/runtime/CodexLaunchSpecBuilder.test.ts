@@ -108,6 +108,21 @@ describe('buildCodexLaunchSpec', () => {
     });
   });
 
+  it.each(['wsl$', 'wsl.localhost'])('launches vaults in the %s namespace using their own distro', (server) => {
+    const vault = `\\\\${server}\\Ubuntu\\home\\user\\vault`;
+    const options = {
+      settings: { providerConfigs: { codex: { installationMethodsByHost: { [getHostnameKey()]: 'wsl' } } } },
+      resolvedCliCommand: 'codex', hostVaultPath: vault, env: {}, hostPlatform: 'win32' as const,
+      resolveDefaultWslDistro: () => 'Debian',
+    };
+    const spec = buildCodexLaunchSpec(options);
+    expect(spec.args).toEqual(['--distribution', 'Ubuntu', '--cd', '/home/user/vault', 'codex', 'app-server', '--listen', 'stdio://']);
+    expect(spec.pathMapper.toTargetPath(`${vault}\\note.md`)).toBe('/home/user/vault/note.md');
+    expect(() => buildCodexLaunchSpec({ ...options, executionTarget: {
+      method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Debian',
+    } })).toThrow('does not match workspace distro');
+  });
+
   it('uses the default WSL distro when no override is configured', () => {
     const spec = buildCodexLaunchSpec({
       settings: {
@@ -219,7 +234,7 @@ describe('buildCodexLaunchSpec', () => {
       hostVaultPath: '\\\\server\\share\\repo',
       env: {},
       hostPlatform: 'win32',
-    })).toThrow('WSL mode only supports Windows drive paths and \\\\wsl$ workspace paths');
+    })).toThrow('WSL mode only supports Windows drive paths and \\\\wsl$ or \\\\wsl.localhost workspace paths');
   });
 
   it('fails fast when the selected distro does not match a \\\\wsl$ workspace path', () => {

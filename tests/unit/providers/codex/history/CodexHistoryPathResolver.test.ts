@@ -29,8 +29,8 @@ describe('CodexHistoryPathResolver', () => {
     })).resolves.toBe(sessionPath);
   });
 
-  it('accepts a standard host-readable WSL transcript root for WSL installs', () => {
-    const root = '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions';
+  it.each(['wsl$', 'wsl.localhost'])('accepts a standard host-readable %s transcript root for WSL installs', (server) => {
+    const root = `\\\\${server}\\Ubuntu\\home\\user\\.codex\\sessions`;
 
     expect(resolveCodexTranscriptRootHint(root, createWslContext())).toBe(root);
   });
@@ -45,8 +45,8 @@ describe('CodexHistoryPathResolver', () => {
     )).resolves.toBe(sessionPath);
   });
 
-  it('accepts host-readable WSL paths under a custom POSIX Codex home', async () => {
-    const root = '\\\\wsl$\\Ubuntu\\srv\\codex-data\\sessions';
+  it.each(['wsl$', 'wsl.localhost'])('accepts host-readable %s paths under a custom POSIX Codex home', async server => {
+    const root = `\\\\${server}\\Ubuntu\\srv\\codex-data\\sessions`;
     const sessionPath = `${root}\\2026\\07\\12\\rollout-thread.jsonl`;
     const context = {
       ...createWslContext('Ubuntu'),
@@ -83,8 +83,8 @@ describe('CodexHistoryPathResolver', () => {
     )).resolves.toBe(sessionPath);
   });
 
-  it('rejects a WSL session path from a different explicitly configured distro', async () => {
-    const sessionPath = '\\\\wsl$\\Debian\\home\\user\\.codex\\sessions\\rollout-thread.jsonl';
+  it.each(['wsl$', 'wsl.localhost'])('rejects a %s session path from a different explicitly configured distro', async server => {
+    const sessionPath = `\\\\${server}\\Debian\\home\\user\\.codex\\sessions\\rollout-thread.jsonl`;
 
     await expect(resolveCodexSessionFileHint(
       sessionPath,

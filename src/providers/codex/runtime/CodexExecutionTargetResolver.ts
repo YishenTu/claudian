@@ -37,7 +37,7 @@ export function inferWslDistroFromWindowsPath(hostPath: string | null | undefine
   }
 
   const normalized = hostPath.replace(/\//g, '\\');
-  const match = normalized.match(/^\\\\wsl\$\\([^\\]+)(?:\\|$)/i);
+  const match = normalized.match(/^\\\\(?:wsl\$|wsl\.localhost)\\([^\\]+)(?:\\|$)/i);
   return match?.[1] || undefined;
 }
 
