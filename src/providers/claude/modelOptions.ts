@@ -120,7 +120,7 @@ function parseClaudeFamilyId(id: string): ClaudeFamilyId | undefined {
   const oneMillion = id.endsWith('[1m]');
   const base = oneMillion ? id.slice(0, -'[1m]'.length) : id;
   if (isClaudeModelTier(base)) return { tier: base, version: '', oneMillion };
-  const match = /^claude-([a-z]+)-(\d+(?:-\d+)*)?/.exec(base);
+  const match = /^claude-([a-z]+)-(\d+(?:-\d+)*)$/.exec(base);
   if (!match || !isClaudeModelTier(match[1])) return undefined;
   return { tier: match[1], version: (match[2] ?? '').replace(/-\d{8}$/, ''), oneMillion };
 }

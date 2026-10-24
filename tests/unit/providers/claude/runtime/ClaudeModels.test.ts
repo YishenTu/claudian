@@ -5,6 +5,7 @@ import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCo
 import { getClaudeModelOptions } from '@/providers/claude/modelOptions';
 import type { ClaudeDiscoveredModel } from '@/providers/claude/models';
 import { claudeProviderRegistration } from '@/providers/claude/registration';
+import { assertClaudeModelAvailable } from '@/providers/claude/runtime/ClaudeModelAvailability';
 import { createClaudeModels, discoverClaudeModels } from '@/providers/claude/runtime/ClaudeModels';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
@@ -98,6 +99,23 @@ describe('Claude panel model discovery', () => {
     expect(getClaudeModelOptions(settings).map(model => [model.value, model.label]))
       .toEqual([['claude-code/claude-fable-5-2', 'My Fable'], ['sonnet', 'SDK Sonnet']]);
     expect(claudeProviderRegistration.settingsStorage?.needsReasoningMetadata?.(settings)).toBe(false);
+  });
+
+  it.each(['claude-opus-4-enterprise', 'claude-opus-4.1'])('preserves unavailable custom identity %s during discovery', async customId => {
+    const { settings, host } = setup();
+    const custom = { value: customId, label: 'Gateway model', description: '' };
+    updateClaudeProviderSettings(settings, {
+      visibleModels: [customId], discoveredModels: [custom], modelAliases: { [customId]: 'My gateway' },
+    });
+    await discover(host, async () => [{ value: 'claude-opus-5-5', label: 'Native Opus', description: '' }]);
+    expect(getClaudeProviderSettings(settings).visibleModels).toEqual([customId]);
+    expect(getClaudeProviderSettings(settings).modelAliases).toEqual({ [customId]: 'My gateway' });
+    expect(getClaudeModelOptions(settings)).toEqual([]);
+    expect(() => assertClaudeModelAvailable(settings, `claude-code/${customId}`)).toThrow('Claude Code');
+
+    await discover(host, async () => [custom]);
+    expect(getClaudeModelOptions(settings)).toEqual([expect.objectContaining({ value: `claude-code/${customId}`, label: 'My gateway' })]);
+    expect(() => assertClaudeModelAvailable(settings, `claude-code/${customId}`)).not.toThrow();
   });
 
   it('respects deselection while native discovery is pending', async () => {
