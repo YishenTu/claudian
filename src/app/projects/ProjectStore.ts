@@ -5,7 +5,7 @@ import type { ProjectRecord } from '@/core/types';
 
 export type ProjectFileAdapter = Pick<
   VaultFileAdapter,
-  'ensureManagedFolder' | 'listManagedFolder' | 'readManagedFile' | 'removeManagedFile' | 'verifyManagedPath' | 'writeManagedFile'
+  'ensureManagedFolder' | 'listManagedFolderEntries' | 'readManagedFile' | 'removeManagedFile' | 'verifyManagedPath' | 'writeManagedFile'
 >;
 
 export interface ProjectStoreLoadResult {
@@ -29,7 +29,9 @@ export class ProjectStore {
       if (!await this.adapter.verifyManagedPath(PROJECTS_PATH, { expectedType: 'folder', allowMissing: true })) {
         return { records: [], invalidCount: 0 };
       }
-      files = (await this.adapter.listManagedFolder(PROJECTS_PATH)).files;
+      files = (await this.adapter.listManagedFolderEntries(PROJECTS_PATH))
+        .filter(entry => entry.type !== 'folder')
+        .map(entry => entry.path);
     } catch {
       // Startup continues without projects; nothing is written for records that were not read.
       return { records: [], invalidCount: 1 };

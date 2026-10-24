@@ -101,7 +101,7 @@ export class ClaudeCommandRepository {
 
     const commands: ClaudeCommandDocument[] = [];
     const diagnostics: AgentSkillDiagnostic[] = [];
-    for (const filePath of await this.#listCommandFiles(CLAUDE_COMMANDS_ROOT)) {
+    for (const filePath of await this.#listCommandFiles(CLAUDE_COMMANDS_ROOT, diagnostics)) {
       try {
         commands.push(await this.#readDocument(filePath));
       } catch (error) {
@@ -112,6 +112,7 @@ export class ClaudeCommandRepository {
       }
     }
     commands.sort((left, right) => left.name.localeCompare(right.name));
+    diagnostics.sort((left, right) => left.directoryPath.localeCompare(right.directoryPath));
     return { commands, diagnostics };
   }
 
@@ -192,17 +193,19 @@ export class ClaudeCommandRepository {
     return `${CLAUDE_COMMANDS_ROOT}/${name}${COMMAND_EXTENSION}`;
   }
 
-  async #listCommandFiles(folder: string): Promise<string[]> {
-    const listing = await this.files.listManagedFolder(folder);
-    const nested = await Promise.all(
-      listing.folders
-        .filter(child => path.posix.dirname(child) === folder)
-        .map(child => this.#listCommandFiles(child)),
-    );
-    return [
-      ...listing.files.filter(file => path.posix.dirname(file) === folder && file.endsWith(COMMAND_EXTENSION)),
-      ...nested.flat(),
-    ];
+  async #listCommandFiles(folder: string, diagnostics: AgentSkillDiagnostic[]): Promise<string[]> {
+    const entries = await this.files.listManagedFolderEntries(folder);
+    const nested = await Promise.all(entries
+      .filter(entry => path.posix.dirname(entry.path) === folder)
+      .map(async entry => {
+        if (entry.type === 'link') {
+          diagnostics.push({ directoryPath: entry.path, message: 'Command paths must not be symbolic links' });
+          return [];
+        }
+        if (entry.type === 'folder') return this.#listCommandFiles(entry.path, diagnostics);
+        return entry.type === 'file' && entry.path.endsWith(COMMAND_EXTENSION) ? [entry.path] : [];
+      }));
+    return nested.flat();
   }
 
   async #exists(filePath: string): Promise<boolean> {
