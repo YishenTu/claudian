@@ -51,6 +51,22 @@ it.each([
   expect(MarkdownRenderer.render).toHaveBeenLastCalledWith(app, expected, host, '', expect.any(Component));
 });
 
+it.each([false, true])('preserves reference-link definitions through the Markdown pipeline (deferMath=%s)', async deferMath => {
+  const markdown = [
+    '[Price][cost] and \\(visible\\).',
+    '',
+    '[cost]: https://host/$price "Cost $5"',
+    '[next]:',
+    '  <https://host/$next>',
+    '  "Price $8"',
+  ].join('\n');
+  const expected = markdown.replace('\\(visible\\)', deferMath ? '\\$visible\\$' : '$visible$');
+
+  await renderer.renderContent(host, markdown, { deferMath });
+
+  expect(MarkdownRenderer.render).toHaveBeenLastCalledWith(app, expected, host, '', expect.any(Component));
+});
+
 it('escapes authored HTML before injecting trusted images and then activates remaining wikilinks', async () => {
   settings.mediaFolder = 'Media';
   await renderer.renderContent(host, 'Use <meta-name> ![[photo.png]] [[note.md|Note]]');

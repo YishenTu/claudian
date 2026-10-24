@@ -6,17 +6,17 @@
 
 import { parser } from '@lezer/markdown';
 
-interface CodeBlock {
+interface ProtectedBlock {
   end: number;
   infoStart?: number;
 }
 
-/** The block parser owns code boundaries, including implicit container endings. */
-function getCodeBlocks(markdown: string): Map<number, CodeBlock> {
-  const blocks = new Map<number, CodeBlock>();
+/** The block parser owns code and reference-definition boundaries, including container endings. */
+function getProtectedBlocks(markdown: string): Map<number, ProtectedBlock> {
+  const blocks = new Map<number, ProtectedBlock>();
   parser.parse(markdown).iterate({
     enter(node) {
-      if (node.name !== 'FencedCode' && node.name !== 'CodeBlock') return;
+      if (node.name !== 'FencedCode' && node.name !== 'CodeBlock' && node.name !== 'LinkReference') return;
       const marker = node.name === 'FencedCode' ? node.node.getChild('CodeMark') : null;
       const lineStart = markdown.lastIndexOf('\n', node.from) + 1;
       let end = node.to;
@@ -318,7 +318,7 @@ function findInlineBlockEnd(
   markdown: string,
   start: number,
   context: ParagraphContext,
-  codeBlocks: ReadonlyMap<number, CodeBlock>,
+  codeBlocks: ReadonlyMap<number, ProtectedBlock>,
 ): number {
   let lineEnd = markdown.indexOf('\n', start);
   while (lineEnd !== -1) {
@@ -464,7 +464,7 @@ function splitInlineMarkdown(
   lineStart: number,
   context: ParagraphContext,
   segments: MarkdownSegment[],
-  codeBlocks: ReadonlyMap<number, CodeBlock>,
+  codeBlocks: ReadonlyMap<number, ProtectedBlock>,
 ): InlineContinuation {
   let segmentStart = 0;
   let bracketDepth = 0;
@@ -594,7 +594,7 @@ function splitInlineMarkdown(
 
 function splitMarkdown(markdown: string): MarkdownSegment[] {
   const segments: MarkdownSegment[] = [];
-  const codeBlocks = getCodeBlocks(markdown);
+  const codeBlocks = getProtectedBlocks(markdown);
   let rawHtmlTag: string | null = null;
   let inlineCodeRunLength: number | null = null;
   let inlineHtmlEnd: number | null = null;
