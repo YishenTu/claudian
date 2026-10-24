@@ -68,6 +68,21 @@ describe('ClaudeCommandRepository', () => {
     expect(result.commands[2].revision).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  it('preserves metadata when editing a UTF-8 BOM command', async () => {
+    addCommand('review.md', `\uFEFF${REVIEW_COMMAND}`);
+    const repository = new ClaudeCommandRepository(files);
+    const [loaded] = (await repository.list()).commands;
+
+    expect(loaded.description).toBe('Review a change');
+    expect(loaded.instructions).toBe('Review $ARGUMENTS carefully.');
+    await repository.update(loaded.name, loaded.revision, {
+      name: loaded.name, description: 'Edited', instructions: 'Updated body',
+    });
+    const [reloaded] = (await repository.list()).commands;
+    expect(reloaded.frontmatter).toMatchObject({ 'argument-hint': '[file]', 'allowed-tools': ['Read', 'Grep'] });
+    expect(reloaded.instructions).toBe('Updated body');
+  });
+
   it('keeps unedited frontmatter under the preserve policy', async () => {
     addCommand('review.md', REVIEW_COMMAND);
     const repository = new ClaudeCommandRepository(files);

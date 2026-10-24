@@ -19,7 +19,7 @@ import { ClaudeCommandRepository, commandNameFromPath, commandSkillName } from '
 import { collectAgentSkillInputErrors } from '@/features/agent-skills/validateAgentSkill';
 
 const SKILL_FILENAME = 'SKILL.md';
-const FRONTMATTER_START = /^---\r?\n/;
+const FRONTMATTER_START = /^\uFEFF?---\r?\n/;
 
 /**
  * - `package`: a `.claude/skills/<name>` folder with `SKILL.md`; moves into `.agents/skills`.

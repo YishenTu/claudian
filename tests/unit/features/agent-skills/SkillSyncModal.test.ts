@@ -131,8 +131,8 @@ describe('SkillSyncModal', () => {
     expect(next.disabled).toBe(false);
   });
 
-  it('asks before discarding a skill whose frontmatter cannot be read', async () => {
-    await vault.write(`${CLAUDE_SKILLS_ROOT}/broken/SKILL.md`, '---\nname: broken\ndescription: Use when: x\n---\nBody\n');
+  it.each(['', '\uFEFF'])('asks before discarding unreadable frontmatter with BOM prefix %j', async prefix => {
+    await vault.write(`${CLAUDE_SKILLS_ROOT}/broken/SKILL.md`, `${prefix}---\nname: broken\ndescription: Use when: x\n---\nBody\n`);
     const dialog = await open();
 
     const card = within(dialog).getByRole('group', { name: 'broken' });

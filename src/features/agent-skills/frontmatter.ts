@@ -1,6 +1,6 @@
 import { parseYaml } from 'obsidian';
 
-const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)(?:\r?\n|(?<=\r?\n))---[ \t]*(?:\r?\n|$)([\s\S]*)$/;
+const FRONTMATTER_PATTERN = /^\uFEFF?---\r?\n([\s\S]*?)(?:\r?\n|(?<=\r?\n))---[ \t]*(?:\r?\n|$)([\s\S]*)$/;
 const VALID_KEY_PATTERN = /^[\w-]+$/;
 
 function isValidKey(key: string): boolean {

@@ -3,7 +3,7 @@ import { parseYaml, stringifyYaml } from 'obsidian';
 import type { AgentSkillInput } from '@/features/agent-skills/AgentSkill';
 import { AgentSkillValidationError, validateAgentSkillInput } from '@/features/agent-skills/validateAgentSkill';
 
-const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)(?:\r?\n|(?<=\r?\n))---[ \t]*(?:\r?\n|$)([\s\S]*)$/;
+const FRONTMATTER_PATTERN = /^\uFEFF?---\r?\n([\s\S]*?)(?:\r?\n|(?<=\r?\n))---[ \t]*(?:\r?\n|$)([\s\S]*)$/;
 
 export interface ParsedAgentSkill {
   name: string;
