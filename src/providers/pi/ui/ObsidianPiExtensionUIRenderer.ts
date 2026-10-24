@@ -81,7 +81,7 @@ function getSelectOptions(request: Record<string, unknown>): PiSelectOption[] {
   const rawOptions = Array.isArray(request.options) ? request.options : [];
   return rawOptions.flatMap((option): PiSelectOption[] => {
     if (typeof option === 'string' && option.trim()) {
-      return [{ label: option.trim(), value: option.trim() }];
+      return [{ label: option.trim(), value: option }];
     }
     if (!option || typeof option !== 'object' || Array.isArray(option)) {
       return [];

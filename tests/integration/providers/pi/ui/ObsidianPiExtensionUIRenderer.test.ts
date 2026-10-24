@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { fireEvent, within } from '@testing-library/dom';
+import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import type { App } from 'obsidian';
 
@@ -21,6 +21,8 @@ jest.mock('obsidian', () => {
   return { ...actual, Modal };
 });
 import { setLocale } from '@/i18n/i18n';
+import { PiExtensionUIBridge } from '@/providers/pi/runtime/PiExtensionUIBridge';
+import type { PiRPCTransport } from '@/providers/pi/runtime/PiRPCTransport';
 import { ObsidianPiExtensionUIRenderer } from '@/providers/pi/ui/ObsidianPiExtensionUIRenderer';
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...names) { this.classList.add(...names); };
@@ -96,5 +98,23 @@ it.each(['input', 'editor'] as const)('localizes fallback %s titles and controls
     await result;
     document.body.replaceChildren();
     setLocale('en');
+  }
+});
+
+it.each(['  Keep indentation', 'Keep trailing space  ', '\tKeep both  '])('returns the original native select option %j', async value => {
+  const send = jest.fn();
+  const bridge = new PiExtensionUIBridge({ send } as unknown as PiRPCTransport, new ObsidianPiExtensionUIRenderer({} as App));
+  try {
+    bridge.handleRequest({ type: 'extension_ui_request', id: 'select-value', method: 'select', title: 'Choose text', options: [value, 'Other'] });
+    const region = within(document.body).getByRole('region', { name: 'Pi extension' });
+    const violations = await axe(region);
+    fireEvent.click(within(region).getByRole('button', { name: value.trim() }));
+    await waitFor(() => expect(send).toHaveBeenCalledWith({ type: 'extension_ui_response', id: 'select-value', value }));
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(within(document.body).queryByRole('region', { name: 'Pi extension' })).toBeNull();
+    expect(violations).toHaveNoViolations();
+  } finally {
+    bridge.cleanup();
+    document.body.replaceChildren();
   }
 });
