@@ -5,6 +5,7 @@ jest.mock('@/utils/date', () => ({
 import {
   buildInlineEditPrompt,
   getInlineEditSystemPrompt,
+  parseInlineEditResponse,
 } from '@/core/prompt/inlineEdit';
 
 describe('buildInlineEditPrompt', () => {
@@ -91,5 +92,24 @@ describe('getInlineEditSystemPrompt', () => {
     expect(prompt.indexOf('## Editing Principles')).toBeLessThan(
       prompt.indexOf('## Output Contract'),
     );
+  });
+});
+
+
+describe('parseInlineEditResponse framing compatibility', () => {
+  it.each([
+    ['<replacement>new</replacement>', { success: true, editedText: 'new' }],
+    [' \n<insertion> new\n</insertion>\n ', { success: true, insertedText: ' new\n' }],
+    ['<replacement></replacement>', { success: true, editedText: '' }],
+    ['<insertion></insertion>', { success: true, insertedText: '' }],
+    ['<replacement>unclosed', { success: true, clarification: '<replacement>unclosed' }],
+    ['</replacement>', { success: true, clarification: '</replacement>' }],
+    ['Before <replacement>new</replacement> after', { success: true, editedText: 'new' }],
+    ['<insertion>first</insertion><insertion>second</insertion>', {
+      success: true, insertedText: 'first</insertion><insertion>second',
+    }],
+    ['   ', { success: false, error: 'Empty response' }],
+  ])('handles reply %j', (reply, expected) => {
+    expect(parseInlineEditResponse(reply as string)).toEqual(expected);
   });
 });

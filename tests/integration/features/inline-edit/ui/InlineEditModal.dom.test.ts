@@ -9,6 +9,7 @@ import {
   typeInstruction,
 } from '@test/helpers/features/inline-edit/InlineEditDOMHarness';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
+import { axe } from 'jest-axe';
 import { MarkdownRenderer, Notice, TFolder } from 'obsidian';
 
 afterEach(async () => {
@@ -130,4 +131,21 @@ it('previews the selected source as deleted and the replacement as inserted Mark
   ])).toEqual([['delete', 'hello'], ['insert', 'Hi']]));
   // The previewed source is hidden from the editor until the edit settles.
   expect(h.editorView.contentDOM.textContent).toBe(`${preview.textContent} world`);
+});
+
+
+it.each([
+  'Use `</replacement>` literally in XML.',
+  'Document <replacement>old</replacement> and <insertion>new</insertion>.',
+])('applies the complete raw replacement containing wrapper text: %s', async replacement => {
+  const h = createHarness();
+  h.createSession().show();
+  const accept = await showReplacementPreview(h, replacement);
+  expect(h.backend.sessions[0].requests[0].configuration.systemInstructions).toMatchObject({
+    instructions: expect.stringContaining('with no explanation outside the tag'),
+  });
+  expect((await axe(screen.getByRole('toolbar', { name: 'Inline edit actions' }))).violations).toEqual([]);
+  fireEvent.click(accept);
+  expect(h.editorView.state.doc.toString()).toBe(`${replacement} world`);
+  expect(h.settled).toHaveBeenCalledWith({ decision: 'accept', editedText: replacement });
 });

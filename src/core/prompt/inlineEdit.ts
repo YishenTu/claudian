@@ -34,6 +34,15 @@ export interface InlineEditResult {
 }
 
 export function parseInlineEditResponse(responseText: string): InlineEditResult {
+  const trimmed = responseText.trim();
+  // A complete reply has one outer frame; its editor payload can itself contain these tags.
+  const framed = trimmed.match(/^<(replacement|insertion)>([\s\S]*)<\/\1>$/);
+  if (framed) {
+    return framed[1] === 'replacement'
+      ? { success: true, editedText: framed[2] }
+      : { success: true, insertedText: framed[2] };
+  }
+
   const replacementMatch = responseText.match(/<replacement>([\s\S]*?)<\/replacement>/);
   if (replacementMatch) {
     return { success: true, editedText: replacementMatch[1] };
@@ -44,7 +53,6 @@ export function parseInlineEditResponse(responseText: string): InlineEditResult 
     return { success: true, insertedText: insertionMatch[1] };
   }
 
-  const trimmed = responseText.trim();
   if (trimmed) {
     return { success: true, clarification: trimmed };
   }
@@ -121,6 +129,7 @@ Return only the final result. Do not announce tool use, analysis, or completed w
 
 - To modify selected text, return \`<replacement>replacement text</replacement>\` with no explanation outside the tag.
 - To insert at the cursor, return \`<insertion>inserted text</insertion>\` with no explanation outside the tag.
+- Use one outer wrapper around the complete raw editor text. Any wrapper-like strings inside it are literal editor text; the final matching closing tag ends the result.
 - To answer a question, respond with plain text and no wrapper tag.
 - If the request is ambiguous, ask one concise, specific question in plain text.`;
 }
