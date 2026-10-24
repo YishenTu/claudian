@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 
-import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
+import { ManagedResourceCollisionError, type VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { AgentSkillDiagnostic, AgentSkillInput } from '@/features/agent-skills/AgentSkill';
 import { serializeMarkdownWithFrontmatter } from '@/features/agent-skills/AgentSkillCodec';
 import {
   AgentSkillRepositoryError,
+  AgentSkillRollbackError,
   CLAUDE_COMMANDS_ROOT,
   type SkillFrontmatterPolicy,
 } from '@/features/agent-skills/AgentSkillRepository';
@@ -138,8 +139,32 @@ export class ClaudeCommandRepository {
       const targetPath = this.#filePath(input.name);
       if (await this.#exists(targetPath)) throw new ClaudeCommandCollisionError(input.name);
       await this.files.ensureManagedFolder(path.posix.dirname(targetPath));
-      await this.files.writeManagedFile(targetPath, content);
-      await this.files.removeManagedFile(current.filePath);
+      try {
+        await this.files.moveManagedFileNoReplace(current.filePath, targetPath);
+      } catch (error) {
+        if (error instanceof ManagedResourceCollisionError) {
+          throw new ClaudeCommandCollisionError(input.name);
+        }
+        throw error;
+      }
+      try {
+        await this.files.writeManagedFile(targetPath, content);
+      } catch (error) {
+        try {
+          const moved = await this.#readDocument(targetPath);
+          if (moved.revision !== current.revision) {
+            throw new ClaudeCommandRevisionConflictError(input.name);
+          }
+          await this.files.moveManagedFileNoReplace(targetPath, current.filePath);
+        } catch (rollbackError) {
+          throw new AgentSkillRollbackError(
+            `Could not rename command "${previousName}" and rollback was incomplete`,
+            error,
+            [rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError))],
+          );
+        }
+        throw error;
+      }
       await this.#pruneEmptyFolders(path.posix.dirname(current.filePath));
       return this.#documentFromRaw(targetPath, content);
     });

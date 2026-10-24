@@ -212,6 +212,67 @@ describe('ClaudeCommandRepository', () => {
     expect(dataAdapter.nodes.has(CLAUDE_COMMANDS_ROOT)).toBe(true);
   });
 
+  it('preserves a command created at the rename destination after the collision check', async () => {
+    addCommand('review.md', REVIEW_COMMAND);
+    const repository = new ClaudeCommandRepository(files);
+    const [loaded] = (await repository.list()).commands;
+    const target = `${CLAUDE_COMMANDS_ROOT}/team/review.md`;
+    dataAdapter.beforeMkdir = folder => {
+      if (folder === `${CLAUDE_COMMANDS_ROOT}/team`) {
+        dataAdapter.addFolder(folder);
+        dataAdapter.addFile(target, 'Created by another writer.\n');
+      }
+    };
+
+    await expect(repository.update('review', loaded.revision, {
+      name: 'team/review', description: '', instructions: 'My replacement.',
+    })).rejects.toBeInstanceOf(ClaudeCommandCollisionError);
+
+    expect(await dataAdapter.read(target)).toBe('Created by another writer.\n');
+    expect(await dataAdapter.read(loaded.filePath)).toBe(REVIEW_COMMAND);
+  });
+
+  it('restores the original command when writing the renamed document fails', async () => {
+    addCommand('old/review.md', REVIEW_COMMAND);
+    const repository = new ClaudeCommandRepository(files);
+    const [loaded] = (await repository.list()).commands;
+    const target = `${CLAUDE_COMMANDS_ROOT}/team/review.md`;
+    dataAdapter.beforeWrite = file => {
+      if (file === target) throw new Error('Write denied');
+    };
+
+    await expect(repository.update('old/review', loaded.revision, {
+      name: 'team/review', description: '', instructions: 'Replacement.',
+    })).rejects.toThrow('Could not write managed resource');
+
+    expect(await dataAdapter.read(loaded.filePath)).toBe(REVIEW_COMMAND);
+    expect(dataAdapter.nodes.has(target)).toBe(false);
+    expect((await repository.list()).commands.map(command => command.name)).toEqual(['old/review']);
+  });
+
+  it.each(['source', 'destination'] as const)('preserves a concurrent %s edit when a rename must roll back', async changed => {
+    addCommand('review.md', REVIEW_COMMAND);
+    const repository = new ClaudeCommandRepository(files);
+    const [loaded] = (await repository.list()).commands;
+    const target = `${CLAUDE_COMMANDS_ROOT}/team/review.md`;
+    dataAdapter.beforeWrite = file => {
+      if (file === target) {
+        dataAdapter.addFile(changed === 'source' ? loaded.filePath : target, 'Written elsewhere.\n');
+        throw new Error('Write denied');
+      }
+    };
+
+    await expect(repository.update('review', loaded.revision, {
+      name: 'team/review', description: '', instructions: 'Replacement.',
+    })).rejects.toThrow('rollback was incomplete');
+
+    const sourceExists = dataAdapter.nodes.has(loaded.filePath);
+    const sourceContent = sourceExists ? await dataAdapter.read(loaded.filePath) : null;
+    expect(sourceExists).toBe(changed === 'source');
+    expect(sourceContent).toBe(changed === 'source' ? 'Written elsewhere.\n' : null);
+    expect(await dataAdapter.read(target)).toBe(changed === 'source' ? REVIEW_COMMAND : 'Written elsewhere.\n');
+  });
+
   it('validates renamed segments but tolerates an unchanged legacy name', async () => {
     addCommand('Legacy_Name.md', 'Body.\n');
     const repository = new ClaudeCommandRepository(files);
