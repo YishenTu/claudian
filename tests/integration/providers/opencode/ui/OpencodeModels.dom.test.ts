@@ -30,6 +30,7 @@ HTMLElement.prototype.createEl = function <K extends keyof HTMLElementTagNameMap
 ): HTMLElementTagNameMap[K] {
   const element = createEl.call(this, tag, info) as HTMLElementTagNameMap[K];
   if (typeof info === 'object' && typeof info.type === 'string') element.setAttribute('type', info.type);
+  if (typeof info === 'object' && typeof info.value === 'string') element.setAttribute('value', info.value);
   callback?.(element);
   return element;
 };
@@ -136,6 +137,30 @@ it('keeps saved selections and explains an empty catalog even when unavailable m
     expect(within(f.container).getByRole('status').textContent).toContain('OpenCode server returned no enabled models');
     expect((within(f.container).getByRole('checkbox', { name: /deepseek\/chat/ }) as HTMLInputElement).checked).toBe(true);
     expect(within(f.container).getByRole('button', { name: 'Remove deepseek/chat' })).toBeTruthy();
+    expect((await axe(f.container)).violations).toEqual([]);
+  } finally { view?.dispose(); await f.dispose(); }
+});
+
+it('filters a native custom provider named all independently from All providers', async () => {
+  const f = setup();
+  writeFileSync(f.fixture.environment.CATALOG_FILE!, JSON.stringify([
+    { providerID: 'all', id: 'chat', name: 'All Chat', enabled: true, variants: [] },
+    { providerID: 'other', id: 'chat', name: 'Other Chat', enabled: true, variants: [] },
+  ]));
+  const view = f.render();
+  try {
+    await waitFor(() => expect(f.catalog.getSnapshot().status).toBe('ready'), { timeout: 40_000 });
+    expect(f.catalog.getSnapshot().models.map(model => model.providerKey).sort()).toEqual(['all', 'other']);
+    const ui = within(f.container);
+    const filter = ui.getByRole('combobox');
+    const provider = within(filter).getByRole('option', { name: 'all (1)' }) as HTMLOptionElement;
+    fireEvent.change(filter, { target: { value: provider.value } });
+    expect(ui.getAllByRole('checkbox')).toHaveLength(1);
+    expect(ui.getByRole('checkbox', { name: /All Chat/ })).toBeTruthy();
+    expect(ui.queryByRole('checkbox', { name: /Other Chat/ })).toBeNull();
+    const everyProvider = within(filter).getByRole('option', { name: /All providers/ }) as HTMLOptionElement;
+    fireEvent.change(filter, { target: { value: everyProvider.value } });
+    expect(ui.getAllByRole('checkbox')).toHaveLength(2);
     expect((await axe(f.container)).violations).toEqual([]);
   } finally { view?.dispose(); await f.dispose(); }
 });
