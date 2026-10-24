@@ -46,9 +46,9 @@ beforeEach(async () => {
   };
   const config = { vaultWorkingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: jest.fn() } } as any;
   sessionConfig = config;
-  kernel = new OpencodeHTTPSessionKernel({ config, getActiveTurnId: () => 'turn',
+  kernel = new OpencodeHTTPSessionKernel({ config, plugin: { getResolvedProviderCliPath: async () => '/opencode', settings: {} }, getActiveTurnId: () => 'turn',
     onNativeOutput: (event: OpencodeNativeOutput, session?: string) => output.push({ event, session }), onNativeTurn: jest.fn(), onClosed: jest.fn(),
-  } as any, '/opencode', {}, { acquire: async () => lease } as any, new OpencodeSessionPersistence(config));
+  } as any, { acquire: async () => lease } as any, new OpencodeSessionPersistence(config));
   await kernel.connect({ profile: 'managed', systemPrompt: '' });
   await kernel.openSession();
 });
@@ -164,9 +164,9 @@ it('blocks queued preview admission after cancellation without stopping a peer c
   expect(previews()).toEqual(['child', 'new run']);
 });
 
-it('publishes usable model IDs and falls back to the ID when the label is missing', async () => {
+it('opens sessions with usable native models, labeled by ID when the name is missing', async () => {
   const session = await kernel.openSession();
-  expect(session.models?.availableModels).toEqual([{ modelId: 'test/model', name: 'test/model' }]);
+  expect(session.models).toEqual([{ rawId: 'test/model', providerID: 'test', id: 'model', label: 'test/model', variants: [], contextWindow: 0 }]);
 });
 
 it('ignores malformed native stream identities without losing valid text or tool output', () => {
@@ -188,12 +188,12 @@ it('ignores malformed native stream identities without losing valid text or tool
 it('admits steers in submission order while a skill lookup is pending', async () => {
   let release!: () => void;
   // Disposal settles the open run and undelivered steers.
-  void kernel.prompt({ sessionId: 'ses_main', prompt: [{ type: 'text', text: 'work' }] }, { start: 0, end: 4 }).catch(() => undefined);
+  void kernel.prompt('ses_main', { text: 'work', files: [], userText: { start: 0, end: 4 } }).catch(() => undefined);
   await jest.advanceTimersByTimeAsync(0);
   skills = () => new Promise(resolve => { release = () => resolve({ data: [{ id: 'writing' }] }); });
   const first = 'Use /writing';
-  void kernel.steer!({ sessionId: 'ses_main', prompt: [{ type: 'text', text: first }] }, { start: 0, end: first.length }).catch(() => undefined);
-  void kernel.steer!({ sessionId: 'ses_main', prompt: [{ type: 'text', text: 'Then this' }] }, { start: 0, end: 9 }).catch(() => undefined);
+  void kernel.steer('ses_main', { text: first, files: [], userText: { start: 0, end: first.length } }).catch(() => undefined);
+  void kernel.steer('ses_main', { text: 'Then this', files: [], userText: { start: 0, end: 9 } }).catch(() => undefined);
   await jest.advanceTimersByTimeAsync(0);
   release();
   await jest.advanceTimersByTimeAsync(0);
@@ -204,11 +204,11 @@ it('admits steers in submission order while a skill lookup is pending', async ()
 
 it('keeps later steers behind an earlier pending lookup when a middle lookup fails', async () => {
   const lookups: Array<{ resolve: (value: unknown) => void; reject: (error: Error) => void }> = [];
-  void kernel.prompt({ sessionId: 'ses_main', prompt: [{ type: 'text', text: 'work' }] }, { start: 0, end: 4 }).catch(() => undefined);
+  void kernel.prompt('ses_main', { text: 'work', files: [], userText: { start: 0, end: 4 } }).catch(() => undefined);
   await jest.advanceTimersByTimeAsync(0);
   skills = () => new Promise((resolve, reject) => { lookups.push({ resolve, reject }); });
   const steer = (text: string, range = { start: 0, end: text.length }) =>
-    kernel.steer!({ sessionId: 'ses_main', prompt: [{ type: 'text', text }] }, range).catch(() => undefined);
+    kernel.steer('ses_main', { text, files: [], userText: range }).catch(() => undefined);
   void steer('First /writing');
   void steer('Second /writing');
   await jest.advanceTimersByTimeAsync(0);
@@ -226,9 +226,8 @@ it('keeps later steers behind an earlier pending lookup when a middle lookup fai
 const callSessionTool = async (id = 'ses_main') => invokeSessionTool('claudian_list_destinations', {},
   resolveCaller?.(id) ?? {port:undefined,toolPolicy:undefined,signal:new AbortController().signal});
 const startToolRun = async (policy: ProviderToolPolicy = {kind:'provider-default'}) => {
-  const request = {sessionId:'ses_main',prompt:[{type:'text' as const,text:'work'}]};
   // The third parameter is the captured execution request, forwarded only by the HTTP path.
-  const completion = kernel.prompt(request, undefined, {toolPolicy:policy,signal:new AbortController().signal});
+  const completion = kernel.prompt('ses_main', {text:'work',files:[],userText:null}, {toolPolicy:policy,signal:new AbortController().signal});
   void completion.catch(() => undefined);
   await jest.advanceTimersByTimeAsync(0);
   event('session.execution.started');

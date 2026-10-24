@@ -1,9 +1,10 @@
 import type { ProviderAsyncSubagentCompletedEvent, ProviderBackgroundOutputEvent, ProviderExecutionRequest,ProviderSessionConfig } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
-import type { ForkSource, SubagentProgress } from '@/core/types';
-import type { ACPPromptRequest, ACPPromptResponse, ACPSessionConfigOption, ACPSessionModelState, ACPSessionNotification } from '@/providers/acp';
+import type { ForkSource, SubagentProgress, TurnStats } from '@/core/types';
 
-import type { OpencodeTextRange } from '../runtime/buildOpencodePrompt';
+import type { OpencodeTurnSelector } from '../history/OpencodeTurnStats';
+import type { OpencodeNativeModel } from '../http/OpencodeNativeModelCatalog';
+import type { OpencodePrompt } from '../runtime/buildOpencodePrompt';
 
 type WithoutScope<T> = T extends unknown ? Omit<T, 'scope'> : never;
 export type OpencodeNativeOutput = WithoutScope<ProviderBackgroundOutputEvent>;
@@ -14,14 +15,20 @@ export interface OpencodeKernelConnectOptions {
   readonly profile: OpencodeExecutionProfile;
   /** Literal instructions, fixed for the kernel's lifetime. */
   readonly systemPrompt: string;
+  /** The native session `openSession` resumes; its binding is checked before any server starts. */
+  readonly resumeSessionId?: string;
 }
 
 export interface OpencodeNativeSessionInfo {
   readonly sessionId: string;
-  readonly nativeVersion?: 1 | 2;
   readonly databasePath: string | null;
-  readonly configOptions?: ACPSessionConfigOption[] | null;
-  readonly models?: ACPSessionModelState | null;
+  /** The kernel server's enabled native model catalog. */
+  readonly models: readonly OpencodeNativeModel[];
+}
+
+export interface OpencodePromptResult {
+  readonly stopReason?: 'end_turn' | 'cancelled';
+  readonly userMessageId?: string | null;
 }
 
 export interface OpencodeSessionKernelOptions {
@@ -38,35 +45,29 @@ export interface OpencodeSessionKernelOptions {
   readonly config: ProviderSessionConfig;
   readonly forkSource?: ForkSource;
   readonly databasePath?: string;
-  readonly nativeVersion?: 1 | 2;
   readonly getActiveTurnId: () => string | null;
   readonly onClosed: (error: Error) => void;
-  readonly onNotification: (notification: ACPSessionNotification) => void;
   readonly plugin: ProviderHost;
   readonly sessionInstanceId: string;
 }
 
 export interface OpencodeSessionKernel {
-  readonly usesSharedRuntime?: boolean;
-  readonly hasNativeWork?: boolean;
-  whenIdle?(): Promise<void>;
+  readonly hasNativeWork: boolean;
+  whenIdle(): Promise<void>;
   connect(options: OpencodeKernelConnectOptions): Promise<void>;
   openSession(resumeSessionId?: string): Promise<OpencodeNativeSessionInfo>;
-  setConfigOption(request: Record<string, unknown>): Promise<{
-    configOptions?: ACPSessionConfigOption[] | null;
-  }>;
+  /** Selects a Claudian agent profile, or a native agent ID it does not own. */
+  setAgent(sessionId: string, agent: string): Promise<void>;
+  /** Selects `<providerID>/<id>`; an omitted variant selects the model's native default. */
+  setModel(sessionId: string, rawModelId: string, variant?: string): Promise<void>;
   /** Replies `once` to managed permission requests, like OpenCode's `--auto`; `deny` rules never ask. */
   setAutoApprove(enabled: boolean): void;
-  /** `userText` locates typed input whose native mentions the kernel may resolve. */
-  prompt(request: ACPPromptRequest, userText?: OpencodeTextRange | null, run?: Pick<ProviderExecutionRequest, 'toolPolicy' | 'signal'>): Promise<Pick<
-    ACPPromptResponse,
-    'usage' | 'userMessageId'
-  > & Partial<Pick<ACPPromptResponse, 'stopReason'>>>;
-  /**
-   * Hands input to the running requested prompt under the neutral steer
-   * contract. Absent where the native protocol cannot steer a running turn.
-   */
-  steer?(request: ACPPromptRequest, userText?: OpencodeTextRange | null): Promise<boolean>;
+  /** The prompt's `userText` locates typed input whose native mentions the kernel may resolve. */
+  prompt(sessionId: string, input: OpencodePrompt, run?: Pick<ProviderExecutionRequest, 'toolPolicy' | 'signal'>): Promise<OpencodePromptResult>;
+  /** Reads a completed turn's statistics from native history, when it reports them. */
+  readTurnStats(sessionId: string, turn: OpencodeTurnSelector): Promise<TurnStats | undefined>;
+  /** Hands input to the running requested prompt under the neutral steer contract. */
+  steer(sessionId: string, input: OpencodePrompt): Promise<boolean>;
   cancel(sessionId: string): void;
   dispose(): Promise<void>;
 }

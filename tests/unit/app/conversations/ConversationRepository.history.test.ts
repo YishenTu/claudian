@@ -8,7 +8,7 @@ import type { Conversation } from '@/core/types';
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
 import * as claudeHistory from '@/providers/claude/history/ClaudeHistoryStore';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
-import * as history from '@/providers/opencode/history/OpencodeHistoryStore';
+import type { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 
 function createConversation(id = 'conversation-1'): Conversation {
   return {
@@ -58,6 +58,21 @@ function createRepository(conversation = createConversation()) {
 
 afterEach(() => jest.restoreAllMocks());
 
+/** Serves native OpenCode history through the server lease port without launching a process. */
+function createOpencodeHistoryService(readMessages: (route: string) => Promise<unknown[]>): OpencodeConversationHistoryService {
+  const server = {
+    acquire: async () => ({
+      request: async (route: string) => ({ data: await readMessages(route) }),
+      dispose: async () => {},
+    }),
+  } as unknown as OpencodeServerService;
+  return new OpencodeConversationHistoryService(async () => server);
+}
+
+function nativeAssistant(id: string, text: string, created: number) {
+  return { id, type: 'assistant', time: { created }, content: [{ type: 'text', text }] };
+}
+
 test('releases cached history behind pending writes, preserves overlays, and reloads native history', async () => {
   const conversation = createConversation();
   conversation.messages = [{ id: 'local', role: 'assistant', content: 'Live client fragment', timestamp: 1 }];
@@ -95,19 +110,15 @@ test('a superseded native history read cannot overwrite the current conversation
   let release!: () => void;
   const reading = new Promise<void>(resolve => { started = resolve; });
   const deferred = new Promise<void>(resolve => { release = resolve; });
-  const oldMessages: Conversation['messages'] = [
-    { id: 'old-message', role: 'assistant', content: 'Old session response', timestamp: 1 },
-  ];
   const newMessages: Conversation['messages'] = [
     { id: 'new-message', role: 'assistant', content: 'Current session response', timestamp: 2 },
   ];
-  jest.spyOn(history, 'loadOpencodeSessionMessages').mockImplementation(async () => {
-    started();
-    await deferred;
-    return oldMessages;
-  });
   jest.spyOn(ProviderRegistry, 'getConversationHistoryService')
-    .mockReturnValue(new OpencodeConversationHistoryService());
+    .mockReturnValue(createOpencodeHistoryService(async () => {
+      started();
+      await deferred;
+      return [nativeAssistant('old-message', 'Old session response', 1)];
+    }));
   const conversation = createConversation();
   conversation.providerId = 'opencode';
   conversation.selectedModel = 'opencode/example';
@@ -159,18 +170,14 @@ test('keeps relocated Claude history readable after its metadata save fails', as
 });
 
 test('OpenCode hydrates a fresh projection after another projection was discarded', async () => {
-  const service = new OpencodeConversationHistoryService();
+  const service = createOpencodeHistoryService(async () => [nativeAssistant('native-response', 'Native history', 2)]);
   const first = { ...createConversation(), providerId: 'opencode' };
-  const nativeMessages: Conversation['messages'] = [
-    { id: 'native-response', role: 'assistant', content: 'Native history', timestamp: 2 },
-  ];
-  jest.spyOn(history, 'loadOpencodeSessionMessages').mockResolvedValue(nativeMessages);
   Object.assign(first, await service.hydrateConversationHistory(first, '/vault'));
   const fresh = { ...createConversation(), providerId: 'opencode', messages: [
     { id: 'local-input', role: 'user' as const, content: 'Local draft', timestamp: 1 },
   ] };
   Object.assign(fresh, await service.hydrateConversationHistory(fresh, '/vault'));
-  expect(fresh.messages).toEqual(nativeMessages);
+  expect(fresh.messages.map(message => [message.id, message.content])).toEqual([['native-response', 'Native history']]);
 });
 
 test('restores the conversation when missing-session metadata removal fails', async () => {

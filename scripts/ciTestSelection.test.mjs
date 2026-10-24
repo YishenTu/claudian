@@ -82,6 +82,7 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/core/process/ManagedStdioProcess.test.ts',
     'tests/integration/core/process/ProcessProbe.test.ts',
     'tests/integration/core/process/loginShellPath.test.ts',
+    'tests/integration/features/chat/tabs/forking/ForkSource.opencode.test.ts',
     'tests/integration/providers/deepseek/app/DeepSeekWorkspaceServices.test.ts',
     'tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts',
     'tests/integration/providers/opencode/execution/OpencodeV2Execution.test.ts',

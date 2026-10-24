@@ -1,11 +1,4 @@
 import type {
-  ProviderExecutionBackend,
-  ProviderExecutionSession,
-  ProviderSessionConfig,
-} from '../../../core/execution';
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
-import type { SlashCommand } from '../../../core/types';
-import type {
   ACPLoadSessionRequest,
   ACPLoadSessionResponse,
   ACPNewSessionRequest,
@@ -19,7 +12,15 @@ import type {
   ACPSetSessionModelRequest,
   ACPSetSessionModelResponse,
   ACPSetSessionModeRequest,
-} from '../../acp';
+} from '@/providers/acp';
+
+import type {
+  ProviderExecutionBackend,
+  ProviderExecutionSession,
+  ProviderSessionConfig,
+} from '../../../core/execution';
+import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import type { SlashCommand } from '../../../core/types';
 import { loadGrokPromptIndexAfterAssistant } from '../history/GrokHistoryStore';
 import type { GrokModelCatalogCoordinator } from '../runtime/GrokModelCatalogCoordinator';
 import { GrokExecutionNativeConnectionImpl } from './GrokExecutionNativeConnection';

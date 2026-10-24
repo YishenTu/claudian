@@ -1002,7 +1002,6 @@ export class ConversationRepository {
       id: record.id, providerId: record.providerId, title: record.title,
       selectedModel: record.selectedModel, isPinned: record.isPinned,
       ...(record.projectId ? { projectId: record.projectId } : {}),
-      capabilities: { ...this.deps.providers.getCapabilities(record.providerId, record.providerState) },
       ...(record.usage ? { usage: { model: record.usage.model } } : {}),
     } : null;
   }

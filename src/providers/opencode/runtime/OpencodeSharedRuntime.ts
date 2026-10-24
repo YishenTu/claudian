@@ -3,9 +3,9 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { OpencodeServerService } from '../http/OpencodeServerService';
 import { getOpencodeProviderSettings } from '../settings';
 import { buildOpencodeRuntimeEnv } from './OpencodeRuntimeEnvironment';
-import { detectOpencodeNativeVersion, type OpencodeNativeVersion } from './OpencodeVersion';
+import { OpencodeCLINotInstalledError } from './OpencodeVersion';
 
-/** Provider-owned prewarm and launch transitions for the shared v2 server. */
+/** Provider-owned prewarm and launch transitions for the shared server. */
 export class OpencodeSharedRuntime {
   private requested = false;
   private disposed = false;
@@ -16,7 +16,6 @@ export class OpencodeSharedRuntime {
   constructor(
     private readonly plugin: ProviderHost,
     private readonly serverService: OpencodeServerService,
-    private readonly onNativeVersion: (version: OpencodeNativeVersion | undefined) => void,
   ) {}
 
   /** Prewarms the committed launch without creating a native session. */
@@ -64,16 +63,14 @@ export class OpencodeSharedRuntime {
       try {
         const launch = await this.#resolveLaunch();
         signal.throwIfAborted();
-        const version = await detectOpencodeNativeVersion(launch.cliPath, launch.environment);
-        signal.throwIfAborted();
-        this.onNativeVersion(version);
-        if (version !== 2) return;
         this.serverService.reconcileLaunch(launch.cliPath, launch.cwd, launch.environment);
         const lease = await this.serverService.acquire(launch.cliPath, launch.cwd, launch.environment, signal);
         try { await lease.request('/api/info', { signal }); }
         finally { await lease.dispose(); }
         return;
       } catch (error) {
+        // A missing CLI has nothing to prewarm; an unsupported one rejects.
+        if (error instanceof OpencodeCLINotInstalledError) return;
         // A transition overtook this attempt; retry against its committed settings.
         if (this.disposed || generation === this.generation) throw error;
       }

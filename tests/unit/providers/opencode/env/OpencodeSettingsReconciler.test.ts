@@ -21,7 +21,7 @@ describe('coordinated OpenCode environment changes', () => {
 });
 
 describe('opencodeSettingsReconciler.reconcileModelWithEnvironment', () => {
-  it('retires the native binding to history-only state when the runtime database/config env changes', () => {
+  it('keeps bindings on a recorded database and retires the rest when the runtime database/config env changes', () => {
     const settings: Record<string, unknown> = {
       providerConfigs: {
         opencode: {
@@ -36,8 +36,15 @@ describe('opencodeSettingsReconciler.reconcileModelWithEnvironment', () => {
         id: 'conv-opencode',
         messages: [],
         providerId: 'opencode',
-        providerState: { databasePath: '/old/opencode.db' },
+        providerState: { databasePath: '/old/opencode.db', nativeConversationContextEstablished: true },
         sessionId: 'session-1',
+      },
+      {
+        id: 'conv-unrecorded',
+        messages: [],
+        providerId: 'opencode',
+        providerState: { nativeConversationContextEstablished: true },
+        sessionId: 'session-2',
       },
       {
         id: 'conv-other',
@@ -51,11 +58,17 @@ describe('opencodeSettingsReconciler.reconcileModelWithEnvironment', () => {
     const result = opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, conversations);
 
     expect(result.changed).toBe(true);
-    expect(result.invalidatedConversations).toHaveLength(1);
-    expect(conversations[0].sessionId).toBeNull();
-    expect(conversations[0].providerState).toEqual({
+    // Native existence on the recorded database is decided later by `opencode serve`.
+    expect(conversations[0]).toMatchObject({
+      sessionId: 'session-1',
+      providerState: { databasePath: '/old/opencode.db', nativeConversationContextEstablished: true },
+    });
+    // Without a recorded database the binding would follow the new default, so it is retired.
+    expect(result.invalidatedConversations).toEqual([conversations[1]]);
+    expect(conversations[1].sessionId).toBeNull();
+    expect(conversations[1].providerState).toEqual({
       nativeConversationContextEstablished: false,
-      previousSessions: [{ sessionId: 'session-1', databasePath: '/old/opencode.db' }],
+      previousSessions: [{ sessionId: 'session-2' }],
     });
     const fingerprint = (settings.providerConfigs as any).opencode.environmentHash;
     expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);

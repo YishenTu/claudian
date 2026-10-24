@@ -272,38 +272,6 @@ it('keeps a detached parent while its side chat is still resolving the source', 
   await destroyTab(second);
 });
 
-it('revalidates a full-session side fork against the rehydrated parent after eviction', async () => {
-  const h = setup();
-  const base = ProviderRegistry.getCapabilities('claude');
-  jest.spyOn(ProviderRegistry, 'getCapabilities').mockReturnValue({ ...base, forkMode: 'full-session' });
-  const first = await h.attach();
-  const transcript = [
-    { id: 'user', role: 'user' as const, content: 'Parent task', timestamp: testDate().getTime() },
-    { id: 'answer', role: 'assistant' as const, content: 'Parent answer', assistantMessageId: 'checkpoint', timestamp: testDate().getTime() },
-  ];
-  first.state.messages = structuredClone(transcript);
-  // Native history assigns its own display ids; the checkpoint and prompts are what identify the source.
-  h.setNativeHistory(transcript.map(message => ({ ...structuredClone(message), id: `native-${message.id}` })));
-  const history = ProviderRegistry.getConversationHistoryService('claude');
-  jest.spyOn(history, 'buildForkProviderState')
-    .mockRejectedValueOnce(new Error('Native fork busy'))
-    .mockResolvedValue({});
-  await first.controllers.sideChatController.handleCommandSubmission('Explain the answer', []);
-  const child = first.controllers.sideChatController.runtime!;
-  expect(child.lastError).toContain('Native fork busy');
-  const runtime = first.session.runtime;
-  await destroyTab(first);
-  await waitFor(() => expect(runtime.peekModel).toBeNull());
-
-  const retry = child.submit({ content: 'Try again' });
-  await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
-  h.backend.latest.emitText('Child answer');
-  h.backend.latest.complete();
-  await retry;
-  expect(child.lastError).toBeNull();
-  expect(runtime.peekModel?.hydrationState ?? 'released').not.toBe('idle');
-});
-
 it('lists Linked content choices from the attached view\'s cached vault index', async () => {
   const h = setup();
   const vault = h.plugin.app.vault as unknown as Record<string, unknown>;

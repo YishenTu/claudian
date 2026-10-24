@@ -235,7 +235,7 @@ export class SideChatRuntime {
   }
 
   get capabilities(): ProviderCapabilities {
-    return ProviderRegistry.getCapabilities(this.deps.source.providerId, this.deps.source.providerState);
+    return ProviderRegistry.getCapabilities(this.deps.source.providerId);
   }
 
   get status(): SideChatStatus {

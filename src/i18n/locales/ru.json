@@ -769,7 +769,7 @@
         "desc": "Дополнительные переменные окружения, передаваемые в OpenCode."
       },
       "migrationNotice": {
-        "text": "Claudian теперь поддерживает OpenCode v2. Поддержка OpenCode v1 прекращается 30 октября 2026 г.",
+        "text": "OpenCode v1 больше не поддерживается. Обновитесь до OpenCode v2, чтобы использовать его в Claudian.",
         "link": "Перейти на OpenCode v2"
       }
     },

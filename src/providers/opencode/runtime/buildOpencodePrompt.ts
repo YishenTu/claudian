@@ -13,7 +13,6 @@ import { buildRecoveryPrompt, decodeRecoveryPrompt } from '@/core/prompt/recover
 import type { ProviderLinkedContentContext } from '../../../core/execution';
 import type { ProviderSelectionSnapshot, ProviderSessionReference } from '../../../core/execution/ProviderExecutionRequest';
 import type { ChatMessage, ImageAttachment } from '../../../core/types';
-import type { ACPContentBlock } from '../../acp';
 
 export interface OpencodePromptRequest {
   selections?: readonly ProviderSelectionSnapshot[];
@@ -32,8 +31,15 @@ export interface OpencodeTextRange {
   readonly end: number;
 }
 
+/** A native attachment, sent by URI. */
+export interface OpencodePromptFile {
+  readonly uri: string;
+}
+
+/** Native prompt input: composed text plus attached files. */
 export interface OpencodePrompt {
-  readonly blocks: ACPContentBlock[];
+  readonly text: string;
+  readonly files: readonly OpencodePromptFile[];
   /** Absent when replayed history already ends with this turn's query. */
   readonly userText: OpencodeTextRange | null;
 }
@@ -79,19 +85,8 @@ export function buildOpencodePrompt(
   conversationHistory: ChatMessage[] = [],
 ): OpencodePrompt {
   const { text, userText } = composeOpencodePromptText(request, conversationHistory);
-  const blocks: ACPContentBlock[] = [{ type: 'text', text }];
-
-  for (const image of request.images ?? []) {
-    if (!image.data) {
-      continue;
-    }
-
-    blocks.push({
-      data: image.data,
-      mimeType: image.mediaType,
-      type: 'image',
-    });
-  }
-
-  return { blocks, userText };
+  const files = (request.images ?? []).flatMap(image => (
+    image.data ? [{ uri: `data:${image.mediaType};base64,${image.data}` }] : []
+  ));
+  return { text, files, userText };
 }

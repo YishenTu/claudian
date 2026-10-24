@@ -4,21 +4,26 @@ import { parseCompactCommand } from '@/core/commands/compactCommand';
 import { PendingInteractionLedger } from '@/core/execution';
 import type { SessionToolInvocation } from '@/core/session-tools/invokeSessionTool';
 import { isSessionTool } from '@/core/tools/toolNames';
-import type { ACPPromptRequest, ACPSessionConfigOption } from '@/providers/acp';
+import type { TurnStats } from '@/core/types';
 import { filterMarkdownTextTokens } from '@/utils/markdownTextTokens';
 
 import { forkOpencodeHTTPSession } from '../history/OpencodeSessionFork';
-import { isRecord, OpencodeHTTPError, type OpencodeHTTPEvent, pollOpencodeUntil } from '../http/OpencodeHTTPClient';
+import { type OpencodeTurnSelector, readOpencodeTurnStats } from '../history/OpencodeTurnStats';
+import { isRecord, OpencodeHTTPError, type OpencodeHTTPEvent } from '../http/OpencodeHTTPClient';
 import { projectOpencodeFormQuestions } from '../http/OpencodeHTTPForms';
+import { loadOpencodeNativeModels, type OpencodeNativeModel } from '../http/OpencodeNativeModelCatalog';
 import type { OpencodeServerLease, OpencodeServerService } from '../http/OpencodeServerService';
 import { OpencodeShellOutput } from '../http/OpencodeShellOutput';
 import { normalizeOpencodeToolInput, normalizeOpencodeToolName, normalizeOpencodeToolResult, normalizeOpencodeToolResultDetails } from '../normalization/opencodeToolNormalization';
-import type { OpencodeTextRange } from '../runtime/buildOpencodePrompt';
+import type { OpencodePrompt } from '../runtime/buildOpencodePrompt';
+import { resolveOpencodeBindingDatabase } from '../runtime/OpencodeBindingDatabase';
 import { AUX_AGENT_IDS, OPENCODE_BUILD_AGENT_ID } from '../runtime/OpencodeExecutionAgents';
+import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
 import {
   type OpencodeKernelConnectOptions,
   type OpencodeNativeOutput,
   type OpencodeNativeSessionInfo,
+  type OpencodePromptResult,
   type OpencodeSessionKernel,
   type OpencodeSessionKernelOptions,
   OpencodeSessionMissingError,
@@ -32,11 +37,11 @@ type PendingInboxInput = { admission: Promise<InboxAdmission>; recall: Promise<v
   | { kind: 'compact' }
 );
 type InboxAdmission = 'admitted' | 'refused' | 'unknown';
-interface NativeModel { providerID: string; id: string; variant?: string }
+interface NativeModelSelection { providerID: string; id: string; variant?: string }
 interface NativeChild { sessionTools?: SessionToolInvocation; toolController: AbortController; outputSessionId: string; toolCallId: string; turnId: string; interactionTurnId: string; background: boolean; text: Map<string, string>; progress: { startedAt: number; toolUses: number; totalTokens: number; lastToolName?: string } }
 interface NativeTool { name: string; input: Record<string, unknown>; sessionId: string; output: string | null; shell?: OpencodeShellOutput }
 
-/** V2 uses native HTTP events and interactions; ACP is only the v1 wire protocol. */
+/** One execution's native HTTP session: its server lease, events, interactions and inbox. */
 export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private client: OpencodeServerLease | null = null;
   private disposed = false;
@@ -44,8 +49,8 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private readonly controller = new AbortController();
   private sessionId: string | null = null;
   private databasePath: string | null = null;
-  private model: NativeModel | null = null;
-  private models: Array<Record<string, unknown> & { providerID: string; id: string; name: string }> = [];
+  private model: NativeModelSelection | null = null;
+  private models: OpencodeNativeModel[] = [];
   private profile: OpencodeKernelConnectOptions['profile'] = 'managed';
   private readonly text = new Map<string, string>();
   private readonly children = new Map<string, NativeChild>();
@@ -60,7 +65,9 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private readonly idleWaiters = new Set<() => void>();
 
   private agents: Record<string, string> = {};
-  constructor(private readonly options: OpencodeSessionKernelOptions, private readonly cliPath: string, private readonly environment: NodeJS.ProcessEnv, private readonly serverService: OpencodeServerService, private readonly persistence: OpencodeSessionPersistence) {
+  private connecting: Promise<void> | null = null;
+  private launch: { cliPath: string; environment: NodeJS.ProcessEnv } | null = null;
+  constructor(private readonly options: OpencodeSessionKernelOptions, private readonly serverService: OpencodeServerService, private readonly persistence: OpencodeSessionPersistence) {
     this.interactions = new PendingInteractionLedger(options.config.interactionPort);
   }
 
@@ -82,9 +89,28 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     this.options.onNativeWorkChanged?.();
   }
 
-  async connect(options: OpencodeKernelConnectOptions): Promise<void> {
+  /** Idempotent: every caller shares the first connection attempt. */
+  connect(options: OpencodeKernelConnectOptions): Promise<void> {
+    if (this.disposed) return Promise.reject(new Error('OpenCode session is disposed'));
+    return this.connecting ??= this.connectInternal(options);
+  }
+
+  private async connectInternal(options: OpencodeKernelConnectOptions): Promise<void> {
     this.profile = options.profile;
-    this.client = await this.serverService.acquire(this.cliPath, this.options.config.vaultWorkingDirectory, this.environment, this.controller.signal);
+    const cliPath = await this.options.plugin.getResolvedProviderCliPath('opencode') ?? 'opencode';
+    if (this.disposed) throw new Error('OpenCode session is disposed');
+    const settings = this.options.plugin.settings;
+    // A session to resume or fork is refused before any launch while its recorded database is
+    // inaccessible; only a fresh session starts on the current database.
+    const database = resolveOpencodeBindingDatabase(this.options.databasePath, buildOpencodeRuntimeEnv(settings, cliPath));
+    if (!database.accessible && database.recorded) {
+      const refusal = new Error(`OpenCode database ${database.recorded} is not accessible with the current settings.`);
+      if (options.resumeSessionId) throw new OpencodeSessionMissingError(options.resumeSessionId, refusal);
+      if (this.options.forkSource) throw refusal;
+    }
+    const launch = { cliPath, environment: buildOpencodeRuntimeEnv(settings, cliPath, database.accessible) };
+    this.launch = launch;
+    this.client = await this.serverService.acquire(launch.cliPath, this.options.config.vaultWorkingDirectory, launch.environment, this.controller.signal);
     if (this.disposed) await this.client.dispose();
     this.controller.signal.throwIfAborted();
     this.client.onRetired(() => this.options.onRetired?.());
@@ -95,17 +121,11 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       [options.profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[options.profile]],
       options.systemPrompt,
     );
-    const client = this.client;
-    await client.waitForActivation(this.controller.signal);
-    this.models = await pollOpencodeUntil(
-      async () => (await client.request<{ data: Array<Record<string, unknown>> }>('/api/model')).data.flatMap(model => model.enabled === true && typeof model.providerID === 'string' && typeof model.id === 'string'
-        ? [{ ...model, providerID: model.providerID, id: model.id, name: typeof model.name === 'string' ? model.name : model.id }]
-        : []),
-      models => models.length > 0, 5000, this.controller.signal,
-    );
+    this.models = await loadOpencodeNativeModels(this.client, this.controller.signal);
   }
 
   async openSession(resumeSessionId?: string): Promise<OpencodeNativeSessionInfo> {
+    const launch = this.requireLaunch();
     let sessionId: string;
     try {
       sessionId = await this.persistence.openSession(async () => {
@@ -118,14 +138,14 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         return data.id;
       }, () => this.client?.isReusable()
         ? Promise.resolve(this.client.retain())
-        : this.serverService.acquireCleanup(this.cliPath, this.options.config.vaultWorkingDirectory, this.environment));
+        : this.serverService.acquireCleanup(launch.cliPath, this.options.config.vaultWorkingDirectory, launch.environment));
     } catch (error) {
       if (resumeSessionId && error instanceof OpencodeHTTPError && error.status === 404) throw new OpencodeSessionMissingError(resumeSessionId, error);
       throw error;
     }
     this.sessionId = sessionId;
     await this.requireClient().refreshGlobalForms();
-    return { sessionId, nativeVersion: 2, databasePath: this.databasePath, models: { currentModelId: '', availableModels: this.models.map(model => ({ modelId: `${model.providerID}/${model.id}`, name: `${model.providerID}/${model.name}` })) } };
+    return { sessionId, databasePath: this.databasePath, models: this.models };
   }
 
   private resolveSessionTools(nativeId: string): SessionToolInvocation | undefined {
@@ -134,32 +154,29 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     return invocation;
   }
 
-  async setConfigOption(request: Record<string, unknown>): Promise<{ configOptions?: ACPSessionConfigOption[] }> {
-    const route = `/api/session/${encodeURIComponent(String(request.sessionId))}`;
-    const value = String(request.value);
-    if (request.configId === 'mode') {
-      await this.requireClient().request(`${route}/agent`, { method: 'POST', body: { agent: this.agents[value] ?? value } });
-    } else if (request.configId === 'model') {
-      const slash = value.indexOf('/');
-      if (slash < 1) throw new Error('Invalid OpenCode model selection.');
-      this.model = { providerID: value.slice(0, slash), id: value.slice(slash + 1) };
-      await this.requireClient().request(`${route}/model`, { method: 'POST', body: { model: this.model } });
-    } else if (request.configId === 'effort' && this.model) {
-      this.model = { providerID: this.model.providerID, id: this.model.id, ...(value === 'default' ? {} : { variant: value }) };
-      await this.requireClient().request(`${route}/model`, { method: 'POST', body: { model: this.model } });
-    }
-    const selected = this.models.find(model => model.id === this.model?.id && model.providerID === this.model?.providerID);
-    const variants = Array.isArray(selected?.variants) ? selected.variants.filter(isRecord).flatMap(variant => typeof variant.id === 'string' ? [variant.id] : []) : [];
-    return { configOptions: [{ id: 'effort', category: 'thought_level', name: 'Effort', type: 'select', currentValue: this.model?.variant ?? 'default', options: [...new Set([...variants, 'default'])].map(value => ({ value, name: value })) }] };
+  async setAgent(sessionId: string, agent: string): Promise<void> {
+    await this.requireClient().request(`/api/session/${encodeURIComponent(sessionId)}/agent`, { method: 'POST', body: { agent: this.agents[agent] ?? agent } });
+  }
+
+  async setModel(sessionId: string, rawModelId: string, variant?: string): Promise<void> {
+    const slash = rawModelId.indexOf('/');
+    if (slash < 1) throw new Error('Invalid OpenCode model selection.');
+    this.model = { providerID: rawModelId.slice(0, slash), id: rawModelId.slice(slash + 1), ...(variant ? { variant } : {}) };
+    await this.requireClient().request(`/api/session/${encodeURIComponent(sessionId)}/model`, { method: 'POST', body: { model: this.model } });
   }
 
   setAutoApprove(enabled: boolean): void {
+    this.requireClient();
     this.autoApprove = this.profile === 'managed' && enabled;
   }
 
-  async prompt(request: ACPPromptRequest, userText?: OpencodeTextRange | null, run?: Parameters<OpencodeSessionKernel['prompt']>[2]): Promise<{ stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }> {
+  readTurnStats(sessionId: string, turn: OpencodeTurnSelector): Promise<TurnStats | undefined> {
+    return readOpencodeTurnStats(this.requireClient(), sessionId, turn);
+  }
+
+  async prompt(sessionId: string, input: OpencodePrompt, run?: Parameters<OpencodeSessionKernel['prompt']>[2]): Promise<OpencodePromptResult> {
     if (this.pending) throw new Error('OpenCode already has an active request.');
-    const { text, files } = toNativeInput(request);
+    const { text, files, userText } = input;
     const compact = parseCompactCommand(text);
     if (compact?.instructions) throw new Error('/compact does not accept arguments');
     const match = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(text);
@@ -171,7 +188,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     const command = match && catalog?.data.some(command => command.name === match[1]) ? match : null;
     const skill = !command && skills.length ? skills : null;
     const kind = compact ? 'compact' : command ? 'command' : 'prompt';
-    const previousMessage = command ? await this.latestMessage(request.sessionId) : undefined;
+    const previousMessage = command ? await this.latestMessage(sessionId) : undefined;
     let resolve!: PendingPrompt['resolve'];
     let reject!: PendingPrompt['reject'];
     const completion = new Promise<{ stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }>((yes, no) => { resolve = yes; reject = no; });
@@ -179,11 +196,11 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     const sessionTools = run ? { toolPolicy: run.toolPolicy, port: this.options.config.sessionTools, signal: AbortSignal.any([run.signal, toolController.signal, this.controller.signal]) } : undefined;
     const pending: PendingPrompt = { sessionTools, toolController, resolve, reject, kind, ...(kind !== 'command' ? { inputId: nativeMessageId() } : {}), announced: false, started: false, steerable: false, idle: false };
     this.pending = pending;
-    this.previewStops.delete(request.sessionId);
+    this.previewStops.delete(sessionId);
     // A native error may arrive before the admission request resolves.
     void completion.catch(() => undefined);
     try {
-      const admission = this.requireClient().request<{ data?: { id?: string } }>(`/api/session/${encodeURIComponent(request.sessionId)}/${kind}`, {
+      const admission = this.requireClient().request<{ data?: { id?: string } }>(`/api/session/${encodeURIComponent(sessionId)}/${kind}`, {
         method: 'POST', ...(command ? { timeoutMs: 0 } : {}), body: compact ? { id: pending.inputId } : { ...(command ? { name: command[1] } : { id: pending.inputId }), text: command ? command[2] ?? '' : text, ...(files.length ? { files } : {}), ...(skill ? { skills: skill } : {}) },
       });
       if (compact) this.inboxInputs.set(pending.inputId!, {
@@ -200,12 +217,12 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       if (kind === 'prompt' && this.pending === pending) pending.steerable = true;
       // A command can complete without starting an agent loop (for example a status command).
       if (command) {
-        void this.requireClient().request(`/api/experimental/session/${encodeURIComponent(request.sessionId)}/wait`, { method: 'POST', timeoutMs: 0 })
+        void this.requireClient().request(`/api/experimental/session/${encodeURIComponent(sessionId)}/wait`, { method: 'POST', timeoutMs: 0 })
           .then(async () => {
             if (this.pending !== pending || pending.started) return;
             // Idle HTTP responses can overtake SSE. A new assistant/idle message
             // means execution occurred: its terminal event must close the turn.
-            const latest = await this.latestMessage(request.sessionId);
+            const latest = await this.latestMessage(sessionId);
             if (this.pending !== pending || pending.started) return;
             if (latest?.id !== previousMessage?.id && ['assistant', 'idle', 'compaction'].includes(String(latest?.type))) return;
             this.finish();
@@ -221,10 +238,10 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
    * steer is still recallable, and one left behind an interrupt would
    * otherwise leak into the next prompt.
    */
-  async steer(request: ACPPromptRequest, userText?: OpencodeTextRange | null): Promise<boolean> {
+  async steer(sessionId: string, input: OpencodePrompt): Promise<boolean> {
     const pending = this.pending;
-    if (!pending?.steerable || pending.idle || this.cancellation || this.disposed || request.sessionId !== this.sessionId) return false;
-    const { text, files } = toNativeInput(request);
+    if (!pending?.steerable || pending.idle || this.cancellation || this.disposed || sessionId !== this.sessionId) return false;
+    const { text, files, userText } = input;
     // Steers reach the native inbox in submission order, whatever their mention lookup costs.
     const previous = this.steerOrder;
     let release!: () => void;
@@ -238,7 +255,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       await previous;
       if (this.pending !== pending || pending.idle || this.cancellation || this.disposed) return false;
       // Register before admission: delivery can be announced before the HTTP response.
-      admission = this.requireClient().request(`/api/session/${encodeURIComponent(request.sessionId)}/prompt`, {
+      admission = this.requireClient().request(`/api/session/${encodeURIComponent(sessionId)}/prompt`, {
         method: 'POST', body: { id, text, ...(files.length ? { files } : {}), ...(skills.length ? { skills } : {}), delivery: 'steer' },
       }).then<InboxAdmission, InboxAdmission>(
         () => 'admitted',
@@ -254,7 +271,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   }
 
   /** OpenCode attaches skills only from explicit mentions; it does not parse prompt text. */
-  private async resolveSkillMentions(text: string, userText?: OpencodeTextRange | null): Promise<NativeSkillMention[]> {
+  private async resolveSkillMentions(text: string, userText: OpencodePrompt['userText']): Promise<NativeSkillMention[]> {
     const typed = userText ? text.slice(userText.start, userText.end) : '';
     if (!typed.includes('/')) return [];
     const catalog = await this.requireClient().request<{ data: Array<{ id: string }> }>('/api/skill')
@@ -273,6 +290,8 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   }
 
   cancel(sessionId: string): void {
+    // Nothing native can run before connection or after disposal.
+    if (!this.client || this.disposed) return;
     if (sessionId === this.sessionId) this.pending?.toolController.abort();
     else this.children.get(sessionId)?.toolController.abort();
     this.previewStops.set(sessionId, 'cancelled');
@@ -306,6 +325,8 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     for (const id of [...this.inboxInputs.keys()]) this.settleInboxInput(id, new Error('OpenCode session disposed before the steer was delivered.'));
     await this.persistence.settle();
     await this.client?.dispose();
+    // A connection still in flight releases its own lease once it observes disposal.
+    await this.connecting?.catch(() => undefined);
   }
 
   private handleEvent(event: OpencodeHTTPEvent): void {
@@ -564,8 +585,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private emitUsage(value: unknown): void {
     if (!isRecord(value)) return;
     const cache = isRecord(value.cache) ? value.cache : {};
-    const model = this.models.find(model => model.id === this.model?.id && model.providerID === this.model?.providerID);
-    const contextWindow = isRecord(model?.limit) ? count(model.limit.context) : 0;
+    const contextWindow = this.models.find(model => model.id === this.model?.id && model.providerID === this.model?.providerID)?.contextWindow ?? 0;
     const inputTokens = count(value.input);
     const cacheReadInputTokens = count(cache.read);
     const cacheCreationInputTokens = count(cache.write);
@@ -660,8 +680,12 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     this.workChanged();
   }
   private requireClient(): OpencodeServerLease {
-    if (!this.client || this.disposed) throw new Error('OpenCode HTTP session is not connected.');
+    if (!this.client || this.disposed) throw new Error('OpenCode session is not connected');
     return this.client;
+  }
+  private requireLaunch(): NonNullable<typeof this.launch> {
+    if (!this.launch) throw new Error('OpenCode session is not connected');
+    return this.launch;
   }
 }
 
@@ -672,13 +696,6 @@ const TRAILING_PUNCTUATION = /^[.,;:!?)\]}"']*$/;
 interface NativeSkillMention {
   id: string;
   mention: { start: number; end: number; text: string };
-}
-
-function toNativeInput(request: ACPPromptRequest): { text: string; files: Array<{ uri: string }> } {
-  return {
-    text: request.prompt.filter(block => block.type === 'text').map(block => block.text).join('\n'),
-    files: request.prompt.flatMap(block => block.type === 'image' ? [{ uri: `data:${block.mimeType};base64,${block.data}` }] : []),
-  };
 }
 
 function nativeMessageId(): string {

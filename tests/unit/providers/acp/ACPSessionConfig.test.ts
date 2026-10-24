@@ -1,18 +1,6 @@
-import {
-  extractACPSessionModelState,
-  extractACPSessionThoughtLevelState,
-  resolveACPLoadSessionId,
-} from '../../../../src/providers/acp';
+import { extractACPSessionModelState } from '@/providers/acp';
 
 describe('AcpSessionConfig', () => {
-  it('uses the requested id when session/load omits its compatibility id', () => {
-    expect(resolveACPLoadSessionId({}, 'saved-session')).toBe('saved-session');
-    expect(resolveACPLoadSessionId({ sessionId: 'saved-session' }, 'saved-session'))
-      .toBe('saved-session');
-    expect(() => resolveACPLoadSessionId({ sessionId: 'different-session' }, 'saved-session'))
-      .toThrow(/different session id/i);
-  });
-
   it('prefers grouped ACP config model options in order over session model metadata', () => {
     expect(extractACPSessionModelState({
       configOptions: [
@@ -180,33 +168,6 @@ describe('AcpSessionConfig', () => {
         { description: 'Fast', id: 'openai/gpt-5-mini', name: 'OpenAI/GPT-5 Mini' },
       ],
       currentModelId: 'openai/gpt-5-mini',
-    });
-  });
-
-  it('extracts detached thought-level options from ACP config options', () => {
-    expect(extractACPSessionThoughtLevelState({
-      configOptions: [
-        {
-          category: 'thought_level',
-          currentValue: 'low',
-          id: 'effort',
-          name: 'Effort',
-          options: [
-            { name: 'Low', value: 'low' },
-            { name: 'Medium', value: 'medium' },
-            { name: 'High', value: 'high' },
-          ],
-          type: 'select',
-        },
-      ],
-    })).toEqual({
-      availableLevels: [
-        { id: 'low', name: 'Low' },
-        { id: 'medium', name: 'Medium' },
-        { id: 'high', name: 'High' },
-      ],
-      configId: 'effort',
-      currentLevel: 'low',
     });
   });
 });

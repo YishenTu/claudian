@@ -1,13 +1,6 @@
 import type { ProviderHost } from '@/core/providers/ProviderHost';
-import type {
-  ACPSessionConfigOption,
-  ACPSessionModelState,
-} from '@/providers/acp';
-import {
-  extractACPSessionModelState,
-  extractACPSessionThoughtLevelState,
-} from '@/providers/acp';
 
+import type { OpencodeNativeModel } from '../http/OpencodeNativeModelCatalog';
 import {
   normalizeOpencodeDiscoveredModels,
   normalizeOpencodeModelVariants,
@@ -18,11 +11,13 @@ import {
   updateOpencodeProviderSettings,
 } from '../settings';
 
+/** A partial update: omitted metadata is kept, while a supplied empty list clears it. */
 export interface OpencodeMetadataProjectionInput {
-  readonly configOptions?: ACPSessionConfigOption[] | null;
-  readonly models?: ACPSessionModelState | null;
+  readonly models?: readonly OpencodeNativeModel[];
+  /** The model whose thinking levels this update carries. */
   readonly selectedRawModelId?: string | null;
-  readonly reasoningMetadataResolved?: boolean;
+  /** The selected model's resolved thinking levels; empty means it has none. */
+  readonly thinkingLevels?: readonly string[];
 }
 
 export async function projectOpencodeMetadata(
@@ -30,35 +25,15 @@ export async function projectOpencodeMetadata(
   input: OpencodeMetadataProjectionInput,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  const modelState = extractACPSessionModelState({
-    configOptions: input.configOptions,
-    models: input.models,
-  });
   const discoveredModels = normalizeOpencodeDiscoveredModels(
-    modelState.availableModels.map((model) => ({
-      ...(model.description ? { description: model.description } : {}),
-      label: model.name,
-      rawId: model.id,
-    })),
+    (input.models ?? []).map(({ label, rawId }) => ({ label, rawId })),
   );
-  const thoughtState = extractACPSessionThoughtLevelState({
-    configOptions: input.configOptions,
-  });
   const thinkingOptions = normalizeOpencodeModelVariants(
-    thoughtState.availableLevels.map((level) => ({
-      ...(level.description ? { description: level.description } : {}),
-      label: level.name,
-      value: level.id,
-    })),
+    (input.thinkingLevels ?? []).map(value => ({ value })),
   );
-  const rawModelId = input.selectedRawModelId
-    ?? modelState.currentModelId
-    ?? null;
-  // Omitted metadata is a partial update; a supplied empty snapshot clears it.
-  // ACP selectors retain currentValue (including '') even when their options are empty.
-  const hasModels = input.models != null || modelState.currentModelId !== null || discoveredModels.length > 0;
-  const hasThinking = rawModelId !== null
-    && (thoughtState.configId !== null || input.reasoningMetadataResolved === true);
+  const rawModelId = input.selectedRawModelId ?? null;
+  const hasModels = input.models !== undefined;
+  const hasThinking = rawModelId !== null && input.thinkingLevels !== undefined;
   const hasUpdate = hasModels || hasThinking;
   if (!hasUpdate) return false;
 

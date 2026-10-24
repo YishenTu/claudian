@@ -1,6 +1,5 @@
 import type { SlashCommand } from '@/core/types';
-
-import { type ACPAvailableCommand, normalizeACPAvailableCommands } from '../../acp';
+import { type ACPAvailableCommand, normalizeACPAvailableCommands } from '@/providers/acp';
 
 /** Grok gives skills and legacy `commands/*.md` the same metadata; only skills point at a `SKILL.md`. */
 export function normalizeGrokCommands(commands: readonly ACPAvailableCommand[]): SlashCommand[] {

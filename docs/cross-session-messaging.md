@@ -101,10 +101,10 @@ The tools are available in main chat and side chat sessions on these providers:
 | Codex | A thread keeps the tools it started with. Threads created before the session tools have none; older threads may lack the read tool, the send modes, or project listing. Start a new session to get the current tools. |
 | DeepSeek Harness | |
 | Grok Build | |
-| OpenCode v2 | OpenCode v1 is not supported: its sessions get no session tools. |
+| OpenCode | |
 | Pi | |
 
 - On providers or threads without the read tool, an @ mention still carries the session id, but the agent cannot read the session.
 - Calls that Claudian cannot tie to a running chat session are rejected with "Session tools are only available in Claudian main chat sessions with the default tool policy." For example, a Codex fork or a session on a shared OpenCode or DeepSeek Harness process may see the tools listed without being bound to a Claudian chat; its calls fail.
 - A side chat acts as its parent session: its `self` entry and the sender of its messages are the parent, so it cannot message its own parent. A side chat on a draft that hasn't been sent yet has no session tools.
-- OpenCode v2, DeepSeek Harness and Grok Build sessions reach the tools through a listener that accepts connections from 127.0.0.1 only.
+- OpenCode, DeepSeek Harness and Grok Build sessions reach the tools through a listener that accepts connections from 127.0.0.1 only.

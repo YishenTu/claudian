@@ -769,7 +769,7 @@
         "desc": "Variables d'environnement supplémentaires transmises à OpenCode."
       },
       "migrationNotice": {
-        "text": "Claudian prend désormais en charge OpenCode v2. La prise en charge d'OpenCode v1 prend fin le 30 octobre 2026.",
+        "text": "OpenCode v1 n'est plus pris en charge. Passez à OpenCode v2 pour l'utiliser dans Claudian.",
         "link": "Migrer vers OpenCode v2"
       }
     },

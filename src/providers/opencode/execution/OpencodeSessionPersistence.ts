@@ -17,11 +17,6 @@ export class OpencodeSessionPersistence {
       || (config.nativePersistence === 'provider-default' && config.lifecycle === 'ephemeral');
   }
 
-  databasePath(version: 1 | 2 | undefined, persistentPath?: string): string | undefined {
-    // V2 needs the native database's saved credentials; V1 can use memory storage.
-    return this.discard && version !== 2 ? ':memory:' : persistentPath;
-  }
-
   async openSession(open: () => Promise<string>, acquire: () => Promise<OpencodeServerLease>): Promise<string> {
     if (this.disposed) throw new Error('OpenCode session persistence is disposed.');
     if (!this.discard) return open();

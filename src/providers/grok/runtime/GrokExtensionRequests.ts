@@ -1,4 +1,4 @@
-import type { ACPContentBlock, ACPJSONRPCTransport } from '../../acp';
+import type { ACPContentBlock, ACPJSONRPCTransport } from '@/providers/acp';
 
 const GROK_REWIND_TIMEOUT_MS = 120_000;
 

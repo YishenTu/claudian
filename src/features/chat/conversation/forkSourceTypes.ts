@@ -1,10 +1,9 @@
-import type { ProviderCapabilities, ProviderId } from '@/core/providers/types';
+import type { ProviderId } from '@/core/providers/types';
 import type { ChatMessage } from '@/core/types';
 
 export interface ForkContext {
   messages: ChatMessage[];
   providerId?: ProviderId;
-  forkMode?: ProviderCapabilities['forkMode'];
   sourceConversationId: string | null;
   sourceSessionId: string;
   sourceProviderState?: Record<string, unknown>;
@@ -23,7 +22,6 @@ export type ForkSourceUnavailableReason =
   | 'streaming'
   | 'rewinding'
   | 'no-messages'
-  | 'not-latest-reply'
   | 'no-checkpoint'
   | 'no-session'
   | 'stale-binding';

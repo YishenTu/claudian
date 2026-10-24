@@ -769,7 +769,7 @@
         "desc": "Variáveis de ambiente extras passadas ao OpenCode."
       },
       "migrationNotice": {
-        "text": "O Claudian agora oferece suporte ao OpenCode v2. O suporte ao OpenCode v1 termina em 30 de outubro de 2026.",
+        "text": "O OpenCode v1 não é mais compatível. Atualize para o OpenCode v2 para usá-lo no Claudian.",
         "link": "Migrar para o OpenCode v2"
       }
     },

@@ -769,7 +769,7 @@
         "desc": "Variables de entorno adicionales que se pasan a OpenCode."
       },
       "migrationNotice": {
-        "text": "Claudian ahora es compatible con OpenCode v2. La compatibilidad con OpenCode v1 finaliza el 30 de octubre de 2026.",
+        "text": "OpenCode v1 ya no es compatible. Actualiza a OpenCode v2 para usarlo en Claudian.",
         "link": "Migrar a OpenCode v2"
       }
     },

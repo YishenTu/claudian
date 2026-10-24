@@ -11,7 +11,7 @@ interface ACPToolStreamState {
   rawOutput?: unknown;
 }
 
-export type ACPToolRawNameProvenance = 'fallback' | 'kind' | 'mapped-kind' | 'title';
+export type ACPToolRawNameProvenance = 'fallback' | 'kind' | 'title';
 
 export interface ACPResolvedToolRawName {
   provenance: ACPToolRawNameProvenance;
@@ -28,7 +28,6 @@ export interface ACPToolStreamPresentationAdapter {
     rawName: string | undefined,
     input: Record<string, unknown>,
     rawOutput: unknown,
-    rawInput: unknown,
   ): ToolResultDetails | undefined;
   /** Lossless native fields attached to the tool's start and result. */
   buildToolProviderPayload?(
@@ -148,7 +147,6 @@ export class ACPToolStreamAdapter {
           state.rawName,
           state.input,
           state.rawOutput,
-          state.rawInput,
         ));
         return {
           ...chunk,

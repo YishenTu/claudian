@@ -1,7 +1,7 @@
 import {
   ACPSessionUpdateNormalizer,
   renderACPContentBlock,
-} from '../../../../src/providers/acp';
+} from '@/providers/acp';
 
 describe('ACPSessionUpdateNormalizer', () => {
   it('emits assistant message boundaries once per message id', () => {

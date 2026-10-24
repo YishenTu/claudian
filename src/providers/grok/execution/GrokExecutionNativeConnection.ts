@@ -2,7 +2,8 @@ import {
   ACPClientConnection,
   ACPJSONRPCTransport,
   ACPSubprocess,
-} from '../../acp';
+} from '@/providers/acp';
+
 import { normalizeGrokCommands } from '../normalization/grokCommandNormalization';
 import {
   requestGrokInterjection,

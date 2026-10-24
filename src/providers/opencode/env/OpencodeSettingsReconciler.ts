@@ -36,18 +36,19 @@ function computeOpencodeRuntimeFingerprint(
 }
 
 /**
- * The one rule for what an environment change keeps: V2 resumes against its captured database,
- * including while the old launch drains, and a conversation without native state has nothing to
- * retire (a shared-runtime first run captures its database as it starts). The workspace hook keeps
- * running sessions by the same rule, so a kept session always keeps its binding.
+ * The one rule for what an environment change keeps: a binding resumes against its recorded
+ * persistent database, including while the old launch drains, and a conversation without native
+ * state has nothing to retire (a shared-runtime first run captures its database as it starts).
+ * A binding without a recorded database would follow the new default, so it is retired. Whether
+ * the native session still exists is answered by `opencode serve` at use time. The workspace hook
+ * keeps running sessions by the same rule, so a kept session always keeps its binding.
  */
 export function preservesOpencodeConversationSession(
   conversation: Pick<Conversation, 'sessionId' | 'providerState'>,
 ): boolean {
   const state = getOpencodeState(conversation.providerState);
-  if (state.nativeVersion === 2 && !!state.databasePath && state.databasePath !== ':memory:') return true;
-  return !conversation.sessionId && !state.sessionId && !state.forkSource
-    && !state.databasePath && !state.nativeVersion;
+  if (state.databasePath) return state.databasePath !== ':memory:';
+  return !conversation.sessionId && !state.sessionId && !state.forkSource;
 }
 
 function invalidateOpencodeConversationSessions(conversations: Conversation[]): Conversation[] {

@@ -235,7 +235,6 @@ export class MessageRenderer {
     if (msg.role === 'user' && msg.displayContent === '' && !msg.images?.length) {
       return this.messagesEl;
     }
-    this.#actions.retireFullSessionForks();
     if (afterMessageId !== undefined) this.#revealThrough(afterMessageId);
     const previous = this.messagesEl.lastChild;
     let element: HTMLElement;
@@ -502,7 +501,7 @@ export class MessageRenderer {
     if (!msgEl || !contentEl) return;
     const finalized = this.#finalizer.finalize(msgEl, contentEl, msg, messages, collapse, index);
     if (finalized === null) return;
-    this.#actions.decorateResponse(msgEl, contentEl, msg, messages, finalized.answer);
+    this.#actions.decorateResponse(msgEl, contentEl, msg, finalized.answer);
   }
 
   #hasVisibleContent(msg: ChatMessage): boolean {

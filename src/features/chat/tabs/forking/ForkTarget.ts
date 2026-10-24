@@ -32,7 +32,6 @@ export interface ForkTargetHost {
 }
 
 type ForkSourceLease = {
-  readonly latestMessageId?: string | null;
   readonly conversationId: string | null;
   readonly session: ChatSessionRuntime;
   readonly identityRevision: number;
@@ -45,7 +44,6 @@ function captureForkSourceLease(
 ): ForkSourceLease {
   return {
     conversationId: context.sourceConversationId,
-    latestMessageId: context.forkMode === 'full-session' ? context.messages.at(-1)?.id ?? null : undefined,
     session: sourceTab.session.runtime,
     identityRevision: sourceTab.session.runtime.identityRevision,
     requestTab: sourceTab,
@@ -55,11 +53,7 @@ function captureForkSourceLease(
 function isForkSourceCurrent(source: ForkSourceLease): boolean {
   return !source.session.isDisposed
     && source.session.identityRevision === source.identityRevision
-    && source.session.conversationId === source.conversationId
-    && (source.latestMessageId === undefined || (
-      !source.session.turns.isInFlight
-      && source.session.peekModel?.state.messages.at(-1)?.id === source.latestMessageId
-    ));
+    && source.session.conversationId === source.conversationId;
 }
 
 function isForkRequestCurrent(host: ForkTargetHost, source: ForkSourceLease): boolean {

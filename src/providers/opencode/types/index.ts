@@ -4,12 +4,10 @@ import type { Conversation, ForkSource } from '@/core/types';
 export interface OpencodePreviousSession {
   sessionId: string;
   databasePath?: string;
-  nativeVersion?: 1 | 2;
 }
 
 export interface OpencodeProviderState extends Record<string, unknown> {
   databasePath?: string;
-  nativeVersion?: 1 | 2;
   sessionId?: string;
   forkSource?: ForkSource;
   nativeConversationContextEstablished?: boolean;
@@ -33,7 +31,6 @@ export function getOpencodeState(
     Object.entries(record).filter(
       ([key, value]) => (
         key !== 'forkSource'
-        && key !== 'nativeVersion'
         && key !== 'sessionId'
         && key !== 'databasePath'
         && key !== 'nativeConversationContextEstablished'
@@ -42,7 +39,6 @@ export function getOpencodeState(
       ),
     ),
   ) as OpencodeProviderState;
-  if (record.nativeVersion === 1 || record.nativeVersion === 2) parsed.nativeVersion = record.nativeVersion;
   const databasePath = typeof record.databasePath === 'string'
     ? record.databasePath.trim()
     : '';
@@ -76,8 +72,7 @@ export function clearOpencodeResumeState(
 ): boolean {
   const state = getOpencodeState(conversation.providerState);
   const sessionId = conversation.sessionId ?? state.sessionId;
-  const releasesDatabase = options.releaseDatabase
-    && (!!state.databasePath || !!state.nativeVersion);
+  const releasesDatabase = options.releaseDatabase && !!state.databasePath;
   if (!sessionId && !state.forkSource && !releasesDatabase) return false;
 
   const previousSessions = [...(state.previousSessions ?? [])];
@@ -88,7 +83,6 @@ export function clearOpencodeResumeState(
     previousSessions.push({
       sessionId,
       ...(state.databasePath ? { databasePath: state.databasePath } : {}),
-      ...(state.nativeVersion ? { nativeVersion: state.nativeVersion } : {}),
     });
   }
 
@@ -98,10 +92,7 @@ export function clearOpencodeResumeState(
   };
   delete providerState.sessionId;
   delete providerState.forkSource;
-  if (options.releaseDatabase) {
-    delete providerState.databasePath;
-    delete providerState.nativeVersion;
-  }
+  if (options.releaseDatabase) delete providerState.databasePath;
   if (previousSessions.length > 0) providerState.previousSessions = previousSessions;
   else delete providerState.previousSessions;
   conversation.sessionId = null;
@@ -117,13 +108,9 @@ function getPreviousSessions(value: unknown): OpencodePreviousSession[] {
     const sessionId = typeof record.sessionId === 'string' ? record.sessionId.trim() : '';
     if (!sessionId) return [];
     const databasePath = typeof record.databasePath === 'string' ? record.databasePath.trim() : '';
-    const nativeVersion = record.nativeVersion === 1 || record.nativeVersion === 2
-      ? record.nativeVersion
-      : undefined;
     return [{
       sessionId,
       ...(databasePath ? { databasePath } : {}),
-      ...(nativeVersion ? { nativeVersion } : {}),
     }];
   });
 }

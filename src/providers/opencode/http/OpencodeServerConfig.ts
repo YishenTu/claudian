@@ -50,7 +50,7 @@ export class OpencodeServerConfig {
     const write = this.writes.catch(() => undefined).then(async () => {
       if (this.disposed) return;
       const base = this.source
-        ? await parseOpencodeConfig(await fs.readFile(this.source, 'utf8'), this.source, this.environment, path.dirname(this.source))
+        ? await parseOpencodeConfig(await readExplicitConfig(this.source), this.source, this.environment, path.dirname(this.source))
         : {};
       // Native resolves local plugin packages relative to their config document.
       // Keep that meaning when layering the explicit document in managed storage.
@@ -84,4 +84,8 @@ export async function createOpencodeServerConfig(cwd: string, environment: NodeJ
     }
     return new OpencodeServerConfig(path.join(root, 'config.json'), cwd, environment, pluginPath);
   } catch (error) { await fs.rm(root, { recursive: true, force: true }); throw error; }
+}
+
+async function readExplicitConfig(source: string): Promise<string> {
+  try { return await fs.readFile(source, 'utf8'); } catch { throw new Error(`Could not read OpenCode config: ${source}`); }
 }

@@ -5,13 +5,9 @@ import { Component } from 'obsidian';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import type { ProviderCapabilities, ProviderConversationHistoryService, ProviderRegistration } from '@/core/providers/types';
+import type { ProviderConversationHistoryService, ProviderRegistration } from '@/core/providers/types';
 import { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
-import {
-  captureLatestCompletedForkSource,
-  findLatestForkCheckpoint,
-  type LiveForkSourceOwner,
-} from '@/features/chat/sessions/SessionForkSource';
+import { captureLatestCompletedForkSource, type LiveForkSourceOwner } from '@/features/chat/sessions/SessionForkSource';
 import { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
@@ -54,8 +50,6 @@ export async function releaseSideChatHarnesses(): Promise<void> {
 
 export function createHarness(options: {
   formatQuestionReply?: ProviderRegistration['formatQuestionReply'];
-  getConversationCapabilities?: ProviderRegistration['getConversationCapabilities'];
-  providerState?: Record<string, unknown>;
   onDestinationChanged?: () => void;
   subagentAdapter?: ProviderRegistration['subagentAdapter'];
   taskResultInterpreter?: ProviderRegistration['taskResultInterpreter'];
@@ -64,7 +58,6 @@ export function createHarness(options: {
   settings?: Record<string, unknown>;
   supportsEphemeralFork?: boolean;
   supportsForkDuringTurn?: boolean;
-  forkMode?: ProviderCapabilities['forkMode'];
   buildForkProviderState?: ProviderConversationHistoryService['buildForkProviderState'];
 } = {}) {
   const backend = new FakeSideBackend();
@@ -72,8 +65,7 @@ export function createHarness(options: {
   const forkState = { forkSource: { resumeAt: 'checkpoint-1', sessionId: 'main-session' } };
   ProviderRegistry.register('claude', {
     formatQuestionReply: options.formatQuestionReply,
-    getConversationCapabilities: options.getConversationCapabilities,
-    capabilities: { providerId: 'claude', supportsFork: options.supportsFork ?? true, supportsEphemeralSessions: true, supportsEphemeralFork: options.supportsEphemeralFork, supportsForkDuringTurn: options.supportsForkDuringTurn, forkMode: options.forkMode },
+    capabilities: { providerId: 'claude', supportsFork: options.supportsFork ?? true, supportsEphemeralSessions: true, supportsEphemeralFork: options.supportsEphemeralFork, supportsForkDuringTurn: options.supportsForkDuringTurn },
     modelPolicy: ProviderRegistry.getModelPolicy('claude'),
     chatUIConfig: ProviderRegistry.getChatUIConfig('claude'),
     createExecutionBackend: () => backend,
@@ -128,7 +120,7 @@ export function createHarness(options: {
   const plugin = {
     app,
     getConversationSummary(id: string) { return (this as unknown as { getConversationSync: (id: string) => any }).getConversationSync(id); },
-    getConversationSync: () => options.providerState ? { id: 'conversation-1', providerId: 'claude', providerState: options.providerState } : null,
+    getConversationSync: () => null,
     projects: createProjectsFake(),
     providerHost: { app, settings, executionLifecycleRegistry: lifecycleRegistry },
     settings,
@@ -144,8 +136,6 @@ export function createHarness(options: {
       get conversationId() { return tab.conversationId; },
       get providerId() { return tab.providerId; },
       get isLive() { return true; },
-      get isStreaming() { return tab.state.isStreaming; },
-      readLatestForkCheckpoint: async () => findLatestForkCheckpoint(tab.state.messages),
       captureForkSource: () => captureLatestCompletedForkSource(tab, plugin, () => true),
     },
     onDestinationChanged: () => { destinationChanges.push(controller.destination); options.onDestinationChanged?.(); },

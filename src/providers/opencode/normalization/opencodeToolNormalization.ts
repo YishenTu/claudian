@@ -23,10 +23,6 @@ import type {
   ToolResultDetails,
   WebSearchResultItem,
 } from '../../../core/types';
-import {
-  type ACPResolvedToolRawName,
-  ACPToolStreamAdapter,
-} from '../../acp';
 
 const TOOL_NAME_MAP: Record<string, string> = {
   apply_patch: TOOL_APPLY_PATCH,
@@ -267,50 +263,6 @@ function extractToolMetadata(rawOutput: unknown): Record<string, unknown> | null
   return isPlainObject(rawOutput.metadata) ? rawOutput.metadata : null;
 }
 
-export function resolveOpencodeRawToolName(
-  currentRawName: ACPResolvedToolRawName | undefined,
-  update: {
-    kind?: string | null;
-    title?: string | null;
-  },
-): ACPResolvedToolRawName {
-  const titleName = firstTrimmedString(update.title);
-  const knownTitleName = titleName && isKnownToolName(titleName)
-    ? titleName.trim().toLowerCase()
-    : undefined;
-
-  if (knownTitleName) {
-    return { provenance: 'title', rawName: knownTitleName };
-  }
-
-  if (
-    titleName
-    && (
-      currentRawName?.provenance !== 'mapped-kind'
-      && (
-        currentRawName?.provenance !== 'title'
-        || !isKnownToolName(currentRawName.rawName)
-      )
-    )
-  ) {
-    return { provenance: 'title', rawName: titleName };
-  }
-  if (currentRawName) {
-    return currentRawName;
-  }
-
-  switch (update.kind) {
-    case 'execute':
-      return { provenance: 'mapped-kind', rawName: 'bash' };
-    case 'fetch':
-      return { provenance: 'mapped-kind', rawName: 'webfetch' };
-    case 'read':
-      return { provenance: 'mapped-kind', rawName: 'read' };
-    default:
-      return { provenance: 'fallback', rawName: 'tool' };
-  }
-}
-
 function normalizeWebSearchInput(input: Record<string, unknown>): Record<string, unknown> {
   const action = isPlainObject(input.action)
     ? input.action
@@ -518,13 +470,4 @@ export function normalizeOpencodeToolResult(
     default:
       return { content, isError };
   }
-}
-
-export function createOpencodeToolStreamAdapter(): ACPToolStreamAdapter {
-  return new ACPToolStreamAdapter({
-    normalizeToolInput: normalizeOpencodeToolInput,
-    normalizeToolName: normalizeOpencodeToolName,
-    normalizeToolResultDetails: normalizeOpencodeToolResultDetails,
-    resolveRawToolName: resolveOpencodeRawToolName,
-  });
 }

@@ -18,23 +18,17 @@ import {
 } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ChatMessage } from '@/core/types';
-import {
-  ACPRequestedTurn,
-  type ACPSessionNotification,
-  buildACPUsageInfo,
-  extractACPSessionThoughtLevelState,
-} from '@/providers/acp';
 
 import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
-import { loadOpencodeTurnStats } from '../history/OpencodeTurnStats';
+import { listOpencodeThinkingLevels } from '../http/OpencodeNativeModelCatalog';
 import type { OpencodeServerService } from '../http/OpencodeServerService';
 import { projectOpencodeMetadata } from '../metadata/OpencodeMetadataProjection';
-import { decodeOpencodeModelId } from '../models';
-import { createOpencodeToolStreamAdapter } from '../normalization/opencodeToolNormalization';
+import { decodeOpencodeModelId, OPENCODE_DEFAULT_THINKING_LEVEL } from '../models';
 import { buildOpencodePrompt } from '../runtime/buildOpencodePrompt';
 import { AUX_AGENT_IDS, OPENCODE_BUILD_AGENT_ID, resolveOpencodeSystemPrompt } from '../runtime/OpencodeExecutionAgents';
 import { assertOpencodeModelAvailable } from '../runtime/OpencodeModelAvailability';
 import { getOpencodeState } from '../types';
+import { OpencodeHTTPSessionKernel } from './OpencodeHTTPSessionKernel';
 import {
   type OpencodeExecutionProfile,
   type OpencodeNativeOutput,
@@ -43,22 +37,23 @@ import {
   type OpencodeSessionKernelOptions,
   OpencodeSessionMissingError,
 } from './OpencodeSessionContract';
-import { DefaultOpencodeSessionKernel } from './OpencodeSessionKernel';
 import { OpencodeSessionPersistence } from './OpencodeSessionPersistence';
 
-export type OpencodeACPSessionKernelFactory = (
+export type OpencodeSessionKernelFactory = (
   options: OpencodeSessionKernelOptions,
 ) => OpencodeSessionKernel;
 
 export interface OpencodeExecutionSessionOptions {
   readonly serverService: OpencodeServerService;
-  readonly createKernel?: OpencodeACPSessionKernelFactory;
+  readonly createKernel?: OpencodeSessionKernelFactory;
 }
 
-/** One requested run: the neutral stream plus the ACP-shaped turn both kernels feed. */
+/** One requested run and its live-output gate. */
 interface OpencodeActiveRun {
   readonly run: RequestedRunChannel;
-  readonly turn: ACPRequestedTurn;
+  /** Between the prompt being sent and the run ending; native output outside it is not this run's. */
+  liveOutput: boolean;
+  accepted: boolean;
   cancellationRequested: boolean;
   nativeCompleted: boolean;
   /** Whether this run started or configured native work that cancellation must stop. */
@@ -70,20 +65,18 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
   readonly sessionInstanceId = randomUUID();
 
   private readonly persistence: OpencodeSessionPersistence;
-  private readonly createKernel: OpencodeACPSessionKernelFactory;
+  private readonly createKernel: OpencodeSessionKernelFactory;
   private activeRun: OpencodeActiveRun | null = null;
   private kernel: OpencodeSessionKernel | null = null;
   private kernelGeneration = 0;
   private kernelRetired = false;
   private kernelMetadataController = new AbortController();
 
-  get usesSharedRuntime(): boolean { return this.kernel?.usesSharedRuntime ?? this.nativeVersion === 2; }
   private kernelConfigurationKey: string | null = null;
   private kernelDisposalPromise: Promise<void> | null = null;
   private nativeInfo: OpencodeNativeSessionInfo | null = null;
   private nativeSessionId: string | null;
   private nativeConversationContextEstablished: boolean;
-  private nativeVersion: 1 | 2 | undefined;
   private databasePath: string | null;
   private readonly seedProviderState: Readonly<Record<string, unknown>>;
   private readonly state: SessionSnapshotState;
@@ -100,12 +93,11 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
   ) {
     this.persistence = new OpencodeSessionPersistence(config);
     this.createKernel = options.createKernel
-      ?? ((kernelOptions) => new DefaultOpencodeSessionKernel(kernelOptions, options.serverService, this.persistence));
+      ?? ((kernelOptions) => new OpencodeHTTPSessionKernel(kernelOptions, options.serverService, this.persistence));
     const providerState = getOpencodeState(config.resumeSeed?.providerState);
     this.nativeSessionId = config.resumeSeed?.providerSessionId ?? providerState.sessionId ?? null;
     this.seedProviderState = Object.freeze({ ...providerState });
     this.databasePath = providerState.databasePath ?? null;
-    this.nativeVersion = providerState.nativeVersion;
     this.nativeConversationContextEstablished = typeof providerState
       .nativeConversationContextEstablished === 'boolean'
       ? providerState.nativeConversationContextEstablished
@@ -116,7 +108,6 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       readProviderSessionId: () => this.nativeSessionId,
       projectProviderState: state => ({
         ...state,
-        ...(this.nativeVersion ? { nativeVersion: this.nativeVersion } : {}),
         ...(this.databasePath ? { databasePath: this.databasePath } : {}),
         ...(
           this.nativeSessionId
@@ -146,12 +137,8 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       nativeCompleted: false,
       ownsNativeWork: false,
       run,
-      turn: new ACPRequestedTurn({
-        onAccept: () => this.#markNativeConversationContextEstablished(active),
-        resolveUsageModel: () => this.#resolveSelectedRawModelId(undefined) ?? undefined,
-        run,
-        toolStreamAdapter: createOpencodeToolStreamAdapter(),
-      }),
+      liveOutput: false,
+      accepted: false,
     };
     this.activeRun = active;
     run.attachAbortSignal(request.signal);
@@ -179,7 +166,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     void this.#disposeKernel();
   }
 
-  /** Only kernels whose native protocol can steer accept; V1 ACP declines. */
+  /** Accepts only while the requested run can still deliver input to its native inbox. */
   async steer(request: ProviderExecutionRequest): Promise<boolean> {
     try {
       assertOpencodeModelAvailable(this.plugin.settings, request.configuration.model);
@@ -194,16 +181,12 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       !active
       || active.run.isTerminal
       || active.cancellationRequested
-      || !active.turn.acceptingLiveOutput
-      || !kernel?.steer
+      || !isAcceptingLiveOutput(active)
+      || !kernel
       || !native
       || request.signal.aborted
     ) return false;
-    const prompt = buildPrompt(request, false);
-    return kernel.steer({
-      prompt: prompt.blocks,
-      sessionId: native.sessionId,
-    }, prompt.userText);
+    return kernel.steer(native.sessionId, buildPrompt(request, false));
   }
 
   getSnapshot(): ProviderSessionSnapshot {
@@ -225,7 +208,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     const active = this.activeRun;
     if (active && !active.run.isTerminal) {
       active.cancellationRequested = true;
-      active.turn.endLiveOutput();
+      active.liveOutput = false;
       active.run.finish(active.nativeCompleted
         ? { reason: 'completed', type: 'turn_completed' }
         : { reason: 'session-disposed', type: 'cancelled' });
@@ -242,15 +225,13 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     active: OpencodeActiveRun,
     request: ProviderExecutionRequest,
   ): Promise<void> {
-    const { run, turn } = active;
+    const { run } = active;
     const generation = ++this.lifecycleGeneration;
     let phase: 'connect' | 'open' | 'run' = 'connect';
     let resumeAttempt: string | null = null;
     try {
-      if (this.usesSharedRuntime) {
-        await this.options.serverService.waitUntilAvailable(request.signal);
-        if (!this.#isRunCurrent(active, generation)) return;
-      }
+      await this.options.serverService.waitUntilAvailable(request.signal);
+      if (!this.#isRunCurrent(active, generation)) return;
       assertOpencodeModelAvailable(this.plugin.settings, request.configuration.model);
       const pendingDisposal = this.kernelDisposalPromise;
       if (pendingDisposal) {
@@ -270,7 +251,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       ) {
         // A new turn cannot reuse a retired generation or interrupt its descendants.
         if (this.kernelRetired) {
-          await kernel.whenIdle?.();
+          await kernel.whenIdle();
           if (!this.#isRunCurrent(active, generation)) return;
         }
         await this.#disposeKernel();
@@ -298,7 +279,6 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
           config: this.config,
           databasePath: this.databasePath ?? undefined,
           forkSource: getOpencodeState(this.seedProviderState).forkSource,
-          nativeVersion: this.nativeVersion,
           getActiveTurnId: () => this.activeRun?.run.turnId ?? this.backgroundTurn?.id ?? null,
           openNativeInteraction: () => {
             if (kernelGeneration !== this.kernelGeneration || this.disposed) return;
@@ -339,48 +319,39 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
             if (kernelGeneration !== this.kernelGeneration || this.disposed) return;
             const current = this.activeRun;
             const child = childSessionId ? this.backgroundScopes.get(childSessionId) : undefined;
-            if (child && (current?.run.turnId !== child.originatingTurnId || !current?.turn.acceptingLiveOutput)) {
+            if (child && (current?.run.turnId !== child.originatingTurnId || !current || !isAcceptingLiveOutput(current))) {
               this.#emitBackground(event, child);
             } else if (this.backgroundTurn) {
               this.#emitBackground(event);
-            } else if (current?.turn.acceptingLiveOutput) {
-              current.turn.accept();
+            } else if (current && isAcceptingLiveOutput(current)) {
+              this.#acceptRun(current);
               current.run.emit(event);
             }
           },
           onClosed: (error) => {
             this.#handleKernelClosed(kernelGeneration, error);
           },
-          onNotification: (notification) => {
-            const current = this.activeRun;
-            if (
-              current
-              && kernelGeneration === this.kernelGeneration
-            ) {
-              void this.handleNotification(
-                this.lifecycleGeneration,
-                current,
-                notification,
-              );
-            }
-          },
           plugin: this.plugin,
           sessionInstanceId: this.sessionInstanceId,
         });
         this.kernel = kernel;
-        await kernel.connect({ profile, systemPrompt });
+        resumeAttempt = this.nativeSessionId;
+        await kernel.connect({
+          profile,
+          systemPrompt,
+          ...(resumeAttempt ? { resumeSessionId: resumeAttempt } : {}),
+        });
         if (this.kernel === kernel) {
           this.kernelConfigurationKey = kernelConfigurationKey;
         }
         if (!this.#isRunCurrent(active, generation)) return;
         phase = 'open';
-        resumeAttempt = this.nativeSessionId;
         native = await kernel.openSession(resumeAttempt ?? undefined);
         this.#captureNativeSessionOwnership(native, active);
         if (!this.#isRunCurrent(active, generation)) return;
         phase = 'run';
         this.nativeInfo = native;
-        await projectOpencodeMetadata(this.plugin, native, this.kernelMetadataController.signal);
+        await projectOpencodeMetadata(this.plugin, { models: native.models }, this.kernelMetadataController.signal);
       } else {
         // Configuring a reused kernel is native work: cancellation must stop it.
         active.ownsNativeWork = true;
@@ -397,29 +368,20 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       if (compact && !this.nativeConversationContextEstablished && request.conversationHistory?.length) {
         throw new Error('Send a normal message to restore the native conversation before using /compact.');
       }
-      turn.beginLiveOutput();
-      const promptStartedAt = Date.now();
-      const prompt = compact ? null : buildPrompt(request, !this.nativeConversationContextEstablished);
-      const response = await kernel.prompt({
-        prompt: prompt?.blocks ?? [{ type: 'text', text: text.trim() }],
-        sessionId: native.sessionId,
-      }, prompt?.userText, request);
+      active.liveOutput = true;
+      const prompt = compact
+        ? { text: text.trim(), files: [], userText: null }
+        : buildPrompt(request, !this.nativeConversationContextEstablished);
+      const startedAt = Date.now();
+      const response = await kernel.prompt(native.sessionId, prompt, request);
       this.#markNativeConversationContextEstablished(active);
       if (!this.#isRunCurrent(active, generation)) return;
       active.nativeCompleted = response.stopReason !== 'cancelled';
-      turn.accept(response.userMessageId);
-      if (response.usage) {
-        const usage = buildACPUsageInfo({
-          contextWindow: turn.contextUsage,
-          model: this.#resolveSelectedRawModelId(request.configuration.model) ?? undefined,
-          promptUsage: response.usage,
-        });
-        if (usage) run.emit({ type: 'usage_updated', usage });
-      }
-      const turnStats = response.stopReason !== 'cancelled' && native.databasePath
-        ? await loadOpencodeTurnStats(native.sessionId, {
-          databasePath: native.databasePath, ...(native.nativeVersion ? { nativeVersion: native.nativeVersion } : {}),
-        }, { userMessageId: response.userMessageId, startedAt: promptStartedAt }).catch(() => undefined)
+      this.#acceptRun(active, response.userMessageId);
+      // Native completion is already authoritative: cancellation cannot rewrite the turn
+      // while optional statistics load, and a failed read never fails it.
+      const turnStats = active.nativeCompleted
+        ? await kernel.readTurnStats(native.sessionId, { userMessageId: response.userMessageId, startedAt }).catch(() => undefined)
         : undefined;
       if (!this.#isRunCurrent(active, generation)) return;
       this.state.setStatus(this.backgroundTurn || this.backgroundScopes.size ? 'executing' : 'idle');
@@ -431,7 +393,8 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       this.#releaseRetiredKernel();
     } catch (error) {
       if (!this.#isRunCurrent(active, generation)) return;
-      const missing = phase === 'open'
+      // Connection refuses a resume whose database is inaccessible; opening reports a missing session.
+      const missing = phase !== 'run'
         && resumeAttempt !== null
         && error instanceof OpencodeSessionMissingError
         && error.sessionId === resumeAttempt;
@@ -493,36 +456,6 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     this.state.notify(scoped);
   }
 
-  private async handleNotification(
-    generation: number,
-    active: OpencodeActiveRun,
-    notification: ACPSessionNotification,
-  ): Promise<void> {
-    if (
-      !this.#isRunCurrent(active, generation)
-      || notification.sessionId !== this.nativeSessionId
-    ) {
-      return;
-    }
-    let metadata;
-    try {
-      metadata = active.turn.handleUpdate(notification.update);
-    } catch {
-      return;
-    }
-    if (metadata?.type === 'config_options') {
-      if (this.nativeInfo) {
-        this.nativeInfo = {
-          ...this.nativeInfo,
-          configOptions: metadata.configOptions,
-        };
-      }
-      await projectOpencodeMetadata(this.plugin, {
-        configOptions: metadata.configOptions,
-      }, this.kernelMetadataController.signal);
-    }
-  }
-
   async #applyConfiguration(
     kernel: OpencodeSessionKernel,
     native: OpencodeNativeSessionInfo,
@@ -531,48 +464,27 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     const selectedModel = this.#resolveSelectedRawModelId(
       request.configuration.model,
     );
-    let configOptions = native.configOptions ?? [];
+    // `default` selects no native variant, which every selected model accepts.
+    const reasoning = request.configuration.reasoning;
+    const variant = reasoning && reasoning !== OPENCODE_DEFAULT_THINKING_LEVEL ? reasoning : undefined;
+    const model = selectedModel ? native.models.find(({ rawId }) => rawId === selectedModel) : undefined;
     if (selectedModel) {
-      const response = await kernel.setConfigOption({
-        configId: 'model',
-        sessionId: native.sessionId,
-        type: 'select',
-        value: selectedModel,
-      });
-      configOptions = response.configOptions ?? configOptions;
-      if (response.configOptions && this.nativeInfo === native) {
-        this.nativeInfo = {
-          ...native,
-          configOptions: response.configOptions,
-        };
-      }
       await projectOpencodeMetadata(this.plugin, {
-        configOptions,
         selectedRawModelId: selectedModel,
+        thinkingLevels: listOpencodeThinkingLevels(model),
       }, this.kernelMetadataController.signal);
     }
-
-    const thoughtState = extractACPSessionThoughtLevelState({ configOptions });
-    if (request.configuration.reasoning) {
-      if (!thoughtState.configId || !thoughtState.availableLevels.some(({ id }) => id === request.configuration.reasoning)) {
-        throw new Error(`OpenCode model "${selectedModel}" does not support thinking level "${request.configuration.reasoning}".`);
-      }
-      await kernel.setConfigOption({
-        configId: thoughtState.configId,
-        sessionId: native.sessionId,
-        type: 'select',
-        value: request.configuration.reasoning,
-      });
+    if (reasoning && (!selectedModel || (variant && !model?.variants.includes(variant)))) {
+      throw new Error(`OpenCode model "${selectedModel}" does not support thinking level "${reasoning}".`);
     }
+    if (selectedModel) await kernel.setModel(native.sessionId, selectedModel, variant);
 
     const profile = resolveProfile(request);
     // Resumed sessions may still name an agent clone from an earlier lease.
-    await kernel.setConfigOption({
-      configId: 'mode',
-      sessionId: native.sessionId,
-      type: 'select',
-      value: profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[profile],
-    });
+    await kernel.setAgent(
+      native.sessionId,
+      profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[profile],
+    );
     kernel.setAutoApprove(request.configuration.permissionMode === 'yolo');
   }
 
@@ -597,7 +509,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
   #cancelRun(active: OpencodeActiveRun): void {
     if (!this.#isRunCurrent(active, this.lifecycleGeneration) || active.nativeCompleted) return;
     active.cancellationRequested = true;
-    active.turn.endLiveOutput();
+    active.liveOutput = false;
     const generation = ++this.lifecycleGeneration;
     if (!active.ownsNativeWork) {
       // The kernel may still serve an earlier turn's descendants; only stop waiting.
@@ -640,12 +552,15 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     this.lifecycleGeneration += 1;
     this.#invalidate('process-exited', true, error);
     this.#emitRunSnapshot(active);
-    active.run.finish({
-      category: 'process-exited',
-      message: formatError(error),
-      recoverable: true,
-      type: 'execution_error',
-    });
+    // Native success stands; only the optional statistics read dies with the runtime.
+    active.run.finish(active.nativeCompleted
+      ? { reason: 'completed', type: 'turn_completed' }
+      : {
+          category: 'process-exited',
+          message: formatError(error),
+          recoverable: true,
+          type: 'execution_error',
+        });
     this.activeRun = null;
     this.nativeInfo = null;
     void this.#disposeKernel();
@@ -658,8 +573,19 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     if (this.disposed) return;
     this.nativeSessionId = native.sessionId;
     this.databasePath = native.databasePath;
-    this.nativeVersion = native.nativeVersion ?? this.nativeVersion;
     this.#publishNativeOwnershipSnapshot(active);
+  }
+
+  /** Emits `turn_started` once, after the native turn first proves it accepted this run. */
+  #acceptRun(active: OpencodeActiveRun, nativeUserMessageId?: string | null): void {
+    if (active.accepted || active.run.isTerminal) return;
+    active.accepted = true;
+    this.#markNativeConversationContextEstablished(active);
+    active.run.emit({
+      accepted: true,
+      ...(nativeUserMessageId ? { nativeUserMessageId } : {}),
+      type: 'turn_started',
+    });
   }
 
   #markNativeConversationContextEstablished(
@@ -776,6 +702,10 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       recoverable,
     });
   }
+}
+
+function isAcceptingLiveOutput(active: OpencodeActiveRun): boolean {
+  return active.liveOutput && !active.run.isTerminal;
 }
 
 function resolveProfile(request: ProviderExecutionRequest): OpencodeExecutionProfile {

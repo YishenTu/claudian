@@ -30,7 +30,7 @@ export const opencodeModelPolicy: ProviderModelPolicy = {
     const discoveredModels = new Map(buildOpencodeBaseModels(opencodeSettings.discoveredModels).map((model) => [
       encodeOpencodeModelId(model.rawId),
       applyAlias(model.rawId, {
-        description: model.description ?? 'ACP runtime',
+        ...(model.description ? { description: model.description } : {}),
         label: model.label,
         value: encodeOpencodeModelId(model.rawId),
       }),
