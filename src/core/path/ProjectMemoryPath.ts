@@ -43,6 +43,8 @@ function slugifyProjectName(name: string): string {
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, '-')
     .slice(0, SLUG_MAX_LENGTH)
+    // Preserve the UTF-16 length budget without splitting a supplementary character.
+    .replace(/[\uD800-\uDBFF]$/, '')
     .replace(/^-+|-+$/g, '');
   if (!slug) return 'project';
   return WINDOWS_DEVICE_NAME.test(slug) ? `project-${slug}` : slug;
