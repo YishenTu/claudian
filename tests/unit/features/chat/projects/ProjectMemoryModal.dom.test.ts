@@ -19,6 +19,7 @@ import { t } from '@/i18n/i18n';
 jest.mock('obsidian', () => ({
   ...jest.requireActual('@test/__mocks__/obsidian'),
   ...jest.requireActual('@test/helpers/ObsidianSettingsDOM'),
+  getFrontMatterInfo: (markdown: string) => ({ contentStart: /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.exec(markdown)?.[0].length ?? 0 }),
 }));
 
 const project: ProjectRecord = {
@@ -404,4 +405,44 @@ it('opens the editor at a heading clicked in the rendered memory, skipping headi
   expect(textarea.hidden).toBe(false);
   expect(document.activeElement).toBe(textarea);
   expect(textarea.selectionStart).toBe(markdown.indexOf('## State'));
+});
+
+
+it.each([
+  { markdown: 'Launch\n======\n\nGoal\n----\nShip it\n\n## State\nDrafting\n', expected: '## State', heading: 'State' },
+  { markdown: 'Launch\n======\n\nGoal\n----\nShip it\n', expected: 'Goal', heading: 'Goal' },
+  { markdown: '> ## Quoted\n> Details\n\n## State\nDrafting\n', expected: '## State', heading: 'State' },
+])('finds clicked heading sources across supported Markdown syntax: $heading', async ({ markdown, expected, heading }) => {
+  // External Obsidian Markdown rendering supplies the headings; mapping them back to source stays real.
+  render.mockImplementation(async (_app, _markdown, el) => {
+    if (markdown.startsWith('>')) el.createEl('blockquote').createEl('h2', { text: 'Quoted' });
+    else {
+      el.createEl('h1', { text: 'Launch' });
+      el.createEl('h2', { text: 'Goal' });
+    }
+    if (markdown.includes('## State')) el.createEl('h2', { text: 'State' });
+  });
+  const { dialog, controls, textarea } = await open(new InMemoryProjectMemory(markdown));
+  const target = await controls.findByRole('heading', { name: heading });
+  fireEvent.click(target);
+  expect(controls.getByRole('textbox', { name: title })).toBe(textarea);
+  expect(document.activeElement).toBe(textarea);
+  expect(textarea.selectionStart).toBe(markdown.indexOf(expected));
+  expect(textarea.selectionEnd).toBe(textarea.selectionStart);
+  expect(await axe(dialog)).toHaveNoViolations();
+});
+
+it('preserves source offsets after host frontmatter and skips ambiguous extra rendered headings', async () => {
+  const markdown = '---\ntitle: Launch\n---\n\n## State\nDrafting\n';
+  render.mockImplementation(async (_app, _markdown, el) => { el.createEl('h2', { text: 'State' }); });
+  const { controls, textarea } = await open(new InMemoryProjectMemory(markdown));
+  fireEvent.click(await controls.findByRole('heading', { name: 'State' }));
+  expect(textarea.hidden).toBe(false);
+  expect(textarea.selectionStart).toBe(markdown.indexOf('## State'));
+  fireEvent.click(controls.getByRole('button', { name: preview }));
+  // A host extension's additional heading makes ordinal source attribution ambiguous.
+  const renderedHeading = await controls.findByRole('heading', { name: 'State' });
+  renderedHeading.parentElement!.createEl('h2', { text: 'Injected heading' });
+  fireEvent.click(controls.getByRole('heading', { name: 'Injected heading' }));
+  expect(textarea.hidden).toBe(true);
 });
