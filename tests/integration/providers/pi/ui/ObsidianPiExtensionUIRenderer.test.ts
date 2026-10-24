@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { fireEvent, within } from '@testing-library/dom';
+import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import type { App } from 'obsidian';
 
@@ -21,6 +21,8 @@ jest.mock('obsidian', () => {
   return { ...actual, Modal };
 });
 import { setLocale } from '@/i18n/i18n';
+import { PiExtensionUIBridge } from '@/providers/pi/runtime/PiExtensionUIBridge';
+import type { PiRPCTransport } from '@/providers/pi/runtime/PiRPCTransport';
 import { ObsidianPiExtensionUIRenderer } from '@/providers/pi/ui/ObsidianPiExtensionUIRenderer';
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...names) { this.classList.add(...names); };
@@ -96,5 +98,27 @@ it.each(['input', 'editor'] as const)('localizes fallback %s titles and controls
     await result;
     document.body.replaceChildren();
     setLocale('en');
+  }
+});
+
+it.each([false, true])('keeps native editor prefill through submission (edited: %s)', async edited => {
+  const send = jest.fn();
+  const bridge = new PiExtensionUIBridge({ send } as unknown as PiRPCTransport, new ObsidianPiExtensionUIRenderer({} as App));
+  const prefill = '  Initial text\nSecond line  ';
+  try {
+    bridge.handleRequest({ type: 'extension_ui_request', id: 'editor-prefill', method: 'editor', title: 'Edit draft', prefill });
+    const region = within(document.body).getByRole('region', { name: 'Pi extension' });
+    const field = within(region).getByRole('textbox', { name: 'Edit draft' });
+    expect(field).toHaveProperty('value', prefill);
+    const violations = await axe(region);
+    const value = edited ? prefill + '\nAdded line' : prefill;
+    if (edited) fireEvent.input(field, { target: { value } });
+    fireEvent.click(within(region).getByRole('button', { name: 'Submit' }));
+    await waitFor(() => expect(send).toHaveBeenCalledWith({ type: 'extension_ui_response', id: 'editor-prefill', value }));
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(violations).toHaveNoViolations();
+  } finally {
+    bridge.cleanup();
+    document.body.replaceChildren();
   }
 });

@@ -224,7 +224,9 @@ class PiTextModal extends PiExtensionModal<{ cancelled?: boolean; value?: string
 
   protected render(): void {
     this.renderHeader(t('chat.pi.extension'));
-    const initialValue = typeof this.request.value === 'string'
+    const initialValue = this.multiline && typeof this.request.prefill === 'string'
+      ? this.request.prefill
+      : typeof this.request.value === 'string'
       ? this.request.value
       : typeof this.request.defaultValue === 'string'
       ? this.request.defaultValue
