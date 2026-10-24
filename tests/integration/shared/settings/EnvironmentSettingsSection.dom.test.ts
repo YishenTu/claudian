@@ -1,6 +1,5 @@
 /** @jest-environment jsdom */
 
-import type * as ObsidianSettingsDOMHelper from '@test/helpers/ObsidianSettingsDOM';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { Notice } from 'obsidian';
@@ -10,28 +9,7 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
 import { renderEnvironmentSettingsSection } from '@/shared/settings/EnvironmentSettingsSection';
 
-jest.mock('obsidian', () => {
-  const actual = jest.requireActual('../../../helpers/ObsidianSettingsDOM') as typeof ObsidianSettingsDOMHelper;
-  type TextAreaCallback = Parameters<InstanceType<typeof actual.Setting>['addTextArea']>[0];
-
-  class LabeledTextAreaSetting extends actual.Setting {
-    private label = '';
-
-    setName(value: string): this {
-      this.label = value;
-      return super.setName(value);
-    }
-
-    addTextArea(callback: TextAreaCallback): this {
-      return super.addTextArea((component) => {
-        component.inputEl.setAttribute('aria-label', this.label);
-        callback(component);
-      });
-    }
-  }
-
-  return { ...actual, Setting: LabeledTextAreaSetting };
-});
+jest.mock('obsidian', () => jest.requireActual('@test/helpers/ObsidianSettingsDOM'));
 
 afterEach(() => {
   (Notice as unknown as jest.Mock).mockClear();

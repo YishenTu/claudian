@@ -99,7 +99,7 @@ jest.mock('obsidian', () => {
     }
 
     addTextArea(callback: (text: Record<string, unknown>) => void): this {
-      callback(createTextComponent());
+      callback(createTextComponent('textarea'));
       return this;
     }
 
@@ -138,17 +138,12 @@ jest.mock('obsidian', () => {
     return component;
   }
 
-  function createTextComponent(): Record<string, unknown> {
+  function createTextComponent(tag: 'input' | 'textarea' = 'input'): Record<string, unknown> {
+    const inputEl = document.createElement(tag);
+    inputEl.addClass = (...classes) => inputEl.classList.add(...classes);
     return {
       ...createChainableComponent(),
-      inputEl: {
-        addClass: jest.fn(),
-        addEventListener: jest.fn(),
-        dataset: {},
-        value: '',
-        rows: 0,
-        cols: 0,
-      },
+      inputEl,
     };
   }
 

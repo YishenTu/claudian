@@ -67,6 +67,7 @@ export function renderEnvironmentSettingsSection(
       text.inputEl.rows = 6;
       text.inputEl.cols = 50;
       text.inputEl.addClass('claudian-settings-env-textarea');
+      text.inputEl.setAttribute('aria-label', name);
       text.inputEl.dataset.envScope = scope;
       text.inputEl.addEventListener('input', () => updateReviewWarning());
       text.inputEl.addEventListener('blur', () => {
