@@ -100,3 +100,35 @@ it('localizes the controller-generated missing-content selector label', () => {
     setLocale('en');
   }
 });
+
+it.each(['Enter', 'Escape', 'ArrowDown', 'ArrowUp'])('leaves %s to an active IME composition in the linked-content search', async key => {
+  const folders = ['Plans', 'Projects'].map(path => Object.assign(new TFolder(), { name: path, path }));
+  const controller = new LinkedContentController({
+    app: {
+      vault: { getAbstractFileByPath: (path: string) => folders.find(folder => folder.path === path) ?? null },
+      workspace: { getActiveFile: () => null },
+    } as never,
+    getExcludedTags: () => [], getCachedVaultFiles: () => [], getCachedVaultFolders: () => folders,
+  });
+  const container = document.body.createDiv();
+  try {
+    const welcome = createWelcomeElement(container, 'Hello');
+    controller.mountWelcome(welcome);
+    const view = within(welcome);
+    fireEvent.click(view.getByRole('button', { name: 'None' }));
+    const search = view.getByRole('textbox', { name: 'Linked content:' });
+    fireEvent.input(search, { target: { value: 'p' } });
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    expect(view.getByRole('option', { name: 'Projects. Projects' }).getAttribute('aria-selected')).toBe('true');
+    expect(fireEvent.keyDown(search, { key, isComposing: true })).toBe(true);
+    expect(view.getByRole('textbox', { name: 'Linked content:' })).toBe(search);
+    expect(view.getByRole('option', { name: 'Projects. Projects' }).getAttribute('aria-selected')).toBe('true');
+    expect(controller.getSnapshot()).toEqual({ mode: 'auto-draft', path: null });
+    expect(document.activeElement).toBe(search);
+    expect(await axe(welcome, {
+      runOnly: ['label', 'aria-valid-attr-value', 'aria-roles', 'aria-required-parent', 'aria-required-children'],
+    })).toHaveNoViolations();
+    fireEvent.keyDown(search, { key: 'Enter' });
+    expect(controller.getSnapshot()).toEqual({ mode: 'explicit-draft', path: 'Projects' });
+  } finally { controller.destroy(); container.remove(); }
+});

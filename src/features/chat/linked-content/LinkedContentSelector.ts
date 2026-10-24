@@ -126,6 +126,7 @@ export class LinkedContentSelector {
   };
 
   private readonly handleSearchKeydown = (event: KeyboardEvent): void => {
+    if (event.isComposing) return;
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
@@ -150,6 +151,7 @@ export class LinkedContentSelector {
   };
 
   private readonly handlePickerBoundaryKeydown = (event: KeyboardEvent): void => {
+    if (event.isComposing) return;
     if (event.key !== 'Escape' || event.target === this.searchInput) return;
     event.preventDefault();
     event.stopPropagation();
@@ -157,6 +159,7 @@ export class LinkedContentSelector {
   };
 
   private readonly handleWindowKeydown = (event: KeyboardEvent): void => {
+    if (event.isComposing) return;
     if (event.key !== 'Escape' || !this.pickerEl) return;
     event.preventDefault();
     event.stopPropagation();
