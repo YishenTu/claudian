@@ -69,7 +69,7 @@ export function parseTitleGenerationResponse(responseText: string): string | nul
     (title.startsWith('"') && title.endsWith('"'))
     || (title.startsWith("'") && title.endsWith("'"))
   ) {
-    title = title.slice(1, -1);
+    title = title.slice(1, -1).trim();
   }
 
   title = title.replace(/[.!?:;,]+$/, '');
