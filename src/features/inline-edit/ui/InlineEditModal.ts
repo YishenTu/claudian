@@ -26,6 +26,7 @@ import {
   diffOpsEqual,
 } from '@/features/inline-edit/ui/markdownLineDiff';
 import { normalizeInsertionText } from '@/features/inline-edit/ui/normalizeInsertionText';
+import { MarkdownRenderScope } from '@/shared/components/MarkdownRenderScope';
 import { hideSelectionHighlight, showSelectionHighlight } from '@/shared/components/SelectionHighlight';
 import {
   ComposerDropdownController,
@@ -88,6 +89,9 @@ class MarkdownDiffWidget extends WidgetType {
   }
   toDOM(): HTMLElement {
     return this.controller.createDiffPreviewDOM(this.diffOps);
+  }
+  destroy(dom: HTMLElement): void {
+    this.controller.destroyDiffPreviewDOM(dom);
   }
   eq(other: MarkdownDiffWidget): boolean {
     return diffOpsEqual(this.diffOps, other.diffOps);
@@ -335,6 +339,7 @@ export class InlineEditSession {
   private reasoningOverride: string | undefined;
   private mentionDataProvider: VaultMentionDataProvider;
   private agentReplyRenderVersion = 0;
+  private readonly previewScopes = new Map<HTMLElement, MarkdownRenderScope>();
   /** The document the edit was computed against; CodeMirror documents are immutable. */
   private sourceDoc: Text | null = null;
   private settled = false;
@@ -477,6 +482,7 @@ export class InlineEditSession {
 
   destroyInputDOM(container: HTMLElement): void {
     if (this.inputResources?.container !== container) return;
+    this.releasePreviews(container);
     this.instructionDraft = this.inputEl?.value ?? this.instructionDraft;
     this.inputResources.dispose();
     this.inputResources = null;
@@ -653,6 +659,19 @@ export class InlineEditSession {
     this.modelToolbarEl?.toggleClass('claudian-hidden', generating);
   }
 
+  destroyDiffPreviewDOM(container: HTMLElement): void {
+    this.releasePreviews(container);
+    if (this.containerEl === container) this.containerEl = null;
+  }
+
+  private releasePreviews(container?: HTMLElement): void {
+    for (const [element, scope] of this.previewScopes) {
+      if (container && element !== container && !container.contains(element)) continue;
+      this.previewScopes.delete(element);
+      this.component.removeChild(scope);
+    }
+  }
+
   createDiffPreviewDOM(diffOps: DiffOp[]): HTMLElement {
     const previewEl = createDiv({ cls: 'claudian-inline-diff-preview' });
     this.containerEl = previewEl;
@@ -699,10 +718,18 @@ export class InlineEditSession {
     return button;
   }
 
-  async #renderMarkdownPreview(container: HTMLElement, markdown: string): Promise<void> {
+  async #renderMarkdownPreview(container: HTMLElement, markdown: string, owner = container): Promise<void> {
+    this.releasePreviews(owner);
+    const scope = new MarkdownRenderScope();
+    this.previewScopes.set(owner, scope);
+    scope.register(() => {
+      if (this.previewScopes.get(owner) === scope) this.previewScopes.delete(owner);
+    });
+    this.component.addChild(scope);
+    scope.load();
     await renderInlineEditMarkdownPreview({
       app: this.app,
-      component: this.component,
+      component: scope,
       container,
       markdown,
       sourcePath: this.notePath,
@@ -713,6 +740,7 @@ export class InlineEditSession {
   async #renderMarkdownDiffPreview(container: HTMLElement, diffOps: DiffOp[]): Promise<void> {
     container.empty();
     for (const document of buildMarkdownDiffDocuments(diffOps)) {
+      if (this.settled || !this.containerEl?.contains(container)) return;
       if (!document.markdown) continue;
 
       const opEl = container.createDiv({ cls: `claudian-diff-block ${getDiffBlockClass(document.type)}` });
@@ -817,11 +845,12 @@ export class InlineEditSession {
     if (!this.agentReplyEl || !this.containerEl) return;
     const replyEl = this.agentReplyEl;
     const renderVersion = ++this.agentReplyRenderVersion;
+    this.releasePreviews(replyEl);
     const renderedEl = this.agentReplyEl.createDiv();
 
     replyEl.removeClass('claudian-hidden');
     replyEl.empty();
-    void this.#renderMarkdownPreview(renderedEl, message).then(() => {
+    void this.#renderMarkdownPreview(renderedEl, message, replyEl).then(() => {
       if (renderVersion !== this.agentReplyRenderVersion || replyEl !== this.agentReplyEl) {
         return;
       }
@@ -969,6 +998,7 @@ export class InlineEditSession {
   private cleanup(options?: { keepSelectionHighlight?: boolean }) {
     this.generation += 1;
     this.generating = false;
+    this.releasePreviews();
     this.releaseEditorLifetime?.();
     this.releaseEditorLifetime = null;
     this.inlineEditService.end();

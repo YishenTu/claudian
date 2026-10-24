@@ -9,7 +9,7 @@ import {
   typeInstruction,
 } from '@test/helpers/features/inline-edit/InlineEditDOMHarness';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
-import { MarkdownRenderer, Notice, TFolder } from 'obsidian';
+import { Component, MarkdownRenderer, Notice, TFolder } from 'obsidian';
 
 afterEach(async () => {
   await disposeInlineEditHarnesses();
@@ -104,7 +104,7 @@ it('shows only the newest clarification when an older render finishes last', asy
   h.backend.sessions[0].complete();
   await waitFor(() => expect(renders).toHaveLength(2));
   expect(MarkdownRenderer.render).toHaveBeenLastCalledWith(
-    h.app, 'Second question?', expect.any(HTMLElement), h.notePath, h.plugin,
+    h.app, 'Second question?', expect.any(HTMLElement), h.notePath, expect.any(Component),
   );
 
   const container = input().closest('.claudian-inline-input-container') as HTMLElement;
@@ -130,4 +130,74 @@ it('previews the selected source as deleted and the replacement as inserted Mark
   ])).toEqual([['delete', 'hello'], ['insert', 'Hi']]));
   // The previewed source is hidden from the editor until the edit settles.
   expect(h.editorView.contentDOM.textContent).toBe(`${preview.textContent} world`);
+});
+
+
+it('releases Markdown resources when clarification previews are replaced and the edit closes', async () => {
+  const h = createHarness();
+  const released: string[] = [];
+  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, element, _path, component) => {
+    component.register(() => released.push(markdown));
+    (element as HTMLElement).textContent = markdown;
+  });
+  const session = h.createSession();
+  session.show();
+  submitInstruction('Improve');
+  await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
+  h.backend.sessions[0].emitText('First question?');
+  h.backend.sessions[0].complete();
+  await screen.findByText('First question?');
+  expect(released).toEqual([]);
+  submitInstruction('Formal');
+  await waitFor(() => expect(h.backend.sessions[0].requests).toHaveLength(2));
+  h.backend.sessions[0].emitText('Second question?');
+  h.backend.sessions[0].complete();
+  await screen.findByText('Second question?');
+  expect(released).toEqual(['First question?']);
+  session.close();
+  expect(released).toEqual(['First question?', 'Second question?']);
+  expect(screen.queryByRole('textbox', { name: 'Edit instructions' })).toBeNull();
+});
+
+it('releases late Markdown registrations after a preview is rejected', async () => {
+  const h = createHarness();
+  const released = jest.fn();
+  const childReleased = jest.fn();
+  let finishRender!: () => void;
+  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, _markdown, _element, _path, component) => {
+    await new Promise<void>(resolve => { finishRender = resolve; });
+    component.register(released);
+    const child = new Component();
+    child.register(childReleased);
+    component.addChild(child);
+  });
+  const session = h.createSession();
+  session.show();
+  submitInstruction();
+  await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
+  h.backend.sessions[0].emitText('Which tone?');
+  h.backend.sessions[0].complete();
+  await waitFor(() => expect(finishRender).toBeDefined());
+  session.reject();
+  finishRender();
+  await waitFor(() => expect(released).toHaveBeenCalledTimes(1));
+  expect(childReleased).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText('Which tone?')).toBeNull();
+});
+
+it('releases both Markdown diff documents when review is rejected', async () => {
+  const h = createHarness();
+  const released: string[] = [];
+  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, element, _path, component) => {
+    component.register(() => released.push(markdown));
+    (element as HTMLElement).textContent = markdown;
+  });
+  const session = h.createSession();
+  session.show();
+  await showReplacementPreview(h, 'Hi');
+  await screen.findByText('Hi');
+  expect(released).toEqual([]);
+  fireEvent.click(screen.getByRole('button', { name: 'Reject inline edit' }));
+  expect(released).toEqual(['hello', 'Hi']);
+  expect(screen.queryByRole('toolbar', { name: 'Inline edit actions' })).toBeNull();
 });

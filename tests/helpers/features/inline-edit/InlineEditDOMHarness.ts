@@ -2,6 +2,7 @@ import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { FakeAuxiliaryBackend } from '@test/helpers/core/auxiliary/AuxiliaryExecutionTestHarness';
 import { fireEvent, screen, waitFor } from '@testing-library/dom';
+import { Component } from 'obsidian';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
@@ -75,7 +76,7 @@ export function createInlineEditHarness() {
   const app: any = {
     vault: { adapter: { basePath: '/vault' }, getFiles: () => [], getAllLoadedFiles: () => [] },
   };
-  const plugin: any = {
+  const plugin: any = Object.assign(new Component(), {
     settings: { model: 'sonnet', effortLevel: 'high' },
     getActiveEnvironmentVariables: () => '',
     getActiveModelSelection: () => null,
@@ -88,7 +89,8 @@ export function createInlineEditHarness() {
       executionLifecycleRegistry: lifecycle,
       runProviderExecutionTransition: lifecycle.runTransition.bind(lifecycle),
     },
-  };
+  });
+  plugin.load();
   const editorView = new EditorView({
     state: EditorState.create({ doc: 'hello world' }),
     parent: document.body,
@@ -113,6 +115,7 @@ export function createInlineEditHarness() {
   cleanups.push(async () => {
     owner.dispose();
     editorView.destroy();
+    plugin.unload();
     await lifecycle.dispose();
   });
   return {

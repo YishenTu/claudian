@@ -7,10 +7,10 @@ import {
   restoreDisplayOnlyCodeFences,
 } from '@/features/chat/rendering/markdown/DisplayOnlyCodeFences';
 import { escapeRawHTMLTags } from '@/features/chat/rendering/markdown/markdownHTML';
-import { MarkdownRenderScope } from '@/features/chat/rendering/markdown/MarkdownRenderScope';
 import { renderMermaidDiagrams } from '@/features/chat/rendering/markdown/MermaidRenderer';
 import { t } from '@/i18n/i18n';
 import { enhanceRenderedCodeFence } from '@/shared/components/CopyableCodeFence';
+import { MarkdownRenderScope } from '@/shared/components/MarkdownRenderScope';
 import { processFileLinks } from '@/utils/fileLink';
 import { replaceImageEmbedsWithHTML } from '@/utils/imageEmbed';
 import {
