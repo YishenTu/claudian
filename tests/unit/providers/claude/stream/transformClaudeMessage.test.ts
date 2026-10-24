@@ -642,6 +642,42 @@ describe('transformSDKMessage', () => {
       ]);
     });
 
+    it.each([
+      { number: '1e3', expected: 1000 },
+      { number: '1e-3', expected: 0.001 },
+      { number: '-2.5E+2', expected: -250 },
+    ])('preserves JSON exponent numbers $number in streamed tool inputs', ({ number, expected }) => {
+      const streamState = createTransformStreamState();
+      const event = (value: Record<string, unknown>) => msg({ type: 'stream_event', event: { index: 0, ...value } });
+      transform(event({ type: 'content_block_start', content_block: {
+        type: 'tool_use', id: 'numeric-tool', name: 'mcp__calculator__scale', input: {},
+      } }), { streamState });
+      const results = transform(event({ type: 'content_block_delta', delta: {
+        type: 'input_json_delta', partial_json: `{"scale":${number},"label":`,
+      } }), { streamState });
+      expect(results).toEqual([{ type: 'tool_use', id: 'numeric-tool', name: 'mcp__calculator__scale', input: { scale: expected } }]);
+      expect(transform(event({ type: 'content_block_delta', delta: {
+        type: 'input_json_delta', partial_json: '"value"}',
+      } }), { streamState })).toEqual([{ type: 'tool_use', id: 'numeric-tool', name: 'mcp__calculator__scale', input: { scale: expected, label: 'value' } }]);
+    });
+
+    it('waits for an incomplete exponent before publishing that number', () => {
+      const streamState = createTransformStreamState();
+      const event = (value: Record<string, unknown>) => msg({ type: 'stream_event', event: { index: 0, ...value } });
+      transform(event({ type: 'content_block_start', content_block: {
+        type: 'tool_use', id: 'numeric-tool', name: 'mcp__calculator__scale', input: {},
+      } }), { streamState });
+      const delta = (partial_json: string) => transform(event({ type: 'content_block_delta', delta: {
+        type: 'input_json_delta', partial_json,
+      } }), { streamState });
+      expect(delta('{"label":"value","scale":1e-')).toEqual([{
+        type: 'tool_use', id: 'numeric-tool', name: 'mcp__calculator__scale', input: { label: 'value' },
+      }]);
+      expect(delta('3}')).toEqual([{
+        type: 'tool_use', id: 'numeric-tool', name: 'mcp__calculator__scale', input: { label: 'value', scale: 0.001 },
+      }]);
+    });
+
     it('reparses streamed tool input only when a delta can change the parsed snapshot', () => {
       const streamState = createTransformStreamState();
       const usageState = createTransformUsageState();

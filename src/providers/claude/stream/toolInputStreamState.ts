@@ -143,7 +143,7 @@ function tokenizePartialJSON(input: string): JSONToken[] {
         char = input[index] ?? '';
       }
 
-      while (/[0-9]/.test(char) || char === '.') {
+      while (/[0-9eE+.-]/.test(char)) {
         value += char;
         index += 1;
         char = input[index] ?? '';
@@ -192,7 +192,7 @@ function stripIncompleteTail(tokens: JSONToken[]): JSONToken[] {
       return stripIncompleteTail(tokens.slice(0, -1));
     case 'number': {
       const lastChar = lastToken.value[lastToken.value.length - 1];
-      return lastChar === '.' || lastChar === '-'
+      return /[.eE+-]/.test(lastChar ?? '')
         ? stripIncompleteTail(tokens.slice(0, -1))
         : tokens;
     }
