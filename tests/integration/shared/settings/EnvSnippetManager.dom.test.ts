@@ -66,6 +66,35 @@ function notifyCalls(notice: jest.Mock): string[] {
 
 const aliasCases: Array<Record<string, string> | undefined> = [undefined, {}, { custom: ' Snippet name ' }];
 
+it('preserves own context-limit keys when inserting a snippet with production object-spread semantics', async () => {
+  const settings = JSON.parse(JSON.stringify(DEFAULT_CLAUDIAN_SETTINGS)) as typeof DEFAULT_CLAUDIAN_SETTINGS;
+  settings.customContextLimits = { sibling: 256000 };
+  settings.envSnippets = [{
+    id: 'snippet', name: 'Custom limits', description: '', scope: 'provider:claude',
+    envVars: 'ANTHROPIC_MODEL=custom',
+    contextLimits: JSON.parse('{"__proto__":64000,"custom":128000}') as Record<string, number>,
+  }];
+  const coordinator = new SettingsCoordinator(settings, async () => undefined);
+  const host = {
+    settings,
+    app: { workspace: { getLeavesOfType: () => [] } },
+    applyEnvironmentVariables: async () => undefined,
+    mutateSettings: coordinator.mutate.bind(coordinator),
+  } as unknown as ProviderHost;
+  const container = document.body.createEl('main');
+  const changed = jest.fn();
+  new EnvSnippetManager(container, host, 'provider:claude', changed);
+
+  fireEvent.click(within(container).getByRole('button', { name: 'Insert' }));
+  await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+
+  expect(Object.getOwnPropertyDescriptor(settings.customContextLimits, '__proto__')?.value).toBe(64000);
+  expect(JSON.parse(JSON.stringify(settings.customContextLimits))).toEqual(
+    JSON.parse('{"sibling":256000,"__proto__":64000,"custom":128000}'),
+  );
+  expect(await axe(container)).toHaveNoViolations();
+});
+
 it.each(aliasCases)('applies snippet aliases through provider settings while preserving unrelated aliases (%p)', async modelAliases => {
   const settings = JSON.parse(JSON.stringify(DEFAULT_CLAUDIAN_SETTINGS)) as typeof DEFAULT_CLAUDIAN_SETTINGS;
   updateClaudeProviderSettings(settings, { modelAliases: { custom: 'Old name', other: 'Keep name' }, loadUserSettings: false });

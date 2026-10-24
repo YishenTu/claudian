@@ -3,6 +3,8 @@
   "compilerOptions": {
     "ignoreDeprecations": "6.0",
     "module": "CommonJS",
+    "target": "ES2018",
+    "useDefineForClassFields": false,
     "types": ["jest", "node"]
   }
 }
