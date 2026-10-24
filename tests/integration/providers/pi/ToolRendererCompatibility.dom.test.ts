@@ -118,6 +118,32 @@ function restoreHistory(call: NativeToolCall): ToolCallInfo {
   return message.toolCalls![0];
 }
 
+it.each([
+  { name: 'an empty text block', content: [{ type: 'text', text: '' }], expectedImages: undefined },
+  { name: 'an empty content array', content: [], expectedImages: undefined },
+  { name: 'an image-only result', content: [{ type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' }], expectedImages: [{ kind: 'data', mediaType: 'image/png', data: 'aGVsbG8=' }] },
+])('replaces live progress with $name at native completion', async ({ content, expectedImages }) => {
+  const normalization = createPiEventNormalizationState();
+  const { stream, response, messages, close } = createChatStream();
+  const send = async (event: Record<string, unknown>) => {
+    for (const chunk of normalizePiRPCEvent(event, normalization)) await stream.handleStreamChunk(chunk, response);
+  };
+  try {
+    await send({ type: 'tool_execution_start', toolCallId: 'tool', toolName: 'preview', args: {} });
+    await send({ type: 'tool_execution_update', toolCallId: 'tool', toolName: 'preview',
+      partialResult: { content: [{ type: 'text', text: 'Temporary progress' }] } });
+    expect(response.toolCalls?.[0].result).toBe('Temporary progress');
+    await send({ type: 'tool_execution_end', toolCallId: 'tool', toolName: 'preview', isError: false,
+      result: { content, details: {} } });
+    expect(response.toolCalls?.[0]).toMatchObject({ status: 'completed', result: '' });
+    expect(messages.textContent).not.toContain('Temporary progress');
+    expect(response.toolCalls?.[0].resultImages).toEqual(expectedImages);
+    expect((await axe(messages)).violations).toEqual([]);
+  } finally {
+    close();
+  }
+});
+
 const restore = (mode: 'live' | 'history', call: NativeToolCall) => mode === 'live'
   ? restoreLive(call)
   : Promise.resolve(restoreHistory(call));
