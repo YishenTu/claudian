@@ -37,7 +37,7 @@ export class ExecutionSessionSupervisor {
   acquire(
     backend: ProviderExecutionBackend,
     config: ProviderSessionConfig,
-    onInvalidated: (reason: ProviderExecutionInvalidationReason) => void,
+    onInvalidated: (reason: ProviderExecutionInvalidationReason, released: Promise<void>) => void,
     onSessionEvent?: (event: ProviderSessionEvent) => void,
   ): SupervisedExecutionSession {
     if (this.active) return this.active;
@@ -60,7 +60,9 @@ export class ExecutionSessionSupervisor {
       if (this.active !== current) return;
       this.active = null;
       current.unsubscribeSessionEvents();
-      onInvalidated(reason);
+      // The registry releases an invalidated lease in the same turn; joining that release (after it starts)
+      // lets the owner settle what the session announces while it shuts down. The registry reports failures.
+      onInvalidated(reason, this.#track(Promise.resolve().then(() => current.lease.release()).catch(() => undefined)));
     });
     return current;
   }
@@ -79,7 +81,10 @@ export class ExecutionSessionSupervisor {
 
     this.active = null;
     current.unsubscribeSessionEvents();
-    const release = current.lease.release();
+    return this.#track(current.lease.release());
+  }
+
+  #track(release: Promise<void>): Promise<void> {
     const trackedRelease = release.finally(() => {
       if (this.releasePromise === trackedRelease) {
         this.releasePromise = null;

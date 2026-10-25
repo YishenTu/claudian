@@ -420,6 +420,58 @@ describe('PiExecutionBackend', () => {
     }
   });
 
+  it('persists a stopped turn so reload replays its prompt and interrupted reply', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-stop-'));
+    const sessionFile = path.join(tempDir, 'session.jsonl');
+    const records = [
+      { type: 'session', version: 3, id: 'pi-session-1', cwd: tempDir },
+      { type: 'message', id: 'user-1', parentId: null, message: { role: 'user', content: 'First' } },
+      { type: 'message', id: 'assistant-1', parentId: 'user-1', message: { role: 'assistant', content: 'First answer' } },
+    ];
+    await fs.writeFile(sessionFile, records.map(r => JSON.stringify(r)).join('\n') + '\n');
+    const harness = createHarness(createConfig({
+      workingDirectory: tempDir,
+      resumeSeed: { providerSessionId: 'pi-session-1', providerState: {
+        sessionId: 'pi-session-1', sessionFile, leafEntryId: 'assistant-1',
+      } },
+    }));
+    harness.responses.set('get_state', { sessionId: 'pi-session-1', sessionFile });
+    const sessionEvents: ProviderSessionEvent[] = [];
+    harness.session.onEvent(event => sessionEvents.push(event));
+    try {
+      const run = harness.session.execute(createRequest());
+      const eventsPromise = collect(run.events);
+      await waitFor(() => harness.kernels[0]?.requests.some(r => r.type === 'prompt') ?? false);
+      harness.kernels[0].emit({ type: 'agent_start' });
+      await fs.appendFile(sessionFile, [
+        { type: 'message', id: 'user-2', parentId: 'assistant-1', message: { role: 'user', content: 'Second' } },
+        { type: 'message', id: 'assistant-2', parentId: 'user-2', message: {
+          role: 'assistant', content: 'Partial', stopReason: 'aborted', errorMessage: 'Request was aborted',
+        } },
+      ].map(r => JSON.stringify(r)).join('\n') + '\n');
+      run.cancel();
+      expect((await eventsPromise).at(-1)).toMatchObject({ type: 'cancelled' });
+
+      // Reload from the state announced for persistence, not the live session.
+      const announced = () => sessionEvents.find(event => event.type === 'session_state_changed'
+        && event.snapshot.providerState?.leafEntryId === 'assistant-2');
+      await waitFor(() => announced() !== undefined);
+      const settled = announced()!;
+      const conversation = {
+        id: 'conversation-1', providerId: 'pi', title: 'Stopped', createdAt: 1, lastActivityAt: 1,
+        sessionId: 'pi-session-1', messages: [],
+        providerState: settled.type === 'session_state_changed' ? settled.snapshot.providerState : undefined,
+      } as Conversation;
+      const reloaded = await new PiConversationHistoryService().hydrateConversationHistory(conversation, tempDir);
+      expect(reloaded.messages?.map(message => [message.content, message.isInterrupt === true])).toEqual([
+        ['First', false], ['First answer', false], ['Second', false], ['Partial', true],
+      ]);
+    } finally {
+      await harness.session.dispose();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it('restores a saved tree edit position before model configuration and input after restart', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-tree-resume-'));
     const sessionFile = path.join(root, 'session.jsonl');

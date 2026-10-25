@@ -473,7 +473,40 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       reason: 'Cancelled',
       type: 'cancelled',
     });
-    void this.#shutdownKernel();
+    this.#shutdownAfterStop(active.nativeRequestDispatched);
+  }
+
+  /**
+   * Pi keeps a stopped turn's prompt and partial reply. Once its writer exits, resume and reload follow
+   * them as on completion; later starts and branch reads wait on this shutdown. A tree cursor already
+   * follows native appends on reload, and an undispatched prompt appended nothing.
+   */
+  #shutdownAfterStop(dispatched: boolean): void {
+    const shutdown = this.#shutdownKernel();
+    if (!dispatched || getPiState(this.state.providerState).treeCursor) {
+      void shutdown.catch(() => undefined);
+      return;
+    }
+    const followed: Promise<void> = shutdown
+      .catch(() => undefined)
+      .then(() => this.#followStoppedTurn())
+      .finally(() => {
+        if (this.shutdownPromise === followed) this.shutdownPromise = null;
+      });
+    this.shutdownPromise = followed;
+  }
+
+  async #followStoppedTurn(): Promise<void> {
+    const previousLeafId = getPiState(this.state.providerState).leafEntryId;
+    try {
+      await this.#syncNativeLeaf(undefined, () => true);
+    } catch {
+      // Reload still shows the history before the stopped turn.
+      return;
+    }
+    if (getPiState(this.state.providerState).leafEntryId === previousLeafId) return;
+    this.state.bumpRevision();
+    this.#emitSession({ snapshot: this.getSnapshot(), type: 'session_state_changed' });
   }
 
   async steer(request: ProviderExecutionRequest): Promise<boolean> {

@@ -225,6 +225,8 @@ export class ChatExecutionCoordinator {
   readonly #pendingSteerAttempts = new Map<string, PendingSteerAttempt>();
   #disposed = false;
   #disposePromise: Promise<void> | null = null;
+  /** Settles once every released binding has given up its claim; replacements register only after it. */
+  #bindingReleases: Promise<void> = Promise.resolve();
   #stale = false;
   #publishedBackgroundWork = false;
   #protectedOperationCount = 0;
@@ -335,6 +337,13 @@ export class ChatExecutionCoordinator {
   }
 
   async #prepareSession(): Promise<void> {
+    // A release can start while this waits; nothing below awaits before registering, so once the barrier is
+    // unchanged after settling, no release can start before the claim.
+    let releases: Promise<void>;
+    do {
+      releases = this.#bindingReleases;
+      await releases;
+    } while (releases !== this.#bindingReleases);
     this.#assertAvailable();
     const conversation = this.#requireConversation();
     if (this.#sessionBinding && this.#isBindingCurrent(this.#sessionBinding)) return;
@@ -358,7 +367,7 @@ export class ChatExecutionCoordinator {
           interactionPort: this.#interactions,
           sessionTools: sessionTools?.port,
         },
-        (reason) => this.#handleLeaseInvalidation(reason),
+        (reason, released) => this.#handleLeaseInvalidation(reason, released),
         (event) => this.#handleSessionEvent(event),
       );
     } catch (error) {
@@ -731,7 +740,8 @@ export class ChatExecutionCoordinator {
     this.#pendingSteerAttempts.clear();
     this.#disposePromise = this.#preparationTail
       .catch(() => undefined)
-      .then(() => this.#releaseSessionBinding());
+      .then(() => this.#releaseSessionBinding())
+      .then(() => this.#bindingReleases);
     return this.#disposePromise;
   }
 
@@ -960,9 +970,18 @@ export class ChatExecutionCoordinator {
     snapshot: ProviderSessionSnapshot,
     requirePersistence = false,
   ): Promise<void> {
+    if (!this.#isBindingCurrent(binding)) return;
+    await this.#writeSnapshot(binding, snapshot, requirePersistence);
+  }
+
+  /** Writes a newer snapshot under the binding's claim; callers establish that the claim is still held. */
+  async #writeSnapshot(
+    binding: SessionBinding,
+    snapshot: ProviderSessionSnapshot,
+    requirePersistence = false,
+  ): Promise<void> {
     if (
-      !this.#isBindingCurrent(binding)
-      || snapshot.providerId !== binding.conversation.providerId
+      snapshot.providerId !== binding.conversation.providerId
       || snapshot.revision <= binding.lastSnapshotRevision
     ) {
       return;
@@ -996,6 +1015,7 @@ export class ChatExecutionCoordinator {
 
   #handleLeaseInvalidation(
     _reason: ProviderExecutionInvalidationReason,
+    released: Promise<void>,
   ): void {
     const binding = this.#sessionBinding;
     if (!binding) return;
@@ -1005,10 +1025,8 @@ export class ChatExecutionCoordinator {
     this.#stale = true;
     this.#pendingSteerAttempts.clear();
     this.#invalidateActiveExecution('invalidated', 'provider-transition');
-    this.deps.persistence.releaseExecutionBinding(
-      binding.conversation.conversationId,
-      binding.bindingId,
-    );
+    const settle = this.#holdReleasedBinding(binding);
+    void this.#trackBindingRelease(settle(released)).catch(error => this.deps.onError?.(error));
     this.#clearIdleTimer();
   }
 
@@ -1019,17 +1037,42 @@ export class ChatExecutionCoordinator {
     this.#pendingSteerAttempts.clear();
     this.#clearIdleTimer();
     this.#publishBackgroundWork();
-    try {
-      await this.#supervisor.release();
-    } finally {
-      // Keep the claim until the previous native session has finished disposal.
-      if (binding) {
+    const settle = binding ? this.#holdReleasedBinding(binding) : null;
+    const release = this.#supervisor.release();
+    await (settle ? this.#trackBindingRelease(settle(release)) : release);
+  }
+
+  /**
+   * Release can settle provider state after event routing ends (Pi follows a stopped turn's native leaf once
+   * its process exits). Listening from before the release starts, the returned step persists that state while
+   * the claim is still held, then gives the claim up once the native session has finished disposal. The final
+   * disposed announcement only reports teardown, and may carry state the release's caller already reset.
+   */
+  #trackBindingRelease(release: Promise<void>): Promise<void> {
+    const settled = release.catch(() => undefined);
+    this.#bindingReleases = Promise.all([this.#bindingReleases, settled]).then(() => undefined);
+    return release;
+  }
+
+  #holdReleasedBinding(binding: SessionBinding): (release: Promise<void>) => Promise<void> {
+    let settled: ProviderSessionSnapshot | undefined;
+    const stopListening = binding.session.onEvent((event) => {
+      if (event.type === 'session_state_changed' && event.snapshot.status !== 'disposed') {
+        settled = event.snapshot;
+      }
+    });
+    return async (release) => {
+      try {
+        await release;
+        if (settled) await this.#writeSnapshot(binding, settled).catch(error => this.deps.onError?.(error));
+      } finally {
+        stopListening();
         this.deps.persistence.releaseExecutionBinding(
           binding.conversation.conversationId,
           binding.bindingId,
         );
       }
-    }
+    };
   }
 
   async #runProtectedOperation<T>(operation: () => Promise<T>): Promise<T> {
