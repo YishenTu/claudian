@@ -1,3 +1,5 @@
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ClaudianSettings } from '@/core/types';
@@ -14,7 +16,7 @@ jest.mock('@/providers/claude/ui/ClaudeSettingsTab', () => ({ createClaudeSettin
 function createPlugin(
   executionLifecycleRegistry: ProviderExecutionLifecycleRegistry,
 ): MutableTestHost {
-  return {
+  const plugin = {
     app: {
       workspace: { onLayoutReady: jest.fn() },
       vault: {
@@ -22,11 +24,12 @@ function createPlugin(
       },
     },
     executionLifecycleRegistry,
-    getActiveEnvironmentVariables: jest.fn(() => ''),
     loadData: jest.fn().mockResolvedValue({}),
     saveData: jest.fn().mockResolvedValue(undefined),
     settings: {},
+    getRuntimeHost: (id: string) => runtimeHostFor(plugin as unknown as Parameters<typeof runtimeHostFor>[0], id),
   } as unknown as MutableTestHost;
+  return plugin;
 }
 
 describe('ClaudeWorkspaceServices', () => {
@@ -34,7 +37,6 @@ describe('ClaudeWorkspaceServices', () => {
     const registry = new ProviderExecutionLifecycleRegistry();
     const plugin = createPlugin(registry);
     plugin.settings.providerConfigs = { claude: { enabled, visibleModels: [] } };
-    plugin.mutateSettingsConditionally = jest.fn(async mutation => { await mutation(plugin.settings); });
     plugin.notifyProviderChatOptionsChanged = jest.fn();
     const catalogProbe = jest.fn().mockResolvedValue({ models: [{ value: 'sdk-only', label: 'SDK model', description: '' }], outputStyles: [] });
     const services = await createClaudeWorkspaceServices(plugin, { catalogProbe });
@@ -52,7 +54,6 @@ describe('ClaudeWorkspaceServices', () => {
     const registry = new ProviderExecutionLifecycleRegistry();
     const plugin = createPlugin(registry);
     plugin.settings.providerConfigs = { claude: { enabled: true, visibleModels: ['sonnet'] } };
-    plugin.mutateSettingsConditionally = jest.fn(async mutation => { await mutation(plugin.settings); });
     plugin.notifyProviderChatOptionsChanged = jest.fn();
     let started!: () => void;
     const probeStarted = new Promise<void>(resolve => { started = resolve; });

@@ -112,7 +112,7 @@ describe('Claude side-chat native child', () => {
 
   it('answers from source context and its own turns while the parent keeps its own history and Claudian record', async () => {
     const native = createNativeClaude();
-    const backend = new ClaudeExecutionBackend(env.host);
+    const backend = new ClaudeExecutionBackend(env.host.getRuntimeHost('claude'));
     const source = await env.open(backend);
     const checkpoint = await env.send(source, 'Remember A');
     const conversationsBefore = env.repository.list().map(conversation => conversation.id);
@@ -140,7 +140,7 @@ describe('Claude side-chat native child', () => {
 
   it('does not refork or resume the parent when the child continues after a later main turn', async () => {
     const native = createNativeClaude();
-    const backend = new ClaudeExecutionBackend(env.host);
+    const backend = new ClaudeExecutionBackend(env.host.getRuntimeHost('claude'));
     const source = await env.open(backend);
     const checkpoint = await env.send(source, 'Remember A');
     const child = await traceSideChild(env, source, checkpoint, backend, {
@@ -162,7 +162,7 @@ describe('Claude side-chat native child', () => {
 
   it('reports an unavailable captured checkpoint without starting the child or changing the source', async () => {
     const native = createNativeClaude();
-    const backend = new ClaudeExecutionBackend(env.host);
+    const backend = new ClaudeExecutionBackend(env.host.getRuntimeHost('claude'));
     const source = await env.open(backend);
     const checkpoint = await env.send(source, 'Remember A');
     const child = await traceSideChild(env, source, checkpoint, backend, {
@@ -178,7 +178,7 @@ describe('Claude side-chat native child', () => {
 
   it('runs a benign fixture tool under the copied permission policy and keeps its effect after disposal', async () => {
     createNativeClaude();
-    const backend = new ClaudeExecutionBackend(env.host);
+    const backend = new ClaudeExecutionBackend(env.host.getRuntimeHost('claude'));
     const source = await env.open(backend);
     const checkpoint = await env.send(source, 'Remember A');
     const written = path.join(env.root, 'side-note.md');
@@ -202,7 +202,7 @@ describe('Claude side-chat native child', () => {
 
   it('denies a fixture tool when the side owner rejects the approval', async () => {
     createNativeClaude();
-    const backend = new ClaudeExecutionBackend(env.host);
+    const backend = new ClaudeExecutionBackend(env.host.getRuntimeHost('claude'));
     const source = await env.open(backend);
     const checkpoint = await env.send(source, 'Remember A');
     const written = path.join(env.root, 'denied-note.md');

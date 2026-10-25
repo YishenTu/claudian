@@ -6,7 +6,7 @@ import {
   detectSideChatCommand,
   isSideChatCommandSupported,
 } from '@/core/commands/builtInCommands';
-import type { ProviderExecutionEvent } from '@/core/execution';
+import type { ProviderExecutionContext, ProviderExecutionEvent } from '@/core/execution';
 import type { BrowserSelectionContext } from '@/core/prompt/browserContext';
 import type { CanvasSelectionContext } from '@/core/prompt/canvasContext';
 import type { EditorSelectionContext } from '@/core/prompt/editorContext';
@@ -33,7 +33,7 @@ import type { ChatSessionRuntime, TurnCancelOptions } from '@/features/chat/sess
 import type { SessionComposerPort } from '@/features/chat/sessions/SessionComposer';
 import type { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import type { ChatState } from '@/features/chat/state/ChatState';
-import { cloneChatTurnRequest, createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
+import { captureSelectionSnapshots, cloneChatTurnRequest, createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
 import type { ChatTurnRequest, TabReviewOutcome } from '@/features/chat/state/types';
 import { type MainTurn, MainTurnExecution } from '@/features/chat/turns/MainTurnExecution';
 import type { StreamController } from '@/features/chat/turns/StreamController';
@@ -365,7 +365,7 @@ export class InputController {
         ? [...(imageOverride ?? composerDraft.images)]
         : [];
       // The side controller owns composer clearing so a rejected command keeps the draft.
-      await sideChat.handleCommandSubmission(sideCommand.argument, images, this.deps.selections.capture());
+      await sideChat.handleCommandSubmission(sideCommand.argument, images, this.#captureSideContext());
       return 'handled';
     }
 
@@ -435,7 +435,7 @@ export class InputController {
       const capturedSideRuntime = sideChat?.runtime;
       const images = [...(imageOverride ?? composerDraft.images)];
       const captured = this.#buildTurnSubmission(content, images, options);
-      const sideContext = this.deps.selections.capture();
+      const sideContext = this.#captureSideContext();
       const original = shouldUseInput ? this.deps.drafts.consume(destination) : { content, images };
       const preparation = new AbortController();
       const ownsMainTurn = destination === 'main' && !this.turns.isActive && !this.queue.message;
@@ -498,7 +498,7 @@ export class InputController {
       const images = hasImages
         ? [...(imageOverride ?? composerDraft.images)]
         : [];
-      const context = this.deps.selections.capture();
+      const context = this.#captureSideContext();
       const previousDraft = shouldUseInput ? this.deps.drafts.consume('side') : null;
       const accepted = await sideChat.submitToSide(
         content,
@@ -550,6 +550,12 @@ export class InputController {
       assertBeforeHandoff: options?.assertBeforeHandoff,
       onDelivery: options?.onDelivery,
     };
+  }
+
+  /** Live selections for a side-chat turn, in capture order. */
+  #captureSideContext(): ProviderExecutionContext {
+    const selections = captureSelectionSnapshots(this.deps.selections.capture());
+    return selections.length ? { selections } : {};
   }
 
   #resolveSelections(options?: SendMessageOptions): Required<Pick<ChatTurnRequest, 'editorSelection' | 'browserSelection' | 'canvasSelection'>> {

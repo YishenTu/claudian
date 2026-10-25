@@ -1,5 +1,7 @@
 import '@/providers';
 
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+
 const mockTransportRequest = jest.fn();
 const mockTransportSend = jest.fn();
 const mockTransportStart = jest.fn();
@@ -37,13 +39,7 @@ import { PiModelDiscoveryService } from '@/providers/pi/runtime/PiModelDiscovery
 
 function createPlugin() {
   return {
-    app: {
-      vault: {
-        adapter: {
-          basePath: '/tmp/vault',
-        },
-      },
-    },
+    workingDirectory: '/tmp/vault',
     getResolvedProviderCliPath: jest.fn(() => '/usr/local/bin/pi'),
     settings: {
       providerConfigs: {
@@ -70,7 +66,7 @@ describe('PiModelDiscoveryService', () => {
     const plugin = createPlugin();
     plugin.settings.providerConfigs.pi.enabled = false;
 
-    const result = await new PiModelDiscoveryService(plugin).discoverModels();
+    const result = await new PiModelDiscoveryService(runtimeHostFor(plugin, 'pi')).discoverModels();
 
     expect(result).toEqual({ kind: 'skipped', reason: 'provider-disabled' });
     expect(plugin.getResolvedProviderCliPath).not.toHaveBeenCalled();
@@ -95,7 +91,7 @@ describe('PiModelDiscoveryService', () => {
       }],
     });
 
-    const result = await new PiModelDiscoveryService(createPlugin()).discoverModels();
+    const result = await new PiModelDiscoveryService(runtimeHostFor(createPlugin(), 'pi')).discoverModels();
 
     expect(result.kind).toBe('completed');
     if (result.kind !== 'completed') {
@@ -130,7 +126,7 @@ describe('PiModelDiscoveryService', () => {
       return { models: [] };
     });
 
-    await new PiModelDiscoveryService(createPlugin()).discoverModels();
+    await new PiModelDiscoveryService(runtimeHostFor(createPlugin(), 'pi')).discoverModels();
 
     expect(mockTransportSend).toHaveBeenCalledWith({
       cancelled: true,
@@ -143,7 +139,7 @@ describe('PiModelDiscoveryService', () => {
     mockTransportRequest.mockRejectedValue(new Error('not logged in'));
     mockGetStderrSnapshot.mockReturnValue('Pi stderr');
 
-    const result = await new PiModelDiscoveryService(createPlugin()).discoverModels();
+    const result = await new PiModelDiscoveryService(runtimeHostFor(createPlugin(), 'pi')).discoverModels();
 
     expect(result).toEqual({
       diagnostics: 'not logged in\n\nPi stderr',

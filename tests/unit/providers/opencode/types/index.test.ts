@@ -1,5 +1,6 @@
 import type { Conversation } from '@/core/types';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
+import { resolveOpencodeHistoryLaunch } from '@/providers/opencode/runtime/OpencodeCLIResolver';
 import { getOpencodeState } from '@/providers/opencode/types';
 
 describe('OpenCode provider state', () => {
@@ -16,7 +17,7 @@ describe('OpenCode provider state', () => {
       futureResumeCursor: { token: 'cursor-1' },
       ignoredFutureValue: undefined,
     });
-    const service = new OpencodeConversationHistoryService();
+    const service = new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch });
 
     Object.assign(conversation, await service.hydrateConversationHistory(
       conversation,

@@ -1,6 +1,6 @@
 import type { SlashCommand as SDKSlashCommand } from '@anthropic-ai/claude-agent-sdk';
 
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { SlashCommand } from '../../../core/types';
 import { ClaudeRuntimeUnavailableError, probeClaudeRuntime } from '../runtime/probeClaudeRuntime';
 
@@ -30,7 +30,7 @@ export function mapSDKCommands(
  * Resolves empty only when no CLI can run; discovery failures reject.
  */
 export async function probeRuntimeCommands(
-  host: ProviderHost,
+  host: ProviderRuntimeHost,
   signal?: AbortSignal,
 ): Promise<SlashCommand[]> {
   try {

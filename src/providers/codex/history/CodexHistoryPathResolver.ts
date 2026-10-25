@@ -3,12 +3,19 @@ import * as path from 'node:path';
 
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
 import { isPathWithinRoot } from '../../../core/storage/pathContainment';
+import type { CodexProviderSettings } from '../config';
 import { inferWslDistroFromWindowsPath } from '../runtime/CodexExecutionTargetResolver';
 import { createCodexPathMapper } from '../runtime/CodexPathMapper';
-import { getCodexProviderSettings } from '../settings';
 import { findCodexSessionFileAsync } from './CodexHistoryStore';
 
 export const CODEX_HISTORY_LOOKUP_TIMEOUT_MS = 10_000;
+
+export type CodexHistoryInstallation = Pick<CodexProviderSettings, 'installationMethod' | 'wslDistroOverride'>;
+
+export interface CodexHistoryPathContext extends Omit<ProviderHistoryPathContext, 'settings'> {
+  /** This host's Codex installation; absent when the caller supplied no settings. */
+  installation?: CodexHistoryInstallation;
+}
 
 interface WslSessionsRoot {
   distroName: string;
@@ -38,11 +45,11 @@ function parseStandardWslSessionsRoot(value: string): WslSessionsRoot | null {
   return match ? { distroName: match[2], root: match[1] } : null;
 }
 
-function getWslDistroConstraint(context: ProviderHistoryPathContext): string | null | undefined {
-  if ((context.hostPlatform ?? process.platform) !== 'win32' || !context.settings) {
+function getWslDistroConstraint(context: CodexHistoryPathContext): string | null | undefined {
+  if ((context.hostPlatform ?? process.platform) !== 'win32' || !context.installation) {
     return undefined;
   }
-  const settings = getCodexProviderSettings(context.settings);
+  const settings = context.installation;
   if (settings.installationMethod !== 'wsl') {
     return undefined;
   }
@@ -53,7 +60,7 @@ function getWslDistroConstraint(context: ProviderHistoryPathContext): string | n
 
 function getTrustedWslRoot(
   value: string | null | undefined,
-  context: ProviderHistoryPathContext,
+  context: CodexHistoryPathContext,
 ): WslSessionsRoot | null {
   if (!value) {
     return null;
@@ -73,7 +80,7 @@ function getTrustedWslRoot(
 }
 
 function getTrustedSessionRoots(
-  context: ProviderHistoryPathContext,
+  context: CodexHistoryPathContext,
   hints: Array<string | null | undefined> = [],
 ): string[] {
   const roots: string[] = [];
@@ -117,7 +124,7 @@ function getTrustedSessionRoots(
 }
 
 export function getCodexArchivedTranscriptRoots(
-  context?: ProviderHistoryPathContext,
+  context?: CodexHistoryPathContext,
   sessionRootHints: string[] = [],
 ): string[] {
   const defaultSessionsRoot = path.join(os.homedir(), '.codex', 'sessions');
@@ -132,7 +139,7 @@ export function getCodexArchivedTranscriptRoots(
 
 export function resolveCodexTranscriptRootHint(
   persistedRoot: string | null | undefined,
-  context?: ProviderHistoryPathContext,
+  context?: CodexHistoryPathContext,
 ): string | null {
   if (!persistedRoot) {
     return null;
@@ -150,7 +157,7 @@ export function resolveCodexTranscriptRootHint(
 export async function resolveCodexSessionFileHint(
   persistedPath: string | null | undefined,
   logicalSessionId: string | null | undefined,
-  context?: ProviderHistoryPathContext,
+  context?: CodexHistoryPathContext,
   deadline = Date.now() + CODEX_HISTORY_LOOKUP_TIMEOUT_MS,
 ): Promise<string | null> {
   if (!context) {

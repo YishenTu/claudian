@@ -1,15 +1,13 @@
 import { getEnhancedPath, parseEnvironmentVariables } from '@/core/process/env';
 
-import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
-
+/** Builds a launch environment from the shared plus OpenCode-scoped environment text. */
 export function buildOpencodeRuntimeEnv(
-  settings: Record<string, unknown>,
+  environmentText: string,
   cliPath: string,
   databasePathOverride?: string | null,
   inheritedEnvironment: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
-  const envText = getRuntimeEnvironmentText(settings, 'opencode');
-  const envVars = parseEnvironmentVariables(envText);
+  const envVars = parseEnvironmentVariables(environmentText);
   return {
     ...process.env,
     ...inheritedEnvironment,

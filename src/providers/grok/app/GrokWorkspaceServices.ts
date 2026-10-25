@@ -29,14 +29,15 @@ export async function createGrokWorkspaceServices(
   plugin: ProviderHost,
   options: GrokWorkspaceServicesOptions = {},
 ): Promise<GrokWorkspaceServices> {
-  const modelCatalogService = new GrokModelDiscoveryService(plugin);
+  const runtimeHost = plugin.getRuntimeHost('grok');
+  const modelCatalogService = new GrokModelDiscoveryService(runtimeHost);
   const modelCatalogCoordinator = new GrokModelCatalogCoordinator(
-    plugin,
+    runtimeHost,
     modelCatalogService,
   );
   const commandMetadataProbe = options.commandMetadataProbe
-    ?? new GrokCommandMetadataProbe(plugin);
-  const modelCatalog = createGrokModels(plugin, modelCatalogCoordinator);
+    ?? new GrokCommandMetadataProbe(runtimeHost);
+  const modelCatalog = createGrokModels(runtimeHost, modelCatalogCoordinator);
   const unregisterTransitionHook =
     plugin.executionLifecycleRegistry.registerTransitionHook('grok', {
       beforeTransition: async () => {

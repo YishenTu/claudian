@@ -1,33 +1,20 @@
-import { getInstallationKey } from '@/core/device/InstallationKey';
-import { parseEnvironmentVariables } from '@/core/process/env';
-
-import { createCLIPathFingerprintInputs } from '../../../core/providers/cli/CLIPathFingerprintInputs';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
-import { createRuntimeInputFingerprint } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import {
   decodeGrokModelId,
   encodeGrokModelId,
 } from '../models';
+import { computeGrokRuntimeInputHash } from '../runtime/GrokRuntimeEnvironment';
 import {
   getGrokProviderSettings,
   updateGrokProviderSettings
 } from '../settings';
 
 export function computeGrokEnvironmentHash(settings: Record<string, unknown>): string {
-  const providerSettings = getGrokProviderSettings(settings);
-  const cliPathInputs = createCLIPathFingerprintInputs(
-    providerSettings.cliPathsByHost[getInstallationKey()],
-    providerSettings.cliPath,
-  );
-  const environment = Object.entries(parseEnvironmentVariables(
+  return computeGrokRuntimeInputHash(
+    getGrokProviderSettings(settings),
     getRuntimeEnvironmentText(settings, 'grok'),
-  )).sort(([left], [right]) => left.localeCompare(right));
-  return createRuntimeInputFingerprint({
-    additionalInputs: cliPathInputs,
-    environmentKeys: environment.map(([key]) => key),
-    environmentText: getRuntimeEnvironmentText(settings, 'grok'),
-  });
+  );
 }
 
 export const grokSettingsReconciler: ProviderSettingsReconciler = {

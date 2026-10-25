@@ -1,43 +1,48 @@
-import { ProviderModelCatalogController } from '@/core/providers/models/ProviderModelCatalog';
+import { createConfigCatalogStore, ProviderModelCatalogController } from '@/core/providers/models/ProviderModelCatalog';
 import { ProviderModelUnavailableError } from '@/core/providers/models/ProviderModelUnavailableError';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 
+import { decodeDeepSeekConfig, isDeepSeekModelSelectable, updateDeepSeekConfig } from '../config';
 import { type DeepSeekModel, encodeDeepSeekModelId } from '../models';
 import { isRecord } from '../remote/DeepSeekRemoteClient';
-import { getDeepSeekProviderSettings, isDeepSeekModelSelectable, updateDeepSeekProviderSettings } from '../settings';
 
-export function assertDeepSeekModelAvailable(settings: Record<string, unknown>, requestedModel: string | undefined): void {
-  const model = requestedModel ?? (typeof settings.model === 'string' ? settings.model : '');
-  const config = getDeepSeekProviderSettings(settings);
+export function assertDeepSeekModelAvailable(
+  host: Pick<ProviderRuntimeHost, 'config' | 'selection'>, requestedModel: string | undefined,
+): void {
+  const model = requestedModel ?? host.selection.model ?? '';
+  const config = decodeDeepSeekConfig(host.config);
   if (!config.enabled || !isDeepSeekModelSelectable(config, model)) {
     throw new ProviderModelUnavailableError('DeepSeek Harness');
   }
 }
 
-export function createDeepSeekModels(host: ProviderHost, discover: (signal: AbortSignal) => Promise<unknown>): ProviderModelCatalogController {
+export function createDeepSeekModels(host: ProviderRuntimeHost, discover: (signal: AbortSignal) => Promise<unknown>): ProviderModelCatalogController {
   return new ProviderModelCatalogController({
-    providerId: 'deepseek', providerName: 'DeepSeek Harness', host, update: updateDeepSeekProviderSettings,
-    read: (settings = host.settings) => {
-      const current = getDeepSeekProviderSettings(settings);
-      return { enabled: current.enabled, selectedIds: current.visibleModels, aliases: current.modelAliases,
-        models: current.discoveredModels.map(model => ({ id: model.encodedId, name: model.label, description: model.description,
-          providerKey: model.provider, providerLabel: model.provider, isAvailable: model.available !== false,
-        })),
-      };
-    },
+    providerName: 'DeepSeek Harness',
+    store: createConfigCatalogStore(host, {
+      update: (config, _selection, patch) => { updateDeepSeekConfig(config, patch); },
+      read: config => {
+        const current = decodeDeepSeekConfig(config);
+        return { enabled: current.enabled, selectedIds: current.visibleModels, aliases: current.modelAliases,
+          models: current.discoveredModels.map(model => ({ id: model.encodedId, name: model.label, description: model.description,
+            providerKey: model.provider, providerLabel: model.provider, isAvailable: model.available !== false,
+          })),
+        };
+      },
+    }),
     discover: async signal => {
       const models = decodeCatalog(await discover(signal));
-      await host.mutateSettingsConditionally(settings => {
+      await host.updateConfig(config => {
         if (signal.aborted) return false;
-        const current = getDeepSeekProviderSettings(settings);
+        const current = decodeDeepSeekConfig(config);
         const ids = new Set(models.map(model => model.encodedId));
         const missing = current.discoveredModels.filter(model => current.visibleModels.includes(model.encodedId) && !ids.has(model.encodedId))
           .map(model => ({ ...model, available: false }));
-        updateDeepSeekProviderSettings(settings, { discoveredModels: [...models, ...missing] });
+        updateDeepSeekConfig(config, { discoveredModels: [...models, ...missing] });
         return true;
       });
       if (signal.aborted) return { changed: false };
-      host.notifyProviderChatOptionsChanged('deepseek');
+      host.notifyChatOptionsChanged();
       return { changed: true };
     },
   });

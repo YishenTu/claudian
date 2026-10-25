@@ -1,5 +1,5 @@
 import type { ProviderAsyncSubagentCompletedEvent, ProviderBackgroundOutputEvent, ProviderExecutionRequest,ProviderSessionConfig } from '@/core/execution';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import type { ForkSource, SubagentProgress } from '@/core/types';
 import type { ACPPromptRequest, ACPPromptResponse, ACPSessionConfigOption, ACPSessionModelState, ACPSessionNotification } from '@/providers/acp';
 
@@ -42,7 +42,7 @@ export interface OpencodeSessionKernelOptions {
   readonly getActiveTurnId: () => string | null;
   readonly onClosed: (error: Error) => void;
   readonly onNotification: (notification: ACPSessionNotification) => void;
-  readonly plugin: ProviderHost;
+  readonly host: ProviderRuntimeHost;
   readonly sessionInstanceId: string;
 }
 

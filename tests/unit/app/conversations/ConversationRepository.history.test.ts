@@ -9,6 +9,7 @@ import { ClaudeConversationHistoryService } from '@/providers/claude/history/Cla
 import * as claudeHistory from '@/providers/claude/history/ClaudeHistoryStore';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
 import * as history from '@/providers/opencode/history/OpencodeHistoryStore';
+import { resolveOpencodeHistoryLaunch } from '@/providers/opencode/runtime/OpencodeCLIResolver';
 
 function createConversation(id = 'conversation-1'): Conversation {
   return {
@@ -107,7 +108,7 @@ test('a superseded native history read cannot overwrite the current conversation
     return oldMessages;
   });
   jest.spyOn(ProviderRegistry, 'getConversationHistoryService')
-    .mockReturnValue(new OpencodeConversationHistoryService());
+    .mockReturnValue(new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }));
   const conversation = createConversation();
   conversation.providerId = 'opencode';
   conversation.selectedModel = 'opencode/example';
@@ -159,7 +160,7 @@ test('keeps relocated Claude history readable after its metadata save fails', as
 });
 
 test('OpenCode hydrates a fresh projection after another projection was discarded', async () => {
-  const service = new OpencodeConversationHistoryService();
+  const service = new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch });
   const first = { ...createConversation(), providerId: 'opencode' };
   const nativeMessages: Conversation['messages'] = [
     { id: 'native-response', role: 'assistant', content: 'Native history', timestamp: 2 },
@@ -192,7 +193,7 @@ test('surfaces a failed missing-session reset save while preserving live identit
   const conversation = { ...createConversation(), providerId: 'opencode' };
   const { repository, persistence } = createRepository(conversation);
   jest.spyOn(ProviderRegistry, 'getConversationHistoryService')
-    .mockReturnValue(new OpencodeConversationHistoryService());
+    .mockReturnValue(new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }));
   persistence.saveMetadata.mockRejectedValue(new Error('Metadata save failed'));
 
   await expect(repository.handleMissingProviderSession(conversation.id, 'session-1'))

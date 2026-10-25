@@ -57,7 +57,7 @@ function createNativeGrok(env: ForkTestEnvironment, options: { tokenStream?: boo
     }
     throw new Error(`Unexpected Grok method: ${method}`);
   }));
-  return { backend: new GrokExecutionBackend(env.host), sessions, operations, prompts, sourceFile };
+  return { backend: new GrokExecutionBackend(env.host.getRuntimeHost('grok')), sessions, operations, prompts, sourceFile };
 }
 
 describe('Grok fork integration', () => {

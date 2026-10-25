@@ -5,6 +5,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
@@ -407,21 +408,21 @@ describe.each(['live', 'history'] as const)('%s Pi tool presentation', mode => {
 
 it('streams a running script\'s nested calls through the Pi session and refreshes files written before cancellation', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-script-progress-'));
-  const configuration = { model: 'pi:anthropic/claude-sonnet-4', reasoning: null, systemInstructions: { kind: 'provider-default' as const } };
+  const configuration = { model: 'pi:anthropic/claude-sonnet-4', reasoning: null, systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' } };
   const host = {
     getResolvedProviderCliPath: async () => process.execPath,
     settings: { model: configuration.model, effortLevel: 'off', systemPrompt: '', userName: '',
       providerConfigs: { pi: { enabled: true, visibleModels: [configuration.model],
         discoveredModels: [{ encodedId: configuration.model, id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text'], reasoning: false, thinkingLevels: ['off'] }] } } },
   };
-  const backend = new PiExecutionBackend(host as any, {
+  const backend = new PiExecutionBackend(runtimeHostFor(host, 'pi'), {
     createKernel: (spec, callbacks) => new PiRPCSessionKernel({ ...spec, command: process.execPath,
       args: [path.resolve('tests/fixtures/providers/pi/PiSessionProcess.mjs'), ...spec.args],
       env: { ...spec.env, CLAUDIAN_TEST_PI_ROOT: root },
     }, callbacks, null),
   });
   const session = backend.createSession({
-    lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported', vaultWorkingDirectory: root,
+    lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported', workingDirectory: root,
     interactionPort: { askUserQuestion: jest.fn(), requestApproval: jest.fn(), dismissInteraction: jest.fn() },
   });
   const { stream, response, close } = createChatStream();

@@ -1,7 +1,7 @@
 import { resolveCommandDiscoveryTimeoutMs } from '@/core/providers/commands/catalogCommandDiscovery';
 import type { ProviderCommandDiscoveryResult } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
 import { ProviderCommandDiscoveryStore } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { PiCommandCatalog } from '@/providers/pi/commands/PiCommandCatalog';
 import { PiCommandMetadataProbe } from '@/providers/pi/execution/PiCommandMetadataProbe';
 
@@ -26,9 +26,9 @@ describe('PiCommandMetadataProbe', () => {
     };
     const createKernel = jest.fn(() => kernel as any);
     const host = {
-      getResolvedProviderCliPath: jest.fn(() => cliResolution.promise),
-      settings: {},
-    } as unknown as ProviderHost;
+      resolveCliPath: jest.fn(() => cliResolution.promise),
+      config: {}, selection: { referencedModelIds: [] }, environmentText: '',
+    } as unknown as ProviderRuntimeHost;
     const probe = new PiCommandMetadataProbe(host, createKernel);
 
     const load = probe.load('/vault');
@@ -54,7 +54,7 @@ describe('PiCommandMetadataProbe', () => {
   it('normalizes a non-Error abort reason while waiting behind a transition fence', async () => {
     const createKernel = jest.fn();
     const probe = new PiCommandMetadataProbe(
-      {} as ProviderHost,
+      {} as ProviderRuntimeHost,
       createKernel,
     );
     const controller = new AbortController();
@@ -90,9 +90,9 @@ describe('PiCommandMetadataProbe', () => {
       return kernel as any;
     });
     const host = {
-      getResolvedProviderCliPath: jest.fn(async () => '/bin/pi'),
-      settings: {},
-    } as unknown as ProviderHost;
+      resolveCliPath: jest.fn(async () => '/bin/pi'),
+      config: {}, selection: { referencedModelIds: [] }, environmentText: '',
+    } as unknown as ProviderRuntimeHost;
     const probe = new PiCommandMetadataProbe(host, createKernel);
 
     await expect(probe.load('/vault')).resolves.toEqual([
@@ -142,9 +142,9 @@ describe('PiCommandMetadataProbe', () => {
         return kernel as any;
       });
       const host = {
-        getResolvedProviderCliPath: jest.fn(async () => '/bin/pi'),
-        settings: {},
-      } as unknown as ProviderHost;
+        resolveCliPath: jest.fn(async () => '/bin/pi'),
+        config: {}, selection: { referencedModelIds: [] }, environmentText: '',
+      } as unknown as ProviderRuntimeHost;
       const probe = new PiCommandMetadataProbe(host, createKernel);
       const store = new ProviderCommandDiscoveryStore(
         async (signal): Promise<ProviderCommandDiscoveryResult<string>> => {

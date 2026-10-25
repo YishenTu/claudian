@@ -9,7 +9,7 @@ import type { CodexThreadObserver, CodexThreadScope } from '@/providers/codex/ru
 import { createCodexWorkspaceDependencyTool } from '@/providers/codex/runtime/CodexWorkspaceDependencyTool';
 
 export interface CodexSessionConnectionHost {
-  readonly vaultWorkingDirectory: string;
+  readonly workingDirectory: string;
   /** Routes the attached thread scope's native traffic. */
   readonly observer: CodexThreadObserver;
   /** The attached app-server generation exited on its own. */
@@ -125,8 +125,8 @@ export class CodexSessionConnection {
   /** The vault directory as the app-server sees it. */
   targetWorkingDirectory(): string {
     const launchSpec = this.#connection?.launchSpec;
-    if (!launchSpec) return this.host.vaultWorkingDirectory;
-    return launchSpec.pathMapper.toTargetPath(this.host.vaultWorkingDirectory) ?? launchSpec.targetCwd;
+    if (!launchSpec) return this.host.workingDirectory;
+    return launchSpec.pathMapper.toTargetPath(this.host.workingDirectory) ?? launchSpec.targetCwd;
   }
 
   toTargetPath(hostPath: string | null): string | null {

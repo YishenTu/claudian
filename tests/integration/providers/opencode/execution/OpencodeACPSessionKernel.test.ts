@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 import spawn from 'cross-spawn';
 
@@ -12,7 +13,6 @@ jest.mock('cross-spawn', () => jest.fn());
 import { createNativeRPCProcess, createNativeVersionProcess } from '@test/helpers/providers/NativeRPCTestProcess';
 
 import type { ProviderExecutionEvent } from '@/core/execution';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
@@ -64,9 +64,9 @@ it.each([
     getResolvedProviderCliPath: async () => cliPath,
     mutateSettings: async () => undefined,
     notifyProviderChatOptionsChanged: () => undefined,
-  } as unknown as ProviderHost;
-  const session = new OpencodeExecutionBackend(host, { serverService: new OpencodeServerService() }).createSession({
-    lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported', vaultWorkingDirectory: root,
+  };
+  const session = new OpencodeExecutionBackend(runtimeHostFor(host, 'opencode'), { serverService: new OpencodeServerService() }).createSession({
+    lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported', workingDirectory: root,
     interactionPort: {
       requestApproval: async request => ({ interactionId: request.interactionId, decision: 'deny' }),
       askUserQuestion: async request => ({ interactionId: request.interactionId, answers: null }),
@@ -76,7 +76,7 @@ it.each([
   try {
     const events: ProviderExecutionEvent[] = [];
     for await (const event of session.execute({
-      configuration: { permissionMode, systemInstructions: { kind: 'provider-default' } },
+      configuration: { permissionMode, systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' } },
       input: [{ type: 'text', text: 'Run pwd.' }], toolPolicy: { kind: 'provider-default' },
       signal: new AbortController().signal,
     }).events) events.push(event);
@@ -129,15 +129,16 @@ it.each([false, true])('discovers V1 model metadata while isolating a failed nat
     return proc;
   });
   const host: any = {
-    app: { vault: { adapter: { basePath: root } } },
+    workingDirectory: root,
     settings: { providerConfigs: { opencode: { enabled: true, visibleModels: ['test/one', 'test/two'] } } },
     executionLifecycleRegistry: { registerTransitionHook: () => () => undefined },
     getResolvedProviderCliPath: async () => cliPath,
     mutateSettingsConditionally: async (mutation: (settings: any) => unknown) => mutation(host.settings),
     notifyProviderChatOptionsChanged: () => undefined,
   };
-  const service = new OpencodeMetadataService(host);
-  const models = createOpencodeModels(host, service);
+  const runtimeHost = runtimeHostFor(host, 'opencode');
+  const service = new OpencodeMetadataService(runtimeHost);
+  const models = createOpencodeModels(runtimeHost, service);
   try {
     await models.refresh();
     expect(switches).toEqual(['test/one', 'test/two']);
@@ -197,9 +198,9 @@ it.each(['completed', 'failed', 'running', 'cancelled', 'unchanged'])('reports a
     getResolvedProviderCliPath: async () => cliPath,
     mutateSettings: async () => undefined,
     notifyProviderChatOptionsChanged: () => undefined,
-  } as unknown as ProviderHost;
-  const session = new OpencodeExecutionBackend(host, { serverService: new OpencodeServerService() }).createSession({
-    lifecycle: 'persistent', nativePersistence: 'enabled', vaultWorkingDirectory: root,
+  };
+  const session = new OpencodeExecutionBackend(runtimeHostFor(host, 'opencode'), { serverService: new OpencodeServerService() }).createSession({
+    lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: root,
     resumeSeed: { providerSessionId: 'native-session', providerState: { databasePath, nativeVersion: 1 } },
     interactionPort: {
       requestApproval: async request => ({ interactionId: request.interactionId, decision: 'deny' }),
@@ -210,7 +211,7 @@ it.each(['completed', 'failed', 'running', 'cancelled', 'unchanged'])('reports a
   try {
     const events: ProviderExecutionEvent[] = [];
     for await (const event of session.execute({
-      configuration: { permissionMode: 'normal', systemInstructions: { kind: 'provider-default' } },
+      configuration: { permissionMode: 'normal', systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' } },
       input: [{ type: 'text', text: '/compact' }], toolPolicy: { kind: 'provider-default' },
       signal: new AbortController().signal,
     }).events) events.push(event);

@@ -20,7 +20,7 @@ function createService() {
     resolveLocale: () => 'ja',
     resolveModel: () => 'title-model',
     nativePersistence: 'disabled-if-supported',
-    vaultWorkingDirectory: '/vault',
+    workingDirectory: '/vault',
   });
   return { backend, lifecycleRegistry, service };
 }

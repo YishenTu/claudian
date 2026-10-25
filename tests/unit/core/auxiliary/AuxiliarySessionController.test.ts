@@ -43,7 +43,7 @@ function createController() {
       },
       lifecycleRegistry: new ProviderExecutionLifecycleRegistry(),
       nativePersistence: 'provider-default',
-      vaultWorkingDirectory: '/vault',
+      workingDirectory: '/vault',
     },
     'inline-edit',
     { kind: 'passive' },

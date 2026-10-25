@@ -171,7 +171,7 @@ function createSessionConfig(
   return {
     lifecycle,
     nativePersistence: 'provider-default',
-    vaultWorkingDirectory: '/vault',
+    workingDirectory: '/vault',
     interactionPort: {
       requestApproval: jest.fn(),
       askUserQuestion: jest.fn(),

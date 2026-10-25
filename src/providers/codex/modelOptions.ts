@@ -1,12 +1,16 @@
 import type { ProviderUIOption } from '../../core/providers/types';
+import { type CodexProviderSettings, getVisibleCodexModelIds } from './config';
 import { isCodexModelAvailable } from './models';
 import {
   encodeCodexModelSelectionId, toCodexRuntimeModelId
 } from './modelSelection';
-import { getCodexProviderSettings, getVisibleCodexModelIds } from './settings';
 
-export function getCodexModelOptions(settings: Record<string, unknown>): ProviderUIOption[] {
-  const codexSettings = getCodexProviderSettings(settings);
+type CodexModelOptionSettings = Pick<
+  CodexProviderSettings,
+  'discoveredModels' | 'enableUltraEffort' | 'modelAliases' | 'visibleModels'
+>;
+
+export function getCodexModelOptions(codexSettings: CodexModelOptionSettings): ProviderUIOption[] {
   const getModelLabel = (modelId: string, fallback: string): string => {
     return Object.prototype.hasOwnProperty.call(codexSettings.modelAliases, modelId)
       ? codexSettings.modelAliases[modelId]
@@ -38,11 +42,10 @@ export function getCodexModelOptions(settings: Record<string, unknown>): Provide
 }
 
 export function resolveCodexModelSelection(
-  settings: Record<string, unknown>,
+  codexSettings: CodexModelOptionSettings,
   currentModel: string,
 ): string | null {
-  const codexSettings = getCodexProviderSettings(settings);
-  const modelOptions = getCodexModelOptions(settings);
+  const modelOptions = getCodexModelOptions(codexSettings);
   if (currentModel) {
     const currentRuntimeModel = toCodexRuntimeModelId(currentModel);
     return modelOptions.find(option => toCodexRuntimeModelId(option.value) === currentRuntimeModel)?.value ?? currentModel;

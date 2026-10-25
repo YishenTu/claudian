@@ -23,7 +23,7 @@ function createSession(overrides: Partial<ConstructorParameters<typeof SideChatS
     providerId: 'claude',
     ephemeral: false,
     resolveBackend: () => backend,
-    vaultWorkingDirectory: '/vault',
+    workingDirectory: '/vault',
     ...overrides,
   });
   return { backend, buildChildResumeState, lifecycleRegistry, requestedEvents, session, sessionEvents };
@@ -31,7 +31,7 @@ function createSession(overrides: Partial<ConstructorParameters<typeof SideChatS
 
 function turn(text: string) {
   return {
-    configuration: { systemInstructions: { kind: 'provider-default' as const } },
+    configuration: { systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' } },
     images: [],
     text,
   };

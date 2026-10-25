@@ -69,7 +69,7 @@ test('two runtime owners cannot both hand off the same conversation to native ex
   let serial = 0;
   const coordinators = [0, 1].map(() => new ChatExecutionCoordinator({
     lifecycleRegistry, resolveBackend: () => backend, persistence: repository,
-    vaultWorkingDirectory: '/vault', createId: () => `audit-binding-${++serial}`,
+    workingDirectory: '/vault', createId: () => `audit-binding-${++serial}`,
     resolveMissingProviderSession: async () => 'preserved',
     interactionPort: {
       requestApproval: async () => { throw new Error('unexpected'); },
@@ -85,7 +85,7 @@ test('two runtime owners cannot both hand off the same conversation to native ex
     const runs = coordinators.map((coordinator, index) => coordinator.execute({
       submissionId: `audit-${index}`, timestamp: testDate().getTime(),
       rawDisplayText: 'run', canonicalText: 'run', images: [],
-      configuration: { systemInstructions: { kind: 'provider-default' } },
+      configuration: { systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' } },
       toolPolicy: { kind: 'provider-default' },
     }).then(result => { outcomes[index] = result; }, error => { outcomes[index] = error; }));
     await waitFor(() => backend.sessions.reduce((n, session) => n + session.requests.length, 0) + outcomes.filter(Boolean).length >= 2);

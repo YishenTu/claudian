@@ -1,5 +1,32 @@
-import { captureSelectionSnapshots } from '@/core/prompt/promptContext';
+import type { ProviderSelectionSnapshot } from '@/core/execution/ProviderExecutionRequest';
 import type { ChatTurnRequest, QueuedMessage } from '@/features/chat/state/types';
+
+/**
+ * Owned copies of a turn's selections in capture order. Singular composer fields
+ * normalize only when no ordered capture exists; an explicit empty capture wins.
+ */
+export function captureSelectionSnapshots(
+  source?: Pick<ChatTurnRequest, 'selections' | 'editorSelection' | 'browserSelection' | 'canvasSelection'>,
+): ProviderSelectionSnapshot[] {
+  const snapshots: readonly ProviderSelectionSnapshot[] = source?.selections ?? [
+    ...(source?.editorSelection ? [{ kind: 'editor' as const, selection: source.editorSelection }] : []),
+    ...(source?.browserSelection ? [{ kind: 'browser' as const, selection: source.browserSelection }] : []),
+    ...(source?.canvasSelection ? [{ kind: 'canvas' as const, selection: source.canvasSelection }] : []),
+  ];
+  return snapshots.map(snapshot => {
+    switch (snapshot.kind) {
+      case 'editor':
+        return { kind: 'editor', selection: {
+          ...snapshot.selection,
+          ...(snapshot.selection.cursorContext ? { cursorContext: { ...snapshot.selection.cursorContext } } : {}),
+        } };
+      case 'browser':
+        return { kind: 'browser', selection: { ...snapshot.selection } };
+      case 'canvas':
+        return { kind: 'canvas', selection: { ...snapshot.selection, nodeIds: [...snapshot.selection.nodeIds] } };
+    }
+  });
+}
 
 export function cloneChatTurnRequest(request: ChatTurnRequest): ChatTurnRequest {
   return {

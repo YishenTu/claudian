@@ -1,15 +1,17 @@
 import { execFile, execFileSync } from 'child_process';
 import { promisify } from 'util';
 
-import { getCodexProviderSettings } from '../settings';
+import type { CodexProviderSettings } from '../config';
 import type {
   CodexExecutionPlatformFamily,
   CodexExecutionPlatformOs,
   CodexExecutionTarget,
 } from './codexLaunchTypes';
 
+export type CodexExecutionTargetSettings = Pick<CodexProviderSettings, 'installationMethod' | 'wslDistroOverride'>;
+
 export interface ResolveCodexExecutionTargetOptions {
-  settings: Record<string, unknown>;
+  codexSettings: CodexExecutionTargetSettings;
   hostPlatform?: NodeJS.Platform;
   hostVaultPath?: string | null;
   resolveDefaultWslDistro?: () => string | undefined;
@@ -132,7 +134,7 @@ export function resolveCodexExecutionTarget(
     };
   }
 
-  const codexSettings = getCodexProviderSettings(options.settings);
+  const { codexSettings } = options;
   if (codexSettings.installationMethod === 'wsl') {
     const distroName = codexSettings.wslDistroOverride
       || inferWslDistroFromWindowsPath(options.hostVaultPath)
@@ -166,7 +168,7 @@ export async function resolveCodexExecutionTargetAsync(
     };
   }
 
-  const codexSettings = getCodexProviderSettings(options.settings);
+  const { codexSettings } = options;
   if (codexSettings.installationMethod === 'wsl') {
     const distroName = codexSettings.wslDistroOverride
       || inferWslDistroFromWindowsPath(options.hostVaultPath)

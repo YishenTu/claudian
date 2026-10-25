@@ -1,37 +1,38 @@
 import '@/providers';
 
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { getClaudeModelOptions } from '@/providers/claude/modelOptions';
 import type { ClaudeDiscoveredModel } from '@/providers/claude/models';
 import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { createClaudeModels, discoverClaudeModels } from '@/providers/claude/runtime/ClaudeModels';
-import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
+import { getClaudeModelSource, getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 
 const rows = [{ value: 'sonnet', label: 'SDK Sonnet', description: '', resolvedModel: 'gateway-model' }];
 function setup(enabled = true) {
   const settings: Record<string, unknown> = { providerConfigs: { claude: { enabled, visibleModels: ['sonnet'], discoveredModels: rows } } };
-  const host = {
+  const appHost: { settings: Record<string, unknown>; notifyProviderChatOptionsChanged: () => void } = {
     settings,
-    mutateSettingsConditionally: jest.fn(async fn => fn(settings)),
     notifyProviderChatOptionsChanged: jest.fn(),
-  } as unknown as ProviderHost;
-  return { settings, host };
+  };
+  return { settings, host: runtimeHostFor(appHost, 'claude'), appHost };
 }
 
-type ModelProbe = (host: ProviderHost, signal: AbortSignal) => Promise<ClaudeDiscoveredModel[]>;
+type ModelProbe = (host: ProviderRuntimeHost, signal: AbortSignal) => Promise<ClaudeDiscoveredModel[]>;
 
 /** Model-only probes report no output styles. */
 function withoutStyles(probe: ModelProbe) {
-  return async (host: ProviderHost, signal: AbortSignal) => ({ models: await probe(host, signal), outputStyles: [] });
+  return async (host: ProviderRuntimeHost, signal: AbortSignal) => ({ models: await probe(host, signal), outputStyles: [] });
 }
 
-function discover(host: ProviderHost, probe: ModelProbe) {
+function discover(host: ProviderRuntimeHost, probe: ModelProbe) {
   return discoverClaudeModels(host, new AbortController().signal, withoutStyles(probe));
 }
 
-function catalogFor(host: ProviderHost, probe: ModelProbe) {
+function catalogFor(host: ProviderRuntimeHost, probe: ModelProbe) {
   return createClaudeModels(host, signal => discoverClaudeModels(host, signal, withoutStyles(probe)));
 }
 
@@ -73,7 +74,7 @@ describe('Claude panel model discovery', () => {
       { value: 'claude-opus-5-5', label: 'Opus', description: '' },
     ]);
     expect(getClaudeProviderSettings(settings).visibleModels).toEqual(['claude-opus-5-5']);
-    expect(getClaudeModelOptions(settings).map(model => model.value)).toEqual(['claude-code/claude-opus-5-5']);
+    expect(getClaudeModelOptions(getClaudeModelSource(settings)).map(model => model.value)).toEqual(['claude-code/claude-opus-5-5']);
   });
 
   it('follows a retired pinned version to its successor on the next discovery', async () => {
@@ -95,7 +96,7 @@ describe('Claude panel model discovery', () => {
 
     expect(getClaudeProviderSettings(settings).visibleModels).toEqual(['claude-fable-5-2', 'sonnet']);
     expect(getClaudeProviderSettings(settings).modelAliases).toEqual({ 'claude-fable-5-2': 'My Fable' });
-    expect(getClaudeModelOptions(settings).map(model => [model.value, model.label]))
+    expect(getClaudeModelOptions(getClaudeModelSource(settings)).map(model => [model.value, model.label]))
       .toEqual([['claude-code/claude-fable-5-2', 'My Fable'], ['sonnet', 'SDK Sonnet']]);
     expect(claudeProviderRegistration.settingsStorage?.needsReasoningMetadata?.(settings)).toBe(false);
   });
@@ -109,14 +110,14 @@ describe('Claude panel model discovery', () => {
     finish([{ value: 'opus[1m]', label: 'Opus', description: '' }]);
     await refresh;
     expect(getClaudeProviderSettings(settings).visibleModels).toEqual([]);
-    expect(getClaudeModelOptions(settings)).toEqual([]);
+    expect(getClaudeModelOptions(getClaudeModelSource(settings))).toEqual([]);
   });
 
   it('keeps a legacy title selection when discovery canonicalizes its enabled SDK identity', async () => {
-    const { settings, host } = setup();
+    const { settings, host, appHost } = setup();
     settings.titleGenerationModel = 'gateway-model';
     updateClaudeProviderSettings(settings, { visibleModels: null, discoveredModels: [], environmentVariables: 'ANTHROPIC_MODEL=gateway-model' });
-    host.notifyProviderChatOptionsChanged = () => {
+    appHost.notifyProviderChatOptionsChanged = () => {
       ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings);
     };
     await discover(host, async () => rows);
@@ -132,13 +133,13 @@ describe('Claude panel model discovery', () => {
   });
 
   it('retains a historical title ID through settings load until SDK evidence arrives', async () => {
-    const { settings, host } = setup();
+    const { settings, host, appHost } = setup();
     settings.titleGenerationModel = 'claude-fable-5';
     updateClaudeProviderSettings(settings, { visibleModels: null, discoveredModels: [] });
     ProviderSettingsCoordinator.normalizeAllModelVariants(settings);
     expect(settings.titleGenerationModel).toBe('claude-fable-5');
-    expect(getClaudeModelOptions(settings)).toHaveLength(0);
-    host.notifyProviderChatOptionsChanged = () => {
+    expect(getClaudeModelOptions(getClaudeModelSource(settings))).toHaveLength(0);
+    appHost.notifyProviderChatOptionsChanged = () => {
       ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings);
     };
     await discover(host, async () => [
@@ -166,7 +167,7 @@ describe('Claude panel model discovery', () => {
     updateClaudeProviderSettings(settings, { enabled: true });
     await catalog.refresh();
     expect(probe).toHaveBeenCalledTimes(1);
-    expect(getClaudeModelOptions(settings)[0].label).toBe('SDK Sonnet');
+    expect(getClaudeModelOptions(getClaudeModelSource(settings))[0].label).toBe('SDK Sonnet');
   });
 
   it('keeps cached rows during a manual refresh and retains them on configuration invalidation', async () => {
@@ -175,11 +176,11 @@ describe('Claude panel model discovery', () => {
     const probe = jest.fn(() => new Promise<typeof rows>(resolve => { release = resolve; }));
     const catalog = catalogFor(host, probe);
     const refresh = catalog.refresh();
-    expect(getClaudeModelOptions(settings)).toHaveLength(1);
+    expect(getClaudeModelOptions(getClaudeModelSource(settings))).toHaveLength(1);
     release(rows);
     await refresh;
     catalog.markStale();
-    expect(getClaudeModelOptions(settings)).toHaveLength(1);
+    expect(getClaudeModelOptions(getClaudeModelSource(settings))).toHaveLength(1);
     expect(getClaudeProviderSettings(settings).visibleModels).toEqual(['sonnet']);
     expect(probe).toHaveBeenCalledTimes(1);
   });
@@ -191,12 +192,12 @@ describe('Claude panel model discovery', () => {
     const result = await catalog.refresh();
     expect(catalog.getSnapshot()).toMatchObject({ status: 'failed', error: 'Claude Code exited with code 1' });
     expect(probe).toHaveBeenCalledTimes(1);
-    expect(getClaudeModelOptions(settings)).toHaveLength(1);
+    expect(getClaudeModelOptions(getClaudeModelSource(settings))).toHaveLength(1);
     expect(result.diagnostics).toBe('Claude Code exited with code 1');
   });
 
   it('cancels discovery on configuration change and waits for a manual refresh', async () => {
-    const { settings, host } = setup();
+    const { settings, host, appHost } = setup();
     let release!: (value: typeof rows) => void;
     let oldSignal!: AbortSignal;
     const freshRows = [{ value: 'haiku', label: 'Fresh model', description: '', resolvedModel: 'new-gateway-model' }];
@@ -215,17 +216,17 @@ describe('Claude panel model discovery', () => {
     await Promise.all([startup, catalog.quiesce()]);
     expect(probe).toHaveBeenCalledTimes(1);
     expect(getClaudeProviderSettings(settings).discoveredModels).toEqual(rows);
-    expect(host.notifyProviderChatOptionsChanged).not.toHaveBeenCalled();
+    expect(appHost.notifyProviderChatOptionsChanged).not.toHaveBeenCalled();
     await catalog.refresh({ force: true });
     expect(getClaudeProviderSettings(settings).discoveredModels).toEqual(freshRows);
     expect(probe).toHaveBeenCalledTimes(2);
   });
 
   it.each(['disable', 'dispose'])('never publishes an obsolete result after %s', async action => {
-    const { settings, host } = setup();
+    const { settings, host, appHost } = setup();
     let release!: (value: typeof rows) => void;
     let signal!: AbortSignal;
-    const probe = jest.fn((_host: ProviderHost, probeSignal: AbortSignal) => {
+    const probe = jest.fn((_host: ProviderRuntimeHost, probeSignal: AbortSignal) => {
       signal = probeSignal;
       return new Promise<typeof rows>(resolve => { release = resolve; });
     });
@@ -239,10 +240,10 @@ describe('Claude panel model discovery', () => {
     release([{ value: 'haiku', label: 'Stale refresh', description: '', resolvedModel: 'stale' }]);
     await Promise.all([stop, startup]);
     expect(getClaudeProviderSettings(settings).discoveredModels).toEqual(rows);
-    expect(host.notifyProviderChatOptionsChanged).not.toHaveBeenCalled();
+    expect(appHost.notifyProviderChatOptionsChanged).not.toHaveBeenCalled();
     expect(probe).toHaveBeenCalledTimes(1);
     updateClaudeProviderSettings(settings, { enabled: true });
-    expect(getClaudeModelOptions(settings)[0].label).toBe('SDK Sonnet');
+    expect(getClaudeModelOptions(getClaudeModelSource(settings))[0].label).toBe('SDK Sonnet');
     await catalog.dispose();
   });
 });

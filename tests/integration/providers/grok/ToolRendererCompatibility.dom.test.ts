@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { parseGrokHistoryContent } from '@test/helpers/providers/grokHistory';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
@@ -76,9 +77,9 @@ async function restoreLive(updates: NativeToolUpdates): Promise<ToolCallInfo> {
     interactionPort: { askUserQuestion: jest.fn(), dismissInteraction: jest.fn(), requestApproval: jest.fn() },
     lifecycle: 'persistent',
     nativePersistence: 'enabled',
-    vaultWorkingDirectory: '/workspace',
+    workingDirectory: '/workspace',
   };
-  const session = new GrokExecutionBackend(createGrokHost(), { nativeFactory: { create: () => native } })
+  const session = new GrokExecutionBackend(runtimeHostFor(createGrokHost() as Parameters<typeof runtimeHostFor>[0], 'grok'), { nativeFactory: { create: () => native } })
     .createSession(config);
   const output: ProviderExecutionEvent[] = [];
   try {

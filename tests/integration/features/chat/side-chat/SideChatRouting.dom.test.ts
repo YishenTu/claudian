@@ -13,12 +13,11 @@ import {
 import { testDate } from '@test/helpers/testClock';
 import { waitFor } from '@testing-library/dom';
 
-import type { ProviderExecutionContext } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage, ImageAttachment } from '@/core/types';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
 import { ChatExecutionPreHandoffError } from '@/features/chat/execution/ChatExecutionCoordinator';
-import { ComposerSelections } from '@/features/chat/input/ComposerSelections';
+import { type ComposerSelectionCapture, ComposerSelections } from '@/features/chat/input/ComposerSelections';
 import { InputController, type InputControllerDeps } from '@/features/chat/input/InputController';
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import { ChatState } from '@/features/chat/state/ChatState';
@@ -30,7 +29,7 @@ afterEach(releaseSideChatHarnesses);
 
 function createRouting(
   harness: SideChatDOMHarness,
-  context: ProviderExecutionContext = {},
+  context: ComposerSelectionCapture = {},
   failAt?: 'initialization' | 'missing-coordinator' | 'handoff',
   configure?: (deps: InputControllerDeps) => void,
 ) {
@@ -241,7 +240,7 @@ it.each([false, true])('dispatches queued main input to main with side working=%
 
 it('forwards captured selection context on initial, expanded, and collapsed side submissions', async () => {
   const harness = createHarness();
-  const context: ProviderExecutionContext = {
+  const context: ComposerSelectionCapture = {
     editorSelection: { mode: 'selection', notePath: 'Design.md', selectedText: 'Original selection' },
     browserSelection: { source: 'browser', selectedText: 'Browser excerpt', url: 'https://example.com' },
     canvasSelection: { canvasPath: 'Design.canvas', nodeIds: ['node-1'] },
@@ -250,7 +249,11 @@ it('forwards captured selection context on initial, expanded, and collapsed side
   for (const [index, prompt] of ['/side Initial question', 'Expanded follow-up', '/side Collapsed follow-up'].entries()) {
     if (index === 2) harness.controller.collapse();
     context.editorSelection!.selectedText = `Selection ${index}`;
-    const expected = JSON.parse(JSON.stringify(context));
+    const expected = JSON.parse(JSON.stringify({ selections: [
+      { kind: 'editor', selection: context.editorSelection },
+      { kind: 'browser', selection: context.browserSelection },
+      { kind: 'canvas', selection: context.canvasSelection },
+    ] }));
     harness.inputEl.value = prompt;
     const sent = routing.controller.sendMessage();
     context.editorSelection!.selectedText = 'Selection changed during preparation';
@@ -335,7 +338,7 @@ it.each(['initialization', 'missing-coordinator', 'handoff'] as const)(
 
 it.each([false, true])('queues collapsed side commands in order with captured input during a later turn=%s', async laterTurn => {
   const harness = createHarness();
-  const context: ProviderExecutionContext = {
+  const context: ComposerSelectionCapture = {
     canvasSelection: { canvasPath: 'Plan.canvas', nodeIds: ['original-node'] },
   };
   const routing = createRouting(harness, context);
@@ -376,7 +379,9 @@ it.each([false, true])('queues collapsed side commands in order with captured in
     { type: 'text', text: 'First queued question' },
     { type: 'image', image: { ...image, data: 'cXVldWVk' } },
   ]);
-  expect(native.requests[initialRequests].context?.canvasSelection?.nodeIds).toEqual(['original-node']);
+  expect(native.requests[initialRequests].context?.selections).toEqual([
+    { kind: 'canvas', selection: { canvasPath: 'Plan.canvas', nodeIds: ['original-node'] } },
+  ]);
   expect(native.requests[initialRequests].conversationHistory).toEqual(expect.arrayContaining([
     expect.objectContaining({ role: 'assistant', content: 'Original side answer' }),
   ]));
@@ -650,7 +655,7 @@ it.each([false, true])('keeps side drafts separate while a branch submission set
   let conversation!: ConversationController;
   const routing = createRouting(harness, {}, undefined, deps => {
     conversation = new ConversationController({
-      ...deps, plugin: { settings: {}, updateConversation: jest.fn(), getConversationSummary: () => null, projects: createProjectsFake() },
+      ...deps, plugin: { settings: {}, updateConversation: jest.fn(), getConversationSummary: () => null, projects: createProjectsFake(), providerHost: { workingDirectory: '/vault' } },
       renderer: { renderMessages: jest.fn(), refreshBranchButtonState: jest.fn(), captureReadingAnchor: () => null, restoreReadingAnchor: jest.fn() },
       setWelcomeEl: jest.fn(), getExecutionCoordinator: () => coordinator,
     } as any);

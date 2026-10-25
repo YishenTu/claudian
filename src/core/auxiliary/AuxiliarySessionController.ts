@@ -55,7 +55,7 @@ export class AuxiliarySessionController {
         interactionPort: this.context.interactionPort,
         lifecycle: 'ephemeral',
         nativePersistence: this.context.nativePersistence,
-        vaultWorkingDirectory: this.context.vaultWorkingDirectory,
+        workingDirectory: this.context.workingDirectory,
       },
       this.owner,
     );

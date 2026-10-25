@@ -23,7 +23,7 @@ export const grokProviderRegistration: ProviderModule = {
   chatUIConfig: grokChatUIConfig,
   createExecutionBackend: (plugin) => {
     const workspace = getGrokWorkspaceServices();
-    return new GrokExecutionBackend(plugin, {
+    return new GrokExecutionBackend(plugin.getRuntimeHost('grok'), {
       modelCatalogCoordinator: workspace.modelCatalogCoordinator,
     });
   },

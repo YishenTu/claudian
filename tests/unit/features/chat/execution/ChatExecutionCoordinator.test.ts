@@ -361,7 +361,7 @@ describe('ChatExecutionCoordinator', () => {
       lifecycle: 'persistent',
       nativePersistence: 'enabled',
       resumeSeed: { providerSessionId: 'native-session' },
-      vaultWorkingDirectory: '/vault',
+      workingDirectory: '/vault',
     });
     expect(harness.repository.registerExecutionBinding).toHaveBeenCalledWith(
       'conversation-1',
@@ -1748,7 +1748,7 @@ it('protects branch navigation from idle release and concurrent input and persis
   const navigate = jest.fn(() => navigation.promise);
   Object.assign(session, { navigateConversationBranch: navigate, getConversationBranches: async () => ({}),
     reconcileConversationBranch: async () => ({ status: 'committed', messages: [] }) });
-  const request = { userMessageId: 'user', configuration: { systemInstructions: { kind: 'provider-default' as const } } };
+  const request = { userMessageId: 'user', configuration: { systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' } } };
   const pending = harness.coordinator.navigateConversationBranch(request);
   await new Promise(resolve => setImmediate(resolve));
   expect(navigate).toHaveBeenCalledWith({ ...request, signal: expect.any(AbortSignal) });
@@ -1776,12 +1776,12 @@ it('reports recovery after native branching succeeds but snapshot persistence fa
     reconcileConversationBranch: async () => ({ status: 'committed', messages }),
   });
   harness.repository.persistExecutionSnapshot.mockRejectedValueOnce(new Error('Storage unavailable'));
-  await expect(harness.coordinator.navigateConversationBranch({ userMessageId: 'old', configuration: { systemInstructions: { kind: 'provider-default' } } }))
+  await expect(harness.coordinator.navigateConversationBranch({ userMessageId: 'old', configuration: { systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' } } }))
     .resolves.toMatchObject({ status: 'recovery-required', messages });
   await jest.advanceTimersByTimeAsync(IDLE_MS);
   expect(session.disposeCalls).toBe(0);
   await expect(harness.coordinator.execute(createSubmission())).rejects.toThrow('recovery must finish');
-  await expect(harness.coordinator.reconcileConversationBranch({ configuration: { systemInstructions: { kind: 'provider-default' } } }))
+  await expect(harness.coordinator.reconcileConversationBranch({ configuration: { systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' } } }))
     .resolves.toEqual({ status: 'committed', messages });
   expect(harness.repository.persistExecutionSnapshot).toHaveBeenLastCalledWith(
     'conversation-1', expect.any(String), expect.any(Number), expect.objectContaining({ revision: 1 }),

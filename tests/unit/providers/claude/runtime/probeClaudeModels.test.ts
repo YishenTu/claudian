@@ -1,18 +1,16 @@
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
+
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { probeClaudeCatalog } from '@/providers/claude/runtime/probeClaudeModels';
-import { getVaultPath } from '@/utils/path';
 
 const mockQuery = jest.fn();
 jest.mock('@/providers/claude/loadClaudeAgentSDK', () => ({ loadClaudeAgentQuery: async () => mockQuery }));
-jest.mock('@/utils/path', () => ({ ...jest.requireActual('@/utils/path'), getVaultPath: jest.fn(() => '/vault') }));
 
-function host(): ProviderHost {
-  return {
-    app: {},
-    settings: { providerConfigs: { claude: {} } },
+function host(workingDirectory: string | null = '/vault'): ProviderRuntimeHost {
+  return createTestRuntimeHost({ providerConfigs: { claude: {} } }, 'claude', {
+    workingDirectory,
     getResolvedProviderCliPath: jest.fn().mockResolvedValue('/bin/claude'),
-    getActiveEnvironmentVariables: () => '',
-  } as unknown as ProviderHost;
+  });
 }
 
 describe('Claude SDK catalog probe', () => {
@@ -40,8 +38,7 @@ describe('Claude SDK catalog probe', () => {
   });
 
   it('reports a missing local vault as a discovery failure', async () => {
-    jest.mocked(getVaultPath).mockReturnValueOnce(null);
-    await expect(probeClaudeCatalog(host())).rejects.toThrow('requires a local vault');
+    await expect(probeClaudeCatalog(host(null))).rejects.toThrow('requires a local vault');
     expect(mockQuery).not.toHaveBeenCalled();
   });
 });

@@ -6,7 +6,7 @@
 
 import type { ChatMessage, ImageAttachment, ToolCallInfo } from '@/core/types';
 
-import { appendLinkedContent, appendLinkedContentBody, appendSelectionContexts, appendSessionReferences, extractUserQuery, formatLinkedContent } from './promptContext';
+import { appendExecutionContext, extractUserQuery, formatLinkedContent } from './promptContext';
 
 // ============================================
 // History Reconstruction
@@ -143,15 +143,7 @@ export function getHistoryImages(messages: readonly ChatMessage[]): ImageAttachm
 function formatCapturedUserContent(message: ChatMessage): string {
   const snapshot = message.executionInput;
   if (!snapshot) return message.content?.trim() ?? '';
-  let content = snapshot.canonicalText;
-  const context = snapshot.context;
-  if (context?.linkedContent) {
-    content = context.linkedContent.content === undefined
-      ? appendLinkedContent(content, context.linkedContent.path)
-      : appendLinkedContentBody(content, context.linkedContent.path, context.linkedContent.content);
-  }
-  content = appendSelectionContexts(content, context);
-  return appendSessionReferences(content, context?.sessionReferences);
+  return appendExecutionContext(snapshot.canonicalText, snapshot.context);
 }
 
 export function buildContextFromHistory(

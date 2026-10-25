@@ -357,7 +357,7 @@ function createBackgroundChat(withInput = false) {
     persistence: { persistExecutionSnapshot: async () => true, registerExecutionBinding: () => undefined,
       releaseExecutionBinding: () => undefined, assertConversationExecutionAuthority: async () => undefined,
       recordConversationActivity: async () => undefined },
-    interactionPort: {} as any, vaultWorkingDirectory: '/vault', createId: () => 'binding',
+    interactionPort: {} as any, workingDirectory: '/vault', createId: () => 'binding',
     resolveMissingProviderSession: async () => 'not_found',
     onRequestedEvent: event => input?.controller.handleExecutionEvent(event),
     onSessionEvent: (event, context) => enqueueTabSessionEvent(tab, plugin, event, context),

@@ -1,13 +1,31 @@
-import { ProviderModelCatalogController, type ProviderModelSelectionChange } from '@/core/providers/models/ProviderModelCatalog';
+import {
+  ProviderModelCatalogController,
+  type ProviderModelCatalogState,
+  type ProviderModelCatalogStore,
+  type ProviderModelSelectionChange,
+} from '@/core/providers/models/ProviderModelCatalog';
+
+/** A store whose writes apply the patch to a mutable state, as provider configuration writers do. */
+function memoryStore(state: ProviderModelCatalogState, notify = jest.fn()): ProviderModelCatalogStore {
+  return {
+    read: () => state,
+    write: async change => {
+      const patch = change(state);
+      if (patch.visibleModels) state.selectedIds = patch.visibleModels;
+      if (patch.modelAliases) state.aliases = patch.modelAliases;
+    },
+    notifyChatOptionsChanged: notify,
+  };
+}
 
 function fixture() {
   let models = [{ id: 'selected', name: 'Selected' }];
   const discover = jest.fn(async () => ({ changed: true }));
   const catalog = new ProviderModelCatalogController({
-    providerId: 'example', providerName: 'Example',
-    read: () => ({ enabled: true, models, selectedIds: ['selected', 'missing'], aliases: {} }),
-    discover, update: jest.fn(),
-    host: { mutateSettings: async mutate => { await mutate({} as any); }, notifyProviderChatOptionsChanged: jest.fn() },
+    providerName: 'Example',
+    store: { ...memoryStore({ enabled: true, models, selectedIds: ['selected', 'missing'], aliases: {} }),
+      read: () => ({ enabled: true, models, selectedIds: ['selected', 'missing'], aliases: {} }) },
+    discover,
   });
   return { catalog, discover, replace: (next: typeof models) => { models = next; } };
 }
@@ -100,11 +118,9 @@ it('starts a new forced discovery after abort and drains the old request on disp
 it('notifies only for committed selection and alias writes, not discovery or status', async () => {
   const notify = jest.fn();
   const catalog = new ProviderModelCatalogController({
-    providerId: 'example', providerName: 'Example',
-    read: () => ({ enabled: true, models: [], selectedIds: [], aliases: {} }),
+    providerName: 'Example',
+    store: memoryStore({ enabled: true, models: [], selectedIds: [], aliases: {} }, notify),
     discover: async () => ({ changed: true }),
-    update: jest.fn(),
-    host: { mutateSettings: async mutate => { await mutate({} as any); }, notifyProviderChatOptionsChanged: notify },
   });
   await catalog.refresh();
   catalog.markStale();
@@ -152,38 +168,27 @@ it.each<{ change: ProviderModelSelectionChange; expected: string[] }>([
   { change: { type: 'set', modelId: ' b ', selected: true }, expected: ['a', 'b', 'c'] },
   { change: { type: 'set', modelId: ' b ', selected: false }, expected: ['a', 'c'] },
 ])('applies selection intent $change without changing other identities', async ({ change, expected }) => {
-  const settings = { visibleModels: ['a', 'b', 'c'] };
+  const state = { enabled: true, models: [], selectedIds: ['a', 'b', 'c'], aliases: {} };
   const catalog = new ProviderModelCatalogController({
-    providerId: 'example', providerName: 'Example',
-    read: (draft = settings) => ({ enabled: true, models: [], selectedIds: draft.visibleModels as string[], aliases: {} }),
-    discover: async () => ({ changed: false }),
-    update: (draft, patch) => { Object.assign(draft, patch); },
-    host: {
-      mutateSettings: async mutate => { await mutate(settings as any); },
-      notifyProviderChatOptionsChanged: jest.fn(),
-    },
+    providerName: 'Example', store: memoryStore(state), discover: async () => ({ changed: false }),
   });
   await catalog.changeSelection(change);
-  expect(settings.visibleModels).toEqual(expected);
+  expect(state.selectedIds).toEqual(expected);
   await catalog.dispose();
 });
 
 it('creates an own __proto__ alias through the shared catalog writer', async () => {
-  const settings = { modelAliases: { other: 'Keep' } as Record<string, string> };
+  const state = { enabled: true, models: [], selectedIds: [], aliases: { other: 'Keep' } as Record<string, string> };
   const catalog = new ProviderModelCatalogController({
-    providerId: 'example', providerName: 'Example',
-    read: (draft = settings) => ({ enabled: true, models: [], selectedIds: [], aliases: draft.modelAliases as Record<string, string> }),
-    discover: async () => ({ changed: false }),
-    update: (draft, patch) => { Object.assign(draft, patch); },
-    host: { mutateSettings: async mutate => { await mutate(settings as any); }, notifyProviderChatOptionsChanged: jest.fn() },
+    providerName: 'Example', store: memoryStore(state), discover: async () => ({ changed: false }),
   });
   try {
     await catalog.setAlias('__proto__', ' Friendly ');
-    expect(Object.hasOwn(settings.modelAliases, '__proto__')).toBe(true);
-    expect(JSON.parse(JSON.stringify(settings.modelAliases))).toEqual(JSON.parse('{"other":"Keep","__proto__":"Friendly"}'));
-    expect(Object.getPrototypeOf(settings.modelAliases)).toBe(Object.prototype);
+    expect(Object.hasOwn(state.aliases, '__proto__')).toBe(true);
+    expect(JSON.parse(JSON.stringify(state.aliases))).toEqual(JSON.parse('{"other":"Keep","__proto__":"Friendly"}'));
+    expect(Object.getPrototypeOf(state.aliases)).toBe(Object.prototype);
     await catalog.setAlias('__proto__', '');
-    expect(settings.modelAliases).toEqual({ other: 'Keep' });
+    expect(state.aliases).toEqual({ other: 'Keep' });
   } finally {
     await catalog.dispose();
   }

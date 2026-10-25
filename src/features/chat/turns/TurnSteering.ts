@@ -93,8 +93,6 @@ export class TurnSteering {
     const coordinator = this.deps.getExecutionCoordinator()!;
     const conversationId = state.currentConversationId!;
     const { displayContent, request } = this.deps.toQueuedChatTurn(queuedMessage);
-    // A steer joins an admitted turn, which already owns any first-turn Linked content.
-    delete request.linkedContentPath;
     const submission = this.deps.createSubmission(displayContent, request);
     const pending: PendingSteerState = {
       conversationId,

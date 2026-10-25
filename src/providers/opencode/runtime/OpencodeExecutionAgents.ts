@@ -1,9 +1,3 @@
-import type { ProviderSystemInstructions } from '@/core/execution';
-import { getInlineEditSystemPrompt } from '@/core/prompt/inlineEdit';
-import { buildSystemPrompt, type SystemPromptSettings } from '@/core/prompt/mainAgent';
-import { buildTitleGenerationSystemPrompt, resolveTitleGenerationLocale } from '@/core/prompt/titleGeneration';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
-
 import type { OpencodeExecutionProfile } from '../execution/OpencodeSessionContract';
 import type { OpencodeManagedAgentConfig } from './OpencodeLaunchArtifacts';
 
@@ -55,45 +49,4 @@ export function buildAgentConfig(
       },
       id: AUX_AGENT_IDS.passive,
     };
-}
-
-export interface OpencodeSystemPromptParams {
-  settings?: SystemPromptSettings;
-  titleLocale?: string;
-  workspaceRoot: string;
-}
-
-/** Claudian's default instructions for each native execution profile. */
-export function buildOpencodeSystemPrompt(profile: OpencodeExecutionProfile, params: OpencodeSystemPromptParams): string {
-  if (profile === 'readonly') return getInlineEditSystemPrompt(params.workspaceRoot);
-  if (profile === 'passive') return buildTitleGenerationSystemPrompt(params.titleLocale);
-  return buildSystemPrompt(params.settings ?? {});
-}
-
-/** The literal instructions one execution runs with, read from the current settings. */
-export function resolveOpencodeSystemPrompt(
-  plugin: Pick<ProviderHost, 'settings'>,
-  workspaceRoot: string,
-  profile: OpencodeExecutionProfile,
-  instructions: ProviderSystemInstructions,
-): string {
-  if (instructions.kind === 'explicit') return instructions.instructions;
-  return buildOpencodeSystemPrompt(profile, {
-    // Only the managed chat profile reads these settings; auxiliary profiles keep their fixed prompts.
-    settings: { ...getSystemPromptSettings(plugin, workspaceRoot), sessionInstructions: instructions.sessionInstructions },
-    titleLocale: resolveTitleGenerationLocale(plugin.settings),
-    workspaceRoot,
-  });
-}
-
-export function getSystemPromptSettings(
-  plugin: Pick<ProviderHost, 'settings'>,
-  vaultPath: string,
-): SystemPromptSettings {
-  return {
-    customPrompt: plugin.settings.systemPrompt,
-    mediaFolder: plugin.settings.mediaFolder,
-    userName: plugin.settings.userName,
-    vaultPath,
-  };
 }

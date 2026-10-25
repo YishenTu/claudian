@@ -1,17 +1,13 @@
 /** Provider-owned discovery and generation-fenced catalog publication. */
 
 import { StartupProfiler } from '../../../core/performance/StartupProfiler';
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
-import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
+import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type {
   ProviderTransitionOwnerContext
 } from '../../../core/providers/types';
+import { decodeCodexConfig, updateCodexConfig } from '../config';
 import { CodexMetadataTransitionGate } from '../metadata/CodexMetadataTransitionGate';
 import type { CodexDiscoveredModel } from '../models';
-import {
-  getCodexProviderSettings,
-  updateCodexProviderSettings,
-} from '../settings';
 import {
   computeCodexCatalogFingerprint,
 } from './CodexModelCatalogFingerprint';
@@ -26,6 +22,22 @@ export interface CodexCatalogResult {
   retryable?: boolean;
   diagnostics?: string;
 }
+
+/**
+ * Codex's part of a catalog commit. It edits a private copy of the stored Codex
+ * configuration and resolves to whether it changed it, or to null to reject the
+ * commit, in which case nothing is written.
+ */
+export type CodexCatalogConfigUpdate = (config: Record<string, unknown>) => Promise<boolean | null>;
+
+/**
+ * Commits a Codex catalog update together with the application's normalization of
+ * every provider's model selections, in one settings transaction. Resolves to null
+ * when the update rejected the commit, else to whether normalization changed a selection.
+ */
+export type CodexModelCatalogCommit = (
+  update: CodexCatalogConfigUpdate,
+) => Promise<{ selectionChanged: boolean } | null>;
 
 function sameCatalog(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
@@ -44,13 +56,14 @@ export class CodexModelCatalogCoordinator {
   private readonly pendingRefreshes = new Set<Promise<CodexCatalogResult>>();
 
   constructor(
-    private readonly plugin: ProviderHost,
+    private readonly host: ProviderRuntimeHost,
     private readonly discovery: CodexModelDiscoveryServiceLike,
+    private readonly commitCatalog: CodexModelCatalogCommit,
     private readonly transitionGate = new CodexMetadataTransitionGate(),
   ) {}
 
   getCachedCatalog(): CodexDiscoveredModel[] {
-    return getCodexProviderSettings(this.plugin.settings).discoveredModels;
+    return decodeCodexConfig(this.host.config).discoveredModels;
   }
 
   async refresh(context?: ProviderTransitionOwnerContext, signal?: AbortSignal): Promise<CodexCatalogResult> {
@@ -61,7 +74,7 @@ export class CodexModelCatalogCoordinator {
     ) {
       return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
     }
-    if (this.disposed || signal?.aborted || !getCodexProviderSettings(this.plugin.settings).enabled) {
+    if (this.disposed || signal?.aborted || !decodeCodexConfig(this.host.config).enabled) {
       return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
     }
     const transitionOwner = context?.providerTransitionOwner === true;
@@ -147,7 +160,7 @@ export class CodexModelCatalogCoordinator {
       let catalogFingerprint: string | null = null;
       let catalogFingerprintError: unknown;
       try {
-        catalogFingerprint = await computeCodexCatalogFingerprint(this.plugin, context);
+        catalogFingerprint = await computeCodexCatalogFingerprint(this.host, context);
       } catch (error) {
         catalogFingerprintError = error;
       }
@@ -202,7 +215,7 @@ export class CodexModelCatalogCoordinator {
         };
       }
       if (persistedResult.changed) {
-        this.plugin.notifyProviderChatOptionsChanged('codex');
+        this.host.notifyChatOptionsChanged();
       }
       return {
         kind: 'completed',
@@ -240,56 +253,49 @@ export class CodexModelCatalogCoordinator {
   }> {
     const timestamp = Date.now();
 
-    let refreshResult = {
-      accepted: false,
-      changed: false,
-      persistedSettingsChanged: false,
-    };
-    await this.plugin.mutateSettingsConditionally(async (settings) => {
+    let catalogChanged = false;
+    let configChanged = false;
+    const committed = await this.commitCatalog(async (config) => {
       if (!this.#isCurrentRefresh(generation)) {
-        return false;
+        return null;
       }
       let currentFingerprint: string;
       try {
-        currentFingerprint = await computeCodexCatalogFingerprint(this.plugin, context);
+        currentFingerprint = await computeCodexCatalogFingerprint(this.host, context);
       } catch {
-        return false;
+        return null;
       }
       if (
         !this.#isCurrentRefresh(generation)
         || currentFingerprint !== fingerprint
       ) {
-        return false;
+        return null;
       }
-      const currentSettings = getCodexProviderSettings(settings);
+      const currentSettings = decodeCodexConfig(config);
       const currentModels = currentSettings.discoveredModels;
-      const catalogChanged = !sameCatalog(currentModels, models);
+      catalogChanged = !sameCatalog(currentModels, models);
       const fingerprintChanged = currentSettings.catalogFingerprint !== fingerprint;
       const timestampChanged = currentSettings.catalogTimestamp !== timestamp;
+      configChanged = catalogChanged || fingerprintChanged || timestampChanged;
 
-      if (catalogChanged || fingerprintChanged || timestampChanged) {
-        updateCodexProviderSettings(settings, {
+      if (configChanged) {
+        updateCodexConfig(config, {
           discoveredModels: models,
           visibleModels: currentSettings.visibleModels,
           catalogFingerprint: fingerprint,
           catalogTimestamp: timestamp,
         });
       }
-
-      const selectionChanged = ProviderSettingsCoordinator.normalizeAllModelVariants(settings);
-      const shouldPersist = catalogChanged
-        || selectionChanged
-        || fingerprintChanged
-        || timestampChanged;
-      refreshResult = {
-        accepted: true,
-        changed: catalogChanged || selectionChanged,
-        persistedSettingsChanged: shouldPersist,
-      };
-      return shouldPersist;
+      return configChanged;
     });
-
-    return refreshResult;
+    if (!committed) {
+      return { accepted: false, changed: false, persistedSettingsChanged: false };
+    }
+    return {
+      accepted: true,
+      changed: catalogChanged || committed.selectionChanged,
+      persistedSettingsChanged: configChanged || committed.selectionChanged,
+    };
   }
 
   #isCurrentRefresh(generation: number): boolean {

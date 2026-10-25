@@ -3,17 +3,18 @@ import {
   parseDefaultWslDistroListOutput,
   resolveCodexExecutionTarget,
 } from '@/providers/codex/runtime/CodexExecutionTargetResolver';
+import { getCodexProviderSettings } from '@/providers/codex/settings';
 
 describe('resolveCodexExecutionTarget', () => {
   it('infers the WSL distro from a \\\\wsl$ workspace path', () => {
     const target = resolveCodexExecutionTarget({
-      settings: {
+      codexSettings: getCodexProviderSettings({
         providerConfigs: {
           codex: {
             installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
           },
         },
-      },
+      }),
       hostPlatform: 'win32',
       hostVaultPath: '\\\\wsl$\\Ubuntu\\home\\user\\repo',
     });
@@ -28,14 +29,14 @@ describe('resolveCodexExecutionTarget', () => {
 
   it('uses the explicit WSL distro override when the workspace path is a Windows drive path', () => {
     const target = resolveCodexExecutionTarget({
-      settings: {
+      codexSettings: getCodexProviderSettings({
         providerConfigs: {
           codex: {
             installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
             wslDistroOverridesByHost: { [getHostnameKey()]: 'Debian' },
           },
         },
-      },
+      }),
       hostPlatform: 'win32',
       hostVaultPath: 'C:\\repo',
     });
@@ -48,13 +49,13 @@ describe('resolveCodexExecutionTarget', () => {
 
   it('falls back to the default WSL distro when the workspace path is a Windows drive path', () => {
     const target = resolveCodexExecutionTarget({
-      settings: {
+      codexSettings: getCodexProviderSettings({
         providerConfigs: {
           codex: {
             installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
           },
         },
-      },
+      }),
       hostPlatform: 'win32',
       hostVaultPath: 'C:\\repo',
       resolveDefaultWslDistro: () => 'Ubuntu',
@@ -68,13 +69,13 @@ describe('resolveCodexExecutionTarget', () => {
 
   it('preserves native host execution on non-Windows hosts', () => {
     const target = resolveCodexExecutionTarget({
-      settings: {
+      codexSettings: getCodexProviderSettings({
         providerConfigs: {
           codex: {
             installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
           },
         },
-      },
+      }),
       hostPlatform: 'darwin',
       hostVaultPath: '/Users/example/repo',
     });

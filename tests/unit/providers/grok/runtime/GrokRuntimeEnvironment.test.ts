@@ -1,6 +1,13 @@
 import * as path from 'node:path';
 
+import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
+
 import { buildGrokRuntimeEnv } from '@/providers/grok/runtime/GrokRuntimeEnvironment';
+
+/** Builds the environment from the runtime host's shared plus provider-scoped text. */
+function buildFromSettings(settings: Record<string, unknown>, cliPath: string): NodeJS.ProcessEnv {
+  return buildGrokRuntimeEnv(createTestRuntimeHost(settings, 'grok').environmentText, cliPath);
+}
 
 describe('buildGrokRuntimeEnv', () => {
   describe('folder trust', () => {
@@ -14,7 +21,7 @@ describe('buildGrokRuntimeEnv', () => {
     });
 
     it('allows native vault skill discovery without changing the host environment', () => {
-      const env = buildGrokRuntimeEnv({}, 'grok');
+      const env = buildFromSettings({}, 'grok');
 
       expect(env.GROK_FOLDER_TRUST).toBe('0');
       expect(process.env.GROK_FOLDER_TRUST).toBeUndefined();
@@ -29,7 +36,7 @@ describe('buildGrokRuntimeEnv', () => {
     ])('honors explicit overrides: %j', ({ processValue, sharedValue, providerValue, expected }) => {
       if (processValue !== undefined) process.env.GROK_FOLDER_TRUST = processValue;
 
-      const env = buildGrokRuntimeEnv({
+      const env = buildFromSettings({
         sharedEnvironmentVariables: sharedValue === undefined ? '' : `GROK_FOLDER_TRUST=${sharedValue}`,
         providerConfigs: {
           grok: {
@@ -45,7 +52,7 @@ describe('buildGrokRuntimeEnv', () => {
 
   it('merges process, shared, and provider scope with an enhanced provider PATH', () => {
     process.env.GROK_P1_PROCESS_ONLY = 'from-process';
-    const env = buildGrokRuntimeEnv({
+    const env = buildFromSettings({
       providerConfigs: {
         grok: {
           environmentVariables: [
@@ -69,7 +76,7 @@ describe('buildGrokRuntimeEnv', () => {
     process.env.GROK_PRECEDENCE = 'from-process';
     process.env.GROK_SHARED_PRECEDENCE = 'from-process';
     try {
-      const env = buildGrokRuntimeEnv({
+      const env = buildFromSettings({
         providerConfigs: {
           grok: {
             environmentVariables: 'GROK_PRECEDENCE=from-provider',
@@ -90,7 +97,7 @@ describe('buildGrokRuntimeEnv', () => {
   });
 
   it('does not source shell expressions or force Grok config, auth, model, or telemetry', () => {
-    const env = buildGrokRuntimeEnv({
+    const env = buildFromSettings({
       providerConfigs: {
         grok: {
           environmentVariables: 'GROK_HOME=$HOME/custom\nXAI_API_KEY=user-provided',

@@ -21,7 +21,7 @@ export const deepseekProviderRegistration: ProviderModule = {
   chatUIConfig: deepseekChatUIConfig,
   capabilities: DEEPSEEK_PROVIDER_CAPABILITIES,
   environmentKeyPatterns: [/^DSH_/i, /^DEEPSEEK_/i],
-  createExecutionBackend: host => new DeepSeekExecutionBackend(host, () => getDeepSeekWorkspaceServices().deepseek),
+  createExecutionBackend: host => new DeepSeekExecutionBackend(host.getRuntimeHost('deepseek'), () => getDeepSeekWorkspaceServices().deepseek),
   historyService: new DeepSeekConversationHistoryService(async context => {
     await context?.ensureWorkspace?.();
     return getDeepSeekWorkspaceServices().deepseek;

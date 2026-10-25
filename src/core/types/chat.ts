@@ -33,42 +33,10 @@ export interface ExecutionInputLinkedContentSnapshot {
   content?: string;
 }
 
-export interface ExecutionInputCursorSnapshot {
-  beforeCursor: string;
-  afterCursor: string;
-  isInbetween: boolean;
-  line: number;
-  column: number;
-}
-
-export interface ExecutionInputEditorSnapshot {
-  notePath: string;
-  mode: 'selection' | 'cursor' | 'none';
-  selectedText?: string;
-  cursorContext?: ExecutionInputCursorSnapshot;
-  lineCount?: number;
-  startLine?: number;
-}
-
-export interface ExecutionInputBrowserSnapshot {
-  source: string;
-  selectedText: string;
-  title?: string;
-  url?: string;
-}
-
-export interface ExecutionInputCanvasSnapshot {
-  canvasPath: string;
-  nodeIds: string[];
-}
-
 export interface ExecutionInputContextSnapshot {
   selections?: readonly ProviderSelectionSnapshot[];
   sessionReferences?: readonly ProviderSessionReference[];
   linkedContent?: ExecutionInputLinkedContentSnapshot;
-  editorSelection?: ExecutionInputEditorSnapshot | null;
-  browserSelection?: ExecutionInputBrowserSnapshot | null;
-  canvasSelection?: ExecutionInputCanvasSnapshot | null;
 }
 
 /** Canonical feature-owned input, before provider-native prompt formatting. */

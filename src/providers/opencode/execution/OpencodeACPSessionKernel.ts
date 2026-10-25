@@ -8,7 +8,6 @@ import * as path from 'node:path';
 
 import { parseCompactCommand } from '@/core/commands/compactCommand';
 import { getEnhancedPath } from '@/core/process/env';
-import { resolveTitleGenerationLocale } from '@/core/prompt/titleGeneration';
 import {
   ACPClientConnection,
   ACPInteractionController,
@@ -28,7 +27,6 @@ import {
 } from '@/providers/acp';
 
 import { loadOpencodeV1CompactionIds } from '../history/OpencodeHistoryStore';
-import { getSystemPromptSettings } from '../runtime/OpencodeExecutionAgents';
 import {
   prepareOpencodeLaunchArtifacts,
 } from '../runtime/OpencodeLaunchArtifacts';
@@ -129,10 +127,10 @@ export class DefaultOpencodeACPSessionKernel
     this.profile = options.profile;
     try {
       const cliPath = this.launchContext?.cliPath
-        ?? await this.options.plugin.getResolvedProviderCliPath('opencode') ?? 'opencode';
+        ?? await this.options.host.resolveCliPath() ?? 'opencode';
       this.#assertNotDisposed();
       const runtimeEnv = this.launchContext?.environment ?? buildOpencodeRuntimeEnv(
-        this.options.plugin.settings,
+        this.options.host.environmentText,
         cliPath,
         this.options.databasePath,
       );
@@ -143,12 +141,10 @@ export class DefaultOpencodeACPSessionKernel
       assertOpencodeSessionCompatibility(this.options.nativeVersion, this.nativeVersion);
       const artifacts = await prepareOpencodeLaunchArtifacts({
         profile: options.profile,
-        settings: getSystemPromptSettings(this.options.plugin, this.options.config.vaultWorkingDirectory),
-        titleLocale: resolveTitleGenerationLocale(this.options.plugin.settings),
         runtimeEnv,
         nativeVersion: this.nativeVersion,
         systemPromptText: options.systemPrompt,
-        workspaceRoot: this.options.config.vaultWorkingDirectory,
+        workspaceRoot: this.options.config.workingDirectory,
       });
       this.#assertNotDisposed();
       this.databasePath = artifacts.databasePath;
@@ -166,7 +162,7 @@ export class DefaultOpencodeACPSessionKernel
       const subprocess = new ACPSubprocess({
         args: ['acp'],
         command: cliPath,
-        cwd: this.options.config.vaultWorkingDirectory,
+        cwd: this.options.config.workingDirectory,
         env: processEnv,
       });
       this.process = subprocess;
@@ -199,7 +195,7 @@ export class DefaultOpencodeACPSessionKernel
       const connection = new ACPClientConnection({
         clientInfo: {
           name: 'claudian',
-          version: this.options.plugin.manifest?.version ?? '0.0.0',
+          version: this.options.host.clientVersion ?? '0.0.0',
         },
         delegate: {
           fileSystem: this.#createFileSystemDelegate(),
@@ -230,7 +226,7 @@ export class DefaultOpencodeACPSessionKernel
 
   async openSession(resumeSessionId?: string): Promise<OpencodeNativeSessionInfo> {
     const connection = this.#requireConnection();
-    const cwd = this.options.config.vaultWorkingDirectory;
+    const cwd = this.options.config.workingDirectory;
     if (resumeSessionId) {
       let response;
       try {
@@ -373,11 +369,11 @@ export class DefaultOpencodeACPSessionKernel
     ): Promise<{ content: string }> => {
       const resolvedPath = this.profile === 'readonly'
         ? resolveOpencodeReadPath(
-          this.options.config.vaultWorkingDirectory,
+          this.options.config.workingDirectory,
           request.path,
         )
         : resolveManagedPath(
-          this.options.config.vaultWorkingDirectory,
+          this.options.config.workingDirectory,
           request.path,
         );
       const content = await fs.readFile(resolvedPath, 'utf8');
@@ -397,7 +393,7 @@ export class DefaultOpencodeACPSessionKernel
       readTextFile,
       writeTextFile: async (request) => {
         const resolvedPath = resolveManagedPath(
-          this.options.config.vaultWorkingDirectory,
+          this.options.config.workingDirectory,
           request.path,
         );
         await fs.mkdir(path.dirname(resolvedPath), { recursive: true });

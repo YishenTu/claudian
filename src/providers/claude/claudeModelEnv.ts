@@ -1,7 +1,7 @@
 import {
   CLAUDE_MODEL_TIER_DEFINITIONS,
   type ClaudeModelTierEnvironmentKey,
-} from '../modelTiers';
+} from './modelTiers';
 
 export type ClaudeModelEnvKey = 'ANTHROPIC_MODEL' | ClaudeModelTierEnvironmentKey;
 

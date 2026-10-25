@@ -2,7 +2,6 @@ import { Notice } from 'obsidian';
 
 import { parseCompactCommand } from '@/core/commands/compactCommand';
 import type { ProviderExecutionEvent, ProviderTurnEventScope } from '@/core/execution';
-import { captureSelectionSnapshots } from '@/core/prompt/promptContext';
 import type { ProviderId } from '@/core/providers/types';
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import type { ChatMessage, ImageAttachment } from '@/core/types';
@@ -10,7 +9,11 @@ import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ChatSettings } from '@/features/chat/ChatSettings';
 import type { ConversationController } from '@/features/chat/conversation/ConversationController';
 import type { FirstTurnAdmission } from '@/features/chat/conversation/FirstTurnAdmission';
-import { buildChatExecutionConfiguration } from '@/features/chat/execution/chatExecutionConfiguration';
+import {
+  buildChatExecutionConfiguration,
+  getChatWorkingDirectory,
+  resolveChatSystemInstructions,
+} from '@/features/chat/execution/chatExecutionConfiguration';
 import {
   type ChatExecutionCoordinator,
   ChatExecutionPreHandoffError,
@@ -21,7 +24,7 @@ import type { MessageRenderer } from '@/features/chat/rendering/MessageRenderer'
 import { SessionMessageDeferredError, type SessionMessageUnsentReason } from '@/features/chat/session-messaging/SessionMailbox';
 import type { SessionComposerPort } from '@/features/chat/sessions/SessionComposer';
 import type { ChatState } from '@/features/chat/state/ChatState';
-import { createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
+import { captureSelectionSnapshots, createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
 import type { ChatTurnRequest, TabReviewOutcome } from '@/features/chat/state/types';
 import { ResponseStream } from '@/features/chat/turns/ResponseStream';
 import type { StreamController } from '@/features/chat/turns/StreamController';
@@ -446,6 +449,7 @@ export class MainTurnExecution {
     const { plugin, state } = this.deps;
     const settings = this.deps.getSettings();
     const images = [...(request.images ?? [])];
+    const selections = captureSelectionSnapshots(request);
     // Membership and project edits apply from the next submission; a steer joins with the same prompt.
     const conversationId = state.currentConversationId;
     const sessionInstructions = resolveSessionInstructions(
@@ -456,23 +460,22 @@ export class MainTurnExecution {
     return {
       canonicalText: request.text,
       configuration: {
-        ...buildChatExecutionConfiguration(settings, sessionInstructions),
+        ...buildChatExecutionConfiguration(
+          settings,
+          resolveChatSystemInstructions(
+            plugin.settings,
+            // The prompt names the directory the session runs in, not a later host value.
+            this.deps.getExecutionCoordinator()?.workingDirectory ?? getChatWorkingDirectory(plugin),
+            sessionInstructions,
+          ),
+        ),
         promptSuggestions: true,
       },
       context: {
-        ...(request.selections !== undefined ? { selections: captureSelectionSnapshots(request) } : {}),
+        ...(selections.length ? { selections } : {}),
         ...(request.sessionReferences?.length ? { sessionReferences: request.sessionReferences } : {}),
-        ...(request.browserSelection
-          ? { browserSelection: request.browserSelection }
-          : {}),
-        ...(request.canvasSelection
-          ? { canvasSelection: request.canvasSelection }
-          : {}),
         ...(request.linkedContentPath
           ? { linkedContent: { path: request.linkedContentPath } }
-          : {}),
-        ...(request.editorSelection
-          ? { editorSelection: request.editorSelection }
           : {}),
       },
       conversationHistory: user && assistant

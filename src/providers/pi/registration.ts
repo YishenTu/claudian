@@ -22,7 +22,7 @@ export const piProviderRegistration: ProviderModule = {
   modelPolicy: piModelPolicy,
   chatUIConfig: piChatUIConfig,
   createExecutionBackend: (plugin) => new PiExecutionBackend(
-    plugin,
+    plugin.getRuntimeHost('pi'),
     { extensionUiRenderer: new ObsidianPiExtensionUIRenderer(plugin.app) },
   ),
 

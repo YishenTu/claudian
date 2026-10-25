@@ -8,6 +8,7 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
+import { createProviderRuntimeHost } from '@/composition/ClaudianProviderHost';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { createCodexModels } from '@/providers/codex/runtime/CodexModels';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
@@ -42,7 +43,7 @@ it.each(['constructor', 'toString', '__proto__'])('edits and clears an alias for
   const host = {
     settings, mutateSettings: coordinator.mutate.bind(coordinator), notifyProviderChatOptionsChanged: notify,
   } as unknown as ProviderHost;
-  const catalog = createCodexModels(host, { refresh: async () => ({ kind: 'skipped', models: [], refreshed: false }) });
+  const catalog = createCodexModels(createProviderRuntimeHost(host, coordinator, 'codex'), { refresh: async () => ({ kind: 'skipped', models: [], refreshed: false }) });
   await catalog.refresh();
   const container = document.body.createDiv();
   const picker = renderProviderModelsSection(container, 'codex', 'Codex', catalog);

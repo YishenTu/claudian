@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
 import { createForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 
 import { isSteerableExecutionSession, type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderSessionEvent } from '@/core/execution';
@@ -300,9 +301,9 @@ function createFixture(resume = false, approval?: (signal: AbortSignal) => Promi
   };
   const approvals: unknown[] = [], questions: unknown[] = [];
   const serverService = new OpencodeServerService();
-  const session = new OpencodeExecutionBackend(plugin, { serverService }).createSession({
+  const session = new OpencodeExecutionBackend(runtimeHostFor(plugin, 'opencode'), { serverService }).createSession({
     ...(resume ? { resumeSeed: { providerSessionId: 'ses_test', providerState: { nativeVersion: 2 } } } : {}),
-    vaultWorkingDirectory: root, lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported',
+    workingDirectory: root, lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported',
     interactionPort: {
       requestApproval: async (request, signal) => { approvals.push(request); await approval?.(signal); return { interactionId: request.interactionId, decision: 'allow' }; },
       askUserQuestion: async request => { questions.push(request); const questionsInput = request.input.questions; return { interactionId: request.interactionId, answers: resolveAnswers ? resolveAnswers(questionsInput) : { q0: Array.isArray(questionsInput) ? questionsInput[0].options[0].value : '' } }; },
@@ -692,7 +693,7 @@ describe('native steering', () => {
     env.host.notifyProviderChatOptionsChanged = () => undefined;
     env.host.settings.providerConfigs.opencode = { enabled: true, visibleModels: ['deepseek/chat'], discoveredModels: [{ rawId: 'deepseek/chat', label: 'DeepSeek' }] };
     const serverService = new OpencodeServerService();
-    const backend = new OpencodeExecutionBackend(env.host, { serverService });
+    const backend = new OpencodeExecutionBackend(runtimeHostFor(env.host as unknown as Parameters<typeof runtimeHostFor>[0], 'opencode'), { serverService });
     const conversation = await env.repository.create({ providerId: 'opencode' });
     const events: ProviderExecutionEvent[] = [];
     let steered: Promise<ChatSteerOutcome> | undefined;
@@ -703,7 +704,7 @@ describe('native steering', () => {
     });
     const coordinator: ChatExecutionCoordinator = new ChatExecutionCoordinator({
       lifecycleRegistry: new ProviderExecutionLifecycleRegistry(), resolveBackend: () => backend,
-      persistence: env.repository, vaultWorkingDirectory: env.root, createId: () => `execution-${++ids}`,
+      persistence: env.repository, workingDirectory: env.root, createId: () => `execution-${++ids}`,
       resolveMissingProviderSession: async () => 'preserved',
       interactionPort: { requestApproval: async request => ({ interactionId: request.interactionId, decision: 'allow' }), askUserQuestion: async request => ({ interactionId: request.interactionId, answers: {} }), dismissInteraction() {} },
       onRequestedEvent: event => {
@@ -785,7 +786,7 @@ it.each(['background-approval', 'background-nested', 'mcp-form-late'])('keeps %s
   env.host.notifyProviderChatOptionsChanged = () => undefined;
   env.host.settings.providerConfigs.opencode = { enabled: true, visibleModels: ['deepseek/chat'], discoveredModels: [{ rawId: 'deepseek/chat', label: 'DeepSeek' }] };
   const serverService = new OpencodeServerService();
-  const backend = new OpencodeExecutionBackend(env.host, { serverService });
+  const backend = new OpencodeExecutionBackend(runtimeHostFor(env.host as unknown as Parameters<typeof runtimeHostFor>[0], 'opencode'), { serverService });
   const conversation = await env.repository.create({ providerId: 'opencode' });
   let release!: () => void, childAsked!: () => void, replied!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
@@ -797,7 +798,7 @@ it.each(['background-approval', 'background-nested', 'mcp-form-late'])('keeps %s
   const events: ProviderSessionEvent[] = [];
   const coordinator = new ChatExecutionCoordinator({
     lifecycleRegistry: new ProviderExecutionLifecycleRegistry(), resolveBackend: () => backend,
-    persistence: env.repository, vaultWorkingDirectory: env.root, createId: () => 'execution-child',
+    persistence: env.repository, workingDirectory: env.root, createId: () => 'execution-child',
     resolveMissingProviderSession: async () => 'preserved',
     interactionPort: {
       requestApproval: async request => {

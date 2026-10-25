@@ -18,9 +18,9 @@ import type {
   ProviderSettingsReconciler,
 } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
+import { CLAUDE_MODEL_ENV_KEYS } from '../claudeModelEnv';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import { clearClaudeResumeState } from '../types/providerState';
-import { CLAUDE_MODEL_ENV_KEYS } from './claudeModelEnv';
 
 /** Session-scope with configured native home keys: changes invalidate bindings. */
 const SESSION_ENV_KEYS = [...CLAUDE_MODEL_ENV_KEYS, 'ANTHROPIC_BASE_URL'];

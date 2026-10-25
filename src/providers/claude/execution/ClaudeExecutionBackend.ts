@@ -2,14 +2,14 @@ import type {
   ProviderExecutionBackend,
   ProviderSessionConfig,
 } from '../../../core/execution';
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import { ClaudeExecutionSession, type ClaudeExecutionSessionOptions } from './ClaudeExecutionSession';
 
 export class ClaudeExecutionBackend implements ProviderExecutionBackend {
   readonly providerId = 'claude' as const;
 
   constructor(
-    private readonly host: ProviderHost,
+    private readonly host: ProviderRuntimeHost,
     private readonly options: ClaudeExecutionSessionOptions = {},
   ) {}
 

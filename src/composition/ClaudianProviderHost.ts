@@ -8,7 +8,17 @@ import type {
   ProviderExecutionTransitionScope,
 } from '@/core/execution';
 import { resolveLoginShellPath } from '@/core/process/loginShellPath';
+import {
+  getProviderConfig,
+  getProviderSavedSelection,
+  getProviderSelectionDefaults,
+  getProviderSelectionInputs,
+  setProviderConfig,
+} from '@/core/providers/providerConfig';
+import { getRuntimeEnvironmentText } from '@/core/providers/providerEnvironment';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
+import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type {
   ProviderCLIResolutionContext,
@@ -18,6 +28,7 @@ import type {
 import type { SessionToolEndpoint } from '@/core/session-tools/SessionToolEndpoint';
 import type { ClaudianSettings } from '@/core/types';
 import type { EnvironmentScope } from '@/core/types/settings';
+import { getVaultPath } from '@/utils/path';
 
 export interface ClaudianProviderHostDeps {
   readonly app: App;
@@ -50,6 +61,7 @@ export class ClaudianProviderHost implements ProviderHost {
   readonly executionLifecycleRegistry: ProviderExecutionLifecycleRegistry;
   readonly storage: ProviderHostStorage;
   readonly sessionToolEndpoint: SessionToolEndpoint;
+  readonly #runtimeHosts = new Map<ProviderId, ProviderRuntimeHost>();
 
   constructor(private readonly deps: ClaudianProviderHostDeps) {
     this.app = deps.app;
@@ -57,6 +69,10 @@ export class ClaudianProviderHost implements ProviderHost {
     this.executionLifecycleRegistry = deps.executionLifecycleRegistry;
     this.storage = deps.storage;
     this.sessionToolEndpoint = deps.sessionToolEndpoint;
+  }
+
+  get workingDirectory(): string | null {
+    return getVaultPath(this.app);
   }
 
   get settings(): Readonly<ClaudianSettings> {
@@ -142,4 +158,64 @@ export class ClaudianProviderHost implements ProviderHost {
   notifyProviderChatOptionsChanged(providerId: ProviderId): void {
     void this.deps.notifyProviderChatOptionsChanged(providerId);
   }
+
+  getRuntimeHost(providerId: ProviderId): ProviderRuntimeHost {
+    let runtimeHost = this.#runtimeHosts.get(providerId);
+    if (!runtimeHost) {
+      runtimeHost = createProviderRuntimeHost(this, this.deps.settings, providerId);
+      this.#runtimeHosts.set(providerId, runtimeHost);
+    }
+    return runtimeHost;
+  }
+}
+
+/** The settings document a runtime host projects, through its owning coordinator. */
+interface RuntimeSettingsSource {
+  getCommittedSettings(): Readonly<Record<string, unknown>>;
+  mutateConditionally(mutation: (draft: Record<string, unknown>) => boolean | Promise<boolean>): Promise<void>;
+}
+
+/** A live provider-scoped projection of the application host; it holds no state of its own. */
+export function createProviderRuntimeHost(
+  host: Pick<
+    ProviderHost,
+    | 'manifest' | 'workingDirectory' | 'storage' | 'sessionToolEndpoint' | 'executionLifecycleRegistry'
+    | 'getResolvedProviderCliPath' | 'runProviderExecutionTransition' | 'notifyProviderChatOptionsChanged'
+  >,
+  settings: RuntimeSettingsSource,
+  providerId: ProviderId,
+): ProviderRuntimeHost {
+  const committed = (): Readonly<Record<string, unknown>> => settings.getCommittedSettings();
+  return {
+    providerId,
+    get config() { return getProviderConfig(committed(), providerId); },
+    get selection() { return getProviderSelectionInputs(committed(), providerId); },
+    get providerSelection() {
+      return getProviderSelectionDefaults(ProviderSettingsCoordinator.getProviderSettingsSnapshot(committed(), providerId));
+    },
+    get savedSelection() { return getProviderSavedSelection(committed(), providerId); },
+    get environmentText() { return getRuntimeEnvironmentText(committed(), providerId); },
+    get locale() { const { locale } = committed(); return typeof locale === 'string' ? locale : ''; },
+    get clientVersion() { return host.manifest?.version; },
+    get workingDirectory() { return host.workingDirectory; },
+    storage: host.storage,
+    sessionToolEndpoint: host.sessionToolEndpoint,
+    executionLifecycleRegistry: host.executionLifecycleRegistry,
+    resolveCliPath: context => host.getResolvedProviderCliPath(providerId, context),
+    runExecutionTransition: (providerIds, mutation, parentScope) =>
+      host.runProviderExecutionTransition(providerIds, mutation, parentScope),
+    notifyChatOptionsChanged: () => host.notifyProviderChatOptionsChanged(providerId),
+    async updateConfig(mutation) {
+      let written = false;
+      await settings.mutateConditionally(async draft => {
+        // The draft publishes even when unwritten, so the mutation edits a private copy.
+        const config = structuredClone(getProviderConfig(draft, providerId));
+        if (!await mutation(config, getProviderSelectionInputs(draft, providerId))) return false;
+        setProviderConfig(draft, providerId, config);
+        written = true;
+        return true;
+      });
+      return written;
+    },
+  };
 }

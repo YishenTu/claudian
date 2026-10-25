@@ -121,7 +121,7 @@ export interface ChatExecutionCoordinatorDeps {
   readonly resolveBackend: (providerId: ProviderId) => ProviderExecutionBackend;
   readonly persistence: ChatExecutionPersistence;
   readonly interactionPort: ProviderInteractionPort;
-  readonly vaultWorkingDirectory: string;
+  readonly workingDirectory: string;
   readonly createId: () => string;
   readonly bindSessionTools?: (conversationId: string) => SessionToolBinding;
   readonly onRequestedEvent?: (
@@ -231,6 +231,11 @@ export class ChatExecutionCoordinator {
   #preparationTail: Promise<void> = Promise.resolve();
   #idleTimer: number | null = null;
   #idleTimerGeneration = 0;
+
+  /** The directory this coordinator's sessions run in, captured when the session runtime was assembled. */
+  get workingDirectory(): string {
+    return this.deps.workingDirectory;
+  }
 
   constructor(private readonly deps: ChatExecutionCoordinatorDeps) {
     this.#supervisor = new ExecutionSessionSupervisor(deps.lifecycleRegistry);
@@ -349,7 +354,7 @@ export class ChatExecutionCoordinator {
           lifecycle: 'persistent',
           nativePersistence: 'enabled',
           resumeSeed: conversation.resumeSeed,
-          vaultWorkingDirectory: this.deps.vaultWorkingDirectory,
+          workingDirectory: this.deps.workingDirectory,
           interactionPort: this.#interactions,
           sessionTools: sessionTools?.port,
         },

@@ -1,25 +1,43 @@
-import { ProviderModelCatalogController } from '../../../core/providers/models/ProviderModelCatalog';
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import { createConfigCatalogStore, ProviderModelCatalogController } from '../../../core/providers/models/ProviderModelCatalog';
+import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { ProviderModelCatalogRefreshResult } from '../../../core/providers/types';
-import { getClaudeModelCatalog, hasClaudeModelIdentity, resolveClaudeVisibleModels } from '../modelOptions';
+import { decodeClaudeConfig, updateClaudeConfig } from '../config';
+import {
+  type ClaudeModelSource,
+  getClaudeModelCatalog,
+  hasClaudeModelIdentity,
+  resolveClaudeVisibleModels,
+} from '../modelOptions';
 import { type ClaudeDiscoveredModel, decodeClaudeModels } from '../models';
 import { toClaudeRuntimeModelId } from '../modelSelection';
-import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import { type ClaudeRuntimeCatalog, probeClaudeCatalog } from './probeClaudeModels';
 
-export type ClaudeCatalogProbe = (host: ProviderHost, signal: AbortSignal) => Promise<ClaudeRuntimeCatalog>;
+export type ClaudeCatalogProbe = (host: ProviderRuntimeHost, signal: AbortSignal) => Promise<ClaudeRuntimeCatalog>;
 export type ClaudeModelDiscovery = (signal: AbortSignal) => Promise<ProviderModelCatalogRefreshResult>;
 
+/** Model options over a configuration under edit; the environment stays the host's committed one. */
+function modelSource(
+  config: Readonly<Record<string, unknown>>,
+  host: Pick<ProviderRuntimeHost, 'environmentText'>,
+): ClaudeModelSource {
+  return { config, get environmentText() { return host.environmentText; } };
+}
+
 /** Replaces the discovered catalog and moves enabled identities (and their aliases) onto reported rows. */
-function applyDiscoveredClaudeModels(settings: Record<string, unknown>, models: ClaudeDiscoveredModel[]): void {
-  const config = getClaudeProviderSettings(settings);
-  updateClaudeProviderSettings(settings, { discoveredModels: models });
-  const catalog = getClaudeModelCatalog(settings);
-  const modelAliases = { ...config.modelAliases };
-  const visibleModels = [...new Set(resolveClaudeVisibleModels(settings, catalog).map(({ id, option }) => {
+function applyDiscoveredClaudeModels(
+  config: Record<string, unknown>,
+  host: Pick<ProviderRuntimeHost, 'environmentText'>,
+  models: ClaudeDiscoveredModel[],
+): void {
+  const current = decodeClaudeConfig(config);
+  updateClaudeConfig(config, { discoveredModels: models });
+  const source = modelSource(config, host);
+  const catalog = getClaudeModelCatalog(source);
+  const modelAliases = { ...current.modelAliases };
+  const visibleModels = [...new Set(resolveClaudeVisibleModels(source, catalog).map(({ id, option }) => {
     // Legacy seeds canonicalize to SDK values. Saved choices keep any identity the SDK
     // still reports; only retired ones follow their family successor.
-    if (config.visibleModels !== null && hasClaudeModelIdentity(catalog, id)) return id;
+    if (current.visibleModels !== null && hasClaudeModelIdentity(catalog, id)) return id;
     const nextId = option ? toClaudeRuntimeModelId(option.value) : id;
     if (nextId !== id && modelAliases[id]) {
       modelAliases[nextId] ??= modelAliases[id];
@@ -27,14 +45,18 @@ function applyDiscoveredClaudeModels(settings: Record<string, unknown>, models: 
     }
     return nextId;
   }))];
-  updateClaudeProviderSettings(settings, { visibleModels, modelAliases });
+  updateClaudeConfig(config, { visibleModels, modelAliases });
 }
 
 /** Output styles only replace the stored list when Claude Code reported some. */
-function applyDiscoveredClaudeCatalog(settings: Record<string, unknown>, catalog: ClaudeRuntimeCatalog): void {
-  applyDiscoveredClaudeModels(settings, catalog.models);
+function applyDiscoveredClaudeCatalog(
+  config: Record<string, unknown>,
+  host: Pick<ProviderRuntimeHost, 'environmentText'>,
+  catalog: ClaudeRuntimeCatalog,
+): void {
+  applyDiscoveredClaudeModels(config, host, catalog.models);
   if (catalog.outputStyles.length > 0) {
-    updateClaudeProviderSettings(settings, { discoveredOutputStyles: catalog.outputStyles });
+    updateClaudeConfig(config, { discoveredOutputStyles: catalog.outputStyles });
   }
 }
 
@@ -43,12 +65,12 @@ function applyDiscoveredClaudeCatalog(settings: Record<string, unknown>, catalog
  * the common catalog controller; an aborted or disabled discovery never writes or publishes.
  */
 export async function discoverClaudeModels(
-  host: ProviderHost,
+  host: ProviderRuntimeHost,
   signal: AbortSignal,
   probe: ClaudeCatalogProbe = probeClaudeCatalog,
 ): Promise<ProviderModelCatalogRefreshResult> {
-  const current = (settings: Record<string, unknown> = host.settings): boolean => (
-    !signal.aborted && getClaudeProviderSettings(settings).enabled
+  const current = (config: Readonly<Record<string, unknown>> = host.config): boolean => (
+    !signal.aborted && decodeClaudeConfig(config).enabled
   );
   let catalog: ClaudeRuntimeCatalog;
   try {
@@ -57,13 +79,13 @@ export async function discoverClaudeModels(
     if (!current()) return { changed: false };
     throw error;
   }
-  await host.mutateSettingsConditionally(settings => {
-    if (!current(settings)) return false;
-    applyDiscoveredClaudeCatalog(settings, catalog);
+  await host.updateConfig(config => {
+    if (!current(config)) return false;
+    applyDiscoveredClaudeCatalog(config, host, catalog);
     return true;
   });
   if (!current()) return { changed: false };
-  host.notifyProviderChatOptionsChanged('claude');
+  host.notifyChatOptionsChanged();
   return { changed: true, persistedSettingsChanged: true };
 }
 
@@ -73,56 +95,55 @@ export async function discoverClaudeModels(
  * An empty model or style list leaves the stored one in place.
  */
 export async function applySessionClaudeCatalog(
-  host: ProviderHost,
+  host: ProviderRuntimeHost,
   catalog: ClaudeRuntimeCatalog,
   isCurrent: () => boolean = () => true,
 ): Promise<boolean> {
   const models = decodeClaudeModels(catalog.models);
   const serializedModels = JSON.stringify(models);
   const serializedStyles = JSON.stringify(catalog.outputStyles);
-  const needsWrite = (settings: Record<string, unknown>): boolean => {
-    const config = getClaudeProviderSettings(settings);
+  const needsWrite = (stored: Readonly<Record<string, unknown>>): boolean => {
+    const config = decodeClaudeConfig(stored);
     if (!isCurrent() || !config.enabled) return false;
     return (models.length > 0 && JSON.stringify(config.discoveredModels) !== serializedModels)
       || (catalog.outputStyles.length > 0 && JSON.stringify(config.discoveredOutputStyles) !== serializedStyles);
   };
-  if (!needsWrite(host.settings)) return false;
-  let written = false;
-  await host.mutateSettingsConditionally(settings => {
-    if (!needsWrite(settings)) return false;
-    if (models.length > 0) applyDiscoveredClaudeModels(settings, models);
+  if (!needsWrite(host.config)) return false;
+  const written = await host.updateConfig(config => {
+    if (!needsWrite(config)) return false;
+    if (models.length > 0) applyDiscoveredClaudeModels(config, host, models);
     if (catalog.outputStyles.length > 0) {
-      updateClaudeProviderSettings(settings, { discoveredOutputStyles: catalog.outputStyles });
+      updateClaudeConfig(config, { discoveredOutputStyles: catalog.outputStyles });
     }
-    written = true;
     return true;
   });
-  if (written && isCurrent()) host.notifyProviderChatOptionsChanged('claude');
+  if (written && isCurrent()) host.notifyChatOptionsChanged();
   return written;
 }
 
 export function createClaudeModels(
-  host: ProviderHost,
+  host: ProviderRuntimeHost,
   discover: ClaudeModelDiscovery = signal => discoverClaudeModels(host, signal),
 ): ProviderModelCatalogController {
   return new ProviderModelCatalogController({
-    providerId: 'claude',
-    host,
-    update: updateClaudeProviderSettings,
     providerName: 'Claude Code',
-    read: (settings = host.settings) => {
-      const current = getClaudeProviderSettings(settings);
-      const models = getClaudeModelCatalog(settings);
-      return {
-        enabled: current.enabled,
-        models: models.map(model => ({
-          id: toClaudeRuntimeModelId(model.value), name: model.label, description: model.description,
-        })),
-        selectedIds: resolveClaudeVisibleModels(settings, models).map(({ id, option }) =>
-          toClaudeRuntimeModelId(option?.value ?? id)),
-        aliases: current.modelAliases,
-      };
-    },
+    store: createConfigCatalogStore(host, {
+      update: (config, _selection, patch) => { updateClaudeConfig(config, patch); },
+      read: config => {
+        const current = decodeClaudeConfig(config);
+        const source = modelSource(config, host);
+        const models = getClaudeModelCatalog(source);
+        return {
+          enabled: current.enabled,
+          models: models.map(model => ({
+            id: toClaudeRuntimeModelId(model.value), name: model.label, description: model.description,
+          })),
+          selectedIds: resolveClaudeVisibleModels(source, models).map(({ id, option }) =>
+            toClaudeRuntimeModelId(option?.value ?? id)),
+          aliases: current.modelAliases,
+        };
+      },
+    }),
     discover,
   });
 }

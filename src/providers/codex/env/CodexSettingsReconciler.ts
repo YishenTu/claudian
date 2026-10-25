@@ -8,7 +8,6 @@ import {
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import {
   compareScopedRuntimeInputFingerprints,
-  createRuntimeInputFingerprint,
   isVersionedRuntimeInputFingerprint,
   type SavedScopedRuntimeInputFingerprints,
   type ScopedRuntimeInputFingerprints,
@@ -21,59 +20,18 @@ import type { Conversation } from '../../../core/types';
 import { codexModelPolicy } from '../CodexModelPolicy';
 import { resolveCodexModelSelection } from '../modelOptions';
 import {
+  CODEX_ENV_HASH_KEYS,
+  type CodexInstallationInputs,
+  computeCodexEnvHash,
+  computeCodexSessionEnvHash,
+  LEGACY_CODEX_ENV_HASH_KEYS,
+} from '../runtime/codexEnvironmentHash';
+import {
   DEFAULT_CODEX_PROVIDER_SETTINGS,
   getCodexProviderSettings,
   updateCodexProviderSettings,
 } from '../settings';
 import { clearCodexResumeState } from '../types';
-
-const LEGACY_CODEX_ENV_HASH_KEYS = [
-  'OPENAI_MODEL',
-  'OPENAI_BASE_URL',
-  'OPENAI_API_KEY',
-] as const;
-const NATIVE_HOME_ENV_KEYS = ['CODEX_HOME', 'HOME', 'USERPROFILE'];
-const ENV_HASH_KEYS = [...LEGACY_CODEX_ENV_HASH_KEYS, 'PATH', ...NATIVE_HOME_ENV_KEYS];
-/**
- * Inputs that select the rollout store, endpoint, or account. CLI paths, `PATH`, and
- * `OPENAI_MODEL` only affect the launched process, so their changes keep thread bindings.
- */
-const SESSION_ENV_HASH_KEYS = ['OPENAI_BASE_URL', 'OPENAI_API_KEY', ...NATIVE_HOME_ENV_KEYS];
-
-interface CodexInstallationInputs {
-  installationMethod: string;
-  wslDistroOverride: string;
-}
-
-/** Keeps existing default-home fingerprints stable when no override is configured. */
-function withConfiguredHomeKeys(keys: readonly string[], environmentText: string): string[] {
-  const environment = parseEnvironmentVariables(environmentText);
-  return keys.filter(key => (
-    !NATIVE_HOME_ENV_KEYS.includes(key) || Object.prototype.hasOwnProperty.call(environment, key)
-  ));
-}
-
-export function computeCodexEnvHash(
-  environmentText: string,
-  additionalInputs: Readonly<Record<string, string | undefined>> = {},
-): string {
-  return createRuntimeInputFingerprint({
-    additionalInputs,
-    environmentKeys: withConfiguredHomeKeys(ENV_HASH_KEYS, environmentText),
-    environmentText,
-  });
-}
-
-function computeCodexSessionEnvHash(
-  environmentText: string,
-  installation: CodexInstallationInputs,
-): string {
-  return createRuntimeInputFingerprint({
-    additionalInputs: { ...installation },
-    environmentKeys: withConfiguredHomeKeys(SESSION_ENV_HASH_KEYS, environmentText),
-    environmentText,
-  });
-}
 
 function isCurrentLegacyCodexFingerprint(
   environmentText: string,
@@ -120,7 +78,7 @@ function getCodexRuntimeFingerprintState(settings: Record<string, unknown>): {
       hasCLIPathFingerprintInputs(cliPathInputs)
       || codexSettings.installationMethod === 'wsl'
       || codexSettings.wslDistroOverride
-      || ENV_HASH_KEYS.some(key => Object.prototype.hasOwnProperty.call(environment, key))
+      || CODEX_ENV_HASH_KEYS.some(key => Object.prototype.hasOwnProperty.call(environment, key))
     ),
     providerEnabled: codexSettings.enabled,
     saved: {
@@ -164,7 +122,7 @@ export const codexSettingsReconciler = {
       : [];
 
     const currentModel = typeof settings.model === 'string' ? settings.model : '';
-    const nextModel = resolveCodexModelSelection(settings, currentModel);
+    const nextModel = resolveCodexModelSelection(getCodexProviderSettings(settings), currentModel);
     if (nextModel) {
       settings.model = nextModel;
     }

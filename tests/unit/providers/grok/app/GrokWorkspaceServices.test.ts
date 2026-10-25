@@ -6,6 +6,8 @@ jest.mock('@/providers/grok/runtime/GrokModelDiscoveryService', () => ({
   })),
 }));
 
+import { withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
+
 import { GrokCommandLoader } from '@/providers/grok/app/GrokCommandLoader';
 import { GrokCommandMetadataProbe } from '@/providers/grok/app/GrokCommandMetadataProbe';
 import {
@@ -31,18 +33,15 @@ function createPlugin(cached = true): any {
       },
     },
   };
-  return {
-    app: { vault: { adapter: { basePath: '/tmp/grok-workspace' } } },
+  return withRuntimeHosts({
+    workingDirectory: '/tmp/grok-workspace',
     executionLifecycleRegistry: {
       registerTransitionHook: jest.fn(() => jest.fn()),
     },
     getResolvedProviderCliPath: jest.fn().mockResolvedValue('/opt/grok/bin/grok'),
-    mutateSettingsConditionally: jest.fn(async (mutation: (value: any) => boolean) => {
-      await mutation(settings);
-    }),
     notifyProviderChatOptionsChanged: jest.fn(),
     settings,
-  };
+  });
 }
 
 jest.mock('@/core/device/InstallationKey', () => ({
@@ -169,7 +168,7 @@ describe('GrokWorkspaceServices', () => {
       shutdown: jest.fn(async () => undefined),
     }));
     const commandMetadataProbe = new GrokCommandMetadataProbe(
-      plugin,
+      plugin.getRuntimeHost('grok'),
       { create: nativeCreate },
     );
     let hook!: {
@@ -187,7 +186,7 @@ describe('GrokWorkspaceServices', () => {
     });
 
     await hook.beforeTransition();
-    plugin.mutateSettingsConditionally.mockClear();
+    const settingsBeforeFencedWork = structuredClone(plugin.settings);
     const commandLoad = services.commandLoader!.loadCommands({
       allowIsolatedMetadataCreation: true,
       conversation: null,
@@ -205,7 +204,7 @@ describe('GrokWorkspaceServices', () => {
 
     expect(nativeCreate).not.toHaveBeenCalled();
     expect(mockDiscoverCatalog).not.toHaveBeenCalled();
-    expect(plugin.mutateSettingsConditionally).not.toHaveBeenCalled();
+    expect(plugin.settings).toEqual(settingsBeforeFencedWork);
 
     cliPath = '/configured/grok-b';
     plugin.settings.providerConfigs.grok.environmentVariables = 'GROK_PROFILE=b';

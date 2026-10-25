@@ -3,8 +3,9 @@ import '@/providers';
 import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+
 import { getProviderSettingsSnapshotWithModel } from '@/core/providers/conversationModel';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { normalizeGrokSessionModelMetadata, normalizeGrokSetModelMetadata } from '@/providers/grok/execution/GrokSessionModelMetadata';
 import { GrokModelCatalogCoordinator } from '@/providers/grok/runtime/GrokModelCatalogCoordinator';
@@ -22,15 +23,14 @@ function makeCatalog(selectedIds: string[] = [], response = nativeCatalog) {
   };
   const host = {
     settings,
-    mutateSettings: async (mutation: (settings: Record<string, unknown>) => void) => mutation(settings),
-    mutateSettingsConditionally: async (mutation: (settings: Record<string, unknown>) => boolean) => mutation(settings),
     notifyProviderChatOptionsChanged: jest.fn(),
-  } as unknown as ProviderHost;
+  };
   const discovered = normalizeGrokSessionModelMetadata({ models: response.result });
-  const coordinator = new GrokModelCatalogCoordinator(host, {
+  const runtime = runtimeHostFor(host, 'grok');
+  const coordinator = new GrokModelCatalogCoordinator(runtime, {
     discoverCatalog: async () => ({ kind: 'completed', fingerprint: 'native', defaultModelId: discovered.currentModelId, models: discovered.models }),
   });
-  return { settings, coordinator, catalog: createGrokModels(host, coordinator) };
+  return { settings, coordinator, catalog: createGrokModels(runtime, coordinator) };
 }
 
 it('retains discovered effort choices through selection, persistence, and reload', async () => {

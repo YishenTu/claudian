@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { testTime } from '@test/helpers/testClock';
 
 import { isBranchableExecutionSession, isSteerableExecutionSession, type ProviderExecutionRequest, type ProviderExecutionSession } from '@/core/execution';
@@ -9,7 +10,7 @@ import { PiExecutionBackend } from '@/providers/pi/execution/PiExecutionBackend'
 import { PiRPCSessionKernel } from '@/providers/pi/execution/PiExecutionKernel';
 import { PiConversationHistoryService } from '@/providers/pi/history/PiConversationHistoryService';
 
-const configuration = { model: 'pi:anthropic/claude-sonnet-4', reasoning: null, systemInstructions: { kind: 'provider-default' as const } };
+const configuration = { model: 'pi:anthropic/claude-sonnet-4', reasoning: null, systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' } };
 
 it.each([false, true])('edits, switches and resumes native branches without losing history (recreate during recovery: %s)', async recreateDuringRecovery => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-tree-integration-'));
@@ -24,7 +25,7 @@ it.each([false, true])('edits, switches and resumes native branches without losi
         discoveredModels: [{ encodedId: configuration.model, id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text', 'image'], reasoning: true, thinkingLevels: ['off', 'high'] }] } } },
   };
   let kernel!: PiRPCSessionKernel;
-  const backend = new PiExecutionBackend(host as any, {
+  const backend = new PiExecutionBackend(runtimeHostFor(host, 'pi'), {
     createKernel: (spec, callbacks) => {
       kernel = new PiRPCSessionKernel({ ...spec, command: process.execPath,
         args: [path.resolve('tests/fixtures/providers/pi/PiSessionProcess.mjs'), ...spec.args],
@@ -34,7 +35,7 @@ it.each([false, true])('edits, switches and resumes native branches without losi
     },
   });
   const createSession = (providerState: Record<string, unknown>) => backend.createSession({
-    lifecycle: 'persistent', nativePersistence: 'enabled', vaultWorkingDirectory: root,
+    lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: root,
     interactionPort: { askUserQuestion: jest.fn(), requestApproval: jest.fn(), dismissInteraction: jest.fn() },
     resumeSeed: { providerSessionId: 'pi-source', providerState },
   });

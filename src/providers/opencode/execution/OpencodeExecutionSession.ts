@@ -16,7 +16,7 @@ import {
   SessionSnapshotState,
   type SteerableExecutionSession,
 } from '@/core/execution';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import type { ChatMessage } from '@/core/types';
 import {
   ACPRequestedTurn,
@@ -32,7 +32,7 @@ import { projectOpencodeMetadata } from '../metadata/OpencodeMetadataProjection'
 import { decodeOpencodeModelId } from '../models';
 import { createOpencodeToolStreamAdapter } from '../normalization/opencodeToolNormalization';
 import { buildOpencodePrompt } from '../runtime/buildOpencodePrompt';
-import { AUX_AGENT_IDS, OPENCODE_BUILD_AGENT_ID, resolveOpencodeSystemPrompt } from '../runtime/OpencodeExecutionAgents';
+import { AUX_AGENT_IDS, OPENCODE_BUILD_AGENT_ID } from '../runtime/OpencodeExecutionAgents';
 import { assertOpencodeModelAvailable } from '../runtime/OpencodeModelAvailability';
 import { getOpencodeState } from '../types';
 import {
@@ -94,7 +94,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
   private backgroundTurn: { id: string; sequence: number } | null = null;
 
   constructor(
-    private readonly plugin: ProviderHost,
+    private readonly host: ProviderRuntimeHost,
     private readonly config: ProviderSessionConfig,
     private readonly options: OpencodeExecutionSessionOptions,
   ) {
@@ -182,7 +182,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
   /** Only kernels whose native protocol can steer accept; V1 ACP declines. */
   async steer(request: ProviderExecutionRequest): Promise<boolean> {
     try {
-      assertOpencodeModelAvailable(this.plugin.settings, request.configuration.model);
+      assertOpencodeModelAvailable(this.host, request.configuration.model);
     } catch (error) {
       if (error instanceof ProviderModelUnavailableError) return false;
       throw error;
@@ -251,7 +251,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
         await this.options.serverService.waitUntilAvailable(request.signal);
         if (!this.#isRunCurrent(active, generation)) return;
       }
-      assertOpencodeModelAvailable(this.plugin.settings, request.configuration.model);
+      assertOpencodeModelAvailable(this.host, request.configuration.model);
       const pendingDisposal = this.kernelDisposalPromise;
       if (pendingDisposal) {
         await pendingDisposal;
@@ -259,7 +259,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       }
       const profile = resolveProfile(request);
       // Instructions are fixed per kernel: a changed prompt reopens the native session on a new one at this turn.
-      const systemPrompt = resolveOpencodeSystemPrompt(this.plugin, this.config.vaultWorkingDirectory, profile, request.configuration.systemInstructions);
+      const systemPrompt = request.configuration.systemInstructions.instructions;
       const kernelConfigurationKey = JSON.stringify([profile, systemPrompt]);
       let kernel = this.kernel;
       let native = this.nativeInfo;
@@ -364,7 +364,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
               );
             }
           },
-          plugin: this.plugin,
+          host: this.host,
           sessionInstanceId: this.sessionInstanceId,
         });
         this.kernel = kernel;
@@ -380,18 +380,18 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
         if (!this.#isRunCurrent(active, generation)) return;
         phase = 'run';
         this.nativeInfo = native;
-        await projectOpencodeMetadata(this.plugin, native, this.kernelMetadataController.signal);
+        await projectOpencodeMetadata(this.host, native, this.kernelMetadataController.signal);
       } else {
         // Configuring a reused kernel is native work: cancellation must stop it.
         active.ownsNativeWork = true;
         this.state.setStatus('executing');
         phase = 'run';
       }
-      assertOpencodeModelAvailable(this.plugin.settings, request.configuration.model);
+      assertOpencodeModelAvailable(this.host, request.configuration.model);
       await this.#applyConfiguration(kernel, native, request);
       if (!this.#isRunCurrent(active, generation)) return;
 
-      assertOpencodeModelAvailable(this.plugin.settings, request.configuration.model);
+      assertOpencodeModelAvailable(this.host, request.configuration.model);
       const text = getInputText(request);
       const compact = parseCompactCommand(text);
       if (compact && !this.nativeConversationContextEstablished && request.conversationHistory?.length) {
@@ -517,7 +517,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
           configOptions: metadata.configOptions,
         };
       }
-      await projectOpencodeMetadata(this.plugin, {
+      await projectOpencodeMetadata(this.host, {
         configOptions: metadata.configOptions,
       }, this.kernelMetadataController.signal);
     }
@@ -546,7 +546,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
           configOptions: response.configOptions,
         };
       }
-      await projectOpencodeMetadata(this.plugin, {
+      await projectOpencodeMetadata(this.host, {
         configOptions,
         selectedRawModelId: selectedModel,
       }, this.kernelMetadataController.signal);
@@ -577,10 +577,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
   }
 
   #resolveSelectedRawModelId(explicit?: string): string | null {
-    const selection = explicit
-      ?? (typeof this.plugin.settings.model === 'string'
-        ? this.plugin.settings.model
-        : '');
+    const selection = explicit ?? this.host.selection.model ?? '';
     return decodeOpencodeModelId(selection) ?? (selection || null);
   }
 
@@ -806,13 +803,8 @@ function buildPrompt(
     ))
     .map(({ image }) => image);
   return buildOpencodePrompt({
-    selections: request.context?.selections,
-    browserSelection: request.context?.browserSelection,
-    canvasSelection: request.context?.canvasSelection,
-    editorSelection: request.context?.editorSelection,
+    context: request.context,
     images,
-    linkedContent: request.context?.linkedContent,
-    sessionReferences: request.context?.sessionReferences,
     text: getInputText(request),
   }, bootstrapHistory
     ? [...(request.conversationHistory ?? [])] as ChatMessage[]

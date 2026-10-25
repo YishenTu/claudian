@@ -32,16 +32,16 @@ import {
   type WithoutEventScope,
 } from '../../../core/execution';
 import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { SlashCommand, TurnStats } from '../../../core/types';
 import { mapSDKCommands } from '../commands/probeRuntimeCommands';
+import { decodeClaudeConfig } from '../config';
 import { loadClaudeTurnStats } from '../history/ClaudeTurnStats';
 import { type ClaudePermissionMode, fromClaudeSDKPermissionMode } from '../permissionModes';
 import { assertClaudeModelAvailable } from '../runtime/ClaudeModelAvailability';
 import { executeClaudeRewind } from '../runtime/ClaudeRewindService';
 import { buildClaudeSDKUserMessage } from '../runtime/ClaudeUserMessageFactory';
 import { type ClaudeRuntimeCatalog, toClaudeRuntimeCatalog } from '../runtime/probeClaudeModels';
-import { getClaudeProviderSettings } from '../settings';
 import { classifyClaudeError, getClaudeInvalidationReason } from './classifyClaudeError';
 import { ClaudeExecutionEventNormalizer } from './ClaudeExecutionEventNormalizer';
 import { ClaudeExecutionInteractionRouter } from './ClaudeExecutionInteractionRouter';
@@ -142,7 +142,7 @@ ClaudeExecutionStrategySink {
   } | null = null;
 
   constructor(
-    private readonly host: ProviderHost,
+    private readonly host: ProviderRuntimeHost,
     private readonly config: ProviderSessionConfig,
     private readonly options: ClaudeExecutionSessionOptions = {},
   ) {
@@ -265,7 +265,7 @@ ClaudeExecutionStrategySink {
 
   async steer(request: ProviderExecutionRequest): Promise<boolean> {
     try {
-      assertClaudeModelAvailable(this.host.settings, request.configuration.model);
+      assertClaudeModelAvailable(this.host, request.configuration.model);
     } catch (error) {
       if (error instanceof ProviderModelUnavailableError) return false;
       throw error;
@@ -399,7 +399,7 @@ ClaudeExecutionStrategySink {
         return await query.rewindFiles(id, { dryRun });
       },
       closePersistentQuery: () => this.strategy.cancel(null, true),
-      vaultPath: this.config.vaultWorkingDirectory,
+      vaultPath: this.config.workingDirectory,
     });
     return result.canRewind
       ? {
@@ -410,7 +410,7 @@ ClaudeExecutionStrategySink {
   }
 
   assertModelAvailable(model: string): void {
-    assertClaudeModelAvailable(this.host.settings, model);
+    assertClaudeModelAvailable(this.host, model);
   }
 
   getProviderSessionId(): string | null {
@@ -445,7 +445,7 @@ ClaudeExecutionStrategySink {
       if (originatingTurnId && !this.activeRun
         && message.session_id === this.resume.providerSessionId
         && this.lastEncodedRequest?.options.promptSuggestions
-        && getClaudeProviderSettings(this.host.settings).promptSuggestions
+        && decodeClaudeConfig(this.host.config).promptSuggestions
         && message.suggestion.trim()) {
         this.#emitSession({ type: 'prompt_suggestion', originatingTurnId, suggestion: message.suggestion });
       }
@@ -647,7 +647,7 @@ ClaudeExecutionStrategySink {
       const sessionId = this.resume.providerSessionId;
       if (sessionId && active.nativeAssistantId) {
         turnStats = await loadClaudeTurnStats(
-          this.config.vaultWorkingDirectory, sessionId, active.nativeAssistantId,
+          this.config.workingDirectory, sessionId, active.nativeAssistantId,
           { environment: this.lastEncodedRequest?.options.env ?? process.env },
         ).catch(() => undefined);
       }
@@ -860,7 +860,7 @@ ClaudeExecutionStrategySink {
       if (this.activeRun !== active || active.run.isTerminal) return;
       this.lastEncodedRequest = encoded;
       this.lastAllowedTools = encoded.allowedTools;
-      assertClaudeModelAvailable(this.host.settings, request.configuration.model);
+      assertClaudeModelAvailable(this.host, request.configuration.model);
       await this.strategy.startTurn(encoded, active.queryToken);
     } catch (error) {
       if (this.activeRun === active && !active.run.isTerminal) {
@@ -1180,11 +1180,12 @@ function isRequestedTurnEvidence(message: SDKMessage): boolean {
 }
 
 
+/** Rewind preparation never sends a turn; the next turn restarts the query with its own instructions if they differ. */
 function createRewindPreparationRequest(): ProviderExecutionRequest {
   return {
     input: [],
     configuration: {
-      systemInstructions: { kind: 'provider-default' },
+      systemInstructions: { kind: 'explicit', instructions: '' },
     },
     toolPolicy: { kind: 'provider-default' },
     signal: new AbortController().signal,

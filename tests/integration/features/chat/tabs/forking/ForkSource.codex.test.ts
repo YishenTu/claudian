@@ -9,9 +9,12 @@ import spawn from 'cross-spawn';
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
 import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
 
+/** The backend resolves its runtime per session; tests pin one instance. */
+const fixedRuntime = (runtime: CodexAppServerRuntime) => (): CodexAppServerRuntime => runtime;
+
 const runtimes: CodexAppServerRuntime[] = [];
 function createRuntime(host: ForkTestEnvironment['host']): CodexAppServerRuntime {
-  const runtime = new CodexAppServerRuntime(host, () => undefined);
+  const runtime = new CodexAppServerRuntime(host.getRuntimeHost('codex'), () => undefined);
   runtimes.push(runtime);
   return runtime;
 }
@@ -71,7 +74,10 @@ function createNativeCodex(env: ForkTestEnvironment) {
     }
     throw new Error(`Unexpected Codex method: ${method}`);
   }));
-  return { backend: new CodexExecutionBackend(env.host, createRuntime(env.host)), threads, prompts, operations, sourceFile };
+  return { backend: new CodexExecutionBackend(
+    env.host.getRuntimeHost('codex'),
+    fixedRuntime(createRuntime(env.host)),
+  ), threads, prompts, operations, sourceFile };
 }
 
 describe('Codex fork integration', () => {

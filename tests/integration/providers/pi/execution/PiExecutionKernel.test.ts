@@ -2,6 +2,8 @@ import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+
 import type { ProviderExecutionSession, ProviderSessionToolPort, ProviderToolPolicy } from '@/core/execution';
 import { PiExecutionBackend } from '@/providers/pi/execution/PiExecutionBackend';
 import { PiRPCSessionKernel } from '@/providers/pi/execution/PiExecutionKernel';
@@ -88,7 +90,7 @@ describe('Pi session tools through the generated extension', () => {
   let kernel: PiRPCSessionKernel;
   let session: ProviderExecutionSession;
   let port: ProviderSessionToolPort;
-  const configuration = { model: 'pi:anthropic/claude-sonnet-4', reasoning: null, systemInstructions: { kind: 'provider-default' as const } };
+  const configuration = { model: 'pi:anthropic/claude-sonnet-4', reasoning: null, systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' } };
 
   beforeEach(async () => {
     root = await fs.mkdtemp(path.join(tmpdir(), 'claudian-pi-session-tools-'));
@@ -110,7 +112,7 @@ describe('Pi session tools through the generated extension', () => {
         providerConfigs: { pi: { enabled: true, visibleModels: [configuration.model],
           discoveredModels: [{ encodedId: configuration.model, id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text'], reasoning: true, thinkingLevels: ['off'] }] } } },
     };
-    const backend = new PiExecutionBackend(host as any, {
+    const backend = new PiExecutionBackend(runtimeHostFor(host, 'pi'), {
       createKernel: (spec, callbacks) => {
         kernel = new PiRPCSessionKernel({ ...spec, command: process.execPath,
           args: [path.resolve('tests/fixtures/providers/pi/PiSessionProcess.mjs'), ...spec.args],
@@ -119,7 +121,7 @@ describe('Pi session tools through the generated extension', () => {
         return kernel;
       },
     });
-    session = backend.createSession({ interactionPort: { askUserQuestion: jest.fn(), requestApproval: jest.fn(), dismissInteraction: jest.fn() }, lifecycle: persistent ? 'persistent' : 'ephemeral', nativePersistence: persistent ? 'enabled' : 'disabled-if-supported', vaultWorkingDirectory: root,
+    session = backend.createSession({ interactionPort: { askUserQuestion: jest.fn(), requestApproval: jest.fn(), dismissInteraction: jest.fn() }, lifecycle: persistent ? 'persistent' : 'ephemeral', nativePersistence: persistent ? 'enabled' : 'disabled-if-supported', workingDirectory: root,
       ...(bound ? { sessionTools: port } : {}),
       resumeSeed: { providerSessionId: 'pi-source', providerState: { sessionId: 'pi-source', sessionFile } },
     });

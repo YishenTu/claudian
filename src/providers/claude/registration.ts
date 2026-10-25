@@ -14,9 +14,9 @@ import {
   hasClaudeModelIdentity,
   resolveClaudeVisibleModels,
 } from './modelOptions';
-import { projectClaudeModelSettings } from './modelPersistence';
+import { projectClaudeModelConfig } from './modelPersistence';
 import { ClaudeTaskResultInterpreter } from './runtime/ClaudeTaskResultInterpreter';
-import { getClaudeProviderSettings, updateClaudeProviderSettings } from './settings';
+import { getClaudeModelSource, getClaudeProviderSettings, updateClaudeProviderSettings } from './settings';
 import { claudeSubagentAdapter } from './subagentAdapter';
 import { claudeChatUIConfig } from './ui/ClaudeChatUIConfig';
 
@@ -35,10 +35,11 @@ export const claudeProviderRegistration: ProviderModule = {
   chatUIConfig: claudeChatUIConfig,
   settingsReconciler: claudeSettingsReconciler,
   settingsStorage: {
-    projectPersistedConfig: projectClaudeModelSettings,
+    projectPersistedConfig: settings => projectClaudeModelConfig(getClaudeModelSource(settings)),
     needsReasoningMetadata(settings) {
-      const catalog = getClaudeModelCatalog(settings);
-      return resolveClaudeVisibleModels(settings, catalog).some(({ id, option }) => !option
+      const source = getClaudeModelSource(settings);
+      const catalog = getClaudeModelCatalog(source);
+      return resolveClaudeVisibleModels(source, catalog).some(({ id, option }) => !option
         || !hasClaudeModelIdentity(catalog, id)
         || (!option.supportedEffortLevels?.length && !option.reasoningMetadataResolved));
     },
@@ -48,7 +49,7 @@ export const claudeProviderRegistration: ProviderModule = {
       const storedSettings = getClaudeProviderSettings(stored);
       updateClaudeProviderSettings(target, {
         ...storedSettings,
-        visibleModels: getClaudeVisibleModelIds(stored),
+        visibleModels: getClaudeVisibleModelIds(getClaudeModelSource(stored)),
       });
       const targetConfig = getProviderConfig(target, 'claude');
       for (const key of RETIRED_CLAUDE_CONFIG_KEYS) delete targetConfig[key];
@@ -57,10 +58,10 @@ export const claudeProviderRegistration: ProviderModule = {
         || hasStoredConfigNormalization(storedConfig, targetConfig);
     },
   },
-  createExecutionBackend: plugin => new ClaudeExecutionBackend(plugin, {
+  createExecutionBackend: plugin => new ClaudeExecutionBackend(plugin.getRuntimeHost('claude'), {
     publishSessionCatalog: catalog => getClaudeWorkspaceServices()?.publishSessionCatalog(catalog),
   }),
-  createSubagentHistoryService: plugin => new ClaudeSubagentHistoryService(plugin),
+  createSubagentHistoryService: plugin => new ClaudeSubagentHistoryService(plugin.getRuntimeHost('claude')),
 
   historyService: new ClaudeConversationHistoryService(),
   taskResultInterpreter: new ClaudeTaskResultInterpreter(),

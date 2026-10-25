@@ -1,6 +1,6 @@
 import { Notice } from 'obsidian';
 
-import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
+import { createProviderHistoryPathContext } from '@/core/providers/historyPathContext';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ForkContext } from '@/features/chat/conversation/forkSourceTypes';
@@ -223,15 +223,7 @@ async function createForkConversation(
         context.resumeAt,
         context.sourceProviderState,
         vaultPath,
-        {
-          environment: {
-            ...process.env,
-            ...getRuntimeEnvironmentVariables(plugin.settings, conversation.providerId),
-          },
-          hostPlatform: process.platform,
-          settings: plugin.settings,
-          vaultPath,
-        },
+        createProviderHistoryPathContext(plugin.settings, conversation.providerId, vaultPath),
       );
     if (!isForkRequestCurrent(host, sourceLease)) {
       await deleteForkConversation(host, conversation.id);

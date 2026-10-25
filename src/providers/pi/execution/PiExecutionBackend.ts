@@ -3,7 +3,7 @@ import type {
   ProviderExecutionSession,
   ProviderSessionConfig,
 } from '../../../core/execution';
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import {
   createPiForkSessionFile,
   rollbackCreatedPiForkSessionFile,
@@ -26,7 +26,7 @@ export class PiExecutionBackend implements ProviderExecutionBackend {
   readonly providerId = 'pi' as const;
 
   constructor(
-    private readonly host: ProviderHost,
+    private readonly host: ProviderRuntimeHost,
     private readonly options: PiExecutionBackendOptions = {},
   ) {}
 

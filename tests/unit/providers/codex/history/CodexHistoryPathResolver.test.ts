@@ -1,4 +1,5 @@
 import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
+import { decodeCodexConfig } from '@/providers/codex/config';
 import {
   resolveCodexSessionFileHint,
   resolveCodexTranscriptRootHint,
@@ -8,14 +9,10 @@ function createWslContext(distroOverride = '') {
   return {
     environment: { HOME: 'C:\\Users\\me' },
     hostPlatform: 'win32' as const,
-    settings: {
-      providerConfigs: {
-        codex: {
-          installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
-          wslDistroOverridesByHost: { [getHostnameKey()]: distroOverride },
-        },
-      },
-    },
+    installation: decodeCodexConfig({
+      installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
+      wslDistroOverridesByHost: { [getHostnameKey()]: distroOverride },
+    }),
     vaultPath: 'C:\\vault',
   };
 }

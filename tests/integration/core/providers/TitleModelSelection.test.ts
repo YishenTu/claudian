@@ -2,6 +2,7 @@ import '@/providers';
 
 import { FakeAuxiliaryBackend, waitFor } from '@test/helpers/core/auxiliary/AuxiliaryExecutionTestHarness';
 import { modelCatalogCases } from '@test/helpers/providerModelCatalogs';
+import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
@@ -15,9 +16,12 @@ import { assertOpencodeModelAvailable } from '@/providers/opencode/runtime/Openc
 import { assertPiModelAvailable } from '@/providers/pi/runtime/PiModelAvailability';
 
 const executionGuards = {
-  deepseek: assertDeepSeekModelAvailable,
-  claude: assertClaudeModelAvailable, codex: assertCodexModelAvailable, grok: assertGrokModelAvailable,
-  opencode: assertOpencodeModelAvailable, pi: assertPiModelAvailable,
+  deepseek: (settings: Record<string, unknown>, model: string | undefined) => assertDeepSeekModelAvailable(createTestRuntimeHost(settings, 'deepseek'), model),
+  claude: (settings: Record<string, unknown>, model: string | undefined) => assertClaudeModelAvailable(createTestRuntimeHost(settings, 'claude'), model),
+  codex: (settings: Record<string, unknown>, model: string | undefined) => assertCodexModelAvailable(createTestRuntimeHost(settings, 'codex'), model),
+  grok: (settings: Record<string, unknown>, model: string | undefined) => assertGrokModelAvailable(createTestRuntimeHost(settings, 'grok'), model),
+  opencode: (settings: Record<string, unknown>, model: string | undefined) => assertOpencodeModelAvailable(createTestRuntimeHost(settings, 'opencode'), model),
+  pi: (settings: Record<string, unknown>, model: string | undefined) => assertPiModelAvailable(createTestRuntimeHost(settings, 'pi'), model),
 };
 
 const titleCases = modelCatalogCases.map(provider => ({
@@ -39,7 +43,7 @@ async function generateTitleModel(settings: Record<string, unknown>, providerId:
   jest.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
   const lifecycle = new ProviderExecutionLifecycleRegistry();
   const host = {
-    settings, app: { vault: { adapter: { basePath: '/vault' } } }, executionLifecycleRegistry: lifecycle,
+    settings, workingDirectory: '/vault', executionLifecycleRegistry: lifecycle,
   } as unknown as ProviderHost;
   const service = ProviderRegistry.createTitleGenerationService(host, providerId);
   const callback = jest.fn();
@@ -79,7 +83,7 @@ it.each(titleCases)('$id rejects a title model cleared after routing instead of 
   const lifecycle = new ProviderExecutionLifecycleRegistry();
   const host = {
     settings,
-    app: { vault: { adapter: { basePath: '/vault' } } },
+    workingDirectory: '/vault',
     executionLifecycleRegistry: lifecycle,
   } as unknown as ProviderHost;
   const service = ProviderRegistry.createTitleGenerationService(host, id);

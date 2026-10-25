@@ -26,9 +26,10 @@ jest.mock('@/providers/codex/skills/CodexSkillListingService', () => ({
   })),
 }));
 
+import { withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
 import { testClock } from '@test/helpers/testClock';
 
-import { createCodexWorkspaceServices } from '@/providers/codex/app/CodexWorkspaceServices';
+import { createCodexModelCatalogCommit, createCodexWorkspaceServices } from '@/providers/codex/app/CodexWorkspaceServices';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 import type { CodexSkillListingService } from '@/providers/codex/skills/CodexSkillListingService';
@@ -95,7 +96,7 @@ function createPlugin(
       await plugin.saveSettings();
     }
   });
-  return plugin;
+  return withRuntimeHosts(plugin);
 }
 
 describe('CodexWorkspaceServices', () => {
@@ -305,8 +306,9 @@ describe('CodexWorkspaceServices', () => {
       }),
     };
     const modelCatalogCoordinator = new CodexModelCatalogCoordinator(
-      plugin,
+      plugin.getRuntimeHost('codex'),
       modelDiscovery,
+      createCodexModelCatalogCommit(plugin),
     );
     const { CodexSkillListingService: ActualCodexSkillListingService } = jest.requireActual(
       '@/providers/codex/skills/CodexSkillListingService',

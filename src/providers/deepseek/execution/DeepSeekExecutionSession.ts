@@ -12,9 +12,8 @@ import {
   type WithoutEventScope,
 } from '@/core/execution';
 import { isSessionToolPolicyAllowed } from '@/core/execution/ProviderSessionToolPort';
-import { buildSystemPrompt } from '@/core/prompt/mainAgent';
-import { appendLinkedContent, appendLinkedContentBody, appendSelectionContexts, appendSessionReferences, captureSelectionSnapshots } from '@/core/prompt/promptContext';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { appendExecutionContext } from '@/core/prompt/promptContext';
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { getActionDescription } from '@/core/security/approvalRules';
 import { invokeSessionTool } from '@/core/session-tools/invokeSessionTool';
 import type { SessionToolRoutedCallRequest } from '@/core/session-tools/SessionToolEndpoint';
@@ -23,6 +22,7 @@ import type { SlashCommand } from '@/core/types';
 import { t } from '@/i18n/i18n';
 
 import { readDeepSeekCommands } from '../commands/DeepSeekCommandCatalog';
+import { decodeDeepSeekConfig } from '../config';
 import { materializeDeepSeekToolImages } from '../history/DeepSeekImages';
 import { readDeepSeekJournal, readDeepSeekProjection } from '../history/DeepSeekJournal';
 import { decodeDeepSeekModelId } from '../models';
@@ -33,7 +33,6 @@ import { isSameDeepSeekHome } from '../runtime/DeepSeekHome';
 import type { DeepSeekHost, DeepSeekHostLease } from '../runtime/DeepSeekHost';
 import { assertDeepSeekModelAvailable } from '../runtime/DeepSeekModels';
 import type { DeepSeekSessionToolAdmission } from '../runtime/DeepSeekRoster';
-import { getDeepSeekProviderSettings } from '../settings';
 import { decodeDeepSeekState, type DeepSeekPreset, type DeepSeekProviderState, encodeDeepSeekCheckpoint, isDeepSeekAuxiliaryPreset, isDeepSeekPreset } from '../types';
 import { applyDeepSeekPermission, type DeepSeekPermission, readDeepSeekPermission } from './DeepSeekPermissions';
 import { DeepSeekSessionObserver } from './DeepSeekSessionObserver';
@@ -134,7 +133,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
   private readonly subagents = new DeepSeekSubagents(subagent => this.snapshots.emit({ type: 'subagent_updated', subagent }));
 
   constructor(
-    private readonly host: ProviderHost,
+    private readonly host: ProviderRuntimeHost,
     private readonly config: ProviderSessionConfig,
     private readonly deepseek: DeepSeekHost,
   ) {
@@ -292,7 +291,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     this.assertRequest(requested);
     const text = input.input.filter(block => block.type === 'text').map(block => block.text).join('\n');
     if (/^\/compact(?:\s|$)/.test(text) && this.commands?.some(command => command.kind === 'command' && command.name === 'compact')) {
-      if (input.input.some(block => block.type === 'image') || input.context?.linkedContent || input.context?.sessionReferences?.length || captureSelectionSnapshots(input.context).length) throw new AdmissionError('DeepSeek /compact does not accept attachments or linked context.');
+      if (input.input.some(block => block.type === 'image') || input.context?.linkedContent || input.context?.sessionReferences?.length || input.context?.selections?.length) throw new AdmissionError('DeepSeek /compact does not accept attachments or linked context.');
       if (!observer.permissionBoundaryAvailable()) throw new AdmissionError('Use Stop before compacting an active DeepSeek conversation.');
       requested.command = true;
       requested.delivery = 'claimed';
@@ -309,7 +308,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       return;
     }
     await lease.writePrompt(this.nativeId!, prompt);
-    if (!isDeepSeekAuxiliaryPreset(this.binding!.preset)) await lease.writeCodeMode(getDeepSeekProviderSettings(this.host.settings).codeMode);
+    if (!isDeepSeekAuxiliaryPreset(this.binding!.preset)) await lease.writeCodeMode(decodeDeepSeekConfig(this.host.config).codeMode);
     this.assertRequest(requested);
     requested.delivery = 'sending';
     const response = await lease.client.call('session/prompt', { request: {
@@ -328,12 +327,9 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
 
   /** Binds this conversation to its native session in the shared Host; returns the session's literal prompt. */
   private async bind(requested: Request): Promise<string> {
-    const settings = this.host.settings;
     const input = requested.input;
     const policy: DeepSeekPreset | undefined = input.toolPolicy.kind === 'passive' ? 'claudian-passive' : input.toolPolicy.kind === 'read-only' ? 'claudian-read-only' : undefined;
-    const instructions = input.configuration.systemInstructions;
-    const prompt = instructions.kind === 'explicit' ? instructions.instructions
-      : buildSystemPrompt({ customPrompt: settings.systemPrompt, mediaFolder: settings.mediaFolder, userName: settings.userName, vaultPath: this.config.vaultWorkingDirectory, sessionInstructions: instructions.sessionInstructions });
+    const prompt = input.configuration.systemInstructions.instructions;
     // A retained binding only serves Stop and closing; sending rebinds with fresh native baselines. Its conversation
     // state already ended with the failure, so releasing it leaves this request alone.
     if (this.retained) this.release();
@@ -442,7 +438,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     const listed = await lease.client.call('session/list', { _request: {} }, { signal });
     if (!isRecord(listed) || !Array.isArray(listed.items)) throw new Error('Malformed DeepSeek session roster.');
     const cwd = listed.items.filter(isRecord).find(item => item.sessionId === sessionId)?.cwd;
-    if (cwd !== this.config.vaultWorkingDirectory) {
+    if (cwd !== this.config.workingDirectory) {
       throw new AdmissionError(`This DeepSeek conversation belongs to ${typeof cwd === 'string' ? `another directory (${cwd})` : 'an unknown directory'}. Open it from that vault, or start a new conversation.`);
     }
   }
@@ -450,7 +446,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
   /** Creates or resumes the native session; a reloaded Claudian may still be releasing its writer. */
   private async createNative(lease: DeepSeekHostLease, signal: AbortSignal, ephemeralId?: string): Promise<string> {
     const resumed = this.nativeId;
-    const request = { cwd: this.config.vaultWorkingDirectory, agentPreset: this.binding!.preset, ...(ephemeralId ? { sessionId: ephemeralId } : {}) };
+    const request = { cwd: this.config.workingDirectory, agentPreset: this.binding!.preset, ...(ephemeralId ? { sessionId: ephemeralId } : {}) };
     const deadline = Date.now() + WRITER_HANDOFF_MS;
     for (let delay = 100; ; delay = Math.min(delay * 2, 1_000)) {
       try {
@@ -465,7 +461,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       } catch (error) {
         // Only chat presets carry the user's additional rows; anything else native cannot mount is Claudian's own fault.
         if (error instanceof DeepSeekRemoteError && error.code === 'agent-preset/invalid' && !isDeepSeekAuxiliaryPreset(this.binding!.preset)
-          && getDeepSeekProviderSettings(this.host.settings).presetPlugins.trim()) {
+          && decodeDeepSeekConfig(this.host.config).presetPlugins.trim()) {
           throw new AdmissionError(`DeepSeek could not load its chat preset: ${error.message}. Check Additional preset plugins in the DeepSeek settings.`);
         }
         if (!(error instanceof DeepSeekRemoteError) || error.code !== 'session/writer-held') throw error;
@@ -482,7 +478,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       if (input.configuration.reasoning) throw new AdmissionError('Select a DeepSeek model before choosing reasoning effort.');
       return;
     }
-    try { assertDeepSeekModelAvailable(this.host.settings, model); } catch (error) { throw new AdmissionError(error instanceof Error ? error.message : 'DeepSeek model is unavailable.'); }
+    try { assertDeepSeekModelAvailable(this.host, model); } catch (error) { throw new AdmissionError(error instanceof Error ? error.message : 'DeepSeek model is unavailable.'); }
     const selection = decodeDeepSeekModelId(model);
     if (!selection) throw new AdmissionError('The selected model does not belong to DeepSeek Harness.');
     let effort = input.configuration.reasoning ?? undefined;
@@ -494,7 +490,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       const native = Array.isArray(group?.models) ? group.models.filter(isRecord).find(item => item.id === selection.model) : undefined;
       const reasoning = isRecord(native?.reasoning) ? native.reasoning : undefined;
       const efforts = Array.isArray(reasoning?.efforts) ? reasoning.efforts.filter(isRecord).map(item => item.id) : [];
-      const preferred = getDeepSeekProviderSettings(this.host.settings).preferredReasoningByModel[model];
+      const preferred = decodeDeepSeekConfig(this.host.config).preferredReasoningByModel[model];
       effort = preferred && efforts.includes(preferred) ? preferred : efforts.includes('high') ? 'high' : undefined;
     }
     const response = await this.lease!.client.call('session/selectModel', { request: { sessionId: this.nativeId, ...selection, ...(effort ? { reasoningEffort: effort } : {}) } }).catch(error => {
@@ -880,7 +876,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
         ...question, ...(!Array.isArray(question.options) || !question.options.length ? { isOther: true } : {}),
       })) : [],
     };
-    const reason = localizedReason(nativeRequest, this.host.settings.locale);
+    const reason = localizedReason(nativeRequest, this.host.locale);
     const presentation = call
       ? { toolName: call.name, input: { ...call.input }, description: getActionDescription(call.name, call.input), ...(reason ? { decisionReason: reason } : {}) }
       : { toolName: typeof nativeRequest.toolName === 'string' ? deepseekToolName(nativeRequest.toolName) : 'DeepSeek tool', input: {}, description: reason ?? t('chat.approval.deepseekRequest') };
@@ -1134,10 +1130,7 @@ function permissionFor(input: ProviderExecutionRequest): DeepSeekPermission {
 }
 
 function encodeInput(input: ProviderExecutionRequest): unknown[] {
-  let text = input.input.filter(block => block.type === 'text').map(block => block.text).join('\n');
-  const linked = input.context?.linkedContent;
-  if (linked) text = linked.content === undefined ? appendLinkedContent(text, linked.path) : appendLinkedContentBody(text, linked.path, linked.content);
-  text = appendSessionReferences(appendSelectionContexts(text, input.context), input.context?.sessionReferences);
+  const text = appendExecutionContext(input.input.filter(block => block.type === 'text').map(block => block.text).join('\n'), input.context);
   return [{ type: 'text', text }, ...input.input.flatMap(block => block.type === 'image' ? [{ type: 'image', mediaType: block.image.mediaType, data: block.image.data, name: block.image.name }] : [])];
 }
 

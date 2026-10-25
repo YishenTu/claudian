@@ -2,12 +2,15 @@ import { existsSync, readFileSync } from 'node:fs';
 import { PassThrough, Writable } from 'node:stream';
 
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
+import { runtimeHostFor, withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
 import { testClock } from '@test/helpers/testClock';
 
 import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderSessionConfig, ProviderSessionToolPort, ProviderToolPolicy } from '@/core/execution';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution/ProviderExecutionLifecycleRegistry';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { createCodexWorkspaceServices } from '@/providers/codex/app/CodexWorkspaceServices';
+import { decodeCodexConfig } from '@/providers/codex/config';
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
 import { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
 import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
@@ -15,6 +18,17 @@ import { buildCodexLaunchSpec } from '@/providers/codex/runtime/CodexLaunchSpecB
 import { CodexModelDiscoveryService } from '@/providers/codex/runtime/CodexModelDiscoveryService';
 import { updateCodexProviderSettings } from '@/providers/codex/settings';
 import { CodexSkillListingService } from '@/providers/codex/skills/CodexSkillListingService';
+
+/** The backend resolves its runtime per session; tests pin one instance. */
+const fixedRuntime = (runtime: CodexAppServerRuntime) => (): CodexAppServerRuntime => runtime;
+const scoped = (host: ProviderHost): ProviderRuntimeHost => runtimeHostFor(
+  host as unknown as Parameters<typeof runtimeHostFor>[0],
+  'codex',
+);
+const createBackend = (host: ProviderHost, runtime: CodexAppServerRuntime): CodexExecutionBackend => new CodexExecutionBackend(
+  scoped(host),
+  fixedRuntime(runtime),
+);
 
 const mockProcesses: FakeProcess[] = [];
 let mockLaunchKey = 'first';
@@ -34,8 +48,8 @@ jest.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
 
 jest.mock('@/providers/codex/runtime/codexAppServerSupport', () => ({
   ...jest.requireActual('@/providers/codex/runtime/codexAppServerSupport'),
-  resolveCodexAppServerLaunchSpec: jest.fn(async (host: ProviderHost) => buildCodexLaunchSpec({
-    settings: host.settings, resolvedCliCommand: 'codex', env: { KEY: mockLaunchKey }, hostVaultPath: '/vault',
+  resolveCodexAppServerLaunchSpec: jest.fn(async (host: ProviderRuntimeHost) => buildCodexLaunchSpec({
+    codexSettings: decodeCodexConfig(host.config), resolvedCliCommand: 'codex', env: { KEY: mockLaunchKey }, hostVaultPath: '/vault',
     executionTarget: target,
   })),
 }));
@@ -143,7 +157,7 @@ describe('Codex shared runtime', () => {
   const runtimes: CodexAppServerRuntime[] = [];
   const plugin = { settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } } } } as unknown as ProviderHost;
   function createRuntime(warn = jest.fn()): CodexAppServerRuntime {
-    const runtime = new CodexAppServerRuntime(plugin, warn);
+    const runtime = new CodexAppServerRuntime(scoped(plugin), warn);
     runtimes.push(runtime);
     return runtime;
   }
@@ -164,7 +178,7 @@ describe('Codex shared runtime', () => {
   it('shares skill and model discovery and waits for plugin readiness only for skills', async () => {
     const runtime = createRuntime();
     const skills = new CodexSkillListingService(runtime);
-    const models = new CodexModelDiscoveryService(plugin, runtime);
+    const models = new CodexModelDiscoveryService(scoped(plugin), runtime);
     const listing = skills.listSkills();
     try {
       await models.discoverModels();
@@ -272,7 +286,7 @@ describe('Codex shared runtime', () => {
   });
 
   const config: ProviderSessionConfig = {
-    lifecycle: 'persistent', nativePersistence: 'enabled', vaultWorkingDirectory: '/vault',
+    lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: '/vault',
     interactionPort: { requestApproval: jest.fn(), askUserQuestion: jest.fn(), dismissInteraction: jest.fn() },
   };
   const request: ProviderExecutionRequest = {
@@ -305,7 +319,7 @@ describe('Codex shared runtime', () => {
   it.each([true, false])('registers session specs and their version only with a port (%s)', async ported => {
     mockAutoReconcile = true;
     const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn(), read: jest.fn() };
-    const session = new CodexExecutionBackend(plugin, createRuntime()).createSession({ ...config, ...(ported ? { sessionTools: port } : {}) });
+    const session = createBackend(plugin, createRuntime()).createSession({ ...config, ...(ported ? { sessionTools: port } : {}) });
     const output = collect(session.execute(request).events);
     const process = await waitForRequest('turn/start');
     const specs = process.requests.find(call => call.method === 'thread/start')!.params.dynamicTools ?? [];
@@ -322,7 +336,7 @@ describe('Codex shared runtime', () => {
 
   it.each([undefined, 1])('resumes a version %s thread without attempting to replace its fixed specs', async sessionToolVersion => {
     mockAutoReconcile = true;
-    const session = new CodexExecutionBackend(plugin, createRuntime()).createSession({ ...config,
+    const session = createBackend(plugin, createRuntime()).createSession({ ...config,
       sessionTools: { list: async () => ({ sessions: [] }), send: jest.fn(), read: jest.fn() },
       resumeSeed: { providerSessionId: 'existing', providerState: { threadId: 'existing', sessionToolVersion } },
     });
@@ -342,7 +356,7 @@ describe('Codex shared runtime', () => {
   ])('denies session calls under $kind on fresh and resumed tool-bearing threads', async toolPolicy => {
     mockAutoReconcile = true;
     const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn(), read: jest.fn() };
-    const backend = new CodexExecutionBackend(plugin, createRuntime());
+    const backend = createBackend(plugin, createRuntime());
     for (const resume of [false, true]) {
       const session = backend.createSession({ ...config, sessionTools: port, ...(resume ? {
         resumeSeed: { providerSessionId: 'persisted', providerState: { threadId: 'persisted', sessionToolVersion: 1 } },
@@ -368,7 +382,7 @@ describe('Codex shared runtime', () => {
       process.respond(call.id, { thread: { id: 'fork-child', turns: [] } });
       return true;
     };
-    const session = new CodexExecutionBackend(plugin, createRuntime()).createSession({ ...config,
+    const session = createBackend(plugin, createRuntime()).createSession({ ...config,
       nativePersistence: 'disabled-if-supported',
       resumeSeed: { providerState: { forkSource: { sessionId: 'source', resumeAt: 'checkpoint' }, sessionToolVersion: 1 } },
     });
@@ -393,7 +407,7 @@ describe('Codex shared runtime', () => {
       admitted.push(args.text!);
       return { sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'started' };
     }, read: jest.fn() };
-    const session = new CodexExecutionBackend(plugin, createRuntime()).createSession({ ...config, sessionTools: port });
+    const session = createBackend(plugin, createRuntime()).createSession({ ...config, sessionTools: port });
     const run = session.execute(request);
     const output = collect(run.events);
     const process = await waitForRequest('turn/start');
@@ -420,7 +434,7 @@ describe('Codex shared runtime', () => {
       admitted.push(args.text!);
       return { sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'started' };
     }, read: jest.fn() };
-    const session = new CodexExecutionBackend(plugin, createRuntime()).createSession({ ...config, sessionTools: port });
+    const session = createBackend(plugin, createRuntime()).createSession({ ...config, sessionTools: port });
     const run = session.execute(request);
     const output = collect(run.events);
     const process = await waitForRequest('turn/start');
@@ -444,7 +458,7 @@ describe('Codex shared runtime', () => {
     jest.useFakeTimers();
     mockAutoReconcile = true;
     const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn(), read: jest.fn() };
-    const session = new CodexExecutionBackend(plugin, createRuntime()).createSession({ ...config, sessionTools: port });
+    const session = createBackend(plugin, createRuntime()).createSession({ ...config, sessionTools: port });
     try {
       const output = collect(session.execute(request).events);
       const process = await waitForRequest('turn/start');
@@ -485,7 +499,7 @@ describe('Codex shared runtime', () => {
   it('rejects an old native call after the thread is reattached to a new session', async () => {
     mockAutoReconcile = true;
     const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn(), read: jest.fn() };
-    const backend = new CodexExecutionBackend(plugin, createRuntime());
+    const backend = createBackend(plugin, createRuntime());
     const first = backend.createSession({ ...config, sessionTools: port });
     const output = collect(first.execute(request).events);
     const process = await waitForRequest('turn/start');
@@ -546,9 +560,9 @@ describe('Codex shared runtime', () => {
     const host = {
       settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } } },
     } as unknown as ProviderHost;
-    const runtime = new CodexAppServerRuntime(host, jest.fn());
+    const runtime = new CodexAppServerRuntime(scoped(host), jest.fn());
     runtimes.push(runtime);
-    const session = new CodexExecutionBackend(host, runtime).createSession(config);
+    const session = createBackend(host, runtime).createSession(config);
     try {
       for (const [index, responseVerbosity] of (['high', 'low', 'default'] as const).entries()) {
         updateCodexProviderSettings(host.settings, { responseVerbosity });
@@ -574,7 +588,7 @@ describe('Codex shared runtime', () => {
   it('releases a completed ephemeral thread and lets its retired server drain', async () => {
     mockAutoReconcile = true;
     const runtime = createRuntime();
-    const session = new CodexExecutionBackend(plugin, runtime).createSession({ ...config, nativePersistence: 'disabled-if-supported' });
+    const session = createBackend(plugin, runtime).createSession({ ...config, nativePersistence: 'disabled-if-supported' });
     const output = collect(session.execute(request).events);
     const process = await waitForRequest('turn/start');
     complete(process, 'thread-1');
@@ -589,7 +603,7 @@ describe('Codex shared runtime', () => {
 
   it('stops late native work through global status after closing and unsubscribing its chat', async () => {
     mockAutoReconcile = true;
-    const backend = new CodexExecutionBackend(plugin, createRuntime());
+    const backend = createBackend(plugin, createRuntime());
     const first = backend.createSession(config);
     const second = backend.createSession(config);
     const firstOutput = collect(first.execute(request).events);
@@ -791,7 +805,7 @@ describe('Codex shared runtime', () => {
       return true;
     };
     const runtime = createRuntime();
-    const session = new CodexExecutionBackend(plugin, runtime).createSession(config);
+    const session = createBackend(plugin, runtime).createSession(config);
     const events = collect(session.execute(request).events);
     const process = await waitForRequest('turn/start');
     const turn = { id: 'delayed', status: 'inProgress', items: [] };
@@ -823,7 +837,7 @@ describe('Codex shared runtime', () => {
       starts.push(rpc);
       return true;
     };
-    const session = new CodexExecutionBackend(plugin, createRuntime()).createSession(config);
+    const session = createBackend(plugin, createRuntime()).createSession(config);
     const firstEvents = collect(session.execute(request).events);
     const process = await waitForRequest('turn/start');
     const firstTurn = { id: 'first', status: 'inProgress', items: [] };
@@ -857,10 +871,10 @@ describe('Codex shared runtime', () => {
 
   it('waits for plugin reconciliation before the first chat thread while models remain readable', async () => {
     const runtime = createRuntime();
-    const session = new CodexExecutionBackend(plugin, runtime).createSession(config);
+    const session = createBackend(plugin, runtime).createSession(config);
     const output = collect(session.execute(request).events);
     const process = await waitForRequest('plugin/reconcile');
-    await new CodexModelDiscoveryService(plugin, runtime).discoverModels();
+    await new CodexModelDiscoveryService(scoped(plugin), runtime).discoverModels();
     expect(process.requests.filter(r => r.method === 'thread/start')).toHaveLength(0);
     process.completeReconcile();
     await waitForRequest('turn/start');
@@ -872,7 +886,7 @@ describe('Codex shared runtime', () => {
 
   it('routes a native approval exclusively to its owning chat', async () => {
     mockAutoReconcile = true;
-    const backend = new CodexExecutionBackend(plugin, createRuntime());
+    const backend = createBackend(plugin, createRuntime());
     const approval = () => jest.fn(async interaction => ({ interactionId: interaction.interactionId, decision: 'allow' as const }));
     const firstApproval = approval();
     const secondApproval = approval();
@@ -895,7 +909,7 @@ describe('Codex shared runtime', () => {
 
   it('refreshes instructions on a retained native thread that ignores subscribed resume overrides', async () => {
     mockAutoReconcile = true;
-    const session = new CodexExecutionBackend(plugin, createRuntime()).createSession(config);
+    const session = createBackend(plugin, createRuntime()).createSession(config);
     const output = collect(session.execute(request).events);
     const process = await waitForRequest('turn/start');
     complete(process, 'thread-1');
@@ -924,7 +938,7 @@ describe('Codex shared runtime', () => {
     const process = await waitForRequest('skills/list');
     abort.abort(new Error('Query cancelled'));
     await expect(listing).rejects.toThrow('Request aborted: skills/list');
-    await expect(new CodexModelDiscoveryService(plugin, runtime).discoverModels()).resolves.toMatchObject({ kind: 'completed' });
+    await expect(new CodexModelDiscoveryService(scoped(plugin), runtime).discoverModels()).resolves.toMatchObject({ kind: 'completed' });
     expect(mockProcesses).toHaveLength(1);
     expect(process.isAlive()).toBe(true);
     await skills.dispose();
@@ -938,8 +952,8 @@ describe('Codex shared runtime', () => {
       settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } } },
       executionLifecycleRegistry: registry,
     } as unknown as ProviderHost;
-    const services = await createCodexWorkspaceServices(host);
-    const backend = new CodexExecutionBackend(host, services.runtime);
+    const services = await createCodexWorkspaceServices(withRuntimeHosts(host as unknown as Parameters<typeof withRuntimeHosts>[0]) as unknown as ProviderHost);
+    const backend = createBackend(host, services.runtime);
     const first = registry.acquire(backend, config, 'chat');
     const firstEvents = collect(first.session.execute(request).events);
     try {
@@ -973,7 +987,7 @@ describe('Codex shared runtime', () => {
 
   it('fails active chats on a crash and resumes their persistent threads lazily on one replacement', async () => {
     mockAutoReconcile = true;
-    const backend = new CodexExecutionBackend(plugin, createRuntime());
+    const backend = createBackend(plugin, createRuntime());
     const first = backend.createSession(config);
     const second = backend.createSession(config);
     const runs = [first, second].map(session => collect(session.execute(request).events));
@@ -1011,7 +1025,7 @@ describe('Codex shared runtime', () => {
       }
       return false;
     };
-    const session = new CodexExecutionBackend(plugin, createRuntime()).createSession(config);
+    const session = createBackend(plugin, createRuntime()).createSession(config);
     const run = session.execute(request);
     const process = await waitForRequest('turn/start');
     run.cancel();
@@ -1029,7 +1043,7 @@ describe('Codex shared runtime', () => {
 
   it.each([false, true])('stops owned children and late mailbox turns on Stop (parent completed: %s) while another chat continues', async (parentCompleted) => {
     mockAutoReconcile = true;
-    const backend = new CodexExecutionBackend(plugin, createRuntime());
+    const backend = createBackend(plugin, createRuntime());
     const first = backend.createSession(config);
     const second = backend.createSession(config);
     const firstRun = first.execute(request);
@@ -1110,7 +1124,7 @@ describe('Codex shared runtime', () => {
 
   it.each([false, true])('stops and unsubscribes owned background children when a completed parent tab closes (late work: %s)', async (lateWork) => {
     mockAutoReconcile = true;
-    const session = new CodexExecutionBackend(plugin, createRuntime()).createSession(config);
+    const session = createBackend(plugin, createRuntime()).createSession(config);
     const output = collect(session.execute(request).events);
     const process = await waitForRequest('turn/start');
     process.notify('item/completed', {
@@ -1140,7 +1154,7 @@ describe('Codex shared runtime', () => {
 
   it('keeps the parent running when one of its child threads closes', async () => {
     mockAutoReconcile = true;
-    const session = new CodexExecutionBackend(plugin, createRuntime()).createSession(config);
+    const session = createBackend(plugin, createRuntime()).createSession(config);
     const output = collect(session.execute(request).events);
     const process = await waitForRequest('turn/start');
     process.notify('item/completed', {
@@ -1158,7 +1172,7 @@ describe('Codex shared runtime', () => {
   it.each(['thread/start', 'thread/fork'])('unsubscribes a late %s result after its caller times out without stopping another chat', async method => {
     mockAutoReconcile = true;
     const runtime = createRuntime();
-    const session = new CodexExecutionBackend(plugin, runtime).createSession(config);
+    const session = createBackend(plugin, runtime).createSession(config);
     const output = collect(session.execute(request).events);
     const process = await waitForRequest('turn/start');
     const lease = await runtime.acquire();
@@ -1194,7 +1208,7 @@ describe('Codex shared runtime', () => {
     let holdCleanup = true;
     mockRequestOverride = (_process, rpc) => holdCleanup && rpc.params?.threadId === 'thread-1'
       && (rpc.method === 'turn/start' || rpc.method === 'thread/read');
-    const backend = new CodexExecutionBackend(plugin, createRuntime());
+    const backend = createBackend(plugin, createRuntime());
     const first = backend.createSession(config);
     const second = backend.createSession(config);
     jest.useFakeTimers();
@@ -1242,7 +1256,7 @@ describe('Codex shared runtime', () => {
       if (notifyStarted) process.notify('turn/started', { threadId: 'thread-1', turn });
       return true;
     };
-    const backend = new CodexExecutionBackend(plugin, createRuntime());
+    const backend = createBackend(plugin, createRuntime());
     const first = backend.createSession(config);
     const second = backend.createSession(config);
     jest.useFakeTimers();
@@ -1292,7 +1306,7 @@ describe('Codex shared runtime', () => {
 
   it('isolates concurrent chat threads and keeps the server alive when one is cancelled or disposed', async () => {
     mockAutoReconcile = true;
-    const backend = new CodexExecutionBackend(plugin, createRuntime());
+    const backend = createBackend(plugin, createRuntime());
     const first = backend.createSession(config);
     const second = backend.createSession(config);
     const firstRun = first.execute(request);

@@ -8,7 +8,7 @@ function createContext(
     allowIsolatedMetadataCreation: false,
     conversation: null,
     plugin: {
-      app: { vault: { adapter: { basePath: '/vault' } } },
+      workingDirectory: '/vault',
     } as any,
     ...overrides,
   };

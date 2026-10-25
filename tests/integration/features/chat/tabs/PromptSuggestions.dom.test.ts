@@ -6,6 +6,7 @@ import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
+import { withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { App, Component } from 'obsidian';
 
@@ -70,11 +71,11 @@ async function createView(fakeBackend?: FakeSideBackend) {
   const saved: unknown[] = [];
   const plugin = {
     app, settings,
-    providerHost: {
+    providerHost: withRuntimeHosts({
       app, settings, executionLifecycleRegistry: lifecycleRegistry,
       getResolvedProviderCliPath: async () => '/bin/claude',
       getActiveEnvironmentVariables: () => '',
-    },
+    }),
     executionPersistence: {
       registerExecutionBinding() {}, releaseExecutionBinding() {},
       assertConversationExecutionAuthority: async () => {},

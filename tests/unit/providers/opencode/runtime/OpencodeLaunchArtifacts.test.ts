@@ -14,25 +14,23 @@ describe('buildOpencodeManagedConfig', () => {
       ...(nativeVersion === 2 ? { agents: { build: {
         model: 'test/model', permissions: [{ action: 'shell', resource: '*', effect: 'ask' }],
       } } } : {}),
-    }, '/vault/main.md', undefined, undefined, nativeVersion);
+    }, [{ id: 'build', prompt: 'Main instructions' }], undefined, nativeVersion);
     expect(config).toMatchObject({
       agent: { build: {
-        model: 'test/model', permission: { bash: 'ask', read: { '*.env': 'ask' } }, prompt: '{file:/vault/main.md}',
+        model: 'test/model', permission: { bash: 'ask', read: { '*.env': 'ask' } }, prompt: 'Main instructions',
       } },
       ...(nativeVersion === 2 ? { agents: { build: {
-        model: 'test/model', permissions: [{ action: 'shell', resource: '*', effect: 'ask' }], system: '{file:/vault/main.md}',
+        model: 'test/model', permissions: [{ action: 'shell', resource: '*', effect: 'ask' }], system: 'Main instructions',
       } } } : {}),
     });
   });
 
-  it('pins the OpenCode build prompt to the managed prompt file', () => {
-    expect(buildOpencodeManagedConfig({}, '/vault/.claudian/opencode/system.md')).toEqual({
+  it('leaves the build agent on its native prompt when no instructions are supplied', () => {
+    expect(buildOpencodeManagedConfig({})).toEqual({
       $schema: 'https://opencode.ai/config.json',
       agent: {
         plan: { disable: true },
-        build: {
-          prompt: '{file:/vault/.claudian/opencode/system.md}',
-        },
+        build: {},
       },
     });
   });
@@ -40,7 +38,6 @@ describe('buildOpencodeManagedConfig', () => {
   it('can create a dedicated aux agent and default it for the process', () => {
     expect(buildOpencodeManagedConfig(
       {},
-      '/vault/.claudian/opencode/auxiliary/system.md',
       [{
         definition: {
           mode: 'primary',
@@ -50,6 +47,7 @@ describe('buildOpencodeManagedConfig', () => {
           },
         },
         id: 'claudian-aux-readonly',
+        prompt: 'Read-only instructions',
       }],
       'claudian-aux-readonly',
     )).toEqual({
@@ -62,7 +60,7 @@ describe('buildOpencodeManagedConfig', () => {
             '*': 'deny',
             read: 'allow',
           },
-          prompt: '{file:/vault/.claudian/opencode/auxiliary/system.md}',
+          prompt: 'Read-only instructions',
         },
       },
       default_agent: 'claudian-aux-readonly',
@@ -83,7 +81,6 @@ describe('buildOpencodeManagedConfig', () => {
 
     const config = buildOpencodeManagedConfig(
       baseConfig,
-      '/vault/.claudian/opencode/system.md',
       managedAgents,
     );
 
@@ -113,7 +110,7 @@ describe('buildOpencodeManagedConfig', () => {
         },
       },
       username: 'Existing',
-    }, '/vault/.claudian/opencode/system.md')).toEqual({
+    })).toEqual({
       $schema: 'https://opencode.ai/config.json',
       agent: {
         plan: { disable: true },
@@ -123,7 +120,6 @@ describe('buildOpencodeManagedConfig', () => {
             bash: 'ask',
             edit: 'ask',
           },
-          prompt: '{file:/vault/.claudian/opencode/system.md}',
         },
       },
       default_agent: 'build',
@@ -138,58 +134,53 @@ describe('buildOpencodeManagedConfig', () => {
 });
 
 describe('prepareOpencodeLaunchArtifacts', () => {
-  it('creates missing prompts without replacing existing ones when sessions supply instructions', async () => {
+  it('launches without instructions write, reference and keep no prompt', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-opencode-prompts-'));
-    const base = { workspaceRoot: root, runtimeEnv: { HOME: root }, settings: { vaultPath: root } };
-    const prompts = path.join(root, '.claudian', 'opencode', 'prompts');
+    const legacyPrompts = path.join(root, '.claudian', 'opencode', 'prompts');
+    await fs.mkdir(legacyPrompts, { recursive: true });
+    await fs.writeFile(path.join(legacyPrompts, 'main.md'), 'Stale instructions\n');
     try {
-      await prepareOpencodeLaunchArtifacts({ ...base, systemPromptText: 'Main instructions' });
-      await prepareOpencodeLaunchArtifacts({ ...base, systemPromptText: 'Replacement', preserveExistingPrompts: true });
-      expect(await fs.readFile(path.join(prompts, 'main.md'), 'utf8')).toBe('Main instructions\n');
-
-      await fs.rm(prompts, { recursive: true });
-      await prepareOpencodeLaunchArtifacts({ ...base, systemPromptText: 'Placeholder', preserveExistingPrompts: true });
-      expect(await fs.readFile(path.join(prompts, 'main.md'), 'utf8')).toBe('Placeholder\n');
+      const result = await prepareOpencodeLaunchArtifacts({
+        workspaceRoot: root, runtimeEnv: { HOME: root, OPENCODE_DB: ':memory:' }, nativeVersion: 2,
+        sessionToolsPluginPath: path.join(root, 'plugin.js'),
+      });
+      const stored = await fs.readFile(result.configPath, 'utf8');
+      for (const text of [stored, result.configContent]) {
+        expect(text).not.toMatch(/"(prompt|system)"/);
+        expect(text).not.toContain('Stale instructions');
+      }
+      await expect(fs.access(legacyPrompts)).rejects.toThrow();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
 
-  it.each([true, false])('shares configuration and distinct prompts with hard-link support: %s', async (supportsLinks) => {
+  it('inlines caller instructions only for the launched profile and keeps the shared file prompt-free', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-opencode-prompts-'));
-    const base = { workspaceRoot: root, runtimeEnv: { HOME: root }, settings: { vaultPath: root } };
-    const link = supportsLinks ? undefined : jest.spyOn(fs, 'link').mockRejectedValue(
-      Object.assign(new Error('Hard links are unsupported'), { code: 'ENOTSUP' }),
-    );
+    const base = { workspaceRoot: root, runtimeEnv: { HOME: root } };
     try {
-      const main = await prepareOpencodeLaunchArtifacts({ ...base, systemPromptText: 'Main instructions' });
+      const main = await prepareOpencodeLaunchArtifacts({ ...base, systemPromptText: 'Main {file:./secret.txt} instructions' });
       const config = await fs.readFile(main.configPath, 'utf8');
-      const inlineParams = { ...base, profile: 'readonly' as const, systemPromptText: 'Inline edit instructions' };
-      const titleParams = { ...base, profile: 'passive' as const, systemPromptText: 'Title instructions' };
       const [inline, title] = await Promise.all([
-        prepareOpencodeLaunchArtifacts(inlineParams),
-        prepareOpencodeLaunchArtifacts(titleParams),
+        prepareOpencodeLaunchArtifacts({ ...base, profile: 'readonly', systemPromptText: 'Inline edit instructions' }),
+        prepareOpencodeLaunchArtifacts({ ...base, profile: 'passive', systemPromptText: 'Title instructions' }),
       ]);
 
       expect(inline.configPath).toBe(main.configPath);
-      expect(title.configPath).toBe(main.configPath);
       expect(await fs.readFile(main.configPath, 'utf8')).toBe(config);
-      const prompts = path.join(root, '.claudian', 'opencode', 'prompts');
-      expect(await fs.readFile(path.join(prompts, 'main.md'), 'utf8')).toBe('Main instructions\n');
-      expect(await fs.readFile(path.join(prompts, 'inline-edit.md'), 'utf8')).toBe('Inline edit instructions\n');
-      expect(await fs.readFile(path.join(prompts, 'title.md'), 'utf8')).toBe('Title instructions\n');
-      expect(JSON.parse(config)).toMatchObject({
-        default_agent: 'build',
-        agent: {
-          build: { prompt: `{file:${path.join(prompts, 'main.md')}}` },
-          'claudian-inline-edit': { prompt: `{file:${path.join(prompts, 'inline-edit.md')}}` },
-          'claudian-title': { prompt: `{file:${path.join(prompts, 'title.md')}}` },
-        },
-      });
+      expect(config).not.toMatch(/"prompt"/);
+      // Caller text is delivered literally; native config expansion must not resolve references inside it.
+      expect(main.configContent).not.toContain('{file:');
+      const agents = (result: { configContent: string }) => JSON.parse(result.configContent).agent;
+      expect(agents(main).build.prompt).toBe('Main {file:./secret.txt} instructions');
+      expect(agents(main)['claudian-inline-edit']).not.toHaveProperty('prompt');
+      expect(agents(inline)['claudian-inline-edit'].prompt).toBe('Inline edit instructions');
+      expect(agents(inline).build).not.toHaveProperty('prompt');
+      expect(agents(title)['claudian-title'].prompt).toBe('Title instructions');
       expect(JSON.parse(inline.configContent).default_agent).toBe('claudian-inline-edit');
       expect(JSON.parse(title.configContent).default_agent).toBe('claudian-title');
+      await expect(fs.access(path.join(root, '.claudian', 'opencode', 'prompts'))).rejects.toThrow();
     } finally {
-      link?.mockRestore();
       await fs.rm(root, { recursive: true, force: true });
     }
   });
@@ -216,18 +207,10 @@ describe('prepareOpencodeLaunchArtifacts', () => {
         HOME: tmpRoot,
         OPENCODE_CONFIG: baseConfigPath,
       } as NodeJS.ProcessEnv,
-      settings: {
-        customPrompt: '',
-        mediaFolder: '',
-        userName: 'Test User',
-        vaultPath: tmpRoot,
-      },
       workspaceRoot: tmpRoot,
     });
 
     expect(result.configPath).toBe(path.join(tmpRoot, '.claudian', 'opencode', 'config.json'));
-    expect(result.systemPromptPath).toBe(path.join(tmpRoot, '.claudian', 'opencode', 'prompts', 'main.md'));
-    expect(result.configContent).toContain(`"prompt": ${JSON.stringify(`{file:${result.systemPromptPath}}`)}`);
     const generatedConfig = JSON.parse(await fs.readFile(result.configPath, 'utf8'));
     // The original user document is loaded natively; the generated file owns only the overlay.
     const nativeConfig = JSON.parse(await fs.readFile(result.nativeConfigPath, 'utf8'));
@@ -240,22 +223,12 @@ describe('prepareOpencodeLaunchArtifacts', () => {
         },
       },
     });
-    expect(generatedConfig.agent).toMatchObject({
-      build: {
-        prompt: `{file:${result.systemPromptPath}}`,
-      },
-    });
+    expect(generatedConfig.agent.build).toEqual({});
   });
 
   it('keeps the launch key stable when the resolved default database is later passed as OPENCODE_DB', async () => {
     const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-opencode-artifacts-'));
     const baseParams = {
-      settings: {
-        customPrompt: '',
-        mediaFolder: '',
-        userName: '',
-        vaultPath: tmpRoot,
-      },
       workspaceRoot: tmpRoot,
     };
     const first = await prepareOpencodeLaunchArtifacts({
@@ -277,29 +250,18 @@ describe('prepareOpencodeLaunchArtifacts', () => {
     expect(first.launchKey).toBe(second.launchKey);
   });
 
-  it('includes the custom instructions in the managed prompt and launch key', async () => {
+  it('delivers the caller-resolved instructions verbatim and keys the launch on them', async () => {
     const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-opencode-artifacts-'));
     const baseParams = {
       runtimeEnv: { HOME: tmpRoot } as NodeJS.ProcessEnv,
-      settings: {
-        customPrompt: '',
-        mediaFolder: '',
-        userName: '',
-        vaultPath: tmpRoot,
-      },
       workspaceRoot: tmpRoot,
     };
 
-    const withoutCustom = await prepareOpencodeLaunchArtifacts(baseParams);
-    const withCustom = await prepareOpencodeLaunchArtifacts({
-      ...baseParams,
-      settings: { ...baseParams.settings, customPrompt: 'Runtime guidance.' },
-    });
-    const prompt = await fs.readFile(withCustom.systemPromptPath, 'utf8');
+    const first = await prepareOpencodeLaunchArtifacts({ ...baseParams, systemPromptText: 'Main Agent prompt A' });
+    const second = await prepareOpencodeLaunchArtifacts({ ...baseParams, systemPromptText: 'Main Agent prompt B' });
 
-    expect(prompt).toContain('## Runtime Context');
-    expect(prompt).toContain('## Custom Instructions\n\nRuntime guidance.');
-    expect(withCustom.launchKey).not.toBe(withoutCustom.launchKey);
+    expect(JSON.parse(second.configContent).agent.build.prompt).toBe('Main Agent prompt B');
+    expect(second.launchKey).not.toBe(first.launchKey);
   });
 
   it('creates the resolved OpenCode database directory before launch', async () => {
@@ -312,12 +274,6 @@ describe('prepareOpencodeLaunchArtifacts', () => {
         HOME: path.join(tmpRoot, 'home'),
         XDG_DATA_HOME: xdgDataHome,
       } as NodeJS.ProcessEnv,
-      settings: {
-        customPrompt: '',
-        mediaFolder: '',
-        userName: '',
-        vaultPath: tmpRoot,
-      },
       workspaceRoot: tmpRoot,
     });
 
@@ -332,14 +288,14 @@ it('layers v2 native agent policies after user rules and pins the native system 
     'claudian-inline-edit': { system: 'old', model: 'test/model', permissions: [{ action: '*', resource: '*', effect: 'allow' }] },
     plan: { disabled: false },
     reviewer: { description: 'Keep this' },
-  } }, '/vault/system.md', [{ id: 'claudian-inline-edit', definition: {
+  } }, [{ id: 'claudian-inline-edit', prompt: 'Inline edit instructions', definition: {
     mode: 'primary', permission: { '*': 'deny', read: { '*': 'allow', '*.env': 'deny' }, bash: 'ask' },
   } }], 'claudian-inline-edit', 2);
   expect(config).toMatchObject({
     default_agent: 'claudian-inline-edit',
     agents: {
       'claudian-inline-edit': {
-        system: '{file:/vault/system.md}', model: 'test/model', mode: 'primary',
+        system: 'Inline edit instructions', model: 'test/model', mode: 'primary',
         permissions: [
           { action: '*', resource: '*', effect: 'allow' },
           { action: '*', resource: '*', effect: 'deny' },
@@ -357,7 +313,7 @@ it('layers v2 native agent policies after user rules and pins the native system 
 it('preserves legacy user agent semantics under v2 native-over-legacy precedence', () => {
   const config = buildOpencodeManagedConfig({
     agent: { build: { model: 'test/user-model', permission: { read: 'deny' }, temperature: 0.2 } },
-  }, '/vault/system.md', undefined, undefined, 2);
+  }, undefined, undefined, 2);
   // v2 normalizes each map, then chooses the entire native entry for colliding IDs.
   const definitions = { ...(config.agent as Record<string, unknown>), ...(config.agents as Record<string, unknown>) };
   expect(definitions.build).toMatchObject({
@@ -373,7 +329,6 @@ it('preserves custom JSONC and inline settings as separate native configuration 
   try {
     const result = await prepareOpencodeLaunchArtifacts({
       workspaceRoot: root, nativeVersion: 2, systemPromptText: 'Managed instructions',
-      settings: { userName: 'Test User' },
       runtimeEnv: {
         OPENCODE_DB: ':memory:', OPENCODE_CONFIG: customPath,
         OPENCODE_CONFIG_CONTENT: '{ /* Inline override */ "username": "inline-user", "providers": {"example": {"settings": {"apiKey": "inline-test-key"}}}, }',
@@ -418,7 +373,7 @@ it('keeps native custom-file loading at its original location for relative file 
     const nativePath = result.nativeConfigPath;
     expect(await fs.readFile(path.resolve(path.dirname(nativePath), 'key.txt'), 'utf8')).toBe('local-test-key');
     expect(nativePath).toBe(customPath);
-    expect(JSON.parse(result.configContent).agent.build.prompt).toBe(`{file:${result.systemPromptPath}}`);
+    expect(JSON.parse(result.configContent).agent.build.prompt).toBe('Managed instructions');
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
@@ -464,7 +419,7 @@ it('resolves native file expressions from each source directory before parsing w
     });
     expect(JSON.parse(result.configContent)).toMatchObject({
       snapshots: true, username: '{file:./missing.txt} {env:PROBE_SECRET}',
-      agent: { build: { prompt: `{file:${result.systemPromptPath}}` } },
+      agent: { build: { prompt: 'Managed instructions' } },
     });
     expect(result.configContent).not.toContain('{file:./missing.txt}');
     expect(result.configContent).not.toContain('{env:PROBE_SECRET}');

@@ -21,7 +21,7 @@ async function createNativePi(env: ForkTestEnvironment) {
     [path.resolve('tests/fixtures/providers/pi/PiSessionProcess.mjs'), ...args],
     { ...options, env: { ...options.env, CLAUDIAN_TEST_PI_ROOT: env.root, CLAUDIAN_TEST_PI_MISMATCH: mismatch ? '1' : '0' } },
   ));
-  const backend = new PiExecutionBackend(env.host);
+  const backend = new PiExecutionBackend(env.host.getRuntimeHost('pi'));
   return {
     backend, sourceFile,
     contexts: () => readRecords(path.join(env.root, 'contexts.jsonl')),

@@ -1,6 +1,8 @@
 import { modelCatalogCases } from '@test/helpers/providerModelCatalogs';
+import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
 
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
+import { createProviderRuntimeHost } from '@/composition/ClaudianProviderHost';
 import type { ProviderModelCatalog } from '@/core/providers/models/ProviderModelCatalog';
 import { ProviderModelUnavailableError } from '@/core/providers/models/ProviderModelUnavailableError';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
@@ -21,7 +23,8 @@ jest.mock('@/providers/pi/runtime/PiModelDiscoveryService', () => ({
   PiModelDiscoveryService: class { discoverModels = mockPiDiscover; },
 }));
 
-const assertions = { deepseek: assertDeepSeekModelAvailable, claude: assertClaudeModelAvailable, codex: assertCodexModelAvailable, grok: assertGrokModelAvailable, opencode: assertOpencodeModelAvailable, pi: assertPiModelAvailable };
+const assertions = { deepseek: (settings: Record<string, unknown>, model: string | undefined) => assertDeepSeekModelAvailable(createTestRuntimeHost(settings, 'deepseek'), model), claude: (settings: Record<string, unknown>, model: string | undefined) => assertClaudeModelAvailable(createTestRuntimeHost(settings, 'claude'), model), codex: (settings: Record<string, unknown>, model: string | undefined) => assertCodexModelAvailable(createTestRuntimeHost(settings, 'codex'), model), grok: (settings: Record<string, unknown>, model: string | undefined) => assertGrokModelAvailable(createTestRuntimeHost(settings, 'grok'), model), opencode: (settings: Record<string, unknown>, model: string | undefined) => assertOpencodeModelAvailable(createTestRuntimeHost(settings, 'opencode'), model),
+  pi: (settings: Record<string, unknown>, model: string | undefined) => assertPiModelAvailable(createTestRuntimeHost(settings, 'pi'), model) };
 
 const browseOrders = {
   deepseek: ['deepseek:native/selected', 'deepseek:native/unselected-catalog-entry'],
@@ -42,12 +45,12 @@ it.each(modelCatalogCases)('$id keeps native selection, aliases and metadata beh
   const warmModelsMetadata = jest.fn(async () => true);
   mockPiDiscover.mockResolvedValue({ kind: 'completed', models: read(settings) });
   const factories: Record<string, () => ProviderModelCatalog> = {
-    deepseek: () => createDeepSeekModels(host, async () => { await discovery(); return { groups: [{ id: 'native', models: [{ id: 'selected', name: 'Selected label' }, { id: 'unselected-catalog-entry', name: 'Unselected' }] }] }; }),
-    claude: () => createClaudeModels(host, discovery),
-    codex: () => createCodexModels(host, { refresh: discovery }),
-    grok: () => createGrokModels(host, { refresh: discovery }),
-    opencode: () => createOpencodeModels(host, { discoverModels: discovery, warmModelsMetadata }),
-    pi: () => createPiModels(host),
+    deepseek: () => createDeepSeekModels(createProviderRuntimeHost(host, coordinator, 'deepseek'), async () => { await discovery(); return { groups: [{ id: 'native', models: [{ id: 'selected', name: 'Selected label' }, { id: 'unselected-catalog-entry', name: 'Unselected' }] }] }; }),
+    claude: () => createClaudeModels(createProviderRuntimeHost(host, coordinator, 'claude'), discovery),
+    codex: () => createCodexModels(createProviderRuntimeHost(host, coordinator, 'codex'), { refresh: discovery }),
+    grok: () => createGrokModels(createProviderRuntimeHost(host, coordinator, 'grok'), { refresh: discovery }),
+    opencode: () => createOpencodeModels(createProviderRuntimeHost(host, coordinator, 'opencode'), { discoverModels: discovery, warmModelsMetadata }),
+    pi: () => createPiModels(createProviderRuntimeHost(host, coordinator, 'pi')),
   };
   const catalog = factories[id]();
   const discoveredModels = structuredClone(read(settings));
@@ -82,12 +85,12 @@ it.each(modelCatalogCases)('$id keeps native selection, aliases and metadata beh
 });
 
 it('preserves OpenCode provider labels for catalog filtering', () => {
-  const host = { settings: { providerConfigs: { opencode: {
+  const host = createTestRuntimeHost({ providerConfigs: { opencode: {
     visibleModels: [], discoveredModels: [
       { rawId: 'anthropic/sonnet', label: 'Anthropic/Sonnet' },
       { rawId: 'openai/gpt', label: 'OpenAI/GPT' },
     ],
-  } } } } as unknown as ProviderHost;
+  } } }, 'opencode');
   const catalog = createOpencodeModels(host, { discoverModels: jest.fn(), warmModelsMetadata: jest.fn() });
   expect(catalog.getSnapshot().models).toEqual([
     expect.objectContaining({ id: 'openai/gpt', name: 'GPT', providerKey: 'openai', providerLabel: 'OpenAI' }),

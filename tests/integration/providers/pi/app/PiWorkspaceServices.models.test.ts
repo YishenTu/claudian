@@ -1,3 +1,5 @@
+import { withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
+
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { createPiWorkspaceServices } from '@/providers/pi/app/PiWorkspaceServices';
@@ -16,7 +18,7 @@ it('drains canceled model discovery before the provider transition mutation', as
     signal!.addEventListener('abort', canceled, { once: true });
     return new Promise(resolve => { release = () => resolve({ kind: 'completed', models: [] }); });
   });
-  const services = await createPiWorkspaceServices(host);
+  const services = await createPiWorkspaceServices(withRuntimeHosts(host as never));
   const discovery = services.modelCatalog!.refresh();
   const mutation = jest.fn(async () => undefined);
   const transition = registry.runTransition(['pi'], mutation);

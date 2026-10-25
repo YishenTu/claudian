@@ -1,3 +1,5 @@
+import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
+
 import type { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
 import { CodexModelDiscoveryService } from '@/providers/codex/runtime/CodexModelDiscoveryService';
 
@@ -27,13 +29,7 @@ function makeWireModel(model: string, isDefault = false) {
 }
 
 function createPlugin(enabled = true) {
-  return {
-    settings: {
-      providerConfigs: {
-        codex: { enabled },
-      },
-    },
-  } as any;
+  return createTestRuntimeHost({ providerConfigs: { codex: { enabled } } }, 'codex');
 }
 
 describe('CodexModelDiscoveryService', () => {

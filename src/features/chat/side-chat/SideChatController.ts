@@ -3,7 +3,7 @@ import { Notice } from 'obsidian';
 
 import { detectSideChatCommand } from '@/core/commands/builtInCommands';
 import type { ProviderExecutionContext } from '@/core/execution';
-import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
+import { createProviderHistoryPathContext } from '@/core/providers/historyPathContext';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ImageAttachment } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
@@ -350,15 +350,7 @@ export class SideChatController {
             source.resumeAt,
             source.providerState,
             vaultPath,
-            {
-              environment: {
-                ...process.env,
-                ...getRuntimeEnvironmentVariables(this.deps.plugin.settings, source.providerId),
-              },
-              hostPlatform: process.platform,
-              settings: this.deps.plugin.settings,
-              vaultPath,
-            },
+            createProviderHistoryPathContext(this.deps.plugin.settings, source.providerId, vaultPath),
             { lifecycle: 'ephemeral' },
           );
         await this.#assertForkSourceCurrent(source);
@@ -381,7 +373,7 @@ export class SideChatController {
         serviceTier: settingsSnapshot.serviceTier,
       },
       source,
-      vaultWorkingDirectory: vaultPath ?? '.',
+      workingDirectory: vaultPath ?? '.',
     });
     this.#runtime = runtime;
     this.#mountPanel();

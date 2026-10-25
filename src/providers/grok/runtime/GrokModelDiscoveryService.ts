@@ -3,20 +3,19 @@ import { createHash } from 'node:crypto';
 
 import crossSpawn from 'cross-spawn';
 
+import { parseEnvironmentVariables } from '@/core/process/env';
 import {
   resolveWindowsCmdShimSpawnSpec,
   terminateSpawnedProcess,
 } from '@/core/process/windowsCmdShim';
 
-import { getRuntimeEnvironmentVariables } from '../../../core/providers/providerEnvironment';
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { ProviderTransitionOwnerContext } from '../../../core/providers/types';
-import { getVaultPath } from '../../../utils/path';
+import { decodeGrokConfig } from '../config';
 import {
   type GrokDiscoveredModel,
   normalizeGrokDiscoveredModels,
 } from '../models';
-import { getGrokProviderSettings } from '../settings';
 import { GrokModelCatalogProbe, type GrokModelCatalogProbeLike } from './GrokModelCatalogProbe';
 import { buildGrokRuntimeEnv } from './GrokRuntimeEnvironment';
 
@@ -147,7 +146,7 @@ export class GrokModelDiscoveryService implements GrokModelDiscoveryServiceLike 
   private readonly probe: GrokModelCatalogProbeLike;
 
   constructor(
-    private readonly plugin: ProviderHost,
+    private readonly host: ProviderRuntimeHost,
     private readonly options: GrokModelDiscoveryServiceOptions = {},
   ) {
     this.runner = options.runner ?? new SpawnGrokCatalogCommandRunner();
@@ -158,7 +157,7 @@ export class GrokModelDiscoveryService implements GrokModelDiscoveryServiceLike 
     signal?: AbortSignal,
     ownerContext?: ProviderTransitionOwnerContext,
   ): Promise<GrokModelCatalogDiscoveryResult> {
-    if (!getGrokProviderSettings(this.plugin.settings).enabled) {
+    if (!decodeGrokConfig(this.host.config, this.host.selection).enabled) {
       return { kind: 'skipped', reason: 'provider-disabled' };
     }
 
@@ -172,7 +171,7 @@ export class GrokModelDiscoveryService implements GrokModelDiscoveryServiceLike 
           env: context.env,
           signal,
           timeoutMs: this.options.modelCommandTimeoutMs ?? MODEL_COMMAND_TIMEOUT_MS,
-          version: this.plugin.manifest?.version ?? '0.0.0',
+          version: this.host.clientVersion ?? '0.0.0',
         });
         return {
           defaultModelId: catalog.currentModelId,
@@ -239,15 +238,13 @@ export class GrokModelDiscoveryService implements GrokModelDiscoveryServiceLike 
   async #resolveCommandContext(
     ownerContext?: ProviderTransitionOwnerContext,
   ): Promise<GrokResolvedCatalogCommandContext> {
-    const command = await this.plugin.getResolvedProviderCliPath(
-      'grok',
-      ownerContext,
-    ) ?? 'grok';
-    const configuredEnvironment = getRuntimeEnvironmentVariables(this.plugin.settings, 'grok');
+    const command = await this.host.resolveCliPath(ownerContext) ?? 'grok';
+    const environmentText = this.host.environmentText;
+    const configuredEnvironment = parseEnvironmentVariables(environmentText);
     return {
       command,
-      cwd: getVaultPath(this.plugin.app) ?? process.cwd(),
-      env: buildGrokRuntimeEnv(this.plugin.settings, command),
+      cwd: this.host.workingDirectory ?? process.cwd(),
+      env: buildGrokRuntimeEnv(environmentText, command),
       environmentKeys: Object.keys(configuredEnvironment),
     };
   }

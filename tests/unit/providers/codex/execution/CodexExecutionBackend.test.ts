@@ -6,6 +6,7 @@ import { dirname, join, normalize } from 'node:path';
 import pair from '@test/fixtures/providers/codex/turn-stats-pair.json';
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 
 import type {
@@ -20,6 +21,9 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ClaudianSettings } from '@/core/types';
 import { CodexConversationHistoryService } from '@/providers/codex/history/CodexConversationHistoryService';
 import { createCodexPathMapper } from '@/providers/codex/runtime/CodexPathMapper';
+
+/** The backend resolves its runtime per session; tests pin one instance. */
+const fixedRuntime = (runtime: CodexAppServerRuntime) => (): CodexAppServerRuntime => runtime;
 type MutableTestHost = ProviderHost & { settings: ClaudianSettings };
 
 const mockTransportRequest = jest.fn();
@@ -77,9 +81,13 @@ import { updateCodexProviderSettings } from '@/providers/codex/settings';
 
 const runtimes: CodexAppServerRuntime[] = [];
 function createBackend(plugin: ProviderHost): CodexExecutionBackend {
-  const runtime = new CodexAppServerRuntime(plugin, () => undefined);
+  const host = runtimeHostFor(plugin as unknown as Parameters<typeof runtimeHostFor>[0], 'codex');
+  const runtime = new CodexAppServerRuntime(host, () => undefined);
   runtimes.push(runtime);
-  return new CodexExecutionBackend(plugin, runtime);
+  return new CodexExecutionBackend(
+    host,
+    fixedRuntime(runtime),
+  );
 }
 afterEach(async () => { await Promise.all(runtimes.splice(0).map(runtime => runtime.dispose())); });
 
@@ -258,7 +266,7 @@ function createSessionConfig(
   return {
     lifecycle: 'persistent',
     nativePersistence: 'enabled',
-    vaultWorkingDirectory: '/vault',
+    workingDirectory: '/vault',
     interactionPort: createInteractionPort(),
     ...overrides,
   };
@@ -678,6 +686,34 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
+  it('falls back to saved Codex preferences, then current selections, for unset request fields', async () => {
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') return {
+        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
+      };
+      if (method === 'thread/start') return createThreadResult('thread-fallbacks');
+      if (method === 'turn/start') {
+        queueMicrotask(() => completeTurn('thread-fallbacks', 'turn-fallbacks'));
+        return createTurnResult('turn-fallbacks');
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const plugin = createPlugin();
+    Object.assign(plugin.settings, {
+      savedProviderEffort: { codex: 'low', claude: 'high' },
+      savedProviderPermissionMode: { codex: 'yolo' },
+    });
+    const session = createBackend(plugin).createSession(createSessionConfig());
+    await collectEvents(session.execute(createRequest(undefined, {
+      configuration: { systemInstructions: { kind: 'explicit', instructions: 'Be concise.' } },
+    })).events);
+
+    expect(mockTransportRequest).toHaveBeenCalledWith('turn/start', expect.objectContaining({
+      model: TEST_CODEX_MODEL, effort: 'low', serviceTier: 'default', approvalPolicy: 'never',
+    }));
+    await session.dispose();
+  });
+
   it('rejects an unavailable selected model before native startup with a configuration error', async () => {
     const host = createPlugin();
     host.settings.providerConfigs!.codex!.visibleModels = [];
@@ -902,7 +938,7 @@ describe('CodexExecutionBackend', () => {
         context: { ...capturedSelections, sessionReferences: [{ id: 'conv-1-ref', title: 'Review & fix', providerId: 'codex', updatedAt: 'updated' }] },
       }))).resolves.toBe(true);
       const input = mockTransportRequest.mock.calls.find(([method]) => method === 'turn/steer')![1].input;
-      expect(input).toEqual([{ type: 'text', text_elements: [], text: 'Use @"Review"\n\n<context_sessions>\n<context_session title="Review &amp; fix" id="conv-1-ref" provider="codex" updated="updated" />\n</context_sessions>' + '\n\n' + capturedSelectionPrompt }]);
+      expect(input).toEqual([{ type: 'text', text_elements: [], text: 'Use @"Review"\n\n' + capturedSelectionPrompt + '\n\n<context_sessions>\n<context_session title="Review &amp; fix" id="conv-1-ref" provider="codex" updated="updated" />\n</context_sessions>' }]);
     } finally { run.cancel(); await collectEvents(run.events); await session.dispose(); }
   });
 
@@ -1130,24 +1166,24 @@ describe('CodexExecutionBackend', () => {
 
     await collectEvents(session.execute(createRequest(undefined, {
       configuration: {
-        systemInstructions: { kind: 'provider-default' },
+        systemInstructions: { kind: 'main-agent', instructions: 'Caller-resolved Main Agent prompt.' },
         model: TEST_CODEX_MODEL,
         permissionMode: 'normal',
         reasoning: 'high',
         serviceTier: 'priority',
       },
-    })).events);
+    } as never)).events);
 
     const threadStart = mockTransportRequest.mock.calls.find(
       ([method]) => method === 'thread/start',
     )?.[1] as { baseInstructions?: string } | undefined;
-    expect(threadStart?.baseInstructions).toContain('## Runtime Context');
+    expect(threadStart?.baseInstructions).toBe('Caller-resolved Main Agent prompt.');
     await session.dispose();
   });
 
   it.each([
     ['explicit', (instructions: string) => ({ kind: 'explicit' as const, instructions })],
-    ['provider-default session', (sessionInstructions: string) => ({ kind: 'provider-default' as const, sessionInstructions })],
+    ['Main Agent', (instructions: string) => ({ kind: 'main-agent' as const, instructions })],
   ])('reapplies changed %s instructions to a loaded thread', async (_label, systemInstructionsFor) => {
     let turnIndex = 0;
     mockTransportRequest.mockImplementation(async (method: string) => {
@@ -1620,20 +1656,22 @@ describe('CodexExecutionBackend', () => {
             path: 'notes/"draft" & review.md',
             content: 'Before\n]]>\nAfter',
           },
-          editorSelection: {
-            mode: 'selection',
-            notePath: 'notes/"draft" & review.md',
-            selectedText: 'Selected\n</editor_selection>',
-          },
-          browserSelection: {
-            source: 'browser:https://example.com',
-            selectedText: 'Browser text',
-            url: 'https://example.com/?a=1&b=2',
-          },
-          canvasSelection: {
-            canvasPath: 'boards/"draft" & review.canvas',
-            nodeIds: ['node-1'],
-          },
+          selections: [
+            { kind: 'editor', selection: {
+              mode: 'selection',
+              notePath: 'notes/"draft" & review.md',
+              selectedText: 'Selected\n</editor_selection>',
+            } },
+            { kind: 'browser', selection: {
+              source: 'browser:https://example.com',
+              selectedText: 'Browser text',
+              url: 'https://example.com/?a=1&b=2',
+            } },
+            { kind: 'canvas', selection: {
+              canvasPath: 'boards/"draft" & review.canvas',
+              nodeIds: ['node-1'],
+            } },
+          ],
         },
       },
     )).events);
@@ -1656,6 +1694,10 @@ describe('CodexExecutionBackend', () => {
       '<canvas_selection path="boards/&quot;draft&quot; &amp; review.canvas">',
     );
     expect(prompt).toContain(`<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" />\n</context_sessions>`);
+    // Canonical order shared by every provider: linked content, selections, then session references.
+    const order = ['<linked_content', '<editor_selection', '<browser_selection', '<canvas_selection', '<context_sessions>']
+      .map(tag => prompt!.indexOf(tag));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(prompt).not.toContain('[Editor selection from');
     expect(prompt).not.toContain('<linked_note');
     expect(prompt).not.toContain('<current_note');

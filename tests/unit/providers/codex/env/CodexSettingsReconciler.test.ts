@@ -3,10 +3,8 @@ import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels'
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import type { Conversation } from '@/core/types';
-import {
-  codexSettingsReconciler,
-  computeCodexEnvHash,
-} from '@/providers/codex/env/CodexSettingsReconciler';
+import { codexSettingsReconciler } from '@/providers/codex/env/CodexSettingsReconciler';
+import { computeCodexEnvHash } from '@/providers/codex/runtime/codexEnvironmentHash';
 
 function establishedConversation(threadId: string): Conversation {
   return {

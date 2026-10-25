@@ -71,7 +71,7 @@ export function createCodexSettingsTabRenderer(
       const lastProviderWarning = renderLastEnabledProviderWarning(container);
 
       const modelWarning = renderProviderModelEnablementWarning(container, context, {
-        getHasEnabledModels: () => getCodexModelOptions(settingsBag).length > 0,
+        getHasEnabledModels: () => getCodexModelOptions(getCodexProviderSettings(settingsBag)).length > 0,
         getIsEnabled: () => getCodexProviderSettings(settingsBag).enabled,
         providerId: 'codex',
         providerName: 'Codex',
@@ -150,7 +150,7 @@ export function createCodexSettingsTabRenderer(
       const cliPathControl = renderCLIInstallationSetting({
         cliName: 'Codex CLI',
         icon: OPENAI_PROVIDER_ICON,
-        inspect: () => inspectCodexInstallation(context.plugin),
+        inspect: () => inspectCodexInstallation(context.plugin.getRuntimeHost('codex')),
         container: installationContainer,
         enablement,
         getValue: () => {

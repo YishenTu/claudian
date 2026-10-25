@@ -20,7 +20,7 @@ function createService() {
     },
     lifecycleRegistry,
     nativePersistence: 'provider-default',
-    vaultWorkingDirectory: '/vault',
+    workingDirectory: '/vault',
   });
   return { backend, lifecycleRegistry, service };
 }

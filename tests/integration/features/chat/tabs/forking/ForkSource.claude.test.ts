@@ -59,7 +59,7 @@ describe('Claude fork integration', () => {
 
   it('resumes at the live SDK UUID in a new session and preserves the source and accepted input prefix', async () => {
     const native = createNativeClaude();
-    const backend = new ClaudeExecutionBackend(env.host);
+    const backend = new ClaudeExecutionBackend(env.host.getRuntimeHost('claude'));
     const source = await env.open(backend);
     const selected = await env.send(source, 'Remember apples');
     await env.send(source, 'Remember pears');
@@ -80,7 +80,7 @@ describe('Claude fork integration', () => {
 
   it('surfaces an unavailable SDK checkpoint without sending a child prompt or altering the source', async () => {
     const native = createNativeClaude();
-    const backend = new ClaudeExecutionBackend(env.host);
+    const backend = new ClaudeExecutionBackend(env.host.getRuntimeHost('claude'));
     const source = await env.open(backend);
     const selected = await env.send(source, 'Remember apples');
     const child = await env.fork(source, selected);

@@ -7,11 +7,7 @@ import {
   buildContextFromHistory,
   getHistoryImages,
 } from '@/core/prompt/historyContext';
-import {
-  appendLinkedContent,
-  appendSelectionContexts,
-  appendSessionReferences,
-} from '@/core/prompt/promptContext';
+import { appendExecutionContext } from '@/core/prompt/promptContext';
 import { buildRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 
 import {
@@ -38,18 +34,17 @@ import {
   type SteerableExecutionSession,
   type WithoutEventScope,
 } from '../../../core/execution';
-import {
-  buildSystemPrompt,
-  type SystemPromptSettings,
-} from '../../../core/prompt/mainAgent';
 import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
-import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import type { ProviderRuntimeHost, ProviderSelectionDefaults } from '../../../core/providers/ProviderRuntimeHost';
 import type {
   ChatMessage,
   StreamChunk,
   TurnStats,
 } from '../../../core/types';
+import {
+  decodePiConfig,
+  type PiProviderSettings,
+} from '../config';
 import { PiConversationHistoryService } from '../history/PiConversationHistoryService';
 import {
   isPiSessionPathReference,
@@ -90,10 +85,6 @@ import {
 import { assertPiModelAvailable } from '../runtime/PiModelAvailability';
 import { buildPiSetModelPayload } from '../runtime/PiRPCPayloads';
 import { type PiRPCRecord, PiRPCResponseError } from '../runtime/PiRPCTransport';
-import {
-  getPiProviderSettings,
-  type PiProviderSettings,
-} from '../settings';
 import {
   getPiState,
   type PiProviderState,
@@ -230,7 +221,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   private shutdownPromise: Promise<void> | null = null;
 
   constructor(
-    private readonly host: ProviderHost,
+    private readonly host: ProviderRuntimeHost,
     private readonly config: ProviderSessionConfig,
     private readonly options: PiExecutionSessionOptions,
   ) {
@@ -414,7 +405,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   async #readBranchHistory(model: string, signal: AbortSignal): Promise<Extract<ConversationBranchResult, { status: 'committed' }>> {
     const history = await new PiConversationHistoryService().hydrateConversationHistory({
       sessionId: this.providerSessionId, providerState: this.state.providerState, messages: [],
-    }, this.config.vaultWorkingDirectory);
+    }, this.config.workingDirectory);
     // Pi computes context usage from the selected native branch, including compaction.
     const usage = await this.#fetchUsage(model, signal).catch(() => null);
     return { status: 'committed', messages: history.messages ?? [], usage };
@@ -486,7 +477,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   }
 
   async steer(request: ProviderExecutionRequest): Promise<boolean> {
-    try { assertPiModelAvailable(this.host.settings, request.configuration.model); }
+    try { assertPiModelAvailable(this.host, request.configuration.model); }
     catch (error) { if (error instanceof ProviderModelUnavailableError) return false; throw error; }
     const active = this.activeRun;
     const kernel = this.kernel;
@@ -584,7 +575,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     request: ProviderExecutionRequest,
   ): Promise<void> {
     try {
-      assertPiModelAvailable(this.host.settings, request.configuration.model);
+      assertPiModelAvailable(this.host, request.configuration.model);
       const encoded = await this.#encodeRequest(active, request);
       if (!this.isActive(active)) return;
       // A stopped background run may still be unwinding; input sent now could be queued behind the abort.
@@ -599,7 +590,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       if (!this.isActive(active) || !this.kernel) return;
       await this.#applyModelConfiguration(encoded, active.abortController.signal);
       if (!this.isActive(active)) return;
-      assertPiModelAvailable(this.host.settings, request.configuration.model);
+      assertPiModelAvailable(this.host, request.configuration.model);
       const previousLeafId = getPiState(this.state.providerState).leafEntryId ?? null;
       const input = encoded.input;
       let promptHandled = false;
@@ -717,19 +708,19 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     active: ActiveRun,
     request: ProviderExecutionRequest,
   ): Promise<EncodedPiRequest> {
-    const settings = getPiProviderSettings(this.host.settings);
+    const settings = decodePiConfig(this.host.config, this.host.selection);
     if (!settings.enabled) {
       throw new PiConfigurationError('Pi is disabled.');
     }
-    const model = resolveSelectedModel(request, settings, this.host.settings);
+    const model = resolveSelectedModel(request, settings, this.host.selection);
     const thinkingLevel = resolveThinkingLevel(
       request,
       settings,
       model,
-      this.host.settings,
+      this.host.selection,
     );
     await this.#materializePendingFork(active);
-    const envText = getRuntimeEnvironmentText(this.host.settings, 'pi');
+    const envText = this.host.environmentText;
     const env = {
       ...process.env,
       ...parseEnvironmentVariables(envText),
@@ -739,8 +730,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     const launchSpec = buildPiLaunchSpec({
       enableTreeBridge: !this.#shouldDisableNativePersistence(),
       enableSessionTools: this.config.sessionTools !== undefined,
-      command: await this.host.getResolvedProviderCliPath('pi') ?? 'pi',
-      cwd: this.config.vaultWorkingDirectory,
+      command: await this.host.resolveCliPath() ?? 'pi',
+      cwd: this.config.workingDirectory,
       env,
       envText,
       noSession: this.#shouldDisableNativePersistence(),
@@ -749,11 +740,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       providerState: getPiState(this.state.providerState),
       readOnlyTools: toolProfile.readOnlyTools,
       settings,
-      systemPrompt: resolveSystemPrompt(
-        request,
-        this.host.settings,
-        this.config.vaultWorkingDirectory,
-      ),
+      systemPrompt: request.configuration.systemInstructions.instructions,
     });
     const state = getPiState(this.state.providerState);
     const hasNativeSession = Boolean(state.sessionId || state.sessionFile);
@@ -790,7 +777,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     const resolvedSessionFile = resolvePiSessionFileHint(
       state.sessionFile,
       state.sessionId,
-      this.config.vaultWorkingDirectory,
+      this.config.workingDirectory,
       { environment },
     );
     if (resolvedSessionFile) {
@@ -1588,7 +1575,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
 
   async #fetchUsage(model: string, signal?: AbortSignal) {
     if (!this.kernel) return null;
-    const settings = getPiProviderSettings(this.host.settings);
+    const settings = decodePiConfig(this.host.config, this.host.selection);
     const contextWindow = findPiModel(settings, model)?.contextWindow;
     const response = await this.kernel.request(
       'get_session_stats',
@@ -1633,12 +1620,12 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     const state = getPiState(this.state.providerState);
     const forkSource = state.forkSource;
     if (!forkSource) return;
-    const envText = getRuntimeEnvironmentText(this.host.settings, 'pi');
+    const envText = this.host.environmentText;
     const env = parseEnvironmentVariables(envText);
     const sourceFile = state.forkSourceSessionFile
       ?? findPiSessionFile(
         forkSource.sessionId,
-        this.config.vaultWorkingDirectory,
+        this.config.workingDirectory,
         getString(env.PI_CODING_AGENT_SESSION_DIR),
       );
     if (!sourceFile) {
@@ -1647,7 +1634,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     const fork = await this.options.createForkSessionFile(
       sourceFile,
       forkSource.resumeAt,
-      { targetCwd: this.config.vaultWorkingDirectory },
+      { targetCwd: this.config.workingDirectory },
     );
     if (isSamePath(fork.sessionFile, sourceFile)) {
       throw new Error('Pi fork materialization returned the source session as its target.');
@@ -1963,10 +1950,10 @@ function createDeferred<T>(): Deferred<T> {
 function resolveSelectedModel(
   request: ProviderExecutionRequest,
   settings: PiProviderSettings,
-  hostSettings: Record<string, unknown>,
+  selection: ProviderSelectionDefaults,
 ): string {
   const model = request.configuration.model
-    ?? getString(hostSettings.model);
+    ?? getString(selection.model);
   if (
     !model
     || !decodePiModelId(model)
@@ -1983,11 +1970,11 @@ function resolveThinkingLevel(
   request: ProviderExecutionRequest,
   settings: PiProviderSettings,
   model: string,
-  hostSettings: Record<string, unknown>,
+  selection: ProviderSelectionDefaults,
 ): string | null {
   if (request.configuration.reasoning === null) return null;
   const requested = request.configuration.reasoning
-    ?? getString(hostSettings.effortLevel)
+    ?? getString(selection.effortLevel)
     ?? settings.preferredThinkingByModel[model];
   const discovered = findPiModel(settings, model);
   const resolved = discovered
@@ -2017,24 +2004,6 @@ function resolveToolProfile(policy: ProviderToolPolicy): {
   return { noTools: false };
 }
 
-function resolveSystemPrompt(
-  request: ProviderExecutionRequest,
-  settings: Record<string, unknown>,
-  vaultPath: string,
-): string {
-  const instructions = request.configuration.systemInstructions;
-  if (instructions.kind === 'explicit') {
-    return instructions.instructions;
-  }
-  return buildSystemPrompt({
-    customPrompt: getString(settings.systemPrompt) ?? undefined,
-    mediaFolder: getString(settings.mediaFolder) ?? undefined,
-    userName: getString(settings.userName) ?? undefined,
-    vaultPath,
-    sessionInstructions: instructions.sessionInstructions,
-  } satisfies SystemPromptSettings);
-}
-
 function encodePrompt(
   request: ProviderExecutionRequest,
   replayConversationHistory: boolean,
@@ -2044,13 +2013,7 @@ function encodePrompt(
   text: string;
 } {
   const inputText = getInputText(request);
-  let text = inputText;
-  const context = request.context;
-  if (context?.linkedContent?.path) {
-    text = appendLinkedContent(text, context.linkedContent.path);
-  }
-  text = appendSelectionContexts(text, context);
-  text = appendSessionReferences(text, context?.sessionReferences);
+  let text = appendExecutionContext(inputText, request.context);
   // Pi splits a leading skill name at a literal space, not the context's newline separator.
   if (text !== inputText && /^\/skill:\S+$/.test(inputText)) {
     text = `${inputText} ${text.slice(inputText.length)}`;

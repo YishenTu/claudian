@@ -4,6 +4,7 @@ import * as path from 'node:path';
 
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { createProviderRecoveryTestHarness } from '@test/helpers/features/chat/ProviderRecoveryTestHarness';
+import { runtimeHostFor, withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
 import { testDate, testTime } from '@test/helpers/testClock';
 
 import type {
@@ -85,7 +86,7 @@ class FakeKernel implements PiExecutionKernel {
 
 function createHost(): any {
   return {
-    app: { vault: { adapter: { basePath: '/vault' } } },
+    workingDirectory: '/vault',
     executionLifecycleRegistry: new ProviderExecutionLifecycleRegistry(),
     getResolvedProviderCliPath: jest.fn(async () => '/bin/pi'),
     settings: {
@@ -120,7 +121,7 @@ function createConfig(
     interactionPort: createInteractionPort(),
     lifecycle: 'persistent',
     nativePersistence: 'enabled',
-    vaultWorkingDirectory: '/vault',
+    workingDirectory: '/vault',
     ...overrides,
   };
 }
@@ -140,7 +141,7 @@ function createRequest(
     configuration: {
       model: 'pi:anthropic/claude-sonnet-4',
       reasoning: 'high',
-      systemInstructions: { kind: 'provider-default' },
+      systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' },
     },
     input: [{ text: 'Hello Pi', type: 'text' }],
     signal: new AbortController().signal,
@@ -246,8 +247,7 @@ function createHarness(
     ['set_thinking_level', {}],
     ['steer', { disposition: 'queued' }],
   ]);
-  const backend = new PiExecutionBackend(
-    host,
+  const backend = new PiExecutionBackend(runtimeHostFor(host, 'pi'),
     {
       createKernel: (spec, callbacks) => {
         const kernel = new FakeKernel(spec, callbacks, responses, requestHandler);
@@ -351,7 +351,7 @@ describe('PiExecutionBackend', () => {
       { type: 'message', id: 'a', parentId: 'u', timestamp: testTime({ milliseconds: 2500 }),
         message: { role: 'assistant', content: [{ type: 'text', text: 'Done' }], stopReason: 'stop', usage: { output: 125 } } },
     ].map(record => JSON.stringify(record)).join('\n');
-    const harness = createHarness(createConfig({ vaultWorkingDirectory: tempDir }));
+    const harness = createHarness(createConfig({ workingDirectory: tempDir }));
     harness.responses.set('get_state', { sessionId: 'pi-session-1', sessionFile });
     try {
       const eventsPromise = collect(harness.session.execute(createRequest()).events);
@@ -392,7 +392,7 @@ describe('PiExecutionBackend', () => {
     ];
     await fs.writeFile(sessionFile, records.map(r => JSON.stringify(r)).join('\n') + '\n');
     const harness = createHarness(createConfig({
-      vaultWorkingDirectory: tempDir,
+      workingDirectory: tempDir,
       resumeSeed: { providerSessionId: 'pi-session-1', providerState: {
         sessionId: 'pi-session-1', sessionFile, ...(storedLeaf ? { leafEntryId: 'assistant-1' } : {}),
       } },
@@ -425,7 +425,7 @@ describe('PiExecutionBackend', () => {
     const sessionFile = path.join(root, 'session.jsonl');
     await fs.writeFile(sessionFile, JSON.stringify({ type: 'session', id: 'pi-session-1', cwd: root }) + '\n');
     const harness = createHarness(createConfig({
-      vaultWorkingDirectory: root,
+      workingDirectory: root,
       resumeSeed: { providerSessionId: 'pi-session-1', providerState: {
         sessionId: 'pi-session-1', sessionFile,
         treeCursor: { targetId: 'first-user', leafId: null },
@@ -464,7 +464,7 @@ describe('PiExecutionBackend', () => {
     let renderer: unknown = 'unset';
     let kernel: FakeKernel | null = null;
     const probe = new PiCommandMetadataProbe(
-      createHost(),
+      runtimeHostFor(createHost(), 'pi'),
       (spec, callbacks, suppliedRenderer) => {
         renderer = suppliedRenderer;
         kernel = new FakeKernel(spec, callbacks, responses);
@@ -490,8 +490,7 @@ describe('PiExecutionBackend', () => {
     let staleRequestStarted = false;
     host.getResolvedProviderCliPath.mockImplementation(async () => cliPath);
     const kernels: FakeKernel[] = [];
-    const probe = new PiCommandMetadataProbe(
-      host,
+    const probe = new PiCommandMetadataProbe(runtimeHostFor(host, 'pi'),
       (spec, callbacks) => {
         const kernel = new FakeKernel(
           spec,
@@ -521,7 +520,7 @@ describe('PiExecutionBackend', () => {
       },
     );
     const quiesce = jest.spyOn(probe, 'quiesceForEnvironmentChange');
-    const services = await createPiWorkspaceServices(host, {
+    const services = await createPiWorkspaceServices(withRuntimeHosts(host), {
       commandMetadataProbe: probe,
     });
     const context = {
@@ -560,7 +559,7 @@ describe('PiExecutionBackend', () => {
     let cliPath = '/bin/pi-a';
     host.getResolvedProviderCliPath.mockImplementation(async () => cliPath);
     const kernels: FakeKernel[] = [];
-    const probe = new PiCommandMetadataProbe(host, (spec, callbacks) => {
+    const probe = new PiCommandMetadataProbe(runtimeHostFor(host, 'pi'), (spec, callbacks) => {
       const kernel = new FakeKernel(
         spec,
         callbacks,
@@ -571,7 +570,7 @@ describe('PiExecutionBackend', () => {
       kernels.push(kernel);
       return kernel;
     });
-    const services = await createPiWorkspaceServices(host, {
+    const services = await createPiWorkspaceServices(withRuntimeHosts(host), {
       commandMetadataProbe: probe,
     });
     const context = {
@@ -616,12 +615,12 @@ describe('PiExecutionBackend', () => {
   it('does not strand a command metadata waiter when the workspace is disposed while fenced', async () => {
     const host = createHost();
     const kernels: FakeKernel[] = [];
-    const probe = new PiCommandMetadataProbe(host, (spec, callbacks) => {
+    const probe = new PiCommandMetadataProbe(runtimeHostFor(host, 'pi'), (spec, callbacks) => {
       const kernel = new FakeKernel(spec, callbacks, new Map());
       kernels.push(kernel);
       return kernel;
     });
-    const services = await createPiWorkspaceServices(host, {
+    const services = await createPiWorkspaceServices(withRuntimeHosts(host), {
       commandMetadataProbe: probe,
     });
     const mutationEntered = createDeferred();
@@ -1117,6 +1116,22 @@ describe('PiExecutionBackend', () => {
     }
   });
 
+  it('encodes a captured Linked content body', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest({
+      context: { linkedContent: { path: 'notes/a.md', content: 'Body' } },
+      input: [{ text: 'Inspect linked content', type: 'text' }],
+    }));
+    const eventsPromise = collect(run.events);
+    await flush();
+    completeTurn(harness.kernels[0]);
+    await eventsPromise;
+
+    expect(getPromptMessages(harness.kernels[0])).toEqual([
+      'Inspect linked content\n\n<linked_content path="notes/a.md">\n<![CDATA[Body]]>\n</linked_content>',
+    ]);
+  });
+
   it('encodes path-only Linked content without changing the Vault-root process CWD', async () => {
     const harness = createHarness();
     const run = harness.session.execute(createRequest({
@@ -1150,7 +1165,7 @@ describe('PiExecutionBackend', () => {
           sessionId: 'pi-session-1',
         },
       },
-      vaultWorkingDirectory: sessionDir,
+      workingDirectory: sessionDir,
     }));
     harness.responses.set('get_state', {
       leafEntryId: 'assistant-1',
@@ -1203,7 +1218,7 @@ describe('PiExecutionBackend', () => {
           sessionId: 'session-a',
         },
       },
-      vaultWorkingDirectory: sessionDir,
+      workingDirectory: sessionDir,
     }));
     harness.host.settings.providerConfigs.pi.environmentVariables =
       `PI_CODING_AGENT_SESSION_DIR=${sessionDir}`;
@@ -1253,7 +1268,7 @@ describe('PiExecutionBackend', () => {
           sessionId: 'session-a',
         },
       },
-      vaultWorkingDirectory: sessionDir,
+      workingDirectory: sessionDir,
     }), undefined, async <T>(type: string): Promise<T> => {
       if (type === 'get_state') return getState.promise as Promise<T>;
       return {} as T;
@@ -1310,7 +1325,7 @@ describe('PiExecutionBackend', () => {
           sessionId: 'session-a',
         },
       },
-      vaultWorkingDirectory: sessionDir,
+      workingDirectory: sessionDir,
     }), undefined, async <T>(type: string): Promise<T> => {
       if (type !== 'get_state') return {} as T;
       getStateCount += 1;
@@ -1368,7 +1383,7 @@ describe('PiExecutionBackend', () => {
           sessionFile: missingSessionFile,
         },
       },
-      vaultWorkingDirectory: sessionDir,
+      workingDirectory: sessionDir,
     }), kernel => {
       kernel.start.mockImplementation(() => kernel.close());
     });
@@ -1398,7 +1413,7 @@ describe('PiExecutionBackend', () => {
     const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-coordinator-missing-'));
     const missingSessionFile = path.join(sessionDir, 'missing.jsonl');
     const harness = createHarness(createConfig({
-      vaultWorkingDirectory: sessionDir,
+      workingDirectory: sessionDir,
     }));
     harness.host.settings.providerConfigs.pi.environmentVariables =
       `PI_CODING_AGENT_SESSION_DIR=${sessionDir}`;
@@ -1419,7 +1434,7 @@ describe('PiExecutionBackend', () => {
     const recovery = createProviderRecoveryTestHarness({
       backend: harness.backend,
       conversation,
-      vaultWorkingDirectory: sessionDir,
+      workingDirectory: sessionDir,
       configuration: createRequest().configuration,
       resolveMissingProviderSession: async (current, missingSessionId) => {
         const resolution = await historyService.resolveMissingConversationSession(
@@ -1515,7 +1530,7 @@ describe('PiExecutionBackend', () => {
     };
     const harness = createHarness(createConfig({
       resumeSeed: { providerState: { previousSessions: [previousSession] } },
-      vaultWorkingDirectory: sessionDir,
+      workingDirectory: sessionDir,
     }));
     const run = harness.session.execute(createRequest({
       conversationHistory: createConversationHistory('recovered'),
@@ -1587,7 +1602,7 @@ describe('PiExecutionBackend', () => {
           sessionId: 'missing-session-id',
         },
       },
-      vaultWorkingDirectory: sessionDir,
+      workingDirectory: sessionDir,
     }), kernel => {
       kernel.start.mockImplementation(() => {
         kernel.stderr = "No session found matching 'missing-session-id'";
@@ -1638,7 +1653,7 @@ describe('PiExecutionBackend', () => {
     await fs.writeFile(outsideSessionFile, '{"type":"session","id":"legacy"}\n');
     const harness = createHarness(createConfig({
       resumeSeed: createResumeSeed(outsideSessionFile),
-      vaultWorkingDirectory: trustedDir,
+      workingDirectory: trustedDir,
     }), kernel => {
       kernel.start.mockImplementation(() => kernel.close());
     });
@@ -1677,7 +1692,7 @@ describe('PiExecutionBackend', () => {
           sessionId: sessionFile,
         },
       },
-      vaultWorkingDirectory: sessionDir,
+      workingDirectory: sessionDir,
     }), undefined, async <T>(type: string): Promise<T> => {
       if (type === 'set_model') throw new Error('stop after startup validation');
       return {} as T;
@@ -2010,9 +2025,9 @@ describe('PiExecutionBackend', () => {
       configuration: {
         model: 'pi:anthropic/claude-sonnet-4',
         reasoning: 'high',
-        systemInstructions: { kind: 'provider-default' },
+        systemInstructions: { kind: 'main-agent', instructions: 'Caller-resolved Main Agent prompt.' },
       },
-    }));
+    } as never));
     const eventsPromise = collect(run.events);
     await waitFor(() => harness.kernels.length === 1);
     completeTurn(harness.kernels[0]);
@@ -2020,22 +2035,19 @@ describe('PiExecutionBackend', () => {
 
     const args = harness.kernels[0].launchSpec.args;
     const promptIndex = args.indexOf('--system-prompt');
-    const systemPrompt = args[promptIndex + 1] ?? '';
-    expect(systemPrompt).toContain('## Runtime Context');
-    expect(systemPrompt).toContain('Use `bash: date`');
-    expect(systemPrompt).toContain('## Vault Media');
+    expect(args[promptIndex + 1]).toBe('Caller-resolved Main Agent prompt.');
   });
 
-  it('appends session instructions to the provider-default prompt and relaunches when they change', async () => {
+  it('relaunches with the Main Agent instructions when they change', async () => {
     const harness = createHarness();
     const promptOf = (kernel: { launchSpec: { args: string[] } }) =>
       kernel.launchSpec.args[kernel.launchSpec.args.indexOf('--system-prompt') + 1] ?? '';
-    const send = async (sessionInstructions: string, expectedKernels: number) => {
+    const send = async (instructions: string, expectedKernels: number) => {
       const run = harness.session.execute(createRequest({
         configuration: {
           model: 'pi:anthropic/claude-sonnet-4',
           reasoning: 'high',
-          systemInstructions: { kind: 'provider-default', sessionInstructions },
+          systemInstructions: { kind: 'main-agent', instructions },
         },
       }));
       const eventsPromise = collect(run.events);
@@ -2044,15 +2056,13 @@ describe('PiExecutionBackend', () => {
       await eventsPromise;
     };
 
-    await send('## Project\nAlpha', 1);
+    await send('Main Agent prompt Alpha', 1);
     expect(harness.kernels).toHaveLength(1);
-    expect(promptOf(harness.kernels[0])).toContain('## Runtime Context');
-    expect(promptOf(harness.kernels[0]).endsWith('## Project\nAlpha')).toBe(true);
+    expect(promptOf(harness.kernels[0])).toBe('Main Agent prompt Alpha');
 
-    await send('## Project\nBeta', 2);
+    await send('Main Agent prompt Beta', 2);
     expect(harness.kernels).toHaveLength(2);
-    expect(promptOf(harness.kernels[1]).endsWith('## Project\nBeta')).toBe(true);
-    expect(promptOf(harness.kernels[1])).not.toContain('Alpha');
+    expect(promptOf(harness.kernels[1])).toBe('Main Agent prompt Beta');
     await harness.session.dispose();
   });
 
@@ -2061,7 +2071,7 @@ describe('PiExecutionBackend', () => {
     const run = harness.session.execute(createRequest({
       configuration: {
         reasoning: 'high',
-        systemInstructions: { kind: 'provider-default' },
+        systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' },
       },
       toolPolicy: {
         kind: 'allow-list',
@@ -2871,7 +2881,7 @@ describe('PiExecutionBackend', () => {
           futureState: { retained: true },
         },
       },
-      vaultWorkingDirectory: tempDir,
+      workingDirectory: tempDir,
     }), kernel => {
       harness.responses.set('get_state', {
         sessionFile: kernel.launchSpec.sessionTarget,

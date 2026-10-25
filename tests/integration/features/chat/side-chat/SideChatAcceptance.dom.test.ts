@@ -11,6 +11,7 @@ import {
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, screen, waitFor } from '@testing-library/dom';
 
+import { buildSystemPrompt } from '@/core/prompt/mainAgent';
 import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { buildTabRuntimePorts } from '@/features/chat/tabs/runtime/TabRuntimePorts';
@@ -36,7 +37,7 @@ it('delivers an admitted prompt to the child even when the panel collapses durin
   expect(screen.getByRole('button', { name: 'Side chat' })).toBeTruthy();
 });
 
-it.each([true, false])('freezes the parent project side-chat text at start (live project: %s)', async live => {
+it.each([true, false])('freezes the side-chat Main Agent prompt and project text at start (live project: %s)', async live => {
   const harness = createHarness();
   const record = projectRecord({ id: 'project-1', name: 'Launch', instructions: 'Ship the beta.' });
   const projects = createProjectsFake(live ? [record] : []);
@@ -52,14 +53,18 @@ it.each([true, false])('freezes the parent project side-chat text at start (live
   // Later project edits, deletion or the parent leaving never reach the started side chat.
   projects.put({ ...record, name: 'Renamed', instructions: 'Changed.' });
   Object.assign(harness.plugin, { getConversationSync: (id: string) => ({ id, providerId: 'claude' }) });
+  Object.assign((harness.plugin as { settings: object }).settings, { systemPrompt: 'Changed custom prompt.', userName: 'Changed user' });
   const second = harness.controller.runtime!.submit({ content: 'Explore C' });
   await waitFor(() => expect(harness.backend.latest.requests).toHaveLength(2));
   harness.backend.latest.complete();
   await second;
 
-  const expected = live
-    ? { kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(record) }
-    : { kind: 'provider-default' };
+  const expected = {
+    kind: 'main-agent',
+    instructions: buildSystemPrompt({
+      vaultPath: '/vault', sessionInstructions: live ? renderProjectMemberInstructions(record) : undefined,
+    }),
+  };
   expect(harness.backend.latest.requests.map(request => request.configuration.systemInstructions)).toEqual([expected, expected]);
 });
 

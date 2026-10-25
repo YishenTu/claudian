@@ -10,5 +10,5 @@ export interface AuxiliaryExecutionContext {
   readonly backend: ProviderExecutionBackend;
   readonly interactionPort: ProviderInteractionPort;
   readonly lifecycleRegistry: ProviderExecutionLifecycleRegistry;
-  readonly vaultWorkingDirectory: string;
+  readonly workingDirectory: string;
 }

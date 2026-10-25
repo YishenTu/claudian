@@ -1,4 +1,5 @@
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+
 import { GrokCommandMetadataProbe } from '@/providers/grok/app/GrokCommandMetadataProbe';
 import type {
   GrokExecutionNativeConnection,
@@ -69,12 +70,12 @@ describe('GrokCommandMetadataProbe', () => {
       create: jest.fn(() => new FakeMetadataNative('stale', false)),
     };
     const plugin = {
-      app: { vault: { adapter: { basePath: '/tmp/grok-vault' } } },
+      workingDirectory: '/tmp/grok-vault',
       getResolvedProviderCliPath: jest.fn(() => cliResolution.promise),
       manifest: { version: 'test' },
       settings: {},
-    } as unknown as ProviderHost;
-    const probe = new GrokCommandMetadataProbe(plugin, nativeFactory);
+    };
+    const probe = new GrokCommandMetadataProbe(runtimeHostFor(plugin, 'grok'), nativeFactory);
 
     const load = probe.load();
     probe.beginEnvironmentTransition();
@@ -108,12 +109,12 @@ describe('GrokCommandMetadataProbe', () => {
       }),
     };
     const plugin = {
-      app: { vault: { adapter: { basePath: '/tmp/grok-vault' } } },
+      workingDirectory: '/tmp/grok-vault',
       getResolvedProviderCliPath: jest.fn(async () => configuredCli),
       manifest: { version: 'test' },
       settings: {},
-    } as unknown as ProviderHost;
-    const probe = new GrokCommandMetadataProbe(plugin, nativeFactory);
+    };
+    const probe = new GrokCommandMetadataProbe(runtimeHostFor(plugin, 'grok'), nativeFactory);
 
     const firstLoad = probe.load();
     await first.listStarted.promise;
@@ -140,12 +141,12 @@ describe('GrokCommandMetadataProbe', () => {
       create: jest.fn(() => new FakeMetadataNative('unused', false)),
     };
     const plugin = {
-      app: { vault: { adapter: { basePath: '/tmp/grok-vault' } } },
+      workingDirectory: '/tmp/grok-vault',
       getResolvedProviderCliPath: jest.fn(async () => '/configured/grok'),
       manifest: { version: 'test' },
       settings: {},
-    } as unknown as ProviderHost;
-    const probe = new GrokCommandMetadataProbe(plugin, nativeFactory);
+    };
+    const probe = new GrokCommandMetadataProbe(runtimeHostFor(plugin, 'grok'), nativeFactory);
     probe.beginEnvironmentTransition();
 
     const controller = new AbortController();
@@ -164,12 +165,12 @@ describe('GrokCommandMetadataProbe', () => {
       create: jest.fn(() => new FakeMetadataNative('unused', false)),
     };
     const plugin = {
-      app: { vault: { adapter: { basePath: '/tmp/grok-vault' } } },
+      workingDirectory: '/tmp/grok-vault',
       getResolvedProviderCliPath: jest.fn(async () => '/configured/grok'),
       manifest: { version: 'test' },
       settings: {},
-    } as unknown as ProviderHost;
-    const probe = new GrokCommandMetadataProbe(plugin, nativeFactory);
+    };
+    const probe = new GrokCommandMetadataProbe(runtimeHostFor(plugin, 'grok'), nativeFactory);
     const controller = new AbortController();
     probe.beginEnvironmentTransition();
 

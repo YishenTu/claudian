@@ -1,5 +1,6 @@
-import { getCodexProviderSettings } from '../settings';
+import type { CodexProviderSettings } from '../config';
 import {
+  type CodexExecutionTargetSettings,
   inferWslDistroFromWindowsPath,
   resolveCodexExecutionTarget,
 } from './CodexExecutionTargetResolver';
@@ -7,7 +8,7 @@ import type { CodexExecutionTarget, CodexLaunchSpec } from './codexLaunchTypes';
 import { createCodexPathMapper } from './CodexPathMapper';
 
 export interface BuildCodexLaunchSpecOptions {
-  settings: Record<string, unknown>;
+  codexSettings: CodexExecutionTargetSettings & Pick<CodexProviderSettings, 'responseVerbosity'>;
   resolvedCliCommand: string | null;
   cliArgs?: readonly string[];
   hostVaultPath: string | null;
@@ -23,7 +24,7 @@ export function buildCodexLaunchSpec(
   options: BuildCodexLaunchSpecOptions,
 ): CodexLaunchSpec {
   const target = options.executionTarget ?? resolveCodexExecutionTarget({
-    settings: options.settings,
+    codexSettings: options.codexSettings,
     hostPlatform: options.hostPlatform,
     hostVaultPath: options.hostVaultPath,
     resolveDefaultWslDistro: options.resolveDefaultWslDistro,
@@ -57,7 +58,7 @@ export function buildCodexLaunchSpec(
   }
 
   const resolvedCliCommand = options.resolvedCliCommand?.trim() || 'codex';
-  const verbosity = getCodexProviderSettings(options.settings).responseVerbosity;
+  const verbosity = options.codexSettings.responseVerbosity;
   // Verbosity has no turn/start override. Launch args participate in the runtime
   // fingerprint, so changing this setting replaces the server for subsequent work.
   const cliArgs = options.cliArgs ?? [

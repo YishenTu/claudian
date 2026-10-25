@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
+import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
 import { App } from 'obsidian';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
@@ -39,7 +40,7 @@ export async function createForkTestEnvironment() {
   const settings = {
     model: 'claude-sonnet-4-5', permissionMode: 'ask', mediaFolder: 'media',
     providerConfigs: {
-      claude: claudeCatalogFixture(['claude-sonnet-4-5']),
+      claude: { ...claudeCatalogFixture(['claude-sonnet-4-5']), environmentVariables: `CLAUDE_CONFIG_DIR=${path.join(root, 'claude')}` },
       pi: { enabled: true, visibleModels: ['pi:anthropic/claude-sonnet-4'], discoveredModels: [{
         encodedId: 'pi:anthropic/claude-sonnet-4', id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text'],
       }] },
@@ -53,6 +54,11 @@ export async function createForkTestEnvironment() {
     storage: {},
     getResolvedProviderCliPath: async (providerId: string) => `/bin/${providerId}`,
     getActiveEnvironmentVariables: () => `CLAUDE_CONFIG_DIR=${path.join(root, 'claude')}`,
+    getRuntimeHost: (providerId: string) => createTestRuntimeHost(settings, providerId, {
+      workingDirectory: root,
+      executionLifecycleRegistry: lifecycleRegistry,
+      getResolvedProviderCliPath: async (id: string) => `/bin/${id}`,
+    }),
   } as unknown as ProviderHost;
   const repository = new ConversationRepository({
     providers: ProviderRegistry,
@@ -81,7 +87,7 @@ export async function createForkTestEnvironment() {
         requestApproval: async () => { throw new Error('Unexpected approval'); },
         dismissInteraction: () => undefined,
       },
-      vaultWorkingDirectory: root,
+      workingDirectory: root,
       createId: () => `execution-${++sequence}`,
       resolveMissingProviderSession: async () => 'preserved',
     });

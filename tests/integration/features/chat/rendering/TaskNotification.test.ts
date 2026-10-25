@@ -43,7 +43,7 @@ it.each([false, true])('renders a native notification and its follow-up through 
   const stream = new StreamController({ plugin, state, renderer, subagentManager,
     getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
   const session = new ClaudeExecutionSession({} as any, {
-    lifecycle: 'persistent', nativePersistence: 'enabled', vaultWorkingDirectory: '/vault', interactionPort: {} as any,
+    lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: '/vault', interactionPort: {} as any,
   });
   let id = 0;
   const host = { state, renderer, stream, createMessageId: () => `message-${++id}` };
@@ -107,7 +107,7 @@ it.each([false, true])('shows a session notification immediately with streaming=
   const coordinator = new ChatExecutionCoordinator({
     lifecycleRegistry, resolveBackend: () => backend,
     persistence: { persistExecutionSnapshot: async () => true, registerExecutionBinding: () => undefined, releaseExecutionBinding: () => undefined } as any,
-    interactionPort: {} as any, vaultWorkingDirectory: '/vault', createId: () => 'binding',
+    interactionPort: {} as any, workingDirectory: '/vault', createId: () => 'binding',
     resolveMissingProviderSession: async () => 'not_found',
     onSessionEvent: (event, context) => enqueueTabSessionEvent(tab, plugin, event, context),
   });

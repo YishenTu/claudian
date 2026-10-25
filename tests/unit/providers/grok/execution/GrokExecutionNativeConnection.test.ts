@@ -8,10 +8,10 @@ jest.mock('cross-spawn', () => jest.fn());
 
 import fixture from '@test/fixtures/providers/grok/extensions/plan-mode-hook.json';
 import commandsList from '@test/fixtures/providers/grok/runtime/commands-list.json';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import spawn from 'cross-spawn';
 
 import { isSteerableExecutionSession, type ProviderExecutionEvent, type ProviderExecutionRequest } from '@/core/execution';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ACPJSONRPCTransport } from '@/providers/acp';
 import { GrokExecutionBackend } from '@/providers/grok/execution/GrokExecutionBackend';
 import { GrokExecutionNativeConnectionImpl } from '@/providers/grok/execution/GrokExecutionNativeConnection';
@@ -192,10 +192,10 @@ it.each([false, true])('terminates on native exit after prompt settled: %s', asy
   native.onRequest('session/prompt', () => { started = true; return prompt; });
   native.onRequest('_x.ai/interject', () => ({ result: { status: 'queued' } }));
   native.start();
-  const session = new GrokExecutionBackend({ getResolvedProviderCliPath: async () => 'grok', settings: { model: 'grok/grok-4', providerConfigs: { grok: { enabled: true, visibleModels: ['grok-4'], selectedModelsByHost: { [getHostnameKey()]: { fingerprint: 'test', refreshedAt: 1, defaultModelId: 'grok-4', models: [{ rawId: 'grok-4', displayName: 'Grok 4', supportsReasoning: false, reasoningEfforts: [] }] } } } } } } as unknown as ProviderHost, {
+  const session = new GrokExecutionBackend(runtimeHostFor({ getResolvedProviderCliPath: async () => 'grok', settings: { model: 'grok/grok-4', providerConfigs: { grok: { enabled: true, visibleModels: ['grok-4'], selectedModelsByHost: { [getHostnameKey()]: { fingerprint: 'test', refreshedAt: 1, defaultModelId: 'grok-4', models: [{ rawId: 'grok-4', displayName: 'Grok 4', supportsReasoning: false, reasoningEfforts: [] }] } } } } } }, 'grok'), {
     nativeFactory: { create: options => new GrokExecutionNativeConnectionImpl(options) },
   }).createSession({
-    vaultWorkingDirectory: '/tmp', lifecycle: 'persistent', nativePersistence: 'enabled',
+    workingDirectory: '/tmp', lifecycle: 'persistent', nativePersistence: 'enabled',
     interactionPort: { askUserQuestion: jest.fn(), dismissInteraction: jest.fn(), requestApproval: jest.fn() },
   });
   const request: ProviderExecutionRequest = {

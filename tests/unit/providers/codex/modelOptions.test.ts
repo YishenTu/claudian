@@ -29,7 +29,7 @@ describe('Codex model options', () => {
     const reloaded = JSON.parse(JSON.stringify(settings));
     expect(getCodexProviderSettings(reloaded).discoveredModels.map(model => model.model))
       .toEqual(['constructor', 'toString', '__proto__']);
-    expect(getCodexModelOptions(reloaded)).toEqual([
+    expect(getCodexModelOptions(getCodexProviderSettings(reloaded))).toEqual([
       { value: 'openai-codex/toString', label: 'String Model', description: undefined },
       { value: 'openai-codex/__proto__', label: 'Proto Model', description: undefined },
       { value: 'openai-codex/constructor', label: 'Constructor Model', description: undefined },
@@ -49,7 +49,7 @@ describe('Codex model options', () => {
     const aliases = getCodexProviderSettings(reloaded).modelAliases;
     expect(Object.keys(aliases)).toEqual(['__proto__', 'constructor', 'toString']);
     expect(aliases['__proto__']).toBe('Custom Proto');
-    expect(getCodexModelOptions(reloaded)).toEqual([
+    expect(getCodexModelOptions(getCodexProviderSettings(reloaded))).toEqual([
       { value: 'openai-codex/toString', label: 'Custom String', description: undefined },
       { value: 'openai-codex/__proto__', label: 'Custom Proto', description: undefined },
       { value: 'openai-codex/constructor', label: 'Custom Constructor', description: undefined },
@@ -58,7 +58,7 @@ describe('Codex model options', () => {
     updateCodexProviderSettings(reloaded, { visibleModels: ['__proto__', 'toString'] });
     const pruned = JSON.parse(JSON.stringify(reloaded));
     expect(Object.keys(getCodexProviderSettings(pruned).modelAliases)).toEqual(['__proto__', 'toString']);
-    expect(getCodexModelOptions(pruned)).toEqual([
+    expect(getCodexModelOptions(getCodexProviderSettings(pruned))).toEqual([
       { value: 'openai-codex/__proto__', label: 'Custom Proto', description: undefined },
       { value: 'openai-codex/toString', label: 'Custom String', description: undefined },
     ]);

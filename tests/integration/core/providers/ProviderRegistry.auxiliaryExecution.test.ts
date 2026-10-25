@@ -17,7 +17,7 @@ it.each([true, false])('selects auxiliary persistence from ephemeral support (%s
   } as unknown as ProviderRegistration);
   const host = {
     settings: { titleGenerationModel: 'explicit-title-model' },
-    app: { vault: { adapter: { basePath: '/vault' } } },
+    workingDirectory: '/vault',
     executionLifecycleRegistry: lifecycle,
   } as unknown as ProviderHost;
   const title = ProviderRegistry.createTitleGenerationService(host, 'claude');

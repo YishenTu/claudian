@@ -1,7 +1,7 @@
 import { SESSION_TOOLS } from '@/core/tools/toolNames';
 
+import type { PiProviderSettings } from '../config';
 import { decodePiModelId, normalizePiThinkingLevel } from '../models';
-import type { PiProviderSettings } from '../settings';
 import type { PiProviderState } from '../types';
 
 export interface BuildPiLaunchSpecParams {

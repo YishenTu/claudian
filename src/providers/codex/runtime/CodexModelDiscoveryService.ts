@@ -1,10 +1,10 @@
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { ProviderTransitionOwnerContext } from '../../../core/providers/types';
+import { decodeCodexConfig } from '../config';
 import {
   type CodexDiscoveredModel,
   normalizeCodexDiscoveredModels,
 } from '../models';
-import { getCodexProviderSettings } from '../settings';
 import type { CodexAppServerLease, CodexAppServerRuntime } from './CodexAppServerRuntime';
 import type { ModelListResult } from './codexAppServerTypes';
 
@@ -29,13 +29,13 @@ export interface CodexModelDiscoveryServiceLike {
 const MODEL_LIST_PAGE_SIZE = 100;
 
 export class CodexModelDiscoveryService implements CodexModelDiscoveryServiceLike {
-  constructor(private readonly plugin: ProviderHost, private readonly runtime: CodexAppServerRuntime) {}
+  constructor(private readonly host: ProviderRuntimeHost, private readonly runtime: CodexAppServerRuntime) {}
 
   async discoverModels(
     signal?: AbortSignal,
     context?: ProviderTransitionOwnerContext,
   ): Promise<CodexModelDiscoveryResult> {
-    if (!getCodexProviderSettings(this.plugin.settings).enabled) {
+    if (!decodeCodexConfig(this.host.config).enabled) {
       return { kind: 'skipped', reason: 'provider-disabled' };
     }
 

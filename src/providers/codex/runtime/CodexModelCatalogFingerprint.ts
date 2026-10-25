@@ -8,11 +8,10 @@
 
 import { createHash } from 'node:crypto';
 
-import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { ProviderTransitionOwnerContext } from '../../../core/providers/types';
-import { getVaultPath } from '../../../utils/path';
-import { computeCodexEnvHash } from '../env/CodexSettingsReconciler';
+import { decodeCodexConfig } from '../config';
+import { computeCodexEnvHash } from './codexEnvironmentHash';
 import { resolveCodexExecutionTargetAsync } from './CodexExecutionTargetResolver';
 
 const CATALOG_FINGERPRINT_VERSION = '2';
@@ -38,16 +37,17 @@ export function buildCodexCatalogFingerprint(
 }
 
 export async function computeCodexCatalogFingerprint(
-  plugin: ProviderHost,
+  host: ProviderRuntimeHost,
   context?: ProviderTransitionOwnerContext,
 ): Promise<string> {
-  const settings = plugin.settings;
-  const hostVaultPath = getVaultPath(plugin.app) ?? null;
+  // Read before awaiting so the fingerprint describes one configuration.
+  const envText = host.environmentText;
+  const hostVaultPath = host.workingDirectory;
   const executionTarget = await resolveCodexExecutionTargetAsync({
-    settings,
+    codexSettings: decodeCodexConfig(host.config),
     hostVaultPath,
   });
-  const resolvedCliCommand = await plugin.getResolvedProviderCliPath('codex', {
+  const resolvedCliCommand = await host.resolveCliPath({
     ...context,
     executionTarget,
   });
@@ -57,7 +57,6 @@ export async function computeCodexCatalogFingerprint(
     executionTarget.platformOs,
     executionTarget.distroName ?? '',
   ].join(':');
-  const envText = getRuntimeEnvironmentText(settings, 'codex');
   const envHash = computeCodexEnvHash(envText);
 
   return buildCodexCatalogFingerprint({

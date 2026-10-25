@@ -23,7 +23,7 @@ interface ProviderRecoveryTestHarnessOptions {
     missingProviderSessionId?: string,
   ) => Promise<MissingProviderSessionResolution>;
   readonly toolPolicy?: ProviderToolPolicy;
-  readonly vaultWorkingDirectory: string;
+  readonly workingDirectory: string;
 }
 
 export interface ProviderRecoveryTestHarness {
@@ -63,7 +63,7 @@ export function createProviderRecoveryTestHarness(
     resolveBackend: () => options.backend,
     persistence,
     interactionPort,
-    vaultWorkingDirectory: options.vaultWorkingDirectory,
+    workingDirectory: options.workingDirectory,
     createId: () => `provider-recovery-${++nextId}`,
     resolveMissingProviderSession: (_conversationId, missingProviderSessionId) => (
       options.resolveMissingProviderSession(

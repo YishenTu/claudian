@@ -3,10 +3,11 @@ import { PassThrough } from 'node:stream';
 
 jest.mock('cross-spawn', () => jest.fn());
 
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import spawn from 'cross-spawn';
 
 import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { inspectCodexInstallation } from '@/providers/codex/runtime/CodexCLIInstallation';
 
 function respond(stdout: string, code = 0) {
@@ -36,8 +37,8 @@ describe('Codex CLI installation', () => {
   });
   afterEach(() => Object.defineProperty(process, 'platform', { value: platform }));
 
-  function host(command = 'codex'): ProviderHost {
-    return {
+  function host(command = 'codex'): ProviderRuntimeHost {
+    return runtimeHostFor({
       storage: { installationKey: getHostnameKey() },
       settings: {
         providerConfigs: { codex: {
@@ -46,10 +47,9 @@ describe('Codex CLI installation', () => {
           cliPathsByHost: command === 'codex' ? {} : { [getHostnameKey()]: command },
         } },
       },
-      app: { vault: { adapter: { basePath: 'C:\\vault' } } },
+      workingDirectory: 'C:\\vault',
       getResolvedProviderCliPath: async () => command,
-      getActiveEnvironmentVariables: () => '',
-    } as unknown as ProviderHost;
+    }, 'codex');
   }
 
   it('resolves the real WSL binary before reading its version', async () => {

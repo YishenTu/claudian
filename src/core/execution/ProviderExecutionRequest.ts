@@ -32,25 +32,25 @@ export type ProviderSelectionSnapshot =
   | { readonly kind: 'canvas'; readonly selection: CanvasSelectionContext };
 
 export interface ProviderExecutionContext {
-  /** Ordered captures; when present, supersedes the legacy singular selection fields. */
+  /** Selections in capture order. */
   readonly selections?: readonly ProviderSelectionSnapshot[];
   readonly sessionReferences?: readonly ProviderSessionReference[];
   readonly linkedContent?: ProviderLinkedContentContext;
-  readonly editorSelection?: EditorSelectionContext | null;
-  readonly browserSelection?: BrowserSelectionContext | null;
-  readonly canvasSelection?: CanvasSelectionContext | null;
 }
 
 /**
  * Resolved per request, so they may differ between sessions and change between turns: a change applies from the
  * session's next turn, never mid-turn. A provider may refuse a change for a non-persistent session (a side chat) whose
  * context a restart would lose; keep such a session's instructions fixed for its lifetime.
+ *
+ * Both kinds carry literal text resolved by the caller; adapters only deliver it through their native transport and
+ * never compose or substitute prompts themselves. The kind tells adapters which transport framing applies.
  */
 export type ProviderSystemInstructions =
   | {
-      readonly kind: 'provider-default';
-      /** Appended verbatim as the last section of the default Main Agent prompt (for example, a project paragraph). */
-      readonly sessionInstructions?: string;
+      /** The default Main Agent prompt, built by the shared core prompt builder. */
+      readonly kind: 'main-agent';
+      readonly instructions: string;
     }
   | {
       readonly kind: 'explicit';

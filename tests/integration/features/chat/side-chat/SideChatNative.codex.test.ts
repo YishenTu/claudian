@@ -11,9 +11,12 @@ import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerR
 
 import { traceSideChild } from './SideChatNativeTracer';
 
+/** The backend resolves its runtime per session; tests pin one instance. */
+const fixedRuntime = (runtime: CodexAppServerRuntime) => (): CodexAppServerRuntime => runtime;
+
 const runtimes: CodexAppServerRuntime[] = [];
 function createRuntime(host: ForkTestEnvironment['host']): CodexAppServerRuntime {
-  const runtime = new CodexAppServerRuntime(host, () => undefined);
+  const runtime = new CodexAppServerRuntime(host.getRuntimeHost('codex'), () => undefined);
   runtimes.push(runtime);
   return runtime;
 }
@@ -68,7 +71,10 @@ function createNativeCodex(env: ForkTestEnvironment) {
     }
     throw new Error(`Unexpected Codex method: ${method}`);
   }));
-  return { backend: new CodexExecutionBackend(env.host, createRuntime(env.host)), operations, prompts, sourceFile, threads };
+  return { backend: new CodexExecutionBackend(
+    env.host.getRuntimeHost('codex'),
+    fixedRuntime(createRuntime(env.host)),
+  ), operations, prompts, sourceFile, threads };
 }
 
 describe('Codex side-chat native child', () => {

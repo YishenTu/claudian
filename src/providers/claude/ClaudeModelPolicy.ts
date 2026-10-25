@@ -1,9 +1,11 @@
+import { getProviderConfig } from '../../core/providers/providerConfig';
 import { formatReasoningValueLabel } from '../../core/providers/reasoning';
 import type {
   ProviderModelPolicy,
+  ProviderPermissionModePolicy,
   ProviderUIOption,
 } from '../../core/providers/types';
-import { getCustomModelIds } from './env/claudeModelEnv';
+import { getCustomModelIds } from './claudeModelEnv';
 import {
   findClaudeModelOption,
   findClaudeModelSelectionOption,
@@ -14,14 +16,33 @@ import {
 } from './modelOptions';
 import { isClaudeModelSelectionId, toClaudeRuntimeModelId } from './modelSelection';
 import { CLAUDE_MODEL_TIER_PATTERN, isClaudeModelTier } from './modelTiers';
-import { CLAUDE_PERMISSION_MODE_POLICY } from './permissionModes';
-import { getClaudeProviderSettings, updateClaudeProviderSettings } from './settings';
+import { CLAUDE_PERMISSION_MODES, type ClaudePermissionMode } from './permissionModes';
+import { getClaudeModelSource, getClaudeProviderSettings, updateClaudeProviderSettings } from './settings';
 import {
   isDefaultClaudeModel,
   resolveSupportedEffortLevel
 } from './types/models';
 
 const VERSIONED_CLAUDE_MODEL = new RegExp(`^claude-(?:${CLAUDE_MODEL_TIER_PATTERN})-`);
+
+/** Retired Safe-toggle targets, stored as `providerConfigs.claude.safeMode`. */
+const LEGACY_SAFE_MODES: Readonly<Record<string, ClaudePermissionMode>> = {
+  auto: 'auto',
+  default: 'manual',
+  acceptEdits: 'acceptEdits',
+};
+
+const CLAUDE_PERMISSION_MODE_POLICY: ProviderPermissionModePolicy = Object.freeze({
+  values: CLAUDE_PERMISSION_MODES,
+  fallbackValue: 'manual',
+  defaultValue: 'auto',
+  migrateValue(value: string, settings: Record<string, unknown>): string | undefined {
+    if (value !== 'normal') return undefined;
+    // The retired Safe toggle ran the configured safe mode, which defaulted to acceptEdits.
+    const safeMode = getProviderConfig(settings, 'claude').safeMode;
+    return safeMode === undefined ? 'acceptEdits' : typeof safeMode === 'string' ? LEGACY_SAFE_MODES[safeMode] : undefined;
+  },
+});
 
 export const claudeModelPolicy: ProviderModelPolicy = {
   permissionModes: CLAUDE_PERMISSION_MODE_POLICY,
@@ -30,18 +51,19 @@ export const claudeModelPolicy: ProviderModelPolicy = {
     update: (settings, modelAliases) => { updateClaudeProviderSettings(settings, { modelAliases }); },
   },
   getModelOptions(settings) {
-    return getClaudeModelOptions(settings);
+    return getClaudeModelOptions(getClaudeModelSource(settings));
   },
 
   getDefaultModel(settings) {
-    return getClaudeModelOptions(settings)[0]?.value ?? null;
+    return getClaudeModelOptions(getClaudeModelSource(settings))[0]?.value ?? null;
   },
 
   ownsModel(model: string, settings: Record<string, unknown>): boolean {
     const runtimeModel = toClaudeRuntimeModelId(model);
+    const source = getClaudeModelSource(settings);
     return VERSIONED_CLAUDE_MODEL.test(model) || isClaudeModelSelectionId(model) || isClaudeModelTier(runtimeModel)
-      || getClaudeVisibleModelIds(settings).some(id => toClaudeRuntimeModelId(id) === runtimeModel)
-      || Boolean(findClaudeModelOption(getClaudeModelCatalog(settings), model));
+      || getClaudeVisibleModelIds(source).some(id => toClaudeRuntimeModelId(id) === runtimeModel)
+      || Boolean(findClaudeModelOption(getClaudeModelCatalog(source), model));
   },
 
   // Claude reasoning is effort-only: every model reads `effortLevel`.
@@ -51,7 +73,7 @@ export const claudeModelPolicy: ProviderModelPolicy = {
   },
 
   getReasoningOptions(model: string, settings: Record<string, unknown>): ProviderUIOption[] {
-    return getClaudeSupportedEffortLevels(settings, model)
+    return getClaudeSupportedEffortLevels(getClaudeModelSource(settings), model)
       .map(value => ({ value, label: formatReasoningValueLabel(value) }));
   },
 
@@ -80,7 +102,7 @@ export const claudeModelPolicy: ProviderModelPolicy = {
 };
 
 function normalizeClaudeModelSelection(model: string, settings: Record<string, unknown>): string {
-  return findClaudeModelSelectionOption(settings, model)?.value ?? model;
+  return findClaudeModelSelectionOption(getClaudeModelSource(settings), model)?.value ?? model;
 }
 
 function applyClaudeEffortSetting(model: string, settings: unknown): void {
@@ -94,5 +116,5 @@ function applyClaudeEffortSetting(model: string, settings: unknown): void {
  */
 function resolveClaudeEffortSetting(model: string, settings: Record<string, unknown>): string {
   const saved = typeof settings.effortLevel === 'string' ? settings.effortLevel : '';
-  return resolveSupportedEffortLevel(getClaudeSupportedEffortLevels(settings, model), saved) ?? saved;
+  return resolveSupportedEffortLevel(getClaudeSupportedEffortLevels(getClaudeModelSource(settings), model), saved) ?? saved;
 }

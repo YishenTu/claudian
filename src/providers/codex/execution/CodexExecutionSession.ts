@@ -15,11 +15,11 @@ import {
   SessionSnapshotState,
   type SteerableExecutionSession,
 } from '@/core/execution';
-import type { SystemPromptSettings } from '@/core/prompt/mainAgent';
 import { ProviderModelUnavailableError } from '@/core/providers/models/ProviderModelUnavailableError';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import type { StreamChunk } from '@/core/types';
 import { createTurnStats, isTokenCount } from '@/core/types';
+import { resolveCodexReasoningSummary } from '@/providers/codex/config';
 import {
   deriveCodexSessionsRootFromSessionPath,
   findCodexSessionFileAsync,
@@ -40,10 +40,6 @@ import type {
 import { assertCodexModelAvailable } from '@/providers/codex/runtime/CodexModelAvailability';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 import { CodexRPCResponseError } from '@/providers/codex/runtime/CodexRPCTransport';
-import {
-  getCodexProviderSettings,
-  getEffectiveCodexReasoningSummary,
-} from '@/providers/codex/settings';
 import {
   clearCodexResumeState,
   type CodexPendingForkTarget,
@@ -68,6 +64,7 @@ import {
   resolveCodexTurnPolicy,
   resolveCodexTurnReasoningEffort,
   resolveCodexTurnSandboxPolicy,
+  resolveCodexTurnSelection,
   resolveCodexTurnSettings,
 } from './codexTurnConfig';
 
@@ -127,7 +124,7 @@ export class CodexExecutionSession
   private nativeConversationContextEstablished: boolean;
 
   constructor(
-    private readonly plugin: ProviderHost,
+    private readonly host: ProviderRuntimeHost,
     private readonly config: ProviderSessionConfig,
     private readonly runtime: CodexAppServerRuntime,
   ) {
@@ -140,7 +137,7 @@ export class CodexExecutionSession
       projectProviderState: state => this.#projectProviderState(state),
     });
     this.connection = new CodexSessionConnection({
-      vaultWorkingDirectory: config.vaultWorkingDirectory,
+      workingDirectory: config.workingDirectory,
       observer: {
         notification: (method, params) => this.handleNotification(method, params),
         serverRequest: (id, method, params) => this.serverRequestRouter.handleServerRequest(id, method, params),
@@ -270,7 +267,7 @@ export class CodexExecutionSession
   }
 
   async steer(request: ProviderExecutionRequest): Promise<boolean> {
-    try { assertCodexModelAvailable(this.plugin.settings, request.configuration.model); }
+    try { assertCodexModelAvailable(this.host, request.configuration.model); }
     catch (error) { if (error instanceof ProviderModelUnavailableError) return false; throw error; }
     const active = this.activeRun;
     const scope = this.connection.scope;
@@ -349,8 +346,8 @@ export class CodexExecutionSession
   ): Promise<void> {
     const generation = this.lifecycleGeneration;
     try {
-      assertCodexModelAvailable(this.plugin.settings, request.configuration.model);
-      let settings = resolveCodexTurnSettings(this.plugin.settings);
+      assertCodexModelAvailable(this.host, request.configuration.model);
+      let settings = resolveCodexTurnSettings(this.host.config, resolveCodexTurnSelection(this.host));
       let model = resolveCodexTurnModel(request, settings);
       if (!model) {
         this.#finishError(
@@ -394,7 +391,7 @@ export class CodexExecutionSession
       await this.#ensureConnection(generation, active.cancellation.signal);
       if (!this.#isRunCurrent(active, generation)) return;
       // Connection acquisition can wait out a settings transition.
-      settings = resolveCodexTurnSettings(this.plugin.settings);
+      settings = resolveCodexTurnSettings(this.host.config, resolveCodexTurnSelection(this.host));
       model = resolveCodexTurnModel(request, settings)!;
       effort = resolveCodexTurnReasoningEffort(request, settings, model);
 
@@ -408,7 +405,7 @@ export class CodexExecutionSession
           model,
           policy,
           serviceTier,
-          baseInstructions: resolveCodexBaseInstructions(request, this.#getSystemPromptSettings()),
+          baseInstructions: resolveCodexBaseInstructions(request),
           persistExtendedHistory: this.#resolveNativePersistence(),
           toolPolicy: request.toolPolicy,
         },
@@ -447,7 +444,7 @@ export class CodexExecutionSession
         this.connection.targetWorkingDirectory(),
       ));
 
-      assertCodexModelAvailable(this.plugin.settings, request.configuration.model);
+      assertCodexModelAvailable(this.host, request.configuration.model);
       if (compact && !compact.instructions) {
         if (!await this.#allowRequestedTurn(active, generation)) return;
         active.nativeStartSubmitted = true;
@@ -505,8 +502,8 @@ export class CodexExecutionSession
         model,
         serviceTier,
         effort,
-        summary: getEffectiveCodexReasoningSummary(settings, model),
-        personality: getCodexProviderSettings(settings).responseStyle,
+        summary: resolveCodexReasoningSummary(settings.codex, model),
+        personality: settings.codex.responseStyle,
         ...(sandboxPolicy ? { sandboxPolicy } : {}),
         collaborationMode,
       }, this.inputBundles.handOff(bundle));
@@ -915,15 +912,6 @@ export class CodexExecutionSession
         ? { pendingForkTarget: { ...pendingForkTarget } }
         : {}),
     } satisfies CodexProviderState & Record<string, unknown>;
-  }
-
-  #getSystemPromptSettings(): SystemPromptSettings {
-    return {
-      mediaFolder: this.plugin.settings.mediaFolder,
-      customPrompt: this.plugin.settings.systemPrompt,
-      vaultPath: this.config.vaultWorkingDirectory,
-      userName: this.plugin.settings.userName,
-    };
   }
 
   #resolveNativePersistence(): boolean | undefined {

@@ -19,8 +19,8 @@ export class DefaultOpencodeSessionKernel implements OpencodeSessionKernel {
   }
 
   private async connectInternal(options: OpencodeKernelConnectOptions): Promise<void> {
-    const cliPath = await this.options.plugin.getResolvedProviderCliPath('opencode') ?? 'opencode';
-    const environment = buildOpencodeRuntimeEnv(this.options.plugin.settings, cliPath, this.options.databasePath);
+    const cliPath = await this.options.host.resolveCliPath() ?? 'opencode';
+    const environment = buildOpencodeRuntimeEnv(this.options.host.environmentText, cliPath, this.options.databasePath);
     const version = await detectOpencodeNativeVersion(cliPath, environment);
     if (this.disposed) throw new Error('OpenCode session is disposed');
     assertOpencodeSessionCompatibility(this.options.nativeVersion, version);

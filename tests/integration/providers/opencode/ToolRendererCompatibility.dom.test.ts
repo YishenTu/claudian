@@ -55,7 +55,7 @@ async function restoreLiveV2(call: NativeToolCall): Promise<ToolCallInfo> {
       return { data: { id: 'ses_main' } };
     },
   };
-  const config = { vaultWorkingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: jest.fn() } } as any;
+  const config = { workingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: jest.fn() } } as any;
   const kernel = new OpencodeHTTPSessionKernel({ config, getActiveTurnId: () => 'turn',
     onNativeOutput: (event: ProviderExecutionEvent) => output.push(event), onNativeTurn: jest.fn(), onClosed: jest.fn(),
   } as any, '/opencode', {}, { acquire: async () => lease } as any, new OpencodeSessionPersistence(config));

@@ -3,6 +3,7 @@ import '@/providers';
 
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { waitFor, within } from '@testing-library/dom';
 import { App, Component, MarkdownRenderer } from 'obsidian';
 
@@ -130,7 +131,7 @@ async function createPiView() {
     getActiveEnvironmentVariables: () => '',
   };
   const kernels: ScriptedPiKernel[] = [];
-  const backend = new PiExecutionBackend(providerHost as never, {
+  const backend = new PiExecutionBackend(runtimeHostFor(providerHost as never, 'pi'), {
     createKernel: (spec, callbacks) => {
       const kernel = new ScriptedPiKernel(spec, callbacks);
       kernels.push(kernel);

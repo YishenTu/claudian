@@ -2,6 +2,7 @@ import { createConversationControllerDeps } from '@test/helpers/features/chat/Co
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { testDate } from '@test/helpers/testClock';
 
+import { buildSystemPrompt } from '@/core/prompt/mainAgent';
 import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
 
@@ -129,6 +130,7 @@ it('carries the live project paragraph on branch navigation and recovery, and dr
   const first = { id: 'first', role: 'user' as const, content: 'First', timestamp: testDate().getTime() };
   const prompt = { id: 'second', role: 'user' as const, content: 'Second', timestamp: testDate().getTime(), userMessageId: 'native-second' };
   const coordinator = {
+    workingDirectory: '/vault',
     navigateConversationBranch: jest.fn().mockResolvedValue({ status: 'recovery-required', error: 'Moved' }),
     reconcileConversationBranch: jest.fn().mockResolvedValue({ status: 'recovery-required', error: 'Still moving' }),
   };
@@ -136,6 +138,8 @@ it('carries the live project paragraph on branch navigation and recovery, and dr
   Object.assign(deps.plugin, {
     projects,
     getConversationSummary: (id: string) => ({ id, providerId: 'claude', projectId: record.id }),
+    // The prompt names the coordinator's captured directory, never a later host value.
+    providerHost: { workingDirectory: '/moved-vault' },
   });
   deps.state.currentConversationId = 'conversation';
   deps.state.messages = [first, prompt];
@@ -147,10 +151,10 @@ it('carries the live project paragraph on branch navigation and recovery, and dr
   await controller.commitBranchDraft();
 
   const member = { model: 'model-a', systemInstructions: {
-    kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(record),
+    kind: 'main-agent', instructions: buildSystemPrompt({ userName: '', vaultPath: '/vault', sessionInstructions: renderProjectMemberInstructions(record) }),
   } };
   expect(coordinator.navigateConversationBranch).toHaveBeenCalledWith(expect.objectContaining({ configuration: member }));
   // Each recovery attempt resolves the project again: the first follows navigation, the later two the deletion.
-  const normal = { model: 'model-a', systemInstructions: { kind: 'provider-default' } };
+  const normal = { model: 'model-a', systemInstructions: { kind: 'main-agent', instructions: buildSystemPrompt({ userName: '', vaultPath: '/vault' }) } };
   expect(coordinator.reconcileConversationBranch.mock.calls.map(([request]) => request.configuration)).toEqual([member, normal, normal]);
 });

@@ -9,28 +9,21 @@ import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
 } from '@/core/prompt/historyContext';
-import {
-  appendLinkedContent,
-  appendLinkedContentBody,
-  appendSelectionContexts,
-  appendSessionReferences,
-} from '@/core/prompt/promptContext';
+import { appendExecutionContext } from '@/core/prompt/promptContext';
 
 import type {
   ProviderExecutionRequest,
   ProviderSessionConfig,
   ProviderToolPolicy,
 } from '../../../core/execution';
-import { buildSystemPrompt } from '../../../core/prompt/mainAgent';
 import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
-import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
+import type { ProviderRuntimeHost, ProviderSelectionDefaults } from '../../../core/providers/ProviderRuntimeHost';
 import {
   isReadOnlyTool,
   READ_ONLY_TOOLS,
 } from '../../../core/tools/toolNames';
 import type { ImageAttachment } from '../../../core/types';
-import type { ClaudianSettings } from '../../../core/types/settings';
+import { decodeClaudeConfig } from '../config';
 import { findEnabledClaudeModelOption } from '../modelOptions';
 import { toClaudeRuntimeModelId } from '../modelSelection';
 import { isClaudePermissionMode, toClaudeSDKPermissionMode } from '../permissionModes';
@@ -40,7 +33,6 @@ import {
   DISABLED_BUILTIN_TASK_TOOLS,
   UNSUPPORTED_SDK_TOOLS,
 } from '../runtime/types';
-import { getClaudeProviderSettings } from '../settings';
 import {
   type EffortLevel,
   isEffortLevel,
@@ -79,7 +71,7 @@ export interface ClaudeEncodedSteer {
 }
 
 export interface ClaudeExecutionRequestEncoderDeps {
-  readonly host: ProviderHost;
+  readonly host: ProviderRuntimeHost;
 }
 
 export class ClaudeExecutionRequestEncoder {
@@ -93,15 +85,15 @@ export class ClaudeExecutionRequestEncoder {
     resume: ClaudeNativeResume,
     replayConversationHistory: boolean,
   ): Promise<ClaudeEncodedExecutionRequest> {
-    const cliPath = await this.deps.host.getResolvedProviderCliPath('claude');
+    const cliPath = await this.deps.host.resolveCliPath();
     if (!cliPath) {
       throw new Error('Claude Code CLI not found');
     }
 
-    const settings = this.#resolveSettings(request);
-    const claudeSettings = getClaudeProviderSettings(settings);
-    const selected = findEnabledClaudeModelOption(this.deps.host.settings, settings.model);
-    if (!getClaudeProviderSettings(this.deps.host.settings).enabled || !selected) {
+    const selection = this.#resolveSelection(request);
+    const claudeSettings = decodeClaudeConfig(this.deps.host.config);
+    const selected = findEnabledClaudeModelOption(this.deps.host, selection.model ?? '');
+    if (!claudeSettings.enabled || !selected) {
       throw new ProviderModelUnavailableError('Claude Code');
     }
     const model = toClaudeRuntimeModelId(selected.value);
@@ -111,7 +103,7 @@ export class ClaudeExecutionRequestEncoder {
         selected.supportedEffortLevels ?? [],
         isEffortLevel(request.configuration.reasoning)
           ? request.configuration.reasoning
-          : settings.effortLevel,
+          : selection.effortLevel,
       );
     const requestedEffort = request.configuration.reasoning;
     if (requestedEffort != null && (!isEffortLevel(requestedEffort)
@@ -119,7 +111,7 @@ export class ClaudeExecutionRequestEncoder {
       throw new Error(`Claude model "${model}" does not support reasoning effort "${request.configuration.reasoning}".`);
     }
     const sdkPermissionMode = toClaudeSDKPermissionMode(
-      isClaudePermissionMode(settings.permissionMode) ? settings.permissionMode : 'manual',
+      isClaudePermissionMode(selection.permissionMode) ? selection.permissionMode : 'manual',
     );
     const compact = parseCompactCommand(getRequestInputText(request));
     if (compact && replayConversationHistory && request.conversationHistory?.length) {
@@ -134,22 +126,15 @@ export class ClaudeExecutionRequestEncoder {
         request.configuration.systemInstructions.instructions.trim(),
         EXPLICIT_PROTOCOL_INSTRUCTIONS,
       ].filter(Boolean).join('\n\n')
-      : buildSystemPrompt({
-        mediaFolder: settings.mediaFolder,
-        customPrompt: settings.systemPrompt,
-        vaultPath: sessionConfig.vaultWorkingDirectory,
-        userName: settings.userName,
-        sessionInstructions: request.configuration.systemInstructions.sessionInstructions,
-      });
+      : request.configuration.systemInstructions.instructions;
     const promptSuggestions = Boolean(
       request.configuration.promptSuggestions && claudeSettings.promptSuggestions,
     );
     const options: Options = {
       ...buildClaudeLaunchOptions(
         this.deps.host,
-        sessionConfig.vaultWorkingDirectory,
+        sessionConfig.workingDirectory,
         cliPath,
-        { settings },
       ),
       systemPrompt: {
         type: 'custom',
@@ -242,41 +227,22 @@ export class ClaudeExecutionRequestEncoder {
     };
   }
 
-  #resolveSettings(request: ProviderExecutionRequest): ClaudianSettings {
-    const settings = { ...ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-      this.deps.host.settings,
-      'claude',
-    ) };
-    if (request.configuration.model?.trim()) {
-      settings.model = request.configuration.model;
-    }
+  /** Claude's own projected selections, overridden by the request's explicit choices. */
+  #resolveSelection(request: ProviderExecutionRequest): ProviderSelectionDefaults {
+    const { model, permissionMode, effortLevel } = this.deps.host.providerSelection;
     const requestedMode = request.configuration.permissionMode;
-    if (isClaudePermissionMode(requestedMode)) {
-      settings.permissionMode = requestedMode;
-    }
-    if (isEffortLevel(request.configuration.reasoning)) {
-      settings.effortLevel = request.configuration.reasoning;
-    }
-    return settings;
+    return {
+      model: request.configuration.model?.trim() ? request.configuration.model : model,
+      permissionMode: isClaudePermissionMode(requestedMode) ? requestedMode : permissionMode,
+      effortLevel: isEffortLevel(request.configuration.reasoning) ? request.configuration.reasoning : effortLevel,
+    };
   }
 
   #encodePrompt(
     request: ProviderExecutionRequest,
     replayConversationHistory: boolean,
   ): string {
-    let prompt = getRequestInputText(request);
-    const context = request.context;
-    if (context?.linkedContent) {
-      prompt = context.linkedContent.content === undefined
-        ? appendLinkedContent(prompt, context.linkedContent.path)
-        : appendLinkedContentBody(
-          prompt,
-          context.linkedContent.path,
-          context.linkedContent.content,
-        );
-    }
-    prompt = appendSelectionContexts(prompt, context);
-    prompt = appendSessionReferences(prompt, context?.sessionReferences);
+    const prompt = appendExecutionContext(getRequestInputText(request), request.context);
 
     const history = replayConversationHistory
       ? request.conversationHistory

@@ -1,5 +1,6 @@
 import '@/providers';
 
+import { getProviderConfig } from '@/core/providers/providerConfig';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import { getOpencodeDiscoveryState, updateOpencodeDiscoveryState } from '@/providers/opencode/discoveryState';
@@ -7,13 +8,14 @@ import { opencodeSettingsReconciler } from '@/providers/opencode/env/OpencodeSet
 
 describe('coordinated OpenCode environment changes', () => {
   it('retains provider-owned discovery state when environment changes', () => {
-    const settings: Record<string, unknown> = {};
-    updateOpencodeDiscoveryState(settings, {
+    const config: Record<string, unknown> = {};
+    updateOpencodeDiscoveryState(config, {
       discoveredModels: [{ label: 'OpenAI/GPT-5', rawId: 'openai/gpt-5' }],
     });
+    const settings: Record<string, unknown> = { providerConfigs: { opencode: config } };
 
     expect(ProviderSettingsCoordinator.handleEnvironmentChange(settings, ['opencode'])).toBe(false);
-    expect(getOpencodeDiscoveryState(settings)).toEqual({
+    expect(getOpencodeDiscoveryState(getProviderConfig(settings, 'opencode'))).toEqual({
       discoveredModels: [{ label: 'OpenAI/GPT-5', rawId: 'openai/gpt-5' }],
       thinkingOptionsByModel: {},
     });

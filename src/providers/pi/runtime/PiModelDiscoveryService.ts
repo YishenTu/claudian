@@ -1,13 +1,11 @@
 import { parseEnvironmentVariables } from '@/core/process/env';
 
-import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
-import { getVaultPath } from '../../../utils/path';
+import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
+import { decodePiConfig } from '../config';
 import {
   normalizePiDiscoveredModels,
   type PiDiscoveredModel,
 } from '../models';
-import { getPiProviderSettings } from '../settings';
 import { buildPiLaunchSpec } from './PiLaunchSpecBuilder';
 import { PiRPCTransport } from './PiRPCTransport';
 import { PiSubprocess } from './PiSubprocess';
@@ -24,17 +22,17 @@ export type PiModelDiscoveryResult =
   };
 
 export class PiModelDiscoveryService {
-  constructor(private readonly plugin: ProviderHost) {}
+  constructor(private readonly host: ProviderRuntimeHost) {}
 
   async discoverModels(signal?: AbortSignal): Promise<PiModelDiscoveryResult> {
-    const settings = getPiProviderSettings(this.plugin.settings);
+    const settings = decodePiConfig(this.host.config, this.host.selection);
     if (!settings.enabled) {
       return { kind: 'skipped', reason: 'provider-disabled' };
     }
 
-    const cwd = getVaultPath(this.plugin.app) ?? process.cwd();
-    const command = await this.plugin.getResolvedProviderCliPath('pi') ?? 'pi';
-    const envText = getRuntimeEnvironmentText(this.plugin.settings, 'pi');
+    const cwd = this.host.workingDirectory ?? process.cwd();
+    const command = await this.host.resolveCliPath() ?? 'pi';
+    const envText = this.host.environmentText;
     const env = {
       ...process.env,
       ...parseEnvironmentVariables(envText),

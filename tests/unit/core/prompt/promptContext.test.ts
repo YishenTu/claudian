@@ -2,11 +2,11 @@ import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/captu
 
 import {
   appendContextFiles,
+  appendExecutionContext,
   appendLinkedContent,
   appendLinkedContentBody,
   appendSelectionContexts,
   appendSessionReferences,
-  captureSelectionSnapshots,
   extractUserDisplayContent,
   extractUserQuery,
   formatLinkedContent,
@@ -299,36 +299,36 @@ describe('session reference context', () => {
 
 
 describe('captured selections', () => {
-  it('renders ordered captures once, with precedence over legacy fields, and hides them in display', () => {
-    const prompt = appendSelectionContexts('Question', {
-      ...capturedSelections,
-      editorSelection: { mode: 'selection', notePath: 'legacy.md', selectedText: 'legacy duplicate' },
-    });
+  it('renders ordered captures once and hides them in display', () => {
+    const prompt = appendSelectionContexts('Question', capturedSelections);
     expect(prompt).toBe('Question\n\n' + capturedSelectionPrompt);
     expect(extractUserDisplayContent(prompt)).toBe('Question');
     expect(extractUserQuery(prompt)).toBe('Question');
   });
+});
 
-  it('normalizes legacy fields but respects an explicitly empty ordered capture', () => {
-    const legacy = { editorSelection: { mode: 'selection' as const, notePath: 'same.md', selectedText: 'first editor' } };
-    expect(appendSelectionContexts('Question', legacy)).toBe('Question\n\n' + capturedSelectionPrompt.split('\n\n')[0]);
-    expect(appendSelectionContexts('Question', { ...legacy, selections: [] })).toBe('Question');
+describe('execution context', () => {
+  const reference = { id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated' };
+  const sessions = '<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" />\n</context_sessions>';
+
+  it('appends Linked content, selections, then session references for every provider', () => {
+    const prompt = appendExecutionContext('Question', {
+      ...capturedSelections, sessionReferences: [reference], linkedContent: { path: 'note.md' },
+    });
+    expect(prompt).toBe(`Question\n\n<linked_content path="note.md" />\n\n${capturedSelectionPrompt}\n\n${sessions}`);
+    expect(extractUserQuery(prompt)).toBe('Question');
   });
 
-  it('owns nested cursor and canvas data after capture', () => {
-    const context = {
-      editorSelection: { mode: 'cursor' as const, notePath: 'same.md', cursorContext: {
-        beforeCursor: 'before', afterCursor: 'after', isInbetween: false, line: 0, column: 6,
-      } },
-      canvasSelection: { canvasPath: 'same.canvas', nodeIds: ['captured-node'] },
-    };
-    const selections = captureSelectionSnapshots(context);
-    context.editorSelection.cursorContext.beforeCursor = 'changed';
-    context.canvasSelection.nodeIds.push('later-node');
-    const prompt = appendSelectionContexts('Question', { selections });
-    expect(prompt).toContain('before|after');
-    expect(prompt).toContain('captured-node');
-    expect(prompt).not.toContain('changed');
-    expect(prompt).not.toContain('later-node');
+  it('renders a captured Linked content body and leaves context-free input unchanged', () => {
+    expect(appendExecutionContext('Question', { linkedContent: { path: 'note.md', content: 'Body' } }))
+      .toBe('Question\n\n<linked_content path="note.md">\n<![CDATA[Body]]>\n</linked_content>');
+    expect(appendExecutionContext('Question')).toBe('Question');
+    expect(appendExecutionContext('Question', {})).toBe('Question');
+  });
+
+  it('keeps earlier session-reference-first prompts readable in history', () => {
+    const legacyOrder = `Question\n\n${sessions}\n\n<linked_content path="note.md" />`;
+    expect(extractUserDisplayContent(legacyOrder)).toBe('Question');
+    expect(extractUserQuery(legacyOrder)).toBe('Question');
   });
 });

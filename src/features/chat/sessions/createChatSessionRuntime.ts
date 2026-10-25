@@ -2,13 +2,13 @@ import { Notice } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import { getChatWorkingDirectory } from '@/features/chat/execution/chatExecutionConfiguration';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { createInteractionPromptPort } from '@/features/chat/interactions/interactionPromptPort';
 import { SessionMailbox } from '@/features/chat/session-messaging/SessionMailbox';
 import { ChatSessionRuntime, type SessionIdentity } from '@/features/chat/sessions/ChatSessionRuntime';
 import { createSessionMessageId, createSessionSideChat, SessionModel } from '@/features/chat/sessions/SessionModel';
 import { t } from '@/i18n/i18n';
-import { getVaultPath } from '@/utils/path';
 
 /** Assembles a session without any tab, component, document, or window. */
 export function createChatSessionRuntime(plugin: ChatFeatureHost, identity: SessionIdentity): ChatSessionRuntime {
@@ -18,7 +18,7 @@ export function createChatSessionRuntime(plugin: ChatFeatureHost, identity: Sess
     persistence: plugin.executionPersistence,
     bindSessionTools: id => plugin.bindSessionTools?.(id),
     interactionPort: createInteractionPromptPort(() => runtime.model.inlinePrompts),
-    vaultWorkingDirectory: getVaultPath(plugin.app) ?? '.',
+    workingDirectory: getChatWorkingDirectory(plugin),
     createId: createSessionMessageId,
     onRequestedEvent: (event, context) => {
       const model = runtime.model;

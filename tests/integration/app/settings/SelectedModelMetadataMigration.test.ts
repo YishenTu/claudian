@@ -6,15 +6,21 @@ import { modelCatalogCases as cases } from '@test/helpers/providerModelCatalogs'
 import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
 import { migrateSelectedModelMetadata } from '@/app/settings/SelectedModelMetadataMigration';
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
+import { createProviderRuntimeHost } from '@/composition/ClaudianProviderHost';
 import { findProviderModelOption, resolveConversationModel, resolveNewConversationModel } from '@/core/providers/conversationModel';
-import { ProviderModelCatalogController } from '@/core/providers/models/ProviderModelCatalog';
+import {
+  ProviderModelCatalogController,
+  type ProviderModelCatalogPatch,
+  type ProviderModelCatalogState,
+  type ProviderModelCatalogStore,
+} from '@/core/providers/models/ProviderModelCatalog';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { getClaudeModelOptions, getClaudeSupportedEffortLevels } from '@/providers/claude/modelOptions';
 import { createClaudeModels, discoverClaudeModels } from '@/providers/claude/runtime/ClaudeModels';
-import { updateClaudeProviderSettings } from '@/providers/claude/settings';
+import { getClaudeModelSource, updateClaudeProviderSettings } from '@/providers/claude/settings';
 import { updateCodexProviderSettings } from '@/providers/codex/settings';
 import { updateDeepSeekProviderSettings } from '@/providers/deepseek/settings';
 import { updateCurrentGrokCatalog, updateGrokProviderSettings } from '@/providers/grok/settings';
@@ -26,6 +32,19 @@ const update = {
   claude: updateClaudeProviderSettings, codex: updateCodexProviderSettings,
   grok: updateGrokProviderSettings, opencode: updateOpencodeProviderSettings, pi: updatePiProviderSettings,
 };
+
+/** A catalog store persisting selections through the settings document, as the migration sees them. */
+function documentStore(
+  host: ReturnType<typeof makeHost>['host'],
+  read: (settings: ReturnType<typeof makeHost>['host']['settings']) => ProviderModelCatalogState,
+  update: (settings: ReturnType<typeof makeHost>['host']['settings'], patch: ProviderModelCatalogPatch) => void,
+): ProviderModelCatalogStore {
+  return {
+    read: () => read(host.settings),
+    write: change => host.mutateSettings(settings => { update(settings, change(read(settings))); }),
+    notifyChatOptionsChanged: () => undefined,
+  };
+}
 
 function makeHost() {
   const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
@@ -40,6 +59,7 @@ function makeHost() {
     settings, mutateSettings: coordinator.mutate.bind(coordinator),
     mutateSettingsConditionally: coordinator.mutateConditionally.bind(coordinator),
     notifyProviderChatOptionsChanged: jest.fn(),
+    getRuntimeHost: (id: string) => createProviderRuntimeHost(host, coordinator, id),
   } as unknown as ProviderHost;
   return { host, storage, read: () => JSON.parse(content) };
 }
@@ -74,7 +94,8 @@ it.each([false, true])('repairs saved Claude family aliases through startup disc
     .toEqual(cached ? ['opus[1m]', 'claude-fable-5-10', 'sonnet', 'haiku'] : []);
   Object.assign(host.settings, await storage.load());
   const probe = jest.fn(async () => ({ models: rows, outputStyles: [] }));
-  const catalog = createClaudeModels(host, signal => discoverClaudeModels(host, signal, probe));
+  const claudeHost = host.getRuntimeHost('claude');
+  const catalog = createClaudeModels(claudeHost, signal => discoverClaudeModels(claudeHost, signal, probe));
   ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: catalog });
 
   await migrateSelectedModelMetadata(host, new AbortController().signal);
@@ -84,7 +105,7 @@ it.each([false, true])('repairs saved Claude family aliases through startup disc
   expect(read().providerConfigs.claude.selectedModels.map((model: { value: string }) => model.value))
     .toEqual(['opus[1m]', 'claude-fable-5-10', 'sonnet', 'haiku']);
   const restored = await storage.load();
-  expect(getClaudeModelOptions(restored).map(model => [model.value, model.label])).toEqual([
+  expect(getClaudeModelOptions(getClaudeModelSource(restored)).map(model => [model.value, model.label])).toEqual([
     ['claude-code/claude-fable-5-10', 'My Fable'], ['haiku', 'Haiku'],
     ['claude-code/opus[1m]', 'Opus'], ['sonnet', 'Sonnet'],
   ]);
@@ -111,7 +132,8 @@ it('keeps saved family aliases enabled after discovering a newer unselected vers
     .mockResolvedValueOnce({ models: [selected, {
       value: 'claude-fable-6-0', label: 'New Fable', description: '', resolvedModel: 'claude-fable-6-0', supportedEffortLevels: ['low'],
     }], outputStyles: [] });
-  const catalog = createClaudeModels(host, signal => discoverClaudeModels(host, signal, probe));
+  const claudeHost = host.getRuntimeHost('claude');
+  const catalog = createClaudeModels(claudeHost, signal => discoverClaudeModels(claudeHost, signal, probe));
   ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: catalog });
   await migrateSelectedModelMetadata(host, new AbortController().signal);
   expect(ProviderRegistry.resolveTitleGenerationSelection(host.settings)?.model).toBe('claude-code/claude-fable-5-10');
@@ -128,7 +150,7 @@ it('keeps saved family aliases enabled after discovering a newer unselected vers
     expect(resolveNewConversationModel(settings)?.model).toBe('claude-code/claude-fable-5-10');
     expect(ProviderRegistry.getModelPolicy('claude').normalizeModelVariant('fable', settings))
       .toBe('claude-code/claude-fable-5-10');
-    expect(getClaudeSupportedEffortLevels(settings, 'fable')).toEqual(['high']);
+    expect(getClaudeSupportedEffortLevels(getClaudeModelSource(settings), 'fable')).toEqual(['high']);
     // A retired explicit ID follows the enabled family member.
     expect(findProviderModelOption('claude', 'claude-fable-4-0', settings)).toBe('claude-code/claude-fable-5-10');
   }
@@ -168,9 +190,10 @@ it.each(cases.flatMap(entry => [false, true].map(deselectDuringQuery => ({ ...en
     return { changed: true };
   });
   const catalog = new ProviderModelCatalogController({
-    providerId: id, providerName: id, host,
-    read: () => ({ enabled: true, selectedIds: host.settings.providerConfigs[id]!.visibleModels as string[], models: [], aliases: {} }),
-    update: (settings, patch) => update[id](settings, patch), discover,
+    providerName: id, discover,
+    store: documentStore(host, settings => ({
+      enabled: true, selectedIds: settings.providerConfigs[id]!.visibleModels as string[], models: [], aliases: {},
+    }), (settings, patch) => update[id](settings, patch)),
   });
   ProviderWorkspaceRegistry.setServices(id, { modelCatalog: catalog });
   expect(ProviderRegistry.getSettingsStorageAdapter(id).needsReasoningMetadata!(host.settings)).toBe(true);
@@ -279,8 +302,8 @@ it('cancels an active native query on unload', async () => {
   const ready = new Promise<void>(resolve => { started = resolve; });
   let aborted = false;
   const catalog = new ProviderModelCatalogController({
-    providerId: 'claude', providerName: 'Claude', host,
-    read: () => ({ enabled: true, selectedIds: ['sonnet'], models: [], aliases: {} }), update: jest.fn(),
+    providerName: 'Claude',
+    store: documentStore(host, () => ({ enabled: true, selectedIds: ['sonnet'], models: [], aliases: {} }), jest.fn()),
     discover: signal => new Promise(resolve => {
       signal.addEventListener('abort', () => { aborted = true; resolve({ changed: false }); }, { once: true });
       started();

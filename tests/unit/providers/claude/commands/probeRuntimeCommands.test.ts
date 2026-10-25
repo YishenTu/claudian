@@ -1,18 +1,19 @@
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
+
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { probeRuntimeCommands } from '@/providers/claude/commands/probeRuntimeCommands';
-import { getVaultPath } from '@/utils/path';
 
 const mockQuery = jest.fn();
 jest.mock('@/providers/claude/loadClaudeAgentSDK', () => ({ loadClaudeAgentQuery: async () => mockQuery }));
-jest.mock('@/utils/path', () => ({ ...jest.requireActual('@/utils/path'), getVaultPath: jest.fn(() => '/test/vault') }));
 
-function createMockPlugin(cliPath: string | null = '/mock/claude'): ProviderHost {
-  return {
-    app: {},
-    settings: {},
+function createMockPlugin(
+  cliPath: string | null = '/mock/claude',
+  workingDirectory: string | null = '/test/vault',
+): ProviderRuntimeHost {
+  return createTestRuntimeHost({}, 'claude', {
+    workingDirectory,
     getResolvedProviderCliPath: jest.fn().mockResolvedValue(cliPath),
-    getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
-  } as unknown as ProviderHost;
+  });
 }
 
 function initializeWith(initializationResult: () => Promise<{ commands?: unknown }>, skills: string[] = []) {
@@ -47,8 +48,7 @@ describe('probeRuntimeCommands', () => {
     ['no local vault', true, '/mock/claude'],
     ['no Claude CLI', false, null],
   ] as const)('resolves empty when %s can run discovery', async (_case, missingVault, cliPath) => {
-    if (missingVault) jest.mocked(getVaultPath).mockReturnValueOnce(null);
-    await expect(probeRuntimeCommands(createMockPlugin(cliPath))).resolves.toEqual([]);
+    await expect(probeRuntimeCommands(createMockPlugin(cliPath, missingVault ? null : '/test/vault'))).resolves.toEqual([]);
     expect(mockQuery).not.toHaveBeenCalled();
   });
 

@@ -19,7 +19,7 @@ function createReadyService() {
   } as unknown as ProviderRegistration);
   const host = {
     settings: { titleGenerationModel: 'test-title' },
-    app: { vault: { adapter: { basePath: '/vault' } } },
+    workingDirectory: '/vault',
     executionLifecycleRegistry: lifecycle,
   } as unknown as ProviderHost;
   return { backend, lifecycle, service: ProviderRegistry.createTitleGenerationService(host) };
@@ -47,7 +47,7 @@ it('does not submit a title request after cancellation during provider initializ
   } as unknown as ProviderRegistration);
   const host = {
     settings: { titleGenerationModel: 'test-title' },
-    app: { vault: { adapter: { basePath: '/vault' } } },
+    workingDirectory: '/vault',
     storage: { getAdapter: () => ({}) },
     executionLifecycleRegistry: lifecycle,
     runProviderExecutionTransition: lifecycle.runTransition.bind(lifecycle),

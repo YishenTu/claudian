@@ -6,7 +6,7 @@ import {
   normalizeLinkedContentPath,
 } from '../../core/path/LinkedContentPath';
 import { normalizeProviderModelSelection } from '../../core/providers/conversationModel';
-import { getRuntimeEnvironmentVariables } from '../../core/providers/providerEnvironment';
+import { createProviderHistoryPathContext } from '../../core/providers/historyPathContext';
 import type {
   ProviderHistoryInput,
   ProviderHistoryPathContext,
@@ -1416,18 +1416,11 @@ export class ConversationRepository {
     providerId: ProviderId,
     vaultPath: string | null = this.deps.getVaultPath(),
   ): ProviderHistoryPathContext {
-    const settings = this.deps.getSettings();
     return {
+      ...createProviderHistoryPathContext(this.deps.getSettings(), providerId, vaultPath),
       ensureWorkspace: this.deps.ensureProviderWorkspace
         ? () => this.deps.ensureProviderWorkspace!(providerId)
         : undefined,
-      environment: {
-        ...process.env,
-        ...getRuntimeEnvironmentVariables(settings, providerId),
-      },
-      hostPlatform: process.platform,
-      settings,
-      vaultPath,
     };
   }
 

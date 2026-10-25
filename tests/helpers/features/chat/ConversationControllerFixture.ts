@@ -52,6 +52,7 @@ export function createConversationControllerDeps(
       getConversationById: jest.fn().mockResolvedValue(null),
       getConversationSummary: jest.fn().mockReturnValue(null),
       projects: createProjectsFake([]),
+      providerHost: { workingDirectory: '/vault' },
       updateConversation: jest.fn().mockResolvedValue(undefined),
       settings: {
         userName: '',

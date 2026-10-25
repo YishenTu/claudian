@@ -15,7 +15,7 @@ type OpencodeMetadataServiceFactory = (
 ) => OpencodeMetadataService;
 
 const DEFAULT_METADATA_SERVICE_FACTORY: OpencodeMetadataServiceFactory =
-  plugin => new OpencodeMetadataService(plugin);
+  plugin => new OpencodeMetadataService(plugin.getRuntimeHost('opencode'));
 
 export class OpencodeCommandLoader implements ProviderCommandLoaderContract {
   constructor(

@@ -1,14 +1,10 @@
 import type { ProviderExecutionRequest } from '@/core/execution';
 import { buildContextFromHistory } from '@/core/prompt/historyContext';
-import { buildSystemPrompt, type SystemPromptSettings } from '@/core/prompt/mainAgent';
-import {
-  appendLinkedContent,
-  appendLinkedContentBody,
-  appendSelectionContexts,
-  appendSessionReferences,
-} from '@/core/prompt/promptContext';
+import { appendExecutionContext } from '@/core/prompt/promptContext';
 import { buildRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
+import type { ProviderRuntimeHost, ProviderSelectionDefaults } from '@/core/providers/ProviderRuntimeHost';
 import type { ChatMessage } from '@/core/types';
+import { type CodexProviderSettings, type CodexSafeMode, decodeCodexConfig } from '@/providers/codex/config';
 import { getCodexModelOptions } from '@/providers/codex/modelOptions';
 import {
   findCodexModel,
@@ -18,12 +14,24 @@ import {
 } from '@/providers/codex/models';
 import { toCodexRuntimeModelId } from '@/providers/codex/modelSelection';
 import type { ConfigReadResult, SandboxPolicy } from '@/providers/codex/runtime/codexAppServerTypes';
-import { type CodexSafeMode, getCodexProviderSettings } from '@/providers/codex/settings';
 
 /** Resolves a turn's native configuration: model, effort, approval and sandbox policy, and prompt. */
 
 const PASSIVE_INSTRUCTIONS =
   'Do not invoke tools. Complete the request only from the supplied input and context.';
+
+/** Turn fallbacks for request fields left unset: Codex's saved preference, then the current selection. */
+export function resolveCodexTurnSelection(
+  host: Pick<ProviderRuntimeHost, 'savedSelection' | 'selection'>,
+): ProviderSelectionDefaults {
+  const { savedSelection: saved, selection: current } = host;
+  return {
+    model: saved.model ?? current.model,
+    effortLevel: saved.effortLevel ?? current.effortLevel,
+    serviceTier: saved.serviceTier ?? current.serviceTier,
+    permissionMode: saved.permissionMode ?? current.permissionMode,
+  };
+}
 
 export interface CodexPolicy {
   readonly approvalPolicy: string;
@@ -33,34 +41,30 @@ export interface CodexPolicy {
   readonly sandboxPolicy?: SandboxPolicy;
 }
 
-/** Plugin settings with the Codex provider's saved projections applied. */
-export function resolveCodexTurnSettings(pluginSettings: unknown): Record<string, unknown> {
-  const settings = pluginSettings as Record<string, unknown>;
-  return {
-    ...settings,
-    model: readProviderProjection(settings, 'savedProviderModel')
-      ?? settings.model,
-    effortLevel: readProviderProjection(settings, 'savedProviderEffort')
-      ?? settings.effortLevel,
-    serviceTier: readProviderProjection(settings, 'savedProviderServiceTier')
-      ?? settings.serviceTier,
-    permissionMode: readProviderProjection(
-      settings,
-      'savedProviderPermissionMode',
-    ) ?? settings.permissionMode,
-  };
+/** The inputs a Codex turn resolves against when its request leaves a field unset. */
+export interface CodexTurnSettings {
+  readonly codex: CodexProviderSettings;
+  /** Saved Codex preferences, else the current selections. */
+  readonly selection: ProviderSelectionDefaults;
+}
+
+export function resolveCodexTurnSettings(
+  config: Readonly<Record<string, unknown>>,
+  selection: ProviderSelectionDefaults,
+): CodexTurnSettings {
+  return { codex: decodeCodexConfig(config), selection };
 }
 
 /** The runtime model ID of an enabled selection, or null when none is usable. */
 export function resolveCodexTurnModel(
   request: ProviderExecutionRequest,
-  settings: Record<string, unknown>,
+  settings: CodexTurnSettings,
 ): string | null {
   const selected = normalizeString(request.configuration.model)
-    ?? normalizeString(settings.model);
+    ?? normalizeString(settings.selection.model);
   if (!selected) return null;
   const runtimeModel = toCodexRuntimeModelId(selected);
-  const enabled = getCodexModelOptions(settings).some(
+  const enabled = getCodexModelOptions(settings.codex).some(
     option => toCodexRuntimeModelId(option.value) === runtimeModel,
   );
   return enabled ? runtimeModel : null;
@@ -68,17 +72,17 @@ export function resolveCodexTurnModel(
 
 export function resolveCodexTurnReasoningEffort(
   request: ProviderExecutionRequest,
-  settings: Record<string, unknown>,
+  settings: CodexTurnSettings,
   model: string,
 ): string | null {
   if (request.configuration.reasoning === null) return null;
-  const codexSettings = getCodexProviderSettings(settings);
+  const codexSettings = settings.codex;
   const modelMetadata = findCodexModel(codexSettings.discoveredModels, model);
   const effort = resolveCodexReasoningEffort(
     modelMetadata,
     codexSettings.enableUltraEffort,
     normalizeString(request.configuration.reasoning)
-      ?? normalizeString(settings.effortLevel),
+      ?? normalizeString(settings.selection.effortLevel),
   );
   if (request.configuration.reasoning !== undefined && (effort !== request.configuration.reasoning
     || (modelMetadata && !getCodexReasoningEffortOptions(modelMetadata, codexSettings.enableUltraEffort)
@@ -94,25 +98,14 @@ export function resolveCodexTurnReasoningEffort(
 export function resolveCodexServiceTier(
   request: ProviderExecutionRequest,
   modelId: string,
-  settings: Record<string, unknown>,
+  settings: CodexTurnSettings,
 ): string | null {
-  const model = findCodexModel(
-    getCodexProviderSettings(settings).discoveredModels,
-    modelId,
-  );
-  return resolveCodexModelServiceTier(model, request.configuration.serviceTier ?? settings.serviceTier);
+  const model = findCodexModel(settings.codex.discoveredModels, modelId);
+  return resolveCodexModelServiceTier(model, request.configuration.serviceTier ?? settings.selection.serviceTier);
 }
 
-export function resolveCodexBaseInstructions(
-  request: ProviderExecutionRequest,
-  promptSettings: SystemPromptSettings,
-): string {
-  const base = request.configuration.systemInstructions.kind === 'explicit'
-    ? request.configuration.systemInstructions.instructions
-    : buildSystemPrompt({
-      ...promptSettings,
-      sessionInstructions: request.configuration.systemInstructions.sessionInstructions,
-    });
+export function resolveCodexBaseInstructions(request: ProviderExecutionRequest): string {
+  const base = request.configuration.systemInstructions.instructions;
   return request.toolPolicy.kind === 'passive'
     ? `${base}\n\n${PASSIVE_INSTRUCTIONS}`
     : base;
@@ -120,7 +113,7 @@ export function resolveCodexBaseInstructions(
 
 export function resolveCodexTurnPolicy(
   request: ProviderExecutionRequest,
-  settings: Record<string, unknown>,
+  settings: CodexTurnSettings,
 ): CodexPolicy {
   const toolPolicy = request.toolPolicy;
   if (toolPolicy.kind === 'passive' || toolPolicy.kind === 'read-only' || toolPolicy.kind === 'allow-list') {
@@ -142,9 +135,9 @@ export function resolveCodexTurnPolicy(
 
   const permissionMode =
     normalizeString(request.configuration.permissionMode)
-    ?? normalizeString(settings.permissionMode)
+    ?? normalizeString(settings.selection.permissionMode)
     ?? 'auto-review';
-  const safeMode = getCodexProviderSettings(settings).safeMode;
+  const safeMode = settings.codex.safeMode;
   const sandboxConfig = resolveCodexSandboxConfig(permissionMode, safeMode);
   return sandboxConfig.sandbox === 'danger-full-access'
     ? { ...sandboxConfig, sandboxPolicy: { type: 'dangerFullAccess' } }
@@ -193,22 +186,10 @@ export function buildCodexTurnPrompt(
   forkCheckpoint?: string,
   replayConversationHistory = false,
 ): string {
-  let prompt = request.input
+  const prompt = appendExecutionContext(request.input
     .filter(block => block.type === 'text')
     .map(block => block.text)
-    .join('\n\n');
-  const context = request.context;
-  prompt = appendSessionReferences(prompt, context?.sessionReferences);
-  if (context?.linkedContent) {
-    prompt = context.linkedContent.content === undefined
-      ? appendLinkedContent(prompt, context.linkedContent.path)
-      : appendLinkedContentBody(
-        prompt,
-        context.linkedContent.path,
-        context.linkedContent.content,
-      );
-  }
-  prompt = appendSelectionContexts(prompt, context);
+    .join('\n\n'), request.context);
 
   const history = request.conversationHistory;
   if (!history?.length) return prompt;
@@ -230,16 +211,6 @@ export function buildCodexTurnPrompt(
     return historyContext ? buildRecoveryPrompt(historyContext, prompt, history as ChatMessage[]) : prompt;
   }
   return prompt;
-}
-
-function readProviderProjection(
-  settings: Record<string, unknown>,
-  key: string,
-): unknown {
-  const map = settings[key];
-  return map && typeof map === 'object' && !Array.isArray(map)
-    ? (map as Record<string, unknown>).codex
-    : undefined;
 }
 
 function resolveCodexSandboxConfig(

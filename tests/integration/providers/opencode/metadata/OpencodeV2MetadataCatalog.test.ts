@@ -1,5 +1,7 @@
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
 import { createOpencodeModels } from '@/providers/opencode/runtime/OpencodeModels';
 import { getOpencodeProviderSettings, projectOpencodeModelSettings } from '@/providers/opencode/settings';
@@ -29,8 +31,9 @@ it('discovers several selected models from one native catalog response', async (
   ]));
   const plugin = fixture.createPlugin();
   plugin.settings.providerConfigs.opencode.visibleModels = ['test/one', 'test/two'];
-  const service = new OpencodeMetadataService(plugin);
-  const models = createOpencodeModels(plugin, service);
+  const host = runtimeHostFor(plugin, 'opencode');
+  const service = new OpencodeMetadataService(host);
+  const models = createOpencodeModels(host, service);
   try {
     await models.refresh();
     const thinking = getOpencodeProviderSettings(plugin.settings).thinkingOptionsByModel;
@@ -45,7 +48,7 @@ it('discovers several selected models from one native catalog response', async (
 
 it('refreshes the native catalog and commands without persisting the catalog or enabling models', async () => {
   const plugin = fixture.createPlugin();
-  const service = new OpencodeMetadataService(plugin);
+  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'));
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([
@@ -71,7 +74,7 @@ it('refreshes the native catalog and commands without persisting the catalog or 
 
 it('discovers models added after the initial discovery on the same metadata server', async () => {
   const plugin = fixture.createPlugin();
-  const service = new OpencodeMetadataService(plugin);
+  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'));
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     const endpoint = readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8');
@@ -90,7 +93,7 @@ it('discovers models added after the initial discovery on the same metadata serv
 });
 
 it('waits for the requested model while other models are already available', async () => {
-  const service = new OpencodeMetadataService(fixture.createPlugin());
+  const service = new OpencodeMetadataService(runtimeHostFor(fixture.createPlugin(), 'opencode'));
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     const read = fixture.environment.ENDPOINT_FILE! + '.read';

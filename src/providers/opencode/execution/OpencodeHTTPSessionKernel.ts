@@ -84,7 +84,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
 
   async connect(options: OpencodeKernelConnectOptions): Promise<void> {
     this.profile = options.profile;
-    this.client = await this.serverService.acquire(this.cliPath, this.options.config.vaultWorkingDirectory, this.environment, this.controller.signal);
+    this.client = await this.serverService.acquire(this.cliPath, this.options.config.workingDirectory, this.environment, this.controller.signal);
     if (this.disposed) await this.client.dispose();
     this.controller.signal.throwIfAborted();
     this.client.onRetired(() => this.options.onRetired?.());
@@ -113,12 +113,12 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         const fork = !resumeSessionId ? this.options.forkSource : undefined;
         if (fork) return forkOpencodeHTTPSession(client, fork.sessionId, fork.resumeAt);
         const { data } = await client.request<{ data: Record<string, unknown> }>(resumeSessionId ? `/api/session/${encodeURIComponent(resumeSessionId)}` : '/api/session',
-          resumeSessionId ? {} : { method: 'POST', body: { location: { directory: this.options.config.vaultWorkingDirectory }, agent: this.agents[this.profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[this.profile]] } });
+          resumeSessionId ? {} : { method: 'POST', body: { location: { directory: this.options.config.workingDirectory }, agent: this.agents[this.profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[this.profile]] } });
         if (typeof data.id !== 'string' || (resumeSessionId && data.id !== resumeSessionId)) throw new Error('Invalid OpenCode session response.');
         return data.id;
       }, () => this.client?.isReusable()
         ? Promise.resolve(this.client.retain())
-        : this.serverService.acquireCleanup(this.cliPath, this.options.config.vaultWorkingDirectory, this.environment));
+        : this.serverService.acquireCleanup(this.cliPath, this.options.config.workingDirectory, this.environment));
     } catch (error) {
       if (resumeSessionId && error instanceof OpencodeHTTPError && error.status === 404) throw new OpencodeSessionMissingError(resumeSessionId, error);
       throw error;

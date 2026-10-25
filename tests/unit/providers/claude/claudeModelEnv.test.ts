@@ -1,6 +1,6 @@
 import {
   getCustomModelIds,
-} from '@/providers/claude/env/claudeModelEnv';
+} from '@/providers/claude/claudeModelEnv';
 
 describe('getCustomModelIds', () => {
   it('should return empty set when no custom models configured', () => {

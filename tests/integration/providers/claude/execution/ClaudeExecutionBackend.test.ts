@@ -2,6 +2,7 @@ import '@/providers';
 
 import * as sdkModule from '@anthropic-ai/claude-agent-sdk';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
+import { withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
@@ -25,8 +26,8 @@ function respond(text: string): void {
 
 function createContext() {
   const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
-  const host = {
-    app: { vault: { adapter: { basePath: '/vault' } } },
+  const host = withRuntimeHosts({
+    workingDirectory: '/vault',
     executionLifecycleRegistry: lifecycleRegistry,
     settings: {
       providerConfigs: { claude: claudeCatalogFixture(
@@ -43,8 +44,7 @@ function createContext() {
       loadUserClaudeSettings: false,
     },
     getResolvedProviderCliPath: jest.fn().mockResolvedValue('/bin/claude'),
-    getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
-  } as unknown as ProviderHost;
+  } as unknown as Parameters<typeof withRuntimeHosts>[0]) as unknown as ProviderHost;
   return { host, lifecycleRegistry };
 }
 

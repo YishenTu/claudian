@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 
 import { NativePeer } from '@test/helpers/deepseek/NativePeer';
+import { withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
@@ -16,15 +17,13 @@ it('discovers native models lazily and preserves explicit selection order and un
   const second = encodeDeepSeekModelId('native/b', 'model/b');
   const settings: any = { providerConfigs: { deepseek: { enabled: true, visibleModels: [second, first], preferredReasoningByModel: { [second]: 'max' } } } };
   const registry = new ProviderExecutionLifecycleRegistry();
-  const host = { settings, app: { vault: { adapter: { basePath: '/vault' } } }, executionLifecycleRegistry: registry,
+  const host = { settings, workingDirectory: '/vault', executionLifecycleRegistry: registry,
     getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: jest.fn(),
-    mutateSettings: async (mutation: (settings: any) => unknown) => { await mutation(settings); },
-    mutateSettingsConditionally: async (mutation: (settings: any) => unknown) => { await mutation(settings); },
   } as unknown as ProviderHost;
   const start = jest.fn(async () => ({ profile: 'web' as const, client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} }));
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
-    workspace = createDeepSeekWorkspaceServices(host, start);
+    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host as never), start);
     expect(start).not.toHaveBeenCalled();
     peer.onCall = method => method === 'session/list' ? { items: [] } : Promise.reject(new Error(`Warm-up called ${method}.`));
     // Tab presence warms the shared Host without creating a native session.
@@ -68,7 +67,7 @@ it('lists vault skills for the dropdown from saved native sessions without activ
   const peer = new NativePeer(); await peer.open();
   const settings: any = { providerConfigs: { deepseek: { enabled: true, codeMode: true } } };
   const registry = new ProviderExecutionLifecycleRegistry();
-  const host = { settings, app: { vault: { adapter: { basePath: '/vault' } } }, executionLifecycleRegistry: registry,
+  const host = { settings, workingDirectory: '/vault', executionLifecycleRegistry: registry,
     getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: jest.fn(),
   } as unknown as ProviderHost;
   const start = jest.fn(async () => ({ profile: 'web' as const, client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} }));
@@ -90,7 +89,7 @@ it('lists vault skills for the dropdown from saved native sessions without activ
   };
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
-    workspace = createDeepSeekWorkspaceServices(host, start);
+    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host as never), start);
     const load = (conversation: any, allowIsolatedMetadataCreation = true) => workspace!.commandLoader!.loadCommands({ allowIsolatedMetadataCreation, conversation, plugin: host });
     // Background tabs never start discovery work.
     expect(await load(null, false)).toMatchObject({ status: 'requires-session' });
@@ -119,7 +118,7 @@ it('stops the shared Host before a provider transition and restarts it lazily wi
   const settings: any = { providerConfigs: { deepseek: { enabled: true, environmentVariables: `DSH_HOME=${beforeHome}`, presetPlugins: '- id: tool-todo\n  name: "@deepseek-ai/dsh-tool-todo"\n' } } };
   const registry = new ProviderExecutionLifecycleRegistry();
   let cliPath = '/bin/dsh-before';
-  const host = { settings, app: { vault: { adapter: { basePath: '/vault' } } }, executionLifecycleRegistry: registry,
+  const host = { settings, workingDirectory: '/vault', executionLifecycleRegistry: registry,
     getResolvedProviderCliPath: async () => cliPath, notifyProviderChatOptionsChanged: jest.fn(),
   } as unknown as ProviderHost;
   peer.onCall = method => method === 'session/list' ? { items: [] } : `${method} answered`;
@@ -132,7 +131,7 @@ it('stops the shared Host before a provider transition and restarts it lazily wi
   });
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
-    workspace = createDeepSeekWorkspaceServices(host, start);
+    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host as never), start);
     await workspace.startRuntime?.();
     let disposedBeforeMutation: number | undefined;
     await registry.runTransition(['deepseek'], async () => {
@@ -157,7 +156,7 @@ it('mirrors Claudian archive state onto native sessions in this Host store', asy
   expect(deepseekWorkspaceRegistration.providesSessionArchive).toBe(true);
   const peer = new NativePeer(); await peer.open();
   const registry = new ProviderExecutionLifecycleRegistry();
-  const host = { settings: { providerConfigs: { deepseek: { enabled: true } } }, app: { vault: { adapter: { basePath: '/vault' } } }, executionLifecycleRegistry: registry,
+  const host = { settings: { providerConfigs: { deepseek: { enabled: true } } }, workingDirectory: '/vault', executionLifecycleRegistry: registry,
     getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: jest.fn(),
   } as unknown as ProviderHost;
   const start = jest.fn(async () => ({ profile: 'web' as const, client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} }));
@@ -172,7 +171,7 @@ it('mirrors Claudian archive state onto native sessions in this Host store', asy
   const change = (sessionId: string | null, isArchived: boolean, providerState: Record<string, unknown> = state()) => ({ conversation: { sessionId, providerState, messages: [] }, isArchived });
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
-    workspace = createDeepSeekWorkspaceServices(host, start);
+    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host as never), start);
     await workspace.sessionArchive!.setSessionsArchived([
       change('chat', true),
       // A pending fork has no native session of its own; never archive its source.
@@ -202,7 +201,7 @@ it('mirrors Claudian archive state onto native sessions in this Host store', asy
 it('lets an admitted archive finish before a provider transition stops the Host', async () => {
   const peer = new NativePeer(); await peer.open();
   const registry = new ProviderExecutionLifecycleRegistry();
-  const host = { settings: { providerConfigs: { deepseek: { enabled: true } } }, app: { vault: { adapter: { basePath: '/vault' } } }, executionLifecycleRegistry: registry,
+  const host = { settings: { providerConfigs: { deepseek: { enabled: true } } }, workingDirectory: '/vault', executionLifecycleRegistry: registry,
     getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: jest.fn(),
   } as unknown as ProviderHost;
   let disposed = 0;
@@ -221,7 +220,7 @@ it('lets an admitted archive finish before a provider transition stops the Host'
   };
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
-    workspace = createDeepSeekWorkspaceServices(host, start);
+    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host as never), start);
     const home = getDeepSeekHome(process.env, process.cwd());
     const operation = workspace.sessionArchive!.setSessionsArchived([{ conversation: { sessionId: 'chat', providerState: { schemaVersion: 1, home, profile: 'web', preset: 'claudian' }, messages: [] }, isArchived: true }]);
     await inFlight;

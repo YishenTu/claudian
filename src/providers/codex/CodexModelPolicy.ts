@@ -54,7 +54,7 @@ export const codexModelPolicy: ProviderModelPolicy = {
     values: ['normal', 'auto-review', 'yolo'], fallbackValue: 'normal', defaultValue: 'auto-review',
   },
   getModelOptions(settings: Record<string, unknown>): ProviderUIOption[] {
-    return getCodexModelOptions(settings);
+    return getCodexModelOptions(getCodexProviderSettings(settings));
   },
 
   getDefaultModel(settings: Record<string, unknown>): string | null {
@@ -63,7 +63,7 @@ export const codexModelPolicy: ProviderModelPolicy = {
       codexSettings.visibleModels,
       codexSettings.discoveredModels,
     ).find(modelId => getVisibleDiscoveredModels(settings).some(model => model.model === modelId));
-    return firstVisibleModel ? encodeCodexModelSelectionId(firstVisibleModel) : getCodexModelOptions(settings)[0]?.value ?? null;
+    return firstVisibleModel ? encodeCodexModelSelectionId(firstVisibleModel) : getCodexModelOptions(getCodexProviderSettings(settings))[0]?.value ?? null;
   },
 
   ownsModel(model: string, settings: Record<string, unknown>): boolean {
@@ -125,7 +125,7 @@ export const codexModelPolicy: ProviderModelPolicy = {
 
   normalizeModelVariant(model: string, settings: Record<string, unknown>): string {
     const runtimeModel = toCodexRuntimeModelId(model);
-    const option = getCodexModelOptions(settings).find((candidate) =>
+    const option = getCodexModelOptions(getCodexProviderSettings(settings)).find((candidate) =>
       candidate.value === model || toCodexRuntimeModelId(candidate.value) === runtimeModel
     );
     if (option) {

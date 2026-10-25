@@ -15,7 +15,6 @@ import { isRecord } from '../http/OpencodeHTTPClient';
 import { readOpencodeHTTPMessages } from '../http/OpencodeHTTPHistory';
 import { type OpencodeServerLease, type OpencodeServerService, withOpencodeServerLease } from '../http/OpencodeServerService';
 import { encodeOpencodeModelId } from '../models';
-import { OpencodeCLIResolver } from '../runtime/OpencodeCLIResolver';
 import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
 import {
   clearOpencodeResumeState,
@@ -34,6 +33,18 @@ import {
 import { forkOpencodeSession } from './OpencodeSessionFork';
 import { hydrateOpencodeV2Subagents } from './OpencodeSubagentHistory';
 
+/** The CLI and environment text a native history read launches with. */
+export interface OpencodeHistoryLaunch {
+  readonly cliPath: string;
+  readonly environmentText: string;
+}
+
+export interface OpencodeConversationHistoryServiceOptions {
+  readonly getServerService?: (context?: ProviderHistoryPathContext) => Promise<OpencodeServerService | null | undefined>;
+  /** Resolves the CLI and environment a native history read launches with. */
+  readonly resolveLaunch: (context?: ProviderHistoryPathContext) => OpencodeHistoryLaunch;
+}
+
 const OPENCODE_PROVIDER_STATE_KEYS = [
   'databasePath',
   'nativeVersion',
@@ -43,7 +54,13 @@ const OPENCODE_PROVIDER_STATE_KEYS = [
 ] as const;
 
 export class OpencodeConversationHistoryService implements ProviderConversationHistoryService {
-  constructor(private readonly getServerService?: (context?: ProviderHistoryPathContext) => Promise<OpencodeServerService | null | undefined>) {}
+  private readonly getServerService?: (context?: ProviderHistoryPathContext) => Promise<OpencodeServerService | null | undefined>;
+  private readonly resolveLaunch: (context?: ProviderHistoryPathContext) => OpencodeHistoryLaunch;
+
+  constructor(options: OpencodeConversationHistoryServiceOptions) {
+    this.getServerService = options.getServerService;
+    this.resolveLaunch = options.resolveLaunch;
+  }
 
   hasConversationModelRecoverySource(conversation: ProviderHistoryInput): boolean {
     return !!this.#resolveModelRecoverySession(conversation);
@@ -220,9 +237,8 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     if (options?.lifecycle === 'ephemeral' && source.nativeVersion === 2) {
       return { databasePath, nativeVersion: 2, forkSource: { sessionId: sourceSessionId, resumeAt }, nativeConversationContextEstablished: true, ...previousSessions };
     }
-    const settings = pathContext?.settings ?? {};
-    const cliPath = new OpencodeCLIResolver().resolveFromSettings(settings) ?? 'opencode';
-    const environment = buildOpencodeRuntimeEnv(settings, cliPath, databasePath, pathContext?.environment);
+    const { cliPath, environmentText } = this.resolveLaunch(pathContext);
+    const environment = buildOpencodeRuntimeEnv(environmentText, cliPath, databasePath, pathContext?.environment);
     let nativeVersion = source.nativeVersion;
     const sessionId = await forkOpencodeSession({
       nativeVersion,
@@ -264,9 +280,8 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
   private async withHttp<T>(databasePath: string | null, vaultPath: string | null, pathContext: ProviderHistoryPathContext | undefined, read: (client: OpencodeServerLease) => Promise<T>): Promise<T> {
     const cwd = vaultPath ?? pathContext?.vaultPath;
     if (!cwd || !databasePath || databasePath === ':memory:') throw new Error('OpenCode history requires a workspace and persistent native database.');
-    const settings = pathContext?.settings ?? {};
-    const cliPath = new OpencodeCLIResolver().resolveFromSettings(settings) ?? 'opencode';
-    const environment = buildOpencodeRuntimeEnv(settings, cliPath, databasePath, pathContext?.environment);
+    const { cliPath, environmentText } = this.resolveLaunch(pathContext);
+    const environment = buildOpencodeRuntimeEnv(environmentText, cliPath, databasePath, pathContext?.environment);
     return withOpencodeServerLease(await this.getServerService?.(pathContext), cliPath, cwd, environment, read);
   }
 

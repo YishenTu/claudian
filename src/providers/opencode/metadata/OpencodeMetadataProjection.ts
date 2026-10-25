@@ -1,4 +1,4 @@
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import type {
   ACPSessionConfigOption,
   ACPSessionModelState,
@@ -8,15 +8,12 @@ import {
   extractACPSessionThoughtLevelState,
 } from '@/providers/acp';
 
+import { decodeOpencodeConfig, updateOpencodeConfig } from '../config';
 import {
   normalizeOpencodeDiscoveredModels,
   normalizeOpencodeModelVariants,
   resolveOpencodeBaseModelRawId,
 } from '../models';
-import {
-  getOpencodeProviderSettings,
-  updateOpencodeProviderSettings,
-} from '../settings';
 
 export interface OpencodeMetadataProjectionInput {
   readonly configOptions?: ACPSessionConfigOption[] | null;
@@ -26,7 +23,7 @@ export interface OpencodeMetadataProjectionInput {
 }
 
 export async function projectOpencodeMetadata(
-  plugin: ProviderHost,
+  host: ProviderRuntimeHost,
   input: OpencodeMetadataProjectionInput,
   signal?: AbortSignal,
 ): Promise<boolean> {
@@ -62,10 +59,9 @@ export async function projectOpencodeMetadata(
   const hasUpdate = hasModels || hasThinking;
   if (!hasUpdate) return false;
 
-  let published = false;
-  await plugin.mutateSettingsConditionally((settings) => {
+  const published = await host.updateConfig((config) => {
     if (signal?.aborted) return false;
-    const current = getOpencodeProviderSettings(settings);
+    const current = decodeOpencodeConfig(config);
     const baseRawModelId = rawModelId
       ? resolveOpencodeBaseModelRawId(
         rawModelId,
@@ -76,16 +72,15 @@ export async function projectOpencodeMetadata(
     if (baseRawModelId && hasThinking) {
       nextThinking[baseRawModelId] = thinkingOptions;
     }
-    updateOpencodeProviderSettings(settings, {
+    updateOpencodeConfig(config, {
       ...(hasModels ? { discoveredModels } : {}),
       ...(baseRawModelId && hasThinking
         ? { thinkingOptionsByModel: nextThinking }
         : {}),
     });
-    published = true;
     return true;
   });
   if (!published || signal?.aborted) return false;
-  plugin.notifyProviderChatOptionsChanged('opencode');
+  host.notifyChatOptionsChanged();
   return true;
 }

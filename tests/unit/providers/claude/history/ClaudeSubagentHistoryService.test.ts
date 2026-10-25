@@ -13,10 +13,7 @@ describe('ClaudeSubagentHistoryService', () => {
       .mockResolvedValue([{ id: 'tool-1' }] as any);
     const loadFinalResult = jest.spyOn(ClaudeHistoryStore, 'loadSubagentFinalResult')
       .mockResolvedValue('Final result');
-    const host = {
-      getActiveEnvironmentVariables: jest.fn()
-        .mockReturnValue('CLAUDE_CONFIG_DIR=/tmp/claude-config'),
-    } as any;
+    const host = { environmentText: 'CLAUDE_CONFIG_DIR=/tmp/claude-config' };
     const service = new ClaudeSubagentHistoryService(host);
     const request = {
       providerSessionId: 'session-1',

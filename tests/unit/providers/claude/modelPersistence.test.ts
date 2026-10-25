@@ -1,7 +1,7 @@
-import { projectClaudeModelSettings } from '@/providers/claude/modelPersistence';
-import { getClaudeProviderSettings } from '@/providers/claude/settings';
+import { projectClaudeModelConfig } from '@/providers/claude/modelPersistence';
+import { getClaudeModelSource, getClaudeProviderSettings } from '@/providers/claude/settings';
 
-describe('projectClaudeModelSettings', () => {
+describe('projectClaudeModelConfig', () => {
   it('persists reported effort levels only for selected models and restores them', () => {
     const settings = { providerConfigs: { claude: {
       discoveredModels: [
@@ -11,7 +11,7 @@ describe('projectClaudeModelSettings', () => {
       visibleModels: ['opus'],
     } } };
 
-    const persisted = projectClaudeModelSettings(settings);
+    const persisted = projectClaudeModelConfig(getClaudeModelSource(settings));
 
     expect(persisted.discoveredModels).toBeUndefined();
     expect(persisted.selectedModels).toEqual([

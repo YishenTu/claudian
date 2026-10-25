@@ -2,6 +2,7 @@ import { NOOP_TASK_RESULT_INTERPRETER } from '../../core/providers/NoopTaskResul
 import type { ProviderModule } from '../../core/providers/types';
 import {
   codexWorkspaceRegistration,
+  getCodexWorkspaceServices,
 } from './app/CodexWorkspaceServices';
 import { CODEX_PROVIDER_CAPABILITIES } from './capabilities';
 import { codexModelPolicy } from './CodexModelPolicy';
@@ -44,7 +45,10 @@ export const codexProviderRegistration: ProviderModule = {
       return normalization.changed;
     },
   },
-  createExecutionBackend: (plugin) => new CodexExecutionBackend(plugin),
+  createExecutionBackend: (plugin) => new CodexExecutionBackend(
+    plugin.getRuntimeHost('codex'),
+    () => getCodexWorkspaceServices().runtime,
+  ),
 
   historyService: new CodexConversationHistoryService(),
   taskResultInterpreter: NOOP_TASK_RESULT_INTERPRETER,

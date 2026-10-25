@@ -1,8 +1,8 @@
 import type { ModelInfo, SDKControlInitializeResponse } from '@anthropic-ai/claude-agent-sdk';
 
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
+import { decodeOutputStyles } from '../config';
 import type { ClaudeDiscoveredModel } from '../models';
-import { decodeOutputStyles } from '../settings';
 import { isEffortLevel } from '../types/models';
 import { probeClaudeRuntime } from './probeClaudeRuntime';
 
@@ -37,7 +37,7 @@ export function toClaudeRuntimeCatalog(
 
 /** Claude Code's reported catalog, read from an independent SDK initialization. */
 export async function probeClaudeCatalog(
-  host: ProviderHost,
+  host: ProviderRuntimeHost,
   signal?: AbortSignal,
 ): Promise<ClaudeRuntimeCatalog> {
   return toClaudeRuntimeCatalog(await probeClaudeRuntime(host, signal));

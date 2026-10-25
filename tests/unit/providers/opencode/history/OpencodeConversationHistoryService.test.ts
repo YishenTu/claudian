@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type * as environmentModule from '@/core/process/env';
 import type { Conversation } from '@/core/types';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
+import { resolveOpencodeHistoryLaunch } from '@/providers/opencode/runtime/OpencodeCLIResolver';
 
 // Exercise real SQLite subprocesses without discovering the runner's other Node installations.
 jest.mock('@/core/process/env', () => ({
@@ -45,7 +46,7 @@ describe('OpencodeConversationHistoryService', () => {
         const { OpencodeConversationHistoryService: HistoryService } = await import(
           '@/providers/opencode/history/OpencodeConversationHistoryService'
         );
-        Object.assign(conversation, await new HistoryService().hydrateConversationHistory(conversation, null, {
+        Object.assign(conversation, await new HistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }).hydrateConversationHistory(conversation, null, {
           environment: {
             ...process.env,
             OPENCODE_DB: dbPath,
@@ -66,7 +67,7 @@ describe('OpencodeConversationHistoryService', () => {
     const dbPath = path.join(tmpRoot, 'opencode.db');
     const sessionId = 'session-retry';
     const conversation = createConversation(sessionId, dbPath);
-    const service = new OpencodeConversationHistoryService();
+    const service = new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch });
 
     const db = new DatabaseSync(dbPath);
     try {
@@ -167,7 +168,7 @@ describe('OpencodeConversationHistoryService', () => {
     }
     const conversation = createConversation(sessionId, dbPath);
 
-    await expect(new OpencodeConversationHistoryService()
+    await expect(new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch })
       .recoverConversationModelSelection?.(conversation, null))
       .resolves.toBe('opencode:google/gemini-3.5-flash');
   });
@@ -182,7 +183,7 @@ describe('OpencodeConversationHistoryService', () => {
     const conversation = createConversation(sessionId, outsidePath);
     conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
 
-    Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }).hydrateConversationHistory(
       conversation,
       null,
       { environment: { HOME: tmpRoot, XDG_DATA_HOME: xdgDataHome } },
@@ -207,7 +208,7 @@ describe('OpencodeConversationHistoryService', () => {
     const conversation = createConversation(sessionId, legacyPath);
     conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
 
-    Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }).hydrateConversationHistory(
       conversation,
       null,
       {
@@ -231,7 +232,7 @@ describe('OpencodeConversationHistoryService', () => {
     conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
 
     expect(
-      new OpencodeConversationHistoryService().buildPersistedProviderState(conversation),
+      new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }).buildPersistedProviderState(conversation),
     ).toEqual({
       databasePath: '/tmp/opencode.db',
       futureResumeCursor: { token: 'cursor-1' },
@@ -242,7 +243,7 @@ describe('OpencodeConversationHistoryService', () => {
     it('retires a confirmed stale resume ID to history while preserving provider-owned state', async () => {
       const conversation = createConversation('missing-session', '/tmp/opencode.db');
       conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
-      const service = new OpencodeConversationHistoryService();
+      const service = new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch });
 
       const update1 = await service.resolveMissingConversationSession(
         conversation,
@@ -265,7 +266,7 @@ describe('OpencodeConversationHistoryService', () => {
     it('preserves a newer resume ID when the failure identifies another session', async () => {
       const conversation = createConversation('current-session', '/tmp/opencode.db');
       conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
-      const service = new OpencodeConversationHistoryService();
+      const service = new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch });
 
       const update2 = await service.resolveMissingConversationSession(
         conversation,
@@ -293,7 +294,7 @@ describe('OpencodeConversationHistoryService', () => {
       nativeConversationContextEstablished: false,
     };
 
-    Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }).hydrateConversationHistory(
       conversation,
       null,
     ));
@@ -311,7 +312,7 @@ describe('OpencodeConversationHistoryService', () => {
     seedDatabase(configuredPath, sessionId, 'Configured prompt');
     const conversation = createConversation(sessionId, configuredPath);
 
-    Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }).hydrateConversationHistory(
       conversation,
       null,
       { environment: { HOME: tmpRoot, OPENCODE_DB: configuredPath } },
@@ -329,7 +330,7 @@ describe('OpencodeConversationHistoryService', () => {
     const conversation = createConversation('remote-session', outsidePath);
     conversation.sessionId = null;
 
-    Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }).hydrateConversationHistory(
       conversation,
       null,
       { environment: { HOME: tmpRoot, XDG_DATA_HOME: xdgDataHome } },

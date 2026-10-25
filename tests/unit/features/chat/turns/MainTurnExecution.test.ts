@@ -4,6 +4,7 @@ import { testDate } from '@test/helpers/testClock';
 import { Notice } from 'obsidian';
 
 import type { ProviderExecutionErrorEvent, ProviderExecutionEvent } from '@/core/execution';
+import { buildSystemPrompt } from '@/core/prompt/mainAgent';
 import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ImageAttachment } from '@/core/types';
@@ -100,18 +101,35 @@ describe('MainTurnExecution', () => {
     ]);
   });
 
-  it('submits provider-default system instructions without changing input', async () => {
+  it('submits the Main Agent prompt resolved from current settings and the Vault root without changing input', async () => {
     const fixture = createFixture();
+    Object.assign(fixture.plugin.settings, { mediaFolder: 'media', systemPrompt: 'Prefer short answers.', userName: 'Ada' });
 
     await fixture.controller.sendMessage({ content: 'list my projects' });
 
     const submission = fixture.coordinator.execute.mock.calls[0][0] as ChatTurnSubmission;
     expect(submission).toMatchObject({
       canonicalText: 'list my projects',
-      configuration: { systemInstructions: { kind: 'provider-default' } },
+      configuration: { systemInstructions: {
+        kind: 'main-agent',
+        instructions: buildSystemPrompt({ customPrompt: 'Prefer short answers.', mediaFolder: 'media', userName: 'Ada', vaultPath: '/vault' }),
+      } },
       rawDisplayText: 'list my projects',
     });
     expect(fixture.state.messages[0]?.content).toBe('list my projects');
+  });
+
+  it('names the working directory the session runs in, not a later host value', async () => {
+    const fixture = createFixture();
+    Object.assign(fixture.coordinator, { workingDirectory: '/session-vault' });
+    Object.assign(fixture.plugin, { providerHost: { workingDirectory: '/moved-vault' } });
+
+    await fixture.controller.sendMessage({ content: 'where am I' });
+
+    const submission = fixture.coordinator.execute.mock.calls[0][0] as ChatTurnSubmission;
+    expect(submission.configuration.systemInstructions).toEqual({
+      kind: 'main-agent', instructions: buildSystemPrompt({ vaultPath: '/session-vault' }),
+    });
   });
 
   describe('project session instructions', () => {
@@ -119,6 +137,9 @@ describe('MainTurnExecution', () => {
     const systemInstructions = (fixture: ReturnType<typeof createFixture>, call: number) => (
       (fixture.coordinator.execute.mock.calls[call][0] as ChatTurnSubmission).configuration.systemInstructions
     );
+    const mainAgent = (sessionInstructions?: string) => ({
+      kind: 'main-agent', instructions: buildSystemPrompt({ vaultPath: '/vault', sessionInstructions }),
+    });
 
     function memberFixture() {
       const record = projectRecord({ id: 'project-1', name: 'Launch', instructions: 'Ship the beta.' });
@@ -143,9 +164,9 @@ describe('MainTurnExecution', () => {
       await fixture.controller.sendMessage({ content: 'after edit' });
 
       expect([0, 1, 2].map(call => systemInstructions(fixture, call))).toEqual([
-        { kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(record) },
-        { kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(record) },
-        { kind: 'provider-default', sessionInstructions: renderProjectMemberInstructions(edited) },
+        mainAgent(renderProjectMemberInstructions(record)),
+        mainAgent(renderProjectMemberInstructions(record)),
+        mainAgent(renderProjectMemberInstructions(edited)),
       ]);
       expect(fixture.plugin.getConversationSync).not.toHaveBeenCalled();
     });
@@ -159,9 +180,9 @@ describe('MainTurnExecution', () => {
       await fixture.controller.sendMessage({ content: 'normal turn' });
       await fixture.controller.sendSessionMessage(message, { assertBeforeHandoff: () => undefined, onUnsent: () => undefined });
 
-      expect(systemInstructions(fixture, 0)).toHaveProperty('sessionInstructions');
-      expect(systemInstructions(fixture, 1)).toEqual({ kind: 'provider-default' });
-      expect(systemInstructions(fixture, 2)).toEqual({ kind: 'provider-default' });
+      expect(systemInstructions(fixture, 0)).toEqual(mainAgent(renderProjectMemberInstructions(record)));
+      expect(systemInstructions(fixture, 1)).toEqual(mainAgent());
+      expect(systemInstructions(fixture, 2)).toEqual(mainAgent());
     });
   });
 
@@ -220,9 +241,11 @@ describe('MainTurnExecution', () => {
     expect(submission).toMatchObject({
       canonicalText: 'B',
       context: {
-        browserSelection: browserContext,
-        canvasSelection: canvasContext,
-        editorSelection: editorContext,
+        selections: [
+          { kind: 'editor', selection: editorContext },
+          { kind: 'browser', selection: browserContext },
+          { kind: 'canvas', selection: canvasContext },
+        ],
       },
       rawDisplayText: 'B',
     });

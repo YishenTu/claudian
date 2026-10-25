@@ -1,6 +1,6 @@
 import { Notice } from 'obsidian';
 
-import type { ConversationBranchResult } from '@/core/execution';
+import type { ConversationBranchResult, ProviderSystemInstructions } from '@/core/execution';
 import { getUserDisplayText } from '@/core/prompt/promptContext';
 import type { ChatMessage } from '@/core/types';
 import type { ComposerDraft, ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
@@ -20,7 +20,7 @@ export interface ConversationBranchingDeps {
   ensureExecutionInitialized?: () => Promise<boolean>;
   getSelectedModel?: () => string | null;
   /** The bound conversation's live project instructions, resolved for each branch operation. */
-  getSessionInstructions?: () => string | undefined;
+  getSystemInstructions: (workingDirectory: string) => ProviderSystemInstructions;
   isClosing?: () => boolean;
   /** Persists the current conversation state. */
   save: () => Promise<void>;
@@ -161,7 +161,7 @@ export class ConversationBranching {
       if (!coordinator || !isCurrent()) return result;
       const configuration = buildChatExecutionConfiguration(
         { model: this.deps.getSelectedModel?.() ?? undefined },
-        this.deps.getSessionInstructions?.(),
+        this.deps.getSystemInstructions(coordinator.workingDirectory),
       );
       const request = { configuration, signal };
       result = message

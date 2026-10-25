@@ -58,7 +58,7 @@ export interface SideChatSessionDeps {
    * Retries reuse it instead of refolding a newer source checkpoint.
    */
   readonly buildChildResumeState: () => Promise<Readonly<Record<string, unknown>>>;
-  readonly vaultWorkingDirectory: string;
+  readonly workingDirectory: string;
   readonly interactionPort: ProviderInteractionPort;
   /** Binds the parent conversation's session tools for each provider session the child acquires. */
   readonly bindSessionTools?: () => SessionToolBinding | undefined;
@@ -263,7 +263,7 @@ export class SideChatSession {
           lifecycle: this.deps.ephemeral ? 'ephemeral' : 'persistent',
           nativePersistence: this.deps.ephemeral ? 'disabled-if-supported' : 'enabled',
           ...(seed ? { resumeSeed: seed } : {}),
-          vaultWorkingDirectory: this.deps.vaultWorkingDirectory,
+          workingDirectory: this.deps.workingDirectory,
           ...(sessionTools ? { sessionTools: sessionTools.port } : {}),
         },
         reason => this.#handleInvalidation(reason),

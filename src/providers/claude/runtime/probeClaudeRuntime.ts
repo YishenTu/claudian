@@ -6,11 +6,10 @@ import type {
 
 import { getEnhancedPath, parseEnvironmentVariables } from '@/core/process/env';
 
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import { throwIfAborted, toAbortError } from '../../../utils/abort';
-import { getVaultPath } from '../../../utils/path';
+import { decodeClaudeConfig, resolveClaudeSettingSources } from '../config';
 import { loadClaudeAgentQuery } from '../loadClaudeAgentSDK';
-import { getClaudeProviderSettings, resolveClaudeSettingSources } from '../settings';
 import { createCustomSpawnFunction } from './customSpawn';
 
 const PROBE_CANCELLED = 'Claude Code runtime discovery cancelled';
@@ -24,22 +23,20 @@ export type ClaudeLaunchOptions = Required<Pick<
 >>;
 
 export interface ClaudeLaunchOptionOverrides {
-  /** Settings snapshot that decides Claude setting sources; defaults to the host settings. */
-  readonly settings?: Record<string, unknown>;
   /** Environment defaults that the process environment and configured variables override. */
   readonly envDefaults?: Record<string, string>;
 }
 
 /** Launch inputs every Claude Code process shares: working folder, executable, environment and settings sources. */
 export function buildClaudeLaunchOptions(
-  host: Pick<ProviderHost, 'settings' | 'getActiveEnvironmentVariables'>,
+  host: Pick<ProviderRuntimeHost, 'config' | 'environmentText'>,
   cwd: string,
   cliPath: string,
   overrides: ClaudeLaunchOptionOverrides = {},
 ): ClaudeLaunchOptions {
-  const customEnv = parseEnvironmentVariables(host.getActiveEnvironmentVariables('claude'));
+  const customEnv = parseEnvironmentVariables(host.environmentText);
   const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
-  const { loadUserSettings } = getClaudeProviderSettings(overrides.settings ?? host.settings);
+  const { loadUserSettings } = decodeClaudeConfig(host.config);
   return {
     cwd,
     pathToClaudeCodeExecutable: cliPath,
@@ -66,7 +63,7 @@ export class ClaudeRuntimeUnavailableError extends Error {
  * session init from local configuration without an inference call.
  */
 export async function probeClaudeRuntime(
-  host: ProviderHost,
+  host: ProviderRuntimeHost,
   signal?: AbortSignal,
 ): Promise<ClaudeRuntimeInitialization> {
   throwIfAborted(signal, PROBE_CANCELLED);
@@ -84,14 +81,14 @@ export async function probeClaudeRuntime(
     controller.signal.addEventListener('abort', onAbort, { once: true });
   });
   const initialize = async (): Promise<ClaudeRuntimeInitialization> => {
-    const cwd = getVaultPath(host.app);
+    const cwd = host.workingDirectory;
     if (!cwd) throw new ClaudeRuntimeUnavailableError('Claude Code discovery requires a local vault');
-    const cliPath = await host.getResolvedProviderCliPath('claude');
+    const cliPath = await host.resolveCliPath();
     throwIfAborted(controller.signal, PROBE_CANCELLED);
     if (!cliPath) throw new ClaudeRuntimeUnavailableError('Claude Code installation not found');
     const agentQuery = await loadClaudeAgentQuery();
     throwIfAborted(controller.signal, PROBE_CANCELLED);
-    const config = getClaudeProviderSettings(host.settings);
+    const config = decodeClaudeConfig(host.config);
     // Match chat launches, which always enable auto mode.
     const extraArgs = {
       'enable-auto-mode': null,

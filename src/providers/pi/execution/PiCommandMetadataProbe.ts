@@ -1,12 +1,11 @@
 import { parseEnvironmentVariables } from '@/core/process/env';
 import { OwnedProbeRegistry } from '@/core/providers/metadata/OwnedProbeRegistry';
 import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTransitionFence';
-import { getRuntimeEnvironmentText } from '@/core/providers/providerEnvironment';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import type { SlashCommand } from '@/core/types';
 
+import { decodePiConfig } from '../config';
 import { buildPiLaunchSpec } from '../runtime/PiLaunchSpecBuilder';
-import { getPiProviderSettings } from '../settings';
 import {
   createPiExecutionKernel,
   type PiExecutionKernel,
@@ -29,7 +28,7 @@ export class PiCommandMetadataProbe {
   });
 
   constructor(
-    private readonly host: ProviderHost,
+    private readonly host: ProviderRuntimeHost,
     private readonly createKernel: PiExecutionKernelFactory =
       createPiExecutionKernel,
   ) {
@@ -41,7 +40,7 @@ export class PiCommandMetadataProbe {
   }
 
   async load(
-    vaultWorkingDirectory: string,
+    workingDirectory: string,
     signal?: AbortSignal,
   ): Promise<SlashCommand[]> {
     if (this.transitionFence.isUnavailable()) {
@@ -51,19 +50,19 @@ export class PiCommandMetadataProbe {
 
     return await this.probes.run({
       create: async (ownedSignal) => {
-        const command = await this.host.getResolvedProviderCliPath('pi') ?? 'pi';
+        const command = await this.host.resolveCliPath() ?? 'pi';
         ownedSignal.throwIfAborted();
-        const envText = getRuntimeEnvironmentText(this.host.settings, 'pi');
+        const envText = this.host.environmentText;
         const launchSpec = buildPiLaunchSpec({
           command,
-          cwd: vaultWorkingDirectory,
+          cwd: workingDirectory,
           env: {
             ...process.env,
             ...parseEnvironmentVariables(envText),
           },
           envText,
           noSession: true,
-          settings: getPiProviderSettings(this.host.settings),
+          settings: decodePiConfig(this.host.config, this.host.selection),
         });
         let pushedCommands: SlashCommand[] | null = null;
         const kernel = this.createKernel(

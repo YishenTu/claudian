@@ -70,7 +70,7 @@ it('runs the side child on an ephemeral native fork of the checkpoint that ends 
   const { deepseek, lifecycle } = peer.host();
   let child: Awaited<ReturnType<typeof traceSideChild>> = null;
   try {
-    const backend = new DeepSeekExecutionBackend(env.host, () => deepseek);
+    const backend = new DeepSeekExecutionBackend(env.host.getRuntimeHost('deepseek'), () => deepseek);
     const source = await env.open(backend);
     const checkpoint = await env.send(source, 'Remember A');
     const checkpointSeq = cursors.get('source')!;

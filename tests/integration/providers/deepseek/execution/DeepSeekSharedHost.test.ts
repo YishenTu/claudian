@@ -6,6 +6,7 @@ import { createInterface } from 'node:readline';
 
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { childFollow, jobsOf, NativePeer, type NativePeerLifecycle, rootFollow } from '@test/helpers/deepseek/NativePeer';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 
 import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderExecutionSession, ProviderInteractionPort, ProviderSessionConfig } from '@/core/execution';
@@ -92,10 +93,10 @@ function port(): ProviderInteractionPort & { askUserQuestion: jest.Mock } {
 function open(interactionPort = port(), resume?: string, lifecycle: ProviderSessionConfig['lifecycle'] = 'persistent', sessionTools?: ProviderSessionConfig['sessionTools']): ProviderExecutionSession {
   if (resume && !stored.includes(resume)) stored.push(resume);
   const config: ProviderSessionConfig = {
-    sessionTools, lifecycle, nativePersistence: lifecycle === 'ephemeral' ? 'disabled-if-supported' : 'enabled', vaultWorkingDirectory: '/vault', interactionPort,
+    sessionTools, lifecycle, nativePersistence: lifecycle === 'ephemeral' ? 'disabled-if-supported' : 'enabled', workingDirectory: '/vault', interactionPort,
     ...(resume ? { resumeSeed: { providerSessionId: resume, providerState: { schemaVersion: 1, home: getDeepSeekHome(process.env, process.cwd()), profile: 'web', preset: 'claudian' } } } : {}),
   };
-  const session = new DeepSeekExecutionBackend(host, () => deepseek).createSession(config);
+  const session = new DeepSeekExecutionBackend(runtimeHostFor(host as never, 'deepseek'), () => deepseek).createSession(config);
   sessions.push(session);
   return session;
 }
@@ -252,18 +253,16 @@ it('gives each conversation on the shared process its own prompt and applies an 
   } finally { native.close(); await artifacts.dispose(); await rm(root, { recursive: true, force: true }); }
 });
 
-it('writes provider-default session instructions into the session prompt and rewrites it when they change', async () => {
+it('writes the Main Agent instructions verbatim into the session prompt and rewrites it when they change', async () => {
   const session = open();
-  const withSession = (sessionInstructions: string): ProviderExecutionRequest => ({
-    ...request(''), configuration: { systemInstructions: { kind: 'provider-default', sessionInstructions }, permissionMode: 'normal' },
+  const withInstructions = (instructions: string): ProviderExecutionRequest => ({
+    ...request(''), configuration: { systemInstructions: { kind: 'main-agent', instructions }, permissionMode: 'normal' },
   });
-  await run(session, withSession('## Project\nAlpha'), 'one');
-  await run(session, withSession('## Project\nBeta'), 'two');
+  await run(session, withInstructions('Main Agent prompt Alpha'), 'one');
+  await run(session, withInstructions('Main Agent prompt Beta'), 'two');
   const written = lifecycle.prompts.filter(p => p.sessionId === 'alpha').map(p => p.text ?? '');
-  expect(written[0]).toContain('## Runtime Context');
-  expect(written[0]!.endsWith('## Project\nAlpha')).toBe(true);
-  expect(written.at(-1)!.endsWith('## Project\nBeta')).toBe(true);
-  expect(written.at(-1)).not.toContain('Alpha');
+  expect(written[0]).toBe('Main Agent prompt Alpha');
+  expect(written.at(-1)).toBe('Main Agent prompt Beta');
   expect(lifecycle.starts).toBe(1);
 });
 

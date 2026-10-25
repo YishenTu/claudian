@@ -1,11 +1,8 @@
 import { getEnhancedPath, parseEnvironmentVariables } from '@/core/process/env';
 
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
-import type {
-  ProviderId,
-  ProviderTransitionOwnerContext,
-} from '../../../core/providers/types';
-import { getVaultPath } from '../../../utils/path';
+import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
+import type { ProviderTransitionOwnerContext } from '../../../core/providers/types';
+import { decodeCodexConfig } from '../config';
 import type { InitializeResult } from './codexAppServerTypes';
 import { resolveCodexExecutionTargetAsync } from './CodexExecutionTargetResolver';
 import { buildCodexLaunchSpec } from './CodexLaunchSpecBuilder';
@@ -17,15 +14,14 @@ const CODEX_APP_SERVER_CLIENT_INFO = Object.freeze({
   version: '1.0.0',
 });
 
-export function getCodexAppServerWorkingDirectory(plugin: ProviderHost): string {
-  return getVaultPath(plugin.app) ?? process.cwd();
+export function getCodexAppServerWorkingDirectory(host: Pick<ProviderRuntimeHost, 'workingDirectory'>): string {
+  return host.workingDirectory ?? process.cwd();
 }
 
 export function buildCodexAppServerEnvironment(
-  plugin: ProviderHost,
-  providerId: ProviderId = 'codex',
+  host: Pick<ProviderRuntimeHost, 'environmentText'>,
 ): Record<string, string> {
-  const customEnv = parseEnvironmentVariables(plugin.getActiveEnvironmentVariables(providerId));
+  const customEnv = parseEnvironmentVariables(host.environmentText);
   const baseEnv = Object.fromEntries(
     Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
   );
@@ -39,24 +35,23 @@ export function buildCodexAppServerEnvironment(
 }
 
 export async function resolveCodexAppServerLaunchSpec(
-  plugin: ProviderHost,
-  providerId: ProviderId = 'codex',
+  host: ProviderRuntimeHost,
   context?: ProviderTransitionOwnerContext,
 ): Promise<CodexLaunchSpec> {
-  const hostVaultPath = getCodexAppServerWorkingDirectory(plugin);
+  const hostVaultPath = getCodexAppServerWorkingDirectory(host);
   const executionTarget = await resolveCodexExecutionTargetAsync({
-    settings: plugin.settings,
+    codexSettings: decodeCodexConfig(host.config),
     hostVaultPath,
   });
 
   return buildCodexLaunchSpec({
-    settings: plugin.settings,
-    resolvedCliCommand: await plugin.getResolvedProviderCliPath(providerId, {
+    codexSettings: decodeCodexConfig(host.config),
+    resolvedCliCommand: await host.resolveCliPath({
       ...context,
       executionTarget,
     }),
     hostVaultPath,
-    env: buildCodexAppServerEnvironment(plugin, providerId),
+    env: buildCodexAppServerEnvironment(host),
     executionTarget,
   });
 }

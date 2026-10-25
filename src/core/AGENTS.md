@@ -1,7 +1,7 @@
 # Core constraints
 
 - Provider lifecycle leases fence provider-wide transitions; they must not acquire tab turn state. Registries must not absorb registered-service lifecycle/storage.
-- All providers receive the same default Main Agent prompt for the same settings and session instructions. Adapters may change transport/replacement mechanics, not omit sections or select provider-specific prompt profiles.
+- Callers resolve system instructions to literal text with the shared core prompt builders (chat resolves the Main Agent prompt from settings, the Vault root and session instructions). Adapters deliver that text through native transport/replacement mechanics and kind-specific protocol framing; they never build, substitute or select prompts, or read prompt settings.
 - Inline Edit has a separate shared explicit prompt with host-provided date/Vault path. Do not append Custom Instructions; keep tool guidance capability-based.
 - New Linked content references use normalized path-only shape, excluding the Vault root. Legacy Note forms are decode-only. A directory reference changes neither CWD nor recursive ingestion.
 

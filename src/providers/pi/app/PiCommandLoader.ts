@@ -5,7 +5,6 @@ import type {
   ProviderCommandLoaderContext,
 } from '@/core/providers/types';
 import type { SlashCommand } from '@/core/types';
-import { getVaultPath } from '@/utils/path';
 
 import type { PiCommandMetadataProbe } from '../execution/PiCommandMetadataProbe';
 import { getPiProviderSettings } from '../settings';
@@ -27,7 +26,7 @@ export class PiCommandLoader implements ProviderCommandLoaderContract {
     return loadRuntimeCommands({
       allowIsolatedMetadataCreation: context.allowIsolatedMetadataCreation,
       discover: signal => this.metadataProbe.load(
-        getVaultPath(context.plugin.app) ?? process.cwd(),
+        context.plugin.workingDirectory ?? process.cwd(),
         signal,
       ),
       errorMessage: 'Could not load Pi commands.',

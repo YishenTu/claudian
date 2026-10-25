@@ -26,9 +26,10 @@ export async function createPiWorkspaceServices(
   plugin: ProviderHost,
   options: PiWorkspaceServicesOptions = {},
 ): Promise<PiWorkspaceServices> {
+  const runtimeHost = plugin.getRuntimeHost('pi');
   const commandMetadataProbe = options.commandMetadataProbe
-    ?? new PiCommandMetadataProbe(plugin);
-  const modelCatalog = createPiModels(plugin);
+    ?? new PiCommandMetadataProbe(runtimeHost);
+  const modelCatalog = createPiModels(runtimeHost);
   const unregisterTransitionHook = plugin.executionLifecycleRegistry
     .registerTransitionHook('pi', {
       beforeTransition: async () => {

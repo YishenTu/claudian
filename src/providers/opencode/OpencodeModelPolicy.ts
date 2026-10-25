@@ -4,7 +4,6 @@ import type {
   ProviderModelPolicy,
   ProviderUIOption,
 } from '../../core/providers/types';
-import { maybeGetOpencodeWorkspaceServices } from './app/OpencodeWorkspaceServices';
 import { OpencodeMetadataService } from './metadata/OpencodeMetadataService';
 import {
   buildOpencodeBaseModels,
@@ -88,30 +87,6 @@ export const opencodeModelPolicy: ProviderModelPolicy = {
   applyModelDefaults: applyOpencodeModelDefaults,
 
   applyModelProjectionDefaults: applyOpencodeModelDefaults,
-
-  async prepareModelMetadata(model: string, _settings: Record<string, unknown>, context): Promise<void> {
-    const rawModelId = decodeOpencodeModelId(model);
-    if (!rawModelId) {
-      return;
-    }
-
-    const opencodeSettings = getOpencodeProviderSettings(context.plugin.settings);
-    const baseRawId = resolveOpencodeBaseModelRawId(rawModelId, opencodeSettings.discoveredModels);
-    if (baseRawId && opencodeSettings.thinkingOptionsByModel[baseRawId]) {
-      return;
-    }
-
-    const workspaceService = maybeGetOpencodeWorkspaceServices()?.metadataService;
-    const metadataService = workspaceService
-      ?? new OpencodeMetadataService(context.plugin);
-    try {
-      await metadataService.warmModelMetadata(model);
-    } catch {
-      // Metadata warmup is opportunistic; the first real turn can still discover it.
-    } finally {
-      if (!workspaceService) await metadataService.dispose();
-    }
-  },
 
   applyReasoningSelection(model: string, value: string, settings: unknown): void {
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
@@ -221,4 +196,36 @@ function pushOption(
 
   seenValues.add(value);
   target.push(option);
+}
+
+/**
+ * Warms model-scoped metadata after selection. Reuses the shared workspace metadata
+ * service when initialized; otherwise owns and disposes a temporary one.
+ */
+export function createOpencodeModelMetadataPreparer(
+  getSharedMetadataService: () => OpencodeMetadataService | null | undefined,
+): NonNullable<ProviderModelPolicy['prepareModelMetadata']> {
+  return async (model, _settings, context) => {
+    const rawModelId = decodeOpencodeModelId(model);
+    if (!rawModelId) {
+      return;
+    }
+
+    const opencodeSettings = getOpencodeProviderSettings(context.plugin.settings);
+    const baseRawId = resolveOpencodeBaseModelRawId(rawModelId, opencodeSettings.discoveredModels);
+    if (baseRawId && opencodeSettings.thinkingOptionsByModel[baseRawId]) {
+      return;
+    }
+
+    const workspaceService = getSharedMetadataService();
+    const metadataService = workspaceService
+      ?? new OpencodeMetadataService(context.plugin.getRuntimeHost('opencode'));
+    try {
+      await metadataService.warmModelMetadata(model);
+    } catch {
+      // Metadata warmup is opportunistic; the first real turn can still discover it.
+    } finally {
+      if (!workspaceService) await metadataService.dispose();
+    }
+  };
 }

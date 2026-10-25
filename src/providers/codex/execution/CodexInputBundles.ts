@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import type { ProviderExecutionRequest } from '@/core/execution';
-import { appendSelectionContexts, appendSessionReferences } from '@/core/prompt/promptContext';
+import { appendExecutionContext } from '@/core/prompt/promptContext';
 import type { ImageAttachment } from '@/core/types';
 import type { UserInput } from '@/providers/codex/runtime/codexAppServerTypes';
 
@@ -81,13 +81,13 @@ export class CodexInputBundles {
         });
       }
 
-      const prompt = promptOverride ?? appendSelectionContexts(appendSessionReferences(
+      const prompt = promptOverride ?? appendExecutionContext(
         request.input
           .filter(block => block.type === 'text')
           .map(block => block.text)
           .join('\n\n'),
-        request.context?.sessionReferences,
-      ), request.context);
+        request.context,
+      );
       if (prompt) {
         input.push({ type: 'text', text: prompt, text_elements: [] });
       }

@@ -1,6 +1,5 @@
 import { normalizeProviderCommandDiscoveryItems } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
 import type { ProviderCommandLoader } from '@/core/providers/types';
-import { getVaultPath } from '@/utils/path';
 
 import { readDeepSeekSkills } from '../commands/DeepSeekCommandCatalog';
 import { readDeepSeekProjection } from '../history/DeepSeekJournal';
@@ -25,7 +24,7 @@ export function createDeepSeekCommandLoader(deepseek: DeepSeekHost): ProviderCom
     async loadCommands({ allowIsolatedMetadataCreation, conversation, plugin, readyCommandSnapshot, signal }) {
       signal?.throwIfAborted();
       if (readyCommandSnapshot) return normalizeProviderCommandDiscoveryItems(readyCommandSnapshot);
-      const cwd = getVaultPath(plugin.app);
+      const cwd = plugin.workingDirectory;
       if (!allowIsolatedMetadataCreation || !cwd) return REQUIRES_SESSION;
       try {
         const saved = decodeDeepSeekState(conversation?.providerState);

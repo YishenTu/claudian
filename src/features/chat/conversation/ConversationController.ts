@@ -8,6 +8,7 @@ import type {
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ConversationBranching } from '@/features/chat/conversation/ConversationBranching';
 import { ConversationRewind, type ConversationSaveOptions } from '@/features/chat/conversation/ConversationRewind';
+import { resolveChatSystemInstructions } from '@/features/chat/execution/chatExecutionConfiguration';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { resolveSessionInstructions } from '@/features/chat/execution/projectInstructions';
 import type { LinkedContentController, LinkedContentSubmissionToken } from '@/features/chat/linked-content';
@@ -101,10 +102,14 @@ export class ConversationController {
       getExecutionCoordinator: () => this.#getExecutionCoordinator(),
       ensureExecutionInitialized,
       getSelectedModel: () => this.deps.getSelectedModel?.() ?? null,
-      getSessionInstructions: () => {
+      getSystemInstructions: workingDirectory => {
         const { plugin, state } = this.deps;
         const id = state.currentConversationId;
-        return resolveSessionInstructions(plugin.projects, id ? plugin.getConversationSummary(id) : null);
+        return resolveChatSystemInstructions(
+          plugin.settings,
+          workingDirectory,
+          resolveSessionInstructions(plugin.projects, id ? plugin.getConversationSummary(id) : null),
+        );
       },
       isClosing,
       save: () => this.save(),

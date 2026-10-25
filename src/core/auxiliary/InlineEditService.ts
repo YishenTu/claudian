@@ -25,11 +25,11 @@ export interface InlineEditExecutionSelection {
  */
 export class InlineEditService {
   private readonly controller: AuxiliarySessionController;
-  private readonly vaultWorkingDirectory: string;
+  private readonly workingDirectory: string;
   private conversing = false;
 
   constructor(context: AuxiliaryExecutionContext) {
-    this.vaultWorkingDirectory = context.vaultWorkingDirectory;
+    this.workingDirectory = context.workingDirectory;
     this.controller = new AuxiliarySessionController(
       context,
       'inline-edit',
@@ -77,7 +77,7 @@ export class InlineEditService {
         model: selection.model,
         reasoning: selection.reasoning,
         prompt,
-        systemPrompt: getInlineEditSystemPrompt(this.vaultWorkingDirectory),
+        systemPrompt: getInlineEditSystemPrompt(this.workingDirectory),
       });
       const result = parseInlineEditResponse(text);
       // A clarification opens the conversation; an empty reply leaves it as it was.

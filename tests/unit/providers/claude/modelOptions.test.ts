@@ -1,6 +1,7 @@
 import { findClaudeModelOption, getClaudeModelOptions } from '@/providers/claude/modelOptions';
+import { getClaudeModelSource } from '@/providers/claude/settings';
 
-const settings = (config: Record<string, unknown>) => ({ providerConfigs: { claude: config } });
+const settings = (config: Record<string, unknown>) => getClaudeModelSource({ providerConfigs: { claude: config } });
 
 describe('Claude SDK model catalog', () => {
   it.each([

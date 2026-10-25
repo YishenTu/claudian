@@ -9,11 +9,13 @@ import type {
   ProviderHistoryUpdate,
 } from '../../../core/providers/types';
 import type { ChatMessage } from '../../../core/types';
+import { decodeCodexConfig } from '../config';
 import { encodeCodexModelSelectionId } from '../modelSelection';
 import type { CodexPreviousSegment, CodexProviderState } from '../types';
 import { clearCodexResumeState, getCodexState } from '../types';
 import {
   CODEX_HISTORY_LOOKUP_TIMEOUT_MS,
+  type CodexHistoryPathContext,
   getCodexArchivedTranscriptRoots,
   resolveCodexSessionFileHint,
   resolveCodexTranscriptRootHint,
@@ -56,6 +58,13 @@ function toHistoryOnlyMessage(message: ChatMessage, segmentIndex: number): ChatM
 }
 
 export class CodexConversationHistoryService implements ProviderConversationHistoryService {
+  #pathContext(context: ProviderHistoryPathContext | undefined): CodexHistoryPathContext | undefined {
+    if (!context) return undefined;
+    const { config, ...rest } = context;
+    if (!config) return rest;
+    const { installationMethod, wslDistroOverride } = decodeCodexConfig(config);
+    return { ...rest, installation: { installationMethod, wslDistroOverride } };
+  }
 
   hasConversationModelRecoverySource(conversation: ProviderHistoryInput): boolean {
     const state = getCodexState(conversation.providerState);
@@ -71,8 +80,9 @@ export class CodexConversationHistoryService implements ProviderConversationHist
   async recoverConversationModelSelection(
     conversation: ProviderHistoryInput,
     _vaultPath: string | null,
-    pathContext?: ProviderHistoryPathContext,
+    historyPathContext?: ProviderHistoryPathContext,
   ): Promise<string | null> {
+    const pathContext = this.#pathContext(historyPathContext);
     const state = getCodexState(conversation.providerState);
     const isPendingFork = this.isPendingForkConversation(conversation);
     const threadId = isPendingFork
@@ -140,8 +150,9 @@ export class CodexConversationHistoryService implements ProviderConversationHist
   async hydrateConversationHistory(
     input: ProviderHistoryInput,
     _vaultPath: string | null,
-    pathContext?: ProviderHistoryPathContext,
+    historyPathContext?: ProviderHistoryPathContext,
   ): Promise<ProviderHistoryUpdate> {
+    const pathContext = this.#pathContext(historyPathContext);
     const conversation = copyProviderHistoryState(input);
     const lookupDeadline = Date.now() + CODEX_HISTORY_LOOKUP_TIMEOUT_MS;
     const state = getCodexState(conversation.providerState);
@@ -185,7 +196,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
   async #hydrateCurrentSegment(
     conversation: ProviderHistoryState,
     state: CodexProviderState,
-    pathContext: ProviderHistoryPathContext | undefined,
+    pathContext: CodexHistoryPathContext | undefined,
     lookupDeadline: number,
   ): Promise<ChatMessage[] | null> {
     const transcriptRootPath = resolveCodexTranscriptRootHint(
@@ -272,7 +283,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
    */
   async #readPreviousSegment(
     segment: CodexPreviousSegment,
-    pathContext: ProviderHistoryPathContext | undefined,
+    pathContext: CodexHistoryPathContext | undefined,
     lookupDeadline: number,
   ): Promise<ChatMessage[]> {
     try {
@@ -323,7 +334,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
 
   async #readPendingForkSegment(
     state: CodexPreviousSegment,
-    pathContext: ProviderHistoryPathContext | undefined,
+    pathContext: CodexHistoryPathContext | undefined,
     lookupDeadline: number,
   ): Promise<ChatMessage[] | null> {
     const sourceSessionFile = await this.#resolveSourceSessionFile(
@@ -351,7 +362,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     forkSessionFile: string,
     forkTurns: CodexParsedTurn[],
     transcriptRootPath: string | null,
-    pathContext: ProviderHistoryPathContext | undefined,
+    pathContext: CodexHistoryPathContext | undefined,
   ): Promise<ChatMessage[] | null> {
     const sourceRecords = await readCodexSessionRecords(sourceSessionFile) ?? [];
     const sourceTurns = parseCodexSessionTurns(sourceRecords);
@@ -376,7 +387,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     persistedPath: string | undefined,
     threadId: string | null,
     transcriptRootPath: string | null,
-    pathContext: ProviderHistoryPathContext | undefined,
+    pathContext: CodexHistoryPathContext | undefined,
     lookupDeadline: number,
   ): Promise<string | null> {
     return await resolveCodexSessionFileHint(
@@ -400,7 +411,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
   async #readPreviousSegmentThread(
     segment: CodexPreviousSegment,
     transcriptRootPath: string | null,
-    pathContext: ProviderHistoryPathContext | undefined,
+    pathContext: CodexHistoryPathContext | undefined,
     lookupDeadline: number,
   ): Promise<{ sessionFile: string; turns: CodexParsedTurn[] } | null> {
     const resolved = await this.#resolveThreadSessionFile(
@@ -430,7 +441,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
 
   async #hydrateSubagents(
     messages: ChatMessage[], sessionFilePath: string, rootHint: string | null | undefined,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: CodexHistoryPathContext,
   ): Promise<void> {
     const root = resolveCodexTranscriptRootHint(rootHint ?? deriveCodexSessionsRootFromSessionPath(sessionFilePath), pathContext);
     await hydrateCodexSubagentHistory(messages, [
@@ -495,8 +506,9 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     resumeAt: string,
     sourceProviderState?: Record<string, unknown>,
     _vaultPath?: string | null,
-    pathContext?: ProviderHistoryPathContext,
+    historyPathContext?: ProviderHistoryPathContext,
   ): Promise<Record<string, unknown>> {
+    const pathContext = this.#pathContext(historyPathContext);
     const sourceState = getCodexState(sourceProviderState);
     const sourceTranscriptRootPath = sourceState.transcriptRootPath
       ?? deriveCodexSessionsRootFromSessionPath(sourceState.sessionFilePath);
@@ -559,7 +571,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
 
   async #resolveSourceSessionFile(
     state: CodexPreviousSegment,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: CodexHistoryPathContext,
     lookupDeadline = Date.now() + CODEX_HISTORY_LOOKUP_TIMEOUT_MS,
   ): Promise<string | null> {
     if (!state.forkSource) return null;

@@ -55,7 +55,7 @@ it('forks native disk history and resumes the side child independently after coo
   };
   let child: Awaited<ReturnType<typeof traceSideChild>> = null;
   try {
-    const backend = new OpencodeExecutionBackend(env.host, { serverService: new OpencodeServerService() });
+    const backend = new OpencodeExecutionBackend(env.host.getRuntimeHost('opencode'), { serverService: new OpencodeServerService() });
     const source = await env.open(backend);
     const checkpoint = await env.send(source, 'Remember A');
     child = await traceSideChild(env, source, checkpoint, backend);

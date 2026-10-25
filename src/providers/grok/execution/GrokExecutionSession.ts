@@ -5,7 +5,7 @@ import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
 } from '@/core/prompt/historyContext';
-import { appendLinkedContent, appendSelectionContexts, appendSessionReferences } from '@/core/prompt/promptContext';
+import { appendExecutionContext } from '@/core/prompt/promptContext';
 import { invokeSessionTool } from '@/core/session-tools/invokeSessionTool';
 import { SESSION_TOOL_ROUTE_HEADER, type SessionToolRoute } from '@/core/session-tools/SessionToolEndpoint';
 import { SESSION_TOOL_MCP_SERVER_NAME } from '@/core/session-tools/sessionToolMCP';
@@ -29,7 +29,7 @@ import {
   type SteerableExecutionSession,
 } from '../../../core/execution';
 import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { ChatMessage } from '../../../core/types';
 import {
   type ACPContentBlock,
@@ -45,7 +45,7 @@ import {
   buildACPUsageInfo,
   mapACPApprovalDecision,
 } from '../../acp';
-import { computeGrokEnvironmentHash } from '../env/GrokSettingsReconciler';
+import { decodeGrokConfig } from '../config';
 import {
   resolveGrokSessionCwd,
   resolveGrokSessionDirectory,
@@ -68,16 +68,11 @@ import {
 } from '../normalization/grokToolNormalization';
 import { parseGrokPromptUsage, parseGrokUsage } from '../normalization/grokUsage';
 import { shouldAutoApproveGrokPermission } from '../permissionModes';
-import {
-  buildGrokSystemPrompt,
-  type GrokSystemPromptSettings,
-} from '../prompt/GrokSystemPrompt';
 import { waitForGrokCancelDelivery } from '../runtime/GrokCancelDelivery';
 import { assertGrokModelAvailable } from '../runtime/GrokModelAvailability';
 import type { GrokModelCatalogCoordinator } from '../runtime/GrokModelCatalogCoordinator';
-import { buildGrokRuntimeEnv } from '../runtime/GrokRuntimeEnvironment';
+import { buildGrokRuntimeEnv, computeGrokRuntimeInputHash } from '../runtime/GrokRuntimeEnvironment';
 import { GrokSessionNotificationMirrorDeduplicator } from '../runtime/GrokSessionNotificationMirrorDeduplicator';
-import { getGrokProviderSettings } from '../settings';
 import { parseGrokProviderState } from '../types';
 import type {
   GrokExecutionNativeConnection,
@@ -168,7 +163,7 @@ RewindableExecutionSession {
   private selectedPermissionMode = 'normal';
 
   constructor(
-    private readonly plugin: ProviderHost,
+    private readonly host: ProviderRuntimeHost,
     private readonly config: ProviderSessionConfig,
     private readonly options: GrokExecutionSessionOptions,
   ) {
@@ -276,7 +271,7 @@ RewindableExecutionSession {
   }
 
   async steer(request: ProviderExecutionRequest): Promise<boolean> {
-    try { assertGrokModelAvailable(this.plugin.settings, request.configuration.model); }
+    try { assertGrokModelAvailable(this.host, request.configuration.model); }
     catch (error) { if (error instanceof ProviderModelUnavailableError) return false; throw error; }
     const active = this.active;
     const native = this.nativeOwner?.initialized ? this.nativeOwner.native : null;
@@ -346,7 +341,7 @@ RewindableExecutionSession {
     }
     let unsubscribeClose: (() => void) | undefined;
     try {
-      assertGrokModelAvailable(this.plugin.settings, active.request.configuration.model);
+      assertGrokModelAvailable(this.host, active.request.configuration.model);
       if (this.cancellationFlight) await this.cancellationFlight;
       if (this.#isCancellationRequested(active)) return;
       const { native, sessionId } = await this.#ensureSession(
@@ -357,7 +352,7 @@ RewindableExecutionSession {
       if (this.#isCancellationRequested(active)) return;
       await this.#applyConfiguration(native, sessionId, active.request, active);
       if (this.#isCancellationRequested(active)) return;
-      assertGrokModelAvailable(this.plugin.settings, active.request.configuration.model);
+      assertGrokModelAvailable(this.host, active.request.configuration.model);
       // Interjections are literal turn input; only requested prompts resolve native commands.
       const compact = parseCompactCommand(getInputText(active.request));
       if (compact && !this.nativeConversationContextEstablished && active.request.conversationHistory?.length) {
@@ -443,15 +438,15 @@ RewindableExecutionSession {
   ): Promise<GrokExecutionNativeConnection> {
     const previousOwner = this.nativeOwner;
     if (previousOwner) await this.#shutdownNativeOwner(previousOwner);
-    const command = await this.plugin.getResolvedProviderCliPath('grok') ?? 'grok';
+    const command = await this.host.resolveCliPath() ?? 'grok';
     if (quarantineGeneration !== this.quarantineGeneration || this.disposed) {
       throw new Error('Grok Build native startup was cancelled.');
     }
     const generation = ++this.nativeGeneration;
     const native = this.options.nativeFactory.create({
       command,
-      cwd: this.config.vaultWorkingDirectory,
-      env: buildGrokRuntimeEnv(this.plugin.settings, command),
+      cwd: this.config.workingDirectory,
+      env: buildGrokRuntimeEnv(this.host.environmentText, command),
       requestPermission: (request, signal) => {
         const active = this.active;
         const sessionTool = normalizeGrokToolName(
@@ -488,7 +483,7 @@ RewindableExecutionSession {
         params,
         signal ?? this.active?.abortController.signal,
       ),
-      version: this.plugin.manifest?.version ?? '0.0.0',
+      version: this.host.clientVersion ?? '0.0.0',
     });
     const owner: GrokNativeOwner = {
       generation,
@@ -497,7 +492,10 @@ RewindableExecutionSession {
       loadedSessionId: null,
       modeUnsubscribe: () => {},
       interjectionUnsubscribe: () => {},
-      modelContextKey: computeGrokEnvironmentHash(this.plugin.settings),
+      modelContextKey: computeGrokRuntimeInputHash(
+        decodeGrokConfig(this.host.config, this.host.selection),
+        this.host.environmentText,
+      ),
       modelsUnsubscribe: () => {},
       native,
       notificationUnsubscribe: () => {},
@@ -597,12 +595,12 @@ RewindableExecutionSession {
         native,
         state.forkSource.sessionId,
         {
-          newCwd: this.config.vaultWorkingDirectory,
+          newCwd: this.config.workingDirectory,
           ...(request?.configuration.model
             ? { newModelId: decodeGrokModelId(request.configuration.model) ?? undefined }
             : {}),
           sourceCwd: resolveGrokSessionCwd(state.forkSourceSessionDirectory)
-            ?? this.config.vaultWorkingDirectory,
+            ?? this.config.workingDirectory,
           sourceSessionId: state.forkSource.sessionId,
           targetPromptIndex,
         },
@@ -624,7 +622,7 @@ RewindableExecutionSession {
     this.#throwIfCancellationRequested(active);
     const response = await native.newSession({
       _meta: this.#buildSessionMeta(request),
-      cwd: this.config.vaultWorkingDirectory,
+      cwd: this.config.workingDirectory,
       mcpServers,
     });
     this.#throwIfCancellationRequested(active);
@@ -651,7 +649,7 @@ RewindableExecutionSession {
     this.#throwIfCancellationRequested(active);
     const response = await native.loadSession({
       _meta: this.#buildSessionMeta(request),
-      cwd: this.config.vaultWorkingDirectory,
+      cwd: this.config.workingDirectory,
       mcpServers,
       sessionId: targetSessionId,
     });
@@ -674,7 +672,7 @@ RewindableExecutionSession {
 
   async #getMCPServers(): Promise<ACPMCPServer[]> {
     if (!this.config.sessionTools) return [];
-    this.sessionToolRoute ??= this.plugin.sessionToolEndpoint.registerMCPRoute(call => {
+    this.sessionToolRoute ??= this.host.sessionToolEndpoint.registerMCPRoute(call => {
       // Capture ownership before dispatch: a pending call must never adopt a later run.
       const active = this.active;
       return invokeSessionTool(call.name, call.args, {
@@ -706,16 +704,7 @@ RewindableExecutionSession {
   #buildSessionMeta(
     request: ProviderExecutionRequest | undefined,
   ): Record<string, unknown> {
-    const instructions = request?.configuration.systemInstructions;
-    return buildSessionMeta(
-      request,
-      instructions?.kind === 'provider-default'
-        ? buildGrokSystemPrompt({
-          ...this.#getSystemPromptSettings(),
-          sessionInstructions: instructions.sessionInstructions,
-        })
-        : undefined,
-    );
+    return buildSessionMeta(request);
   }
 
   #buildSessionConfigurationKey(request: ProviderExecutionRequest): string {
@@ -725,15 +714,6 @@ RewindableExecutionSession {
       systemPromptOverride: meta.systemPromptOverride ?? null,
       yoloMode: meta.yoloMode === true,
     });
-  }
-
-  #getSystemPromptSettings(): GrokSystemPromptSettings {
-    return {
-      customPrompt: this.plugin.settings.systemPrompt,
-      mediaFolder: this.plugin.settings.mediaFolder,
-      userName: this.plugin.settings.userName,
-      vaultPath: this.config.vaultWorkingDirectory,
-    };
   }
 
   async #applyConfiguration(
@@ -786,7 +766,7 @@ RewindableExecutionSession {
     rawModelId: string,
     requestedReasoning: string | undefined,
   ): string | null {
-    const settings = getGrokProviderSettings(this.plugin.settings);
+    const settings = decodeGrokConfig(this.host.config, this.host.selection);
     const model = findGrokModel(settings.currentCatalog?.models ?? [], rawModelId);
     const advertisedValues = getGrokAvailableReasoningEfforts(model)
       .map(effort => effort.value);
@@ -866,7 +846,7 @@ RewindableExecutionSession {
     if (active.promptUsage) {
       const model = active.request.configuration.model ?? '';
       const advertisedWindow = findGrokModel(
-        getGrokProviderSettings(this.plugin.settings).currentCatalog?.models ?? [], model,
+        decodeGrokConfig(this.host.config, this.host.selection).currentCatalog?.models ?? [], model,
       )?.contextWindow;
       const size = active.turn.contextUsage?.size || advertisedWindow;
       const usage = buildACPUsageInfo({
@@ -1113,12 +1093,11 @@ RewindableExecutionSession {
     const sessionDirectory = resolveGrokSessionDirectory(
       persistedSessionDirectory,
       providerSessionId,
-      this.config.vaultWorkingDirectory,
+      this.config.workingDirectory,
       {
-        environment: buildGrokRuntimeEnv(this.plugin.settings, ''),
+        environment: buildGrokRuntimeEnv(this.host.environmentText, ''),
         hostPlatform: process.platform,
-        settings: this.plugin.settings,
-        vaultPath: this.config.vaultWorkingDirectory,
+        vaultPath: this.config.workingDirectory,
       },
     );
     if (sessionDirectory) {
@@ -1289,13 +1268,7 @@ function buildPromptBlocks(
   replayConversationHistory = false,
 ): ACPContentBlock[] {
   const blocks: ACPContentBlock[] = [];
-  let text = getInputText(request);
-  const context = request.context;
-  if (context?.linkedContent) {
-    text = appendLinkedContent(text, context.linkedContent.path);
-  }
-  text = appendSelectionContexts(text, context);
-  text = appendSessionReferences(text, context?.sessionReferences);
+  let text = appendExecutionContext(getInputText(request), request.context);
   if (replayConversationHistory && request.conversationHistory?.length) {
     const history = [...request.conversationHistory] as ChatMessage[];
     text = buildPromptWithHistoryContext(
@@ -1320,16 +1293,12 @@ function buildPromptBlocks(
 
 function buildSessionMeta(
   request: ProviderExecutionRequest | undefined,
-  providerDefaultInstructions?: string,
 ): Record<string, unknown> {
   if (!request) return {};
   const rawModel = request.configuration.model
     ? decodeGrokModelId(request.configuration.model)
     : null;
-  const systemPromptOverride = buildGrokSystemPromptOverride(
-    request,
-    providerDefaultInstructions,
-  );
+  const systemPromptOverride = buildGrokSystemPromptOverride(request);
   return {
     ...(rawModel ? { modelId: rawModel } : {}),
     ...(systemPromptOverride ? { systemPromptOverride } : {}),
@@ -1353,13 +1322,8 @@ const GROK_PASSIVE_TOOL_INSTRUCTION = [
   'Answer only from information supplied directly in the prompt.',
 ].join(' ');
 
-function buildGrokSystemPromptOverride(
-  request: ProviderExecutionRequest,
-  providerDefaultInstructions?: string,
-): string | undefined {
-  const instructions = request.configuration.systemInstructions.kind === 'explicit'
-    ? request.configuration.systemInstructions.instructions.trim()
-    : providerDefaultInstructions?.trim() ?? '';
+function buildGrokSystemPromptOverride(request: ProviderExecutionRequest): string | undefined {
+  const instructions = request.configuration.systemInstructions.instructions.trim();
   if (request.toolPolicy.kind !== 'passive') {
     return instructions || undefined;
   }

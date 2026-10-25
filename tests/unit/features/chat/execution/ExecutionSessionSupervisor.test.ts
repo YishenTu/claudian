@@ -56,7 +56,7 @@ describe('ExecutionSessionSupervisor', () => {
     const config: ProviderSessionConfig = {
       lifecycle: 'persistent',
       nativePersistence: 'enabled',
-      vaultWorkingDirectory: '/vault',
+      workingDirectory: '/vault',
       interactionPort,
     };
     const invalidated = jest.fn();

@@ -5,6 +5,7 @@
 
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { NativePeer, rootFollow } from '@test/helpers/deepseek/NativePeer';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor,within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
@@ -61,8 +62,8 @@ beforeEach(async () => {
 afterEach(async () => { setLocale('en'); await session?.dispose(); await deepseek.dispose(); await peer.close(); });
 
 function create(): void {
-  session = new DeepSeekExecutionBackend(host, () => deepseek).createSession({
-    lifecycle: 'persistent', nativePersistence: 'enabled', vaultWorkingDirectory: '/vault', interactionPort: port,
+  session = new DeepSeekExecutionBackend(runtimeHostFor(host as never, 'deepseek'), () => deepseek).createSession({
+    lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: '/vault', interactionPort: port,
   });
 }
 

@@ -3,7 +3,7 @@ import type {
   ProviderExecutionSession,
   ProviderSessionConfig,
 } from '@/core/execution';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 
 import type { OpencodeServerService } from '../http/OpencodeServerService';
 import {
@@ -20,11 +20,11 @@ export class OpencodeExecutionBackend implements ProviderExecutionBackend {
   readonly providerId = 'opencode' as const;
 
   constructor(
-    private readonly plugin: ProviderHost,
+    private readonly host: ProviderRuntimeHost,
     private readonly options: OpencodeExecutionBackendOptions,
   ) {}
 
   createSession(config: ProviderSessionConfig): ProviderExecutionSession {
-    return new OpencodeExecutionSession(this.plugin, config, this.options);
+    return new OpencodeExecutionSession(this.host, config, this.options);
   }
 }

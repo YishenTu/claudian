@@ -1,7 +1,7 @@
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 
+import { decodeOpencodeConfig } from '../config';
 import type { OpencodeServerService } from '../http/OpencodeServerService';
-import { getOpencodeProviderSettings } from '../settings';
 import { buildOpencodeRuntimeEnv } from './OpencodeRuntimeEnvironment';
 import { detectOpencodeNativeVersion, type OpencodeNativeVersion } from './OpencodeVersion';
 
@@ -14,7 +14,7 @@ export class OpencodeSharedRuntime {
   private startup: Promise<void> | null = null;
 
   constructor(
-    private readonly plugin: ProviderHost,
+    private readonly host: ProviderRuntimeHost,
     private readonly serverService: OpencodeServerService,
     private readonly onNativeVersion: (version: OpencodeNativeVersion | undefined) => void,
   ) {}
@@ -39,7 +39,7 @@ export class OpencodeSharedRuntime {
 
   async endTransition(): Promise<void> {
     try {
-      if (!getOpencodeProviderSettings(this.plugin.settings).enabled) await this.serverService.invalidate();
+      if (!decodeOpencodeConfig(this.host.config).enabled) await this.serverService.invalidate();
       else {
         const launch = await this.#resolveLaunch();
         this.serverService.reconcileLaunch(launch.cliPath, launch.cwd, launch.environment);
@@ -58,7 +58,7 @@ export class OpencodeSharedRuntime {
     for (;;) {
       // Read settings only once admission is open, so a transition cannot leak a stale launch.
       await this.serverService.waitUntilAvailable();
-      if (this.disposed || !getOpencodeProviderSettings(this.plugin.settings).enabled) return;
+      if (this.disposed || !decodeOpencodeConfig(this.host.config).enabled) return;
       const generation = this.generation;
       const signal = this.controller.signal;
       try {
@@ -81,8 +81,7 @@ export class OpencodeSharedRuntime {
   }
 
   async #resolveLaunch() {
-    const cliPath = await this.plugin.getResolvedProviderCliPath('opencode') ?? 'opencode';
-    const adapter = this.plugin.app.vault.adapter as { basePath?: string };
-    return { cliPath, cwd: adapter.basePath || process.cwd(), environment: buildOpencodeRuntimeEnv(this.plugin.settings, cliPath) };
+    const cliPath = await this.host.resolveCliPath() ?? 'opencode';
+    return { cliPath, cwd: this.host.workingDirectory || process.cwd(), environment: buildOpencodeRuntimeEnv(this.host.environmentText, cliPath) };
   }
 }

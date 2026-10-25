@@ -9,6 +9,7 @@ import type { Conversation } from '@/core/types';
 import { opencodeSettingsReconciler } from '@/providers/opencode/env/OpencodeSettingsReconciler';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
 import { buildOpencodePrompt } from '@/providers/opencode/runtime/buildOpencodePrompt';
+import { resolveOpencodeHistoryLaunch } from '@/providers/opencode/runtime/OpencodeCLIResolver';
 
 interface SeedMessage {
   role: 'user' | 'assistant';
@@ -17,7 +18,7 @@ interface SeedMessage {
 }
 
 describe('OpenCode history after runtime invalidation', () => {
-  const history = new OpencodeConversationHistoryService();
+  const history = new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch });
   const startedAt = testDate().getTime();
   let root: string;
   let databasePath: string;

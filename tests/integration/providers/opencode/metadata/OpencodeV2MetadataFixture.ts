@@ -122,7 +122,7 @@ export function createOpencodeV2MetadataFixture(): OpencodeV2MetadataFixture {
 
   const createPlugin = (): any => {
     const plugin: any = {
-      app: { vault: { adapter: { basePath: root } } },
+      workingDirectory: root,
       getResolvedProviderCliPath: async () => cliPath,
       executionLifecycleRegistry: { registerTransitionHook: jest.fn(() => () => undefined) },
       notifyProviderChatOptionsChanged: () => undefined,

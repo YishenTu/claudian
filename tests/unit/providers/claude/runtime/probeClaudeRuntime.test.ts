@@ -1,11 +1,11 @@
 import type { Options, SDKControlInitializeResponse } from '@anthropic-ai/claude-agent-sdk';
+import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
 
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { buildClaudeLaunchOptions, probeClaudeRuntime } from '@/providers/claude/runtime/probeClaudeRuntime';
 
 const mockQuery = jest.fn();
 jest.mock('@/providers/claude/loadClaudeAgentSDK', () => ({ loadClaudeAgentQuery: async () => mockQuery }));
-jest.mock('@/utils/path', () => ({ ...jest.requireActual('@/utils/path'), getVaultPath: () => '/vault' }));
 jest.mock('@/core/process/env', () => ({
   ...jest.requireActual('@/core/process/env'), getEnhancedPath: () => '/enhanced/bin',
 }));
@@ -19,13 +19,15 @@ const initialization = {
   available_output_styles: [],
 } as unknown as SDKControlInitializeResponse;
 
-function host(config: Record<string, unknown> = {}, environment = ''): ProviderHost {
-  return {
-    app: {},
-    settings: { model: 'chat-model', providerConfigs: { claude: config } },
+function host(config: Record<string, unknown> = {}, environment = ''): ProviderRuntimeHost {
+  return createTestRuntimeHost({
+    model: 'chat-model',
+    sharedEnvironmentVariables: environment,
+    providerConfigs: { claude: config },
+  }, 'claude', {
+    workingDirectory: '/vault',
     getResolvedProviderCliPath: jest.fn().mockResolvedValue('/bin/claude'),
-    getActiveEnvironmentVariables: () => environment,
-  } as unknown as ProviderHost;
+  });
 }
 
 const sessionInit = { type: 'system', subtype: 'init', session_id: 'probe-session', skills: ['commit'] };
@@ -136,10 +138,8 @@ describe('Claude runtime probe', () => {
 });
 
 describe('buildClaudeLaunchOptions', () => {
-  it('reads setting sources from the supplied settings snapshot', () => {
-    const options = buildClaudeLaunchOptions(host({ loadUserSettings: true }), '/work', '/bin/claude', {
-      settings: { providerConfigs: { claude: { loadUserSettings: false } } },
-    });
+  it('reads setting sources from the Claude configuration', () => {
+    const options = buildClaudeLaunchOptions(host({ loadUserSettings: false }), '/work', '/bin/claude');
     expect(options).toMatchObject({
       cwd: '/work', pathToClaudeCodeExecutable: '/bin/claude', settingSources: ['project', 'local'],
     });

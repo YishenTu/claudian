@@ -4,10 +4,12 @@ import '@test/helpers/ObsidianSettingsDOM';
 
 import { deserialize, serialize } from 'node:v8';
 
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
+import { createProviderRuntimeHost } from '@/composition/ClaudianProviderHost';
 import { ProviderModelCatalogController } from '@/core/providers/models/ProviderModelCatalog';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ProviderSettingsTabRendererContext } from '@/core/providers/types';
@@ -52,7 +54,8 @@ HTMLElement.prototype.appendText = function (text) { this.append(text); };
 
 function renderModels(container: HTMLElement, context: ProviderSettingsTabRendererContext, native: { refresh: ClaudeModelDiscovery }) {
   context.plugin.notifyProviderChatOptionsChanged = jest.fn();
-  return renderProviderModelsSection(container, 'claude', 'Claude Code', createClaudeModels(context.plugin, signal => native.refresh(signal)));
+  const host = runtimeHostFor(context.plugin as unknown as Parameters<typeof runtimeHostFor>[0], 'claude');
+  return renderProviderModelsSection(container, 'claude', 'Claude Code', createClaudeModels(host, signal => native.refresh(signal)));
 }
 
 describe('Claude model picker', () => {
@@ -228,10 +231,12 @@ it('allows Discover after abort and detaches the closed settings observer', asyn
     .mockResolvedValue({ changed: true });
   const notify = jest.fn();
   const catalog = new ProviderModelCatalogController({
-    providerId: 'claude', providerName: 'Claude Code',
-    read: () => ({ enabled: true, models: [{ id: 'sonnet', name: 'Sonnet' }], selectedIds: ['sonnet'], aliases: {} }),
-    discover, update: jest.fn(),
-    host: { mutateSettings: async mutate => { await mutate({} as any); }, notifyProviderChatOptionsChanged: notify },
+    providerName: 'Claude Code', discover,
+    store: {
+      read: () => ({ enabled: true, models: [{ id: 'sonnet', name: 'Sonnet' }], selectedIds: ['sonnet'], aliases: {} }),
+      write: async () => undefined,
+      notifyChatOptionsChanged: notify,
+    },
   });
   const container = document.body.createDiv();
   const picker = renderProviderModelsSection(container, 'claude', 'Claude Code', catalog);
@@ -276,7 +281,7 @@ it.each(['selections', 'aliases'] as const)(
         coordinator.mutate(draft => mutation(draft as unknown as ClaudianSettings)),
       notifyProviderChatOptionsChanged: notify,
     } as unknown as ProviderHost;
-    const catalog = createClaudeModels(host, async () => ({ changed: false }));
+    const catalog = createClaudeModels(createProviderRuntimeHost(host, coordinator, 'claude'), async () => ({ changed: false }));
     await catalog.refresh();
     const container = document.body.createDiv();
     const picker = renderProviderModelsSection(container, 'claude', 'Claude Code', catalog);
@@ -319,7 +324,7 @@ function continuityHarness(persist: (draft: ClaudianSettings) => Promise<void>) 
       coordinator.mutate(draft => mutation(draft as unknown as ClaudianSettings)),
     notifyProviderChatOptionsChanged: notify,
   } as unknown as ProviderHost;
-  return { settings, coordinator, notify, catalog: createClaudeModels(host, async () => ({ changed: false })) };
+  return { settings, coordinator, notify, catalog: createClaudeModels(createProviderRuntimeHost(host, coordinator, 'claude'), async () => ({ changed: false })) };
 }
 
 async function settleCallbacks() {

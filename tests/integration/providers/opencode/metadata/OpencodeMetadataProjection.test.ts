@@ -1,18 +1,13 @@
-import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
-import type { ACPSessionConfigOption } from '@/providers/acp';
-import { projectOpencodeMetadata } from '@/providers/opencode/metadata/OpencodeMetadataProjection';
-import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
+import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
 
-function createHost(): ProviderHost {
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
+import type { ACPSessionConfigOption } from '@/providers/acp';
+import { decodeOpencodeConfig } from '@/providers/opencode/config';
+import { projectOpencodeMetadata } from '@/providers/opencode/metadata/OpencodeMetadataProjection';
+
+function createHost(): ProviderRuntimeHost {
   const settings = { providerConfigs: { opencode: { enabled: true, visibleModels: ['provider/alpha', 'provider/beta'] } } };
-  const coordinator = new SettingsCoordinator(settings, async () => undefined);
-  return {
-    settings,
-    mutateSettings: coordinator.mutate.bind(coordinator),
-    mutateSettingsConditionally: coordinator.mutateConditionally.bind(coordinator),
-    notifyProviderChatOptionsChanged() {},
-  } as unknown as ProviderHost;
+  return createTestRuntimeHost(settings, 'opencode');
 }
 
 function effort(values: string[]): ACPSessionConfigOption[] {
@@ -28,7 +23,7 @@ it('retains independent model warmups published through serialized settings muta
     projectOpencodeMetadata(host, { selectedRawModelId: 'provider/alpha', configOptions: effort(['high']) }),
     projectOpencodeMetadata(host, { selectedRawModelId: 'provider/beta', configOptions: effort(['low']) }),
   ]);
-  expect(getOpencodeProviderSettings(host.settings).thinkingOptionsByModel).toEqual({
+  expect(decodeOpencodeConfig(host.config).thinkingOptionsByModel).toEqual({
     'provider/alpha': [{ label: 'high', value: 'high' }],
     'provider/beta': [{ label: 'low', value: 'low' }],
   });
@@ -40,7 +35,7 @@ it('replaces an explicitly empty catalog without changing enabled model choices'
     models: { currentModelId: '', availableModels: [{ modelId: 'provider/alpha', name: 'Alpha' }] },
   });
   await projectOpencodeMetadata(host, { models: { currentModelId: '', availableModels: [] } });
-  expect(getOpencodeProviderSettings(host.settings)).toMatchObject({
+  expect(decodeOpencodeConfig(host.config)).toMatchObject({
     discoveredModels: [], visibleModels: ['provider/alpha', 'provider/beta'],
   });
 });
@@ -53,7 +48,7 @@ it('clears catalogs supplied as empty ACP selectors while preserving omitted cat
   await projectOpencodeMetadata(host, {
     configOptions: [{ id: 'model', category: 'model', name: 'Model', type: 'select', currentValue: '', options: [] }],
   });
-  expect(getOpencodeProviderSettings(host.settings)).toMatchObject({
+  expect(decodeOpencodeConfig(host.config)).toMatchObject({
     discoveredModels: [],
     visibleModels: ['provider/alpha', 'provider/beta'],
   });
@@ -69,13 +64,13 @@ it('clears explicitly empty reasoning options while retaining metadata absent fr
     selectedRawModelId: 'provider/beta', configOptions: effort(['low']),
   });
   await projectOpencodeMetadata(host, { selectedRawModelId: 'provider/alpha' });
-  expect(getOpencodeProviderSettings(host.settings).thinkingOptionsByModel['provider/alpha'])
+  expect(decodeOpencodeConfig(host.config).thinkingOptionsByModel['provider/alpha'])
     .toEqual([{ label: 'high', value: 'high' }]);
 
   await projectOpencodeMetadata(host, { selectedRawModelId: 'provider/alpha', configOptions: effort([]) });
-  expect(getOpencodeProviderSettings(host.settings)).toMatchObject({
+  expect(decodeOpencodeConfig(host.config)).toMatchObject({
     discoveredModels: [{ rawId: 'provider/alpha', label: 'Alpha' }],
     thinkingOptionsByModel: { 'provider/beta': [{ label: 'low', value: 'low' }] },
   });
-  expect(getOpencodeProviderSettings(host.settings).thinkingOptionsByModel['provider/alpha']).toEqual([]);
+  expect(decodeOpencodeConfig(host.config).thinkingOptionsByModel['provider/alpha']).toEqual([]);
 });

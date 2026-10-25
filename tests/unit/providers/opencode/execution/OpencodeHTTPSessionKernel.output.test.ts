@@ -44,7 +44,7 @@ beforeEach(async () => {
       return { data: { id: 'ses_main' } };
     },
   };
-  const config = { vaultWorkingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: jest.fn() } } as any;
+  const config = { workingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: jest.fn() } } as any;
   sessionConfig = config;
   kernel = new OpencodeHTTPSessionKernel({ config, getActiveTurnId: () => 'turn',
     onNativeOutput: (event: OpencodeNativeOutput, session?: string) => output.push({ event, session }), onNativeTurn: jest.fn(), onClosed: jest.fn(),

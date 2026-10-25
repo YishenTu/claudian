@@ -75,7 +75,7 @@ export async function traceSideChild(
     resolveBackend: () => backend,
     lifecycleRegistry: registry,
     interactionPort: options.interactionPort ?? rejectingInteractionPort(),
-    vaultWorkingDirectory: env.root,
+    workingDirectory: env.root,
     onRequestedEvent: event => { if (event.type === 'text_delta') responseText += event.text; },
   });
 

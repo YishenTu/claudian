@@ -2,11 +2,14 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { Conversation } from '@/core/types';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
 import { opencodeProviderRegistration } from '@/providers/opencode/registration';
+import { resolveOpencodeHistoryLaunch } from '@/providers/opencode/runtime/OpencodeCLIResolver';
 
 it.each(['standalone', 'registered before workspace initialization'])('loads V2 history, recovers its model, and forks using %s history', async kind => {
   expect(ProviderWorkspaceRegistry.getServices('opencode')).toBeNull();
@@ -67,13 +70,15 @@ const server = http.createServer((req, res) => {
 server.listen(0, '127.0.0.1', () => console.log(JSON.stringify({ url: 'http://127.0.0.1:' + server.address().port })));
 process.stdin.resume(); process.stdin.on('end', () => server.close());
 `, { mode: 0o700 });
-  const history = kind === 'standalone' ? new OpencodeConversationHistoryService() : opencodeProviderRegistration.historyService!;
+  const history = kind === 'standalone' ? new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }) : opencodeProviderRegistration.historyService!;
   const conversation = { id: 'local', sessionId: 'ses_parent', messages: [], providerState: { nativeVersion: 2, databasePath } } as unknown as Conversation;
-  const context = { settings: { providerConfigs: { opencode: { cliPath } } }, vaultPath: root, environment: { ...process.env, XDG_DATA_HOME: path.join(root, 'data'), OPENCODE_DB: path.join(root, 'untrusted.db') } };
+  const settings = { providerConfigs: { opencode: { cliPath } } };
+  const context = { config: settings.providerConfigs.opencode, vaultPath: root, environment: { ...process.env, XDG_DATA_HOME: path.join(root, 'data'), OPENCODE_DB: path.join(root, 'untrusted.db') } };
   const registry = new ProviderExecutionLifecycleRegistry();
-  const host: any = { settings: context.settings, app: { vault: { adapter: { basePath: root } } }, storage: { getAdapter: () => ({}) },
+  const host: any = { settings, workingDirectory: root, storage: { getAdapter: () => ({}) },
     executionLifecycleRegistry: registry, runProviderExecutionTransition: (ids: string[], mutation: any) => registry.runTransition(ids, mutation),
     getResolvedProviderCliPath: async () => cliPath };
+  host.getRuntimeHost = (id: string) => runtimeHostFor(host, id);
   ProviderWorkspaceRegistry.register('opencode', opencodeProviderRegistration.workspace!);
   const historyContext = { ...context, ensureWorkspace: () => ProviderWorkspaceRegistry.ensureInitialized(host, 'opencode', 'history') };
   try {

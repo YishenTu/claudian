@@ -1,10 +1,10 @@
 import type { ProviderConfigMap } from '../core/types/settings';
-import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from './claude/settings';
-import { DEFAULT_CODEX_PROVIDER_CONFIG } from './codex/settings';
-import { DEFAULT_DEEPSEEK_PROVIDER_SETTINGS } from './deepseek/settings';
-import { DEFAULT_GROK_PROVIDER_SETTINGS } from './grok/settings';
-import { DEFAULT_OPENCODE_PROVIDER_SETTINGS } from './opencode/settings';
-import { DEFAULT_PI_PROVIDER_SETTINGS } from './pi/settings';
+import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from './claude/config';
+import { DEFAULT_CODEX_PROVIDER_CONFIG } from './codex/config';
+import { DEFAULT_DEEPSEEK_PROVIDER_SETTINGS } from './deepseek/config';
+import { DEFAULT_GROK_PROVIDER_SETTINGS } from './grok/config';
+import { DEFAULT_OPENCODE_PROVIDER_SETTINGS } from './opencode/config';
+import { DEFAULT_PI_PROVIDER_SETTINGS } from './pi/config';
 
 export function getBuiltInProviderDefaultConfigs(): ProviderConfigMap {
   return {

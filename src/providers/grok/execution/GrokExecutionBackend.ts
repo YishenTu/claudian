@@ -3,7 +3,7 @@ import type {
   ProviderExecutionSession,
   ProviderSessionConfig,
 } from '../../../core/execution';
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { SlashCommand } from '../../../core/types';
 import type {
   ACPLoadSessionRequest,
@@ -116,7 +116,7 @@ export class GrokExecutionBackend implements ProviderExecutionBackend {
   private readonly nativeFactory: GrokExecutionNativeFactory;
 
   constructor(
-    private readonly plugin: ProviderHost,
+    private readonly host: ProviderRuntimeHost,
     private readonly options: GrokExecutionBackendOptions = {},
   ) {
     this.nativeFactory = options.nativeFactory ?? {
@@ -125,7 +125,7 @@ export class GrokExecutionBackend implements ProviderExecutionBackend {
   }
 
   createSession(config: ProviderSessionConfig): ProviderExecutionSession {
-    return new GrokExecutionSession(this.plugin, config, {
+    return new GrokExecutionSession(this.host, config, {
       modelCatalogCoordinator: this.options.modelCatalogCoordinator,
       nativeFactory: this.nativeFactory,
       resolvePromptIndex: this.options.resolvePromptIndex

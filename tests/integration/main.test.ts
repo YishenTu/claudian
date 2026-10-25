@@ -22,6 +22,7 @@ import { type ClaudianSettings, type Conversation, type SessionMetadata, VIEW_TY
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import { ZenModeController } from '@/features/chat/zen/ZenModeController';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
+import { createCodexModelCatalogCommit } from '@/providers/codex/app/CodexWorkspaceServices';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
 import {
   getCodexProviderSettings,
@@ -1741,11 +1742,11 @@ describe('ClaudianPlugin', () => {
             }
         )),
       };
-      const service = new GrokModelDiscoveryService(plugin.providerHost, {
+      const service = new GrokModelDiscoveryService(plugin.providerHost.getRuntimeHost('grok'), {
         runner,
         probe: { discover: async () => { throw new Error('Method not found'); } },
       });
-      const coordinator = new GrokModelCatalogCoordinator(plugin.providerHost, service);
+      const coordinator = new GrokModelCatalogCoordinator(plugin.providerHost.getRuntimeHost('grok'), service);
       const cliResolver = new GrokCLIResolver();
       ProviderWorkspaceRegistry.setServices('grok', {
         cliResolver,
@@ -1783,7 +1784,11 @@ describe('ClaudianPlugin', () => {
           models: [discoveredModel],
         }),
       };
-      const coordinator = new CodexModelCatalogCoordinator(plugin.providerHost, discovery);
+      const coordinator = new CodexModelCatalogCoordinator(
+        plugin.providerHost.getRuntimeHost('codex'),
+        discovery,
+        createCodexModelCatalogCommit(plugin.providerHost),
+      );
       const cliResolver = {
         reset: jest.fn(),
         resolveFromSettings: jest.fn().mockReturnValue('/owned/codex'),
@@ -1806,6 +1811,77 @@ describe('ClaudianPlugin', () => {
       expect(cliResolver.resolveFromSettings).toHaveBeenCalled();
 
       await refresh;
+    });
+
+    describe('Codex catalog commits', () => {
+      const settingsPath = '.claudian/claudian-settings.json';
+      const discoveredModel = {
+        defaultReasoningEffort: 'medium',
+        defaultServiceTier: null,
+        description: 'Committed model',
+        displayName: 'Committed model',
+        inputModalities: ['text' as const],
+        isDefault: true,
+        model: 'committed-model',
+        serviceTiers: [],
+        supportedReasoningEfforts: [{ value: 'medium', description: 'Balanced' }],
+      };
+
+      async function prepareCodexCatalog(beforeResult?: () => void) {
+        const files = installVaultFiles({});
+        await plugin.onload();
+        // Only selected models persist, so select the model the catalog will list.
+        updateCodexProviderSettings(plugin.settings, { enabled: true, visibleModels: ['committed-model'] });
+        // A raw runtime ID that model normalization encodes once the catalog lists it.
+        Object.assign(plugin.settings, { settingsProvider: 'codex', model: 'committed-model' });
+        ProviderWorkspaceRegistry.setServices('codex', {
+          cliResolver: { reset: jest.fn(), resolveFromSettings: jest.fn().mockReturnValue('/owned/codex') },
+        });
+        const coordinator = new CodexModelCatalogCoordinator(
+          plugin.providerHost.getRuntimeHost('codex'),
+          {
+            discoverModels: jest.fn(async () => {
+              beforeResult?.();
+              return { kind: 'completed' as const, models: [discoveredModel] };
+            }),
+          },
+          createCodexModelCatalogCommit(plugin.providerHost),
+        );
+        const writes = () => mockApp.vault.adapter.write.mock.calls
+          .filter(([path]: [string]) => path === settingsPath);
+        return { coordinator, files, writes, writesBefore: writes().length };
+      }
+
+      it('rejects a catalog whose fingerprint went stale during discovery without writing', async () => {
+        const { coordinator, files, writes, writesBefore } = await prepareCodexCatalog(() => {
+          updateCodexProviderSettings(plugin.settings, { environmentVariables: 'OPENAI_API_KEY=rotated' });
+        });
+        const persistedBefore = files.get(settingsPath);
+
+        await expect(coordinator.refresh()).resolves.toMatchObject({ refreshed: false, retryable: true });
+
+        expect(writes()).toHaveLength(writesBefore);
+        expect(files.get(settingsPath)).toBe(persistedBefore);
+        expect(getCodexProviderSettings(plugin.settings).discoveredModels).toEqual([]);
+        expect(plugin.settings.model).toBe('committed-model');
+        await coordinator.dispose();
+      });
+
+      it('persists an accepted catalog and the selection normalization it enables in one write', async () => {
+        const { coordinator, files, writes, writesBefore } = await prepareCodexCatalog();
+
+        await expect(coordinator.refresh()).resolves.toMatchObject({ refreshed: true });
+
+        expect(writes()).toHaveLength(writesBefore + 1);
+        const persisted = JSON.parse(files.get(settingsPath)!);
+        expect(persisted.model).toBe('openai-codex/committed-model');
+        expect(persisted.providerConfigs.codex.selectedModels.map((model: { model: string }) => model.model))
+          .toEqual(['committed-model']);
+        expect(plugin.settings.model).toBe('openai-codex/committed-model');
+        expect(getCodexProviderSettings(plugin.settings).discoveredModels.map(model => model.model))
+          .toEqual(['committed-model']);
+        await coordinator.dispose();
+      });
     });
 
     it('recovers the committed environment before surfacing a post-commit publication failure', async () => {

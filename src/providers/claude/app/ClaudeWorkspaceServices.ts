@@ -38,11 +38,15 @@ export async function createClaudeWorkspaceServices(
   plugin: ProviderHost,
   options: ClaudeWorkspaceServicesOptions = {},
 ): Promise<ClaudeWorkspaceServices> {
+  const runtimeHost = plugin.getRuntimeHost('claude');
   const cliResolver = new ClaudeCLIResolver();
-  const modelCatalog = createClaudeModels(plugin, signal => discoverClaudeModels(plugin, signal, options.catalogProbe));
+  const modelCatalog = createClaudeModels(
+    runtimeHost,
+    signal => discoverClaudeModels(runtimeHost, signal, options.catalogProbe),
+  );
 
   const commandCatalog = new ClaudeCommandCatalog(
-    options.commandProbe ?? (signal => probeRuntimeCommands(plugin, signal)),
+    options.commandProbe ?? (signal => probeRuntimeCommands(runtimeHost, signal)),
   );
   let transitioning = false;
   let disposed = false;
@@ -69,7 +73,7 @@ export async function createClaudeWorkspaceServices(
     modelCatalog,
     async publishSessionCatalog(catalog) {
       // A session reporting across an environment transition may describe the old runtime.
-      await applySessionClaudeCatalog(plugin, catalog, () => !disposed && !transitioning);
+      await applySessionClaudeCatalog(runtimeHost, catalog, () => !disposed && !transitioning);
     },
     dispose() {
       if (disposePromise) return disposePromise;

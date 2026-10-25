@@ -52,7 +52,7 @@ function createNativeGrok(env: ForkTestEnvironment) {
     }
     throw new Error(`Unexpected Grok method: ${method}`);
   }));
-  return { backend: new GrokExecutionBackend(env.host), operations, prompts, sessions, sourceFile };
+  return { backend: new GrokExecutionBackend(env.host.getRuntimeHost('grok')), operations, prompts, sessions, sourceFile };
 }
 
 describe('Grok side-chat native child', () => {

@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 import { rmSync, writeFileSync } from 'node:fs';
 
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 
@@ -38,8 +39,9 @@ function setup() {
   const fixture = createOpencodeV2MetadataFixture();
   const host = fixture.createPlugin();
   host.storage = { installationKey: 'test' };
-  const service = new OpencodeMetadataService(host);
-  const catalog = createOpencodeModels(host, service);
+  const runtimeHost = runtimeHostFor(host, 'opencode');
+  const service = new OpencodeMetadataService(runtimeHost);
+  const catalog = createOpencodeModels(runtimeHost, service);
   const container = document.body.createDiv();
   const render = () => createOpencodeSettingsTabRenderer({
     cliResolver: { reset: () => undefined }, metadataService: service, modelCatalog: catalog,

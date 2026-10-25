@@ -1,4 +1,4 @@
-import type { CodexInstallationMethod } from '../settings';
+import type { CodexInstallationMethod } from '../config';
 
 export type CodexExecutionMethod = 'host-native' | CodexInstallationMethod;
 export type CodexExecutionPlatformOs = 'windows' | 'linux' | 'macos';

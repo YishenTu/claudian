@@ -5,12 +5,13 @@ import type {
   ProviderExecutionContext,
   ProviderExecutionLifecycleRegistry,
   ProviderSessionEvent,
+  ProviderSystemInstructions,
 } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderId, TitleGenerationService } from '@/core/providers/types';
 import type { AskUserAnswers, ChatMessage, ImageAttachment, ToolCallInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
-import { buildChatExecutionConfiguration } from '@/features/chat/execution/chatExecutionConfiguration';
+import { buildChatExecutionConfiguration, resolveChatSystemInstructions } from '@/features/chat/execution/chatExecutionConfiguration';
 import { deliverAsyncQuestion } from '@/features/chat/interactions/asyncQuestionDelivery';
 import { createInteractionPromptPort } from '@/features/chat/interactions/interactionPromptPort';
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
@@ -41,7 +42,7 @@ export interface SideChatRuntimeDeps {
   readonly lifecycleRegistry: ProviderExecutionLifecycleRegistry;
   readonly resolveBackend: (providerId: ProviderId) => ProviderExecutionBackend;
   readonly buildChildResumeState: () => Promise<Readonly<Record<string, unknown>>>;
-  readonly vaultWorkingDirectory: string;
+  readonly workingDirectory: string;
   readonly onStatusChanged: () => void;
   readonly onError?: (error: unknown) => void;
 }
@@ -76,6 +77,8 @@ export class SideChatRuntime {
   readonly #session: SideChatSession;
   readonly #prompts: SessionInteractions;
   readonly #settings: SideChatSettingsProjection;
+  /** Fixed for the child's lifetime: its native context cannot follow later prompt-setting changes. */
+  readonly #systemInstructions: ProviderSystemInstructions;
   #activeDelivery: SideChatSubmission['onDelivery'];
   readonly #responseStream: ResponseStream;
   /** Owns the requested side turn; presentation state derives from it. */
@@ -97,6 +100,9 @@ export class SideChatRuntime {
 
   constructor(private readonly deps: SideChatRuntimeDeps) {
     this.#settings = { ...deps.settings };
+    this.#systemInstructions = resolveChatSystemInstructions(
+      deps.plugin.settings, deps.workingDirectory, deps.source.sessionInstructions,
+    );
     this.state = new ChatState({
       onAttentionChanged: () => this.#refreshStatus(),
       onStreamingStateChanged: () => this.#refreshStatus(),
@@ -164,7 +170,7 @@ export class SideChatRuntime {
         return conversationId ? deps.plugin.bindSessionTools?.(conversationId) : undefined;
       },
       resolveBackend: deps.resolveBackend,
-      vaultWorkingDirectory: deps.vaultWorkingDirectory,
+      workingDirectory: deps.workingDirectory,
     });
   }
 
@@ -395,7 +401,7 @@ export class SideChatRuntime {
       const result = await this.#session.execute({
         assertBeforeHandoff: submission.assertBeforeHandoff,
         ...(submission.context ? { context: submission.context } : {}),
-        configuration: buildChatExecutionConfiguration(this.#settings, this.deps.source.sessionInstructions),
+        configuration: buildChatExecutionConfiguration(this.#settings, this.#systemInstructions),
         conversationHistory: [
           ...this.deps.source.messages,
           ...this.state.messages.slice(0, -2),

@@ -6,6 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { App, Notice, type Plugin } from 'obsidian';
 
@@ -15,7 +16,6 @@ import { ConversationPersistenceStore } from '@/app/storage/ConversationPersiste
 import { migrateSessionSidecars } from '@/app/storage/migrateSessionSidecars';
 import { SharedStorageService } from '@/app/storage/SharedStorageService';
 import { CLAUDIAN_SETTINGS_PATH, getDeviceSessionsPath, SESSIONS_PATH } from '@/core/bootstrap/storagePaths';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
@@ -88,8 +88,8 @@ test('execution snapshots avoid history payload serialization while persistence 
     messages: [{ id: 'message-1', role: 'assistant', content: '', timestamp: testDate().getTime(),
       toolCalls: [{ id: subagent.id, name: 'Agent', input: {}, status: 'completed', isExpanded: false, subagent }] }],
   };
-  const session = new ClaudeExecutionBackend({ settings: {} } as ProviderHost).createSession({
-    lifecycle: 'persistent', nativePersistence: 'enabled', vaultWorkingDirectory: root,
+  const session = new ClaudeExecutionBackend(createTestRuntimeHost({}, 'claude')).createSession({
+    lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: root,
     resumeSeed: { providerSessionId: 'native-1', providerState },
     interactionPort: { dismissInteraction() {}, requestApproval: async ({ interactionId }) => ({ interactionId, decision: 'deny' }),
       askUserQuestion: async ({ interactionId }) => ({ interactionId, answers: null }) },

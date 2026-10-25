@@ -3,20 +3,19 @@ import * as path from 'node:path';
 import { stripSurroundingQuotes } from '@/core/process/cliPath';
 import { runProcessProbe } from '@/core/process/ProcessProbe';
 import { type CLIInstallation, parseCLIVersion, probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 
-import { getCodexProviderSettings } from '../settings';
+import { decodeCodexConfig } from '../config';
 import { buildCodexAppServerEnvironment, getCodexAppServerWorkingDirectory } from './codexAppServerSupport';
 import { resolveCodexExecutionTargetAsync } from './CodexExecutionTargetResolver';
 import { buildCodexLaunchSpec } from './CodexLaunchSpecBuilder';
 
-export async function inspectCodexInstallation(host: ProviderHost): Promise<CLIInstallation> {
-  const settings = host.settings as unknown as Record<string, unknown>;
-  const config = getCodexProviderSettings(settings);
+export async function inspectCodexInstallation(host: ProviderRuntimeHost): Promise<CLIInstallation> {
+  const config = decodeCodexConfig(host.config);
   const configuredPath = config.cliPathsByHost[host.storage.installationKey] || config.cliPath;
   const hostVaultPath = getCodexAppServerWorkingDirectory(host);
-  const target = await resolveCodexExecutionTargetAsync({ settings, hostVaultPath });
-  const command = await host.getResolvedProviderCliPath('codex', { executionTarget: target });
+  const target = await resolveCodexExecutionTargetAsync({ codexSettings: config, hostVaultPath });
+  const command = await host.resolveCliPath({ executionTarget: target });
   const env = buildCodexAppServerEnvironment(host);
   if (target.method !== 'wsl') {
     return probeCLIInstallation({ path: command, configuredPath, args: ['--version'], env });
@@ -24,7 +23,7 @@ export async function inspectCodexInstallation(host: ProviderHost): Promise<CLII
   const missing: CLIInstallation = { path: null, version: null, source: 'auto' };
   if (!command || !target.distroName) return missing;
   const launch = (resolvedCliCommand: string, cliArgs: string[]) => buildCodexLaunchSpec({
-    settings, resolvedCliCommand, cliArgs, hostVaultPath, env, executionTarget: target,
+    codexSettings: config, resolvedCliCommand, cliArgs, hostVaultPath, env, executionTarget: target,
   });
   const probe = (spec: ReturnType<typeof launch>) => runProcessProbe({
     command: spec.command,

@@ -4,9 +4,9 @@ import * as sdkModule from '@anthropic-ai/claude-agent-sdk';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
+import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
 
 import type { ProviderExecutionRequest, ProviderSessionConfig, ProviderSessionToolPort } from '@/core/execution';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { SessionToolMCPServer } from '@/core/session-tools/sessionToolMCP';
 import { ClaudeExecutionSession } from '@/providers/claude/execution/ClaudeExecutionSession';
 
@@ -25,22 +25,17 @@ function deferred<T>() {
 function request(toolPolicy: ProviderExecutionRequest['toolPolicy'] = { kind: 'provider-default' }): ProviderExecutionRequest {
   return {
     input: [{ type: 'text', text: 'Hello' }],
-    configuration: { model: 'claude-sonnet-4-5', systemInstructions: { kind: 'provider-default' } },
+    configuration: { model: 'claude-sonnet-4-5', systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' } },
     toolPolicy, signal: new AbortController().signal,
   };
 }
 function session(port?: ProviderSessionToolPort, lifecycle: ProviderSessionConfig['lifecycle'] = 'persistent') {
-  const host = {
-    app: { vault: { adapter: { basePath: '/vault' } } },
-    settings: {
-      providerConfigs: { claude: claudeCatalogFixture(['claude-sonnet-4-5']) },
-      model: 'claude-sonnet-4-5', permissionMode: 'manual', mediaFolder: '', systemPrompt: '', userName: '',
-    },
-    getResolvedProviderCliPath: async () => '/bin/claude',
-    getActiveEnvironmentVariables: () => '',
-  } as unknown as ProviderHost;
+  const host = createTestRuntimeHost({
+    providerConfigs: { claude: claudeCatalogFixture(['claude-sonnet-4-5']) },
+    model: 'claude-sonnet-4-5', permissionMode: 'manual', mediaFolder: '', systemPrompt: '', userName: '',
+  }, 'claude', { getResolvedProviderCliPath: async () => '/bin/claude' });
   return new ClaudeExecutionSession(host, {
-    lifecycle, nativePersistence: 'enabled', vaultWorkingDirectory: '/vault', sessionTools: port,
+    lifecycle, nativePersistence: 'enabled', workingDirectory: '/vault', sessionTools: port,
     interactionPort: { requestApproval: jest.fn(), askUserQuestion: jest.fn(), dismissInteraction: jest.fn() },
   });
 }

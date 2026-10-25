@@ -1,5 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
 import { OpencodeV2MetadataProbe } from '@/providers/opencode/metadata/OpencodeV2MetadataProbe';
@@ -30,18 +32,18 @@ it('includes account-backed models in the first discovery and keeps the saved se
   writeFileSync(fixture.environment.CATALOG_FILE!, JSON.stringify(catalog));
   const plugin = fixture.createPlugin();
   plugin.settings.providerConfigs.opencode.visibleModels = ['opencode-go/deepseek-v4.1-flash'];
-  const service = new OpencodeMetadataService(plugin);
+  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'));
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toContainEqual({
       rawId: 'opencode-go/deepseek-v4.1-flash', label: 'opencode-go/DeepSeek Flash',
     });
-    expect(() => assertOpencodeModelAvailable(plugin.settings, 'opencode:opencode-go/deepseek-v4.1-flash')).not.toThrow();
+    expect(() => assertOpencodeModelAvailable(runtimeHostFor(plugin, 'opencode'), 'opencode:opencode-go/deepseek-v4.1-flash')).not.toThrow();
   } finally { await service.dispose(); }
 });
 
 it('discovers native commands after catalog loading and lists skills', async () => {
-  const service = new OpencodeMetadataService(fixture.createPlugin());
+  const service = new OpencodeMetadataService(runtimeHostFor(fixture.createPlugin(), 'opencode'));
   try {
     const result = await service.discoverCommands();
     expect(result.loaded).toBe(true);
@@ -54,7 +56,7 @@ it('discovers native commands after catalog loading and lists skills', async () 
 
 it.each(['404', '500'])('loads models when the optional readiness endpoint returns %s', async status => {
   fixture.environment.INTEGRATION_STATUS = status;
-  const service = new OpencodeMetadataService(fixture.createPlugin());
+  const service = new OpencodeMetadataService(runtimeHostFor(fixture.createPlugin(), 'opencode'));
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     await expect(service.warmModelMetadata('opencode:deepseek/chat')).resolves.toBe(true);
@@ -64,7 +66,7 @@ it.each(['404', '500'])('loads models when the optional readiness endpoint retur
 it('bounds the readiness wait and aborts its request without stopping the retained server', async () => {
   fixture.environment.INTEGRATION_STATUS = 'hang';
   const plugin = fixture.createPlugin();
-  const service = new OpencodeMetadataService(plugin);
+  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'));
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([

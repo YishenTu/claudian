@@ -4,7 +4,7 @@
  * Note and context file formatting for prompts.
  */
 
-import type { ProviderExecutionContext, ProviderSelectionSnapshot, ProviderSessionReference } from '@/core/execution/ProviderExecutionRequest';
+import type { ProviderExecutionContext, ProviderSessionReference } from '@/core/execution/ProviderExecutionRequest';
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 
 import { appendBrowserContext } from './browserContext';
@@ -147,34 +147,8 @@ export function appendSessionReferences(
   return `${prompt}\n\n<context_sessions>\n${entries.join('\n')}\n</context_sessions>`;
 }
 
-/** Normalize legacy single selections only when an ordered capture is absent. */
-function getSelectionSnapshots(context?: ProviderExecutionContext): readonly ProviderSelectionSnapshot[] {
-  if (context?.selections !== undefined) return context.selections;
-  const selections: ProviderSelectionSnapshot[] = [];
-  if (context?.editorSelection) selections.push({ kind: 'editor', selection: context.editorSelection });
-  if (context?.browserSelection) selections.push({ kind: 'browser', selection: context.browserSelection });
-  if (context?.canvasSelection) selections.push({ kind: 'canvas', selection: context.canvasSelection });
-  return selections;
-}
-
-export function captureSelectionSnapshots(context?: ProviderExecutionContext): ProviderSelectionSnapshot[] {
-  return getSelectionSnapshots(context).map(snapshot => {
-    switch (snapshot.kind) {
-      case 'editor':
-        return { kind: 'editor', selection: {
-          ...snapshot.selection,
-          ...(snapshot.selection.cursorContext ? { cursorContext: { ...snapshot.selection.cursorContext } } : {}),
-        } };
-      case 'browser':
-        return { kind: 'browser', selection: { ...snapshot.selection } };
-      case 'canvas':
-        return { kind: 'canvas', selection: { ...snapshot.selection, nodeIds: [...snapshot.selection.nodeIds] } };
-    }
-  });
-}
-
 export function appendSelectionContexts(prompt: string, context?: ProviderExecutionContext): string {
-  for (const snapshot of getSelectionSnapshots(context)) {
+  for (const snapshot of context?.selections ?? []) {
     switch (snapshot.kind) {
       case 'editor':
         prompt = appendEditorContext(prompt, snapshot.selection);
@@ -188,4 +162,18 @@ export function appendSelectionContexts(prompt: string, context?: ProviderExecut
     }
   }
   return prompt;
+}
+
+/**
+ * Appends a request's captured context in the order every provider sends it:
+ * Linked content (with its body when captured), selections, then session references.
+ */
+export function appendExecutionContext(prompt: string, context?: ProviderExecutionContext): string {
+  const linked = context?.linkedContent;
+  if (linked) {
+    prompt = linked.content === undefined
+      ? appendLinkedContent(prompt, linked.path)
+      : appendLinkedContentBody(prompt, linked.path, linked.content);
+  }
+  return appendSessionReferences(appendSelectionContexts(prompt, context), context?.sessionReferences);
 }

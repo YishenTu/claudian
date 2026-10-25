@@ -23,7 +23,7 @@ async function createNativePi(env: ForkTestEnvironment) {
     { ...options, env: { ...options.env, CLAUDIAN_TEST_PI_MISMATCH: '0', CLAUDIAN_TEST_PI_ROOT: env.root } },
   ));
   return {
-    backend: new PiExecutionBackend(env.host),
+    backend: new PiExecutionBackend(env.host.getRuntimeHost('pi')),
     contexts: () => readRecords(path.join(env.root, 'contexts.jsonl')),
     sourceFile,
   };
@@ -42,7 +42,7 @@ describe('Pi side-chat native child', () => {
     source.conversation.messages[0].images = [capturedImage];
     source.conversation.messages[0].executionInput = {
       schemaVersion: 1, canonicalText: 'Remember A with expanded instructions',
-      context: { browserSelection: { source: 'browser', selectedText: 'Captured passage 48271' } },
+      context: { selections: [{ kind: 'browser', selection: { source: 'browser', selectedText: 'Captured passage 48271' } }] },
     };
     checkpoint.toolCalls = [{
       id: 'read-capture', name: 'Read', input: { path: 'transient.txt' },

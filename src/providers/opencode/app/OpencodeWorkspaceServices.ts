@@ -26,9 +26,10 @@ export interface OpencodeWorkspaceServices extends ProviderWorkspaceServices {
 export async function createOpencodeWorkspaceServices(
   plugin: ProviderHost,
 ): Promise<OpencodeWorkspaceServices> {
+  const runtimeHost = plugin.getRuntimeHost('opencode');
   const commandCatalog = new OpencodeCommandCatalog();
   const serverService = new OpencodeServerService(plugin.sessionToolEndpoint);
-  const runtime = new OpencodeSharedRuntime(plugin, serverService, version => commandCatalog.setNativeVersion(version));
+  const runtime = new OpencodeSharedRuntime(runtimeHost, serverService, version => commandCatalog.setNativeVersion(version));
   const unregister = plugin.executionLifecycleRegistry.registerTransitionHook('opencode', {
     preserveSessions: (session, { sessionsInvalidated }) => {
       if (!getOpencodeProviderSettings(plugin.settings).enabled) return false;
@@ -44,9 +45,9 @@ export async function createOpencodeWorkspaceServices(
     beforeTransition: () => runtime.beginTransition(),
     afterTransition: () => runtime.endTransition(),
   });
-  const metadataService = new OpencodeMetadataService(plugin, { commandCatalog, serverService });
+  const metadataService = new OpencodeMetadataService(runtimeHost, { commandCatalog, serverService });
 
-  const modelCatalog = createOpencodeModels(plugin, metadataService);
+  const modelCatalog = createOpencodeModels(runtimeHost, metadataService);
   const unregisterModels = plugin.executionLifecycleRegistry.registerTransitionHook('opencode', { beforeTransition: () => modelCatalog.beginTransition(), afterTransition: () => modelCatalog.endTransition() });
   const cliResolver = new OpencodeCLIResolver();
   return {

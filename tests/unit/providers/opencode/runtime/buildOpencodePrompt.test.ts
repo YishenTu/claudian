@@ -4,19 +4,23 @@ import { buildOpencodePrompt } from '@/providers/opencode/runtime/buildOpencodeP
 describe('buildOpencodePrompt text', () => {
   it('appends Claudian XML context to the user query', () => {
     const result = buildOpencodePrompt({
-      browserSelection: {
-        selectedText: 'Browser quote',
-        source: 'browser:https://example.com',
-        title: 'Example',
-        url: 'https://example.com',
-      },
-      linkedContent: { path: 'notes/"today" & draft.md' },
-      editorSelection: {
-        mode: 'selection',
-        notePath: 'notes/"today" & draft.md',
-        selectedText: 'Selected text',
-        startLine: 4,
-        lineCount: 2,
+      context: {
+        linkedContent: { path: 'notes/"today" & draft.md' },
+        selections: [
+          { kind: 'editor', selection: {
+            mode: 'selection',
+            notePath: 'notes/"today" & draft.md',
+            selectedText: 'Selected text',
+            startLine: 4,
+            lineCount: 2,
+          } },
+          { kind: 'browser', selection: {
+            selectedText: 'Browser quote',
+            source: 'browser:https://example.com',
+            title: 'Example',
+            url: 'https://example.com',
+          } },
+        ],
       },
       text: 'Summarize this',
     });
@@ -33,9 +37,11 @@ describe('buildOpencodePrompt text', () => {
 
   it('encodes Linked content without allowing CDATA to close early', () => {
     const result = buildOpencodePrompt({
-      linkedContent: {
-        content: 'Before\n]]>\nAfter',
-        path: 'notes/"draft".md',
+      context: {
+        linkedContent: {
+          content: 'Before\n]]>\nAfter',
+          path: 'notes/"draft".md',
+        },
       },
       text: 'Review this',
     });

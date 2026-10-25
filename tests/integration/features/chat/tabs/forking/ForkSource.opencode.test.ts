@@ -12,6 +12,7 @@ import { createNativeRPCProcess, createNativeVersionProcess } from '@test/helper
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
+import { resolveOpencodeHistoryLaunch } from '@/providers/opencode/runtime/OpencodeCLIResolver';
 
 interface NativeMessage {
   info: { id: string; role: string };
@@ -83,7 +84,7 @@ async function createNativeOpencode(env: ForkTestEnvironment) {
     environmentVariables: `OPENCODE_DB=${path.join(env.root, 'opencode.db')}`,
   };
   return {
-    backend: new OpencodeExecutionBackend(env.host, { serverService: new OpencodeServerService() }), sessions, prompts, processes,
+    backend: new OpencodeExecutionBackend(env.host.getRuntimeHost('opencode'), { serverService: new OpencodeServerService() }), sessions, prompts, processes,
     rejectFork: () => { rejectFork = true; },
     disableFork: () => { supportsFork = false; },
   };
@@ -117,7 +118,7 @@ describe('OpenCode fork integration', () => {
     const selected = await env.send(source, 'Remember apples');
     const child = await env.fork(source, selected);
     expect(child).toBeDefined();
-    const service = new OpencodeConversationHistoryService();
+    const service = new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch });
     const restored = { ...child!, providerState: JSON.parse(JSON.stringify(service.buildPersistedProviderState(child!))) };
     Object.assign(restored, await service.hydrateConversationHistory(restored, env.root));
     expect(restored.messages[1].assistantMessageId).toBe('msg-child-1-1');
@@ -155,10 +156,10 @@ describe('OpenCode fork integration', () => {
     const nodePath = path.join(env.root, process.platform === 'win32' ? 'node.exe' : 'node');
     await fs.writeFile(nodePath, '');
     if (process.platform !== 'win32') await fs.chmod(nodePath, 0o755);
-    const settings = { providerConfigs: { opencode: { cliPath } } };
-    const service = new OpencodeConversationHistoryService();
+
+    const service = new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch });
     await service.buildForkProviderState('ses-source', selected.assistantMessageId!, source.conversation.providerState, env.root, {
-      settings, environment: { ...process.env, OPENCODE_DB: path.join(env.root, 'opencode.db'), PATH: '/restricted' },
+      config: { cliPath }, environment: { ...process.env, OPENCODE_DB: path.join(env.root, 'opencode.db'), PATH: '/restricted' },
     });
     const launch = jest.mocked(spawn).mock.calls.at(-1)!;
     expect(launch[0]).toBe(cliPath);

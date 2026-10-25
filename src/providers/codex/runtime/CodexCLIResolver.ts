@@ -36,7 +36,7 @@ export class CodexCLIResolver {
       return this.resolver.resolveFromSettings(settings, { ...executionTarget });
     }
 
-    return resolveCodexExecutionTargetAsync({ settings }).then((resolvedTarget) => (
+    return resolveCodexExecutionTargetAsync({ codexSettings: getCodexProviderSettings(settings) }).then((resolvedTarget) => (
       this.resolver.resolveFromSettings(settings, { ...resolvedTarget })
     ));
   }

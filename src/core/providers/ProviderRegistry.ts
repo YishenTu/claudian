@@ -1,4 +1,3 @@
-import { getVaultPath } from '../../utils/path';
 import type { AuxiliaryExecutionContext } from '../auxiliary/AuxiliaryExecutionContext';
 import { InlineEditService } from '../auxiliary/InlineEditService';
 import { RoutedTitleGenerationService } from '../auxiliary/RoutedTitleGenerationService';
@@ -124,7 +123,7 @@ export class ProviderRegistry {
       backend: this.createExecutionBackend(plugin, providerId),
       interactionPort: PASSIVE_AUXILIARY_INTERACTION_PORT,
       lifecycleRegistry: plugin.executionLifecycleRegistry,
-      vaultWorkingDirectory: getVaultPath(plugin.app) ?? '.',
+      workingDirectory: plugin.workingDirectory ?? '.',
     };
   }
 

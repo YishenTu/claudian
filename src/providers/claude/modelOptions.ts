@@ -1,11 +1,18 @@
-import { getProviderConfig } from '../../core/providers/providerConfig';
-import { getRuntimeEnvironmentVariables } from '../../core/providers/providerEnvironment';
+import { parseEnvironmentVariables } from '@/core/process/env';
+
 import type { ProviderUIOption } from '../../core/providers/types';
-import { getCustomModelIds } from './env/claudeModelEnv';
+import { getCustomModelIds } from './claudeModelEnv';
+import { decodeClaudeConfig } from './config';
 import { encodeClaudeModelSelectionId, toClaudeRuntimeModelId } from './modelSelection';
 import { type ClaudeModelTier, isClaudeModelTier } from './modelTiers';
-import { getClaudeProviderSettings } from './settings';
 import { DEFAULT_CLAUDE_MODELS, type EffortLevel } from './types/models';
+
+/** The stored configuration and runtime environment Claude's model options derive from. */
+export interface ClaudeModelSource {
+  readonly config: Readonly<Record<string, unknown>>;
+  /** Shared plus Claude environment text; read only to seed selections from legacy configuration. */
+  readonly environmentText: string;
+}
 
 export interface ClaudeModelOption extends ProviderUIOption {
   resolvedModel?: string;
@@ -13,8 +20,8 @@ export interface ClaudeModelOption extends ProviderUIOption {
   reasoningMetadataResolved?: boolean;
 }
 
-export function getClaudeModelCatalog(settings: Record<string, unknown>): ClaudeModelOption[] {
-  const { discoveredModels, modelAliases } = getClaudeProviderSettings(settings);
+export function getClaudeModelCatalog(source: ClaudeModelSource): ClaudeModelOption[] {
+  const { discoveredModels, modelAliases } = decodeClaudeConfig(source.config);
   return discoveredModels.filter(model => isSelectableClaudeModel(model.value)).map(model => ({
     ...model,
     value: isClaudeModelTier(model.value) ? model.value : encodeClaudeModelSelectionId(model.value),
@@ -23,11 +30,12 @@ export function getClaudeModelCatalog(settings: Record<string, unknown>): Claude
 }
 
 /** Legacy configuration only seeds enablement; it never creates catalog entries. */
-export function getClaudeVisibleModelIds(settings: Record<string, unknown>): string[] {
-  const config = getClaudeProviderSettings(settings);
+export function getClaudeVisibleModelIds(source: ClaudeModelSource): string[] {
+  const stored = source.config;
+  const config = decodeClaudeConfig(stored);
   if (config.visibleModels !== null) return config.visibleModels.filter(isSelectableClaudeModel);
-  const environmentIds = [...getCustomModelIds(getRuntimeEnvironmentVariables(settings, 'claude'))];
-  const oldManualModels = getProviderConfig(settings, 'claude').customModels;
+  const environmentIds = [...getCustomModelIds(parseEnvironmentVariables(source.environmentText))];
+  const oldManualModels = stored.customModels;
   return [...new Set([
     ...(environmentIds.length ? environmentIds : DEFAULT_CLAUDE_MODELS.map(model => model.value)),
     ...(typeof oldManualModels === 'string' ? oldManualModels.split(/\r?\n/).map(id => id.trim()).filter(Boolean) : []),
@@ -55,17 +63,17 @@ export interface ClaudeVisibleModel {
 
 /** The single resolution of enabled identities onto catalog rows, in enabled order. */
 export function resolveClaudeVisibleModels(
-  settings: Record<string, unknown>,
-  catalog: readonly ClaudeModelOption[] = getClaudeModelCatalog(settings),
+  source: ClaudeModelSource,
+  catalog: readonly ClaudeModelOption[] = getClaudeModelCatalog(source),
 ): ClaudeVisibleModel[] {
-  return getClaudeVisibleModelIds(settings).map(id => ({ id, option: findClaudeModelOption(catalog, id) }));
+  return getClaudeVisibleModelIds(source).map(id => ({ id, option: findClaudeModelOption(catalog, id) }));
 }
 
 export function getClaudeModelOptions(
-  settings: Record<string, unknown>,
-  catalog: readonly ClaudeModelOption[] = getClaudeModelCatalog(settings),
+  source: ClaudeModelSource,
+  catalog: readonly ClaudeModelOption[] = getClaudeModelCatalog(source),
 ): ClaudeModelOption[] {
-  return [...new Set(resolveClaudeVisibleModels(settings, catalog).flatMap(({ option }) => option ? [option] : []))];
+  return [...new Set(resolveClaudeVisibleModels(source, catalog).flatMap(({ option }) => option ? [option] : []))];
 }
 
 /** Whether the SDK reports the model as a value or a resolved identity, as opposed to a family successor. */
@@ -77,31 +85,31 @@ export function hasClaudeModelIdentity(options: readonly ClaudeModelOption[], mo
 
 /** Identities the catalog reports keep their meaning; anything else may only follow enabled models. */
 export function findClaudeModelSelectionOption(
-  settings: Record<string, unknown>, model: string,
-  catalog: readonly ClaudeModelOption[] = getClaudeModelCatalog(settings),
+  source: ClaudeModelSource, model: string,
+  catalog: readonly ClaudeModelOption[] = getClaudeModelCatalog(source),
 ): ClaudeModelOption | undefined {
   return findClaudeModelOption(
-    hasClaudeModelIdentity(catalog, model) ? catalog : getClaudeModelOptions(settings, catalog), model,
+    hasClaudeModelIdentity(catalog, model) ? catalog : getClaudeModelOptions(source, catalog), model,
   );
 }
 
 /** The enabled option a saved selection runs as; undefined when its identity is unselected or unknown. */
 export function findEnabledClaudeModelOption(
-  settings: Record<string, unknown>, model: string,
+  source: ClaudeModelSource, model: string,
 ): ClaudeModelOption | undefined {
-  const catalog = getClaudeModelCatalog(settings);
-  const selected = findClaudeModelSelectionOption(settings, model, catalog);
-  return selected && getClaudeModelOptions(settings, catalog).some(option => option.value === selected.value)
+  const catalog = getClaudeModelCatalog(source);
+  const selected = findClaudeModelSelectionOption(source, model, catalog);
+  return selected && getClaudeModelOptions(source, catalog).some(option => option.value === selected.value)
     ? selected
     : undefined;
 }
 
 /** Effort levels Claude Code reported for the model; empty when unknown. */
 export function getClaudeSupportedEffortLevels(
-  settings: Record<string, unknown>,
+  source: ClaudeModelSource,
   model: string,
 ): EffortLevel[] {
-  return findClaudeModelSelectionOption(settings, model)?.supportedEffortLevels ?? [];
+  return findClaudeModelSelectionOption(source, model)?.supportedEffortLevels ?? [];
 }
 
 function isSelectableClaudeModel(model: string): boolean {

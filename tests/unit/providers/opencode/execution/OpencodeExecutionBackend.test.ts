@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
 import {
   isSteerableExecutionSession,
@@ -245,7 +246,7 @@ function createConfig(overrides: Partial<ProviderSessionConfig> = {}): ProviderS
     interactionPort,
     lifecycle: 'persistent',
     nativePersistence: 'enabled',
-    vaultWorkingDirectory: '/vault',
+    workingDirectory: '/vault',
     ...overrides,
   };
 }
@@ -253,7 +254,7 @@ function createConfig(overrides: Partial<ProviderSessionConfig> = {}): ProviderS
 function createRequest(overrides: Partial<ProviderExecutionRequest> = {}): ProviderExecutionRequest {
   return {
     configuration: {
-      systemInstructions: { kind: 'provider-default' },
+      systemInstructions: { kind: 'main-agent' as const, instructions: 'Main Agent prompt.' },
       model: 'opencode:anthropic/claude',
       reasoning: 'high',
       permissionMode: 'normal',
@@ -275,7 +276,7 @@ async function collect(events: AsyncIterable<ProviderExecutionEvent>): Promise<P
 async function waitForPrompt(kernel: FakeKernel, count = 1): Promise<void> {
   for (
     let attempt = 0;
-    attempt < 20 && kernel.prompts.length < count;
+    attempt < 100 && kernel.prompts.length < count;
     attempt += 1
   ) {
     await Promise.resolve();
@@ -284,7 +285,7 @@ async function waitForPrompt(kernel: FakeKernel, count = 1): Promise<void> {
 }
 
 async function waitForCondition(condition: () => boolean): Promise<void> {
-  for (let attempt = 0; attempt < 20 && !condition(); attempt += 1) {
+  for (let attempt = 0; attempt < 100 && !condition(); attempt += 1) {
     await Promise.resolve();
   }
   expect(condition()).toBe(true);
@@ -292,7 +293,7 @@ async function waitForCondition(condition: () => boolean): Promise<void> {
 
 function createHarness(config = createConfig()) {
   const kernels: FakeKernel[] = [];
-  const backend = new OpencodeExecutionBackend(plugin, {
+  const backend = new OpencodeExecutionBackend(runtimeHostFor(plugin, 'opencode'), {
     serverService: new OpencodeServerService(),
     createKernel: (options) => {
       const kernel = new FakeKernel(options);
@@ -326,7 +327,6 @@ describe('OpencodeExecutionBackend', () => {
       configPath: '/vault/.claudian/opencode/config.json',
       databasePath: '/native/opencode.db',
       launchKey: 'launch-key',
-      systemPromptPath: '/vault/.claudian/opencode/system.md',
     });
   });
 
@@ -359,7 +359,7 @@ describe('OpencodeExecutionBackend', () => {
     const cliPath = createDeferred<string | null>();
     const host = createPlugin();
     host.getResolvedProviderCliPath = jest.fn(() => cliPath.promise);
-    const session = new OpencodeExecutionBackend(host, { serverService: new OpencodeServerService() }).createSession(createConfig());
+    const session = new OpencodeExecutionBackend(runtimeHostFor(host, 'opencode'), { serverService: new OpencodeServerService() }).createSession(createConfig());
     const run = session.execute(createRequest());
     const events = collect(run.events);
     await waitForCondition(() => host.getResolvedProviderCliPath.mock.calls.length === 1);
@@ -381,11 +381,10 @@ describe('OpencodeExecutionBackend', () => {
       configPath: string;
       databasePath: string | null;
       launchKey: string;
-      systemPromptPath: string;
     }>();
     mockPrepareLaunchArtifacts.mockReturnValueOnce(artifacts.promise);
     const host = createPlugin();
-    const session = new OpencodeExecutionBackend(host, { serverService: new OpencodeServerService() }).createSession(createConfig());
+    const session = new OpencodeExecutionBackend(runtimeHostFor(host, 'opencode'), { serverService: new OpencodeServerService() }).createSession(createConfig());
     const run = session.execute(createRequest());
     const events = collect(run.events);
     await waitForCondition(() => mockPrepareLaunchArtifacts.mock.calls.length === 1);
@@ -396,7 +395,6 @@ describe('OpencodeExecutionBackend', () => {
       configPath: '/vault/.claudian/opencode/config.json',
       databasePath: '/native/opencode.db',
       launchKey: 'launch-key',
-      systemPromptPath: '/vault/.claudian/opencode/system.md',
     });
 
     await disposal;
@@ -411,7 +409,7 @@ describe('OpencodeExecutionBackend', () => {
     const initialize = createDeferred<Record<string, never>>();
     mockConnectionInitialize.mockReturnValueOnce(initialize.promise);
     const host = createPlugin();
-    const session = new OpencodeExecutionBackend(host, { serverService: new OpencodeServerService() }).createSession(createConfig());
+    const session = new OpencodeExecutionBackend(runtimeHostFor(host, 'opencode'), { serverService: new OpencodeServerService() }).createSession(createConfig());
     const run = session.execute(createRequest());
     const events = collect(run.events);
     await waitForCondition(() => mockConnectionInitialize.mock.calls.length === 1);
@@ -456,7 +454,7 @@ describe('OpencodeExecutionBackend', () => {
       }
 
       const host = createPlugin();
-      const session = new OpencodeExecutionBackend(host, { serverService: new OpencodeServerService() }).createSession(createConfig());
+      const session = new OpencodeExecutionBackend(runtimeHostFor(host, 'opencode'), { serverService: new OpencodeServerService() }).createSession(createConfig());
       const events = await collect(session.execute(createRequest()).events);
 
       expect(events).toEqual(expect.arrayContaining([
@@ -591,7 +589,7 @@ describe('OpencodeExecutionBackend', () => {
     harness.kernels[0].completePrompt();
     await collect(run.events);
 
-    expect(harness.kernels[0].options.config.vaultWorkingDirectory).toBe('/vault');
+    expect(harness.kernels[0].options.config.workingDirectory).toBe('/vault');
     expect(harness.kernels[0].prompts[0]).toEqual({
       prompt: [{
         text: 'Inspect linked content\n\n<linked_content path="Projects/Research" />\n\n' + capturedSelectionPrompt + '\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" />\n</context_sessions>',
@@ -855,7 +853,7 @@ describe('OpencodeExecutionBackend', () => {
     ]);
   });
 
-  it('appends session instructions only to the managed default prompt and reconnects when they change', async () => {
+  it('sends caller-resolved Main Agent instructions for every profile and reconnects when they change', async () => {
     const harness = createHarness();
     const execute = async (
       sessionInstructions: string,
@@ -866,10 +864,10 @@ describe('OpencodeExecutionBackend', () => {
       const run = harness.session.execute(createRequest({
         configuration: {
           ...base.configuration,
-          systemInstructions: { kind: 'provider-default', sessionInstructions },
+          systemInstructions: { kind: 'main-agent', instructions: sessionInstructions },
         },
         toolPolicy,
-      }));
+      } as never));
       await waitForCondition(() => harness.kernels.length === expectedKernelCount);
       const kernel = harness.kernels[expectedKernelCount - 1];
       await waitForPrompt(kernel);
@@ -877,16 +875,13 @@ describe('OpencodeExecutionBackend', () => {
       await collect(run.events);
     };
 
-    await execute('## Project\nAlpha', { kind: 'provider-default' }, 1);
-    await execute('## Project\nBeta', { kind: 'provider-default' }, 2);
-    await execute('## Project\nBeta', { kind: 'read-only' }, 3);
+    await execute('Main Agent prompt Alpha', { kind: 'provider-default' }, 1);
+    await execute('Main Agent prompt Beta', { kind: 'provider-default' }, 2);
+    await execute('Main Agent prompt Beta', { kind: 'read-only' }, 3);
 
+    // Every profile sends the caller-resolved text; OpenCode never substitutes its own prompt.
     const prompts = harness.kernels.map(kernel => String((kernel.connectCalls[0] as { systemPrompt?: string } | undefined)?.systemPrompt));
-    expect(prompts[0]).toContain('## Runtime Context');
-    expect(prompts[0]!.endsWith('## Project\nAlpha')).toBe(true);
-    expect(prompts[1]!.endsWith('## Project\nBeta')).toBe(true);
-    expect(prompts[1]).not.toContain('Alpha');
-    expect(prompts[2]).not.toContain('## Project');
+    expect(prompts).toEqual(['Main Agent prompt Alpha', 'Main Agent prompt Beta', 'Main Agent prompt Beta']);
   });
 
   it('reconnects when explicit system instructions change', async () => {
@@ -1121,7 +1116,7 @@ describe('OpencodeExecutionBackend', () => {
     controller.abort();
 
     const run = harness.session.execute(createRequest({ signal: controller.signal }));
-    for (let attempt = 0; attempt < 20; attempt += 1) await Promise.resolve();
+    for (let attempt = 0; attempt < 100; attempt += 1) await Promise.resolve();
 
     expect(harness.kernels).toEqual([]);
     const events = await collect(run.events);

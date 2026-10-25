@@ -1,8 +1,11 @@
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { StartupProfiler } from '@/core/performance/StartupProfiler';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { ProviderId, ProviderWorkspaceServices } from '@/core/providers/types';
+import { createCodexModelCatalogCommit } from '@/providers/codex/app/CodexWorkspaceServices';
 import type { CodexDiscoveredModel } from '@/providers/codex/models';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
 import type {
@@ -80,7 +83,11 @@ describe('Startup optimization', () => {
 
     ProviderWorkspaceRegistry.register('codex', {
       initialize: async ({ plugin }) => ({
-        modelCatalogCoordinator: new CodexModelCatalogCoordinator(plugin, discovery),
+        modelCatalogCoordinator: new CodexModelCatalogCoordinator(
+          runtimeHostFor(plugin as unknown as Parameters<typeof runtimeHostFor>[0], 'codex'),
+          discovery,
+          createCodexModelCatalogCommit(plugin),
+        ),
       } as unknown as ProviderWorkspaceServices),
     });
 

@@ -1,6 +1,8 @@
 const mockGetHostnameKey = jest.fn(() => 'device:current');
 
+import { createProviderRuntimeHost } from '@/composition/ClaudianProviderHost';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import {
   computeGrokEnvironmentHash,
   grokSettingsReconciler,
@@ -73,6 +75,16 @@ function makeHost(options: {
     notifyProviderChatOptionsChanged: jest.fn(),
     settings,
   } as unknown as ProviderHost;
+}
+
+/** The production runtime projection, scheduling its writes through the fixture's conditional mutation mock. */
+function runtimeHost(host: ProviderHost): ProviderRuntimeHost {
+  return createProviderRuntimeHost(host, {
+    getCommittedSettings: () => host.settings as unknown as Record<string, unknown>,
+    mutateConditionally: mutation => host.mutateSettingsConditionally(
+      settings => mutation(settings as unknown as Record<string, unknown>),
+    ),
+  }, 'grok');
 }
 
 function makeService(
@@ -183,7 +195,7 @@ describe('GrokModelCatalogCoordinator', () => {
     const service: GrokModelDiscoveryServiceLike = {
       discoverCatalog: jest.fn(async () => pending),
     };
-    const coordinator = new GrokModelCatalogCoordinator(makeHost(), service);
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(makeHost()), service);
 
     const first = coordinator.refresh();
     const second = coordinator.refresh();
@@ -205,7 +217,7 @@ describe('GrokModelCatalogCoordinator', () => {
         return pending;
       }),
     };
-    const coordinator = new GrokModelCatalogCoordinator(makeHost(), service);
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(makeHost()), service);
     const refresh = coordinator.refresh();
     while (!discoverySignal) await Promise.resolve();
     let quiesced = false;
@@ -224,7 +236,7 @@ describe('GrokModelCatalogCoordinator', () => {
 
   it('admits only transition-owner refreshes while fenced and releases waiters on disposal', async () => {
     const service = makeService(completedResult());
-    const coordinator = new GrokModelCatalogCoordinator(makeHost(), service);
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(makeHost()), service);
     coordinator.beginEnvironmentTransition();
 
     const ordinaryRefresh = coordinator.refresh();
@@ -261,7 +273,7 @@ describe('GrokModelCatalogCoordinator', () => {
         .mockImplementationOnce(() => ownerDiscovery),
     };
     const host = makeHost();
-    const coordinator = new GrokModelCatalogCoordinator(host, service);
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), service);
 
     const oldRefresh = coordinator.refresh();
     await Promise.resolve();
@@ -303,7 +315,7 @@ describe('GrokModelCatalogCoordinator', () => {
     };
     const host = makeHost();
     const mutations = deferConditionalMutations(host, 2);
-    const coordinator = new GrokModelCatalogCoordinator(host, service);
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), service);
 
     const oldRefresh = coordinator.refresh();
     resolveOld(completedResult({
@@ -339,7 +351,7 @@ describe('GrokModelCatalogCoordinator', () => {
         models: [makeModel('kimi-coding', 'kimi-coding'), makeModel('glm-coding', 'GLM')],
       }),
     });
-    const coordinator = new GrokModelCatalogCoordinator(host, makeService(completedResult()));
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), makeService(completedResult()));
 
     await expect(coordinator.mergeLiveModels([{
       agentType: 'coding',
@@ -378,7 +390,7 @@ describe('GrokModelCatalogCoordinator', () => {
       }),
       visibleModels: ['kimi-coding'],
     });
-    const coordinator = new GrokModelCatalogCoordinator(host, makeService(completedResult()));
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), makeService(completedResult()));
 
     await coordinator.mergeLiveModels([{
       displayName: 'Kimi',
@@ -410,7 +422,7 @@ describe('GrokModelCatalogCoordinator', () => {
 
   it('composes concurrent disjoint live-model deltas in serialized persistence', async () => {
     const host = makeHost({ catalog: makeCatalog({ models: [] }) });
-    const coordinator = new GrokModelCatalogCoordinator(host, makeService(completedResult()));
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), makeService(completedResult()));
     const deferred = deferConditionalMutations(host, 2);
 
     const first = coordinator.mergeLiveModels([makeModel('model-a')]);
@@ -428,7 +440,7 @@ describe('GrokModelCatalogCoordinator', () => {
 
   it('composes richer metadata from concurrent live merges of the same model', async () => {
     const host = makeHost({ catalog: makeCatalog({ models: [] }) });
-    const coordinator = new GrokModelCatalogCoordinator(host, makeService(completedResult()));
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), makeService(completedResult()));
     const deferred = deferConditionalMutations(host, 2);
 
     const first = coordinator.mergeLiveModels([{
@@ -467,7 +479,7 @@ describe('GrokModelCatalogCoordinator', () => {
 
   it('keeps the newest live default revision when concurrent mutations settle out of order', async () => {
     const host = makeHost({ catalog: makeCatalog({ defaultModelId: 'old-default', models: [] }) });
-    const coordinator = new GrokModelCatalogCoordinator(host, makeService(completedResult()));
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), makeService(completedResult()));
     const deferred = deferConditionalMutations(host, 2);
 
     const first = coordinator.mergeLiveModels([makeModel('model-a')], 'model-a');
@@ -497,7 +509,7 @@ describe('GrokModelCatalogCoordinator', () => {
     const host = makeHost({
       catalog: makeCatalog({ defaultModelId: 'old-default', models: [makeModel('shared')] }),
     });
-    const coordinator = new GrokModelCatalogCoordinator(host, service);
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), service);
 
     const refresh = coordinator.refresh();
     await coordinator.mergeLiveModels([{
@@ -536,7 +548,7 @@ describe('GrokModelCatalogCoordinator', () => {
       fingerprint: 'fingerprint-next',
       models: [makeModel('shared', 'Shared CLI'), makeModel('cli-only', 'CLI only')],
     }));
-    const coordinator = new GrokModelCatalogCoordinator(host, service);
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), service);
     const deferred = deferConditionalMutations(host, 2);
 
     const liveMerge = coordinator.mergeLiveModels([{
@@ -586,7 +598,7 @@ describe('GrokModelCatalogCoordinator', () => {
       fingerprint: 'fingerprint-next',
       models: [makeModel('cli-only'), makeModel('shared')],
     }));
-    const coordinator = new GrokModelCatalogCoordinator(host, service);
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), service);
 
     await coordinator.mergeLiveModels([{
       contextWindow: 262_144,
@@ -621,7 +633,7 @@ describe('GrokModelCatalogCoordinator', () => {
       fingerprint: 'new-context-fingerprint',
       models: [makeModel('new-default')],
     }));
-    const coordinator = new GrokModelCatalogCoordinator(host, service);
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), service);
     const oldContextKey = computeGrokEnvironmentHash(host.settings);
 
     await coordinator.mergeLiveModels(
@@ -650,7 +662,7 @@ describe('GrokModelCatalogCoordinator', () => {
 
   it('does not persist a live merge after a queued environment reconciliation supersedes it', async () => {
     const host = makeHost({ catalog: makeCatalog() });
-    const coordinator = new GrokModelCatalogCoordinator(host, makeService(completedResult()));
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), makeService(completedResult()));
     const deferred = deferNextConditionalMutation(host);
 
     const merge = coordinator.mergeLiveModels([makeModel('stale-live')], 'stale-default');
@@ -666,7 +678,7 @@ describe('GrokModelCatalogCoordinator', () => {
 
   it('does not persist a completed CLI refresh after a queued environment reconciliation clears it', async () => {
     const host = makeHost({ catalog: makeCatalog() });
-    const coordinator = new GrokModelCatalogCoordinator(host, makeService(completedResult({
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), makeService(completedResult({
       defaultModelId: 'stale-cli',
       fingerprint: 'stale-fingerprint',
       models: [makeModel('stale-cli')],
@@ -699,7 +711,7 @@ describe('GrokModelCatalogCoordinator', () => {
       fingerprint: 'fingerprint-next',
       models: [makeModel('new-model'), makeModel('model-a')],
     }));
-    const coordinator = new GrokModelCatalogCoordinator(host, service);
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), service);
 
     await coordinator.mergeLiveModels([{
       agentType: 'coding',
@@ -751,7 +763,7 @@ describe('GrokModelCatalogCoordinator', () => {
       diagnostics: 'Grok Build models command timed out',
       models: [],
     }));
-    const coordinator = new GrokModelCatalogCoordinator(host, service);
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), service);
 
     await expect(coordinator.refresh()).resolves.toMatchObject({
       catalog: cached,
@@ -770,7 +782,7 @@ describe('GrokModelCatalogCoordinator', () => {
     const service = makeService(completedResult({
       fingerprint: 'new-fingerprint',
     }));
-    const coordinator = new GrokModelCatalogCoordinator(host, service);
+    const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), service);
 
     await expect(coordinator.refresh()).resolves.toMatchObject({
       changed: false,
@@ -781,7 +793,7 @@ describe('GrokModelCatalogCoordinator', () => {
   it('skips refresh when disabled and stops refresh after disposal', async () => {
     const disabledHost = makeHost({ enabled: false });
     const disabledService = makeService(completedResult());
-    const disabled = new GrokModelCatalogCoordinator(disabledHost, disabledService);
+    const disabled = new GrokModelCatalogCoordinator(runtimeHost(disabledHost), disabledService);
     await expect(disabled.refresh()).resolves.toMatchObject({
       changed: false,
       kind: 'skipped',
@@ -789,7 +801,7 @@ describe('GrokModelCatalogCoordinator', () => {
     expect(disabledService.discoverCatalog).not.toHaveBeenCalled();
 
     const service = makeService(completedResult());
-    const disposed = new GrokModelCatalogCoordinator(makeHost(), service);
+    const disposed = new GrokModelCatalogCoordinator(runtimeHost(makeHost()), service);
     disposed.dispose();
     await expect(disposed.refresh()).resolves.toMatchObject({
       changed: false,
@@ -805,7 +817,7 @@ it('does not reuse canceled discovery for a transition owner or publish its dela
   const fresh = { kind: 'completed' as const, models: [makeModel('fresh-model')], defaultModelId: null, fingerprint: 'fingerprint-current' };
   const service = makeService(fresh);
   jest.mocked(service.discoverCatalog).mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
-  const catalog = new GrokModelCatalogCoordinator(host, service);
+  const catalog = new GrokModelCatalogCoordinator(runtimeHost(host), service);
   const owner = { providerTransitionOwner: true as const };
   const old = catalog.refresh(owner);
   catalog.cancel();
