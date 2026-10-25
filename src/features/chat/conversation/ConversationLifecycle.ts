@@ -13,6 +13,7 @@ import type { TabId } from '@/features/chat/tabs/ChatTab';
 
 /** Application conversation writes the lifecycle applies after its tab policy. */
 export interface ConversationLifecycleStore {
+  ensureAllConversationMetadataLoaded(): Promise<void>;
   getConversationList(): readonly Pick<ConversationMeta, 'id' | 'isArchived' | 'projectId'>[];
   deleteConversation(id: string): Promise<void>;
   setConversationArchived(id: string, isArchived: boolean): Promise<void>;
@@ -86,6 +87,7 @@ export class ConversationLifecycle {
 
   /** Archives every active member, then the project; it stays active when any member is skipped. */
   async archiveProject(projectId: string): Promise<void> {
+    await this.deps.conversations.ensureAllConversationMetadataLoaded();
     const memberIds = this.#memberIds(projectId, false);
     if (await this.#archiveClosing(memberIds) === memberIds.length) {
       await this.deps.conversations.archiveProjectIfEmpty(projectId);
@@ -94,6 +96,7 @@ export class ConversationLifecycle {
 
   /** Restores the project, then its archived members. */
   async restoreProject(projectId: string): Promise<void> {
+    await this.deps.conversations.ensureAllConversationMetadataLoaded();
     await this.deps.projects.setArchived(projectId, false);
     const memberIds = this.#memberIds(projectId, true);
     if (memberIds.length > 0) await this.deps.conversations.restoreConversations(memberIds);

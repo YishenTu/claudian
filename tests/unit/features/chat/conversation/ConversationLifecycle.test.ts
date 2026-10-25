@@ -33,6 +33,7 @@ function createStore(): jest.Mocked<ConversationLifecycleStore> {
     setConversationArchived: jest.fn().mockResolvedValue(undefined),
     setConversationsPlacement: jest.fn().mockResolvedValue(undefined),
     restoreConversations: jest.fn().mockResolvedValue(undefined),
+    ensureAllConversationMetadataLoaded: jest.fn().mockResolvedValue(undefined),
     archiveProjectIfEmpty: jest.fn().mockResolvedValue(undefined),
     archiveConversationsIf: jest.fn(async (ids, shouldArchive) => (
       ids.filter(id => shouldArchive({ id } as never)).length

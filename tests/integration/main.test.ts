@@ -3500,7 +3500,7 @@ describe('ClaudianPlugin', () => {
       ]);
     });
 
-    it('applies a rename during creation once, preserving a later conversation at the reused path', async () => {
+    it.each(['queued', 'persisting'] as const)('applies a rename during %s creation once, preserving a later conversation at the reused path', async phase => {
       await plugin.onload();
       mockApp.workspace.getActiveFile = jest.fn().mockReturnValue(null);
       mockApp.vault.getAbstractFileByPath = jest.fn().mockReturnValue(null);
@@ -3521,15 +3521,17 @@ describe('ClaudianPlugin', () => {
         await new Promise<void>(resolve => { releaseWrite = resolve; });
         await save(...args);
       });
+      const blocking = phase === 'queued' ? host.createConversation() : undefined;
+      if (blocking) await waitForCondition(() => Boolean(releaseWrite));
       const creating = model.conversationController.createConversation(token, { providerId: 'claude' });
-      await waitForCondition(() => Boolean(releaseWrite));
+      if (!blocking) await waitForCondition(() => Boolean(releaseWrite));
       const renaming = (plugin as any).vaultContentEvents.handleRename(
         new (TFile as any)('Notes/New.md'), 'Notes/Old.md',
       );
       // A separate new file/conversation can reuse the old path after the Vault event.
-      const later = await host.createConversation({ linkedContentPath: 'Notes/Old.md' });
+      const laterCreation = host.createConversation({ linkedContentPath: 'Notes/Old.md' });
       releaseWrite();
-      await Promise.all([creating, renaming]);
+      const [, , , later] = await Promise.all([blocking, creating, renaming, laterCreation]);
 
       const createdId = attachment.runtime.conversationId!;
       expect(host.getConversationSync(createdId)?.linkedContentPath).toBe('Notes/New.md');

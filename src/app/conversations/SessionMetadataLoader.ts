@@ -51,7 +51,7 @@ export class SessionMetadataLoader {
       }
       this.scheduledLoadTimer = window.setTimeout(() => {
         this.scheduledLoadTimer = null;
-        this.startRemainingLoad();
+        void this.startRemainingLoad().catch(() => undefined);
       }, 0);
     };
 
@@ -230,6 +230,15 @@ export class SessionMetadataLoader {
     }
   }
 
+  /** Loads complete membership before operations that target an entire project. */
+  async ensureAllLoaded(): Promise<void> {
+    if (this.loadedAll) return;
+    await this.startRemainingLoad();
+    if (!this.loadedAll || this.isStopped()) {
+      throw new Error('Session metadata could not be fully loaded');
+    }
+  }
+
   async ensureLoaded(conversationIds: readonly string[]): Promise<void> {
     if (this.isStopped()) return;
     const load = this.loadConversations(conversationIds);
@@ -297,27 +306,24 @@ export class SessionMetadataLoader {
     };
   }
 
-  private startRemainingLoad(): void {
-    if (
-      !this.pendingScan
-      || this.isStopped()
-      || this.remainingLoad
-    ) {
-      return;
-    }
+  private startRemainingLoad(): Promise<void> {
+    if (this.remainingLoad) return this.remainingLoad;
+    if (this.loadedAll || this.isStopped()) return Promise.resolve();
 
     this.pendingScan = false;
     const load = StartupProfiler.runAsync(
       'session-metadata-background-load',
       () => this.loadRemaining(),
-    ).catch(() => {
+    ).catch((error: unknown) => {
       StartupProfiler.increment('session-metadata-background-failures');
+      throw error;
     }).finally(() => {
       if (this.remainingLoad === load) {
         this.remainingLoad = null;
       }
     });
     this.remainingLoad = load;
+    return load;
   }
 
 }

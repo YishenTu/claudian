@@ -11,9 +11,14 @@ import { testDate } from '@test/helpers/testClock';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import { ConversationService } from '@/app/conversations/ConversationService';
+import { SessionMetadataLoader } from '@/app/conversations/SessionMetadataLoader';
 import { ProjectService } from '@/app/projects/ProjectService';
 import { ProjectStore } from '@/app/projects/ProjectStore';
+import { RuntimeSettingsCoordinator } from '@/app/settings/RuntimeSettingsCoordinator';
+import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
+import { SessionStorage } from '@/app/storage/SessionStorage';
 import { PROJECTS_PATH } from '@/core/bootstrap/storagePaths';
+import { ProviderExecutionLifecycleRegistry } from '@/core/execution/ProviderExecutionLifecycleRegistry';
 import { defaultProjectMemoryPath, projectMemoryFolderOf } from '@/core/path/ProjectMemoryPath';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
@@ -27,7 +32,9 @@ jest.mock('node:fs/promises', () => {
 const actualFs = jest.requireActual<typeof fs>('node:fs/promises');
 
 const vaults: DesktopVault[] = [];
+const metadataLoaders: SessionMetadataLoader[] = [];
 afterEach(async () => {
+  await Promise.all(metadataLoaders.splice(0).map(loader => loader.dispose()));
   allowWrites();
   jest.mocked(fs.rename).mockClear();
   await Promise.all(vaults.splice(0).map(vault => vault.dispose()));
@@ -85,15 +92,29 @@ async function fixture(options: { vault?: DesktopVault; conversations?: Conversa
     projects,
   });
   repository.replaceAll(options.conversations ?? []);
+  const settingsCoordinator = new SettingsCoordinator(settings, async () => undefined);
+  const sessions = new SessionStorage(files, `device-${'a'.repeat(64)}`);
+  const metadataLoaded = deferred<void>();
+  const sessionMetadata: SessionMetadataLoader = new SessionMetadataLoader({
+    sessions, conversations: repository, providerSettings: ProviderSettingsCoordinator,
+    runtimeSettings: new RuntimeSettingsCoordinator({
+      settings: settingsCoordinator, conversations: repository, getSettings: () => settings,
+      canCompleteInvalidations: () => sessionMetadata.hasLoadedAll,
+      executionLifecycle: new ProviderExecutionLifecycleRegistry(),
+    }),
+    isUnloading: () => false, whenLayoutReady: callback => callback(),
+    onConversationListChanged, onAllMetadataLoaded: () => metadataLoaded.resolve(),
+  });
+  metadataLoaders.push(sessionMetadata);
   const conversations = new ConversationService({
     repository,
     projects,
-    sessionMetadata: { ensureLoaded: async () => undefined },
+    sessionMetadata,
     pinnedLinkedContentPaths: {} as never,
     nativeSessionArchives: { sync: async () => undefined },
     onConversationListChanged,
   });
-  return { vault, settings, store, loaded, projects, repository, conversations, persistence, onConversationListChanged };
+  return { vault, settings, store, loaded, projects, repository, conversations, persistence, onConversationListChanged, sessions, sessionMetadata, metadataLoaded };
 }
 
 function readFile(vault: DesktopVault, relativePath: string): Promise<string | undefined> {
@@ -417,13 +438,11 @@ describe('ProjectService', () => {
   });
 
   it('archives a project, unpinning it, persists the state, and restores it', async () => {
-    const memory = new MemoryDataAdapter();
-    memory.addFolder('.claudian');
-    memory.addFolder(PROJECTS_PATH);
-    memory.addFile(`${PROJECTS_PATH}/kept.json`, JSON.stringify({
-      id: 'kept', name: 'Kept', instructions: '', memoryPath: 'kept.md', isPinned: true, createdAt: 1,
+    const vault = await createVault();
+    await vault.write(`${PROJECTS_PATH}/kept.json`, JSON.stringify({
+      id: 'kept', name: 'Kept', instructions: '', memoryPath: 'kept.md', isPinned: true, createdAt: testDate().getTime(),
     }));
-    const { projects, store } = await fixture({ memory });
+    const { projects, store } = await fixture({ vault });
     const changed = jest.fn();
     projects.onChanged(changed);
     expect(projects.get('kept')?.isArchived).toBe(false);
@@ -432,7 +451,7 @@ describe('ProjectService', () => {
     await projects.setArchived('kept', true);
 
     expect(projects.get('kept')).toMatchObject({ isArchived: true, isPinned: false });
-    expect(JSON.parse(readFile(memory, `${PROJECTS_PATH}/kept.json`)!)).toMatchObject({ isArchived: true, isPinned: false });
+    expect(JSON.parse((await readFile(vault, `${PROJECTS_PATH}/kept.json`))!)).toMatchObject({ isArchived: true, isPinned: false });
     expect((await store.load()).records[0]).toMatchObject({ id: 'kept', isArchived: true, isPinned: false });
     expect(changed).toHaveBeenCalledTimes(1);
 
@@ -540,6 +559,69 @@ describe('ProjectService', () => {
     await expect(conversations.setConversationsPlacement(['outsider'], { projectId: deleted.id }))
       .rejects.toThrow(`Unknown project: ${deleted.id}`);
     expect(repository.getSync('outsider')?.projectId).toBe(other.id);
+  });
+
+  it.each([
+    ['archive', 'scheduled'], ['restore', 'scheduled'],
+    ['archive', 'not scheduled'], ['restore', 'not scheduled'],
+  ] as const)('%s includes startup members when the scan is %s', async (operation, scanState) => {
+    const { vault, projects, repository, conversations, persistence, sessions, sessionMetadata, metadataLoaded } = await fixture();
+    const project = await projects.create({ name: 'Startup', instructions: '', memoryPath: 'Startup.md' });
+    const initiallyArchived = operation === 'restore';
+    await projects.setArchived(project.id, initiallyArchived);
+    const member = { ...conversation('late-member', project.id), selectedModel: 'sonnet', isArchived: initiallyArchived };
+    await vault.write(sessions.getMetadataPath(member.id), JSON.stringify(member));
+    const scanEntered = deferred<void>();
+    const releaseScan = deferred<void>();
+    const scan = sessions.scan.bind(sessions);
+    jest.spyOn(sessions, 'scan').mockImplementationOnce(async options => {
+      scanEntered.resolve();
+      await releaseScan.promise;
+      return scan(options);
+    });
+    if (scanState === 'scheduled') {
+      sessionMetadata.scheduleRemainingLoad();
+      await scanEntered.promise;
+    }
+    expect(repository.list()).toEqual([]);
+    const lifecycle = new ConversationLifecycle({
+      conversations, projects,
+      sessions: { get: () => null, isRunning: () => false, retire: async () => undefined, whenSettled: async () => true },
+      views: { getAllViews: () => [] },
+    });
+
+    const changing = operation === 'archive' ? lifecycle.archiveProject(project.id) : lifecycle.restoreProject(project.id);
+    await scanEntered.promise;
+    // Drain already-admitted project writes without changing this unpinned project.
+    await projects.setPinned(project.id, false);
+    releaseScan.resolve();
+    await Promise.all([changing, metadataLoaded.promise]);
+
+    expect(projects.get(project.id)?.isArchived).toBe(!initiallyArchived);
+    expect(repository.getSync(member.id)?.isArchived).toBe(!initiallyArchived);
+    expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
+      id: member.id, isArchived: !initiallyArchived,
+    }));
+  });
+
+  it.each(['incomplete', 'failed'] as const)('keeps project state intact after an %s metadata scan and allows retry', async failure => {
+    const { projects, conversations, sessions } = await fixture();
+    const project = await projects.create({ name: 'Retry scan', instructions: '', memoryPath: 'Retry scan.md' });
+    const scan = jest.spyOn(sessions, 'scan');
+    if (failure === 'incomplete') scan.mockResolvedValueOnce({ records: [], complete: false, invalidMetadataCount: 0 });
+    else scan.mockRejectedValueOnce(new Error('scan unavailable'));
+    const lifecycle = new ConversationLifecycle({
+      conversations, projects,
+      sessions: { get: () => null, isRunning: () => false, retire: async () => undefined, whenSettled: async () => true },
+      views: { getAllViews: () => [] },
+    });
+
+    await expect(lifecycle.archiveProject(project.id)).rejects.toThrow(
+      failure === 'incomplete' ? 'Session metadata could not be fully loaded' : 'scan unavailable',
+    );
+    expect(projects.get(project.id)?.isArchived).toBe(false);
+    await lifecycle.archiveProject(project.id);
+    expect(projects.get(project.id)?.isArchived).toBe(true);
   });
 
   it('drops a retained draft seed when its project is archived before first submission', async () => {

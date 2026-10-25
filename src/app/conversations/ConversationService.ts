@@ -18,7 +18,7 @@ export interface ConversationServiceDeps {
   readonly repository: ConversationRepository;
   /** Omitted only when this conversation domain has no projects. */
   readonly projects?: Pick<ProjectReader, 'get'> & Pick<ProjectMutations, 'setArchived'>;
-  readonly sessionMetadata: Pick<SessionMetadataLoader, 'ensureLoaded'>;
+  readonly sessionMetadata: Pick<SessionMetadataLoader, 'ensureLoaded' | 'ensureAllLoaded'>;
   readonly pinnedLinkedContentPaths: PinnedLinkedContentPathCoordinator;
   readonly nativeSessionArchives: Pick<NativeSessionArchiveSync, 'sync'>;
   /** Publishes a committed list change; projection failures never roll the commit back. */
@@ -31,9 +31,9 @@ export interface ConversationServiceDeps {
  * provider sessions after they commit.
  */
 export class ConversationService {
-  // Creation, placement, restore and final project archive share this ordering point.
+  // Creation, Vault renames, placement, restore and final project archive share this ordering point.
   // Tab closure and provider callbacks stay outside it.
-  #projectMembershipQueue: Promise<unknown> = Promise.resolve();
+  #mutationQueue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly deps: ConversationServiceDeps) {}
 
@@ -49,7 +49,7 @@ export class ConversationService {
     /** Kept only when it names a live project at creation. */
     projectId?: string;
   }): Promise<Conversation> {
-    const conversation = await this.#mutateProjectMembership(() => this.deps.repository.create(options));
+    const conversation = await this.#orderMutation(() => this.deps.repository.create(options));
     this.notifyConversationListChanged();
     return conversation;
   }
@@ -93,7 +93,7 @@ export class ConversationService {
 
   /** One write per conversation and one list refresh; see `ConversationRepository.setPlacement`. */
   async setConversationsPlacement(ids: readonly string[], placement: ConversationPlacement): Promise<void> {
-    await this.#mutateProjectMembership(() =>
+    await this.#orderMutation(() =>
       this.#mutateConversations(ids, id => this.deps.repository.setPlacement(id, placement)));
   }
 
@@ -107,7 +107,7 @@ export class ConversationService {
   async setConversationArchived(id: string, isArchived: boolean): Promise<void> {
     const changed = isArchived
       ? await this.deps.repository.setArchived(id, true)
-      : await this.#mutateProjectMembership(async () => {
+      : await this.#orderMutation(async () => {
           await this.#restoreProjectsOf([id]);
           return this.deps.repository.setArchived(id, false);
         });
@@ -118,7 +118,7 @@ export class ConversationService {
   async restoreConversations(ids: readonly string[]): Promise<void> {
     const restoredIds: string[] = [];
     try {
-      await this.#mutateProjectMembership(async () => {
+      await this.#orderMutation(async () => {
         await this.#restoreProjectsOf(ids);
         await this.#mutateConversations(ids, async (id) => {
           if (await this.deps.repository.setArchived(id, false)) restoredIds.push(id);
@@ -131,7 +131,7 @@ export class ConversationService {
 
   /** Rechecks membership and holds off new admissions through the durable project archive write. */
   async archiveProjectIfEmpty(projectId: string): Promise<void> {
-    await this.#mutateProjectMembership(async () => {
+    await this.#orderMutation(async () => {
       if (this.deps.repository.list().some(record => record.projectId === projectId && !record.isArchived)) return;
       await this.deps.projects?.setArchived(projectId, true);
     });
@@ -149,9 +149,9 @@ export class ConversationService {
     for (const projectId of projectIds) await projects.setArchived(projectId, false);
   }
 
-  #mutateProjectMembership<T>(mutate: () => Promise<T>): Promise<T> {
-    const result = this.#projectMembershipQueue.then(mutate);
-    this.#projectMembershipQueue = result.catch(() => undefined);
+  #orderMutation<T>(mutate: () => Promise<T>): Promise<T> {
+    const result = this.#mutationQueue.then(mutate);
+    this.#mutationQueue = result.catch(() => undefined);
     return result;
   }
 
@@ -176,7 +176,8 @@ export class ConversationService {
     newPath: string,
     includeDescendants: boolean,
   ): Promise<void> {
-    await this.deps.repository.rewriteLinkedContentPaths(oldPath, newPath, { includeDescendants });
+    await this.#orderMutation(() =>
+      this.deps.repository.rewriteLinkedContentPaths(oldPath, newPath, { includeDescendants }));
     await this.deps.pinnedLinkedContentPaths.rewritePaths(oldPath, newPath, includeDescendants);
   }
 
@@ -203,6 +204,10 @@ export class ConversationService {
 
   getConversationList(): ConversationMeta[] {
     return this.deps.repository.list();
+  }
+
+  ensureAllConversationMetadataLoaded(): Promise<void> {
+    return this.deps.sessionMetadata.ensureAllLoaded();
   }
 
   async ensureConversationMetadataLoaded(conversationIds: readonly string[]): Promise<void> {
