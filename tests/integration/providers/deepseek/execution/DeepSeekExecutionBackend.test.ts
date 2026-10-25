@@ -80,7 +80,7 @@ function savedState(overrides: Record<string, unknown> = {}): Record<string, unk
 }
 function create(resume: boolean | NonNullable<ProviderSessionConfig['resumeSeed']> = false, lifecycle: ProviderSessionConfig['lifecycle'] = 'persistent'): void {
   const resumeSeed = resume === true ? { providerSessionId: 'root', providerState: savedState() } : resume || undefined;
-  session = new DeepSeekExecutionBackend(runtimeHostFor(host as never, 'deepseek'), () => deepseek).createSession({
+  session = new DeepSeekExecutionBackend(runtimeHostFor(host, 'deepseek'), () => deepseek).createSession({
     lifecycle, nativePersistence: lifecycle === 'ephemeral' ? 'disabled-if-supported' : 'enabled', workingDirectory: '/vault', interactionPort: port,
     ...(resumeSeed ? { resumeSeed } : {}),
   });
@@ -1145,7 +1145,7 @@ it('recovers the saved native preset before resuming an unbound conversation', a
     const value = await ordinary(method, args) as any;
     return method === 'session/projections' ? { ...value, values: { ...value.values, agentPreset: 'claudian-code' } } : value;
   };
-  session = new DeepSeekExecutionBackend(runtimeHostFor(host as never, 'deepseek'), () => deepseek).createSession({
+  session = new DeepSeekExecutionBackend(runtimeHostFor(host, 'deepseek'), () => deepseek).createSession({
     lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: '/vault', interactionPort: port, resumeSeed: { providerSessionId: 'root' },
   });
   const run = session.execute(request()); const events: ProviderExecutionEvent[] = []; const done = collect(run.events, events);
@@ -1270,7 +1270,7 @@ async function createMainChat(options: Omit<NativePeerHostOptions, 'beforeStart'
   await deepseek.dispose();
   ({ deepseek, lifecycle } = peer.host({ ...options, beforeStart: start }));
   const coordinator = createCoordinator({
-    resolveBackend: () => new DeepSeekExecutionBackend(runtimeHostFor(host as never, 'deepseek'), () => deepseek),
+    resolveBackend: () => new DeepSeekExecutionBackend(runtimeHostFor(host, 'deepseek'), () => deepseek),
     onRequestedEvent: event => fixture.controller.handleExecutionEvent(event),
   });
   const image: ImageAttachment = { id: 'image', name: 'pixel.png', mediaType: 'image/png', data: 'aW1hZ2U=', size: 5, source: 'paste' };

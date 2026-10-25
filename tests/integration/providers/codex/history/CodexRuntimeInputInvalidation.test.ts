@@ -14,7 +14,6 @@ import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import type { ProviderSessionEvent } from '@/core/execution';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution/ProviderExecutionLifecycleRegistry';
 import { SessionSnapshotState } from '@/core/execution/SessionSnapshotState';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { ClaudianSettings, Conversation } from '@/core/types';
@@ -168,7 +167,7 @@ describe('Codex runtime-input changes', () => {
     const { lifecycle, repository, runtimeSettings, settings } = fixture();
     const workspace = await createCodexWorkspaceServices(withRuntimeHosts({
       settings, executionLifecycleRegistry: lifecycle,
-    }) as unknown as ProviderHost);
+    }));
     const live = new SessionSnapshotState({
       providerId: 'codex',
       sessionInstanceId: 'live-session',
@@ -231,7 +230,7 @@ describe('Codex runtime-input changes', () => {
     let adoptedThreadId: string | null = null;
     const workspace = await createCodexWorkspaceServices(withRuntimeHosts({
       settings, executionLifecycleRegistry: lifecycle,
-    }) as unknown as ProviderHost);
+    }));
     const live = new SessionSnapshotState({
       providerId: 'codex',
       sessionInstanceId: 'live-session',
@@ -299,7 +298,7 @@ describe('Codex runtime-input changes', () => {
     let adoptedThreadId: string | null = null;
     const workspace = await createCodexWorkspaceServices(withRuntimeHosts({
       settings, executionLifecycleRegistry: lifecycle,
-    }) as unknown as ProviderHost);
+    }));
     const live = new SessionSnapshotState({
       providerId: 'codex',
       sessionInstanceId: 'live-session',

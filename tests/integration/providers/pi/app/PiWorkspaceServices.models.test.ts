@@ -18,7 +18,7 @@ it('drains canceled model discovery before the provider transition mutation', as
     signal!.addEventListener('abort', canceled, { once: true });
     return new Promise(resolve => { release = () => resolve({ kind: 'completed', models: [] }); });
   });
-  const services = await createPiWorkspaceServices(withRuntimeHosts(host as never));
+  const services = await createPiWorkspaceServices(withRuntimeHosts(host));
   const discovery = services.modelCatalog!.refresh();
   const mutation = jest.fn(async () => undefined);
   const transition = registry.runTransition(['pi'], mutation);

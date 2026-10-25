@@ -5,31 +5,9 @@ import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import type { ProviderCLIResolutionContext, ProviderId } from '@/core/providers/types';
 import type { ClaudianSettings } from '@/core/types';
 
-type RuntimeCapabilities = Parameters<typeof createProviderRuntimeHost>[0];
-
-/**
- * A provider runtime host over a settings document, through the production projection.
- * Reads stay live: direct edits to `settings` and committed writes are both visible.
- */
-export function createTestRuntimeHost(
-  settings: Record<string, unknown>,
-  providerId: ProviderId,
-  capabilities: Partial<RuntimeCapabilities> = {},
-  persist: (settings: ClaudianSettings) => Promise<void> = async () => undefined,
-): ProviderRuntimeHost {
-  const coordinator = new SettingsCoordinator(settings as unknown as ClaudianSettings, persist);
-  return createProviderRuntimeHost({
-    workingDirectory: null,
-    storage: {} as ProviderHost['storage'],
-    sessionToolEndpoint: {} as ProviderHost['sessionToolEndpoint'],
-    getResolvedProviderCliPath: async () => null,
-    notifyProviderChatOptionsChanged: () => undefined,
-    ...capabilities,
-  }, coordinator, providerId);
-}
-
-interface AppHostFixture {
-  settings: Record<string, unknown>;
+/** The application-host capabilities a provider runtime host reads; everything but `settings` is optional. */
+export interface RuntimeHostFixture {
+  settings: object;
   workingDirectory?: string | null;
   manifest?: { version?: string };
   storage?: unknown;
@@ -38,22 +16,37 @@ interface AppHostFixture {
   notifyProviderChatOptionsChanged?: (providerId: ProviderId) => void;
 }
 
+interface RuntimeHostOptions {
+  /** Receives each committed settings document; rejecting rolls the write back. */
+  persist?: (settings: ClaudianSettings) => Promise<void>;
+}
+
 /**
- * The provider runtime host an application host fixture would hand out. Capabilities
- * delegate lazily, so later edits to the fixture (settings, mocks) stay visible.
+ * A provider runtime host over a fixture, through the production projection. Reads stay
+ * live: later edits to the fixture (settings, mocks) and committed writes are both visible.
  */
-export function runtimeHostFor(host: AppHostFixture, providerId: ProviderId): ProviderRuntimeHost {
-  return createTestRuntimeHost(host.settings, providerId, {
+export function runtimeHostFor(
+  host: RuntimeHostFixture,
+  providerId: ProviderId,
+  { persist = async () => undefined }: RuntimeHostOptions = {},
+): ProviderRuntimeHost {
+  const coordinator = new SettingsCoordinator(host.settings as ClaudianSettings, persist);
+  return createProviderRuntimeHost({
     get workingDirectory() { return host.workingDirectory ?? null; },
     get manifest() { return host.manifest; },
     get storage() { return host.storage as ProviderHost['storage']; },
     get sessionToolEndpoint() { return host.sessionToolEndpoint as ProviderHost['sessionToolEndpoint']; },
     getResolvedProviderCliPath: async (id, context) => await host.getResolvedProviderCliPath?.(id, context) ?? null,
     notifyProviderChatOptionsChanged: id => host.notifyProviderChatOptionsChanged?.(id),
-  });
+  }, coordinator, providerId);
 }
 
-/** Adds `getRuntimeHost` to an application host fixture. */
-export function withRuntimeHosts<T extends AppHostFixture>(host: T): T & Pick<ProviderHost, 'getRuntimeHost'> {
-  return Object.assign(host, { getRuntimeHost: (providerId: ProviderId) => runtimeHostFor(host, providerId) });
+/**
+ * Adds `getRuntimeHost` to an application host fixture and types it as the `ProviderHost`
+ * it stands in for; members the fixture omits stay absent at runtime.
+ */
+export function withRuntimeHosts<T extends RuntimeHostFixture>(host: T): T & ProviderHost {
+  return Object.assign(host, {
+    getRuntimeHost: (providerId: ProviderId) => runtimeHostFor(host, providerId),
+  }) as unknown as T & ProviderHost;
 }

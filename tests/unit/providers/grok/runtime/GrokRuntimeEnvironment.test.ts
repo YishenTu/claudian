@@ -1,12 +1,12 @@
 import * as path from 'node:path';
 
-import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
 import { buildGrokRuntimeEnv } from '@/providers/grok/runtime/GrokRuntimeEnvironment';
 
 /** Builds the environment from the runtime host's shared plus provider-scoped text. */
 function buildFromSettings(settings: Record<string, unknown>, cliPath: string): NodeJS.ProcessEnv {
-  return buildGrokRuntimeEnv(createTestRuntimeHost(settings, 'grok').environmentText, cliPath);
+  return buildGrokRuntimeEnv(runtimeHostFor({ settings }, 'grok').environmentText, cliPath);
 }
 
 describe('buildGrokRuntimeEnv', () => {

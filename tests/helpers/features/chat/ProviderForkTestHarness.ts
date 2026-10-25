@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
-import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { App } from 'obsidian';
 
@@ -54,10 +54,9 @@ export async function createForkTestEnvironment() {
     storage: {},
     getResolvedProviderCliPath: async (providerId: string) => `/bin/${providerId}`,
     getActiveEnvironmentVariables: () => `CLAUDE_CONFIG_DIR=${path.join(root, 'claude')}`,
-    getRuntimeHost: (providerId: string) => createTestRuntimeHost(settings, providerId, {
-      workingDirectory: root,
-      getResolvedProviderCliPath: async (id: string) => `/bin/${id}`,
-    }),
+    getRuntimeHost: (providerId: string) => runtimeHostFor({
+      settings, workingDirectory: root, getResolvedProviderCliPath: async (id: string) => `/bin/${id}`,
+    }, providerId),
   } as unknown as ProviderHost;
   const repository = new ConversationRepository({
     providers: ProviderRegistry,

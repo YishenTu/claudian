@@ -5,7 +5,6 @@ import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { updateClaudeProviderSettings } from '@/providers/claude/settings';
 
@@ -44,7 +43,7 @@ function createContext() {
       loadUserClaudeSettings: false,
     },
     getResolvedProviderCliPath: jest.fn().mockResolvedValue('/bin/claude'),
-  } as unknown as Parameters<typeof withRuntimeHosts>[0]) as unknown as ProviderHost;
+  });
   return { host, lifecycleRegistry };
 }
 

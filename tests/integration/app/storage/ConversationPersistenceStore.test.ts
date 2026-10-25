@@ -6,7 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
-import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { App, Notice, type Plugin } from 'obsidian';
 
@@ -88,7 +88,7 @@ test('execution snapshots avoid history payload serialization while persistence 
     messages: [{ id: 'message-1', role: 'assistant', content: '', timestamp: testDate().getTime(),
       toolCalls: [{ id: subagent.id, name: 'Agent', input: {}, status: 'completed', isExpanded: false, subagent }] }],
   };
-  const session = new ClaudeExecutionBackend(createTestRuntimeHost({}, 'claude')).createSession({
+  const session = new ClaudeExecutionBackend(runtimeHostFor({ settings: {} }, 'claude')).createSession({
     lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: root,
     resumeSeed: { providerSessionId: 'native-1', providerState },
     interactionPort: { dismissInteraction() {}, requestApproval: async ({ interactionId }) => ({ interactionId, decision: 'deny' }),

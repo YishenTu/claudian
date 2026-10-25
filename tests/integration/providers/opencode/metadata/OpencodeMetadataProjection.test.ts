@@ -1,4 +1,4 @@
-import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import type { ACPSessionConfigOption } from '@/providers/acp';
@@ -7,7 +7,7 @@ import { projectOpencodeMetadata } from '@/providers/opencode/metadata/OpencodeM
 
 function createHost(): ProviderRuntimeHost {
   const settings = { providerConfigs: { opencode: { enabled: true, visibleModels: ['provider/alpha', 'provider/beta'] } } };
-  return createTestRuntimeHost(settings, 'opencode');
+  return runtimeHostFor({ settings }, 'opencode');
 }
 
 function effort(values: string[]): ACPSessionConfigOption[] {

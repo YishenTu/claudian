@@ -204,8 +204,7 @@ export function createProviderRuntimeHost(
     async updateConfig(mutation) {
       let written = false;
       await settings.mutateConditionally(async draft => {
-        // The draft publishes even when unwritten, so the mutation edits a private copy.
-        const config = structuredClone(getProviderConfig(draft, providerId));
+        const config = getProviderConfig(draft, providerId);
         if (!await mutation(config, getProviderSelectionInputs(draft, providerId))) return false;
         setProviderConfig(draft, providerId, config);
         written = true;

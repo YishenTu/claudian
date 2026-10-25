@@ -27,7 +27,7 @@ function createPlugin(
     loadData: jest.fn().mockResolvedValue({}),
     saveData: jest.fn().mockResolvedValue(undefined),
     settings: {},
-    getRuntimeHost: (id: string) => runtimeHostFor(plugin as unknown as Parameters<typeof runtimeHostFor>[0], id),
+    getRuntimeHost: (id: string) => runtimeHostFor(plugin, id),
   } as unknown as MutableTestHost;
   return plugin;
 }

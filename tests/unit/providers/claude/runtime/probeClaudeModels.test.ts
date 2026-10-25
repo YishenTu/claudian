@@ -1,4 +1,4 @@
-import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { probeClaudeCatalog } from '@/providers/claude/runtime/probeClaudeModels';
@@ -7,10 +7,11 @@ const mockQuery = jest.fn();
 jest.mock('@/providers/claude/loadClaudeAgentSDK', () => ({ loadClaudeAgentQuery: async () => mockQuery }));
 
 function host(workingDirectory: string | null = '/vault'): ProviderRuntimeHost {
-  return createTestRuntimeHost({ providerConfigs: { claude: {} } }, 'claude', {
+  return runtimeHostFor({
+    settings: { providerConfigs: { claude: {} } },
     workingDirectory,
     getResolvedProviderCliPath: jest.fn().mockResolvedValue('/bin/claude'),
-  });
+  }, 'claude');
 }
 
 describe('Claude SDK catalog probe', () => {

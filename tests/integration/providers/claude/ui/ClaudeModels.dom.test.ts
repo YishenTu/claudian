@@ -54,7 +54,7 @@ HTMLElement.prototype.appendText = function (text) { this.append(text); };
 
 function renderModels(container: HTMLElement, context: ProviderSettingsTabRendererContext, native: { refresh: ClaudeModelDiscovery }) {
   context.plugin.notifyProviderChatOptionsChanged = jest.fn();
-  const host = runtimeHostFor(context.plugin as unknown as Parameters<typeof runtimeHostFor>[0], 'claude');
+  const host = runtimeHostFor(context.plugin, 'claude');
   return renderProviderModelsSection(container, 'claude', 'Claude Code', createClaudeModels(host, signal => native.refresh(signal)));
 }
 

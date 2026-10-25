@@ -21,10 +21,7 @@ import { CodexSkillListingService } from '@/providers/codex/skills/CodexSkillLis
 
 /** The backend resolves its runtime per session; tests pin one instance. */
 const fixedRuntime = (runtime: CodexAppServerRuntime) => (): CodexAppServerRuntime => runtime;
-const scoped = (host: ProviderHost): ProviderRuntimeHost => runtimeHostFor(
-  host as unknown as Parameters<typeof runtimeHostFor>[0],
-  'codex',
-);
+const scoped = (host: ProviderHost): ProviderRuntimeHost => runtimeHostFor(host, 'codex');
 const createBackend = (host: ProviderHost, runtime: CodexAppServerRuntime): CodexExecutionBackend => new CodexExecutionBackend(
   scoped(host),
   fixedRuntime(runtime),
@@ -952,7 +949,7 @@ describe('Codex shared runtime', () => {
       settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } } },
       executionLifecycleRegistry: registry,
     } as unknown as ProviderHost;
-    const services = await createCodexWorkspaceServices(withRuntimeHosts(host as unknown as Parameters<typeof withRuntimeHosts>[0]) as unknown as ProviderHost);
+    const services = await createCodexWorkspaceServices(withRuntimeHosts(host));
     const backend = createBackend(host, services.runtime);
     const first = registry.acquire(backend, config, 'chat');
     const firstEvents = collect(first.session.execute(request).events);

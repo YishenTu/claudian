@@ -79,7 +79,7 @@ async function restoreLive(updates: NativeToolUpdates): Promise<ToolCallInfo> {
     nativePersistence: 'enabled',
     workingDirectory: '/workspace',
   };
-  const session = new GrokExecutionBackend(runtimeHostFor(createGrokHost() as Parameters<typeof runtimeHostFor>[0], 'grok'), { nativeFactory: { create: () => native } })
+  const session = new GrokExecutionBackend(runtimeHostFor(createGrokHost(), 'grok'), { nativeFactory: { create: () => native } })
     .createSession(config);
   const output: ProviderExecutionEvent[] = [];
   try {

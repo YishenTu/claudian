@@ -107,7 +107,7 @@ function createFakeHost(overrides: {
 
 function createCoordinator(host: ProviderHost, discovery: CodexModelDiscoveryServiceLike): CodexModelCatalogCoordinator {
   return new CodexModelCatalogCoordinator(
-    runtimeHostFor(host as unknown as Parameters<typeof runtimeHostFor>[0], 'codex'),
+    runtimeHostFor(host, 'codex'),
     discovery,
     createCodexModelCatalogCommit(host),
   );

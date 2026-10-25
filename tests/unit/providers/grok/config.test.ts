@@ -1,4 +1,4 @@
-import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
 import { decodeGrokConfig, updateGrokConfig } from '@/providers/grok/config';
 
@@ -28,7 +28,7 @@ describe('Grok configuration through the runtime host', () => {
         },
       },
     };
-    const host = createTestRuntimeHost(settings, 'grok');
+    const host = runtimeHostFor({ settings }, 'grok');
 
     await expect(host.updateConfig((config, selection) => {
       updateGrokConfig(config, selection, {

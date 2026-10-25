@@ -23,7 +23,7 @@ it('discovers native models lazily and preserves explicit selection order and un
   const start = jest.fn(async () => ({ profile: 'web' as const, client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} }));
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
-    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host as never), start);
+    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host), start);
     expect(start).not.toHaveBeenCalled();
     peer.onCall = method => method === 'session/list' ? { items: [] } : Promise.reject(new Error(`Warm-up called ${method}.`));
     // Tab presence warms the shared Host without creating a native session.
@@ -89,7 +89,7 @@ it('lists vault skills for the dropdown from saved native sessions without activ
   };
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
-    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host as never), start);
+    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host), start);
     const load = (conversation: any, allowIsolatedMetadataCreation = true) => workspace!.commandLoader!.loadCommands({ allowIsolatedMetadataCreation, conversation, plugin: host });
     // Background tabs never start discovery work.
     expect(await load(null, false)).toMatchObject({ status: 'requires-session' });
@@ -131,7 +131,7 @@ it('stops the shared Host before a provider transition and restarts it lazily wi
   });
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
-    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host as never), start);
+    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host), start);
     await workspace.startRuntime?.();
     let disposedBeforeMutation: number | undefined;
     await registry.runTransition(['deepseek'], async () => {
@@ -171,7 +171,7 @@ it('mirrors Claudian archive state onto native sessions in this Host store', asy
   const change = (sessionId: string | null, isArchived: boolean, providerState: Record<string, unknown> = state()) => ({ conversation: { sessionId, providerState, messages: [] }, isArchived });
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
-    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host as never), start);
+    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host), start);
     await workspace.sessionArchive!.setSessionsArchived([
       change('chat', true),
       // A pending fork has no native session of its own; never archive its source.
@@ -220,7 +220,7 @@ it('lets an admitted archive finish before a provider transition stops the Host'
   };
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
-    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host as never), start);
+    workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host), start);
     const home = getDeepSeekHome(process.env, process.cwd());
     const operation = workspace.sessionArchive!.setSessionsArchived([{ conversation: { sessionId: 'chat', providerState: { schemaVersion: 1, home, profile: 'web', preset: 'claudian' }, messages: [] }, isArchived: true }]);
     await inFlight;

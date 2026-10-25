@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import compactCompleted from '@test/fixtures/providers/grok/runtime/compaction-completed.json';
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
-import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { type RuntimeHostFixture,runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { testDate } from '@test/helpers/testClock';
 
@@ -54,8 +54,8 @@ import {
   updateGrokProviderSettings,
 } from '@/providers/grok/settings';
 
-function createBackend(host: object, options?: GrokExecutionBackendOptions): GrokExecutionBackend {
-  return new GrokExecutionBackend(runtimeHostFor(host as Parameters<typeof runtimeHostFor>[0], 'grok'), options);
+function createBackend(host: RuntimeHostFixture, options?: GrokExecutionBackendOptions): GrokExecutionBackend {
+  return new GrokExecutionBackend(runtimeHostFor(host, 'grok'), options);
 }
 
 function createGrokHost(model = 'grok-4'): ProviderHost {

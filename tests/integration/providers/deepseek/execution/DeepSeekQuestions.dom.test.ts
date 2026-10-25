@@ -62,7 +62,7 @@ beforeEach(async () => {
 afterEach(async () => { setLocale('en'); await session?.dispose(); await deepseek.dispose(); await peer.close(); });
 
 function create(): void {
-  session = new DeepSeekExecutionBackend(runtimeHostFor(host as never, 'deepseek'), () => deepseek).createSession({
+  session = new DeepSeekExecutionBackend(runtimeHostFor(host, 'deepseek'), () => deepseek).createSession({
     lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: '/vault', interactionPort: port,
   });
 }

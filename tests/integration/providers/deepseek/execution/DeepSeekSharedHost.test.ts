@@ -96,7 +96,7 @@ function open(interactionPort = port(), resume?: string, lifecycle: ProviderSess
     sessionTools, lifecycle, nativePersistence: lifecycle === 'ephemeral' ? 'disabled-if-supported' : 'enabled', workingDirectory: '/vault', interactionPort,
     ...(resume ? { resumeSeed: { providerSessionId: resume, providerState: { schemaVersion: 1, home: getDeepSeekHome(process.env, process.cwd()), profile: 'web', preset: 'claudian' } } } : {}),
   };
-  const session = new DeepSeekExecutionBackend(runtimeHostFor(host as never, 'deepseek'), () => deepseek).createSession(config);
+  const session = new DeepSeekExecutionBackend(runtimeHostFor(host, 'deepseek'), () => deepseek).createSession(config);
   sessions.push(session);
   return session;
 }

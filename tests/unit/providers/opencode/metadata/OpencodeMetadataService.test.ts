@@ -1,4 +1,4 @@
-import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
 import {
   type OpencodeMetadataProbe,
@@ -17,7 +17,7 @@ function createPlugin(): any {
     },
   };
   const notifyProviderChatOptionsChanged = jest.fn();
-  const host = createTestRuntimeHost(settings, 'opencode', { notifyProviderChatOptionsChanged });
+  const host = runtimeHostFor({ settings, notifyProviderChatOptionsChanged }, 'opencode');
   host.updateConfig = jest.fn(host.updateConfig);
   const executionLifecycleRegistry = { registerTransitionHook: jest.fn(() => jest.fn()) };
   return Object.assign(host, { settings, notifyProviderChatOptionsChanged, executionLifecycleRegistry });

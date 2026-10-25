@@ -81,7 +81,7 @@ import { updateCodexProviderSettings } from '@/providers/codex/settings';
 
 const runtimes: CodexAppServerRuntime[] = [];
 function createBackend(plugin: ProviderHost): CodexExecutionBackend {
-  const host = runtimeHostFor(plugin as unknown as Parameters<typeof runtimeHostFor>[0], 'codex');
+  const host = runtimeHostFor(plugin, 'codex');
   const runtime = new CodexAppServerRuntime(host, () => undefined);
   runtimes.push(runtime);
   return new CodexExecutionBackend(

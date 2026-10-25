@@ -84,7 +84,7 @@ describe('Startup optimization', () => {
     ProviderWorkspaceRegistry.register('codex', {
       initialize: async ({ plugin }) => ({
         modelCatalogCoordinator: new CodexModelCatalogCoordinator(
-          runtimeHostFor(plugin as unknown as Parameters<typeof runtimeHostFor>[0], 'codex'),
+          runtimeHostFor(plugin, 'codex'),
           discovery,
           createCodexModelCatalogCommit(plugin),
         ),

@@ -693,7 +693,7 @@ describe('native steering', () => {
     env.host.notifyProviderChatOptionsChanged = () => undefined;
     env.host.settings.providerConfigs.opencode = { enabled: true, visibleModels: ['deepseek/chat'], discoveredModels: [{ rawId: 'deepseek/chat', label: 'DeepSeek' }] };
     const serverService = new OpencodeServerService();
-    const backend = new OpencodeExecutionBackend(runtimeHostFor(env.host as unknown as Parameters<typeof runtimeHostFor>[0], 'opencode'), { serverService });
+    const backend = new OpencodeExecutionBackend(runtimeHostFor(env.host, 'opencode'), { serverService });
     const conversation = await env.repository.create({ providerId: 'opencode' });
     const events: ProviderExecutionEvent[] = [];
     let steered: Promise<ChatSteerOutcome> | undefined;
@@ -786,7 +786,7 @@ it.each(['background-approval', 'background-nested', 'mcp-form-late'])('keeps %s
   env.host.notifyProviderChatOptionsChanged = () => undefined;
   env.host.settings.providerConfigs.opencode = { enabled: true, visibleModels: ['deepseek/chat'], discoveredModels: [{ rawId: 'deepseek/chat', label: 'DeepSeek' }] };
   const serverService = new OpencodeServerService();
-  const backend = new OpencodeExecutionBackend(runtimeHostFor(env.host as unknown as Parameters<typeof runtimeHostFor>[0], 'opencode'), { serverService });
+  const backend = new OpencodeExecutionBackend(runtimeHostFor(env.host, 'opencode'), { serverService });
   const conversation = await env.repository.create({ providerId: 'opencode' });
   let release!: () => void, childAsked!: () => void, replied!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });

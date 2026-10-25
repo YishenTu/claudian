@@ -1,12 +1,38 @@
 import { TEST_CODEX_CATALOG } from '@test/helpers/codexModels';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 
+import { assertClaudeModelAvailable } from '@/providers/claude/runtime/ClaudeModelAvailability';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
+import { assertCodexModelAvailable } from '@/providers/codex/runtime/CodexModelAvailability';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '@/providers/codex/settings';
+import { assertDeepSeekModelAvailable } from '@/providers/deepseek/runtime/DeepSeekModels';
 import { getDeepSeekProviderSettings, updateDeepSeekProviderSettings } from '@/providers/deepseek/settings';
+import { assertGrokModelAvailable } from '@/providers/grok/runtime/GrokModelAvailability';
 import { getGrokProviderSettings, updateGrokProviderSettings } from '@/providers/grok/settings';
+import { assertOpencodeModelAvailable } from '@/providers/opencode/runtime/OpencodeModelAvailability';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from '@/providers/opencode/settings';
+import { assertPiModelAvailable } from '@/providers/pi/runtime/PiModelAvailability';
 import { getPiProviderSettings, updatePiProviderSettings } from '@/providers/pi/settings';
+
+const availabilityGuards = {
+  claude: assertClaudeModelAvailable,
+  codex: assertCodexModelAvailable,
+  deepseek: assertDeepSeekModelAvailable,
+  grok: assertGrokModelAvailable,
+  opencode: assertOpencodeModelAvailable,
+  pi: assertPiModelAvailable,
+};
+
+/** Runs a provider's execution-time model guard against a settings document. */
+export function assertCatalogModelAvailable(
+  providerId: keyof typeof availabilityGuards,
+  settings: object,
+  model: string | undefined,
+): void {
+  availabilityGuards[providerId](runtimeHostFor({ settings }, providerId), model);
+}
+
 export const modelCatalogCases = [
   {
     id: 'claude' as const, selected: 'sonnet',

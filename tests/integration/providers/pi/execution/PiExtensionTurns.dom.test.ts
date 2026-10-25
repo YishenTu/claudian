@@ -131,7 +131,7 @@ async function createPiView() {
     getActiveEnvironmentVariables: () => '',
   };
   const kernels: ScriptedPiKernel[] = [];
-  const backend = new PiExecutionBackend(runtimeHostFor(providerHost as never, 'pi'), {
+  const backend = new PiExecutionBackend(runtimeHostFor(providerHost, 'pi'), {
     createKernel: (spec, callbacks) => {
       const kernel = new ScriptedPiKernel(spec, callbacks);
       kernels.push(kernel);

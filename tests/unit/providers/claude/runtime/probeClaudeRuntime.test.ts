@@ -1,5 +1,5 @@
 import type { Options, SDKControlInitializeResponse } from '@anthropic-ai/claude-agent-sdk';
-import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { buildClaudeLaunchOptions, probeClaudeRuntime } from '@/providers/claude/runtime/probeClaudeRuntime';
@@ -20,14 +20,11 @@ const initialization = {
 } as unknown as SDKControlInitializeResponse;
 
 function host(config: Record<string, unknown> = {}, environment = ''): ProviderRuntimeHost {
-  return createTestRuntimeHost({
-    model: 'chat-model',
-    sharedEnvironmentVariables: environment,
-    providerConfigs: { claude: config },
-  }, 'claude', {
+  return runtimeHostFor({
+    settings: { model: 'chat-model', sharedEnvironmentVariables: environment, providerConfigs: { claude: config } },
     workingDirectory: '/vault',
     getResolvedProviderCliPath: jest.fn().mockResolvedValue('/bin/claude'),
-  });
+  }, 'claude');
 }
 
 const sessionInit = { type: 'system', subtype: 'init', session_id: 'probe-session', skills: ['commit'] };

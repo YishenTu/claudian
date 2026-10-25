@@ -1,28 +1,12 @@
 import '@/providers';
 
 import { FakeAuxiliaryBackend, waitFor } from '@test/helpers/core/auxiliary/AuxiliaryExecutionTestHarness';
-import { modelCatalogCases } from '@test/helpers/providerModelCatalogs';
-import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
+import { assertCatalogModelAvailable, modelCatalogCases } from '@test/helpers/providerModelCatalogs';
+import { withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import { assertClaudeModelAvailable } from '@/providers/claude/runtime/ClaudeModelAvailability';
 import { updateClaudeProviderSettings } from '@/providers/claude/settings';
-import { assertCodexModelAvailable } from '@/providers/codex/runtime/CodexModelAvailability';
-import { assertDeepSeekModelAvailable } from '@/providers/deepseek/runtime/DeepSeekModels';
-import { assertGrokModelAvailable } from '@/providers/grok/runtime/GrokModelAvailability';
-import { assertOpencodeModelAvailable } from '@/providers/opencode/runtime/OpencodeModelAvailability';
-import { assertPiModelAvailable } from '@/providers/pi/runtime/PiModelAvailability';
-
-const executionGuards = {
-  deepseek: (settings: Record<string, unknown>, model: string | undefined) => assertDeepSeekModelAvailable(createTestRuntimeHost(settings, 'deepseek'), model),
-  claude: (settings: Record<string, unknown>, model: string | undefined) => assertClaudeModelAvailable(createTestRuntimeHost(settings, 'claude'), model),
-  codex: (settings: Record<string, unknown>, model: string | undefined) => assertCodexModelAvailable(createTestRuntimeHost(settings, 'codex'), model),
-  grok: (settings: Record<string, unknown>, model: string | undefined) => assertGrokModelAvailable(createTestRuntimeHost(settings, 'grok'), model),
-  opencode: (settings: Record<string, unknown>, model: string | undefined) => assertOpencodeModelAvailable(createTestRuntimeHost(settings, 'opencode'), model),
-  pi: (settings: Record<string, unknown>, model: string | undefined) => assertPiModelAvailable(createTestRuntimeHost(settings, 'pi'), model),
-};
 
 const titleCases = modelCatalogCases.map(provider => ({
   ...provider,
@@ -38,23 +22,27 @@ const titleCases = modelCatalogCases.map(provider => ({
 
 afterEach(() => jest.restoreAllMocks());
 
-async function generateTitleModel(settings: Record<string, unknown>, providerId: string): Promise<string | undefined> {
+/** Runs one title generation over a fake backend; returns the requests it sent and its result callback. */
+async function runTitleGeneration(settings: Record<string, unknown>, providerId: string) {
   const backend = new FakeAuxiliaryBackend();
   jest.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
   const lifecycle = new ProviderExecutionLifecycleRegistry();
-  const host = {
-    settings, workingDirectory: '/vault', executionLifecycleRegistry: lifecycle,
-  } as unknown as ProviderHost;
+  const host = withRuntimeHosts({ settings, workingDirectory: '/vault', executionLifecycleRegistry: lifecycle });
   const service = ProviderRegistry.createTitleGenerationService(host, providerId);
   const callback = jest.fn();
   const generation = service.generateTitle('conversation', 'First message', callback);
   await waitFor(() => backend.sessions.some(session => session.requests.length > 0) || callback.mock.calls.length > 0);
-  const model = backend.sessions.flatMap(session => session.requests)[0]?.configuration.model;
+  const requests = backend.sessions.flatMap(session => session.requests);
   for (const session of backend.sessions) { session.emitText('A title'); session.complete(); }
   await generation;
   await lifecycle.dispose();
+  return { requests, callback };
+}
+
+async function generateTitleModel(settings: Record<string, unknown>, providerId: string): Promise<string | undefined> {
+  const { requests, callback } = await runTitleGeneration(settings, providerId);
   expect(callback).toHaveBeenCalledWith('conversation', expect.objectContaining({ success: true }));
-  return model;
+  return requests[0]?.configuration.model;
 }
 
 
@@ -66,7 +54,7 @@ it.each(titleCases)('$id routes equivalent title IDs without choosing a sibling'
     expect(ProviderRegistry.resolveTitleGenerationSelection(settings)?.providerId).toBe(id);
     const expectedModel = id === 'claude' ? forms[0] : forms[1];
     expect(await generateTitleModel(settings, id)).toBe(expectedModel);
-    expect(() => executionGuards[id](settings, expectedModel)).not.toThrow();
+    expect(() => assertCatalogModelAvailable(id, settings, expectedModel)).not.toThrow();
     settings.titleGenerationModel = `${model}/high`;
     expect(ProviderRegistry.resolveTitleGenerationSelection(settings)).toBeNull();
     settings.titleGenerationModel = `${model}-sibling`;
@@ -78,25 +66,7 @@ it.each(titleCases)('$id rejects a title model cleared after routing instead of 
   const settings: Record<string, unknown> = {};
   populate(settings);
   settings.titleGenerationModel = '';
-  const backend = new FakeAuxiliaryBackend();
-  jest.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
-  const lifecycle = new ProviderExecutionLifecycleRegistry();
-  const host = {
-    settings,
-    workingDirectory: '/vault',
-    executionLifecycleRegistry: lifecycle,
-  } as unknown as ProviderHost;
-  const service = ProviderRegistry.createTitleGenerationService(host, id);
-  const callback = jest.fn();
-  const generation = service.generateTitle('conversation', 'First message', callback);
-  await waitFor(() => backend.sessions.some(session => session.requests.length > 0) || callback.mock.calls.length > 0);
-  const requests = backend.sessions.flatMap(session => session.requests);
-  for (const session of backend.sessions) {
-    session.emitText('A title');
-    session.complete();
-  }
-  await generation;
-  await lifecycle.dispose();
+  const { requests, callback } = await runTitleGeneration(settings, id);
   expect(requests).toHaveLength(0);
   expect(callback).toHaveBeenCalledWith('conversation', expect.objectContaining({ success: false }));
 });
@@ -117,6 +87,6 @@ it('routes plain and qualified Claude haiku selections to the same model', async
 it.each(titleCases)('$id preserves omitted-model execution fallback without accepting an explicit missing model', ({ id, populate, selected }) => {
   const settings: Record<string, unknown> = { model: selected };
   populate(settings);
-  expect(() => executionGuards[id](settings, undefined)).not.toThrow();
-  expect(() => executionGuards[id](settings, 'missing-model')).toThrow(/unavailable/);
+  expect(() => assertCatalogModelAvailable(id, settings, undefined)).not.toThrow();
+  expect(() => assertCatalogModelAvailable(id, settings, 'missing-model')).toThrow(/unavailable/);
 });

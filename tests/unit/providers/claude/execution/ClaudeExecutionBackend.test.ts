@@ -25,7 +25,6 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import type { ClaudianSettings } from '@/core/types';
 type MutableTestHost = ProviderHost & { settings: ClaudianSettings };
-type RuntimeHostFixture = Parameters<typeof runtimeHostFor>[0];
 import * as env from '@/core/process/env';
 import type { Conversation } from '@/core/types';
 import { createClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
@@ -95,7 +94,7 @@ function createInteractionPort(): jest.Mocked<ProviderInteractionPort> {
 }
 
 function createHost(): MutableTestHost {
-  return withRuntimeHosts<RuntimeHostFixture>({
+  return withRuntimeHosts({
     app: {
       vault: {
         adapter: {
@@ -115,12 +114,12 @@ function createHost(): MutableTestHost {
     },
     storage: {} as ProviderHost['storage'],
     getResolvedProviderCliPath: jest.fn().mockResolvedValue('/bin/claude'),
-  } as unknown as RuntimeHostFixture) as unknown as MutableTestHost;
+  });
 }
 
 /** Counts the configuration transactions Claude's runtime commits through the host. */
 function countConfigWrites(host: MutableTestHost): { readonly count: number } {
-  const runtimeHost = runtimeHostFor(host as unknown as RuntimeHostFixture, 'claude');
+  const runtimeHost = runtimeHostFor(host, 'claude');
   const counter = { count: 0 };
   const counted: ProviderRuntimeHost = Object.create(runtimeHost, {
     updateConfig: {

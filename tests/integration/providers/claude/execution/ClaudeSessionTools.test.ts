@@ -4,7 +4,7 @@ import * as sdkModule from '@anthropic-ai/claude-agent-sdk';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
-import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
 import type { ProviderExecutionRequest, ProviderSessionConfig, ProviderSessionToolPort } from '@/core/execution';
 import type { SessionToolMCPServer } from '@/core/session-tools/sessionToolMCP';
@@ -30,10 +30,13 @@ function request(toolPolicy: ProviderExecutionRequest['toolPolicy'] = { kind: 'p
   };
 }
 function session(port?: ProviderSessionToolPort, lifecycle: ProviderSessionConfig['lifecycle'] = 'persistent') {
-  const host = createTestRuntimeHost({
-    providerConfigs: { claude: claudeCatalogFixture(['claude-sonnet-4-5']) },
-    model: 'claude-sonnet-4-5', permissionMode: 'manual', mediaFolder: '', systemPrompt: '', userName: '',
-  }, 'claude', { getResolvedProviderCliPath: async () => '/bin/claude' });
+  const host = runtimeHostFor({
+    settings: {
+      providerConfigs: { claude: claudeCatalogFixture(['claude-sonnet-4-5']) },
+      model: 'claude-sonnet-4-5', permissionMode: 'manual', mediaFolder: '', systemPrompt: '', userName: '',
+    },
+    getResolvedProviderCliPath: async () => '/bin/claude',
+  }, 'claude');
   return new ClaudeExecutionSession(host, {
     lifecycle, nativePersistence: 'enabled', workingDirectory: '/vault', sessionTools: port,
     interactionPort: { requestApproval: jest.fn(), askUserQuestion: jest.fn(), dismissInteraction: jest.fn() },

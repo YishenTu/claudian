@@ -1,4 +1,4 @@
-import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
+import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { probeRuntimeCommands } from '@/providers/claude/commands/probeRuntimeCommands';
@@ -10,10 +10,11 @@ function createMockPlugin(
   cliPath: string | null = '/mock/claude',
   workingDirectory: string | null = '/test/vault',
 ): ProviderRuntimeHost {
-  return createTestRuntimeHost({}, 'claude', {
+  return runtimeHostFor({
+    settings: {},
     workingDirectory,
     getResolvedProviderCliPath: jest.fn().mockResolvedValue(cliPath),
-  });
+  }, 'claude');
 }
 
 function initializeWith(initializationResult: () => Promise<{ commands?: unknown }>, skills: string[] = []) {
