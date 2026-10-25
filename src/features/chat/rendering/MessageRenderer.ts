@@ -205,7 +205,7 @@ export class MessageRenderer {
         return;
       }
       await this.plugin.ensureConversationMetadataLoaded([conversationId]);
-      if (!this.plugin.getCachedConversation(conversationId)) {
+      if (!this.plugin.getConversationSummary(conversationId)) {
         new Notice(t('chat.sessionTools.sessionMissing'));
         return;
       }

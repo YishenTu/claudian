@@ -274,14 +274,14 @@ export class ClaudeSkillSync {
       if (resolution?.action === 'apply' && resolution.replaceExisting) await this.#trashShared(input.name);
       const target = `${AGENT_SKILLS_ROOT}/${input.name}`;
       const targetFile = `${target}/${SKILL_FILENAME}`;
-      await this.files.relocateManagedPackageNoReplace(item.id, target);
+      await this.files.relocateManagedPackage(item.id, target);
       try {
         await this.files.writeManagedFile(targetFile, serializeAgentSkillMarkdown({}, input));
       } catch (error) {
         // Managed writes are atomic, so SKILL.md still holds the original content.
         // Put the package back so a re-run sees the same item.
         try {
-          await this.files.relocateManagedPackageNoReplace(target, item.id);
+          await this.files.relocateManagedPackage(target, item.id);
         } catch (rollbackError) {
           throw new Error(
             `${errorMessage(error)}; could not move the package back: ${errorMessage(rollbackError)}`,

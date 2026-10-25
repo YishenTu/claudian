@@ -661,10 +661,10 @@ export class TabManager implements TabManagerInterface {
     const { membership } = this;
     const state = this.layoutPolicy.showsPreviews() ? savedState : returnPreviewToNarrowTab(savedState);
     for (const tabState of state.openTabs) {
-      if (
-        tabState.conversationId
-        && !this.plugin.getCachedConversation(tabState.conversationId)
-      ) {
+      const conversation = tabState.conversationId
+        ? this.plugin.getConversationSummary(tabState.conversationId)
+        : null;
+      if (tabState.conversationId && !conversation) {
         continue;
       }
       if (membership.isDestroyed()) return;
@@ -678,7 +678,7 @@ export class TabManager implements TabManagerInterface {
       // A draft preview stays replaceable only where a viewer slot can replace it.
       const lifecycleState = tabState.preview && this.layoutPolicy.showsPreviews() ? 'provisional' : 'open';
       const identity = createTabIdentity(this.plugin.settings,
-        tabState.conversationId ? this.plugin.getCachedConversation(tabState.conversationId) : null,
+        conversation,
         { ...tabState, lifecycleState });
       membership.addRestored(identity);
       this.providerPresence.startForTab(identity);

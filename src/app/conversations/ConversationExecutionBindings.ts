@@ -161,11 +161,9 @@ export class ConversationExecutionBindings {
     const { fence } = this.deps;
     const conversation = fence.getRecord(conversationId);
     const binding = this.bindings.get(conversationId);
-    if (!conversation || !await fence.canWrite(conversation)
-      || fence.getRecord(conversationId) !== conversation
+    if (!conversation || !fence.canWrite(conversation)
       || !binding || binding.closed
-      || binding.bindingId !== bindingId || binding.providerGeneration !== providerGeneration
-      || this.bindings.get(conversationId) !== binding) {
+      || binding.bindingId !== bindingId || binding.providerGeneration !== providerGeneration) {
       throw new Error(`Conversation is no longer available: ${conversationId}`);
     }
   }
@@ -184,14 +182,7 @@ export class ConversationExecutionBindings {
         return false;
       }
       const current = fence.getRecord(conversationId);
-      if (!current || !await fence.canWrite(current)) {
-        return false;
-      }
-      if (
-        this.bindings.get(conversationId) !== binding
-        || !binding.latestSnapshot
-        || binding.latestSnapshot.revision <= binding.lastPersistedRevision
-      ) {
+      if (!current || !fence.canWrite(current)) {
         return false;
       }
 

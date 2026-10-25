@@ -383,8 +383,7 @@ export class ConversationModelRecovery {
     return this.fence.enqueuePersistence(conversation.id, async () => {
       if (
         this.#getSelectedModelMutationVersion(conversation) !== selectedModelMutationVersion
-        || !await this.fence.canWrite(conversation)
-        || this.#getSelectedModelMutationVersion(conversation) !== selectedModelMutationVersion
+        || !this.fence.canWrite(conversation)
         || conversation.selectedModel !== previousSelectedModel
       ) {
         return false;

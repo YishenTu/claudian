@@ -3,7 +3,6 @@ import * as path from 'node:path';
 
 import {
   ManagedResourceCollisionError,
-  ManagedResourceRelocationError,
   type VaultFileAdapter,
 } from '@/core/storage/VaultFileAdapter';
 import type {
@@ -259,15 +258,9 @@ export class AgentSkillRepository {
     const oldDirectory = this.#packagePath(previousName);
     const newDirectory = this.#packagePath(name);
     try {
-      await this.files.relocateManagedPackageNoReplace(oldDirectory, newDirectory);
+      await this.files.relocateManagedPackage(oldDirectory, newDirectory);
     } catch (error) {
-      const collision = error instanceof ManagedResourceCollisionError
-        || (
-          error instanceof ManagedResourceRelocationError
-          && error.cause instanceof ManagedResourceCollisionError
-          && error.rollbackErrors.length === 0
-        );
-      if (collision) {
+      if (error instanceof ManagedResourceCollisionError) {
         throw new AgentSkillCollisionError(name, { cause: error });
       }
       throw error;
@@ -277,7 +270,7 @@ export class AgentSkillRepository {
       await this.files.writeManagedFile(this.#skillFilePath(name), content);
     } catch (error) {
       try {
-        await this.files.relocateManagedPackageNoReplace(newDirectory, oldDirectory);
+        await this.files.relocateManagedPackage(newDirectory, oldDirectory);
       } catch (rollbackError) {
         throw new AgentSkillRollbackError(
           `Could not rename skill "${previousName}" and rollback was incomplete`,

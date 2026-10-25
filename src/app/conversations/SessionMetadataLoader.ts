@@ -272,7 +272,7 @@ export class SessionMetadataLoader {
   private async loadConversations(conversationIds: readonly string[]): Promise<void> {
     const { conversations, runtimeSettings } = this.options;
     const missingIds = Array.from(new Set(conversationIds)).filter(
-      id => !conversations.getCachedConversation(id),
+      id => !conversations.getSummary(id),
     );
     if (missingIds.length === 0) return;
 

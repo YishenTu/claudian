@@ -16,11 +16,12 @@ it.each(['live', 'history'])('shows the sender safely in %s and keeps the envelo
   document.body.replaceChildren();
   const host = document.body.createDiv();
   const records = new Map([['source-session', { id: 'source-session', providerId: 'claude' } as Conversation]]);
+  const getCachedConversation = jest.fn((id: string) => records.get(id) ?? null);
   const openConversation = jest.fn(async (_id: string) => undefined);
   const renderer = new MessageRenderer({
     app: {}, settings: { mediaFolder: '' },
     ensureConversationMetadataLoaded: async () => undefined,
-    getCachedConversation: (id: string) => records.get(id) ?? null,
+    getCachedConversation,
     getConversationSummary: (id: string) => records.get(id) ?? null,
   } as any, new Component(), host, undefined, undefined, undefined, undefined, openConversation);
   jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
@@ -68,6 +69,7 @@ it.each(['live', 'history'])('shows the sender safely in %s and keeps the envelo
     fireEvent.click(stale);
     await waitFor(() => expect(Notice).toHaveBeenCalledWith('That session no longer exists.'));
     expect(openConversation).toHaveBeenCalledTimes(1);
+    expect(getCachedConversation).not.toHaveBeenCalled();
   } finally {
     renderer.dispose();
   }

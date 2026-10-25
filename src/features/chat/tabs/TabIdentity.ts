@@ -39,7 +39,7 @@ export function generateTabId(): TabId {
 /** Selects an identity without constructing a tab's UI, controllers, or provider resources. */
 export function createTabIdentity(
   settings: ClaudianSettings,
-  conversation: Conversation | null | undefined,
+  conversation: Pick<Conversation, 'id' | 'providerId'> | null | undefined,
   options: {
     tabId: string;
     draftModel?: string | null;

@@ -726,15 +726,15 @@ describe('ConversationRepository hydration', () => {
     expect(persistence.saveMetadata).not.toHaveBeenCalled();
   });
 
-  it('repairs leaked Linked content mutations at read and persistence boundaries', async () => {
+  it('isolates Linked content from input and snapshot mutations', async () => {
     const conversation: Conversation = {
       ...createConversation(),
       linkedContentPath: 'Projects/Authoritative',
     };
     const { repository, persistence } = createRepository(conversation);
-    const leaked = repository.getSync(conversation.id)! as { linkedContentPath?: string };
+    const snapshot = repository.getSync(conversation.id)! as { linkedContentPath?: string };
 
-    leaked.linkedContentPath = 'Projects/Leaked';
+    snapshot.linkedContentPath = 'Projects/Leaked';
     await repository.persistConversations(repository.getAll());
 
     expect(repository.getSync(conversation.id)!.linkedContentPath).toBe('Projects/Authoritative');
@@ -744,14 +744,14 @@ describe('ConversationRepository hydration', () => {
       }),
     );
 
-    leaked.linkedContentPath = undefined;
+    snapshot.linkedContentPath = undefined;
     expect(repository.list().find(({ id }) => id === conversation.id)).toMatchObject({
       linkedContentPath: 'Projects/Authoritative',
     });
     expect(repository.getSync(conversation.id)!.linkedContentPath).toBe('Projects/Authoritative');
   });
 
-  it('repairs a leaked Linked content mutation before a queued save serializes', async () => {
+  it('isolates a queued save from Linked content input mutations', async () => {
     const conversation: Conversation = {
       ...createConversation(),
       linkedContentPath: 'Projects/Authoritative',

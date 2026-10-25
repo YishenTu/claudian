@@ -41,7 +41,7 @@ describe('AgentSkillRepository', () => {
   });
 
   function useMemoryRelocation(): void {
-    jest.spyOn(vaultFiles, 'relocateManagedPackageNoReplace')
+    jest.spyOn(vaultFiles, 'relocateManagedPackage')
       .mockImplementation(async (source, target) => {
         if (await dataAdapter.exists(target)) {
           throw new ManagedResourceCollisionError(target);

@@ -43,16 +43,6 @@ export class ManagedResourceCollisionError extends Error {
   }
 }
 
-export class ManagedResourceRelocationError extends Error {
-  readonly rollbackErrors: readonly Error[];
-
-  constructor(source: string, target: string, cause: unknown, rollbackErrors: Error[]) {
-    super(`Failed to relocate managed package from ${source} to ${target}`, { cause });
-    this.name = 'ManagedResourceRelocationError';
-    this.rollbackErrors = rollbackErrors;
-  }
-}
-
 interface DesktopDataAdapter extends DataAdapter {
   getBasePath(): string;
 }
@@ -80,21 +70,6 @@ function isCollision(error: unknown): boolean {
   return ['EEXIST', 'EISDIR', 'ENOTEMPTY', 'ERR_FS_CP_EEXIST'].includes(
     String(error.code),
   );
-}
-
-function findFullyRolledBackCollision(error: unknown): ManagedResourceCollisionError | null {
-  if (error instanceof ManagedResourceCollisionError) return error;
-  if (
-    error instanceof ManagedResourceRelocationError
-    && error.rollbackErrors.length === 0
-  ) {
-    return findFullyRolledBackCollision(error.cause);
-  }
-  return null;
-}
-
-function toError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error));
 }
 
 export class VaultFileAdapter {
@@ -327,6 +302,7 @@ export class VaultFileAdapter {
 
   async ensureManagedFolder(folderPath: string): Promise<void> {
     const normalized = normalizeManagedPath(folderPath);
+    if (await this.verifyManagedPath(normalized, { expectedType: 'folder', allowMissing: true })) return;
     const segments = normalized.split('/');
     let current = '';
     for (const segment of segments) {
@@ -554,157 +530,44 @@ export class VaultFileAdapter {
     }
   }
 
-  async relocateManagedPackageNoReplace(sourcePath: string, targetPath: string): Promise<void> {
+  /**
+   * Renames the complete package after rejecting existing targets. A directory created
+   * after the check may be replaced if it is still empty when the filesystem renames.
+   */
+  async relocateManagedPackage(sourcePath: string, targetPath: string): Promise<void> {
     const source = normalizeManagedPath(sourcePath);
     const target = normalizeManagedPath(targetPath);
     await this.verifyManagedPath(source, { expectedType: 'folder' });
-    const moved: Array<{ source: string; target: string }> = [];
-    let targetClaimed = false;
-
-    try {
-      await this.createManagedFolderExclusive(target);
-      targetClaimed = true;
-      const listing = await this.listManagedFolder(source);
-      const entries = [...listing.folders, ...listing.files]
-        .sort((left, right) => {
-          const leftSkill = path.posix.basename(left) === 'SKILL.md';
-          const rightSkill = path.posix.basename(right) === 'SKILL.md';
-          if (leftSkill !== rightSkill) return leftSkill ? 1 : -1;
-          return left.localeCompare(right);
-        });
-
-      for (const entry of entries) {
-        if (path.posix.dirname(entry) !== source) {
-          throw new ManagedResourcePathError(`Package listing escaped its directory: ${source}`);
-        }
-        const destination = `${target}/${path.posix.basename(entry)}`;
-        if (await this.adapter.exists(destination)) {
-          throw new ManagedResourceCollisionError(destination);
-        }
-        await this.moveManagedEntryNoReplace(entry, destination);
-        moved.push({ source: entry, target: destination });
-      }
-      await this.#removeEmptyFolder(source);
-    } catch (error) {
-      const rollbackErrors: Error[] = [];
-      for (const entry of [...moved].reverse()) {
-        try {
-          if (await this.adapter.exists(entry.target)) {
-            await this.moveManagedEntryNoReplace(entry.target, entry.source);
-          }
-        } catch (rollbackError) {
-          rollbackErrors.push(toError(rollbackError));
-        }
-      }
-      if (targetClaimed) {
-        try {
-          await this.#removeEmptyFolder(target);
-        } catch (rollbackError) {
-          rollbackErrors.push(toError(rollbackError));
-        }
-      }
-      const collision = rollbackErrors.length === 0
-        ? findFullyRolledBackCollision(error)
-        : null;
-      if (collision) {
-        throw collision;
-      }
-      throw new ManagedResourceRelocationError(source, target, error, rollbackErrors);
+    const parent = path.posix.dirname(target);
+    if (parent !== '.') await this.verifyManagedPath(parent, { expectedType: 'folder' });
+    if (await this.#verifyManagedCollisionTarget(target)) {
+      throw new ManagedResourceCollisionError(target);
     }
-  }
-
-  private async moveManagedEntryNoReplace(sourcePath: string, targetPath: string): Promise<void> {
-    const source = normalizeManagedPath(sourcePath);
-    const target = normalizeManagedPath(targetPath);
-    const desktopAdapter = this.#getDesktopAdapter();
-    if (!desktopAdapter) {
-      throw new ManagedResourcePathError(
-        'Exclusive managed relocation requires a filesystem-backed vault adapter',
+    const basePath = this.#requireDesktopBasePath();
+    try {
+      await fs.rename(
+        this.#resolveManagedDesktopPath(basePath, source),
+        this.#resolveManagedDesktopPath(basePath, target),
       );
-    }
-
-    const basePath = path.resolve(desktopAdapter.getBasePath());
-    const sourceAbsolute = this.#resolveManagedDesktopPath(basePath, source);
-    const targetAbsolute = this.#resolveManagedDesktopPath(basePath, target);
-    let stat: Awaited<ReturnType<typeof fs.lstat>>;
-    try {
-      stat = await fs.lstat(sourceAbsolute);
     } catch (error) {
-      throw new ManagedResourcePathError(`Could not inspect managed resource: ${source}`, {
+      if (isCollision(error)) throw new ManagedResourceCollisionError(target, { cause: error });
+      throw new ManagedResourcePathError(`Could not relocate managed package from ${source} to ${target}`, {
         cause: error,
       });
     }
-    if (stat.isSymbolicLink()) {
-      throw new ManagedResourcePathError(`Managed resource must not be a symlink: ${source}`);
-    }
-
-    try {
-      if (stat.isFile()) {
-        await fs.link(sourceAbsolute, targetAbsolute);
-        await fs.unlink(sourceAbsolute);
-        return;
-      }
-      if (!stat.isDirectory()) {
-        throw new ManagedResourcePathError(
-          `Managed resource must be a regular file or folder: ${source}`,
-        );
-      }
-      await this.#moveManagedDirectoryNoReplace(
-        source,
-        target,
-        sourceAbsolute,
-        targetAbsolute,
-      );
-    } catch (error) {
-      if (isCollision(error)) {
-        throw new ManagedResourceCollisionError(target, { cause: error });
-      }
-      throw error;
-    }
   }
 
-  async #moveManagedDirectoryNoReplace(
-    source: string,
-    target: string,
-    sourceAbsolute: string,
-    targetAbsolute: string,
-  ): Promise<void> {
+  private async moveManagedEntryNoReplace(source: string, target: string): Promise<void> {
+    const basePath = this.#requireDesktopBasePath();
+    const sourceAbsolute = this.#resolveManagedDesktopPath(basePath, source);
+    const targetAbsolute = this.#resolveManagedDesktopPath(basePath, target);
     try {
-      await fs.mkdir(targetAbsolute);
+      await fs.link(sourceAbsolute, targetAbsolute);
+      await fs.unlink(sourceAbsolute);
     } catch (error) {
-      if (isCollision(error)) {
-        throw new ManagedResourceCollisionError(target, { cause: error });
-      }
+      if (isCollision(error)) throw new ManagedResourceCollisionError(target, { cause: error });
       throw error;
     }
-
-    const moved: Array<{ source: string; target: string }> = [];
-    try {
-      const entries = await fs.readdir(sourceAbsolute);
-      for (const name of entries.sort((left, right) => left.localeCompare(right))) {
-        const childSource = `${source}/${name}`;
-        const childTarget = `${target}/${name}`;
-        await this.moveManagedEntryNoReplace(childSource, childTarget);
-        moved.push({ source: childSource, target: childTarget });
-      }
-      await fs.rmdir(sourceAbsolute);
-    } catch (error) {
-      const rollbackErrors: Error[] = [];
-      for (const entry of [...moved].reverse()) {
-        try {
-          await this.moveManagedEntryNoReplace(entry.target, entry.source);
-        } catch (rollbackError) {
-          rollbackErrors.push(toError(rollbackError));
-        }
-      }
-      try {
-        await fs.rmdir(targetAbsolute);
-      } catch (rollbackError) {
-        rollbackErrors.push(toError(rollbackError));
-      }
-      throw new ManagedResourceRelocationError(source, target, error, rollbackErrors);
-    }
-
   }
 
   #resolveManagedDesktopPath(basePath: string, resourcePath: string): string {

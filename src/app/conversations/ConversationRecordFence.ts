@@ -31,7 +31,7 @@ export interface ConversationRecordFence {
   isCurrent(conversation: Conversation, generation: number): boolean;
   /** The record is live or retained for deletion rollback. */
   isRetained(conversation: Conversation): boolean;
-  canWrite(conversation: Conversation): Promise<boolean>;
+  canWrite(conversation: Conversation): boolean;
   /** No live, deleting, or deleted record owns this id. */
   canAdopt(id: string): boolean;
   isHydrated(id: string): boolean;

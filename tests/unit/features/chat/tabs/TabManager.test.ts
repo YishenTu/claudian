@@ -1389,9 +1389,10 @@ describe('TabManager provider execution orchestration', () => {
       id,
       providerId: 'claude',
     }));
+    const getConversationSummary = jest.fn((id: string) => ({ id, providerId: 'claude' }));
     const onActiveTabChanged = jest.fn();
     const { manager } = createManager(
-      createPlugin({ getCachedConversation }),
+      createPlugin({ getCachedConversation, getConversationSummary }),
       { onActiveTabChanged },
     );
 
@@ -1410,6 +1411,8 @@ describe('TabManager provider execution orchestration', () => {
       { id: 'restored-1', lifecycleState: 'open' },
       { id: 'restored-2', lifecycleState: 'open' },
     ]);
+    expect(getCachedConversation).not.toHaveBeenCalled();
+    expect(getConversationSummary).toHaveBeenCalledWith('conversation-1');
     expect(mockCreateTabRuntime).toHaveBeenCalledTimes(1);
     expect(manager.getTab('restored-1')).toBeNull();
     expect(manager.getTabCount()).toBe(2);
