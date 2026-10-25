@@ -146,26 +146,37 @@ describe('SettingsCoordinator', () => {
     expect(persisted).toEqual([1, 2]);
   });
 
-  it('keeps conditional mutations serialized and persists only when requested', async () => {
-    const settings: Record<string, unknown> = { transient: 0, persisted: 0 };
+  it('discards rejected conditional drafts and commits accepted ones', async () => {
+    const settings: Record<string, unknown> = { rejected: 0, accepted: 0 };
     const persisted: Array<Record<string, unknown>> = [];
-    const coordinator = new SettingsCoordinator(settings, async current => {
-      persisted.push({ ...current });
-    });
+    const published: Array<Record<string, unknown>> = [];
+    const commit = jest.fn();
+    const coordinator = new SettingsCoordinator(
+      settings,
+      async current => { persisted.push({ ...current }); },
+      current => { published.push({ ...current }); },
+    );
 
-    await coordinator.mutateConditionally(current => {
-      current.transient = 1;
-      expect(coordinator.getCommittedSettings()).toEqual({ transient: 0, persisted: 0 });
+    await expect(coordinator.mutateConditionally(current => {
+      current.rejected = 1;
       return false;
-    });
-    expect(coordinator.getCommittedSettings()).toEqual({ transient: 1, persisted: 0 });
-    await coordinator.mutateConditionally(current => {
-      current.persisted = 2;
-      return true;
-    });
+    }, commit)).resolves.toBeUndefined();
 
-    expect(settings).toEqual({ transient: 1, persisted: 2 });
-    expect(persisted).toEqual([{ transient: 1, persisted: 2 }]);
+    expect(coordinator.getCommittedSettings()).toEqual({ rejected: 0, accepted: 0 });
+    expect(persisted).toEqual([]);
+    expect(published).toEqual([]);
+    expect(commit).not.toHaveBeenCalled();
+
+    await coordinator.mutateConditionally(current => {
+      expect(current.rejected).toBe(0);
+      current.accepted = 2;
+      return true;
+    }, commit);
+
+    expect(settings).toEqual({ rejected: 0, accepted: 2 });
+    expect(persisted).toEqual([{ rejected: 0, accepted: 2 }]);
+    expect(published).toEqual([{ rejected: 0, accepted: 2 }]);
+    expect(commit).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -139,6 +139,7 @@ button.claudian-ask-tab--submit.is-ready {
   padding: 6px 8px;
   border-radius: 6px;
   line-height: 20px;
+  white-space: normal;
   cursor: pointer;
   color: var(--text-normal);
 }
