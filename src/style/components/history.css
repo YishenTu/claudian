@@ -518,6 +518,11 @@
   opacity: 1;
 }
 
+/* A collapsed group's status indicator holds the far end; its row's actions reveal to its left. */
+:is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-header > :is(.claudian-session-group-running-indicator, .claudian-session-group-status-indicator) {
+  order: 1;
+}
+
 :is(.claudian-session-sidebar, .claudian-history-menu) .claudian-session-group-header :is(.claudian-session-group-menu-action, .claudian-session-group-new-action):is(:hover, :focus-visible) {
   color: var(--text-normal);
 }
