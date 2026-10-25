@@ -401,7 +401,7 @@ export class TabManager implements TabManagerInterface {
     } catch (error) {
       errors.push(error);
     }
-    errors.push(...this.commandDiscovery.releaseTab(tabId));
+    this.commandDiscovery.releaseTab(tabId);
     return errors;
   }
 
@@ -410,15 +410,14 @@ export class TabManager implements TabManagerInterface {
     previousActiveTabId: TabId | null,
   ): Promise<unknown[]> {
     const { membership } = this;
-    const rollbackErrors: unknown[] = [];
     if (membership.getTab(tab.id) !== tab) {
-      rollbackErrors.push(...this.commandDiscovery.releaseTab(tab.id));
-      return rollbackErrors;
+      this.commandDiscovery.releaseTab(tab.id);
+      return [];
     }
 
     membership.beginClose(tab.id);
-    rollbackErrors.push(...this.commandDiscovery.releaseTab(tab.id));
-    rollbackErrors.push(...this.activation.rollbackAdmission(tab, previousActiveTabId));
+    this.commandDiscovery.releaseTab(tab.id);
+    const rollbackErrors = this.activation.rollbackAdmission(tab, previousActiveTabId);
 
     membership.remove(tab.id);
     try {
@@ -744,7 +743,7 @@ export class TabManager implements TabManagerInterface {
       lifecycleState: 'open',
       ...(tab.label ? { label: tab.label } : {}),
     });
-    throwCollectedErrors(this.commandDiscovery.releaseTab(tab.id), `Failed to release tab ${tab.id} metadata`);
+    this.commandDiscovery.releaseTab(tab.id);
     await destroyTab(tab);
   }
 
@@ -905,19 +904,11 @@ export class TabManager implements TabManagerInterface {
     throwCollectedErrors(drainErrors, 'Failed to drain every tab for shutdown persistence');
   }
 
-  /** Joins admitted closes, navigation, and tab switches; returns their failures. */
+  /** Joins admitted closes, navigation, and tab switches; returns close failures. */
   async #joinAdmittedWork(): Promise<unknown[]> {
     const errors = await this.closePolicy.drain();
-    try {
-      await this.navigation.invalidateAndDrain();
-    } catch (error) {
-      errors.push(error);
-    }
-    try {
-      await this.waitForTabSwitchIdle();
-    } catch (error) {
-      errors.push(error);
-    }
+    await this.navigation.invalidateAndDrain();
+    await this.waitForTabSwitchIdle();
     return errors;
   }
 
@@ -952,7 +943,7 @@ export class TabManager implements TabManagerInterface {
       destroyErrors.push(error);
     }
     // Destroyed tabs cannot recreate discovery metadata, so it is released once, before teardown.
-    destroyErrors.push(...this.commandDiscovery.releaseAll());
+    this.commandDiscovery.releaseAll();
 
     // Each tab drains background work and persists its final state during teardown.
     const teardownResults = await Promise.allSettled(this.getAllTabs().map(tab => destroyTab(tab)));

@@ -31,7 +31,6 @@ export class DeepSeekOutput {
   private readonly attempts = new Map<string, Attempt>();
   /** Attempts by the seq of their durable settlement, so late records reach a superseded attempt. */
   private readonly committed = new Map<number, Attempt>();
-  private readonly records = new Set<number>();
   private readonly calls = new Map<string, DeepSeekToolCall>();
   private readonly completedTools = new Set<string>();
   private readonly scriptCalls = new Map<string, Map<string, ScriptToolCallItem>>();
@@ -84,8 +83,6 @@ export class DeepSeekOutput {
     if (!isRecord(value) || typeof value.seq !== 'number' || typeof value.type !== 'string' || !isRecord(value.data)) {
       throw new Error('Malformed DeepSeek durable event.');
     }
-    if (this.records.has(value.seq)) return;
-    this.records.add(value.seq);
     if (value.surfaceOp !== undefined && value.surfaceOp !== 'append') return;
     const data = value.data;
     if (value.type === 'request/context') {

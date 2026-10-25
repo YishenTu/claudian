@@ -8,9 +8,9 @@ jest.mock('@/core/device/InstallationKey', () => ({
   getInstallationKey: () => 'device:current',
 }));
 
-const reconcile = (settings: Record<string, unknown>) => deepseekSettingsReconciler.reconcileModelWithEnvironment(settings, []);
-const unchanged = { changed: false, invalidatedConversations: [] };
-const changed = { changed: true, invalidatedConversations: [], sessionPolicy: 'reload' };
+const reconcile = (settings: Record<string, unknown>) => deepseekSettingsReconciler.reconcileModelWithEnvironment(settings);
+const unchanged = { changed: false };
+const changed = { changed: true, sessionPolicy: 'reload' };
 
 describe('DeepSeekSettingsReconciler', () => {
   it('leaves pristine defaults untouched during startup reconciliation', () => {
@@ -72,7 +72,7 @@ describe('DeepSeekSettingsReconciler', () => {
     };
 
     expect(deepseekSettingsReconciler.invalidateConversationSessions([conversation])).toEqual([]);
-    expect(deepseekSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation])).toEqual(changed);
+    expect(deepseekSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual(changed);
     expect(conversation).toEqual(expect.objectContaining({
       sessionId: 'session-1',
       providerState: { schemaVersion: 1, home: '/home', profile: 'web', preset: 'claudian' },

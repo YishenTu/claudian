@@ -11,10 +11,6 @@ export interface TabRuntimeResourceOwner {
 }
 
 const tabDestructionPromises = new WeakMap<AssembledTabRuntime, Promise<void>>();
-const tabShutdownDrainPromises = new WeakMap<
-  AssembledTabRuntime,
-  Promise<TabShutdownDrainResult>
->();
 const tabRuntimeResourceOwners = new WeakMap<
   AssembledTabRuntime,
   TabRuntimeResourceOwner
@@ -83,17 +79,6 @@ async function captureTeardownFailure(
 }
 
 export async function drainTabForShutdownSnapshot(
-  tab: AssembledTabRuntime,
-): Promise<TabShutdownDrainResult> {
-  const existingDrain = tabShutdownDrainPromises.get(tab);
-  if (existingDrain) return existingDrain;
-
-  const drain = drainTabForShutdownSnapshotOnce(tab);
-  tabShutdownDrainPromises.set(tab, drain);
-  return drain;
-}
-
-async function drainTabForShutdownSnapshotOnce(
   tab: AssembledTabRuntime,
 ): Promise<TabShutdownDrainResult> {
   const cleanupFailures: TabRuntimeCleanupFailure[] = [];

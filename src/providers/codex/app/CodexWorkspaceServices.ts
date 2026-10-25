@@ -40,7 +40,7 @@ export interface CodexWorkspaceServicesOptions {
 /**
  * Commits a Codex catalog update in one settings transaction with the application's
  * model-selection normalization, which may change any provider's selections. A
- * rejected update leaves the transaction draft untouched, so nothing is written.
+ * rejected update discards the transaction draft, so nothing is written.
  */
 export function createCodexModelCatalogCommit(
   plugin: Pick<ProviderHost, 'mutateSettingsConditionally'>,
@@ -49,7 +49,7 @@ export function createCodexModelCatalogCommit(
     let outcome: { selectionChanged: boolean } | null = null;
     await plugin.mutateSettingsConditionally(async (draft) => {
       const settings = draft as unknown as Record<string, unknown>;
-      const config = structuredClone(getProviderConfig(settings, 'codex'));
+      const config = getProviderConfig(settings, 'codex');
       const configChanged = await update(config);
       if (configChanged === null) return false;
       if (configChanged) setProviderConfig(settings, 'codex', config);

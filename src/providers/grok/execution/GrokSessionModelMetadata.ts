@@ -64,13 +64,6 @@ export function normalizeGrokSetModelMetadata(
   }])[0] ?? null;
 }
 
-export function normalizeGrokModelUpdateMetadata(
-  value: unknown,
-): NormalizedGrokSessionModels | null {
-  const state = parseGrokModelUpdateState(value);
-  return state ? normalizeGrokSessionModelMetadata({ models: state }) : null;
-}
-
 export function parseGrokModelUpdateState(
   value: unknown,
 ): ACPSessionModelState | null {

@@ -28,7 +28,7 @@ export async function invokeCodexSessionTool(
 export function createCodexSessionTools(port: ProviderSessionToolPort): CodexDynamicToolRegistration[] {
   return SESSION_TOOL_SPECS.map(spec => ({
     includeInThreadStart: true,
-    namespace: { name: CODEX_SESSION_TOOL_NAMESPACE, description: 'Message other Claudian sessions.' },
+    namespace: CODEX_SESSION_TOOL_NAMESPACE,
     tool: { type: 'function', ...spec },
     handler: (params, context) => invokeCodexSessionTool(params, { ...context, port }),
   }));

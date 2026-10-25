@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 declare const installationKeyBrand: unique symbol;
 
@@ -12,16 +12,9 @@ export function isInstallationKey(value: unknown): value is InstallationKey {
   return typeof value === 'string' && INSTALLATION_KEY_PATTERN.test(value);
 }
 
-export function parseInstallationKey(value: unknown): InstallationKey {
-  if (!isInstallationKey(value)) {
-    throw new TypeError('A valid installation key is required');
-  }
-  return value;
-}
-
 const DEVICE_SETTINGS_STORAGE_KEY = 'claudian.deviceSettingsKey';
 let cachedDeviceSettingsSeed: string | null = null;
-let cachedDeviceSettingsKey: string | null = null;
+let cachedDeviceSettingsKey: InstallationKey | null = null;
 
 function getDeviceSettingsStorage(): Storage | null {
   try {
@@ -29,24 +22,6 @@ function getDeviceSettingsStorage(): Storage | null {
   } catch {
     return null;
   }
-}
-
-function createOpaqueDeviceSettingsSeed(): string {
-  const cryptoApi = typeof window === 'undefined' ? null : window.crypto;
-  const randomUUID = cryptoApi?.randomUUID?.();
-  if (randomUUID) {
-    return randomUUID;
-  }
-
-  if (cryptoApi?.getRandomValues) {
-    const randomBytes = new Uint8Array(16);
-    cryptoApi.getRandomValues(randomBytes);
-    const entropy = Array.from(randomBytes, byte => byte.toString(16).padStart(2, '0')).join('');
-    return `${Date.now().toString(36)}-${entropy}`;
-  }
-
-  const entropy = Math.random().toString(36).slice(2);
-  return `${Date.now().toString(36)}-${entropy}`;
 }
 
 function getDeviceSettingsSeed(): string {
@@ -70,7 +45,7 @@ function getDeviceSettingsSeed(): string {
     return cachedDeviceSettingsSeed;
   }
 
-  const candidate = createOpaqueDeviceSettingsSeed();
+  const candidate = randomUUID();
   try {
     storage.setItem(DEVICE_SETTINGS_STORAGE_KEY, candidate);
     if (storage.getItem(DEVICE_SETTINGS_STORAGE_KEY)?.trim() !== candidate) {
@@ -86,14 +61,14 @@ function getDeviceSettingsSeed(): string {
 
 export function getInstallationKey(): InstallationKey {
   if (cachedDeviceSettingsKey) {
-    return parseInstallationKey(cachedDeviceSettingsKey);
+    return cachedDeviceSettingsKey;
   }
 
   const digest = createHash('sha256')
     .update(getDeviceSettingsSeed(), 'utf8')
     .digest('hex');
-  cachedDeviceSettingsKey = `device-${digest}`;
-  return parseInstallationKey(cachedDeviceSettingsKey);
+  cachedDeviceSettingsKey = `device-${digest}` as InstallationKey;
+  return cachedDeviceSettingsKey;
 }
 
 export function getLegacyDeviceSettingsKey(): string | null {

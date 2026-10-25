@@ -11,36 +11,26 @@ import type {
 import type { AuxiliaryExecutionContext } from './AuxiliaryExecutionContext';
 import { AuxiliarySessionController } from './AuxiliarySessionController';
 
-interface ActiveGeneration {
-  readonly controller: AuxiliarySessionController;
-}
-
 export interface TitleGenerationServiceOptions
 extends AuxiliaryExecutionContext {
   readonly resolveLocale?: () => string | undefined;
   readonly resolveModel?: () => string | undefined;
 }
 
+/** One request's execution; the routed service owns concurrent requests and replacement. */
 export class TitleGenerationService implements TitleGenerationServiceContract {
-  private readonly activeGenerations = new Map<string, ActiveGeneration>();
+  private readonly controller: AuxiliarySessionController;
 
-  constructor(private readonly options: TitleGenerationServiceOptions) {}
+  constructor(private readonly options: TitleGenerationServiceOptions) {
+    this.controller = new AuxiliarySessionController(options, 'title', { kind: 'passive' });
+  }
 
   async generateTitle(
     conversationId: string,
     userMessage: string,
     callback: TitleGenerationCallback,
   ): Promise<void> {
-    const previous = this.activeGenerations.get(conversationId);
-    previous?.controller.cancel();
-
-    const controller = new AuxiliarySessionController(
-      this.options,
-      'title',
-      { kind: 'passive' },
-    );
-    const generation = { controller };
-    this.activeGenerations.set(conversationId, generation);
+    const { controller } = this;
 
     try {
       await controller.startRoot();
@@ -67,17 +57,11 @@ export class TitleGenerationService implements TitleGenerationServiceContract {
       });
     } finally {
       await controller.dispose();
-      if (this.activeGenerations.get(conversationId) === generation) {
-        this.activeGenerations.delete(conversationId);
-      }
     }
   }
 
   cancel(): void {
-    for (const active of this.activeGenerations.values()) {
-      active.controller.cancel();
-    }
-    this.activeGenerations.clear();
+    this.controller.cancel();
   }
 
   async #safeCallback(

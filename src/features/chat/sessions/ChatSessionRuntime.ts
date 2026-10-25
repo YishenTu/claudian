@@ -128,7 +128,6 @@ export class ChatSessionRuntime {
   /** The single owner of this session's foreground turn activity. */
   readonly turns = new TurnCoordinator(() => this.admitsConversationOperations);
   private backgroundWork: Promise<void> = Promise.resolve();
-  private coordinatorDisposal: Promise<void> | null = null;
   private identityRevisionValue = 0;
 
   constructor(
@@ -262,13 +261,6 @@ export class ChatSessionRuntime {
     }
   }
 
-  private async disposeExecutionCoordinator(): Promise<void> {
-    if (!this.coordinatorDisposal) {
-      this.coordinatorDisposal = Promise.resolve().then(() => this.coordinator.dispose());
-    }
-    await this.coordinatorDisposal;
-  }
-
   enqueueBackgroundWork(work: () => Promise<void>, independent = false): Promise<void> | null {
     if (this.isDisposed) return null;
 
@@ -310,7 +302,7 @@ export class ChatSessionRuntime {
       results.push(await model.conversationController.save(false)
         .then(value => ({ status: 'fulfilled' as const, value }), (reason: unknown) => ({ status: 'rejected' as const, reason })));
     }
-    results.push(await this.disposeExecutionCoordinator()
+    results.push(await this.coordinator.dispose()
       .then(value => ({ status: 'fulfilled' as const, value }), (reason: unknown) => ({ status: 'rejected' as const, reason })));
     model?.dispose();
     this.currentModel = null;

@@ -5,26 +5,11 @@ import * as path from 'path';
 
 import type { ChatRewindMode, ChatRewindResult } from '../../../core/execution';
 
-interface BackupEntryFile {
+interface BackupEntry {
   originalPath: string;
-  existedBefore: true;
-  kind: 'file' | 'dir';
-  backupPath: string;
+  /** Absent when the path did not exist before the rewind. */
+  backupPath?: string;
 }
-
-interface BackupEntrySymlink {
-  originalPath: string;
-  existedBefore: true;
-  kind: 'symlink';
-  symlinkTarget: string;
-}
-
-interface BackupEntryMissing {
-  originalPath: string;
-  existedBefore: false;
-}
-
-type BackupEntry = BackupEntryFile | BackupEntrySymlink | BackupEntryMissing;
 
 export interface ClaudeRewindBackup {
   restore: () => Promise<void>;
@@ -49,30 +34,6 @@ function resolveRewindFilePath(filePath: string, vaultPath: string | null): stri
   return filePath;
 }
 
-async function copyDir(from: string, to: string): Promise<void> {
-  await fs.mkdir(to, { recursive: true });
-  const dirents = await fs.readdir(from, { withFileTypes: true });
-  for (const dirent of dirents) {
-    const srcPath = path.join(from, dirent.name);
-    const destPath = path.join(to, dirent.name);
-
-    if (dirent.isDirectory()) {
-      await copyDir(srcPath, destPath);
-      continue;
-    }
-
-    if (dirent.isSymbolicLink()) {
-      const target = await fs.readlink(srcPath);
-      await fs.symlink(target, destPath);
-      continue;
-    }
-
-    if (dirent.isFile()) {
-      await fs.copyFile(srcPath, destPath);
-    }
-  }
-}
-
 /**
  * SDK file checkpointing performs the rewind, but a rewind that throws or declines
  * after partial writes leaves no SDK-side undo; this snapshot restores the pre-rewind state.
@@ -91,34 +52,15 @@ export async function createClaudeRewindBackup(
 
   for (let i = 0; i < filesChanged.length; i++) {
     const originalPath = resolveRewindFilePath(filesChanged[i], vaultPath);
-
+    const backupPath = backupPathForIndex(i);
     try {
-      const stats = await fs.lstat(originalPath);
-
-      if (stats.isSymbolicLink()) {
-        const target = await fs.readlink(originalPath);
-        entries.push({ originalPath, existedBefore: true, kind: 'symlink', symlinkTarget: target });
-        continue;
-      }
-
-      const backupPath = backupPathForIndex(i);
-      if (stats.isDirectory()) {
-        await copyDir(originalPath, backupPath);
-        entries.push({ originalPath, existedBefore: true, kind: 'dir', backupPath });
-        continue;
-      }
-
-      if (stats.isFile()) {
-        await fs.copyFile(originalPath, backupPath);
-        entries.push({ originalPath, existedBefore: true, kind: 'file', backupPath });
-        continue;
-      }
-
-      entries.push({ originalPath, existedBefore: false });
+      // The SDK reports tracked regular files; copying follows links so restore writes back through them.
+      await fs.copyFile(originalPath, backupPath);
+      entries.push({ originalPath, backupPath });
     } catch (error) {
-      const err = error as NodeJS.ErrnoException;
-      if (err.code === 'ENOENT') {
-        entries.push({ originalPath, existedBefore: false });
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        // A dangling link cannot be copied; leave it alone instead of deleting it on restore.
+        if (!(await fs.lstat(originalPath).then(() => true, () => false))) entries.push({ originalPath });
         continue;
       }
 
@@ -132,24 +74,12 @@ export async function createClaudeRewindBackup(
 
     for (const entry of entries) {
       try {
-        if (!entry.existedBefore) {
-          await fs.rm(entry.originalPath, { recursive: true, force: true });
+        if (!entry.backupPath) {
+          await fs.rm(entry.originalPath, { force: true });
           continue;
         }
 
-        await fs.rm(entry.originalPath, { recursive: true, force: true });
         await fs.mkdir(path.dirname(entry.originalPath), { recursive: true });
-
-        if (entry.kind === 'symlink') {
-          await fs.symlink(entry.symlinkTarget, entry.originalPath);
-          continue;
-        }
-
-        if (entry.kind === 'dir') {
-          await copyDir(entry.backupPath, entry.originalPath);
-          continue;
-        }
-
         await fs.copyFile(entry.backupPath, entry.originalPath);
       } catch (error) {
         errors.push(error);

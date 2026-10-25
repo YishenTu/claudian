@@ -24,7 +24,7 @@ import type { ChatMessage, Conversation, ConversationMeta } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
 import { formatLastReply, formatSessionSnapshot } from '@/features/chat/session-messaging/formatSessionSnapshot';
-import { prepareSessionReasoningSelection } from '@/features/chat/sessions/sessionSettings';
+import { setSessionReasoningSelection } from '@/features/chat/sessions/sessionSettings';
 import { throwIfAborted } from '@/utils/abort';
 
 interface NewSessionChoice {
@@ -55,10 +55,6 @@ export class SessionMessagingService {
     getActiveConversationId(): string | null;
     /** Re-renders open model controls after a session's selection is switched. */
     refreshModelControls(providerId: ProviderId): void;
-    commitSelection(
-      id: string, expectedModel: string | undefined, model: string | undefined,
-      admission: { isCurrent(candidate: Readonly<Conversation>): boolean; commit(): void },
-    ): Promise<boolean>;
   }) {}
 
   bindSessionTools(conversationId: string): SessionToolBinding {
@@ -237,39 +233,21 @@ export class SessionMessagingService {
     if (!mailbox) throw new Error('The target session cannot receive messages');
     const recipient = { sessionId: target.id, title: target.title, provider: target.providerId };
     const message = args.text === undefined ? null : { from: caller.title, sessionId: caller.id, text: args.text };
-    if (model === undefined && reasoning === undefined) {
-      return { ...recipient, status: await mailbox.deliver({ message, mode: args.mode, signal }) };
+    // Applied like the user's own choice: a later choice wins, and a send that fails after it keeps the switch.
+    if (model !== undefined) {
+      await host.updateConversation(target.id, { selectedModel: model });
+      throwIfAborted(signal, 'Session tool call was cancelled');
     }
-    const resultingModel = model ?? resolveConversationModel(host.getCommittedSettings(), target.providerId, target).model;
-    const selection = reasoning === undefined ? null
-      : prepareSessionReasoningSelection(runtime, target.providerId, resultingModel, reasoning);
-    const status = await mailbox.deliver({
-      message, mode: args.mode, signal,
-      commitSwitch: async admission => {
-        const committed = await this.deps.commitSelection(target.id, target.selectedModel, model, {
-          isCurrent: candidate => {
-            if (!admission.isCurrent || signal.aborted || (selection && !selection.isCurrent())) return false;
-            const settings = host.getCommittedSettings();
-            const actualModel = resolveConversationModel(settings, candidate.providerId, candidate).model;
-            if (actualModel !== resultingModel) return false;
-            if (model !== undefined && findProviderModelOption(candidate.providerId, model, settings) !== model) return false;
-            if (reasoning !== undefined) validateReasoning(candidate.providerId, actualModel, reasoning, settings);
-            return true;
-          },
-          commit: () => {
-            admission.commit();
-            selection?.commit();
-          },
-        });
-        if (!committed) throw new Error('The session or its selection changed before message admission');
-      },
-    });
-    if (args.sessionId) {
-      try { this.deps.refreshModelControls(target.providerId); } catch { /* Admission already committed. */ }
+    if (reasoning !== undefined) {
+      const resultingModel = model ?? resolveConversationModel(host.getCommittedSettings(), target.providerId, target).model;
+      setSessionReasoningSelection(runtime, target.providerId, resultingModel, reasoning);
     }
+    if (args.sessionId && (model !== undefined || reasoning !== undefined)) {
+      try { this.deps.refreshModelControls(target.providerId); } catch { /* The switch already committed. */ }
+    }
+    const status = await mailbox.deliver({ message, mode: args.mode, signal });
     return { ...recipient, status };
   }
-
 }
 
 /** The reasoning a new session with this model would carry; null when the model has no reasoning control. */

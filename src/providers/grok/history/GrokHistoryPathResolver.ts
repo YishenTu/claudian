@@ -58,7 +58,7 @@ export function resolveGrokSessionDirectory(
   if (vaultPath && path.isAbsolute(vaultPath)) {
     for (const root of roots) {
       const direct = path.join(root, encodeGrokSessionCwd(vaultPath), normalizedSessionId);
-      if (isPathWithinRoot(direct, root) && isDirectory(direct)) {
+      if (isDirectory(direct)) {
         return direct;
       }
     }
@@ -127,7 +127,7 @@ function findExactSessionDirectory(root: string, sessionId: string): string | nu
       break;
     }
     const candidate = path.join(root, entry.name, sessionId);
-    if (isPathWithinRoot(candidate, root) && isDirectory(candidate)) {
+    if (isDirectory(candidate)) {
       return candidate;
     }
   }

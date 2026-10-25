@@ -50,10 +50,8 @@ describe('opencodeSettingsReconciler.reconcileModelWithEnvironment', () => {
       },
     ] as any;
 
-    const result = opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, conversations);
-
-    expect(result.changed).toBe(true);
-    expect(result.invalidatedConversations).toHaveLength(1);
+    expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true });
+    expect(opencodeSettingsReconciler.invalidateConversationSessions(conversations)).toEqual([conversations[0]]);
     expect(conversations[0].sessionId).toBeNull();
     expect(conversations[0].providerState).toEqual({
       nativeConversationContextEstablished: false,

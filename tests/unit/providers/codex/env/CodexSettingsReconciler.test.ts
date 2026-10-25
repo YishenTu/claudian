@@ -26,19 +26,15 @@ describe('codexSettingsReconciler', () => {
     const settings: Record<string, unknown> = {
       providerConfigs: { codex: { enabled: true, environmentVariables: `${key}=/old-home` } },
     };
-    codexSettingsReconciler.reconcileModelWithEnvironment(settings, []);
-    const conversation = { providerId: 'codex', sessionId: 'native-session', messages: [] } as unknown as Conversation;
+    codexSettingsReconciler.reconcileModelWithEnvironment(settings);
     for (const nextEnvironment of [`${key}=/new-home`, '']) {
       (settings.providerConfigs as any).codex.environmentVariables = nextEnvironment;
-      conversation.sessionId = 'native-session';
-      const result = codexSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]);
-      expect(result).toMatchObject({ changed: true, invalidatedConversations: [conversation] });
-      expect(conversation.sessionId).toBeNull();
+      expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings))
+        .toEqual({ changed: true, sessionPolicy: 'invalidate' });
     }
   });
 
   it('finalizes an empty legacy fingerprint before later runtime inputs change', () => {
-    const conversation = establishedConversation('thread-123');
     const settings: Record<string, unknown> = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
@@ -58,14 +54,21 @@ describe('codexSettingsReconciler', () => {
     expect(isVersionedRuntimeInputFingerprint(
       (settings.providerConfigs as any).codex.sessionEnvironmentHash,
     )).toBe(true);
-    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]))
-      .toEqual({ changed: false, invalidatedConversations: [] });
+    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
 
     (settings.providerConfigs as any).codex.environmentVariables = 'OPENAI_BASE_URL=https://new.example.com/v1';
 
     expect(codexSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(false);
-    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]))
-      .toEqual({ changed: true, invalidatedConversations: [conversation], sessionPolicy: 'invalidate' });
+    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings))
+      .toEqual({ changed: true, sessionPolicy: 'invalidate' });
+  });
+
+  it('retires an established binding into recovery-only history', () => {
+    const conversation = establishedConversation('thread-123');
+    const otherProvider = { providerId: 'claude', sessionId: 'claude-session', messages: [] } as unknown as Conversation;
+
+    expect(codexSettingsReconciler.invalidateConversationSessions([conversation, otherProvider]))
+      .toEqual([conversation]);
     expect(conversation.sessionId).toBeNull();
     expect(conversation.providerState).toEqual({
       nativeConversationContextEstablished: false,
@@ -75,6 +78,7 @@ describe('codexSettingsReconciler', () => {
         transcriptRootPath: '/tmp',
       }],
     });
+    expect(otherProvider.sessionId).toBe('claude-session');
   });
 
   it.each([
@@ -82,11 +86,7 @@ describe('codexSettingsReconciler', () => {
     ['host CLI path', (codex: Record<string, unknown>) => { codex.cliPathsByHost = { [getInstallationKey()]: '/opt/host/codex' }; }],
     ['PATH', (codex: Record<string, unknown>) => { codex.environmentVariables = 'PATH=/opt/codex/bin:/usr/bin'; }],
     ['OPENAI_MODEL', (codex: Record<string, unknown>) => { codex.environmentVariables = `OPENAI_MODEL=${TEST_CODEX_MODEL}`; }],
-  ])('reloads without invalidating closed conversations when only the %s changes', (_input, change) => {
-    const conversations = [
-      establishedConversation('thread-a'),
-      establishedConversation('thread-b'),
-    ];
+  ])('reloads without invalidating bindings when only the %s changes', (_input, change) => {
     const settings: Record<string, unknown> = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
@@ -99,15 +99,13 @@ describe('codexSettingsReconciler', () => {
       },
     };
     codexSettingsReconciler.normalizeModelVariantSettings(settings);
-    const before = structuredClone(conversations);
     const savedSessionHash = (settings.providerConfigs as any).codex.sessionEnvironmentHash;
     const savedRuntimeHash = (settings.providerConfigs as any).codex.environmentHash;
 
     change((settings.providerConfigs as any).codex);
 
-    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings, conversations))
-      .toEqual({ changed: true, invalidatedConversations: [], sessionPolicy: 'reload' });
-    expect(conversations).toEqual(before);
+    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings))
+      .toEqual({ changed: true, sessionPolicy: 'reload' });
     expect((settings.providerConfigs as any).codex.environmentHash).not.toBe(savedRuntimeHash);
     expect((settings.providerConfigs as any).codex.sessionEnvironmentHash).toBe(savedSessionHash);
   });
@@ -117,8 +115,7 @@ describe('codexSettingsReconciler', () => {
     ['OPENAI_API_KEY', (codex: Record<string, unknown>) => { codex.environmentVariables = 'OPENAI_API_KEY=other-test-key'; }],
     ['installation method', (codex: Record<string, unknown>) => { codex.installationMethodsByHost = { [getInstallationKey()]: 'wsl' }; }],
     ['WSL distro', (codex: Record<string, unknown>) => { codex.wslDistroOverridesByHost = { [getInstallationKey()]: 'Ubuntu' }; }],
-  ])('invalidates closed conversations as recovery-only history when the %s changes', (_input, change) => {
-    const conversation = establishedConversation('thread-a');
+  ])('invalidates bindings when the %s changes', (_input, change) => {
     const settings: Record<string, unknown> = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
@@ -134,17 +131,11 @@ describe('codexSettingsReconciler', () => {
 
     change((settings.providerConfigs as any).codex);
 
-    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]))
-      .toEqual({ changed: true, invalidatedConversations: [conversation], sessionPolicy: 'invalidate' });
-    expect(conversation.sessionId).toBeNull();
-    expect(conversation.providerState).toEqual({
-      nativeConversationContextEstablished: false,
-      previousSegments: [{ threadId: 'thread-a', sessionFilePath: '/tmp/thread-a.jsonl', transcriptRootPath: '/tmp' }],
-    });
+    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings))
+      .toEqual({ changed: true, sessionPolicy: 'invalidate' });
   });
 
   it('backfills the session fingerprint without invalidating when runtime inputs are unchanged', () => {
-    const conversation = establishedConversation('thread-123');
     const settings: Record<string, unknown> = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
@@ -157,33 +148,21 @@ describe('codexSettingsReconciler', () => {
         },
       },
     };
-    codexSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+    codexSettingsReconciler.reconcileModelWithEnvironment(settings);
     (settings.providerConfigs as any).codex.sessionEnvironmentHash = '';
-    const before = structuredClone(conversation);
 
-    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]))
-      .toEqual({ changed: true, invalidatedConversations: [], sessionPolicy: 'reload' });
-    expect(conversation).toEqual(before);
+    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings))
+      .toEqual({ changed: true, sessionPolicy: 'reload' });
     expect(isVersionedRuntimeInputFingerprint(
       (settings.providerConfigs as any).codex.sessionEnvironmentHash,
     )).toBe(true);
 
     (settings.providerConfigs as any).codex.cliPath = '/usr/local/bin/codex';
-    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]))
-      .toMatchObject({ changed: true, invalidatedConversations: [], sessionPolicy: 'reload' });
-    expect(conversation).toEqual(before);
+    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings))
+      .toEqual({ changed: true, sessionPolicy: 'reload' });
   });
 
-  it('migrates a legacy fingerprint with an existing CLI path without invalidating history', () => {
-    const conversation = {
-      providerId: 'codex',
-      sessionId: 'thread-123',
-      providerState: {
-        threadId: 'thread-123',
-        sessionFilePath: 'C:\\Users\\tester\\.codex\\sessions\\thread-123.jsonl',
-      },
-      messages: [],
-    } as unknown as Conversation;
+  it('migrates a legacy fingerprint with an existing CLI path without reporting a change', () => {
     const settings: Record<string, unknown> = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
@@ -198,13 +177,7 @@ describe('codexSettingsReconciler', () => {
     };
 
     expect(codexSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
-    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]))
-      .toEqual({ changed: false, invalidatedConversations: [] });
-    expect(conversation.sessionId).toBe('thread-123');
-    expect(conversation.providerState).toMatchObject({
-      threadId: 'thread-123',
-      sessionFilePath: 'C:\\Users\\tester\\.codex\\sessions\\thread-123.jsonl',
-    });
+    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
     expect(isVersionedRuntimeInputFingerprint(
       (settings.providerConfigs as any).codex.environmentHash,
     )).toBe(true);
@@ -213,16 +186,7 @@ describe('codexSettingsReconciler', () => {
     )).toBe(true);
   });
 
-  it('migrates a matching legacy environment fingerprint without invalidating history', () => {
-    const conversation = {
-      providerId: 'codex',
-      sessionId: 'thread-123',
-      providerState: {
-        threadId: 'thread-123',
-        sessionFilePath: '/tmp/thread-123.jsonl',
-      },
-      messages: [],
-    } as unknown as Conversation;
+  it('migrates a matching legacy environment fingerprint without reporting a change', () => {
     const settings: Record<string, unknown> = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
@@ -236,28 +200,13 @@ describe('codexSettingsReconciler', () => {
     };
 
     expect(codexSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
-    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]))
-      .toEqual({ changed: false, invalidatedConversations: [] });
-    expect(conversation.sessionId).toBe('thread-123');
-    expect(conversation.providerState).toMatchObject({
-      threadId: 'thread-123',
-      sessionFilePath: '/tmp/thread-123.jsonl',
-    });
+    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
     expect(isVersionedRuntimeInputFingerprint(
       (settings.providerConfigs as any).codex.environmentHash,
     )).toBe(true);
   });
 
-  it('invalidates session state when legacy settings contain a real environment change', () => {
-    const conversation = {
-      providerId: 'codex',
-      sessionId: 'thread-123',
-      providerState: {
-        threadId: 'thread-123',
-        sessionFilePath: '/tmp/thread-123.jsonl',
-      },
-      messages: [],
-    } as unknown as Conversation;
+  it('invalidates bindings when legacy settings contain a real environment change', () => {
     const settings: Record<string, unknown> = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
@@ -271,13 +220,8 @@ describe('codexSettingsReconciler', () => {
     };
 
     expect(codexSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
-    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]))
-      .toMatchObject({ changed: true, invalidatedConversations: [conversation], sessionPolicy: 'invalidate' });
-    expect(conversation.sessionId).toBeNull();
-    expect(conversation.providerState).toEqual({
-      nativeConversationContextEstablished: false,
-      previousSegments: [{ threadId: 'thread-123', sessionFilePath: '/tmp/thread-123.jsonl' }],
-    });
+    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings))
+      .toEqual({ changed: true, sessionPolicy: 'invalidate' });
   });
 
   it.each([
@@ -286,16 +230,6 @@ describe('codexSettingsReconciler', () => {
     ['OPENAI_BASE_URL', { environmentVariables: 'OPENAI_BASE_URL=https://new.example.com/v1' }, 'invalidate'],
     ['CODEX_HOME', { environmentVariables: 'CODEX_HOME=/data/codex' }, 'invalidate'],
   ] as const)('scopes a first %s input on a never-fingerprinted config', (_input, inputs, sessionPolicy) => {
-    const conversation = {
-      providerId: 'codex',
-      sessionId: 'thread-123',
-      providerState: {
-        threadId: 'thread-123',
-        sessionFilePath: '/tmp/thread-123.jsonl',
-      },
-      messages: [],
-    } as unknown as Conversation;
-    const before = structuredClone(conversation);
     const settings: Record<string, unknown> = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
@@ -309,24 +243,7 @@ describe('codexSettingsReconciler', () => {
       },
     };
 
-    const result = codexSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]);
-
-    const invalidated = sessionPolicy === 'invalidate';
-    expect(result).toEqual({
-      changed: true,
-      invalidatedConversations: invalidated ? [conversation] : [],
-      sessionPolicy,
-    });
-    expect(conversation).toEqual(invalidated
-      ? {
-        ...before,
-        sessionId: null,
-        providerState: {
-          nativeConversationContextEstablished: false,
-          previousSegments: [{ threadId: 'thread-123', sessionFilePath: '/tmp/thread-123.jsonl' }],
-        },
-      }
-      : before);
+    expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true, sessionPolicy });
     // Model selection is re-resolved on every runtime change, including reloads.
     expect(settings.model).toBe(`openai-codex/${TEST_CODEX_MODEL}`);
   });
@@ -343,23 +260,13 @@ describe('codexSettingsReconciler', () => {
       },
     };
 
-    const result = codexSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+    const result = codexSettingsReconciler.reconcileModelWithEnvironment(settings);
 
     expect(result.changed).toBe(true);
     expect(settings.model).toBe(TEST_CODEX_MODEL);
   });
 
   it('preserves an active settings-defined custom model across non-model env changes', () => {
-    const conversation = {
-      providerId: 'codex',
-      sessionId: 'thread-123',
-      providerState: {
-        threadId: 'thread-123',
-        sessionFilePath: '/tmp/thread-123.jsonl',
-      },
-      messages: [],
-    } as unknown as Conversation;
-
     const settings: Record<string, unknown> = {
       model: 'my-custom-model',
       providerConfigs: {
@@ -372,14 +279,9 @@ describe('codexSettingsReconciler', () => {
       },
     };
 
-    const result = codexSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]);
+    const result = codexSettingsReconciler.reconcileModelWithEnvironment(settings);
 
-    expect(result.changed).toBe(true);
-    expect(result.invalidatedConversations).toEqual([conversation]);
-    expect(conversation.sessionId).toBeNull();
-    expect(conversation.providerState).toMatchObject({
-      previousSegments: [{ threadId: 'thread-123', sessionFilePath: '/tmp/thread-123.jsonl' }],
-    });
+    expect(result).toEqual({ changed: true, sessionPolicy: 'invalidate' });
     expect(settings.model).toBe('my-custom-model');
     const fingerprint = (settings.providerConfigs as any).codex.environmentHash;
     expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
@@ -400,7 +302,7 @@ describe('codexSettingsReconciler', () => {
       },
     };
 
-    const result = codexSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+    const result = codexSettingsReconciler.reconcileModelWithEnvironment(settings);
 
     expect(result.changed).toBe(true);
     expect(settings.model).toBe('my-custom-model');

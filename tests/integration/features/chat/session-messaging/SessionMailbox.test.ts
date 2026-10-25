@@ -3,7 +3,7 @@ import { createSessionModelStub } from '@test/helpers/ConversationPorts';
 
 import type { SessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
-import { SessionMailbox, type SessionMessageDelivery } from '@/features/chat/session-messaging/SessionMailbox';
+import { SessionMailbox } from '@/features/chat/session-messaging/SessionMailbox';
 import { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -39,8 +39,7 @@ function setup() {
   const discarded = jest.fn();
   const mailbox = new SessionMailbox({ runtime, isTargetAvailable: () => available, onDiscard: discarded });
   runtime.installMailbox(mailbox);
-  const send = (text: string, mode?: 'interrupt', commitSwitch?: SessionMessageDelivery['commitSwitch']) =>
-    mailbox.deliver({ message: message(text), mode, signal, commitSwitch });
+  const send = (text: string, mode?: 'interrupt') => mailbox.deliver({ message: message(text), mode, signal });
   return { runtime, mailbox, send, stops, hydrate, sent, completions, callbacks, discarded,
     setAvailable: (value: boolean) => { available = value; },
     setUserQueued: (value: boolean) => { userQueued = value; runtime.notifyChanged(); },
@@ -148,32 +147,13 @@ describe('session mailbox lifetime and dispatch', () => {
   it('delivers an interrupt first when an older dispatch is still hydrating', async () => {
     const h = setup();
     expect(await h.send('older')).toBe('started');
+    const sentAtStop: string[][] = [];
+    h.stops.mockImplementation(() => { sentAtStop.push([...h.sent]); });
     // No turn is running yet, so the interrupt has nothing to stop; it is simply first.
     expect(await h.send('interrupt', 'interrupt')).toBe('queued');
     h.hydrate.resolve();
     await flush();
-    expect(h.sent).toEqual(['interrupt']);
-    h.completions[0].resolve();
-    await flush();
-    expect(h.sent).toEqual(['interrupt', 'older']);
-    h.completions[1].resolve();
-    await flush();
-    await h.runtime.dispose();
-  });
-
-  it('lets nothing overtake a held interrupt while its switch commits, and stops only once it is admitted', async () => {
-    const h = setup();
-    void h.send('older');
-    const switching = deferred<void>();
-    const interrupt = h.send('interrupt', 'interrupt', async admission => { await switching.promise; admission.commit(); });
-    h.hydrate.resolve();
-    await flush();
-    expect(h.sent).toEqual([]);
-    expect(h.stops).not.toHaveBeenCalled();
-    switching.resolve();
-    expect(await interrupt).toBe('started');
-    expect(h.stops).toHaveBeenCalledTimes(1);
-    await flush();
+    expect(sentAtStop).toEqual([[]]);
     expect(h.sent).toEqual(['interrupt']);
     h.completions[0].resolve();
     await flush();
@@ -220,30 +200,6 @@ describe('session mailbox lifetime and dispatch', () => {
       await flush();
     }
     expect(h.sent).toEqual(['running', 'new interrupt', 'newest interrupt', 'new interrupt', 'old interrupt']);
-    await h.runtime.dispose();
-  });
-
-  it('does not dispatch an admitted interrupt before its stop, even if hydration finishes as the switch commits', async () => {
-    const h = setup();
-    void h.send('older');
-    const sentAtStop: string[][] = [];
-    h.stops.mockImplementation(() => { sentAtStop.push([...h.sent]); });
-    const settling = deferred<void>();
-    // The repository commits inside its queue, then settles the switch a little later.
-    const interrupt = h.send('interrupt', 'interrupt', async admission => { admission.commit(); await settling.promise; });
-    h.hydrate.resolve();
-    await flush();
-    expect(h.sent).toEqual([]);
-    settling.resolve();
-    expect(await interrupt).toBe('started');
-    await flush();
-    expect(sentAtStop).toEqual([[]]);
-    expect(h.sent).toEqual(['interrupt']);
-    h.completions[0].resolve();
-    await flush();
-    expect(h.sent).toEqual(['interrupt', 'older']);
-    h.completions[1].resolve();
-    await flush();
     await h.runtime.dispose();
   });
 });

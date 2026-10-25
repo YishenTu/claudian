@@ -36,7 +36,6 @@ export function nativeDefaults(options: NativeDefaultsOptions): { call: (...args
   const permission = (sessionId: string): string => options.permission?.(sessionId) ?? 'workspace-write';
   const call = (method: string, args: Record<string, any>): unknown => {
     if (method === 'session/list') return { items: options.roster().map(sessionId => ({ sessionId, agentAvailable: true, running: false, cwd: options.cwd?.(sessionId) ?? '/vault' })) };
-    if (method === 'permissionPresets/catalog') return { options: [{ value: 'workspace-write' }, { value: 'read-only' }, { value: 'danger-full-access' }] };
     if (method === 'commands/list') return options.commands ?? [{ name: 'permission' }];
     if (method === 'skills/list') return { skills: options.skills ?? [] };
     if (method === 'commands/execute' && options.setPermission && typeof args.line === 'string' && args.line.startsWith('/permission ')) {

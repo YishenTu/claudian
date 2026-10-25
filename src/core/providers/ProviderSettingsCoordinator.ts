@@ -13,11 +13,6 @@ export interface SettingsReconciliationResult {
   changed: boolean;
   environmentChangedProviderIds: ProviderId[];
   sessionInvalidationProviderIds: ProviderId[];
-  invalidatedConversations: Conversation[];
-}
-
-export interface ReconcileProviderSettingsOptions {
-  invalidateConversations?: boolean;
 }
 
 const PROJECTION_KEYS = new Set([
@@ -407,22 +402,15 @@ export class ProviderSettingsCoordinator {
 
   static reconcileProviders(
     settings: Record<string, unknown>,
-    conversations: Conversation[],
     providerIds: ProviderId[],
-    options: ReconcileProviderSettingsOptions = {},
   ): SettingsReconciliationResult {
     let anyChanged = false;
-    const allInvalidated: Conversation[] = [];
     const environmentChangedProviderIds: ProviderId[] = [];
     const sessionInvalidationProviderIds: ProviderId[] = [];
     const settingsProvider = getSettingsProviderId(settings);
 
     for (const providerId of providerIds) {
       const reconciler = ProviderRegistry.getSettingsReconciler(providerId);
-      const providerConversations = conversations.filter(c => c.providerId === providerId);
-      const reconciliationConversations = options.invalidateConversations === false
-        ? []
-        : providerConversations;
       const targetSettings = providerId === settingsProvider
         ? settings
         : cloneProviderSettings(settings);
@@ -431,10 +419,7 @@ export class ProviderSettingsCoordinator {
         this.projectProviderState(targetSettings, providerId);
       }
 
-      const { changed, invalidatedConversations, sessionPolicy } = reconciler.reconcileModelWithEnvironment(
-        targetSettings,
-        reconciliationConversations,
-      );
+      const { changed, sessionPolicy } = reconciler.reconcileModelWithEnvironment(targetSettings);
 
       if (changed) {
         anyChanged = true;
@@ -447,9 +432,6 @@ export class ProviderSettingsCoordinator {
           mergeProviderSettings(settings, targetSettings);
         }
       }
-      if (options.invalidateConversations !== false) {
-        allInvalidated.push(...invalidatedConversations);
-      }
     }
 
     if (this.reconcileTitleGenerationModelSelection(settings)) {
@@ -460,7 +442,6 @@ export class ProviderSettingsCoordinator {
       changed: anyChanged,
       environmentChangedProviderIds,
       sessionInvalidationProviderIds,
-      invalidatedConversations: allInvalidated,
     };
   }
 

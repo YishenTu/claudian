@@ -813,14 +813,22 @@ it('reads missed durable records beyond a reconnect snapshot without replaying i
   peer.send('session/follow', { type: 'assistant-stream', frame: { type: 'chunk', attemptId: 'attempt', revision: 2, index: 0, chunk: { type: 'text-delta', index: 0, text: 'Hel' } } }, rootFollow('root'));
   await until(() => events.some(e => e.type === 'text_delta'));
   const commit = { type: 'event', event: { seq: 7, time, type: 'assistant/message', data: { turn: nativeTurn, step: 0, message: { content: [{ type: 'text', text: 'Hello' }] } } } };
+  // The snapshot window starts at the open turn, whose records the session already recorded, and ends before its cursor.
+  const opened = [
+    { type: 'event', event: { seq: 4, time, type: 'turn/start', data: { turn: nativeTurn } } },
+    { type: 'event', event: { seq: 5, time, type: 'user/message', data: { id: `user-${nativeTurn}`, content: [{ type: 'text', text: 'requested' }], source: { kind: 'user', rpcId: run.executionId } } } },
+  ];
   const end = { type: 'event', event: { seq: 8, time, type: 'turn/end', data: { turn: nativeTurn, reason: { kind: 'completed' } } } };
   const ordinaryCall = peer.onCall; const ordinaryOpen = peer.onOpen;
-  peer.onCall = (method, args) => method === 'session/page' && args.request.throughSeq === 8
-    ? { records: [commit, end], hasMore: false } : ordinaryCall(method, args);
-  peer.onOpen = (endpoint, args, send) => endpoint === 'session/follow'
-    ? send({ type: 'snapshot', cursor: 8, records: [end] }) : ordinaryOpen(endpoint, args, send);
+  peer.onCall = (method, args) => method === 'session/page' && args.request.throughSeq === 7
+    ? { records: [commit], hasMore: false } : ordinaryCall(method, args);
+  peer.onOpen = (endpoint, args, send) => {
+    if (endpoint !== 'session/follow') return ordinaryOpen(endpoint, args, send);
+    send({ type: 'snapshot', cursor: 7, records: opened }); send(end);
+  };
   for (const stream of peer.streams.values()) stream.socket.terminate();
   await done;
+  expect(events.at(-1)?.type).toBe('turn_completed');
   expect(events.filter(e => e.type === 'text_delta').map(e => e.text).join('')).toBe('Hello');
   expect(peer.calls.filter(c => c.method === 'session/prompt')).toHaveLength(1);
 });
@@ -1239,12 +1247,12 @@ async function until(predicate: () => boolean): Promise<void> {
   while (!predicate()) { if (Date.now() > deadline) throw new Error('Native execution fixture timed out.'); await new Promise(resolve => setTimeout(resolve, 5)); }
 }
 
-it('rechecks the permission boundary after native catalog discovery', async () => {
+it('checks the permission boundary after reading native permission state', async () => {
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   const ordinary = peer.onCall;
   peer.onCall = async (method, args) => {
-    if (method === 'permissionPresets/catalog') await gate;
+    if (method === 'session/projections') await gate;
     return ordinary(method, args);
   };
   create();
@@ -1252,7 +1260,7 @@ it('rechecks the permission boundary after native catalog discovery', async () =
   const elevated = { ...input, configuration: { ...input.configuration, permissionMode: 'yolo' } };
   const events: ProviderExecutionEvent[] = [];
   const done = collect(session.execute(elevated).events, events);
-  await until(() => peer.calls.some(c => c.method === 'permissionPresets/catalog'));
+  await until(() => peer.calls.some(c => c.method === 'session/projections'));
   begin();
   event('assistant/message', { turn: nativeTurn, step: 0, message: { content: [{ type: 'text', text: 'automatic work' }] } });
   await until(() => sessionEvents.some(e => e.type === 'background_turn_started'));

@@ -41,7 +41,7 @@ function getModelRecoverySource(
   conversation: Conversation,
 ): ConversationModelRecoverySource | null {
   if (conversation.modelRecoverySource) {
-    return cloneModelRecoverySource(conversation.modelRecoverySource);
+    return conversation.modelRecoverySource;
   }
   if (
     conversation.sessionId === null
@@ -68,9 +68,7 @@ function applyModelRecoverySource(
   return {
     ...conversation,
     sessionId: source.sessionId,
-    providerState: source.providerState
-      ? { ...source.providerState }
-      : undefined,
+    providerState: source.providerState,
     resumeAtMessageId: source.resumeAtMessageId,
   };
 }
@@ -120,7 +118,7 @@ export class ConversationModelRecovery {
         ?? getModelRecoverySource(target);
       if (!recoverySource) continue;
 
-      target.modelRecoverySource ??= cloneModelRecoverySource(recoverySource);
+      target.modelRecoverySource ??= recoverySource;
       this.recoverySources.set(
         source.id,
         applyModelRecoverySource(source, recoverySource),
@@ -281,12 +279,9 @@ export class ConversationModelRecovery {
     const existing = this.recoveryPromises.get(conversation.id);
     if (existing) return existing;
 
-    const persistedRecoverySource = conversation.modelRecoverySource
-      ? cloneModelRecoverySource(conversation.modelRecoverySource)
-      : null;
     const recoverySource = this.recoverySources.get(conversation.id)
-      ?? (persistedRecoverySource
-        ? applyModelRecoverySource(conversation, persistedRecoverySource)
+      ?? (conversation.modelRecoverySource
+        ? applyModelRecoverySource(conversation, conversation.modelRecoverySource)
         : conversation);
     let recoverModelSelection: HistoricalModelRecovery | undefined;
     try {

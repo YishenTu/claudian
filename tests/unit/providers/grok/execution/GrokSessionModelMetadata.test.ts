@@ -1,7 +1,7 @@
 import {
-  normalizeGrokModelUpdateMetadata,
   normalizeGrokSessionModelMetadata,
   normalizeGrokSetModelMetadata,
+  parseGrokModelUpdateState,
 } from '@/providers/grok/execution/GrokSessionModelMetadata';
 
 const sessionReasoningMeta = {
@@ -105,15 +105,16 @@ describe('GrokSessionModelMetadata', () => {
       currentModelId: 'grok-future',
     };
 
-    expect(normalizeGrokModelUpdateMetadata(state)).toEqual(expect.objectContaining({
+    const parsed = parseGrokModelUpdateState(state);
+    expect(parsed).not.toBeNull();
+    expect(normalizeGrokSessionModelMetadata({ models: parsed })).toEqual(expect.objectContaining({
       currentModelId: 'grok-future',
       models: [expect.objectContaining({
         rawId: 'grok-future',
         reasoningMetadataResolved: true,
       })],
     }));
-    expect(normalizeGrokModelUpdateMetadata({ models: state }))
-      .toEqual(normalizeGrokModelUpdateMetadata(state));
-    expect(normalizeGrokModelUpdateMetadata({ invalid: true })).toBeNull();
+    expect(parseGrokModelUpdateState({ models: state })).toEqual(parsed);
+    expect(parseGrokModelUpdateState({ invalid: true })).toBeNull();
   });
 });

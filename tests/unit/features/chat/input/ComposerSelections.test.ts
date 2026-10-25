@@ -1,4 +1,6 @@
+import { appendExecutionContext } from '@/core/prompt/promptContext';
 import { ComposerSelections, type ComposerSelectionSources } from '@/features/chat/input/ComposerSelections';
+import { captureSelectionSnapshots } from '@/features/chat/state/chatTurnRequest';
 
 const SELECTION_POLL_INTERVAL = 250;
 
@@ -94,5 +96,29 @@ describe('ComposerSelections polling', () => {
     expect(sources.editor.poll).toHaveBeenCalledTimes(2);
     expect(sources.browser.poll).toHaveBeenCalledTimes(2);
     expect(sources.canvas.poll).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('ComposerSelections capture', () => {
+  it('owns nested cursor and canvas data after capture', () => {
+    const editor = { mode: 'cursor' as const, notePath: 'same.md', cursorContext: {
+      beforeCursor: 'before', afterCursor: 'after', isInbetween: false, line: 0, column: 6,
+    } };
+    const canvas = { canvasPath: 'same.canvas', nodeIds: ['captured-node'] };
+    const sources = createSources();
+    const selections = new ComposerSelections({
+      ...sources,
+      editor: { ...sources.editor, getContext: () => editor },
+      canvas: { ...sources.canvas, getContext: () => canvas },
+    });
+
+    const captured = selections.capture();
+    editor.cursorContext.beforeCursor = 'changed';
+    canvas.nodeIds.push('later-node');
+    const prompt = appendExecutionContext('Question', { selections: captureSelectionSnapshots(captured) });
+    expect(prompt).toContain('before|after');
+    expect(prompt).toContain('captured-node');
+    expect(prompt).not.toContain('changed');
+    expect(prompt).not.toContain('later-node');
   });
 });

@@ -26,54 +26,33 @@ function createService() {
 }
 
 describe('TitleGenerationService', () => {
-  it('uses independent one-shot passive sessions and preserves prompt parsing', async () => {
+  it('uses a one-shot passive session and preserves prompt parsing', async () => {
     const { backend, service } = createService();
-    const firstCallback = jest.fn();
-    const secondCallback = jest.fn();
-    const first = service.generateTitle('conversation-1', 'First request', firstCallback);
-    const second = service.generateTitle('conversation-2', 'Second request', secondCallback);
-    await waitFor(() => backend.sessions.length === 2
-      && backend.sessions.every(session => session.requests.length === 1));
+    const callback = jest.fn();
+    const generation = service.generateTitle('conversation-1', 'First request', callback);
+    await waitFor(() => backend.sessions[0]?.requests.length === 1);
 
-    expect(backend.sessions).toHaveLength(2);
-    for (const session of backend.sessions) {
-      expect(session.requests[0]).toMatchObject({
-        configuration: {
-          model: 'title-model',
-          systemInstructions: {
-            instructions: expect.stringContaining('Write the title in Japanese'),
-            kind: 'explicit',
-          },
+    expect(backend.sessions[0].requests[0]).toMatchObject({
+      configuration: {
+        model: 'title-model',
+        systemInstructions: {
+          instructions: expect.stringContaining('Write the title in Japanese'),
+          kind: 'explicit',
         },
-        toolPolicy: { kind: 'passive' },
-      });
-    }
-    expect(backend.configs).toEqual([
-      expect.objectContaining({
-        lifecycle: 'ephemeral',
-        nativePersistence: 'disabled-if-supported',
-      }),
-      expect.objectContaining({
-        lifecycle: 'ephemeral',
-        nativePersistence: 'disabled-if-supported',
-      }),
-    ]);
+      },
+      toolPolicy: { kind: 'passive' },
+    });
+    expect(backend.configs).toEqual([expect.objectContaining({
+      lifecycle: 'ephemeral',
+      nativePersistence: 'disabled-if-supported',
+    })]);
 
     backend.sessions[0].emitText('First title');
     backend.sessions[0].complete();
-    backend.sessions[1].emitText('Second title');
-    backend.sessions[1].complete();
-    await Promise.all([first, second]);
+    await generation;
 
-    expect(firstCallback).toHaveBeenCalledWith('conversation-1', {
-      success: true,
-      title: 'First title',
-    });
-    expect(secondCallback).toHaveBeenCalledWith('conversation-2', {
-      success: true,
-      title: 'Second title',
-    });
-    expect(backend.sessions.map(session => session.disposeCalls)).toEqual([1, 1]);
+    expect(callback).toHaveBeenCalledWith('conversation-1', { success: true, title: 'First title' });
+    expect(backend.sessions[0].disposeCalls).toBe(1);
   });
 
   it('cancels only the matching active generation and releases its lease', async () => {

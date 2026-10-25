@@ -12,8 +12,8 @@ export interface TabCloseHost {
   createReplacement(): Promise<AssembledTabRuntime | null>;
   /** Creates an inactive draft preview to succeed an active preview; null outside the wide layout. */
   createPreviewReplacement(): Promise<AssembledTabRuntime | null>;
-  /** Releases manager metadata (command discovery) that outlives membership; returns failures. */
-  releaseMetadata(tabId: TabId): readonly unknown[];
+  /** Releases manager metadata (command discovery) that outlives membership. */
+  releaseMetadata(tabId: TabId): void;
   /** Publishes a completed close; not called once the manager is destroyed. */
   onTabClosed(tabId: TabId): void;
 }
@@ -178,7 +178,8 @@ export class TabClosePolicy {
     const { membership } = this.host;
     membership.beginClose(tabId);
     // Closing tabs cannot recreate metadata, so in-flight discovery is released once, now.
-    const errors: unknown[] = [...this.host.releaseMetadata(tabId)];
+    this.host.releaseMetadata(tabId);
+    const errors: unknown[] = [];
     try {
       if (runtime) await destroyTab(runtime);
     } catch (error) {

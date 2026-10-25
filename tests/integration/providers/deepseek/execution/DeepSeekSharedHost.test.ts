@@ -448,9 +448,9 @@ function sessionToolEndpoint() {
       offerEphemeralFork: async () => async () => {},
     };
   }, undefined, { registerCallRoute, registerMCPRoute: jest.fn() });
-  return { route, registerCallRoute, starts, call: (callerNativeId: string, name = 'claudian_list_destinations', args: unknown = {}, callId = 'session-call', signal = new AbortController().signal) => {
+  return { route, registerCallRoute, starts, call: (callerNativeId: string, name = 'claudian_list_destinations', args: unknown = {}, signal = new AbortController().signal) => {
     expect(handler).toBeDefined();
-    return handler!({ name, args: { callId, args }, callerNativeId, signal });
+    return handler!({ name, args, callerNativeId, signal });
   } };
 }
 
@@ -476,7 +476,7 @@ it('routes session tools through one Host route to the claimed root, denying unk
   expect(endpoint.registerCallRoute).toHaveBeenCalledTimes(1);
   expect(endpoint.starts).toHaveBeenCalledWith(expect.objectContaining({ sessionToolRoute: endpoint.route }));
   const unknown = new AbortController();
-  const unknownCall = endpoint.call('stranger', 'claudian_list_destinations', {}, 'session-call', unknown.signal);
+  const unknownCall = endpoint.call('stranger', 'claudian_list_destinations', {}, unknown.signal);
   unknown.abort();
   expect(await unknownCall).toMatchObject({ isError: true });
   expect(await endpoint.call('beta')).toMatchObject({ isError: true });
@@ -596,8 +596,9 @@ it('resolves nested child session-tool ownership when the root creation catalog 
   expect(grandchildResult).toEqual({ isError: false, text: '{"sessions":[]}' });
 });
 
-// The HTTP bridge and native follow frames arrive independently; no fixture retries the invocation.
-it.each(['tool/call', 'tool/ptc-dispatch-start'])('reconciles one root session-tool invocation before ownership and %s arrive', async type => {
+// The HTTP bridge and native follow frames arrive independently; no fixture retries the invocation. Ownership alone
+// admits it: native's own call event need not have arrived.
+it('reconciles one root session-tool invocation that arrives before native claims its run', async () => {
   const endpoint = sessionToolEndpoint();
   const list = jest.fn(async () => ({ sessions: [] }));
   const session = open(port(), undefined, 'persistent', { list, send: jest.fn(), read: jest.fn() });
@@ -609,7 +610,6 @@ it.each(['tool/call', 'tool/ptc-dispatch-start'])('reconciles one root session-t
   expect(list).not.toHaveBeenCalled();
   emit('alpha', 'turn/start', { turn: seq });
   emit('alpha', 'user/message', { source: { kind: 'user', rpcId: execution.executionId }, content: [] });
-  emit('alpha', type, { callId: 'session-call', subCallId: 'session-call', rootCallId: 'script', name: 'claudian_list_destinations', arguments: '{}' });
   const result = await pending;
   emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
   await done;
@@ -626,7 +626,7 @@ it.each(['native', 'request', 'session'] as const)('cancels a pending session-to
   const done = (async () => { for await (const event of execution.events) events.push(event); })();
   await until(() => peer.calls.some(call => call.method === 'session/prompt' && call.args.request.requestId === execution.executionId));
   const native = new AbortController();
-  const pending = endpoint.call('alpha', 'claudian_list_destinations', {}, 'session-call', native.signal);
+  const pending = endpoint.call('alpha', 'claudian_list_destinations', {}, native.signal);
   let settled = false;
   void pending.then(() => { settled = true; });
   await new Promise(resolve => realTimeout(resolve, 10));
@@ -650,18 +650,16 @@ it.each(['native', 'request', 'session'] as const)('cancels a pending session-to
   await next.done;
 });
 
-it.each(['unknown', 'ended', 'wrong-name'] as const)('bounds reconciliation and denies an %s native call identity', async identity => {
+it('bounds ownership reconciliation and denies a call whose run native never claims', async () => {
   const endpoint = sessionToolEndpoint();
   const list = jest.fn(async () => ({ sessions: [] }));
-  const send = jest.fn();
-  const turn = await startSessionToolTurn(open(port(), undefined, 'persistent', { list, send, read: jest.fn() }), 'alpha');
-  if (identity === 'ended') {
-    emit('alpha', 'tool/result', { message: { toolCallId: 'session-call', content: [], isError: false } });
-    emit('alpha', 'tool/call', { callId: 'barrier', name: 'read', arguments: '{}' });
-    await until(() => turn.events.some(event => event.type === 'tool_started' && event.toolCallId === 'barrier'));
-  }
+  const session = open(port(), undefined, 'persistent', { list, send: jest.fn(), read: jest.fn() });
+  const execution = session.execute(request('Prompt'));
+  const events: ProviderExecutionEvent[] = [];
+  const done = (async () => { for await (const event of execution.events) events.push(event); })();
+  await until(() => peer.calls.some(call => call.method === 'session/prompt' && call.args.request.requestId === execution.executionId));
   jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
-  const pending = endpoint.call('alpha', identity === 'wrong-name' ? 'claudian_send_message' : 'claudian_list_destinations', {}, identity === 'unknown' ? 'unknown' : 'session-call');
+  const pending = endpoint.call('alpha');
   let settled = false;
   void pending.then(() => { settled = true; });
   await Promise.resolve();
@@ -669,34 +667,11 @@ it.each(['unknown', 'ended', 'wrong-name'] as const)('bounds reconciliation and 
   jest.advanceTimersByTime(10_000);
   expect(await pending).toMatchObject({ isError: true });
   jest.useRealTimers();
+  emit('alpha', 'turn/start', { turn: seq });
+  emit('alpha', 'user/message', { source: { kind: 'user', rpcId: execution.executionId }, content: [] });
+  emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
+  await done;
   expect(list).not.toHaveBeenCalled();
-  expect(send).not.toHaveBeenCalled();
-  emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
-  await turn.done;
-});
-
-it('reconciles a child call whose new turn overtakes the previous turn end', async () => {
-  const endpoint = sessionToolEndpoint();
-  const list = jest.fn(async () => ({ sessions: [] }));
-  const turn = await startSessionToolTurn(open(port(), undefined, 'persistent', { list, send: jest.fn(), read: jest.fn() }), 'alpha');
-  peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: 'child', parentSessionId: 'alpha', origin: 'subagent', agentAvailable: true, running: true }] });
-  peer.send('session/control', { type: 'projection', sessionId: 'alpha', key: 'subagentCatalog', value: [{ id: 'child', mode: 'continuable' }] });
-  peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { parentSessionId: 'alpha', mode: 'continuable' } });
-  emit('alpha', 'subagent/catalog', { childId: 'child', mode: 'continuable' });
-  await until(() => [...peer.streams.values()].some(stream => stream.endpoint === 'session/follow' && childFollow('child')(stream.args)));
-  peer.send('session/follow', { type: 'event', event: { seq: 1, type: 'turn/start', data: { turn: 1 } } }, childFollow('child'));
-  emit('alpha', 'tool/call', { callId: 'barrier', name: 'read', arguments: '{}' });
-  await until(() => turn.events.some(event => event.type === 'tool_started' && event.toolCallId === 'barrier'));
-  const pending = endpoint.call('child');
-  peer.send('session/follow', { type: 'event', event: { seq: 2, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } } }, childFollow('child'));
-  peer.send('session/follow', { type: 'event', event: { seq: 3, type: 'turn/start', data: { turn: 2 } } }, childFollow('child'));
-  peer.send('session/follow', { type: 'event', event: { seq: 4, type: 'tool/call', data: { callId: 'session-call', name: 'claudian_list_destinations', arguments: '{}' } } }, childFollow('child'));
-  const result = await pending;
-  peer.send('session/follow', { type: 'event', event: { seq: 5, type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } } }, childFollow('child'));
-  emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
-  await turn.done;
-  expect(result).toEqual({ isError: false, text: '{"sessions":[]}' });
-  expect(list).toHaveBeenCalledTimes(1);
 });
 
 it.each(['native', 'request', 'timeout'] as const)('denies a pre-announcement child call after %s and cannot lend it a later request', async ending => {
@@ -711,7 +686,7 @@ it.each(['native', 'request', 'timeout'] as const)('denies a pre-announcement ch
   const other = await startSessionToolTurn(open(port(), undefined, 'persistent', { list: otherList, send: jest.fn(), read: jest.fn() }), 'beta');
   const native = new AbortController();
   jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
-  const pending = endpoint.call('child', 'claudian_list_destinations', {}, 'child-call', native.signal);
+  const pending = endpoint.call('child', 'claudian_list_destinations', {}, native.signal);
   let settled = false;
   void pending.then(() => { settled = true; });
   await new Promise(resolve => realTimeout(resolve, 10));
@@ -737,7 +712,7 @@ it.each(['native', 'request', 'timeout'] as const)('denies a pre-announcement ch
   const result = await pending;
   const oldDispatches = list.mock.calls.length;
   // A fresh invocation proves the child is now owned and callable under the new request.
-  const fresh = await endpoint.call('child', 'claudian_list_destinations', {}, 'child-call');
+  const fresh = await endpoint.call('child');
   peer.send('session/follow', { type: 'event', event: { seq: 3, type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } } }, childFollow('child'));
   emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
   emit('beta', 'turn/end', { turn: seq, reason: { kind: 'completed' } });

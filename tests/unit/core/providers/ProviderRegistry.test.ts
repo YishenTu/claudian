@@ -8,10 +8,6 @@ import {
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
-import type {
-  ProviderId,
-  TitleGenerationService,
-} from '@/core/providers/types';
 
 describe('ProviderRegistry', () => {
   beforeEach(() => {
@@ -219,17 +215,6 @@ describe('ProviderRegistry', () => {
   });
 
   it('requires an explicit title model instead of selecting Claude automatically', async () => {
-    const providerCalls: ProviderId[] = [];
-    const originalCreate = ProviderRegistry.createTitleGenerationService.bind(ProviderRegistry);
-    jest.spyOn(ProviderRegistry, 'createTitleGenerationService')
-      .mockImplementation((plugin: any, providerId?: ProviderId) => {
-        if (!providerId) {
-          return originalCreate(plugin);
-        }
-        providerCalls.push(providerId);
-        return createMockTitleService(providerId);
-      });
-
     const service = ProviderRegistry.createTitleGenerationService({
       settings: {
         titleGenerationModel: '',
@@ -242,7 +227,6 @@ describe('ProviderRegistry', () => {
 
     await service.generateTitle('conv-1', 'hello', callback);
 
-    expect(providerCalls).toEqual([]);
     expect(ProviderWorkspaceRegistry.ensureInitialized).not.toHaveBeenCalled();
     expect(callback).toHaveBeenCalledWith('conv-1', {
       success: false,
@@ -251,17 +235,6 @@ describe('ProviderRegistry', () => {
   });
 
   it('does not select another provider when the title model is empty', async () => {
-    const providerCalls: ProviderId[] = [];
-    const originalCreate = ProviderRegistry.createTitleGenerationService.bind(ProviderRegistry);
-    jest.spyOn(ProviderRegistry, 'createTitleGenerationService')
-      .mockImplementation((plugin: any, providerId?: ProviderId) => {
-        if (!providerId) {
-          return originalCreate(plugin);
-        }
-        providerCalls.push(providerId);
-        return createMockTitleService(providerId);
-      });
-
     const service = ProviderRegistry.createTitleGenerationService({
       settings: {
         settingsProvider: 'codex',
@@ -276,7 +249,6 @@ describe('ProviderRegistry', () => {
     const callback = jest.fn();
     await service.generateTitle('conv-1', 'hello', callback);
 
-    expect(providerCalls).toEqual([]);
     expect(ProviderWorkspaceRegistry.ensureInitialized).not.toHaveBeenCalled();
     expect(callback).toHaveBeenCalledWith('conv-1', {
       success: false,
@@ -284,49 +256,7 @@ describe('ProviderRegistry', () => {
     });
   });
 
-  it('routes explicit title model selections to the owning provider', async () => {
-    const providerCalls: ProviderId[] = [];
-    const originalCreate = ProviderRegistry.createTitleGenerationService.bind(ProviderRegistry);
-    jest.spyOn(ProviderRegistry, 'createTitleGenerationService')
-      .mockImplementation((plugin: any, providerId?: ProviderId) => {
-        if (!providerId) {
-          return originalCreate(plugin);
-        }
-        providerCalls.push(providerId);
-        return createMockTitleService(providerId);
-      });
-
-    const service = ProviderRegistry.createTitleGenerationService({
-      settings: {
-        titleGenerationModel: TEST_CODEX_MODEL,
-        providerConfigs: {
-          codex: { enabled: true, visibleModels: [TEST_CODEX_MODEL], discoveredModels: TEST_CODEX_CATALOG },
-        },
-      },
-    } as any);
-    const callback = jest.fn();
-
-    await service.generateTitle('conv-1', 'hello', callback);
-
-    expect(providerCalls).toEqual(['codex']);
-    expect(callback).toHaveBeenCalledWith('conv-1', {
-      success: true,
-      title: 'codex title',
-    });
-  });
-
   it('rejects a disabled title selection before initializing its provider', async () => {
-    const providerCalls: ProviderId[] = [];
-    const originalCreate = ProviderRegistry.createTitleGenerationService.bind(ProviderRegistry);
-    jest.spyOn(ProviderRegistry, 'createTitleGenerationService')
-      .mockImplementation((plugin: any, providerId?: ProviderId) => {
-        if (!providerId) {
-          return originalCreate(plugin);
-        }
-        providerCalls.push(providerId);
-        return createMockTitleService(providerId);
-      });
-
     const service = ProviderRegistry.createTitleGenerationService({
       settings: {
         titleGenerationModel: TEST_CODEX_MODEL,
@@ -342,7 +272,6 @@ describe('ProviderRegistry', () => {
     const callback = jest.fn();
     await service.generateTitle('conv-1', 'hello', callback);
 
-    expect(providerCalls).toEqual([]);
     expect(ProviderWorkspaceRegistry.ensureInitialized).not.toHaveBeenCalled();
     expect(callback).toHaveBeenCalledWith('conv-1', {
       success: false,
@@ -381,11 +310,11 @@ describe('ProviderRegistry', () => {
     jest.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockImplementation(async () => {
       settings.providerConfigs.codex.enabled = false;
     });
-    const createService = jest.spyOn(ProviderRegistry, 'createTitleGenerationService');
+    const createBackend = jest.spyOn(ProviderRegistry, 'createExecutionBackend');
     const service = ProviderRegistry.createTitleGenerationService({ settings } as any);
     const callback = jest.fn();
     await service.generateTitle('conversation', 'hello', callback);
-    expect(createService).toHaveBeenCalledTimes(1);
+    expect(createBackend).not.toHaveBeenCalled();
     expect(callback).toHaveBeenCalledWith('conversation', {
       success: false,
       error: expect.stringContaining('became unavailable'),
@@ -393,15 +322,3 @@ describe('ProviderRegistry', () => {
   });
 
 });
-
-function createMockTitleService(providerId: ProviderId): TitleGenerationService {
-  return {
-    cancel: jest.fn(),
-    generateTitle: jest.fn(async (conversationId, _userMessage, callback) => {
-      await callback(conversationId, {
-        success: true,
-        title: `${providerId} title`,
-      });
-    }),
-  };
-}

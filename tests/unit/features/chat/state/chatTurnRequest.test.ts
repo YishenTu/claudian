@@ -19,20 +19,4 @@ describe('captureSelectionSnapshots', () => {
     expect(captureSelectionSnapshots({ ...legacy, selections: [] })).toEqual([]);
   });
 
-  it('owns nested cursor and canvas data after capture', () => {
-    const context = {
-      editorSelection: { mode: 'cursor' as const, notePath: 'same.md', cursorContext: {
-        beforeCursor: 'before', afterCursor: 'after', isInbetween: false, line: 0, column: 6,
-      } },
-      canvasSelection: { canvasPath: 'same.canvas', nodeIds: ['captured-node'] },
-    };
-    const selections = captureSelectionSnapshots(context);
-    context.editorSelection.cursorContext.beforeCursor = 'changed';
-    context.canvasSelection.nodeIds.push('later-node');
-    const prompt = appendExecutionContext('Question', { selections });
-    expect(prompt).toContain('before|after');
-    expect(prompt).toContain('captured-node');
-    expect(prompt).not.toContain('changed');
-    expect(prompt).not.toContain('later-node');
-  });
 });

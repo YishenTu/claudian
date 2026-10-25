@@ -116,16 +116,13 @@ function invalidateClaudeConversationSessions(conversations: Conversation[]): Co
 export const claudeSettingsReconciler = {
   invalidateConversationSessions: invalidateClaudeConversationSessions,
 
-  reconcileModelWithEnvironment(
-    settings: Record<string, unknown>,
-    conversations: Conversation[],
-  ): ProviderEnvironmentReconciliation {
+  reconcileModelWithEnvironment(settings: Record<string, unknown>): ProviderEnvironmentReconciliation {
     const inputs = readFingerprintInputs(settings);
     if (!inputs.savedFingerprint && !hasFingerprintInputs(inputs)) {
-      return { changed: false, invalidatedConversations: [] };
+      return { changed: false };
     }
     if (isCurrentLegacyFingerprint(inputs)) {
-      return { changed: false, invalidatedConversations: [] };
+      return { changed: false };
     }
     const current = computeFingerprints(inputs);
     const { changed, sessionPolicy } = compareScopedRuntimeInputFingerprints(
@@ -134,18 +131,14 @@ export const claudeSettingsReconciler = {
       computeSessionFingerprint({ environment: {}, environmentText: '' }),
     );
     if (!changed) {
-      return { changed: false, invalidatedConversations: [] };
+      return { changed: false };
     }
-
-    const invalidatedConversations = sessionPolicy === 'invalidate'
-      ? invalidateClaudeConversationSessions(conversations)
-      : [];
 
     updateClaudeProviderSettings(settings, {
       environmentHash: current.runtime,
       sessionEnvironmentHash: current.session,
     });
-    return { changed: true, invalidatedConversations, sessionPolicy };
+    return { changed: true, sessionPolicy };
   },
 
   normalizeModelVariantSettings(settings: Record<string, unknown>): boolean {

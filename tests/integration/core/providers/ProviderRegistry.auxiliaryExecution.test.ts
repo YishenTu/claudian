@@ -3,6 +3,7 @@ import { FakeAuxiliaryBackend, waitFor } from '@test/helpers/core/auxiliary/Auxi
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { ProviderRegistration } from '@/core/providers/types';
 
 it.each([true, false])('selects auxiliary persistence from ephemeral support (%s)', async (supported) => {
@@ -20,7 +21,8 @@ it.each([true, false])('selects auxiliary persistence from ephemeral support (%s
     workingDirectory: '/vault',
     executionLifecycleRegistry: lifecycle,
   } as unknown as ProviderHost;
-  const title = ProviderRegistry.createTitleGenerationService(host, 'claude');
+  ProviderWorkspaceRegistry.setServices('claude', {});
+  const title = ProviderRegistry.createTitleGenerationService(host);
   const inlineEdit = ProviderRegistry.createInlineEditService(host, 'claude');
   try {
     const results = [
@@ -42,5 +44,6 @@ it.each([true, false])('selects auxiliary persistence from ephemeral support (%s
     title.cancel();
     inlineEdit.end();
     await lifecycle.dispose();
+    ProviderWorkspaceRegistry.clear();
   }
 });

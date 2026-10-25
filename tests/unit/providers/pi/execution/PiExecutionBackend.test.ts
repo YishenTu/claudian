@@ -2660,15 +2660,22 @@ describe('PiExecutionBackend', () => {
     await harness.session.dispose();
   });
 
-  it('terminates an immediate retry when prior rollback fails and blocks further execution', async () => {
+  it('leaves a failed rollback target behind and lets an immediate retry materialize its own fork', async () => {
     const firstTarget = {
       leafEntryId: 'assistant-1',
       parentSession: '/tmp/source.jsonl',
       sessionFile: '/tmp/fork-a.jsonl',
       sessionId: 'fork-a',
     };
+    const retryTarget = {
+      ...firstTarget,
+      sessionFile: '/tmp/fork-b.jsonl',
+      sessionId: 'fork-b',
+    };
     const firstCreation = createRejectableDeferred<typeof firstTarget>();
-    const createForkSessionFile = jest.fn(() => firstCreation.promise);
+    const createForkSessionFile = jest.fn()
+      .mockImplementationOnce(() => firstCreation.promise)
+      .mockResolvedValueOnce(retryTarget);
     const rollbackForkSessionFile = jest.fn(async () => {
       throw new Error('fork rollback failed');
     });
@@ -2683,6 +2690,7 @@ describe('PiExecutionBackend', () => {
       createForkSessionFile,
       rollbackForkSessionFile,
     });
+    harness.responses.set('get_state', retryTarget);
     const firstRun = harness.session.execute(createRequest({
       input: [{ text: 'A', type: 'text' }],
     }));
@@ -2694,48 +2702,25 @@ describe('PiExecutionBackend', () => {
     const retryEventsPromise = collect(harness.session.execute(createRequest({
       input: [{ text: 'B', type: 'text' }],
     })).events);
-    let retrySettled = false;
-    void retryEventsPromise.then(() => {
-      retrySettled = true;
-    });
     firstCreation.resolve(firstTarget);
-    await waitFor(() => rollbackForkSessionFile.mock.calls.length === 1, 100);
-    await flush();
-
-    expect(retrySettled).toBe(true);
+    await waitFor(() => harness.kernels.length === 1, 100);
+    harness.kernels[0].emit({ type: 'agent_start' });
+    harness.kernels[0].emit({ type: 'agent_end' });
+    harness.kernels[0].emit({ type: 'agent_settled' });
     const retryEvents = await retryEventsPromise;
+
     expect(firstEvents.filter(event => (
       event.type === 'cancelled'
       || event.type === 'execution_error'
       || event.type === 'turn_completed'
     ))).toEqual([expect.objectContaining({ type: 'cancelled' })]);
-    expect(retryEvents.filter(event => (
-      event.type === 'cancelled'
-      || event.type === 'execution_error'
-      || event.type === 'turn_completed'
-    ))).toEqual([
-      expect.objectContaining({
-        category: 'provider',
-        recoverable: false,
-        type: 'execution_error',
-      }),
-    ]);
-    expect(retryEvents.at(-2)).toMatchObject({
-      snapshot: expect.objectContaining({
-        invalidation: expect.objectContaining({ recoverable: false }),
-        status: 'invalidated',
-      }),
-      type: 'session_state_changed',
-    });
-    expect(harness.session.getStatus()).toBe('invalidated');
-    expect(() => harness.session.execute(createRequest())).toThrow(
-      'cleanup failed and requires disposal',
-    );
-    await expect(harness.session.dispose()).rejects.toThrow('fork rollback failed');
-    expect(harness.session.getStatus()).toBe('disposed');
-    expect(createForkSessionFile).toHaveBeenCalledTimes(1);
-    expect(rollbackForkSessionFile).toHaveBeenCalledTimes(1);
-    expect(harness.kernels).toHaveLength(0);
+    expect(retryEvents.at(-1)).toMatchObject({ type: 'turn_completed' });
+    expect(rollbackForkSessionFile).toHaveBeenCalledWith(firstTarget);
+    expect(createForkSessionFile).toHaveBeenCalledTimes(2);
+    const sessionTargetIndex = harness.kernels[0].launchSpec.args.indexOf('--session') + 1;
+    expect(harness.kernels[0].launchSpec.args[sessionTargetIndex]).toBe('/tmp/fork-b.jsonl');
+    expect(harness.session.getStatus()).toBe('idle');
+    await expect(harness.session.dispose()).resolves.toBeUndefined();
   });
 
   it('retries the preserved fork seed after an ordinary prior creation failure', async () => {
@@ -2789,7 +2774,7 @@ describe('PiExecutionBackend', () => {
     await harness.session.dispose();
   });
 
-  it('keeps cancellation primary while lifecycle disposal surfaces rollback failure', async () => {
+  it('keeps cancellation primary and disposes cleanly when rollback fails', async () => {
     const createdFork = {
       leafEntryId: 'assistant-1',
       parentSession: '/tmp/source.jsonl',
@@ -2825,7 +2810,7 @@ describe('PiExecutionBackend', () => {
       || event.type === 'execution_error'
       || event.type === 'turn_completed'
     ))).toEqual([expect.objectContaining({ type: 'cancelled' })]);
-    await expect(disposePromise).rejects.toThrow('fork rollback failed');
+    await expect(disposePromise).resolves.toBeUndefined();
     expect(rollbackForkSessionFile).toHaveBeenCalledTimes(1);
     expect(harness.session.getSnapshot()).toMatchObject({
       providerState: {

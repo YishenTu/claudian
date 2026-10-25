@@ -108,11 +108,7 @@ export class CanvasSelectionController {
   }
 
   getContext(): CanvasSelectionContext | null {
-    if (!this.storedSelection) return null;
-    return {
-      canvasPath: this.storedSelection.canvasPath,
-      nodeIds: [...this.storedSelection.nodeIds],
-    };
+    return this.storedSelection;
   }
 
   hasSelection(): boolean {

@@ -70,26 +70,25 @@ export class ProviderRegistry {
     return factory?.(plugin) ?? null;
   }
 
-  static createTitleGenerationService(plugin: ProviderHost, providerId?: ProviderId): TitleGenerationService {
-    if (!providerId) {
-      return new RoutedTitleGenerationService({
-        resolveProviderId: () => this.resolveTitleGenerationSelection(plugin.settings)?.providerId ?? null,
-        initializeProvider: provider => ProviderWorkspaceRegistry.ensureInitialized(
-          plugin, provider, 'title-generation',
-        ),
-        createService: provider => this.createTitleGenerationService(plugin, provider),
-      });
-    }
-    const registration = this.getProviderRegistration(providerId);
-    return new SharedTitleGenerationService({
-      ...this.createAuxiliaryExecutionContext(plugin, providerId),
-      resolveLocale: () => resolveTitleGenerationLocale(plugin.settings),
-      resolveModel: () => {
-        const selection = this.resolveTitleGenerationSelection(plugin.settings);
-        if (!selection || selection.providerId !== providerId) {
-          throw new ProviderModelUnavailableError(registration.displayName);
-        }
-        return selection.model;
+  static createTitleGenerationService(plugin: ProviderHost): TitleGenerationService {
+    return new RoutedTitleGenerationService({
+      resolveProviderId: () => this.resolveTitleGenerationSelection(plugin.settings)?.providerId ?? null,
+      initializeProvider: provider => ProviderWorkspaceRegistry.ensureInitialized(
+        plugin, provider, 'title-generation',
+      ),
+      createService: providerId => {
+        const registration = this.getProviderRegistration(providerId);
+        return new SharedTitleGenerationService({
+          ...this.createAuxiliaryExecutionContext(plugin, providerId),
+          resolveLocale: () => resolveTitleGenerationLocale(plugin.settings),
+          resolveModel: () => {
+            const selection = this.resolveTitleGenerationSelection(plugin.settings);
+            if (!selection || selection.providerId !== providerId) {
+              throw new ProviderModelUnavailableError(registration.displayName);
+            }
+            return selection.model;
+          },
+        });
       },
     });
   }

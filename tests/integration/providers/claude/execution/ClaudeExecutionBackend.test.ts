@@ -6,6 +6,7 @@ import { withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { updateClaudeProviderSettings } from '@/providers/claude/settings';
 
 const sdkMock = sdkModule as unknown as {
@@ -104,7 +105,8 @@ describe('Claude auxiliary execution', () => {
   it('releases a non-persistent title query after its single response', async () => {
     const context = createContext();
     updateClaudeProviderSettings(context.host.settings, { promptSuggestions: true });
-    const service = ProviderRegistry.createTitleGenerationService(context.host, 'claude');
+    ProviderWorkspaceRegistry.setServices('claude', {});
+    const service = ProviderRegistry.createTitleGenerationService(context.host);
     const callback = jest.fn();
     try {
       respond('A useful title');
@@ -123,6 +125,7 @@ describe('Claude auxiliary execution', () => {
     } finally {
       service.cancel();
       await context.lifecycleRegistry.dispose();
+      ProviderWorkspaceRegistry.clear();
     }
   });
 });

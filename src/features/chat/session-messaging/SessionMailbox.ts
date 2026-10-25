@@ -11,18 +11,8 @@ export class SessionMessageDeferredError extends Error {}
 
 interface MailboxEntry {
   readonly message: MailboxMessage;
-  /** Holds its place without dispatching until admitted and, for an interrupt, stopped. */
-  held: boolean;
   /** Queue order: interrupts first, newest first, then ordinary entries in admission order. */
   readonly rank: number;
-}
-
-/** The held entry's side of a selection switch that must commit before the message is admitted. */
-export interface SessionMessageAdmission {
-  /** False once the entry was discarded or the recipient became unavailable. */
-  readonly isCurrent: boolean;
-  /** Admits the entry; call it inside the switch's commit. */
-  commit(): void;
 }
 
 export interface SessionMessageDelivery {
@@ -31,11 +21,6 @@ export interface SessionMessageDelivery {
   /** Omitted for a queued message. */
   readonly mode?: SessionToolSendMode;
   readonly signal: AbortSignal;
-  /**
-   * Commits a sticky selection switch while the message holds its place, calling `commit` inside it.
-   * Rejecting withdraws the message: nothing is admitted, stopped or delivered.
-   */
-  readonly commitSwitch?: (admission: SessionMessageAdmission) => Promise<void>;
 }
 
 /**
@@ -56,7 +41,7 @@ export class SessionMailbox {
 
   get hasPending(): boolean { return this.pending.length > 0; }
 
-  async deliver({ message, mode, signal, commitSwitch }: SessionMessageDelivery): Promise<SessionToolSendStatus> {
+  async deliver({ message, mode, signal }: SessionMessageDelivery): Promise<SessionToolSendStatus> {
     if (mode === 'steer' && message) {
       const model = this.deps.runtime.peekModel;
       const steered = model ? await model.inputController.steerSessionMessage(message, signal) : 'not-sent';
@@ -69,32 +54,12 @@ export class SessionMailbox {
     if (!this.isAvailable) throw new Error('The target session is unavailable');
 
     const admission = ++this.admissions;
-    const entry: MailboxEntry = { message, held: true, rank: mode === 'interrupt' ? -admission : admission };
-    const generation = this.generation;
-    const isCurrent = () => generation === this.generation && this.pending.includes(entry) && this.isAvailable;
-    // Admission and release are separate: the entry stays held until an interrupt's stop has run,
-    // so a hydration finishing in between cannot start it only for the stop to cancel it.
-    let admitted = false;
-    const commit = () => {
-      if (admitted || !isCurrent()) throw new Error('Session message reservation was discarded');
-      admitted = true;
-    };
-    this.insert(entry);
-    this.notify();
-    try {
-      if (commitSwitch) await commitSwitch({ get isCurrent() { return isCurrent(); }, commit });
-      else commit();
-      if (!admitted) throw new Error('The session or its selection changed before message admission');
-    } catch (error) {
-      if (admitted) entry.held = false;
-      else this.remove(entry);
-      this.notify();
-      throw error;
-    }
-    // Stopped only once admitted, so a rejected send changes nothing; the entry is already first.
+    const entry: MailboxEntry = { message, rank: mode === 'interrupt' ? -admission : admission };
+    // Stopped before the entry is queued; a dispatch woken meanwhile picks its head only after the
+    // model is ready, by which time the entry is already first.
     const interrupted = mode === 'interrupt' && this.stop();
-    entry.held = false;
-    const starts = isCurrent() && this.pending[0] === entry && !this.dispatching && this.canDispatch;
+    this.insert(entry);
+    const starts = this.pending[0] === entry && !this.dispatching && this.canDispatch;
     this.notify();
     return interrupted ? 'interrupted' : starts ? 'started' : 'queued';
   }
@@ -114,7 +79,7 @@ export class SessionMailbox {
       this.clear();
       return;
     }
-    if (this.dispatching || this.pending[0].held || !this.canDispatch) return;
+    if (this.dispatching || !this.canDispatch) return;
     this.dispatching = true;
     const generation = this.generation;
     let entry: MailboxEntry | undefined;
@@ -124,7 +89,7 @@ export class SessionMailbox {
       if (!this.deps.isTargetAvailable()) { this.clear(); return; }
       // Chosen once the model is ready, so nothing admitted while it hydrated is overtaken.
       const head = this.pending[0];
-      if (!head || head.held || !this.canDispatch) return;
+      if (!head || !this.canDispatch) return;
       entry = head;
       this.remove(head);
       await model.inputController.sendSessionMessage(head.message, {
@@ -145,7 +110,7 @@ export class SessionMailbox {
     }).catch(() => {
       if (generation !== this.generation || dispositionReported) return;
       // A model that cannot hydrate fails its head entry rather than retrying it forever.
-      const failed = entry ?? (this.pending[0]?.held === false ? this.pending[0] : undefined);
+      const failed = entry ?? this.pending[0];
       if (!failed) return;
       this.remove(failed);
       this.deps.onDiscard([failed.message]);

@@ -80,7 +80,6 @@ import type {
 } from './GrokExecutionBackend';
 import { GrokExecutionInteractionRouter } from './GrokExecutionInteractionRouter';
 import {
-  normalizeGrokModelUpdateMetadata,
   normalizeGrokSessionModelMetadata,
   normalizeGrokSetModelMetadata,
 } from './GrokSessionModelMetadata';
@@ -103,7 +102,6 @@ interface PendingInterjection {
 
 interface ActiveExecution {
   readonly abortController: AbortController;
-  readonly cancellationGeneration: number;
   readonly request: ProviderExecutionRequest;
   readonly run: RequestedRunChannel;
   readonly turn: ACPRequestedTurn;
@@ -120,7 +118,6 @@ interface GrokNativeSession {
 }
 
 interface GrokNativeOwner {
-  readonly generation: number;
   initialized: boolean;
   loadedSessionConfigurationKey: string | null;
   loadedSessionId: string | null;
@@ -144,11 +141,9 @@ RewindableExecutionSession {
   private active: ActiveExecution | null = null;
   private sessionToolRoute: Promise<SessionToolRoute> | null = null;
   private cancellationFlight: Promise<void> | null = null;
-  private cancellationGeneration = 0;
   private disposalFlight: Promise<void> | null = null;
   private disposed = false;
   private forkCreationFlight: Promise<string> | null = null;
-  private nativeGeneration = 0;
   private nativeOwner: GrokNativeOwner | null = null;
   private nativeStartupFlight: Promise<GrokExecutionNativeConnection> | null = null;
   private quarantineGeneration = 0;
@@ -158,7 +153,6 @@ RewindableExecutionSession {
   private nativeConversationContextEstablished: boolean;
   private providerSessionId: string | undefined;
   private readonly state: SessionSnapshotState;
-  private forkApplied = false;
   private nativeAlwaysApproveOverride = false;
   private selectedPermissionMode = 'normal';
 
@@ -204,7 +198,6 @@ RewindableExecutionSession {
     });
     const active: ActiveExecution = {
       abortController: new AbortController(),
-      cancellationGeneration: this.cancellationGeneration,
       promptUsage: null,
       interjections: new Map(),
       observedTurnCompletions: 0,
@@ -232,8 +225,7 @@ RewindableExecutionSession {
   }
 
   cancel(): void {
-    const run = this.active?.run;
-    if (run) void this.#cancelRun(run, 'cancelled');
+    this.active?.run.cancel();
   }
 
   getSnapshot(): ProviderSessionSnapshot {
@@ -442,7 +434,6 @@ RewindableExecutionSession {
     if (quarantineGeneration !== this.quarantineGeneration || this.disposed) {
       throw new Error('Grok Build native startup was cancelled.');
     }
-    const generation = ++this.nativeGeneration;
     const native = this.options.nativeFactory.create({
       command,
       cwd: this.config.workingDirectory,
@@ -486,7 +477,6 @@ RewindableExecutionSession {
       version: this.host.clientVersion ?? '0.0.0',
     });
     const owner: GrokNativeOwner = {
-      generation,
       initialized: false,
       loadedSessionConfigurationKey: null,
       loadedSessionId: null,
@@ -578,7 +568,7 @@ RewindableExecutionSession {
       };
     }
     const state = parseGrokProviderState(this.state.providerState);
-    if (state.forkSource && !this.forkApplied) {
+    if (state.forkSource) {
       if (!native.fork || !state.forkSourceSessionDirectory) {
         throw new Error('Grok Build fork metadata is incomplete.');
       }
@@ -866,7 +856,6 @@ RewindableExecutionSession {
     const active = this.active;
     if (!active || active.run !== run || run.isTerminal) return;
     if (this.cancellationFlight) return this.cancellationFlight;
-    this.cancellationGeneration += 1;
     this.#updateSnapshot('cancelling');
     this.#emitCurrentSnapshot();
     this.quarantineGeneration += 1;
@@ -909,7 +898,7 @@ RewindableExecutionSession {
 
   #isCancellationRequested(active: ActiveExecution): boolean {
     return this.disposed
-      || active.cancellationGeneration !== this.cancellationGeneration
+      || active.run.isCancellationRequested
       || this.active !== active
       || active.run.isTerminal;
   }
@@ -955,15 +944,8 @@ RewindableExecutionSession {
     sourceSessionId: string,
     request: Parameters<NonNullable<GrokExecutionNativeConnection['fork']>>[0],
   ): Promise<string> {
-    if (this.forkCreationFlight) return this.forkCreationFlight;
-    const fork = native.fork?.bind(native);
-    if (!fork) return Promise.reject(new Error('Grok Build fork metadata is incomplete.'));
-
     const flight = (async () => {
-      const response = await fork(request);
-      if (!response.newSessionId.trim()) {
-        throw new Error('Grok Build returned a fork without a child session.');
-      }
+      const response = await native.fork!(request);
       this.#adoptForkSession(response.newSessionId);
       if (response.parentSessionId !== sourceSessionId) {
         throw new Error('Grok Build returned a fork for an unexpected parent session.');
@@ -983,7 +965,6 @@ RewindableExecutionSession {
   }
 
   #adoptForkSession(providerSessionId: string): void {
-    this.forkApplied = true;
     this.state.deleteProviderStateValue('forkSource');
     this.state.deleteProviderStateValue('forkSourceSessionDirectory');
     this.#captureProviderSession(providerSessionId, null);
@@ -1004,22 +985,10 @@ RewindableExecutionSession {
   #shutdownNativeOwner(owner: GrokNativeOwner): Promise<void> {
     if (this.nativeOwner === owner) {
       this.nativeOwner = null;
-      try {
-        owner.notificationUnsubscribe();
-      } catch {
-        // Listener cleanup cannot prevent process shutdown.
-      }
-      try {
-        owner.modeUnsubscribe();
-        owner.interjectionUnsubscribe();
-      } catch {
-        // Listener cleanup cannot prevent process shutdown.
-      }
-      try {
-        owner.modelsUnsubscribe();
-      } catch {
-        // Listener cleanup cannot prevent process shutdown.
-      }
+      owner.notificationUnsubscribe();
+      owner.modeUnsubscribe();
+      owner.interjectionUnsubscribe();
+      owner.modelsUnsubscribe();
     }
     if (!owner.shutdownFlight) {
       owner.shutdownFlight = Promise.resolve().then(() => owner.native.shutdown());
@@ -1028,9 +997,7 @@ RewindableExecutionSession {
   }
 
   #isCurrentNativeOwner(owner: GrokNativeOwner): boolean {
-    return !this.disposed
-      && owner.generation === this.nativeGeneration
-      && this.nativeOwner === owner;
+    return !this.disposed && this.nativeOwner === owner;
   }
 
   #getNativeOwner(
@@ -1125,9 +1092,7 @@ RewindableExecutionSession {
     owner: GrokNativeOwner,
     state: ACPSessionModelState,
   ): Promise<void> {
-    if (!this.#isCurrentNativeOwner(owner)) return;
-    const update = normalizeGrokModelUpdateMetadata(state);
-    if (!update || !this.#isCurrentNativeOwner(owner)) return;
+    const update = normalizeGrokSessionModelMetadata({ models: state });
     await this.#mergeModelMetadataBestEffort(
       update.models,
       update.currentModelId ?? undefined,

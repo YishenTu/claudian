@@ -170,19 +170,8 @@ async function readSessionTimeCandidate(
     const lastRecords = lastStart === 0
       ? firstRecords
       : parseCompleteRecords(lastBuffer.toString('utf8'), true, true);
-    const observedSessionIds = new Set<string>();
-    const timestamps: number[] = [];
     const sampledRecords = [...firstRecords, ...lastRecords];
-    for (const record of sampledRecords) {
-      if (typeof record.sessionId === 'string') {
-        observedSessionIds.add(record.sessionId);
-      }
-      if (typeof record.timestamp === 'string') {
-        const timestamp = Date.parse(record.timestamp);
-        if (Number.isFinite(timestamp)) timestamps.push(timestamp);
-      }
-    }
-    if (!observedSessionIds.has(sessionId) || timestamps.length === 0) return null;
+    if (!sampledRecords.some(record => record.sessionId === sessionId)) return null;
 
     const firstTimestamp = firstTimestampFromRecords(firstRecords);
     const lastTimestamp = lastTimestampFromRecords(lastRecords);

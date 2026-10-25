@@ -14,10 +14,7 @@ export function createCodexWorkspaceDependencyTool(
 ): CodexDynamicToolRegistration {
   return {
     includeInThreadStart: true,
-    namespace: {
-      name: CODEX_WORKSPACE_DEPENDENCY_TOOL_NAMESPACE,
-      description: 'Tools provided by the Claudian Codex host.',
-    },
+    namespace: CODEX_WORKSPACE_DEPENDENCY_TOOL_NAMESPACE,
     tool: {
       type: 'function',
       name: CODEX_WORKSPACE_DEPENDENCY_TOOL_NAME,

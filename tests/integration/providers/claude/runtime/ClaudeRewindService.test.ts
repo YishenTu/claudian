@@ -9,26 +9,23 @@ describe('Claude rewind filesystem recovery', () => {
   beforeEach(async () => { root = await fs.mkdtemp(path.join(tmpdir(), 'claudian-rewind-test-')); });
   afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); });
 
-  it.each(['throws', 'declines'] as const)('restores files, directories, links and missing paths when the provider %s after mutation', async failure => {
+  it.each(['throws', 'declines'] as const)('restores tracked files, linked files, dangling links and missing paths when the provider %s after mutation', async failure => {
     await fs.writeFile(path.join(root, 'existing.txt'), 'Original file');
     await fs.mkdir(path.join(root, 'directory'));
     await fs.writeFile(path.join(root, 'directory/nested.txt'), 'Original nested file');
-    const target = path.join(root, 'link-target');
-    await fs.mkdir(target);
-    await fs.writeFile(path.join(target, 'untouched.txt'), 'Link target');
-    await fs.symlink(target, path.join(root, 'link'), 'junction');
+    const target = path.join(root, 'link-target.md');
+    await fs.writeFile(target, 'Link target');
+    await fs.symlink(target, path.join(root, 'linked.md'));
+    await fs.symlink(path.join(root, 'missing-target.md'), path.join(root, 'dangling.md'));
     let closeCount = 0;
     const rewind = executeClaudeRewind('user-1', {
       assistantMessageId: 'assistant-1', mode: 'code-and-conversation', vaultPath: root,
       closePersistentQuery: () => { closeCount += 1; },
       rewindFiles: async (_id, dryRun) => {
-        if (dryRun) return { canRewind: true, filesChanged: ['existing.txt', 'directory', 'link', 'created.txt'] };
+        // Dry runs do not apply the SDK's link-safety refusal, so a linked path can be reported but stays untouched.
+        if (dryRun) return { canRewind: true, filesChanged: ['existing.txt', 'directory/nested.txt', 'linked.md', 'dangling.md', 'created.txt'] };
         await fs.writeFile(path.join(root, 'existing.txt'), 'Partially rewound');
         await fs.rm(path.join(root, 'directory'), { recursive: true });
-        await fs.mkdir(path.join(root, 'directory'));
-        await fs.writeFile(path.join(root, 'directory/replacement.txt'), 'New content');
-        await fs.unlink(path.join(root, 'link'));
-        await fs.writeFile(path.join(root, 'link'), 'Replaced symlink');
         await fs.writeFile(path.join(root, 'created.txt'), 'Created during rewind');
         if (failure === 'throws') throw new Error('Provider rewind interrupted');
         return { canRewind: false, error: 'Provider declined rewind' };
@@ -41,11 +38,10 @@ describe('Claude rewind filesystem recovery', () => {
       ? restoredFailure
       : { value: { canRewind: false } });
     expect(await fs.readFile(path.join(root, 'existing.txt'), 'utf8')).toBe('Original file');
-    expect(await fs.readdir(path.join(root, 'directory'))).toEqual(['nested.txt']);
     expect(await fs.readFile(path.join(root, 'directory/nested.txt'), 'utf8')).toBe('Original nested file');
-    expect((await fs.lstat(path.join(root, 'link'))).isSymbolicLink()).toBe(true);
-    expect(await fs.realpath(path.join(root, 'link'))).toBe(await fs.realpath(target));
-    expect(await fs.readFile(path.join(root, 'link/untouched.txt'), 'utf8')).toBe('Link target');
+    expect((await fs.lstat(path.join(root, 'linked.md'))).isSymbolicLink()).toBe(true);
+    expect(await fs.readFile(target, 'utf8')).toBe('Link target');
+    expect((await fs.lstat(path.join(root, 'dangling.md'))).isSymbolicLink()).toBe(true);
     await expect(fs.stat(path.join(root, 'created.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
     expect(closeCount).toBe(1);
   });

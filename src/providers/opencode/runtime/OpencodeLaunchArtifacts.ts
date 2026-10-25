@@ -181,21 +181,7 @@ export function buildOpencodeManagedConfig(
   return config;
 }
 
-const pendingFileWrites = new Map<string, Promise<void>>();
-
 export async function writeIfChanged(filePath: string, content: string): Promise<void> {
-  // Serialize launches in this plugin so each compares against the latest completed write.
-  const previous = pendingFileWrites.get(filePath) ?? Promise.resolve();
-  const pending = previous.catch(() => undefined).then(() => writeFileIfChanged(filePath, content));
-  pendingFileWrites.set(filePath, pending);
-  try {
-    await pending;
-  } finally {
-    if (pendingFileWrites.get(filePath) === pending) pendingFileWrites.delete(filePath);
-  }
-}
-
-async function writeFileIfChanged(filePath: string, content: string): Promise<void> {
   try {
     if (await fs.readFile(filePath, 'utf-8') === content) return;
   } catch (error) {

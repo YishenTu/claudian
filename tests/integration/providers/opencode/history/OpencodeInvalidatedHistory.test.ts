@@ -35,7 +35,7 @@ describe('OpenCode history after runtime invalidation', () => {
       },
     };
     // Record the starting runtime fingerprint.
-    opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+    opencodeSettingsReconciler.reconcileModelWithEnvironment(settings);
     seedSession('session-original', [
       { role: 'user', text: 'Original prompt' },
       { role: 'assistant', text: 'Original reply', model: { providerID: 'google', modelID: 'gemini-3.5-flash' } },
@@ -184,7 +184,7 @@ describe('OpenCode history after runtime invalidation', () => {
     const config = (settings.providerConfigs as Record<string, Record<string, unknown>>).opencode;
     config.environmentVariables = '';
     config.environmentHash = undefined;
-    opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+    opencodeSettingsReconciler.reconcileModelWithEnvironment(settings);
   }
 
   function createConversation(): Conversation {
@@ -206,9 +206,8 @@ describe('OpenCode history after runtime invalidation', () => {
   ): Conversation[] {
     const config = (settings.providerConfigs as Record<string, Record<string, unknown>>).opencode;
     config.environmentVariables = `${String(config.environmentVariables)}\n${variable}`;
-    const result = opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]);
-    expect(result.changed).toBe(true);
-    return result.invalidatedConversations;
+    expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true });
+    return opencodeSettingsReconciler.invalidateConversationSessions([conversation]);
   }
 
   function seedSession(sessionId: string, messages: SeedMessage[], target = databasePath): void {

@@ -54,10 +54,10 @@ it('gives every preset the session prompt directory and its tool policy while ke
         section: section => { sections.push(section); return () => {}; },
         getSectionOrder: name => name,
       } }, config);
-      for (const bad of [{}, { promptDirectory: 1 }, { promptDirectory: 'x', allow: ['write'] }, { promptDirectory: 'x', codeModeFile: 1 }, { promptDirectory: 'x', allow: [], codeModeFile: 'mode' }]) {
+      for (const bad of [{}, { promptDirectory: 1 }]) {
         let rejected = false;
         try { plugin.apply({}, bad); } catch { rejected = true; }
-        if (!rejected) throw new Error('Unsafe bridge configuration accepted');
+        if (!rejected) throw new Error('Configuration without a prompt directory accepted');
       }
       const persona = sections[0];
       const session = { id: process.argv[3], header: { id: process.argv[3] } };
@@ -541,7 +541,7 @@ it('runs the sessions plugin in a child, forwarding caller identity, re-reading 
   try {
     const next = await replacement.registerCallRoute(async request => {
       calls.push({ name: request.name, args: request.args, callerNativeId: request.callerNativeId });
-      if ((request.args as { args: { text?: string } }).args.text === 'hold') {
+      if ((request.args as { text?: string }).text === 'hold') {
         const stopped = new Promise<void>(resolve => request.signal.addEventListener('abort', () => { cancelled(); resolve(); }, { once: true }));
         stopCall();
         await stopped;
@@ -576,7 +576,7 @@ it('runs the sessions plugin in a child, forwarding caller identity, re-reading 
           return spec;
         } };
       } }, tools: { register: tool => tools.push(tool) } }, JSON.parse(process.argv[2]));
-      const exec = { callId: 'native-call', agent: { id: 'child-native' }, signal: new AbortController().signal };
+      const exec = { agent: { id: 'child-native' }, signal: new AbortController().signal };
       const before = await tools[0].execute({}, exec);
       const after = await tools[1].execute({ sessionId: 'target', text: 'hello' }, exec);
       const stop = new AbortController();
@@ -599,9 +599,9 @@ it('runs the sessions plugin in a child, forwarding caller identity, re-reading 
     expect(output.tools[1].parameters.text.required).not.toBe(true);
     await aborted;
     expect(calls).toEqual([
-      { name: 'claudian_list_destinations', args: { callId: 'native-call', args: {} }, callerNativeId: 'child-native' },
-      { name: 'claudian_send_message', args: { callId: 'native-call', args: { sessionId: 'target', text: 'hello' } }, callerNativeId: 'child-native' },
-      { name: 'claudian_send_message', args: { callId: 'native-call', args: { text: 'hold' } }, callerNativeId: 'child-native' },
+      { name: 'claudian_list_destinations', args: {}, callerNativeId: 'child-native' },
+      { name: 'claudian_send_message', args: { sessionId: 'target', text: 'hello' }, callerNativeId: 'child-native' },
+      { name: 'claudian_send_message', args: { text: 'hold' }, callerNativeId: 'child-native' },
     ]);
   } finally { await endpoint.close(); await replacement.close(); await artifacts.dispose(); }
 });

@@ -8,7 +8,7 @@ import {
 } from '../../../core/providers/cli/CLIPathFingerprintInputs';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import { createRuntimeInputFingerprint } from '../../../core/providers/settings/RuntimeInputFingerprint';
-import type { ProviderSettingsReconciler } from '../../../core/providers/types';
+import type { ProviderEnvironmentReconciliation, ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import {
   getOpencodeProviderSettings,
@@ -69,10 +69,7 @@ export const opencodeSettingsReconciler = {
 
   preservesConversationSession: preservesOpencodeConversationSession,
 
-  reconcileModelWithEnvironment(
-    settings: Record<string, unknown>,
-    conversations: Conversation[],
-  ): { changed: boolean; invalidatedConversations: Conversation[] } {
+  reconcileModelWithEnvironment(settings: Record<string, unknown>): ProviderEnvironmentReconciliation {
     const envText = getRuntimeEnvironmentText(settings, 'opencode');
     const opencodeSettings = getOpencodeProviderSettings(settings);
     const cliPathInputs = createCLIPathFingerprintInputs(
@@ -90,16 +87,14 @@ export const opencodeSettingsReconciler = {
       )
     );
     if (!savedHash && !hasFingerprintInputs) {
-      return { changed: false, invalidatedConversations: [] };
+      return { changed: false };
     }
     if (currentHash === savedHash) {
-      return { changed: false, invalidatedConversations: [] };
+      return { changed: false };
     }
 
-    const invalidatedConversations = invalidateOpencodeConversationSessions(conversations);
-
     updateOpencodeProviderSettings(settings, { environmentHash: currentHash });
-    return { changed: true, invalidatedConversations };
+    return { changed: true };
   },
 
 } satisfies ProviderSettingsReconciler;

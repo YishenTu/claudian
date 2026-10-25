@@ -95,7 +95,6 @@ implements ClaudeExecutionStrategy {
     const priorTurn = this.activeNativeTurn;
     if (priorTurn) {
       const outcome = await priorTurn.completion;
-      requestSignal?.throwIfAborted();
       if (outcome.type === 'failed') {
         throw outcome.error;
       }
@@ -119,7 +118,6 @@ implements ClaudeExecutionStrategy {
       );
       const inputs = new ClaudeTurnInputs(message.uuid);
       this.sink.bindNativeTurnInputs(inputs, queryToken);
-      requestSignal?.throwIfAborted();
       const query = this.query;
       this.sink.assertModelAvailable(request.model);
       this.messageChannel.enqueue(message);
@@ -221,7 +219,6 @@ implements ClaudeExecutionStrategy {
     queryToken: number,
   ): Promise<void> {
     const requestSignal = request.options.abortController?.signal;
-    requestSignal?.throwIfAborted();
     if (this.disposed) {
       throw new Error('Claude Code persistent strategy is disposed');
     }
@@ -527,17 +524,12 @@ function createPersistentNativeTurn(
       resolve = innerResolve;
     },
   );
-  let settled = false;
   return {
     query,
     queryToken,
     inputs,
     completion,
-    settle: (outcome) => {
-      if (settled) return;
-      settled = true;
-      resolve(outcome);
-    },
+    settle: resolve,
   };
 }
 

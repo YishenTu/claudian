@@ -42,11 +42,6 @@ export type LinkedContentPathEvent =
     readonly includeDescendants: boolean;
   };
 
-export interface LinkedContentSubmissionSettlement {
-  readonly linkedContentPath?: string;
-  readonly queuedEvents: readonly LinkedContentPathEvent[];
-}
-
 export interface LinkedContentControllerOptions {
   readonly app: App;
   readonly getExcludedTags: () => readonly string[];
@@ -166,7 +161,7 @@ export class LinkedContentController {
     return token;
   }
 
-  commitSubmission(token: LinkedContentSubmissionToken): LinkedContentSubmissionSettlement {
+  commitSubmission(token: LinkedContentSubmissionToken): void {
     this.#assertLive();
     const submission = this.#requireSubmission(token);
     this.mode = 'locked';
@@ -174,10 +169,6 @@ export class LinkedContentController {
     for (const event of submission.queuedEvents) this.#applyPathEvent(event);
     this.activeSubmission = null;
     this.publish();
-    return {
-      ...(this.path === null ? {} : { linkedContentPath: this.path }),
-      queuedEvents: [...submission.queuedEvents],
-    };
   }
 
   rollbackSubmission(token: LinkedContentSubmissionToken): void {

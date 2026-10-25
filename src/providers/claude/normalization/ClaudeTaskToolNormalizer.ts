@@ -150,7 +150,7 @@ export class ClaudeTaskToolNormalizer {
 
     if (call.updateTaskId !== taskId) {
       call.updateTaskId = taskId;
-      call.updateTaskBefore = cloneTask(this.tasks.get(taskId));
+      call.updateTaskBefore = this.tasks.get(taskId);
     }
 
     const before = call.updateTaskBefore;
@@ -201,7 +201,7 @@ export class ClaudeTaskToolNormalizer {
   #restoreUpdate(call: TaskCallState): void {
     if (!call.updateTaskId) return;
     if (call.updateTaskBefore) {
-      this.tasks.set(call.updateTaskId, cloneTask(call.updateTaskBefore)!);
+      this.tasks.set(call.updateTaskId, call.updateTaskBefore);
     } else {
       this.tasks.delete(call.updateTaskId);
     }
@@ -322,10 +322,6 @@ function readNonEmptyString(value: unknown): string | null {
 
 function extractCreatedTaskId(content: string | undefined): string | null {
   return content?.match(/Task #([^\s]+) created successfully/i)?.[1] ?? null;
-}
-
-function cloneTask(task: StoredTask | undefined): StoredTask | undefined {
-  return task ? { ...task } : undefined;
 }
 
 function toRecord(value: unknown): Record<string, unknown> | null {

@@ -125,16 +125,7 @@ export function decodeOpencodeConfig(
   config: Readonly<Record<string, unknown>>,
 ): OpencodeProviderSettings {
   const cliPathsByHost = normalizeHostnameStringMap(config.cliPathsByHost);
-  const discoveryState = getOpencodeDiscoveryState(config);
-  const discoveredModels = discoveryState.discoveredModels;
-  const persistedThinkingOptionsByModel = normalizeOpencodeThinkingOptionsByModel(
-    config.thinkingOptionsByModel,
-    discoveredModels,
-  );
-  const thinkingOptionsByModel = normalizeOpencodeThinkingOptionsByModel({
-    ...persistedThinkingOptionsByModel,
-    ...discoveryState.thinkingOptionsByModel,
-  }, discoveredModels);
+  const { discoveredModels, thinkingOptionsByModel } = getOpencodeDiscoveryState(config);
 
   return {
     cliPath: readStoredString(config.cliPath, DEFAULT_OPENCODE_PROVIDER_SETTINGS.cliPath),

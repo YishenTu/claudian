@@ -15,7 +15,6 @@ it('reconciles matching reconnect and durable prefixes without duplicated output
   output.baseline(baseline('Hello'));
   output.frame(textChunk('lo', 1, 3));
   output.record({ type: 'assistant/message', seq: 11, time: now, data: { turn: 1, step: 0, message: { content: [{ type: 'text', text: 'Hello world' }] } } });
-  output.record({ type: 'assistant/message', seq: 11, time: now, data: { turn: 1, step: 0, message: { content: [{ type: 'text', text: 'Hello world' }] } } });
   expect(events.filter(e => e.type === 'text_delta')).toEqual([
     { type: 'text_delta', text: 'He' }, { type: 'text_delta', text: 'llo' }, { type: 'text_delta', text: ' world' },
   ]);

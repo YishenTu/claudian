@@ -52,7 +52,6 @@ import {
 } from '../history/PiHistoryPathResolver';
 import {
   correlatePiUserMessages,
-  type CreatedPiForkSessionFile,
   type createPiForkSessionFile,
   findPiSessionFile,
   getPiConversationBranches,
@@ -663,33 +662,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         type: 'turn_completed',
       });
     } catch (error) {
-      if (error instanceof PiForkRollbackError) {
-        this.lifecycleError ??= error;
-        if (!active.run.isTerminal) {
-          this.#invalidateForForkRollback(error);
-          this.#emitRequestedState(active);
-          this.#finishRequested(active, {
-            category: 'provider',
-            message: error.message,
-            recoverable: false,
-            type: 'execution_error',
-          });
-        } else if (!this.disposed) {
-          if (this.#invalidateForForkRollback(error)) {
-            this.#emitSession({
-              snapshot: this.getSnapshot(),
-              type: 'session_state_changed',
-            });
-          }
-          this.#emitSession({
-            category: 'provider',
-            message: error.message,
-            recoverable: false,
-            type: 'session_error',
-          });
-        }
-        throw error;
-      }
       if (!active.run.isTerminal) {
         // A lost response cannot prove that native work stopped. Fence that process before allowing a retry.
         const shouldShutdown = active.nativeRequestDispatched && !active.settled
@@ -869,36 +841,17 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         ? this.options.extensionUiRenderer
         : null,
     );
-    if (!this.isActive(active) || active.abortController.signal.aborted) {
-      await kernel.shutdown().catch(() => undefined);
-      return;
-    }
     this.kernel = kernel;
     this.#kernelSettlement = null;
     this.#kernelModel = null;
     this.processKey = launchSpec.processKey;
     this.kernelResumeValidationTarget = launchSpec.sessionTarget;
     this.#replaceKernelSessionTargets(launchSpec.sessionTarget);
-    if (
-      !this.isActive(active)
-      || active.abortController.signal.aborted
-      || !this.#isCurrentKernel(kernel, generation)
-    ) {
-      await this.#shutdownAcquiredKernel(kernel, generation);
-      return;
-    }
     try {
       kernel.start();
     } catch (error) {
-      await this.#shutdownAcquiredKernel(kernel, generation);
+      await this.#shutdownKernel().catch(() => undefined);
       throw error;
-    }
-    if (
-      !this.isActive(active)
-      || active.abortController.signal.aborted
-      || !this.#isCurrentKernel(kernel, generation)
-    ) {
-      await this.#shutdownAcquiredKernel(kernel, generation);
     }
   }
 
@@ -1589,11 +1542,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   async #materializePendingFork(active: ActiveRun): Promise<void> {
     while (this.forkMaterializationFlight) {
       const priorFlight = this.forkMaterializationFlight;
-      try {
-        await priorFlight;
-      } catch (error) {
-        if (error instanceof PiForkRollbackError) throw error;
-      }
+      await priorFlight.catch(() => undefined);
       if (this.forkMaterializationFlight === priorFlight) {
         this.forkMaterializationFlight = null;
       }
@@ -1636,11 +1585,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       forkSource.resumeAt,
       { targetCwd: this.config.workingDirectory },
     );
-    if (isSamePath(fork.sessionFile, sourceFile)) {
-      throw new Error('Pi fork materialization returned the source session as its target.');
-    }
     if (!this.isActive(active) || active.abortController.signal.aborted) {
-      await this.#rollbackCreatedFork(fork);
+      // Best effort: a failed cleanup only leaves an unreferenced fork file behind.
+      await this.options.rollbackForkSessionFile(fork).catch(() => undefined);
       return;
     }
     this.#setProviderStateValue('leafEntryId', fork.leafEntryId);
@@ -1651,34 +1598,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     this.#deleteProviderStateValue('forkSourceSessionFile');
     this.providerSessionId = fork.sessionId;
     this.state.bumpRevision();
-  }
-
-  async #rollbackCreatedFork(
-    fork: CreatedPiForkSessionFile,
-  ): Promise<void> {
-    try {
-      await this.options.rollbackForkSessionFile(fork);
-    } catch (error) {
-      throw new PiForkRollbackError(toError(error));
-    }
-  }
-
-  #invalidateForForkRollback(error: PiForkRollbackError): boolean {
-    const invalidation = this.state.invalidation;
-    if (
-      this.disposed
-      || (
-        this.state.status === 'invalidated'
-        && invalidation?.message === error.message
-        && invalidation.recoverable === false
-      )
-    ) return false;
-    this.state.invalidate({
-      message: error.message,
-      reason: 'provider-error',
-      recoverable: false,
-    });
-    return true;
   }
 
   #shouldDisableNativePersistence(): boolean {
@@ -1854,21 +1773,6 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     return Boolean(state.sessionId || state.sessionFile);
   }
 
-  async #shutdownAcquiredKernel(
-    kernel: PiExecutionKernel,
-    generation: number,
-  ): Promise<void> {
-    if (this.kernel === kernel && this.kernelGeneration === generation) {
-      await this.#shutdownKernel().catch(() => undefined);
-      return;
-    }
-    if (this.shutdownPromise) {
-      await this.shutdownPromise.catch(() => undefined);
-      return;
-    }
-    await kernel.shutdown().catch(() => undefined);
-  }
-
   #setProviderStateValue(
     key: keyof PiProviderState,
     value: unknown,
@@ -1916,35 +1820,15 @@ class PiProviderSessionMismatchError extends Error {
   }
 }
 
-class PiForkRollbackError extends Error {
-  constructor(readonly cleanupError: Error) {
-    super(cleanupError.message);
-    this.name = 'PiForkRollbackError';
-  }
-}
-
 function createDeferred<T>(): Deferred<T> {
-  let settled = false;
-  let resolvePromise!: (value: T) => void;
-  let rejectPromise!: (error: Error) => void;
-  const promise = new Promise<T>((resolve, reject) => {
-    resolvePromise = resolve;
-    rejectPromise = reject;
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
   });
   void promise.catch(() => undefined);
-  return {
-    promise,
-    reject(error) {
-      if (settled) return;
-      settled = true;
-      rejectPromise(error);
-    },
-    resolve(value?: T) {
-      if (settled) return;
-      settled = true;
-      resolvePromise(value as T);
-    },
-  };
+  return { promise, reject, resolve };
 }
 
 function resolveSelectedModel(

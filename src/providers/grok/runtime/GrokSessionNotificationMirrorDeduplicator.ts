@@ -8,13 +8,8 @@ interface MirrorCandidate {
 export class GrokSessionNotificationMirrorDeduplicator {
   private candidate: MirrorCandidate | null = null;
 
-  shouldProcess(notification: unknown, source: GrokSessionNotificationSource): boolean {
-    const fingerprint = this.#createFingerprint(notification);
-    if (!fingerprint) {
-      this.candidate = null;
-      return true;
-    }
-
+  shouldProcess(notification: object, source: GrokSessionNotificationSource): boolean {
+    const fingerprint = JSON.stringify(notification);
     if (this.candidate?.fingerprint === fingerprint && this.candidate.source !== source) {
       this.candidate = null;
       return false;
@@ -25,13 +20,5 @@ export class GrokSessionNotificationMirrorDeduplicator {
 
   reset(): void {
     this.candidate = null;
-  }
-
-  #createFingerprint(notification: unknown): string | null {
-    try {
-      return JSON.stringify(notification) ?? null;
-    } catch {
-      return null;
-    }
   }
 }

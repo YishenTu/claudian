@@ -105,11 +105,6 @@ export interface ChatFeatureHost extends FeatureHost {
   /** Completes generation atomically; null records failure. A changed title takes precedence. */
   completeConversationTitleGeneration(id: string, expectedTitle: string, title: string | null): Promise<void>;
   setLinkedContentPinned(contentPath: string, isPinned: boolean): Promise<void>;
-  rewriteLinkedContentPaths(
-    oldPath: string,
-    newPath: string,
-    includeDescendants: boolean,
-  ): Promise<void>;
   /** Sessions held by any chat pane's tabs, including unloaded panes and pending restoration. */
   getWorkspaceConversationIds(): ReadonlySet<string>;
   updateConversation(id: string, updates: ConversationMutablePatch): Promise<void>;

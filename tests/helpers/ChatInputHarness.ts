@@ -117,7 +117,6 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
     projects: createProjectsFake([]),
     providerHost: { workingDirectory: '/vault' },
     renameConversation: jest.fn().mockResolvedValue(undefined),
-    rewriteLinkedContentPaths: jest.fn().mockResolvedValue(undefined),
     settings: {
       enableAutoTitleGeneration: false,
       titleGenerationModel: '',

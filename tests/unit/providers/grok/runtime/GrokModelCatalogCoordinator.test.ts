@@ -161,7 +161,7 @@ function deferConditionalMutations(host: ProviderHost, count: number): {
 
 function reconcileNewEnvironment(host: ProviderHost): void {
   (host.settings as any).providerConfigs.grok.environmentVariables = 'GROK_PROFILE=new-context';
-  grokSettingsReconciler.reconcileModelWithEnvironment(host.settings, []);
+  grokSettingsReconciler.reconcileModelWithEnvironment(host.settings);
 }
 
 function completedResult(overrides: Partial<Extract<GrokModelCatalogDiscoveryResult, { kind: 'completed' }>> = {}): Extract<GrokModelCatalogDiscoveryResult, { kind: 'completed' }> {

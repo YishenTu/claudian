@@ -33,7 +33,7 @@ import type { ChatSessionRuntime, TurnCancelOptions } from '@/features/chat/sess
 import type { SessionComposerPort } from '@/features/chat/sessions/SessionComposer';
 import type { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import type { ChatState } from '@/features/chat/state/ChatState';
-import { captureSelectionSnapshots, cloneChatTurnRequest, createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
+import { captureSelectionSnapshots, createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
 import type { ChatTurnRequest, TabReviewOutcome } from '@/features/chat/state/types';
 import { type MainTurn, MainTurnExecution } from '@/features/chat/turns/MainTurnExecution';
 import type { StreamController } from '@/features/chat/turns/StreamController';
@@ -121,7 +121,7 @@ export class InputController {
       canStartTurn: () => this.deps.canStartTurn(),
       toQueuedChatTurn: message => ({
         displayContent: message.content,
-        request: cloneChatTurnRequest(message.turnRequest),
+        request: message.turnRequest,
       }),
       createSubmission: (displayContent, request) => this.execution.createSubmission(displayContent, request),
       onVisibleSteerChanged: () => this.queue.updateIndicator(),
@@ -141,7 +141,7 @@ export class InputController {
         return this.execution.run({
           origin: 'user',
           displayContent: message.content,
-          request: cloneChatTurnRequest(message.turnRequest),
+          request: message.turnRequest,
           images: images.length > 0 ? [...images] : undefined,
           composerDraft: 'none',
           onDelivery: message.onDelivery,
@@ -578,12 +578,12 @@ export class InputController {
     turnRequest: ChatTurnRequest;
   } {
     if (options?.turnRequestOverride) {
-      return { displayContent: content, turnRequest: cloneChatTurnRequest(options.turnRequestOverride) };
+      return { displayContent: content, turnRequest: options.turnRequestOverride };
     }
     // Linked content is bound only at admission, never from capture-time transcript state.
     return {
       displayContent: content,
-      turnRequest: cloneChatTurnRequest({ text: content, images, ...this.#resolveSelections(options) }),
+      turnRequest: { text: content, images, ...this.#resolveSelections(options) },
     };
   }
 

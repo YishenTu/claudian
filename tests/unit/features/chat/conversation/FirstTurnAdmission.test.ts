@@ -230,15 +230,6 @@ describe('FirstTurnAdmission', () => {
       beginSubmission: jest.fn().mockReturnValue(token),
       commitSubmission: jest.fn().mockImplementation(() => {
         currentPath = 'Projects/New';
-        return {
-          linkedContentPath: currentPath,
-          queuedEvents: [{
-            kind: 'rename',
-            oldPath: 'Projects/Old',
-            newPath: 'Projects/New',
-            includeDescendants: true,
-          }],
-        };
       }),
       getSnapshot: jest.fn().mockImplementation(() => ({
         mode: currentPath === 'Projects/Old' ? 'explicit-draft' : 'locked',

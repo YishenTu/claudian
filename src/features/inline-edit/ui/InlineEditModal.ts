@@ -338,7 +338,6 @@ export class InlineEditSession {
   /** The document the edit was computed against; CodeMirror documents are immutable. */
   private sourceDoc: Text | null = null;
   private settled = false;
-  private generation = 0;
   private releaseEditorLifetime: (() => void) | null = null;
   private editorDestroyed = false;
 
@@ -728,7 +727,6 @@ export class InlineEditSession {
       this.#rejectStaleSource();
       return;
     }
-    const generation = ++this.generation;
     this.generating = true;
 
     this.#removeSelectionListeners();
@@ -745,19 +743,19 @@ export class InlineEditSession {
         reasoning,
       });
     } catch (error) {
-      if (this.#isGenerationActive(generation)) {
+      if (!this.settled) {
         if (!this.#isSourceUnchanged()) this.#rejectStaleSource();
         else this.#handleError(error instanceof Error ? error.message : 'Error - try again');
       }
       return;
     } finally {
-      if (this.#isGenerationActive(generation)) {
+      if (!this.settled) {
         this.generating = false;
         this.#showGenerating(false);
       }
     }
 
-    if (!this.#isGenerationActive(generation)) {
+    if (this.settled) {
       return;
     }
     if (!this.#isSourceUnchanged()) {
@@ -967,7 +965,6 @@ export class InlineEditSession {
   }
 
   private cleanup(options?: { keepSelectionHighlight?: boolean }) {
-    this.generation += 1;
     this.generating = false;
     this.releaseEditorLifetime?.();
     this.releaseEditorLifetime = null;
@@ -995,10 +992,6 @@ export class InlineEditSession {
 
   #isSourceUnchanged(): boolean {
     return this.editorView.state.doc === this.sourceDoc;
-  }
-
-  #isGenerationActive(generation: number): boolean {
-    return !this.settled && generation === this.generation;
   }
 
   #rejectStaleSource(): void {

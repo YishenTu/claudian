@@ -1,11 +1,10 @@
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
-import { MemoryDataAdapter } from '@test/helpers/MemoryDataAdapter';
 import * as obsidian from 'obsidian';
 
-import {
-  ManagedResourceCollisionError,
-  VaultFileAdapter,
-} from '@/core/storage/VaultFileAdapter';
+import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import {
   AGENT_SKILLS_ROOT,
   AgentSkillCollisionError,
@@ -14,6 +13,12 @@ import {
   CLAUDE_SKILLS_ROOT,
 } from '@/features/agent-skills/AgentSkillRepository';
 import { AgentSkillValidationError } from '@/features/agent-skills/validateAgentSkill';
+
+jest.mock('node:fs/promises', () => {
+  const actual = jest.requireActual<typeof fs>('node:fs/promises');
+  return { ...actual, mkdir: jest.fn(actual.mkdir), writeFile: jest.fn(actual.writeFile) };
+});
+const actualFs = jest.requireActual<typeof fs>('node:fs/promises');
 
 function markdown(name: string, description = 'Description', instructions = 'Instructions'): string {
   return [
@@ -29,34 +34,29 @@ function markdown(name: string, description = 'Description', instructions = 'Ins
 }
 
 describe('AgentSkillRepository', () => {
-  let dataAdapter: MemoryDataAdapter;
+  let vault: DesktopVault;
   let vaultFiles: VaultFileAdapter;
   let repository: AgentSkillRepository;
 
-  beforeEach(() => {
-    dataAdapter = new MemoryDataAdapter();
-    const app = { vault: { adapter: dataAdapter } } as unknown as obsidian.App;
-    vaultFiles = new VaultFileAdapter(app);
+  beforeEach(async () => {
+    vault = await DesktopVault.create();
+    await vault.mkdir(AGENT_SKILLS_ROOT);
+    vaultFiles = vault.files;
     repository = new AgentSkillRepository(vaultFiles);
   });
 
-  function useMemoryRelocation(): void {
-    jest.spyOn(vaultFiles, 'relocateManagedPackage')
-      .mockImplementation(async (source, target) => {
-        if (await dataAdapter.exists(target)) {
-          throw new ManagedResourceCollisionError(target);
-        }
-        await dataAdapter.rename(source, target);
-      });
-  }
+  afterEach(async () => {
+    jest.mocked(fs.mkdir).mockImplementation(actualFs.mkdir);
+    jest.mocked(fs.writeFile).mockImplementation(actualFs.writeFile);
+    await vault.dispose();
+  });
 
-  function addSkill(name: string, content = markdown(name)): void {
-    dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/${name}`);
-    dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/${name}/SKILL.md`, content);
+  function addSkill(name: string, content = markdown(name)): Promise<void> {
+    return vault.write(`${AGENT_SKILLS_ROOT}/${name}/SKILL.md`, content);
   }
 
   it('validates each skill file once through the safe reader', async () => {
-    addSkill('one'); addSkill('two');
+    await addSkill('one'); await addSkill('two');
     const verify = jest.spyOn(vaultFiles, 'verifyManagedPath');
     const result = await repository.list();
     expect(result.skills).toHaveLength(2);
@@ -64,13 +64,11 @@ describe('AgentSkillRepository', () => {
   });
 
   it('lists only direct packages and returns sorted skills and diagnostics', async () => {
-    addSkill('z-skill');
-    addSkill('a-skill');
-    dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/broken`);
-    dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/broken/SKILL.md`, 'not frontmatter');
-    dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/missing`);
-    dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/a-skill/nested`);
-    dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/a-skill/nested/SKILL.md`, markdown('nested'));
+    await addSkill('z-skill');
+    await addSkill('a-skill');
+    await vault.write(`${AGENT_SKILLS_ROOT}/broken/SKILL.md`, 'not frontmatter');
+    await vault.mkdir(`${AGENT_SKILLS_ROOT}/missing`);
+    await vault.write(`${AGENT_SKILLS_ROOT}/a-skill/nested/SKILL.md`, markdown('nested'));
 
     const result = await repository.list();
 
@@ -115,9 +113,9 @@ describe('AgentSkillRepository', () => {
 
     expect(created.directoryPath).toBe('.agents/skills/portable-skill');
     expect(created.filePath).toBe('.agents/skills/portable-skill/SKILL.md');
-    expect(await dataAdapter.read(created.filePath)).toContain('portable-skill');
+    expect(await vault.read(created.filePath)).toContain('portable-skill');
 
-    dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/orphan`);
+    await vault.mkdir(`${AGENT_SKILLS_ROOT}/orphan`);
     await expect(repository.create({
       name: 'orphan',
       description: 'Description',
@@ -126,29 +124,31 @@ describe('AgentSkillRepository', () => {
   });
 
   it.each(['con', 'com1'])('rejects reserved device package %s before changing the vault', async name => {
-    const originalNodes = JSON.stringify([...dataAdapter.nodes]);
+    const original = await vault.snapshot();
     await expect(repository.create({
       name, description: 'Description', instructions: 'Instructions',
     })).rejects.toBeInstanceOf(AgentSkillValidationError);
-    expect(JSON.stringify([...dataAdapter.nodes])).toBe(originalNodes);
+    expect(await vault.snapshot()).toEqual(original);
   });
 
   it('rejects a target created during the exclusive claim race', async () => {
-    dataAdapter.beforeMkdir = path => {
-      if (path.endsWith('/racing')) dataAdapter.addFolder(path);
-    };
+    jest.mocked(fs.mkdir).mockImplementation(async (target, options) => {
+      // Another writer claims the package between the existence check and the claim.
+      if (target === vault.resolve(`${AGENT_SKILLS_ROOT}/racing`)) await actualFs.mkdir(target);
+      return actualFs.mkdir(target, options);
+    });
 
     await expect(repository.create({
       name: 'racing',
       description: 'Description',
       instructions: 'Instructions',
     })).rejects.toBeInstanceOf(AgentSkillCollisionError);
-    expect(dataAdapter.nodes.has(`${AGENT_SKILLS_ROOT}/racing/SKILL.md`)).toBe(false);
+    expect(await vault.exists(`${AGENT_SKILLS_ROOT}/racing/SKILL.md`)).toBe(false);
   });
 
   it('updates owned fields while preserving unknown metadata and ancillary files', async () => {
-    addSkill('portable-skill');
-    dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/portable-skill/script.ts`, 'export {};');
+    await addSkill('portable-skill');
+    await vault.write(`${AGENT_SKILLS_ROOT}/portable-skill/script.ts`, 'export {};');
     const loaded = (await repository.list()).skills[0];
 
     const updated = await repository.update('portable-skill', loaded.revision, {
@@ -158,13 +158,13 @@ describe('AgentSkillRepository', () => {
     });
 
     expect(updated.frontmatter).toMatchObject({ license: 'MIT', metadata: { owner: 'team' } });
-    expect(await dataAdapter.read(`${AGENT_SKILLS_ROOT}/portable-skill/script.ts`)).toBe('export {};');
+    expect(await vault.read(`${AGENT_SKILLS_ROOT}/portable-skill/script.ts`)).toBe('export {};');
   });
 
   it('rejects a stale update after an external edit', async () => {
-    addSkill('portable-skill');
+    await addSkill('portable-skill');
     const loaded = (await repository.list()).skills[0];
-    dataAdapter.addFile(loaded.filePath, markdown('portable-skill', 'Externally changed'));
+    await vault.write(loaded.filePath, markdown('portable-skill', 'Externally changed'));
 
     await expect(repository.update('portable-skill', loaded.revision, {
       name: 'portable-skill',
@@ -174,10 +174,8 @@ describe('AgentSkillRepository', () => {
   });
 
   it('renames the whole package and rejects a pre-existing empty destination', async () => {
-    useMemoryRelocation();
-    addSkill('old-name');
-    dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/old-name/assets`);
-    dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/old-name/assets/example.txt`, 'asset');
+    await addSkill('old-name');
+    await vault.write(`${AGENT_SKILLS_ROOT}/old-name/assets/example.txt`, 'asset');
     const loaded = (await repository.list()).skills[0];
 
     const renamed = await repository.update('old-name', loaded.revision, {
@@ -187,11 +185,11 @@ describe('AgentSkillRepository', () => {
     });
 
     expect(renamed.directoryPath).toBe(`${AGENT_SKILLS_ROOT}/new-name`);
-    expect(await dataAdapter.read(`${AGENT_SKILLS_ROOT}/new-name/assets/example.txt`)).toBe('asset');
-    expect(dataAdapter.nodes.has(`${AGENT_SKILLS_ROOT}/old-name`)).toBe(false);
+    expect(await vault.read(`${AGENT_SKILLS_ROOT}/new-name/assets/example.txt`)).toBe('asset');
+    expect(await vault.exists(`${AGENT_SKILLS_ROOT}/old-name`)).toBe(false);
 
-    addSkill('source-name');
-    dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/occupied`);
+    await addSkill('source-name');
+    await vault.mkdir(`${AGENT_SKILLS_ROOT}/occupied`);
     const source = (await repository.list()).skills.find(skill => skill.name === 'source-name')!;
     await expect(repository.update('source-name', source.revision, {
       name: 'occupied',
@@ -201,13 +199,13 @@ describe('AgentSkillRepository', () => {
   });
 
   it('restores the original package and content when the renamed write fails', async () => {
-    useMemoryRelocation();
-    addSkill('old-name');
-    dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/old-name/reference.txt`, 'reference');
+    await addSkill('old-name');
+    await vault.write(`${AGENT_SKILLS_ROOT}/old-name/reference.txt`, 'reference');
     const loaded = (await repository.list()).skills[0];
-    dataAdapter.beforeWrite = path => {
-      if (path === `${AGENT_SKILLS_ROOT}/new-name/SKILL.md`) throw new Error('write failed');
-    };
+    jest.mocked(fs.writeFile).mockImplementation(async (file, data, options) => {
+      if (path.dirname(String(file)) === vault.resolve(`${AGENT_SKILLS_ROOT}/new-name`)) throw new Error('write failed');
+      return actualFs.writeFile(file, data, options);
+    });
 
     await expect(repository.update('old-name', loaded.revision, {
       name: 'new-name',
@@ -215,29 +213,29 @@ describe('AgentSkillRepository', () => {
       instructions: 'Updated instructions',
     })).rejects.toThrow('Could not write managed resource');
 
-    expect(await dataAdapter.read(`${AGENT_SKILLS_ROOT}/old-name/SKILL.md`)).toBe(markdown('old-name'));
-    expect(await dataAdapter.read(`${AGENT_SKILLS_ROOT}/old-name/reference.txt`)).toBe('reference');
-    expect(dataAdapter.nodes.has(`${AGENT_SKILLS_ROOT}/new-name`)).toBe(false);
+    expect(await vault.read(`${AGENT_SKILLS_ROOT}/old-name/SKILL.md`)).toBe(markdown('old-name'));
+    expect(await vault.read(`${AGENT_SKILLS_ROOT}/old-name/reference.txt`)).toBe('reference');
+    expect(await vault.exists(`${AGENT_SKILLS_ROOT}/new-name`)).toBe(false);
   });
 
   it('rechecks the revision before trashing the whole validated package', async () => {
-    addSkill('portable-skill');
-    dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/portable-skill/asset.txt`, 'asset');
+    await addSkill('portable-skill');
+    await vault.write(`${AGENT_SKILLS_ROOT}/portable-skill/asset.txt`, 'asset');
     const loaded = (await repository.list()).skills[0];
-    dataAdapter.addFile(loaded.filePath, markdown('portable-skill', 'External edit'));
+    await vault.write(loaded.filePath, markdown('portable-skill', 'External edit'));
 
     await expect(repository.trash('portable-skill', loaded.revision))
       .rejects.toBeInstanceOf(AgentSkillRevisionConflictError);
-    expect(dataAdapter.trashed).toEqual([]);
+    expect(vault.trashed).toEqual([]);
 
     const refreshed = (await repository.list()).skills[0];
     await repository.trash('portable-skill', refreshed.revision);
-    expect(dataAdapter.trashed).toEqual([`${AGENT_SKILLS_ROOT}/portable-skill`]);
-    expect(dataAdapter.nodes.has(`${AGENT_SKILLS_ROOT}/portable-skill/asset.txt`)).toBe(false);
+    expect(vault.trashed).toEqual([`${AGENT_SKILLS_ROOT}/portable-skill`]);
+    expect(await vault.exists(`${AGENT_SKILLS_ROOT}/portable-skill/asset.txt`)).toBe(false);
   });
 
   it('serializes concurrent updates so only one loaded revision succeeds', async () => {
-    addSkill('portable-skill');
+    await addSkill('portable-skill');
     const loaded = (await repository.list()).skills[0];
 
     const results = await Promise.allSettled([
@@ -289,7 +287,7 @@ describe('AgentSkillRepository', () => {
         instructions: 'Claude instructions',
       });
       expect(created.filePath).toBe(`${CLAUDE_SKILLS_ROOT}/claude-skill/SKILL.md`);
-      expect(dataAdapter.nodes.has(`${AGENT_SKILLS_ROOT}/claude-skill`)).toBe(false);
+      expect(await vault.exists(`${AGENT_SKILLS_ROOT}/claude-skill`)).toBe(false);
 
       const updated = await repo.update('claude-skill', created.revision, {
         name: 'claude-skill',
@@ -299,11 +297,11 @@ describe('AgentSkillRepository', () => {
       expect((await repo.list()).skills.map(skill => skill.description)).toEqual(['Updated']);
 
       await repo.trash('claude-skill', updated.revision);
-      expect(dataAdapter.trashed).toEqual([`${CLAUDE_SKILLS_ROOT}/claude-skill`]);
+      expect(vault.trashed).toEqual([`${CLAUDE_SKILLS_ROOT}/claude-skill`]);
     });
 
     it('removes unknown frontmatter on update under the portable policy', async () => {
-      addSkill('portable-skill');
+      await addSkill('portable-skill');
       const portable = new AgentSkillRepository(vaultFiles, { frontmatterPolicy: 'portable' });
       const loaded = (await portable.list()).skills[0];
       expect(loaded.frontmatter).toMatchObject({ license: 'MIT' });
@@ -318,19 +316,15 @@ describe('AgentSkillRepository', () => {
         name: 'portable-skill',
         description: 'Updated description',
       });
-      expect(await dataAdapter.read(updated.filePath)).not.toContain('license');
+      expect(await vault.read(updated.filePath)).not.toContain('license');
     });
 
     it('lists lenient packages without a matching name or description, but not files without frontmatter', async () => {
-      dataAdapter.addFolder('.claude');
-      dataAdapter.addFolder(CLAUDE_SKILLS_ROOT);
-      dataAdapter.addFolder(`${CLAUDE_SKILLS_ROOT}/Legacy_Skill`);
-      dataAdapter.addFile(
+      await vault.write(
         `${CLAUDE_SKILLS_ROOT}/Legacy_Skill/SKILL.md`,
         '---\nallowed-tools: [Read]\n---\nLegacy instructions\n',
       );
-      dataAdapter.addFolder(`${CLAUDE_SKILLS_ROOT}/no-frontmatter`);
-      dataAdapter.addFile(`${CLAUDE_SKILLS_ROOT}/no-frontmatter/SKILL.md`, 'Plain instructions\n');
+      await vault.write(`${CLAUDE_SKILLS_ROOT}/no-frontmatter/SKILL.md`, 'Plain instructions\n');
 
       const repo = claudeRepository();
       const result = await repo.list();
@@ -354,7 +348,6 @@ describe('AgentSkillRepository', () => {
         instructions: 'Legacy instructions',
       })).rejects.toBeInstanceOf(AgentSkillValidationError);
 
-      useMemoryRelocation();
       const renamed = await repo.update('Legacy_Skill', legacy.revision, {
         name: 'legacy-skill',
         description: 'Now described',
@@ -365,8 +358,7 @@ describe('AgentSkillRepository', () => {
     });
 
     it('keeps strict reads for the default shared root', async () => {
-      dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/no-frontmatter`);
-      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/no-frontmatter/SKILL.md`, 'Plain instructions\n');
+      await vault.write(`${AGENT_SKILLS_ROOT}/no-frontmatter/SKILL.md`, 'Plain instructions\n');
 
       const result = await repository.list();
 
@@ -378,11 +370,8 @@ describe('AgentSkillRepository', () => {
 
     it('rejects a closing delimiter with trailing text in strict and lenient reads', async () => {
       const source = '---\nname: example\ndescription: Example\n---suffix\nPrompt';
-      addSkill('example', source);
-      dataAdapter.addFolder('.claude');
-      dataAdapter.addFolder(CLAUDE_SKILLS_ROOT);
-      dataAdapter.addFolder(`${CLAUDE_SKILLS_ROOT}/example`);
-      dataAdapter.addFile(`${CLAUDE_SKILLS_ROOT}/example/SKILL.md`, source);
+      await addSkill('example', source);
+      await vault.write(`${CLAUDE_SKILLS_ROOT}/example/SKILL.md`, source);
 
       const strict = await repository.list();
       expect(strict.skills).toEqual([]);
@@ -397,12 +386,12 @@ describe('AgentSkillRepository', () => {
       ]);
 
       await expect(repository.readForRepair('example')).rejects.toThrow('cannot be repaired');
-      expect(await dataAdapter.read(`${AGENT_SKILLS_ROOT}/example/SKILL.md`)).toBe(source);
-      expect(await dataAdapter.read(`${CLAUDE_SKILLS_ROOT}/example/SKILL.md`)).toBe(source);
+      expect(await vault.read(`${AGENT_SKILLS_ROOT}/example/SKILL.md`)).toBe(source);
+      expect(await vault.read(`${CLAUDE_SKILLS_ROOT}/example/SKILL.md`)).toBe(source);
     });
 
     it('accepts a standalone closing delimiter after the same metadata', async () => {
-      addSkill('example', '---\nname: example\ndescription: Example\n---\nPrompt');
+      await addSkill('example', '---\nname: example\ndescription: Example\n---\nPrompt');
 
       const result = await repository.list();
 
@@ -424,11 +413,8 @@ describe('AgentSkillRepository', () => {
         content.trim() === '' ? emptyDocument as Record<string, unknown> : parseYaml(content)
       ));
       try {
-        addSkill('example', source);
-        dataAdapter.addFolder('.claude');
-        dataAdapter.addFolder(CLAUDE_SKILLS_ROOT);
-        dataAdapter.addFolder(`${CLAUDE_SKILLS_ROOT}/example`);
-        dataAdapter.addFile(`${CLAUDE_SKILLS_ROOT}/example/SKILL.md`, source);
+        await addSkill('example', source);
+        await vault.write(`${CLAUDE_SKILLS_ROOT}/example/SKILL.md`, source);
 
         const strict = await repository.list();
         expect(strict.skills).toEqual([]);
@@ -446,8 +432,8 @@ describe('AgentSkillRepository', () => {
 
         await expect(repository.readForRepair('example')).rejects.toThrow('cannot be repaired');
         await expect(claudeRepository().readForRepair('example')).rejects.toThrow('cannot be repaired');
-        expect(await dataAdapter.read(`${AGENT_SKILLS_ROOT}/example/SKILL.md`)).toBe(source);
-        expect(await dataAdapter.read(`${CLAUDE_SKILLS_ROOT}/example/SKILL.md`)).toBe(source);
+        expect(await vault.read(`${AGENT_SKILLS_ROOT}/example/SKILL.md`)).toBe(source);
+        expect(await vault.read(`${CLAUDE_SKILLS_ROOT}/example/SKILL.md`)).toBe(source);
       } finally {
         parseYamlSpy.mockRestore();
       }
@@ -482,11 +468,8 @@ describe('AgentSkillRepository', () => {
       strictSkills,
       strictDiagnostics,
     ) => {
-      addSkill('example', source);
-      dataAdapter.addFolder('.claude');
-      dataAdapter.addFolder(CLAUDE_SKILLS_ROOT);
-      dataAdapter.addFolder(`${CLAUDE_SKILLS_ROOT}/example`);
-      dataAdapter.addFile(`${CLAUDE_SKILLS_ROOT}/example/SKILL.md`, source);
+      await addSkill('example', source);
+      await vault.write(`${CLAUDE_SKILLS_ROOT}/example/SKILL.md`, source);
 
       const strict = await repository.list();
       expect(strict.skills.map(skill => [skill.name, skill.description, skill.instructions])).toEqual(strictSkills);
@@ -503,19 +486,16 @@ describe('AgentSkillRepository', () => {
         input: { name: 'example', description: 'Example', instructions },
       });
 
-      expect(await dataAdapter.read(`${AGENT_SKILLS_ROOT}/example/SKILL.md`)).toBe(source);
-      expect(await dataAdapter.read(`${CLAUDE_SKILLS_ROOT}/example/SKILL.md`)).toBe(source);
+      expect(await vault.read(`${AGENT_SKILLS_ROOT}/example/SKILL.md`)).toBe(source);
+      expect(await vault.read(`${CLAUDE_SKILLS_ROOT}/example/SKILL.md`)).toBe(source);
     });
   });
   describe('repairing packages that need attention', () => {
     it('offers repair only for SKILL.md files with frontmatter that fail validation', async () => {
-      dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/no-description`);
-      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/no-description/SKILL.md`, '---\nname: no-description\nlicense: MIT\n---\nKeep this\n');
-      dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/Bad_Name`);
-      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/Bad_Name/SKILL.md`, '---\nname: Bad_Name\ndescription: Desc\n---\nBody\n');
-      dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/no-frontmatter`);
-      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/no-frontmatter/SKILL.md`, 'Plain instructions\n');
-      dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/empty`);
+      await vault.write(`${AGENT_SKILLS_ROOT}/no-description/SKILL.md`, '---\nname: no-description\nlicense: MIT\n---\nKeep this\n');
+      await vault.write(`${AGENT_SKILLS_ROOT}/Bad_Name/SKILL.md`, '---\nname: Bad_Name\ndescription: Desc\n---\nBody\n');
+      await vault.write(`${AGENT_SKILLS_ROOT}/no-frontmatter/SKILL.md`, 'Plain instructions\n');
+      await vault.mkdir(`${AGENT_SKILLS_ROOT}/empty`);
 
       const { diagnostics } = await repository.list();
 
@@ -534,10 +514,8 @@ describe('AgentSkillRepository', () => {
     });
 
     it('rewrites a flagged package as a valid skill, renaming its folder', async () => {
-      useMemoryRelocation();
-      dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/Bad_Name`);
-      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/Bad_Name/SKILL.md`, '---\nname: Bad_Name\ndescription: Desc\n---\nBody\n');
-      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/Bad_Name/asset.txt`, 'asset');
+      await vault.write(`${AGENT_SKILLS_ROOT}/Bad_Name/SKILL.md`, '---\nname: Bad_Name\ndescription: Desc\n---\nBody\n');
+      await vault.write(`${AGENT_SKILLS_ROOT}/Bad_Name/asset.txt`, 'asset');
 
       const draft = await repository.readForRepair('Bad_Name');
       await repository.repair('Bad_Name', draft.revision, {
@@ -547,14 +525,13 @@ describe('AgentSkillRepository', () => {
       const result = await repository.list();
       expect(result.diagnostics).toEqual([]);
       expect(result.skills.map(skill => [skill.name, skill.description])).toEqual([['fixed-skill', 'Now valid']]);
-      expect(await dataAdapter.read(`${AGENT_SKILLS_ROOT}/fixed-skill/asset.txt`)).toBe('asset');
+      expect(await vault.read(`${AGENT_SKILLS_ROOT}/fixed-skill/asset.txt`)).toBe('asset');
     });
 
     it('rejects a stale repair and invalid input', async () => {
-      dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/broken`);
-      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/broken/SKILL.md`, '---\nname: broken\n---\nOriginal\n');
+      await vault.write(`${AGENT_SKILLS_ROOT}/broken/SKILL.md`, '---\nname: broken\n---\nOriginal\n');
       const draft = await repository.readForRepair('broken');
-      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/broken/SKILL.md`, '---\nname: broken\n---\nChanged elsewhere\n');
+      await vault.write(`${AGENT_SKILLS_ROOT}/broken/SKILL.md`, '---\nname: broken\n---\nChanged elsewhere\n');
 
       await expect(repository.repair('broken', draft.revision, {
         name: 'broken', description: 'Desc', instructions: 'Body',
@@ -563,29 +540,18 @@ describe('AgentSkillRepository', () => {
       await expect(repository.repair('broken', current.revision, {
         name: 'broken', description: '', instructions: 'Body',
       })).rejects.toBeInstanceOf(AgentSkillValidationError);
-      expect(await dataAdapter.read(`${AGENT_SKILLS_ROOT}/broken/SKILL.md`)).toContain('Changed elsewhere');
+      expect(await vault.read(`${AGENT_SKILLS_ROOT}/broken/SKILL.md`)).toContain('Changed elsewhere');
     });
 
     it('moves a broken package folder to trash', async () => {
-      dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/broken`);
-      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/broken/SKILL.md`, '---\nname: broken\n---\nBody\n');
+      await vault.write(`${AGENT_SKILLS_ROOT}/broken/SKILL.md`, '---\nname: broken\n---\nBody\n');
 
       await repository.trashBroken('broken');
 
-      expect(dataAdapter.trashed).toEqual([`${AGENT_SKILLS_ROOT}/broken`]);
+      expect(vault.trashed).toEqual([`${AGENT_SKILLS_ROOT}/broken`]);
     });
   });
   describe('on a filesystem-backed vault', () => {
-    let vault: DesktopVault;
-
-    beforeEach(async () => {
-      vault = await DesktopVault.create();
-    });
-
-    afterEach(async () => {
-      await vault.dispose();
-    });
-
     it('renames a package folder while fixing it and leaves no empty folders behind', async () => {
       await vault.write(`${AGENT_SKILLS_ROOT}/Weekly_Review/SKILL.md`, '---\nname: Weekly_Review\ndescription: Weekly\n---\nReview the week\n');
       await vault.write(`${AGENT_SKILLS_ROOT}/Weekly_Review/notes.md`, 'extra');

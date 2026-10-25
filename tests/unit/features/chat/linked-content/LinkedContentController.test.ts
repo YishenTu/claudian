@@ -211,11 +211,7 @@ describe('LinkedContentController', () => {
       'Linked content cannot be changed while submitting',
     );
 
-    const settlement = harness.controller.commitSubmission(token);
-    expect(settlement).toEqual({
-      linkedContentPath: 'Projects',
-      queuedEvents: [],
-    });
+    harness.controller.commitSubmission(token);
     expect(harness.controller.getSnapshot()).toMatchObject({
       mode: 'locked',
       path: 'Projects',
@@ -256,12 +252,7 @@ describe('LinkedContentController', () => {
     expect(harness.controller.getSnapshot().path).toBe('Projects/Old');
 
     harness.entries.delete('Projects/Old');
-    const settlement = harness.controller.commitSubmission(token);
-    expect(settlement.linkedContentPath).toBe('Projects/New');
-    expect(settlement.queuedEvents).toEqual([
-      { kind: 'rename', oldPath: 'Projects/Old', newPath: 'Projects/New', includeDescendants: true },
-      { kind: 'delete', path: 'Projects/New', includeDescendants: true },
-    ]);
+    harness.controller.commitSubmission(token);
     expect(harness.controller.getSnapshot()).toEqual({
       mode: 'locked',
       path: 'Projects/New',

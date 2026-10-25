@@ -197,8 +197,6 @@ export class CodexExecutionSession
       (threadId, turnId) => this.turn.observe(threadId, turnId),
     );
     this.completionRecovery = new CodexCompletionRecovery({
-      lifecycleGeneration: () => this.lifecycleGeneration,
-      activeRun: () => this.activeRun,
       transport: () => this.connection.transport,
       replayNotification: (method, params) => this.connection.scope?.notification(method, params),
       fail: (active, message) => this.#finishError(active, 'provider', message, true),
@@ -840,15 +838,11 @@ export class CodexExecutionSession
   }
 
   #publishNativeOwnershipSnapshot(active: CodexActiveRun): void {
-    const status = this.state.status;
     const isCurrentExecution = (
       this.activeRun === active
       && !active.run.isTerminal
       && !active.run.isCancellationRequested
-      && !this.disposed
-      && status !== 'invalidated'
-      && status !== 'disposed'
-      && status !== 'cancelling'
+      && this.state.status !== 'invalidated'
     );
     if (isCurrentExecution) {
       this.state.setStatus('executing');

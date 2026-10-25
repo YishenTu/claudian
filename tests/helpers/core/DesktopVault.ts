@@ -9,11 +9,12 @@ import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 /**
  * A real temporary vault on disk behind a minimal filesystem-backed Obsidian
  * adapter, for behavior that depends on real folders and links. Adapter methods
- * mirror Obsidian's desktop FileSystemAdapter (recursive mkdir, `fs.rm` rmdir,
+ * mirror Obsidian's desktop FileSystemAdapter (recursive mkdir, no-replace rename, `fs.rm` rmdir,
  * link-following list).
  */
 export class DesktopVault {
   readonly trashed: string[] = [];
+  readonly app: App;
   readonly files: VaultFileAdapter;
 
   private constructor(readonly root: string) {
@@ -49,7 +50,12 @@ export class DesktopVault {
       rmdir: async (relativePath: string, recursive: boolean) => (
         fs.rm(resolve(relativePath), { maxRetries: 5, recursive })
       ),
-      rename: async (source: string, target: string) => fs.rename(resolve(source), resolve(target)),
+      rename: async (source: string, target: string) => {
+        if (await fs.lstat(resolve(target)).then(() => true, () => false)) {
+          throw new Error('Destination file already exists!');
+        }
+        await fs.rename(resolve(source), resolve(target));
+      },
       trashSystem: async (relativePath: string) => {
         this.trashed.push(relativePath);
         await fs.rm(resolve(relativePath), { recursive: true });
@@ -59,7 +65,8 @@ export class DesktopVault {
         throw new Error('Unexpected local trash');
       },
     };
-    this.files = new VaultFileAdapter({ vault: { adapter } } as unknown as App);
+    this.app = { vault: { adapter } } as unknown as App;
+    this.files = new VaultFileAdapter(this.app);
   }
 
   static async create(): Promise<DesktopVault> {
@@ -90,6 +97,33 @@ export class DesktopVault {
 
   async exists(relativePath: string): Promise<boolean> {
     return fs.lstat(this.resolve(relativePath)).then(() => true, () => false);
+  }
+
+  async isFolder(relativePath: string): Promise<boolean> {
+    return fs.lstat(this.resolve(relativePath)).then(stat => stat.isDirectory(), () => false);
+  }
+
+  async remove(relativePath: string): Promise<void> {
+    await fs.rm(this.resolve(relativePath), { recursive: true });
+  }
+
+  /** Every entry under the vault root, sorted: a file maps to its content, a folder to `null`. */
+  async snapshot(): Promise<Map<string, string | null>> {
+    const entries = new Map<string, string | null>();
+    const visit = async (folder: string): Promise<void> => {
+      const dirents = await fs.readdir(folder ? this.resolve(folder) : this.root, { withFileTypes: true });
+      for (const dirent of dirents.sort((a, b) => a.name.localeCompare(b.name))) {
+        const child = folder ? `${folder}/${dirent.name}` : dirent.name;
+        if (dirent.isDirectory()) {
+          entries.set(child, null);
+          await visit(child);
+        } else {
+          entries.set(child, await this.read(child));
+        }
+      }
+    };
+    await visit('');
+    return entries;
   }
 
   async symlink(relativePath: string, absoluteTarget: string): Promise<void> {

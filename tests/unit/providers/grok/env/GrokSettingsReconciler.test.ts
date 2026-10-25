@@ -93,8 +93,7 @@ describe('GrokSettingsReconciler', () => {
       },
     };
 
-    expect(grokSettingsReconciler.reconcileModelWithEnvironment(settings, []))
-      .toEqual({ changed: false, invalidatedConversations: [] });
+    expect(grokSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
     expect(getGrokProviderSettings(settings).environmentHash).toBe('');
   });
 
@@ -119,19 +118,11 @@ describe('GrokSettingsReconciler', () => {
       providerState: { sessionDirectory: '/tmp/grok/session-1' },
       sessionId: 'session-1',
     } as unknown as Conversation;
-    const otherConversation = {
-      messages: [],
-      providerId: 'claude',
-      providerState: { providerSessionId: 'claude-session' },
-      sessionId: 'claude-session',
-    } as unknown as Conversation;
 
-    const result = grokSettingsReconciler.reconcileModelWithEnvironment(
-      settings,
-      [grokConversation, otherConversation],
-    );
+    const result = grokSettingsReconciler.reconcileModelWithEnvironment(settings);
 
-    expect(result).toEqual({ changed: true, invalidatedConversations: [], sessionPolicy: 'reload' });
+    expect(result).toEqual({ changed: true, sessionPolicy: 'reload' });
+    expect(grokSettingsReconciler.invalidateConversationSessions([grokConversation])).toEqual([]);
     expect(getGrokProviderSettings(settings).catalogsByHost).toEqual({
       'current-host': catalog('current-model'),
       'other-host': catalog('other-model'),
@@ -139,7 +130,6 @@ describe('GrokSettingsReconciler', () => {
     expect(getGrokProviderSettings(settings).environmentHash)
       .toBe(grokEnvironmentHash(settings));
     expect(grokConversation.sessionId).toBe('session-1');
-    expect(otherConversation.sessionId).toBe('claude-session');
     expect((settings.providerConfigs as Record<string, unknown>).codex).toEqual({
       enabled: true,
       marker: 'untouched',
@@ -159,8 +149,7 @@ describe('GrokSettingsReconciler', () => {
     (settings.providerConfigs as Record<string, any>).grok.environmentHash =
       grokEnvironmentHash(settings);
 
-    expect(grokSettingsReconciler.reconcileModelWithEnvironment(settings, []))
-      .toEqual({ changed: false, invalidatedConversations: [] });
+    expect(grokSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
     expect(getGrokProviderSettings(settings).currentCatalog).toEqual(catalog('current-model'));
   });
 

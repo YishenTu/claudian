@@ -22,17 +22,17 @@ export const grokSettingsReconciler: ProviderSettingsReconciler = {
 
   reconcileModelWithEnvironment(settings) {
     if (!getGrokProviderSettings(settings).enabled) {
-      return { changed: false, invalidatedConversations: [] };
+      return { changed: false };
     }
 
     const environmentHash = computeGrokEnvironmentHash(settings);
     if (getGrokProviderSettings(settings).environmentHash === environmentHash) {
-      return { changed: false, invalidatedConversations: [] };
+      return { changed: false };
     }
 
     updateGrokProviderSettings(settings, { environmentHash });
     // Grok sessions resume across environment changes.
-    return { changed: true, invalidatedConversations: [], sessionPolicy: 'reload' };
+    return { changed: true, sessionPolicy: 'reload' };
   },
 
   normalizeModelVariantSettings(settings): boolean {

@@ -10,8 +10,6 @@ afterEach(async () => { await peer.close(); });
 
 it('validates effective permission facts across a pinned paginated log before admission', async () => {
   peer.onCall = (method, args) => {
-    if (method === 'permissionPresets/catalog') return { options: [{ value: 'workspace-write' }] };
-    if (method === 'commands/list') return [{ name: 'permission' }];
     if (method === 'commands/execute') return { result: { kind: 'success' } };
     if (method === 'session/projections') return { asOfSeq: 60, values: { permissions: { currentValue: 'workspace-write' } } };
     if (method === 'session/page') {
@@ -22,7 +20,7 @@ it('validates effective permission facts across a pinned paginated log before ad
     }
     throw new Error(`Unexpected ${method}`);
   };
-  await expect(applyDeepSeekPermission(peer.client, 'root', 'normal', () => {})).resolves.toBe('normal');
+  await expect(applyDeepSeekPermission(peer.client, 'root', 'normal')).resolves.toBe('normal');
   expect(peer.calls.filter(c => c.method === 'session/page').map(c => c.args.request)).toEqual([
     { address: { kind: 'session', sessionId: 'root' }, throughSeq: 60, maxMessages: 100 },
     { address: { kind: 'session', sessionId: 'root' }, throughSeq: 60, beforeSeq: 60, maxMessages: 100 },
@@ -44,14 +42,12 @@ it.each([
   { name: 'missing facts', outcome: 'success', records: [], message: incompatible },
 ])('rejects $name instead of trusting preset labels or RPC success', async ({ outcome, records, message }) => {
   peer.onCall = method => {
-    if (method === 'permissionPresets/catalog') return { options: [{ value: 'workspace-write' }] };
-    if (method === 'commands/list') return [{ name: 'permission' }];
     if (method === 'commands/execute') return { result: { kind: outcome } };
     if (method === 'session/projections') return { asOfSeq: 5, values: { permissions: { currentValue: 'workspace-write' } } };
     if (method === 'session/page') return { hasMore: false, records };
     throw new Error(`Unexpected ${method}`);
   };
-  await expect(applyDeepSeekPermission(peer.client, 'root', 'normal', () => {})).rejects.toThrow(message);
+  await expect(applyDeepSeekPermission(peer.client, 'root', 'normal')).rejects.toThrow(message);
 });
 
 it('reports unavailable native sessions without using activating follow', async () => {

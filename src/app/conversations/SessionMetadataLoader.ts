@@ -9,12 +9,6 @@ import type {
 } from '../storage/SessionStorage';
 import type { ConversationRepository } from './ConversationRepository';
 
-export interface InitialSessionMetadataScan {
-  records: SessionMetadataReadResult[];
-  complete: boolean;
-  invalidMetadataCount: number;
-}
-
 export interface SessionMetadataLoaderOptions {
   sessions: SessionMetadataReader;
   conversations: ConversationRepository;
@@ -27,16 +21,15 @@ export interface SessionMetadataLoaderOptions {
 }
 
 /**
- * Loads session metadata for the conversation repository. It reads the
- * startup scan for application startup, which adopts those records itself,
- * and owns the deferred background scan after layout and on-demand loading
- * of individual conversations.
+ * Loads session metadata for the conversation repository: the deferred
+ * background scan after layout and on-demand loading of individual
+ * conversations.
  */
 export class SessionMetadataLoader {
   private stopped = false;
   private disposal: Promise<void> | null = null;
   private readonly requestedLoads = new Set<Promise<void>>();
-  private pendingScan = false;
+  private pendingScan = true;
   private loadedAll = false;
   private scheduledLoadTimer: number | null = null;
   private remainingLoad: Promise<void> | null = null;
@@ -45,20 +38,6 @@ export class SessionMetadataLoader {
 
   get hasLoadedAll(): boolean {
     return this.loadedAll;
-  }
-
-  async readInitialMetadata(): Promise<InitialSessionMetadataScan> {
-    const scan = await this.options.sessions.scan();
-    return {
-      records: await this.options.sessions.revalidate(scan.records),
-      complete: scan.complete,
-      invalidMetadataCount: scan.invalidMetadataCount,
-    };
-  }
-
-  finishStartup(complete: boolean, deferRemaining: boolean): void {
-    this.loadedAll = complete;
-    this.pendingScan = deferRemaining;
   }
 
   scheduleRemainingLoad(): void {
@@ -222,32 +201,25 @@ export class SessionMetadataLoader {
       ),
     );
     StartupProfiler.recordCount('background-session-metadata-count', currentAddedConversations.length);
-    let recoveredModels: Conversation[] = [];
-    if (!this.isStopped()) {
-      recoveredModels = await conversations
-        .recoverMissingSelectedModels();
-      StartupProfiler.recordCount(
-        'recovered-session-model-count',
-        recoveredModels.length,
-      );
-    }
+    const recoveredModels = await conversations
+      .recoverMissingSelectedModels();
+    StartupProfiler.recordCount(
+      'recovered-session-model-count',
+      recoveredModels.length,
+    );
     if (this.isStopped()) return;
     await conversations.persistConversations(
       uniqueCurrentInvalidatedConversations,
     );
-    if (
-      !this.isStopped()
-      && (didChangeConversationList || recoveredModels.length > 0)
-    ) {
+    if (this.isStopped()) return;
+    if (didChangeConversationList || recoveredModels.length > 0) {
       this.options.onConversationListChanged();
     }
     if (scan.complete) {
       this.loadedAll = true;
-      if (!this.isStopped()) {
-        await runtimeSettings.completePendingSessionInvalidations(
-          runtimeSettings.getCompletablePendingSessionInvalidations(),
-        );
-      }
+      await runtimeSettings.completePendingSessionInvalidations(
+        runtimeSettings.getPendingGenerations(),
+      );
       if (!this.isStopped()) this.options.onAllMetadataLoaded?.();
       if (!this.isStopped()) {
         StartupProfiler.recordCount(

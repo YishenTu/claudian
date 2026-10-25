@@ -97,13 +97,10 @@ function invalidateCodexConversationSessions(conversations: Conversation[]): Con
 export const codexSettingsReconciler = {
   invalidateConversationSessions: invalidateCodexConversationSessions,
 
-  reconcileModelWithEnvironment(
-    settings: Record<string, unknown>,
-    conversations: Conversation[],
-  ): ProviderEnvironmentReconciliation {
+  reconcileModelWithEnvironment(settings: Record<string, unknown>): ProviderEnvironmentReconciliation {
     const fingerprint = getCodexRuntimeFingerprintState(settings);
     if (!fingerprint.saved.environmentHash && !fingerprint.hasFingerprintInputs) {
-      return { changed: false, invalidatedConversations: [] };
+      return { changed: false };
     }
     const { changed, sessionPolicy } = compareScopedRuntimeInputFingerprints(
       fingerprint.saved,
@@ -114,12 +111,8 @@ export const codexSettingsReconciler = {
       }),
     );
     if (!changed) {
-      return { changed: false, invalidatedConversations: [] };
+      return { changed: false };
     }
-
-    const invalidatedConversations = sessionPolicy === 'invalidate'
-      ? invalidateCodexConversationSessions(conversations)
-      : [];
 
     const currentModel = typeof settings.model === 'string' ? settings.model : '';
     const nextModel = resolveCodexModelSelection(getCodexProviderSettings(settings), currentModel);
@@ -131,7 +124,7 @@ export const codexSettingsReconciler = {
       environmentHash: fingerprint.current.runtime,
       sessionEnvironmentHash: fingerprint.current.session,
     });
-    return { changed: true, invalidatedConversations, sessionPolicy };
+    return { changed: true, sessionPolicy };
   },
 
   normalizeModelVariantSettings(settings: Record<string, unknown>): boolean {

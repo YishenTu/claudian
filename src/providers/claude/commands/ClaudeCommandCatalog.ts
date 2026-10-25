@@ -55,7 +55,6 @@ interface ActiveCommandProbe {
 
 export class ClaudeCommandCatalog implements ProviderCommandCatalog {
   private readonly activeProbes = new Set<ActiveCommandProbe>();
-  private cacheGeneration = 0;
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
   private quiescenceDepth = 0;
@@ -96,7 +95,6 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog {
   }
 
   async #runProbe(signal?: AbortSignal): Promise<SlashCommand[]> {
-    const generation = this.cacheGeneration;
     let resolveCompletion!: () => void;
     const entry: ActiveCommandProbe = {
       completion: new Promise(resolve => { resolveCompletion = resolve; }),
@@ -111,12 +109,11 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog {
       entry.controller.signal.throwIfAborted();
       const commands = await this.probe?.(entry.controller.signal) ?? [];
       entry.controller.signal.throwIfAborted();
-      if (this.disposed || generation !== this.cacheGeneration) return [];
       this.probedCommands = commands.map(command => ({ ...command }));
       return this.probedCommands;
     } catch (error) {
       signal?.throwIfAborted();
-      if (this.disposed || generation !== this.cacheGeneration) return [];
+      if (entry.controller.signal.aborted) return [];
       // Failures stay uncached so a retry re-probes.
       throw error;
     } finally {
@@ -177,7 +174,6 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog {
   }
 
   #invalidateProbeCache(): void {
-    this.cacheGeneration += 1;
     this.probedCommands = null;
     for (const entry of this.activeProbes) {
       entry.controller.abort();

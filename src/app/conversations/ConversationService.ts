@@ -83,16 +83,6 @@ export class ConversationService {
     this.notifyConversationListChanged();
   }
 
-  async updateSelectedModelIf(
-    ...args: Parameters<ConversationRepository['updateSelectedModelIf']>
-  ): Promise<boolean> {
-    const committed = await this.deps.repository.updateSelectedModelIf(...args);
-    if (committed) {
-      try { this.notifyConversationListChanged(); } catch { /* Metadata and admission already committed. */ }
-    }
-    return committed;
-  }
-
   /** One write per conversation and one list refresh; see `ConversationRepository.setPlacement`. */
   async setConversationsPlacement(ids: readonly string[], placement: ConversationPlacement): Promise<void> {
     await this.#mutateConversations(ids, id => this.deps.repository.setPlacement(id, placement));
@@ -135,17 +125,6 @@ export class ConversationService {
       await this.deps.nativeSessionArchives.sync(archivedIds);
     }
     return archivedIds.length;
-  }
-
-  async rewriteLinkedContentPaths(
-    oldPath: string,
-    newPath: string,
-    includeDescendants: boolean,
-  ): Promise<void> {
-    await this.deps.repository.rewriteLinkedContentPaths(oldPath, newPath, {
-      includeDescendants,
-    });
-    this.notifyConversationListChanged();
   }
 
   /** Reconciles linked content identity and pinned paths after a Vault rename; publication is the caller's. */

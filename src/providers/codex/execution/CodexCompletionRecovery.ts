@@ -10,16 +10,13 @@ const THREAD_READ_RECOVERY_TIMEOUT_MS = 5_000;
 
 interface RecoveryAttempt {
   readonly active: CodexActiveRun;
-  readonly generation: number;
   attempt: number;
   inFlight: boolean;
   timer: number | null;
 }
 
+/** Releasing or cancelling the run calls `cancel()`, so a recovery is current while it is the pending one. */
 export interface CodexCompletionRecoveryHost {
-  /** A newer lifecycle generation invalidates a pending recovery. */
-  lifecycleGeneration(): number;
-  activeRun(): CodexActiveRun | null;
   transport(): CodexRPCTransport | null;
   /** Delivers a recovered notification through normal notification handling. */
   replayNotification(method: string, params: unknown): void;
@@ -39,10 +36,9 @@ export class CodexCompletionRecovery {
   /** The run's thread became idle; its turn completion should follow within a grace period. */
   observeIdle(active: CodexActiveRun): void {
     let recovery = this.#recovery;
-    const generation = this.host.lifecycleGeneration();
-    if (!recovery || recovery.active !== active || recovery.generation !== generation) {
+    if (!recovery || recovery.active !== active) {
       this.cancel();
-      recovery = { active, generation, attempt: 0, inFlight: false, timer: null };
+      recovery = { active, attempt: 0, inFlight: false, timer: null };
       this.#recovery = recovery;
     }
     this.#schedule(recovery, MISSED_TURN_COMPLETION_GRACE_MS);
@@ -69,7 +65,6 @@ export class CodexCompletionRecovery {
       this.#recovery !== recovery
       || recovery.timer !== null
       || recovery.inFlight
-      || !this.#isCurrent(recovery)
       || !recovery.active.nativeTurnId
     ) {
       return;
@@ -85,7 +80,7 @@ export class CodexCompletionRecovery {
     const transport = this.host.transport();
     const threadId = active.nativeThreadId;
     const turnId = active.nativeTurnId;
-    if (!transport || !threadId || !turnId || !this.#isCurrent(recovery)) {
+    if (!transport || !threadId || !turnId || this.#recovery !== recovery) {
       return;
     }
     recovery.attempt += 1;
@@ -103,7 +98,7 @@ export class CodexCompletionRecovery {
       this.#retryOrFail(recovery);
       return;
     }
-    if (!this.#isCurrent(recovery)) return;
+    if (this.#recovery !== recovery) return;
     recovery.inFlight = false;
     const turn = result.thread.turns.find(candidate => candidate.id === turnId);
     if (result.thread.id !== threadId || !turn || turn.status === 'inProgress') {
@@ -117,7 +112,7 @@ export class CodexCompletionRecovery {
   }
 
   #retryOrFail(recovery: RecoveryAttempt): void {
-    if (!this.#isCurrent(recovery)) return;
+    if (this.#recovery !== recovery) return;
     if (recovery.attempt < MISSED_TURN_COMPLETION_MAX_ATTEMPTS) {
       const retryDelay = MISSED_TURN_COMPLETION_RETRY_BASE_MS * (2 ** (recovery.attempt - 1));
       this.#schedule(recovery, retryDelay);
@@ -126,16 +121,5 @@ export class CodexCompletionRecovery {
 
     this.cancel();
     this.host.fail(recovery.active, 'Codex became idle, but its completed turn could not be recovered.');
-  }
-
-  #isCurrent(recovery: RecoveryAttempt): boolean {
-    const { active, generation } = recovery;
-    return (
-      this.#recovery === recovery
-      && this.host.activeRun() === active
-      && !active.run.isTerminal
-      && !active.run.isCancellationRequested
-      && generation === this.host.lifecycleGeneration()
-    );
   }
 }

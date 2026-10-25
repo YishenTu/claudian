@@ -13,13 +13,13 @@ export const deepseekSettingsReconciler: ProviderSettingsReconciler = {
     const environmentText = getRuntimeEnvironmentText(settings, 'deepseek');
     const environmentKeys = Object.keys(parseEnvironmentVariables(environmentText));
     const cliPath = current.cliPathsByHost[getInstallationKey()] ?? current.cliPath;
-    if (!current.environmentHash && !cliPath && !environmentKeys.length) return { changed: false, invalidatedConversations: [] };
+    if (!current.environmentHash && !cliPath && !environmentKeys.length) return { changed: false };
     const environmentHash = createRuntimeInputFingerprint({ environmentText, environmentKeys,
       additionalInputs: { cliPath },
     });
-    if (current.environmentHash === environmentHash) return { changed: false, invalidatedConversations: [] };
+    if (current.environmentHash === environmentHash) return { changed: false };
     updateDeepSeekProviderSettings(settings, { environmentHash });
     // DeepSeek sessions resume across environment changes.
-    return { changed: true, invalidatedConversations: [], sessionPolicy: 'reload' };
+    return { changed: true, sessionPolicy: 'reload' };
   },
 };

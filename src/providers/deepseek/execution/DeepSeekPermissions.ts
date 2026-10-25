@@ -24,18 +24,10 @@ export async function readDeepSeekPermission(client: DeepSeekReader, sessionId: 
   throw new Error('DeepSeek permission state is missing or incompatible with the canonical native presets. Restore the native permission presets before continuing.');
 }
 
-export async function applyDeepSeekPermission(client: DeepSeekReader, sessionId: string, mode: DeepSeekPermission, assertBoundary: () => void): Promise<DeepSeekPermission> {
+export async function applyDeepSeekPermission(client: DeepSeekReader, sessionId: string, mode: DeepSeekPermission): Promise<DeepSeekPermission> {
   const native = PRESETS[mode];
   if (!native) throw new Error('Unsupported DeepSeek permission mode.');
-  const catalog = await client.call('permissionPresets/catalog');
-  if (!isRecord(catalog) || !Array.isArray(catalog.options) || !catalog.options.some(option => isRecord(option) && option.value === native)) {
-    throw new Error(`DeepSeek native permission preset ${native} is unavailable.`);
-  }
-  const commands = await client.call('commands/list', { agentId: sessionId });
-  if (!Array.isArray(commands) || !commands.some(command => isRecord(command) && command.name === 'permission')) {
-    throw new Error('DeepSeek native permission command is unavailable.');
-  }
-  assertBoundary();
+  // Native resolves `undefined` for an unknown command and an error result for an unknown preset.
   const response = await client.call('commands/execute', { agentId: sessionId, line: `/permission ${native}`, submittedAttachments: [] });
   if (!isRecord(response) || !isRecord(response.result) || response.result.kind !== 'success') {
     throw new Error(`DeepSeek could not select permission preset ${native}.`);

@@ -269,11 +269,7 @@ export class ConversationController {
     state.currentConversationId = conversation.id;
     this.#setDraftProject({ projectId: null, frozen: false });
 
-    const settlement = this.deps.getLinkedContentController().commitSubmission(token);
-    for (const event of settlement.queuedEvents) {
-      if (event.kind !== 'rename') continue;
-      await plugin.rewriteLinkedContentPaths(event.oldPath, event.newPath, event.includeDescendants);
-    }
+    this.deps.getLinkedContentController().commitSubmission(token);
   }
 
   /**

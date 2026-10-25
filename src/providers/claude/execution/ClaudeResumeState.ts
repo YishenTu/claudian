@@ -10,7 +10,7 @@ export interface ClaudeResumeStateStore {
 }
 
 /**
- * Native resume target, pending fork, and history-replay generation for one
+ * Native resume target, pending fork, and pending history replay for one
  * Claude session. The session owns the persisted provider-state record; this
  * class writes only the keys that describe resume.
  */
@@ -20,7 +20,6 @@ export class ClaudeResumeState {
   private resumeAt: string | undefined;
   private pendingFork: boolean;
   private replayHistoryOnNextTurn: boolean;
-  private replayHistoryGeneration: number;
 
   constructor(
     seed: ProviderNativeResumeSeed | undefined,
@@ -40,17 +39,11 @@ export class ClaudeResumeState {
       ? null
       : this.initialProviderSessionId;
     this.replayHistoryOnNextTurn = store.get('historyReplayPending') === true;
-    this.replayHistoryGeneration = this.replayHistoryOnNextTurn ? 1 : 0;
     this.resumeAt = seed?.resumeCheckpoint ?? forkSource?.resumeAt;
   }
 
   get providerSessionId(): string | null {
     return this.liveProviderSessionId;
-  }
-
-  /** The generation a replaying turn clears on acceptance, or null when none is pending. */
-  get pendingReplayGeneration(): number | null {
-    return this.replayHistoryOnNextTurn ? this.replayHistoryGeneration : null;
   }
 
   getNativeResume(): ClaudeNativeResume {
@@ -123,14 +116,9 @@ export class ClaudeResumeState {
     }
   }
 
-  /** Returns whether the pending replay of that generation was cleared. */
-  clearReplayPending(expectedGeneration: number): boolean {
-    if (
-      !this.replayHistoryOnNextTurn
-      || this.replayHistoryGeneration !== expectedGeneration
-    ) {
-      return false;
-    }
+  /** Returns whether a pending replay was cleared. */
+  clearReplayPending(): boolean {
+    if (!this.replayHistoryOnNextTurn) return false;
     this.replayHistoryOnNextTurn = false;
     this.store.delete('historyReplayPending');
     return true;
@@ -143,7 +131,6 @@ export class ClaudeResumeState {
 
   #markHistoryReplayPending(): void {
     this.replayHistoryOnNextTurn = true;
-    this.replayHistoryGeneration += 1;
     this.store.set('historyReplayPending', true);
   }
 }

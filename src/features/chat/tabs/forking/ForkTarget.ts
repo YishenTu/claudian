@@ -80,18 +80,18 @@ export async function openForkTarget(
   if (!isForkRequestCurrent(host, sourceLease)) return;
 
   if (host.forkTarget() === 'viewer') {
-    await forkToViewer(host, context, sourceTab);
+    await forkToViewer(host, context, sourceLease);
     return;
   }
   const target = await chooseForkTarget(host.plugin.app);
   if (!target || !isForkRequestCurrent(host, sourceLease)) return;
 
   if (target === 'new-tab') {
-    const tab = await forkToNewTab(host, context, sourceTab);
+    const tab = await forkToNewTab(host, context, sourceLease);
     if (!tab) return;
     new Notice(t('chat.fork.notice'));
   } else {
-    const success = await forkInCurrentTab(host, context, sourceTab);
+    const success = await forkInCurrentTab(host, context, sourceLease);
     if (!success) {
       new Notice(t('chat.fork.failed', { error: t('chat.fork.errorNoActiveTab') }));
       return;
@@ -104,10 +104,8 @@ export async function openForkTarget(
 async function forkToViewer(
   host: ForkTargetHost,
   context: ForkContext,
-  sourceTab: AssembledTabRuntime,
+  sourceLease: ForkSourceLease,
 ): Promise<void> {
-  const sourceLease = captureForkSourceLease(context, sourceTab);
-  if (!isForkRequestCurrent(host, sourceLease)) return;
   const conversationId = await createForkConversation(host, context, sourceLease);
   if (!conversationId) return;
   if (!isForkRequestCurrent(host, sourceLease)) {
@@ -118,7 +116,7 @@ async function forkToViewer(
   try {
     // The source session must stay current until the fork is shown; the source tab itself may
     // be the preview the fork replaces, so its liveness is not part of that check.
-    shown = await host.showInViewer(conversationId, sourceTab, () => isForkSourceCurrent(sourceLease));
+    shown = await host.showInViewer(conversationId, sourceLease.requestTab, () => isForkSourceCurrent(sourceLease));
   } finally {
     if (!shown) await deleteForkConversation(host, conversationId);
   }
@@ -127,10 +125,8 @@ async function forkToViewer(
 async function forkToNewTab(
   host: ForkTargetHost,
   context: ForkContext,
-  sourceTab: AssembledTabRuntime,
+  sourceLease: ForkSourceLease,
 ): Promise<AssembledTabRuntime | null> {
-  const sourceLease = captureForkSourceLease(context, sourceTab);
-  if (!isForkRequestCurrent(host, sourceLease)) return null;
   const conversationId = await createForkConversation(host, context, sourceLease);
   if (!conversationId) return null;
   if (!isForkRequestCurrent(host, sourceLease)) {
@@ -170,10 +166,8 @@ async function forkToNewTab(
 async function forkInCurrentTab(
   host: ForkTargetHost,
   context: ForkContext,
-  sourceTab: AssembledTabRuntime,
+  sourceLease: ForkSourceLease,
 ): Promise<boolean> {
-  const sourceLease = captureForkSourceLease(context, sourceTab);
-  if (!isForkRequestCurrent(host, sourceLease)) return false;
   const conversationId = await createForkConversation(host, context, sourceLease);
   if (!conversationId) return false;
   if (!isForkRequestCurrent(host, sourceLease)) {
@@ -181,7 +175,7 @@ async function forkInCurrentTab(
     return false;
   }
   try {
-    const target = await host.rebind(sourceTab, conversationId, () => isForkRequestCurrent(host, sourceLease));
+    const target = await host.rebind(sourceLease.requestTab, conversationId, () => isForkRequestCurrent(host, sourceLease));
     if (target?.conversationId === conversationId && host.membership.isTabStateMutable(target)) return true;
   } catch (error) {
     await deleteForkConversation(host, conversationId);
@@ -191,6 +185,7 @@ async function forkInCurrentTab(
   return false;
 }
 
+/** Creates the fork conversation; callers revalidate the lease once it resolves. */
 async function createForkConversation(
   host: ForkTargetHost,
   context: ForkContext,
@@ -234,10 +229,6 @@ async function createForkConversation(
       providerState: forkProviderState,
       ...(title && { title }),
     });
-    if (!isForkRequestCurrent(host, sourceLease)) {
-      await deleteForkConversation(host, conversation.id);
-      return null;
-    }
   } catch (error) {
     await deleteForkConversation(host, conversation.id);
     throw error;

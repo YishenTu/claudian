@@ -24,7 +24,7 @@ export interface ProjectServiceDeps {
   readonly memory: Pick<
     VaultFileAdapter,
     | 'ensureManagedFolder'
-    | 'moveManagedFileNoReplace'
+    | 'moveManagedFile'
     | 'readManagedFile'
     | 'removeManagedFile'
     | 'removeManagedFolderIfEmpty'
@@ -124,7 +124,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
           if (preserveSource) {
             await this.deps.memory.removeManagedFile(updated.memoryPath).catch(() => undefined);
           } else {
-            await this.deps.memory.moveManagedFileNoReplace(updated.memoryPath, record.memoryPath).catch(() => undefined);
+            await this.deps.memory.moveManagedFile(updated.memoryPath, record.memoryPath).catch(() => undefined);
           }
         }
         throw error;
@@ -237,24 +237,14 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
   }
 
   /**
-   * Writes a new memory file, creating its folders, and reports false when a file is already at the path. The content
-   * goes to a hidden sibling first and is moved without replacing, so a racing writer's file is never overwritten.
+   * Writes a new memory file, creating its folders, and reports false when a file is already at the path. A file
+   * another writer creates after the check may be replaced.
    */
   async #createMemory(memoryPath: string, content: string): Promise<boolean> {
     if (await this.#memoryExists(memoryPath)) return false;
-    const folder = await this.#ensureFolderOf(memoryPath);
-    const temp = `${folder ? `${folder}/` : ''}.claudian-${randomUUID()}.tmp`;
-    await this.deps.memory.writeManagedFile(temp, content);
-    try {
-      await this.deps.memory.moveManagedFileNoReplace(temp, memoryPath);
-      return true;
-    } catch (error) {
-      if (error instanceof ManagedResourceCollisionError) return false;
-      throw error;
-    } finally {
-      // A no-op once the move succeeded.
-      await this.deps.memory.removeManagedFile(temp).catch(() => undefined);
-    }
+    await this.#ensureFolderOf(memoryPath);
+    await this.deps.memory.writeManagedFile(memoryPath, content);
+    return true;
   }
 
   /** Relocates existing memory, keeping a copy for other owners; a missing file is only repointed. */
@@ -269,7 +259,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
     }
     await this.#ensureFolderOf(target);
     try {
-      await this.deps.memory.moveManagedFileNoReplace(source, target);
+      await this.deps.memory.moveManagedFile(source, target);
     } catch (error) {
       if (error instanceof ManagedResourceCollisionError) throw new ProjectMemoryPathTakenError(target, { cause: error });
       throw error;
@@ -281,11 +271,10 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
     return this.deps.memory.verifyManagedPath(memoryPath, { expectedType: 'file', allowMissing: true });
   }
 
-  /** Creates the folder holding the memory file and returns it; `''` at the vault root, which needs none. */
-  async #ensureFolderOf(memoryPath: string): Promise<string> {
+  /** Creates the folder holding the memory file; the vault root needs none. */
+  async #ensureFolderOf(memoryPath: string): Promise<void> {
     const folder = projectMemoryFolderOf(memoryPath);
     if (folder) await this.deps.memory.ensureManagedFolder(folder);
-    return folder;
   }
 
   async #readMemory(memoryPath: string): Promise<ProjectMemoryReadResult> {

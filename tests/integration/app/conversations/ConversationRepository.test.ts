@@ -119,7 +119,6 @@ test('a metadata scan paused during source resolution cannot publish writes afte
     isUnloading: () => unloading, whenLayoutReady: callback => callback(),
     onConversationListChanged: () => undefined,
   });
-  loader.finishStartup(false, true);
   loader.scheduleRemainingLoad();
   await readingSource;
   unloading = true;

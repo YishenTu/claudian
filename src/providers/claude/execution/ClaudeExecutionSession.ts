@@ -76,7 +76,7 @@ interface ActiveRequestedRun {
   nativeFork: boolean;
   nativeHandedOff: boolean;
   nativeCompleted?: boolean;
-  historyReplayGeneration: number | null;
+  replaysHistory: boolean;
   inputs: ClaudeTurnInputs | null;
   nativeAssistantId?: string;
   /** The latest result Claude reported for this run, kept while a queued steer holds it open. */
@@ -214,7 +214,7 @@ ClaudeExecutionStrategySink {
       accepted: false,
       nativeFork: false,
       nativeHandedOff: false,
-      historyReplayGeneration: null,
+      replaysHistory: false,
       inputs: null,
     };
     this.activeRun = active;
@@ -846,9 +846,7 @@ ClaudeExecutionStrategySink {
         Boolean(request.conversationHistory?.length),
         this.nativeQuery !== null,
       );
-      active.historyReplayGeneration = replayConversationHistory
-        ? this.resume.pendingReplayGeneration
-        : null;
+      active.replaysHistory = replayConversationHistory;
       const encoded = await this.encoder.encode(
         request,
         this.config,
@@ -938,12 +936,7 @@ ClaudeExecutionStrategySink {
       type: 'user_message_started',
       nativeUserMessageId,
     });
-    const historyReplayGeneration = active.historyReplayGeneration;
-    active.historyReplayGeneration = null;
-    if (
-      historyReplayGeneration !== null
-      && this.resume.clearReplayPending(historyReplayGeneration)
-    ) {
+    if (active.replaysHistory && this.resume.clearReplayPending()) {
       this.state.bumpRevision();
       this.#emitStateForCurrentTurn();
     }

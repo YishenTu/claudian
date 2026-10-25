@@ -22,20 +22,6 @@ function toPiConfig({ cliPath = '', environment = '', hostCliPath }: PiFingerpri
   };
 }
 
-function createBoundPiConversation(): Conversation {
-  return {
-    id: 'pi-conversation',
-    messages: [],
-    providerId: 'pi',
-    providerState: {
-      leafEntryId: 'assistant-1',
-      sessionFile: '/sessions/current.jsonl',
-      sessionId: 'current-session',
-    },
-    sessionId: 'current-session',
-  } as unknown as Conversation;
-}
-
 describe('piSettingsReconciler', () => {
   it.each(['PI_CODING_AGENT_DIR', 'PI_CODING_AGENT_SESSION_DIR', 'PI_PACKAGE_DIR'])(
     'invalidates native bindings when location-affecting %s changes or is removed',
@@ -43,25 +29,11 @@ describe('piSettingsReconciler', () => {
       const settings: Record<string, unknown> = {
         providerConfigs: { pi: toPiConfig({ environment: `${key}=/old\nPI_OFFLINE=1` }) },
       };
-      piSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+      piSettingsReconciler.reconcileModelWithEnvironment(settings);
       for (const environment of [`${key}=/new\nPI_OFFLINE=1`, 'PI_OFFLINE=1']) {
         (settings.providerConfigs as any).pi.environmentVariables = environment;
-        const conversation = createBoundPiConversation();
-        const result = piSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]);
-        expect(result).toEqual({
-          changed: true,
-          invalidatedConversations: [conversation],
-          sessionPolicy: 'invalidate',
-        });
-        expect(conversation.sessionId).toBeNull();
-        expect(conversation.providerState).toEqual({
-          bindingRetired: true,
-          previousSessions: [{
-            leafEntryId: 'assistant-1',
-            sessionFile: '/sessions/current.jsonl',
-            sessionId: 'current-session',
-          }],
-        });
+        expect(piSettingsReconciler.reconcileModelWithEnvironment(settings))
+          .toEqual({ changed: true, sessionPolicy: 'invalidate' });
       }
     },
   );
@@ -87,24 +59,20 @@ describe('piSettingsReconciler', () => {
       settingsProvider: 'pi',
       providerConfigs: { pi: toPiConfig(withSessionEnvironment(before)) },
     };
-    piSettingsReconciler.reconcileModelWithEnvironment(settings, []);
-    const conversation = createBoundPiConversation();
+    piSettingsReconciler.reconcileModelWithEnvironment(settings);
     (settings.providerConfigs as any).pi = {
       ...(settings.providerConfigs as any).pi,
       ...toPiConfig(withSessionEnvironment(after)),
     };
 
-    const result = ProviderSettingsCoordinator.reconcileProviders(settings, [conversation], ['pi']);
+    const result = ProviderSettingsCoordinator.reconcileProviders(settings, ['pi']);
 
     expect(result).toMatchObject({
       changed: true,
       environmentChangedProviderIds: ['pi'],
-      invalidatedConversations: [],
       sessionInvalidationProviderIds: [],
     });
-    expect(conversation).toEqual(createBoundPiConversation());
-    expect(piSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]))
-      .toEqual({ changed: false, invalidatedConversations: [] });
+    expect(piSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
   });
 
   it.each([
@@ -116,29 +84,22 @@ describe('piSettingsReconciler', () => {
         pi: toPiConfig({ cliPath: '/same/pi', environment: 'PI_CODING_AGENT_DIR=/agent' }),
       },
     };
-    piSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+    piSettingsReconciler.reconcileModelWithEnvironment(settings);
     const config = (settings.providerConfigs as any).pi;
     const runtimeFingerprint = config.environmentHash;
     delete config.sessionEnvironmentHash;
     config.cliPath = nextCliPath;
-    const conversation = createBoundPiConversation();
 
-    const result = piSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]);
+    const result = piSettingsReconciler.reconcileModelWithEnvironment(settings);
 
-    const invalidates = sessionPolicy === 'invalidate';
-    expect(result).toEqual({
-      changed: true,
-      invalidatedConversations: invalidates ? [conversation] : [],
-      sessionPolicy,
-    });
-    expect(conversation.sessionId).toBe(invalidates ? null : 'current-session');
+    expect(result).toEqual({ changed: true, sessionPolicy });
     expect(getPiProviderSettings(settings).sessionEnvironmentHash).toMatch(/^runtime-input:v1:/);
-    expect(getPiProviderSettings(settings).environmentHash === runtimeFingerprint).toBe(!invalidates);
-    expect(piSettingsReconciler.reconcileModelWithEnvironment(settings, []))
-      .toEqual({ changed: false, invalidatedConversations: [] });
+    expect(getPiProviderSettings(settings).environmentHash === runtimeFingerprint)
+      .toBe(sessionPolicy === 'reload');
+    expect(piSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
   });
 
-  it('invalidates Pi conversations when Pi session/config environment changes', () => {
+  it('invalidates when Pi session/config environment changes and retires only Pi bindings', () => {
     const settings: Record<string, unknown> = {
       providerConfigs: {
         pi: {
@@ -167,16 +128,10 @@ describe('piSettingsReconciler', () => {
       sessionId: 'claude-session',
     } as unknown as Conversation;
 
-    const result = piSettingsReconciler.reconcileModelWithEnvironment(
-      settings,
-      [piConversation, claudeConversation],
-    );
-
-    expect(result).toEqual({
-      changed: true,
-      invalidatedConversations: [piConversation],
-      sessionPolicy: 'invalidate',
-    });
+    expect(piSettingsReconciler.reconcileModelWithEnvironment(settings))
+      .toEqual({ changed: true, sessionPolicy: 'invalidate' });
+    expect(piSettingsReconciler.invalidateConversationSessions([piConversation, claudeConversation]))
+      .toEqual([piConversation]);
     expect(piConversation.sessionId).toBeNull();
     expect(piConversation.providerState).toEqual({
       bindingRetired: true,
@@ -193,7 +148,7 @@ describe('piSettingsReconciler', () => {
     expect(fingerprint).not.toContain('/new');
   });
 
-  it('migrates a matching legacy environment fingerprint before coordinator invalidation', () => {
+  it('migrates a matching legacy environment fingerprint without reporting a change', () => {
     const settings: Record<string, unknown> = {
       providerConfigs: {
         pi: {
@@ -203,36 +158,13 @@ describe('piSettingsReconciler', () => {
         },
       },
     };
-    const conversation = {
-      id: 'pi-conversation',
-      messages: [],
-      providerId: 'pi',
-      providerState: {
-        leafEntryId: 'assistant-1',
-        sessionFile: '/sessions/current.jsonl',
-        sessionId: 'current-session',
-      },
-      sessionId: 'current-session',
-    } as unknown as Conversation;
-
     expect(piSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
-    const result = ProviderSettingsCoordinator.reconcileProviders(
-      settings,
-      [conversation],
-      ['pi'],
-    );
+    const result = ProviderSettingsCoordinator.reconcileProviders(settings, ['pi']);
 
     expect(result).toMatchObject({
       changed: false,
       environmentChangedProviderIds: [],
-      invalidatedConversations: [],
       sessionInvalidationProviderIds: [],
-    });
-    expect(conversation.sessionId).toBe('current-session');
-    expect(conversation.providerState).toMatchObject({
-      leafEntryId: 'assistant-1',
-      sessionFile: '/sessions/current.jsonl',
-      sessionId: 'current-session',
     });
     expect(isVersionedRuntimeInputFingerprint(
       (settings.providerConfigs as any).pi.environmentHash,

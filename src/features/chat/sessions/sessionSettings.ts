@@ -115,19 +115,14 @@ export async function updateSessionReasoning(
   if (committed) tab.reasoningSelections.set(reasoningSelectionKey(providerId, model), reasoning);
 }
 
-/** Captures a compare-and-set against the session's authoritative reasoning selection. */
-export function prepareSessionReasoningSelection(
-  tab: ChatSessionRuntime,
+/** Selects a session's reasoning for one model without changing the saved preference. */
+export function setSessionReasoningSelection(
+  tab: Pick<ChatSessionRuntime, 'reasoningSelections'>,
   providerId: string,
   model: string,
   reasoning: string,
-): { isCurrent(): boolean; commit(): void } {
-  const key = reasoningSelectionKey(providerId, model);
-  const previous = tab.reasoningSelections.get(key);
-  return {
-    isCurrent: () => tab.reasoningSelections.get(key) === previous,
-    commit: () => { tab.reasoningSelections.set(key, reasoning); },
-  };
+): void {
+  tab.reasoningSelections.set(reasoningSelectionKey(providerId, model), reasoning);
 }
 
 function reasoningSelectionKey(providerId: string, model: string): string {

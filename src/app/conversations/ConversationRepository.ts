@@ -589,52 +589,6 @@ export class ConversationRepository {
     await this.#mutateMetadata(id, () => safeUpdates);
   }
 
-  /**
-   * Commits a model compare-and-set and a synchronous admission under the metadata queue.
-   * Admission callbacks must not publish, await persistence, or throw from commit().
-   * A revoked reservation during IO restores the committed projection before releasing the queue.
-   */
-  updateSelectedModelIf(
-    id: string,
-    expectedModel: string | undefined,
-    selectedModel: string | undefined,
-    admission: {
-      isCurrent(candidate: Readonly<Conversation>): boolean;
-      commit(): void;
-    },
-  ): Promise<boolean> {
-    const conversation = this.#getRecord(id);
-    if (!conversation) return Promise.resolve(false);
-    return this.#enqueuePersistence(id, async () => {
-      const candidate = { ...conversation, ...(selectedModel !== undefined ? { selectedModel } : {}) };
-      const isCurrent = () => this.#getRecord(id) === conversation
-        && !this.deletingConversationIds.has(id) && !this.deletedConversationIds.has(id)
-        && !conversation.isArchived && conversation.selectedModel === expectedModel
-        && admission.isCurrent(candidate);
-      if (!isCurrent()) return false;
-      const changed = candidate.selectedModel !== conversation.selectedModel;
-      if (changed) await this.#writeMetadata(candidate);
-      let committed = false;
-      try {
-        if (!isCurrent()) return false;
-        if (changed) {
-          this.modelRecovery.markSelectedModelMutation(conversation);
-          conversation.selectedModel = candidate.selectedModel;
-        }
-        admission.commit();
-        committed = true;
-        return true;
-      } finally {
-        // All later metadata choices still wait behind this operation. Restore from the current
-        // authoritative record, never from a stale caller snapshot or after releasing the queue.
-        if (changed && !committed) {
-          const current = this.#getRecord(id) ?? this.deletionStates.get(id)?.conversation;
-          if (current) await this.#writeMetadata(current);
-        }
-      }
-    });
-  }
-
   /** Resolves true when the archive state changed. */
   async setArchived(id: string, isArchived: boolean): Promise<boolean> {
     let archiveChanged = false;

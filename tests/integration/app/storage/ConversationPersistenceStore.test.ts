@@ -413,7 +413,7 @@ test('compacts stored subagent copies in the background after all metadata loads
     providerSettings: ProviderSettingsCoordinator,
     runtimeSettings: {
       getPendingProviderIds: () => [],
-      getCompletablePendingSessionInvalidations: () => new Map(),
+      getPendingGenerations: () => new Map(),
       completePendingSessionInvalidations: async () => undefined,
     } as never,
     isUnloading: () => false, whenLayoutReady: callback => callback(), onConversationListChanged: () => undefined,
@@ -421,7 +421,6 @@ test('compacts stored subagent copies in the background after all metadata loads
     onAllMetadataLoaded: () => { atListPublication = readFileSync(path.join(root, DEVICE_PATH, 'redundant.meta.json'), 'utf8'); },
   });
   try {
-    loader.finishStartup(false, true);
     loader.scheduleRemainingLoad();
     expect(await passSettled).toBe(1);
     const compacted = JSON.parse(await read('redundant')) as SessionMetadata;
@@ -458,20 +457,16 @@ test.each([
   expect(saved).toMatchObject({ sessionId: null, providerState: state, modelRecoverySource: recoverySource });
 });
 
-test('initial metadata loading reads unchanged payloads once through the storage adapter', async () => {
+test('metadata scan and revalidation read unchanged payloads once through the storage adapter', async () => {
   for (let index = 0; index < 25; index++) {
     await store.saveMetadata({ ...metadata, id: `saved-${index}` });
   }
   const read = jest.spyOn(adapter, 'read');
-  const loader = new SessionMetadataLoader({
-    sessions: store.metadataReader, conversations: createRepository(),
-    providerSettings: ProviderSettingsCoordinator, runtimeSettings: {} as never,
-    isUnloading: () => false, whenLayoutReady: callback => callback(), onConversationListChanged: () => undefined,
-  });
-  const result = await loader.readInitialMetadata();
-  expect(result.records).toHaveLength(25);
-  expect(result.complete).toBe(true);
-  expect(result.records.every(record => record.source === 'device')).toBe(true);
+  const scan = await store.metadataReader.scan();
+  const records = await store.metadataReader.revalidate(scan.records);
+  expect(records).toHaveLength(25);
+  expect(scan.complete).toBe(true);
+  expect(records.every(record => record.source === 'device')).toBe(true);
   expect(read).toHaveBeenCalledTimes(25);
 });
 

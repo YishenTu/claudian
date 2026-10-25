@@ -17,7 +17,7 @@ import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { getActionDescription } from '@/core/security/approvalRules';
 import { invokeSessionTool } from '@/core/session-tools/invokeSessionTool';
 import type { SessionToolRoutedCallRequest } from '@/core/session-tools/SessionToolEndpoint';
-import { SESSION_TOOL_SPECS, type SessionToolResult } from '@/core/session-tools/sessionToolSpecs';
+import type { SessionToolResult } from '@/core/session-tools/sessionToolSpecs';
 import type { SlashCommand } from '@/core/types';
 import { t } from '@/i18n/i18n';
 
@@ -52,7 +52,6 @@ interface Turn {
   readonly startedAt: number;
   readonly output: DeepSeekOutput;
   readonly buffered: DeepSeekOutputEvent[];
-  readonly sessionCalls: Map<string, string>;
   owner?: RequestedRunChannel | 'background';
   sequence: number;
   nativeUserId?: string;
@@ -64,7 +63,7 @@ interface ChildState {
   /** Set once from its parent's native creation catalog, never from whichever root turn happens to be running. */
   origin?: { readonly request: Request | undefined } | { readonly parent: ChildState };
   lastSeq: number;
-  turn?: { native: number; id: string; sequence: number; interactionScope: boolean; abort: AbortController; sessionCalls: Map<string, string> };
+  turn?: { native: number; id: string; sequence: number; interactionScope: boolean; abort: AbortController };
 }
 
 /**
@@ -277,12 +276,9 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     const desired = permissionFor(input);
     const current = this.permission ??= await readDeepSeekPermission(lease.client, this.nativeId!);
     if (current !== desired) {
-      const assertBoundary = (): void => {
-        this.assertRequest(requested);
-        if (!observer.permissionBoundaryAvailable()) throw new AdmissionError('DeepSeek cannot change permissions while a turn, tool, or question is active. Use Stop, then resend your draft.');
-      };
-      assertBoundary();
-      this.permission = await applyDeepSeekPermission(lease.client, this.nativeId!, desired, assertBoundary);
+      this.assertRequest(requested);
+      if (!observer.permissionBoundaryAvailable()) throw new AdmissionError('DeepSeek cannot change permissions while a turn, tool, or question is active. Use Stop, then resend your draft.');
+      this.permission = await applyDeepSeekPermission(lease.client, this.nativeId!, desired);
       this.snapshots.bumpRevision();
       requested.channel.emit({ type: 'permission_mode_changed', permissionMode: desired, snapshot: this.getSnapshot() });
     }
@@ -552,7 +548,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       if (this.turn) throw new Error('DeepSeek opened overlapping native turns.');
       if (typeof data.turn !== 'number') throw new Error('Missing DeepSeek turn identity.');
       const turn: Turn = { native: data.turn, id: randomUUID(), startedAt: typeof event.time === 'number' ? event.time : Date.now(),
-        buffered: [], sequence: 0, sessionCalls: new Map(), output: new DeepSeekOutput(value => this.output(turn, value)),
+        buffered: [], sequence: 0, output: new DeepSeekOutput(value => this.output(turn, value)),
       };
       this.turn = turn;
       return;
@@ -620,7 +616,6 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       return;
     }
     if (event.type.startsWith('assistant/') || event.type.startsWith('tool/')) this.classify();
-    this.trackSessionCall(turn.sessionCalls, event);
     turn.output.record(event);
   }
 
@@ -711,7 +706,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
       this.claimChild(event, { parent: child });
       if (event.type === 'turn/start' && typeof event.data.turn === 'number') {
         child.turn?.abort.abort();
-        child.turn = { native: event.data.turn, id: randomUUID(), sequence: 0, interactionScope: false, abort: new AbortController(), sessionCalls: new Map() };
+        child.turn = { native: event.data.turn, id: randomUUID(), sequence: 0, interactionScope: false, abort: new AbortController() };
       } else if (event.type === 'turn/end') {
         const turn = child.turn;
         if (!turn || turn.native !== event.data.turn) continue;
@@ -719,7 +714,6 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
         turn.abort.abort();
         child.turn = undefined;
       }
-      if (child.turn) this.trackSessionCall(child.turn.sessionCalls, event);
     }
   }
 
@@ -735,16 +729,6 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     return undefined;
   }
 
-  /** Only calls still executing in this native turn can authorize the independent HTTP invocation. */
-  private trackSessionCall(calls: Map<string, string>, event: Record<string, unknown>): void {
-    const data = event.data;
-    if (!isRecord(data)) return;
-    const id = event.type === 'tool/call' ? data.callId : event.type === 'tool/ptc-dispatch-start' ? data.subCallId : undefined;
-    if (typeof id === 'string' && typeof data.name === 'string' && SESSION_TOOL_SPECS.some(spec => spec.name === data.name)) calls.set(id, data.name);
-    if (event.type === 'tool/result' && isRecord(data.message) && typeof data.message.toolCallId === 'string') calls.delete(data.message.toolCallId);
-    if (event.type === 'tool/ptc-dispatch' && typeof data.subCallId === 'string') calls.delete(data.subCallId);
-  }
-
   private captureSessionTool(call: SessionToolRoutedCallRequest, deadline: number): DeepSeekSessionToolAdmission | undefined {
     const requested = this.requested;
     if (!requested || !this.config.sessionTools || !this.observer || this.detaching
@@ -755,37 +739,20 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
   }
 
   private async callSessionTool(call: SessionToolRoutedCallRequest, requested: Request, signal: AbortSignal, deadline: number): Promise<SessionToolResult> {
-    const envelope = call.args;
-    if (!isRecord(envelope) || typeof envelope.callId !== 'string' || !envelope.callId) {
-      return { isError: true, text: 'Missing DeepSeek session tool call identity.' };
-    }
-    const callId = envelope.callId;
-    // The roster captured this request before discovery; matching native call/turn evidence must still prove ownership.
-    const denied = (): Promise<SessionToolResult> => invokeSessionTool(call.name, envelope.args, { port: this.config.sessionTools, toolPolicy: undefined, signal });
+    // The roster captured this request before discovery; the caller's owning run, once the follow stream knows it, must be that request.
+    const denied = (): Promise<SessionToolResult> => invokeSessionTool(call.name, call.args, { port: this.config.sessionTools, toolPolicy: undefined, signal });
     if (!this.observer) return denied();
     const isRoot = call.callerNativeId === this.nativeId;
-    const readTurn = () => isRoot ? this.turn : this.children.get(call.callerNativeId)?.turn;
-    let turn: ReturnType<typeof readTurn>;
+    const owner = () => isRoot ? this.turn?.claimed : this.childRequest(this.children.get(call.callerNativeId));
     const active = () => Date.now() < deadline && !signal.aborted && !requested.channel.isTerminal && !requested.channel.isCancellationRequested && !this.detaching;
-    const matches = () => {
-      const current = readTurn();
-      const declared = current?.sessionCalls.get(callId) === call.name;
-      if (declared) turn ??= current;
-      const owner = isRoot ? this.turn?.claimed : this.childRequest(this.children.get(call.callerNativeId));
-      return { current, owner, declared };
-    };
     try {
-      await this.observer.waitUntil(() => {
-        const { current, owner, declared } = matches();
-        return !active() || (turn !== undefined && current !== turn) || (owner !== undefined && owner !== requested) || (owner === requested && declared);
-      }, Math.max(0, deadline - Date.now()), signal);
+      await this.observer.waitUntil(() => !active() || owner() !== undefined, Math.max(0, deadline - Date.now()), signal);
     } catch {
       return { isError: true, text: 'DeepSeek session tool call ended or did not reconcile before the deadline.' };
     }
-    const { current, owner, declared } = matches();
-    if (!active() || !current || current !== turn || owner !== requested || !declared) return denied();
+    if (!active() || owner() !== requested) return denied();
     const childTurn = isRoot ? undefined : this.children.get(call.callerNativeId)?.turn;
-    return invokeSessionTool(call.name, envelope.args, {
+    return invokeSessionTool(call.name, call.args, {
       port: this.config.sessionTools, toolPolicy: requested.input.toolPolicy,
       signal: childTurn ? AbortSignal.any([signal, childTurn.abort.signal]) : signal,
     });

@@ -1837,6 +1837,45 @@ describe('ClaudeExecutionBackend', () => {
     );
   });
 
+  it('does not replay history again when the replaying turn reports another session', async () => {
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'second-replacement-session' },
+      { type: 'result', subtype: 'success' },
+    ], { appendResult: false });
+    const session = new ClaudeExecutionBackend(createHost().getRuntimeHost('claude'))
+      .createSession(createConfig({
+        resumeSeed: {
+          providerSessionId: 'replacement-session',
+          providerState: {
+            historyReplayPending: true,
+            providerSessionId: 'replacement-session',
+          },
+        },
+      }));
+    const conversationHistory = [
+      { id: 'history-user', role: 'user' as const, content: 'single replay question', timestamp: 1 },
+      { id: 'history-assistant', role: 'assistant' as const, content: 'single replay answer', timestamp: 2 },
+    ];
+
+    await collectEvents(session.execute(createRequest({
+      conversationHistory,
+      input: [{ type: 'text', text: 'Replay into new session' }],
+    })).events);
+    await collectEvents(session.execute(createRequest({
+      conversationHistory,
+      input: [{ type: 'text', text: 'Continue without replay' }],
+    })).events);
+
+    const prompts = getEncodedPrompts();
+    expect(prompts.at(-2)).toContain('single replay question');
+    expect(prompts.at(-1)).toBe('Continue without replay');
+    expect(session.getSnapshot().providerState).toEqual(expect.objectContaining({
+      providerSessionId: 'second-replacement-session',
+    }));
+    expect(session.getSnapshot().providerState).not.toHaveProperty('historyReplayPending');
+    await session.dispose();
+  });
+
   it('invalidates a missing native session and reports the missing ID as a terminal event', async () => {
     const query = createThrowingPersistentQuery(
       new Error('No conversation found with session ID: missing-session'),

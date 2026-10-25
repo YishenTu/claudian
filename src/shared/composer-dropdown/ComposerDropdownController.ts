@@ -23,7 +23,6 @@ export class ComposerDropdownController {
   private activeMatch: ComposerTriggerMatch | null = null;
   private activeSource: ComposerDropdownSource | null = null;
   private destroyed = false;
-  private generation = 0;
   private inputLoadTimer: number | null = null;
   private items: readonly ComposerDropdownItem[] = [];
   private selectedIndex = -1;
@@ -140,7 +139,9 @@ export class ComposerDropdownController {
     const match = this.activeMatch;
     if (!source || !match || this.destroyed) return;
 
-    const generation = this.#invalidateActiveLoad();
+    this.#invalidateActiveLoad();
+    const controller = new AbortController();
+    this.activeController = controller;
     this.items = [{ id: 'loading', kind: 'status', label: t('chat.suggestions.loading'), state: 'loading' }];
     this.selectedIndex = -1;
     this.view.render(this.items, this.selectedIndex);
@@ -148,37 +149,34 @@ export class ComposerDropdownController {
     if (inputDriven && source.inputLoadPolicy === 'debounced') {
       this.inputLoadTimer = window.setTimeout(() => {
         this.inputLoadTimer = null;
-        void this.loadActive(generation);
+        void this.loadActive(controller);
       }, INPUT_LOAD_DEBOUNCE_MS);
       return;
     }
 
-    void this.loadActive(generation);
+    void this.loadActive(controller);
   }
 
-  private async loadActive(generation: number): Promise<void> {
+  private async loadActive(controller: AbortController): Promise<void> {
     const source = this.activeSource;
     const match = this.activeMatch;
     if (
       !source
       || !match
       || this.destroyed
-      || generation !== this.generation
+      || controller.signal.aborted
     ) return;
-
-    const controller = new AbortController();
-    this.activeController = controller;
 
     try {
       const items = await source.load(match, controller.signal);
-      if (this.destroyed || controller.signal.aborted || generation !== this.generation) return;
+      if (controller.signal.aborted) return;
       this.items = items.length > 0
         ? items
         : [{ id: 'empty', kind: 'status', label: t('chat.suggestions.noMatches'), state: 'empty' }];
       this.selectedIndex = this.#findSelectable(0, 1, true);
       this.view.render(this.items, this.selectedIndex);
     } catch {
-      if (this.destroyed || controller.signal.aborted || generation !== this.generation) return;
+      if (controller.signal.aborted) return;
       this.items = [{
         id: 'error',
         kind: 'status',
@@ -191,15 +189,13 @@ export class ComposerDropdownController {
     }
   }
 
-  #invalidateActiveLoad(): number {
-    this.generation++;
+  #invalidateActiveLoad(): void {
     if (this.inputLoadTimer !== null) {
       window.clearTimeout(this.inputLoadTimer);
       this.inputLoadTimer = null;
     }
     this.activeController?.abort();
     this.activeController = null;
-    return this.generation;
   }
 
   #moveSelection(delta: number): void {

@@ -309,7 +309,6 @@ export function runtimeOptions(index: number): Record<string, any> {
 export function expectTabMetadataReleased(manager: TabManager, tabId: string): void {
   const internals = manager as any;
   const discovery = internals.commandDiscovery;
-  expect(discovery.providerRuntimeCommandLoads.has(tabId)).toBe(false);
   expect(discovery.providerRuntimeCommandCache.has(tabId)).toBe(false);
   expect(discovery.providerCommandDiscoveryStores.has(tabId)).toBe(false);
   expect(discovery.tabCommandContextRevisions.has(tabId)).toBe(false);

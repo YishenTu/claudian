@@ -310,9 +310,8 @@ require('node:readline').createInterface({input: process.stdin}).on('line', line
 it('retains a v2 conversation database binding when runtime settings move to another database', () => {
   const conversation: any = { providerId: 'opencode', sessionId: 'original', providerState: { sessionId: 'original', nativeVersion: 2, databasePath: '/original.db' } };
   const settings = { providerConfigs: { opencode: { enabled: true, environmentHash: 'old', environmentVariables: 'OPENCODE_DB=/replacement.db' } } };
-  const result = opencodeSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]);
-  expect(result.changed).toBe(true);
-  expect(result.invalidatedConversations).toEqual([]);
+  expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true });
+  expect(opencodeSettingsReconciler.invalidateConversationSessions([conversation])).toEqual([]);
   expect(conversation).toMatchObject({ sessionId: 'original', providerState: { nativeVersion: 2, databasePath: '/original.db' } });
 });
 
@@ -486,7 +485,8 @@ it.each([false, true])('keeps history, model recovery and forks on the bound dat
     writeFileSync(nextDatabase, '');
     await f.plugin.executionLifecycleRegistry.runTransition(['opencode'], async () => {
       f.plugin.settings.providerConfigs.opencode.environmentVariables += `\nOPENCODE_DB=${nextDatabase}`;
-      opencodeSettingsReconciler.reconcileModelWithEnvironment(f.plugin.settings, [conversation]);
+      opencodeSettingsReconciler.reconcileModelWithEnvironment(f.plugin.settings);
+      opencodeSettingsReconciler.invalidateConversationSessions([conversation]);
     });
     if (missing) rmSync(f.environment.OPENCODE_DB!);
     const context = { ...createProviderHistoryPathContext(f.plugin.settings, 'opencode', f.root), environment: buildOpencodeRuntimeEnv(f.plugin.getRuntimeHost('opencode').environmentText, f.cli), vaultPath: f.root };

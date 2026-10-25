@@ -101,10 +101,7 @@ export const piSettingsReconciler = {
 
   invalidateConversationSessions: invalidatePiConversationSessions,
 
-  reconcileModelWithEnvironment(
-    settings: Record<string, unknown>,
-    conversations: Conversation[],
-  ): ProviderEnvironmentReconciliation {
+  reconcileModelWithEnvironment(settings: Record<string, unknown>): ProviderEnvironmentReconciliation {
     const envText = getRuntimeEnvironmentText(settings, 'pi');
     const piSettings = getPiProviderSettings(settings);
     const cliPathInputs = createCLIPathFingerprintInputs(
@@ -119,7 +116,7 @@ export const piSettingsReconciler = {
       || PI_ENV_HASH_KEYS.some(key => Object.prototype.hasOwnProperty.call(environment, key))
     );
     if (!savedHash && !hasFingerprintInputs) {
-      return { changed: false, invalidatedConversations: [] };
+      return { changed: false };
     }
     const current = computePiFingerprints(envText, cliPathInputs);
     const { changed, sessionPolicy } = compareScopedRuntimeInputFingerprints(
@@ -128,18 +125,14 @@ export const piSettingsReconciler = {
       computePiSessionFingerprint(''),
     );
     if (!changed) {
-      return { changed: false, invalidatedConversations: [] };
+      return { changed: false };
     }
-
-    const invalidatedConversations = sessionPolicy === 'invalidate'
-      ? invalidatePiConversationSessions(conversations)
-      : [];
 
     updatePiProviderSettings(settings, {
       environmentHash: current.runtime,
       sessionEnvironmentHash: current.session,
     });
-    return { changed: true, invalidatedConversations, sessionPolicy };
+    return { changed: true, sessionPolicy };
   },
 
   normalizeModelVariantSettings(settings: Record<string, unknown>): boolean {

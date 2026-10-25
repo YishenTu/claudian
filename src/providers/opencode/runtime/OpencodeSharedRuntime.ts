@@ -9,7 +9,6 @@ import { detectOpencodeNativeVersion, type OpencodeNativeVersion } from './Openc
 export class OpencodeSharedRuntime {
   private requested = false;
   private disposed = false;
-  private generation = 0;
   private controller = new AbortController();
   private startup: Promise<void> | null = null;
 
@@ -31,7 +30,6 @@ export class OpencodeSharedRuntime {
   }
 
   beginTransition(): void {
-    this.generation += 1;
     this.controller.abort();
     this.controller = new AbortController();
     this.serverService.beginTransition();
@@ -50,7 +48,6 @@ export class OpencodeSharedRuntime {
 
   dispose(): void {
     this.disposed = true;
-    this.generation += 1;
     this.controller.abort();
   }
 
@@ -59,7 +56,6 @@ export class OpencodeSharedRuntime {
       // Read settings only once admission is open, so a transition cannot leak a stale launch.
       await this.serverService.waitUntilAvailable();
       if (this.disposed || !decodeOpencodeConfig(this.host.config).enabled) return;
-      const generation = this.generation;
       const signal = this.controller.signal;
       try {
         const launch = await this.#resolveLaunch();
@@ -75,7 +71,7 @@ export class OpencodeSharedRuntime {
         return;
       } catch (error) {
         // A transition overtook this attempt; retry against its committed settings.
-        if (this.disposed || generation === this.generation) throw error;
+        if (this.disposed || !signal.aborted) throw error;
       }
     }
   }

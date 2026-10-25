@@ -349,45 +349,15 @@ describe('ProviderSettingsCoordinator', () => {
   });
 
   describe('reconcileProviders', () => {
-    it('filters conversations per provider', () => {
-      const reconcileSpy = jest.spyOn(
-        ProviderRegistry.getSettingsReconciler('claude'),
-        'reconcileModelWithEnvironment',
-      );
-
-      const claudeConv = { providerId: 'claude', messages: [] } as unknown as Conversation;
-      const otherConv = { providerId: 'codex', messages: [] } as unknown as Conversation;
-      const settings: Record<string, unknown> = { model: 'haiku' };
-
-      ProviderSettingsCoordinator.reconcileProviders(
-        settings, [claudeConv, otherConv], ProviderRegistry.getRegisteredProviderIds(),
-      );
-
-      // Claude reconciler should only receive claude conversations
-      expect(reconcileSpy).toHaveBeenCalledWith(
-        settings,
-        [claudeConv],
-      );
-
-      reconcileSpy.mockRestore();
-    });
-
     it('defaults existing providers to invalidation and separates reload-policy changes', () => {
       const defaultReconciler: ProviderSettingsReconciler = {
         invalidateConversationSessions: jest.fn(conversations => conversations),
-        reconcileModelWithEnvironment: jest.fn((_settings, conversations) => ({
-          changed: true,
-          invalidatedConversations: conversations,
-        })),
+        reconcileModelWithEnvironment: jest.fn(() => ({ changed: true })),
         normalizeModelVariantSettings: jest.fn(() => false),
       };
       const reloadReconciler: ProviderSettingsReconciler = {
         invalidateConversationSessions: jest.fn(conversations => conversations),
-        reconcileModelWithEnvironment: jest.fn(() => ({
-          changed: true,
-          invalidatedConversations: [],
-          sessionPolicy: 'reload',
-        })),
+        reconcileModelWithEnvironment: jest.fn(() => ({ changed: true, sessionPolicy: 'reload' })),
         normalizeModelVariantSettings: jest.fn(() => false),
       };
       const originalGetSettingsReconciler = ProviderRegistry.getSettingsReconciler.bind(
@@ -408,20 +378,8 @@ describe('ProviderSettingsCoordinator', () => {
             ? originalGetChatUIConfig('claude')
             : originalGetChatUIConfig(providerId)
         ));
-      const invalidatedConversation = {
-        id: 'invalidate-conversation',
-        providerId: 'fake-invalidate',
-        messages: [],
-      } as unknown as Conversation;
-      const preservedConversation = {
-        id: 'reload-conversation',
-        providerId: 'fake-reload',
-        messages: [],
-      } as unknown as Conversation;
-
       const result = ProviderSettingsCoordinator.reconcileProviders(
         { model: 'haiku' },
-        [invalidatedConversation, preservedConversation],
         ['fake-invalidate', 'fake-reload'],
       );
       reconcilerSpy.mockRestore();
@@ -433,7 +391,31 @@ describe('ProviderSettingsCoordinator', () => {
         'fake-reload',
       ]);
       expect(result.sessionInvalidationProviderIds).toEqual(['fake-invalidate']);
-      expect(result.invalidatedConversations).toEqual([invalidatedConversation]);
+    });
+  });
+
+  describe('invalidateConversationSessions', () => {
+    it('clears bindings only for conversations of the requested providers', () => {
+      const claudeConv = {
+        providerId: 'claude',
+        sessionId: 'claude-session',
+        providerState: { providerSessionId: 'claude-session' },
+        messages: [],
+      } as unknown as Conversation;
+      const codexConv = {
+        providerId: 'codex',
+        sessionId: 'thread-1',
+        providerState: { threadId: 'thread-1' },
+        messages: [],
+      } as unknown as Conversation;
+
+      expect(ProviderSettingsCoordinator.invalidateConversationSessions([claudeConv, codexConv], ['codex']))
+        .toEqual([codexConv]);
+      expect(codexConv.sessionId).toBeNull();
+      expect(claudeConv).toMatchObject({
+        sessionId: 'claude-session',
+        providerState: { providerSessionId: 'claude-session' },
+      });
     });
   });
 
@@ -591,7 +573,7 @@ describe('ProviderSettingsCoordinator', () => {
         },
       };
 
-      ProviderSettingsCoordinator.reconcileProviders(settings, [], ['claude']);
+      ProviderSettingsCoordinator.reconcileProviders(settings, ['claude']);
 
       expect(settings.savedProviderModel).toMatchObject({
         claude: 'claude-code/fable-v1',
@@ -615,7 +597,7 @@ describe('ProviderSettingsCoordinator', () => {
         },
       };
 
-      ProviderSettingsCoordinator.reconcileProviders(settings, [], ['claude']);
+      ProviderSettingsCoordinator.reconcileProviders(settings, ['claude']);
 
       expect(settings.titleGenerationModel).toBe('claude-code/fable-old');
 
@@ -624,7 +606,7 @@ describe('ProviderSettingsCoordinator', () => {
         'ANTHROPIC_DEFAULT_FABLE_MODEL=fable-new',
       ].join('\n');
 
-      ProviderSettingsCoordinator.reconcileProviders(settings, [], ['claude']);
+      ProviderSettingsCoordinator.reconcileProviders(settings, ['claude']);
 
       expect(settings.titleGenerationModel).toBe('claude-code/fable-old');
     });
@@ -1001,11 +983,14 @@ describe('ProviderSettingsCoordinator', () => {
       };
 
       const result = ProviderSettingsCoordinator.reconcileProviders(
-        settings, [codexConv], ProviderRegistry.getRegisteredProviderIds(),
+        settings, ProviderRegistry.getRegisteredProviderIds(),
       );
 
       expect(result.changed).toBe(true);
       expect(result.sessionInvalidationProviderIds).toContain('codex');
+      expect(ProviderSettingsCoordinator.invalidateConversationSessions(
+        [codexConv], result.sessionInvalidationProviderIds,
+      )).toEqual([codexConv]);
       expect(codexConv.sessionId).toBeNull();
       expect(codexConv.providerState).toEqual({
         nativeConversationContextEstablished: false,

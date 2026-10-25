@@ -48,8 +48,6 @@ export interface ApplicationStartupOptions {
   readonly providers: StartupProviderCatalog;
   readonly providerSettings: StartupProviderSettings;
   readonly executionLifecycle: Pick<ProviderExecutionLifecycleRegistry, 'markSessionsInvalidated'>;
-  /** Defers sessions not selected for restoration to the background metadata scan. */
-  readonly deferNonRestoredSessionMetadata: boolean;
   isUnloading(): boolean;
   publishCommittedSettings(
     settings: Readonly<ClaudianSettings>,
@@ -166,55 +164,15 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
   const didNormalizeProviderSelection = providerSettings.normalizeProviderSelection(settings);
   const didNormalizeModelVariants = providerSettings.normalizeAllModelVariants(settings);
 
-  const deferRemainingMetadata = options.deferNonRestoredSessionMetadata;
-  const initialMetadataScan = deferRemainingMetadata
-    ? {
-        records: [],
-        complete: false,
-        invalidMetadataCount: 0,
-      }
-    : await StartupProfiler.runAsync(
-        'session-metadata-load',
-        () => sessionMetadata.readInitialMetadata(),
-      );
-  const initialModelRecoverySources = initialMetadataScan.records.map(({ metadata }) => (
-    sessionMetadata.createShell(metadata)
-  ));
-  const initialEntries = initialMetadataScan.records.map(({ metadata, needsMigration, source }) => ({
-    conversation: sessionMetadata.createShell(metadata),
-    needsMigration,
-    source,
-  }));
-  StartupProfiler.recordCount('initial-session-metadata-count', initialEntries.length);
-  StartupProfiler.recordCount('session-metadata-count', initialEntries.length);
-  StartupProfiler.recordCount(
-    'invalid-session-metadata-count',
-    initialMetadataScan.invalidMetadataCount,
-  );
-  await conversationRepository.adoptMetadataConversations(initialEntries);
-  conversationRepository.registerHistoricalModelRecoverySources(
-    initialModelRecoverySources,
-  );
-  if (initialMetadataScan.complete) {
-    const recoveredModels = await conversationRepository.recoverMissingSelectedModels();
-    StartupProfiler.recordCount(
-      'recovered-session-model-count',
-      recoveredModels.length,
-    );
-  }
   setLocale(settings.locale as Locale);
 
+  // No conversation is loaded yet: restored and remaining sessions apply pending
+  // invalidations as the metadata loader adopts them.
   const reconciliation = runtimeSettings.reconcile();
   runtimeSettings.markPendingSessionInvalidations(
     settings,
     reconciliation.sessionInvalidationProviderIds,
   );
-  const pendingInvalidatedConversations = conversationRepository.invalidateProviderSessions(
-    runtimeSettings.getPendingProviderIds(),
-  );
-  const completedInvalidationGenerations = initialMetadataScan.complete
-    ? new Map(runtimeSettings.getPendingGenerations())
-    : new Map<ProviderId, number>();
 
   providerSettings.projectActiveProviderState(settings);
 
@@ -226,14 +184,6 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
   ) {
     await settingsCoordinator.persistCurrent();
   }
-
-  const conversationsToSave = new Set([
-    ...reconciliation.invalidatedConversations,
-    ...pendingInvalidatedConversations,
-  ]);
-  await conversationRepository.persistConversations(Array.from(conversationsToSave));
-  await runtimeSettings.completePendingSessionInvalidations(completedInvalidationGenerations);
-  sessionMetadata.finishStartup(initialMetadataScan.complete, deferRemainingMetadata);
 
   return {
     storage,

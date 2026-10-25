@@ -1,5 +1,4 @@
 import {
-  isProviderCommandLoaderAvailable,
   listDiscoveredCommandEntries,
   loadProviderCommands,
   type ProviderCommandLoaderDiscovery,
@@ -19,7 +18,7 @@ import { getSessionProviderId } from '@/features/chat/sessions/sessionProvider';
 import type { TabId } from '@/features/chat/tabs/ChatTab';
 import type { TabIdentity } from '@/features/chat/tabs/TabIdentity';
 import type { AssembledTabRuntime, ProviderCatalogInfo, TabMembershipView } from '@/features/chat/tabs/types';
-import { throwIfAborted, toAbortError } from '@/utils/abort';
+import { throwIfAborted } from '@/utils/abort';
 
 type ProviderRuntimeCommandCacheEntry = {
   result: ProviderCommandDiscoveryResult<SlashCommand>;
@@ -42,12 +41,6 @@ type ProviderCommandContext = ProviderCommandLookup & {
   resourceGeneration: number;
 };
 
-type ProviderCommandLoadEntry = {
-  abortController: AbortController;
-  key: string;
-  promise: Promise<ProviderCommandDiscoveryResult<SlashCommand>>;
-};
-
 type SDKCommandDiscovery = ProviderCommandLoaderDiscovery;
 
 const ABORT_MESSAGE = 'Provider command discovery aborted';
@@ -58,7 +51,6 @@ const ABORT_MESSAGE = 'Provider command discovery aborted';
  * it never runs eagerly and never creates chat sessions.
  */
 export class TabCommandDiscovery {
-  private readonly providerRuntimeCommandLoads = new Map<TabId, ProviderCommandLoadEntry>();
   private readonly providerRuntimeCommandCache = new Map<TabId, ProviderRuntimeCommandCacheEntry>();
   private readonly providerCommandDiscoveryStores = new Map<
     TabId,
@@ -155,40 +147,26 @@ export class TabCommandDiscovery {
     return entries;
   }
 
-  /** Cancels and forgets a tab's discovery state, collecting failures for the caller. */
-  releaseTab(tabId: TabId): unknown[] {
-    const errors: unknown[] = [];
-    try {
-      this.#cancelRuntimeCommandLoad(tabId);
-    } catch (error) {
-      errors.push(error);
-    }
-    try {
-      this.providerCommandDiscoveryStores.get(tabId)?.invalidate();
-    } catch (error) {
-      errors.push(error);
-    } finally {
-      this.providerRuntimeCommandLoads.delete(tabId);
-      this.providerRuntimeCommandCache.delete(tabId);
-      this.providerCommandDiscoveryStores.delete(tabId);
-      this.tabCommandContextRevisions.delete(tabId);
-    }
-    return errors;
+  /** Cancels and forgets a tab's discovery state. */
+  releaseTab(tabId: TabId): void {
+    this.providerCommandDiscoveryStores.get(tabId)?.invalidate();
+    this.providerRuntimeCommandCache.delete(tabId);
+    this.providerCommandDiscoveryStores.delete(tabId);
+    this.tabCommandContextRevisions.delete(tabId);
   }
 
   /** Tab IDs that still own any discovery state, including state outliving membership. */
   getTrackedTabIds(): TabId[] {
     return [...new Set<TabId>([
-      ...this.providerRuntimeCommandLoads.keys(),
       ...this.providerRuntimeCommandCache.keys(),
       ...this.providerCommandDiscoveryStores.keys(),
       ...this.tabCommandContextRevisions.keys(),
     ])];
   }
 
-  /** Releases every tab's discovery state, collecting failures for the caller. */
-  releaseAll(): unknown[] {
-    return this.getTrackedTabIds().flatMap(tabId => this.releaseTab(tabId));
+  /** Releases every tab's discovery state. */
+  releaseAll(): void {
+    for (const tabId of this.getTrackedTabIds()) this.releaseTab(tabId);
   }
 
   #isTabProviderCurrent(tab: AssembledTabRuntime, providerId: ProviderId): boolean {
@@ -242,67 +220,37 @@ export class TabCommandDiscovery {
     }
     // Without a loader the catalog discovers on its own.
     if (!commandLoader) return { result: { status: 'empty' } };
-    const result = await this.#ensureRuntimeCommands(targetTab, providerId, lookup, signal);
+    const result = await this.#ensureRuntimeCommands(targetTab, providerId, commandContext, signal);
     if (!this.#isTabProviderCurrent(targetTab, providerId)) {
       return { result: { status: 'empty' } };
     }
     return toLoaderDiscovery(result);
   }
 
+  /** Returns the cached loader answer for this context, or loads it under the store's signal. */
   async #ensureRuntimeCommands(
     tab: AssembledTabRuntime,
     providerId: ProviderId,
-    lookup: ProviderCommandLookup,
+    context: ProviderCommandContext,
     signal: AbortSignal,
   ): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {
-    throwIfAborted(signal, ABORT_MESSAGE);
-    if (
-      !this.membership.isTabAlive(tab)
-      || !isProviderCommandLoaderAvailable(providerId, this.plugin.settings)
-    ) {
-      return { status: 'empty' };
-    }
-
-    const context = this.#buildContext(tab, providerId, lookup);
-    if (!this.#isContextCurrent(tab, providerId, context)) {
-      return { status: 'empty' };
-    }
     const cached = this.providerRuntimeCommandCache.get(tab.id);
-    if (cached && cached.key === context.cacheKey) {
-      return cached.result.status === 'ready'
-        ? { status: 'ready', items: cached.result.items.map(command => ({ ...command })) as [SlashCommand, ...SlashCommand[]] }
-        : cached.result;
-    }
+    if (cached?.key === context.cacheKey) return cached.result;
 
-    const existing = this.providerRuntimeCommandLoads.get(tab.id);
-    if (existing?.key === context.cacheKey) {
-      const result = await this.#awaitLoad(existing, signal);
-      return this.#isTabProviderCurrent(tab, providerId) ? result : { status: 'empty' };
-    }
-    this.#cancelRuntimeCommandLoad(tab.id);
-    if (!this.#isContextCurrent(tab, providerId, context)) {
-      return { status: 'empty' };
-    }
-
-    const abortController = new AbortController();
-    const load = this.#loadRuntimeCommands(
-      tab,
-      providerId,
-      context,
-      abortController.signal,
-    ).finally(() => {
-      if (this.providerRuntimeCommandLoads.get(tab.id)?.promise === load) {
-        this.providerRuntimeCommandLoads.delete(tab.id);
-      }
+    const result = await loadProviderCommands(providerId, {
+      allowIsolatedMetadataCreation: context.allowIsolatedMetadataCreation,
+      conversation: context.conversation,
+      plugin: this.plugin.providerHost,
+      signal,
     });
-    const entry: ProviderCommandLoadEntry = {
-      abortController,
-      key: context.cacheKey,
-      promise: load,
-    };
-    this.providerRuntimeCommandLoads.set(tab.id, entry);
-    const result = await this.#awaitLoad(entry, signal);
-    return this.#isTabProviderCurrent(tab, providerId) ? result : { status: 'empty' };
+    if (this.#isContextCurrent(tab, providerId, context)) {
+      if (result.status === 'ready' || result.status === 'empty') {
+        this.providerRuntimeCommandCache.set(tab.id, { key: context.cacheKey, result });
+      } else {
+        this.providerRuntimeCommandCache.delete(tab.id);
+      }
+    }
+    return result;
   }
 
   async #buildLookup(
@@ -338,45 +286,8 @@ export class TabCommandDiscovery {
       tabId,
       (this.tabCommandContextRevisions.get(tabId) ?? 0) + 1,
     );
-    this.#cancelRuntimeCommandLoad(tabId);
     this.providerRuntimeCommandCache.delete(tabId);
     return true;
-  }
-
-  #cancelRuntimeCommandLoad(tabId: TabId): void {
-    const load = this.providerRuntimeCommandLoads.get(tabId);
-    if (!load) {
-      return;
-    }
-    load.abortController.abort();
-    this.providerRuntimeCommandLoads.delete(tabId);
-  }
-
-  async #awaitLoad(
-    load: ProviderCommandLoadEntry,
-    signal: AbortSignal,
-  ): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {
-    if (signal.aborted) {
-      load.abortController.abort();
-      throwIfAborted(signal, ABORT_MESSAGE);
-    }
-
-    let onAbort: (() => void) | null = null;
-    const aborted = new Promise<never>((_resolve, reject) => {
-      onAbort = () => {
-        load.abortController.abort();
-        reject(toAbortError(signal, ABORT_MESSAGE));
-      };
-      signal.addEventListener('abort', onAbort, { once: true });
-    });
-
-    try {
-      return await Promise.race([load.promise, aborted]);
-    } finally {
-      if (onAbort) {
-        signal.removeEventListener('abort', onAbort);
-      }
-    }
   }
 
   #isContextCurrent(
@@ -421,35 +332,6 @@ export class TabCommandDiscovery {
       providerGeneration,
       resourceGeneration,
     };
-  }
-
-  async #loadRuntimeCommands(
-    tab: AssembledTabRuntime,
-    providerId: ProviderId,
-    context: ProviderCommandContext,
-    signal: AbortSignal,
-  ): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {
-    const result = await loadProviderCommands(providerId, {
-      allowIsolatedMetadataCreation: context.allowIsolatedMetadataCreation,
-      conversation: context.conversation,
-      plugin: this.plugin.providerHost,
-      signal,
-    });
-
-    if (
-      this.#isContextCurrent(tab, providerId, context)
-      && (result.status === 'ready' || result.status === 'empty')
-    ) {
-      this.providerRuntimeCommandCache.set(tab.id, {
-        key: context.cacheKey,
-        result: result.status === 'ready'
-          ? { status: 'ready', items: result.items.map(command => ({ ...command })) as [SlashCommand, ...SlashCommand[]] }
-          : result,
-      });
-    } else if (this.#isContextCurrent(tab, providerId, context)) {
-      this.providerRuntimeCommandCache.delete(tab.id);
-    }
-    return result;
   }
 
   #ensureDiscoveryStore(

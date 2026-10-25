@@ -1,8 +1,8 @@
 /**
  * VaultFileAdapter - Wrapper around Obsidian Vault API for file operations.
  *
- * Provides a consistent interface for file operations using Obsidian's
- * vault adapter instead of Node's fs module.
+ * Simple operations delegate to Obsidian's vault adapter. Managed-resource
+ * operations verify and act on the desktop filesystem under the vault root.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -73,17 +73,19 @@ function isCollision(error: unknown): boolean {
 }
 
 export class VaultFileAdapter {
-  private folderCreationPromises = new Map<string, Promise<void>>();
-
   constructor(private app: App) {}
 
   private get adapter(): DataAdapter {
     return this.app.vault.adapter;
   }
 
-  #getDesktopAdapter(): DesktopDataAdapter | null {
+  /** Managed operations work on the real filesystem; the plugin is desktop-only. */
+  #basePath(): string {
     const candidate = this.adapter as Partial<DesktopDataAdapter>;
-    return typeof candidate.getBasePath === 'function' ? candidate as DesktopDataAdapter : null;
+    if (typeof candidate.getBasePath !== 'function') {
+      throw new ManagedResourcePathError('Managed files require a filesystem-backed vault adapter');
+    }
+    return path.resolve(candidate.getBasePath());
   }
 
   async exists(path: string): Promise<boolean> {
@@ -139,52 +141,12 @@ export class VaultFileAdapter {
 
   async #ensureParentFolder(filePath: string): Promise<void> {
     const folder = filePath.substring(0, filePath.lastIndexOf('/'));
-    if (folder && !(await this.exists(folder))) {
-      await this.ensureFolder(folder);
-    }
+    if (folder) await this.ensureFolder(folder);
   }
 
-  /** Ensure a folder exists, creating it and parent folders if needed. */
+  /** Ensures a folder exists. Obsidian's `mkdir` creates missing parents and succeeds when the folder exists. */
   async ensureFolder(path: string): Promise<void> {
-    const parts = path.split('/').filter(Boolean);
-    let current = '';
-    for (const part of parts) {
-      current = current ? `${current}/${part}` : part;
-      await this.#ensureSingleFolder(current);
-    }
-  }
-
-  async #ensureSingleFolder(path: string): Promise<void> {
-    const existing = this.folderCreationPromises.get(path);
-    if (existing) {
-      await existing;
-      return;
-    }
-    if (await this.exists(path)) return;
-
-    const pendingAfterCheck = this.folderCreationPromises.get(path);
-    if (pendingAfterCheck) {
-      await pendingAfterCheck;
-      return;
-    }
-
-    const creation = (async () => {
-      try {
-        await this.app.vault.adapter.mkdir(path);
-      } catch (error) {
-        if (!(await this.exists(path))) {
-          throw error;
-        }
-      }
-    })();
-    this.folderCreationPromises.set(path, creation);
-    try {
-      await creation;
-    } finally {
-      if (this.folderCreationPromises.get(path) === creation) {
-        this.folderCreationPromises.delete(path);
-      }
-    }
+    if (!(await this.exists(path))) await this.app.vault.adapter.mkdir(path);
   }
 
   /** Rename/move a file. */
@@ -197,33 +159,22 @@ export class VaultFileAdapter {
     options: ManagedPathVerificationOptions,
   ): Promise<boolean> {
     const normalized = normalizeManagedPath(resourcePath);
-    const desktopAdapter = this.#getDesktopAdapter();
-    if (desktopAdapter) {
-      return this.#verifyDesktopManagedPath(desktopAdapter, normalized, options);
-    }
-    return this.#verifyAdapterManagedPath(normalized, options);
+    if (await this.#countVerifiedSegments(normalized, options.expectedType) === normalized.split('/').length) return true;
+    if (options.allowMissing) return false;
+    throw new ManagedResourcePathError(`Managed resource does not exist: ${normalized}`);
   }
 
-  async #verifyDesktopManagedPath(
-    adapter: DesktopDataAdapter,
-    normalized: string,
-    options: ManagedPathVerificationOptions,
-  ): Promise<boolean> {
-    const basePath = path.resolve(adapter.getBasePath());
+  /**
+   * Verifies each existing segment root to leaf, rejecting links, vault escapes and wrong types, and returns how many
+   * leading segments exist.
+   */
+  async #countVerifiedSegments(normalized: string, leafType: ManagedResourceType): Promise<number> {
+    const basePath = this.#basePath();
     let realBasePath: string;
     try {
       realBasePath = await fs.realpath(basePath);
     } catch (error) {
       throw new ManagedResourcePathError('Could not resolve the vault root', { cause: error });
-    }
-    const candidatePath = path.resolve(basePath, ...normalized.split('/'));
-    const relativeCandidate = path.relative(basePath, candidatePath);
-    if (
-      relativeCandidate === '..'
-      || relativeCandidate.startsWith(`..${path.sep}`)
-      || path.isAbsolute(relativeCandidate)
-    ) {
-      throw new ManagedResourcePathError('Managed path escapes the vault root');
     }
 
     let current = basePath;
@@ -234,12 +185,7 @@ export class VaultFileAdapter {
       try {
         stat = await fs.lstat(current);
       } catch (error) {
-        if (isNotFound(error)) {
-          if (options.allowMissing) return false;
-          throw new ManagedResourcePathError(`Managed resource does not exist: ${normalized}`, {
-            cause: error,
-          });
-        }
+        if (isNotFound(error)) return index;
         throw new ManagedResourcePathError(`Could not inspect managed resource: ${normalized}`, {
           cause: error,
         });
@@ -259,7 +205,7 @@ export class VaultFileAdapter {
       if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
         throw new ManagedResourcePathError(`Managed resource escapes the vault root: ${normalized}`);
       }
-      const expectedType = index === segments.length - 1 ? options.expectedType : 'folder';
+      const expectedType = index === segments.length - 1 ? leafType : 'folder';
       const matches = expectedType === 'folder' ? stat.isDirectory() : stat.isFile();
       if (!matches) {
         throw new ManagedResourcePathError(
@@ -267,64 +213,19 @@ export class VaultFileAdapter {
         );
       }
     }
-    return true;
-  }
-
-  async #verifyAdapterManagedPath(
-    normalized: string,
-    options: ManagedPathVerificationOptions,
-  ): Promise<boolean> {
-    const segments = normalized.split('/');
-    let current = '';
-    for (let index = 0; index < segments.length; index += 1) {
-      current = current ? `${current}/${segments[index]}` : segments[index];
-      let stat;
-      try {
-        stat = await this.adapter.stat(current);
-      } catch (error) {
-        throw new ManagedResourcePathError(`Could not inspect managed resource: ${normalized}`, {
-          cause: error,
-        });
-      }
-      if (!stat) {
-        if (options.allowMissing) return false;
-        throw new ManagedResourcePathError(`Managed resource does not exist: ${normalized}`);
-      }
-      const expectedType = index === segments.length - 1 ? options.expectedType : 'folder';
-      if (stat.type !== expectedType) {
-        throw new ManagedResourcePathError(
-          `Managed resource must be a regular ${expectedType}: ${normalized}`,
-        );
-      }
-    }
-    return true;
+    return segments.length;
   }
 
   async ensureManagedFolder(folderPath: string): Promise<void> {
     const normalized = normalizeManagedPath(folderPath);
-    if (await this.verifyManagedPath(normalized, { expectedType: 'folder', allowMissing: true })) return;
-    const segments = normalized.split('/');
-    let current = '';
-    for (const segment of segments) {
-      current = current ? `${current}/${segment}` : segment;
-      if (await this.verifyManagedPath(current, { expectedType: 'folder', allowMissing: true })) {
-        continue;
-      }
-      try {
-        await this.adapter.mkdir(current);
-      } catch (error) {
-        const wonByAnotherWriter = await this.verifyManagedPath(current, {
-          expectedType: 'folder',
-          allowMissing: true,
-        });
-        if (!wonByAnotherWriter) {
-          throw new ManagedResourcePathError(`Could not create managed folder: ${current}`, {
-            cause: error,
-          });
-        }
-      }
-      await this.verifyManagedPath(current, { expectedType: 'folder' });
+    const existing = await this.#countVerifiedSegments(normalized, 'folder');
+    if (existing === normalized.split('/').length) return;
+    try {
+      await this.adapter.mkdir(normalized);
+    } catch (error) {
+      throw new ManagedResourcePathError(`Could not create managed folder: ${normalized}`, { cause: error });
     }
+    await this.verifyManagedPath(normalized, { expectedType: 'folder' });
   }
 
   async createManagedFolderExclusive(folderPath: string): Promise<void> {
@@ -333,13 +234,14 @@ export class VaultFileAdapter {
     if (parent) {
       await this.verifyManagedPath(parent, { expectedType: 'folder' });
     }
-    if (await this.#verifyManagedCollisionTarget(normalized)) {
+    if (await this.#managedTargetExists(normalized)) {
       throw new ManagedResourceCollisionError(normalized);
     }
     try {
-      await this.#createFolderExclusive(normalized);
+      // Bypass the adapter: its desktop `mkdir` is recursive and succeeds on an existing folder, so it cannot claim one exclusively.
+      await fs.mkdir(this.#resolveManagedDesktopPath(this.#basePath(), normalized));
     } catch (error) {
-      if (await this.#verifyManagedCollisionTarget(normalized)) {
+      if (await this.#managedTargetExists(normalized)) {
         throw new ManagedResourceCollisionError(normalized, { cause: error });
       }
       throw new ManagedResourcePathError(
@@ -350,21 +252,14 @@ export class VaultFileAdapter {
     await this.verifyManagedPath(normalized, { expectedType: 'folder' });
   }
 
-  async #verifyManagedCollisionTarget(resourcePath: string): Promise<boolean> {
+  /** Whether anything, including a link, occupies a path whose parent is already verified. */
+  async #managedTargetExists(normalized: string): Promise<boolean> {
     try {
-      return await this.verifyManagedPath(resourcePath, {
-        expectedType: 'folder',
-        allowMissing: true,
-      });
-    } catch (folderError) {
-      try {
-        return await this.verifyManagedPath(resourcePath, {
-          expectedType: 'file',
-          allowMissing: true,
-        });
-      } catch {
-        throw folderError;
-      }
+      await fs.lstat(this.#resolveManagedDesktopPath(this.#basePath(), normalized));
+      return true;
+    } catch (error) {
+      if (isNotFound(error)) return false;
+      throw new ManagedResourcePathError(`Could not inspect managed resource: ${normalized}`, { cause: error });
     }
   }
 
@@ -397,12 +292,7 @@ export class VaultFileAdapter {
     if (separator !== -1) await this.verifyManagedPath(normalized.slice(0, separator), { expectedType: 'folder' });
     await this.verifyManagedPath(normalized, { expectedType: 'file', allowMissing: true });
     try {
-      const desktopAdapter = this.#getDesktopAdapter();
-      if (desktopAdapter) {
-        await this.#writeDesktopFileAtomically(desktopAdapter, normalized, content);
-      } else {
-        await this.adapter.write(normalized, content);
-      }
+      await this.#writeFileAtomically(normalized, content);
     } catch (error) {
       throw new ManagedResourcePathError(`Could not write managed resource: ${normalized}`, {
         cause: error,
@@ -414,12 +304,8 @@ export class VaultFileAdapter {
    * Writes a sibling temp file and renames it over the target, so a failed or
    * torn write never leaves the previous content partially overwritten.
    */
-  async #writeDesktopFileAtomically(
-    adapter: DesktopDataAdapter,
-    normalized: string,
-    content: string,
-  ): Promise<void> {
-    const target = this.#resolveManagedDesktopPath(path.resolve(adapter.getBasePath()), normalized);
+  async #writeFileAtomically(normalized: string, content: string): Promise<void> {
+    const target = this.#resolveManagedDesktopPath(this.#basePath(), normalized);
     const temp = path.join(path.dirname(target), `.claudian-${randomUUID()}.tmp`);
     try {
       await fs.writeFile(temp, content, { encoding: 'utf8', flag: 'wx' });
@@ -450,21 +336,10 @@ export class VaultFileAdapter {
    */
   async listManagedFolderEntries(folderPath: string): Promise<ManagedFolderEntry[]> {
     const normalized = normalizeManagedPath(folderPath);
-    const desktopAdapter = this.#getDesktopAdapter();
-    if (!desktopAdapter) {
-      const listing = await this.listManagedFolder(normalized);
-      return [
-        ...listing.folders.map(entry => ({ path: entry, type: 'folder' as const })),
-        ...listing.files.map(entry => ({ path: entry, type: 'file' as const })),
-      ];
-    }
     await this.verifyManagedPath(normalized, { expectedType: 'folder' });
     let dirents;
     try {
-      dirents = await fs.readdir(
-        this.#resolveManagedDesktopPath(path.resolve(desktopAdapter.getBasePath()), normalized),
-        { withFileTypes: true },
-      );
+      dirents = await fs.readdir(this.#resolveManagedDesktopPath(this.#basePath(), normalized), { withFileTypes: true });
     } catch (error) {
       throw new ManagedResourcePathError(`Could not list managed resource: ${normalized}`, {
         cause: error,
@@ -493,7 +368,8 @@ export class VaultFileAdapter {
   async removeManagedFolderIfEmpty(folderPath: string): Promise<void> {
     if (!await this.verifyManagedPath(folderPath, { expectedType: 'folder', allowMissing: true })) return;
     try {
-      await this.#removeEmptyFolder(normalizeManagedPath(folderPath));
+      // Obsidian's desktop `rmdir(path, false)` is `fs.rm` without `recursive`, which refuses every directory.
+      await fs.rmdir(this.#resolveManagedDesktopPath(this.#basePath(), normalizeManagedPath(folderPath)));
     } catch (error) {
       throw new ManagedResourcePathError(`Could not remove managed folder: ${folderPath}`, {
         cause: error,
@@ -502,28 +378,23 @@ export class VaultFileAdapter {
   }
 
   /**
-   * Moves a file into an existing folder, never replacing a resource at the target. Throws
-   * `ManagedResourceCollisionError` with both paths untouched when the target is taken.
+   * Moves a file into an existing folder after rejecting an existing target. A file created
+   * at the target after the check may be replaced.
    */
-  async moveManagedFileNoReplace(sourcePath: string, targetPath: string): Promise<void> {
+  async moveManagedFile(sourcePath: string, targetPath: string): Promise<void> {
     const source = normalizeManagedPath(sourcePath);
     const target = normalizeManagedPath(targetPath);
     await this.verifyManagedPath(source, { expectedType: 'file' });
     const separator = target.lastIndexOf('/');
     // The vault root itself needs no verification.
     if (separator !== -1) await this.verifyManagedPath(target.slice(0, separator), { expectedType: 'folder' });
-    if (await this.#verifyManagedCollisionTarget(target)) {
+    if (await this.#managedTargetExists(target)) {
       throw new ManagedResourceCollisionError(target);
-    }
-    if (this.#getDesktopAdapter()) {
-      // A hard link claims the target exclusively, so a racing writer is never replaced.
-      await this.moveManagedEntryNoReplace(source, target);
-      return;
     }
     try {
       await this.adapter.rename(source, target);
     } catch (error) {
-      if (await this.#verifyManagedCollisionTarget(target)) {
+      if (isCollision(error) || await this.#managedTargetExists(target)) {
         throw new ManagedResourceCollisionError(target, { cause: error });
       }
       throw new ManagedResourcePathError(`Could not move managed resource: ${source}`, { cause: error });
@@ -540,10 +411,10 @@ export class VaultFileAdapter {
     await this.verifyManagedPath(source, { expectedType: 'folder' });
     const parent = path.posix.dirname(target);
     if (parent !== '.') await this.verifyManagedPath(parent, { expectedType: 'folder' });
-    if (await this.#verifyManagedCollisionTarget(target)) {
+    if (await this.#managedTargetExists(target)) {
       throw new ManagedResourceCollisionError(target);
     }
-    const basePath = this.#requireDesktopBasePath();
+    const basePath = this.#basePath();
     try {
       await fs.rename(
         this.#resolveManagedDesktopPath(basePath, source),
@@ -551,25 +422,12 @@ export class VaultFileAdapter {
       );
     } catch (error) {
       // Windows can report a destination collision as EPERM instead of EEXIST/ENOTEMPTY.
-      if (isCollision(error) || await this.#verifyManagedCollisionTarget(target)) {
+      if (isCollision(error) || await this.#managedTargetExists(target)) {
         throw new ManagedResourceCollisionError(target, { cause: error });
       }
       throw new ManagedResourcePathError(`Could not relocate managed package from ${source} to ${target}`, {
         cause: error,
       });
-    }
-  }
-
-  private async moveManagedEntryNoReplace(source: string, target: string): Promise<void> {
-    const basePath = this.#requireDesktopBasePath();
-    const sourceAbsolute = this.#resolveManagedDesktopPath(basePath, source);
-    const targetAbsolute = this.#resolveManagedDesktopPath(basePath, target);
-    try {
-      await fs.link(sourceAbsolute, targetAbsolute);
-      await fs.unlink(sourceAbsolute);
-    } catch (error) {
-      if (isCollision(error)) throw new ManagedResourceCollisionError(target, { cause: error });
-      throw error;
     }
   }
 
@@ -593,7 +451,7 @@ export class VaultFileAdapter {
   async inspectFolderLink(linkPath: string, expectedTargetPath: string): Promise<FolderLinkState> {
     const link = normalizeManagedPath(linkPath);
     const target = normalizeManagedPath(expectedTargetPath);
-    const basePath = this.#requireDesktopBasePath();
+    const basePath = this.#basePath();
     const parent = path.posix.dirname(link);
     if (parent !== '.' && !await this.verifyManagedPath(parent, { expectedType: 'folder', allowMissing: true })) {
       return 'missing';
@@ -631,7 +489,7 @@ export class VaultFileAdapter {
   async createFolderLink(linkPath: string, targetPath: string): Promise<void> {
     const link = normalizeManagedPath(linkPath);
     const target = normalizeManagedPath(targetPath);
-    const basePath = this.#requireDesktopBasePath();
+    const basePath = this.#basePath();
     await this.verifyManagedPath(target, { expectedType: 'folder' });
     const parent = path.posix.dirname(link);
     if (parent !== '.') await this.ensureManagedFolder(parent);
@@ -653,7 +511,7 @@ export class VaultFileAdapter {
   /** Removes a folder link itself. Never follows the link or touches its target. */
   async removeFolderLink(linkPath: string): Promise<void> {
     const link = normalizeManagedPath(linkPath);
-    const basePath = this.#requireDesktopBasePath();
+    const basePath = this.#basePath();
     const parent = path.posix.dirname(link);
     if (parent !== '.') await this.verifyManagedPath(parent, { expectedType: 'folder' });
     const linkAbsolute = this.#resolveManagedDesktopPath(basePath, link);
@@ -679,37 +537,6 @@ export class VaultFileAdapter {
         throw new ManagedResourcePathError(`Could not remove folder link: ${link}`, { cause: rmdirError });
       }
     }
-  }
-
-  /**
-   * Obsidian's desktop `rmdir(path, false)` is `fs.rm` without `recursive`, which
-   * refuses every directory. `fs.rmdir` removes only an empty one.
-   */
-  async #removeEmptyFolder(normalized: string): Promise<void> {
-    const desktopAdapter = this.#getDesktopAdapter();
-    if (!desktopAdapter) {
-      await this.adapter.rmdir(normalized, false);
-      return;
-    }
-    await fs.rmdir(this.#resolveManagedDesktopPath(path.resolve(desktopAdapter.getBasePath()), normalized));
-  }
-
-  /** Obsidian's desktop `mkdir` is recursive and succeeds when the folder exists. */
-  async #createFolderExclusive(normalized: string): Promise<void> {
-    const desktopAdapter = this.#getDesktopAdapter();
-    if (!desktopAdapter) {
-      await this.adapter.mkdir(normalized);
-      return;
-    }
-    await fs.mkdir(this.#resolveManagedDesktopPath(path.resolve(desktopAdapter.getBasePath()), normalized));
-  }
-
-  #requireDesktopBasePath(): string {
-    const desktopAdapter = this.#getDesktopAdapter();
-    if (!desktopAdapter) {
-      throw new ManagedResourcePathError('Folder links require a filesystem-backed vault adapter');
-    }
-    return path.resolve(desktopAdapter.getBasePath());
   }
 
   async trash(resourcePath: string): Promise<void> {

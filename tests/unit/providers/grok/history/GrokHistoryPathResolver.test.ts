@@ -166,7 +166,7 @@ describe('GrokHistoryPathResolver', () => {
     )).toBe(valid);
   });
 
-  it('rejects a session directory symlink that escapes the effective home', () => {
+  it('accepts a symlinked session directory found under the effective home', () => {
     if (process.platform === 'win32') return;
 
     const vaultPath = path.join(tempRoot, 'vault');
@@ -180,10 +180,14 @@ describe('GrokHistoryPathResolver', () => {
     const outsideDirectory = path.join(tempRoot, 'outside', sessionId);
     fs.mkdirSync(cwdDirectory, { recursive: true });
     fs.mkdirSync(outsideDirectory, { recursive: true });
-    fs.symlinkSync(outsideDirectory, path.join(cwdDirectory, sessionId), 'dir');
+    const sessionDirectory = path.join(cwdDirectory, sessionId);
+    fs.symlinkSync(outsideDirectory, sessionDirectory, 'dir');
 
     expect(resolveGrokSessionDirectory(undefined, sessionId, vaultPath, {
       environment: { GROK_HOME: customHome, HOME: tempRoot },
-    })).toBeNull();
+    })).toBe(sessionDirectory);
+    expect(resolveGrokSessionDirectory(undefined, sessionId, '/missing-vault', {
+      environment: { GROK_HOME: customHome, HOME: tempRoot },
+    })).toBe(sessionDirectory);
   });
 });

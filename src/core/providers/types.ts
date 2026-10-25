@@ -104,7 +104,6 @@ export type ProviderEnvironmentSessionPolicy = 'invalidate' | 'reload';
 
 export interface ProviderEnvironmentReconciliation {
   changed: boolean;
-  invalidatedConversations: Conversation[];
   /** How this change treats conversation bindings; `invalidate` when omitted. */
   sessionPolicy?: ProviderEnvironmentSessionPolicy;
 }
@@ -125,10 +124,7 @@ export interface ProviderSettingsReconciler {
    */
   preservesConversationSession?(conversation: Conversation): boolean;
 
-  reconcileModelWithEnvironment(
-    settings: Record<string, unknown>,
-    conversations: Conversation[],
-  ): ProviderEnvironmentReconciliation;
+  reconcileModelWithEnvironment(settings: Record<string, unknown>): ProviderEnvironmentReconciliation;
 
   normalizeModelVariantSettings?(settings: Record<string, unknown>): boolean;
 }

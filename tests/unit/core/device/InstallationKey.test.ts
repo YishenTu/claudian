@@ -2,7 +2,6 @@ import type * as InstallationIdentity from '@/core/device/InstallationKey';
 import {
   getInstallationKey,
   isInstallationKey,
-  parseInstallationKey,
 } from '@/core/device/InstallationKey';
 
 describe('InstallationKey', () => {
@@ -22,13 +21,6 @@ describe('InstallationKey', () => {
     ]) {
       expect(isInstallationKey(candidate)).toBe(false);
     }
-  });
-
-  it('fails closed before an invalid key can enter a filesystem path', () => {
-    expect(parseInstallationKey(valid)).toBe(valid);
-    expect(() => parseInstallationKey('device-invalid')).toThrow(
-      'A valid installation key is required',
-    );
   });
 });
 

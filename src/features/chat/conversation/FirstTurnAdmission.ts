@@ -5,7 +5,6 @@ import type { ConversationController } from '@/features/chat/conversation/Conver
 import { ConversationTitleGeneration } from '@/features/chat/conversation/ConversationTitleGeneration';
 import type { LinkedContentController, LinkedContentSubmissionToken } from '@/features/chat/linked-content';
 import type { ChatState } from '@/features/chat/state/ChatState';
-import { cloneChatTurnRequest } from '@/features/chat/state/chatTurnRequest';
 import type { ChatTurnRequest } from '@/features/chat/state/types';
 
 export interface FirstTurnAdmissionDeps {
@@ -103,7 +102,7 @@ export class FirstTurnAdmission {
     const linkedContentPath = isFirstTurn ? frozenPath ?? undefined : undefined;
     if (request.linkedContentPath === linkedContentPath) return request;
 
-    const admittedRequest = cloneChatTurnRequest(request);
+    const admittedRequest = { ...request };
     if (linkedContentPath) {
       admittedRequest.linkedContentPath = linkedContentPath;
     } else {

@@ -7,12 +7,7 @@ export interface GrokFlushableTransport {
 export function waitForGrokCancelDelivery(
   transport: GrokFlushableTransport | null | undefined,
 ): Promise<void> {
-  let delivery: Promise<void>;
-  try {
-    delivery = transport?.flush() ?? Promise.resolve();
-  } catch {
-    delivery = Promise.resolve();
-  }
+  const delivery = transport?.flush() ?? Promise.resolve();
 
   return new Promise(resolve => {
     const timeout = window.setTimeout(resolve, GROK_CANCEL_DELIVERY_GRACE_MS);

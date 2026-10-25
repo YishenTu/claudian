@@ -15,15 +15,6 @@ export function apply(ctx, config) {
   if (typeof config?.promptDirectory !== 'string' || !config.promptDirectory) {
     throw new TypeError('Claudian compatibility requires a prompt directory.');
   }
-  const allowed = ['read', 'read_image', 'glob', 'grep'];
-  if (config.allow !== undefined && (!Array.isArray(config.allow)
-    || config.allow.some(value => !allowed.includes(value))
-    || (config.allow.length !== 0 && (config.allow.length !== 4 || new Set(config.allow).size !== 4)))) {
-    throw new TypeError('Claudian auxiliary policy must be passive or read-only.');
-  }
-  if (config.codeModeFile !== undefined && (typeof config.codeModeFile !== 'string' || !config.codeModeFile || config.allow !== undefined)) {
-    throw new TypeError('Claudian code mode requires a chat preset and a mode file.');
-  }
   // Claudian writes one prompt per claimed native session. A session without its own (a subagent) runs on its parent's,
   // and every session keeps the prompt its current turn started with.
   const own = id => {
@@ -107,13 +98,13 @@ export async function apply(ctx, config) {
       async execute(args, exec) {
         exec.signal.throwIfAborted();
         const callerNativeId = exec.agent?.id;
-        if (typeof callerNativeId !== 'string' || !callerNativeId || typeof exec.callId !== 'string' || !exec.callId) throw new Error('Unbound Claudian session tool caller.');
+        if (typeof callerNativeId !== 'string' || !callerNativeId) throw new Error('Unbound Claudian session tool caller.');
         // Read on every call: an endpoint replacement never restarts the shared native Host.
         const route = JSON.parse(await readFile(config.endpointFile, 'utf8'));
         if (typeof route.url !== 'string' || typeof route.routeId !== 'string') throw new Error('Claudian session tools are unavailable.');
         const response = await fetch(route.url, {
           method: 'POST', headers: { 'Content-Type': 'application/json', [config.routeHeader]: route.routeId },
-          body: JSON.stringify({ tool: spec.name, args: { callId: exec.callId, args }, callerNativeId }), signal: exec.signal,
+          body: JSON.stringify({ tool: spec.name, args, callerNativeId }), signal: exec.signal,
         });
         if (!response.ok) throw new Error('Claudian session tool endpoint returned HTTP ' + response.status);
         const result = await response.json();
