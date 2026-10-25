@@ -286,7 +286,7 @@ export class DeepSeekExecutionSession implements ProviderExecutionSession {
     await this.selectModel(input);
     this.assertRequest(requested);
     const text = input.input.filter(block => block.type === 'text').map(block => block.text).join('\n');
-    if (/^\/compact(?:\s|$)/.test(text) && this.commands?.some(command => command.kind === 'command' && command.name === 'compact')) {
+    if (/^\/compact(?:\s|$)/.test(text)) {
       if (input.input.some(block => block.type === 'image') || input.context?.linkedContent || input.context?.sessionReferences?.length || input.context?.selections?.length) throw new AdmissionError('DeepSeek /compact does not accept attachments or linked context.');
       if (!observer.permissionBoundaryAvailable()) throw new AdmissionError('Use Stop before compacting an active DeepSeek conversation.');
       requested.command = true;

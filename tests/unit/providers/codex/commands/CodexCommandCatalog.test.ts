@@ -84,12 +84,10 @@ describe('CodexCommandCatalog', () => {
     expect(entries.map(entry => entry.name)).toEqual(['scope:qualified-name']);
   });
 
-  it('includes the provider built-in only when requested', async () => {
+  it('leaves built-in commands to the shared picker', async () => {
     const catalog = new CodexCommandCatalog(createListProvider());
 
-    await expect(catalog.listDropdownEntries({ includeBuiltIns: true })).resolves.toEqual([
-      expect.objectContaining({ name: 'compact', insertPrefix: '/' }),
-    ]);
+    await expect(catalog.listDropdownEntries({ includeBuiltIns: true })).resolves.toEqual([]);
     await expect(catalog.listDropdownEntries({ includeBuiltIns: false })).resolves.toEqual([]);
   });
 

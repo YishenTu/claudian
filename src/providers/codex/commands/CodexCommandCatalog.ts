@@ -13,21 +13,6 @@ import {
 
 const CODEX_SKILL_ID_PREFIX = 'codex-skill-';
 
-const CODEX_COMPACT_COMMAND: ProviderCommandEntry = {
-  id: 'codex-builtin-compact',
-  providerId: 'codex',
-  kind: 'command',
-  name: 'compact',
-  description: 'Compact conversation history',
-  content: '',
-  scope: 'system',
-  source: 'builtin',
-  isEditable: false,
-  isDeletable: false,
-  displayPrefix: '/',
-  insertPrefix: '/',
-};
-
 function buildSkillId(skill: Pick<SkillMetadata, 'path' | 'scope'>): string {
   const encodedPath = encodeURIComponent(skill.path);
   return `${CODEX_SKILL_ID_PREFIX}${skill.scope}-${encodedPath}`;
@@ -59,8 +44,7 @@ export class CodexCommandCatalog implements ProviderCommandCatalog {
     ))
       .filter(skill => skill.enabled)
       .sort(compareCodexSkillPriority);
-    const entries = skills.map(listedSkillToProviderEntry);
-    return context.includeBuiltIns ? [CODEX_COMPACT_COMMAND, ...entries] : entries;
+    return skills.map(listedSkillToProviderEntry);
   }
 
   getDropdownConfig(): ProviderCommandDropdownConfig {

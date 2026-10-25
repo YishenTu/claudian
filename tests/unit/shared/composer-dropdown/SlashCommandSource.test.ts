@@ -119,8 +119,9 @@ describe('SlashCommandSource', () => {
   it('offers built-ins only for a leading slash and lets built-in names and aliases win collisions', async () => {
     const newEntry = { ...ENTRY, displayPrefix: '/', id: 'provider:new', insertPrefix: '/', name: 'new' };
     const clearEntry = { ...ENTRY, displayPrefix: '/', id: 'provider:clear', insertPrefix: '/', name: 'clear' };
+    const compactEntry = { ...ENTRY, displayPrefix: '/', id: 'provider:compact', insertPrefix: '/', name: 'compact' };
     const source = new SlashCommandSource({
-      providerDiscovery: discovery({ status: 'ready', items: [newEntry, clearEntry] }),
+      providerDiscovery: discovery({ status: 'ready', items: [newEntry, clearEntry, compactEntry] }),
       providerId: 'claude',
     });
     const leading = await source.load(match('/'), new AbortController().signal);
@@ -128,8 +129,11 @@ describe('SlashCommandSource', () => {
       expect.objectContaining({ id: 'builtin:new' }),
     ]);
     expect(leading.some(item => item.kind === 'value' && item.label === '/clear')).toBe(false);
+    expect(leading.filter(item => item.kind === 'value' && item.label === '/compact')).toEqual([
+      expect.objectContaining({ id: 'builtin:compact' }),
+    ]);
     const embedded = await source.load(match('/', '', false), new AbortController().signal);
-    expect(embedded.map(item => item.id).sort()).toEqual(['provider:clear', 'provider:new']);
+    expect(embedded.map(item => item.id).sort()).toEqual(['provider:clear', 'provider:compact', 'provider:new']);
     source.destroy();
   });
 
@@ -164,19 +168,37 @@ describe('SlashCommandSource', () => {
     source.destroy();
   });
 
-  it('shows local built-ins immediately while provider discovery starts', async () => {
-    const providerDiscovery = discovery({ status: 'idle' });
-    const source = new SlashCommandSource({
-      providerDiscovery,
-      providerId: 'claude',
-    });
-    const items = source.load(match('/'), new AbortController().signal);
-    expect(items).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: '/new' }),
-      expect.objectContaining({ state: 'loading' }),
-    ]));
-    await Promise.resolve();
-    expect(providerDiscovery.load).toHaveBeenCalledTimes(1);
-    source.destroy();
-  });
+  it.each(['claude', 'codex', 'pi', 'grok', 'opencode', 'deepseek'])(
+    'offers compact for %s independently of provider discovery', async providerId => {
+      const providerDiscovery = discovery({ status: 'idle' });
+      const source = new SlashCommandSource({
+        providerDiscovery,
+        providerId,
+      });
+      const items = source.load(match('/'), new AbortController().signal);
+      expect(items).toEqual(expect.arrayContaining([
+        expect.objectContaining({ label: '/new' }),
+        expect.objectContaining({ state: 'loading' }),
+      ]));
+      await Promise.resolve();
+      expect(providerDiscovery.load).toHaveBeenCalledTimes(1);
+      const snapshots: ReturnType<typeof providerDiscovery.getSnapshot>[] = [
+        { status: 'idle' }, { status: 'loading' }, { status: 'empty' },
+        { status: 'requires-session', message: 'Send a message first' },
+        { status: 'error', message: 'Discovery failed', retryable: true },
+      ];
+      for (const snapshot of snapshots) {
+        providerDiscovery.getSnapshot.mockReturnValue(snapshot);
+        const trigger = match('/', 'compact');
+        const compact = source.load(trigger, new AbortController().signal).filter(item => item.kind === 'value' && item.label === '/compact');
+        expect(compact).toEqual([expect.objectContaining({ id: 'builtin:compact', replacement: '/compact ' })]);
+        expect(source.resolveCommandKind('/compact', true)).toBe('command');
+        if (compact[0].kind !== 'value') throw new Error('Expected selectable compact');
+        expect(source.select(compact[0], trigger)).toEqual({ kind: 'replace', text: '/compact ' });
+      }
+      source.setBuiltInsEnabled(false);
+      expect(source.load(match('/', 'compact'), new AbortController().signal).some(item => item.id === 'builtin:compact')).toBe(false);
+      source.destroy();
+    },
+  );
 });

@@ -1299,10 +1299,14 @@ async function createMainChat(options: Omit<NativePeerHostOptions, 'beforeStart'
   };
 }
 
-it('executes compact from the actual main-chat submission with empty context', async () => {
+it.each([true, false])('executes compact from main chat independently of the native list (listed: %s)', async listed => {
   const ordinary = peer.onCall;
-  peer.onCall = (method, args) => method === 'commands/execute' && args.line === '/compact'
-    ? { result: { kind: 'success', text: 'Compacted.' } } : ordinary(method, args);
+  peer.onCall = (method, args) => {
+    if (method === 'commands/list' && !listed) return [];
+    if (method === 'session/prompt') throw new Error('Compaction must not become a prompt');
+    if (method === 'commands/execute' && args.line === '/compact') return { result: { kind: 'success', text: 'Compacted.' } };
+    return ordinary(method, args);
+  };
   const chat = await createMainChat();
   try {
     chat.fixture.input.value = '/compact';

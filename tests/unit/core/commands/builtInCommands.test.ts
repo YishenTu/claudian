@@ -1,6 +1,7 @@
 import {
   BUILT_IN_COMMANDS,
   detectBuiltInCommand,
+  detectMainOnlyBuiltInCommand,
   getBuiltInCommandsForDropdown,
   isBuiltInCommandSupported,
 } from '@/core/commands/builtInCommands';
@@ -93,6 +94,13 @@ describe('builtInCommands', () => {
       expect(result?.command.action).toBe('fast');
       expect(result?.args).toBe('');
     });
+
+    it.each(['/compact', '/COMPACT keep recent edits', '/compact line one\nline two'])(
+      'leaves built-in compaction %j to provider turn execution on either destination', input => {
+        expect(detectBuiltInCommand(input)).toBeNull();
+        expect(detectMainOnlyBuiltInCommand(input)).toBeNull();
+      },
+    );
 
     it('leaves unsupported commands to provider handling', () => {
       expect(detectBuiltInCommand('/fast', 'claude')).toBeNull();

@@ -17,9 +17,10 @@ describe('getBuiltInCommandsForDropdown - provider filtering', () => {
 
   it('returns only commands supported by codex capabilities', () => {
     const commands = getBuiltInCommandsForDropdown('codex');
-    expect(commands.length).toBe(4);
+    expect(commands.length).toBe(5);
     expect(commands.map(c => c.name)).toEqual([
       'new',
+      'compact',
       'sessions',
       'fast',
       'side',
