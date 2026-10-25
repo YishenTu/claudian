@@ -540,7 +540,9 @@ describe('VaultFileAdapter', () => {
 
     it('leaves the whole source in place when the directory move fails', async () => {
       const vaultPath = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-vault-'));
-      const rename = jest.mocked(fs.rename).mockRejectedValue(new Error('denied at /private/vault'));
+      const rename = jest.mocked(fs.rename).mockRejectedValue(
+        Object.assign(new Error('denied at /private/vault'), { code: 'EPERM' }),
+      );
       try {
         await fs.mkdir(path.join(vaultPath, '.agents/skills/old/assets'), { recursive: true });
         await fs.writeFile(path.join(vaultPath, '.agents/skills/old/assets/example.txt'), 'asset');
@@ -551,7 +553,7 @@ describe('VaultFileAdapter', () => {
           .relocateManagedPackage('.agents/skills/old', '.agents/skills/new'))
           .rejects.toMatchObject({
             message: 'Could not relocate managed package from .agents/skills/old to .agents/skills/new',
-            cause: expect.objectContaining({ message: 'denied at /private/vault' }),
+            cause: expect.objectContaining({ message: 'denied at /private/vault', code: 'EPERM' }),
           });
         await expect(fs.readFile(path.join(vaultPath, '.agents/skills/old/assets/example.txt'), 'utf8'))
           .resolves.toBe('asset');
@@ -564,7 +566,7 @@ describe('VaultFileAdapter', () => {
       }
     });
 
-    it.each(['empty', 'nonempty', 'racing-nonempty'])('preserves a %s destination', async kind => {
+    it.each(['empty', 'nonempty', 'racing-nonempty', 'racing-nonempty-EPERM'])('preserves a %s destination', async kind => {
       const vaultPath = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-vault-'));
       const renameDirectory = jest.requireActual<typeof fs>('node:fs/promises').rename;
       const rename = jest.mocked(fs.rename);
@@ -577,9 +579,12 @@ describe('VaultFileAdapter', () => {
           await fs.mkdir(target);
           if (kind !== 'empty') await fs.writeFile(path.join(target, 'racer.txt'), 'racer');
         };
-        if (kind === 'racing-nonempty') {
+        if (kind.startsWith('racing-nonempty')) {
           rename.mockImplementationOnce(async (from, to) => {
             await createTarget();
+            if (kind === 'racing-nonempty-EPERM') {
+              throw Object.assign(new Error('Access denied'), { code: 'EPERM' });
+            }
             return renameDirectory(from, to);
           });
         } else {

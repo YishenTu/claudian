@@ -550,7 +550,10 @@ export class VaultFileAdapter {
         this.#resolveManagedDesktopPath(basePath, target),
       );
     } catch (error) {
-      if (isCollision(error)) throw new ManagedResourceCollisionError(target, { cause: error });
+      // Windows can report a destination collision as EPERM instead of EEXIST/ENOTEMPTY.
+      if (isCollision(error) || await this.#verifyManagedCollisionTarget(target)) {
+        throw new ManagedResourceCollisionError(target, { cause: error });
+      }
       throw new ManagedResourcePathError(`Could not relocate managed package from ${source} to ${target}`, {
         cause: error,
       });
