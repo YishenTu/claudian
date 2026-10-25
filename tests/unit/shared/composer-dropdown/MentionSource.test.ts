@@ -27,6 +27,55 @@ function source(
 }
 
 describe('MentionSource', () => {
+  it('ranks a large matching vault with bounded comparison work', () => {
+    const count = 4096;
+    const files = Array.from({ length: count }, (_, index) =>
+      file(`Note ${String((index * 2053) % count).padStart(4, '0')}.md`));
+    const { source: value } = source({
+      getCachedVaultFiles: () => files,
+      getCachedVaultFolders: () => [],
+    });
+    const compare = jest.spyOn(String.prototype, 'localeCompare');
+    let items;
+    let comparisons;
+    try {
+      items = value.load(value.match('@Note', 5)!, new AbortController().signal);
+      comparisons = compare.mock.calls.length;
+    } finally {
+      compare.mockRestore();
+    }
+    expect(items.map(item => item.id)).toEqual(Array.from({ length: 100 }, (_, index) =>
+      `vault-file:Note ${String(index).padStart(4, '0')}.md`));
+    // Ranking the retained 100 suggestions should not sort all 4096 matches.
+    expect(comparisons).toBeLessThan(count * 3);
+  });
+
+  it('ranks ancestor folders by their newest descendant and reflects timestamp changes', () => {
+    const files = [file('Projects/old/a.md', 5), file('Projects/new/deep/b.md', 10), file('Projects/new/c.md', 2)];
+    const { source: value } = source({
+      getCachedVaultFiles: () => files,
+      getCachedVaultFolders: () => [
+        { name: 'Projects', path: 'Projects/' },
+        { name: 'new', path: 'Projects\\new/' },
+        { name: 'old', path: 'Projects/old' },
+        { name: 'empty', path: 'Projects/empty' },
+      ],
+    });
+    const lookup = () => value.load(value.match('@new', 4)!, new AbortController().signal);
+    expect(lookup().map(item => item.id)).toEqual([
+      'vault-folder:Projects/new', 'vault-file:Projects/new/deep/b.md', 'vault-file:Projects/new/c.md',
+    ]);
+    const folders = value.load(value.match('@Projects', 9)!, new AbortController().signal)
+      .filter(item => item.id.startsWith('vault-folder:'));
+    expect(folders.map(item => item.id)).toEqual([
+      'vault-folder:Projects', 'vault-folder:Projects/new', 'vault-folder:Projects/old', 'vault-folder:Projects/empty',
+    ]);
+    files[1].stat.mtime = 1;
+    expect(lookup().map(item => item.id)).toEqual([
+      'vault-folder:Projects/new', 'vault-file:Projects/new/c.md', 'vault-file:Projects/new/deep/b.md',
+    ]);
+  });
+
   it('formats only retained suggestions while preserving file and folder ranking', async () => {
     const now = testDate().getTime();
     const files = Array.from({ length: 250 }, (_, index) => file(`folder${index % 60}/Note ${index}.md`, now + index + 1));

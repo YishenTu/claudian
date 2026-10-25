@@ -92,51 +92,67 @@ export class MentionSource implements ComposerDropdownSource {
       if (left.type !== right.type) return ['file', 'folder', 'session'].indexOf(left.type) - ['file', 'folder', 'session'].indexOf(right.type);
       return left.name.localeCompare(right.name);
     };
-    const files = this.callbacks.getCachedVaultFiles();
-    const folderMtimes = new Map<string, number>();
-    for (const file of files) {
-      const parts = file.path.split('/');
-      for (let index = 1; index < parts.length; index++) {
-        const path = parts.slice(0, index).join('/');
-        folderMtimes.set(path, Math.max(folderMtimes.get(path) ?? 0, file.stat.mtime));
+    // Keep a small sorted result set instead of sorting every matching vault entry.
+    // Insert after equal entries to preserve the vault's stable tie order.
+    const retain = (items: Scored[], item: Scored, limit: number): void => {
+      if (items.length === limit && compare(item, items[limit - 1]) >= 0) return;
+      let low = 0;
+      let high = items.length;
+      while (low < high) {
+        const middle = (low + high) >>> 1;
+        if (compare(item, items[middle]) < 0) high = middle;
+        else low = middle + 1;
       }
+      items.splice(low, 0, item);
+      if (items.length > limit) items.pop();
+    };
+    const matchingFolders: Scored[] = [];
+    for (const folder of this.callbacks.getCachedVaultFolders()) {
+      const path = folder.path.replace(/\\/g, '/').replace(/\/+$/, '');
+      if (!path) continue;
+      const name = query ? folder.name.toLocaleLowerCase() : '';
+      if (query && !name.includes(query) && !path.toLocaleLowerCase().includes(query)) continue;
+      matchingFolders.push({
+        path, name: folder.name, mtime: 0, starts: name.startsWith(query), type: 'folder',
+      });
     }
 
-    const folders: Scored[] = this.callbacks.getCachedVaultFolders()
-      .map(folder => ({
-        name: folder.name,
-        path: folder.path.replace(/\\/g, '/').replace(/\/+$/, ''),
-      }))
-      .filter(folder => folder.path.length > 0 && (
-        folder.path.toLocaleLowerCase().includes(query)
-        || folder.name.toLocaleLowerCase().includes(query)
-      ))
-      .map((folder): Scored => {
-        return {
-          path: folder.path,
-          mtime: folderMtimes.get(folder.path) ?? 0,
-          name: folder.name,
-          starts: folder.name.toLocaleLowerCase().startsWith(query),
-          type: 'folder' as const,
-        };
-      })
-      .sort(compare)
-      .slice(0, 50);
+    const directoryMtimes = new Map<string, number>();
+    const fileItems: Scored[] = [];
+    for (const file of this.callbacks.getCachedVaultFiles()) {
+      if (matchingFolders.length > 0) {
+        const separator = file.path.lastIndexOf('/');
+        if (separator >= 0) {
+          const directory = file.path.slice(0, separator);
+          directoryMtimes.set(directory, Math.max(directoryMtimes.get(directory) ?? 0, file.stat.mtime));
+        }
+      }
+      const name = query ? file.name.toLocaleLowerCase() : '';
+      if (query && !name.includes(query) && !file.path.toLocaleLowerCase().includes(query)) continue;
+      retain(fileItems, {
+        path: file.path,
+        mtime: file.stat.mtime,
+        name: file.name,
+        starts: name.startsWith(query),
+        type: 'file',
+      }, 100);
+    }
 
-    const fileItems: Scored[] = files
-      .filter(file => file.path.toLocaleLowerCase().includes(query)
-        || file.name.toLocaleLowerCase().includes(query))
-      .map((file): Scored => {
-        return {
-          path: file.path,
-          mtime: file.stat.mtime,
-          name: file.name,
-          starts: file.name.toLocaleLowerCase().startsWith(query),
-          type: 'file' as const,
-        };
-      })
-      .sort(compare)
-      .slice(0, 100);
+    // Each distinct directory contributes its newest file to all of its ancestors.
+    const folderMtimes = new Map<string, number>();
+    for (const [directory, mtime] of directoryMtimes) {
+      let path = directory;
+      while (path) {
+        folderMtimes.set(path, Math.max(folderMtimes.get(path) ?? 0, mtime));
+        const separator = path.lastIndexOf('/');
+        if (separator < 0) break;
+        path = path.slice(0, separator);
+      }
+    }
+    const folders: Scored[] = [];
+    for (const folder of matchingFolders) {
+      retain(folders, { ...folder, mtime: folderMtimes.get(folder.path) ?? 0 }, 50);
+    }
 
     const sessionItems: Scored[] = sessions.filter(item => item.label.toLocaleLowerCase().includes(query))
       .map(item => ({ path: item.id, name: item.label, mtime: item.mtime,
