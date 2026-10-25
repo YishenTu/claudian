@@ -127,7 +127,8 @@ export class DeepSeekHostProcess {
 
 function readLaunchURL(child: ManagedStdioProcess, signal: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
-    let output = '';
+    // Each stream buffers separately: a stderr line between two stdout chunks must not join the token.
+    const output = { stdout: '', stderr: '' };
     let settled = false;
     let offError = (): void => {};
     let offExit = (): void => {};
@@ -135,17 +136,19 @@ function readLaunchURL(child: ManagedStdioProcess, signal: AbortSignal): Promise
       if (settled) return;
       settled = true;
       signal.removeEventListener('abort', abort); offError(); offExit();
-      if (child.isStarted()) { child.stdout.off('data', data); child.stderr.off('data', data); }
-      output = '';
+      if (child.isStarted()) { child.stdout.off('data', stdoutData); child.stderr.off('data', stderrData); }
+      output.stdout = ''; output.stderr = '';
       if (error) reject(error); else resolve(url!);
     };
     const abort = (): void => finish(new Error('DeepSeek startup cancelled or timed out.'));
-    const data = (chunk: Buffer | string): void => {
-      output = (output + chunk.toString()).slice(-16_384);
+    const data = (stream: keyof typeof output, chunk: Buffer | string): void => {
+      output[stream] = (output[stream] + chunk.toString()).slice(-16_384);
       // The token may arrive across chunks; accept it only once a delimiter ends it.
-      const url = output.match(/(https?:\/\/[^\s"'<>]+\?token=[A-Za-z0-9_%.-]+)[\s"'<>]/)?.[1];
+      const url = output[stream].match(/(https?:\/\/[^\s"'<>]+\?token=[A-Za-z0-9_%.-]+)[\s"'<>]/)?.[1];
       if (url) finish(undefined, url);
     };
+    const stdoutData = (chunk: Buffer | string): void => data('stdout', chunk);
+    const stderrData = (chunk: Buffer | string): void => data('stderr', chunk);
     offError = child.onError(() => finish(new Error('DeepSeek process could not start. Check the configured CLI path.')));
     offExit = child.onExit(() => finish(new Error('DeepSeek exited before becoming ready. Check the selected native profile and MCP configuration.')));
     signal.addEventListener('abort', abort, { once: true });
@@ -154,6 +157,6 @@ function readLaunchURL(child: ManagedStdioProcess, signal: AbortSignal): Promise
     // A synchronous spawn failure reaches onError before start() throws, so that rejection is already settled.
     child.start();
     // Removing these listeners leaves the streams flowing, draining later output without retaining tokens or diagnostics.
-    child.stdout.on('data', data); child.stderr.on('data', data);
+    child.stdout.on('data', stdoutData); child.stderr.on('data', stderrData);
   });
 }

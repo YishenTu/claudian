@@ -143,10 +143,11 @@ describe('native Host process', () => {
   });
 
   it.each([
-    ['after the origin', (url: string) => new URL(url).origin.length],
-    ['inside the login token', (url: string) => url.length - 3],
-  ])('connects to the launch URL split %s and removes the process and its launch files on dispose', async (_split, offset) => {
-    const hostProcess = await start('serve', { FAKE_DSH_SPLIT: String(offset(peer.url)) });
+    ['after the origin', (url: string) => new URL(url).origin.length, {}],
+    ['inside the login token', (url: string) => url.length - 3, {}],
+    ['inside the login token while stderr logs', (url: string) => url.length - 3, { FAKE_DSH_GAP_LOG: 'loading MCP servers' }],
+  ])('connects to the launch URL split %s and removes the process and its launch files on dispose', async (_split, offset, extra) => {
+    const hostProcess = await start('serve', { FAKE_DSH_SPLIT: String(offset(peer.url)), ...extra });
     const exited = jest.fn();
     hostProcess.onExit(exited);
     const invocation = await launched();

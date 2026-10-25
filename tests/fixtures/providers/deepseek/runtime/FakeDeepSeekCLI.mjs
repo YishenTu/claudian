@@ -29,5 +29,7 @@ if (mode === 'serve' || mode === 'untethered') {
   const split = Number(process.env.FAKE_DSH_SPLIT ?? new URL(url).origin.length);
   process.stderr.write('loading MCP servers\n');
   process.stdout.write(`dsh web listening on ${url.slice(0, split)}`);
+  // FAKE_DSH_GAP_LOG logs a diagnostic line on stderr while the URL is still incomplete on stdout.
+  if (process.env.FAKE_DSH_GAP_LOG) setTimeout(() => process.stderr.write(`${process.env.FAKE_DSH_GAP_LOG}\n`), 10);
   setTimeout(() => process.stdout.write(`${url.slice(split)}${process.env.FAKE_DSH_EOL ?? '\n'}`), 50);
 }
