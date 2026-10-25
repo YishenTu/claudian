@@ -1,14 +1,16 @@
 import { CODEX_SPARK_MODEL, TEST_CODEX_CATALOG } from '@test/helpers/codexModels';
 
+import { resolveCodexReasoningSummary } from '@/providers/codex/config';
 import {
-  applyCodexModelDefaults,
   DEFAULT_CODEX_PROVIDER_SETTINGS,
-  getCodexProviderSettings,
-  getEffectiveCodexReasoningSummary,
   getVisibleCodexModelIds,
   normalizeCodexModelAliases,
-  normalizeCodexStoredConfig,
   normalizeCodexVisibleModels,
+} from '@/providers/codex/config';
+import {
+  applyCodexModelDefaults,
+  getCodexProviderSettings,
+  normalizeCodexStoredConfig,
   projectCodexModelSettings,
   updateCodexProviderSettings,
 } from '@/providers/codex/settings';
@@ -537,8 +539,9 @@ describe('codex settings', () => {
       },
     };
 
-    expect(getEffectiveCodexReasoningSummary(settingsBag, CODEX_SPARK_MODEL)).toBe('none');
-    expect(getEffectiveCodexReasoningSummary(settingsBag, 'gpt-5.5')).toBe('detailed');
+    const codexSettings = getCodexProviderSettings(settingsBag);
+    expect(resolveCodexReasoningSummary(codexSettings, CODEX_SPARK_MODEL)).toBe('none');
+    expect(resolveCodexReasoningSummary(codexSettings, 'gpt-5.5')).toBe('detailed');
   });
 
   it('sets reasoning summary off when applying GPT-5.3 Codex Spark model defaults', () => {

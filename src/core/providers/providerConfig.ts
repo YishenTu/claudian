@@ -34,15 +34,28 @@ export function setProviderConfig(
   settings.providerConfigs = nextConfigs;
 }
 
+/** Each selection field and the settings key that saves it per provider. */
+const SAVED_SELECTION_KEYS = {
+  model: 'savedProviderModel',
+  effortLevel: 'savedProviderEffort',
+  permissionMode: 'savedProviderPermissionMode',
+  serviceTier: 'savedProviderServiceTier',
+} as const satisfies Record<keyof ProviderSelectionDefaults, string>;
+
+function readSelection(
+  read: (field: keyof ProviderSelectionDefaults, savedKey: string) => unknown,
+): ProviderSelectionDefaults {
+  const selection: Record<string, string | undefined> = {};
+  for (const [field, savedKey] of Object.entries(SAVED_SELECTION_KEYS)) {
+    const value = read(field as keyof ProviderSelectionDefaults, savedKey);
+    selection[field] = typeof value === 'string' ? value : undefined;
+  }
+  return selection;
+}
+
 /** The stored top-level selections, whichever provider they were made for. */
 export function getProviderSelectionDefaults(settings: Readonly<Record<string, unknown>>): ProviderSelectionDefaults {
-  const read = (key: string): string | undefined => typeof settings[key] === 'string' ? settings[key] : undefined;
-  return {
-    model: read('model'),
-    effortLevel: read('effortLevel'),
-    permissionMode: read('permissionMode'),
-    serviceTier: read('serviceTier'),
-  };
+  return readSelection(field => settings[field]);
 }
 
 /** The preferences saved for one provider, without projection or fallback. */
@@ -50,17 +63,10 @@ export function getProviderSavedSelection(
   settings: Readonly<Record<string, unknown>>,
   providerId: ProviderId,
 ): ProviderSelectionDefaults {
-  const read = (key: string): string | undefined => {
-    const saved = settings[key];
-    const value = isRecord(saved) ? saved[providerId] : undefined;
-    return typeof value === 'string' ? value : undefined;
-  };
-  return {
-    model: read('savedProviderModel'),
-    effortLevel: read('savedProviderEffort'),
-    permissionMode: read('savedProviderPermissionMode'),
-    serviceTier: read('savedProviderServiceTier'),
-  };
+  return readSelection((_field, savedKey) => {
+    const saved = settings[savedKey];
+    return isRecord(saved) ? saved[providerId] : undefined;
+  });
 }
 
 /** Selection inputs a provider configuration decoder needs from the settings document. */
@@ -68,11 +74,9 @@ export function getProviderSelectionInputs(
   settings: Readonly<Record<string, unknown>>,
   providerId: ProviderId,
 ): ProviderSelectionInputs {
-  const saved = settings.savedProviderModel;
-  const savedModel = isRecord(saved) ? saved[providerId] : undefined;
   return {
     ...getProviderSelectionDefaults(settings),
-    referencedModelIds: [settings.model, settings.titleGenerationModel, savedModel]
+    referencedModelIds: [settings.model, settings.titleGenerationModel, getProviderSavedSelection(settings, providerId).model]
       .filter((id): id is string => typeof id === 'string'),
   };
 }

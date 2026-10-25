@@ -6,6 +6,7 @@ import * as path from 'node:path';
 
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { createTestRuntimeHost } from '@test/helpers/providerRuntimeHost';
+import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { App } from 'obsidian';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
@@ -21,7 +22,6 @@ import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { handleForkRequest } from '@/features/chat/sessions/SessionForkSource';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
-import { updateCurrentGrokCatalog } from '@/providers/grok/settings';
 
 /** Real persistence/orchestration with only the Obsidian filesystem boundary supplied by the test. */
 export async function createForkTestEnvironment() {
@@ -47,7 +47,7 @@ export async function createForkTestEnvironment() {
       codex: { enabled: true, visibleModels: ['gpt-5'], discoveredModels: [{ model: 'gpt-5', displayName: 'GPT-5', description: '', supportedReasoningEfforts: [{ value: 'medium', description: '' }], defaultReasoningEffort: 'medium', inputModalities: ['text'], isDefault: true }] }, grok: { enabled: true, visibleModels: ['grok-code-fast-1'], environmentVariables: `GROK_HOME=${path.join(root, 'grok')}` },
     },
   };
-  updateCurrentGrokCatalog(settings, { fingerprint: 'test', refreshedAt: 1, defaultModelId: 'grok-code-fast-1', models: [{ rawId: 'grok-code-fast-1', displayName: 'Grok', supportsReasoning: false, reasoningEfforts: [] }] });
+  writeGrokCatalog(settings, { fingerprint: 'test', refreshedAt: 1, defaultModelId: 'grok-code-fast-1', models: [{ rawId: 'grok-code-fast-1', displayName: 'Grok', supportsReasoning: false, reasoningEfforts: [] }] });
   const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   const host = {
     app, settings, executionLifecycleRegistry: lifecycleRegistry,
@@ -56,7 +56,6 @@ export async function createForkTestEnvironment() {
     getActiveEnvironmentVariables: () => `CLAUDE_CONFIG_DIR=${path.join(root, 'claude')}`,
     getRuntimeHost: (providerId: string) => createTestRuntimeHost(settings, providerId, {
       workingDirectory: root,
-      executionLifecycleRegistry: lifecycleRegistry,
       getResolvedProviderCliPath: async (id: string) => `/bin/${id}`,
     }),
   } as unknown as ProviderHost;

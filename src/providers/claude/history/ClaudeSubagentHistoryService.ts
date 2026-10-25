@@ -2,7 +2,7 @@ import { parseEnvironmentVariables } from '@/core/process/env';
 
 import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type {
-  ProviderHistoryPathContext,
+  ProviderHistoryEnvironment,
   ProviderSubagentHistoryRequest,
   ProviderSubagentHistoryService,
 } from '../../../core/providers/types';
@@ -34,7 +34,7 @@ export class ClaudeSubagentHistoryService implements ProviderSubagentHistoryServ
     );
   }
 
-  #buildPathContext(vaultPath: string): ProviderHistoryPathContext {
+  #buildPathContext(vaultPath: string): ProviderHistoryEnvironment {
     const customEnvironment = parseEnvironmentVariables(this.host.environmentText);
     return {
       environment: { ...process.env, ...customEnvironment },

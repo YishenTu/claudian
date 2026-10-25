@@ -3,7 +3,7 @@ import * as path from 'path';
 
 import { forEachJSONLLine } from '@/utils/jsonlFile';
 
-import type { ProviderHistoryPathContext } from '../../../core/providers/types';
+import type { ProviderHistoryEnvironment } from '../../../core/providers/types';
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import type { ToolCallInfo } from '../../../core/types';
 import {
@@ -192,7 +192,7 @@ function getSubagentsDirectory(
   vaultPath: string,
   sessionId: string,
   sessionPath?: string,
-  pathContext?: ProviderHistoryPathContext,
+  pathContext?: ProviderHistoryEnvironment,
 ): string | null {
   if (!isValidSessionId(sessionId)) {
     return null;
@@ -209,7 +209,7 @@ function getSubagentSidecarPath(
   sessionId: string,
   agentId: string,
   sessionPath?: string,
-  pathContext?: ProviderHistoryPathContext,
+  pathContext?: ProviderHistoryEnvironment,
 ): string | null {
   if (!isValidAgentId(agentId)) {
     return null;
@@ -223,7 +223,7 @@ export function hasSubagentSidecar(
   vaultPath: string,
   sessionId: string,
   agentId: string,
-  pathContext?: ProviderHistoryPathContext,
+  pathContext?: ProviderHistoryEnvironment,
 ): boolean {
   try {
     const subagentFilePath = getSubagentSidecarPath(vaultPath, sessionId, agentId, undefined, pathContext);
@@ -237,7 +237,7 @@ export function hasSubagentSidecar(
 export function readSubagentToolUseIndex(
   vaultPath: string,
   sessionId: string,
-  pathContext?: ProviderHistoryPathContext,
+  pathContext?: ProviderHistoryEnvironment,
 ): Map<string, string> {
   const index = new Map<string, string>();
   try {
@@ -270,7 +270,7 @@ export async function loadSubagentToolCalls(
   sessionId: string,
   agentId: string,
   sessionPath?: string,
-  pathContext?: ProviderHistoryPathContext,
+  pathContext?: ProviderHistoryEnvironment,
   runWindow?: SubagentRunWindow,
 ): Promise<ToolCallInfo[]> {
   const subagentFilePath = getSubagentSidecarPath(
@@ -328,7 +328,7 @@ export async function loadSubagentFinalResult(
   sessionId: string,
   agentId: string,
   sessionPath?: string,
-  pathContext?: ProviderHistoryPathContext,
+  pathContext?: ProviderHistoryEnvironment,
 ): Promise<string | null> {
   const subagentFilePath = getSubagentSidecarPath(
     vaultPath,

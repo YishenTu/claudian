@@ -137,7 +137,7 @@ it.each([false, true])('discovers V1 model metadata while isolating a failed nat
     notifyProviderChatOptionsChanged: () => undefined,
   };
   const runtimeHost = runtimeHostFor(host, 'opencode');
-  const service = new OpencodeMetadataService(runtimeHost);
+  const service = new OpencodeMetadataService(runtimeHost, host.executionLifecycleRegistry);
   const models = createOpencodeModels(runtimeHost, service);
   try {
     await models.refresh();

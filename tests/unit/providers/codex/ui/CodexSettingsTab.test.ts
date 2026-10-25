@@ -10,7 +10,7 @@ import { setImmediate } from 'timers';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
-import { DEFAULT_CODEX_PROVIDER_SETTINGS } from '@/providers/codex/settings';
+import { DEFAULT_CODEX_PROVIDER_SETTINGS } from '@/providers/codex/config';
 import { createCodexSettingsTabRenderer } from '@/providers/codex/ui/CodexSettingsTab';
 
 Object.assign(globalThis, { setImmediate });

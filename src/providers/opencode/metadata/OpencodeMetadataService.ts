@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { ProviderInteractionPort } from '@/core/execution';
+import type { ProviderExecutionLifecycleRegistry, ProviderInteractionPort } from '@/core/execution';
 import { OwnedProbeRegistry } from '@/core/providers/metadata/OwnedProbeRegistry';
 import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTransitionFence';
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
@@ -71,6 +71,7 @@ export class OpencodeMetadataService {
 
   constructor(
     private readonly host: ProviderRuntimeHost,
+    transitionHooks: Pick<ProviderExecutionLifecycleRegistry, 'registerTransitionHook'>,
     private readonly options: OpencodeMetadataServiceOptions = {},
   ) {
     this.serverService = options.serverService ?? new OpencodeServerService();
@@ -91,7 +92,7 @@ export class OpencodeMetadataService {
       dispose: probe => probe.dispose(),
       unavailableError: () => new Error('OpenCode metadata service is disposed.'),
     });
-    this.unregisterTransitionHook = host.executionLifecycleRegistry
+    this.unregisterTransitionHook = transitionHooks
       .registerTransitionHook('opencode', {
         beforeTransition: () => {
           this.beginTransition();

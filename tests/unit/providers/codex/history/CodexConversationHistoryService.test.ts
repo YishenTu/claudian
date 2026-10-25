@@ -265,6 +265,7 @@ describe('CodexConversationHistoryService', () => {
       environment: { HOME: 'C:\\Users\\me' },
       hostPlatform: 'win32' as const,
       config: { installationMethodsByHost: { [getInstallationKey()]: installationMethod } },
+      environmentText: '',
       vaultPath: 'C:\\vault',
     });
     try {
@@ -686,7 +687,7 @@ describe('CodexConversationHistoryService', () => {
     Object.assign(conversation, await new CodexConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
-      { environment: { HOME: tempHome } },
+      { config: {}, environment: { HOME: tempHome }, environmentText: '' },
     ));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Trusted transcript.']);
@@ -720,7 +721,7 @@ describe('CodexConversationHistoryService', () => {
     Object.assign(conversation, await new CodexConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
-      { environment: { CODEX_HOME: configuredHome, HOME: tempHome } },
+      { config: {}, environment: { CODEX_HOME: configuredHome, HOME: tempHome }, environmentText: '' },
     ));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Configured transcript.']);

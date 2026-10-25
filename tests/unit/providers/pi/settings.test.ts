@@ -3,10 +3,10 @@ const mockGetHostnameKey = jest.fn(() => 'host-a');
 import '@/providers';
 
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+import { normalizePiVisibleModels } from '@/providers/pi/config';
 import { piSettingsReconciler } from '@/providers/pi/env/PiSettingsReconciler';
 import {
   getPiProviderSettings,
-  normalizePiVisibleModels,
   updatePiProviderSettings
 } from '@/providers/pi/settings';
 

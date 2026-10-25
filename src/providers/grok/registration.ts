@@ -7,12 +7,13 @@ import {
   grokWorkspaceRegistration,
 } from './app/GrokWorkspaceServices';
 import { GROK_PROVIDER_CAPABILITIES } from './capabilities';
+import { getGrokMigratedVisibleModelIds, getOrderedGrokVisibleModelIds } from './config';
 import { grokSettingsReconciler } from './env/GrokSettingsReconciler';
 import { GrokExecutionBackend } from './execution/GrokExecutionBackend';
 import { grokModelPolicy } from './GrokModelPolicy';
 import { GrokConversationHistoryService } from './history/GrokConversationHistoryService';
 import { grokSubagentLifecycleAdapter } from './normalization/grokSubagentNormalization';
-import { getGrokMigratedVisibleModelIds, getGrokProviderSettings, getOrderedGrokVisibleModelIds, projectGrokModelSettings, updateGrokProviderSettings } from './settings';
+import { getGrokProviderSettings, projectGrokModelSettings, updateGrokProviderSettings } from './settings';
 import { grokChatUIConfig } from './ui/GrokChatUIConfig';
 
 export const grokProviderRegistration: ProviderModule = {

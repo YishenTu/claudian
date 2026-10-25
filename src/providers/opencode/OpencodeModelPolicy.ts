@@ -219,7 +219,7 @@ export function createOpencodeModelMetadataPreparer(
 
     const workspaceService = getSharedMetadataService();
     const metadataService = workspaceService
-      ?? new OpencodeMetadataService(context.plugin.getRuntimeHost('opencode'));
+      ?? new OpencodeMetadataService(context.plugin.getRuntimeHost('opencode'), context.plugin.executionLifecycleRegistry);
     try {
       await metadataService.warmModelMetadata(model);
     } catch {

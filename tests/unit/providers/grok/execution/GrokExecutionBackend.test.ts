@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import compactCompleted from '@test/fixtures/providers/grok/runtime/compaction-completed.json';
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { testDate } from '@test/helpers/testClock';
 
 const mockLoadGrokPromptIndexAfterAssistant = jest.fn();
@@ -50,7 +51,6 @@ import {
 } from '@/providers/grok/execution/GrokExecutionBackend';
 import type { GrokDiscoveredModel } from '@/providers/grok/models';
 import {
-  updateCurrentGrokCatalog,
   updateGrokProviderSettings,
 } from '@/providers/grok/settings';
 
@@ -60,7 +60,7 @@ function createBackend(host: object, options?: GrokExecutionBackendOptions): Gro
 
 function createGrokHost(model = 'grok-4'): ProviderHost {
   const host = { getResolvedProviderCliPath: async () => 'grok', settings: { model: `grok/${model}`, providerConfigs: { grok: { enabled: true, visibleModels: [model, "grok-3"] } } } } as unknown as ProviderHost;
-  updateCurrentGrokCatalog(host.settings, { defaultModelId: model, fingerprint: 'fixture', refreshedAt: 1, models: [{ rawId: "grok-3", displayName: "Grok 3", supportsReasoning: false, reasoningEfforts: [] }, { rawId: model, displayName: model, supportsReasoning: true, reasoningEfforts: [] }] });
+  writeGrokCatalog(host.settings, { defaultModelId: model, fingerprint: 'fixture', refreshedAt: 1, models: [{ rawId: "grok-3", displayName: "Grok 3", supportsReasoning: false, reasoningEfforts: [] }, { rawId: model, displayName: model, supportsReasoning: true, reasoningEfforts: [] }] });
   return host;
 }
 
@@ -136,7 +136,7 @@ function persistGrok45Catalog(
     supportsReasoning: true,
   }],
 ): void {
-  updateCurrentGrokCatalog(host.settings, {
+  writeGrokCatalog(host.settings, {
     defaultModelId: 'grok-4.5',
     fingerprint: 'catalog-fixture',
     models,

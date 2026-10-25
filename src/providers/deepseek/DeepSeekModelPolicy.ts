@@ -1,9 +1,10 @@
 import { DEFAULT_REASONING_VALUE } from '@/core/providers/reasoning';
 import type { ProviderModelPolicy } from '@/core/providers/types';
 
+import { findDeepSeekModel, isDeepSeekModelSelectable } from './config';
 import { decodeDeepSeekModelId } from './models';
 import { DEEPSEEK_PERMISSION_MODE_POLICY } from './permissionModes';
-import { findDeepSeekModel, getDeepSeekProviderSettings, isDeepSeekModelSelectable, updateDeepSeekProviderSettings } from './settings';
+import { getDeepSeekProviderSettings, updateDeepSeekProviderSettings } from './settings';
 
 export const deepseekModelPolicy: ProviderModelPolicy = {
   permissionModes: DEEPSEEK_PERMISSION_MODE_POLICY,

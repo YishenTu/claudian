@@ -1,6 +1,6 @@
 import * as fs from 'node:fs/promises';
 
-import type { ProviderHistoryPathContext } from '@/core/providers/types';
+import type { ProviderHistoryEnvironment } from '@/core/providers/types';
 import { createTurnStats, isTokenCount, type TurnStats } from '@/core/types';
 
 import { getSDKSessionPath } from './ClaudeHistoryPathResolver';
@@ -40,7 +40,7 @@ export async function loadClaudeTurnStats(
   vaultPath: string,
   sessionId: string,
   assistantId: string,
-  context?: ProviderHistoryPathContext,
+  context?: ProviderHistoryEnvironment,
 ): Promise<TurnStats | undefined> {
   const file = await fs.open(getSDKSessionPath(vaultPath, sessionId, context), 'r');
   try {

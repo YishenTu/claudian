@@ -12,7 +12,6 @@ import { createNativeRPCProcess, createNativeVersionProcess } from '@test/helper
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
-import { resolveOpencodeHistoryLaunch } from '@/providers/opencode/runtime/OpencodeCLIResolver';
 
 interface NativeMessage {
   info: { id: string; role: string };
@@ -118,7 +117,7 @@ describe('OpenCode fork integration', () => {
     const selected = await env.send(source, 'Remember apples');
     const child = await env.fork(source, selected);
     expect(child).toBeDefined();
-    const service = new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch });
+    const service = new OpencodeConversationHistoryService();
     const restored = { ...child!, providerState: JSON.parse(JSON.stringify(service.buildPersistedProviderState(child!))) };
     Object.assign(restored, await service.hydrateConversationHistory(restored, env.root));
     expect(restored.messages[1].assistantMessageId).toBe('msg-child-1-1');
@@ -157,9 +156,9 @@ describe('OpenCode fork integration', () => {
     await fs.writeFile(nodePath, '');
     if (process.platform !== 'win32') await fs.chmod(nodePath, 0o755);
 
-    const service = new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch });
+    const service = new OpencodeConversationHistoryService();
     await service.buildForkProviderState('ses-source', selected.assistantMessageId!, source.conversation.providerState, env.root, {
-      config: { cliPath }, environment: { ...process.env, OPENCODE_DB: path.join(env.root, 'opencode.db'), PATH: '/restricted' },
+      config: { cliPath }, environment: { ...process.env, OPENCODE_DB: path.join(env.root, 'opencode.db'), PATH: '/restricted' }, environmentText: '',
     });
     const launch = jest.mocked(spawn).mock.calls.at(-1)!;
     expect(launch[0]).toBe(cliPath);

@@ -1,10 +1,10 @@
 const mockGetHostnameKey = jest.fn(() => 'device:current');
 
+import { readGrokCatalog, writeGrokCatalog } from '@test/helpers/providers/grokSettings';
+
+import { normalizeGrokCatalogSnapshot } from '@/providers/grok/config';
 import {
-  getCurrentGrokCatalog,
   getGrokProviderSettings,
-  normalizeGrokCatalogSnapshot,
-  updateCurrentGrokCatalog,
   updateGrokProviderSettings,
 } from '@/providers/grok/settings';
 import {
@@ -110,8 +110,8 @@ describe('Grok settings', () => {
       refreshedAt: 200,
     };
 
-    expect(updateCurrentGrokCatalog(settings, replacement)).toEqual(replacement);
-    expect(getCurrentGrokCatalog(settings)).toEqual(replacement);
+    expect(writeGrokCatalog(settings, replacement)).toEqual(replacement);
+    expect(readGrokCatalog(settings)).toEqual(replacement);
     expect(getGrokProviderSettings(settings).catalogsByHost['other-host']).toEqual(otherCatalog);
   });
 

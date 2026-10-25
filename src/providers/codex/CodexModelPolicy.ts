@@ -7,6 +7,7 @@ import type {
   ProviderServiceTierPolicy,
   ProviderUIOption,
 } from '../../core/providers/types';
+import { getVisibleCodexModelIds } from './config';
 import { getCodexModelOptions } from './modelOptions';
 import {
   CODEX_DEFAULT_SERVICE_TIER,
@@ -26,7 +27,6 @@ import {
 import {
   applyCodexModelDefaults,
   getCodexProviderSettings,
-  getVisibleCodexModelIds,
 } from './settings';
 
 const EFFORT_LEVELS: ProviderUIOption[] = [

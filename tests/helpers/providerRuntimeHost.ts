@@ -22,9 +22,7 @@ export function createTestRuntimeHost(
     workingDirectory: null,
     storage: {} as ProviderHost['storage'],
     sessionToolEndpoint: {} as ProviderHost['sessionToolEndpoint'],
-    executionLifecycleRegistry: {} as ProviderHost['executionLifecycleRegistry'],
     getResolvedProviderCliPath: async () => null,
-    runProviderExecutionTransition: (_ids, mutation) => mutation({} as never),
     notifyProviderChatOptionsChanged: () => undefined,
     ...capabilities,
   }, coordinator, providerId);
@@ -36,10 +34,8 @@ interface AppHostFixture {
   manifest?: { version?: string };
   storage?: unknown;
   sessionToolEndpoint?: unknown;
-  executionLifecycleRegistry?: unknown;
   getResolvedProviderCliPath?: (providerId: ProviderId, context?: ProviderCLIResolutionContext) => Promise<string | null> | string | null;
   notifyProviderChatOptionsChanged?: (providerId: ProviderId) => void;
-  runProviderExecutionTransition?: (...args: never[]) => Promise<unknown>;
 }
 
 /**
@@ -52,12 +48,8 @@ export function runtimeHostFor(host: AppHostFixture, providerId: ProviderId): Pr
     get manifest() { return host.manifest; },
     get storage() { return host.storage as ProviderHost['storage']; },
     get sessionToolEndpoint() { return host.sessionToolEndpoint as ProviderHost['sessionToolEndpoint']; },
-    get executionLifecycleRegistry() { return host.executionLifecycleRegistry as ProviderHost['executionLifecycleRegistry']; },
     getResolvedProviderCliPath: async (id, context) => await host.getResolvedProviderCliPath?.(id, context) ?? null,
     notifyProviderChatOptionsChanged: id => host.notifyProviderChatOptionsChanged?.(id),
-    runProviderExecutionTransition: ((ids, mutation, parent) => host.runProviderExecutionTransition
-      ? (host.runProviderExecutionTransition as ProviderHost['runProviderExecutionTransition'])(ids, mutation, parent)
-      : mutation({} as never)) as ProviderHost['runProviderExecutionTransition'],
   });
 }
 

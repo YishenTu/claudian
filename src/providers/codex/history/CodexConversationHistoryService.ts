@@ -60,10 +60,9 @@ function toHistoryOnlyMessage(message: ChatMessage, segmentIndex: number): ChatM
 export class CodexConversationHistoryService implements ProviderConversationHistoryService {
   #pathContext(context: ProviderHistoryPathContext | undefined): CodexHistoryPathContext | undefined {
     if (!context) return undefined;
-    const { config, ...rest } = context;
-    if (!config) return rest;
+    const { config, environment, hostPlatform, vaultPath } = context;
     const { installationMethod, wslDistroOverride } = decodeCodexConfig(config);
-    return { ...rest, installation: { installationMethod, wslDistroOverride } };
+    return { environment, hostPlatform, vaultPath, installation: { installationMethod, wslDistroOverride } };
   }
 
   hasConversationModelRecoverySource(conversation: ProviderHistoryInput): boolean {

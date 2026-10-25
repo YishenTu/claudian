@@ -1,9 +1,10 @@
 import { TEST_CODEX_CATALOG } from '@test/helpers/codexModels';
+import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '@/providers/codex/settings';
 import { getDeepSeekProviderSettings, updateDeepSeekProviderSettings } from '@/providers/deepseek/settings';
-import { getGrokProviderSettings, updateCurrentGrokCatalog, updateGrokProviderSettings } from '@/providers/grok/settings';
+import { getGrokProviderSettings, updateGrokProviderSettings } from '@/providers/grok/settings';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from '@/providers/opencode/settings';
 import { getPiProviderSettings, updatePiProviderSettings } from '@/providers/pi/settings';
 export const modelCatalogCases = [
@@ -30,7 +31,7 @@ export const modelCatalogCases = [
     id: 'grok' as const, selected: 'grok/selected',
     populate(settings: Record<string, unknown>) {
       updateGrokProviderSettings(settings, { enabled: true, visibleModels: ['selected'] });
-      updateCurrentGrokCatalog(settings, { defaultModelId: 'selected', fingerprint: 'test', refreshedAt: 10, models: [
+      writeGrokCatalog(settings, { defaultModelId: 'selected', fingerprint: 'test', refreshedAt: 10, models: [
         { rawId: 'selected', displayName: 'Selected label', reasoningEfforts: [], supportsReasoning: false },
         { rawId: 'unselected-catalog-entry', displayName: 'Unselected', reasoningEfforts: [], supportsReasoning: false },
       ] });

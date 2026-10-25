@@ -2,6 +2,7 @@ import type {
   ProviderModelPolicy,
   ProviderUIOption,
 } from '../../core/providers/types';
+import { getOrderedGrokVisibleModelIds } from './config';
 import {
   decodeGrokModelId,
   encodeGrokModelId,
@@ -14,7 +15,6 @@ import {
 import { GROK_PERMISSION_MODE_POLICY } from './permissionModes';
 import {
   getGrokProviderSettings,
-  getOrderedGrokVisibleModelIds,
   updateGrokProviderSettings,
 } from './settings';
 

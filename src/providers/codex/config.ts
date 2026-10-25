@@ -16,11 +16,11 @@ import { toCodexRuntimeModelId } from './modelSelection';
 import { CODEX_SPARK_MODEL } from './types/models';
 
 export type CodexSafeMode = 'workspace-write' | 'read-only';
-export type CodexResponseStyle = 'pragmatic' | 'friendly' | 'none';
-export type CodexResponseVerbosity = 'default' | 'low' | 'medium' | 'high';
-export type CodexReasoningSummary = 'auto' | 'concise' | 'detailed' | 'none';
+type CodexResponseStyle = 'pragmatic' | 'friendly' | 'none';
+type CodexResponseVerbosity = 'default' | 'low' | 'medium' | 'high';
+type CodexReasoningSummary = 'auto' | 'concise' | 'detailed' | 'none';
 export type CodexInstallationMethod = 'native-windows' | 'wsl';
-export type HostnameInstallationMethods = Record<string, CodexInstallationMethod>;
+type HostnameInstallationMethods = Record<string, CodexInstallationMethod>;
 
 const CODEX_SAFE_MODES = ['workspace-write', 'read-only'] as const;
 const CODEX_REASONING_SUMMARIES = ['auto', 'concise', 'detailed', 'none'] as const;

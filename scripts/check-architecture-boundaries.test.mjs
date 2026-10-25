@@ -219,14 +219,40 @@ test('providers avoid root app imports', () => {
   ), []);
 });
 
-/** Settings-document wrappers adapt a provider's configuration to the application settings. */
-function isProviderDocumentWrapper(relative) {
-  return /^[^/]+\/settings$/.test(relative)
-    || /^[^/]+\/[A-Za-z]+ModelPolicy$/.test(relative)
-    || /^[^/]+\/env\//.test(relative)
-    || /^[^/]+\/runtime\/[A-Za-z]+CLIResolver$/.test(relative)
-    || /^[^/]+\/app\/[A-Za-z]+CommandLoader$/.test(relative);
-}
+/**
+ * Settings-document wrappers adapt a provider's configuration to the application settings.
+ * Listed explicitly so a new provider module is runtime until it is reviewed into this set.
+ */
+const PROVIDER_DOCUMENT_WRAPPERS = new Set([
+  'src/providers/claude/ClaudeModelPolicy.ts',
+  'src/providers/claude/env/ClaudeSettingsReconciler.ts',
+  'src/providers/claude/runtime/ClaudeCLIResolver.ts',
+  'src/providers/claude/settings.ts',
+  'src/providers/codex/CodexModelPolicy.ts',
+  'src/providers/codex/env/CodexSettingsReconciler.ts',
+  'src/providers/codex/runtime/CodexCLIResolver.ts',
+  'src/providers/codex/settings.ts',
+  'src/providers/deepseek/DeepSeekModelPolicy.ts',
+  'src/providers/deepseek/app/DeepSeekCommandLoader.ts',
+  'src/providers/deepseek/env/DeepSeekSettingsReconciler.ts',
+  'src/providers/deepseek/runtime/DeepSeekCLIResolver.ts',
+  'src/providers/deepseek/settings.ts',
+  'src/providers/grok/GrokModelPolicy.ts',
+  'src/providers/grok/app/GrokCommandLoader.ts',
+  'src/providers/grok/env/GrokSettingsReconciler.ts',
+  'src/providers/grok/runtime/GrokCLIResolver.ts',
+  'src/providers/grok/settings.ts',
+  'src/providers/opencode/OpencodeModelPolicy.ts',
+  'src/providers/opencode/app/OpencodeCommandLoader.ts',
+  'src/providers/opencode/env/OpencodeSettingsReconciler.ts',
+  'src/providers/opencode/runtime/OpencodeCLIResolver.ts',
+  'src/providers/opencode/settings.ts',
+  'src/providers/pi/PiModelPolicy.ts',
+  'src/providers/pi/app/PiCommandLoader.ts',
+  'src/providers/pi/env/PiSettingsReconciler.ts',
+  'src/providers/pi/runtime/PiCLIResolver.ts',
+  'src/providers/pi/settings.ts',
+]);
 
 /**
  * Integration modules adapt a provider to Obsidian and to the application settings
@@ -238,7 +264,14 @@ function isProviderIntegrationModule(file) {
     || /^[^/]+\/registration$/.test(relative)
     || /^[^/]+\/ui(?:\/|$)/.test(relative)
     || /^[^/]+\/app\/[A-Za-z]+WorkspaceServices$/.test(relative)
-    || isProviderDocumentWrapper(relative);
+    || PROVIDER_DOCUMENT_WRAPPERS.has(normalizeRepositoryPath(path.relative(process.cwd(), file)));
+}
+
+/** Original names a named import or export clause binds; null for namespace and default bindings. */
+function namedBindingNames(clause) {
+  return clause && (ts.isNamedImports(clause) || ts.isNamedExports(clause))
+    ? clause.elements.map(element => (element.propertyName ?? element.name).text)
+    : null;
 }
 
 /** Core modules and exports that read or write the application settings document. */
@@ -272,10 +305,7 @@ function inspectSettingsDocumentAccess(file, sourceText) {
       const key = target && normalizeRepositoryPath(path.relative(sourceRoot, normalizeModuleTarget(target)));
       if (key && SETTINGS_DOCUMENT_ACCESS.has(key)) {
         const names = SETTINGS_DOCUMENT_ACCESS.get(key);
-        const clause = ts.isImportDeclaration(node) ? node.importClause?.namedBindings : node.exportClause;
-        const imported = clause && (ts.isNamedImports(clause) || ts.isNamedExports(clause))
-          ? clause.elements.map(element => (element.propertyName ?? element.name).text)
-          : null;
+        const imported = namedBindingNames(ts.isImportDeclaration(node) ? node.importClause?.namedBindings : node.exportClause);
         const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
         if (names === null || imported === null) {
           violations.push(`${relative}:${line} reaches the settings document through ${specifier}`);
@@ -290,6 +320,18 @@ function inspectSettingsDocumentAccess(file, sourceText) {
   };
   visit(sourceFile);
   return violations;
+}
+
+/** Why a listed document wrapper is stale: it is missing or no longer reaches the document. */
+function inspectDocumentWrapper(file, sourceText) {
+  const relative = normalizeRepositoryPath(path.relative(process.cwd(), file));
+  if (sourceText === null) return [`${relative} is listed as a document wrapper but does not exist`];
+  const reachesDocument = inspectSettingsDocumentAccess(file, sourceText).length > 0
+    || listSourceImports(file, sourceText).some(sourceImport => {
+      const target = resolveTypeScriptImport(file, sourceImport.specifier);
+      return target !== null && isPathWithin(target, providersRoot) && isProviderIntegrationModule(target);
+    });
+  return reachesDocument ? [] : [`${relative} is listed as a document wrapper but never reaches the settings document`];
 }
 
 function listProviderRuntimeFiles() {
@@ -390,9 +432,7 @@ function inspectProviderRuntimeSource(file, sourceText, { reachesObsidian, obsid
       }
     } else if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) {
       const bound = boundExportsOf(node.moduleSpecifier.text);
-      const names = node.exportClause && ts.isNamedExports(node.exportClause)
-        ? node.exportClause.elements.map(element => (element.propertyName ?? element.name).text)
-        : [...bound];
+      const names = namedBindingNames(node.exportClause) ?? [...bound];
       for (const name of names.filter(name => bound.has(name))) {
         violations.push(`${relative}:${lineOf(node)} re-exports Obsidian-bound ${name} from ${node.moduleSpecifier.text}`);
       }
@@ -452,6 +492,26 @@ test('the settings document boundary detects direct and type-only access', () =>
   // Document wrappers are integration; the configuration modules they wrap are runtime.
   assert.equal(isProviderIntegrationModule(path.join(providersRoot, 'pi', 'settings.ts')), true);
   assert.equal(isProviderIntegrationModule(path.join(providersRoot, 'pi', 'config.ts')), false);
+  // A module named like a wrapper is runtime until it is listed.
+  for (const unlisted of [
+    ['pi', 'runtime', 'FooCLIResolver.ts'],
+    ['pi', 'app', 'FooCommandLoader.ts'],
+    ['pi', 'FooModelPolicy.ts'],
+    ['pi', 'env', 'FooReconciler.ts'],
+  ]) assert.equal(isProviderIntegrationModule(path.join(providersRoot, ...unlisted)), false, unlisted.join('/'));
+});
+
+test('every listed document wrapper exists and reaches the settings document', () => {
+  const problems = [...PROVIDER_DOCUMENT_WRAPPERS].flatMap(relative => {
+    const file = path.join(process.cwd(), relative);
+    return inspectDocumentWrapper(file, fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null);
+  });
+  assert.deepEqual(problems, []);
+  const listed = path.join(providersRoot, 'pi', 'runtime', 'PiCLIResolver.ts');
+  assert.notDeepEqual(inspectDocumentWrapper(listed, null), []);
+  assert.notDeepEqual(inspectDocumentWrapper(listed, "import { decodePiConfig } from '../config';\nexport const read = decodePiConfig;"), []);
+  assert.deepEqual(inspectDocumentWrapper(listed, "import { getPiProviderSettings } from '../settings';\nexport const read = getPiProviderSettings;"), []);
+  assert.deepEqual(inspectDocumentWrapper(listed, "import { getProviderConfig } from '@/core/providers/providerConfig';\nexport const read = getProviderConfig;"), []);
 });
 
 test('the provider runtime boundary detects indirect Obsidian access', () => {

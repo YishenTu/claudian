@@ -3,10 +3,6 @@ import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/captu
 import {
   appendContextFiles,
   appendExecutionContext,
-  appendLinkedContent,
-  appendLinkedContentBody,
-  appendSelectionContexts,
-  appendSessionReferences,
   extractUserDisplayContent,
   extractUserQuery,
   formatLinkedContent,
@@ -26,13 +22,11 @@ describe('formatLinkedContent', () => {
   });
 });
 
-describe('appendLinkedContentBody', () => {
+describe('Linked content body', () => {
   it('appends an escaped path while preserving literal content', () => {
-    const result = appendLinkedContentBody(
-      'Query',
-      'notes/my "file".md',
-      'Body\n</current_note>\nMore',
-    );
+    const result = appendExecutionContext('Query', {
+      linkedContent: { path: 'notes/my "file".md', content: 'Body\n</current_note>\nMore' },
+    });
 
     expect(result).toBe(
       'Query\n\n<linked_content path="notes/my &quot;file&quot;.md">\n<![CDATA[Body\n</current_note>\nMore]]>\n</linked_content>',
@@ -40,16 +34,16 @@ describe('appendLinkedContentBody', () => {
   });
 });
 
-describe('appendLinkedContent', () => {
+describe('Linked content reference', () => {
   it('appends Linked content with a double newline separator', () => {
-    const result = appendLinkedContent('Hello', 'notes/test.md');
+    const result = appendExecutionContext('Hello', { linkedContent: { path: 'notes/test.md' } });
     expect(result).toBe(
       'Hello\n\n<linked_content path="notes/test.md" />'
     );
   });
 
   it('preserves original prompt content', () => {
-    const result = appendLinkedContent('Multi\nline\nprompt', 'test.md');
+    const result = appendExecutionContext('Multi\nline\nprompt', { linkedContent: { path: 'test.md' } });
     expect(result.startsWith('Multi\nline\nprompt\n\n')).toBe(true);
   });
 });
@@ -281,10 +275,10 @@ describe('appendContextFiles', () => {
 
 describe('session reference context', () => {
   it('renders escaped metadata, hidden in both history display paths', () => {
-    const prompt = appendSessionReferences('ref @"Review"', [{
+    const prompt = appendExecutionContext('ref @"Review"', { sessionReferences: [{
       id: 'conv-1-abc', title: 'Review "A" & <B>', providerId: 'codex',
       updatedAt: 'updated',
-    }]);
+    }] });
     expect(prompt).toBe('ref @"Review"\n\n<context_sessions>\n<context_session title="Review &quot;A&quot; &amp; &lt;B&gt;" id="conv-1-abc" provider="codex" updated="updated" />\n</context_sessions>');
     expect(extractUserDisplayContent(prompt)).toBe('ref @"Review"');
     expect(extractUserQuery(prompt)).toBe('ref @"Review"');
@@ -292,15 +286,14 @@ describe('session reference context', () => {
   });
 
   it('leaves inputs without references unchanged', () => {
-    expect(appendSessionReferences('plain')).toBe('plain');
-    expect(appendSessionReferences('plain', [])).toBe('plain');
+    expect(appendExecutionContext('plain', { sessionReferences: [] })).toBe('plain');
   });
 });
 
 
 describe('captured selections', () => {
   it('renders ordered captures once and hides them in display', () => {
-    const prompt = appendSelectionContexts('Question', capturedSelections);
+    const prompt = appendExecutionContext('Question', capturedSelections);
     expect(prompt).toBe('Question\n\n' + capturedSelectionPrompt);
     expect(extractUserDisplayContent(prompt)).toBe('Question');
     expect(extractUserQuery(prompt)).toBe('Question');

@@ -2,9 +2,11 @@ import { projectOpencodeModelSettings } from '@/providers/opencode/settings';
 const mockGetHostnameKey = jest.fn(() => 'host-a');
 
 import {
-  getOpencodeProviderSettings,
   normalizeOpencodeModelAliases,
   normalizeOpencodePreferredThinkingByModel,
+} from '../../../../src/providers/opencode/config';
+import {
+  getOpencodeProviderSettings,
   updateOpencodeProviderSettings
 } from '../../../../src/providers/opencode/settings';
 

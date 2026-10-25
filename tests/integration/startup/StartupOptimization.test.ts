@@ -6,13 +6,13 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { ProviderId, ProviderWorkspaceServices } from '@/core/providers/types';
 import { createCodexModelCatalogCommit } from '@/providers/codex/app/CodexWorkspaceServices';
+import { DEFAULT_CODEX_PROVIDER_SETTINGS } from '@/providers/codex/config';
 import type { CodexDiscoveredModel } from '@/providers/codex/models';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
 import type {
   CodexModelDiscoveryResult,
   CodexModelDiscoveryServiceLike,
 } from '@/providers/codex/runtime/CodexModelDiscoveryService';
-import { DEFAULT_CODEX_PROVIDER_SETTINGS } from '@/providers/codex/settings';
 
 function makeModel(model: string, displayName = model): CodexDiscoveredModel {
   return {

@@ -12,7 +12,6 @@ import { OpencodeExecutionBackend } from './execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from './history/OpencodeConversationHistoryService';
 import { buildOpencodeBaseModels } from './models';
 import { opencodeModelPolicy } from './OpencodeModelPolicy';
-import { resolveOpencodeHistoryLaunch } from './runtime/OpencodeCLIResolver';
 import { opencodeTaskResultInterpreter } from './runtime/OpencodeTaskResultInterpreter';
 import { getOpencodeProviderSettings, projectOpencodeModelSettings, updateOpencodeProviderSettings } from './settings';
 import { opencodeSubagentAdapter } from './subagentAdapter';
@@ -40,7 +39,6 @@ export const opencodeProviderRegistration: ProviderModule = {
       if (!maybeGetOpencodeWorkspaceServices()) await context?.ensureWorkspace?.();
       return maybeGetOpencodeWorkspaceServices()?.serverService;
     },
-    resolveLaunch: resolveOpencodeHistoryLaunch,
   }),
   isEnabled: (settings) => getOpencodeProviderSettings(settings).enabled,
   setEnabled: (settings, enabled) => updateOpencodeProviderSettings(settings, { enabled }),

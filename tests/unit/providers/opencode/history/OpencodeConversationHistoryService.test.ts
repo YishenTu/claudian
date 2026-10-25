@@ -7,7 +7,6 @@ import { DatabaseSync } from 'node:sqlite';
 import type * as environmentModule from '@/core/process/env';
 import type { Conversation } from '@/core/types';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
-import { resolveOpencodeHistoryLaunch } from '@/providers/opencode/runtime/OpencodeCLIResolver';
 
 // Exercise real SQLite subprocesses without discovering the runner's other Node installations.
 jest.mock('@/core/process/env', () => ({
@@ -46,13 +45,15 @@ describe('OpencodeConversationHistoryService', () => {
         const { OpencodeConversationHistoryService: HistoryService } = await import(
           '@/providers/opencode/history/OpencodeConversationHistoryService'
         );
-        Object.assign(conversation, await new HistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }).hydrateConversationHistory(conversation, null, {
+        Object.assign(conversation, await new HistoryService().hydrateConversationHistory(conversation, null, {
+          config: {},
           environment: {
             ...process.env,
             OPENCODE_DB: dbPath,
             CLAUDIAN_HISTORY_TEST: 'configured',
             PATH: path.dirname(process.execPath),
           },
+          environmentText: '',
         }));
       });
       expect(conversation.messages.map(message => message.content)).toEqual(['Configured history']);
@@ -67,7 +68,7 @@ describe('OpencodeConversationHistoryService', () => {
     const dbPath = path.join(tmpRoot, 'opencode.db');
     const sessionId = 'session-retry';
     const conversation = createConversation(sessionId, dbPath);
-    const service = new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch });
+    const service = new OpencodeConversationHistoryService();
 
     const db = new DatabaseSync(dbPath);
     try {
@@ -168,7 +169,7 @@ describe('OpencodeConversationHistoryService', () => {
     }
     const conversation = createConversation(sessionId, dbPath);
 
-    await expect(new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch })
+    await expect(new OpencodeConversationHistoryService()
       .recoverConversationModelSelection?.(conversation, null))
       .resolves.toBe('opencode:google/gemini-3.5-flash');
   });
@@ -183,10 +184,10 @@ describe('OpencodeConversationHistoryService', () => {
     const conversation = createConversation(sessionId, outsidePath);
     conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
 
-    Object.assign(conversation, await new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }).hydrateConversationHistory(
+    Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
-      { environment: { HOME: tmpRoot, XDG_DATA_HOME: xdgDataHome } },
+      { config: {}, environment: { HOME: tmpRoot, XDG_DATA_HOME: xdgDataHome }, environmentText: '' },
     ));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Trusted prompt']);
@@ -208,15 +209,17 @@ describe('OpencodeConversationHistoryService', () => {
     const conversation = createConversation(sessionId, legacyPath);
     conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
 
-    Object.assign(conversation, await new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }).hydrateConversationHistory(
+    Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
       {
+        config: {},
         environment: {
           APPDATA: appData,
           HOME: home,
           LOCALAPPDATA: path.join(home, 'AppData', 'Local'),
         },
+        environmentText: '',
       },
     ));
 
@@ -232,7 +235,7 @@ describe('OpencodeConversationHistoryService', () => {
     conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
 
     expect(
-      new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }).buildPersistedProviderState(conversation),
+      new OpencodeConversationHistoryService().buildPersistedProviderState(conversation),
     ).toEqual({
       databasePath: '/tmp/opencode.db',
       futureResumeCursor: { token: 'cursor-1' },
@@ -243,7 +246,7 @@ describe('OpencodeConversationHistoryService', () => {
     it('retires a confirmed stale resume ID to history while preserving provider-owned state', async () => {
       const conversation = createConversation('missing-session', '/tmp/opencode.db');
       conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
-      const service = new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch });
+      const service = new OpencodeConversationHistoryService();
 
       const update1 = await service.resolveMissingConversationSession(
         conversation,
@@ -266,7 +269,7 @@ describe('OpencodeConversationHistoryService', () => {
     it('preserves a newer resume ID when the failure identifies another session', async () => {
       const conversation = createConversation('current-session', '/tmp/opencode.db');
       conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
-      const service = new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch });
+      const service = new OpencodeConversationHistoryService();
 
       const update2 = await service.resolveMissingConversationSession(
         conversation,
@@ -294,7 +297,7 @@ describe('OpencodeConversationHistoryService', () => {
       nativeConversationContextEstablished: false,
     };
 
-    Object.assign(conversation, await new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }).hydrateConversationHistory(
+    Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
     ));
@@ -312,10 +315,10 @@ describe('OpencodeConversationHistoryService', () => {
     seedDatabase(configuredPath, sessionId, 'Configured prompt');
     const conversation = createConversation(sessionId, configuredPath);
 
-    Object.assign(conversation, await new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }).hydrateConversationHistory(
+    Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
-      { environment: { HOME: tmpRoot, OPENCODE_DB: configuredPath } },
+      { config: {}, environment: { HOME: tmpRoot, OPENCODE_DB: configuredPath }, environmentText: '' },
     ));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Configured prompt']);
@@ -330,10 +333,10 @@ describe('OpencodeConversationHistoryService', () => {
     const conversation = createConversation('remote-session', outsidePath);
     conversation.sessionId = null;
 
-    Object.assign(conversation, await new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }).hydrateConversationHistory(
+    Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
-      { environment: { HOME: tmpRoot, XDG_DATA_HOME: xdgDataHome } },
+      { config: {}, environment: { HOME: tmpRoot, XDG_DATA_HOME: xdgDataHome }, environmentText: '' },
     ));
 
     expect(conversation.providerState).toEqual({ databasePath: trustedPath });

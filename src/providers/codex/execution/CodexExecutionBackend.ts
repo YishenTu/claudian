@@ -17,7 +17,6 @@ export class CodexExecutionBackend implements ProviderExecutionBackend {
     private readonly host: ProviderRuntimeHost,
     /** Resolved per session so the backend stays cheap before workspace services initialize. */
     private readonly resolveRuntime: () => CodexAppServerRuntime,
-    /** Saved Codex preferences, else the current selections; wired by Codex integration. */
   ) {}
 
   createSession(config: ProviderSessionConfig): ProviderExecutionSession {

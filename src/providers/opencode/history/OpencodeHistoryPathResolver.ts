@@ -1,7 +1,7 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import type { ProviderHistoryPathContext } from '../../../core/providers/types';
+import type { ProviderHistoryEnvironment } from '../../../core/providers/types';
 import { isPathWithinRoot, isSamePath } from '../../../core/storage/pathContainment';
 import {
   resolveExistingOpencodeDatabasePath,
@@ -11,7 +11,7 @@ import {
 
 export function resolveOpencodeDatabasePathHint(
   persistedPath: string | null | undefined,
-  context?: ProviderHistoryPathContext,
+  context?: ProviderHistoryEnvironment,
 ): string | null {
   if (!context) {
     return resolveExistingOpencodeDatabasePath(persistedPath);

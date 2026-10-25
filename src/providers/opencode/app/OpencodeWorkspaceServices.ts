@@ -45,7 +45,7 @@ export async function createOpencodeWorkspaceServices(
     beforeTransition: () => runtime.beginTransition(),
     afterTransition: () => runtime.endTransition(),
   });
-  const metadataService = new OpencodeMetadataService(runtimeHost, { commandCatalog, serverService });
+  const metadataService = new OpencodeMetadataService(runtimeHost, plugin.executionLifecycleRegistry, { commandCatalog, serverService });
 
   const modelCatalog = createOpencodeModels(runtimeHost, metadataService);
   const unregisterModels = plugin.executionLifecycleRegistry.registerTransitionHook('opencode', { beforeTransition: () => modelCatalog.beginTransition(), afterTransition: () => modelCatalog.endTransition() });

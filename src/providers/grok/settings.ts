@@ -3,24 +3,9 @@ import { getProviderConfig, getProviderSelectionInputs, setProviderConfig } from
 import {
   decodeGrokConfig,
   getGrokMigratedVisibleModelIds,
-  type GrokCatalogSnapshot,
   type GrokProviderSettings,
   type PersistedGrokProviderSettings,
-  updateCurrentGrokCatalogConfig,
   updateGrokConfig,
-} from './config';
-
-export {
-  DEFAULT_GROK_PROVIDER_SETTINGS,
-  getGrokMigratedVisibleModelIds,
-  getOrderedGrokVisibleModelIds,
-  type GrokCatalogSnapshot,
-  type GrokProviderSettings,
-  normalizeGrokCatalogSnapshot,
-  normalizeGrokModelAliases,
-  normalizeGrokPreferredReasoningByModel,
-  normalizeGrokVisibleModels,
-  type PersistedGrokProviderSettings,
 } from './config';
 
 /** Reads Grok's configuration from the settings document. */
@@ -39,22 +24,6 @@ export function updateGrokProviderSettings(
   const next = updateGrokConfig(config, getProviderSelectionInputs(settings, 'grok'), updates);
   setProviderConfig(settings, 'grok', config);
   return next;
-}
-
-export function getCurrentGrokCatalog(
-  settings: Record<string, unknown>,
-): GrokCatalogSnapshot | null {
-  return getGrokProviderSettings(settings).currentCatalog;
-}
-
-export function updateCurrentGrokCatalog(
-  settings: Record<string, unknown>,
-  snapshot: GrokCatalogSnapshot,
-): GrokCatalogSnapshot | null {
-  const config = getProviderConfig(settings, 'grok');
-  const normalized = updateCurrentGrokCatalogConfig(config, getProviderSelectionInputs(settings, 'grok'), snapshot);
-  if (normalized) setProviderConfig(settings, 'grok', config);
-  return normalized;
 }
 
 export function projectGrokModelSettings(settings: Record<string, unknown>): Record<string, unknown> {

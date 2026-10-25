@@ -10,15 +10,6 @@ import {
   resolveOpencodeBaseModelRawId
 } from './models';
 
-export {
-  DEFAULT_OPENCODE_PROVIDER_SETTINGS,
-  normalizeOpencodeModelAliases,
-  normalizeOpencodePreferredThinkingByModel,
-  normalizeOpencodeVisibleModels,
-  type OpencodeProviderSettings,
-  type PersistedOpencodeProviderSettings,
-} from './config';
-
 /** Reads OpenCode's configuration from the settings document. */
 export function getOpencodeProviderSettings(
   settings: Record<string, unknown>,

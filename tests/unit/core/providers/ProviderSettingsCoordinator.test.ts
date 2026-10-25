@@ -8,7 +8,7 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsReconciler } from '@/core/providers/types';
 import type { Conversation } from '@/core/types';
-import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from '@/providers/claude/settings';
+import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from '@/providers/claude/config';
 
 describe('ProviderSettingsCoordinator', () => {
   it('commits only the target provider preferences without changing its selected model', () => {

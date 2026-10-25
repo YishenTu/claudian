@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
 
-import type { ProviderHistoryPathContext } from '../../../core/providers/types';
+import type { ProviderHistoryEnvironment } from '../../../core/providers/types';
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import { settleInterruptedTurn } from '../../../core/types';
 import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
@@ -72,7 +72,7 @@ function resolveSessionPath(
   vaultPath: string,
   sessionId: string,
   sessionPath: string | undefined,
-  pathContext: ProviderHistoryPathContext | undefined,
+  pathContext: ProviderHistoryEnvironment | undefined,
 ): string | null {
   if (sessionPath) return sessionPath;
   try {
@@ -101,7 +101,7 @@ async function readSessionEntries(
   vaultPath: string,
   sessionId: string,
   sessionPath: string | undefined,
-  pathContext: ProviderHistoryPathContext | undefined,
+  pathContext: ProviderHistoryEnvironment | undefined,
 ): Promise<SDKSessionReadResult> {
   return sessionPath
     ? readSDKSessionFile(sessionPath)
@@ -120,7 +120,7 @@ export async function loadSDKSessionMessages(
   sessionId: string,
   resumeAtMessageId?: string,
   sessionPath?: string,
-  pathContext?: ProviderHistoryPathContext,
+  pathContext?: ProviderHistoryEnvironment,
 ): Promise<SDKSessionLoadResult> {
   const result = await takePendingModelRead(resolveSessionPath(vaultPath, sessionId, sessionPath, pathContext))
     ?? await readSessionEntries(vaultPath, sessionId, sessionPath, pathContext);
@@ -495,7 +495,7 @@ export async function loadSDKSessionModel(
   sessionId: string,
   resumeAtMessageId?: string,
   sessionPath?: string,
-  pathContext?: ProviderHistoryPathContext,
+  pathContext?: ProviderHistoryEnvironment,
 ): Promise<string | null> {
   const resolvedPath = resolveSessionPath(vaultPath, sessionId, sessionPath, pathContext);
   const fingerprint = resolvedPath ? await getSessionFingerprint(resolvedPath) : null;

@@ -1,5 +1,5 @@
+import type { PiProviderSettings } from '@/providers/pi/config';
 import { buildPiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpecBuilder';
-import type { PiProviderSettings } from '@/providers/pi/settings';
 
 const baseSettings: PiProviderSettings = {
   cliPath: '',

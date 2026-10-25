@@ -18,6 +18,7 @@ import type {
 } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import { codexModelPolicy } from '../CodexModelPolicy';
+import { DEFAULT_CODEX_PROVIDER_SETTINGS } from '../config';
 import { resolveCodexModelSelection } from '../modelOptions';
 import {
   CODEX_ENV_HASH_KEYS,
@@ -27,7 +28,6 @@ import {
   LEGACY_CODEX_ENV_HASH_KEYS,
 } from '../runtime/codexEnvironmentHash';
 import {
-  DEFAULT_CODEX_PROVIDER_SETTINGS,
   getCodexProviderSettings,
   updateCodexProviderSettings,
 } from '../settings';

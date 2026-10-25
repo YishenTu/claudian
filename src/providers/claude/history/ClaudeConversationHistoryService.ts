@@ -5,8 +5,8 @@ import { encodeProviderModelSelectionId } from '../../../core/providers/modelSel
 import type {
   ProviderConversationHistoryService,
   ProviderConversationSessionAvailability,
+  ProviderHistoryEnvironment,
   ProviderHistoryInput,
-  ProviderHistoryPathContext,
   ProviderHistoryResult,
   ProviderHistoryState,
   ProviderHistoryUpdate,
@@ -371,7 +371,7 @@ async function enrichAsyncSubagents(
   vaultPath: string,
   sessionIds: string[],
   relocatedSessionPaths: Map<string, string>,
-  pathContext?: ProviderHistoryPathContext,
+  pathContext?: ProviderHistoryEnvironment,
 ): Promise<void> {
   const uniqueSessionIds = [...new Set(sessionIds)];
   if (uniqueSessionIds.length === 0) return;
@@ -608,7 +608,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   #getSessionLocationCache(
     conversation: ProviderHistoryInput,
     vaultPath: string,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: ProviderHistoryEnvironment,
   ): SessionLocationCache {
     const state = getClaudeState(conversation.providerState);
     const cacheKey = JSON.stringify([
@@ -637,7 +637,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   async getConversationSessionAvailability(
     conversation: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: ProviderHistoryEnvironment,
   ): Promise<ProviderConversationSessionAvailability> {
     const sessionId = this.resolveSessionIdForConversation(conversation);
     if (!vaultPath) {
@@ -659,7 +659,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   async prepareRelocatedConversationSession(
     input: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: ProviderHistoryEnvironment,
   ): Promise<ProviderHistoryUpdate | null> {
     const conversation = copyProviderHistoryState(input);
     const sessionId = this.resolveSessionIdForConversation(conversation);
@@ -694,7 +694,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     input: ProviderHistoryInput,
     vaultPath: string | null,
     missingProviderSessionId?: string,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: ProviderHistoryEnvironment,
   ): Promise<ProviderHistoryResult<'delete' | 'reset' | 'preserve'>> {
     const conversation = copyProviderHistoryState(input);
     const currentSessionId = this.resolveSessionIdForConversation(conversation);
@@ -762,7 +762,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     conversation: ProviderHistoryInput,
     options: {
       preserveProviderState?: boolean;
-      getNativeHistory?: () => { vaultPath: string | null; pathContext?: ProviderHistoryPathContext };
+      getNativeHistory?: () => { vaultPath: string | null; pathContext?: ProviderHistoryEnvironment };
     } = {},
   ): Record<string, unknown> | undefined {
     const providerState: ClaudeProviderState = {
@@ -790,7 +790,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   hasRedundantPersistedState(
     conversation: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: ProviderHistoryEnvironment,
   ): boolean {
     const findNativeSidecar = this.#createSidecarLookup(conversation, vaultPath, pathContext);
     // Redundant exactly when the save projection would drop or reduce a stored full record.
@@ -809,7 +809,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   #createSidecarLookup(
     conversation: ProviderHistoryInput,
     vaultPath: string | null | undefined,
-    pathContext: ProviderHistoryPathContext | undefined,
+    pathContext: ProviderHistoryEnvironment | undefined,
   ): (subagent: SubagentInfo) => string | null {
     if (!vaultPath) return () => null;
     const sessionIds = [...new Set(this.#getConversationSessionIds(conversation))];
@@ -830,7 +830,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   async recoverConversationSessionReference(
     input: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: ProviderHistoryEnvironment,
   ): Promise<ProviderHistoryUpdate | null> {
     const conversation = copyProviderHistoryState(input);
     if (!vaultPath || this.resolveSessionIdForConversation(conversation)) {
@@ -871,7 +871,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     conversation: ProviderHistoryState,
     state: ClaudeProviderState,
     vaultPath: string,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: ProviderHistoryEnvironment,
   ): Promise<ProviderHistoryUpdate | null> {
     if (state.bindingRetired) return null;
     const previousSessionIds = state.previousProviderSessionIds ?? [];
@@ -896,7 +896,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   async hydrateConversationHistory(
     input: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: ProviderHistoryEnvironment,
   ): Promise<ProviderHistoryUpdate> {
     return (await this.#readHistory(input, vaultPath, pathContext)).changes;
   }
@@ -904,7 +904,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   async #readHistory(
     input: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: ProviderHistoryEnvironment,
   ): Promise<{ changes: ProviderHistoryState; complete: boolean }> {
     const conversation = copyProviderHistoryState(input);
     normalizeCachedSyncResults(conversation.messages);
@@ -1024,7 +1024,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   async recoverConversationModelSelection(
     conversation: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: ProviderHistoryEnvironment,
   ): Promise<string | null> {
     if (!vaultPath) return null;
 

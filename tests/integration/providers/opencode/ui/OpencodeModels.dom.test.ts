@@ -40,7 +40,7 @@ function setup() {
   const host = fixture.createPlugin();
   host.storage = { installationKey: 'test' };
   const runtimeHost = runtimeHostFor(host, 'opencode');
-  const service = new OpencodeMetadataService(runtimeHost);
+  const service = new OpencodeMetadataService(runtimeHost, host.executionLifecycleRegistry);
   const catalog = createOpencodeModels(runtimeHost, service);
   const container = document.body.createDiv();
   const render = () => createOpencodeSettingsTabRenderer({

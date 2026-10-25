@@ -1,4 +1,5 @@
 import { DEFAULT_CLAUDIAN_SETTINGS as DEFAULT_SETTINGS } from '@test/helpers/defaultSettings';
+import { grokEnvironmentHash, writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { testClock } from '@test/helpers/testClock';
 import { Notice, TFile, TFolder } from 'obsidian';
 
@@ -28,13 +29,11 @@ import {
   getCodexProviderSettings,
   updateCodexProviderSettings,
 } from '@/providers/codex/settings';
-import { computeGrokEnvironmentHash } from '@/providers/grok/env/GrokSettingsReconciler';
 import { GrokCLIResolver } from '@/providers/grok/runtime/GrokCLIResolver';
 import { GrokModelCatalogCoordinator } from '@/providers/grok/runtime/GrokModelCatalogCoordinator';
 import { GrokModelDiscoveryService } from '@/providers/grok/runtime/GrokModelDiscoveryService';
 import {
   getGrokProviderSettings,
-  updateCurrentGrokCatalog,
   updateGrokProviderSettings,
 } from '@/providers/grok/settings';
 
@@ -2064,7 +2063,7 @@ describe('ClaudianPlugin', () => {
         enabled: true,
         environmentVariables: 'GROK_PROFILE=old',
       });
-      updateCurrentGrokCatalog(plugin.settings, {
+      writeGrokCatalog(plugin.settings, {
         defaultModelId: 'old-model',
         fingerprint: 'old-catalog',
         models: [{
@@ -2076,7 +2075,7 @@ describe('ClaudianPlugin', () => {
         refreshedAt: 1,
       });
       updateGrokProviderSettings(plugin.settings, {
-        environmentHash: computeGrokEnvironmentHash(plugin.settings),
+        environmentHash: grokEnvironmentHash(plugin.settings),
       });
       const committed = structuredClone(getGrokProviderSettings(plugin.settings));
       let contextAtRelease: ReturnType<typeof getGrokProviderSettings> | null = null;
@@ -2678,7 +2677,7 @@ describe('ClaudianPlugin', () => {
       });
 
       const grokSettings = getGrokProviderSettings(plugin.settings);
-      expect(grokSettings.environmentHash).toBe(computeGrokEnvironmentHash(plugin.settings));
+      expect(grokSettings.environmentHash).toBe(grokEnvironmentHash(plugin.settings));
       expect(chatHostOf(plugin).getConversationSync(conversation.id)).toEqual(expect.objectContaining({
         sessionId: 'grok-session-id',
         providerState: { sessionDirectory: '/tmp/grok/session-id' },

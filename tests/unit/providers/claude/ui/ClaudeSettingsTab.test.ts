@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import { axe } from 'jest-axe';
 import { setImmediate } from 'timers';
 
-import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from '@/providers/claude/settings';
+import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from '@/providers/claude/config';
 import { createClaudeSettingsTabRenderer } from '@/providers/claude/ui/ClaudeSettingsTab';
 
 Object.assign(globalThis, { setImmediate });

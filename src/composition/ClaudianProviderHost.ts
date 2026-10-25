@@ -179,15 +179,14 @@ interface RuntimeSettingsSource {
 export function createProviderRuntimeHost(
   host: Pick<
     ProviderHost,
-    | 'manifest' | 'workingDirectory' | 'storage' | 'sessionToolEndpoint' | 'executionLifecycleRegistry'
-    | 'getResolvedProviderCliPath' | 'runProviderExecutionTransition' | 'notifyProviderChatOptionsChanged'
+    | 'manifest' | 'workingDirectory' | 'storage' | 'sessionToolEndpoint'
+    | 'getResolvedProviderCliPath' | 'notifyProviderChatOptionsChanged'
   >,
   settings: RuntimeSettingsSource,
   providerId: ProviderId,
 ): ProviderRuntimeHost {
   const committed = (): Readonly<Record<string, unknown>> => settings.getCommittedSettings();
   return {
-    providerId,
     get config() { return getProviderConfig(committed(), providerId); },
     get selection() { return getProviderSelectionInputs(committed(), providerId); },
     get providerSelection() {
@@ -200,10 +199,7 @@ export function createProviderRuntimeHost(
     get workingDirectory() { return host.workingDirectory; },
     storage: host.storage,
     sessionToolEndpoint: host.sessionToolEndpoint,
-    executionLifecycleRegistry: host.executionLifecycleRegistry,
     resolveCliPath: context => host.getResolvedProviderCliPath(providerId, context),
-    runExecutionTransition: (providerIds, mutation, parentScope) =>
-      host.runProviderExecutionTransition(providerIds, mutation, parentScope),
     notifyChatOptionsChanged: () => host.notifyProviderChatOptionsChanged(providerId),
     async updateConfig(mutation) {
       let written = false;

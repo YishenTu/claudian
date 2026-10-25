@@ -3,8 +3,8 @@ import { copyProviderHistoryState } from '@/core/providers/providerHistory';
 import { mergePersistedProviderState } from '../../../core/providers/providerState';
 import type {
   ProviderConversationHistoryService,
+  ProviderHistoryEnvironment,
   ProviderHistoryInput,
-  ProviderHistoryPathContext,
   ProviderHistoryResult,
   ProviderHistoryUpdate,
 } from '../../../core/providers/types';
@@ -27,7 +27,7 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
   async hydrateConversationHistory(
     input: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: ProviderHistoryEnvironment,
   ): Promise<ProviderHistoryUpdate> {
     const conversation = copyProviderHistoryState(input);
     const state = parseGrokProviderState(conversation.providerState);

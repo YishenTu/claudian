@@ -32,7 +32,7 @@ it('discovers several selected models from one native catalog response', async (
   const plugin = fixture.createPlugin();
   plugin.settings.providerConfigs.opencode.visibleModels = ['test/one', 'test/two'];
   const host = runtimeHostFor(plugin, 'opencode');
-  const service = new OpencodeMetadataService(host);
+  const service = new OpencodeMetadataService(host, plugin.executionLifecycleRegistry);
   const models = createOpencodeModels(host, service);
   try {
     await models.refresh();
@@ -48,7 +48,7 @@ it('discovers several selected models from one native catalog response', async (
 
 it('refreshes the native catalog and commands without persisting the catalog or enabling models', async () => {
   const plugin = fixture.createPlugin();
-  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'));
+  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([
@@ -74,7 +74,7 @@ it('refreshes the native catalog and commands without persisting the catalog or 
 
 it('discovers models added after the initial discovery on the same metadata server', async () => {
   const plugin = fixture.createPlugin();
-  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'));
+  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     const endpoint = readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8');
@@ -93,7 +93,8 @@ it('discovers models added after the initial discovery on the same metadata serv
 });
 
 it('waits for the requested model while other models are already available', async () => {
-  const service = new OpencodeMetadataService(runtimeHostFor(fixture.createPlugin(), 'opencode'));
+  const plugin = fixture.createPlugin();
+  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     const read = fixture.environment.ENDPOINT_FILE! + '.read';

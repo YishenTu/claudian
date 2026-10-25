@@ -16,7 +16,7 @@ import {
   type OpencodeThinkingOptionsByModel,
 } from './models';
 
-export interface PersistedOpencodeProviderSettings {
+interface PersistedOpencodeProviderSettings {
   cliPath: string;
   cliPathsByHost: HostnameCLIPaths;
   enabled: boolean;
@@ -44,7 +44,7 @@ export const DEFAULT_OPENCODE_PROVIDER_SETTINGS: Readonly<PersistedOpencodeProvi
   visibleModels: [],
 });
 
-export function normalizeOpencodeVisibleModels(
+function normalizeOpencodeVisibleModels(
   value: unknown,
 ): string[] {
   if (!Array.isArray(value)) {

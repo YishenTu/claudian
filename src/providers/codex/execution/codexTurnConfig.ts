@@ -1,3 +1,5 @@
+/** Resolves a turn's native configuration: model, effort, approval and sandbox policy, and prompt. */
+
 import type { ProviderExecutionRequest } from '@/core/execution';
 import { buildContextFromHistory } from '@/core/prompt/historyContext';
 import { appendExecutionContext } from '@/core/prompt/promptContext';
@@ -15,23 +17,8 @@ import {
 import { toCodexRuntimeModelId } from '@/providers/codex/modelSelection';
 import type { ConfigReadResult, SandboxPolicy } from '@/providers/codex/runtime/codexAppServerTypes';
 
-/** Resolves a turn's native configuration: model, effort, approval and sandbox policy, and prompt. */
-
 const PASSIVE_INSTRUCTIONS =
   'Do not invoke tools. Complete the request only from the supplied input and context.';
-
-/** Turn fallbacks for request fields left unset: Codex's saved preference, then the current selection. */
-export function resolveCodexTurnSelection(
-  host: Pick<ProviderRuntimeHost, 'savedSelection' | 'selection'>,
-): ProviderSelectionDefaults {
-  const { savedSelection: saved, selection: current } = host;
-  return {
-    model: saved.model ?? current.model,
-    effortLevel: saved.effortLevel ?? current.effortLevel,
-    serviceTier: saved.serviceTier ?? current.serviceTier,
-    permissionMode: saved.permissionMode ?? current.permissionMode,
-  };
-}
 
 export interface CodexPolicy {
   readonly approvalPolicy: string;
@@ -42,17 +29,25 @@ export interface CodexPolicy {
 }
 
 /** The inputs a Codex turn resolves against when its request leaves a field unset. */
-export interface CodexTurnSettings {
+interface CodexTurnSettings {
   readonly codex: CodexProviderSettings;
   /** Saved Codex preferences, else the current selections. */
   readonly selection: ProviderSelectionDefaults;
 }
 
 export function resolveCodexTurnSettings(
-  config: Readonly<Record<string, unknown>>,
-  selection: ProviderSelectionDefaults,
+  host: Pick<ProviderRuntimeHost, 'config' | 'savedSelection' | 'selection'>,
 ): CodexTurnSettings {
-  return { codex: decodeCodexConfig(config), selection };
+  const { savedSelection: saved, selection: current } = host;
+  return {
+    codex: decodeCodexConfig(host.config),
+    selection: {
+      model: saved.model ?? current.model,
+      effortLevel: saved.effortLevel ?? current.effortLevel,
+      serviceTier: saved.serviceTier ?? current.serviceTier,
+      permissionMode: saved.permissionMode ?? current.permissionMode,
+    },
+  };
 }
 
 /** The runtime model ID of an enabled selection, or null when none is usable. */

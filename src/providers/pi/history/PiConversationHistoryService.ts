@@ -6,8 +6,8 @@ import { copyProviderHistoryState } from '@/core/providers/providerHistory';
 import { mergePersistedProviderState } from '../../../core/providers/providerState';
 import type {
   ProviderConversationHistoryService,
+  ProviderHistoryEnvironment,
   ProviderHistoryInput,
-  ProviderHistoryPathContext,
   ProviderHistoryResult,
   ProviderHistoryState,
   ProviderHistoryUpdate,
@@ -63,7 +63,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   async recoverConversationModelSelection(
     conversation: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: ProviderHistoryEnvironment,
   ): Promise<string | null> {
     const state = getPiState(conversation.providerState);
     const isPendingFork = this.isPendingForkConversation(conversation);
@@ -90,7 +90,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   async hydrateConversationHistory(
     input: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: ProviderHistoryEnvironment,
   ): Promise<ProviderHistoryUpdate> {
     const conversation = copyProviderHistoryState(input);
     const state = getPiState(conversation.providerState);
@@ -261,7 +261,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   async recoverConversationSessionReference(
     input: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: ProviderHistoryEnvironment,
   ): Promise<ProviderHistoryUpdate | null> {
     const conversation = copyProviderHistoryState(input);
     const state = getPiState(conversation.providerState);
@@ -367,7 +367,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     resumeAt: string,
     sourceProviderState?: Record<string, unknown>,
     vaultPath: string | null = null,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: ProviderHistoryEnvironment,
   ): Promise<Record<string, unknown>> {
     const sourceState = getPiState(sourceProviderState);
     const candidates: PiForkSourceCandidate[] = [];
@@ -463,7 +463,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   async #resolvePreviousSessionFile(
     source: PiPreviousSession,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryPathContext,
+    pathContext?: ProviderHistoryEnvironment,
     preferResolvedPath = false,
   ): Promise<string | null> {
     const resolved = resolvePiSessionFileHint(

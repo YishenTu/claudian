@@ -621,7 +621,7 @@ RewindableExecutionSession {
     const mcpServers = await this.#getMCPServers();
     this.#throwIfCancellationRequested(active);
     const response = await native.newSession({
-      _meta: this.#buildSessionMeta(request),
+      _meta: buildSessionMeta(request),
       cwd: this.config.workingDirectory,
       mcpServers,
     });
@@ -648,7 +648,7 @@ RewindableExecutionSession {
     const mcpServers = await this.#getMCPServers();
     this.#throwIfCancellationRequested(active);
     const response = await native.loadSession({
-      _meta: this.#buildSessionMeta(request),
+      _meta: buildSessionMeta(request),
       cwd: this.config.workingDirectory,
       mcpServers,
       sessionId: targetSessionId,
@@ -701,14 +701,8 @@ RewindableExecutionSession {
     }];
   }
 
-  #buildSessionMeta(
-    request: ProviderExecutionRequest | undefined,
-  ): Record<string, unknown> {
-    return buildSessionMeta(request);
-  }
-
   #buildSessionConfigurationKey(request: ProviderExecutionRequest): string {
-    const meta = this.#buildSessionMeta(request);
+    const meta = buildSessionMeta(request);
     return JSON.stringify({
       autoMode: meta.autoMode === true,
       systemPromptOverride: meta.systemPromptOverride ?? null,

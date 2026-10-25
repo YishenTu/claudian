@@ -10,7 +10,7 @@ import {
   updateGrokProviderSettings
 } from '../settings';
 
-export function computeGrokEnvironmentHash(settings: Record<string, unknown>): string {
+function computeGrokEnvironmentHash(settings: Record<string, unknown>): string {
   return computeGrokRuntimeInputHash(
     getGrokProviderSettings(settings),
     getRuntimeEnvironmentText(settings, 'grok'),

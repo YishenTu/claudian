@@ -9,7 +9,6 @@ import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceReg
 import type { Conversation } from '@/core/types';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
 import { opencodeProviderRegistration } from '@/providers/opencode/registration';
-import { resolveOpencodeHistoryLaunch } from '@/providers/opencode/runtime/OpencodeCLIResolver';
 
 it.each(['standalone', 'registered before workspace initialization'])('loads V2 history, recovers its model, and forks using %s history', async kind => {
   expect(ProviderWorkspaceRegistry.getServices('opencode')).toBeNull();
@@ -70,10 +69,10 @@ const server = http.createServer((req, res) => {
 server.listen(0, '127.0.0.1', () => console.log(JSON.stringify({ url: 'http://127.0.0.1:' + server.address().port })));
 process.stdin.resume(); process.stdin.on('end', () => server.close());
 `, { mode: 0o700 });
-  const history = kind === 'standalone' ? new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch }) : opencodeProviderRegistration.historyService!;
+  const history = kind === 'standalone' ? new OpencodeConversationHistoryService() : opencodeProviderRegistration.historyService!;
   const conversation = { id: 'local', sessionId: 'ses_parent', messages: [], providerState: { nativeVersion: 2, databasePath } } as unknown as Conversation;
   const settings = { providerConfigs: { opencode: { cliPath } } };
-  const context = { config: settings.providerConfigs.opencode, vaultPath: root, environment: { ...process.env, XDG_DATA_HOME: path.join(root, 'data'), OPENCODE_DB: path.join(root, 'untrusted.db') } };
+  const context = { config: settings.providerConfigs.opencode, environmentText: '', vaultPath: root, environment: { ...process.env, XDG_DATA_HOME: path.join(root, 'data'), OPENCODE_DB: path.join(root, 'untrusted.db') } };
   const registry = new ProviderExecutionLifecycleRegistry();
   const host: any = { settings, workingDirectory: root, storage: { getAdapter: () => ({}) },
     executionLifecycleRegistry: registry, runProviderExecutionTransition: (ids: string[], mutation: any) => registry.runTransition(ids, mutation),

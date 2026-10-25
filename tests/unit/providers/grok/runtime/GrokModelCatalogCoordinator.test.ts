@@ -1,12 +1,12 @@
 const mockGetHostnameKey = jest.fn(() => 'device:current');
 
+import { grokEnvironmentHash, readGrokCatalog } from '@test/helpers/providers/grokSettings';
+
 import { createProviderRuntimeHost } from '@/composition/ClaudianProviderHost';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
-import {
-  computeGrokEnvironmentHash,
-  grokSettingsReconciler,
-} from '@/providers/grok/env/GrokSettingsReconciler';
+import { DEFAULT_GROK_PROVIDER_SETTINGS } from '@/providers/grok/config';
+import { grokSettingsReconciler } from '@/providers/grok/env/GrokSettingsReconciler';
 import type { GrokDiscoveredModel } from '@/providers/grok/models';
 import {
   GrokModelCatalogCoordinator,
@@ -16,8 +16,6 @@ import type {
   GrokModelDiscoveryServiceLike,
 } from '@/providers/grok/runtime/GrokModelDiscoveryService';
 import {
-  DEFAULT_GROK_PROVIDER_SETTINGS,
-  getCurrentGrokCatalog,
   getGrokProviderSettings,
   updateGrokProviderSettings,
 } from '@/providers/grok/settings';
@@ -31,7 +29,7 @@ function makeModel(rawId: string, displayName = rawId): GrokDiscoveredModel {
   };
 }
 
-function makeCatalog(overrides: Partial<NonNullable<ReturnType<typeof getCurrentGrokCatalog>>> = {}) {
+function makeCatalog(overrides: Partial<NonNullable<ReturnType<typeof readGrokCatalog>>> = {}) {
   return {
     defaultModelId: 'kimi-coding',
     fingerprint: 'fingerprint-current',
@@ -292,7 +290,7 @@ describe('GrokModelCatalogCoordinator', () => {
     await oldRefresh;
 
     expect(host.mutateSettingsConditionally).toHaveBeenCalledTimes(1);
-    expect(getCurrentGrokCatalog(host.settings)).toMatchObject({
+    expect(readGrokCatalog(host.settings)).toMatchObject({
       defaultModelId: 'owner-model',
       fingerprint: 'owner-fingerprint',
       models: [expect.objectContaining({ rawId: 'owner-model' })],
@@ -337,7 +335,7 @@ describe('GrokModelCatalogCoordinator', () => {
     await mutations.execute(0);
     await oldRefresh;
 
-    expect(getCurrentGrokCatalog(host.settings)).toMatchObject({
+    expect(readGrokCatalog(host.settings)).toMatchObject({
       defaultModelId: 'owner-model',
       fingerprint: 'owner-fingerprint',
       models: [expect.objectContaining({ rawId: 'owner-model' })],
@@ -366,7 +364,7 @@ describe('GrokModelCatalogCoordinator', () => {
       persistedSettingsChanged: true,
     });
 
-    expect(getCurrentGrokCatalog(host.settings)?.models).toEqual([
+    expect(readGrokCatalog(host.settings)?.models).toEqual([
       expect.objectContaining({
         agentType: 'coding',
         contextWindow: 262_144,
@@ -406,7 +404,7 @@ describe('GrokModelCatalogCoordinator', () => {
       supportsReasoning: true,
     }]);
 
-    expect(getCurrentGrokCatalog(host.settings)?.models).toEqual([
+    expect(readGrokCatalog(host.settings)?.models).toEqual([
       expect.objectContaining({
         rawId: 'kimi-coding',
         reasoningMetadataResolved: true,
@@ -432,7 +430,7 @@ describe('GrokModelCatalogCoordinator', () => {
     await deferred.execute(1);
     await Promise.all([first, second]);
 
-    expect(getCurrentGrokCatalog(host.settings)?.models.map(model => model.rawId)).toEqual([
+    expect(readGrokCatalog(host.settings)?.models.map(model => model.rawId)).toEqual([
       'model-a',
       'model-b',
     ]);
@@ -465,7 +463,7 @@ describe('GrokModelCatalogCoordinator', () => {
       { changed: false, persistedSettingsChanged: false },
     ]);
 
-    expect(getCurrentGrokCatalog(host.settings)?.models).toEqual([
+    expect(readGrokCatalog(host.settings)?.models).toEqual([
       expect.objectContaining({
         contextWindow: 262_144,
         description: 'Live context metadata',
@@ -489,7 +487,7 @@ describe('GrokModelCatalogCoordinator', () => {
     await deferred.execute(0);
     await Promise.all([first, second]);
 
-    expect(getCurrentGrokCatalog(host.settings)).toMatchObject({
+    expect(readGrokCatalog(host.settings)).toMatchObject({
       defaultModelId: 'model-b',
       models: expect.arrayContaining([
         expect.objectContaining({ rawId: 'model-a' }),
@@ -526,7 +524,7 @@ describe('GrokModelCatalogCoordinator', () => {
     }));
     await refresh;
 
-    expect(getCurrentGrokCatalog(host.settings)).toMatchObject({
+    expect(readGrokCatalog(host.settings)).toMatchObject({
       defaultModelId: 'live-default',
       models: expect.arrayContaining([
         expect.objectContaining({ contextWindow: 262_144, rawId: 'shared' }),
@@ -566,7 +564,7 @@ describe('GrokModelCatalogCoordinator', () => {
     await deferred.execute(1);
     await Promise.all([liveMerge, refresh]);
 
-    expect(getCurrentGrokCatalog(host.settings)).toMatchObject({
+    expect(readGrokCatalog(host.settings)).toMatchObject({
       defaultModelId: 'live-default',
       fingerprint: 'fingerprint-next',
       models: [
@@ -582,7 +580,7 @@ describe('GrokModelCatalogCoordinator', () => {
         expect.objectContaining({ rawId: 'live-only' }),
       ],
     });
-    expect(getCurrentGrokCatalog(host.settings)?.models.map(model => model.rawId)).toEqual([
+    expect(readGrokCatalog(host.settings)?.models.map(model => model.rawId)).toEqual([
       'shared',
       'cli-only',
       'live-only',
@@ -609,7 +607,7 @@ describe('GrokModelCatalogCoordinator', () => {
     }, makeModel('live-only', 'Live only')], 'live-default');
     await coordinator.refresh();
 
-    expect(getCurrentGrokCatalog(host.settings)).toMatchObject({
+    expect(readGrokCatalog(host.settings)).toMatchObject({
       defaultModelId: 'cli-default',
       models: [
         expect.objectContaining({ rawId: 'cli-only' }),
@@ -620,7 +618,7 @@ describe('GrokModelCatalogCoordinator', () => {
         }),
       ],
     });
-    expect(getCurrentGrokCatalog(host.settings)?.models.map(model => model.rawId)).toEqual([
+    expect(readGrokCatalog(host.settings)?.models.map(model => model.rawId)).toEqual([
       'cli-only',
       'shared',
     ]);
@@ -634,7 +632,7 @@ describe('GrokModelCatalogCoordinator', () => {
       models: [makeModel('new-default')],
     }));
     const coordinator = new GrokModelCatalogCoordinator(runtimeHost(host), service);
-    const oldContextKey = computeGrokEnvironmentHash(host.settings);
+    const oldContextKey = grokEnvironmentHash(host.settings);
 
     await coordinator.mergeLiveModels(
       [makeModel('old-live-only')],
@@ -654,7 +652,7 @@ describe('GrokModelCatalogCoordinator', () => {
     )).resolves.toEqual({ changed: false });
     await coordinator.refresh();
 
-    expect(getCurrentGrokCatalog(host.settings)).toMatchObject({
+    expect(readGrokCatalog(host.settings)).toMatchObject({
       defaultModelId: 'new-default',
       models: [expect.objectContaining({ rawId: 'new-default' })],
     });
@@ -668,12 +666,12 @@ describe('GrokModelCatalogCoordinator', () => {
     const merge = coordinator.mergeLiveModels([makeModel('stale-live')], 'stale-default');
     await deferred.queued;
     reconcileNewEnvironment(host);
-    expect(getCurrentGrokCatalog(host.settings)?.models[0].rawId).toBe('kimi-coding');
+    expect(readGrokCatalog(host.settings)?.models[0].rawId).toBe('kimi-coding');
 
     await deferred.execute();
 
     await expect(merge).resolves.toEqual({ changed: false, persistedSettingsChanged: false });
-    expect(getCurrentGrokCatalog(host.settings)?.models[0].rawId).toBe('kimi-coding');
+    expect(readGrokCatalog(host.settings)?.models[0].rawId).toBe('kimi-coding');
   });
 
   it('does not persist a completed CLI refresh after a queued environment reconciliation clears it', async () => {
@@ -688,7 +686,7 @@ describe('GrokModelCatalogCoordinator', () => {
     const refresh = coordinator.refresh();
     await deferred.queued;
     reconcileNewEnvironment(host);
-    expect(getCurrentGrokCatalog(host.settings)?.models[0].rawId).toBe('kimi-coding');
+    expect(readGrokCatalog(host.settings)?.models[0].rawId).toBe('kimi-coding');
 
     await deferred.execute();
 
@@ -696,7 +694,7 @@ describe('GrokModelCatalogCoordinator', () => {
       changed: false,
       persistedSettingsChanged: false,
     });
-    expect(getCurrentGrokCatalog(host.settings)?.models[0].rawId).toBe('kimi-coding');
+    expect(readGrokCatalog(host.settings)?.models[0].rawId).toBe('kimi-coding');
   });
 
   it('retains live ACP metadata for surviving ids across a later CLI refresh', async () => {
@@ -725,7 +723,7 @@ describe('GrokModelCatalogCoordinator', () => {
     }]);
     await coordinator.refresh();
 
-    expect(getCurrentGrokCatalog(host.settings)).toMatchObject({
+    expect(readGrokCatalog(host.settings)).toMatchObject({
       defaultModelId: 'new-model',
       fingerprint: 'fingerprint-next',
       models: [
@@ -751,7 +749,7 @@ describe('GrokModelCatalogCoordinator', () => {
         }),
       ],
     });
-    expect(getCurrentGrokCatalog(host.settings)?.models.map(model => model.rawId)).not
+    expect(readGrokCatalog(host.settings)?.models.map(model => model.rawId)).not
       .toContain('removed-model');
   });
 
@@ -771,7 +769,7 @@ describe('GrokModelCatalogCoordinator', () => {
       diagnostics: 'Grok Build models command timed out',
       persistedSettingsChanged: false,
     });
-    expect(getCurrentGrokCatalog(host.settings)).toEqual(cached);
+    expect(readGrokCatalog(host.settings)).toEqual(cached);
     expect(getGrokProviderSettings(host.settings).catalogsByHost['device:other']).toEqual(other);
     expect(host.mutateSettingsConditionally).not.toHaveBeenCalled();
   });
@@ -824,7 +822,7 @@ it('does not reuse canceled discovery for a transition owner or publish its dela
   const replacement = catalog.refresh(owner);
   expect(service.discoverCatalog).toHaveBeenCalledTimes(2);
   await replacement;
-  expect(getCurrentGrokCatalog(host.settings)?.models.map(model => model.rawId)).toEqual(['fresh-model']);
+  expect(readGrokCatalog(host.settings)?.models.map(model => model.rawId)).toEqual(['fresh-model']);
   let drained = false;
   catalog.dispose();
   const cleanup = catalog.quiesceForEnvironmentChange().then(() => { drained = true; });
@@ -832,6 +830,6 @@ it('does not reuse canceled discovery for a transition owner or publish its dela
   expect(drained).toBe(false);
   finishOld({ ...fresh, models: [makeModel('obsolete-model')] });
   await Promise.all([old, cleanup]);
-  expect(getCurrentGrokCatalog(host.settings)?.models.map(model => model.rawId)).toEqual(['fresh-model']);
+  expect(readGrokCatalog(host.settings)?.models.map(model => model.rawId)).toEqual(['fresh-model']);
   expect(host.notifyProviderChatOptionsChanged).toHaveBeenCalledTimes(1);
 });

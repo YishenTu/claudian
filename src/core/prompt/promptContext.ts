@@ -27,22 +27,10 @@ export function formatLinkedContent(contentPath: string): string {
   return `<${LINKED_CONTENT_TAG} path="${escapePromptXMLAttribute(contentPath)}" />`;
 }
 
-export function appendLinkedContent(prompt: string, contentPath: string): string {
-  return `${prompt}\n\n${formatLinkedContent(contentPath)}`;
-}
-
-export function formatLinkedContentBody(contentPath: string, content: string): string {
+function formatLinkedContentBody(contentPath: string, content: string): string {
   return `<${LINKED_CONTENT_TAG} path="${escapePromptXMLAttribute(contentPath)}">\n${formatPromptXMLCdata(
     content,
   )}\n</${LINKED_CONTENT_TAG}>`;
-}
-
-export function appendLinkedContentBody(
-  prompt: string,
-  contentPath: string,
-  content: string,
-): string {
-  return `${prompt}\n\n${formatLinkedContentBody(contentPath, content)}`;
 }
 
 /**
@@ -130,8 +118,7 @@ export function appendContextFiles(prompt: string, files: string[]): string {
   return `${prompt}\n\n${formatContextFilesLine(files)}`;
 }
 
-
-export function appendSessionReferences(
+function appendSessionReferences(
   prompt: string,
   references?: readonly ProviderSessionReference[],
 ): string {
@@ -147,7 +134,7 @@ export function appendSessionReferences(
   return `${prompt}\n\n<context_sessions>\n${entries.join('\n')}\n</context_sessions>`;
 }
 
-export function appendSelectionContexts(prompt: string, context?: ProviderExecutionContext): string {
+function appendSelectionContexts(prompt: string, context?: ProviderExecutionContext): string {
   for (const snapshot of context?.selections ?? []) {
     switch (snapshot.kind) {
       case 'editor':
@@ -171,9 +158,9 @@ export function appendSelectionContexts(prompt: string, context?: ProviderExecut
 export function appendExecutionContext(prompt: string, context?: ProviderExecutionContext): string {
   const linked = context?.linkedContent;
   if (linked) {
-    prompt = linked.content === undefined
-      ? appendLinkedContent(prompt, linked.path)
-      : appendLinkedContentBody(prompt, linked.path, linked.content);
+    prompt = `${prompt}\n\n${linked.content === undefined
+      ? formatLinkedContent(linked.path)
+      : formatLinkedContentBody(linked.path, linked.content)}`;
   }
   return appendSessionReferences(appendSelectionContexts(prompt, context), context?.sessionReferences);
 }

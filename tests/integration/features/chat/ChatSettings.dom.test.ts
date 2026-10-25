@@ -7,6 +7,7 @@ import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRu
 import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { FakeSideSession } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { modelCatalogCases } from '@test/helpers/providerModelCatalogs';
+import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { App, Component, Notice } from 'obsidian';
@@ -28,7 +29,6 @@ import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 import { setLocale } from '@/i18n/i18n';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '@/providers/codex/settings';
-import { updateCurrentGrokCatalog } from '@/providers/grok/settings';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 const originalResizeObserver = globalThis.ResizeObserver;
@@ -59,7 +59,7 @@ function createSettings({ id, populate }: typeof modelCatalogCases[number], adve
   if (id === 'opencode') config.thinkingOptionsByModel = {
     'anthropic/selected': [{ value: 'default', label: 'Default' }, ...levels.map(value => ({ value, label: formatReasoningValueLabel(value) }))],
   };
-  if (id === 'grok') updateCurrentGrokCatalog(settings, {
+  if (id === 'grok') writeGrokCatalog(settings, {
     defaultModelId: 'selected', fingerprint: 'test', refreshedAt: 10,
     models: [{ rawId: 'selected', displayName: 'Selected label', reasoningMetadataResolved: true,
       defaultReasoningEffort: 'medium', supportsReasoning: true,

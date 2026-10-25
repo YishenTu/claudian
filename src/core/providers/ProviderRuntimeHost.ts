@@ -1,10 +1,6 @@
 import type { ProviderHostStorage } from '../bootstrap/storage';
-import type {
-  ProviderExecutionLifecycleRegistry,
-  ProviderExecutionTransitionScope,
-} from '../execution';
 import type { SessionToolEndpoint } from '../session-tools/SessionToolEndpoint';
-import type { ProviderCLIResolutionContext, ProviderId } from './types';
+import type { ProviderCLIResolutionContext } from './types';
 
 /** Execution preferences a runtime falls back to when a request leaves them unset. */
 export interface ProviderSelectionDefaults {
@@ -27,14 +23,20 @@ export interface ProviderSelectionInputs extends ProviderSelectionDefaults {
  * settings document.
  */
 export interface ProviderRuntimeHost {
-  readonly providerId: ProviderId;
   /** A copy of the stored configuration this provider owns. */
   readonly config: Readonly<Record<string, unknown>>;
   /** Current selections as stored, whichever provider they were made for. */
   readonly selection: ProviderSelectionInputs;
-  /** This provider's own selections, projected from its saved preferences. */
+  /**
+   * The selections the settings projection shows for this provider: each saved preference,
+   * else a current selection this provider can reuse, else its default, normalized and
+   * migrated by its model and permission policies.
+   */
   readonly providerSelection: ProviderSelectionDefaults;
-  /** The preferences saved for this provider, without projection or fallback. */
+  /**
+   * The preferences saved for this provider, verbatim: a field is undefined when none is
+   * saved, and no normalization, migration or fallback applies.
+   */
   readonly savedSelection: ProviderSelectionDefaults;
   /** Shared plus provider-scoped environment variable text. */
   readonly environmentText: string;
@@ -45,14 +47,8 @@ export interface ProviderRuntimeHost {
   readonly storage: ProviderHostStorage;
   /** Loopback endpoint through which shared provider processes reach main-chat session tools. */
   readonly sessionToolEndpoint: SessionToolEndpoint;
-  readonly executionLifecycleRegistry: ProviderExecutionLifecycleRegistry;
 
   resolveCliPath(context?: ProviderCLIResolutionContext): Promise<string | null>;
-  runExecutionTransition<T>(
-    providerIds: ProviderId[],
-    mutation: (scope: ProviderExecutionTransitionScope) => Promise<T>,
-    parentScope?: ProviderExecutionTransitionScope,
-  ): Promise<T>;
   notifyChatOptionsChanged(): void;
   /**
    * Updates this provider's stored configuration in one settings transaction. The

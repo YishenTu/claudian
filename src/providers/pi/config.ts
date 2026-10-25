@@ -18,7 +18,7 @@ import {
   type PiThinkingLevel
 } from './models';
 
-export interface PersistedPiProviderSettings {
+interface PersistedPiProviderSettings {
   cliPath: string;
   cliPathsByHost: HostnameCLIPaths;
   discoveredModels: PiDiscoveredModel[];
@@ -174,15 +174,6 @@ export function updatePiConfig(
     visibleModels: nextVisibleModels,
   };
 
-  if (updates.visibleModels !== undefined) {
-    const retargetedPersistableIds = getPersistablePiModelIds(selection, next.visibleModels);
-    next.modelAliases = pruneMapToPersistableIds(next.modelAliases, retargetedPersistableIds);
-    next.preferredThinkingByModel = pruneMapToPersistableIds(
-      next.preferredThinkingByModel,
-      retargetedPersistableIds,
-    );
-  }
-
   replaceProviderConfig(config, {
     cliPath: next.cliPath,
     cliPathsByHost: next.cliPathsByHost,
@@ -296,14 +287,10 @@ function getPersistablePiModelIds(
   visibleModels: string[],
 ): Set<string> {
   const persistableIds = new Set(visibleModels);
-  for (const id of selection.referencedModelIds) addPersistableSelection(persistableIds, id);
-  return persistableIds;
-}
-
-function addPersistableSelection(target: Set<string>, value: unknown): void {
-  if (typeof value === 'string' && decodePiModelId(value)) {
-    target.add(value);
+  for (const id of selection.referencedModelIds) {
+    if (decodePiModelId(id)) persistableIds.add(id);
   }
+  return persistableIds;
 }
 
 function pruneMapToPersistableIds<T extends string>(

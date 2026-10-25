@@ -2,6 +2,7 @@ import '@/providers';
 
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { modelCatalogCases as cases } from '@test/helpers/providerModelCatalogs';
+import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 
 import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
@@ -10,7 +11,7 @@ import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 import { getDeepSeekProviderSettings } from '@/providers/deepseek/settings';
-import { getGrokProviderSettings, updateCurrentGrokCatalog } from '@/providers/grok/settings';
+import { getGrokProviderSettings } from '@/providers/grok/settings';
 import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 import { getPiProviderSettings } from '@/providers/pi/settings';
 
@@ -71,7 +72,7 @@ it.each(cases)('$id does not restore removed models from an older selected snaps
   const config = restored.providerConfigs[id]!;
   const selected = config.visibleModels;
   if (id === 'grok') {
-    updateCurrentGrokCatalog(restored, { defaultModelId: null, fingerprint: 'new', refreshedAt: 20, models: [] });
+    writeGrokCatalog(restored, { defaultModelId: null, fingerprint: 'new', refreshedAt: 20, models: [] });
   } else {
     config.discoveredModels = [];
   }
@@ -241,7 +242,6 @@ it('keeps xHigh for an explicitly selected Grok model while its capabilities are
   expect(getGrokProviderSettings(restored).preferredReasoningByModel)
     .toEqual({ 'temporarily-unavailable': 'xhigh' });
 });
-
 
 it('cleans context overrides by provider identity while preserving resolved aliases and snippet templates', async () => {
   const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);

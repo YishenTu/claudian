@@ -9,7 +9,6 @@ import type { Conversation } from '@/core/types';
 import { opencodeSettingsReconciler } from '@/providers/opencode/env/OpencodeSettingsReconciler';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
 import { buildOpencodePrompt } from '@/providers/opencode/runtime/buildOpencodePrompt';
-import { resolveOpencodeHistoryLaunch } from '@/providers/opencode/runtime/OpencodeCLIResolver';
 
 interface SeedMessage {
   role: 'user' | 'assistant';
@@ -18,7 +17,7 @@ interface SeedMessage {
 }
 
 describe('OpenCode history after runtime invalidation', () => {
-  const history = new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch });
+  const history = new OpencodeConversationHistoryService();
   const startedAt = testDate().getTime();
   let root: string;
   let databasePath: string;
@@ -53,9 +52,9 @@ describe('OpenCode history after runtime invalidation', () => {
     expect(changeRuntime(conversation)).toEqual([conversation]);
 
     expect(history.resolveSessionIdForConversation(conversation)).toBeNull();
-    expect(await history.recoverConversationModelSelection!(conversation, root, { environment }))
+    expect(await history.recoverConversationModelSelection!(conversation, root, { config: {}, environment, environmentText: '' }))
       .toBe('opencode:google/gemini-3.5-flash');
-    const hydrated = await history.hydrateConversationHistory(conversation, root, { environment });
+    const hydrated = await history.hydrateConversationHistory(conversation, root, { config: {}, environment, environmentText: '' });
     expect(hydrated.messages?.map(message => [message.role, message.content])).toEqual([
       ['user', 'Original prompt'],
       ['assistant', 'Original reply'],
@@ -67,7 +66,7 @@ describe('OpenCode history after runtime invalidation', () => {
   it('renders earlier sessions before the replacement session without the replayed history', async () => {
     const conversation = createConversation();
     changeRuntime(conversation);
-    Object.assign(conversation, await history.hydrateConversationHistory(conversation, root, { environment }));
+    Object.assign(conversation, await history.hydrateConversationHistory(conversation, root, { config: {}, environment, environmentText: '' }));
 
     // The next send starts a fresh native session seeded with the hydrated history.
     const [block] = buildOpencodePrompt({ text: 'Follow up' }, conversation.messages).blocks;
@@ -85,7 +84,7 @@ describe('OpenCode history after runtime invalidation', () => {
     conversation.messages = [];
 
     expect(history.resolveSessionIdForConversation(conversation)).toBe('session-next');
-    const hydrated = await history.hydrateConversationHistory(conversation, root, { environment });
+    const hydrated = await history.hydrateConversationHistory(conversation, root, { config: {}, environment, environmentText: '' });
     expect(hydrated.messages?.map(message => [message.role, message.content])).toEqual([
       ['user', 'Original prompt'],
       ['assistant', 'Original reply'],
@@ -107,7 +106,7 @@ describe('OpenCode history after runtime invalidation', () => {
         { sessionId: 'session-next', databasePath, nativeVersion: 1 },
       ],
     });
-    const rehydrated = await history.hydrateConversationHistory(conversation, root, { environment });
+    const rehydrated = await history.hydrateConversationHistory(conversation, root, { config: {}, environment, environmentText: '' });
     expect(rehydrated.messages?.map(message => message.content)).toEqual([
       'Original prompt', 'Original reply', 'Follow up', 'Next reply',
     ]);
@@ -135,8 +134,8 @@ describe('OpenCode history after runtime invalidation', () => {
     changeRuntime(conversation, `XDG_DATA_HOME=${environment.XDG_DATA_HOME}`);
 
     // The old database is no longer trusted, so its history stays unreadable.
-    expect(await history.recoverConversationModelSelection!(conversation, root, { environment })).toBeNull();
-    const hydrated = await history.hydrateConversationHistory(conversation, root, { environment });
+    expect(await history.recoverConversationModelSelection!(conversation, root, { config: {}, environment, environmentText: '' })).toBeNull();
+    const hydrated = await history.hydrateConversationHistory(conversation, root, { config: {}, environment, environmentText: '' });
     expect(hydrated.messages ?? []).toEqual([]);
   });
 
@@ -146,9 +145,9 @@ describe('OpenCode history after runtime invalidation', () => {
     // Only launch configuration changes; the native store stays where it was.
     changeRuntime(conversation);
 
-    expect(await history.recoverConversationModelSelection!(conversation, root, { environment }))
+    expect(await history.recoverConversationModelSelection!(conversation, root, { config: {}, environment, environmentText: '' }))
       .toBe('opencode:google/gemini-3.5-flash');
-    const hydrated = await history.hydrateConversationHistory(conversation, root, { environment });
+    const hydrated = await history.hydrateConversationHistory(conversation, root, { config: {}, environment, environmentText: '' });
     expect(hydrated.messages?.map(message => message.content)).toEqual(['Original prompt', 'Original reply']);
   });
 
@@ -164,13 +163,13 @@ describe('OpenCode history after runtime invalidation', () => {
 
     changeRuntime(conversation, `XDG_DATA_HOME=${environment.XDG_DATA_HOME}`);
 
-    const hydrated = await history.hydrateConversationHistory(conversation, root, { environment });
+    const hydrated = await history.hydrateConversationHistory(conversation, root, { config: {}, environment, environmentText: '' });
     expect(hydrated.messages ?? []).toEqual([]);
   });
 
   it('records the trusted database a live binding was read from before retiring it', async () => {
     const conversation: Conversation = { ...createConversation(), providerState: { nativeVersion: 1 } };
-    Object.assign(conversation, await history.hydrateConversationHistory(conversation, root, { environment }));
+    Object.assign(conversation, await history.hydrateConversationHistory(conversation, root, { config: {}, environment, environmentText: '' }));
     expect(conversation.providerState?.databasePath).toBe(databasePath);
 
     changeRuntime(conversation);

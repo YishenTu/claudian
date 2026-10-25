@@ -3,13 +3,6 @@ import { getProviderConfig, setProviderConfig } from '@/core/providers/providerC
 
 import { decodeDeepSeekConfig, type DeepSeekProviderSettings, updateDeepSeekConfig } from './config';
 
-export {
-  type DeepSeekProviderSettings,
-  DEFAULT_DEEPSEEK_PROVIDER_SETTINGS,
-  findDeepSeekModel,
-  isDeepSeekModelSelectable,
-} from './config';
-
 /** Reads DeepSeek's configuration from the settings document. */
 export function getDeepSeekProviderSettings(settings: Record<string, unknown>): DeepSeekProviderSettings {
   return decodeDeepSeekConfig(getProviderConfig(settings, 'deepseek'));

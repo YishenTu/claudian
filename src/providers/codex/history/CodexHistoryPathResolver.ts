@@ -1,7 +1,7 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import type { ProviderHistoryPathContext } from '../../../core/providers/types';
+import type { ProviderHistoryEnvironment } from '../../../core/providers/types';
 import { isPathWithinRoot } from '../../../core/storage/pathContainment';
 import type { CodexProviderSettings } from '../config';
 import { inferWslDistroFromWindowsPath } from '../runtime/CodexExecutionTargetResolver';
@@ -12,8 +12,8 @@ export const CODEX_HISTORY_LOOKUP_TIMEOUT_MS = 10_000;
 
 export type CodexHistoryInstallation = Pick<CodexProviderSettings, 'installationMethod' | 'wslDistroOverride'>;
 
-export interface CodexHistoryPathContext extends Omit<ProviderHistoryPathContext, 'settings'> {
-  /** This host's Codex installation; absent when the caller supplied no settings. */
+export interface CodexHistoryPathContext extends ProviderHistoryEnvironment {
+  /** This host's Codex installation, decoded from the provider config; absent leaves WSL roots unconstrained. */
   installation?: CodexHistoryInstallation;
 }
 

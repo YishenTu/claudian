@@ -2,18 +2,18 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import type { ProviderHistoryPathContext } from '../../../core/providers/types';
+import type { ProviderHistoryEnvironment } from '../../../core/providers/types';
 import { isPathWithinRoot } from '../../../core/storage/pathContainment';
 import { findPiSessionFile, findPiSessionFileInRoot } from './PiHistoryStore';
 
-function getConfiguredSessionDir(context: ProviderHistoryPathContext): string | null {
+function getConfiguredSessionDir(context: ProviderHistoryEnvironment): string | null {
   const configured = context.environment.PI_CODING_AGENT_SESSION_DIR?.trim();
   return configured && path.isAbsolute(configured) ? configured : null;
 }
 
 function getTrustedRoots(
   vaultPath: string | null,
-  context: ProviderHistoryPathContext,
+  context: ProviderHistoryEnvironment,
 ): string[] {
   const roots: string[] = [];
   const configuredSessionDir = getConfiguredSessionDir(context);
@@ -60,7 +60,7 @@ export function resolvePiSessionFileHint(
   persistedPath: string | null | undefined,
   logicalSessionId: string | null | undefined,
   vaultPath: string | null,
-  context?: ProviderHistoryPathContext,
+  context?: ProviderHistoryEnvironment,
 ): string | null {
   if (!context) {
     const target = persistedPath ?? logicalSessionId;

@@ -9,7 +9,6 @@ import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceReg
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
-import { resolveOpencodeHistoryLaunch } from '@/providers/opencode/runtime/OpencodeCLIResolver';
 
 // OpenCode 2.0.18 uses an exclusive `before` boundary and ignores `messageID`.
 // Copied messages receive new IDs.
@@ -66,7 +65,7 @@ describe('OpenCode v2 checkpoint forks', () => {
     env = await createForkTestEnvironment();
     server = new OpencodeServerService();
     ProviderWorkspaceRegistry.setServices('opencode', { serverService: server } as any);
-    history = new OpencodeConversationHistoryService({ getServerService: async () => server, resolveLaunch: resolveOpencodeHistoryLaunch });
+    history = new OpencodeConversationHistoryService({ getServerService: async () => server });
     backend = new OpencodeExecutionBackend(env.host.getRuntimeHost('opencode'), { serverService: server });
     databasePath = path.join(env.root, 'native.db');
     const cliPath = path.join(env.root, 'opencode.cjs');

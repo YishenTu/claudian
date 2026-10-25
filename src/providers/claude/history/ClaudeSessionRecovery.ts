@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import type { ProviderHistoryPathContext } from '../../../core/providers/types';
+import type { ProviderHistoryEnvironment } from '../../../core/providers/types';
 import {
   encodeVaultPathForSDK,
   getSDKProjectsPath,
@@ -80,7 +80,7 @@ function selectUniqueCandidate(
 export async function recoverSDKSessionIdByTime(
   vaultPath: string,
   fingerprint: ClaudeSessionTimeFingerprint,
-  pathContext?: ProviderHistoryPathContext,
+  pathContext?: ProviderHistoryEnvironment,
 ): Promise<string | null> {
   const projectPath = path.join(
     getSDKProjectsPath(pathContext),

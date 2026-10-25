@@ -6,6 +6,7 @@ import {
 } from './app/CodexWorkspaceServices';
 import { CODEX_PROVIDER_CAPABILITIES } from './capabilities';
 import { codexModelPolicy } from './CodexModelPolicy';
+import { getVisibleCodexModelIds } from './config';
 import { codexSettingsReconciler } from './env/CodexSettingsReconciler';
 import { CodexExecutionBackend } from './execution/CodexExecutionBackend';
 import { CodexConversationHistoryService } from './history/CodexConversationHistoryService';
@@ -13,7 +14,7 @@ import { findCodexModel } from './models';
 import { formatCodexQuestionReply } from './normalization/codexQuestionNormalization';
 import { codexSubagentLifecycleAdapter } from './normalization/codexSubagentNormalization';
 import {
-  getCodexProviderSettings, getVisibleCodexModelIds,
+  getCodexProviderSettings,
   normalizeCodexStoredConfig, projectCodexModelSettings, updateCodexProviderSettings
 } from './settings';
 import { codexChatUIConfig } from './ui/CodexChatUIConfig';

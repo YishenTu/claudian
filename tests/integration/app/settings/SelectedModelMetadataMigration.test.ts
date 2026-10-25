@@ -2,6 +2,7 @@ import '@/providers';
 
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { modelCatalogCases as cases } from '@test/helpers/providerModelCatalogs';
+import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 
 import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
 import { migrateSelectedModelMetadata } from '@/app/settings/SelectedModelMetadataMigration';
@@ -23,7 +24,7 @@ import { createClaudeModels, discoverClaudeModels } from '@/providers/claude/run
 import { getClaudeModelSource, updateClaudeProviderSettings } from '@/providers/claude/settings';
 import { updateCodexProviderSettings } from '@/providers/codex/settings';
 import { updateDeepSeekProviderSettings } from '@/providers/deepseek/settings';
-import { updateCurrentGrokCatalog, updateGrokProviderSettings } from '@/providers/grok/settings';
+import { updateGrokProviderSettings } from '@/providers/grok/settings';
 import { updateOpencodeProviderSettings } from '@/providers/opencode/settings';
 import { updatePiProviderSettings } from '@/providers/pi/settings';
 
@@ -176,10 +177,10 @@ it.each(cases.flatMap(entry => [false, true].map(deselectDuringQuery => ({ ...en
     [selectedIds[0]]: [{ value: 'high', label: 'High' }],
   };
   if (id === 'grok') {
-    updateCurrentGrokCatalog(complete, { defaultModelId: selectedIds[0], fingerprint: 'test', refreshedAt: 1,
+    writeGrokCatalog(complete, { defaultModelId: selectedIds[0], fingerprint: 'test', refreshedAt: 1,
       models: [{ rawId: selectedIds[0], displayName: 'Selected', reasoningMetadataResolved: true,
         supportsReasoning: true, reasoningEfforts: [{ value: 'high', label: 'High' }] }] });
-    updateCurrentGrokCatalog(host.settings, { defaultModelId: selectedIds[0], fingerprint: 'old', refreshedAt: 0, models: [] });
+    writeGrokCatalog(host.settings, { defaultModelId: selectedIds[0], fingerprint: 'old', refreshedAt: 0, models: [] });
   } else config.discoveredModels = [];
   const discover = jest.fn(async () => {
     await host.mutateSettings(settings => {
@@ -268,7 +269,7 @@ it.each(cases)('$id detects a selected model missing from the catalog despite re
   const config = host.settings.providerConfigs[id]!;
   const selected = (config.visibleModels as string[])[0];
   if (id === 'opencode') config.thinkingOptionsByModel = { [selected]: [] };
-  if (id === 'grok') updateCurrentGrokCatalog(host.settings, { defaultModelId: selected, fingerprint: 'native', refreshedAt: 1, models: [] });
+  if (id === 'grok') writeGrokCatalog(host.settings, { defaultModelId: selected, fingerprint: 'native', refreshedAt: 1, models: [] });
   else config.discoveredModels = [];
   expect(ProviderRegistry.getSettingsStorageAdapter(id).needsReasoningMetadata!(host.settings)).toBe(true);
 });
@@ -285,7 +286,7 @@ it.each(['claude', 'grok', 'opencode', 'pi'] as const)('%s retains confirmed non
     thinkingLevels: ['off'], reasoning: false,
   });
   if (id === 'opencode') config.thinkingOptionsByModel = { [selected]: [] };
-  if (id === 'grok') updateCurrentGrokCatalog(host.settings, {
+  if (id === 'grok') writeGrokCatalog(host.settings, {
     defaultModelId: selected, fingerprint: 'native', refreshedAt: 1,
     models: [{ rawId: selected, displayName: selected, reasoningEfforts: [], supportsReasoning: false, reasoningMetadataResolved: true }],
   });

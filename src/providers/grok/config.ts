@@ -96,13 +96,13 @@ export function decodeGrokConfig(
   const currentCatalog = catalogsByHost[currentHostKey] ?? null;
   const selectedModelIds = collectSelectedGrokRawModelIds(selection);
   const catalogModels = currentCatalog?.models ?? [];
+  const visibleModels = normalizeGrokVisibleModels(config.visibleModels);
   const allowedModelIds = new Set(catalogModels.map(model => model.rawId));
-  for (const id of normalizeGrokVisibleModels(config.visibleModels) ?? []) allowedModelIds.add(id);
+  for (const id of visibleModels ?? []) allowedModelIds.add(id);
   for (const modelId of selectedModelIds) {
     allowedModelIds.add(modelId);
   }
 
-  const visibleModels = normalizeGrokVisibleModels(config.visibleModels);
   const enabledModelIds = new Set(
     visibleModels ?? catalogModels.map(model => model.rawId),
   );
@@ -224,7 +224,7 @@ export function updateCurrentGrokCatalogConfig(
   return normalized;
 }
 
-export function normalizeGrokVisibleModels(value: unknown): string[] | null {
+function normalizeGrokVisibleModels(value: unknown): string[] | null {
   if (value === null || value === undefined) {
     return null;
   }
@@ -248,7 +248,7 @@ export function normalizeGrokVisibleModels(value: unknown): string[] | null {
   return normalized;
 }
 
-export function normalizeGrokModelAliases(
+function normalizeGrokModelAliases(
   value: unknown,
   allowedModelIds: ReadonlySet<string> = new Set(),
   restrictToAllowed = allowedModelIds.size > 0,
@@ -273,7 +273,7 @@ export function normalizeGrokModelAliases(
   return normalized;
 }
 
-export function normalizeGrokPreferredReasoningByModel(
+function normalizeGrokPreferredReasoningByModel(
   value: unknown,
   allowedModelIds: ReadonlySet<string> = new Set(),
   catalogModels: GrokDiscoveredModel[] = [],
@@ -328,18 +328,11 @@ function collectSelectedGrokRawModelIds(
   selection: Pick<ProviderSelectionInputs, 'referencedModelIds'>,
 ): Set<string> {
   const selected = new Set<string>();
-  for (const id of selection.referencedModelIds) addSelectedGrokRawModelId(selected, id);
+  for (const id of selection.referencedModelIds) {
+    const rawModelId = decodeGrokModelId(id.trim());
+    if (rawModelId) selected.add(rawModelId);
+  }
   return selected;
-}
-
-function addSelectedGrokRawModelId(target: Set<string>, value: unknown): void {
-  if (typeof value !== 'string') {
-    return;
-  }
-  const rawModelId = decodeGrokModelId(value.trim());
-  if (rawModelId) {
-    target.add(rawModelId);
-  }
 }
 
 function normalizeRawModelId(value: unknown): string | null {

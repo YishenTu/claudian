@@ -6,12 +6,10 @@ import { DEFAULT_REASONING_VALUE } from '../../core/providers/reasoning';
 import {
   type CodexProviderConfig,
   type CodexProviderSettings,
-  type CodexReasoningSummary,
   decodeCodexConfig,
   decodeCodexStoredConfig,
   DEFAULT_CODEX_PROVIDER_CONFIG,
   getVisibleCodexModelIds,
-  resolveCodexReasoningSummary,
   shouldDisableCodexReasoningSummary,
   updateCodexConfig,
 } from './config';
@@ -19,23 +17,6 @@ import {
   findCodexModel,
   getCodexDefaultReasoningEffort,
 } from './models';
-
-export {
-  type CodexInstallationMethod,
-  type CodexProviderConfig,
-  type CodexProviderSettings,
-  type CodexReasoningSummary,
-  type CodexResponseStyle,
-  type CodexResponseVerbosity,
-  type CodexSafeMode,
-  DEFAULT_CODEX_PROVIDER_CONFIG,
-  DEFAULT_CODEX_PROVIDER_SETTINGS,
-  getVisibleCodexModelIds,
-  type HostnameInstallationMethods,
-  normalizeCodexModelAliases,
-  normalizeCodexVisibleModels,
-  shouldDisableCodexReasoningSummary,
-} from './config';
 
 export interface NormalizeCodexStoredConfigContext {
   platform?: NodeJS.Platform;
@@ -45,13 +26,6 @@ export interface NormalizeCodexStoredConfigContext {
 export interface NormalizeCodexStoredConfigResult {
   config: CodexProviderConfig & Record<string, unknown>;
   changed: boolean;
-}
-
-export function getEffectiveCodexReasoningSummary(
-  settings: Record<string, unknown>,
-  model: string | undefined,
-): CodexReasoningSummary {
-  return resolveCodexReasoningSummary(getCodexProviderSettings(settings), model);
 }
 
 export function applyCodexModelDefaults(
@@ -143,10 +117,6 @@ export function updateCodexProviderSettings(
   return next;
 }
 
-/**
- * Codex turn fallbacks: each saved Codex preference, else the current top-level
- * selection. Requests that set a field explicitly never read these.
- */
 export function projectCodexModelSettings(settings: Record<string, unknown>): Record<string, unknown> {
   const current = getCodexProviderSettings(settings);
   const visibleModels = getVisibleCodexModelIds(current.visibleModels, current.discoveredModels);

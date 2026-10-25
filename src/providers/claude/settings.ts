@@ -3,13 +3,6 @@ import { getRuntimeEnvironmentText } from '../../core/providers/providerEnvironm
 import { type ClaudeProviderSettings, decodeClaudeConfig, updateClaudeConfig } from './config';
 import type { ClaudeModelSource } from './modelOptions';
 
-export {
-  type ClaudeProviderSettings,
-  decodeOutputStyles,
-  DEFAULT_CLAUDE_PROVIDER_SETTINGS,
-  resolveClaudeSettingSources,
-} from './config';
-
 /** Reads Claude's configuration from the settings document. */
 export function getClaudeProviderSettings(
   settings: Record<string, unknown>,

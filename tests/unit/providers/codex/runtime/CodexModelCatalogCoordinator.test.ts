@@ -3,6 +3,7 @@ import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { createCodexModelCatalogCommit } from '@/providers/codex/app/CodexWorkspaceServices';
+import { DEFAULT_CODEX_PROVIDER_SETTINGS } from '@/providers/codex/config';
 import type { CodexDiscoveredModel } from '@/providers/codex/models';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
 import { buildCodexCatalogFingerprint } from '@/providers/codex/runtime/CodexModelCatalogFingerprint';
@@ -10,10 +11,7 @@ import type {
   CodexModelDiscoveryResult,
   CodexModelDiscoveryServiceLike,
 } from '@/providers/codex/runtime/CodexModelDiscoveryService';
-import {
-  DEFAULT_CODEX_PROVIDER_SETTINGS,
-  getCodexProviderSettings,
-} from '@/providers/codex/settings';
+import { getCodexProviderSettings } from '@/providers/codex/settings';
 
 jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   ProviderSettingsCoordinator: {

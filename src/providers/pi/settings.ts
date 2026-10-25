@@ -2,13 +2,6 @@ import { selectModelMetadata } from '../../core/providers/models/selectedModelMe
 import { getProviderConfig, getProviderSelectionInputs, setProviderConfig } from '../../core/providers/providerConfig';
 import { decodePiConfig, type PiProviderSettings, updatePiConfig } from './config';
 
-export {
-  DEFAULT_PI_PROVIDER_SETTINGS,
-  normalizePiVisibleModels,
-  type PersistedPiProviderSettings,
-  type PiProviderSettings,
-} from './config';
-
 /** Reads Pi's configuration from the settings document. */
 export function getPiProviderSettings(settings: Record<string, unknown>): PiProviderSettings {
   return decodePiConfig(getProviderConfig(settings, 'pi'), getProviderSelectionInputs(settings, 'pi'));

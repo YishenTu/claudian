@@ -19,7 +19,7 @@ afterEach(() => fixture.dispose());
 it('cancels one activation wait without publishing or stopping another reader', async () => {
   fixture.environment.ACTIVATION_DELAY_MS = '500';
   const plugin = fixture.createPlugin();
-  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'));
+  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
   const controller = new AbortController();
   try {
     const cancelled = service.loadCatalog(controller.signal);
@@ -54,7 +54,8 @@ it('cancels a probe waiting for native catalog initialization and closes its ser
 
 it('cancels one reader during shared startup without stopping another reader', async () => {
   fixture.environment.READY_DELAY_MS = '1000';
-  const service = new OpencodeMetadataService(runtimeHostFor(fixture.createPlugin(), 'opencode'));
+  const plugin = fixture.createPlugin();
+  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
   const controller = new AbortController();
   try {
     const cancelled = service.loadCatalog(controller.signal);
@@ -75,7 +76,8 @@ it('cancels one reader during shared startup without stopping another reader', a
 
 it('invalidates a retained server during startup and permits a fresh discovery', async () => {
   fixture.environment.READY_DELAY_MS = '1000';
-  const service = new OpencodeMetadataService(runtimeHostFor(fixture.createPlugin(), 'opencode'));
+  const plugin = fixture.createPlugin();
+  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
   try {
     const pending = service.loadCatalog();
     await waitUntil(() => existsSync(fixture.environment.ENDPOINT_FILE!));
@@ -90,7 +92,7 @@ it('invalidates a retained server during startup and permits a fresh discovery',
 
 it('cancels one polling reader without stopping another or publishing its stale result', async () => {
   const plugin = fixture.createPlugin();
-  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'));
+  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
   const controller = new AbortController();
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
@@ -116,7 +118,7 @@ it('does not start a server when disposed while resolving the CLI', async () => 
   const plugin = fixture.createPlugin();
   let resolveCli!: (value: string) => void;
   plugin.getResolvedProviderCliPath = () => new Promise<string>(resolve => { resolveCli = resolve; });
-  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'));
+  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
   const pending = service.loadCatalog();
   const disposal = service.dispose();
   resolveCli(fixture.cliPath);

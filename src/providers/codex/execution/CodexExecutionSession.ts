@@ -64,7 +64,6 @@ import {
   resolveCodexTurnPolicy,
   resolveCodexTurnReasoningEffort,
   resolveCodexTurnSandboxPolicy,
-  resolveCodexTurnSelection,
   resolveCodexTurnSettings,
 } from './codexTurnConfig';
 
@@ -347,7 +346,7 @@ export class CodexExecutionSession
     const generation = this.lifecycleGeneration;
     try {
       assertCodexModelAvailable(this.host, request.configuration.model);
-      let settings = resolveCodexTurnSettings(this.host.config, resolveCodexTurnSelection(this.host));
+      let settings = resolveCodexTurnSettings(this.host);
       let model = resolveCodexTurnModel(request, settings);
       if (!model) {
         this.#finishError(
@@ -391,7 +390,7 @@ export class CodexExecutionSession
       await this.#ensureConnection(generation, active.cancellation.signal);
       if (!this.#isRunCurrent(active, generation)) return;
       // Connection acquisition can wait out a settings transition.
-      settings = resolveCodexTurnSettings(this.host.config, resolveCodexTurnSelection(this.host));
+      settings = resolveCodexTurnSettings(this.host);
       model = resolveCodexTurnModel(request, settings)!;
       effort = resolveCodexTurnReasoningEffort(request, settings, model);
 

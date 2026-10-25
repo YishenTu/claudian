@@ -1,6 +1,5 @@
 import type { Conversation } from '@/core/types';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
-import { resolveOpencodeHistoryLaunch } from '@/providers/opencode/runtime/OpencodeCLIResolver';
 import { getOpencodeState } from '@/providers/opencode/types';
 
 describe('OpenCode provider state', () => {
@@ -17,12 +16,12 @@ describe('OpenCode provider state', () => {
       futureResumeCursor: { token: 'cursor-1' },
       ignoredFutureValue: undefined,
     });
-    const service = new OpencodeConversationHistoryService({ resolveLaunch: resolveOpencodeHistoryLaunch });
+    const service = new OpencodeConversationHistoryService();
 
     Object.assign(conversation, await service.hydrateConversationHistory(
       conversation,
       null,
-      { environment: { HOME: '/missing-home', XDG_DATA_HOME: '/missing-data' } },
+      { config: {}, environment: { HOME: '/missing-home', XDG_DATA_HOME: '/missing-data' }, environmentText: '' },
     ));
     expect(service.buildPersistedProviderState(conversation)).toEqual({
       futureResumeCursor: { token: 'cursor-1' },
