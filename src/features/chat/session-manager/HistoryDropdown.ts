@@ -27,9 +27,11 @@ export class HistoryDropdown {
   private menuEl: HTMLElement | null = null;
   private renderAbortController: AbortController | null = null;
   private dirty = true;
-  private readonly collapse = new SessionGroupCollapse();
+  private readonly collapse: SessionGroupCollapse;
 
-  constructor(private readonly deps: HistoryDropdownDeps) {}
+  constructor(private readonly deps: HistoryDropdownDeps) {
+    this.collapse = new SessionGroupCollapse({ host: deps.plugin });
+  }
 
   /** Builds the history button and its drop-up menu inside `parentEl`. */
   mount(parentEl: HTMLElement): void {

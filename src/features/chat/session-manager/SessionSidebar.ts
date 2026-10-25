@@ -58,10 +58,12 @@ export class SessionSidebar {
   private searchDismissCleanup: (() => void) | null = null;
   /** Search starts every group and section expanded, matching projects included. */
   private searchCollapse = new SessionGroupCollapse({ projectsStartExpanded: true });
-  private readonly collapse = new SessionGroupCollapse();
+  private readonly collapse: SessionGroupCollapse;
   private groupKeys = new Set<string>();
 
-  constructor(private readonly deps: SessionSidebarDeps) {}
+  constructor(private readonly deps: SessionSidebarDeps) {
+    this.collapse = new SessionGroupCollapse({ host: deps.plugin });
+  }
 
   /** True while search is composing IME input; Escape belongs to the composition. */
   get isComposing(): boolean {

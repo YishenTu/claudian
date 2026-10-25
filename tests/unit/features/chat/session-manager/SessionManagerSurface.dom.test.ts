@@ -2,17 +2,22 @@
 
 import '@/providers';
 
+import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { testDate } from '@test/helpers/testClock';
-import { fireEvent, within } from '@testing-library/dom';
+import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { Menu, setIcon } from 'obsidian';
 
-import type { ConversationMeta } from '@/core/types';
+import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
+import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
+import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
+import type { ClaudianSettings, ConversationMeta } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { createProject } from '@/features/chat/projects/projectActions';
 import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import { SessionManagerSurface } from '@/features/chat/session-manager/SessionManagerSurface';
+import { ChatViewPublisher } from '@/features/chat/workspace/ChatViewPublisher';
 import { t } from '@/i18n/i18n';
 
 jest.mock('@/features/chat/projects/projectActions', () => ({
@@ -171,14 +176,25 @@ describe('projects section', () => {
   const folderIcon = (toggle: HTMLElement) => jest.mocked(setIcon).mock.calls
     .filter(([element]) => toggle.contains(element)).at(-1)?.[1];
 
-  function createProjectSurface({ wide = true } = {}) {
+  function createProjectSurface({ wide = true, persisted }: {
+    wide?: boolean;
+    persisted?: { settings: ClaudianSettings; storage: ClaudianSettingsStorage };
+  } = {}) {
     const conversations = [
       conversation('member', { title: 'Member session', projectId: 'launch', lastActivityAt: testDate({ hours: -1 }).getTime() }),
       conversation('loose', { title: 'Loose session' }),
       conversation('pinned', { title: 'Pinned session', isPinned: true }),
     ];
-    const settings: Record<string, unknown> = { enableAutoTitleGeneration: false, sessionManagerOrganization: 'list' };
+    const settings = persisted?.settings ?? { ...structuredClone(DEFAULT_CLAUDIAN_SETTINGS), enableAutoTitleGeneration: false };
     const views: { surface?: SessionManagerSurface } = {};
+    const publisher = new ChatViewPublisher({
+      views: { getAllViews: () => [{ notifyConversationListChanged: () => views.surface?.invalidate() }] },
+    } as unknown as ConstructorParameters<typeof ChatViewPublisher>[0]);
+    const coordinator = persisted && new SettingsCoordinator(
+      settings,
+      value => persisted.storage.save(value),
+      (value, previous) => publisher.publishSettings(value, previous),
+    );
     const plugin = {
       app: { vault: { getAbstractFileByPath: () => null } },
       settings,
@@ -187,7 +203,8 @@ describe('projects section', () => {
         projectRecord({ id: 'launch', name: 'Launch', createdAt: testDate({ days: -10 }).getTime() }),
         projectRecord({ id: 'empty', name: 'Empty', createdAt: testDate({ days: -2 }).getTime() }),
       ]),
-      mutateSettings: jest.fn(async (mutation: (value: Record<string, unknown>) => void) => {
+      mutateSettings: jest.fn(async (mutation: (value: ClaudianSettings) => void) => {
+        if (coordinator) return coordinator.mutate(mutation);
         mutation(settings);
         views.surface?.invalidate();
       }),
@@ -220,6 +237,55 @@ describe('projects section', () => {
   afterEach(() => {
     menus().length = 0;
     jest.mocked(createProject).mockReset();
+  });
+
+  it.each([true, false])('restores project expansion after reloading persisted settings (wide: %s)', async wide => {
+    const files = new Map<string, string>();
+    const adapter = {
+      exists: async (path: string) => files.has(path),
+      read: async (path: string) => files.get(path)!,
+      write: async (path: string, content: string) => { files.set(path, content); },
+    } as unknown as VaultFileAdapter;
+    const reload = async () => {
+      const storage = new ClaudianSettingsStorage(adapter, DEFAULT_CLAUDIAN_SETTINGS);
+      const ui = createProjectSurface({ wide, persisted: { settings: await storage.load(), storage } });
+      if (!wide) {
+        ui.surface.mountHistoryControl(ui.host);
+        fireEvent.click(ui.view.getByRole('button', { name: 'Chat history' }));
+      }
+      return ui;
+    };
+    let ui = await reload();
+    const toggle = () => ui.view.getByRole('button', { name: 'Launch' });
+    const expectExpanded = async (expanded: boolean) => {
+      await waitFor(() => expect(toggle().getAttribute('aria-expanded')).toBe(String(expanded)));
+      expect(ui.view.queryByText('Member session') !== null).toBe(expanded);
+    };
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(toggle());
+    await expectExpanded(true);
+    if (wide) {
+      fireEvent.click(ui.view.getByRole('button', { name: 'Search' }));
+      fireEvent.input(ui.view.getByRole('searchbox'), { target: { value: 'member' } });
+      fireEvent.click(toggle());
+      await expectExpanded(false);
+      fireEvent.keyDown(ui.view.getByRole('searchbox'), { key: 'Escape' });
+      await expectExpanded(true);
+    }
+    ui.surface.dispose();
+    ui.host.remove();
+
+    ui = await reload();
+    await expectExpanded(true);
+    expect(ui.view.getByRole('button', { name: 'Empty' }).getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(toggle());
+    await expectExpanded(false);
+    ui.surface.dispose();
+    ui.host.remove();
+
+    ui = await reload();
+    await expectExpanded(false);
+    ui.surface.dispose();
   });
 
   it('heads the projects with New project and a sort menu, without a By project organization', async () => {

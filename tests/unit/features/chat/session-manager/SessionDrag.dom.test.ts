@@ -63,6 +63,9 @@ function setup(conversations: ConversationMeta[] = [
   const plugin = {
     app: { vault: { getAbstractFileByPath: () => null } },
     settings: { enableAutoTitleGeneration: false, sessionManagerOrganization: 'list' },
+    mutateSettings: jest.fn(async (mutation: (settings: Record<string, unknown>) => void) => {
+      mutation(plugin.settings);
+    }),
     getConversationList: () => conversations,
     conversationLifecycle: lifecycle,
     projects,

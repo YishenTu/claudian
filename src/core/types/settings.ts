@@ -177,6 +177,8 @@ export interface ClaudianSettings {
   sessionManagerSort?: SessionManagerSort;
   /** Order of the session manager's projects section; pinned projects always come first. */
   projectSort?: SessionManagerSort;
+  /** Project folders expanded in the session sidebar and compact history. */
+  expandedProjectIds?: string[];
   pinnedLinkedContentPaths?: string[];
   sessionAutoArchiveAfter?: SessionAutoArchiveAfter;
 
