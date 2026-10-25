@@ -280,6 +280,32 @@ describe('prepareOpencodeLaunchArtifacts', () => {
     expect(result.databasePath).toBe(path.join(databaseDir, 'opencode.db'));
     await expect(fs.access(databaseDir)).resolves.toBeUndefined();
   });
+
+  // Windows rejects a rename onto a target another launch is replacing with EPERM.
+  it.each([
+    ['accepts the shared file a concurrent launch already wrote', true],
+    ['rejects a failed replacement that left the shared file stale', false],
+  ])('%s', async (_name, peerWrites) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-opencode-rename-'));
+    const params = { workspaceRoot: root, runtimeEnv: { HOME: root }, nativeVersion: 2 as const };
+    const expected = await prepareOpencodeLaunchArtifacts(params);
+    const content = await fs.readFile(expected.configPath, 'utf8');
+    await fs.writeFile(expected.configPath, '{}\n');
+    const rename = jest.spyOn(fs, 'rename').mockImplementationOnce(async () => {
+      if (peerWrites) await fs.writeFile(expected.configPath, content);
+      throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' });
+    });
+    try {
+      const outcome = await prepareOpencodeLaunchArtifacts(params).then(result => result, (error: unknown) => error);
+      const rejected = expect.objectContaining({ code: 'EPERM' });
+      expect(outcome).toEqual(peerWrites ? expected : rejected);
+      await expect(fs.readFile(expected.configPath, 'utf8')).resolves.toBe(peerWrites ? content : '{}\n');
+      await expect(fs.readdir(path.dirname(expected.configPath))).resolves.toEqual(['config.json']);
+    } finally {
+      rename.mockRestore();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 

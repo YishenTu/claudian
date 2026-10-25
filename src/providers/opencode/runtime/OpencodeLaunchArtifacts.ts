@@ -191,7 +191,12 @@ export async function writeIfChanged(filePath: string, content: string): Promise
   const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
   try {
     await fs.writeFile(temporaryPath, content, 'utf-8');
-    await fs.rename(temporaryPath, filePath);
+    try {
+      await fs.rename(temporaryPath, filePath);
+    } catch (error) {
+      // Windows rejects a rename while a concurrent launch replaces the same target.
+      if (await fs.readFile(filePath, 'utf-8').catch(() => undefined) !== content) throw error;
+    }
   } finally {
     await fs.rm(temporaryPath, { force: true });
   }
