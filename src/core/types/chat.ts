@@ -30,7 +30,6 @@ export interface ImageAttachment {
 
 export interface ExecutionInputLinkedContentSnapshot {
   path: string;
-  content?: string;
 }
 
 export interface ExecutionInputContextSnapshot {

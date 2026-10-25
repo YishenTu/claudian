@@ -1116,22 +1116,6 @@ describe('PiExecutionBackend', () => {
     }
   });
 
-  it('encodes a captured Linked content body', async () => {
-    const harness = createHarness();
-    const run = harness.session.execute(createRequest({
-      context: { linkedContent: { path: 'notes/a.md', content: 'Body' } },
-      input: [{ text: 'Inspect linked content', type: 'text' }],
-    }));
-    const eventsPromise = collect(run.events);
-    await flush();
-    completeTurn(harness.kernels[0]);
-    await eventsPromise;
-
-    expect(getPromptMessages(harness.kernels[0])).toEqual([
-      'Inspect linked content\n\n<linked_content path="notes/a.md">\n<![CDATA[Body]]>\n</linked_content>',
-    ]);
-  });
-
   it('encodes path-only Linked content without changing the Vault-root process CWD', async () => {
     const harness = createHarness();
     const run = harness.session.execute(createRequest({

@@ -35,26 +35,6 @@ describe('buildOpencodePrompt text', () => {
     expect(prompt).toContain('<browser_selection source="browser:https://example.com" title="Example" url="https://example.com">');
   });
 
-  it('encodes Linked content without allowing CDATA to close early', () => {
-    const result = buildOpencodePrompt({
-      context: {
-        linkedContent: {
-          content: 'Before\n]]>\nAfter',
-          path: 'notes/"draft".md',
-        },
-      },
-      text: 'Review this',
-    });
-
-    const [block] = result.blocks;
-    const prompt = block.type === 'text' ? block.text : '';
-    expect(result.userText).toEqual({ start: 0, end: 'Review this'.length });
-    expect(prompt).toContain(
-      '<linked_content path="notes/&quot;draft&quot;.md">\n<![CDATA[Before\n]]]]><![CDATA[>\nAfter]]>\n</linked_content>',
-    );
-    expect(prompt).not.toMatch(/<(?:linked_note|current_note)\b/);
-  });
-
   it('rebuilds prior conversation context when a native session must be recreated', () => {
     const result = buildOpencodePrompt(
       {

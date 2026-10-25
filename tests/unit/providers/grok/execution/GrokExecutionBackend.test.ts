@@ -808,25 +808,6 @@ describe('GrokExecutionBackend', () => {
     });
   });
 
-  it('encodes a captured Linked content body', async () => {
-    const native = new FakeNativeConnection();
-    const nativeFactory: GrokExecutionNativeFactory = { create: jest.fn(() => native) };
-    const session = createBackend(
-      createGrokHost(),
-      { nativeFactory },
-    ).createSession(sessionConfig);
-
-    await collect(session.execute({
-      ...executionRequest('Inspect linked content'),
-      context: { linkedContent: { path: 'notes/a.md', content: 'Body' } },
-    }).events);
-
-    expect(native.promptRequests[0]?.prompt).toEqual([{
-      text: 'Inspect linked content\n\n<linked_content path="notes/a.md">\n<![CDATA[Body]]>\n</linked_content>',
-      type: 'text',
-    }]);
-  });
-
   it('encodes path-only Linked content without changing the Vault-root session CWD', async () => {
     const native = new FakeNativeConnection();
     const nativeFactory: GrokExecutionNativeFactory = { create: jest.fn(() => native) };

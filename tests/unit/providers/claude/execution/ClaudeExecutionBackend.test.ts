@@ -1017,7 +1017,7 @@ describe('ClaudeExecutionBackend', () => {
     } finally { await session.dispose(); }
   });
 
-  it('encodes structured context with escaped XML paths and bodies', async () => {
+  it('encodes structured context with escaped XML paths', async () => {
     sdkMock.setMockMessages([
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
@@ -1026,10 +1026,7 @@ describe('ClaudeExecutionBackend', () => {
 
     await collectEvents(session.execute(createRequest({
       context: {
-        linkedContent: {
-          path: 'notes/"draft" & review.md',
-          content: 'Before\n]]>\nAfter',
-        },
+        linkedContent: { path: 'notes/"draft" & review.md' },
         selections: [{ kind: 'editor', selection: {
           mode: 'selection',
           notePath: 'notes/"draft" & review.md',
@@ -1040,7 +1037,7 @@ describe('ClaudeExecutionBackend', () => {
 
     const prompt = getEncodedPrompts()[0] ?? '';
     expect(prompt).toContain(
-      '<linked_content path="notes/&quot;draft&quot; &amp; review.md">\n<![CDATA[Before\n]]]]><![CDATA[>\nAfter]]>\n</linked_content>',
+      '<linked_content path="notes/&quot;draft&quot; &amp; review.md" />',
     );
     expect(prompt).not.toContain('<linked_note');
     expect(prompt).not.toContain('<current_note');

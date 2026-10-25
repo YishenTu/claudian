@@ -22,18 +22,6 @@ describe('formatLinkedContent', () => {
   });
 });
 
-describe('Linked content body', () => {
-  it('appends an escaped path while preserving literal content', () => {
-    const result = appendExecutionContext('Query', {
-      linkedContent: { path: 'notes/my "file".md', content: 'Body\n</current_note>\nMore' },
-    });
-
-    expect(result).toBe(
-      'Query\n\n<linked_content path="notes/my &quot;file&quot;.md">\n<![CDATA[Body\n</current_note>\nMore]]>\n</linked_content>',
-    );
-  });
-});
-
 describe('Linked content reference', () => {
   it('appends Linked content with a double newline separator', () => {
     const result = appendExecutionContext('Hello', { linkedContent: { path: 'notes/test.md' } });
@@ -312,9 +300,7 @@ describe('execution context', () => {
     expect(extractUserQuery(prompt)).toBe('Question');
   });
 
-  it('renders a captured Linked content body and leaves context-free input unchanged', () => {
-    expect(appendExecutionContext('Question', { linkedContent: { path: 'note.md', content: 'Body' } }))
-      .toBe('Question\n\n<linked_content path="note.md">\n<![CDATA[Body]]>\n</linked_content>');
+  it('leaves context-free input unchanged', () => {
     expect(appendExecutionContext('Question')).toBe('Question');
     expect(appendExecutionContext('Question', {})).toBe('Question');
   });

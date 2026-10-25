@@ -175,7 +175,7 @@ export function createSubmission(overrides: Partial<ChatTurnSubmission> = {}): C
     canonicalText: 'canonical input',
     images: [],
     context: {
-      linkedContent: { path: 'note.md', content: 'note' },
+      linkedContent: { path: 'note.md' },
     },
     conversationHistory: [],
     configuration: {

@@ -1652,10 +1652,7 @@ describe('CodexExecutionBackend', () => {
       {
         context: {
           sessionReferences: [{ id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated' }],
-          linkedContent: {
-            path: 'notes/"draft" & review.md',
-            content: 'Before\n]]>\nAfter',
-          },
+          linkedContent: { path: 'notes/"draft" & review.md' },
           selections: [
             { kind: 'editor', selection: {
               mode: 'selection',
@@ -1682,7 +1679,7 @@ describe('CodexExecutionBackend', () => {
       };
     const prompt = turnParams.input.find(block => block.type === 'text')?.text;
     expect(prompt).toContain(
-      '<linked_content path="notes/&quot;draft&quot; &amp; review.md">\n<![CDATA[Before\n]]]]><![CDATA[>\nAfter]]>\n</linked_content>',
+      '<linked_content path="notes/&quot;draft&quot; &amp; review.md" />',
     );
     expect(prompt).toContain(
       '<editor_selection path="notes/&quot;draft&quot; &amp; review.md">\n<![CDATA[Selected\n</editor_selection>]]>\n</editor_selection>',

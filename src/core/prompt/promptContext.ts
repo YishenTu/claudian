@@ -10,7 +10,7 @@ import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelop
 import { appendBrowserContext } from './browserContext';
 import { appendCanvasContext } from './canvasContext';
 import { appendEditorContext } from './editorContext';
-import { escapePromptXMLAttribute, formatPromptXMLCdata } from './promptXML';
+import { escapePromptXMLAttribute } from './promptXML';
 
 const LINKED_CONTENT_TAG = 'linked_content';
 
@@ -25,12 +25,6 @@ const BRACKET_CONTEXT_PATTERN = /\n\[(?:Current note|Editor selection from|Brows
 
 export function formatLinkedContent(contentPath: string): string {
   return `<${LINKED_CONTENT_TAG} path="${escapePromptXMLAttribute(contentPath)}" />`;
-}
-
-function formatLinkedContentBody(contentPath: string, content: string): string {
-  return `<${LINKED_CONTENT_TAG} path="${escapePromptXMLAttribute(contentPath)}">\n${formatPromptXMLCdata(
-    content,
-  )}\n</${LINKED_CONTENT_TAG}>`;
 }
 
 /**
@@ -153,14 +147,11 @@ function appendSelectionContexts(prompt: string, context?: ProviderExecutionCont
 
 /**
  * Appends a request's captured context in the order every provider sends it:
- * Linked content (with its body when captured), selections, then session references.
+ * Linked content, selections, then session references.
  */
 export function appendExecutionContext(prompt: string, context?: ProviderExecutionContext): string {
-  const linked = context?.linkedContent;
-  if (linked) {
-    prompt = `${prompt}\n\n${linked.content === undefined
-      ? formatLinkedContent(linked.path)
-      : formatLinkedContentBody(linked.path, linked.content)}`;
+  if (context?.linkedContent) {
+    prompt = `${prompt}\n\n${formatLinkedContent(context.linkedContent.path)}`;
   }
   return appendSessionReferences(appendSelectionContexts(prompt, context), context?.sessionReferences);
 }

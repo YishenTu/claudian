@@ -16,7 +16,6 @@ export type ProviderExecutionInputBlock =
 
 export interface ProviderLinkedContentContext {
   readonly path: string;
-  readonly content?: string;
 }
 
 export interface ProviderSessionReference {
