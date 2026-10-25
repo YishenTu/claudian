@@ -372,7 +372,8 @@
       "menu": {
         "edit": "Modifier le projet",
         "openMemory": "Ouvrir la mémoire du projet",
-        "archiveAll": "Archiver toutes les sessions",
+        "archive": "Archiver le projet",
+        "restore": "Restaurer le projet",
         "pin": "Épingler le projet",
         "unpin": "Désépingler le projet",
         "delete": "Supprimer le projet",
@@ -387,6 +388,8 @@
         "create": "Impossible de créer le projet",
         "update": "Impossible de mettre à jour le projet",
         "delete": "Impossible de supprimer le projet",
+        "archive": "Impossible d’archiver le projet",
+        "restore": "Impossible de restaurer le projet",
         "pin": "Impossible de modifier l’épinglage du projet",
         "move": "Impossible de déplacer les sessions vers le projet",
         "remove": "Impossible de retirer les sessions du projet",

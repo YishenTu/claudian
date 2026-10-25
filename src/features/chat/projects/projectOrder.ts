@@ -5,10 +5,9 @@ export function compareProjectNames(left: Pick<ProjectRecord, 'name'>, right: Pi
   return left.name.localeCompare(right.name, undefined, { sensitivity: 'base', numeric: true });
 }
 
-/** Order of project pickers: pinned projects first, then by name. */
-export function compareProjectsForPicker(
-  left: Pick<ProjectRecord, 'name' | 'isPinned'>,
-  right: Pick<ProjectRecord, 'name' | 'isPinned'>,
-): number {
-  return Number(right.isPinned) - Number(left.isPinned) || compareProjectNames(left, right);
+/** Projects a session can join from a picker: unarchived ones, pinned first, then by name. */
+export function projectsForPicker(projects: readonly ProjectRecord[]): ProjectRecord[] {
+  return projects
+    .filter(project => !project.isArchived)
+    .sort((left, right) => Number(right.isPinned) - Number(left.isPinned) || compareProjectNames(left, right));
 }

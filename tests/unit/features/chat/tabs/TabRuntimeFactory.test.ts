@@ -482,6 +482,7 @@ describe('Tab provider execution ownership', () => {
     const manager = createTabManager(plugin);
     const lifecycle = new ConversationLifecycle({
       sessions: plugin.sessionRuntimes,
+      projects: { get: () => null, setArchived: async () => undefined },
       conversations: {} as any,
       views: { getAllViews: () => [{ getTabManager: () => manager }] as any },
     });
@@ -511,6 +512,7 @@ describe('Tab provider execution ownership', () => {
     const manager = createTabManager(plugin);
     const lifecycle = new ConversationLifecycle({
       sessions: plugin.sessionRuntimes,
+      projects: { get: () => null, setArchived: async () => undefined },
       conversations: {} as any,
       views: { getAllViews: () => [{ getTabManager: () => manager }] as any },
     });

@@ -243,9 +243,9 @@ export interface SessionListModelOptions {
   showPinnedSection?: boolean;
   pinnedLinkedContentPaths?: ReadonlySet<string>;
   /**
-   * Live project records for a projects section outside the archive. Members of a live project are listed
-   * only there, unless pinned with a Pinned section; without it, or in the archive, every session stays in
-   * the session list.
+   * Live project records for a projects section: unarchived projects outside the archive, archived ones in it.
+   * Members of a listed project are listed only there, unless pinned with a Pinned section; without it, every
+   * session stays in the session list.
    */
   projects?: SessionListProjects;
   projectSort: SessionManagerSort;
@@ -256,14 +256,31 @@ export interface SessionListModelOptions {
   groupByRecency?: { now: number };
 }
 
+/** The projects listed in a scope; an archived project is listed only in the archive, an active one only outside. */
+function projectsInScope(
+  projects: SessionListProjects | undefined,
+  scope: SessionListModelOptions['scope'],
+): SessionListProjects | undefined {
+  if (!projects) return undefined;
+  const isListed = (project: ProjectRecord): boolean => project.isArchived === (scope === 'archived');
+  return {
+    list: () => projects.list().filter(isListed),
+    get: (id) => {
+      const project = projects.get(id);
+      return project && isListed(project) ? project : null;
+    },
+  };
+}
+
 /** What a session list shows, derived from the conversation list without any DOM. */
 export interface SessionListModel {
   readonly hasSearchTerms: boolean;
   /** No session or pinned Linked content group matches the scope and search; projects do not count. */
   readonly isEmpty: boolean;
   /**
-   * Every live project matching the search, pinned first, with its matching members (pinned members are listed
-   * under Pinned instead); null without the section. With a Pinned section, pinned projects move there.
+   * Every listed project matching the search, pinned first, with its matching members (pinned members are listed
+   * under Pinned instead); null without the section, or in the archive when none matches. With a Pinned section,
+   * pinned projects move there.
    */
   readonly projectSections: readonly ProjectListSection[] | null;
   /** Pinned projects listed under Pinned with all their matching members, pinned or not. */
@@ -276,7 +293,7 @@ export interface SessionListModel {
   readonly groupKeys: readonly string[] | null;
   /** Every in-scope session per Linked content path outside a live project, ignoring search, for group actions. */
   readonly conversationsByLinkedContent: ReadonlyMap<string, readonly ConversationMeta[]>;
-  /** Every in-scope session per live project, ignoring search and pinning, for project actions. */
+  /** Every in-scope session per listed project, ignoring search and pinning, for project actions. */
   readonly conversationsByProject: ReadonlyMap<string, readonly ConversationMeta[]>;
   /** Session list rows shown when every expanded group is fully paged in. */
   readonly visibleConversationTotal: number;
@@ -306,8 +323,8 @@ function groupBy(
  *
  * Sessions group by live project (its own section, active scope only) or, with Linked content organization, by
  * Linked content; project membership wins. Pinning only moves a session, project, or Linked content group to
- * Pinned, where a pinned group keeps all its members. Archive is a session state: the archive view lists archived
- * sessions without projects, and a project stays listed until deleted.
+ * Pinned, where a pinned group keeps all its members. Archived projects are listed only in the archive, with their
+ * archived members; archived members of an active project are listed there as sessions.
  */
 export function deriveSessionListModel(
   conversations: readonly ConversationMeta[],
@@ -325,7 +342,7 @@ export function deriveSessionListModel(
     const searchableText = text.toLocaleLowerCase();
     return searchTerms.every(term => searchableText.includes(term));
   };
-  const projects = options.scope === 'archived' ? undefined : options.projects;
+  const projects = projectsInScope(options.projects, options.scope);
   const conversationsByProject = groupBy(scopedConversations, conversation => (
     projects?.get(conversation.projectId)?.id
   ));
@@ -368,7 +385,9 @@ export function deriveSessionListModel(
       })
     : null;
   const pinnedProjectSections = projectSections?.filter(section => isPinnedProject(section.project)) ?? [];
-  const unpinnedProjectSections = projectSections?.filter(section => !isPinnedProject(section.project)) ?? null;
+  const unpinnedProjectSections = options.scope === 'archived' && projectSections?.length === 0
+    ? null
+    : projectSections?.filter(section => !isPinnedProject(section.project)) ?? null;
   // Project membership wins over Linked content, so a pinned member listed under Pinned joins no Linked content group.
   const linkedContentPathOf = (conversation: ConversationMeta): string | undefined => (
     projects?.get(conversation.projectId) ? undefined : conversation.linkedContentPath

@@ -254,7 +254,7 @@ describe('deriveSessionListModel with a projects section', () => {
   function project(id: string, overrides: Partial<ProjectRecord> = {}): ProjectRecord {
     return {
       id, name: `${id} project`, instructions: '', memoryPath: `.claudian/projects/${id}.md`,
-      isPinned: false, createdAt: 1, ...overrides,
+      isPinned: false, isArchived: false, createdAt: 1, ...overrides,
     };
   }
   function reader(records: readonly ProjectRecord[]): Pick<ProjectReader, 'list' | 'get'> {
@@ -372,6 +372,31 @@ describe('deriveSessionListModel with a projects section', () => {
     const archived = deriveSessionListModel(conversations, { ...base, scope: 'archived' });
     expect(archived.projectSections).toBeNull();
     expect(ids(archived.sections)).toEqual(['archived']);
+  });
+
+  it('lists an archived project only in the archive, with its archived members', () => {
+    const shelved = project('shelved', { isArchived: true, createdAt: 50 });
+    const withShelved = { ...base, projects: reader([...records, shelved]) };
+    const members = [
+      ...conversations,
+      createConversation('shelved-chat', { title: 'Shelved chat', projectId: 'shelved', isArchived: true, lastActivityAt: 6 }),
+      createConversation('shelved-live', { title: 'Shelved live', projectId: 'shelved', lastActivityAt: 7 }),
+    ];
+
+    const active = deriveSessionListModel(members, withShelved);
+    expect(projectRows(active).map(([id]) => id)).not.toContain('shelved');
+    // An active member of an archived project is listed as a session rather than hidden.
+    expect(ids(active.sections)).toContain('shelved-live');
+    expect(active.conversationsByProject.has('shelved')).toBe(false);
+
+    const archived = deriveSessionListModel(members, { ...withShelved, scope: 'archived' });
+    expect(projectRows(archived)).toEqual([['shelved', ['shelved-chat']]]);
+    expect(archived.conversationsByProject.get('shelved')?.map(({ id }) => id)).toEqual(['shelved-chat']);
+    // Archived members of an active project stay in the flat archive list.
+    expect(ids(archived.sections)).toEqual(['archived']);
+
+    const searched = deriveSessionListModel(members, { ...withShelved, scope: 'archived', searchQuery: 'nothing' });
+    expect(searched.projectSections).toBeNull();
   });
 
   it('shows empty projects while there are no sessions', () => {

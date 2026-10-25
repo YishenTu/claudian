@@ -154,6 +154,7 @@ export async function startApplication(options: ApplicationStartupOptions): Prom
   });
   const conversations = new ConversationService({
     repository: conversationRepository,
+    projects,
     sessionMetadata,
     pinnedLinkedContentPaths,
     nativeSessionArchives,

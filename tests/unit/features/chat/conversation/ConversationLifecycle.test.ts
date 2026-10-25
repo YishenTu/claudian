@@ -1,5 +1,7 @@
+import { projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { Notice } from 'obsidian';
 
+import type { ProjectRecord } from '@/core/types';
 import { ConversationLifecycle, type ConversationLifecycleStore } from '@/features/chat/conversation/ConversationLifecycle';
 
 interface FakeTab {
@@ -31,26 +33,97 @@ function createStore(): jest.Mocked<ConversationLifecycleStore> {
     setConversationArchived: jest.fn().mockResolvedValue(undefined),
     setConversationsPlacement: jest.fn().mockResolvedValue(undefined),
     restoreConversations: jest.fn().mockResolvedValue(undefined),
+    archiveProjectIfEmpty: jest.fn().mockResolvedValue(undefined),
     archiveConversationsIf: jest.fn(async (ids, shouldArchive) => (
       ids.filter(id => shouldArchive({ id } as never)).length
     )),
   };
 }
 
+function createProjects(records: ProjectRecord[] = []) {
+  const live = new Map(records.map(record => [record.id, record]));
+  return {
+    get: jest.fn((id: string | undefined) => (id === undefined ? null : live.get(id) ?? null)),
+    setArchived: jest.fn(async (id: string, isArchived: boolean) => {
+      const record = live.get(id);
+      if (record) live.set(id, { ...record, isArchived });
+    }),
+  };
+}
+
 function createLifecycle(...managers: Array<FakeManager | null>) {
+  return createLifecycleWith(createProjects(), ...managers);
+}
+
+function createLifecycleWith(projects: ReturnType<typeof createProjects>, ...managers: Array<FakeManager | null>) {
   const conversations = createStore();
   const views = managers.map(manager => ({ getTabManager: () => manager }));
   const lifecycle = new ConversationLifecycle({
     conversations,
+    projects,
     sessions: { get: () => null, isRunning: id => managers.some(manager => manager?.tabs.some(tab => tab.conversationId === id && tab.isWorking)), retire: async () => undefined, whenSettled: async () => true },
     views: { getAllViews: () => views as never },
   });
-  return { lifecycle, conversations };
+  return { lifecycle, conversations, projects };
 }
 
 describe('ConversationLifecycle', () => {
   beforeEach(() => {
     (Notice as unknown as jest.Mock).mockClear();
+  });
+
+  describe('project archive', () => {
+    function setupProject(running: string[] = [], launchArchived = false) {
+      const manager = createManager([
+        ...running.map(id => ({ id: `tab-${id}`, conversationId: id, isWorking: true })),
+        { id: 'tab-idle', conversationId: 'idle' },
+      ]);
+      const projects = createProjects([
+        projectRecord({ id: 'launch', isArchived: launchArchived }),
+        projectRecord({ id: 'other' }),
+      ]);
+      const { lifecycle, conversations } = createLifecycleWith(projects, manager);
+      const list = [
+        { id: 'idle', isArchived: false, projectId: 'launch' },
+        { id: 'busy', isArchived: false, projectId: 'launch' },
+        { id: 'done', isArchived: true, projectId: 'launch' },
+        { id: 'outside', isArchived: false, projectId: 'other' },
+      ];
+      conversations.getConversationList.mockReturnValue(list);
+      return { lifecycle, conversations, manager, projects };
+    }
+
+    it('archives every active member, closing idle tabs, then the project', async () => {
+      const { lifecycle, conversations, manager } = setupProject();
+
+      await lifecycle.archiveProject('launch');
+
+      expect(manager.closeTab).toHaveBeenCalledWith('tab-idle');
+      expect(conversations.archiveConversationsIf.mock.calls[0]![0]).toEqual(['idle', 'busy']);
+      expect(conversations.archiveProjectIfEmpty).toHaveBeenCalledWith('launch');
+      expect(conversations.archiveConversationsIf.mock.invocationCallOrder[0])
+        .toBeLessThan(conversations.archiveProjectIfEmpty.mock.invocationCallOrder[0]!);
+    });
+
+    it('keeps the project active when a member is running', async () => {
+      const { lifecycle, conversations } = setupProject(['busy']);
+
+      await lifecycle.archiveProject('launch');
+
+      expect(conversations.archiveProjectIfEmpty).not.toHaveBeenCalled();
+      expect(Notice).toHaveBeenCalledWith('Skipped 1 session that is open or running');
+    });
+
+    it('restores the project before its archived members', async () => {
+      const { lifecycle, conversations, projects } = setupProject([], true);
+
+      await lifecycle.restoreProject('launch');
+
+      expect(projects.setArchived).toHaveBeenCalledWith('launch', false);
+      expect(conversations.restoreConversations).toHaveBeenCalledWith(['done']);
+      expect(projects.setArchived.mock.invocationCallOrder[0])
+        .toBeLessThan(conversations.restoreConversations.mock.invocationCallOrder[0]!);
+    });
   });
 
   describe('delete', () => {
@@ -199,6 +272,7 @@ describe('committed archive mailbox cleanup', () => {
     conversations.archiveConversationsIf.mockRejectedValue(new Error('write failed'));
     const lifecycle = new ConversationLifecycle({
       conversations,
+      projects: createProjects(),
       sessions: { get: () => ({ mailbox: { clear } }) as never, isRunning: () => false, retire: async () => undefined, whenSettled: async () => true },
       views: { getAllViews: () => [] },
     });
@@ -219,6 +293,7 @@ describe('committed archive mailbox cleanup', () => {
     });
     const lifecycle = new ConversationLifecycle({
       conversations,
+      projects: createProjects(),
       sessions: { get: () => ({ mailbox: { clear } }) as never, isRunning: () => false, retire: async () => undefined, whenSettled: async () => true },
       views: { getAllViews: () => [] },
     });

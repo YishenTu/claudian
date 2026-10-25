@@ -54,7 +54,7 @@ export interface ConversationRepositoryDeps {
   persistence: ConversationPersistence;
   providers: ConversationProviderCatalog;
   providerSettings: ConversationProviderSettings;
-  /** Live projects; membership writes accept only ids it resolves. Without it no project is live. */
+  /** Membership writes accept only existing, unarchived projects. Without it no project is live. */
   projects?: Pick<ProjectReader, 'get'>;
 }
 
@@ -641,7 +641,8 @@ export class ConversationRepository {
   }
 
   #isLiveProject(projectId: string): boolean {
-    return this.deps.projects?.get(projectId) != null;
+    const project = this.deps.projects?.get(projectId);
+    return project != null && !project.isArchived;
   }
 
   /**

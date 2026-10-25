@@ -3,7 +3,7 @@ import { Menu } from 'obsidian';
 import type { ProjectReader } from '@/core/types';
 import type { ComposerInfoRow } from '@/features/chat/composer/ComposerInfoRow';
 import type { ConversationController } from '@/features/chat/conversation/ConversationController';
-import { compareProjectsForPicker } from '@/features/chat/projects/projectOrder';
+import { projectsForPicker } from '@/features/chat/projects/projectOrder';
 import { t } from '@/i18n/i18n';
 
 export interface ProjectChipDeps {
@@ -50,7 +50,7 @@ export class ProjectChip {
 
   private showMenu(anchorEl: HTMLElement, currentProjectId: string): void {
     const { conversation } = this.deps;
-    const projects = [...this.deps.projects.list()].sort(compareProjectsForPicker);
+    const projects = projectsForPicker(this.deps.projects.list());
     const menu = new Menu().setUseNativeMenu(false);
     for (const project of projects) {
       menu.addItem((item) => {

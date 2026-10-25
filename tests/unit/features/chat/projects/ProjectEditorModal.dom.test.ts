@@ -16,7 +16,7 @@ jest.mock('obsidian', () => ({
 
 const record: ProjectRecord = {
   id: 'project-1', name: 'Launch', instructions: 'Keep the memory current.',
-  memoryPath: '.claudian/projects/launch/MEMORY.md', isPinned: false, createdAt: 1,
+  memoryPath: '.claudian/projects/launch/MEMORY.md', isPinned: false, isArchived: false, createdAt: 1,
 };
 
 function host() {

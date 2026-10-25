@@ -71,6 +71,7 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
       instructions: input.instructions,
       memoryPath: requireMemoryPath(input.memoryPath),
       isPinned: false,
+      isArchived: false,
       createdAt: Date.now(),
     };
     return this.#enqueue(async () => {
@@ -135,7 +136,17 @@ export class ProjectService implements ProjectReader, ProjectMutations, ProjectM
   }
 
   setPinned(id: string, pinned: boolean): Promise<void> {
-    return this.#commit(id, record => (record.isPinned === pinned ? record : { ...record, isPinned: pinned }));
+    return this.#commit(id, record => (
+      record.isPinned === pinned || (pinned && record.isArchived) ? record : { ...record, isPinned: pinned }
+    ));
+  }
+
+  setArchived(id: string, archived: boolean): Promise<void> {
+    return this.#commit(id, record => (
+      record.isArchived === archived && (!archived || !record.isPinned)
+        ? record
+        : { ...record, isArchived: archived, ...(archived ? { isPinned: false } : {}) }
+    ));
   }
 
   /**

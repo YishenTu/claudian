@@ -8,7 +8,7 @@ import {
   editProject,
   openProjectMemory,
 } from '@/features/chat/projects/projectActions';
-import { compareProjectsForPicker } from '@/features/chat/projects/projectOrder';
+import { projectsForPicker } from '@/features/chat/projects/projectOrder';
 import type { SessionDropTarget } from '@/features/chat/session-manager/SessionDrag';
 import type { SessionListSectionKind } from '@/features/chat/session-manager/SessionListOrganizer';
 import type { SessionMultiSelection } from '@/features/chat/session-manager/SessionMultiSelection';
@@ -434,7 +434,10 @@ export class SessionActions {
     };
   }
 
-  /** A project's actions. Projects are listed only among active sessions, so its members can be archived. */
+  /**
+   * A project's actions. An active project is archived whole, which waits for its members to stop running; an
+   * archived one is restored with its members or deleted.
+   */
   projectMenu(
     project: ProjectRecord,
     conversations: readonly ConversationMeta[],
@@ -442,6 +445,18 @@ export class SessionActions {
   ): Menu {
     const { plugin } = this.deps;
     const menu = new Menu().setUseNativeMenu(false);
+    if (project.isArchived) {
+      menu.addItem(menuItem => menuItem
+        .setTitle(t('chat.projects.menu.restore'))
+        .onClick(() => {
+          runSessionAction(
+            () => plugin.conversationLifecycle.restoreProject(project.id),
+            t('chat.projects.errors.restore'),
+          );
+        }));
+      this.#addDeleteProject(menu, project);
+      return menu;
+    }
     menu.addItem(menuItem => menuItem
       .setTitle(project.isPinned ? t('chat.projects.menu.unpin') : t('chat.projects.menu.pin'))
       .onClick(() => {
@@ -457,21 +472,32 @@ export class SessionActions {
       .setTitle(t('chat.projects.menu.openMemory'))
       .onClick(() => openProjectMemory(plugin, project)));
     menu.addSeparator();
-    this.#addArchiveIdle(
-      menu,
-      conversations,
-      isRunning,
-      t('chat.projects.menu.archiveAll'),
-      'Failed to archive sessions',
-    );
+    menu.addItem((menuItem) => {
+      menuItem.setTitle(t('chat.projects.menu.archive'));
+      if (conversations.some(isRunning)) {
+        menuItem.setDisabled(true);
+        return;
+      }
+      menuItem.onClick(() => {
+        runSessionAction(
+          () => plugin.conversationLifecycle.archiveProject(project.id),
+          t('chat.projects.errors.archive'),
+        );
+      });
+    });
     menu.addSeparator();
+    this.#addDeleteProject(menu, project);
+    return menu;
+  }
+
+  #addDeleteProject(menu: Menu, project: ProjectRecord): void {
+    const { plugin } = this.deps;
     menu.addItem(menuItem => menuItem
       .setTitle(t('chat.projects.menu.delete'))
       .setWarning(true)
       .onClick(() => {
         runSessionAction(() => deleteProject(plugin, project), t('chat.projects.errors.delete'));
       }));
-    return menu;
   }
 
   #addArchiveIdle(
@@ -524,7 +550,7 @@ export class SessionActions {
   ): void {
     const { plugin, selection } = this.deps;
     const moveFailure = t('chat.projects.errors.move');
-    const projects = [...plugin.projects.list()].sort(compareProjectsForPicker);
+    const projects = projectsForPicker(plugin.projects.list());
     const menu = new Menu().setUseNativeMenu(false);
     for (const project of projects) {
       menu.addItem((menuItem) => {

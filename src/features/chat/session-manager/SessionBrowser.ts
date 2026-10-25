@@ -594,7 +594,10 @@ export class SessionBrowser {
     });
   }
 
-  /** The projects section: its header with the project actions, and one collapsible row per project. */
+  /**
+   * The projects section: its header with the project actions (outside the archive, where projects are only
+   * restored or deleted), and one collapsible row per project.
+   */
   #renderProjectsSection(
     list: HTMLElement,
     projectSections: readonly ProjectListSection[],
@@ -611,7 +614,7 @@ export class SessionBrowser {
     });
     const items = section.createDiv({ cls: 'claudian-history-section-items claudian-session-project-items' });
     this.#renderSectionToggle(section, header, label, items, sessionManagerSectionKey('projects'), options);
-    renderProjectsHeaderActions(header, this.deps.plugin);
+    if (options.sessionScope !== 'archived') renderProjectsHeaderActions(header, this.deps.plugin);
     for (const projectSection of projectSections) {
       this.#renderProjectSection(items, projectSection, options, conversationsByProject);
     }
@@ -683,7 +686,7 @@ export class SessionBrowser {
     this.#openMenuOnContextMenu(groupHeader, buildMenu);
 
     const startProjectConversation = options.onStartProjectConversation;
-    if (startProjectConversation) {
+    if (startProjectConversation && !project.isArchived) {
       const newButton = groupHeader.createEl('button', {
         cls: 'claudian-session-group-new-action',
         attr: { type: 'button', 'aria-label': t('chat.projects.newSessionIn', { name: label }) },

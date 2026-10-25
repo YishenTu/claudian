@@ -8,13 +8,13 @@ export function sessionProjectId(runtime: ChatSessionRuntime): string | undefine
 }
 
 /**
- * What New starts from the session the user is in: a draft in that session's live project, or a draft with no
- * project. Explicit seeds (a project row's New, Linked content) do not pass through here.
+ * What New starts from the session the user is in: a draft in that session's live, unarchived project, or a draft
+ * with no project. Explicit seeds (a project row's New, Linked content) do not pass through here.
  */
 export function inheritedDraftSeed(
   projects: Pick<ProjectReader, 'get'>,
   source: { readonly session: { readonly runtime: ChatSessionRuntime } } | null | undefined,
 ): DraftSeed {
   const project = source ? projects.get(sessionProjectId(source.session.runtime)) : null;
-  return project ? { projectId: project.id } : {};
+  return project && !project.isArchived ? { projectId: project.id } : {};
 }

@@ -23,7 +23,7 @@ HTMLElement.prototype.toggleClass = function (classes, value) {
 };
 
 type MockMenuItem = {
-  title: string; checked: boolean | null; isWarning?: boolean;
+  title: string; checked: boolean | null; disabled: boolean; isWarning?: boolean;
   clickHandler: ((event?: unknown) => void) | null;
 };
 type MockMenu = { items: MockMenuItem[]; showAtPosition: jest.Mock; showAtMouseEvent: jest.Mock };
@@ -69,6 +69,8 @@ function setup(options: {
   };
   const lifecycle = {
     archive: jest.fn().mockResolvedValue(undefined),
+    archiveProject: jest.fn().mockResolvedValue(undefined),
+    restoreProject: jest.fn().mockResolvedValue(undefined),
     setPinned: jest.fn(),
     setPlacement: jest.fn().mockResolvedValue(undefined),
   };
@@ -249,19 +251,19 @@ it('starts a session in a project and manages the project from its section menu'
     t('chat.projects.menu.pin'),
     t('chat.projects.menu.edit'),
     t('chat.projects.menu.openMemory'),
-    t('chat.projects.menu.archiveAll'),
+    t('chat.projects.menu.archive'),
     t('chat.projects.menu.delete'),
   ]);
 
+  // Launch has a running member, so it cannot be archived yet.
+  expect(item(menu, t('chat.projects.menu.archive')).disabled).toBe(true);
   item(menu, t('chat.projects.menu.pin')).clickHandler!();
-  item(menu, t('chat.projects.menu.archiveAll')).clickHandler!();
   jest.mocked(confirm).mockResolvedValue(true);
   item(menu, t('chat.projects.menu.delete')).clickHandler!();
   await new Promise(resolve => setTimeout(resolve, 0));
 
   expect(projects.setPinned).toHaveBeenCalledWith('launch', true);
-  // The running member stays active.
-  expect(lifecycle.archive).toHaveBeenCalledWith(['alpha']);
+  expect(lifecycle.archiveProject).not.toHaveBeenCalled();
   expect(confirm).toHaveBeenCalledWith(
     expect.anything(),
     t('chat.projects.deleteConfirm', { name: 'Launch' }),
@@ -274,7 +276,43 @@ it('starts a session in a project and manages the project from its section menu'
     .toBeLessThan(lifecycle.setPlacement.mock.invocationCallOrder[0]);
 
   fireEvent.contextMenu(view.getByRole('button', { name: sectionName('Research', 1) }));
-  expect(titles(menus().at(-1)!)).toContain(t('chat.projects.menu.unpin'));
+  const researchMenu = menus().at(-1)!;
+  expect(titles(researchMenu)).toContain(t('chat.projects.menu.unpin'));
+  item(researchMenu, t('chat.projects.menu.archive')).clickHandler!();
+  expect(lifecycle.archiveProject).toHaveBeenCalledWith('research');
+});
+
+it('lists an archived project only in the archive, where it can be restored or deleted', async () => {
+  const shelved = projectRecord({ id: 'shelved', name: 'Shelved', isArchived: true });
+  const conversations = [
+    session('alpha', { projectId: 'launch' }),
+    session('old', { projectId: 'shelved', isArchived: true }),
+  ];
+  const active = setup({ conversations, records: [launch, shelved] });
+  expect(within(projectsRegion(active.container)).queryByText('Shelved')).toBeNull();
+  document.body.replaceChildren();
+
+  const { lifecycle, projects, view } = setup({
+    conversations,
+    records: [launch, shelved],
+    render: { sessionScope: 'archived', sessionActionMode: 'archived', showPinnedSection: false, showArchivedSection: true },
+  });
+  const region = view.getByRole('region', { name: t('chat.projects.header') });
+  expect(within(region).queryByText('Launch')).toBeNull();
+  expect(within(region).getByText('old session')).toBeTruthy();
+  expect(within(region).queryByRole('button', { name: t('chat.projects.newSessionIn', { name: 'Shelved' }) })).toBeNull();
+  expect(within(region).queryByRole('button', { name: t('chat.projects.newProjectAction') })).toBeNull();
+  expect(within(view.getByRole('region', { name: 'Archived' })).queryByText('old session')).toBeNull();
+
+  fireEvent.click(within(region).getByRole('button', { name: t('chat.projects.actionsFor', { name: 'Shelved' }) }));
+  const menu = menus().at(-1)!;
+  expect(titles(menu)).toEqual([t('chat.projects.menu.restore'), t('chat.projects.menu.delete')]);
+  item(menu, t('chat.projects.menu.restore')).clickHandler!();
+  expect(lifecycle.restoreProject).toHaveBeenCalledWith('shelved');
+  jest.mocked(confirm).mockResolvedValue(true);
+  item(menu, t('chat.projects.menu.delete')).clickHandler!();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(projects.delete).toHaveBeenCalledWith('shelved');
 });
 
 it('keeps the project when deletion is not confirmed', async () => {

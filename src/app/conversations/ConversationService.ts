@@ -5,6 +5,8 @@ import type {
   ConversationMutablePatch,
   ConversationPlacement,
   ConversationSummary,
+  ProjectMutations,
+  ProjectReader,
 } from '@/core/types';
 
 import type { PinnedLinkedContentPathCoordinator } from '../settings/PinnedLinkedContentPathCoordinator';
@@ -14,6 +16,8 @@ import type { SessionMetadataLoader } from './SessionMetadataLoader';
 
 export interface ConversationServiceDeps {
   readonly repository: ConversationRepository;
+  /** Omitted only when this conversation domain has no projects. */
+  readonly projects?: Pick<ProjectReader, 'get'> & Pick<ProjectMutations, 'setArchived'>;
   readonly sessionMetadata: Pick<SessionMetadataLoader, 'ensureLoaded'>;
   readonly pinnedLinkedContentPaths: PinnedLinkedContentPathCoordinator;
   readonly nativeSessionArchives: Pick<NativeSessionArchiveSync, 'sync'>;
@@ -27,6 +31,10 @@ export interface ConversationServiceDeps {
  * provider sessions after they commit.
  */
 export class ConversationService {
+  // Creation, placement, restore and final project archive share this ordering point.
+  // Tab closure and provider callbacks stay outside it.
+  #projectMembershipQueue: Promise<unknown> = Promise.resolve();
+
   constructor(private readonly deps: ConversationServiceDeps) {}
 
   notifyConversationListChanged(): void {
@@ -41,7 +49,7 @@ export class ConversationService {
     /** Kept only when it names a live project at creation. */
     projectId?: string;
   }): Promise<Conversation> {
-    const conversation = await this.deps.repository.create(options);
+    const conversation = await this.#mutateProjectMembership(() => this.deps.repository.create(options));
     this.notifyConversationListChanged();
     return conversation;
   }
@@ -85,7 +93,8 @@ export class ConversationService {
 
   /** One write per conversation and one list refresh; see `ConversationRepository.setPlacement`. */
   async setConversationsPlacement(ids: readonly string[], placement: ConversationPlacement): Promise<void> {
-    await this.#mutateConversations(ids, id => this.deps.repository.setPlacement(id, placement));
+    await this.#mutateProjectMembership(() =>
+      this.#mutateConversations(ids, id => this.deps.repository.setPlacement(id, placement)));
   }
 
   async setLinkedContentPinned(contentPath: string, isPinned: boolean): Promise<void> {
@@ -96,7 +105,12 @@ export class ConversationService {
   }
 
   async setConversationArchived(id: string, isArchived: boolean): Promise<void> {
-    const changed = await this.deps.repository.setArchived(id, isArchived);
+    const changed = isArchived
+      ? await this.deps.repository.setArchived(id, true)
+      : await this.#mutateProjectMembership(async () => {
+          await this.#restoreProjectsOf([id]);
+          return this.deps.repository.setArchived(id, false);
+        });
     this.notifyConversationListChanged();
     if (changed) await this.deps.nativeSessionArchives.sync([id]);
   }
@@ -104,12 +118,41 @@ export class ConversationService {
   async restoreConversations(ids: readonly string[]): Promise<void> {
     const restoredIds: string[] = [];
     try {
-      await this.#mutateConversations(ids, async (id) => {
-        if (await this.deps.repository.setArchived(id, false)) restoredIds.push(id);
+      await this.#mutateProjectMembership(async () => {
+        await this.#restoreProjectsOf(ids);
+        await this.#mutateConversations(ids, async (id) => {
+          if (await this.deps.repository.setArchived(id, false)) restoredIds.push(id);
+        });
       });
     } finally {
       await this.deps.nativeSessionArchives.sync(restoredIds);
     }
+  }
+
+  /** Rechecks membership and holds off new admissions through the durable project archive write. */
+  async archiveProjectIfEmpty(projectId: string): Promise<void> {
+    await this.#mutateProjectMembership(async () => {
+      if (this.deps.repository.list().some(record => record.projectId === projectId && !record.isArchived)) return;
+      await this.deps.projects?.setArchived(projectId, true);
+    });
+  }
+
+  async #restoreProjectsOf(conversationIds: readonly string[]): Promise<void> {
+    const projects = this.deps.projects;
+    if (!projects) return;
+    const ids = new Set(conversationIds);
+    const projectIds = new Set(this.deps.repository.list().flatMap(conversation => (
+      ids.has(conversation.id) && projects.get(conversation.projectId)?.isArchived
+        ? [conversation.projectId!]
+        : []
+    )));
+    for (const projectId of projectIds) await projects.setArchived(projectId, false);
+  }
+
+  #mutateProjectMembership<T>(mutate: () => Promise<T>): Promise<T> {
+    const result = this.#projectMembershipQueue.then(mutate);
+    this.#projectMembershipQueue = result.catch(() => undefined);
+    return result;
   }
 
   async archiveConversationsIf(

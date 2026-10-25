@@ -295,6 +295,7 @@ export default class ClaudianPlugin extends Plugin {
     this.api = createClaudianAPI(this.sessionMessaging);
     this.conversationLifecycle = new ConversationLifecycle({
       conversations: domains.conversations,
+      projects: domains.projects,
       views: this.views,
       sessions: this.sessionRuntimes,
     });

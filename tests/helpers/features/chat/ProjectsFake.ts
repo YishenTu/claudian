@@ -8,6 +8,7 @@ export function projectRecord(overrides: Partial<ProjectRecord> & Pick<ProjectRe
     instructions: `Instructions for ${overrides.id}`,
     memoryPath: `.claudian/projects/${overrides.id}.md`,
     isPinned: false,
+    isArchived: false,
     createdAt: testDate().getTime(),
     ...overrides,
   };

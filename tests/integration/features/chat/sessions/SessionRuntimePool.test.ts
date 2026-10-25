@@ -45,9 +45,10 @@ describe('session ownership across presentations', () => {
       setConversationArchived: jest.fn(async () => undefined),
       setConversationsPlacement: jest.fn(async () => undefined),
       restoreConversations: jest.fn(async () => undefined),
+      archiveProjectIfEmpty: jest.fn(async () => undefined),
       archiveConversationsIf: jest.fn(async () => 1),
     };
-    const lifecycle = new ConversationLifecycle({ sessions: pool, conversations: store, views: { getAllViews: () => [] } });
+    const lifecycle = new ConversationLifecycle({ sessions: pool, conversations: store, projects: { get: () => null, setArchived: async () => undefined }, views: { getAllViews: () => [] } });
     await lifecycle.setArchived('created', true);
     await lifecycle.delete(['created']);
     expect(store.archiveConversationsIf).not.toHaveBeenCalled();

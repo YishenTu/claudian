@@ -372,7 +372,8 @@
       "menu": {
         "edit": "Edit project",
         "openMemory": "Open project memory",
-        "archiveAll": "Archive all sessions",
+        "archive": "Archive project",
+        "restore": "Restore project",
         "pin": "Pin project",
         "unpin": "Unpin project",
         "delete": "Delete project",
@@ -387,6 +388,8 @@
         "create": "Failed to create project",
         "update": "Failed to update project",
         "delete": "Failed to delete project",
+        "archive": "Failed to archive project",
+        "restore": "Failed to restore project",
         "pin": "Failed to update project pin",
         "move": "Failed to move sessions to project",
         "remove": "Failed to remove sessions from project",

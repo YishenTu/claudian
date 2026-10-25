@@ -372,7 +372,8 @@
       "menu": {
         "edit": "Editar proyecto",
         "openMemory": "Abrir memoria del proyecto",
-        "archiveAll": "Archivar todas las sesiones",
+        "archive": "Archivar proyecto",
+        "restore": "Restaurar proyecto",
         "pin": "Fijar proyecto",
         "unpin": "Desfijar proyecto",
         "delete": "Eliminar proyecto",
@@ -387,6 +388,8 @@
         "create": "No se pudo crear el proyecto",
         "update": "No se pudo actualizar el proyecto",
         "delete": "No se pudo eliminar el proyecto",
+        "archive": "No se pudo archivar el proyecto",
+        "restore": "No se pudo restaurar el proyecto",
         "pin": "No se pudo cambiar la fijación del proyecto",
         "move": "No se pudieron mover las sesiones al proyecto",
         "remove": "No se pudieron quitar las sesiones del proyecto",

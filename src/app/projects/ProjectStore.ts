@@ -56,6 +56,7 @@ export class ProjectStore {
       instructions: record.instructions,
       memoryPath: record.memoryPath,
       isPinned: record.isPinned,
+      isArchived: record.isArchived,
       createdAt: record.createdAt,
     };
     await this.adapter.writeManagedFile(this.#path(record.id), `${JSON.stringify(persisted, null, 2)}\n`);
@@ -100,6 +101,7 @@ function decodeProjectRecord(value: unknown, expectedId: string): ProjectRecord 
     instructions: raw.instructions,
     memoryPath,
     isPinned: raw.isPinned === true,
+    isArchived: raw.isArchived === true,
     createdAt: raw.createdAt,
   };
 }

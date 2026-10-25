@@ -372,7 +372,8 @@
       "menu": {
         "edit": "Projekt bearbeiten",
         "openMemory": "Projektgedächtnis öffnen",
-        "archiveAll": "Alle Sitzungen archivieren",
+        "archive": "Projekt archivieren",
+        "restore": "Projekt wiederherstellen",
         "pin": "Projekt anheften",
         "unpin": "Projekt lösen",
         "delete": "Projekt löschen",
@@ -387,6 +388,8 @@
         "create": "Projekt konnte nicht erstellt werden",
         "update": "Projekt konnte nicht aktualisiert werden",
         "delete": "Projekt konnte nicht gelöscht werden",
+        "archive": "Projekt konnte nicht archiviert werden",
+        "restore": "Projekt konnte nicht wiederhergestellt werden",
         "pin": "Anheften des Projekts konnte nicht geändert werden",
         "move": "Sitzungen konnten nicht in das Projekt verschoben werden",
         "remove": "Sitzungen konnten nicht aus dem Projekt entfernt werden",

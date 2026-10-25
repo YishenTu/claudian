@@ -10,6 +10,8 @@ export interface ProjectRecord {
   /** Vault-relative path of the project memory file (`.md`); editing the project can move or rename it. */
   readonly memoryPath: string;
   readonly isPinned: boolean;
+  /** Hidden from the active session list with its archived members; an archived project is never pinned. */
+  readonly isArchived: boolean;
   readonly createdAt: number;
 }
 
@@ -49,7 +51,10 @@ export interface ProjectReader {
 export interface ProjectMutations {
   create(input: ProjectCreateInput): Promise<ProjectRecord>;
   update(id: string, patch: ProjectUpdatePatch): Promise<void>;
+  /** Pinning an archived project is ignored. */
   setPinned(id: string, pinned: boolean): Promise<void>;
+  /** Archiving also unpins. Members keep their own archive state; the conversation lifecycle archives them. */
+  setArchived(id: string, archived: boolean): Promise<void>;
   /**
    * Removes the record and moves its memory file to the trash (best effort). Member sessions stay; their ids
    * resolve to no project until the caller clears them through the conversation owner.

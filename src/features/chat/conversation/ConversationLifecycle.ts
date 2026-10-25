@@ -1,17 +1,24 @@
 import { Notice } from 'obsidian';
 
-import type { Conversation, ConversationMeta, ConversationPlacement } from '@/core/types';
+import type {
+  Conversation,
+  ConversationMeta,
+  ConversationPlacement,
+  ProjectMutations,
+  ProjectReader,
+} from '@/core/types';
 import type { ChatTabManagerHost, ChatViewHost } from '@/features/chat/ChatFeatureHost';
 import type { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 import type { TabId } from '@/features/chat/tabs/ChatTab';
 
 /** Application conversation writes the lifecycle applies after its tab policy. */
 export interface ConversationLifecycleStore {
-  getConversationList(): readonly Pick<ConversationMeta, 'id' | 'isArchived'>[];
+  getConversationList(): readonly Pick<ConversationMeta, 'id' | 'isArchived' | 'projectId'>[];
   deleteConversation(id: string): Promise<void>;
   setConversationArchived(id: string, isArchived: boolean): Promise<void>;
   setConversationsPlacement(ids: readonly string[], placement: ConversationPlacement): Promise<void>;
   restoreConversations(ids: readonly string[]): Promise<void>;
+  archiveProjectIfEmpty(projectId: string): Promise<void>;
   archiveConversationsIf(
     ids: readonly string[],
     shouldArchive: (conversation: Readonly<Conversation>) => boolean,
@@ -21,6 +28,7 @@ export interface ConversationLifecycleStore {
 export interface ConversationLifecycleDeps {
   readonly sessions: Pick<SessionRuntimePool, 'get' | 'isRunning' | 'retire' | 'whenSettled'>;
   readonly conversations: ConversationLifecycleStore;
+  readonly projects: Pick<ProjectReader, 'get'> & Pick<ProjectMutations, 'setArchived'>;
   readonly views: { getAllViews(): readonly ChatViewHost[] };
 }
 
@@ -33,7 +41,8 @@ export type ArchivableConversation = Readonly<Pick<Conversation, 'id' | 'isPinne
 
 /**
  * The single owner of archive, restore, pin, project placement, and delete across every chat view. A session
- * counts as running while its runtime has foreground or background work, including without a view.
+ * counts as running while its runtime has foreground or background work, including without a view. An archived
+ * project keeps no active member: it is archived after all of them, and restoring any of them restores it first.
  */
 export class ConversationLifecycle {
   constructor(private readonly deps: ConversationLifecycleDeps) {}
@@ -72,6 +81,26 @@ export class ConversationLifecycle {
 
   /** Archives a batch, skipping sessions that are running or reopened before their write. */
   async archive(conversationIds: readonly string[]): Promise<void> {
+    await this.#archiveClosing(conversationIds);
+  }
+
+  /** Archives every active member, then the project; it stays active when any member is skipped. */
+  async archiveProject(projectId: string): Promise<void> {
+    const memberIds = this.#memberIds(projectId, false);
+    if (await this.#archiveClosing(memberIds) === memberIds.length) {
+      await this.deps.conversations.archiveProjectIfEmpty(projectId);
+    }
+  }
+
+  /** Restores the project, then its archived members. */
+  async restoreProject(projectId: string): Promise<void> {
+    await this.deps.projects.setArchived(projectId, false);
+    const memberIds = this.#memberIds(projectId, true);
+    if (memberIds.length > 0) await this.deps.conversations.restoreConversations(memberIds);
+  }
+
+  /** Returns how many sessions were archived. */
+  async #archiveClosing(conversationIds: readonly string[]): Promise<number> {
     const closedIds: string[] = [];
     for (const conversationId of conversationIds) {
       if (await this.#closeTabsBeforeArchive(conversationId)) closedIds.push(conversationId);
@@ -87,6 +116,7 @@ export class ConversationLifecycle {
     if (skippedCount > 0) {
       new Notice(`Skipped ${skippedCount} ${skippedCount === 1 ? 'session that is' : 'sessions that are'} open or running`);
     }
+    return archivedCount;
   }
 
   /** Archives closed sessions whose `shouldArchive` still holds at each write. */
@@ -115,8 +145,14 @@ export class ConversationLifecycle {
     }
   }
 
-  restore(conversationIds: readonly string[]): Promise<void> {
-    return this.deps.conversations.restoreConversations(conversationIds);
+  async restore(conversationIds: readonly string[]): Promise<void> {
+    await this.deps.conversations.restoreConversations(conversationIds);
+  }
+
+  #memberIds(projectId: string, isArchived: boolean): string[] {
+    return this.deps.conversations.getConversationList()
+      .filter(conversation => conversation.projectId === projectId && !!conversation.isArchived === isArchived)
+      .map(conversation => conversation.id);
   }
 
   /**
