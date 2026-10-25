@@ -8,8 +8,6 @@ import type {
   ComposerTriggerMatch,
 } from './types';
 
-const INPUT_LOAD_DEBOUNCE_MS = 200;
-
 export interface ComposerDropdownControllerOptions {
   readonly fixed?: boolean;
   /** Runs after the menu shows or hides. */
@@ -23,7 +21,6 @@ export class ComposerDropdownController {
   private activeMatch: ComposerTriggerMatch | null = null;
   private activeSource: ComposerDropdownSource | null = null;
   private destroyed = false;
-  private inputLoadTimer: number | null = null;
   private items: readonly ComposerDropdownItem[] = [];
   private selectedIndex = -1;
 
@@ -61,10 +58,10 @@ export class ComposerDropdownController {
   }
 
   handleInputChange(): void {
-    this.#rematchAndLoad(true);
+    this.#rematchAndLoad();
   }
 
-  #rematchAndLoad(inputDriven: boolean): void {
+  #rematchAndLoad(): void {
     if (this.destroyed) {
       this.hide();
       return;
@@ -87,7 +84,7 @@ export class ComposerDropdownController {
     this.activeSource = source;
     this.activeMatch = match;
     if (opening) source.onOpen?.();
-    this.#requestActiveLoad(inputDriven);
+    this.#requestActiveLoad();
   }
 
   handleKeydown(event: KeyboardEvent): boolean {
@@ -131,10 +128,10 @@ export class ComposerDropdownController {
 
   #rematchInput(): void {
     if (!this.activeSource || !this.activeMatch || this.destroyed) return;
-    this.#rematchAndLoad(false);
+    this.#rematchAndLoad();
   }
 
-  #requestActiveLoad(inputDriven: boolean): void {
+  #requestActiveLoad(): void {
     const source = this.activeSource;
     const match = this.activeMatch;
     if (!source || !match || this.destroyed) return;
@@ -142,58 +139,48 @@ export class ComposerDropdownController {
     this.#invalidateActiveLoad();
     const controller = new AbortController();
     this.activeController = controller;
+    let result: ReturnType<ComposerDropdownSource['load']>;
+    try {
+      result = source.load(match, controller.signal);
+    } catch {
+      this.#renderLoadFailure();
+      return;
+    }
+    // Synchronous results replace the list directly; only pending loads show a placeholder.
+    if (!(result instanceof Promise)) {
+      this.#renderLoaded(result);
+      return;
+    }
     this.items = [{ id: 'loading', kind: 'status', label: t('chat.suggestions.loading'), state: 'loading' }];
     this.selectedIndex = -1;
     this.view.render(this.items, this.selectedIndex);
-
-    if (inputDriven && source.inputLoadPolicy === 'debounced') {
-      this.inputLoadTimer = window.setTimeout(() => {
-        this.inputLoadTimer = null;
-        void this.loadActive(controller);
-      }, INPUT_LOAD_DEBOUNCE_MS);
-      return;
-    }
-
-    void this.loadActive(controller);
+    result.then(
+      items => { if (!controller.signal.aborted) this.#renderLoaded(items); },
+      () => { if (!controller.signal.aborted) this.#renderLoadFailure(); },
+    );
   }
 
-  private async loadActive(controller: AbortController): Promise<void> {
-    const source = this.activeSource;
-    const match = this.activeMatch;
-    if (
-      !source
-      || !match
-      || this.destroyed
-      || controller.signal.aborted
-    ) return;
+  #renderLoaded(items: readonly ComposerDropdownItem[]): void {
+    this.items = items.length > 0
+      ? items
+      : [{ id: 'empty', kind: 'status', label: t('chat.suggestions.noMatches'), state: 'empty' }];
+    this.selectedIndex = this.#findSelectable(0, 1, true);
+    this.view.render(this.items, this.selectedIndex);
+  }
 
-    try {
-      const items = await source.load(match, controller.signal);
-      if (controller.signal.aborted) return;
-      this.items = items.length > 0
-        ? items
-        : [{ id: 'empty', kind: 'status', label: t('chat.suggestions.noMatches'), state: 'empty' }];
-      this.selectedIndex = this.#findSelectable(0, 1, true);
-      this.view.render(this.items, this.selectedIndex);
-    } catch {
-      if (controller.signal.aborted) return;
-      this.items = [{
-        id: 'error',
-        kind: 'status',
-        label: t('chat.suggestions.loadFailed'),
-        detail: t('chat.suggestions.retryHint'),
-        state: 'error',
-      }];
-      this.selectedIndex = -1;
-      this.view.render(this.items, this.selectedIndex);
-    }
+  #renderLoadFailure(): void {
+    this.items = [{
+      id: 'error',
+      kind: 'status',
+      label: t('chat.suggestions.loadFailed'),
+      detail: t('chat.suggestions.retryHint'),
+      state: 'error',
+    }];
+    this.selectedIndex = -1;
+    this.view.render(this.items, this.selectedIndex);
   }
 
   #invalidateActiveLoad(): void {
-    if (this.inputLoadTimer !== null) {
-      window.clearTimeout(this.inputLoadTimer);
-      this.inputLoadTimer = null;
-    }
     this.activeController?.abort();
     this.activeController = null;
   }

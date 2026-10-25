@@ -21,7 +21,6 @@ export interface MentionSourceOptions {
 
 export class MentionSource implements ComposerDropdownSource {
   readonly id = 'mentions';
-  readonly inputLoadPolicy = 'debounced';
 
   private readonly listeners = new Set<() => void>();
 

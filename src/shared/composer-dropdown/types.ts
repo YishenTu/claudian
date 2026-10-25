@@ -71,7 +71,6 @@ export type ComposerSelectionAction =
 export interface ComposerDropdownSource {
   readonly id: string;
   onOpen?(): void;
-  readonly inputLoadPolicy?: 'debounced' | 'immediate';
   load(
     match: ComposerTriggerMatch,
     signal: AbortSignal,

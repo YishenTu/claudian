@@ -331,7 +331,10 @@ describe('Vault paths that resemble environment variables', () => {
     const h = createHarness();
     withVaultFiles(h);
     h.createSession().show();
-    submitInstruction(`Improve @${percentPath} using @${dollarPath}`);
+    typeInstruction(`Improve @${percentPath} using @${dollarPath}`);
+    // The trailing mention is still an open trigger, so Enter first accepts its suggestion.
+    fireEvent.click(await screen.findByRole('option', { name: dollarPath }));
+    fireEvent.keyDown(input(), { key: 'Enter' });
     await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
     const prompt = h.backend.sessions[0].requests[0].input
       .map(block => block.type === 'text' ? block.text : '')
@@ -373,12 +376,14 @@ describe('Vault mentions whose literal path ends in punctuation', () => {
       name: 'only the punctuation-ended file is known',
       vault: ['Report!'],
       instruction: 'Improve @Report!',
+      openSuggestion: 'Report!',
       contextBlock: '<context_files>\n<context_file path="Report!" />\n</context_files>',
     },
     {
       name: 'a shorter stem is known as well',
       vault: ['Report', 'Report!'],
       instruction: 'Improve @Report!',
+      openSuggestion: 'Report!',
       contextBlock: '<context_files>\n<context_file path="Report!" />\n</context_files>',
     },
     {
@@ -405,12 +410,17 @@ describe('Vault mentions whose literal path ends in punctuation', () => {
       instruction: 'Improve @Report..',
       contextBlock: '<context_files>\n<context_file path="Report." />\n</context_files>',
     },
-  ])('attaches the literal file for $name and keeps the complete instruction', async ({ vault, instruction, contextBlock }) => {
+  ])('attaches the literal file for $name and keeps the complete instruction', async ({
+    vault, instruction, openSuggestion, contextBlock,
+  }) => {
     const h = createHarness();
     withVaultFiles(h, vault);
     const result = h.createModal().openAndWait();
     await screen.findByRole('textbox', { name: 'Edit instructions' });
-    submitInstruction(instruction);
+    typeInstruction(instruction);
+    // A trailing mention that names a file is still an open trigger; accepting it keeps the literal path.
+    if (openSuggestion) fireEvent.click(await screen.findByRole('option', { name: openSuggestion }));
+    fireEvent.keyDown(input(), { key: 'Enter' });
     await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
     const prompt = h.backend.sessions[0].requests[0].input
       .map(block => block.type === 'text' ? block.text : '')
