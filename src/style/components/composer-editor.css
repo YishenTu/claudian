@@ -38,6 +38,13 @@
   color: var(--text-muted);
 }
 
+/* Restored drafts are plain text until first focus mounts CodeMirror. */
+.claudian-composer-editor[role="textbox"]:not(:empty) {
+  padding: var(--claudian-composer-padding-top) var(--claudian-composer-padding-inline) var(--claudian-composer-padding-bottom);
+  max-height: var(--claudian-textarea-max-height, none);
+  overflow: auto;
+}
+
 .claudian-composer-editor .cm-editor {
   background: transparent;
 }
