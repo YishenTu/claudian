@@ -7,12 +7,12 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
-import { getBlankTabModelOptions } from '@/features/chat/tabs/tabProviderSettings';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 import { updateCodexProviderSettings } from '@/providers/codex/settings';
 import { codexChatUIConfig } from '@/providers/codex/ui/CodexChatUIConfig';
 import { EffortSelector } from '@/shared/toolbar/EffortSelector';
 import { ModelSelector } from '@/shared/toolbar/ModelSelector';
+import { getProviderPickerModelOptions } from '@/shared/toolbar/providerPickerModelOptions';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
@@ -133,7 +133,7 @@ it('lists a new session\'s providers in their own column and shows one provider\
   const callbacks = {
     getSettings: () => settings,
     getUIConfig: () => ({
-      getModelOptions: getBlankTabModelOptions,
+      getModelOptions: (options: Record<string, unknown>) => getProviderPickerModelOptions(() => options),
       getReasoningOptions: () => [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }],
       getDefaultReasoningValue: () => 'low',
     }),
