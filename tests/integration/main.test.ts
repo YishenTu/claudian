@@ -307,7 +307,7 @@ describe('ClaudianPlugin', () => {
   it.each([
     ['organization', (settings: ClaudianSettings) => { settings.sessionManagerOrganization = 'linked-content'; }],
     ['sort', (settings: ClaudianSettings) => { settings.sessionManagerSort = 'created'; }],
-    ['project sort', (settings: ClaudianSettings) => { settings.projectSort = 'created'; }],
+    ['project order', (settings: ClaudianSettings) => { settings.projectOrder = ['research', 'launch']; }],
   ])('refreshes every view\'s session list when only session %s changes', async (_name, mutation) => {
     await plugin.onload();
     const views = createPublishedViews();

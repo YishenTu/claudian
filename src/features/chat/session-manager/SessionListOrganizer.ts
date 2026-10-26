@@ -5,7 +5,7 @@ import type {
   SessionManagerOrganization,
   SessionManagerSort,
 } from '@/core/types';
-import { compareProjectNames } from '@/features/chat/projects/projectOrder';
+import { orderProjects } from '@/features/chat/projects/projectOrder';
 import { isProvisionalNotePath } from '@/features/chat/session-manager/ProvisionalNoteNames';
 
 export type SessionListSectionKind = 'list' | 'recency' | 'content' | 'ungrouped' | 'missing' | 'project';
@@ -136,26 +136,10 @@ export function sessionManagerSectionKey(section: 'projects' | 'sessions' | 'arc
   return `section:${section}`;
 }
 
-/**
- * Pinned projects first, then by the project sort: latest member activity (creation for a project without
- * members) or creation.
- */
-function sortProjects(
-  records: readonly ProjectRecord[],
-  membersByProject: ReadonlyMap<string, readonly ConversationMeta[]>,
-  projectSort: SessionManagerSort,
-): ProjectRecord[] {
-  const timestamp = (record: ProjectRecord): number => {
-    const members = membersByProject.get(record.id) ?? [];
-    if (projectSort === 'created' || members.length === 0) return record.createdAt;
-    return Math.max(...members.map(getLastActivityTimestamp));
-  };
-  return [...records].sort((left, right) => (
-    Number(right.isPinned) - Number(left.isPinned)
-    || timestamp(right) - timestamp(left)
-    || compareProjectNames(left, right)
-    || left.id.localeCompare(right.id)
-  ));
+/** Pinned projects first, each group in the user's project order. */
+function sortProjects(records: readonly ProjectRecord[], projectOrder: readonly string[]): ProjectRecord[] {
+  return orderProjects(records, projectOrder)
+    .sort((left, right) => Number(right.isPinned) - Number(left.isPinned));
 }
 
 export function getLinkedContentTitle(contentPath: string): string {
@@ -248,7 +232,8 @@ export interface SessionListModelOptions {
    * session stays in the session list.
    */
   projects?: SessionListProjects;
-  projectSort: SessionManagerSort;
+  /** The saved project order (`savedProjectOrder`). */
+  projectOrder?: readonly string[];
   isGroupCollapsed?: (groupKey: string) => boolean;
   contentExists?: (contentPath: string) => boolean;
   contentIsNote?: (contentPath: string) => boolean;
@@ -369,7 +354,7 @@ export function deriveSessionListModel(
     : listedConversations.filter(matchesConversation);
   // A project matching the search lists all its members; otherwise it lists only matching members, if any.
   const projectSections = projects
-    ? sortProjects(projects.list(), conversationsByProject, options.projectSort).flatMap((project) => {
+    ? sortProjects(projects.list(), options.projectOrder ?? []).flatMap((project) => {
         const nameMatches = matchesSearch(project.name);
         const members = (conversationsByProject.get(project.id) ?? []).filter(conversation => (
           !isListedAsPinned(conversation, project) && (nameMatches || matchesConversation(conversation))

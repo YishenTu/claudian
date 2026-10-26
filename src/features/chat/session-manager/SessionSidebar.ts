@@ -85,6 +85,8 @@ export class SessionSidebar {
     const surfaceEl = this.surfaceEl ?? this.sidebarEl;
     if (!surfaceEl || !this.dirty || !this.deps.isWide()) return;
     if (this.isSearchComposing) return;
+    // The whole surface waits, since its list render clears the controls built around it.
+    if (this.deps.shared.browser.deferWhileSortingProjects(() => this.render())) return;
 
     const previousSearchInput = this.searchInputEl;
     const shouldRestoreSearchFocus = previousSearchInput?.ownerDocument.activeElement

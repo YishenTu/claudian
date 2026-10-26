@@ -61,6 +61,7 @@ describe('ClaudianSettingsStorage', () => {
         ...DEFAULT_SETTINGS,
         persistentExternalContextPaths: ['/old/project'],
         maxWarmAgentProcesses: 7,
+        projectSort: 'created',
         userName: 'Ada',
         providerConfigs: { claude: { loadUserSettings: true } },
       }));
@@ -75,6 +76,7 @@ describe('ClaudianSettingsStorage', () => {
       expect(written).not.toHaveProperty('persistentExternalContextPaths');
       expect(loaded).not.toHaveProperty('maxWarmAgentProcesses');
       expect(written).not.toHaveProperty('maxWarmAgentProcesses');
+      expect(written).not.toHaveProperty('projectSort');
     });
 
 
@@ -1089,9 +1091,4 @@ describe('ClaudianSettingsStorage project settings', () => {
     expect(written.sessionManagerOrganization).toBe('list');
   });
 
-  it('defaults the project sort to last activity', async () => {
-    const settings = await new ClaudianSettingsStorage(createAdapter({}), DEFAULT_SETTINGS).load();
-
-    expect(settings.projectSort).toBe('last-updated');
-  });
 });

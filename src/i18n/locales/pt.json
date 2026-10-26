@@ -357,12 +357,6 @@
     },
     "projects": {
       "header": "Projetos",
-      "options": "Opções de projetos",
-      "sortBy": "Ordenar projetos por",
-      "sort": {
-        "lastActivity": "Última atividade",
-        "created": "Criação"
-      },
       "noSessions": "Nenhuma sessão",
       "newSessionIn": "Nova sessão em {name}",
       "actionsFor": "Ações de {name}",
@@ -391,10 +385,10 @@
         "archive": "Não foi possível arquivar o projeto",
         "restore": "Não foi possível restaurar o projeto",
         "pin": "Falha ao alterar a fixação do projeto",
+        "reorder": "Falha ao reordenar os projetos",
         "move": "Falha ao mover as sessões para o projeto",
         "remove": "Falha ao remover as sessões do projeto",
-        "start": "Falha ao iniciar uma sessão neste projeto",
-        "sort": "Falha ao atualizar a ordenação dos projetos"
+        "start": "Falha ao iniciar uma sessão neste projeto"
       },
       "editor": {
         "titleNew": "Novo projeto",

@@ -357,12 +357,6 @@
     },
     "projects": {
       "header": "Proyectos",
-      "options": "Opciones de proyectos",
-      "sortBy": "Ordenar proyectos por",
-      "sort": {
-        "lastActivity": "Última actividad",
-        "created": "Creación"
-      },
       "noSessions": "Sin sesiones",
       "newSessionIn": "Nueva sesión en {name}",
       "actionsFor": "Acciones de {name}",
@@ -391,10 +385,10 @@
         "archive": "No se pudo archivar el proyecto",
         "restore": "No se pudo restaurar el proyecto",
         "pin": "No se pudo cambiar la fijación del proyecto",
+        "reorder": "No se pudieron reordenar los proyectos",
         "move": "No se pudieron mover las sesiones al proyecto",
         "remove": "No se pudieron quitar las sesiones del proyecto",
-        "start": "No se pudo iniciar una sesión en este proyecto",
-        "sort": "No se pudo actualizar el orden de los proyectos"
+        "start": "No se pudo iniciar una sesión en este proyecto"
       },
       "editor": {
         "titleNew": "Nuevo proyecto",

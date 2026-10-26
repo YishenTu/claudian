@@ -357,12 +357,6 @@
     },
     "projects": {
       "header": "專案",
-      "options": "專案選項",
-      "sortBy": "專案排序方式",
-      "sort": {
-        "lastActivity": "最近活動",
-        "created": "建立時間"
-      },
       "noSessions": "沒有工作階段",
       "newSessionIn": "在 {name} 中新增工作階段",
       "actionsFor": "{name} 的操作",
@@ -391,10 +385,10 @@
         "archive": "無法封存專案",
         "restore": "無法還原專案",
         "pin": "更新專案釘選狀態失敗",
+        "reorder": "重新排序專案失敗",
         "move": "將工作階段移動到專案失敗",
         "remove": "從專案中移除工作階段失敗",
-        "start": "在此專案中新增工作階段失敗",
-        "sort": "無法更新專案排序"
+        "start": "在此專案中新增工作階段失敗"
       },
       "editor": {
         "titleNew": "新增專案",

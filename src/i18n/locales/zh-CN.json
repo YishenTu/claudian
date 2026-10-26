@@ -357,12 +357,6 @@
     },
     "projects": {
       "header": "项目",
-      "options": "项目选项",
-      "sortBy": "项目排序方式",
-      "sort": {
-        "lastActivity": "最近活动",
-        "created": "创建时间"
-      },
       "noSessions": "暂无会话",
       "newSessionIn": "在 {name} 中新建会话",
       "actionsFor": "{name} 的操作",
@@ -391,10 +385,10 @@
         "archive": "无法归档项目",
         "restore": "无法恢复项目",
         "pin": "更新项目固定状态失败",
+        "reorder": "重新排序项目失败",
         "move": "将会话移动到项目失败",
         "remove": "从项目中移除会话失败",
-        "start": "在此项目中新建会话失败",
-        "sort": "无法更新项目排序"
+        "start": "在此项目中新建会话失败"
       },
       "editor": {
         "titleNew": "新建项目",

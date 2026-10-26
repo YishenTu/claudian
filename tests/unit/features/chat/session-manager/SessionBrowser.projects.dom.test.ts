@@ -6,7 +6,7 @@ import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { Menu } from 'obsidian';
 
-import type { ConversationMeta, ProjectRecord, SessionManagerSort } from '@/core/types';
+import type { ConversationMeta, ProjectRecord } from '@/core/types';
 import { SessionBrowser, type SessionBrowserDeps } from '@/features/chat/session-manager/SessionBrowser';
 import type { HistoryConversationStatus } from '@/features/chat/session-manager/SessionStatusPresentation';
 import { t } from '@/i18n/i18n';
@@ -46,7 +46,6 @@ const idle = projectRecord({ id: 'idle', name: 'Idle', createdAt: testDate({ day
 function setup(options: {
   conversations?: ConversationMeta[];
   records?: ProjectRecord[];
-  projectSort?: SessionManagerSort;
   render?: Record<string, unknown>;
   /** The document showing the list, such as a popped-out window's. */
   doc?: Document;
@@ -77,7 +76,7 @@ function setup(options: {
   const browser = new SessionBrowser({
     plugin: {
       app: {},
-      settings: { enableAutoTitleGeneration: false, projectSort: options.projectSort ?? 'last-updated' },
+      settings: { enableAutoTitleGeneration: false },
       getConversationList: () => conversations,
       conversationLifecycle: lifecycle, projects,
     },
@@ -190,7 +189,6 @@ it('shows the projects header without rows when there are no projects, and no se
   const region = projectsRegion(empty.container);
   expect(within(region).queryAllByRole('button')).toEqual([
     within(region).getByRole('button', { name: t('chat.projects.header') }),
-    within(region).getByRole('button', { name: t('chat.projects.options') }),
     within(region).getByRole('button', { name: t('chat.projects.newProjectAction') }),
   ]);
   expect(within(projectsRegion(empty.container)).queryByText(t('chat.projects.noSessions'))).toBeNull();
@@ -220,20 +218,6 @@ it('expands and collapses a project from its native toggle', () => {
   fireEvent.click(toggle());
   expect(onGroupCollapseChange).toHaveBeenLastCalledWith('project:launch', true);
   expect(within(projectsRegion(container)).queryByText('alpha session')).toBeNull();
-});
-
-it.each<[SessionManagerSort, string[]]>([
-  ['last-updated', ['Launch', 'Idle']],
-  // Launch was created ten days ago, Idle twelve hours ago.
-  ['created', ['Idle', 'Launch']],
-])('orders projects by the %s project sort', (projectSort, names) => {
-  const recentIdle = projectRecord({ id: 'idle', name: 'Idle', createdAt: testDate({ hours: -12 }).getTime() });
-  const { container } = setup({ records: [launch, research, recentIdle], projectSort });
-
-  expect(expandedProjectToggles(projectsRegion(container))
-    .map(toggle => toggle.textContent)).toEqual(names.map(name => (
-    sectionName(name, { Research: 1, Launch: 2, Idle: 0 }[name]!)
-  )));
 });
 
 it('starts a session in a project and manages the project from its section menu', async () => {

@@ -78,7 +78,7 @@ Each project in the **Projects** section has a collapse toggle, a New button and
 | Archive all sessions | Archives the project's sessions, skipping running ones. The project stays listed until you delete it. |
 | Delete project | Deletes the project after confirmation. See below. |
 
-The **Projects** header's sort menu orders projects by last activity or creation time. In single-pane mode, the history drop-up shows the same Projects section and actions, with pinned projects first.
+Drag a project row up or down in the sidebar to reorder projects. Pinned projects stay above the others, and each group reorders on its own. New projects appear at the top until you move them. In single-pane mode, the history drop-up shows the same Projects section and actions in the same order.
 
 ### Moving the memory file
 

@@ -42,6 +42,7 @@ const RETIRED_SHARED_SETTING_FIELDS = [
   'persistentExternalContextPaths',
   'hiddenProviderCommands',
   'maxWarmAgentProcesses',
+  'projectSort',
 ] as const;
 
 function getProviderSettingsAdapters() {

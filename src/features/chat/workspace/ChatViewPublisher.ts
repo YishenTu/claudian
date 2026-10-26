@@ -28,7 +28,7 @@ export class ChatViewPublisher {
     const contextChanged = JSON.stringify(settings.customContextLimits) !== JSON.stringify(previous.customContextLimits);
     const sessionsChanged = settings.sessionManagerOrganization !== previous.sessionManagerOrganization
       || settings.sessionManagerSort !== previous.sessionManagerSort
-      || settings.projectSort !== previous.projectSort
+      || JSON.stringify(settings.projectOrder) !== JSON.stringify(previous.projectOrder)
       || JSON.stringify(settings.expandedProjectIds) !== JSON.stringify(previous.expandedProjectIds);
     if (timestampsChanged || layoutChanged || commandsChanged || contextChanged || sessionsChanged) {
       for (const view of this.deps.views.getAllViews()) {

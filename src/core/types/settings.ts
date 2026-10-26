@@ -175,8 +175,11 @@ export interface ClaudianSettings {
   skillsSynced: boolean;
   sessionManagerOrganization?: SessionManagerOrganization;
   sessionManagerSort?: SessionManagerSort;
-  /** Order of the session manager's projects section; pinned projects always come first. */
-  projectSort?: SessionManagerSort;
+  /**
+   * Project ids in the user's dragged order; pinned projects still come first. Projects missing from it lead,
+   * newest first.
+   */
+  projectOrder?: string[];
   /** Project folders expanded in the session sidebar and compact history. */
   expandedProjectIds?: string[];
   pinnedLinkedContentPaths?: string[];

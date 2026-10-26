@@ -357,12 +357,6 @@
     },
     "projects": {
       "header": "Projects",
-      "options": "Project options",
-      "sortBy": "Sort projects by",
-      "sort": {
-        "lastActivity": "Last activity",
-        "created": "Created"
-      },
       "noSessions": "No sessions",
       "newSessionIn": "New session in {name}",
       "actionsFor": "Actions for {name}",
@@ -391,10 +385,10 @@
         "archive": "Failed to archive project",
         "restore": "Failed to restore project",
         "pin": "Failed to update project pin",
+        "reorder": "Failed to reorder projects",
         "move": "Failed to move sessions to project",
         "remove": "Failed to remove sessions from project",
-        "start": "Failed to start a session in this project",
-        "sort": "Failed to update project sorting"
+        "start": "Failed to start a session in this project"
       },
       "editor": {
         "titleNew": "New project",

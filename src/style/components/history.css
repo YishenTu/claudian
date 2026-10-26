@@ -331,6 +331,33 @@
   box-shadow: inset 0 0 0 1px var(--interactive-accent);
 }
 
+/*
+ * Live project sorting. The pressed project follows the pointer, keeping its row look, while the other projects of its
+ * group slide aside to open its slot; all movement is transform-only, so layout never changes mid-drag.
+ */
+.claudian-session-sidebar .claudian-project-sorting {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.claudian-session-sidebar .claudian-project-sorting > :is(.claudian-session-group-header, .claudian-session-group-body) {
+  transition: transform 160ms ease;
+}
+
+/* An expanded project folds to its row while dragged. */
+.claudian-session-sidebar .claudian-project-sorting > .claudian-project-sort-folded {
+  display: none;
+}
+
+/* The lifted row keeps its own hovered look and paints above the projects sliding under it. */
+.claudian-session-sidebar .claudian-project-sorting > .claudian-session-group-header.claudian-project-lifted {
+  position: relative;
+  z-index: 2;
+  background: var(--background-modifier-hover);
+  transition: none;
+  pointer-events: none;
+}
+
 .claudian-session-sidebar .claudian-history-section--sessions,
 .claudian-session-sidebar .claudian-history-section--archived {
   display: flex;

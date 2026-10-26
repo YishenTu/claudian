@@ -200,7 +200,7 @@ describe('deriveSessionListModel', () => {
     createConversation('archived', { title: 'Old chat', isArchived: true, lastActivityAt: 1 }),
   ];
   const base = {
-    organization: 'linked-content', sort: 'last-updated', projectSort: 'last-updated', language: 'en', scope: 'active',
+    organization: 'linked-content', sort: 'last-updated', language: 'en', scope: 'active',
   } as const;
 
   it('partitions pinned sessions and pinned Linked content out of the session groups', () => {
@@ -282,7 +282,7 @@ describe('deriveSessionListModel with a projects section', () => {
     createConversation('archived', { title: 'Old', projectId: 'alpha', isArchived: true, lastActivityAt: 50 }),
   ];
   const base = {
-    organization: 'list', sort: 'last-updated', projectSort: 'last-updated', language: 'en', scope: 'active',
+    organization: 'list', sort: 'last-updated', language: 'en', scope: 'active',
     projects: reader(records),
   } as const;
   const ids = (sections: readonly { conversations: readonly ConversationMeta[] }[]) => (
@@ -292,20 +292,20 @@ describe('deriveSessionListModel with a projects section', () => {
     (model.projectSections ?? []).map(section => [section.project.id, section.conversations.map(({ id }) => id)])
   );
 
-  it('orders projects pinned first, then by last member activity falling back to creation', () => {
-    const model = deriveSessionListModel(conversations, base);
+  it('orders projects pinned first, then by the saved order, with unsaved projects leading', () => {
+    // Empty is missing from the saved order, as a project created after the last reorder is.
+    const model = deriveSessionListModel(conversations, { ...base, projectOrder: ['quiet', 'alpha', 'beta'] });
 
     expect(projectRows(model)).toEqual([
       ['beta', ['beta-chat']],
-      // Activity of active members only: the archived member does not lift alpha.
-      ['alpha', ['alpha-new', 'alpha-old']],
       ['empty', []],
       ['quiet', ['quiet-chat']],
+      ['alpha', ['alpha-new', 'alpha-old']],
     ]);
     expect(model.pinnedProjectSections).toEqual([]);
     expect(model.projectSections?.every(section => section.kind === 'project')).toBe(true);
     expect(model.projectSections?.map(section => section.key)).toEqual([
-      'project:beta', 'project:alpha', 'project:empty', 'project:quiet',
+      'project:beta', 'project:empty', 'project:quiet', 'project:alpha',
     ]);
   });
 
@@ -321,13 +321,13 @@ describe('deriveSessionListModel with a projects section', () => {
       // Its pinned member stays with the project instead of joining the pinned sessions.
       ['alpha', ['alpha-new', 'alpha-old']],
     ]);
-    expect(projectRows(model).map(([id]) => id)).toEqual(['beta', 'empty', 'quiet']);
+    expect(projectRows(model).map(([id]) => id)).toEqual(['quiet', 'empty', 'beta']);
     expect(model.pinnedConversations.map(({ id }) => id)).toEqual(['pinned']);
     expect(model.isEmpty).toBe(false);
   });
 
-  it('orders projects by creation for the created project sort', () => {
-    const model = deriveSessionListModel(conversations, { ...base, projectSort: 'created' });
+  it('orders projects newest first without a saved order', () => {
+    const model = deriveSessionListModel(conversations, base);
 
     expect(model.projectSections?.map(section => section.project.id)).toEqual(['beta', 'quiet', 'empty', 'alpha']);
   });
