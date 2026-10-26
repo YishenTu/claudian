@@ -113,6 +113,12 @@ export class LinkedContentController {
     this.publish();
   }
 
+  /** New returning to a draft drops any explicit choice and links the active Note again. */
+  reopenAutoDraft(): void {
+    if (this.destroyed || (this.mode !== 'auto-draft' && this.mode !== 'explicit-draft')) return;
+    this.resetAutoDraft();
+  }
+
   selectExplicit(path: string | null): void {
     this.#assertLive();
     if (this.mode === 'submitting') {

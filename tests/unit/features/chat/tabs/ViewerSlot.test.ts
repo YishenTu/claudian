@@ -673,6 +673,42 @@ describe('ViewerSlot', () => {
       expect(shownDraft(manager)).toBe('new idea');
     });
 
+    it('re-links the focused Note whenever New returns to the new session, keeping its text', async () => {
+      let activeFile: { path: string; extension: string } | null = { path: 'Notes/A.md', extension: 'md' };
+      const focus = (path: string) => { activeFile = { path, extension: 'md' }; };
+      const plugin = conversationPlugin();
+      plugin.app.workspace.getActiveFile = () => activeFile;
+      const { manager } = createManager(plugin);
+      const shownLink = () => (manager.getActiveTab()!.linkedContent as any).getSnapshot();
+
+      await manager.viewerSlot.startDraft();
+      const session = manager.getActiveTab()!.session.runtime;
+      manager.getActiveTab()!.controllers.drafts.restore('main', { content: 'new idea' });
+      expect(shownLink()).toEqual({ mode: 'auto-draft', path: 'Notes/A.md' });
+
+      // Shown draft: a removed link follows focus again.
+      manager.getActiveTab()!.linkedContent.selectExplicit(null);
+      focus('Notes/B.md');
+      await manager.viewerSlot.startDraft();
+      expect([manager.getActiveTab()!.session.runtime === session, shownLink()])
+        .toEqual([true, { mode: 'auto-draft', path: 'Notes/B.md' }]);
+
+      // Held draft: an explicit pick is replaced by the Note focused while it was detached.
+      manager.getActiveTab()!.linkedContent.selectExplicit('Projects');
+      await manager.viewerSlot.show('conversation-1');
+      focus('Notes/C.md');
+      await manager.viewerSlot.startDraft();
+      expect([manager.getActiveTab()!.session.runtime === session, shownLink()])
+        .toEqual([true, { mode: 'auto-draft', path: 'Notes/C.md' }]);
+
+      // Held auto draft: it missed focus changes while detached.
+      await manager.viewerSlot.show('conversation-1');
+      focus('Notes/D.md');
+      await manager.viewerSlot.startDraft();
+      expect([manager.getActiveTab()!.session.runtime === session, shownLink(), shownDraft(manager)])
+        .toEqual([true, { mode: 'auto-draft', path: 'Notes/D.md' }, 'new idea']);
+    });
+
     it('starts a fresh new session when the remembered one created its conversation while browsing', async () => {
       const { manager } = createManager(conversationPlugin());
       await manager.viewerSlot.startDraft();
@@ -766,7 +802,7 @@ describe('ViewerSlot', () => {
               adapter: { basePath: '/vault' },
               getAbstractFileByPath: (path: string) => (files.has(path) ? { path } : null),
             },
-            workspace: { revealLeaf: jest.fn(), setActiveLeaf: jest.fn() },
+            workspace: { getActiveFile: () => null, revealLeaf: jest.fn(), setActiveLeaf: jest.fn() },
           },
           getCachedConversation: (id: string) => ({ id, providerId: 'claude' }),
           ...overrides,
@@ -788,7 +824,7 @@ describe('ViewerSlot', () => {
       expect(mockDestroyTab).toHaveBeenCalledWith(preview);
       expect(draft.conversationId).toBeNull();
       expect(draft.lifecycleState).toBe('provisional');
-      expect(draft.linkedContent.selectExplicit).toHaveBeenCalledWith('Projects/Plan.md');
+      expect(draft.linkedContent.getSnapshot()).toEqual({ mode: 'explicit-draft', path: 'Projects/Plan.md' });
       expect(draft.composer.focus).toHaveBeenCalledTimes(1);
     });
 
@@ -834,7 +870,7 @@ describe('ViewerSlot', () => {
         .rejects.toThrow('Linked content is no longer available');
 
       expect(manager.getAllTabs()).toEqual([retained]);
-      expect(mockTabs[1].linkedContent.selectExplicit).not.toHaveBeenCalled();
+      expect(mockTabs[1].linkedContent.getSnapshot()).toEqual({ mode: 'auto-draft', path: null });
     });
 
     it('closes the draft when selecting its Linked content fails', async () => {

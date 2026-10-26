@@ -17,6 +17,7 @@ import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/P
 import { createMockEl } from '@test/helpers/MockElement';
 
 import { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
+import { LinkedContentController } from '@/features/chat/linked-content/LinkedContentController';
 import { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { ChatState } from '@/features/chat/state/ChatState';
 import type { TabManager } from '@/features/chat/tabs/TabManager';
@@ -62,17 +63,20 @@ export const commandCatalog = {
   listDropdownEntries: jest.fn().mockResolvedValue([]),
 };
 
-/** Records an explicit Linked content choice the way the controller's snapshot reports it. */
-function createMockLinkedContent() {
-  let snapshot: { mode: string; path: string | null } = { mode: 'auto-draft', path: null };
-  return {
-    getSnapshot: () => snapshot,
-    selectExplicit: jest.fn((path: string | null) => { snapshot = { mode: 'explicit-draft', path }; }),
-  };
+/** The real Linked content owner over the plugin's app; only the vault index is empty. */
+function createLinkedContent(plugin: any): LinkedContentController {
+  const controller = new LinkedContentController({
+    app: plugin.app,
+    getExcludedTags: () => plugin.settings?.excludedTags ?? [],
+    getCachedVaultFiles: () => [],
+    getCachedVaultFolders: () => [],
+  });
+  controller.resetAutoDraft();
+  return controller;
 }
 
 const mockDraftSessions = new Map<string, ChatSessionRuntime>();
-const mockLinkedContent = new WeakMap<ChatSessionRuntime, ReturnType<typeof createMockLinkedContent>>();
+const mockLinkedContent = new WeakMap<ChatSessionRuntime, LinkedContentController>();
 const mockDraftProjects = new WeakMap<ChatSessionRuntime, string | null>();
 
 export function createMockTab(options: Record<string, any>): any {
@@ -113,7 +117,7 @@ export function createMockTab(options: Record<string, any>): any {
       },
     },
     composer: { focus: jest.fn() },
-    linkedContent: null as unknown as ReturnType<typeof createMockLinkedContent>,
+    linkedContent: null as unknown as LinkedContentController,
     controllers: {
       drafts: new ComposerDraftController({ getInput: () => input as never, getImages: () => null, getDestination: () => 'main' }),
       conversationController: {
@@ -156,7 +160,7 @@ export function createMockTab(options: Record<string, any>): any {
   mockDraftSessions.set(session.sessionKey, session);
   tab.session = new TabSession(tab, session);
   // Linked content belongs to the session's model, so a reattached session keeps its choice.
-  tab.linkedContent = mockLinkedContent.get(session) ?? createMockLinkedContent();
+  tab.linkedContent = mockLinkedContent.get(session) ?? createLinkedContent(options.plugin);
   mockLinkedContent.set(session, tab.linkedContent);
   for (const key of ['conversationId', 'providerId', 'draftModel'] as const) {
     Object.defineProperty(tab, key, { get: () => tab.session[key] });
@@ -238,8 +242,9 @@ export function createPlugin(overrides: Record<string, unknown> = {}) {
       holdDraft: (runtime: ChatSessionRuntime) => ({ key: runtime.sessionKey, runtime, release: () => undefined }),
     },
     app: {
-      vault: { adapter: { basePath: '/vault' } },
+      vault: { adapter: { basePath: '/vault' }, getAbstractFileByPath: () => null },
       workspace: {
+        getActiveFile: () => null,
         revealLeaf: jest.fn(),
         setActiveLeaf: jest.fn(),
       },

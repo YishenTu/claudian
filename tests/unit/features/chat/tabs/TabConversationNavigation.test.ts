@@ -264,7 +264,7 @@ describe('TabConversationNavigation', () => {
       getCachedConversation: (id: string) => ({ id, providerId: 'claude' }),
       app: {
         vault: { adapter: { basePath: '/vault' } },
-        workspace: { revealLeaf },
+        workspace: { getActiveFile: () => null, revealLeaf },
       },
       findConversationAcrossViews: jest.fn().mockReturnValue({
         tabId: 'other-tab',
@@ -312,7 +312,7 @@ describe('TabConversationNavigation', () => {
       getCachedConversation: (id: string) => ({ id, providerId: 'claude' }),
       app: {
         vault: { adapter: { basePath: '/vault' } },
-        workspace: { revealLeaf },
+        workspace: { getActiveFile: () => null, revealLeaf },
       },
       findConversationAcrossViews: jest.fn().mockReturnValue({
         tabId: 'other-tab',

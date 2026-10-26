@@ -200,6 +200,7 @@ export class ViewerSlot {
     const active = this.#activePreview();
     // The shown blank draft already is the new session.
     if (active && !active.conversationId && source === undefined && matchesSeed(active.session.runtime)) {
+      active.linkedContent.reopenAutoDraft();
       active.composer.focus();
       return active;
     }
@@ -223,6 +224,7 @@ export class ViewerSlot {
       return null;
     }
     try {
+      if (newSession) tab.linkedContent.reopenAutoDraft();
       // Assembly applied the seed before publishing the draft.
       if (membership.getActiveTabId() === tab.id) tab.composer.focus();
     } catch (error) {

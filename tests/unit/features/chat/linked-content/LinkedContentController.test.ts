@@ -95,6 +95,31 @@ describe('LinkedContentController', () => {
     expect(harness.controller.getSnapshot().path).toBe('Notes/First.md');
   });
 
+  it('reopens any editable draft to the active Note', () => {
+    const stale = createFile('Notes/Stale.md');
+    const note = createFile('Notes/Focus.md');
+    const harness = createHarness([stale, note, createFolder('Projects')]);
+    harness.setActiveFile(stale);
+    harness.controller.resetAutoDraft();
+    harness.setActiveFile(note);
+    harness.controller.reopenAutoDraft();
+    expect(harness.controller.getSnapshot()).toEqual({ mode: 'auto-draft', path: 'Notes/Focus.md' });
+
+    harness.controller.selectExplicit('Projects');
+    harness.controller.reopenAutoDraft();
+    expect(harness.controller.getSnapshot()).toEqual({ mode: 'auto-draft', path: 'Notes/Focus.md' });
+
+    harness.controller.selectExplicit(null);
+    harness.controller.reopenAutoDraft();
+    expect(harness.controller.getSnapshot()).toEqual({ mode: 'auto-draft', path: 'Notes/Focus.md' });
+
+    harness.controller.selectExplicit(null);
+    const token = harness.controller.beginSubmission();
+    harness.controller.reopenAutoDraft();
+    harness.controller.commitSubmission(token);
+    expect(harness.controller.getSnapshot()).toEqual({ mode: 'locked', path: null });
+  });
+
   it('normalizes every explicit selection through the core Linked content codec', () => {
     const harness = createHarness();
 
