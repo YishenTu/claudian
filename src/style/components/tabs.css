@@ -75,6 +75,14 @@ button.claudian-tab-badge:focus-visible {
   outline-offset: 1px;
 }
 
+button.claudian-tab-badge-drop-before {
+  box-shadow: inset 3px 0 var(--interactive-accent);
+}
+
+button.claudian-tab-badge-drop-after {
+  box-shadow: inset -3px 0 var(--interactive-accent);
+}
+
 button.claudian-tab-badge-active {
   border-color: var(--interactive-accent);
   color: var(--text-normal);

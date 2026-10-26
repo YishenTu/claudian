@@ -142,6 +142,33 @@ describe('TabManager provider execution orchestration', () => {
     });
   });
 
+  it('persists a reordered tab list without changing the active tab or its runtime', async () => {
+    const onTabReordered = jest.fn();
+    const { manager } = createManager(createPlugin(), { onTabReordered });
+    const first = await manager.createTab(null, 'first');
+    const second = await manager.createTab(null, 'second');
+    const third = await manager.createTab(null, 'third');
+
+    expect(manager.moveTab('first', 'third', true)).toBe(true);
+    expect(manager.getTabBarItems().map(tab => [tab.id, tab.index])).toEqual([
+      ['second', 1], ['third', 2], ['first', 3],
+    ]);
+    expect(manager.getPersistedState().openTabs.map(tab => tab.tabId)).toEqual(['second', 'third', 'first']);
+    expect(manager.getActiveTabId()).toBe(third!.id);
+    expect(manager.getTab('first')).toBe(first);
+    expect(manager.getTab('second')).toBe(second);
+    expect(onTabReordered).toHaveBeenCalledTimes(1);
+
+    expect(manager.moveTab('first', 'third', true)).toBe(false);
+    expect(manager.moveTab('missing', 'third', false)).toBe(false);
+    expect(onTabReordered).toHaveBeenCalledTimes(1);
+
+    const restored = createManager().manager;
+    await restored.restoreState(manager.getPersistedState());
+    expect(restored.getTabBarItems().map(tab => tab.id)).toEqual(['second', 'third', 'first']);
+    expect(restored.getActiveTabId()).toBe('third');
+  });
+
   it('keeps the committed active tab visible while another tab is hydrating', async () => {
     const { manager } = createManager(createPlugin({
       getCachedConversation: jest.fn((id: string) => ({ id, providerId: 'claude' })),

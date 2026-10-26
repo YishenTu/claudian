@@ -306,6 +306,10 @@ export class ClaudianView extends ItemView implements ZenModeSource {
           if (isTabWorkspaceInitialized()) this.updateTabBar();
           persist();
         },
+        onTabReordered: () => {
+          if (isTabWorkspaceInitialized()) this.updateTabBar();
+          persist();
+        },
         onTabWorkChanged: () => {
           if (isTabWorkspaceInitialized()) {
             this.updateTabBar();
@@ -429,6 +433,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
         void this.handleTabClose(tabId);
       },
       onTabLabelChange: (tabId, label) => this.tabManager?.setTabLabel(tabId, label),
+      onTabMove: (tabId, targetTabId, after) => this.tabManager?.moveTab(tabId, targetTabId, after),
       onDisplayStateChanged: () => this.tabWorkspace.persist(),
     });
 

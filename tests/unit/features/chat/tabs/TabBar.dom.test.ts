@@ -29,6 +29,7 @@ function setup(items: TabBarItem[] = [item(), item({ id: 'tab-2', index: 2, titl
   const callbacks = {
     onTabClick: jest.fn(),
     onTabClose: jest.fn(),
+    onTabMove: jest.fn(),
     onTabLabelChange: jest.fn(),
     onDisplayStateChanged: jest.fn(),
   };
@@ -70,6 +71,30 @@ afterEach(() => {
 });
 
 describe('TabBar tab labels', () => {
+  it('requests a drop-position reorder without switching tabs', () => {
+    const { callbacks, ui } = setup();
+    const first = ui.getByRole('button', { name: /^Refactor/ });
+    const second = ui.getByRole('button', { name: /^Second/ });
+    second.getBoundingClientRect = jest.fn(() => ({ left: 100, width: 24 } as DOMRect));
+    const dataTransfer = { setData: jest.fn(), effectAllowed: 'uninitialized', dropEffect: 'none' };
+
+    fireEvent.dragStart(first, { dataTransfer });
+    fireEvent(second, new MouseEvent('dragover', { bubbles: true, cancelable: true, clientX: 120 }));
+    fireEvent(second, new MouseEvent('drop', { bubbles: true, cancelable: true, clientX: 120 }));
+
+    expect(callbacks.onTabMove).toHaveBeenCalledWith('tab-1', 'tab-2', true);
+    expect(callbacks.onTabClick).not.toHaveBeenCalled();
+    fireEvent.dragEnd(first, { dataTransfer });
+
+    fireEvent(first, new MouseEvent('drop', { bubbles: true, cancelable: true, clientX: 100 }));
+    expect(callbacks.onTabMove).toHaveBeenCalledTimes(1);
+
+    first.getBoundingClientRect = jest.fn(() => ({ left: 100, width: 24 } as DOMRect));
+    fireEvent.dragStart(second, { dataTransfer });
+    fireEvent(first, new MouseEvent('drop', { bubbles: true, cancelable: true, clientX: 101 }));
+    expect(callbacks.onTabMove).toHaveBeenLastCalledWith('tab-2', 'tab-1', false);
+  });
+
   it('renders badges as native buttons whose context menu replaces right-click close', async () => {
     const { container, callbacks, ui } = setup([
       item(),

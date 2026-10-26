@@ -78,6 +78,33 @@ export class TabMembership implements TabMembershipView {
     return this.#members().length;
   }
 
+  /** Moves one visible tab relative to another without changing its identity or activation. */
+  move(tabId: TabId, targetTabId: TabId, after: boolean): boolean {
+    if (this.#destroyed || this.#identitiesSealed || tabId === targetTabId) return false;
+    const entries = [...this.#records.entries()];
+    const visibleIds = entries.filter(([, record]) => record.member).map(([id]) => id);
+    const sourceIndex = visibleIds.indexOf(tabId);
+    if (sourceIndex < 0 || !visibleIds.includes(targetTabId)) return false;
+    visibleIds.splice(sourceIndex, 1);
+    const targetIndex = visibleIds.indexOf(targetTabId);
+    visibleIds.splice(targetIndex + (after ? 1 : 0), 0, tabId);
+    const priorIds = entries.filter(([, record]) => record.member).map(([id]) => id);
+    if (visibleIds.every((id, index) => id === priorIds[index])) return false;
+
+    const records = new Map(entries);
+    this.#records.clear();
+    let visibleIndex = 0;
+    for (const [id, record] of entries) {
+      if (!record.member) {
+        this.#records.set(id, record);
+      } else {
+        const nextId = visibleIds[visibleIndex++];
+        this.#records.set(nextId, records.get(nextId)!);
+      }
+    }
+    return true;
+  }
+
   /** Owned or reserved: the ID cannot be taken by another tab. */
   holds(tabId: TabId): boolean {
     return this.#records.has(tabId);
