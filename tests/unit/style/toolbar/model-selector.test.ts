@@ -105,13 +105,17 @@ describe('Toolbar popover styles', () => {
     }
   });
 
-  it('flips each chip chevron to point up while its menu is open', () => {
+  it('flips each chip chevron to point up while its menu is open above it', () => {
     const toolbar = renderToolbar();
     for (const button of Array.from(toolbar.querySelectorAll<HTMLElement>('button.claudian-toolbar-chip'))) {
       const chevron = button.querySelector('.claudian-toolbar-chip-chevron')!;
       expect(['', 'none']).toContain(style(chevron).transform);
       button.setAttribute('aria-expanded', 'true');
       expect(style(chevron).transform).toBe('rotate(180deg)');
+      // A floating menu that opens below the chip keeps the chevron pointing down at it.
+      button.setAttribute('data-menu-placement', 'below');
+      expect(['', 'none']).toContain(style(chevron).transform);
+      button.removeAttribute('data-menu-placement');
       button.setAttribute('aria-expanded', 'false');
       expect(['', 'none']).toContain(style(chevron).transform);
     }

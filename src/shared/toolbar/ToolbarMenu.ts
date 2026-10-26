@@ -248,6 +248,7 @@ export class ToolbarMenu {
     this.#floatingWindow?.removeEventListener('resize', this.#placeFloating);
     this.#floatingWindow = null;
     this.menuEl.removeClass('claudian-toolbar-popover--floating');
+    this.buttonEl.removeAttribute('data-menu-placement');
     this.anchorEl.appendChild(this.menuEl);
   }
 
@@ -267,6 +268,9 @@ export class ToolbarMenu {
     const above = aboveEdge - margin;
     const below = view.innerHeight - margin - belowEdge;
     const opensBelow = height > above && below > above;
+    // The chip's chevron points toward the open menu.
+    if (opensBelow) this.buttonEl.setAttribute('data-menu-placement', 'below');
+    else this.buttonEl.removeAttribute('data-menu-placement');
     this.menuEl.setCssProps({
       '--claudian-toolbar-popover-top': opensBelow ? `${belowEdge}px` : 'auto',
       '--claudian-toolbar-popover-max-height': `${Math.max(0, opensBelow ? below : above)}px`,
