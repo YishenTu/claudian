@@ -227,7 +227,7 @@ it('saves the model and effort chosen on its composer chip as the inline edit de
   fireEvent.click(screen.getByRole('button', { name: 'Model: Sonnet, effort High' }));
   fireEvent.click(screen.getByRole('option', { name: 'Opus' }));
   await screen.findByRole('button', { name: 'Model: Opus, effort High' });
-  fireEvent.change(screen.getByRole('slider', { name: 'Effort' }), { target: { value: '0' } });
+  fireEvent.click(within(screen.getByRole('listbox', { name: 'Thinking' })).getByRole('option', { name: 'Low' }));
   await screen.findByRole('button', { name: 'Model: Opus, effort Low' });
   submitInstruction();
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));

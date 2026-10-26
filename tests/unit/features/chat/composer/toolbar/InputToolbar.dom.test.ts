@@ -104,24 +104,12 @@ function renderToolbar(fixture: FixtureOptions = {}) {
 
 const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
-/** The slider's level as the user perceives it: value, announced text, visible label and announced detail. */
-function sliderLevel(slider: HTMLElement) {
-  const input = slider as HTMLInputElement;
-  const section = input.closest('[role="group"]')!;
-  return {
-    value: input.value,
-    valueText: input.getAttribute('aria-valuetext'),
-    shown: section.querySelector('.claudian-toolbar-slider-value')?.textContent,
-    detail: input.getAttribute('aria-description'),
-  };
-}
-
 afterEach(() => {
   document.body.replaceChildren();
 });
 
 describe('model button', () => {
-  it('opens its popover on click rather than hover, with a model list and an effort slider', async () => {
+  it('opens its popover on click rather than hover, with model and thinking columns side by side', async () => {
     const { host, ui } = renderToolbar();
     const button = ui.getByRole('button', { name: 'Model: Sonnet, effort High' });
     expect(button.getAttribute('type')).toBe('button');
@@ -139,18 +127,26 @@ describe('model button', () => {
     const models = within(dialog).getByRole('listbox', { name: 'Model' });
     const selected = within(models).getByRole('option', { name: 'Sonnet', selected: true });
     expect(document.activeElement).toBe(selected);
-    // Each control is one tab stop: the selected model, then the slider.
+    // Each list is one tab stop: its selected entry.
     expect(within(models).getAllByRole('option').map(option => option.tabIndex)).toEqual([-1, 0, -1]);
+    // A model's description is its second line.
+    expect(within(models).getByRole('option', { name: 'Haiku' }).textContent).toBe('HaikuFast and efficient');
+    // A session's own provider is fixed, so there is no provider column.
+    expect(within(dialog).queryByRole('tablist')).toBeNull();
 
-    const effort = within(dialog).getByRole('group', { name: 'Effort' });
-    const slider = within(effort).getByRole('slider', { name: 'Effort' }) as HTMLInputElement;
-    expect([slider.type, slider.min, slider.max, slider.step]).toEqual(['range', '0', '3', '1']);
-    expect(sliderLevel(slider)).toEqual({ value: '2', valueText: 'High', shown: 'High', detail: 'Deeper reasoning' });
-    // The level's description is announced only: nothing is written under the track and nothing pops up on hover.
-    expect(effort.textContent).toBe('EffortHighFasterSmarter');
-    expect(slider.hasAttribute('title')).toBe(false);
-    // One visible stop per level the provider reports.
-    expect(effort.querySelectorAll('.claudian-toolbar-slider-tick')).toHaveLength(4);
+    // Levels run from the deepest at the top to the fastest at the bottom.
+    const effort = within(dialog).getByRole('listbox', { name: 'Thinking' });
+    const levels = within(effort).getAllByRole('option');
+    expect(levels.map(level => [
+      level.querySelector('.claudian-toolbar-popover-option-label')?.textContent,
+      level.getAttribute('aria-selected'),
+      level.tabIndex,
+    ])).toEqual([['Max', 'false', -1], ['High', 'true', 0], ['Med', 'false', -1], ['Low', 'false', -1]]);
+    // A level's description is announced, not shown.
+    const high = within(effort).getByRole('option', { name: 'High' });
+    expect(high.textContent).toBe('High');
+    expect(high.getAttribute('aria-description')).toBe('Deeper reasoning');
+    expect(levels.some(level => level.hasAttribute('title'))).toBe(false);
     expect((await axe(host)).violations).toEqual([]);
 
     fireEvent.click(button);
@@ -158,53 +154,46 @@ describe('model button', () => {
     expect(button.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('moves between controls with Up and Down and leaves the level keys to the slider', () => {
+  it('moves through every control with Up and Down, keeping Home and End inside each list', () => {
     const { ui } = renderToolbar({ serviceTier: true });
     const button = ui.getByRole('button', { name: /^Model: Sonnet/ });
     fireEvent.keyDown(button, { key: 'ArrowDown' });
     const dialog = ui.getByRole('dialog', { name: 'Model options' });
-    const option = (name: string) => within(dialog).getByRole('option', { name });
-    const slider = within(dialog).getByRole('slider', { name: 'Effort' });
-    const fastMode = within(dialog).getByRole('switch', { name: 'Fast mode' });
-    expect(document.activeElement).toBe(option('Sonnet'));
+    const models = within(dialog).getByRole('listbox', { name: 'Model' });
+    const effort = within(dialog).getByRole('listbox', { name: 'Thinking' });
+    const model = (name: string) => within(models).getByRole('option', { name });
+    const level = (name: string) => within(effort).getByRole('option', { name });
+    const fastMode = within(dialog).getByRole('switch', { name: 'Fast' });
+    expect(document.activeElement).toBe(model('Sonnet'));
 
     fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
-    expect(document.activeElement).toBe(option('Opus'));
+    expect(document.activeElement).toBe(model('Opus'));
     fireEvent.keyDown(document.activeElement!, { key: 'Home' });
-    expect(document.activeElement).toBe(option('Haiku'));
-    // Home and End stay inside the model list.
+    expect(document.activeElement).toBe(model('Haiku'));
     fireEvent.keyDown(document.activeElement!, { key: 'End' });
-    expect(document.activeElement).toBe(option('Opus'));
+    expect(document.activeElement).toBe(model('Opus'));
     fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
-    expect(document.activeElement).toBe(slider);
-
-    // Left, Right, Home, End and the Page keys change the level natively, so they pass through.
-    for (const key of ['ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']) {
-      expect(fireEvent.keyDown(slider, { key })).toBe(true);
-      expect(document.activeElement).toBe(slider);
-    }
-    // Up and Down leave the slider instead of changing the level.
-    expect(fireEvent.keyDown(slider, { key: 'ArrowDown' })).toBe(false);
+    expect(document.activeElement).toBe(level('Max'));
+    fireEvent.keyDown(document.activeElement!, { key: 'End' });
+    expect(document.activeElement).toBe(level('Low'));
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
     expect(document.activeElement).toBe(fastMode);
     fireEvent.keyDown(fastMode, { key: 'ArrowDown' });
-    expect(document.activeElement).toBe(option('Haiku'));
+    expect(document.activeElement).toBe(model('Haiku'));
     fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
     expect(document.activeElement).toBe(fastMode);
-    fireEvent.keyDown(fastMode, { key: 'ArrowUp' });
-    expect(fireEvent.keyDown(slider, { key: 'ArrowUp' })).toBe(false);
-    expect(document.activeElement).toBe(option('Opus'));
 
     // Tab moves between the popover's controls instead of closing it.
-    expect(fireEvent.keyDown(option('Opus'), { key: 'Tab' })).toBe(true);
+    expect(fireEvent.keyDown(fastMode, { key: 'Tab' })).toBe(true);
     expect(ui.getByRole('dialog')).toBe(dialog);
-    expect([slider.tabIndex, fastMode.tabIndex]).toEqual([0, 0]);
+    expect([level('High').tabIndex, fastMode.tabIndex]).toEqual([0, 0]);
 
     fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
     expect(ui.queryByRole('dialog')).toBeNull();
     expect(document.activeElement).toBe(button);
 
     fireEvent.keyDown(button, { key: 'ArrowUp' });
-    expect(document.activeElement).toBe(ui.getByRole('switch', { name: 'Fast mode' }));
+    expect(document.activeElement).toBe(ui.getByRole('switch', { name: 'Fast' }));
   });
 
   it('consumes Escape for an open menu before document key handlers in either phase', () => {
@@ -280,71 +269,55 @@ describe('model button', () => {
     expect(ui.getByRole('dialog', { name: 'Model options' })).toBeDefined();
   });
 
-  it('follows the thumb while dragging and commits the level once, on release', async () => {
-    const { callbacks, outsideEl, toolbar, ui } = renderToolbar();
+  it('changes the thinking level from its list and keeps the popover open on the chosen level', async () => {
+    const { callbacks, ui } = renderToolbar();
     const button = ui.getByRole('button', { name: /^Model:/ });
     fireEvent.click(button);
-    const slider = ui.getByRole('slider', { name: 'Effort' });
-    slider.focus();
-
-    fireEvent.pointerDown(slider);
-    fireEvent.input(slider, { target: { value: '1' } });
-    fireEvent.input(slider, { target: { value: '0' } });
-    expect(sliderLevel(slider)).toEqual({ value: '0', valueText: 'Low', shown: 'Low', detail: null });
-    expect(callbacks.onEffortLevelChange).not.toHaveBeenCalled();
-    // A refresh mid-drag neither replaces the slider nor snaps it back to the saved level.
-    toolbar.effortSelector.updateDisplay();
-    expect(ui.getByRole('slider', { name: 'Effort' })).toBe(slider);
-    expect(sliderLevel(slider).value).toBe('0');
-    // Releasing outside the popover does not close it.
-    fireEvent.pointerUp(outsideEl);
-    expect(ui.getByRole('dialog', { name: 'Model options' })).toBeDefined();
-    expect(button.getAttribute('aria-label')).toBe('Model: Sonnet, effort High');
-
-    fireEvent.change(slider);
+    const low = ui.getByRole('option', { name: 'Low' });
+    low.focus();
+    fireEvent.click(low);
     await flush();
-    expect(callbacks.onEffortLevelChange).toHaveBeenCalledTimes(1);
     expect(callbacks.onEffortLevelChange).toHaveBeenCalledWith('low');
     expect(button.getAttribute('aria-label')).toBe('Model: Sonnet, effort Low');
     expect(button.querySelector('.claudian-thinking-current')?.textContent).toBe('Low');
-    expect(ui.getByRole('slider', { name: 'Effort' })).toBe(slider);
-    expect(document.activeElement).toBe(slider);
-
-    // Committing the current level again still reaches the provider, as re-picking it always has.
-    fireEvent.change(slider);
-    await flush();
-    expect(callbacks.onEffortLevelChange).toHaveBeenCalledTimes(2);
-    expect(callbacks.onEffortLevelChange).toHaveBeenLastCalledWith('low');
+    const chosen = within(ui.getByRole('listbox', { name: 'Thinking' })).getByRole('option', { name: 'Low', selected: true });
+    expect(document.activeElement).toBe(chosen);
+    expect(chosen.tabIndex).toBe(0);
+    expect(ui.getByRole('dialog', { name: 'Model options' })).toBeDefined();
   });
 
-  it('keeps the latest keyboard level while earlier commits are still saving', async () => {
-    const { callbacks, settings, toolbar, ui } = renderToolbar();
-    const pending: Array<() => void> = [];
-    const onEffortLevelChange = callbacks.onEffortLevelChange as jest.Mock;
-    onEffortLevelChange.mockImplementation((effort: string) => new Promise<void>((resolve) => {
-      pending.push(() => {
-        settings.reasoning = effort;
-        // The runtime refreshes the toolbar as each save lands, as side chat's settings path does.
-        toolbar.effortSelector.updateDisplay();
-        resolve();
-      });
-    }));
-    fireEvent.click(ui.getByRole('button', { name: /^Model:/ }));
-    const slider = ui.getByRole('slider', { name: 'Effort' });
-    // Keyboard steps fire input and change together, one commit per step.
-    for (const value of ['1', '0']) {
-      fireEvent.input(slider, { target: { value } });
-      fireEvent.change(slider);
-    }
-    expect(onEffortLevelChange.mock.calls).toEqual([['medium'], ['low']]);
+  it('restores focus to the chosen model when another upstream group has a model of the same name', async () => {
+    const { callbacks, ui } = renderToolbar({
+      settings: { model: 'openai/gpt-5' },
+      models: [
+        { value: 'openai/gpt-5', label: 'GPT-5', group: 'OpenAI' },
+        { value: 'openrouter/gpt-5', label: 'GPT-5', group: 'OpenRouter' },
+      ],
+    });
+    fireEvent.click(ui.getByRole('button', { name: /^Model: GPT-5/ }));
+    const routed = within(ui.getByRole('group', { name: 'OpenRouter' })).getByRole('option', { name: 'GPT-5' });
+    routed.focus();
+    fireEvent.click(routed);
+    await flush();
+    expect(callbacks.onModelChange).toHaveBeenCalledWith('openrouter/gpt-5');
+    const chosen = within(ui.getByRole('group', { name: 'OpenRouter' })).getByRole('option', { name: 'GPT-5', selected: true });
+    expect(document.activeElement).toBe(chosen);
+  });
 
-    pending[0]();
-    await flush();
-    expect(sliderLevel(slider)).toMatchObject({ value: '0', valueText: 'Low' });
-    pending[1]();
-    await flush();
-    expect(sliderLevel(slider)).toMatchObject({ value: '0', valueText: 'Low' });
-    expect(ui.getByRole('button', { name: 'Model: Sonnet, effort Low' })).toBeDefined();
+  it('keeps one tab stop in the level list when neither the saved nor the default level is listed', () => {
+    const { ui } = renderToolbar({ reasoningOptions: [{ value: 'low', label: 'Low' }, { value: 'max', label: 'Max' }] });
+    fireEvent.click(ui.getByRole('button', { name: /^Model: Sonnet/ }));
+    const levels = within(ui.getByRole('listbox', { name: 'Thinking' })).getAllByRole('option');
+    expect(levels.map(level => [level.getAttribute('aria-selected'), level.tabIndex])).toEqual([['false', 0], ['false', -1]]);
+  });
+
+  it('keeps a saved level the provider no longer lists on the button without selecting a listed one', () => {
+    const { ui } = renderToolbar({ settings: { reasoning: 'ultra' } });
+    fireEvent.click(ui.getByRole('button', { name: 'Model: Sonnet, effort Ultra' }));
+    const levels = within(ui.getByRole('listbox', { name: 'Thinking' })).getAllByRole('option');
+    expect(levels.filter(level => level.getAttribute('aria-selected') === 'true')).toEqual([]);
+    // The default level holds the list's tab stop.
+    expect(levels.map(level => level.tabIndex)).toEqual([-1, 0, -1, -1]);
   });
 
   it.each([
@@ -355,8 +328,8 @@ describe('model button', () => {
     const { ui } = renderToolbar(fixture);
     fireEvent.click(ui.getByRole('button', { name: 'Model: Sonnet' }));
     expect(ui.getByRole('dialog', { name: 'Model options' })).toBeDefined();
-    expect(ui.queryByRole('slider')).toBeNull();
-    expect(ui.queryByRole('group', { name: 'Effort' })).toBeNull();
+    expect(ui.getByRole('listbox', { name: 'Model' })).toBeDefined();
+    expect(ui.queryByRole('listbox', { name: 'Thinking' })).toBeNull();
   });
 
   it('shows fast mode on the button and switches it from the model menu', async () => {
@@ -364,19 +337,19 @@ describe('model button', () => {
     const button = ui.getByRole('button', { name: 'Model: Sonnet, effort High' });
     expect(button.querySelector('.claudian-service-tier-indicator')?.classList.contains('claudian-hidden')).toBe(true);
     fireEvent.click(button);
-    const fastMode = ui.getByRole('switch', { name: 'Fast mode' });
+    const fastMode = ui.getByRole('switch', { name: 'Fast' });
     expect(fastMode.getAttribute('aria-checked')).toBe('false');
     expect(fastMode.getAttribute('title')).toBe('Fast mode: Standard\n1.5x speed, 2x credits');
     fireEvent.click(fastMode);
     await flush();
     expect(callbacks.onServiceTierChange).toHaveBeenCalledWith('fast');
-    expect(ui.getByRole('switch', { name: 'Fast mode' }).getAttribute('aria-checked')).toBe('true');
+    expect(ui.getByRole('switch', { name: 'Fast' }).getAttribute('aria-checked')).toBe('true');
     expect(ui.getByRole('button', { name: 'Model: Sonnet, effort High, fast mode on' })).toBe(button);
     expect(button.querySelector('.claudian-service-tier-indicator')?.classList.contains('claudian-hidden')).toBe(false);
-    fireEvent.click(ui.getByRole('switch', { name: 'Fast mode' }));
+    fireEvent.click(ui.getByRole('switch', { name: 'Fast' }));
     await flush();
     expect(callbacks.onServiceTierChange).toHaveBeenLastCalledWith('default');
-    expect(ui.getByRole('switch', { name: 'Fast mode' }).getAttribute('aria-checked')).toBe('false');
+    expect(ui.getByRole('switch', { name: 'Fast' }).getAttribute('aria-checked')).toBe('false');
 
     // Slash-command toggles refresh through the same public update.
     settings.serviceTier = 'default';
@@ -390,6 +363,24 @@ describe('model button', () => {
     expect(withoutTier.ui.queryByRole('switch')).toBeNull();
     await expect(withoutTier.toolbar.serviceTierToggle.toggle()).resolves.toBe(false);
     expect(withoutTier.callbacks.onServiceTierChange).not.toHaveBeenCalled();
+  });
+
+  it('offers fast mode only while the list shows the model in use, as for a model without it', () => {
+    const { ui } = renderToolbar({
+      serviceTier: true,
+      models: [
+        { value: 'sonnet', label: 'Sonnet', providerId: 'claude', providerLabel: 'Claude' },
+        { value: 'pi-model', label: 'Pi Model', providerId: 'pi', providerLabel: 'Pi' },
+      ],
+    });
+    fireEvent.click(ui.getByRole('button', { name: /^Model: Sonnet/ }));
+    expect(ui.getByRole('switch', { name: 'Fast' })).toBeDefined();
+    // Browsing another provider chooses no model there, so it has no fast mode to offer.
+    fireEvent.click(ui.getByRole('tab', { name: 'Pi' }));
+    expect(ui.getByRole('listbox', { name: 'Model' })).toBeDefined();
+    expect(ui.queryByRole('switch', { name: 'Fast', hidden: true })).toBeNull();
+    fireEvent.click(ui.getByRole('tab', { name: 'Claude' }));
+    expect(ui.getByRole('switch', { name: 'Fast' })).toBeDefined();
   });
 
   it('shows the selected model provider icon ahead of the label', () => {
@@ -414,9 +405,10 @@ describe('model button', () => {
     const button = unavailable.ui.getByRole('button', { name: /^Model unavailable/ });
     expect(button.title).toBe('Choose an enabled model in provider settings. If discovery failed, refresh the model list.');
     fireEvent.click(button);
-    expect(unavailable.ui.queryAllByRole('option', { selected: true })).toEqual([]);
+    const models = within(unavailable.ui.getByRole('listbox', { name: 'Model' }));
+    expect(models.queryAllByRole('option', { selected: true })).toEqual([]);
     // With nothing selected, the first model is the list's tab stop.
-    expect(unavailable.ui.getAllByRole('option').map(option => option.tabIndex)).toEqual([0, -1, -1]);
+    expect(models.getAllByRole('option').map(option => option.tabIndex)).toEqual([0, -1, -1]);
 
     const empty = renderToolbar({ settings: { model: '' }, models: [] });
     fireEvent.click(empty.ui.getByRole('button', { name: /^Set up models/ }));

@@ -46,11 +46,11 @@ body.theme-light .claudian-inline-menu-layer {
 }
 
 /* Active-provider aliases (chat, zen, and the inline edit composer and its menu layer): `--claudian-provider-logo` colours provider icons, `--claudian-brand` the other accents.
-   A model row that names its provider takes that provider's. */
+   A provider tab in the model menu takes its own provider's. */
 .claudian-container[data-provider="claude"],
 .claudian-inline-input-container[data-provider="claude"],
 .claudian-inline-menu-layer[data-provider="claude"],
-.claudian-container .claudian-model-option[data-provider="claude"] {
+.claudian-model-provider-tab[data-provider="claude"] {
   --claudian-brand: var(--claudian-brand-claude);
   --claudian-brand-rgb: var(--claudian-brand-claude-rgb);
   --claudian-provider-logo: var(--claudian-brand-claude);
@@ -59,7 +59,7 @@ body.theme-light .claudian-inline-menu-layer {
 .claudian-container[data-provider="codex"],
 .claudian-inline-input-container[data-provider="codex"],
 .claudian-inline-menu-layer[data-provider="codex"],
-.claudian-container .claudian-model-option[data-provider="codex"] {
+.claudian-model-provider-tab[data-provider="codex"] {
   --claudian-brand: var(--claudian-brand-codex);
   --claudian-brand-rgb: var(--claudian-brand-codex-rgb);
   --claudian-provider-logo: var(--claudian-brand-codex);
@@ -68,7 +68,7 @@ body.theme-light .claudian-inline-menu-layer {
 .claudian-container[data-provider="opencode"],
 .claudian-inline-input-container[data-provider="opencode"],
 .claudian-inline-menu-layer[data-provider="opencode"],
-.claudian-container .claudian-model-option[data-provider="opencode"] {
+.claudian-model-provider-tab[data-provider="opencode"] {
   --claudian-brand: var(--claudian-brand-opencode);
   --claudian-brand-rgb: var(--claudian-brand-opencode-rgb);
   --claudian-provider-logo: var(--claudian-brand-opencode);
@@ -77,7 +77,7 @@ body.theme-light .claudian-inline-menu-layer {
 .claudian-container[data-provider="pi"],
 .claudian-inline-input-container[data-provider="pi"],
 .claudian-inline-menu-layer[data-provider="pi"],
-.claudian-container .claudian-model-option[data-provider="pi"] {
+.claudian-model-provider-tab[data-provider="pi"] {
   --claudian-brand: var(--claudian-brand-pi);
   --claudian-brand-rgb: var(--claudian-brand-pi-rgb);
   --claudian-provider-logo: var(--claudian-brand-pi);
@@ -86,7 +86,7 @@ body.theme-light .claudian-inline-menu-layer {
 .claudian-container[data-provider="grok"],
 .claudian-inline-input-container[data-provider="grok"],
 .claudian-inline-menu-layer[data-provider="grok"],
-.claudian-container .claudian-model-option[data-provider="grok"] {
+.claudian-model-provider-tab[data-provider="grok"] {
   --claudian-brand: var(--claudian-brand-grok);
   --claudian-brand-rgb: var(--claudian-brand-grok-rgb);
   --claudian-provider-logo: var(--claudian-brand-grok);
@@ -95,7 +95,7 @@ body.theme-light .claudian-inline-menu-layer {
 .claudian-container[data-provider="deepseek"],
 .claudian-inline-input-container[data-provider="deepseek"],
 .claudian-inline-menu-layer[data-provider="deepseek"],
-.claudian-container .claudian-model-option[data-provider="deepseek"] {
+.claudian-model-provider-tab[data-provider="deepseek"] {
   /* DeepSeek blue marks only its logo; its other accents read as normal text. */
   --claudian-brand: var(--claudian-brand-neutral);
   --claudian-brand-rgb: var(--claudian-brand-neutral-rgb);

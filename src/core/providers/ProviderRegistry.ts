@@ -183,7 +183,8 @@ export class ProviderRegistry {
         seenValues.add(option.value);
         options.push({
           ...option,
-          label: `${this.getProviderDisplayName(providerId)}: ${option.label}`,
+          // The flat list has no group headings, so an upstream group stays in the label.
+          label: `${this.getProviderDisplayName(providerId)}: ${option.group ? `${option.group}/` : ''}${option.label}`,
         });
       }
     }
@@ -215,7 +216,7 @@ export class ProviderRegistry {
       ));
   }
 
-  /** Provider order as presented from top to bottom in the blank-tab model selector. */
+  /** Priority for choosing a blank tab's default provider when no model was selected before. */
   static getBlankTabProviderIds(settings: Record<string, unknown>): ProviderId[] {
     return this.getEnabledProviderIds(settings).reverse();
   }

@@ -18,7 +18,7 @@ export const deepseekModelPolicy: ProviderModelPolicy = {
         value: id,
         label: model && model.available !== false
           ? current.modelAliases[id] ?? model.label : `${current.modelAliases[id] ?? model?.label ?? id} (unavailable)`,
-        group: model?.provider,
+        group: model?.providerName ?? model?.provider,
         description: model?.description,
       };
     });
@@ -32,7 +32,7 @@ export const deepseekModelPolicy: ProviderModelPolicy = {
   },
   getReasoningOptions(model, settings) {
     return (findDeepSeekModel(getDeepSeekProviderSettings(settings), model)?.reasoning ?? [])
-      .map(effort => ({ value: effort.id, label: effort.name }));
+      .map(effort => ({ value: effort.id, label: effort.name, ...(effort.description ? { description: effort.description } : {}) }));
   },
   getDefaultReasoningValue(model, settings) {
     const current = getDeepSeekProviderSettings(settings);

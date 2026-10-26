@@ -26,20 +26,36 @@ describe('Toolbar popover styles', () => {
             <span class="claudian-toolbar-chip-secondary claudian-service-tier-indicator"></span>
             <span class="claudian-toolbar-chip-chevron"></span>
           </button>
-          <div class="claudian-toolbar-popover" data-popover="model">
-            <button type="button" role="option" aria-selected="true" class="claudian-toolbar-popover-option claudian-model-option">
-              <svg class="claudian-provider-icon claudian-model-provider-icon"></svg>
-              <span class="claudian-toolbar-popover-option-label">Sonnet</span>
-              <span class="claudian-toolbar-popover-option-check"></span>
-            </button>
-            <button type="button" role="option" aria-selected="false" class="claudian-toolbar-popover-option claudian-model-option">
-              <svg class="claudian-provider-icon claudian-model-provider-icon"></svg>
-              <span class="claudian-toolbar-popover-option-label">Opus</span>
-            </button>
-            <div class="claudian-toolbar-slider-group"><span class="claudian-toolbar-slider-value">High</span></div>
-            <button type="button" role="switch" aria-checked="true" class="claudian-toolbar-popover-option claudian-toolbar-popover-switch-row">
-              <span class="claudian-toggle-switch active"></span>
-            </button>
+          <div class="claudian-toolbar-popover claudian-model-popover" data-popover="model">
+            <div class="claudian-model-column claudian-model-providers" role="tablist">
+              <button type="button" role="tab" aria-selected="true" class="claudian-toolbar-popover-option claudian-model-provider-tab">
+                <span class="claudian-model-provider-tile"><svg class="claudian-provider-icon claudian-model-provider-icon"></svg></span>
+              </button>
+              <button type="button" role="tab" aria-selected="false" class="claudian-toolbar-popover-option claudian-model-provider-tab">
+                <span class="claudian-model-provider-tile"><svg class="claudian-provider-icon claudian-model-provider-icon"></svg></span>
+              </button>
+            </div>
+            <div class="claudian-model-column claudian-model-options">
+              <button type="button" role="option" aria-selected="true" class="claudian-toolbar-popover-option claudian-model-option">
+                <span class="claudian-toolbar-popover-option-label">Sonnet</span>
+                <span class="claudian-toolbar-popover-option-check"></span>
+              </button>
+              <button type="button" role="option" aria-selected="false" class="claudian-toolbar-popover-option claudian-model-option">
+                <span class="claudian-toolbar-popover-option-label">Opus</span>
+              </button>
+            </div>
+            <div class="claudian-model-column claudian-model-parts">
+              <div class="claudian-toolbar-popover-section claudian-thinking-selector">
+                <button type="button" role="option" aria-selected="true" class="claudian-toolbar-popover-option claudian-thinking-level selected">
+                  <span class="claudian-toolbar-popover-option-label">High</span>
+                </button>
+              </div>
+              <div class="claudian-toolbar-popover-section claudian-service-tier-toggle">
+                <button type="button" role="switch" aria-checked="true" class="claudian-toolbar-popover-option claudian-toolbar-popover-switch-row">
+                  <span class="claudian-toggle-switch active"></span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
         <div class="claudian-toolbar-chip-anchor claudian-permission-toggle">
@@ -130,27 +146,34 @@ describe('Toolbar popover styles', () => {
     expect(declared).toEqual(['true']);
   });
 
-  it('shows every provider icon in the list in its brand colour and marks the selection with a light green tick only', () => {
+  it('shows every provider icon in its brand colour and marks the chosen model with a light green tick only', () => {
     const toolbar = renderToolbar();
     const color = (selector: string) => style(toolbar.querySelector(selector)!).color;
     const brand = 'var(--claudian-provider-logo)';
-    // Only the icon is tinted; model names read as normal text.
+    // Only provider icons are tinted; model names read as normal text.
     expect({
-      selectedIcon: color('[aria-selected="true"] .claudian-model-provider-icon'),
-      selectedLabel: color('[aria-selected="true"] .claudian-toolbar-popover-option-label'),
-      otherIcon: color('[aria-selected="false"] .claudian-model-provider-icon'),
-      otherLabel: color('[aria-selected="false"] .claudian-toolbar-popover-option-label'),
-    }).toEqual({ selectedIcon: brand, selectedLabel: 'var(--text-normal)', otherIcon: brand, otherLabel: 'var(--text-normal)' });
+      selectedProvider: color('[role="tab"][aria-selected="true"] .claudian-model-provider-tile'),
+      otherProvider: color('[role="tab"][aria-selected="false"] .claudian-model-provider-tile'),
+      selectedLabel: color('.claudian-model-option[aria-selected="true"] .claudian-toolbar-popover-option-label'),
+      otherLabel: color('.claudian-model-option[aria-selected="false"] .claudian-toolbar-popover-option-label'),
+    }).toEqual({
+      selectedProvider: brand, otherProvider: brand, selectedLabel: 'var(--text-normal)', otherLabel: 'var(--text-normal)',
+    });
 
-    // The selected row gets no fill; only its tick marks the choice.
-    const selected = style(toolbar.querySelector('[aria-selected="true"]')!);
-    expect(`${selected.background} ${selected.backgroundColor}`).not.toMatch(/modifier-hover|claudian-brand/);
+    // No model row takes a fill; only the tick marks the choice.
+    const fill = (selector: string) => {
+      const declared = style(toolbar.querySelector(selector)!);
+      return `${declared.background} ${declared.backgroundColor}`;
+    };
+    for (const selected of ['true', 'false']) {
+      expect(fill(`.claudian-model-option[aria-selected="${selected}"]`)).not.toMatch(/modifier-hover|claudian-brand/);
+    }
     expect(color('.claudian-toolbar-popover-option-check')).toBe('var(--claudian-selection-check)');
     expect({
       buttonModel: color('.claudian-model-label'),
       buttonReasoning: color('.claudian-thinking-current'),
       buttonFastMode: color('.claudian-service-tier-indicator'),
-      level: color('.claudian-toolbar-slider-value'),
+      level: color('.claudian-thinking-level.selected'),
       permission: color('.claudian-permission-label'),
     }).toEqual({
       buttonModel: 'var(--text-normal)',
@@ -170,7 +193,7 @@ describe('Toolbar popover styles', () => {
   });
 
   it.each(['claude', 'codex', 'opencode', 'pi', 'grok', 'deepseek'])(
-    'gives a %s model row its own brand colour for its icon when providers share one list',
+    'gives the %s provider tab its own brand colour for its icon',
     (provider) => {
       renderToolbar();
       // jsdom does not compute custom properties, so check the alias declared for the row.
@@ -178,7 +201,7 @@ describe('Toolbar popover styles', () => {
       const aliases = Array.from(sheet.cssRules)
         .filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule)
         .filter(rule => rule.selectorText.split(',')
-          .some(selector => selector.trim().endsWith(`.claudian-model-option[data-provider="${provider}"]`)))
+          .some(selector => selector.trim().endsWith(`.claudian-model-provider-tab[data-provider="${provider}"]`)))
         .map(rule => rule.style.getPropertyValue('--claudian-provider-logo').trim());
       expect(aliases).toEqual([`var(--claudian-brand-${provider})`]);
     },
@@ -216,16 +239,15 @@ describe('Toolbar popover styles', () => {
     });
   });
 
-  it('shows fast mode on with neutral colours, not the provider brand', () => {
+  it('shows fast mode on in its own amber, not the provider brand', () => {
     const toolbar = renderToolbar();
     const track = style(toolbar.querySelector('.claudian-toggle-switch.active')!);
-    // jsdom does not style pseudo-elements, so read the knob's declaration from its rule.
-    const sheet = document.head.querySelector('style')!.sheet!;
-    const knob = Array.from(sheet.cssRules)
-      .filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule)
-      .find(rule => rule.selectorText === '.claudian-toggle-switch.active::after')!;
-    const surfaces = [track.background, track.backgroundColor, knob.style.background, knob.style.backgroundColor];
-    expect(surfaces.join(' ')).not.toContain('claudian-brand');
-    expect(knob.style.background || knob.style.backgroundColor).toBe('var(--text-normal)');
+    const row = style(toolbar.querySelector('.claudian-toolbar-popover-switch-row')!);
+    const surfaces = [track.background, track.backgroundColor, row.background, row.backgroundColor].join(' ');
+    expect(surfaces).not.toContain('claudian-brand');
+    expect(track.background || track.backgroundColor).toBe('var(--claudian-fast-mode)');
+    expect(row.background).toContain('var(--claudian-fast-mode)');
+    // The switch row has no border of its own.
+    expect(['', '0', '0px']).toContain(row.borderWidth || row.borderTopWidth);
   });
 });

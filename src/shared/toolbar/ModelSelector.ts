@@ -1,3 +1,4 @@
+import type { ProviderUIOption } from '@/core/providers/types';
 import { createProviderIconSvg } from '@/shared/icons';
 import { nextToolbarId, runToolbarAction, ToolbarMenu, type ToolbarMenuGroup } from '@/shared/toolbar/ToolbarMenu';
 import type { ModelPickerCallbacks } from '@/shared/toolbar/types';
@@ -9,17 +10,30 @@ export interface ModelMenuPart {
   readonly menu: ToolbarMenu;
   /** Sets this part's phrase in the model button's accessible name; null omits it. */
   describe(text: string | null): void;
+  /** False while the menu browses another provider's models, so no current-model setting shows as chosen. */
+  showsCurrentModel(): boolean;
 }
 
-/** Model button: model, reasoning and fast mode on one chip, with one menu for all three. */
+/**
+ * Model button: model, reasoning and fast mode on one chip, with one menu for all three.
+ * The menu lays its columns side by side: providers (only while a new session can still pick one),
+ * models, then the attached parts.
+ */
 export class ModelSelector {
   private readonly menu: ToolbarMenu;
   private readonly iconSlotEl: HTMLElement;
   private readonly labelEl: HTMLElement;
+  private readonly providersEl: HTMLElement;
   private readonly optionsEl: HTMLElement;
+  private readonly partsEl: HTMLElement;
+  private readonly listId = nextToolbarId('model-list');
   private readonly partRefreshers: Array<() => void> = [];
   private readonly partDescriptions = new Map<string, string | null>();
   private modelDescription = '';
+  /** The provider whose models the list shows; it changes no setting until a model is picked. */
+  #browsedProviderId: string | null = null;
+  /** Whether the list shows the current model's provider; the parts apply to that model only. */
+  #showsCurrentModel = true;
   private callbacks: ModelPickerCallbacks;
 
   constructor(
@@ -39,16 +53,23 @@ export class ModelSelector {
       group: menuGroup,
       floatingLayer,
       onOpen: () => {
+        this.#browsedProviderId = null;
         this.updateDisplay();
         this.renderOptions();
         for (const refresh of this.partRefreshers) refresh();
       },
     });
+    this.menu.menuEl.addClass('claudian-model-popover');
     this.iconSlotEl = this.menu.createChipPart('claudian-toolbar-chip-icon');
     this.labelEl = this.menu.createChipPart('claudian-toolbar-chip-primary claudian-model-label');
-    this.optionsEl = this.menu.menuEl.createDiv({
-      cls: 'claudian-toolbar-popover-section claudian-model-options',
+    this.providersEl = this.menu.menuEl.createDiv({
+      cls: 'claudian-model-column claudian-model-providers',
+      attr: { role: 'tablist', 'aria-label': 'Provider', 'aria-orientation': 'vertical' },
     });
+    this.optionsEl = this.menu.menuEl.createDiv({
+      cls: 'claudian-model-column claudian-model-options',
+    });
+    this.partsEl = this.menu.menuEl.createDiv({ cls: 'claudian-model-column claudian-model-parts' });
     this.updateDisplay();
     this.renderOptions();
   }
@@ -59,12 +80,13 @@ export class ModelSelector {
     this.partDescriptions.set(key, null);
     return {
       chipEl: this.menu.createChipPart(chipCls),
-      sectionEl: this.menu.menuEl.createDiv({ cls: 'claudian-toolbar-popover-section' }),
+      sectionEl: this.partsEl.createDiv({ cls: 'claudian-toolbar-popover-section' }),
       menu: this.menu,
       describe: (text) => {
         this.partDescriptions.set(key, text);
         this.#updateAccessibleName();
       },
+      showsCurrentModel: () => this.#showsCurrentModel,
     };
   }
 
@@ -112,10 +134,26 @@ export class ModelSelector {
   }
 
   renderOptions() {
-    this.optionsEl.empty();
-
     const currentModel = this.callbacks.getSettings().model;
-    const models = this.#getAvailableModels();
+    const allModels = this.#getAvailableModels();
+    // Only a new session's models name their provider; a started session keeps the one it has.
+    const providers = new Map<string, ProviderUIOption>();
+    for (const model of allModels) {
+      if (model.providerId && !providers.has(model.providerId)) providers.set(model.providerId, model);
+    }
+    const currentProviderId = allModels.find(model => model.value === currentModel)?.providerId;
+    if (!this.#browsedProviderId || !providers.has(this.#browsedProviderId)) {
+      this.#browsedProviderId = currentProviderId ?? providers.keys().next().value ?? null;
+    }
+    this.#renderProviders(providers);
+    this.#setShowsCurrentModel(!providers.size || this.#browsedProviderId === currentProviderId);
+    const models = providers.size
+      ? allModels.filter(model => model.providerId === this.#browsedProviderId)
+      : allModels;
+
+    this.optionsEl.empty();
+    const headingId = nextToolbarId('heading');
+    this.optionsEl.createDiv({ cls: 'claudian-toolbar-popover-heading', text: 'Model', attr: { id: headingId } });
     if (!models.length) {
       this.optionsEl.createDiv({
         cls: 'claudian-toolbar-popover-empty',
@@ -125,39 +163,42 @@ export class ModelSelector {
     }
 
     const listEl = models.length
-      ? this.optionsEl.createDiv({ cls: 'claudian-model-list', attr: { role: 'listbox', 'aria-label': 'Model' } })
+      ? this.optionsEl.createDiv({
+        cls: 'claudian-model-list',
+        attr: { id: this.listId, role: 'listbox', 'aria-labelledby': headingId },
+      })
       : null;
-    // Ungrouped models sit directly in the list; each provider group gets a labelled group.
+    // Ungrouped models sit directly in the list; each upstream group gets a labelled group.
     let groupEl: HTMLElement | null = null;
     let lastGroup: string | undefined;
     const hasSelection = models.some(model => model.value === currentModel);
     for (const [index, model] of models.entries()) {
       if (!listEl) break;
       if (model.group && model.group !== lastGroup) {
-        const headingId = nextToolbarId('heading');
+        const groupHeadingId = nextToolbarId('heading');
         groupEl = listEl.createDiv({
           cls: 'claudian-toolbar-popover-group',
-          attr: { role: 'group', 'aria-labelledby': headingId },
+          attr: { role: 'group', 'aria-labelledby': groupHeadingId },
         });
         groupEl.createDiv({
           cls: 'claudian-toolbar-popover-heading claudian-model-group',
           text: model.group,
-          attr: { id: headingId },
+          attr: { id: groupHeadingId },
         });
       }
       lastGroup = model.group;
 
       const selected = model.value === currentModel;
-      this.menu.createItem(model.group && groupEl ? groupEl : listEl, {
+      const itemEl = this.menu.createItem(model.group && groupEl ? groupEl : listEl, {
         role: 'option',
+        key: `model:${model.value}`,
         checked: selected,
         // The list is one tab stop: the selected model, or the first when none is.
         tabbable: hasSelection ? selected : index === 0,
         label: model.label,
-        cls: `claudian-model-option${selected ? ' selected' : ''}`,
+        detail: model.description,
+        cls: 'claudian-model-option',
         title: model.description,
-        providerIcon: model.providerIcon ?? this.callbacks.getUIConfig().getProviderIcon?.(),
-        providerId: model.providerId,
         showCheck: true,
         onSelect: () => {
           runToolbarAction(async () => {
@@ -167,7 +208,61 @@ export class ModelSelector {
           }, 'Failed to change model');
         },
       });
+      // The model's name is the option's name; its title already carries the description.
+      itemEl.querySelector('.claudian-toolbar-popover-option-detail')?.setAttribute('aria-hidden', 'true');
     }
     this.menu.restoreFocus();
+  }
+
+  /**
+   * While another provider is browsed, the parts show no current-model setting as chosen and
+   * cannot change it, since they apply to the model in use.
+   */
+  #setShowsCurrentModel(shows: boolean): void {
+    if (shows) this.partsEl.removeAttribute('inert');
+    else this.partsEl.setAttribute('inert', '');
+    this.partsEl.toggleClass('claudian-model-parts--inert', !shows);
+    if (shows === this.#showsCurrentModel) return;
+    this.#showsCurrentModel = shows;
+    for (const refresh of this.partRefreshers) refresh();
+  }
+
+  /** One icon tab per provider, each named by its provider's display name. */
+  #renderProviders(providers: ReadonlyMap<string, ProviderUIOption>): void {
+    this.providersEl.empty();
+    this.providersEl.toggleClass('claudian-hidden', providers.size === 0);
+    for (const [providerId, model] of providers) {
+      const selected = providerId === this.#browsedProviderId;
+      const name = model.providerLabel ?? providerId;
+      const tabEl = this.menu.createItem(this.providersEl, {
+        role: 'tab',
+        key: `provider:${providerId}`,
+        checked: selected,
+        tabbable: selected,
+        label: name,
+        cls: 'claudian-model-provider-tab',
+        title: name,
+        onSelect: () => {
+          if (this.#browsedProviderId === providerId) return;
+          this.#browsedProviderId = providerId;
+          this.renderOptions();
+        },
+      });
+      // The tab shows only its icon; the provider's name stays its accessible name.
+      tabEl.empty();
+      tabEl.setAttribute('aria-label', name);
+      tabEl.setAttribute('aria-controls', this.listId);
+      tabEl.dataset.provider = providerId;
+      const iconEl = tabEl.createSpan({ cls: 'claudian-model-provider-tile' });
+      const icon = model.providerIcon ?? this.callbacks.getUIConfig().getProviderIcon?.();
+      if (icon) {
+        createProviderIconSvg(icon, {
+          className: 'claudian-model-provider-icon',
+          height: 13,
+          parent: iconEl,
+          width: 13,
+        });
+      }
+    }
   }
 }

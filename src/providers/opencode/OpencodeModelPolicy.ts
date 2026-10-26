@@ -13,6 +13,7 @@ import {
   OPENCODE_DEFAULT_THINKING_LEVEL,
   resolveOpencodeBaseModelRawId,
   resolveOpencodeDefaultThinkingLevel,
+  splitOpencodeModelLabel,
 } from './models';
 import { OPENCODE_PERMISSION_MODE_POLICY } from './permissionModes';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from './settings';
@@ -22,18 +23,18 @@ export const opencodeModelPolicy: ProviderModelPolicy = {
   permissionModes: OPENCODE_PERMISSION_MODE_POLICY,
   getModelOptions(settings): ProviderUIOption[] {
     const opencodeSettings = getOpencodeProviderSettings(settings);
-    const applyAlias = (rawId: string, option: ProviderUIOption): ProviderUIOption => {
-      const alias = opencodeSettings.modelAliases[rawId];
-      return alias ? { ...option, label: alias } : option;
-    };
-    const discoveredModels = new Map(buildOpencodeBaseModels(opencodeSettings.discoveredModels).map((model) => [
-      encodeOpencodeModelId(model.rawId),
-      applyAlias(model.rawId, {
-        description: model.description ?? 'ACP runtime',
-        label: model.label,
+    // Native labels read "Upstream/Model": the upstream provider becomes the group, the rest the name.
+    const discoveredModels = new Map(buildOpencodeBaseModels(opencodeSettings.discoveredModels).map((model) => {
+      const { modelLabel, providerLabel } = splitOpencodeModelLabel(model.label);
+      const hasUpstream = model.label.includes('/');
+      const option: ProviderUIOption = {
+        ...(model.description ? { description: model.description } : {}),
+        ...(hasUpstream ? { group: providerLabel } : {}),
+        label: opencodeSettings.modelAliases[model.rawId] ?? modelLabel,
         value: encodeOpencodeModelId(model.rawId),
-      }),
-    ]));
+      };
+      return [option.value, option];
+    }));
     const seenValues = new Set<string>();
     const options: ProviderUIOption[] = [];
     for (const rawModelId of [...opencodeSettings.visibleModels]) {

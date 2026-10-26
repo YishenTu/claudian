@@ -25,7 +25,7 @@ export function createDeepSeekModels(host: ProviderRuntimeHost, discover: (signa
         const current = decodeDeepSeekConfig(config);
         return { enabled: current.enabled, selectedIds: current.visibleModels, aliases: current.modelAliases,
           models: current.discoveredModels.map(model => ({ id: model.encodedId, name: model.label, description: model.description,
-            providerKey: model.provider, providerLabel: model.provider, isAvailable: model.available !== false,
+            providerKey: model.provider, providerLabel: model.providerName ?? model.provider, isAvailable: model.available !== false,
           })),
         };
       },
@@ -56,10 +56,15 @@ function decodeCatalog(value: unknown): DeepSeekModel[] {
     for (const native of group.models) {
       if (!isRecord(native) || typeof native.id !== 'string') throw new Error('Malformed DeepSeek model.');
       const reasoning = isRecord(native.reasoning) && Array.isArray(native.reasoning.efforts) ? native.reasoning.efforts : [];
-      models.push({ encodedId: encodeDeepSeekModelId(group.id, native.id), provider: group.id, id: native.id,
+      models.push({ encodedId: encodeDeepSeekModelId(group.id, native.id), provider: group.id,
+        ...(typeof group.name === 'string' && group.name.trim() ? { providerName: group.name.trim() } : {}),
+        id: native.id,
         label: typeof native.name === 'string' ? native.name : native.id,
         description: typeof native.description === 'string' ? native.description : undefined,
-        reasoning: reasoning.filter(isRecord).filter(effort => typeof effort.id === 'string').map(effort => ({ id: effort.id as string, name: typeof effort.name === 'string' ? effort.name : effort.id as string })),
+        reasoning: reasoning.filter(isRecord).filter(effort => typeof effort.id === 'string').map(effort => ({
+          id: effort.id as string, name: typeof effort.name === 'string' ? effort.name : effort.id as string,
+          ...(typeof effort.description === 'string' && effort.description ? { description: effort.description } : {}),
+        })),
         available: true,
       });
     }

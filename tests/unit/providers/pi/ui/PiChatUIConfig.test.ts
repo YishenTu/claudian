@@ -51,15 +51,10 @@ describe('PiChatUIConfig', () => {
       },
     });
 
+    // Each model is grouped under its upstream provider; Pi supplies no prose description.
     expect(options).toEqual([
-      expect.objectContaining({
-        label: 'Sonnet',
-        value: 'pi:anthropic/claude-sonnet-4',
-      }),
-      expect.objectContaining({
-        label: 'GPT-5',
-        value: 'pi:openai/gpt-5',
-      }),
+      { group: 'anthropic', label: 'Sonnet', value: 'pi:anthropic/claude-sonnet-4' },
+      { group: 'openai', label: 'GPT-5', value: 'pi:openai/gpt-5' },
     ]);
   });
 

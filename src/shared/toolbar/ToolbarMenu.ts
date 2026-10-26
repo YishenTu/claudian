@@ -1,8 +1,5 @@
 import { Notice, setIcon } from 'obsidian';
 
-import type { ProviderIconSvg } from '@/core/providers/types';
-import { createProviderIconSvg } from '@/shared/icons';
-
 export function runToolbarAction(action: () => Promise<void>, failureMessage: string): void {
   void action().catch(() => {
     new Notice(failureMessage);
@@ -13,12 +10,11 @@ const MENU_ITEM_SELECTOR = [
   '[role="menuitemradio"]',
   '[role="menuitemcheckbox"]',
   '[role="option"]',
+  '[role="tab"]',
   '[role="switch"]',
-  'input[type="range"]',
 ].join(', ');
-const RANGE_SELECTOR = 'input[type="range"]';
-/** Keys a focused range input uses to change its own value. */
-const RANGE_VALUE_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']);
+/** Lists that keep Home and End to themselves. */
+const LIST_SELECTOR = '[role="listbox"], [role="tablist"]';
 
 let toolbarElementSequence = 0;
 
@@ -63,7 +59,7 @@ export class ToolbarMenuGroup implements ToolbarMenus {
 
 interface ToolbarMenuOptions {
   anchorCls: string;
-  /** A menu holds only menu items; a dialog also holds other controls, such as a slider. */
+  /** A menu holds only menu items; a dialog also holds other controls, such as lists and switches. */
   popupRole?: 'menu' | 'dialog';
   buttonCls?: string;
   menuLabel: string;
@@ -84,18 +80,17 @@ const FLOATING_MENU_GAP = 8;
 const FLOATING_MENU_MIN_WIDTH = 160;
 
 interface ToolbarMenuItemOptions {
-  role: 'menuitemradio' | 'menuitemcheckbox' | 'option' | 'switch';
-  /** Options report aria-selected; the other roles report aria-checked. */
+  role: 'menuitemradio' | 'menuitemcheckbox' | 'option' | 'tab' | 'switch';
+  /** Options and tabs report aria-selected; the other roles report aria-checked. */
   checked: boolean;
   /** Dialog controls take one tab stop each; menu items are reached with arrow keys only. */
   tabbable?: boolean;
   label: string;
+  /** Identifies the item across rebuilds when its label is not unique, such as a model value. */
+  key?: string;
   cls?: string;
   detail?: string;
   title?: string;
-  providerIcon?: ProviderIconSvg | null;
-  /** Names the option's provider for per-provider brand styling. */
-  providerId?: string;
   leadingIcon?: string;
   showCheck?: boolean;
   onSelect: () => void;
@@ -161,20 +156,11 @@ export class ToolbarMenu {
       attr: {
         type: 'button',
         role: options.role,
-        [options.role === 'option' ? 'aria-selected' : 'aria-checked']: String(options.checked),
+        [options.role === 'option' || options.role === 'tab' ? 'aria-selected' : 'aria-checked']: String(options.checked),
         tabindex: options.tabbable ? '0' : '-1',
-        'data-menu-key': `${options.role}:${options.label}`,
+        'data-menu-key': `${options.role}:${options.key ?? options.label}`,
       },
     });
-    if (options.providerId) itemEl.dataset.provider = options.providerId;
-    if (options.providerIcon) {
-      createProviderIconSvg(options.providerIcon, {
-        className: 'claudian-model-provider-icon',
-        height: 12,
-        parent: itemEl,
-        width: 12,
-      });
-    }
     if (options.leadingIcon) {
       setIcon(itemEl.createSpan({ cls: 'claudian-toolbar-popover-option-icon' }), options.leadingIcon);
     }
@@ -281,24 +267,24 @@ export class ToolbarMenu {
 
   #items(scopeEl: Element = this.menuEl): HTMLElement[] {
     return Array.from(scopeEl.querySelectorAll<HTMLElement>(MENU_ITEM_SELECTOR))
-      .filter(item => !(item as HTMLButtonElement).disabled && !item.closest('.claudian-hidden'));
+      .filter(item => !(item as HTMLButtonElement).disabled && !item.closest('.claudian-hidden, [inert]'));
   }
 
   #focusItem(target: MenuFocusTarget): void {
     const items = this.#items();
-    // The current choice: a selected option, or a checked menu item (a switch is a setting, not a choice).
+    // The current choice: a selected option, or a checked menu item. A switch is a setting and a tab
+    // only browses, so neither is a choice.
     const checked = target === 'checked'
-      ? items.find(item => item.getAttribute('aria-selected') === 'true'
+      ? items.find(item => (item.getAttribute('role') === 'option' && item.getAttribute('aria-selected') === 'true')
         || (item.getAttribute('role')?.startsWith('menuitem') && item.getAttribute('aria-checked') === 'true'))
       : undefined;
     const item = target === 'last' ? items[items.length - 1] : checked ?? items[0];
     (item ?? this.menuEl).focus();
   }
 
-  /** Up and Down step through every control; a focused slider keeps its own value keys. */
+  /** Up and Down step through every control. */
   #moveFocus(event: KeyboardEvent): boolean {
     const target = event.target as HTMLElement;
-    if (target.matches(RANGE_SELECTOR) && RANGE_VALUE_KEYS.has(event.key)) return false;
     const items = this.#items();
     const current = items.indexOf(target);
     if (current < 0) return false;
@@ -312,8 +298,8 @@ export class ToolbarMenu {
         return true;
       case 'Home':
       case 'End': {
-        // In the model list these jump within the list, not to the popover's other controls.
-        const scoped = this.#items(target.closest('[role="listbox"]') ?? this.menuEl);
+        // In a list these jump within that list, not to the popover's other controls.
+        const scoped = this.#items(target.closest(LIST_SELECTOR) ?? this.menuEl);
         scoped[event.key === 'Home' ? 0 : scoped.length - 1].focus();
         return true;
       }

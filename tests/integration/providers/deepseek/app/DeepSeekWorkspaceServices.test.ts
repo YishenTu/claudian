@@ -34,7 +34,7 @@ it('discovers native models lazily and preserves explicit selection order and un
       if (method !== 'session/modelCatalog') throw new Error('Metadata discovery activated native work.');
       return { default: { provider: 'native/a', model: 'model/a' }, groups: [
         { id: 'native/a', models: [{ id: 'model/a', name: 'A' }] },
-        { id: 'native/b', models: [{ id: 'model/b', name: 'B', reasoning: { efforts: [{ id: 'high', name: 'High' }, { id: 'max', name: 'Max' }] } }] },
+        { id: 'native/b', name: 'Native B', models: [{ id: 'model/b', name: 'B', reasoning: { efforts: [{ id: 'high', name: 'High' }, { id: 'max', name: 'Max', description: 'Deepest' }] } }] },
       ] };
     };
     await workspace.modelCatalog.refresh();
@@ -42,7 +42,10 @@ it('discovers native models lazily and preserves explicit selection order and un
     expect(peer.calls.map(call => call.method)).toEqual(['session/list', 'session/modelCatalog']);
     expect(workspace.modelCatalog.getSnapshot().selectedIds).toEqual([second, first]);
     expect(deepseekModelPolicy.getModelOptions(settings).map(option => option.value)).toEqual([second, first]);
-    expect(deepseekModelPolicy.getReasoningOptions(second, settings)).toEqual([{ value: 'high', label: 'High' }, { value: 'max', label: 'Max' }]);
+    // A group's native display name heads its models; a group without one keeps its id.
+    expect(deepseekModelPolicy.getModelOptions(settings).map(option => option.group)).toEqual(['Native B', 'native/a']);
+    expect(deepseekModelPolicy.getReasoningOptions(second, settings))
+      .toEqual([{ value: 'high', label: 'High' }, { value: 'max', label: 'Max', description: 'Deepest' }]);
     expect(deepseekModelPolicy.getDefaultReasoningValue(second, settings)).toBe('max');
     peer.onCall = method => method === 'session/list' ? { items: [] } : { groups: [{ id: 'native/a', models: [{ id: 'model/a', name: 'A' }] }] };
     await workspace.modelCatalog.refresh({ force: true });

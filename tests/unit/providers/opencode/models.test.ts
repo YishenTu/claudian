@@ -150,10 +150,11 @@ describe('opencodeChatUIConfig', () => {
       },
     });
 
+    // The upstream provider prefix becomes the model's group, not part of its name.
     expect(options).toEqual([
       {
-        description: 'ACP runtime',
-        label: 'OpenAI/GPT-5',
+        group: 'OpenAI',
+        label: 'GPT-5',
         value: 'opencode:openai/gpt-5',
       },
     ]);
@@ -180,13 +181,13 @@ describe('opencodeChatUIConfig', () => {
 
     expect(options).toEqual([
       {
-        description: 'ACP runtime',
+        group: 'Anthropic',
         label: 'Sonnet',
         value: 'opencode:anthropic/claude-sonnet-4',
       },
       {
-        description: 'ACP runtime',
-        label: 'OpenAI/GPT-5',
+        group: 'OpenAI',
+        label: 'GPT-5',
         value: 'opencode:openai/gpt-5',
       },
     ]);

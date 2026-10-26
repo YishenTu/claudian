@@ -135,10 +135,6 @@
   background-color: var(--background-secondary);
 }
 
-/* The model popover also keeps enough width for the reasoning slider to be usable. */
-.claudian-toolbar-chip-anchor--model > .claudian-toolbar-popover {
-  min-width: max(100%, 160px);
-}
 
 /* A floating menu (ToolbarMenu's floatingLayer) is fixed above its button's end edge. */
 .claudian-toolbar-popover.claudian-toolbar-popover--floating {
@@ -202,9 +198,9 @@
   background: var(--background-modifier-hover);
 }
 
-/* Every model's provider icon carries that provider's logo colour; names stay normal text. */
+/* Every provider icon carries that provider's logo colour; names stay normal text. */
 .claudian-toolbar-chip .claudian-model-provider-icon,
-.claudian-model-option .claudian-model-provider-icon {
+.claudian-model-provider-tab .claudian-model-provider-icon {
   color: var(--claudian-provider-logo);
 }
 
@@ -256,4 +252,162 @@
 
 .claudian-model-provider-icon {
   flex-shrink: 0;
+}
+
+/*
+ * Model popover: columns side by side (providers, models, then reasoning and fast mode), each
+ * scrolling on its own. Its size is fixed, so browsing providers or models never reshapes it:
+ * the height fits the model heading and four models with a one-line description, and longer
+ * lists scroll. Fixed line heights keep that sum exact under any theme.
+ */
+.claudian-toolbar-popover.claudian-model-popover {
+  --claudian-model-provider-tab-size: 28px;
+  --claudian-model-provider-gap: 2px;
+  --claudian-model-heading-height: calc(4px + 13px + 6px);
+  --claudian-model-row-height: calc(4px + 16px + 1px + 14px + 4px);
+
+  flex-direction: row;
+  align-items: stretch;
+  height: min(
+    calc(var(--claudian-model-heading-height) + 4 * var(--claudian-model-row-height) + 2px + 12px + 2px),
+    60vh
+  );
+  max-width: calc(100cqi - 12px);
+  overflow: hidden;
+  padding: 6px;
+  border-radius: 12px;
+}
+
+.claudian-toolbar-popover.claudian-model-popover.claudian-toolbar-popover--floating {
+  max-width: min(560px, calc(100vw - 24px));
+}
+
+.claudian-model-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 6px 2px;
+}
+
+.claudian-model-column .claudian-toolbar-popover-heading {
+  padding-top: 4px;
+  padding-bottom: 6px;
+  line-height: 13px;
+}
+
+/* Upstream groups in the model list are set apart by their headings alone, with no divider. */
+.claudian-model-list > .claudian-toolbar-popover-group + .claudian-toolbar-popover-group {
+  margin-top: 4px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+/*
+ * A sub-heading sits close to the models under it, compact enough that three groups holding four
+ * undescribed models fit the popover's fixed height.
+ */
+.claudian-model-list .claudian-model-group {
+  padding-top: 1px;
+  padding-bottom: 0;
+}
+
+/* A column with no visible part, such as a provider without reasoning or fast mode, takes no room. */
+.claudian-model-parts:not(:has(> :not(.claudian-hidden))) {
+  display: none;
+}
+
+.claudian-model-providers {
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--claudian-model-provider-gap);
+
+  /* Icons stack from the top of the column. */
+  padding: 0 8px 2px;
+  border-inline-end: 1px solid var(--background-modifier-border);
+}
+
+.claudian-model-options {
+  flex: 0 1 220px;
+  width: 220px;
+}
+
+.claudian-model-parts {
+  flex: 0 0 116px;
+  width: 116px;
+  transition: opacity 0.15s ease;
+  border-inline-start: 1px solid var(--background-modifier-border);
+}
+
+/* While another provider is browsed, the current model's settings fade and cannot be changed. */
+.claudian-model-parts--inert {
+  opacity: 0.45;
+}
+
+/* The columns' own sections stack without the menu's separators. */
+.claudian-model-parts > .claudian-toolbar-popover-section + .claudian-toolbar-popover-section {
+  margin-top: 0;
+  border-top: 0;
+}
+
+.claudian-toolbar-popover button.claudian-toolbar-popover-option {
+  border-radius: 7px;
+}
+
+.claudian-model-option .claudian-toolbar-popover-option-label {
+  font-weight: 500;
+  line-height: 16px;
+}
+
+/* A description wraps to two lines at most; its full text stays in the row's tooltip. */
+.claudian-model-option .claudian-toolbar-popover-option-detail {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  line-height: 14px;
+}
+
+/* Provider tabs: a bare icon each with no fill; the browsed provider is at full strength with a bar in its colour. */
+.claudian-toolbar-popover button.claudian-model-provider-tab,
+.claudian-toolbar-popover button.claudian-model-provider-tab:is(:hover, :focus, :focus-visible, :active) {
+  position: relative;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: auto;
+  height: var(--claudian-model-provider-tab-size);
+  min-height: var(--claudian-model-provider-tab-size);
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  opacity: 0.5;
+}
+
+.claudian-toolbar-popover button.claudian-model-provider-tab:is(:hover, :focus-visible, [aria-selected='true']) {
+  opacity: 1;
+}
+
+.claudian-model-provider-tile {
+  display: grid;
+  place-items: center;
+  color: var(--claudian-provider-logo);
+}
+
+.claudian-model-provider-tile svg {
+  width: 13px;
+  height: 13px;
+}
+
+.claudian-model-provider-tab[aria-selected='true']::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: -8px;
+  top: 4px;
+  bottom: 4px;
+  width: 2.5px;
+  border-radius: 2px;
+  background: var(--claudian-provider-logo);
 }

@@ -4,29 +4,13 @@ import type { ModelMenuPart, ModelSelector } from '@/shared/toolbar/ModelSelecto
 import { nextToolbarId, runToolbarAction } from '@/shared/toolbar/ToolbarMenu';
 import type { ModelPickerCallbacks } from '@/shared/toolbar/types';
 
-/** Levels the provider reports for the current model, in its order. */
-interface ReasoningScale {
-  options: ProviderUIOption[];
-  defaultValue: string;
-}
+/** Bars in each level's strength glyph, however many levels the provider reports. */
+const STRENGTH_BARS = 4;
 
-interface ReasoningSlider {
-  inputEl: HTMLInputElement;
-  valueEl: HTMLElement;
-  segmentEls: HTMLElement[];
-  tickEls: HTMLElement[];
-}
-
-/** Effort: a level on the model button, a slider in its popover. */
+/** Effort: a level on the model button, a list of levels in its popover. */
 export class EffortSelector {
   private readonly part: ModelMenuPart;
   private callbacks: ModelPickerCallbacks;
-  #scale: ReasoningScale | null = null;
-  #scaleKey: string | null = null;
-  #slider: ReasoningSlider | null = null;
-  #dragging = false;
-  /** Commits still saving; the slider keeps the user's latest level until all have landed. */
-  #pendingCommits = 0;
 
   constructor(modelSelector: ModelSelector, callbacks: ModelPickerCallbacks) {
     this.callbacks = callbacks;
@@ -44,9 +28,6 @@ export class EffortSelector {
     this.part.sectionEl.addClass('claudian-hidden');
     this.part.sectionEl.empty();
     this.part.describe(null);
-    this.#scale = null;
-    this.#scaleKey = null;
-    this.#slider = null;
   }
 
   updateDisplay() {
@@ -69,128 +50,58 @@ export class EffortSelector {
     }
 
     const current = settings.reasoning;
-    const currentIndex = options.findIndex(option => option.value === current);
-    const currentLabel = options[currentIndex]?.label
+    const currentLabel = options.find(option => option.value === current)?.label
       ?? (current ? formatReasoningValueLabel(current) : 'Default');
 
     this.part.chipEl.removeClass('claudian-hidden');
     this.part.chipEl.setText(currentLabel);
     this.part.describe(`effort ${currentLabel}`);
     this.part.sectionEl.removeClass('claudian-hidden');
-
-    // Rebuild only when the levels change, so a refresh never replaces the slider under the user.
-    const scale = { options, defaultValue };
-    const scaleKey = JSON.stringify([
-      defaultValue, options.map(option => [option.value, option.label, option.description]),
-    ]);
-    if (scaleKey !== this.#scaleKey || !this.#slider) {
-      this.#scaleKey = scaleKey;
-      this.#slider = this.#buildSlider(scale);
-    }
-    this.#scale = scale;
-
-    if (!this.#dragging && this.#pendingCommits === 0) {
-      const fallbackIndex = Math.max(0, options.findIndex(option => option.value === defaultValue));
-      const index = currentIndex >= 0 ? currentIndex : fallbackIndex;
-      this.#slider.inputEl.value = String(index);
-      this.#showLevel(index, currentIndex >= 0 ? undefined : currentLabel);
-    }
+    this.#renderLevels(options, defaultValue, current);
     this.part.menu.restoreFocus();
   }
 
-  #buildSlider(scale: ReasoningScale): ReasoningSlider {
+  /** Levels from the deepest at the top to the fastest at the bottom; the provider lists them fastest first. */
+  #renderLevels(options: ProviderUIOption[], defaultValue: string, current: string | null): void {
     const sectionEl = this.part.sectionEl;
     sectionEl.empty();
-    const name = 'Effort';
-    const nameId = nextToolbarId('slider-name');
-    const groupEl = sectionEl.createDiv({
-      cls: 'claudian-toolbar-slider-group claudian-thinking-effort',
-      attr: { role: 'group', 'aria-labelledby': nameId },
+    const headingId = nextToolbarId('heading');
+    sectionEl.createDiv({ cls: 'claudian-toolbar-popover-heading', text: 'Thinking', attr: { id: headingId } });
+    const listEl = sectionEl.createDiv({
+      cls: 'claudian-thinking-levels',
+      attr: { role: 'listbox', 'aria-labelledby': headingId },
     });
-    const headerEl = groupEl.createDiv({ cls: 'claudian-toolbar-slider-header' });
-    headerEl.createSpan({ cls: 'claudian-toolbar-slider-name', text: name, attr: { id: nameId } });
-    const valueEl = headerEl.createSpan({ cls: 'claudian-toolbar-slider-value' });
+    // The list is one tab stop: the current level, else the default, else the top level.
+    // No level is chosen while the menu browses another provider's models.
+    const chosen = this.part.showsCurrentModel() ? current : null;
+    const tabStop = [chosen, defaultValue].find(value => options.some(option => option.value === value))
+      ?? options[options.length - 1].value;
+    for (let index = options.length - 1; index >= 0; index--) {
+      const option = options[index];
+      const selected = option.value === chosen;
+      const itemEl = this.part.menu.createItem(listEl, {
+        role: 'option',
+        key: `level:${option.value}`,
+        checked: selected,
+        tabbable: option.value === tabStop,
+        label: option.label,
+        cls: `claudian-thinking-level${selected ? ' selected' : ''}`,
+        onSelect: () => {
+          runToolbarAction(async () => {
+            await this.callbacks.onEffortLevelChange(option.value);
+            this.updateDisplay();
+          }, 'Failed to change effort level');
+        },
+      });
+      // The level's description is announced, not shown: no text under the level and no hover tooltip.
+      if (option.description) itemEl.setAttribute('aria-description', option.description);
 
-    const endsEl = groupEl.createDiv({ cls: 'claudian-toolbar-slider-ends', attr: { 'aria-hidden': 'true' } });
-    endsEl.createSpan({ text: 'Faster' });
-    endsEl.createSpan({ text: 'Smarter' });
-
-    // The fill and stops are drawn under a transparent native range input that takes all pointer input.
-    const controlEl = groupEl.createDiv({ cls: 'claudian-toolbar-slider' });
-    const trackEl = controlEl.createDiv({ cls: 'claudian-toolbar-slider-track', attr: { 'aria-hidden': 'true' } });
-    trackEl.createSpan({ cls: 'claudian-toolbar-slider-fill-start' });
-    const segmentEls = scale.options.slice(1).map(() => trackEl.createSpan({ cls: 'claudian-toolbar-slider-segment' }));
-    const stopsEl = controlEl.createDiv({ cls: 'claudian-toolbar-slider-stops', attr: { 'aria-hidden': 'true' } });
-    const tickEls = scale.options.map(option => stopsEl.createSpan({
-      cls: `claudian-toolbar-slider-tick${option.value === scale.defaultValue ? ' claudian-toolbar-slider-tick--recommended' : ''}`,
-    }));
-    const inputEl = controlEl.createEl('input', {
-      cls: 'claudian-toolbar-slider-input',
-      attr: {
-        type: 'range',
-        min: '0',
-        max: String(scale.options.length - 1),
-        step: '1',
-        'aria-labelledby': nameId,
-        'data-menu-key': `slider:${name}`,
-      },
-    });
-
-    inputEl.addEventListener('input', () => this.#showLevel(Number(inputEl.value)));
-    // Change fires once when a drag is released and once per keyboard step, never per stop crossed mid-drag.
-    inputEl.addEventListener('change', () => this.#commit(Number(inputEl.value)));
-    inputEl.addEventListener('pointerdown', () => this.#startDrag(inputEl));
-
-    return { inputEl, valueEl, segmentEls, tickEls };
-  }
-
-  #startDrag(inputEl: HTMLInputElement): void {
-    this.#dragging = true;
-    const ownerDocument = inputEl.ownerDocument;
-    const endDrag = (): void => {
-      this.#dragging = false;
-      ownerDocument.removeEventListener('pointerup', endDrag, true);
-      ownerDocument.removeEventListener('pointercancel', endDrag, true);
-    };
-    ownerDocument.addEventListener('pointerup', endDrag, true);
-    ownerDocument.addEventListener('pointercancel', endDrag, true);
-  }
-
-  /** Shows the level under the thumb; a label override covers a saved value the provider no longer lists. */
-  #showLevel(index: number, labelOverride?: string): void {
-    const scale = this.#scale;
-    const slider = this.#slider;
-    const option = scale?.options[index];
-    if (!scale || !slider || !option) return;
-
-    const label = labelOverride ?? option.label;
-    const detail = labelOverride ? '' : option.description ?? '';
-
-    slider.inputEl.setAttribute('aria-valuetext', label);
-    slider.valueEl.setText(label);
-    // The level's description is announced, not shown: no text under the track and no hover tooltip.
-    if (detail) {
-      slider.inputEl.setAttribute('aria-description', detail);
-    } else {
-      slider.inputEl.removeAttribute('aria-description');
-    }
-    slider.segmentEls.forEach((segmentEl, segment) => segmentEl.toggleClass('is-filled', segment < index));
-    slider.tickEls.forEach((tickEl, tick) => tickEl.toggleClass('is-filled', tick <= index));
-  }
-
-  #commit(index: number): void {
-    const scale = this.#scale;
-    const option = scale?.options[index];
-    if (!scale || !option) return;
-    runToolbarAction(async () => {
-      this.#pendingCommits++;
-      try {
-        await this.callbacks.onEffortLevelChange(option.value);
-      } finally {
-        this.#pendingCommits--;
-        // Once every commit has landed, show what was saved, including a rollback after a failure.
-        if (this.#pendingCommits === 0) this.updateDisplay();
+      const barsEl = itemEl.createSpan({ cls: 'claudian-thinking-strength', attr: { 'aria-hidden': 'true' } });
+      const filled = Math.max(1, Math.round(((index + 1) / options.length) * STRENGTH_BARS));
+      for (let bar = 0; bar < STRENGTH_BARS; bar++) {
+        barsEl.createSpan({ cls: bar < filled ? 'is-filled' : '' });
       }
-    }, 'Failed to change effort level');
+      itemEl.prepend(barsEl);
+    }
   }
 }

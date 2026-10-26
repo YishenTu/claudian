@@ -30,8 +30,15 @@ if (process.argv.includes('--version')) {
     if (req.headers.authorization !== auth || url.searchParams.get('location[directory]') !== process.cwd()) {
       res.writeHead(403); res.end(); return;
     }
-    if (req.method !== 'GET' || !['/api/model', '/api/command', '/api/skill', '/api/integration'].includes(url.pathname)) {
+    if (req.method !== 'GET' || !['/api/model', '/api/command', '/api/skill', '/api/integration', '/api/provider'].includes(url.pathname)) {
       res.writeHead(405); res.end(); return;
+    }
+    // Provider display names are optional: without a providers file the endpoint is absent, as in older versions.
+    if (url.pathname === '/api/provider') {
+      if (!fs.existsSync(process.env.CATALOG_FILE + '.providers')) { res.writeHead(404); res.end(); return; }
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ location: { directory: process.cwd() }, data: JSON.parse(fs.readFileSync(process.env.CATALOG_FILE + '.providers', 'utf8')) }));
+      return;
     }
     activation ??= new Promise(resolve => setTimeout(() => { activated = true; resolve(); }, Number(process.env.ACTIVATION_DELAY_MS || 0)));
     if (url.pathname === '/api/integration') {

@@ -13,6 +13,8 @@ import type {
 interface NativeModel {
   id: string;
   providerID: string;
+  /** The upstream provider's native display name, when the server lists one. */
+  providerName?: string;
   name: string;
   variants: string[];
 }
@@ -90,7 +92,7 @@ export class OpencodeV2MetadataProbe implements OpencodeMetadataProbe {
   private async loadModels(signal: AbortSignal, rawModelId?: string): Promise<NativeModel[]> {
     await this.client.waitForActivation(signal);
     // Older versions and background discovery can still need polling or a later refresh.
-    return pollOpencodeUntil(async () => (await this.read('model', signal)).filter(isNamedRecord).flatMap(model => {
+    const models = await pollOpencodeUntil(async () => (await this.read('model', signal)).filter(isNamedRecord).flatMap(model => {
       if (model.enabled !== true || typeof model.id !== 'string' || typeof model.providerID !== 'string') return [];
       return [{
         id: model.id, providerID: model.providerID, name: model.name,
@@ -101,9 +103,34 @@ export class OpencodeV2MetadataProbe implements OpencodeMetadataProbe {
     }), models => rawModelId
       ? models.some(model => `${model.providerID}/${model.id}` === rawModelId)
       : models.length > 0, 5_000, signal);
+    const providerNames = await this.readProviderNames(signal);
+    return models.map(model => {
+      const providerName = providerNames.get(model.providerID);
+      return providerName ? { ...model, providerName } : model;
+    });
   }
 
-  private async read(resource: 'model' | 'command' | 'skill', signal: AbortSignal): Promise<unknown[]> {
+  /**
+   * Provider display names label each model's upstream group. They are optional: a server without
+   * the endpoint keeps provider ids, and a name containing "/" would split the "Upstream/Model" label.
+   */
+  private async readProviderNames(signal: AbortSignal): Promise<Map<string, string>> {
+    let providers: unknown[];
+    try {
+      providers = await this.read('provider', signal);
+    } catch {
+      signal.throwIfAborted();
+      return new Map();
+    }
+    return new Map(providers.flatMap(provider => (
+      isRecord(provider) && typeof provider.id === 'string' && typeof provider.name === 'string'
+        && provider.name.trim() && !provider.name.includes('/')
+        ? [[provider.id, provider.name.trim()] as const]
+        : []
+    )));
+  }
+
+  private async read(resource: 'model' | 'command' | 'skill' | 'provider', signal: AbortSignal): Promise<unknown[]> {
     const result = await this.client.request(`/api/${resource}`, { signal });
     if (!isRecord(result) || !Array.isArray(result.data)) throw new Error('Invalid OpenCode catalog response.');
     return result.data as unknown[];
@@ -113,7 +140,10 @@ export class OpencodeV2MetadataProbe implements OpencodeMetadataProbe {
 function modelState(models: NativeModel[]): NonNullable<OpencodeMetadataCatalogResult['models']> {
   return {
     currentModelId: '',
-    availableModels: models.map(model => ({ modelId: `${model.providerID}/${model.id}`, name: `${model.providerID}/${model.name}` })),
+    availableModels: models.map(model => ({
+      modelId: `${model.providerID}/${model.id}`,
+      name: `${model.providerName ?? model.providerID}/${model.name}`,
+    })),
   };
 }
 

@@ -1,4 +1,4 @@
-/* Fast mode: an indicator on the model chip and a switch row in the model menu. */
+/* Fast mode: an indicator on the model chip and a switch row at the foot of the model popover's last column. */
 
 /* The indicator only shows while fast mode is on, so it reads at full strength rather than muted. */
 .claudian-service-tier-indicator {
@@ -12,13 +12,48 @@
   height: 11px;
 }
 
+.claudian-model-popover {
+  --claudian-fast-mode: #eab308;
+}
+
+/* The switch sits at the column's foot, below the levels. */
+.claudian-model-parts > .claudian-toolbar-popover-section.claudian-service-tier-toggle {
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.claudian-toolbar-popover button.claudian-toolbar-popover-switch-row {
+  min-height: 26px;
+  color: var(--text-muted);
+}
+
+.claudian-toolbar-popover button.claudian-toolbar-popover-switch-row:is(:hover, :focus-visible) {
+  color: var(--text-normal);
+}
+
+.claudian-toolbar-popover-switch-row .claudian-toolbar-popover-option-icon {
+  color: var(--text-faint);
+}
+
+/* On, the row takes a faint amber wash and the zap lights up: amber is fast mode's own colour, never a provider's. */
+.claudian-toolbar-popover button.claudian-toolbar-popover-switch-row[aria-checked='true'],
+.claudian-toolbar-popover button.claudian-toolbar-popover-switch-row[aria-checked='true']:is(:hover, :focus, :focus-visible, :active) {
+  background: color-mix(in srgb, var(--claudian-fast-mode) 10%, transparent);
+  color: var(--text-normal);
+}
+
+.claudian-toolbar-popover-switch-row[aria-checked='true'] .claudian-toolbar-popover-option-icon {
+  color: var(--claudian-fast-mode);
+}
+
 .claudian-toggle-switch {
   position: relative;
   flex-shrink: 0;
-  width: 32px;
-  height: 18px;
-  border-radius: 9px;
-  background: var(--background-modifier-border);
+  width: 26px;
+  height: 15px;
+  margin-inline-start: auto;
+  border-radius: 999px;
+  background: var(--background-modifier-border-hover);
   transition: background 0.2s ease;
 }
 
@@ -27,19 +62,18 @@
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 14px;
-  height: 14px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
-  background: var(--text-muted);
-  transition: transform 0.2s ease, background 0.2s ease;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 30%);
+  transition: transform 0.2s ease;
 }
 
-/* On is neutral, like the reasoning slider's fill and thumb; brand colour only identifies providers. */
 .claudian-toggle-switch.active {
-  background: color-mix(in srgb, var(--text-normal) 32%, var(--background-modifier-border));
+  background: var(--claudian-fast-mode);
 }
 
 .claudian-toggle-switch.active::after {
-  transform: translateX(14px);
-  background: var(--text-normal);
+  transform: translateX(11px);
 }

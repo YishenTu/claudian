@@ -1,4 +1,4 @@
-/* Reasoning: the level on the model chip, and a stepped slider in the model popover. */
+/* Reasoning: the level on the model chip, and a list of levels in the model popover's last column. */
 
 /* The level stays muted while the chip brightens on hover, focus or while open. */
 .claudian-thinking-current {
@@ -10,165 +10,61 @@
   margin-inline-end: 5px;
 }
 
-.claudian-toolbar-slider-group {
-  --claudian-slider-thumb-width: 22px;
-  --claudian-slider-height: 24px;
-  --claudian-slider-track-height: 18px;
-
-  /* Neutral rather than the provider brand: several brands are near white and would hide the thumb. */
-  --claudian-slider-track: var(--background-modifier-border);
-  --claudian-slider-fill: color-mix(in srgb, var(--text-normal) 32%, var(--background-modifier-border));
-  --claudian-slider-thumb: var(--text-normal);
-  --claudian-slider-thumb-shadow: 0 1px 3px rgb(0 0 0 / 40%);
-
+.claudian-thinking-levels {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px 8px 8px;
+  gap: 1px;
 }
 
-.claudian-toolbar-slider-header {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  font-size: 13px;
+/* Compact rows: five levels and the fast switch fit the popover's fixed height without scrolling. */
+.claudian-toolbar-popover button.claudian-thinking-level,
+.claudian-toolbar-popover button.claudian-thinking-level:is(:hover, :focus, :focus-visible, :active) {
+  gap: 8px;
+  min-height: 24px;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
-.claudian-toolbar-slider-name {
+.claudian-toolbar-popover button.claudian-thinking-level {
   color: var(--text-muted);
 }
 
-.claudian-toolbar-slider-value {
+.claudian-toolbar-popover button.claudian-thinking-level:is(:hover, :focus-visible) {
   color: var(--text-normal);
 }
 
-.claudian-toolbar-slider-ends {
-  display: flex;
-  justify-content: space-between;
-  color: var(--text-muted);
-  font-size: 11px;
+/* The chosen level takes a tint of the active provider's accent; near-white brands read as a neutral fill. */
+.claudian-toolbar-popover button.claudian-thinking-level.selected,
+.claudian-toolbar-popover button.claudian-thinking-level.selected:is(:hover, :focus, :focus-visible, :active) {
+  background: rgba(var(--claudian-brand-rgb), 0.14);
+  color: var(--text-normal);
+  font-weight: 500;
 }
 
-/* The native range input sits on top and takes every pointer; the track, fill and stops are drawn beneath it. */
-.claudian-toolbar-slider {
-  position: relative;
-  height: var(--claudian-slider-height);
+/* A four-bar strength glyph, rising with the level. */
+.claudian-thinking-strength {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
 }
 
-.claudian-toolbar-slider-track {
-  position: absolute;
-  top: 50%;
-  inset-inline: 0;
-  display: flex;
-  height: var(--claudian-slider-track-height);
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--claudian-slider-track);
-  pointer-events: none;
-  transform: translateY(-50%);
+.claudian-thinking-strength > span {
+  width: 3px;
+  border-radius: 1px;
+  background: var(--background-modifier-border-hover);
 }
 
-/* Half a thumb at each end, so each segment boundary lands on a thumb centre. */
-.claudian-toolbar-slider-fill-start,
-.claudian-toolbar-slider-track::after {
-  flex: 0 0 calc(var(--claudian-slider-thumb-width) / 2);
-}
+.claudian-thinking-strength > span:nth-child(1) { height: 4px; }
+.claudian-thinking-strength > span:nth-child(2) { height: 6.5px; }
+.claudian-thinking-strength > span:nth-child(3) { height: 9px; }
+.claudian-thinking-strength > span:nth-child(4) { height: 12px; }
 
-.claudian-toolbar-slider-track::after {
-  content: '';
-}
-
-.claudian-toolbar-slider-fill-start,
-.claudian-toolbar-slider-segment.is-filled {
-  background: var(--claudian-slider-fill);
-}
-
-.claudian-toolbar-slider-segment {
-  flex: 1 1 0;
-}
-
-.claudian-toolbar-slider-stops {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  inset-inline: calc(var(--claudian-slider-thumb-width) / 2 - 3px);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  pointer-events: none;
-}
-
-.claudian-toolbar-slider-tick {
-  position: relative;
-  width: 6px;
-  height: 6px;
-}
-
-.claudian-toolbar-slider-tick::before {
-  content: '';
-  position: absolute;
-  inset: 1px;
-  border-radius: 50%;
-  background: var(--text-faint);
-}
-
-.claudian-toolbar-slider-tick.is-filled::before {
+.claudian-thinking-strength > span.is-filled {
   background: var(--text-muted);
 }
 
-/* The recommended level is a short upright tick instead of a dot. */
-.claudian-toolbar-slider-tick--recommended::before {
-  inset: -1px 2px;
-  border-radius: 1px;
-}
-
-.claudian-toolbar-slider input.claudian-toolbar-slider-input,
-.claudian-toolbar-slider input.claudian-toolbar-slider-input:is(:hover, :focus, :focus-visible, :active) {
-  appearance: none;
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  outline: none;
-  cursor: pointer;
-
-  /* Obsidian offsets, fades and re-shadows its range thumb through these; pin them so the thumb stays on the track. */
-  --slider-thumb-y: 0;
-  --slider-thumb-y-active: 0;
-  --slider-thumb-opacity-active: 1;
-  --slider-thumb-shadow-active: var(--claudian-slider-thumb-shadow);
-  --slider-thumb-shadow-focus: 0 0 0 2px var(--background-secondary), 0 0 0 4px var(--interactive-accent);
-}
-
-.claudian-toolbar-slider input.claudian-toolbar-slider-input::-webkit-slider-runnable-track {
-  height: 100%;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.claudian-toolbar-slider input.claudian-toolbar-slider-input::-webkit-slider-thumb,
-.claudian-toolbar-slider input.claudian-toolbar-slider-input:is(:hover, :active)::-webkit-slider-thumb {
-  appearance: none;
-  width: var(--claudian-slider-thumb-width);
-  height: var(--claudian-slider-height);
-  top: 0;
-  margin-top: 0;
-  border: 0;
-  border-radius: 7px;
-  background: var(--claudian-slider-thumb);
-  box-shadow: var(--claudian-slider-thumb-shadow);
-  opacity: 1;
-  cursor: pointer;
-}
-
-/* The thumb carries the keyboard focus ring, clear of both the fill and the bare track. */
-.claudian-toolbar-slider input.claudian-toolbar-slider-input:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 0 0 2px var(--background-secondary), 0 0 0 4px var(--interactive-accent);
+.claudian-thinking-level.selected .claudian-thinking-strength > span.is-filled {
+  background: var(--claudian-brand);
 }

@@ -166,7 +166,6 @@ function getPiDefaultReasoningValue(model: string, settings: Record<string, unkn
 
 function buildModelOption(model: PiDiscoveredModel, alias: string | undefined): ProviderUIOption {
   return {
-    description: `${model.provider} runtime`,
     group: model.provider,
     label: alias ?? model.label,
     value: model.encodedId,

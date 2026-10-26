@@ -138,7 +138,7 @@ describe('ProviderRegistry', () => {
     })).toEqual(['opencode', 'pi', 'grok', 'codex', 'claude']);
   });
 
-  it('exposes the blank-tab provider order from top to bottom', () => {
+  it('exposes the blank-tab default-provider priority', () => {
     expect(ProviderRegistry.getBlankTabProviderIds({
       providerConfigs: {
         codex: { enabled: true },
@@ -199,8 +199,17 @@ describe('ProviderRegistry', () => {
           discoveredModels: TEST_CODEX_CATALOG,
           enabled: true,
         },
+        opencode: {
+          enabled: true,
+          discoveredModels: [{ label: 'zai-coding-plan/GLM-5.3', rawId: 'zai-coding-plan/glm-5.3' }],
+          visibleModels: ['zai-coding-plan/glm-5.3'],
+        },
       },
     });
+
+    // An upstream group stays in the label, since the flat list has no headings.
+    expect(options.find(option => option.value === 'opencode:zai-coding-plan/glm-5.3')?.label)
+      .toBe('OpenCode: zai-coding-plan/GLM-5.3');
 
     expect(options.find(option => option.value === `openai-codex/${TEST_CODEX_MODEL}`)?.label)
       .toBe(`Codex: ${TEST_CODEX_MODEL_LABEL}`);

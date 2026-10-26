@@ -1,9 +1,11 @@
 export interface DeepSeekModel {
   readonly encodedId: string;
   readonly provider: string;
+  /** The provider route's native display name, when the catalog gives one. */
+  readonly providerName?: string;
   readonly id: string;
   readonly label: string;
-  readonly reasoning?: readonly { readonly id: string; readonly name: string }[];
+  readonly reasoning?: readonly { readonly id: string; readonly name: string; readonly description?: string }[];
   readonly description?: string;
   readonly available?: boolean;
 }
@@ -36,18 +38,23 @@ export function normalizeDeepSeekModels(value: unknown): DeepSeekModel[] {
       || typeof entry.id !== 'string' || !entry.id.trim()) continue;
     const encodedId = encodeDeepSeekModelId(entry.provider, entry.id);
     if (models.has(encodedId)) continue;
-    const reasoning: Array<{ id: string; name: string }> = [];
+    const reasoning: Array<{ id: string; name: string; description?: string }> = [];
     if (Array.isArray(entry.reasoning)) {
       for (const value of entry.reasoning as unknown[]) {
         const effort = value && typeof value === 'object' ? value as Record<string, unknown> : {};
         if (typeof effort.id === 'string' && effort.id.trim()
           && typeof effort.name === 'string' && !reasoning.some(row => row.id === effort.id)) {
-          reasoning.push({ id: effort.id, name: effort.name });
+          reasoning.push({
+            id: effort.id, name: effort.name,
+            ...(typeof effort.description === 'string' && effort.description ? { description: effort.description } : {}),
+          });
         }
       }
     }
     models.set(encodedId, {
-      encodedId, provider: entry.provider, id: entry.id,
+      encodedId, provider: entry.provider,
+      ...(typeof entry.providerName === 'string' && entry.providerName ? { providerName: entry.providerName } : {}),
+      id: entry.id,
       label: typeof entry.label === 'string' ? entry.label : entry.id,
       ...(Array.isArray(entry.reasoning) ? { reasoning } : {}),
       ...(typeof entry.description === 'string' ? { description: entry.description } : {}),

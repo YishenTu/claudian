@@ -106,7 +106,10 @@ describe('GrokChatUIConfig', () => {
           visibleModels: null,
         },
       },
-    })).map(option => option.label)).toEqual(['Grok 4.7', 'Grok Code Fast 1', 'kimi-coding', 'Grok 4 Heavy']);
+    })).map(option => [option.label, option.description])).toEqual([
+      // A model the catalog does not describe has no description line.
+      ['Grok 4.7', undefined], ['Grok Code Fast 1', undefined], ['kimi-coding', undefined], ['Grok 4 Heavy', undefined],
+    ]);
   });
 
   it('does not expose active or saved selections that the user disabled', () => {

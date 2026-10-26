@@ -163,6 +163,8 @@ export interface ProviderUIOption {
   providerIcon?: ProviderIconSvg;
   /** Owning provider when several providers share one dropdown, so the option can carry its brand. */
   providerId?: ProviderId;
+  /** The owning provider's display name when several providers share one dropdown. */
+  providerLabel?: string;
 }
 
 export interface ProviderPathIconSvg {

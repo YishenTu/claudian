@@ -46,6 +46,24 @@ it('discovers several selected models from one native catalog response', async (
   }
 });
 
+it('names each model\'s upstream provider by its native display name when the server lists one', async () => {
+  writeFileSync(fixture.environment.CATALOG_FILE + '.providers', JSON.stringify([
+    { id: 'deepseek', name: 'DeepSeek Official' },
+    // A name that would split the "Upstream/Model" label keeps the provider id.
+    { id: 'acme', name: 'Acme / Labs' },
+  ]));
+  addModel();
+  const plugin = fixture.createPlugin();
+  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
+  try {
+    await expect(service.loadCatalog()).resolves.toBe(true);
+    expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([
+      { rawId: 'deepseek/chat', label: 'DeepSeek Official/DeepSeek Chat' },
+      { rawId: 'acme/slow-model', label: 'acme/Slow Model' },
+    ]);
+  } finally { await service.dispose(); }
+});
+
 it('refreshes the native catalog and commands without persisting the catalog or enabling models', async () => {
   const plugin = fixture.createPlugin();
   const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);

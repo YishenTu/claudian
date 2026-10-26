@@ -158,7 +158,7 @@ function pushModelOption(
   options.push({
     value,
     label: aliases[rawId] ?? getGrokModelLabel(model),
-    description: model.description ?? 'Selected in an existing session',
+    ...(model.description ? { description: model.description } : {}),
   });
 }
 
