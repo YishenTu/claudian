@@ -8,3 +8,4 @@
 - Persistent session-manager styles stay under its dedicated containers; shared history item primitives must not impose persistent-sidebar sizing or actions on the compact menu.
 - Pinned/session lists scroll independently. Preserve min-height: 0 through flex ancestors so bounded lists and sticky headers do not clip.
 - Surfaces that cover other content (overlays, popovers, menus) need an opaque base under theme colors: translucent themes can make `--background-primary` transparent, and jsdom cannot detect it.
+- Do not use `:has()`: the Obsidian CSS lint flags it for broad selector invalidation. State that depends on descendants belongs to the owning component, which toggles a class on the ancestor.

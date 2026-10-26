@@ -25,7 +25,7 @@ export class EffortSelector {
 
   #hide(): void {
     this.part.chipEl.addClass('claudian-hidden');
-    this.part.sectionEl.addClass('claudian-hidden');
+    this.part.showSection(false);
     this.part.sectionEl.empty();
     this.part.describe(null);
   }
@@ -56,7 +56,7 @@ export class EffortSelector {
     this.part.chipEl.removeClass('claudian-hidden');
     this.part.chipEl.setText(currentLabel);
     this.part.describe(`effort ${currentLabel}`);
-    this.part.sectionEl.removeClass('claudian-hidden');
+    this.part.showSection(true);
     this.#renderLevels(options, defaultValue, current);
     this.part.menu.restoreFocus();
   }

@@ -314,11 +314,6 @@
   padding-bottom: 0;
 }
 
-/* A column with no visible part, such as a provider without reasoning or fast mode, takes no room. */
-.claudian-model-parts:not(:has(> :not(.claudian-hidden))) {
-  display: none;
-}
-
 .claudian-model-providers {
   flex: 0 0 auto;
   align-items: center;

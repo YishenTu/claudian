@@ -37,11 +37,11 @@ export class ServiceTierToggle {
     // While the menu browses another provider no model is chosen there, so, as for a model
     // without fast mode, the switch is not offered. The button still shows the current model's state.
     if (!toggleConfig || !this.part.showsCurrentModel()) {
-      sectionEl.addClass('claudian-hidden');
+      this.part.showSection(false);
       return;
     }
 
-    sectionEl.removeClass('claudian-hidden');
+    this.part.showSection(true);
     const currentLabel = toggleConfig.isActive ? toggleConfig.activeLabel : toggleConfig.inactiveLabel;
     const itemEl = this.part.menu.createItem(sectionEl, {
       role: 'switch',

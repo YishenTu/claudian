@@ -97,6 +97,26 @@ it('renders saved model order top-to-bottom through the real provider UI config'
   expect(labels()).toEqual(['sonnet', 'opus', 'haiku']);
 });
 
+it('hides the parts column while none of its parts is shown', () => {
+  const host = document.body.createDiv();
+  let reasoningControl = 'none';
+  const callbacks = {
+    getSettings: () => ({ model: 'opus', reasoning: 'high' }),
+    getUIConfig: () => ({
+      getModelOptions: () => [{ value: 'opus', label: 'opus' }],
+      getReasoningOptions: () => [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }],
+      getDefaultReasoningValue: () => 'low',
+    }),
+    getCapabilities: () => ({ reasoningControl }),
+  } as unknown as ToolbarCallbacks;
+  const effort = new EffortSelector(new ModelSelector(host, callbacks), callbacks);
+  const parts = host.querySelector('.claudian-model-parts')!;
+  expect(parts.classList.contains('claudian-hidden')).toBe(true);
+  reasoningControl = 'effort';
+  effort.updateDisplay();
+  expect(parts.classList.contains('claudian-hidden')).toBe(false);
+});
+
 it('lists a new session\'s providers in their own column and shows one provider\'s models at a time', async () => {
   const host = document.body.createDiv();
   const settings = {

@@ -8,6 +8,8 @@ export interface ModelMenuPart {
   readonly chipEl: HTMLElement;
   readonly sectionEl: HTMLElement;
   readonly menu: ToolbarMenu;
+  /** Shows or hides this part's section; the parts column hides while no section shows. */
+  showSection(visible: boolean): void;
   /** Sets this part's phrase in the model button's accessible name; null omits it. */
   describe(text: string | null): void;
   /** False while the menu browses another provider's models, so no current-model setting shows as chosen. */
@@ -69,7 +71,7 @@ export class ModelSelector {
     this.optionsEl = this.menu.menuEl.createDiv({
       cls: 'claudian-model-column claudian-model-options',
     });
-    this.partsEl = this.menu.menuEl.createDiv({ cls: 'claudian-model-column claudian-model-parts' });
+    this.partsEl = this.menu.menuEl.createDiv({ cls: 'claudian-model-column claudian-model-parts claudian-hidden' });
     this.updateDisplay();
     this.renderOptions();
   }
@@ -78,10 +80,16 @@ export class ModelSelector {
   attachPart(key: string, chipCls: string, refresh: () => void): ModelMenuPart {
     this.partRefreshers.push(refresh);
     this.partDescriptions.set(key, null);
+    const sectionEl = this.partsEl.createDiv({ cls: 'claudian-toolbar-popover-section claudian-hidden' });
     return {
       chipEl: this.menu.createChipPart(chipCls),
-      sectionEl: this.partsEl.createDiv({ cls: 'claudian-toolbar-popover-section' }),
+      sectionEl,
       menu: this.menu,
+      showSection: (visible) => {
+        sectionEl.toggleClass('claudian-hidden', !visible);
+        const anyVisible = Array.from(this.partsEl.children).some(el => !el.hasClass('claudian-hidden'));
+        this.partsEl.toggleClass('claudian-hidden', !anyVisible);
+      },
       describe: (text) => {
         this.partDescriptions.set(key, text);
         this.#updateAccessibleName();
