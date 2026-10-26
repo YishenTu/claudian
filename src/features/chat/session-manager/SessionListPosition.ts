@@ -40,6 +40,8 @@ export const INITIAL_SESSION_LIST_POSITION: SessionListPosition = {
 };
 
 function captureScrollAnchors(list: HTMLElement): ScrollAnchor[] {
+  // A list at its top stays there, so rows that load above the first one, such as after startup, show.
+  if (list.scrollTop <= 0) return [];
   const listRect = list.getBoundingClientRect();
   if (listRect.height <= 0) return [];
 

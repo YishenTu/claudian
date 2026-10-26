@@ -415,6 +415,33 @@ describe('projects section', () => {
     }
   });
 
+  it('keeps the wide session list at the top when newer sessions load above it, as after startup', () => {
+    const { host, plugin, surface } = createProjectSurface();
+    const sessionList = () => host.querySelector<HTMLElement>('.claudian-session-list-items')!;
+    // jsdom has no layout: stack every session row 40px tall in document order.
+    const layout = jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const list = sessionList();
+      const index = Array.from(list.querySelectorAll<HTMLElement>('.claudian-history-item, .claudian-session-group-header')).indexOf(this);
+      const top = this === list ? 0 : index * 40 - list.scrollTop;
+      const height = this === list ? 400 : index < 0 ? 0 : 40;
+      return { top, bottom: top + height, height, left: 0, right: 300, width: 300 } as DOMRect;
+    });
+    try {
+      const newer = (minutes: number) => conversation(`newer-${minutes}`, { lastActivityAt: testDate({ minutes }).getTime() });
+      plugin.getConversationList().push(...Array.from({ length: 20 }, (_, index) => newer(-index)));
+      surface.invalidate();
+      expect(sessionList().scrollTop).toBe(0);
+
+      // A scrolled list keeps its first visible row in place instead.
+      sessionList().scrollTop = 80;
+      plugin.getConversationList().push(newer(1));
+      surface.invalidate();
+      expect(sessionList().scrollTop).toBe(120);
+    } finally {
+      layout.mockRestore();
+    }
+  });
+
   it('keeps a project expanded across re-renders and the archive, which hides the section', () => {
     const { host, region, surface, view } = createProjectSurface();
 
