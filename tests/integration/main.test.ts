@@ -3949,6 +3949,7 @@ describe('ClaudianPlugin', () => {
         undefined,
         undefined,
         expect.any(Object),
+        'latest-branch',
       );
       expect(loaded?.messages[0].images?.[0]).toMatchObject({
         id: 'img-blank',
@@ -3998,6 +3999,7 @@ describe('ClaudianPlugin', () => {
         'asst-uuid-cutoff',
         undefined,
         expect.any(Object),
+        'exact',
       );
 
       // Messages should be loaded
@@ -4095,6 +4097,7 @@ describe('ClaudianPlugin', () => {
         undefined,
         undefined,
         expect.any(Object),
+        'latest-branch',
       );
       expect(loaded?.messages[0].toolCalls?.find(tc => tc.id === 'task-1')).toEqual(
         expect.objectContaining({
@@ -4168,6 +4171,7 @@ describe('ClaudianPlugin', () => {
         undefined,
         undefined,
         expect.any(Object),
+        'latest-branch',
       );
       expect(taskTool?.result).toBe('Full SDK result from queue-operation');
       expect(taskTool?.subagent?.result).toBe('Full SDK result from queue-operation');

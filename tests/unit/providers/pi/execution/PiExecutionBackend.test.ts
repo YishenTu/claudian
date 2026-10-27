@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { PassThrough } from 'node:stream';
 
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { createProviderRecoveryTestHarness } from '@test/helpers/features/chat/ProviderRecoveryTestHarness';
@@ -29,7 +30,7 @@ import {
 } from '@/providers/pi/execution';
 import { PiConversationHistoryService } from '@/providers/pi/history/PiConversationHistoryService';
 import type { PiLaunchSpec } from '@/providers/pi/runtime/PiLaunchSpecBuilder';
-import { PiRPCResponseError } from '@/providers/pi/runtime/PiRPCTransport';
+import { PiRPCResponseError, PiRPCTransport } from '@/providers/pi/runtime/PiRPCTransport';
 
 class FakeKernel implements PiExecutionKernel {
   readonly requests: Array<{ payload: Record<string, unknown>; type: string }> = [];
@@ -290,6 +291,61 @@ describe('PiExecutionBackend', () => {
       expect(events.filter(event => event.type === 'context_compacted')).toHaveLength(1);
       expect(events.at(-1)?.type).toBe('turn_completed');
     } finally { await session.dispose(); }
+  });
+
+  it('emits one manual compaction boundary when native Pi also reports completion', async () => {
+    const harness = createHarness(createConfig(), undefined, async <T>(type: string) => {
+      if (type === 'compact') {
+        const result = { summary: 'Summary', firstKeptEntryId: 'entry', tokensBefore: 1000 };
+        harness.kernels[0].emit({ type: 'compaction_end', reason: 'manual', result, aborted: false, willRetry: false });
+        return result as T;
+      }
+      return harness.responses.get(type) as T;
+    });
+    try {
+      const events = await collect(harness.session.execute(createRequest({ input: [{ type: 'text', text: '/compact' }] })).events);
+      expect(events.at(-1)?.type).toBe('turn_completed');
+      expect(events.filter(event => event.type === 'context_compacted')).toHaveLength(1);
+    } finally { await harness.session.dispose(); }
+  });
+
+  it.each(['complete', 'cancel'] as const)('keeps manual compaction pending beyond the control deadline until %s', async outcome => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
+    const nativeOutput = new PassThrough();
+    const nativeInput = new PassThrough();
+    const transport = new PiRPCTransport({ input: nativeOutput, output: nativeInput });
+    const harness = createHarness(createConfig(), undefined, async <T>(type: string, payload: Record<string, unknown>, timeoutMs?: number, signal?: AbortSignal) => {
+      if (type === 'compact') return transport.request<T>(type, payload, timeoutMs, signal);
+      return harness.responses.get(type) as T;
+    });
+    const events: ProviderExecutionEvent[] = [];
+    const collecting = (async () => {
+      for await (const event of harness.session.execute(createRequest({ input: [{ type: 'text', text: '/compact' }] })).events) events.push(event);
+    })();
+    try {
+      await flush();
+      const compact = JSON.parse(nativeInput.read().toString());
+      expect(compact.type).toBe('compact');
+      await jest.advanceTimersByTimeAsync(30_001);
+      expect(events.filter(event => event.type === 'execution_error')).toEqual([]);
+      expect(harness.kernels[0].shutdown).not.toHaveBeenCalled();
+      if (outcome === 'complete') {
+        nativeOutput.write(JSON.stringify({ type: 'response', id: compact.id, command: 'compact', success: true, data: {} }) + '\n');
+      } else {
+        harness.session.cancel();
+      }
+      await collecting;
+      expect(events.at(-1)).toMatchObject(outcome === 'complete'
+        ? { type: 'turn_completed', reason: 'completed' }
+        : { type: 'cancelled' });
+      expect(events.filter(event => event.type === 'context_compacted')).toHaveLength(outcome === 'complete' ? 1 : 0);
+    } finally {
+      harness.session.cancel();
+      transport.dispose();
+      await collecting;
+      await harness.session.dispose();
+      jest.useRealTimers();
+    }
   });
 
   it('rejects compact without consuming history that still needs recovery', async () => {

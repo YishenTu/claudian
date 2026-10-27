@@ -11,6 +11,7 @@ import { createInteractionPromptPort } from '@/features/chat/interactions/intera
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
 import { setLocale } from '@/i18n/i18n';
 import { ClaudeExecutionInteractionRouter } from '@/providers/claude/execution/ClaudeExecutionInteractionRouter';
+import { CodexExecutionServerRequestRouter } from '@/providers/codex/execution/CodexExecutionServerRequestRouter';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
@@ -146,4 +147,45 @@ it('localizes uncertain answer-delivery feedback without requeueing the native r
   expect(Notice).toHaveBeenCalledWith('无法确认回答是否送达。为避免重复发送，未将其重新加入队列。');
   expect(submit).not.toHaveBeenCalled();
   expect(prepare.mock.calls[0][0].content).toContain('History');
+});
+
+
+it.each([false, true])('honors Codex isSecret=%s during answer review and delivers the original value', async isSecret => {
+  const parent = document.body.createDiv();
+  const prompts = new SessionInteractions({ getPromptParentEl: () => parent });
+  const router = new CodexExecutionServerRequestRouter('session', createInteractionPromptPort(() => prompts), () => true);
+  router.setActiveTurn({
+    localTurnId: 'local-turn', nativeThreadId: 'thread', nativeTurnId: 'turn',
+    toolPolicy: { kind: 'provider-default' }, cancellation: new AbortController(),
+  });
+  const pending = router.handleServerRequest('request', 'item/tool/requestUserInput', {
+    threadId: 'thread', turnId: 'turn', itemId: 'item', questions: [{
+      id: 'token', header: 'Token', question: 'Enter API token', options: null, isOther: true, isSecret,
+    }],
+  });
+  try {
+    const region = within(parent).getByRole('region', { name: 'Question' });
+    const input = within(region).getByLabelText('Enter API token');
+    expect(input.getAttribute('type')).toBe(isSecret ? 'password' : 'text');
+    const answer = 'sample-sensitive-token-123';
+    fireEvent.input(input, { target: { value: answer } });
+    fireEvent.click(within(region).getByRole('button', { name: 'Submit' }));
+    expect(within(region).getByText('Review your answers')).toBeDefined();
+    const review = within(region).getByRole('button', { name: 'Edit answer to Enter API token' });
+    expect(review.textContent).toContain(isSecret ? '••••••••' : answer);
+    expect(region.textContent?.includes(answer)).toBe(!isSecret);
+    expect(await axe(region)).toHaveNoViolations();
+
+    // Editing the masked review preserves the underlying answer in its original input type.
+    fireEvent.click(review);
+    const restoredInput = within(region).getByLabelText('Enter API token') as HTMLInputElement;
+    expect(restoredInput.type).toBe(isSecret ? 'password' : 'text');
+    expect(restoredInput.value).toBe(answer);
+    fireEvent.click(within(region).getByRole('button', { name: 'Submit' }));
+    fireEvent.click(within(region).getByRole('button', { name: 'Submit answers' }));
+    await expect(pending).resolves.toEqual({ answers: { token: { answers: [answer] } } });
+  } finally {
+    router.abortAll('cancelled');
+    await pending;
+  }
 });

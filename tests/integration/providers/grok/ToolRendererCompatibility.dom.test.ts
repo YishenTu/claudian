@@ -541,10 +541,12 @@ describe.each(['live', 'history'] as const)('%s Grok tool presentation', mode =>
     expect(within(block).getByRole('img', { name: 'image/png' }).getAttribute('src')).toBe(`data:image/png;base64,${data}`);
   });
 
-  it('shows image-only MCP results without the encoded payload', async () => {
+  it('shows image-only MCP results without stale progress or the encoded payload', async () => {
     const data = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==';
     const tool = await restore(mode, [
       { sessionUpdate: 'tool_call', toolCallId: 'image-only', title: 'use_tool', rawInput: { tool_name: 'probe__snapshot', tool_input: {} } },
+      { sessionUpdate: 'tool_call_update', toolCallId: 'image-only', status: 'in_progress',
+        content: [{ type: 'content', content: { type: 'text', text: 'Preparing screenshot...' } }] },
       { sessionUpdate: 'tool_call_update', toolCallId: 'image-only', status: 'completed', rawOutput: { type: 'MCP', tool_name: 'snapshot', server_name: 'probe',
         output: { OkayOutput: `data:image/png;base64,${data}` } } },
     ]);
@@ -553,7 +555,10 @@ describe.each(['live', 'history'] as const)('%s Grok tool presentation', mode =>
     expand(block, /^mcp__probe__snapshot/);
     expect(within(block).getByRole('img', { name: 'image/png' }).getAttribute('src')).toBe(`data:image/png;base64,${data}`);
     expect(block.textContent).not.toContain(data);
+    expect(block.textContent).not.toContain('Preparing screenshot...');
+    expect(block.textContent).not.toContain('Tool completed');
     expect(within(block).queryByText('No result')).toBeNull();
+    expect(await axe(block)).toHaveNoViolations();
   });
 
   it('keeps a backgrounded command completed when its task reports later output', async () => {

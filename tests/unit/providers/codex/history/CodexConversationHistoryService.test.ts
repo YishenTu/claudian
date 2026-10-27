@@ -806,6 +806,69 @@ describe('CodexConversationHistoryService', () => {
     });
   });
 
+  it.each(['pending', 'established'])(
+    'preserves %s fork history and model recovery after its source is archived', async mode => {
+      const sessions = path.join(tempHome, '.codex', 'sessions');
+      const archive = path.join(tempHome, '.codex', 'archived_sessions');
+      fs.mkdirSync(sessions, { recursive: true });
+      fs.mkdirSync(archive, { recursive: true });
+      const sourcePath = path.join(sessions, 'rollout-source.jsonl');
+      const forkPath = path.join(sessions, 'rollout-child.jsonl');
+      const turn = (id: string, question: string, answer: string, model: string) => [
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: id } },
+        { type: 'turn_context', payload: { model, turn_id: id } },
+        { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: question }] } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: answer }] } },
+        { type: 'event_msg', payload: { type: 'task_complete', turn_id: id } },
+      ];
+      const serialize = (records: ReturnType<typeof turn>) => records.map((record, seconds) => JSON.stringify({
+        timestamp: testDate({ seconds }).toISOString(), ...record,
+      })).join('\n');
+      const prefix = turn('checkpoint', 'Source question', 'Source answer', 'gpt-5.4');
+      const source = serialize([...prefix, ...turn('later', 'Later question', 'Later answer', 'gpt-5.5')]);
+      fs.writeFileSync(sourcePath, source);
+      fs.writeFileSync(forkPath, serialize([...prefix, ...turn('child-turn', 'Child question', 'Child answer', 'gpt-5.4-mini')]));
+      const context = { config: {}, environment: { HOME: tempHome }, environmentText: '' };
+      const service = new CodexConversationHistoryService();
+      const forkState = await service.buildForkProviderState('source', 'checkpoint', {
+        threadId: 'source', sessionFilePath: sourcePath, transcriptRootPath: sessions,
+      }, null, context);
+      const conversation: Conversation = {
+        id: 'fork', providerId: 'codex', title: 'Fork',
+        createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(),
+        sessionId: mode === 'pending' ? null : 'child', messages: [],
+        providerState: {
+          ...forkState,
+          ...(mode === 'established' ? { threadId: 'child', sessionFilePath: forkPath, transcriptRootPath: sessions } : {}),
+        },
+      };
+      const snapshot = async (pathContext = context) => ({
+        messages: (await service.hydrateConversationHistory(conversation, null, pathContext)).messages?.map(message => message.content),
+        model: await service.recoverConversationModelSelection(conversation, null, pathContext),
+      });
+      const expected = {
+        messages: ['Source question', 'Source answer', ...(mode === 'established' ? ['Child question', 'Child answer'] : [])],
+        model: mode === 'pending' ? 'openai-codex/gpt-5.4' : 'openai-codex/gpt-5.4-mini',
+      };
+      expect(await snapshot()).toEqual(expected);
+
+      const archivedPath = path.join(archive, path.basename(sourcePath));
+      fs.renameSync(sourcePath, archivedPath);
+      expect(await snapshot()).toEqual(expected);
+      expect(fs.readFileSync(archivedPath, 'utf8')).toBe(source);
+      expect(await snapshot({ ...context, environment: { HOME: path.join(tempHome, 'other-home') } }))
+        .toEqual({ messages: [], model: null });
+
+      fs.renameSync(archivedPath, sourcePath);
+      expect(await snapshot()).toEqual(expected);
+      fs.renameSync(sourcePath, archivedPath);
+
+      // Finding the moved file must still validate the captured checkpoint.
+      fs.writeFileSync(archivedPath, serialize(turn('replacement', 'Replacement question', 'Replacement answer', 'gpt-5.5')));
+      expect(await snapshot()).toEqual({ messages: [], model: null });
+    },
+  );
+
   describe('isPendingForkConversation', () => {
     it('returns true when forkSource exists, no threadId, no sessionId', () => {
       const service = new CodexConversationHistoryService();

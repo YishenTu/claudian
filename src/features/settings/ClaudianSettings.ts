@@ -34,6 +34,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
   private readonly providerSettingsRenders = new Map<ProviderId, ProviderSettingsTabRenderHandle>();
   private skillsTab: SkillsSettingsTab | null = null;
   private readonly textEdits: DebouncedSettingsWriter<ClaudianSettings>;
+  private readonly customAliasDrafts = new Map<string, string>();
 
   constructor(app: App, plugin: Plugin, host: FeatureHost) {
     super(app, plugin);
@@ -742,6 +743,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
     const listEl = container.createDiv({ cls: 'claudian-context-limits-list' });
 
     for (const modelId of uniqueModelIds) {
+      const aliasDraftKey = JSON.stringify([providerId, modelId]);
       const limits = this.host.settings.customContextLimits ?? {};
       const currentValue = Object.hasOwn(limits, modelId) ? limits[modelId] : undefined;
       const currentAliases = modelAliases?.get(this.host.settings) ?? {};
@@ -756,7 +758,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         type: 'text',
         placeholder: t('settings.customModelAliases.placeholder'),
         cls: 'claudian-context-alias-input',
-        value: currentAlias,
+        value: this.customAliasDrafts.get(aliasDraftKey) ?? currentAlias,
       });
       aliasInputEl.setAttribute('aria-label', t('settings.customModelAliases.ariaLabel', { model: modelId }));
       aliasInputEl.setAttribute('aria-description', t('settings.customModelAliases.ariaDescription'));
@@ -772,18 +774,25 @@ export class ClaudianSettingTab extends PluginSettingTab {
       const validationEl = inputWrapper.createDiv({ cls: 'claudian-context-limit-validation claudian-hidden' });
 
       const saveAlias = async (): Promise<void> => {
-        const trimmed = aliasInputEl.value.trim();
+        const draft = aliasInputEl.value;
+        const trimmed = draft.trim();
+        this.customAliasDrafts.set(aliasDraftKey, draft);
 
-        await this.host.mutateSettings((settings) => {
-          const aliases = new Map(Object.entries(modelAliases?.get(settings) ?? {}));
-          if (trimmed) {
-            aliases.set(modelId, trimmed);
-          } else {
-            aliases.delete(modelId);
-          }
-          modelAliases?.update(settings, Object.fromEntries(aliases));
-        });
-        this.notifyProviderModelOptionsChanged(providerId);
+        try {
+          await this.host.mutateSettings((settings) => {
+            const aliases = new Map(Object.entries(modelAliases?.get(settings) ?? {}));
+            if (trimmed) {
+              aliases.set(modelId, trimmed);
+            } else {
+              aliases.delete(modelId);
+            }
+            modelAliases?.update(settings, Object.fromEntries(aliases));
+          });
+          if (this.customAliasDrafts.get(aliasDraftKey) === draft) this.customAliasDrafts.delete(aliasDraftKey);
+          this.notifyProviderModelOptionsChanged(providerId);
+        } catch {
+          new Notice('Could not save model alias. Try again.');
+        }
       };
 
       const saveContextLimit = async (): Promise<void> => {
@@ -823,6 +832,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
       aliasInputEl.addEventListener('blur', () => {
         void saveAlias();
       });
+      aliasInputEl.addEventListener('input', () => {
+        this.customAliasDrafts.set(aliasDraftKey, aliasInputEl.value);
+      });
       aliasInputEl.addEventListener('keydown', (event) => {
         if (event.isComposing) return;
         if (event.key === 'Enter') {
@@ -831,6 +843,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         } else if (event.key === 'Escape') {
           event.preventDefault();
           const aliases = modelAliases?.get(this.host.settings) ?? {};
+          this.customAliasDrafts.delete(aliasDraftKey);
           aliasInputEl.value = Object.hasOwn(aliases, modelId) ? aliases[modelId] : '';
           aliasInputEl.blur();
         }

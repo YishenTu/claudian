@@ -84,6 +84,60 @@ describe('MainTurnExecution', () => {
     expect(fixture.deps.streamController.beginResponse).toHaveBeenCalledTimes(2);
   });
 
+  it.each(['creation', 'initialization'] as const)(
+    'recovers queued follow-ups and newer drafts in admission order after %s fails', async failureAt => {
+      const images: ImageAttachment[] = ['first', 'queued', 'draft'].map(id => ({
+        id, name: `${id}.png`, mediaType: 'image/png', data: 'aGVsbG8=', size: 5, source: 'paste',
+      }));
+      let attachedImages = [images[0]];
+      const imageContextManager = {
+        clearImages: () => { attachedImages = []; },
+        getAttachedImages: () => attachedImages,
+        hasImages: () => attachedImages.length > 0,
+        setImages: (next: ImageAttachment[]) => { attachedImages = next; },
+      };
+      const initialization = deferred<boolean>();
+      const initialize = jest.fn().mockResolvedValue(true);
+      if (failureAt === 'initialization') initialize.mockReturnValueOnce(initialization.promise);
+      const fixture = createFixture({
+        getImageContextManager: () => imageContextManager,
+        ensureExecutionInitialized: initialize,
+      });
+      const creation = deferred<{ id: string }>();
+      if (failureAt === 'creation') {
+        fixture.state.currentConversationId = null;
+        fixture.plugin.createConversation.mockReturnValueOnce(creation.promise)
+          .mockResolvedValue({ id: 'conversation-1' });
+      }
+      fixture.input.value = 'First request';
+      const first = fixture.controller.sendMessage();
+      const settled = first.catch((error: unknown) => error);
+      await waitForCall(failureAt === 'creation' ? fixture.plugin.createConversation : initialize);
+      fixture.input.value = 'Follow-up request';
+      attachedImages = [images[1]];
+      await fixture.controller.sendMessage();
+      fixture.input.value = '    newerDraft()\n';
+      attachedImages = [images[2]];
+      if (failureAt === 'creation') creation.reject(new Error('Disk full'));
+      else initialization.resolve(false);
+      expect(await settled).toEqual(failureAt === 'creation' ? new Error('Disk full') : undefined);
+
+      expect(fixture.session.turns.isActive).toBe(false);
+      expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+      expect(fixture.state.messages).toEqual([]);
+      expect(fixture.controller.queue.message).toBeNull();
+      expect(fixture.input.value).toBe('First request\n\nFollow-up request\n\n    newerDraft()\n');
+      expect(attachedImages).toEqual(images);
+
+      await fixture.controller.sendMessage();
+      expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
+      expect(fixture.coordinator.execute.mock.calls[0][0]).toMatchObject({
+        canonicalText: 'First request\n\nFollow-up request\n\n    newerDraft()',
+        images,
+      });
+    },
+  );
+
   it('does not launch execution when close overlaps execution initialization', async () => {
     let closing = false;
     const fixture = createFixture({

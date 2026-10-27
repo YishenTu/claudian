@@ -258,6 +258,7 @@ export class InlineEditModal {
       return { decision: 'reject' };
     }
 
+    const sourceDoc = editorView.state.doc;
     const providerContext = resolveInlineEditProviderContext(this.host);
     return new Promise((resolve) => {
       let settled = false;
@@ -290,6 +291,11 @@ export class InlineEditModal {
         'inline-edit',
       ).then(() => {
         if (settled) return;
+        if (editorView.state.doc !== sourceDoc) {
+          new Notice('Inline edit was not applied because the source document or selection changed.');
+          close();
+          return;
+        }
         session = new InlineEditSession(
           this.app,
           this.host,

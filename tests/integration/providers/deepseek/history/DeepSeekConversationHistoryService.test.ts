@@ -291,7 +291,29 @@ it('marks user-aborted turns interrupted without work timing and keeps a followi
     { role: 'assistant', content: '', isInterrupt: true },
   ].map(message => Object.fromEntries(Object.entries({ isInterrupt: undefined, isAutomaticResponse: undefined,
     durationSeconds: undefined, turnStats: undefined, completedAt: undefined, ...message }))));
-  expect(result.messages?.[1].toolCalls).toEqual([expect.objectContaining({ id: 'job', name: 'Read' })]);
+  expect(result.messages?.[1].toolCalls).toEqual([expect.objectContaining({ id: 'job', name: 'Read', status: 'error' })]);
+});
+
+it('settles pending tools before and after a steer while retaining completed background launches', async () => {
+  records = [
+    wire(1, 'turn/start', { turn: 1 }),
+    wire(2, 'user/message', { source: { kind: 'user' }, content: [{ type: 'text', text: 'start work' }] }),
+    wire(3, 'tool/call', { callId: 'background', name: 'bash', arguments: '{"command":"watch"}' }),
+    wire(4, 'tool/result', { message: { toolCallId: 'background', content: [{ type: 'text', text: 'Job started in background' }], isError: false } }),
+    wire(5, 'tool/call', { callId: 'before-steer', name: 'read', arguments: '{"path":"note.md"}' }),
+    wire(6, 'user/message', { source: { kind: 'user' }, content: [{ type: 'text', text: 'change direction' }] }),
+    wire(7, 'tool/call', { callId: 'after-steer', name: 'read', arguments: '{"path":"other.md"}' }),
+    wire(8, 'turn/end', { turn: 1, reason: { kind: 'cancelled' } }),
+  ];
+  const result = await history.hydrateConversationHistory(input, '/vault');
+  expect(result.messages?.map(message => [message.role, message.content])).toEqual([
+    ['user', 'start work'], ['assistant', ''], ['user', 'change direction'], ['assistant', ''],
+  ]);
+  expect(result.messages?.flatMap(message => message.toolCalls ?? []).map(({ id, status, result: content }) => ({ id, status, content }))).toEqual([
+    { id: 'background', status: 'completed', content: 'Job started in background' },
+    { id: 'before-steer', status: 'error', content: undefined },
+    { id: 'after-steer', status: 'error', content: undefined },
+  ]);
 });
 
 it('hydrates a session-message sender and preserves neutral tool names without colliding with native send_message', async () => {

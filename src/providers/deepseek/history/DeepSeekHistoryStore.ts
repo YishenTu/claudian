@@ -86,6 +86,15 @@ export async function loadDeepSeekHistory(client: DeepSeekReader, sessionId: str
           assistant.turnStats = { outputTokens: output?.outputTokens ?? 0, durationMs };
         }
       }
+      if (stopped) {
+        // Steers split a turn into replies, but cancellation settles all its foreground calls.
+        for (const message of messages) {
+          if (message.role !== 'assistant' || message.turnId !== turnId) continue;
+          for (const tool of message.toolCalls ?? []) {
+            if (tool.status === 'running') tool.status = 'error';
+          }
+        }
+      }
       output = undefined; assistant = undefined;
       continue;
     }

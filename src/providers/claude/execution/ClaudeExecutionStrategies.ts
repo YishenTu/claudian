@@ -276,12 +276,13 @@ implements ClaudeExecutionStrategy {
     request: ClaudeEncodedExecutionRequest,
   ): Promise<void> {
     const query = this.query;
-    const current = this.currentConfig;
+    let current = this.currentConfig;
     if (!query || !current) return;
 
     if (request.model !== current.model) {
       await query.setModel(request.model);
       if (this.query !== query || this.disposed) return;
+      this.currentConfig = current = { ...current, model: request.model };
     }
     const flagSettings: Parameters<Query['applyFlagSettings']>[0] = {
       ...(request.effort !== current.effort
@@ -295,6 +296,7 @@ implements ClaudeExecutionStrategy {
     if (Object.keys(flagSettings).length > 0) {
       await query.applyFlagSettings(flagSettings);
       if (this.query !== query || this.disposed) return;
+      this.currentConfig = current = { ...current, effort: request.effort, outputStyle: request.outputStyle };
     }
     if (request.sdkPermissionMode !== current.sdkPermissionMode) {
       await query.setPermissionMode(request.sdkPermissionMode);

@@ -631,7 +631,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         await this.kernel.request(
           'compact',
           { customInstructions: input.instructions },
-          undefined,
+          // Unlike prompt admission, compact responds only after model inference finishes.
+          0,
           active.abortController.signal,
         );
         this.#ensureAccepted(active);
@@ -1134,6 +1135,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
 
   #handleRequestedChunk(active: ActiveRun, chunk: StreamChunk): void {
     if (chunk.type === 'done') return;
+    // The compact RPC owns manual completion, including on Pi versions without this event.
+    if (chunk.type === 'context_compacted' && parseCompactCommand(active.inputText)) return;
     if (chunk.type === 'error') {
       active.terminalSignal.reject(new Error(chunk.content));
       return;

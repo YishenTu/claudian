@@ -973,6 +973,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
         truncateAt,
         relocatedSessionPaths.get(sessionId),
         pathContext,
+        isPendingFork && isCheckpointSession ? 'exact' : 'latest-branch',
       );
 
       return result;
@@ -1069,6 +1070,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
         resumeAt,
         location?.sessionPath,
         pathContext,
+        isPendingFork && sessionId === checkpointSessionId ? 'exact' : 'latest-branch',
       );
       if (sessionId === checkpointSessionId) {
         if (!recovered) return null;

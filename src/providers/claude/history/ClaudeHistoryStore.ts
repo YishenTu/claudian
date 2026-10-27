@@ -17,7 +17,7 @@ import {
 } from './ClaudeHistoryPathResolver';
 import { ClaudeTurnStats } from './ClaudeTurnStats';
 import { buildAsyncSubagentInfo } from './sdkAsyncSubagent';
-import { filterActiveBranch } from './sdkBranchFilter';
+import { filterActiveBranch, type SDKCheckpointPolicy } from './sdkBranchFilter';
 import type { SDKNativeMessage, SDKSessionLoadResult, SDKSessionReadResult } from './sdkHistoryTypes';
 import {
   collectAsyncSubagentResults,
@@ -121,6 +121,7 @@ export async function loadSDKSessionMessages(
   resumeAtMessageId?: string,
   sessionPath?: string,
   pathContext?: ProviderHistoryEnvironment,
+  checkpointPolicy: SDKCheckpointPolicy = 'latest-branch',
 ): Promise<SDKSessionLoadResult> {
   const result = await takePendingModelRead(resolveSessionPath(vaultPath, sessionId, sessionPath, pathContext))
     ?? await readSessionEntries(vaultPath, sessionId, sessionPath, pathContext);
@@ -129,7 +130,7 @@ export async function loadSDKSessionMessages(
     return { messages: [], skippedLines: result.skippedLines, error: result.error };
   }
 
-  const filteredEntries = filterActiveBranch(result.messages.filter(entry => !entry.isSidechain), resumeAtMessageId);
+  const filteredEntries = filterActiveBranch(result.messages.filter(entry => !entry.isSidechain), resumeAtMessageId, checkpointPolicy);
 
   const toolResults = collectToolResults(filteredEntries);
   const toolUseResults = collectStructuredPatchResults(filteredEntries);
@@ -469,8 +470,9 @@ function resolveTurnDurationAssistantUuid(
 export function getLastSDKSessionModel(
   entries: SDKNativeMessage[],
   resumeAtMessageId?: string,
+  checkpointPolicy: SDKCheckpointPolicy = 'latest-branch',
 ): string | null {
-  const activeBranch = filterActiveBranch(entries, resumeAtMessageId);
+  const activeBranch = filterActiveBranch(entries, resumeAtMessageId, checkpointPolicy);
   if (
     resumeAtMessageId
     && !activeBranch.some(entry => entry.uuid === resumeAtMessageId)
@@ -496,6 +498,7 @@ export async function loadSDKSessionModel(
   resumeAtMessageId?: string,
   sessionPath?: string,
   pathContext?: ProviderHistoryEnvironment,
+  checkpointPolicy: SDKCheckpointPolicy = 'latest-branch',
 ): Promise<string | null> {
   const resolvedPath = resolveSessionPath(vaultPath, sessionId, sessionPath, pathContext);
   const fingerprint = resolvedPath ? await getSessionFingerprint(resolvedPath) : null;
@@ -512,7 +515,7 @@ export async function loadSDKSessionModel(
       deletePendingModelRead(oldest);
     }
   }
-  return getLastSDKSessionModel(result.messages, resumeAtMessageId);
+  return getLastSDKSessionModel(result.messages, resumeAtMessageId, checkpointPolicy);
 }
 
 function normalizeTaskToolCalls(

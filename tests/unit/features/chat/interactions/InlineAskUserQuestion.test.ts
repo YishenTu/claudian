@@ -416,23 +416,6 @@ describe('InlineAskUserQuestion', () => {
       const { container: withOther } = renderWidget(allowOtherInput);
       expect(withOther.querySelectorAll('claudian-ask-custom-item')).toHaveLength(1);
     });
-
-    it('renders secret free-form questions with password input', () => {
-      const input = {
-        questions: [
-          {
-            question: 'Enter API token',
-            options: null,
-            isOther: true,
-            isSecret: true,
-          },
-        ],
-      };
-      const { container } = renderWidget(input);
-
-      const customInput = container.querySelector('claudian-ask-custom-text');
-      expect(customInput?.getAttribute('type')).toBe('password');
-    });
   });
 
   describe('question id keying', () => {

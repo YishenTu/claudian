@@ -6,6 +6,7 @@ import { deserialize, serialize } from 'node:v8';
 
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
+import { Notice } from 'obsidian';
 
 import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
@@ -13,6 +14,20 @@ import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { ClaudianSettingTab } from '@/features/settings/ClaudianSettings';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
+
+// Obsidian applies native input attributes supplied through createEl options.
+const originalCreateEl = HTMLElement.prototype.createEl;
+HTMLElement.prototype.createEl = function (tag, info, callback) {
+  const element = originalCreateEl.call(this, tag, info) as HTMLElement;
+  if (typeof info === 'object') {
+    for (const name of ['type', 'value', 'placeholder'] as const) {
+      if (typeof info[name] === 'string') element.setAttribute(name, info[name]);
+    }
+  }
+  callback?.(element as never);
+  return element as never;
+};
+afterAll(() => { HTMLElement.prototype.createEl = originalCreateEl; });
 
 it.each(['Enter', 'Escape'])('leaves composing %s to the custom model alias editor', async key => {
   globalThis.structuredClone ??= value => deserialize(serialize(value));
@@ -145,4 +160,37 @@ it('persists and clears prototype-named overrides through the general custom mod
   expect(getClaudeProviderSettings(cleared).modelAliases).toEqual({});
   expect(cleared.customContextLimits).toEqual({});
   container.remove();
+});
+
+it('retains a failed custom alias across rerender and allows retry', async () => {
+  const settings = { providerConfigs: { claude: { modelAliases: {} } } };
+  const persist = jest.fn().mockRejectedValueOnce(new Error('storage unavailable')).mockResolvedValue(undefined);
+  const coordinator = new SettingsCoordinator(settings, persist);
+  const plugin = {
+    settings, getActiveEnvironmentVariables: () => 'ANTHROPIC_MODEL=custom-model',
+    mutateSettings: coordinator.mutate.bind(coordinator),
+    notifyProviderChatOptionsChanged: jest.fn(), storage: { getAdapter: () => ({}) },
+  };
+  const tab = new ClaudianSettingTab({} as any, {} as any, plugin as any);
+  const container = document.body.appendChild(document.createElement('div'));
+  const field = () => within(container).getByRole<HTMLInputElement>('textbox', { name: 'Alias for custom-model' });
+  try {
+    tab['renderCustomContextLimits'](container, 'claude');
+    field().focus();
+    fireEvent.input(field(), { target: { value: 'My custom alias' } });
+    fireEvent.keyDown(field(), { key: 'Enter' });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    tab['renderCustomContextLimits'](container, 'claude');
+    expect(field().value).toBe('My custom alias');
+    expect(Notice).toHaveBeenCalledWith('Could not save model alias. Try again.');
+    expect(getClaudeProviderSettings(settings).modelAliases).toEqual({});
+    expect(await axe(container)).toHaveNoViolations();
+    field().focus();
+    fireEvent.keyDown(field(), { key: 'Enter' });
+    await waitFor(() => expect(plugin.notifyProviderChatOptionsChanged).toHaveBeenCalledTimes(1));
+    expect(getClaudeProviderSettings(settings).modelAliases['custom-model']).toBe('My custom alias');
+    tab['renderCustomContextLimits'](container, 'claude');
+    expect(field().value).toBe('My custom alias');
+    expect(persist).toHaveBeenCalledTimes(2);
+  } finally { container.remove(); }
 });

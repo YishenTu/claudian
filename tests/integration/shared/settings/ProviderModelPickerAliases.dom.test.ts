@@ -6,6 +6,7 @@ import { deserialize, serialize } from 'node:v8';
 
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
+import { Notice } from 'obsidian';
 
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { createProviderRuntimeHost } from '@/composition/ClaudianProviderHost';
@@ -113,6 +114,47 @@ it.each(['constructor', 'toString', '__proto__'])('edits and clears an alias for
     fireEvent.keyDown(aliasField(), { key: 'Escape' });
     await waitFor(() => expect(notify).toHaveBeenCalledTimes(4));
     expect(aliasField().value).toBe('');
+  } finally {
+    picker.dispose(); await catalog.dispose(); container.remove();
+  }
+});
+
+it('retains a failed alias draft across refresh and allows a successful retry', async () => {
+  globalThis.structuredClone ??= value => deserialize(serialize(value));
+  const settings = { providerConfigs: { codex: {
+    enabled: true, visibleModels: ['gateway-model'], modelAliases: {},
+    discoveredModels: [{
+      model: 'gateway-model', displayName: 'Gateway model', description: '',
+      supportedReasoningEfforts: [{ value: 'high', description: 'High' }], defaultReasoningEffort: 'high',
+    }],
+  } } };
+  let rejectSave!: (reason: Error) => void;
+  const save = new Promise<void>((_resolve, reject) => { rejectSave = reject; });
+  const persist = jest.fn().mockImplementationOnce(async () => save).mockResolvedValue(undefined);
+  const coordinator = new SettingsCoordinator(settings, persist);
+  const host = { settings, mutateSettings: coordinator.mutate.bind(coordinator), notifyProviderChatOptionsChanged: jest.fn() } as unknown as ProviderHost;
+  const catalog = createCodexModels(createProviderRuntimeHost(host, coordinator, 'codex'), { refresh: async () => ({ kind: 'skipped', models: [], refreshed: false }) });
+  await catalog.refresh();
+  const container = document.body.createDiv();
+  const picker = renderProviderModelsSection(container, 'codex', 'Codex', catalog);
+  const aliasField = () => within(container).getByRole('textbox', { name: 'Alias for Gateway model' }) as HTMLInputElement;
+  try {
+    aliasField().focus();
+    fireEvent.input(aliasField(), { target: { value: 'My alias draft' } });
+    fireEvent.keyDown(aliasField(), { key: 'Enter' });
+    rejectSave(new Error('settings storage unavailable'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    picker.refresh();
+    expect(aliasField().value).toBe('My alias draft');
+    expect(Notice).toHaveBeenCalledWith('Could not save model alias. Try again.');
+    expect(getCodexProviderSettings(settings).modelAliases).toEqual({});
+    expect((await axe(container)).violations).toEqual([]);
+    aliasField().focus();
+    fireEvent.keyDown(aliasField(), { key: 'Enter' });
+    await waitFor(() => expect(getCodexProviderSettings(settings).modelAliases['gateway-model']).toBe('My alias draft'));
+    picker.refresh();
+    expect(aliasField().value).toBe('My alias draft');
+    expect(persist).toHaveBeenCalledTimes(2);
   } finally {
     picker.dispose(); await catalog.dispose(); container.remove();
   }

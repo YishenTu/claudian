@@ -13,10 +13,12 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { MarkdownRenderer, Notice } from 'obsidian';
 
+import { buildCursorContext } from '@/core/prompt/editorContext';
 import type { ProviderCommandCatalog } from '@/core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
 import { RuntimeCommandCatalog } from '@/core/providers/commands/RuntimeCommandCatalog';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import { InlineEditModal } from '@/features/inline-edit/ui/InlineEditModal';
 
 afterEach(async () => {
   await disposeInlineEditHarnesses();
@@ -139,6 +141,40 @@ it.each(['plugin unload', 'editor destruction', 'second invocation'] as const)(
     expect(h.backend.sessions).toHaveLength(0);
   },
 );
+
+it.each(['cursor', 'selection'] as const)('rejects changed %s context during provider startup', async mode => {
+  const h = createHarness();
+  const sourceDoc = h.editorView.state.doc;
+  const context = mode === 'cursor'
+    ? { mode, cursorContext: buildCursorContext(line => sourceDoc.line(line + 1).text, sourceDoc.lines, 0, 5) }
+    : { mode, selectedText: 'hello' };
+  let initialized = false;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  ProviderWorkspaceRegistry.setServices('claude', undefined);
+  ProviderWorkspaceRegistry.register('claude', {
+    async initialize() { initialized = true; await gate; return {}; },
+  });
+  const modal = new InlineEditModal(
+    h.app, h.plugin, h.plugin, h.editor, { editor: h.editor } as any, context, h.notePath, h.owner,
+  );
+  const settled = jest.fn();
+  const result = modal.openAndWait().then(settled);
+  await waitFor(() => expect(initialized).toBe(true));
+  h.editorView.dispatch({ changes: { from: 0, insert: 'PREFIX ' } });
+  release();
+  await waitFor(() => expect(settled).toHaveBeenCalledWith({ decision: 'reject' }));
+  await result;
+  expect(Notice).toHaveBeenCalledWith(STALE_SOURCE_NOTICE);
+  expect(h.backend.sessions).toHaveLength(0);
+  expect(h.editorView.state.doc.toString()).toBe('PREFIX hello world');
+  // Establish the same modal still opens a usable editor when its source stays unchanged.
+  const retry = h.createModal().openAndWait();
+  const field = await screen.findByRole('textbox', { name: 'Edit instructions' });
+  expect(await axe(field.closest('.claudian-inline-input-container')!)).toHaveNoViolations();
+  h.owner.dispose();
+  await expect(retry).resolves.toEqual({ decision: 'reject' });
+});
 
 it('closes a visible edit on plugin unload without refocusing its editor', async () => {
   const h = createHarness();

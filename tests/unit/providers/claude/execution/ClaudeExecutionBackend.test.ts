@@ -1537,6 +1537,50 @@ describe('ClaudeExecutionBackend', () => {
     expect(query?.setMcpServers).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['enabled', 'applyFlagSettings'],
+    ['enabled', 'setPermissionMode'],
+    ['disabled-if-supported', 'applyFlagSettings'],
+    ['disabled-if-supported', 'setPermissionMode'],
+  ] as const)('restores applied native settings after %s-persistence %s failure', async (nativePersistence, failingSetter) => {
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'result', subtype: 'success' },
+    ], { appendResult: false });
+    const host = createHost();
+    const withStyle = (outputStyle: string) => ({
+      claude: { ...claudeCatalogFixture(['claude-sonnet-4-5', 'claude-opus-4-6'], ['low', 'medium', 'high']), outputStyle },
+    });
+    host.settings.providerConfigs = withStyle('Concise');
+    const session = new ClaudeExecutionBackend(host.getRuntimeHost('claude'))
+      .createSession(createConfig({ nativePersistence }));
+    try {
+      await collectEvents(session.execute(createRequest()).events);
+      expect(sdkMock.getLastOptions()?.persistSession).toBe(nativePersistence === 'enabled');
+      const query = sdkMock.getLastResponse()!;
+      const native = { model: 'claude-sonnet-4-5', effortLevel: 'medium', outputStyle: 'Concise' };
+      query.setModel.mockImplementation(async (model: string) => { native.model = model; });
+      query.applyFlagSettings.mockImplementation(async (flags: Partial<typeof native>) => { Object.assign(native, flags); });
+      query[failingSetter].mockRejectedValueOnce(new Error('Native setting rejected'));
+      host.settings.providerConfigs = withStyle('Explanatory');
+      const request = createRequest();
+      const failed = await collectEvents(session.execute({
+        ...request,
+        configuration: { ...request.configuration, model: 'claude-opus-4-6', reasoning: 'high', permissionMode: 'yolo' },
+      }).events);
+      expect(failed.at(-1)).toMatchObject({ type: 'execution_error', message: 'Native setting rejected' });
+      expect(native.model).toBe('claude-opus-4-6');
+
+      host.settings.providerConfigs = withStyle('Concise');
+      const recovered = await collectEvents(session.execute(createRequest()).events);
+      expect(recovered.at(-1)?.type).toBe('turn_completed');
+      expect(native).toEqual({ model: 'claude-sonnet-4-5', effortLevel: 'medium', outputStyle: 'Concise' });
+      expect(sdkMock.getQueryCallCount()).toBe(1);
+    } finally {
+      await session.dispose();
+    }
+  });
+
   it.each(['xhigh', 'high'])('rejects unsupported toolbar effort %s without substituting a default', async reasoning => {
     sdkMock.setMockMessages([
       { type: 'system', subtype: 'init', session_id: 'session-1' },

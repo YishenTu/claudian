@@ -149,6 +149,8 @@ export class MainTurnExecution {
       }
       // Unadmitted interaction replies stay with their prompt; queued replies use normal draft recovery.
       if (turn.assertBeforeHandoff) return;
+      // Restore later submissions first so this turn precedes them and any newer unsent draft.
+      this.deps.queue.restoreToComposer();
       this.deps.queue.returnMessageToComposer(createQueuedMessage(displayContent, request), { merge });
     };
     // Capture and consume the main submission before native navigation can yield

@@ -41,6 +41,7 @@ export function renderProviderModelPicker(
   let disposed = false;
   const isLoading = () => options.getState().status === 'loading';
   let renderingSelected = false;
+  const aliasDrafts = new Map<string, string>();
   const sorter = new LiveListSorter({
     ignoreSelector: '.claudian-provider-model-picker-selected-controls',
     onDrop: (modelId, target, placement) => persistSelection({ type: 'move', modelId, target, placement }),
@@ -134,7 +135,13 @@ export function renderProviderModelPicker(
   };
 
   const persistAlias = async (modelId: string, value: string): Promise<void> => {
-    await options.onAliasChange(modelId, value);
+    aliasDrafts.set(modelId, value);
+    try {
+      await options.onAliasChange(modelId, value);
+      if (aliasDrafts.get(modelId) === value) aliasDrafts.delete(modelId);
+    } catch {
+      new Notice('Could not save model alias. Try again.');
+    }
     renderSelected();
   };
 
@@ -247,8 +254,12 @@ export function renderProviderModelPicker(
       });
       aliasInput.placeholder = defaultLabel;
       aliasInput.value = aliasInput.defaultValue = Object.hasOwn(state.aliases, model.id) ? state.aliases[model.id] : '';
+      aliasInput.value = aliasDrafts.get(model.id) ?? aliasInput.value;
       aliasInput.setAttribute('aria-label', t('settings.customModelAliases.ariaLabel', { model: defaultLabel }));
       aliasInput.setAttribute('aria-description', t('settings.customModelAliases.ariaDescription'));
+      aliasInput.addEventListener('input', () => {
+        aliasDrafts.set(model.id, aliasInput.value);
+      });
       aliasInput.addEventListener('blur', () => {
         if (!renderingSelected) void persistAlias(model.id, aliasInput.value);
       });
@@ -260,6 +271,7 @@ export function renderProviderModelPicker(
         } else if (event.key === 'Escape') {
           event.preventDefault();
           const aliases = options.getState().aliases;
+          aliasDrafts.delete(model.id);
           aliasInput.value = Object.hasOwn(aliases, model.id) ? aliases[model.id] : '';
           aliasInput.blur();
         }
@@ -286,7 +298,6 @@ export function renderProviderModelPicker(
     const control = ['alias', 'drag', 'remove', 'clear'].find(kind =>
       active?.classList.contains(`claudian-provider-model-picker-selected-${kind}`));
     const input = control === 'alias' ? active as HTMLInputElement : null;
-    const draft = input && input.value !== input.defaultValue ? input.value : null;
     const selection = input ? [input.selectionStart, input.selectionEnd, input.selectionDirection] as const : null;
 
     // Native removal can blur a dirty input; a render must not commit its draft.
@@ -300,7 +311,6 @@ export function renderProviderModelPicker(
       if (replacement?.isConnected && !disposed) {
         if (control === 'alias' && selection) {
           const alias = replacement as HTMLInputElement;
-          if (draft !== null) alias.value = draft;
           alias.setSelectionRange(selection[0], selection[1], selection[2] ?? undefined);
         }
         replacement.focus({ preventScroll: true });

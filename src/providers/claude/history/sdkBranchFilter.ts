@@ -1,8 +1,11 @@
 import type { SDKNativeMessage } from './sdkHistoryTypes';
 
+export type SDKCheckpointPolicy = 'latest-branch' | 'exact';
+
 export function filterActiveBranch(
   entries: SDKNativeMessage[],
   resumeAtMessageId?: string,
+  checkpointPolicy: SDKCheckpointPolicy = 'latest-branch',
 ): SDKNativeMessage[] {
   if (entries.length === 0) {
     return [];
@@ -166,7 +169,10 @@ export function filterActiveBranch(
   });
 
   let leaf: SDKNativeMessage | undefined;
-  if (hasBranching) {
+  if (checkpointPolicy === 'exact' && resumeAtMessageId) {
+    leaf = byUuid.get(resumeAtMessageId);
+    if (!leaf) return [];
+  } else if (hasBranching) {
     leaf = latestLeaf;
     if (resumeAtMessageId && leaf?.uuid && byUuid.has(resumeAtMessageId)) {
       let current: SDKNativeMessage | undefined = leaf;
@@ -191,15 +197,18 @@ export function filterActiveBranch(
     return conversationEntries;
   }
 
+  // Sibling tool results belong to the selected branch, which may differ from the latest branch.
+  if (checkpointPolicy === 'exact') activeChildOf.clear();
   const activeUuids = new Set<string>();
   let current: SDKNativeMessage | undefined = leaf;
   while (current?.uuid && !activeUuids.has(current.uuid)) {
     activeUuids.add(current.uuid);
     const parent = parentOf(current);
+    if (parent && checkpointPolicy === 'exact') activeChildOf.set(parent, current.uuid);
     current = parent ? byUuid.get(parent) : undefined;
   }
 
-  if (hasBranching) {
+  if (hasBranching || checkpointPolicy === 'exact') {
     const ancestorUuids = [...activeUuids];
     const pending: string[] = [];
 
@@ -210,6 +219,7 @@ export function filterActiveBranch(
       }
 
       const activeChildUuid = activeChildOf.get(uuid);
+      if (checkpointPolicy === 'exact' && !activeChildUuid) continue;
       if (activeChildUuid && isDirectRealUserBranchChild(uuid, byUuid.get(activeChildUuid))) {
         continue;
       }

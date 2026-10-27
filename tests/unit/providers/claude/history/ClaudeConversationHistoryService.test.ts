@@ -9,6 +9,7 @@ import type { Conversation, ToolCallInfo } from '@/core/types';
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
 import type { SDKSessionLocation } from '@/providers/claude/history/ClaudeHistoryPathResolver';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
+import type { SDKNativeMessage } from '@/providers/claude/history/sdkHistoryTypes';
 import { clearClaudeResumeState } from '@/providers/claude/types/providerState';
 
 function createConversation(overrides: Partial<Conversation> = {}): Conversation {
@@ -130,6 +131,7 @@ describe('ClaudeConversationHistoryService', () => {
         undefined,
         '/vault/session-previous.jsonl',
         undefined,
+        'latest-branch',
       );
       expect(modelSpy).toHaveBeenNthCalledWith(
         2,
@@ -138,6 +140,7 @@ describe('ClaudeConversationHistoryService', () => {
         'assistant-checkpoint',
         '/vault/session-current.jsonl',
         undefined,
+        'latest-branch',
       );
 
       locationsSpy.mockRestore();
@@ -527,6 +530,69 @@ describe('ClaudeConversationHistoryService', () => {
   });
 
   describe('hydrateConversationHistory', () => {
+    it.each([false, true])('keeps a pending fork at its checkpoint after the source branches (cached: %s)', async cached => {
+      const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-fork-checkpoint-'));
+      const vaultPath = path.join(configDir, 'vault');
+      const pathContext = { environment: { CLAUDE_CONFIG_DIR: configDir } };
+      const sessionDir = path.join(historyStore.getSDKProjectsPath(pathContext), historyStore.encodeVaultPathForSDK(vaultPath));
+      const sessionPath = path.join(sessionDir, 'source-session.jsonl');
+      const serialize = (entries: SDKNativeMessage[], seconds = 0) => entries.map((entry, index) => JSON.stringify({
+        ...entry, timestamp: testTime({ seconds: seconds + index }),
+      })).join('\n') + '\n';
+      await fs.mkdir(sessionDir, { recursive: true });
+      try {
+        await fs.writeFile(sessionPath, serialize([
+          { type: 'user', uuid: 'u1', parentUuid: null, message: { content: 'Original question' } },
+          { type: 'assistant', uuid: 'a1', parentUuid: 'u1', message: {
+            model: 'claude-sonnet-4-6', stop_reason: 'end_turn', content: [{ type: 'text', text: 'Original answer' }],
+          } },
+          { type: 'user', uuid: 'u2', parentUuid: 'a1', message: { content: 'Forked question' } },
+          { type: 'assistant', uuid: 'tool-left', parentUuid: 'u2', message: {
+            stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'left', name: 'Read', input: { file_path: 'left.md' } }],
+          } },
+          { type: 'assistant', uuid: 'tool-right', parentUuid: 'u2', message: {
+            stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'right', name: 'Read', input: { file_path: 'right.md' } }],
+          } },
+          { type: 'user', uuid: 'result-left', parentUuid: 'tool-left', toolUseResult: {}, message: {
+            content: [{ type: 'tool_result', tool_use_id: 'left', content: 'Left result' }],
+          } },
+          { type: 'user', uuid: 'result-right', parentUuid: 'tool-right', toolUseResult: {}, message: {
+            content: [{ type: 'tool_result', tool_use_id: 'right', content: 'Right result' }],
+          } },
+          { type: 'assistant', uuid: 'a2', parentUuid: 'result-right', message: {
+            model: 'claude-sonnet-4-6', stop_reason: 'end_turn', content: [{ type: 'text', text: 'Forked answer' }],
+          } },
+        ]));
+        const service = new ClaudeConversationHistoryService();
+        const conversation = createConversation({
+          sessionId: null,
+          providerState: service.buildForkProviderState('source-session', 'a2'),
+        });
+        const before = await service.hydrateConversationHistory(conversation, vaultPath, pathContext);
+        const expected = ['Original question', 'Original answer', 'Forked question', 'Forked answer'];
+        expect(before.messages?.map(message => message.content)).toEqual(expected);
+
+        // Rewind the source to a1 and continue it while the fork remains unsent.
+        await fs.appendFile(sessionPath, serialize([
+          { type: 'user', uuid: 'u3', parentUuid: 'a1', message: { content: 'Unrelated source branch' } },
+          { type: 'assistant', uuid: 'a3', parentUuid: 'u3', message: {
+            model: 'claude-opus-4-6', stop_reason: 'end_turn', content: [{ type: 'text', text: 'Unrelated answer' }],
+          } },
+        ], 8));
+        const fork = { ...conversation, messages: cached ? before.messages! : [] };
+        const after = await service.hydrateConversationHistory(fork, vaultPath, pathContext);
+        expect(after.messages?.map(message => message.content)).toEqual(expected);
+        expect(after.messages?.at(-1)?.toolCalls).toMatchObject([
+          { id: 'left', result: 'Left result', status: 'completed' },
+          { id: 'right', result: 'Right result', status: 'completed' },
+        ]);
+        await expect(service.recoverConversationModelSelection(fork, vaultPath, pathContext))
+          .resolves.toBe('claude-code/claude-sonnet-4-6');
+      } finally {
+        await fs.rm(configDir, { recursive: true, force: true });
+      }
+    });
+
     it('never matches a transcript by time for a record with retired sessions', async () => {
       const conversation = createConversation();
       clearClaudeResumeState(conversation);
@@ -720,7 +786,7 @@ describe('ClaudeConversationHistoryService', () => {
       await service.getConversationSessionAvailability(conversation, '/vault');
       Object.assign(conversation, await service.hydrateConversationHistory(conversation, '/vault'));
 
-      expect(loadSpy).toHaveBeenCalledWith('/vault', 'session-1', undefined, undefined, undefined);
+      expect(loadSpy).toHaveBeenCalledWith('/vault', 'session-1', undefined, undefined, undefined, 'latest-branch');
 
       currentLocationSpy.mockRestore();
       locationsSpy.mockRestore();
@@ -752,6 +818,7 @@ describe('ClaudeConversationHistoryService', () => {
         undefined,
         '/old-project/session-1.jsonl',
         undefined,
+        'latest-branch',
       );
 
       currentLocationSpy.mockRestore();
@@ -864,6 +931,7 @@ describe('ClaudeConversationHistoryService', () => {
         undefined,
         '/old-project/session-previous.jsonl',
         undefined,
+        'latest-branch',
       );
       expect(loadSpy).toHaveBeenCalledWith(
         '/vault',
@@ -871,6 +939,7 @@ describe('ClaudeConversationHistoryService', () => {
         undefined,
         '/old-project/session-current.jsonl',
         undefined,
+        'latest-branch',
       );
 
       locationSpy.mockRestore();

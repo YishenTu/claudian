@@ -91,6 +91,29 @@ describe('ACPSessionUpdateNormalizer', () => {
     });
   });
 
+  it.each([
+    { label: 'empty text', payload: { content: [{ type: 'content' as const, content: { type: 'text' as const, text: '' } }] }, expected: '' },
+    { label: 'empty content list', payload: { content: [] }, expected: '' },
+    { label: 'empty raw output', payload: { rawOutput: '' }, expected: '' },
+    { label: 'null fields', payload: { content: null, rawOutput: null }, expected: 'Progress' },
+    { label: 'omitted fields', payload: {}, expected: 'Progress' },
+  ])('distinguishes $label from missing tool output', ({ payload, expected }) => {
+    const normalizer = new ACPSessionUpdateNormalizer();
+    normalizer.normalize({ sessionUpdate: 'tool_call', toolCallId: 'tool', title: 'Tool', rawOutput: 'Progress' });
+    normalizer.normalize({ sessionUpdate: 'tool_call_update', toolCallId: 'tool', ...payload });
+    const done = normalizer.normalize({ sessionUpdate: 'tool_call_update', toolCallId: 'tool', status: 'completed' });
+    expect(done).toMatchObject({ streamChunks: [{ type: 'tool_result', content: expected }] });
+  });
+
+  it.each([undefined, '', null])('uses default result text only when an initially completed call has no output (%s)', rawOutput => {
+    const normalizer = new ACPSessionUpdateNormalizer();
+    const done = normalizer.normalize({ sessionUpdate: 'tool_call', toolCallId: 'tool', title: 'Tool', status: 'completed', rawOutput });
+    expect(done).toMatchObject({ streamChunks: [
+      { type: 'tool_use' },
+      { type: 'tool_result', content: rawOutput === undefined ? 'Tool completed' : rawOutput === null ? 'null' : '' },
+    ] });
+  });
+
   it('preserves native diff content through a status-only completion', () => {
     const normalizer = new ACPSessionUpdateNormalizer();
 

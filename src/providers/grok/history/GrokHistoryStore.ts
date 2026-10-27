@@ -119,6 +119,16 @@ export function createGrokHistoryParser(
       promptIndex: turn.timelinePromptIndex,
       ...(usage ? { usage } : {}),
     });
+    if (turn.interrupted) {
+      // Steers split one native prompt into several displayed replies.
+      for (const segment of completedTurns.filter(item => item.promptIndex === turn.timelinePromptIndex)) {
+        for (const message of segment.messages) {
+          for (const tool of message.toolCalls ?? []) {
+            if (tool.status === 'running') tool.status = 'error';
+          }
+        }
+      }
+    }
     turnIndex += 1;
     return true;
   };
