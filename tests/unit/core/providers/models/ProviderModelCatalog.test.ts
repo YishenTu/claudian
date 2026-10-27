@@ -159,12 +159,14 @@ it('does not retry a failed initial discovery when settings reopen', async () =>
 
 
 it.each<{ change: ProviderModelSelectionChange; expected: string[] }>([
-  { change: { type: 'move', modelId: 'c', target: 'a' }, expected: ['c', 'a', 'b'] },
-  { change: { type: 'move', modelId: 'a', target: 'c' }, expected: ['b', 'c', 'a'] },
+  { change: { type: 'move', modelId: 'c', target: 'a', placement: 'before' }, expected: ['c', 'a', 'b'] },
+  { change: { type: 'move', modelId: 'a', target: 'c', placement: 'before' }, expected: ['b', 'a', 'c'] },
+  { change: { type: 'move', modelId: 'a', target: 'c', placement: 'after' }, expected: ['b', 'c', 'a'] },
+  { change: { type: 'move', modelId: 'c', target: 'a', placement: 'after' }, expected: ['a', 'c', 'b'] },
   { change: { type: 'move', modelId: 'a', target: -1 }, expected: ['a', 'b', 'c'] },
   { change: { type: 'move', modelId: 'c', target: 1 }, expected: ['a', 'b', 'c'] },
-  { change: { type: 'move', modelId: 'missing', target: 'a' }, expected: ['a', 'b', 'c'] },
-  { change: { type: 'move', modelId: 'a', target: 'missing' }, expected: ['a', 'b', 'c'] },
+  { change: { type: 'move', modelId: 'missing', target: 'a', placement: 'before' }, expected: ['a', 'b', 'c'] },
+  { change: { type: 'move', modelId: 'a', target: 'missing', placement: 'before' }, expected: ['a', 'b', 'c'] },
   { change: { type: 'set', modelId: ' b ', selected: true }, expected: ['a', 'b', 'c'] },
   { change: { type: 'set', modelId: ' b ', selected: false }, expected: ['a', 'c'] },
 ])('applies selection intent $change without changing other identities', async ({ change, expected }) => {

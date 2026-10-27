@@ -6,7 +6,6 @@ import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ConversationTitleGeneration } from '@/features/chat/conversation/ConversationTitleGeneration';
 import { moveProject, savedProjectOrder } from '@/features/chat/projects/projectOrder';
 import { renderProjectsHeaderActions } from '@/features/chat/session-manager/ProjectsHeaderActions';
-import { ProjectSorter } from '@/features/chat/session-manager/ProjectSorter';
 import {
   canMultiSelect,
   type SessionActionOptions,
@@ -44,6 +43,7 @@ import {
 } from '@/features/chat/session-manager/SessionStatusPresentation';
 import { bindMenuToggle, runSessionAction, showMenuAt } from '@/features/chat/session-manager/SessionSurfaceShared';
 import { t } from '@/i18n/i18n';
+import { LiveListSorter } from '@/shared/components/LiveListSorter';
 
 const DEFAULT_HISTORY_PAGE_SIZE = 100;
 
@@ -121,7 +121,9 @@ export class SessionBrowser {
     onDragStart: () => this.metadataPopover.close(),
     onDrop: (conversationIds, target) => this.actions.placeSessions(conversationIds, target),
   });
-  private readonly projectSorter = new ProjectSorter({
+  private readonly projectSorter = new LiveListSorter({
+    // Row controls keep their own clicks.
+    ignoreSelector: '.claudian-session-group-menu-action, .claudian-session-group-new-action',
     onDragStart: () => this.metadataPopover.close(),
     onDrop: (projectId, targetId, placement) => moveProject(this.deps.plugin, projectId, targetId, placement)
       .catch(() => {
@@ -670,7 +672,7 @@ export class SessionBrowser {
     const dropTarget = { kind: 'project', projectId: project.id } as const;
     const canDrag = this.#canDrag(options);
     if (canDrag) this.drag.attachTarget(groupHeader, dropTarget);
-    const projectSortRow = { projectId: project.id, isPinned: project.isPinned };
+    const projectSortRow = { id: project.id, group: project.isPinned ? 'pinned' : 'unpinned' };
 
     // Named by its visible label: an aria-label would show Obsidian's hover tooltip.
     const toggle = groupHeader.createEl('button', {

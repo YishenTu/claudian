@@ -1,0 +1,25 @@
+/*
+ * Live list sorting. The pressed row follows the pointer while the other rows of its group slide aside to open its
+ * slot; all movement is transform-only, so layout never changes mid-drag. Surfaces style their own lifted look.
+ */
+.claudian-live-sorting {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.claudian-live-sorting > .claudian-live-sort-item {
+  transition: transform 160ms ease;
+}
+
+/* The elements under a dragged row fold away. */
+.claudian-live-sorting > .claudian-live-sort-folded {
+  display: none;
+}
+
+/* The lifted row paints above the rows sliding under it and lets the pointer through. */
+.claudian-live-sorting > .claudian-live-sort-lifted {
+  position: relative;
+  z-index: 2;
+  transition: none;
+  pointer-events: none;
+}

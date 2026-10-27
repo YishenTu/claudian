@@ -26,7 +26,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .claudian-session-sidebar .claudian-project-sorting > :is(.claudian-session-group-header, .claudian-session-group-body) {
+  .claudian-live-sorting > .claudian-live-sort-item {
     transition: none;
   }
 

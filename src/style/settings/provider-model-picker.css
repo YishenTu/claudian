@@ -101,13 +101,9 @@
   border-radius: 6px;
 }
 
-.claudian-provider-model-picker-selected-row--dragging {
-  opacity: 0.55;
-}
-
-.claudian-provider-model-picker-selected-row--drop-target {
-  border-color: var(--interactive-accent);
-  box-shadow: 0 0 0 1px var(--interactive-accent);
+/* A lifted model row rises above the rows sliding under it. */
+.claudian-provider-model-picker-selected-rows.claudian-live-sorting > .claudian-live-sort-lifted {
+  box-shadow: var(--shadow-s);
 }
 
 .claudian-provider-model-picker-selected-drag {

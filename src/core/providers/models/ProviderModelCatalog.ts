@@ -28,7 +28,8 @@ export interface ProviderModelCatalogSnapshot extends ProviderModelSelection {
 
 export type ProviderModelSelectionChange =
   | { type: 'set'; modelId: string; selected: boolean }
-  | { type: 'move'; modelId: string; target: string | -1 | 1 }
+  | { type: 'move'; modelId: string; target: string; placement: 'before' | 'after' }
+  | { type: 'move'; modelId: string; target: -1 | 1 }
   | { type: 'clear' };
 
 export interface ProviderModelCatalog {
@@ -218,12 +219,18 @@ export class ProviderModelCatalogController implements ProviderModelCatalog {
         }
         case 'move': {
           const index = selectedIds.indexOf(change.modelId);
-          const target = typeof change.target === 'string'
-            ? selectedIds.indexOf(change.target)
-            : index + change.target;
-          if (index >= 0 && target >= 0 && target < selectedIds.length) {
+          if (index < 0) break;
+          if (typeof change.target === 'string') {
+            if (change.target === change.modelId || !selectedIds.includes(change.target)) break;
             selectedIds.splice(index, 1);
-            selectedIds.splice(target, 0, change.modelId);
+            const target = selectedIds.indexOf(change.target);
+            selectedIds.splice(change.placement === 'after' ? target + 1 : target, 0, change.modelId);
+          } else {
+            const target = index + change.target;
+            if (target >= 0 && target < selectedIds.length) {
+              selectedIds.splice(index, 1);
+              selectedIds.splice(target, 0, change.modelId);
+            }
           }
           break;
         }

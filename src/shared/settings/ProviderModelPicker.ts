@@ -2,6 +2,7 @@ import { Setting } from 'obsidian';
 
 import type { ProviderCatalogModel, ProviderModelCatalogSnapshot, ProviderModelSelectionChange } from '../../core/providers/models/ProviderModelCatalog';
 import { t } from '../../i18n/i18n';
+import { LiveListSorter } from '../components/LiveListSorter';
 
 const ALL_PROVIDERS_KEY = '';
 
@@ -39,8 +40,11 @@ export function renderProviderModelPicker(
   let providerFilter = ALL_PROVIDERS_KEY;
   let disposed = false;
   const isLoading = () => options.getState().status === 'loading';
-  let draggedModelId: string | null = null;
   let renderingSelected = false;
+  const sorter = new LiveListSorter({
+    ignoreSelector: '.claudian-provider-model-picker-selected-controls',
+    onDrop: (modelId, target, placement) => persistSelection({ type: 'move', modelId, target, placement }),
+  });
 
   const summaryEl = pickerEl.createDiv({ cls: 'claudian-provider-model-picker-summary' });
   const selectedEl = pickerEl.createDiv({ cls: 'claudian-provider-model-picker-selected' });
@@ -135,6 +139,7 @@ export function renderProviderModelPicker(
   };
 
   const renderSelectedRows = (): void => {
+    sorter.beginRender();
     selectedEl.empty();
     const state = options.getState();
     if (state.selectedIds.length === 0) {
@@ -174,27 +179,6 @@ export function renderProviderModelPicker(
         rowEl.classList.add('claudian-provider-model-picker-selected-row--unavailable');
       }
 
-      rowEl.addEventListener('dragover', (event) => {
-        if (!draggedModelId || draggedModelId === modelId) {
-          return;
-        }
-        event.preventDefault();
-        rowEl.classList.add('claudian-provider-model-picker-selected-row--drop-target');
-      });
-      rowEl.addEventListener('dragleave', () => {
-        rowEl.classList.remove('claudian-provider-model-picker-selected-row--drop-target');
-      });
-      rowEl.addEventListener('drop', (event) => {
-        event.preventDefault();
-        rowEl.classList.remove('claudian-provider-model-picker-selected-row--drop-target');
-        const sourceModelId = draggedModelId ?? event.dataTransfer?.getData('text/plain') ?? '';
-        draggedModelId = null;
-        if (!sourceModelId || sourceModelId === modelId) {
-          return;
-        }
-        void persistSelection({ type: 'move', modelId: sourceModelId, target: modelId });
-      });
-
       const dragHandle = rowEl.createEl('button', {
         cls: 'claudian-provider-model-picker-selected-drag',
         text: '⋮⋮',
@@ -204,19 +188,8 @@ export function renderProviderModelPicker(
         'aria-label',
         t('settings.modelPicker.reorderLabel', { model: defaultLabel }),
       );
-      dragHandle.draggable = state.selectedIds.length > 1;
-      dragHandle.addEventListener('dragstart', (event) => {
-        draggedModelId = modelId;
-        rowEl.classList.add('claudian-provider-model-picker-selected-row--dragging');
-        event.dataTransfer?.setData('text/plain', modelId);
-        if (event.dataTransfer) {
-          event.dataTransfer.effectAllowed = 'move';
-        }
-      });
-      dragHandle.addEventListener('dragend', () => {
-        draggedModelId = null;
-        rowEl.classList.remove('claudian-provider-model-picker-selected-row--dragging');
-      });
+      // Pressing anywhere on the row outside its controls drags it.
+      sorter.attach([rowEl], { id: modelId });
       dragHandle.addEventListener('keydown', (event) => {
         const offset = event.key === 'ArrowUp'
           ? -1
@@ -305,7 +278,7 @@ export function renderProviderModelPicker(
   };
 
   const renderSelected = (): void => {
-    if (disposed) return;
+    if (disposed || sorter.deferRender(renderSelected)) return;
     // Read current focus at render time, never from an earlier asynchronous action.
     const active = selectedEl.contains(selectedEl.ownerDocument.activeElement)
       ? selectedEl.ownerDocument.activeElement as HTMLElement : null;
@@ -478,6 +451,9 @@ export function renderProviderModelPicker(
   void loadCatalog(false);
   return {
     refresh: renderAll,
-    dispose() { disposed = true; },
+    dispose() {
+      disposed = true;
+      sorter.dispose();
+    },
   };
 }
