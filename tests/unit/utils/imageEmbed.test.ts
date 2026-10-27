@@ -1,3 +1,4 @@
+import { parser } from '@lezer/markdown';
 import type { App, TFile } from 'obsidian';
 
 import { replaceImageEmbedsWithHTML } from '@/utils/imageEmbed';
@@ -435,11 +436,19 @@ describe('replaceImageEmbedsWithHTML', () => {
       expect(result).toBe('');
     });
 
-    it('handles text without embeds', () => {
+    it.each([
+      'Just plain text',
+      'A [[note]] link and a Markdown image ![photo](photo.png).',
+      'An incomplete embed ![',
+    ])('skips parsing text without embed markers: %s', markdown => {
       const app = createMockApp();
-      const result = replaceImageEmbedsWithHTML('Just plain text', app);
-
-      expect(result).toBe('Just plain text');
+      const parse = jest.spyOn(parser, 'parse');
+      try {
+        expect(replaceImageEmbedsWithHTML(markdown, app)).toBe(markdown);
+        expect(parse).not.toHaveBeenCalled();
+      } finally {
+        parse.mockRestore();
+      }
     });
 
     it('handles incomplete embed syntax', () => {

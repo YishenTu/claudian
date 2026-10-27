@@ -206,6 +206,11 @@ it('lists every prompt of a long transcript in the directory, including prompts 
   fireEvent.click(view.getByRole('button', { name: 'Conversation directory' }));
   const entries = view.getAllByRole('button').filter(button => button.classList.contains('claudian-nav-toc-item'));
   expect(entries.map(entry => entry.textContent)).toEqual(Array.from({ length: 30 }, (_, index) => `${index + 1}. Prompt ${index}`));
+  expect(view.getByRole('button', { name: 'Show earlier messages' })).toBeTruthy();
+  expect(within(tab.dom.messagesEl).queryByText('Prompt 0')).toBeNull();
+  tab.dom.messagesEl.scrollTo = jest.fn();
+  fireEvent.click(entries[0]);
+  expect(within(tab.dom.messagesEl).getByText('Prompt 0')).toBeTruthy();
   expect(view.queryByRole('button', { name: 'Show earlier messages' })).toBeNull();
   await destroyTab(tab);
 });

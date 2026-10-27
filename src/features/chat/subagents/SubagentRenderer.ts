@@ -15,7 +15,9 @@ import { setToolStatus } from '@/features/chat/rendering/tools/toolStatus';
 import { formatDurationMmSs } from '@/utils/date';
 
 interface SubagentToolView {
+  isExpanded: boolean;
   renderedToolCall?: Readonly<ToolCallInfo>;
+  renderedContent?: Readonly<ToolCallInfo>;
   wrapperEl: HTMLElement;
   nameEl: HTMLElement;
   summaryEl: HTMLElement;
@@ -29,6 +31,7 @@ interface SubagentSection {
 }
 
 export interface SubagentState {
+  isExpanded: boolean;
   wrapperEl: HTMLElement;
   contentEl: HTMLElement;
   headerEl: HTMLElement;
@@ -102,7 +105,14 @@ function updateSubagentToolView(view: SubagentToolView, toolCall: ToolCallInfo):
   view.nameEl.setText(getToolName(toolCall.name, toolCall.input));
   view.summaryEl.setText(getToolSummary(toolCall.name, toolCall.input));
   setToolStatus(view.statusEl, toolCall.status, 'claudian-subagent-tool-status');
+  if (view.isExpanded) renderSubagentToolBody(view);
+}
+
+function renderSubagentToolBody(view: SubagentToolView): void {
+  const toolCall = view.renderedToolCall;
+  if (!toolCall || view.renderedContent === toolCall) return;
   renderSubagentToolContent(view.contentEl, toolCall);
+  view.renderedContent = toolCall;
 }
 
 function createSubagentToolView(parentEl: HTMLElement, toolCall: ToolCallInfo): SubagentToolView {
@@ -123,13 +133,8 @@ function createSubagentToolView(parentEl: HTMLElement, toolCall: ToolCallInfo): 
 
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-tool-content' });
 
-  const collapseState = { isExpanded: toolCall.isExpanded ?? false };
-  setupCollapsible(wrapperEl, headerEl, contentEl, collapseState, {
-    initiallyExpanded: toolCall.isExpanded ?? false,
-    baseAriaLabel: getToolLabel(toolCall.name, toolCall.input),
-  });
-
   const view: SubagentToolView = {
+    isExpanded: toolCall.isExpanded ?? false,
     wrapperEl,
     nameEl,
     summaryEl,
@@ -137,6 +142,11 @@ function createSubagentToolView(parentEl: HTMLElement, toolCall: ToolCallInfo): 
     contentEl,
   };
   updateSubagentToolView(view, toolCall);
+  setupCollapsible(wrapperEl, headerEl, contentEl, view, {
+    initiallyExpanded: view.isExpanded,
+    onToggle: expanded => { if (expanded) renderSubagentToolBody(view); },
+    baseAriaLabel: getToolLabel(toolCall.name, toolCall.input),
+  });
 
   return view;
 }
@@ -245,9 +255,8 @@ function createSubagentView(
 
   const toolsContainerEl = contentEl.createDiv({ cls: 'claudian-subagent-tools' });
 
-  setupCollapsible(wrapperEl, headerEl, contentEl, { isExpanded: false });
-
   const state: SubagentState = {
+    isExpanded: false,
     wrapperEl,
     contentEl,
     headerEl,
@@ -263,6 +272,9 @@ function createSubagentView(
     progressEl: null,
     progress: null,
   };
+  setupCollapsible(wrapperEl, headerEl, contentEl, state, {
+    onToggle: expanded => { if (expanded) updateSubagentTools(state); },
+  });
 
   return state;
 }
@@ -278,23 +290,31 @@ function updateSubagentContent(state: SubagentState, info: Readonly<SubagentInfo
   if (state.promptBodyEl.textContent !== (info.prompt || '')) {
     setPromptText(state.promptBodyEl, info.prompt || '');
   }
-  for (const toolCall of info.toolCalls) {
-    const view = state.toolElements.get(toolCall.id);
-    if (view) updateSubagentToolView(view, toolCall);
-    else state.toolElements.set(toolCall.id, createSubagentToolView(state.toolsContainerEl, toolCall));
-  }
-  for (const [id, view] of state.toolElements) {
-    if (!info.toolCalls.some(tool => tool.id === id)) {
-      view.wrapperEl.remove();
-      state.toolElements.delete(id);
-    }
-  }
+  updateSubagentTools(state);
   if (result !== undefined) {
     setResultText(state, result);
   } else {
     state.resultSectionEl?.remove();
     state.resultSectionEl = null;
     state.resultBodyEl = null;
+  }
+}
+
+function updateSubagentTools(state: SubagentState): void {
+  if (!state.isExpanded) return;
+  const currentIds = new Set<string>();
+  for (const toolCall of state.info.toolCalls) {
+    const id = toolCall.id;
+    currentIds.add(id);
+    const view = state.toolElements.get(id);
+    if (view) updateSubagentToolView(view, toolCall);
+    else state.toolElements.set(id, createSubagentToolView(state.toolsContainerEl, toolCall));
+  }
+  for (const [id, view] of state.toolElements) {
+    if (!currentIds.has(id)) {
+      view.wrapperEl.remove();
+      state.toolElements.delete(id);
+    }
   }
 }
 
@@ -384,7 +404,7 @@ export function createAsyncSubagentBlock(
   view.wrapperEl.dataset.asyncSubagentId = info.id;
   const statusTextEl = view.headerEl.createDiv({ cls: 'claudian-subagent-status-text' });
   view.headerEl.insertBefore(statusTextEl, view.statusEl);
-  const state: AsyncSubagentState = { ...view, statusTextEl };
+  const state: AsyncSubagentState = Object.assign(view, { statusTextEl });
   updateAsyncSubagentBlock(state, info);
   return state;
 }

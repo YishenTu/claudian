@@ -189,6 +189,9 @@ it('coalesces Codex child progress saves between immediate lifecycle saves and k
   try {
     // The spawn card is already running, so attaching the child and streaming its output is progress.
     startChild(view);
+    await view.settle();
+    fireEvent.click(within(view.messagesEl).getByRole('button', { name: /Subagent.*helper/ }));
+    fireEvent.click(within(view.messagesEl).getByRole('button', { name: /Bash/ }));
     const lines = Array.from({ length: 20 }, (_, index) => `line ${index}\n`);
     streamOutput(view, lines);
     await view.settle();

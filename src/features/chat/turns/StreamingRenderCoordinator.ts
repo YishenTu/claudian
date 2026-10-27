@@ -45,6 +45,10 @@ export class StreamingRenderCoordinator<TSnapshot> {
     this.nextIntervalMs = options.minIntervalMs;
   }
 
+  get isRendering(): boolean {
+    return this.renderRunning;
+  }
+
   request(snapshot: TSnapshot): void {
     if (this.disposed) return;
 

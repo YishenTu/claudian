@@ -630,6 +630,11 @@ it.each([false, true].flatMap(lateNative => ['text', 'thinking'].map(boundary =>
         await notify('rawResponseItem/completed', { item: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: `Checking note ${index}.` }] } });
         await stream.finalizeCurrentTextBlock(response);
       }
+      if (boundary === 'thinking') {
+        const thinkingHeaders = within(messagesEl).getAllByRole('button', { name: /^Thought/ });
+        fireEvent.click(thinkingHeaders[index]);
+        await Promise.resolve();
+      }
       expect(within(messagesEl).getAllByText(`Checking note ${index}.`)).toHaveLength(1);
       const boundaryText = within(messagesEl).getByText(`Checking note ${index}.`);
       expect(header.compareDocumentPosition(boundaryText) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

@@ -81,6 +81,7 @@ function setScrollHeight(height: number): void {
 }
 
 async function streamText(): Promise<void> {
+  tab.state.currentContentEl ??= tab.dom.messagesEl.createDiv();
   await tab.controllers.streamController.handleStreamChunk(
     { type: 'text', content: 'continued' },
     { content: '', role: 'assistant' } as ChatMessage,
@@ -194,7 +195,7 @@ it.each([
   tab.dom.messagesEl.scrollTop += movement;
   await streamText();
   fireEvent.scroll(tab.dom.messagesEl);
-  jest.advanceTimersByTime(16);
+  await jest.advanceTimersByTimeAsync(200);
 
   expect(tab.state.autoScrollEnabled).toBe(true);
   expect(tab.dom.messagesEl.scrollTop).toBe(1000 + growth);
@@ -202,7 +203,7 @@ it.each([
   // Later frames must continue following, not only the frame already queued before scroll.
   setScrollHeight(1200 + growth);
   await streamText();
-  jest.advanceTimersByTime(16);
+  await jest.advanceTimersByTimeAsync(200);
   expect(tab.dom.messagesEl.scrollTop).toBe(1200 + growth);
 });
 
@@ -235,7 +236,7 @@ it.each([
     fireEvent.scroll(messagesEl);
     setScrollHeight(1200);
     await streamText();
-    jest.advanceTimersByTime(16);
+    await jest.advanceTimersByTimeAsync(200);
     expect(tab.state.autoScrollEnabled).toBe(false);
     expect(messagesEl.scrollTop).toBe(250);
 
@@ -243,7 +244,7 @@ it.each([
     fireEvent.scroll(messagesEl);
     setScrollHeight(1400);
     await streamText();
-    jest.advanceTimersByTime(16);
+    await jest.advanceTimersByTimeAsync(200);
     expect(tab.state.autoScrollEnabled).toBe(true);
     expect(messagesEl.scrollTop).toBe(1400);
   },
@@ -256,7 +257,7 @@ it.each(['pointerup', 'pointercancel'])('keeps following through layout scrolls 
   tab.dom.messagesEl.scrollTop += 1;
   fireEvent.scroll(tab.dom.messagesEl);
   await streamText();
-  jest.advanceTimersByTime(16);
+  await jest.advanceTimersByTimeAsync(200);
 
   expect(tab.state.autoScrollEnabled).toBe(true);
   expect(tab.dom.messagesEl.scrollTop).toBe(1036);

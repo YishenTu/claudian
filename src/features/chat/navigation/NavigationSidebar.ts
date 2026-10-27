@@ -5,7 +5,7 @@ import {
   scheduleAnimationFrame,
   type ScheduledAnimationFrame,
 } from '@/features/chat/utils/animationFrame';
-import { formatConversationDirectoryTitle } from '@/features/chat/utils/conversationDirectoryTitle';
+import { type ConversationDirectoryEntry, getRenderedConversationDirectory } from '@/features/chat/utils/conversationDirectoryTitle';
 import { t } from '@/i18n/i18n';
 
 type NavigationScrollIntent = 'away' | 'bottom';
@@ -32,8 +32,8 @@ export class NavigationSidebar {
   constructor(
     private parentEl: HTMLElement,
     private messagesEl: HTMLElement,
-    /** Renders a windowed transcript's earlier messages, so the directory lists every prompt. */
-    private readonly revealEarlierMessages: () => void = () => undefined,
+    /** Includes unrendered prompts; choosing an entry reveals only the needed transcript window. */
+    private readonly getDirectoryEntries?: () => readonly ConversationDirectoryEntry[],
   ) {
     this.container = this.parentEl.createDiv({ cls: 'claudian-nav-sidebar' });
 
@@ -142,23 +142,6 @@ export class NavigationSidebar {
     this.container.classList.toggle('visible', isScrollable);
   }
 
-  #getDirectoryEntries(): Array<{ el: HTMLElement; title: string }> {
-    return Array.from(this.messagesEl.querySelectorAll<HTMLElement>('.claudian-message-user, [data-role="user"]'))
-      .map(el => ({
-        el,
-        title: this.#getDirectoryTitle(el),
-      }))
-      .filter((entry): entry is { el: HTMLElement; title: string } => entry.title.length > 0);
-  }
-
-  #getDirectoryTitle(el: HTMLElement): string {
-    const explicitTitle = (el.getAttribute('data-toc-title') ?? '').trim();
-    if (explicitTitle) return explicitTitle;
-
-    const contentEl = el.querySelector<HTMLElement>('.claudian-message-content');
-    return formatConversationDirectoryTitle(contentEl?.textContent ?? el.textContent ?? '');
-  }
-
   #shouldRefreshDirectory(mutations: MutationRecord[]): boolean {
     if (!this.tocPopover) return false;
     return mutations.some((mutation) => {
@@ -197,12 +180,11 @@ export class NavigationSidebar {
       this.#closeDirectory();
       return;
     }
-    this.revealEarlierMessages();
     this.#openDirectory();
   }
 
   #openDirectory(): void {
-    const entries = this.#getDirectoryEntries();
+    const entries = this.getDirectoryEntries?.() ?? getRenderedConversationDirectory(this.messagesEl);
     this.#closeDirectory();
     this.tocBtn.setAttribute('aria-expanded', 'true');
     this.tocPopover = this.parentEl.createDiv({ cls: 'claudian-nav-toc-popover' });
@@ -225,7 +207,8 @@ export class NavigationSidebar {
       });
       itemEl.addEventListener('click', () => {
         this.onScrollIntent?.('away');
-        this.#scrollToElement(entry.el);
+        const element = entry.reveal();
+        if (element) this.#scrollToElement(element);
         this.#closeDirectory();
       });
     });

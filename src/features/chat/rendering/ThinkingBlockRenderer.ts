@@ -9,6 +9,8 @@ export interface ThinkingBlockState {
   labelEl: HTMLElement;
   timerInterval: number | null;
   isExpanded: boolean;
+  /** Final Markdown deferred until this view is expanded. Consumed once. */
+  renderFinalContent?: () => void;
 }
 
 export interface ThinkingBlockOptions {
@@ -54,13 +56,25 @@ export function createThinkingBlock(
   };
 
   setupCollapsible(wrapperEl, headerEl, contentEl, state, {
-    onToggle: options.onToggle,
+    onToggle: isExpanded => {
+      if (isExpanded && state.renderFinalContent) {
+        const render = state.renderFinalContent;
+        state.renderFinalContent = undefined;
+        render();
+      }
+      options.onToggle?.(isExpanded);
+    },
   });
 
   return state;
 }
 
-export function finalizeThinkingBlock(state: ThinkingBlockState, durationSeconds: number): void {
+export function finalizeThinkingBlock(
+  state: ThinkingBlockState,
+  durationSeconds: number,
+  renderFinalContent?: () => void,
+): void {
+  state.renderFinalContent = renderFinalContent;
   // Stop the timer
   if (state.timerInterval) {
     window.clearInterval(state.timerInterval);

@@ -2,6 +2,7 @@
 
 import { Component, MarkdownRenderer } from 'obsidian';
 
+import { MarkdownContentRenderer } from '@/features/chat/rendering/markdown/MarkdownContentRenderer';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
@@ -187,4 +188,30 @@ it('releases a late child even when its onload throws', async () => {
   finish();
   await pending;
   expect(activeEmbeds.size).toBe(0);
+});
+
+
+it('releases nested render scopes without visiting every highlighted span', async () => {
+  const wrapper = host.createDiv();
+  for (let index = 0; index < 4; index += 1) {
+    const content = wrapper.createDiv();
+    await renderer.renderContent(content, 'embed');
+    for (let span = 0; span < 100; span += 1) content.createSpan({ text: 'token' });
+  }
+  await Promise.resolve();
+  const release = jest.spyOn(MarkdownContentRenderer.prototype, 'releaseRemoved');
+  try {
+    const destination = host.createDiv();
+    destination.append(wrapper);
+    await Promise.resolve();
+    expect(activeEmbeds.size).toBe(4);
+    expect(release).not.toHaveBeenCalled();
+    wrapper.remove();
+    await Promise.resolve();
+    expect(activeEmbeds.size).toBe(0);
+    expect(cleanups).toHaveBeenCalledTimes(4);
+    expect(release).toHaveBeenCalledTimes(1);
+  } finally {
+    release.mockRestore();
+  }
 });

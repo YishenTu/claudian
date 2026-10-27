@@ -1,3 +1,5 @@
+import { parser } from '@lezer/markdown';
+
 import {
   escapeMathDelimitersForStreaming,
   hasStreamingMathDelimiters,
@@ -6,6 +8,20 @@ import {
 
 describe('markdownMath', () => {
   describe('normalizeLatexMathDelimiters', () => {
+    it.each([
+      String.raw`Escaped \*punctuation\* and C:\Users\example\notes.`,
+      String.raw`Unmatched closing delimiters \) and \].`,
+      String.raw`An escaped price \$5 and dollar math $x$.`,
+    ])('skips parsing without a LaTeX opening delimiter: %s', markdown => {
+      const parse = jest.spyOn(parser, 'parse');
+      try {
+        expect(normalizeLatexMathDelimiters(markdown)).toBe(markdown);
+        expect(parse).not.toHaveBeenCalled();
+      } finally {
+        parse.mockRestore();
+      }
+    });
+
     it('normalizes inline and display LaTeX delimiters', () => {
       const markdown = [
         'Inline \\(x<y\\).',
@@ -94,6 +110,25 @@ describe('markdownMath', () => {
   });
 
   describe('escapeMathDelimitersForStreaming', () => {
+    it('bounds paragraph scans for currency tables followed by real math', () => {
+      const rows = Array.from({ length: 400 }, (_, index) => `| Item ${index} | $${100 + index} |`);
+      const markdown = `${rows.join('\n')}\n\n$x$`;
+      const indexOf = String.prototype.indexOf;
+      let newlineSearches = 0;
+      let result: string;
+      String.prototype.indexOf = function (search, position) {
+        if (String(this) === markdown && search === '\n') newlineSearches += 1;
+        return indexOf.call(this, search, position);
+      };
+      try {
+        result = escapeMathDelimitersForStreaming(markdown);
+      } finally {
+        String.prototype.indexOf = indexOf;
+      }
+      expect(result).toBe(`${rows.map(row => row.replace('$', '\\$')).join('\n')}\n\n\\$x\\$`);
+      expect(newlineSearches).toBeLessThan(rows.length * 10);
+    });
+
     it('escapes inline and display math outside code', () => {
       expect(escapeMathDelimitersForStreaming('Use $x + y$ and $$z^2$$.')).toBe(
         'Use \\$x + y\\$ and \\$\\$z^2\\$\\$.'

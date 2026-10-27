@@ -87,7 +87,7 @@ function normalizeLatexMathInText(text: string): string {
 
 /** Converts matched LaTeX math delimiters to Obsidian's dollar delimiters. */
 export function normalizeLatexMathDelimiters(markdown: string): string {
-  if (!markdown.includes('\\')) {
+  if (!markdown.includes('\\(') && !markdown.includes('\\[')) {
     return markdown;
   }
 

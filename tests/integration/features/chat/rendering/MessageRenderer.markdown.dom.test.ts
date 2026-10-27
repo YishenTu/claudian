@@ -1,12 +1,21 @@
 /** @jest-environment jsdom */
 
-import { within } from '@testing-library/dom';
+import '@/providers';
+
+import { parser } from '@lezer/markdown';
+import { testDate } from '@test/helpers/testClock';
+import { fireEvent, within } from '@testing-library/dom';
 import { type App, Component, MarkdownRenderer, type TFile } from 'obsidian';
 
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { ChatState } from '@/features/chat/state/ChatState';
+import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
+import { StreamController } from '@/features/chat/turns/StreamController';
 import * as fileLinks from '@/utils/fileLink';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
+HTMLElement.prototype.addClass = function (...names: string[]) { this.classList.add(...names); };
+HTMLElement.prototype.removeClass = function (...names: string[]) { this.classList.remove(...names); };
 
 let renderer: MessageRenderer;
 let host: HTMLElement;
@@ -38,6 +47,111 @@ afterEach(() => {
   renderer.dispose();
   host.remove();
   jest.restoreAllMocks();
+});
+
+it.each([true, false])('prepares streamed math once without a separate detection parse (defer=%s)', async deferMath => {
+  jest.useFakeTimers();
+  const state = new ChatState();
+  state.currentContentEl = host;
+  const subagents = new SubagentManager(() => undefined);
+  const stream = new StreamController({
+    plugin: { app, settings: { ...settings, deferMathRenderingDuringStreaming: deferMath } } as never,
+    state, renderer, subagentManager: subagents, getMessagesEl: () => host, updateQueueIndicator: () => undefined,
+  });
+  const parse = jest.spyOn(parser, 'parse');
+  try {
+    const message = { id: 'streamed', role: 'assistant' as const, timestamp: testDate().getTime(), content: '' };
+    await stream.handleStreamChunk({ type: 'text', content: 'Math $x$' }, message);
+    await jest.advanceTimersByTimeAsync(20);
+    expect(MarkdownRenderer.render).toHaveBeenLastCalledWith(app, deferMath ? 'Math \\$x\\$' : 'Math $x$', expect.anything(), '', expect.any(Component));
+    expect(parse).toHaveBeenCalledTimes(deferMath ? 1 : 0);
+  } finally {
+    stream.dispose();
+    subagents.clear();
+    state.dispose();
+    jest.useRealTimers();
+  }
+});
+
+it('keeps finalized collapsed thinking lazy and renders its final math on expansion', async () => {
+  jest.mocked(MarkdownRenderer.render).mockClear();
+  jest.useFakeTimers();
+  const state = new ChatState();
+  state.currentContentEl = host;
+  const subagents = new SubagentManager(() => undefined);
+  const stream = new StreamController({
+    plugin: { app, settings: { ...settings, deferMathRenderingDuringStreaming: true, enableAutoScroll: true } } as never,
+    state, renderer, subagentManager: subagents, getMessagesEl: () => host, updateQueueIndicator: () => undefined,
+  });
+  state.autoScrollEnabled = true;
+  const readHeight = jest.fn(() => 1000);
+  Object.defineProperty(host, 'scrollHeight', { get: readHeight, configurable: true });
+  try {
+    const message = { id: 'thinking', role: 'assistant' as const, timestamp: testDate().getTime(), content: '' };
+    for (let index = 0; index < 60; index += 1) {
+      await stream.handleStreamChunk({ type: 'thinking', content: '$x$ ' }, message);
+      await jest.advanceTimersByTimeAsync(20);
+    }
+    const header = within(host).getByRole('button', { name: /Thinking/ });
+    expect(header.getAttribute('aria-expanded')).toBe('false');
+    expect(readHeight).toHaveBeenCalledTimes(1);
+    await stream.finalizeCurrentThinkingBlock(message);
+    expect(MarkdownRenderer.render).not.toHaveBeenCalled();
+    expect(message).toMatchObject({ contentBlocks: [{ type: 'thinking', content: '$x$ '.repeat(60) }] });
+    fireEvent.click(header);
+    await jest.advanceTimersByTimeAsync(20);
+    expect(MarkdownRenderer.render).toHaveBeenCalledTimes(1);
+    expect(MarkdownRenderer.render).toHaveBeenLastCalledWith(app, '$x$ '.repeat(60), expect.anything(), '', expect.any(Component));
+    fireEvent.click(header);
+    fireEvent.click(header);
+    expect(MarkdownRenderer.render).toHaveBeenCalledTimes(1);
+    await stream.handleStreamChunk({ type: 'thinking', content: 'Next block' }, message);
+    expect(within(host).getAllByRole('button', { name: /Thought|Thinking/ })).toHaveLength(2);
+  } finally {
+    stream.dispose();
+    subagents.clear();
+    state.dispose();
+    jest.useRealTimers();
+  }
+});
+
+it('settles an in-flight thinking render before finalizing a newly collapsed block', async () => {
+  jest.useFakeTimers();
+  const state = new ChatState();
+  state.currentContentEl = host;
+  const subagents = new SubagentManager(() => undefined);
+  const stream = new StreamController({
+    plugin: { app, settings: { ...settings, deferMathRenderingDuringStreaming: true } } as never,
+    state, renderer, subagentManager: subagents, getMessagesEl: () => host, updateQueueIndicator: () => undefined,
+  });
+  let finish!: () => void;
+  jest.mocked(MarkdownRenderer.render).mockClear().mockImplementationOnce(async (_app, markdown, target) => {
+    await new Promise<void>(resolve => { finish = resolve; });
+    target.textContent = markdown;
+  });
+  try {
+    await stream.appendThinking('Reasoning $x$');
+    const header = within(host).getByRole('button', { name: /Thinking/ });
+    fireEvent.click(header);
+    await jest.advanceTimersByTimeAsync(20);
+    expect(MarkdownRenderer.render).toHaveBeenCalledTimes(1);
+    fireEvent.click(header);
+    let finalized = false;
+    const finalization = stream.finalizeCurrentThinkingBlock().then(() => { finalized = true; });
+    await jest.advanceTimersByTimeAsync(20);
+    expect(finalized).toBe(false);
+    expect(MarkdownRenderer.render).toHaveBeenCalledTimes(1);
+    finish();
+    await finalization;
+    fireEvent.click(header);
+    expect(host.textContent).toContain('Reasoning $x$');
+    expect(MarkdownRenderer.render).toHaveBeenCalledTimes(2);
+  } finally {
+    stream.dispose();
+    subagents.clear();
+    state.dispose();
+    jest.useRealTimers();
+  }
 });
 
 it.each([

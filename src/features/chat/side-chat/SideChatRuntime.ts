@@ -74,6 +74,7 @@ export class SideChatRuntime {
   readonly state: ChatState;
   readonly #transcript: SessionTranscript;
   #presentation: SideChatPresentation | null = null;
+  #visibilityObserver: IntersectionObserver | null = null;
   readonly #stream: StreamController;
   readonly #subagents: SubagentManager;
   readonly #session: SideChatSession;
@@ -187,6 +188,14 @@ export class SideChatRuntime {
     if (this.#presentation) throw new Error('Side chat already attached');
     this.#presentation = presentation;
     try {
+      this.#stream.setViewportVisible(true);
+      const view = presentation.messagesEl.ownerDocument.defaultView;
+      if (view?.IntersectionObserver) {
+        this.#visibilityObserver = new view.IntersectionObserver(entries => {
+          this.#stream.setViewportVisible(entries[0]?.isIntersecting ?? true);
+        });
+        this.#visibilityObserver.observe(presentation.messagesEl);
+      }
       const renderer = new MessageRenderer(this.deps.plugin, presentation.component,
         presentation.messagesEl, undefined, undefined, () => this.capabilities);
       const welcome = this.#transcript.attach(renderer, presentation.messagesEl, () => '');
@@ -199,6 +208,8 @@ export class SideChatRuntime {
   }
 
   detachPresentation(): void {
+    this.#visibilityObserver?.disconnect();
+    this.#visibilityObserver = null;
     this.#prompts.detachPresentation();
     this.#transcript.detach();
     this.#presentation = null;

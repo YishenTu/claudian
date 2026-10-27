@@ -51,8 +51,8 @@ export function renderSubagentHistory(
         const view = createSubagentBlock(runBody, run.subagent!);
         // These are passive details, not another live card.
         delete view.wrapperEl.dataset.subagentId;
+        view.headerEl.click();
         view.headerEl.remove();
-        view.contentEl.removeClass('claudian-hidden');
         for (const section of [view.promptSectionEl, view.resultSectionEl]) {
           if (section && !section.hidden) section.querySelector<HTMLElement>('.claudian-subagent-section-header')?.click();
         }

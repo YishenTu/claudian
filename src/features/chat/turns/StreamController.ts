@@ -179,8 +179,12 @@ export class StreamController {
       maxIntervalMs: 500,
       render: async ({ el, content, final }) => {
         content = prepareContent(content);
-        // Derive options only when a render runs so hidden or throttled deltas skip the scans.
-        const options = final ? undefined : this.#getStreamingRenderOptions(content);
+        // Defer by policy; the render pipeline already recognizes protected math and fences.
+        // Parsing once here merely to select flags repeats that work on every snapshot.
+        const options = final ? undefined : {
+          deferMath: this.#shouldDeferMathRendering(),
+          deferDiagrams: true,
+        };
         if (options) {
           await this.deps.renderer?.renderContent(el, content, options);
         } else {
@@ -314,7 +318,8 @@ export class StreamController {
       if (tool) state.recordActivity({ kind: 'tool', tool });
     }
 
-    this.scrollToBottom();
+    // Text changes layout only when its throttled Markdown render completes.
+    if (chunk.type !== 'text' && chunk.type !== 'thinking') this.scrollToBottom();
   }
 
   /** Renders buffered tools and finalizes open thinking and text before a standalone block. */
@@ -410,6 +415,7 @@ export class StreamController {
       });
       state.currentThinkingState = thinkingState;
       this.#syncThinkingRenderAvailability();
+      this.scrollToBottom();
     }
 
     this.thinkingRenderCoordinator.request({
@@ -431,6 +437,16 @@ export class StreamController {
     }
     state.currentThinkingBlock = null;
     state.currentThinkingState = null;
+    // Keep an in-flight host render serialized with its final snapshot.
+    if (thinkingState && !thinkingState.isExpanded && !this.thinkingRenderCoordinator.isRendering) {
+      this.thinkingRenderCoordinator.cancel();
+      const renderer = this.deps.renderer;
+      const content = block.content;
+      finalizeThinkingBlock(thinkingState, durationSeconds, () => {
+        void renderer?.renderContent(thinkingState.contentEl, content);
+      });
+      return;
+    }
     if (thinkingState && this.#getStreamingRenderOptions(block.content)) {
       this.thinkingRenderCoordinator.request({ el: thinkingState.contentEl, content: block.content, final: true });
     }

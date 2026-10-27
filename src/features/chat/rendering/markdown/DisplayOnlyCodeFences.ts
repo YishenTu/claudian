@@ -36,6 +36,11 @@ export function prepareDisplayOnlyCodeFences(
   pluginLanguages: ReadonlySet<string> = new Set(),
 ): PreparedDisplayOnlyCodeFences {
   const fences: DisplayOnlyCodeFence[] = [];
+  // A fence needs at least three consecutive backticks or tildes, even in a container.
+  // Ordinary prose reaches this path on every streaming render.
+  if (!markdown.includes('```') && !markdown.includes('~~~')) {
+    return { markdown, fences };
+  }
   const preparedMarkdown = transformMarkdownSegments(markdown, {
     fence: (opener, fence) => {
       const languageMatch = fence.info.match(/^([\t ]*)(\S+)(.*)$/);

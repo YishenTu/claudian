@@ -29,6 +29,7 @@ import { resolveSubagentAdapter } from '@/features/chat/subagents/subagentAdapte
 import { renderSubagentHistory } from '@/features/chat/subagents/SubagentHistoryRenderer';
 import { renderStoredAsyncSubagent, renderStoredSubagent } from '@/features/chat/subagents/SubagentRenderer';
 import { cancelScheduledAnimationFrame, scheduleAnimationFrame, type ScheduledAnimationFrame } from '@/features/chat/utils/animationFrame';
+import { type ConversationDirectoryEntry, formatConversationDirectoryTitle, getRenderedConversationDirectory } from '@/features/chat/utils/conversationDirectoryTitle';
 import { t } from '@/i18n/i18n';
 import { ImagePreviewModal } from '@/shared/modals/ImagePreviewModal';
 import { registerFileLinkHandler } from '@/utils/fileLink';
@@ -169,14 +170,15 @@ export class MessageRenderer {
             this.messageEls.delete(id);
             this.#actions.forget(id);
           }
-          this.#markdown.releaseRemoved(el);
         };
         for (const record of records) {
           for (const node of record.removedNodes) {
             if (node.nodeType !== 1) continue;
             const el = node as HTMLElement;
+            if (this.messagesEl.contains(el)) continue;
             releaseRemoved(el);
-            el.querySelectorAll<HTMLElement>('*').forEach(releaseRemoved);
+            el.querySelectorAll<HTMLElement>('[data-message-id]').forEach(releaseRemoved);
+            this.#markdown.releaseRemoved(el);
           }
         }
       });
@@ -315,6 +317,24 @@ export class MessageRenderer {
   revealEarlierMessages(all = false): void {
     const earlier = this.#earlier;
     if (earlier) this.#revealFrom(all ? 0 : findWindowStart(earlier.messages, earlier.start - RENDER_WINDOW));
+  }
+
+  /** Lists the transcript's prompts without materializing the earlier message bodies. */
+  getDirectoryEntries(): ConversationDirectoryEntry[] {
+    const entries: ConversationDirectoryEntry[] = [];
+    const earlier = this.#earlier;
+    if (earlier) {
+      for (let index = 0; index < earlier.start; index += 1) {
+        const message = earlier.messages[index];
+        if (message.role !== 'user' || message.isRebuiltContext || isInterruptMarker(message)) continue;
+        const title = formatConversationDirectoryTitle(getUserDisplayText(message));
+        if (title) entries.push({ title, reveal: () => {
+          this.#revealThrough(message.id);
+          return this.findMessageEl(message.id);
+        } });
+      }
+    }
+    return entries.concat(getRenderedConversationDirectory(this.messagesEl));
   }
 
   #revealFrom(start: number): void {

@@ -998,12 +998,13 @@ describe('Tab provider execution ownership', () => {
 
       expect(tab.state.autoScrollEnabled).toBe(true);
 
+      tab.state.currentContentEl = tab.dom.messagesEl.createDiv();
       tab.dom.messagesEl.scrollHeight = 1_200;
       await tab.controllers.streamController.handleStreamChunk(
         { type: 'text', content: 'continued' },
         { content: '', role: 'assistant' },
       );
-      jest.advanceTimersByTime(16);
+      await jest.advanceTimersByTimeAsync(200);
 
       expect(tab.dom.messagesEl.scrollTop).toBe(1_200);
     } finally {
@@ -1036,12 +1037,13 @@ describe('Tab provider execution ownership', () => {
 
       expect(tab.state.autoScrollEnabled).toBe(true);
 
+      tab.state.currentContentEl = tab.dom.messagesEl.createDiv();
       tab.dom.messagesEl.scrollHeight = 1_200;
       await tab.controllers.streamController.handleStreamChunk(
         { type: 'text', content: 'continued' },
         { content: '', role: 'assistant' },
       );
-      jest.advanceTimersByTime(16);
+      await jest.advanceTimersByTimeAsync(200);
 
       expect(tab.dom.messagesEl.scrollTop).toBe(1_200);
     } finally {

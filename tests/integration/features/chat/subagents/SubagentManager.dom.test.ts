@@ -36,6 +36,11 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
+function expandButton(parent: HTMLElement, name: RegExp): void {
+  const button = within(parent).getByRole('button', { name });
+  if (button.getAttribute('aria-expanded') !== 'true') fireEvent.click(button);
+}
+
 function createCodexLifecycleView() {
   const parent = document.body.createDiv();
   const manager = new SubagentManager(() => {}, NOOP_TASK_RESULT_INTERPRETER);
@@ -333,6 +338,7 @@ it('normalizes a completed synchronous answer containing not-ready prose', () =>
   expect(manager.getSyncSubagent('sync')?.toolCalls).toEqual([
     expect.objectContaining({ input: { file_path: 'note.md', limit: 10 }, status: 'completed', result: 'The note.' }),
   ]);
+  expandButton(parent, /Subagent task: Deployment check/);
   expect(parent.querySelectorAll('.claudian-subagent-tool-item')).toHaveLength(1);
   const answer = 'Deployment is not ready.';
   const metadata = 'agentId: agent-sync\n<usage>total_tokens: 500</usage>';
@@ -414,8 +420,23 @@ it.each(['sync', 'async'] as const)('renders %s snapshots without changing their
   Object.freeze(initial);
   const parent = document.body.createDiv();
   const view = mode === 'sync' ? createSubagentBlock(parent, initial) : createAsyncSubagentBlock(parent, initial);
+  expect(view.toolsContainerEl.childElementCount).toBe(0);
+  const updated = Object.freeze({ ...initial, toolCalls: [Object.freeze({ ...initial.toolCalls[0], status: 'completed' as const, result: 'First child result' })] });
+  if ('statusTextEl' in view) updateAsyncSubagentBlock(view as ReturnType<typeof createAsyncSubagentBlock>, updated);
+  else updateSubagentBlock(view, updated);
+  expect(view.toolsContainerEl.childElementCount).toBe(0);
   fireEvent.click(within(parent).getByRole('button', { name: /Snapshot task/ }));
-  fireEvent.click(within(parent).getByRole('button', { name: /^Read/ }));
+  expect(within(parent).queryByText('First child result')).toBeNull();
+  const childHeader = within(parent).getByRole('button', { name: /^Read/ });
+  fireEvent.click(childHeader);
+  expect(within(parent).getByText('First child result')).toBeDefined();
+  fireEvent.click(childHeader);
+  const latest = Object.freeze({ ...updated, toolCalls: [Object.freeze({ ...updated.toolCalls[0], result: 'Latest child result' })] });
+  if ('statusTextEl' in view) updateAsyncSubagentBlock(view as ReturnType<typeof createAsyncSubagentBlock>, latest);
+  else updateSubagentBlock(view, latest);
+  expect(within(parent).queryByText('Latest child result')).toBeNull();
+  fireEvent.click(childHeader);
+  expect(within(parent).getByText('Latest child result')).toBeDefined();
   const completed = Object.freeze({ ...initial, status: 'completed' as const, asyncStatus: 'completed' as const, result: 'Snapshot result' });
   if ('statusTextEl' in view) updateAsyncSubagentBlock(view as ReturnType<typeof createAsyncSubagentBlock>, completed);
   else updateSubagentBlock(view, completed);
@@ -425,6 +446,25 @@ it.each(['sync', 'async'] as const)('renders %s snapshots without changing their
   expect(initial.toolCalls[0].isExpanded).toBe(false);
   expect(completed.isExpanded).toBe(false);
   expect(await axe(parent)).toHaveNoViolations();
+});
+
+it('reconciles a large expanded child list with linear identity lookups and removes retired tools', () => {
+  let identityReads = 0;
+  const tools: ToolCallInfo[] = Array.from({ length: 100 }, (_, index) => ({
+    get id() { identityReads += 1; return `child-${index}`; },
+    name: 'Read', input: { file_path: `note-${index}.md` }, status: 'completed', result: 'contents',
+  }));
+  const info: SubagentInfo = { id: 'many-tools', description: 'Many tools', status: 'running', isExpanded: false, toolCalls: tools };
+  const parent = document.body.createDiv();
+  const view = createSubagentBlock(parent, info);
+  fireEvent.click(within(parent).getByRole('button', { name: /Subagent task: Many tools/ }));
+  expect(parent.querySelectorAll('.claudian-subagent-tool-item')).toHaveLength(100);
+  identityReads = 0;
+  updateSubagentBlock(view, { ...info, toolCalls: tools.slice(1) });
+  expect(parent.querySelectorAll('.claudian-subagent-tool-item')).toHaveLength(99);
+  expect(parent.querySelector('[data-tool-id="child-0"]')).toBeNull();
+  expect(parent.querySelector('[data-tool-id="child-99"]')).not.toBeNull();
+  expect(identityReads).toBeLessThanOrEqual(400);
 });
 
 it('preserves focus in a completed child result when a sibling tool updates', () => {
@@ -495,6 +535,8 @@ it.each(['before spawn', 'after spawn', 'native only'])('keeps the native Codex 
   ] });
   expect(view.tools[0].subagent).toMatchObject({ status: 'completed', result: 'Ready.' });
   expect(view.parent.textContent).toContain('Ready.');
+  expandButton(view.parent, /^Subagent task:/);
+  expandButton(view.parent, /^clock__curr_time/);
   expect(view.parent.querySelectorAll('.claudian-subagent-tool-item')).toHaveLength(1);
   expect(view.parent.textContent).toContain('clock__curr_time');
   expect(view.parent.textContent).toContain('Clock result');
@@ -541,6 +583,7 @@ it.each(['before spawn', 'after spawn', 'native only'])('keeps the native Codex 
   await followupWork;
   await view.stream.handleStreamChunk({ type: 'done' }, laterMessage);
   expect(view.state.currentContentEl!.querySelector('[data-tool-id="native-wait"]')).toBeNull();
+  expandButton(view.state.currentContentEl!, /^Subagent task:/);
   const liveHistory = within(view.state.currentContentEl!).getByRole('button', { name: 'Previous runs (1)' });
   liveHistory.focus();
   const dateItems = timing === 'native only' ? [
@@ -554,6 +597,8 @@ it.each(['before spawn', 'after spawn', 'native only'])('keeps the native Codex 
   for (const item of dateItems) tracker.handleNotification('child', 'child-turn-2',
     item.type === 'commandExecution' ? 'item/completed' : 'rawResponseItem/completed',
     { threadId: 'child', turnId: 'child-turn-2', item });
+  expandButton(view.state.currentContentEl!, /^Bash/);
+  liveHistory.focus();
   expect(view.state.currentContentEl!.textContent).toContain('Date result');
   tracker.turnCompleted('child', { id: 'child-turn-2', status: 'completed', error: null, items: [
     { type: 'agentMessage', id: 'answer-2', text: 'Two.', phase: 'final_answer', memoryCitation: null },
@@ -576,6 +621,10 @@ it.each(['before spawn', 'after spawn', 'native only'])('keeps the native Codex 
     if (reload) view.renderer.renderMessages(view.state.messages, () => 'Hello');
     const original = view.parent.querySelector('[data-message-id="response"]')! as HTMLElement;
     const later = view.parent.querySelector('[data-message-id="later"]')! as HTMLElement;
+    expandButton(original, /^Subagent task:/);
+    expandButton(original, /^clock__curr_time/);
+    expandButton(later, /^Subagent task:/);
+    expandButton(later, /^Bash/);
     expect(original.querySelectorAll('.claudian-subagent-list')).toHaveLength(1);
     expect(original.textContent).toContain('Ready.');
     expect(original.textContent).toContain('Clock result');
@@ -593,6 +642,7 @@ it.each(['before spawn', 'after spawn', 'native only'])('keeps the native Codex 
     expect(run.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(run);
     const runBody = document.getElementById(run.getAttribute('aria-controls')!)!;
+    expandButton(runBody, /^clock__curr_time/);
     expect(within(runBody).getByRole('button', { name: /^Result/ }).getAttribute('aria-expanded')).toBe('true');
     expect(later.textContent).toContain('Clock result');
     expect(later.textContent).toContain('Ready.');
@@ -600,10 +650,13 @@ it.each(['before spawn', 'after spawn', 'native only'])('keeps the native Codex 
     expect(later.querySelectorAll('[data-subagent-id="spawn"]')).toHaveLength(0);
     expect(within(later).queryByRole('button', { name: 'Go to original turn' })).toBeNull();
     const final = view.parent.querySelector('[data-message-id="final-run"]')! as HTMLElement;
+    expandButton(final, /^Subagent task:/);
     fireEvent.click(within(final).getByRole('button', { name: 'Previous runs (2)' }));
     expect(within(final).getAllByRole('button', { name: /^Run \d/ }).map(button => button.textContent))
       .toEqual(['Run 1 · Completed', 'Run 2 · Completed']);
-    fireEvent.click(within(final).getByRole('button', { name: 'Run 2 · Completed' }));
+    const secondRun = within(final).getByRole('button', { name: 'Run 2 · Completed' });
+    fireEvent.click(secondRun);
+    expandButton(document.getElementById(secondRun.getAttribute('aria-controls')!)!, /^Bash/);
     expect(final.textContent!.includes('Run bash date')).toBe(timing !== 'native only');
     expect(final.textContent).toContain('Date result');
     expect(final.textContent).toContain('Two.');

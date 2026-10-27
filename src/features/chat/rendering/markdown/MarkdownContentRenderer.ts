@@ -18,6 +18,8 @@ import {
   normalizeLatexMathDelimiters,
 } from '@/utils/markdownMath';
 
+const RENDER_SCOPE_ATTRIBUTE = 'data-chat-markdown-scope';
+
 export interface RenderContentOptions {
   deferMath?: boolean;
   deferDiagrams?: boolean;
@@ -53,8 +55,12 @@ export class MarkdownContentRenderer {
     this.#releaseOne(el);
     const scope = new MarkdownRenderScope();
     this.#renders.set(el, scope);
+    el.setAttribute(RENDER_SCOPE_ATTRIBUTE, '');
     scope.register(() => {
-      if (this.#renders.get(el) === scope) this.#renders.delete(el);
+      if (this.#renders.get(el) === scope) {
+        this.#renders.delete(el);
+        el.removeAttribute(RENDER_SCOPE_ATTRIBUTE);
+      }
     });
     this.component.addChild(scope);
     scope.load();
@@ -117,18 +123,18 @@ export class MarkdownContentRenderer {
 
   /** Releases renders at or inside `container`, or every render when omitted. */
   release(container?: HTMLElement): void {
-    for (const el of this.#renders.keys()) {
-      if (!container || container === el || container.contains(el)) {
-        this.#releaseOne(el);
-      }
+    if (!container) {
+      for (const el of this.#renders.keys()) this.#releaseOne(el);
+      return;
     }
+    const descendants = container.querySelectorAll<HTMLElement>(`[${RENDER_SCOPE_ATTRIBUTE}]`);
+    this.#releaseOne(container);
+    descendants.forEach(el => this.#releaseOne(el));
   }
 
-  /** Releases the render of an element that has left the root. */
+  /** Releases owned render targets in a subtree that has left the root. */
   releaseRemoved(el: HTMLElement): void {
-    if (this.#renders.has(el) && !this.rootEl.contains(el)) {
-      this.#releaseOne(el);
-    }
+    if (!this.rootEl.contains(el)) this.release(el);
   }
 
   dispose(): void {
@@ -140,6 +146,7 @@ export class MarkdownContentRenderer {
     const scope = this.#renders.get(el);
     if (!scope) return;
     this.#renders.delete(el);
+    el.removeAttribute(RENDER_SCOPE_ATTRIBUTE);
     this.component.removeChild(scope);
   }
 }

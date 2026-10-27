@@ -450,6 +450,7 @@ describe('tool snapshots', () => {
 
   it('updates the same tool row from successive snapshots', () => {
     const state = createSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+    (state.headerEl as any).click();
 
     updateSubagentBlock(state, { ...state.info, toolCalls: [...state.info.toolCalls, {
       id: 'tool-1',
@@ -686,6 +687,8 @@ describe('renderStoredSubagent status variants', () => {
     };
 
     const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
+    (wrapperEl as any).querySelector('.claudian-subagent-header').click();
+    (wrapperEl as any).querySelector('.claudian-subagent-tool-header').click();
     const contentEl = (wrapperEl as any).children[1]; // content area
 
     // Should show result text

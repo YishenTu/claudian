@@ -1,7 +1,9 @@
+import { parser } from '@lezer/markdown';
 import { createMockEl } from '@test/helpers/MockElement';
 import { loadPrism } from 'obsidian';
 
 import {
+  hasDeferredDiagramFence,
   prepareDisplayOnlyCodeFences,
   restoreDisplayOnlyCodeFences,
 } from '@/features/chat/rendering/markdown/DisplayOnlyCodeFences';
@@ -9,6 +11,21 @@ import {
 describe('DisplayOnlyCodeFences', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it.each([
+    '# Summary\n\nOrdinary **Markdown** with [a link](https://example.com).',
+    'Inline `code` and ``two backticks`` with ~ and ~~strikethrough~~.',
+    '    indented code\n\nMore prose.',
+  ])('skips full parsing when fence preparation cannot change the source: %s', markdown => {
+    const parse = jest.spyOn(parser, 'parse');
+    try {
+      expect(prepareDisplayOnlyCodeFences(markdown)).toEqual({ markdown, fences: [] });
+      expect(hasDeferredDiagramFence(markdown, new Set(['dataview']))).toBe(false);
+      expect(parse).not.toHaveBeenCalled();
+    } finally {
+      parse.mockRestore();
+    }
   });
 
   it('replaces every fenced language while preserving fence structure and metadata', () => {

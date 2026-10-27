@@ -12,6 +12,7 @@ import { Component, MarkdownRenderer } from 'obsidian';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage } from '@/core/types';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
+import { NavigationSidebar } from '@/features/chat/navigation/NavigationSidebar';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
 
@@ -118,6 +119,47 @@ it('renders a short transcript whole without an earlier-messages control', () =>
   renderer.renderMessages(messages, () => 'Hello');
   expect(renderedPrompts(messagesEl)).toHaveLength(5);
   expect(within(messagesEl).queryByRole('button', { name: 'Show earlier messages' })).toBeNull();
+});
+
+it('lists every prompt without rendering earlier bodies and reveals only through the selected prompt', () => {
+  const { renderer, messagesEl } = setup();
+  const parent = document.body.createDiv();
+  parent.append(messagesEl);
+  messagesEl.scrollTo = jest.fn();
+  jest.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (this: HTMLElement) {
+    return Array.from(messagesEl.children).indexOf(this) * 100;
+  });
+  const messages = Array.from({ length: 60 }, (_, index) => turn(index)).flat();
+  messages[20].displayContent = 'Visible prompt ten';
+  renderer.renderMessages(messages, () => 'Hello');
+  const sidebar = new NavigationSidebar(parent, messagesEl, () => renderer.getDirectoryEntries());
+  try {
+    const rendersBefore = jest.mocked(MarkdownRenderer.render).mock.calls.length;
+    fireEvent.click(within(parent).getByRole('button', { name: 'Conversation directory' }));
+    expect(within(parent).getAllByRole('button', { name: /^\d+\. / })).toHaveLength(60);
+    expect(within(parent).getByRole('button', { name: '11. Visible prompt ten' })).toBeDefined();
+    expect(jest.mocked(MarkdownRenderer.render)).toHaveBeenCalledTimes(rendersBefore);
+    expect(renderedPrompts(messagesEl)).toHaveLength(20);
+
+    fireEvent.click(within(parent).getByRole('button', { name: '11. Visible prompt ten' }));
+    expect(renderedPrompts(messagesEl)[0]).toBe('Visible prompt ten');
+    expect(renderedPrompts(messagesEl)).not.toContain('Prompt 9');
+    const selected = messagesEl.querySelector<HTMLElement>('[data-message-id="u10"]')!;
+    expect(messagesEl.scrollTo).toHaveBeenLastCalledWith({ top: Math.max(selected.offsetTop - 10, 0), behavior: 'smooth' });
+
+    renderer.removeMessage('u3');
+    renderer.removeMessage('u15');
+    renderer.addMessage(turn(60)[0]);
+    fireEvent.click(within(parent).getByRole('button', { name: 'Conversation directory' }));
+    const labels = within(parent).getAllByRole('button', { name: /^\d+\. / }).map(button => button.textContent);
+    expect(labels).toHaveLength(59);
+    expect(labels).not.toContain('4. Prompt 3');
+    expect(labels.some(label => label?.endsWith('. Prompt 15'))).toBe(false);
+    expect(labels.at(-1)).toBe('59. Prompt 60');
+  } finally {
+    sidebar.destroy();
+    renderer.dispose();
+  }
 });
 
 it('offers branching from the first rendered prompt while earlier prompts are unrendered, never from the transcript start', () => {

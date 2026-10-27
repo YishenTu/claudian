@@ -115,6 +115,7 @@ it.each(['text', 'thinking'] as const)('reattaches during %s without losing open
   expect(within(finalRoot).getByRole('button', { name: /Read.*note.md/ })).toBeTruthy();
   fireEvent.click(within(finalRoot).getByRole('button', { name: /Subagent task: Research.*completed/ }));
   expect(finalRoot.textContent).toContain('Research finished.');
+  fireEvent.click(within(finalRoot).getByRole('button', { name: /Read.*child.md/ }));
   expect(finalRoot.textContent).toContain('Child note.');
 });
 
@@ -150,6 +151,7 @@ it('keeps one live card when a buffered subagent resolves after reattachment', a
   await session.stream.handleStreamChunk({ type: 'tool_result', id: 'task', content: 'Research finished.' }, session.response.active!);
   expect(within(root).getAllByRole('button', { name: /Subagent task: Research/ })).toHaveLength(1);
   fireEvent.click(within(root).getByRole('button', { name: /Subagent task: Research.*completed/ }));
+  fireEvent.click(within(root).getByRole('button', { name: /Read.*child.md/ }));
   expect(root.textContent).toContain('Child note.');
   expect(root.textContent).toContain('Research finished.');
   await session.finish();
