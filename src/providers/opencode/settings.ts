@@ -5,10 +5,7 @@ import {
   type OpencodeProviderSettings,
   updateOpencodeConfig,
 } from './config';
-import {
-  type OpencodeThinkingOptionsByModel,
-  resolveOpencodeBaseModelRawId
-} from './models';
+import type { OpencodeThinkingOptionsByModel } from './models';
 
 /** Reads OpenCode's configuration from the settings document. */
 export function getOpencodeProviderSettings(
@@ -52,7 +49,7 @@ export function projectOpencodeModelSettings(settings: Record<string, unknown>):
     modelAliases: selectModelMetadata(current.modelAliases, selected),
     preferredThinkingByModel: selectModelMetadata(current.preferredThinkingByModel, selected),
     thinkingOptionsByModel: pruneThinkingOptionsToPersistedSelections(current),
-    selectedModels: current.discoveredModels.filter(model => selected.has(resolveOpencodeBaseModelRawId(model.rawId, current.discoveredModels))),
+    selectedModels: current.discoveredModels.filter(model => selected.has(model.rawId)),
   };
   for (const key of ['discoveredModels', 'catalogTimestamp', 'catalogFingerprint', 'availableModes', 'selectedMode']) delete (config as Record<string, unknown>)[key];
   return config;

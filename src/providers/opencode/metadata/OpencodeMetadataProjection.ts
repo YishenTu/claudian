@@ -5,7 +5,6 @@ import type { OpencodeNativeModel } from '../http/OpencodeNativeModelCatalog';
 import {
   normalizeOpencodeDiscoveredModels,
   normalizeOpencodeModelVariants,
-  resolveOpencodeBaseModelRawId,
 } from '../models';
 
 /** A partial update: omitted metadata is kept, while a supplied empty list clears it. */
@@ -37,19 +36,13 @@ export async function projectOpencodeMetadata(
   const published = await host.updateConfig((config) => {
     if (signal?.aborted) return false;
     const current = decodeOpencodeConfig(config);
-    const baseRawModelId = rawModelId
-      ? resolveOpencodeBaseModelRawId(
-        rawModelId,
-        discoveredModels.length > 0 ? discoveredModels : current.discoveredModels,
-      )
-      : null;
     const nextThinking = { ...current.thinkingOptionsByModel };
-    if (baseRawModelId && hasThinking) {
-      Object.defineProperty(nextThinking, baseRawModelId, { value: thinkingOptions, enumerable: true, writable: true, configurable: true });
+    if (rawModelId && hasThinking) {
+      Object.defineProperty(nextThinking, rawModelId, { value: thinkingOptions, enumerable: true, writable: true, configurable: true });
     }
     updateOpencodeConfig(config, {
       ...(hasModels ? { discoveredModels } : {}),
-      ...(baseRawModelId && hasThinking
+      ...(rawModelId && hasThinking
         ? { thinkingOptionsByModel: nextThinking }
         : {}),
     });

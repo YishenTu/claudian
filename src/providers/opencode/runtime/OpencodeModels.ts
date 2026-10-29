@@ -2,7 +2,7 @@ import { createConfigCatalogStore, ProviderModelCatalogController } from '../../
 import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import { decodeOpencodeConfig, updateOpencodeConfig } from '../config';
 import type { OpencodeMetadataService } from '../metadata/OpencodeMetadataService';
-import { buildOpencodeBaseModels, encodeOpencodeModelId, splitOpencodeModelLabel } from '../models';
+import { encodeOpencodeModelId, splitOpencodeModelLabel } from '../models';
 
 export function createOpencodeModels(host: ProviderRuntimeHost, native: Pick<OpencodeMetadataService, 'discoverModels' | 'warmModelsMetadata'>): ProviderModelCatalogController {
   return new ProviderModelCatalogController({
@@ -13,7 +13,7 @@ export function createOpencodeModels(host: ProviderRuntimeHost, native: Pick<Ope
         const current = decodeOpencodeConfig(config);
         return {
           enabled: current.enabled,
-          models: buildOpencodeBaseModels(current.discoveredModels).map(model => {
+          models: [...current.discoveredModels].sort((left, right) => left.label.localeCompare(right.label)).map(model => {
             const { modelLabel, providerLabel } = splitOpencodeModelLabel(model.label || model.rawId);
             return {
               id: model.rawId,

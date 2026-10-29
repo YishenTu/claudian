@@ -17,13 +17,6 @@ export interface OpencodeModelVariant {
 
 export type OpencodeThinkingOptionsByModel = Record<string, OpencodeModelVariant[]>;
 
-export interface OpencodeBaseModel {
-  description?: string;
-  label: string;
-  rawId: string;
-  variants: OpencodeModelVariant[];
-}
-
 export const OPENCODE_DEFAULT_THINKING_LEVEL = 'default';
 
 const OPENCODE_MODEL_PREFIX = 'opencode:';
@@ -144,7 +137,6 @@ export function normalizeOpencodeModelVariants(value: unknown): OpencodeModelVar
 
 export function normalizeOpencodeThinkingOptionsByModel(
   value: unknown,
-  discoveredModels: OpencodeDiscoveredModel[] = [],
 ): OpencodeThinkingOptionsByModel {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
@@ -152,7 +144,7 @@ export function normalizeOpencodeThinkingOptionsByModel(
 
   const normalized: OpencodeThinkingOptionsByModel = {};
   for (const [rawId, variants] of Object.entries(value as Record<string, unknown>)) {
-    const normalizedRawId = resolveOpencodeBaseModelRawId(rawId.trim(), discoveredModels);
+    const normalizedRawId = rawId.trim();
     const normalizedVariants = normalizeOpencodeModelVariants(variants);
     if (!normalizedRawId || !Array.isArray(variants)) {
       continue;
@@ -162,52 +154,6 @@ export function normalizeOpencodeThinkingOptionsByModel(
   }
 
   return normalized;
-}
-
-export function resolveOpencodeBaseModelRawId(
-  rawId: string,
-  discoveredModels: OpencodeDiscoveredModel[] | Set<string>,
-): string {
-  const normalizedRawId = rawId.trim();
-  if (!normalizedRawId) {
-    return '';
-  }
-
-  const discoveredRawIds = discoveredModels instanceof Set
-    ? discoveredModels
-    : new Set(discoveredModels.map((model) => model.rawId));
-  const slashIndex = normalizedRawId.lastIndexOf('/');
-  if (slashIndex <= 0) {
-    return normalizedRawId;
-  }
-
-  const candidate = normalizedRawId.slice(0, slashIndex);
-  if (discoveredRawIds.has(candidate)) {
-    return candidate;
-  }
-
-  const variant = normalizedRawId.slice(slashIndex + 1).trim().toLowerCase();
-  return OPENCODE_VARIANT_ASCENDING_RANK.has(variant)
-    ? candidate
-    : normalizedRawId;
-}
-
-export function extractOpencodeModelVariantValue(
-  rawId: string,
-  discoveredModels: OpencodeDiscoveredModel[] | Set<string>,
-): string | null {
-  const normalizedRawId = rawId.trim();
-  if (!normalizedRawId) {
-    return null;
-  }
-
-  const baseRawId = resolveOpencodeBaseModelRawId(normalizedRawId, discoveredModels);
-  if (baseRawId === normalizedRawId || baseRawId.length >= normalizedRawId.length) {
-    return null;
-  }
-
-  const variant = normalizedRawId.slice(baseRawId.length + 1).trim();
-  return variant || null;
 }
 
 export function splitOpencodeModelLabel(label: string): {
@@ -227,53 +173,6 @@ export function splitOpencodeModelLabel(label: string): {
     modelLabel: trimmed.slice(slashIndex + 1).trim(),
     providerLabel: trimmed.slice(0, slashIndex).trim(),
   };
-}
-
-export function buildOpencodeBaseModels(
-  models: OpencodeDiscoveredModel[],
-): OpencodeBaseModel[] {
-  const discoveredRawIds = new Set(models.map((model) => model.rawId));
-  const discoveredByRawId = new Map(models.map((model) => [model.rawId, model] as const));
-  const grouped = new Map<string, OpencodeDiscoveredModel[]>();
-
-  for (const model of models) {
-    const baseRawId = resolveOpencodeBaseModelRawId(model.rawId, discoveredRawIds);
-    const existing = grouped.get(baseRawId);
-    if (existing) {
-      existing.push(model);
-    } else {
-      grouped.set(baseRawId, [model]);
-    }
-  }
-
-  return Array.from(grouped.entries())
-    .map(([baseRawId, entries]) => {
-      const baseModel = discoveredByRawId.get(baseRawId) ?? entries[0];
-      const variants = entries.flatMap((entry) => {
-        if (entry.rawId === baseRawId) {
-          return [];
-        }
-
-        const variant = extractOpencodeModelVariantValue(entry.rawId, discoveredRawIds);
-        if (!variant) {
-          return [];
-        }
-
-        return [{
-          ...(entry.description ? { description: entry.description } : {}),
-          label: formatReasoningValueLabel(variant),
-          value: variant,
-        }];
-      });
-
-      return {
-        ...(baseModel?.description ? { description: baseModel.description } : {}),
-        label: baseModel?.label ?? baseRawId,
-        rawId: baseRawId,
-        variants: dedupeOpencodeVariants(variants),
-      };
-    })
-    .sort((left, right) => left.label.localeCompare(right.label));
 }
 
 function dedupeOpencodeVariants(variants: OpencodeModelVariant[]): OpencodeModelVariant[] {

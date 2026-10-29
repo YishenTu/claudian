@@ -11,7 +11,6 @@ import {
   updateOpencodeDiscoveryState,
 } from './discoveryState';
 import {
-  normalizeOpencodeThinkingOptionsByModel,
   type OpencodeDiscoveredModel,
   type OpencodeThinkingOptionsByModel,
 } from './models';
@@ -169,12 +168,7 @@ export function updateOpencodeConfig(
   }
   const discoveryState = getOpencodeDiscoveryState(config);
   const nextDiscoveredModels = discoveryState.discoveredModels;
-  const nextThinkingOptionsByModel = updates.thinkingOptionsByModel !== undefined
-    ? discoveryState.thinkingOptionsByModel
-    : normalizeOpencodeThinkingOptionsByModel(
-      current.thinkingOptionsByModel,
-      nextDiscoveredModels,
-    );
+  const nextThinkingOptionsByModel = discoveryState.thinkingOptionsByModel;
   const nextVisibleModels = normalizeOpencodeVisibleModels(
     updates.visibleModels ?? current.visibleModels
   );

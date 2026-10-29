@@ -3,6 +3,8 @@ import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'nod
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
+import { opencodeModelPolicy } from '@/providers/opencode/OpencodeModelPolicy';
+import { assertOpencodeModelAvailable } from '@/providers/opencode/runtime/OpencodeModelAvailability';
 import { createOpencodeModels } from '@/providers/opencode/runtime/OpencodeModels';
 import { getOpencodeProviderSettings, projectOpencodeModelSettings } from '@/providers/opencode/settings';
 
@@ -23,22 +25,51 @@ function addModel(): void {
   renameSync(file + '.pending', file);
 }
 
-it('discovers several selected models from one native catalog response', async () => {
+it('keeps native model IDs and reasoning independent through discovery, selection and persistence', async () => {
   fixture.environment.ACTIVATION_DELAY_MS = '1';
   writeFileSync(fixture.environment.CATALOG_FILE!, JSON.stringify([
     { providerID: 'test', id: 'one', name: 'One', enabled: true, variants: [{ id: 'high' }] },
-    { providerID: 'test', id: 'two', name: 'Two', enabled: true, variants: [{ id: 'low' }] },
+    { providerID: 'test', id: 'one/high', name: 'Nested Model', enabled: true, variants: [{ id: 'low' }] },
+    { providerID: 'test', id: 'high', name: 'High Model', enabled: true, variants: [{ id: 'max' }] },
   ]));
   const plugin = fixture.createPlugin();
-  plugin.settings.providerConfigs.opencode.visibleModels = ['test/one', 'test/two'];
+  plugin.settings.providerConfigs.opencode.visibleModels = ['test/one/high', 'test/high', 'test/one'];
   const host = runtimeHostFor(plugin, 'opencode');
   const service = new OpencodeMetadataService(host, plugin.executionLifecycleRegistry);
   const models = createOpencodeModels(host, service);
   try {
     await models.refresh();
     const thinking = getOpencodeProviderSettings(plugin.settings).thinkingOptionsByModel;
-    expect(thinking['test/one'].map(option => option.value)).toEqual(['high', 'default']);
-    expect(thinking['test/two'].map(option => option.value)).toEqual(['low', 'default']);
+    expect(thinking).toEqual({
+      'test/one': [{ label: 'High', value: 'high' }, { label: 'Default', value: 'default' }],
+      'test/one/high': [{ label: 'Low', value: 'low' }, { label: 'Default', value: 'default' }],
+      'test/high': [{ label: 'Max', value: 'max' }, { label: 'Default', value: 'default' }],
+    });
+    expect(models.getSnapshot().models.map(model => [model.id, model.isAvailable !== false])).toEqual([
+      ['test/one', true], ['test/one/high', true], ['test/high', true],
+    ]);
+    expect(opencodeModelPolicy.getModelOptions(plugin.settings).map(option => option.value))
+      .toEqual(['opencode:test/one/high', 'opencode:test/high', 'opencode:test/one']);
+    expect(opencodeModelPolicy.getDefaultModel?.(plugin.settings)).toBe('opencode:test/one/high');
+    for (const [id, effort] of [['test/one/high', 'low'], ['test/high', 'max']]) {
+      const model = `opencode:${id}`;
+      expect(() => assertOpencodeModelAvailable(host, model)).not.toThrow();
+      expect(opencodeModelPolicy.normalizeModelVariant(model, plugin.settings)).toBe(model);
+      opencodeModelPolicy.applyReasoningSelection?.(model, effort, plugin.settings);
+      opencodeModelPolicy.applyModelDefaults?.(model, plugin.settings);
+      expect(plugin.settings.model).toBe(model);
+      expect(plugin.settings.effortLevel).toBe(effort);
+    }
+    expect(() => assertOpencodeModelAvailable(host, 'opencode:test/one/max')).toThrow();
+    await models.changeSelection({ type: 'set', modelId: 'test/one', selected: false });
+    const reopened = getOpencodeProviderSettings({ providerConfigs: {
+      opencode: JSON.parse(JSON.stringify(projectOpencodeModelSettings(plugin.settings))),
+    } });
+    expect(reopened.discoveredModels.map(model => model.rawId)).toEqual(['test/one/high', 'test/high']);
+    expect(reopened.thinkingOptionsByModel).toEqual({
+      'test/one/high': thinking['test/one/high'], 'test/high': thinking['test/high'],
+    });
+    expect(reopened.preferredThinkingByModel).toEqual({ 'test/one/high': 'low', 'test/high': 'max' });
     expect(readFileSync(fixture.environment.ENDPOINT_FILE + '.read', 'utf8')).toBe('1');
   } finally {
     await models.dispose();

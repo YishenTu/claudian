@@ -16,7 +16,7 @@ export function getOpencodeDiscoveryState(config: Readonly<Record<string, unknow
   const discoveredModels = normalizeOpencodeDiscoveredModels(config.discoveredModels ?? config.selectedModels);
   return {
     discoveredModels,
-    thinkingOptionsByModel: normalizeOpencodeThinkingOptionsByModel(config.thinkingOptionsByModel, discoveredModels),
+    thinkingOptionsByModel: normalizeOpencodeThinkingOptionsByModel(config.thinkingOptionsByModel),
   };
 }
 
@@ -30,7 +30,7 @@ export function updateOpencodeDiscoveryState(
     ? normalizeOpencodeDiscoveredModels(updates.discoveredModels)
     : state.discoveredModels;
   const nextThinkingOptionsByModel = 'thinkingOptionsByModel' in updates
-    ? normalizeOpencodeThinkingOptionsByModel(updates.thinkingOptionsByModel, nextDiscoveredModels)
+    ? normalizeOpencodeThinkingOptionsByModel(updates.thinkingOptionsByModel)
     : state.thinkingOptionsByModel;
   const changed = !sameDiscoveredModels(state.discoveredModels, nextDiscoveredModels)
     || !sameThinkingOptionsByModel(state.thinkingOptionsByModel, nextThinkingOptionsByModel);
