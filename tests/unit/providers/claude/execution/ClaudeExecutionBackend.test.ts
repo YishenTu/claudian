@@ -4048,6 +4048,33 @@ it.each([
   } finally { await session.dispose(); }
 });
 
+it('blocks idle release while Claude Code reports a live background task', async () => {
+  const session = new ClaudeExecutionSession(createHost().getRuntimeHost('claude'), createConfig());
+  const tasksChanged = (tasks: unknown[]) => ({ type: 'system', subtype: 'background_tasks_changed', session_id: 'session-1', uuid: 'tasks', tasks });
+  const shell = { task_id: 'shell', task_type: 'local_bash', description: 'Wait for the build' };
+  try {
+    expect(session.blocksIdleRelease()).toBe(false);
+    await session.handleNativeMessage(tasksChanged([{ task_id: 'watcher', task_type: 'monitor', description: 'Watch', ambient: true }]) as any, 1);
+    expect(session.blocksIdleRelease()).toBe(false);
+    await session.handleNativeMessage(tasksChanged([shell]) as any, 1);
+    expect(session.blocksIdleRelease()).toBe(true);
+    // The level replaces the set, so a missed task_notification cannot keep the task running.
+    await session.handleNativeMessage(tasksChanged([]) as any, 1);
+    expect(session.blocksIdleRelease()).toBe(false);
+    await session.handleNativeMessage(tasksChanged([shell]) as any, 1);
+    // Cancelling automatic output keeps the process, so its task level still applies.
+    await session.handleNativeMessage({ type: 'assistant', message: { id: 'automatic', content: [{ type: 'text', text: 'Automatic output' }] } } as any, 1);
+    session.cancel();
+    await session.handleNativeMessage(tasksChanged([]) as any, 1);
+    await session.handleNativeMessage({ type: 'result', subtype: 'success' } as any, 1);
+    expect(session.blocksIdleRelease()).toBe(false);
+    await session.handleNativeMessage(tasksChanged([shell]) as any, 1);
+    // A new CLI process starts with no background tasks.
+    session.handleNativeQueryOpened({} as sdkModule.Query);
+    expect(session.blocksIdleRelease()).toBe(false);
+  } finally { await session.dispose(); }
+});
+
 it('keeps task notification state across requested turns of one persistent query', async () => {
   let sends = 0;
   jest.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')

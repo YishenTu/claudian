@@ -755,6 +755,7 @@ export class ChatExecutionCoordinator {
       && this.#activeExecution === null
       && !this.#interactions.hasPending
       && !binding.session.hasBackgroundWork?.()
+      && !binding.session.blocksIdleRelease?.()
       && !binding.events.hasBackgroundWork
       && binding.pendingWorkCount === 0
       && (this.deps.isOwnerIdle?.() ?? true),

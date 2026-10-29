@@ -271,17 +271,21 @@ describe('ChatExecutionCoordinator', () => {
       await harness.registry.dispose();
     });
 
-    it('keeps a session with running children alive past the idle period', async () => {
+    it.each([
+      { name: 'running children', method: 'hasBackgroundWork', busy: true },
+      { name: 'native work that does not make the conversation busy', method: 'blocksIdleRelease', busy: false },
+    ])('keeps a session with $name alive past the idle period', async ({ method, busy }) => {
       const harness = createHarness({ idleReleaseMs: IDLE_MS });
       await harness.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'codex' });
       await harness.coordinator.prepare();
       const session = harness.backends.get('codex')!.sessions[0];
-      const hasBackgroundWork = jest.fn(() => true);
-      Object.assign(session, { hasBackgroundWork });
+      const working = jest.fn(() => true);
+      Object.assign(session, { [method]: working });
 
       await jest.advanceTimersByTimeAsync(IDLE_MS);
       expect(session.disposeCalls).toBe(0);
-      hasBackgroundWork.mockReturnValue(false);
+      expect(harness.coordinator.hasBackgroundWork).toBe(busy);
+      working.mockReturnValue(false);
       await jest.advanceTimersByTimeAsync(IDLE_MS);
       expect(session.disposeCalls).toBe(1);
       await harness.coordinator.dispose();

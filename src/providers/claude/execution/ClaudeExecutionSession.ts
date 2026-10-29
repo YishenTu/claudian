@@ -296,6 +296,8 @@ ClaudeExecutionStrategySink {
     return this.strategy.steerTurn(message, active.queryToken, delivery) ? acceptance : false;
   }
 
+  blocksIdleRelease(): boolean { return this.taskNotifications.hasLiveBackgroundTask(); }
+
   getSnapshot(): ProviderSessionSnapshot {
     return this.state.getSnapshot();
   }
@@ -449,6 +451,11 @@ ClaudeExecutionStrategySink {
         && message.suggestion.trim()) {
         this.#emitSession({ type: 'prompt_suggestion', originatingTurnId, suggestion: message.suggestion });
       }
+      return;
+    }
+    if (message.type === 'system' && message.subtype === 'background_tasks_changed') {
+      // Task membership belongs to the process, which outlives a cancelled turn's suppressed output.
+      this.taskNotifications.observe(message);
       return;
     }
     if (this.cancelledBackgroundQueryToken === queryToken) {

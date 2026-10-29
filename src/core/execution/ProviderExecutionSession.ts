@@ -43,6 +43,8 @@ export interface ProviderExecutionSession {
   getStatus(): ProviderSessionStatus;
   /** Native work that outlives a requested turn prevents idle session release. */
   hasBackgroundWork?(): boolean;
+  /** Native work that dies with the session, such as a background shell, prevents idle release without making the conversation busy. */
+  blocksIdleRelease?(): boolean;
   /**
    * Current native query commands; undefined means no authoritative snapshot is available.
    * Reading never starts provider work. Implementations emit commands_changed when it changes or clears.
