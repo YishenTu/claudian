@@ -82,4 +82,12 @@ describe('inline-edit.css', () => {
 
     expect(parseFloat(composer.marginBottom || '0') + parseFloat(composer.paddingBottom || '0')).toBeGreaterThanOrEqual(8);
   });
+
+  it('gates the ::highlight rule, since an ungated one adds a highlight style to every element restyle', () => {
+    const css = readFileSync(path.resolve('src/style/features/inline-edit.css'), 'utf8');
+    const highlightSelectors = css.match(/^[^{}\n]*::highlight\([^{]*/gm) ?? [];
+
+    expect(highlightSelectors.map(selector => selector.trim()))
+      .toEqual(['body.claudian-selection-highlight-active ::highlight(claudian-selection)']);
+  });
 });

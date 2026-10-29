@@ -9,8 +9,8 @@
   margin: -3px 0;
 }
 
-/* Preview mode selection highlight via CSS Custom Highlight API */
-::highlight(claudian-selection) {
+/* Preview mode selection highlight via CSS Custom Highlight API, gated by SelectionController */
+body.claudian-selection-highlight-active ::highlight(claudian-selection) {
   background: var(--text-selection);
 }
 

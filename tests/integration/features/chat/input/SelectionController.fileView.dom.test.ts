@@ -208,3 +208,35 @@ it('ignores selections outside the active file view', () => {
   active.controller.poll();
   expect(active.selections.capture()).toEqual({});
 });
+
+it('gates the highlight style on only while the chat shows a mock selection highlight', () => {
+  // jsdom lacks the CSS Custom Highlight API; stand in for the browser registry it exposes.
+  const highlights = new Map<string, unknown>();
+  const original = { CSS: (globalThis as { CSS?: unknown }).CSS, Highlight: (window as { Highlight?: unknown }).Highlight };
+  Object.assign(globalThis, { CSS: { highlights } });
+  Object.assign(window, { Highlight: class { constructor(...ranges: Range[]) { Object.assign(this, { ranges }); } } });
+  const highlightStyled = () => document.body.classList.contains('claudian-selection-highlight-active');
+  try {
+    jest.useFakeTimers();
+    const view = new SourceViewer(SOURCE);
+    active = fixture(view);
+    active.select(view.code, SOURCE.indexOf('value ='), SOURCE.indexOf('print(value)'));
+    expect(highlightStyled()).toBe(false);
+
+    fireEvent.pointerDown(active.input);
+    document.getSelection()?.removeAllRanges();
+    active.input.focus();
+    expect(highlights.has('claudian-selection')).toBe(true);
+    expect(highlightStyled()).toBe(true);
+
+    active.input.blur();
+    jest.advanceTimersByTime(2000);
+    active.controller.poll();
+    expect(active.selections.capture()).toEqual({});
+    expect(highlights.has('claudian-selection')).toBe(false);
+    expect(highlightStyled()).toBe(false);
+  } finally {
+    Object.assign(globalThis, { CSS: original.CSS });
+    Object.assign(window, { Highlight: original.Highlight });
+  }
+});
