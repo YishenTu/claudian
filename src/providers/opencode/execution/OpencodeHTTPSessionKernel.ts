@@ -9,7 +9,7 @@ import { filterMarkdownTextTokens } from '@/utils/markdownTextTokens';
 
 import { forkOpencodeHTTPSession } from '../history/OpencodeSessionFork';
 import { type OpencodeTurnSelector, readOpencodeTurnStats } from '../history/OpencodeTurnStats';
-import { isRecord, OpencodeHTTPError, type OpencodeHTTPEvent } from '../http/OpencodeHTTPClient';
+import { isRecord, OpencodeHTTPError, type OpencodeHTTPEvent, pollOpencodeUntil } from '../http/OpencodeHTTPClient';
 import { projectOpencodeFormQuestions } from '../http/OpencodeHTTPForms';
 import { loadOpencodeNativeModels, type OpencodeNativeModel } from '../http/OpencodeNativeModelCatalog';
 import type { OpencodeServerLease, OpencodeServerService } from '../http/OpencodeServerService';
@@ -121,7 +121,11 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       [options.profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[options.profile]],
       options.systemPrompt,
     );
-    this.models = await loadOpencodeNativeModels(this.client, this.controller.signal);
+    // Execution requires a usable startup snapshot; metadata pickers may show an empty one immediately.
+    this.models = await pollOpencodeUntil(
+      () => loadOpencodeNativeModels(this.requireClient(), this.controller.signal),
+      models => models.length > 0, 5_000, this.controller.signal,
+    );
   }
 
   async openSession(resumeSessionId?: string): Promise<OpencodeNativeSessionInfo> {

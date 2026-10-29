@@ -4,9 +4,10 @@ import { decodeOpencodeConfig, updateOpencodeConfig } from '../config';
 import type { OpencodeMetadataService } from '../metadata/OpencodeMetadataService';
 import { encodeOpencodeModelId, splitOpencodeModelLabel } from '../models';
 
-export function createOpencodeModels(host: ProviderRuntimeHost, native: Pick<OpencodeMetadataService, 'discoverModels' | 'warmModelsMetadata'>): ProviderModelCatalogController {
+export function createOpencodeModels(host: ProviderRuntimeHost, native: Pick<OpencodeMetadataService, 'discoverModels' | 'warmModelsMetadata' | 'observeCatalog'>): ProviderModelCatalogController {
   return new ProviderModelCatalogController({
     providerName: 'OpenCode',
+    observeChanges: observer => native.observeCatalog(observer),
     store: createConfigCatalogStore(host, {
       update: (config, _selection, patch) => { updateOpencodeConfig(config, patch); },
       read: config => {

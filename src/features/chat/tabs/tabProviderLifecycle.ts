@@ -19,8 +19,10 @@ export function onProviderAvailabilityChanged(tab: AssembledTabRuntime, plugin: 
   const selection = resolveBlankTabReselection(tab, plugin);
   if (selection) tab.session.selectDraft(selection.providerId, selection.draftModel);
   syncTabProviderServices(tab, tab.services);
-  syncComposerDropdownForProvider(tab, plugin);
-  invalidateTabProviderCommands(tab);
+  if (selection) {
+    syncComposerDropdownForProvider(tab, plugin);
+    invalidateTabProviderCommands(tab);
+  }
   refreshTabProviderUI(tab);
   applyProviderUIGating(tab, plugin);
   return selection !== null;

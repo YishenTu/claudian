@@ -26,6 +26,8 @@ export interface OpencodeMetadataWarmResult extends OpencodeMetadataCatalogResul
 
 export interface OpencodeMetadataProbe {
   dispose(): Promise<void>;
+  watchCatalog?(onChange: () => Promise<void>, signal: AbortSignal): Promise<void>;
+  watchCommands?(onChange: () => Promise<void>, signal: AbortSignal): Promise<void>;
   loadCatalog(signal?: AbortSignal): Promise<OpencodeMetadataCatalogResult>;
   loadCommands(signal?: AbortSignal): Promise<SlashCommand[]>;
   warmModel(
@@ -44,6 +46,8 @@ interface CommandFlight { promise: Promise<CommandResult>; controller: AbortCont
 
 export class OpencodeMetadataService {
   private commandFlight: CommandFlight | null = null;
+  private catalogWatch: Promise<unknown> | null = null;
+  private readonly catalogObservers = new Set<() => void>();
   private readonly createProbe: (signal: AbortSignal) => OpencodeMetadataProbe | Promise<OpencodeMetadataProbe>;
   private readonly probes: OwnedProbeRegistry<OpencodeMetadataProbe>;
   private readonly transitionFence = new ProviderTransitionFence({
@@ -88,13 +92,6 @@ export class OpencodeMetadataService {
   async discoverModels(signal?: AbortSignal): Promise<ProviderModelCatalogRefreshResult> {
     return await this.#runProbe<ProviderModelCatalogRefreshResult>(async (probe, ownedSignal) => {
       await this.#publishCatalog(probe, ownedSignal);
-      const selected = decodeOpencodeConfig(this.host.config).visibleModels;
-      for (const id of selected) {
-        ownedSignal.throwIfAborted();
-        const current = decodeOpencodeConfig(this.host.config);
-        if (!current.visibleModels.includes(id) || Object.hasOwn(current.thinkingOptionsByModel, id)) continue;
-        await this.#warmModel(probe, id, ownedSignal);
-      }
       return { changed: true };
     }, signal, error => ({
       changed: false,
@@ -107,7 +104,39 @@ export class OpencodeMetadataService {
     signal.throwIfAborted();
     await projectOpencodeMetadata(this.host, catalog, signal);
     signal.throwIfAborted();
+    const selected = decodeOpencodeConfig(this.host.config).visibleModels;
+    for (const id of selected) {
+      const current = decodeOpencodeConfig(this.host.config);
+      if (!catalog.models.some(model => model.rawId === id)
+        || !current.visibleModels.includes(id) || Object.hasOwn(current.thinkingOptionsByModel, id)) continue;
+      await this.#warmModel(probe, id, signal);
+      signal.throwIfAborted();
+    }
+    for (const observer of this.catalogObservers) observer();
+    if (probe.watchCatalog) this.#ensureCatalogWatch();
     return true;
+  }
+
+  /** Model rows remain in provider settings; observers only reread that projection. */
+  observeCatalog(observer: () => void): () => void {
+    if (this.disposed) return () => undefined;
+    this.catalogObservers.add(observer);
+    return () => { this.catalogObservers.delete(observer); };
+  }
+
+  #ensureCatalogWatch(): void {
+    if (this.catalogWatch || this.disposed) return;
+    const watch = Promise.resolve().then(() => this.#runProbe(async (probe, signal) => {
+      await probe.watchCatalog?.(async () => { await this.#publishCatalog(probe, signal); }, signal);
+    })).finally(() => { if (this.catalogWatch === watch) this.catalogWatch = null; });
+    this.catalogWatch = watch;
+  }
+
+  /** The requesting dropdown owns this lease through its signal; no command cache is kept here. */
+  async watchCommands(onChange: () => void, signal: AbortSignal): Promise<void> {
+    await this.#runProbe(async (probe, ownedSignal) => {
+      await probe.watchCommands?.(async () => { ownedSignal.throwIfAborted(); onChange(); }, ownedSignal);
+    }, signal);
   }
 
   async discoverCommands(
@@ -163,6 +192,8 @@ export class OpencodeMetadataService {
     const ids = models.map(decodeOpencodeModelId).filter((id): id is string => !!id);
     if (ids.length === 0) return false;
     return await this.#runProbe(async (probe, ownedSignal) => {
+      // A missing saved model is still a successful catalog read, with later updates observed normally.
+      await this.#publishCatalog(probe, ownedSignal);
       let warmed = false;
       for (const id of ids) {
         ownedSignal.throwIfAborted();
@@ -205,6 +236,7 @@ export class OpencodeMetadataService {
     this.disposed = true;
     this.transitionFence.dispose();
     this.unregisterTransitionHook();
+    this.catalogObservers.clear();
     this.disposeFlight = (async () => {
       await this.invalidate();
       await this.probes.dispose();

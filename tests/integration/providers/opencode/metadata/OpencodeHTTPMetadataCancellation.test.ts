@@ -2,7 +2,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
-import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
+import { OpencodeServerLease, OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 import { OpencodeHTTPMetadataProbe } from '@/providers/opencode/metadata/OpencodeHTTPMetadataProbe';
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
 import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
@@ -37,8 +37,8 @@ it('cancels one activation wait without publishing or stopping another reader', 
   } finally { await service.dispose(); }
 });
 
-it('cancels a probe waiting for native catalog initialization and closes its server', async () => {
-  writeFileSync(fixture.environment.CATALOG_FILE!, '[]');
+it('cancels an in-flight catalog read and closes its server', async () => {
+  writeFileSync(fixture.environment.CATALOG_FILE! + '.hang', '');
   const servers = new OpencodeServerService();
   const probe = new OpencodeHTTPMetadataProbe(await servers.acquire(fixture.cliPath, fixture.root, fixture.environment));
   const controller = new AbortController();
@@ -90,21 +90,22 @@ it('invalidates a retained server during startup and permits a fresh discovery',
   } finally { await service.dispose(); }
 });
 
-it('cancels one polling reader without stopping another or publishing its stale result', async () => {
+it('cancels one in-flight reader without stopping another or publishing its stale result', async () => {
   const plugin = fixture.createPlugin();
   const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
   const controller = new AbortController();
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     const endpoint = readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8');
-    writeFileSync(fixture.environment.CATALOG_FILE!, '[]');
+    writeFileSync(fixture.environment.CATALOG_FILE! + '.hold', '');
     rmSync(fixture.environment.ENDPOINT_FILE! + '.read');
     const cancelled = service.loadCatalog(controller.signal);
     const other = service.loadCatalog();
     await waitUntil(() => existsSync(fixture.environment.ENDPOINT_FILE! + '.read'));
     controller.abort();
-    // The survivor's poll is bounded in real time, so the update must not wait on cancellation cleanup.
+    // Release the real HTTP read only after cancelling its peer.
     fixture.writeCatalog('Updated Chat');
+    rmSync(fixture.environment.CATALOG_FILE! + '.hold');
     await expect(cancelled).resolves.toBe(false);
     await expect(other).resolves.toBe(true);
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([
@@ -125,4 +126,65 @@ it('does not start a server when disposed while resolving the CLI', async () => 
   await disposal;
   await expect(pending).resolves.toBe(false);
   expect(existsSync(fixture.environment.ENDPOINT_FILE!)).toBe(false);
+});
+
+it('aborts background catalog discovery on dispose without late settings writes or stopping a shared server', async () => {
+  writeFileSync(fixture.environment.CATALOG_FILE!, '[]');
+  writeFileSync(fixture.environment.CATALOG_FILE! + '.hang-after-first', '');
+  const plugin = fixture.createPlugin();
+  const host = runtimeHostFor(plugin, 'opencode');
+  const writes = vi.spyOn(host, 'updateConfig');
+  const servers = new OpencodeServerService();
+  const service = new OpencodeMetadataService(host, plugin.executionLifecycleRegistry, { serverService: servers });
+  try {
+    await expect(service.loadCatalog()).resolves.toBe(true);
+    await waitUntil(() => existsSync(fixture.environment.ENDPOINT_FILE! + '.model-pending'));
+    await service.dispose();
+    await waitUntil(() => existsSync(fixture.environment.ENDPOINT_FILE! + '.model-aborted'));
+    const writeCount = writes.mock.calls.length;
+    rmSync(fixture.environment.CATALOG_FILE! + '.hang-after-first');
+    fixture.writeCatalog('After disposal');
+    expect((await fetch(readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8'))).status).toBe(403);
+    expect(writes).toHaveBeenCalledTimes(writeCount);
+    expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([]);
+  } finally { await service.dispose(); await servers.dispose(); }
+});
+
+
+it('cancels metadata subscription admission without cancelling a peer sharing the pending event stream', async () => {
+  const hold = fixture.environment.CATALOG_FILE! + '.event-hold';
+  writeFileSync(hold, '');
+  const plugin = fixture.createPlugin();
+  const servers = new OpencodeServerService();
+  const peer = await servers.acquire(fixture.cliPath, fixture.root, fixture.environment);
+  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry, {
+    serverService: servers, createProbe: () => new OpencodeHTTPMetadataProbe(peer.retain()),
+  });
+  const subscribe = vi.spyOn(OpencodeServerLease.prototype, 'subscribe');
+  const events: string[] = [];
+  const peerAdmission = peer.subscribe(event => events.push(event.type), () => undefined, () => false);
+  void peerAdmission.catch(() => undefined);
+  let disposal: Promise<void> | undefined;
+  try {
+    await expect(service.loadCatalog()).resolves.toBe(true);
+    await vi.waitFor(() => expect(subscribe).toHaveBeenCalledTimes(2));
+    await waitUntil(() => existsSync(fixture.environment.ENDPOINT_FILE! + '.event-pending'));
+    let admissionSettled = false;
+    void subscribe.mock.results[1].value.then(
+      () => { admissionSettled = true; }, () => { admissionSettled = true; },
+    );
+    let disposed = false;
+    disposal = service.dispose().then(() => { disposed = true; });
+    await vi.waitFor(() => expect(disposed).toBe(true));
+    await vi.waitFor(() => expect(admissionSettled).toBe(true));
+    expect(existsSync(fixture.environment.ENDPOINT_FILE! + '.event-closed')).toBe(false);
+    rmSync(hold);
+    await peerAdmission;
+    fixture.writeCatalog('Peer still observes');
+    await vi.waitFor(() => expect(events).toContain('model.updated'));
+  } finally {
+    rmSync(hold, { force: true });
+    await servers.dispose(); await disposal; await service.dispose(); await peer.dispose();
+    await Promise.allSettled([peerAdmission]); subscribe.mockRestore();
+  }
 });

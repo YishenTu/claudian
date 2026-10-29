@@ -48,7 +48,7 @@ if (process.env.OPENCODE_DB && process.env.OPENCODE_DB !== ':memory:' && !requir
   require('node:fs').mkdirSync(require('node:path').dirname(process.env.OPENCODE_DB), { recursive: true });
   require('node:fs').writeFileSync(process.env.OPENCODE_DB, '');
 }
-let onSteer, selectedAgents = [], selectedModels = [], inbox = [], lateChild, feed, permission, grandApproval, form, mcpAnswer, settleInventory = false, cancelRace = false, ownedForms = [], idle = true, waiter, messages = [], turn = 0, modelRequests = 0, releaseModel;
+let onSteer, selectedAgents = [], selectedModels = [], inbox = [], lateChild, feed, permission, grandApproval, form, mcpAnswer, settleInventory = false, cancelRace = false, ownedForms = [], idle = true, waiter, messages = [], turn = 0, modelRequests = 0, catalogReads = 0, releaseModel;
 let activated = !process.env.ACTIVATION_DELAY_MS, activation;
 // Earlier native turns, created before any prompt of this test.
 for (let index = 0; index < Number(process.env.SEED_HISTORY || 0); index += 1) messages.push({ id: 'msg_old_' + String(index).padStart(5, '0'), type: index % 2 ? 'assistant' : 'user', time: { created: Date.now() - 60000 + index } });
@@ -73,6 +73,7 @@ const server = http.createServer(async (req, res) => {
   if (route === '/api/integration' || route === '/api/model') {
     activation ??= new Promise(resolve => setTimeout(() => { activated = true; resolve(); }, Number(process.env.ACTIVATION_DELAY_MS || 0)));
     if (route === '/api/integration') { await activation; res.end(JSON.stringify({ data: [] })); return; }
+    if (process.env.FIRST_CATALOG_EMPTY && ++catalogReads === 1) { res.end(JSON.stringify({ data: [] })); return; }
     res.end(JSON.stringify({ data: activated
       ? [{ id: 'chat', providerID: 'deepseek', name: 'Chat', enabled: true, variants: (process.env.MODEL_VARIANTS || '').split(',').filter(Boolean).map(id => ({ id })), limit: { context: 1000 } }]
       : [{ id: 'builtin', providerID: 'opencode', name: 'Builtin', enabled: true, variants: [] }] })); return;
@@ -520,7 +521,7 @@ it.each([
 }, 15000);
 
 it('waits for account activation before replacing the catalog on a resumed first turn', async () => {
-  const f = createFixture(true, undefined, 'ACTIVATION_DELAY_MS=250');
+  const f = createFixture(true, undefined, 'ACTIVATION_DELAY_MS=250\nFIRST_CATALOG_EMPTY=1');
   try {
     const events: ProviderExecutionEvent[] = [];
     for await (const event of f.session.execute(request()).events) events.push(event);

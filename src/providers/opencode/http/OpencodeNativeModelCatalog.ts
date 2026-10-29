@@ -1,5 +1,5 @@
 import { OPENCODE_DEFAULT_THINKING_LEVEL } from '../models';
-import { isRecord, pollOpencodeUntil } from './OpencodeHTTPClient';
+import { isRecord } from './OpencodeHTTPClient';
 import type { OpencodeServerLease } from './OpencodeServerService';
 
 /** One enabled entry of OpenCode's native `/api/model` catalog. */
@@ -17,22 +17,16 @@ export interface OpencodeNativeModel {
 
 /**
  * Reads the enabled native catalog once the server's account state activates.
- * Background discovery can still add models, so reads poll until `rawModelId`
- * (or any model) appears; the last read is returned after the deadline.
+ * Empty and missing-model results are valid snapshots; later changes arrive through native events.
  */
 export async function loadOpencodeNativeModels(
   client: Pick<OpencodeServerLease, 'request' | 'waitForActivation'>,
   signal: AbortSignal,
-  rawModelId?: string,
 ): Promise<OpencodeNativeModel[]> {
   await client.waitForActivation(signal);
-  const models = await pollOpencodeUntil(async () => {
-    const result = await client.request('/api/model', { signal });
-    if (!isRecord(result) || !Array.isArray(result.data)) throw new Error('Invalid OpenCode catalog response.');
-    return parseOpencodeNativeModels(result.data);
-  }, models => rawModelId
-    ? models.some(model => model.rawId === rawModelId)
-    : models.length > 0, 5_000, signal);
+  const result = await client.request('/api/model', { signal });
+  if (!isRecord(result) || !Array.isArray(result.data)) throw new Error('Invalid OpenCode catalog response.');
+  const models = parseOpencodeNativeModels(result.data);
   // Provider names are optional on older servers and cannot contain the group separator.
   let providers: unknown[];
   try {

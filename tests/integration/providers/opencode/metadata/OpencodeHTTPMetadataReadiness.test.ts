@@ -94,3 +94,16 @@ it('bounds the readiness wait and aborts its request without stopping the retain
     expect((await fetch(readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8'))).status).toBe(403);
   } finally { vi.useRealTimers(); await service.dispose(); }
 });
+
+it('returns a successful empty command and skill snapshot without waiting for discovery', async () => {
+  writeFileSync(fixture.environment.CATALOG_FILE! + '.commands', '[]');
+  writeFileSync(fixture.environment.CATALOG_FILE! + '.skills', '[]');
+  const plugin = fixture.createPlugin();
+  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
+  try {
+    await service.loadCatalog();
+    const started = performance.now();
+    await expect(service.discoverCommands()).resolves.toEqual({ loaded: true, commands: [] });
+    expect(performance.now() - started).toBeLessThan(1_000);
+  } finally { await service.dispose(); }
+});

@@ -195,3 +195,45 @@ it('creates an own __proto__ alias through the shared catalog writer', async () 
     await catalog.dispose();
   }
 });
+
+it('publishes successful background recovery with ready status and no stale failure', async () => {
+  const state: ProviderModelCatalogState = { enabled: true, models: [], selectedIds: [], aliases: {} };
+  let publishSuccess!: () => void;
+  const catalog = new ProviderModelCatalogController({
+    providerName: 'Example',
+    store: memoryStore(state),
+    discover: async () => ({ changed: false, diagnostics: 'Offline' }),
+    observeChanges: observer => { publishSuccess = observer; return () => undefined; },
+  });
+  try {
+    catalog.markStale();
+    await catalog.refresh({ force: true });
+    expect(catalog.getSnapshot()).toMatchObject({ status: 'failed', stale: true, error: 'Offline' });
+    const snapshots: ReturnType<typeof catalog.getSnapshot>[] = [];
+    catalog.observe(() => snapshots.push(catalog.getSnapshot()));
+    state.models = [{ id: 'recovered', name: 'Recovered' }];
+    publishSuccess();
+    expect(snapshots).toEqual([expect.objectContaining({
+      status: 'ready', stale: false, error: undefined, models: state.models,
+    })]);
+  } finally { await catalog.dispose(); }
+});
+
+it('keeps an explicit refresh loading while an older background snapshot is published', async () => {
+  let publishSuccess!: () => void;
+  let finish!: () => void;
+  const catalog = new ProviderModelCatalogController({
+    providerName: 'Example',
+    store: memoryStore({ enabled: true, models: [], selectedIds: [], aliases: {} }),
+    discover: () => new Promise(resolve => { finish = () => resolve({ changed: true }); }),
+    observeChanges: observer => { publishSuccess = observer; return () => undefined; },
+  });
+  try {
+    const pending = catalog.refresh();
+    publishSuccess();
+    expect(catalog.getSnapshot().status).toBe('loading');
+    finish();
+    await pending;
+    expect(catalog.getSnapshot().status).toBe('ready');
+  } finally { finish(); await catalog.dispose(); }
+});

@@ -125,6 +125,38 @@ describe('ProviderCommandDiscoveryStore', () => {
     expect(loader).toHaveBeenCalledTimes(2);
   });
 
+  it('renews ended observation on invalidation only while its caller lifetime remains active', async () => {
+    const observations: { signal: AbortSignal; onChange(): void; finish(): void }[] = [];
+    let commands = ['initial'];
+    const loader = vi.fn(async () => ({ status: 'ready' as const, items: commands as [string, ...string[]] }));
+    const store = new ProviderCommandDiscoveryStore(loader, {
+      watchChanges: (signal, onChange) => new Promise<void>(finish => { observations.push({ signal, onChange, finish }); }),
+    });
+    const menu = new AbortController();
+    try {
+      await store.load();
+      store.watch(menu.signal);
+      observations[0].finish();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      store.invalidate();
+      expect(observations).toHaveLength(2);
+      expect(observations[0].signal.aborted).toBe(true);
+      expect(observations[1].signal.aborted).toBe(false);
+      await store.load();
+      commands = ['updated'];
+      observations[1].onChange();
+      await store.load();
+      expect(store.getSnapshot()).toEqual({ status: 'ready', items: ['updated'] });
+      menu.abort();
+      store.invalidate();
+      expect(observations[1].signal.aborted).toBe(true);
+      expect(observations).toHaveLength(2);
+      const calls = loader.mock.calls.length;
+      observations[1].onChange();
+      expect(loader).toHaveBeenCalledTimes(calls);
+    } finally { menu.abort(); store.dispose(); for (const observation of observations) observation.finish(); }
+  });
+
   it('turns an unresponsive load into a retryable timeout', async () => {
     vi.useFakeTimers();
     try {

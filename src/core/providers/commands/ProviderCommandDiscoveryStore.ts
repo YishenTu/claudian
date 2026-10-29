@@ -10,14 +10,17 @@ export interface ProviderCommandDiscoverySource<T> {
   load(): Promise<ProviderCommandDiscoveryResult<T>>;
   retry(): Promise<ProviderCommandDiscoveryResult<T>>;
   subscribe(listener: () => void): () => void;
+  watch?(signal: AbortSignal): void;
 }
 
 export interface ProviderCommandDiscoveryController<T>
   extends ProviderCommandDiscoverySource<T> {
   invalidate(): void;
+  dispose(): void;
 }
 
 export interface ProviderCommandDiscoveryStoreOptions {
+  watchChanges?(signal: AbortSignal, onChange: () => void): Promise<void>;
   /** Evicts upstream discovery state before retry observers can start a new load. */
   onBeforeRetry?: () => void;
   /** Re-resolves the deadline for each load; null delegates the bound to the loader. */
@@ -45,6 +48,7 @@ implements ProviderCommandDiscoveryController<T> {
   private snapshot: ProviderCommandDiscoverySnapshot<T> = { status: 'idle' };
   private inFlight: Promise<ProviderCommandDiscoveryResult<T>> | null = null;
   private loadAbortController: AbortController | null = null;
+  private watchLease: { readonly signal: AbortSignal; stop(): void } | null = null;
   private generation = 0;
   private readonly listeners = new Set<() => void>();
   private readonly onBeforeRetry: (() => void) | undefined;
@@ -55,7 +59,7 @@ implements ProviderCommandDiscoveryController<T> {
     private readonly loader: (
       signal: AbortSignal,
     ) => Promise<ProviderCommandDiscoveryResult<T>>,
-    options: ProviderCommandDiscoveryStoreOptions = {},
+    private readonly options: ProviderCommandDiscoveryStoreOptions = {},
   ) {
     this.onBeforeRetry = options.onBeforeRetry;
     this.resolveTimeoutMs = options.resolveTimeoutMs;
@@ -74,10 +78,14 @@ implements ProviderCommandDiscoveryController<T> {
   }
 
   load(): Promise<ProviderCommandDiscoveryResult<T>> {
+    return this.#load();
+  }
+
+  #load(preserveSnapshot = false): Promise<ProviderCommandDiscoveryResult<T>> {
     if (this.inFlight) {
       return this.inFlight;
     }
-    if (this.snapshot.status !== 'idle' && this.snapshot.status !== 'loading') {
+    if (!preserveSnapshot && this.snapshot.status !== 'idle' && this.snapshot.status !== 'loading') {
       return Promise.resolve(cloneResult(this.snapshot));
     }
 
@@ -107,8 +115,10 @@ implements ProviderCommandDiscoveryController<T> {
       });
 
     this.inFlight = load;
-    this.snapshot = { status: 'loading' };
-    this.notify();
+    if (!preserveSnapshot) {
+      this.snapshot = { status: 'loading' };
+      this.notify();
+    }
     return load;
   }
 
@@ -118,13 +128,59 @@ implements ProviderCommandDiscoveryController<T> {
     return this.load();
   }
 
+  watch(signal: AbortSignal): void {
+    this.watchLease?.stop();
+    if (!this.options.watchChanges || signal.aborted) return;
+    const controller = new AbortController();
+    const lease = {
+      signal,
+      stop: (): void => {
+        controller.abort();
+        signal.removeEventListener('abort', lease.stop);
+        if (this.watchLease === lease) this.watchLease = null;
+      },
+    };
+    this.watchLease = lease;
+    signal.addEventListener('abort', lease.stop, { once: true });
+    const ownedSignal = AbortSignal.any([signal, controller.signal]);
+    void this.options.watchChanges?.(ownedSignal, () => {
+      if (ownedSignal.aborted) return;
+      const refresh = (): void => {
+        if (ownedSignal.aborted) return;
+        this.onBeforeRetry?.();
+        // Keep the current menu available while its replacement is read.
+        this.#invalidate(false);
+        void this.#load(true);
+      };
+      // A coalescing provider must finish its current read before an invalidation starts a fresh one.
+      if (this.inFlight) void this.inFlight.then(() => { if (!this.inFlight) refresh(); });
+      else refresh();
+    }).catch(() => undefined);
+    // A provider transition can end this operation while the menu still requests observation.
+    // Keep its caller lease so explicit context invalidation can renew it until the menu closes.
+  }
+
+  dispose(): void {
+    this.watchLease?.stop();
+    this.listeners.clear();
+    this.invalidate();
+  }
+
   invalidate(): void {
+    const signal = this.watchLease?.signal;
+    if (signal) this.watch(signal);
+    this.#invalidate(true);
+  }
+
+  #invalidate(clearSnapshot: boolean): void {
     this.generation++;
     this.loadAbortController?.abort();
     this.loadAbortController = null;
     this.inFlight = null;
-    this.snapshot = { status: 'idle' };
-    this.notify();
+    if (clearSnapshot) {
+      this.snapshot = { status: 'idle' };
+      this.notify();
+    }
   }
 
   subscribe(listener: () => void): () => void {

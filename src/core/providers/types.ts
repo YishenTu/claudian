@@ -350,6 +350,8 @@ export interface ProviderCommandLoader {
   loadCommands(
     context: ProviderCommandLoaderContext,
   ): Promise<ProviderCommandDiscoveryResult<SlashCommand>>;
+  /** Notify an active picker to reread its existing command owner; the signal owns the subscription. */
+  watchCommands?(context: ProviderCommandLoaderContext, onChange: () => void): Promise<void>;
 }
 
 export interface ProviderWorkspaceServices {

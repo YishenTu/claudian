@@ -149,7 +149,7 @@ export class TabCommandDiscovery {
 
   /** Cancels and forgets a tab's discovery state. */
   releaseTab(tabId: TabId): void {
-    this.providerCommandDiscoveryStores.get(tabId)?.invalidate();
+    this.providerCommandDiscoveryStores.get(tabId)?.dispose();
     this.providerRuntimeCommandCache.delete(tabId);
     this.providerCommandDiscoveryStores.delete(tabId);
     this.tabCommandContextRevisions.delete(tabId);
@@ -334,6 +334,23 @@ export class TabCommandDiscovery {
     };
   }
 
+  async #watchCommands(tabId: TabId, signal: AbortSignal, onChange: () => void): Promise<void> {
+    const tab = this.membership.getTab(tabId);
+    if (!tab || !this.membership.isTabAlive(tab) || tabId !== this.membership.getActiveTabId()) return;
+    const providerId = getSessionProviderId(tab, this.plugin);
+    if (!providerId) return;
+    await ProviderWorkspaceRegistry.ensureInitialized(this.plugin.providerHost, providerId, 'command-picker');
+    signal.throwIfAborted();
+    if (!this.#isTabProviderCurrent(tab, providerId) || tabId !== this.membership.getActiveTabId()) return;
+    const loader = ProviderWorkspaceRegistry.getCommandLoader(providerId);
+    const lookup = await this.#buildLookup(tab, providerId);
+    signal.throwIfAborted();
+    if (!this.#isTabProviderCurrent(tab, providerId) || tabId !== this.membership.getActiveTabId()) return;
+    await loader?.watchCommands?.({
+      allowIsolatedMetadataCreation: true, conversation: lookup.conversation, plugin: this.plugin.providerHost, signal,
+    }, () => { if (!signal.aborted && this.#isTabProviderCurrent(tab, providerId) && tabId === this.membership.getActiveTabId()) onChange(); });
+  }
+
   #ensureDiscoveryStore(
     tabId: TabId,
   ): ProviderCommandDiscoveryStore<ProviderCommandEntry> {
@@ -345,6 +362,7 @@ export class TabCommandDiscovery {
     const discovery = new ProviderCommandDiscoveryStore(
       signal => this.#getProviderCommandDiscovery(tabId, signal),
       {
+        watchChanges: (signal, onChange) => this.#watchCommands(tabId, signal, onChange),
         onBeforeRetry: () => {
           this.#advanceCommandContextRevision(tabId);
         },

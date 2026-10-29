@@ -71,11 +71,15 @@ it('keeps the shared server alive after an invalid catalog and permits retry aft
   } finally { await service.dispose(); }
 });
 
-it('retains initialization after a missing-model timeout so warmup can be retried', async () => {
+it('retains initialization after a missing-model response so warmup can be retried', async () => {
   const plugin = fixture.createPlugin();
   const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
   try {
+    // Warm native startup first so this measures only the missing-model catalog read.
+    await expect(service.loadCatalog()).resolves.toBe(true);
+    const started = performance.now();
     await expect(service.warmModelMetadata('opencode:acme/slow-model')).resolves.toBe(false);
+    expect(performance.now() - started).toBeLessThan(1_000);
     const endpoint = readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8');
     writeFileSync(fixture.environment.CATALOG_FILE!, JSON.stringify([
       { providerID: 'acme', id: 'slow-model', name: 'Slow Model', enabled: true, variants: [{ id: 'high' }] },
@@ -91,7 +95,9 @@ it('clears removed models when the retained server reports an empty catalog', as
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     writeFileSync(fixture.environment.CATALOG_FILE!, '[]');
+    const started = performance.now();
     await expect(service.loadCatalog()).resolves.toBe(true);
+    expect(performance.now() - started).toBeLessThan(1_000);
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([]);
   } finally { await service.dispose(); }
 });

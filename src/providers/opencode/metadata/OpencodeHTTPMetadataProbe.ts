@@ -1,6 +1,6 @@
 import type { SlashCommand } from '@/core/types';
 
-import { isRecord, OpencodeHTTPError, pollOpencodeUntil } from '../http/OpencodeHTTPClient';
+import { isRecord, OpencodeHTTPError } from '../http/OpencodeHTTPClient';
 import { listOpencodeThinkingLevels, loadOpencodeNativeModels, type OpencodeNativeModel } from '../http/OpencodeNativeModelCatalog';
 import type { OpencodeServerLease } from '../http/OpencodeServerService';
 import type {
@@ -28,9 +28,9 @@ export class OpencodeHTTPMetadataProbe implements OpencodeMetadataProbe {
   }
 
   private async readCommands(signal: AbortSignal): Promise<SlashCommand[]> {
-    // A fresh native instance lists no commands until its catalog loads; built-ins always follow.
+    // Empty is a valid current snapshot; native command/skill events announce later changes.
     const [commands, skills] = await Promise.all([
-      pollOpencodeUntil(async () => (await this.read('command', signal)).filter(isNamedRecord), commands => commands.length > 0, 5_000, signal),
+      this.read('command', signal).then(commands => commands.filter(isNamedRecord)),
       // Earlier V2 releases have no skill catalog route.
       this.read('skill', signal).catch((error: unknown): unknown[] => {
         if (error instanceof OpencodeHTTPError && error.status === 404) return [];
@@ -64,10 +64,50 @@ export class OpencodeHTTPMetadataProbe implements OpencodeMetadataProbe {
     ownedSignal.throwIfAborted();
     const models = this.models?.some(model => model.rawId === rawModelId)
       ? this.models
-      : this.models = await loadOpencodeNativeModels(this.client, ownedSignal, rawModelId);
+      : this.models = await loadOpencodeNativeModels(this.client, ownedSignal);
     const model = models.find(model => model.rawId === rawModelId);
     if (!model) throw new Error('OpenCode model is no longer available. Refresh the model catalog.');
     return { rawModelId, models, thinkingLevels: listOpencodeThinkingLevels(model) };
+  }
+
+  watchCatalog(onChange: () => Promise<void>, signal: AbortSignal): Promise<void> {
+    return this.watch(['model.updated', 'provider.updated'], onChange, signal);
+  }
+
+  watchCommands(onChange: () => Promise<void>, signal: AbortSignal): Promise<void> {
+    return this.watch(['command.updated', 'skill.updated'], onChange, signal);
+  }
+
+  /** Coalesce invalidations; eventless v2 servers retain a bounded startup discovery window. */
+  private async watch(types: readonly string[], onChange: () => Promise<void>, signal: AbortSignal): Promise<void> {
+    const ownedSignal = this.client.signal(signal);
+    let wake = (): void => {};
+    let changed = new Promise<void>(resolve => { wake = resolve; });
+    let receivedEvent = false;
+    let timer: number | undefined;
+    const notify = (): void => wake();
+    ownedSignal.addEventListener('abort', notify, { once: true });
+    try {
+      // Poll while admission is pending too; a connected stream alone does not prove catalog event support.
+      const discoveryDeadline = Date.now() + 5_000;
+      timer = window.setTimeout(notify, 250);
+      void this.client.subscribe(event => {
+        if (types.includes(event.type)) { receivedEvent = true; notify(); }
+      }, notify, () => false).then(notify, notify);
+      for (;;) {
+        await changed;
+        window.clearTimeout(timer);
+        ownedSignal.throwIfAborted();
+        changed = new Promise<void>(resolve => { wake = resolve; });
+        // The first reread closes the initial read/subscription gap. Failed reads retain observation.
+        try { await onChange(); } catch { ownedSignal.throwIfAborted(); }
+        const remaining = discoveryDeadline - Date.now();
+        if (!receivedEvent && remaining > 0) timer = window.setTimeout(notify, Math.min(250, remaining));
+      }
+    } finally {
+      window.clearTimeout(timer);
+      ownedSignal.removeEventListener('abort', notify);
+    }
   }
 
   async dispose(): Promise<void> { await this.client.dispose(); }

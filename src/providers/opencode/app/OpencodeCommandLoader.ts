@@ -32,6 +32,13 @@ export class OpencodeCommandLoader implements ProviderCommandLoaderContract {
     return getOpencodeProviderSettings(settings).enabled;
   }
 
+  async watchCommands(context: ProviderCommandLoaderContext, onChange: () => void): Promise<void> {
+    if (!context.signal || !context.allowIsolatedMetadataCreation || !this.isAvailable(context.plugin.settings)) return;
+    const service = this.metadataService ?? this.createMetadataService(context.plugin);
+    try { await service.watchCommands(onChange, context.signal); }
+    finally { if (!this.metadataService) await service.dispose(); }
+  }
+
   async loadCommands(
     context: ProviderCommandLoaderContext,
   ): Promise<ProviderCommandDiscoveryResult<SlashCommand>> {

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { rmSync, writeFileSync } from 'node:fs';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
 
 import { axe } from '@test/helpers/accessibility';
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
@@ -119,8 +119,10 @@ it('keeps a confirmed empty response successful, gives configuration guidance, a
     expect(f.container.textContent).not.toContain('err_');
     expect(within(f.container).getByRole('status').textContent).toContain('OpenCode server returned no enabled models');
     f.fixture.writeCatalog();
-    fireEvent.click(within(f.container).getByRole('button', { name: 'Discover' }));
+    // Native catalog changes must reach the already-open settings without another Discover click.
     await waitFor(() => expect(within(f.container).getByRole('checkbox', { name: /DeepSeek Chat/ })).toBeTruthy());
+    writeFileSync(f.fixture.environment.CATALOG_FILE! + '.providers', JSON.stringify([{ id: 'deepseek', name: 'Native Provider Name' }]));
+    await waitFor(() => expect(within(f.container).getByRole('option', { name: /Native Provider Name/ })).toBeTruthy());
   } finally { view?.dispose(); await f.dispose(); }
 });
 
@@ -164,5 +166,45 @@ it('filters a native custom provider named all independently from All providers'
     fireEvent.change(filter, { target: { value: everyProvider.value } });
     expect(ui.getAllByRole('checkbox')).toHaveLength(2);
     expect((await axe(f.container)).violations).toEqual([]);
+  } finally { view?.dispose(); await f.dispose(); }
+});
+
+it('clears manual refresh failure guidance after background recovery and retains success on a later background error', async () => {
+  const f = setup();
+  const errorFile = f.fixture.environment.CATALOG_FILE! + '.error';
+  const view = f.render();
+  const writeFailure = () => writeFileSync(errorFile, JSON.stringify({ status: 500, body: {
+    _tag: 'UnknownError', message: 'Catalog temporarily unavailable', ref: 'err_background_test',
+  } }));
+  try {
+    await waitFor(() => expect(f.catalog.getSnapshot().status).toBe('ready'), { timeout: 40_000 });
+    await waitFor(() => expect(existsSync(f.fixture.environment.ENDPOINT_FILE + '.subscribed')).toBe(true));
+    writeFailure();
+    fireEvent.click(within(f.container).getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(f.catalog.getSnapshot().status).toBe('failed'));
+    expect(within(f.container).getByRole('status').textContent).toContain('Catalog temporarily unavailable');
+    expect(within(f.container).getByRole('checkbox', { name: /DeepSeek Chat/ })).toBeTruthy();
+
+    rmSync(errorFile);
+    f.fixture.writeCatalog('Recovered Chat');
+    await waitFor(() => expect(within(f.container).getByRole('checkbox', { name: /Recovered Chat/ })).toBeTruthy());
+    expect(f.catalog.getSnapshot()).toMatchObject({ status: 'ready', stale: false, error: undefined });
+    expect(within(f.container).getByRole('status').textContent).toBe('');
+    expect((await axe(f.container)).violations).toEqual([]);
+
+    // Observe a real failing HTTP read, rather than asserting before the event is handled.
+    const request = OpencodeHTTPClient.prototype.request;
+    let backgroundRejected = false;
+    vi.spyOn(OpencodeHTTPClient.prototype, 'request').mockImplementation(async function (this: OpencodeHTTPClient, route, options) {
+      try { return await request.call(this, route, options); }
+      catch (error) { if (route === '/api/model') backgroundRejected = true; throw error; }
+    });
+    writeFailure();
+    f.fixture.writeCatalog('Unavailable Update');
+    await waitFor(() => expect(backgroundRejected).toBe(true));
+    expect(f.catalog.getSnapshot()).toMatchObject({ status: 'ready', error: undefined });
+    expect(within(f.container).getByRole('checkbox', { name: /Recovered Chat/ })).toBeTruthy();
+    expect(within(f.container).queryByRole('checkbox', { name: /Unavailable Update/ })).toBeNull();
+    expect(within(f.container).getByRole('status').textContent).toBe('');
   } finally { view?.dispose(); await f.dispose(); }
 });

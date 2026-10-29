@@ -42,6 +42,7 @@ export function activateTab(tab: AssembledTabRuntime): void {
 }
 
 export function deactivateTab(tab: AssembledTabRuntime): void {
+  tab.ui.composerDropdown.hide();
   tab.ui.promptSuggestion.discard();
   tab.controllers.streamController.setTabActive(false);
   tab.controllers.sideChatController.setTabActive(false);

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTransitionFence';
 import { invokeSessionTool, type SessionToolInvocation } from '@/core/session-tools/invokeSessionTool';
 import type { SessionToolEndpoint, SessionToolRoute } from '@/core/session-tools/SessionToolEndpoint';
+import { toAbortError } from '@/utils/abort';
 
 import { prepareOpencodeLaunchArtifacts } from '../runtime/OpencodeLaunchArtifacts';
 import { resolveOpencodeDatabasePath } from '../runtime/OpencodePaths';
@@ -323,8 +324,20 @@ export class OpencodeServerLease {
     const subscriber = { event, error, interactive, sessionTools };
     this.subscriber = subscriber;
     this.server.subscribers.add(subscriber);
-    await subscribeToServer(this.server, this.failServer);
-    this.controller.signal.throwIfAborted();
+    const signal = this.signal();
+    let onAbort!: () => void;
+    try {
+      // Only admission belongs to this lease; the pending transport can still admit its peers.
+      await Promise.race([
+        subscribeToServer(this.server, this.failServer),
+        new Promise<never>((_resolve, reject) => {
+          onAbort = () => reject(toAbortError(signal, 'OpenCode event subscription aborted.'));
+          signal.addEventListener('abort', onAbort, { once: true });
+          if (signal.aborted) onAbort();
+        }),
+      ]);
+      signal.throwIfAborted();
+    } finally { signal.removeEventListener('abort', onAbort); }
   }
 
   async refreshGlobalForms(): Promise<void> {

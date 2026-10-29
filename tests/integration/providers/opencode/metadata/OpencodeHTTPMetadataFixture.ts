@@ -23,16 +23,34 @@ const cliFixture = `#!/usr/bin/env node
 const fs = require('node:fs');
 const http = require('node:http');
 if (process.argv.includes('--version')) {
-  process.stdout.write('opencode v2.0.12\\n');
+  process.stdout.write('opencode v2.2.0\\n');
 } else {
   if (!process.argv.includes('--stdio') || process.env.OPENCODE_DB !== process.env.EXPECTED_DATABASE) process.exit(2);
-  let reads = 0, commandReads = 0;
+  let reads = 0, commandReads = 0, skillReads = 0;
+  const feeds = new Set();
+  const emit = type => { for (const feed of feeds) feed.write('data: ' + JSON.stringify({ type, data: {} }) + '\\n\\n'); };
+  if (!process.env.NO_CATALOG_EVENTS) fs.watchFile(process.env.CATALOG_FILE, { interval: 20 }, () => emit('model.updated'));
+  if (!process.env.NO_CATALOG_EVENTS) fs.watchFile(process.env.CATALOG_FILE + '.providers', { interval: 20 }, () => emit('provider.updated'));
+  if (!process.env.NO_CATALOG_EVENTS) fs.watchFile(process.env.CATALOG_FILE + '.commands', { interval: 20 }, () => emit('command.updated'));
+  if (!process.env.NO_CATALOG_EVENTS) fs.watchFile(process.env.CATALOG_FILE + '.skills', { interval: 20 }, () => emit('skill.updated'));
   let activated = !process.env.ACTIVATION_DELAY_MS, activation;
   const server = http.createServer(async (req, res) => {
     const auth = 'Basic ' + Buffer.from('opencode:' + process.env.OPENCODE_PASSWORD).toString('base64');
     const url = new URL(req.url, 'http://localhost');
     if (req.headers.authorization !== auth || url.searchParams.get('location[directory]') !== process.cwd()) {
       res.writeHead(403); res.end(); return;
+    }
+    if (url.pathname === '/api/event') {
+      fs.writeFileSync(process.env.ENDPOINT_FILE + '.event-pending', '');
+      res.on('close', () => fs.writeFileSync(process.env.ENDPOINT_FILE + '.event-closed', ''));
+      while (fs.existsSync(process.env.CATALOG_FILE + '.event-hold')) await new Promise(resolve => setTimeout(resolve, 10));
+      if (res.destroyed) return;
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      feeds.add(res);
+      res.write('data: ' + JSON.stringify({ type: 'server.connected', data: {} }) + '\\n\\n');
+      res.on('close', () => feeds.delete(res));
+      fs.writeFileSync(process.env.ENDPOINT_FILE + '.subscribed', '');
+      return;
     }
     if (req.method !== 'GET' || !['/api/model', '/api/command', '/api/skill', '/api/integration', '/api/provider'].includes(url.pathname)) {
       res.writeHead(405); res.end(); return;
@@ -65,18 +83,30 @@ if (process.argv.includes('--version')) {
       res.writeHead(error.status, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(error.body)); return;
     }
-    if (url.pathname === '/api/model' && fs.existsSync(process.env.CATALOG_FILE + '.hang')) return;
+    if (url.pathname === '/api/model') {
+      reads++;
+      fs.writeFileSync(process.env.ENDPOINT_FILE + '.read', String(reads));
+      if (fs.existsSync(process.env.CATALOG_FILE + '.hang') || reads > 1 && fs.existsSync(process.env.CATALOG_FILE + '.hang-after-first')) {
+        fs.writeFileSync(process.env.ENDPOINT_FILE + '.model-pending', '');
+        res.on('close', () => fs.writeFileSync(process.env.ENDPOINT_FILE + '.model-aborted', ''));
+        return;
+      }
+      while (fs.existsSync(process.env.CATALOG_FILE + '.hold')) await new Promise(resolve => setTimeout(resolve, 10));
+      if (res.destroyed) return;
+    }
     const catalog = JSON.parse(fs.readFileSync(process.env.CATALOG_FILE, 'utf8'))
       .filter(model => activated || model.providerID !== 'opencode-go');
     // A fresh native instance loads its command catalog after its first read.
-    const data = url.pathname === '/api/model'
-      ? (++reads === 1 && !process.env.ACTIVATION_DELAY_MS ? [] : catalog)
+    let data = url.pathname === '/api/model'
+      ? catalog
       : url.pathname === '/api/skill'
-        ? [{ id: 'writing', name: 'writing', description: 'Writing guide', path: '/skills/writing/SKILL.md', content: '' }]
-        : (++commandReads === 1 ? [] : [{ name: 'review', description: 'Review changes' }]);
+        ? (fs.existsSync(process.env.CATALOG_FILE + '.skills') ? JSON.parse(fs.readFileSync(process.env.CATALOG_FILE + '.skills', 'utf8')) : [{ id: 'writing', name: 'writing', description: 'Writing guide', path: '/skills/writing/SKILL.md', content: '' }])
+        : (fs.existsSync(process.env.CATALOG_FILE + '.commands') ? JSON.parse(fs.readFileSync(process.env.CATALOG_FILE + '.commands', 'utf8')) : [{ name: 'review', description: 'Review changes' }]);
+    // Older v2 instances can return empty startup snapshots before discovery completes, without events.
+    const resourceReads = url.pathname === '/api/model' ? reads : url.pathname === '/api/command' ? ++commandReads : ++skillReads;
+    if (resourceReads <= Number(process.env.EMPTY_INITIAL_READS || 0)) data = [];
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ location: { directory: process.cwd() }, data }));
-    if (url.pathname === '/api/model') fs.writeFileSync(process.env.ENDPOINT_FILE + '.read', String(reads));
   });
   server.listen(0, '127.0.0.1', () => {
     const url = 'http://127.0.0.1:' + server.address().port;
@@ -85,7 +115,7 @@ if (process.argv.includes('--version')) {
     setTimeout(() => process.stdout.write(JSON.stringify({ url: process.env.INVALID_READY === '1' ? 'https://example.com' : url }) + '\\n'), Number(process.env.READY_DELAY_MS || 0));
   });
   process.stdin.resume();
-  process.stdin.on('end', () => server.close());
+  process.stdin.on('end', () => { fs.unwatchFile(process.env.CATALOG_FILE); fs.unwatchFile(process.env.CATALOG_FILE + '.providers'); fs.unwatchFile(process.env.CATALOG_FILE + '.commands'); fs.unwatchFile(process.env.CATALOG_FILE + '.skills'); for (const feed of feeds) feed.end(); server.close(); });
 }
 `;
 
@@ -97,6 +127,8 @@ const pluginEnvironmentKeys = [
   'READY_DELAY_MS',
   'ACTIVATION_DELAY_MS',
   'INTEGRATION_STATUS',
+  'NO_CATALOG_EVENTS',
+  'EMPTY_INITIAL_READS',
 ];
 
 export interface OpencodeHTTPMetadataFixture {

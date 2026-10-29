@@ -32,6 +32,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
   readonly id = 'slash-commands';
 
   private discovery: ProviderCommandDiscoverySource<ProviderCommandEntry> | null;
+  private watchController: AbortController | null = null;
   private discoveryUnsubscribe: (() => void) | null = null;
   private hiddenCommands: ReadonlySet<string>;
   private includeBuiltIns: boolean;
@@ -49,12 +50,25 @@ export class SlashCommandSource implements ComposerDropdownSource {
   }
 
   onOpen(): void {
+    this.#watchDiscovery();
     if (this.providerConfig?.refreshOnOpen && this.discovery?.getSnapshot().status !== 'idle') {
       this.#startDiscovery('retry');
     }
   }
 
+  onClose(): void {
+    this.watchController?.abort();
+    this.watchController = null;
+  }
+
+  #watchDiscovery(): void {
+    this.watchController?.abort();
+    this.watchController = new AbortController();
+    this.discovery?.watch?.(this.watchController.signal);
+  }
+
   clearProviderCatalog(): void {
+    this.watchController?.abort();
     this.discoveryUnsubscribe?.();
     this.discoveryUnsubscribe = null;
     this.discovery = null;
@@ -63,6 +77,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
   }
 
   destroy(): void {
+    this.onClose();
     this.discoveryUnsubscribe?.();
     this.discoveryUnsubscribe = null;
     this.discovery = null;
@@ -212,6 +227,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
   }
 
   #bindDiscovery(): void {
+    if (this.watchController) this.#watchDiscovery();
     this.discoveryUnsubscribe = this.discovery?.subscribe(() => this.notify()) ?? null;
   }
 

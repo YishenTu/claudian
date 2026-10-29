@@ -37,7 +37,7 @@ it.each(modelCatalogCases)('$id keeps native selection, aliases and metadata beh
     claude: () => createClaudeModels(host, discovery),
     codex: () => createCodexModels(host, { refresh: discovery }),
     grok: () => createGrokModels(host, { refresh: discovery }),
-    opencode: () => createOpencodeModels(host, { discoverModels: discovery, warmModelsMetadata }),
+    opencode: () => createOpencodeModels(host, { discoverModels: discovery, warmModelsMetadata, observeCatalog: () => () => undefined }),
     pi: () => createPiModels(host),
   };
   const catalog = factories[id]();
@@ -79,7 +79,7 @@ it('preserves OpenCode provider labels for catalog filtering', () => {
       { rawId: 'openai/gpt', label: 'OpenAI/GPT' },
     ],
   } } } }, 'opencode');
-  const catalog = createOpencodeModels(host, { discoverModels: vi.fn(), warmModelsMetadata: vi.fn() });
+  const catalog = createOpencodeModels(host, { discoverModels: vi.fn(), warmModelsMetadata: vi.fn(), observeCatalog: () => () => undefined });
   expect(catalog.getSnapshot().models).toEqual([
     expect.objectContaining({ id: 'openai/gpt', name: 'GPT', providerKey: 'openai', providerLabel: 'OpenAI' }),
     expect.objectContaining({ id: 'anthropic/sonnet', name: 'Sonnet', providerKey: 'anthropic', providerLabel: 'Anthropic' }),

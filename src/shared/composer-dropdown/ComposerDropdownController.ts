@@ -52,6 +52,7 @@ export class ComposerDropdownController {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.activeSource?.onClose?.();
     this.#invalidateActiveLoad();
     for (const unsubscribe of this.sourceUnsubscribers.splice(0)) unsubscribe();
     this.view.destroy();
@@ -61,7 +62,7 @@ export class ComposerDropdownController {
     this.#rematchAndLoad();
   }
 
-  #rematchAndLoad(): void {
+  #rematchAndLoad(preserveSelection = false): void {
     if (this.destroyed) {
       this.hide();
       return;
@@ -81,10 +82,11 @@ export class ComposerDropdownController {
     }
     const { match, source } = sourceMatch;
     const opening = this.activeSource?.id !== source.id;
+    if (opening) this.activeSource?.onClose?.();
     this.activeSource = source;
     this.activeMatch = match;
     if (opening) source.onOpen?.();
-    this.#requestActiveLoad();
+    this.#requestActiveLoad(preserveSelection);
   }
 
   handleKeydown(event: KeyboardEvent): boolean {
@@ -116,6 +118,7 @@ export class ComposerDropdownController {
   }
 
   hide(): void {
+    this.activeSource?.onClose?.();
     this.#invalidateActiveLoad();
     this.activeMatch = null;
     this.activeSource = null;
@@ -130,13 +133,14 @@ export class ComposerDropdownController {
 
   #rematchInput(): void {
     if (!this.activeSource || !this.activeMatch || this.destroyed) return;
-    this.#rematchAndLoad();
+    this.#rematchAndLoad(true);
   }
 
-  #requestActiveLoad(): void {
+  #requestActiveLoad(preserveSelection: boolean): void {
     const source = this.activeSource;
     const match = this.activeMatch;
     if (!source || !match || this.destroyed) return;
+    const selectedId = preserveSelection ? this.items[this.selectedIndex]?.id : undefined;
 
     this.#invalidateActiveLoad();
     const controller = new AbortController();
@@ -150,23 +154,25 @@ export class ComposerDropdownController {
     }
     // Synchronous results replace the list directly; only pending loads show a placeholder.
     if (!(result instanceof Promise)) {
-      this.#renderLoaded(result);
+      this.#renderLoaded(result, selectedId);
       return;
     }
     this.items = [{ id: 'loading', kind: 'status', label: t('chat.suggestions.loading'), state: 'loading' }];
     this.selectedIndex = -1;
     this.view.render(this.items, this.selectedIndex);
     result.then(
-      items => { if (!controller.signal.aborted) this.#renderLoaded(items); },
+      items => { if (!controller.signal.aborted) this.#renderLoaded(items, selectedId); },
       () => { if (!controller.signal.aborted) this.#renderLoadFailure(); },
     );
   }
 
-  #renderLoaded(items: readonly ComposerDropdownItem[]): void {
+  #renderLoaded(items: readonly ComposerDropdownItem[], selectedId?: string): void {
     this.items = items.length > 0
       ? items
       : [{ id: 'empty', kind: 'status', label: t('chat.suggestions.noMatches'), state: 'empty' }];
-    this.selectedIndex = this.#findSelectable(0, 1, true);
+    const retained = selectedId === undefined ? -1 : this.items.findIndex(item =>
+      item.id === selectedId && item.kind === 'value' && !item.disabled);
+    this.selectedIndex = retained >= 0 ? retained : this.#findSelectable(0, 1, true);
     this.view.render(this.items, this.selectedIndex);
   }
 

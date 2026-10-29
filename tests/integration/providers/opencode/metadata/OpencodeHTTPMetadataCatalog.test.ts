@@ -1,7 +1,9 @@
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { setTimeout as yieldToIO } from 'node:timers/promises';
 
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
+import { OpencodeHTTPClient } from '@/providers/opencode/http/OpencodeHTTPClient';
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
 import { opencodeModelPolicy } from '@/providers/opencode/OpencodeModelPolicy';
 import { assertOpencodeModelAvailable } from '@/providers/opencode/runtime/OpencodeModelAvailability';
@@ -70,7 +72,8 @@ it('keeps native model IDs and reasoning independent through discovery, selectio
       'test/one/high': thinking['test/one/high'], 'test/high': thinking['test/high'],
     });
     expect(reopened.preferredThinkingByModel).toEqual({ 'test/one/high': 'low', 'test/high': 'max' });
-    expect(readFileSync(fixture.environment.ENDPOINT_FILE + '.read', 'utf8')).toBe('1');
+    // Selected-model warming reuses its catalog; one extra read may attach the background watcher.
+    expect(Number(readFileSync(fixture.environment.ENDPOINT_FILE + '.read', 'utf8'))).toBeLessThanOrEqual(2);
   } finally {
     await models.dispose();
     await service.dispose();
@@ -141,17 +144,74 @@ it('discovers models added after the initial discovery on the same metadata serv
   } finally { await service.dispose(); }
 });
 
-it('waits for the requested model while other models are already available', async () => {
+it('returns a missing requested model immediately and discovers it later while other models remain available', async () => {
+  const plugin = fixture.createPlugin();
+  plugin.settings.providerConfigs.opencode.visibleModels = ['acme/slow-model'];
+  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
+  try {
+    await expect(service.loadCatalog()).resolves.toBe(true);
+    await expect(service.warmModelMetadata('opencode:acme/slow-model')).resolves.toBe(false);
+    addModel();
+    await waitUntil(() => getOpencodeProviderSettings(plugin.settings).discoveredModels.some(model => model.rawId === 'acme/slow-model'));
+    await waitUntil(() => Object.hasOwn(getOpencodeProviderSettings(plugin.settings).thinkingOptionsByModel, 'acme/slow-model'));
+    expect(getOpencodeProviderSettings(plugin.settings).thinkingOptionsByModel['acme/slow-model'])
+      .toEqual([{ value: 'high', label: 'High' }, { value: 'default', label: 'Default' }]);
+    await expect(service.warmModelMetadata('opencode:acme/slow-model')).resolves.toBe(true);
+  } finally { await service.dispose(); }
+});
+
+
+it('keeps observing catalog events after a transient background model read failure', async () => {
+  const plugin = fixture.createPlugin();
+  const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
+  let successfulReads = 0;
+  let failedReads = 0;
+  const request = OpencodeHTTPClient.prototype.request;
+  const spy = vi.spyOn(OpencodeHTTPClient.prototype, 'request').mockImplementation(async function (this: OpencodeHTTPClient, route, options) {
+    try {
+      const result = await request.call(this, route, options);
+      if (route === '/api/model') successfulReads++;
+      return result;
+    } catch (error) {
+      if (route === '/api/model') failedReads++;
+      throw error;
+    }
+  });
+  try {
+    await expect(service.loadCatalog()).resolves.toBe(true);
+    await vi.waitFor(() => expect(successfulReads).toBeGreaterThanOrEqual(2));
+    writeFileSync(fixture.environment.CATALOG_FILE! + '.error', JSON.stringify({ status: 500, body: { message: 'Temporary catalog reload error' } }));
+    fixture.writeCatalog('During failure');
+    await vi.waitFor(() => expect(failedReads).toBeGreaterThan(0));
+    const failures = failedReads;
+    // Once events are available, failure alone must not start a hot retry loop.
+    await yieldToIO(100);
+    expect(failedReads).toBe(failures);
+    rmSync(fixture.environment.CATALOG_FILE! + '.error');
+    fixture.writeCatalog('Recovered catalog');
+    await vi.waitFor(() => expect(getOpencodeProviderSettings(plugin.settings).discoveredModels)
+      .toContainEqual({ rawId: 'deepseek/chat', label: 'deepseek/Recovered catalog' }));
+  } finally { await service.dispose(); spy.mockRestore(); }
+});
+
+it('discovers models after two empty startup reads when native catalog events are absent', async () => {
+  fixture.environment.NO_CATALOG_EVENTS = '1';
+  fixture.environment.EMPTY_INITIAL_READS = '2';
   const plugin = fixture.createPlugin();
   const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
-    const read = fixture.environment.ENDPOINT_FILE! + '.read';
-    rmSync(read);
-    const pending = service.warmModelMetadata('opencode:acme/slow-model');
-    // The requested model appears only after a response containing other models was sent.
-    await waitUntil(() => existsSync(read));
-    addModel();
-    await expect(pending).resolves.toBe(true);
-  } finally { await service.dispose(); }
+    expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([]);
+    await vi.waitFor(() => expect(getOpencodeProviderSettings(plugin.settings).discoveredModels)
+      .toContainEqual({ rawId: 'deepseek/chat', label: 'deepseek/DeepSeek Chat' }));
+    expect(Number(readFileSync(fixture.environment.ENDPOINT_FILE! + '.read', 'utf8'))).toBeGreaterThanOrEqual(3);
+    // Advance only the background deadline; its already-scheduled tick and native HTTP I/O remain real.
+    vi.useFakeTimers({ now: Date.now(), toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    await vi.advanceTimersByTimeAsync(5_000);
+    await yieldToIO(300);
+    const finalReads = Number(readFileSync(fixture.environment.ENDPOINT_FILE! + '.read', 'utf8'));
+    await vi.advanceTimersByTimeAsync(1_000);
+    await yieldToIO(50);
+    expect(Number(readFileSync(fixture.environment.ENDPOINT_FILE! + '.read', 'utf8'))).toBe(finalReads);
+  } finally { vi.useRealTimers(); await service.dispose(); }
 });

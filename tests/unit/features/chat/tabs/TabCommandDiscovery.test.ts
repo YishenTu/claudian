@@ -159,6 +159,25 @@ describe('TabCommandDiscovery', () => {
     }));
   });
 
+  it('does not admit command observation after the requesting tab becomes inactive during initialization', async () => {
+    const { manager } = await createManager();
+    const first = await manager.createTab();
+    const second = await manager.createTab(null, 'second', { activate: false });
+    const initialized = deferred<void>();
+    const watchCommands = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockReturnValue({ ...commandLoader, watchCommands });
+    vi.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockReturnValueOnce(initialized.promise);
+    const controller = new AbortController();
+    discoveryFor(0, first).watch(controller.signal);
+    await manager.switchToTab(second!.id);
+    initialized.resolve();
+    // Drain the initialization continuation, lookup and observer admission.
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(watchCommands).not.toHaveBeenCalled();
+    controller.abort();
+    await manager.destroy();
+  });
+
   it('lets provider-owned command discovery outlive the shared deadline', async () => {
     vi.useFakeTimers();
     const commandResult = deferred<any>();
