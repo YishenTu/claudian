@@ -1,4 +1,5 @@
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
+import type { SessionSignal } from '@/features/chat/sessions/ChatSessionRuntime';
 import { createChatSessionRuntime } from '@/features/chat/sessions/createChatSessionRuntime';
 import { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 
@@ -7,13 +8,18 @@ const pools: SessionRuntimePool[] = [];
 /** Real session ownership for view fixtures; persistence remains their supplied application port. */
 export function installSessionRuntimePool(
   plugin: ChatFeatureHost,
-  options: { onChanged?: () => void; onSessionSettled?: (conversationId: string) => void } = {},
+  options: {
+    onChanged?: () => void;
+    onSessionSettled?: (conversationId: string) => void;
+    onSessionSignal?: (conversationId: string, signal: SessionSignal) => void;
+  } = {},
 ): SessionRuntimePool {
   const pool = new SessionRuntimePool({
     createRuntime: identity => createChatSessionRuntime(plugin, identity),
     releaseHistory: async (_id, canRelease) => canRelease(),
     onChanged: options.onChanged ?? (() => undefined),
     ...(options.onSessionSettled ? { onSessionSettled: options.onSessionSettled } : {}),
+    ...(options.onSessionSignal ? { onSessionSignal: options.onSessionSignal } : {}),
     onError: () => undefined,
   });
   Object.assign(plugin, { sessionRuntimes: pool });
