@@ -1,4 +1,4 @@
-import { constants, copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
@@ -67,7 +67,9 @@ describe('OpenCode fork integration', () => {
   it('keeps a configured CLI sibling Node directory on PATH when forking', async () => {
     const cliPath = writeNativeOpencode(root, { version: '2.0.12' });
     // The sibling runtime is the one the CLI's `env node` shebang must resolve.
-    copyFileSync(process.execPath, path.join(root, process.platform === 'win32' ? 'node.exe' : 'node'), constants.COPYFILE_FICLONE);
+    // POSIX links the runtime: executing a freshly written binary can fail with ETXTBSY.
+    if (process.platform === 'win32') copyFileSync(process.execPath, path.join(root, 'node.exe'));
+    else symlinkSync(process.execPath, path.join(root, 'node'));
     await expect(fork(cliPath, { ...process.env, PATH: '/restricted' })).resolves.toMatchObject({
       sessionId: 'ses-child',
     });
