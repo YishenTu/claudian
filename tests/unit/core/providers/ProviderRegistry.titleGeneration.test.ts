@@ -53,7 +53,7 @@ it('does not submit a title request after cancellation during provider initializ
     runProviderExecutionTransition: lifecycle.runTransition.bind(lifecycle),
   } as unknown as ProviderHost;
   const service = ProviderRegistry.createTitleGenerationService(host);
-  const callback = jest.fn();
+  const callback = vi.fn();
   const generation = service.generateTitle('conversation', 'Explain ownership', callback);
   await waitFor(() => initializing);
   service.cancel();
@@ -73,7 +73,7 @@ it('does not submit a title request after cancellation during provider initializ
 
 it('replaces a running title without publishing its cancellation or affecting another conversation', async () => {
   const { backend, lifecycle, service } = createReadyService();
-  const results = jest.fn();
+  const results = vi.fn();
   const first = service.generateTitle('conversation', 'first request', results);
   const other = service.generateTitle('other', 'other request', results);
   await waitFor(() => backend.sessions.length === 2 && backend.sessions.every(session => session.requests.length > 0));
@@ -95,7 +95,7 @@ it('replaces a running title without publishing its cancellation or affecting an
 
 it('supersedes a preparing request and permits a fresh request after cancellation', async () => {
   const { backend, lifecycle, service } = createReadyService();
-  const results = jest.fn();
+  const results = vi.fn();
   const first = service.generateTitle('conversation', 'first request', results);
   const second = service.generateTitle('conversation', 'second request', results);
   service.cancel();

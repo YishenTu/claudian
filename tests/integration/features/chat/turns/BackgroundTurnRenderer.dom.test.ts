@@ -1,6 +1,7 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { createFixture, deferred } from '@test/helpers/ChatInputHarness';
 import { createTabSession } from '@test/helpers/ConversationPorts';
 import { enqueueTabSessionEvent } from '@test/helpers/features/chat/SessionEventsHarness';
@@ -8,7 +9,6 @@ import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarn
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
 import { testClock, testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import { ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest } from '@/core/execution';
@@ -25,7 +25,7 @@ import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
 import { parsePiSessionContent } from '@/providers/pi/history/PiHistoryStore';
 
-jest.mock('node:fs/promises');
+vi.mock('node:fs/promises');
 const writeSession = useClaudeSessionFiles();
 HTMLElement.prototype.appendText = function (text) { this.append(document.createTextNode(text)); };
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
@@ -33,7 +33,7 @@ HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...c
 HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
 beforeEach(() => {
   document.body.replaceChildren();
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     (el as HTMLElement).createEl('p', { text: markdown });
   });
 });
@@ -41,7 +41,7 @@ beforeEach(() => {
 it.each(['attached', 'detached', 'absent', 'late-text', 'late-thinking'] as const)(
   'retains ordered text and thinking blocks with %s transcript content', async presentation => {
     const clock = testClock();
-    const now = jest.spyOn(Date, 'now').mockImplementation(() => clock().getTime());
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => clock().getTime());
     const messagesEl = document.body.createDiv();
     const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
     const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
@@ -239,7 +239,7 @@ it.each([
     await coordinator.prepare();
     const native = backend.latest;
     const admission = deferred<boolean>();
-    const nativeSteer = jest.fn((_request: ProviderExecutionRequest) => Promise.resolve(true))
+    const nativeSteer = vi.fn((_request: ProviderExecutionRequest) => Promise.resolve(true))
       .mockImplementationOnce(() => admission.promise);
     Object.assign(native, { steer: nativeSteer });
     input!.input.value = 'initial message';
@@ -262,7 +262,7 @@ it.each([
     native.complete();
     await first;
     state.hasPendingConversationSave = false;
-    const accept = jest.spyOn(coordinator, 'acceptSteerFromProviderEvent');
+    const accept = vi.spyOn(coordinator, 'acceptSteerFromProviderEvent');
     let next: Promise<void> | undefined;
     const late = { type: 'user_message_started' as const, content: '', nativeUserMessageId: 'late-image-user',
       inputId: nativeSteer.mock.calls[0][0].inputId };
@@ -271,7 +271,7 @@ it.each([
       input!.input.value = 'new message';
       next = input!.controller.sendMessage();
     } else if (destination === 'rejected') {
-      jest.spyOn(native, 'execute').mockImplementationOnce(() => {
+      vi.spyOn(native, 'execute').mockImplementationOnce(() => {
         native.emitBackgroundEvent({ type: 'background_turn_started' });
         native.emitBackgroundEvent(late);
         throw new Error('New request failed admission');
@@ -459,7 +459,7 @@ function visibleTranscript(root: HTMLElement): string {
 it.each([true, false])('folds a stopped automatic reply under Interrupted after its notification, live and on reload (output: %s)', async output => {
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
-  const renderer = new MessageRenderer(plugin, new Component(), messagesEl, undefined, jest.fn());
+  const renderer = new MessageRenderer(plugin, new Component(), messagesEl, undefined, vi.fn());
   const state = new ChatState();
   const manager = new SubagentManager(() => undefined);
   const stream = new StreamController({ plugin, state, renderer, subagentManager: manager,

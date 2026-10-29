@@ -5,7 +5,7 @@ import { createTabSession } from '@test/helpers/ConversationPorts';
 
 beforeEach(() => {
   const execute = FakeSession.prototype.execute;
-  jest.spyOn(FakeSession.prototype, 'execute').mockImplementation(function (this: FakeSession, request) {
+  vi.spyOn(FakeSession.prototype, 'execute').mockImplementation(function (this: FakeSession, request) {
     const result = execute.call(this, request);
     const run = this.runs[this.runs.length - 1];
     run.events.push({ type: 'turn_completed', scope: requestedScope(this, run, 1), reason: 'completed' });
@@ -13,7 +13,7 @@ beforeEach(() => {
     return result;
   });
 });
-afterEach(() => { jest.restoreAllMocks(); });
+afterEach(() => { vi.restoreAllMocks(); });
 
 test.each(['execution initialization', 'handoff authority'] as const)(
   'Stop during %s prevents a later native handoff', async phase => {

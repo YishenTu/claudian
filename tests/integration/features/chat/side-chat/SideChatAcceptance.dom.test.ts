@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
@@ -167,8 +167,8 @@ it('is safe to discard repeatedly and cannot be resurrected by late events', asy
 
 it.each([false, true])('shows completed side work duration and the completion timestamp (compaction: %s)', async compaction => {
   const harness = createHarness({ settings: { showMessageTimestamps: true } });
-  const elapsed = jest.spyOn(performance, 'now').mockReturnValue(1000);
-  const clock = jest.spyOn(Date, 'now').mockReturnValue(testDate().getTime());
+  const elapsed = vi.spyOn(performance, 'now').mockReturnValue(1000);
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(testDate().getTime());
   try {
     const { started } = await startSideChat(harness);
     harness.backend.latest.establishChild('child-session');
@@ -200,7 +200,7 @@ it('refreshes side completion timestamps when the view timestamp setting changes
     () => { throw new Error('Timestamp refresh must not read the runtime'); },
   );
   const view = createClaudianView({ tabManager: { getAllTabs: () => [tab] } });
-  const clock = jest.spyOn(Date, 'now').mockReturnValue(testDate().getTime());
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(testDate().getTime());
   try {
     const { started } = await startSideChat(harness);
     harness.backend.latest.emitText('A side answer.');
@@ -236,9 +236,9 @@ it('keeps the side answer completed when cancellation follows native completion'
 
 it('gives the child the parent conversation\'s session tools and releases them with the child', async () => {
   const harness = createHarness();
-  const port = { list: jest.fn(), send: jest.fn(), read: jest.fn() };
-  const release = jest.fn();
-  const bindSessionTools = jest.fn((_conversationId: string) => ({ port, dispose: release }));
+  const port = { list: vi.fn(), send: vi.fn(), read: vi.fn() };
+  const release = vi.fn();
+  const bindSessionTools = vi.fn((_conversationId: string) => ({ port, dispose: release }));
   Object.assign(harness.plugin, { bindSessionTools });
   const { started } = await startSideChat(harness);
   const native = harness.backend.latest;

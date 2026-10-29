@@ -5,8 +5,8 @@ import { ComposerSelections } from '@/features/chat/input/ComposerSelections';
 
 function createMockContextTray() {
   return {
-    setItems: jest.fn(),
-    clearItems: jest.fn(),
+    setItems: vi.fn(),
+    clearItems: vi.fn(),
   };
 }
 
@@ -18,7 +18,7 @@ function createMockCanvasNode(id: string) {
 /** The selection runs under the tab's shared poll cadence; the other sources stay idle. */
 let polling: ComposerSelections | null = null;
 function startPolling(source: CanvasSelectionController): ComposerSelections {
-  const idle = { clear: jest.fn(), getContext: () => null, poll: jest.fn(), start: jest.fn(), stop: jest.fn() };
+  const idle = { clear: vi.fn(), getContext: () => null, poll: vi.fn(), start: vi.fn(), stop: vi.fn() };
   polling = new ComposerSelections({ editor: idle, browser: idle, canvas: source });
   polling.start();
   return polling;
@@ -37,7 +37,7 @@ describe('CanvasSelectionController', () => {
   let originalDocument: any;
 
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
 
     contextTray = createMockContextTray();
     inputEl = createMockEl();
@@ -55,9 +55,9 @@ describe('CanvasSelectionController', () => {
 
     app = {
       workspace: {
-        getActiveViewOfType: jest.fn().mockReturnValue(null),
-        getMostRecentLeaf: jest.fn().mockReturnValue({ view: canvasView }),
-        getLeavesOfType: jest.fn().mockReturnValue([{ view: canvasView }]),
+        getActiveViewOfType: vi.fn().mockReturnValue(null),
+        getMostRecentLeaf: vi.fn().mockReturnValue({ view: canvasView }),
+        getLeavesOfType: vi.fn().mockReturnValue([{ view: canvasView }]),
       },
     };
 
@@ -69,13 +69,13 @@ describe('CanvasSelectionController', () => {
 
   afterEach(() => {
     stopPolling();
-    jest.useRealTimers();
+    vi.useRealTimers();
     (global as any).document = originalDocument;
   });
 
   it('captures canvas selection and updates indicator', () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     expect(controller.hasSelection()).toBe(true);
     expect(controller.getContext()).toEqual({
@@ -93,7 +93,7 @@ describe('CanvasSelectionController', () => {
     canvasView.canvas.selection = new Set([singleNode]);
 
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     expect(controller.getContext()?.nodeIds).toEqual(['single1']);
     expect(contextTray.setItems).toHaveBeenLastCalledWith('canvas-selection', [
@@ -103,13 +103,13 @@ describe('CanvasSelectionController', () => {
 
   it('clears selection when no nodes selected and input not focused', () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     expect(controller.hasSelection()).toBe(true);
 
     canvasView.canvas.selection = new Set();
     (global as any).document.activeElement = null;
 
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     expect(controller.hasSelection()).toBe(false);
     expect(contextTray.clearItems).toHaveBeenCalledWith('canvas-selection');
@@ -117,13 +117,13 @@ describe('CanvasSelectionController', () => {
 
   it('preserves selection when input is focused (sticky)', () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     expect(controller.hasSelection()).toBe(true);
 
     canvasView.canvas.selection = new Set();
     (global as any).document.activeElement = inputEl;
 
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     expect(controller.hasSelection()).toBe(true);
     expect(contextTray.clearItems).not.toHaveBeenCalledWith('canvas-selection');
@@ -132,18 +132,18 @@ describe('CanvasSelectionController', () => {
   it('returns null context when no selection', () => {
     canvasView.canvas.selection = new Set();
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     expect(controller.getContext()).toBeNull();
   });
 
   it('does not update when selection unchanged', () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     contextTray.setItems.mockClear();
 
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     expect(contextTray.setItems).not.toHaveBeenCalled();
   });
@@ -169,7 +169,7 @@ describe('CanvasSelectionController', () => {
     app.workspace.getMostRecentLeaf.mockReturnValue({ view: activeCanvasView });
 
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     expect(controller.getContext()).toEqual({
       canvasPath: 'active.canvas',
@@ -182,7 +182,7 @@ describe('CanvasSelectionController', () => {
     app.workspace.getLeavesOfType.mockReturnValue([]);
 
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     expect(controller.hasSelection()).toBe(false);
     expect(controller.getContext()).toBeNull();
@@ -190,7 +190,7 @@ describe('CanvasSelectionController', () => {
 
   it('clear() resets state and indicator', () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     expect(controller.hasSelection()).toBe(true);
 
     controller.clear();
@@ -201,7 +201,7 @@ describe('CanvasSelectionController', () => {
 
   it('clears selection from the tray remove action', () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     const items = contextTray.setItems.mock.calls[0][1];
     items[0].onRemove();

@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import { testClock } from '@test/helpers/testClock';
@@ -26,14 +26,14 @@ HTMLElement.prototype.removeClass = function (...classes) { this.classList.remov
 
 const cleanups: Array<() => void> = [];
 beforeEach(() => {
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     (el as HTMLElement).createEl('p', { text: markdown });
   });
 });
 afterEach(() => {
   cleanups.splice(0).forEach(cleanup => cleanup());
   document.body.replaceChildren();
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
 });
 
 function createSession(providerId?: ProviderCapabilities['providerId']) {
@@ -67,7 +67,7 @@ function createSession(providerId?: ProviderCapabilities['providerId']) {
 
 it.each(['text', 'thinking'] as const)('reattaches during %s without losing open blocks, child output, or live tools', async openKind => {
   const clock = testClock();
-  jest.spyOn(Date, 'now').mockImplementation(() => clock().getTime());
+  vi.spyOn(Date, 'now').mockImplementation(() => clock().getTime());
   const control = createSession();
   const moved = createSession();
   control.attach();

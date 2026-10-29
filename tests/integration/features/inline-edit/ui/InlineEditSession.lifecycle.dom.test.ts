@@ -1,5 +1,6 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import { EditorState } from '@codemirror/state';
+import { axe } from '@test/helpers/accessibility';
 import {
   createInlineEditHarness as createHarness,
   disposeInlineEditHarnesses,
@@ -10,8 +11,8 @@ import {
 } from '@test/helpers/features/inline-edit/InlineEditDOMHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { MarkdownRenderer, Notice } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import { buildCursorContext } from '@/core/prompt/editorContext';
 import type { ProviderCommandCatalog } from '@/core/providers/commands/ProviderCommandCatalog';
@@ -20,9 +21,11 @@ import { RuntimeCommandCatalog } from '@/core/providers/commands/RuntimeCommandC
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { InlineEditModal } from '@/features/inline-edit/ui/InlineEditModal';
 
+
+
 afterEach(async () => {
   await disposeInlineEditHarnesses();
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 });
 
 it('removes completion menus when inline edit is rejected after selection changes', async () => {
@@ -74,7 +77,7 @@ it('mounts another inline edit after the reused editor receives a fresh note sta
 it('retains clarification when CodeMirror releases and later recreates the input widget', async () => {
   const h = createHarness();
   const session = h.createSession();
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, element) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, element) => {
     (element as HTMLElement).textContent = markdown;
   });
   session.show();
@@ -158,7 +161,7 @@ it.each(['cursor', 'selection'] as const)('rejects changed %s context during pro
   const modal = new InlineEditModal(
     h.app, h.plugin, h.plugin, h.editor, { editor: h.editor } as any, context, h.notePath, h.owner,
   );
-  const settled = jest.fn();
+  const settled = vi.fn();
   const result = modal.openAndWait().then(settled);
   await waitFor(() => expect(initialized).toBe(true));
   h.editorView.dispatch({ changes: { from: 0, insert: 'PREFIX ' } });
@@ -319,7 +322,7 @@ it.each([
   await showReplacementPreview(h);
   if (from === 'the note editor') h.editorView.contentDOM.focus();
   // CodeMirror would insert a newline on Enter, so the decision must be taken before it sees the key.
-  const reachedEditor = jest.fn();
+  const reachedEditor = vi.fn();
   h.editorView.contentDOM.addEventListener('keydown', reachedEditor);
   fireEvent.keyDown(document.activeElement ?? document.body, { key });
   expect(reachedEditor).not.toHaveBeenCalled();
@@ -335,7 +338,7 @@ it('continues provider execution when vault mentions cannot load and reports one
   h.createSession().show();
   submitInstruction('Improve @missing');
   await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
-  expect((Notice as unknown as jest.Mock).mock.calls).toEqual([
+  expect((Notice as unknown as Mock).mock.calls).toEqual([
     ['Failed to load vault files. Vault @-mentions may be unavailable.'],
   ]);
 });
@@ -509,7 +512,7 @@ it('discovers commands as a blank chat tab does when the provider reports them t
     projectEntry: command => ({ ...command, providerId: 'claude', kind: command.kind ?? 'command', scope: 'runtime',
       source: 'sdk', isEditable: false, isDeletable: false, displayPrefix: '/', insertPrefix: '/' }),
   });
-  const loadCommands = jest.fn(async () => ({ status: 'ready' as const, items: [
+  const loadCommands = vi.fn(async () => ({ status: 'ready' as const, items: [
     { id: 'skill:summarize', name: 'summarize', description: 'Summarize', content: '', kind: 'skill' as const },
   ] as [ProviderCommandEntry] }));
   ProviderWorkspaceRegistry.setServices('claude', {

@@ -74,27 +74,29 @@ npm run build
 npm run check:performance
 ```
 
+Run one unit or integration file with `npm run test:unit -- tests/unit/example.test.ts`; file paths replace the old runner-specific path flag. Use `npm run test:watch -- <path>` for watching and `npm run test:coverage` for V8 coverage of `src/`.
+
 For local iteration, `npm run test:affected -- --base origin/main` selects tests from
 committed, staged, unstaged and untracked changes using the CI dependency graph.
-It prints the selection and runs the selected Jest and script checks.
-Use `--list` to inspect without running, `--full` for all tests, and `-- --runInBand` to forward Jest
+It prints the selection and runs the selected Vitest and script checks.
+Use `--list` to inspect without running, `--full` for all tests, and `-- --maxWorkers=1` to forward Vitest
 options. Unknown inputs or an unavailable base retain full coverage. For code or test
 changes, this does not replace typecheck, lint, build/performance checks or native
 checks on other platforms.
 
 For documentation-only changes, a production build is not required. Follow the authoritative rules in [AGENTS.md](AGENTS.md): run `git diff --check` and the affected documentation tests.
 
-Full Linux CI verification uses two Jest shards, with script checks on the first
+Full Linux CI verification uses two Vitest shards, with script checks on the first
 shard. Affected selections use one job. Each Linux test job uses three workers.
 Both shards must pass the aggregate test gate, and each uploads its own timing artifact. Sharding uses more runner capacity
 to reduce elapsed time; compare runner minutes as well as wall time.
 
-JSON Jest runs also produce suite timings and execution metadata. CI uploads these
+Vitest runs through the package wrappers with `--outputFile=<path>` produce JSON, suite execution timings and metadata including resolved workers and unhandled-error counts. Suite execution timings exclude import/worker startup; wall time includes them. CI uploads these
 for Linux, native smoke and scheduled suites. To compare native worker counts locally:
 
 ```bash
-npm run test:cross-platform -- --maxWorkers=2 --json --outputFile=.context/native.json
-node scripts/summarize-jest-results.mjs .context/native.json .context/native-timings
+npm run test:cross-platform -- --maxWorkers=2 --outputFile=.context/native.json
+node scripts/summarize-vitest-results.mjs .context/native.json .context/native-timings
 ```
 
 CI runs native smoke with three workers on macOS and one on Windows. The local wrapper
@@ -102,5 +104,7 @@ remains serial unless a worker count is supplied. Compare the same selection and
 commit, including fixture setup/teardown, and report elapsed time separately from
 summed suite durations. Recheck timings on the actual CI runners before increasing
 concurrency further.
+
+Scheduled Linux verification also shuffles test files once, using and printing the workflow run ID as its seed. Reproduce with `npm run test:unit -- --sequence.shuffle.files --sequence.seed=<seed>`. Test order within files is unchanged. Linux CI still runs selected tests under `faketime -m -f +1100d` with monotonic clocks excluded and shared memory disabled (`FAKETIME_DISABLE_SHM=1`). Threaded mode serializes libfaketime clock updates; disabling shared memory prevents a killed native child from leaving its stat semaphore locked. Worker threads and child processes still inherit the same relative clock offset. The CI test step stops after five minutes and retains active-file diagnostics in `vitest.json.progress.json` if execution is interrupted.
 
 The project architecture and area-specific development rules are documented in `AGENTS.md` and the scoped `AGENTS.md` files under `src/`.

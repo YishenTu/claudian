@@ -14,7 +14,7 @@ function createFolder(path: string): TFolder {
 
 describe('VaultMentionDataProvider', () => {
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it('returns cached vault files and folders without reloading until dirty', () => {
@@ -22,8 +22,8 @@ describe('VaultMentionDataProvider', () => {
     const folders = [createFolder('notes')];
     const app = {
       vault: {
-        getFiles: jest.fn(() => files),
-        getAllLoadedFiles: jest.fn(() => folders),
+        getFiles: vi.fn(() => files),
+        getAllLoadedFiles: vi.fn(() => folders),
       },
     } as any;
     const provider = new VaultMentionDataProvider(app);
@@ -46,13 +46,13 @@ describe('VaultMentionDataProvider', () => {
   });
 
   it.each(['background', 'queued twice', 'foreground first'])('initializes real file and folder caches once with %s ordering', ordering => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const files = [createFile('notes/a.md')];
     const folders = [createFolder('notes')];
     const app = {
       vault: {
-        getFiles: jest.fn(() => files),
-        getAllLoadedFiles: jest.fn(() => folders),
+        getFiles: vi.fn(() => files),
+        getAllLoadedFiles: vi.fn(() => folders),
       },
     } as any;
     const provider = new VaultMentionDataProvider(app);
@@ -69,26 +69,26 @@ describe('VaultMentionDataProvider', () => {
     expect(app.vault.getFiles).toHaveBeenCalledTimes(ordering === 'foreground first' ? 1 : 0);
     expect(app.vault.getAllLoadedFiles).toHaveBeenCalledTimes(ordering === 'foreground first' ? 1 : 0);
 
-    jest.runOnlyPendingTimers();
+    vi.runOnlyPendingTimers();
 
     expect(app.vault.getFiles).toHaveBeenCalledTimes(1);
     expect(app.vault.getAllLoadedFiles).toHaveBeenCalledTimes(1);
     expect(provider.getCachedVaultFiles()).toEqual(files);
     expect(provider.getCachedVaultFolders()).toEqual([{ name: 'notes', path: 'notes' }]);
     provider.initializeInBackground();
-    jest.runOnlyPendingTimers();
+    vi.runOnlyPendingTimers();
     expect(app.vault.getFiles).toHaveBeenCalledTimes(1);
     expect(app.vault.getAllLoadedFiles).toHaveBeenCalledTimes(1);
   });
 
   it('reports file load errors only once while continuing to return an empty result', () => {
-    const onFileLoadError = jest.fn();
+    const onFileLoadError = vi.fn();
     const app = {
       vault: {
-        getFiles: jest.fn(() => {
+        getFiles: vi.fn(() => {
           throw new Error('Vault unavailable');
         }),
-        getAllLoadedFiles: jest.fn(() => []),
+        getAllLoadedFiles: vi.fn(() => []),
       },
     } as any;
     const provider = new VaultMentionDataProvider(app, { onFileLoadError });
@@ -106,13 +106,13 @@ describe('VaultMentionDataProvider vault events', () => {
   function fixture() {
     const listeners = new Map<string, () => void>();
     const vault = {
-      getFiles: jest.fn(() => [createFile('notes/a.md')]),
-      getAllLoadedFiles: jest.fn(() => [createFolder('notes')]),
-      on: jest.fn((name: string, callback: () => void) => {
+      getFiles: vi.fn(() => [createFile('notes/a.md')]),
+      getAllLoadedFiles: vi.fn(() => [createFolder('notes')]),
+      on: vi.fn((name: string, callback: () => void) => {
         listeners.set(name, callback);
         return { name };
       }),
-      offref: jest.fn((ref: { name: string }) => listeners.delete(ref.name)),
+      offref: vi.fn((ref: { name: string }) => listeners.delete(ref.name)),
     };
     const provider = new VaultMentionDataProvider({ vault } as never);
     const unsubscribe = provider.register(vault as never);

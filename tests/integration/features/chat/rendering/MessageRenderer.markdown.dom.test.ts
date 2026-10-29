@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@/providers';
 
@@ -38,7 +38,7 @@ beforeEach(() => {
   settings = { mediaFolder: '' };
   renderer = new MessageRenderer({ app, settings } as never, new Component(), host);
   // Obsidian is the external rendering boundary; all plugin transformations stay real.
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, target) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, target) => {
     target.innerHTML = markdown;
   });
 });
@@ -46,11 +46,11 @@ beforeEach(() => {
 afterEach(() => {
   renderer.dispose();
   host.remove();
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
 });
 
 it.each([true, false])('prepares streamed math once without a separate detection parse (defer=%s)', async deferMath => {
-  jest.useFakeTimers();
+  vi.useFakeTimers();
   const state = new ChatState();
   state.currentContentEl = host;
   const subagents = new SubagentManager(() => undefined);
@@ -58,24 +58,24 @@ it.each([true, false])('prepares streamed math once without a separate detection
     plugin: { app, settings: { ...settings, deferMathRenderingDuringStreaming: deferMath } } as never,
     state, renderer, subagentManager: subagents, getMessagesEl: () => host, updateQueueIndicator: () => undefined,
   });
-  const parse = jest.spyOn(parser, 'parse');
+  const parse = vi.spyOn(parser, 'parse');
   try {
     const message = { id: 'streamed', role: 'assistant' as const, timestamp: testDate().getTime(), content: '' };
     await stream.handleStreamChunk({ type: 'text', content: 'Math $x$' }, message);
-    await jest.advanceTimersByTimeAsync(20);
+    await vi.advanceTimersByTimeAsync(20);
     expect(MarkdownRenderer.render).toHaveBeenLastCalledWith(app, deferMath ? 'Math \\$x\\$' : 'Math $x$', expect.anything(), '', expect.any(Component));
     expect(parse).toHaveBeenCalledTimes(deferMath ? 1 : 0);
   } finally {
     stream.dispose();
     subagents.clear();
     state.dispose();
-    jest.useRealTimers();
+    vi.useRealTimers();
   }
 });
 
 it('keeps finalized collapsed thinking lazy and renders its final math on expansion', async () => {
-  jest.mocked(MarkdownRenderer.render).mockClear();
-  jest.useFakeTimers();
+  vi.mocked(MarkdownRenderer.render).mockClear();
+  vi.useFakeTimers();
   const state = new ChatState();
   state.currentContentEl = host;
   const subagents = new SubagentManager(() => undefined);
@@ -84,13 +84,13 @@ it('keeps finalized collapsed thinking lazy and renders its final math on expans
     state, renderer, subagentManager: subagents, getMessagesEl: () => host, updateQueueIndicator: () => undefined,
   });
   state.autoScrollEnabled = true;
-  const readHeight = jest.fn(() => 1000);
+  const readHeight = vi.fn(() => 1000);
   Object.defineProperty(host, 'scrollHeight', { get: readHeight, configurable: true });
   try {
     const message = { id: 'thinking', role: 'assistant' as const, timestamp: testDate().getTime(), content: '' };
     for (let index = 0; index < 60; index += 1) {
       await stream.handleStreamChunk({ type: 'thinking', content: '$x$ ' }, message);
-      await jest.advanceTimersByTimeAsync(20);
+      await vi.advanceTimersByTimeAsync(20);
     }
     const header = within(host).getByRole('button', { name: /Thinking/ });
     expect(header.getAttribute('aria-expanded')).toBe('false');
@@ -99,7 +99,7 @@ it('keeps finalized collapsed thinking lazy and renders its final math on expans
     expect(MarkdownRenderer.render).not.toHaveBeenCalled();
     expect(message).toMatchObject({ contentBlocks: [{ type: 'thinking', content: '$x$ '.repeat(60) }] });
     fireEvent.click(header);
-    await jest.advanceTimersByTimeAsync(20);
+    await vi.advanceTimersByTimeAsync(20);
     expect(MarkdownRenderer.render).toHaveBeenCalledTimes(1);
     expect(MarkdownRenderer.render).toHaveBeenLastCalledWith(app, '$x$ '.repeat(60), expect.anything(), '', expect.any(Component));
     fireEvent.click(header);
@@ -111,12 +111,12 @@ it('keeps finalized collapsed thinking lazy and renders its final math on expans
     stream.dispose();
     subagents.clear();
     state.dispose();
-    jest.useRealTimers();
+    vi.useRealTimers();
   }
 });
 
 it('settles an in-flight thinking render before finalizing a newly collapsed block', async () => {
-  jest.useFakeTimers();
+  vi.useFakeTimers();
   const state = new ChatState();
   state.currentContentEl = host;
   const subagents = new SubagentManager(() => undefined);
@@ -125,7 +125,7 @@ it('settles an in-flight thinking render before finalizing a newly collapsed blo
     state, renderer, subagentManager: subagents, getMessagesEl: () => host, updateQueueIndicator: () => undefined,
   });
   let finish!: () => void;
-  jest.mocked(MarkdownRenderer.render).mockClear().mockImplementationOnce(async (_app, markdown, target) => {
+  vi.mocked(MarkdownRenderer.render).mockClear().mockImplementationOnce(async (_app, markdown, target) => {
     await new Promise<void>(resolve => { finish = resolve; });
     target.textContent = markdown;
   });
@@ -133,12 +133,12 @@ it('settles an in-flight thinking render before finalizing a newly collapsed blo
     await stream.appendThinking('Reasoning $x$');
     const header = within(host).getByRole('button', { name: /Thinking/ });
     fireEvent.click(header);
-    await jest.advanceTimersByTimeAsync(20);
+    await vi.advanceTimersByTimeAsync(20);
     expect(MarkdownRenderer.render).toHaveBeenCalledTimes(1);
     fireEvent.click(header);
     let finalized = false;
     const finalization = stream.finalizeCurrentThinkingBlock().then(() => { finalized = true; });
-    await jest.advanceTimersByTimeAsync(20);
+    await vi.advanceTimersByTimeAsync(20);
     expect(finalized).toBe(false);
     expect(MarkdownRenderer.render).toHaveBeenCalledTimes(1);
     finish();
@@ -150,7 +150,7 @@ it('settles an in-flight thinking render before finalizing a newly collapsed blo
     stream.dispose();
     subagents.clear();
     state.dispose();
-    jest.useRealTimers();
+    vi.useRealTimers();
   }
 });
 
@@ -199,7 +199,7 @@ it('escapes authored HTML before injecting trusted images and then activates rem
 });
 
 it('skips the file-link DOM pass for content without wikilinks', async () => {
-  const processLinks = jest.spyOn(fileLinks, 'processFileLinks');
+  const processLinks = vi.spyOn(fileLinks, 'processFileLinks');
   await renderer.renderContent(host, 'Plain text without links');
 
   expect(host.textContent).toBe('Plain text without links');
@@ -209,7 +209,7 @@ it('skips the file-link DOM pass for content without wikilinks', async () => {
 it('replaces earlier content before Obsidian renders the new Markdown', async () => {
   host.createDiv({ text: 'previous render' });
   let contentWhenRendering: string | undefined;
-  jest.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, _markdown, target) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, _markdown, target) => {
     contentWhenRendering = target.textContent ?? undefined;
   });
 
@@ -221,7 +221,7 @@ it('replaces earlier content before Obsidian renders the new Markdown', async ()
 
 it('shows a render error instead of stale content when Obsidian rejects', async () => {
   host.createDiv({ text: 'previous render' });
-  jest.mocked(MarkdownRenderer.render).mockRejectedValueOnce(new Error('Render failed'));
+  vi.mocked(MarkdownRenderer.render).mockRejectedValueOnce(new Error('Render failed'));
 
   await expect(renderer.renderContent(host, '**broken markdown**')).resolves.toBeUndefined();
 
@@ -231,7 +231,7 @@ it('shows a render error instead of stale content when Obsidian rejects', async 
 });
 
 it('renders again after a failed render', async () => {
-  jest.mocked(MarkdownRenderer.render).mockRejectedValueOnce(new Error('Render failed'));
+  vi.mocked(MarkdownRenderer.render).mockRejectedValueOnce(new Error('Render failed'));
   await renderer.renderContent(host, 'broken');
 
   await renderer.renderContent(host, 'recovered');

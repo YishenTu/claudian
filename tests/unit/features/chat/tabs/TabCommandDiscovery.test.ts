@@ -1,3 +1,4 @@
+const actualModule0 = await vi.importActual<any>('@/core/providers/ProviderInitializationBoundary');
 import {
   commandCatalog,
   commandLoader,
@@ -8,28 +9,30 @@ import {
   mockTabs,
   runtimeOptions,
 } from '@test/helpers/features/chat/TabManagerTestHarness';
+import type { Mock } from 'vitest';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { RuntimeCommandCatalog } from '@/core/providers/commands/RuntimeCommandCatalog';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 
-jest.mock('@/features/chat/tabs/TabLifecycle', () => (
-  jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').tabLifecycleModuleMock()
+
+vi.mock('@/features/chat/tabs/TabLifecycle', async () => (
+  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).tabLifecycleModuleMock()
 ));
-jest.mock('@/features/chat/tabs/tabProviderUI', () => ({ refreshTabWorkspaceServices: jest.fn() }));
-jest.mock('@/features/chat/tabs/tabProviderLifecycle', () => ({ onProviderAvailabilityChanged: jest.fn().mockReturnValue(false) }));
-jest.mock('@/features/chat/tabs/TabRuntimeFactory', () => (
-  jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').tabRuntimeFactoryModuleMock()
+vi.mock('@/features/chat/tabs/tabProviderUI', () => ({ refreshTabWorkspaceServices: vi.fn() }));
+vi.mock('@/features/chat/tabs/tabProviderLifecycle', () => ({ onProviderAvailabilityChanged: vi.fn().mockReturnValue(false) }));
+vi.mock('@/features/chat/tabs/TabRuntimeFactory', async () => (
+  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).tabRuntimeFactoryModuleMock()
 ));
-jest.mock('@/features/chat/tabs/forking/ForkTargetModal', () => (
-  jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').forkTargetModalModuleMock()
+vi.mock('@/features/chat/tabs/forking/ForkTargetModal', async () => (
+  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).forkTargetModalModuleMock()
 ));
-jest.mock('@/core/providers/ProviderWorkspaceRegistry', () => (
-  jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').providerWorkspaceRegistryModuleMock()
+vi.mock('@/core/providers/ProviderWorkspaceRegistry', async () => (
+  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).providerWorkspaceRegistryModuleMock()
 ));
-jest.mock('@/core/providers/ProviderRegistry', () => (
-  jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').providerRegistryModuleMock()
+vi.mock('@/core/providers/ProviderRegistry', async () => (
+  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).providerRegistryModuleMock()
 ));
 
 function createRuntimeCatalog(): RuntimeCommandCatalog {
@@ -60,13 +63,13 @@ describe('TabCommandDiscovery', () => {
 
   beforeEach(() => {
     catalog = createRuntimeCatalog();
-    jest.mocked(ProviderWorkspaceRegistry.getCommandCatalog).mockReturnValue(catalog);
-    jest.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockReturnValue(commandLoader);
-    jest.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockResolvedValue(undefined);
-    jest.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockReturnValue({});
+    vi.mocked(ProviderWorkspaceRegistry.getCommandCatalog).mockReturnValue(catalog);
+    vi.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockReturnValue(commandLoader);
+    vi.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockResolvedValue(undefined);
+    vi.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockReturnValue({});
     mockTabs.length = 0;
-    jest.clearAllMocks();
-    (ProviderRegistry.getCapabilities as jest.Mock).mockReturnValue({
+    vi.clearAllMocks();
+    (ProviderRegistry.getCapabilities as Mock).mockReturnValue({
       providerId: 'claude',
       supportsProviderCommands: true,
     });
@@ -77,7 +80,7 @@ describe('TabCommandDiscovery', () => {
   });
 
   it('validates cached workspace ownership during command lookup', async () => {
-    const { ProviderInitializationBoundary } = jest.requireActual('@/core/providers/ProviderInitializationBoundary');
+    const { ProviderInitializationBoundary } = actualModule0;
     const boundary = new ProviderInitializationBoundary();
     const hostA = {
       storage: { getAdapter: () => ({}) },
@@ -85,19 +88,19 @@ describe('TabCommandDiscovery', () => {
     };
     const commandsA = {
       ...commandLoader,
-      loadCommands: jest.fn().mockResolvedValue({
+      loadCommands: vi.fn().mockResolvedValue({
         status: 'ready', items: [{ name: 'from-vault-a', description: 'Vault A only' }],
       }),
     };
-    const { manager } = createManager(createPlugin());
+    const { manager } = await createManager(createPlugin());
     const tab = await manager.createTab();
     boundary.register('claude', {
       initialize: async () => ({ commandCatalog: catalog, commandLoader: commandsA }),
     });
     await boundary.ensureInitialized(hostA, 'claude', 'host-a');
-    jest.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(id => boundary.getIfInitialized(id));
-    jest.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockImplementation((host, id, reason) => boundary.ensureInitialized(host, id, reason));
-    jest.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockImplementation(id => boundary.getIfInitialized(id)?.commandLoader ?? null);
+    vi.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(id => boundary.getIfInitialized(id));
+    vi.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockImplementation((host, id, reason) => boundary.ensureInitialized(host, id, reason));
+    vi.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockImplementation(id => boundary.getIfInitialized(id)?.commandLoader ?? null);
 
     await expect(reloadDiscovery(0, tab)).resolves.toMatchObject({ status: 'error' });
     expect(commandsA.loadCommands).not.toHaveBeenCalled();
@@ -105,8 +108,8 @@ describe('TabCommandDiscovery', () => {
   });
 
   it('uses each tab live command snapshot instead of unrelated discovery state', async () => {
-    jest.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockReturnValue(null);
-    const { manager } = createManager();
+    vi.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockReturnValue(null);
+    const { manager } = await createManager();
     const first = await manager.createTab();
     const second = await manager.createTab(null, 'second', { activate: false });
     const command = (name: string) => ({ id: name, name, description: name, content: '', source: 'sdk' as const });
@@ -123,7 +126,7 @@ describe('TabCommandDiscovery', () => {
   });
 
   it('runs on-demand command discovery without a runtime or provider session', async () => {
-    const { manager } = createManager();
+    const { manager } = await createManager();
     const tab = await manager.createTab();
 
     await expect(reloadDiscovery(0, tab)).resolves.toMatchObject({
@@ -140,9 +143,9 @@ describe('TabCommandDiscovery', () => {
 
   it('does not start isolated command metadata for a background tab', async () => {
     const conversation = { id: 'background-conversation', providerId: 'claude' };
-    const { manager } = createManager(createPlugin({
-      getCachedConversation: jest.fn().mockReturnValue(conversation),
-      getConversationSync: jest.fn().mockReturnValue(conversation),
+    const { manager } = await createManager(createPlugin({
+      getCachedConversation: vi.fn().mockReturnValue(conversation),
+      getConversationSync: vi.fn().mockReturnValue(conversation),
     }));
     await manager.createTab();
     const background = await manager.createTab('background-conversation', 'background', { activate: false });
@@ -157,22 +160,22 @@ describe('TabCommandDiscovery', () => {
   });
 
   it('lets provider-owned command discovery outlive the shared deadline', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const commandResult = deferred<any>();
     commandLoader.loadCommands.mockReturnValueOnce(commandResult.promise);
-    jest.mocked(ProviderWorkspaceRegistry.getCommandCatalog).mockReturnValue(commandCatalog as never);
+    vi.mocked(ProviderWorkspaceRegistry.getCommandCatalog).mockReturnValue(commandCatalog as never);
     commandCatalog.listDropdownEntries.mockResolvedValueOnce([{
       id: 'opencode:review',
       name: 'review',
     }]);
-    (ProviderRegistry.getCapabilities as jest.Mock).mockReturnValue({
+    (ProviderRegistry.getCapabilities as Mock).mockReturnValue({
       providerId: 'opencode',
       supportsProviderCommands: true,
     });
     commandCatalog.getDropdownConfig.mockReturnValue({
       discoveryTimeoutMs: 'provider-owned',
     });
-    const { manager } = createManager();
+    const { manager } = await createManager();
 
     try {
       const tab = await manager.createTab();
@@ -185,7 +188,7 @@ describe('TabCommandDiscovery', () => {
         attempt += 1) {
         await Promise.resolve();
       }
-      await jest.advanceTimersByTimeAsync(8_000);
+      await vi.advanceTimersByTimeAsync(8_000);
 
       expect(discovery.getSnapshot()).toEqual({ status: 'loading' });
       commandResult.resolve({
@@ -194,7 +197,7 @@ describe('TabCommandDiscovery', () => {
       });
       await expect(load).resolves.toMatchObject({ status: 'ready' });
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
       commandCatalog.getDropdownConfig.mockReturnValue({});
       await manager.destroy();
     }
@@ -207,11 +210,11 @@ describe('TabCommandDiscovery', () => {
       messages: [],
       providerId: 'claude',
     };
-    const getConversationById = jest.fn()
+    const getConversationById = vi.fn()
       .mockImplementationOnce(() => firstLookup.promise)
       .mockResolvedValue(conversationB);
-    const { manager } = createManager(createPlugin({
-      getCachedConversation: jest.fn((id: string) => ({ id, providerId: 'claude' })),
+    const { manager } = await createManager(createPlugin({
+      getCachedConversation: vi.fn((id: string) => ({ id, providerId: 'claude' })),
       getConversationById,
     }));
     const tab = await manager.createTab('conversation-a');
@@ -243,7 +246,7 @@ describe('TabCommandDiscovery', () => {
 
   it('reloads cached commands after the provider lifecycle generation advances', async () => {
     const executionLifecycleRegistry = new ProviderExecutionLifecycleRegistry();
-    const { manager } = createManager(createPlugin({
+    const { manager } = await createManager(createPlugin({
       providerHost: { executionLifecycleRegistry },
     }));
     const tab = await manager.createTab();
@@ -268,7 +271,7 @@ describe('TabCommandDiscovery', () => {
       items: [{ description: string; name: string }];
     }>();
     commandLoader.loadCommands.mockReturnValueOnce(oldDiscovery.promise);
-    const { manager } = createManager(createPlugin({
+    const { manager } = await createManager(createPlugin({
       providerHost: { executionLifecycleRegistry },
     }));
     const tab = await manager.createTab();
@@ -300,11 +303,11 @@ describe('TabCommandDiscovery', () => {
   });
 
   it('does not start command discovery after its tab begins closing', async () => {
-    const { manager } = createManager();
+    const { manager } = await createManager();
     await manager.createTab();
     const closing = await manager.createTab();
     const save = deferred<void>();
-    closing!.controllers.conversationController.save = jest.fn(() => save.promise);
+    closing!.controllers.conversationController.save = vi.fn(() => save.promise);
 
     const discovery = reloadDiscovery(1, closing);
     const close = manager.closeTab(closing!.id);

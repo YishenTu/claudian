@@ -21,17 +21,17 @@ const titleCases = modelCatalogCases.map(provider => ({
   }[provider.id],
 }));
 
-beforeEach(() => jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized').mockResolvedValue(undefined));
-afterEach(() => jest.restoreAllMocks());
+beforeEach(() => vi.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized').mockResolvedValue(undefined));
+afterEach(() => vi.restoreAllMocks());
 
 /** Runs one title generation over a fake backend; returns the requests it sent and its result callback. */
 async function runTitleGeneration(settings: Record<string, unknown>, providerId: string) {
   const backend = new FakeAuxiliaryBackend();
-  const createBackend = jest.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
+  const createBackend = vi.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
   const lifecycle = new ProviderExecutionLifecycleRegistry();
   const host = withRuntimeHosts({ settings, workingDirectory: '/vault', executionLifecycleRegistry: lifecycle });
   const service = ProviderRegistry.createTitleGenerationService(host);
-  const callback = jest.fn();
+  const callback = vi.fn();
   const generation = service.generateTitle('conversation', 'First message', callback);
   await waitFor(() => backend.sessions.some(session => session.requests.length > 0) || callback.mock.calls.length > 0);
   const requests = backend.sessions.flatMap(session => session.requests);
@@ -69,7 +69,7 @@ it.each(titleCases)('$id rejects a title model cleared after routing instead of 
   const settings: Record<string, unknown> = {};
   populate(settings);
   settings.titleGenerationModel = forms[0];
-  jest.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockImplementation(async () => {
+  vi.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockImplementation(async () => {
     settings.titleGenerationModel = '';
   });
   const { requests, callback } = await runTitleGeneration(settings, id);

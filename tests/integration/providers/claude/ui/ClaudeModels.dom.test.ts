@@ -1,12 +1,12 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@test/helpers/ObsidianSettingsDOM';
 
 import { deserialize, serialize } from 'node:v8';
 
+import { axe } from '@test/helpers/accessibility';
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Notice } from 'obsidian';
 
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
@@ -23,15 +23,15 @@ import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 import { renderProviderModelsSection } from '@/shared/settings/ProviderModelsSection';
 import { ModelSelector } from '@/shared/toolbar/ModelSelector';
 
-jest.mock('obsidian', () => ({
+vi.mock('obsidian', () => ({
   Setting: class {
     settingEl: HTMLElement;
     constructor(container: HTMLElement) { this.settingEl = container.createDiv(); }
     setName(value: string) { this.settingEl.createDiv({ text: value }); return this; }
     setDesc(value: string) { this.settingEl.createDiv({ text: value }); return this; }
   },
-  setIcon: jest.fn(),
-  Notice: jest.fn(),
+  setIcon: vi.fn(),
+  Notice: vi.fn(),
 }));
 
 HTMLElement.prototype.createEl = function <K extends keyof HTMLElementTagNameMap>(
@@ -55,7 +55,7 @@ HTMLElement.prototype.toggleClass = function (names, value) {
 HTMLElement.prototype.appendText = function (text) { this.append(text); };
 
 function renderModels(container: HTMLElement, context: ProviderSettingsTabRendererContext, native: { refresh: ClaudeModelDiscovery }) {
-  context.plugin.notifyProviderChatOptionsChanged = jest.fn();
+  context.plugin.notifyProviderChatOptionsChanged = vi.fn();
   const host = runtimeHostFor(context.plugin, 'claude');
   return renderProviderModelsSection(container, 'claude', 'Claude Code', createClaudeModels(host, signal => native.refresh(signal)));
 }
@@ -78,7 +78,7 @@ describe('Claude model picker', () => {
     const context = {
       plugin: { settings, mutateSettings: async (fn: (value: unknown) => void) => fn(settings) },
     } as unknown as ProviderSettingsTabRendererContext;
-    renderModels(container, context, { refresh: jest.fn().mockResolvedValue({ changed: false }) });
+    renderModels(container, context, { refresh: vi.fn().mockResolvedValue({ changed: false }) });
     await waitFor(() => expect((within(container).getByRole('button', { name: 'Refresh' }) as HTMLButtonElement).disabled).toBe(false));
     expect(within(container).queryByRole('checkbox', { name: /default/i })).toBeNull();
     expect(within(container).getAllByRole('checkbox')).toEqual([within(container).getByRole('checkbox', { name: /Opus/ })]);
@@ -96,7 +96,7 @@ describe('Claude model picker', () => {
     const context = {
       plugin: { settings, mutateSettings: async (fn: (value: unknown) => void) => fn(settings) },
     } as unknown as ProviderSettingsTabRendererContext;
-    const catalog = { refresh: jest.fn(async () => {
+    const catalog = { refresh: vi.fn(async () => {
       settings.providerConfigs.claude.discoveredModels = [
         { value: 'gateway-model', label: 'Gateway model', description: 'From SDK' },
         { value: 'sonnet', label: 'Sonnet', description: 'From SDK' },
@@ -200,7 +200,7 @@ describe('Claude model picker', () => {
     const context = {
       plugin: { settings, mutateSettings: async (fn: (value: unknown) => void) => fn(settings) },
     } as unknown as ProviderSettingsTabRendererContext;
-    const catalog = { refresh: jest.fn().mockResolvedValue({ changed: true }) };
+    const catalog = { refresh: vi.fn().mockResolvedValue({ changed: true }) };
     renderModels(container, context, catalog);
     const checkbox = within(container).getByRole('checkbox', { name: /Sonnet/ }) as HTMLInputElement;
     expect(checkbox.checked).toBe(true);
@@ -214,7 +214,7 @@ describe('Claude model picker', () => {
   it('offers manual recovery after failure without retrying automatically', async () => {
     const container = document.body.createDiv();
     const context = { plugin: { settings: { providerConfigs: { claude: { visibleModels: [] } } } } } as unknown as ProviderSettingsTabRendererContext;
-    const catalog = { refresh: jest.fn().mockResolvedValue({ changed: false, diagnostics: 'Unavailable' }) };
+    const catalog = { refresh: vi.fn().mockResolvedValue({ changed: false, diagnostics: 'Unavailable' }) };
     renderModels(container, context, catalog);
     await waitFor(() => expect(within(container).getByRole('status').textContent).toBe('Unavailable'));
     expect(within(container).queryByText(/Could not load Claude models/)).toBeNull();
@@ -228,10 +228,10 @@ describe('Claude model picker', () => {
 
 it('allows Discover after abort and detaches the closed settings observer', async () => {
   let finishOld!: () => void;
-  const discover = jest.fn()
+  const discover = vi.fn()
     .mockImplementationOnce(() => new Promise(resolve => { finishOld = () => resolve({ changed: true }); }))
     .mockResolvedValue({ changed: true });
-  const notify = jest.fn();
+  const notify = vi.fn();
   const catalog = new ProviderModelCatalogController({
     providerName: 'Claude Code', discover,
     store: {
@@ -276,7 +276,7 @@ it.each(['selections', 'aliases'] as const)(
     const coordinator = new SettingsCoordinator(settings, async () => {
       if (++writes === 1) { started(); await gate; }
     });
-    const notify = jest.fn();
+    const notify = vi.fn();
     const host = {
       settings,
       mutateSettings: (mutation: (draft: ClaudianSettings) => void | Promise<void>) =>
@@ -322,7 +322,7 @@ it('restores committed model checkboxes after a failed selection save and allows
   const picker = renderProviderModelsSection(container, 'claude', 'Claude Code', h.catalog);
   container.querySelector('details')!.open = true;
   const checkbox = () => within(container).getByRole('checkbox', { name: /Gateway model/ }) as HTMLInputElement;
-  jest.mocked(Notice).mockClear();
+  vi.mocked(Notice).mockClear();
   try {
     checkbox().focus();
     fireEvent.click(checkbox());
@@ -350,7 +350,7 @@ function continuityHarness(persist: (draft: ClaudianSettings) => Promise<void>) 
     ],
   } } };
   const coordinator = new SettingsCoordinator(settings, draft => persist(draft as unknown as ClaudianSettings));
-  const notify = jest.fn();
+  const notify = vi.fn();
   const host = {
     settings,
     mutateSettings: (mutation: (draft: ClaudianSettings) => void | Promise<void>) =>
@@ -430,7 +430,7 @@ it.each(['outside focus', 'disposed'] as const)('does not restore an older alias
   await saving;
   if (lifecycle === 'disposed') { picker.dispose(); container.remove(); }
   const rendered = container.innerHTML;
-  const mutations = jest.fn();
+  const mutations = vi.fn();
   const observer = new MutationObserver(mutations);
   observer.observe(container, { subtree: true, childList: true, attributes: true, characterData: true });
   try {

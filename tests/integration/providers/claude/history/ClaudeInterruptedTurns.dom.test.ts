@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
@@ -17,7 +17,7 @@ import { StreamController } from '@/features/chat/turns/StreamController';
 import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
 
-jest.mock('node:fs/promises');
+vi.mock('node:fs/promises');
 const writeSession = useClaudeSessionFiles();
 HTMLElement.prototype.appendText = function (text) { this.append(document.createTextNode(text)); };
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
@@ -26,7 +26,7 @@ HTMLElement.prototype.removeClass = function (...classes) { this.classList.remov
 
 const cleanups: Array<() => void> = [];
 beforeEach(() => {
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     (el as HTMLElement).createEl('p', { text: markdown });
   });
 });

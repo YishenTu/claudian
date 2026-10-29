@@ -1,18 +1,21 @@
 import '@/providers';
 
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+import type { Mock } from 'vitest';
 
 import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
 
+
+
 function createStorage(initial: Record<string, unknown>) {
   let content = JSON.stringify(initial);
   const adapter = {
-    exists: jest.fn(async () => Boolean(content)),
-    read: jest.fn(async () => content),
-    write: jest.fn(async (_path: string, value: string) => { content = value; }),
-    delete: jest.fn(async () => undefined),
+    exists: vi.fn(async () => Boolean(content)),
+    read: vi.fn(async () => content),
+    write: vi.fn(async (_path: string, value: string) => { content = value; }),
+    delete: vi.fn(async () => undefined),
   } as unknown as VaultFileAdapter;
   return {
     adapter,
@@ -64,7 +67,7 @@ describe('Claude effort metadata migration', () => {
     settings.providerConfigs.claude.selectedModels = [
       { value: 'claude-sonnet-5', label: 'Sonnet', description: '', supportedEffortLevels: [] },
     ];
-    await (adapter.write as jest.Mock)('', JSON.stringify(settings));
+    await (adapter.write as Mock)('', JSON.stringify(settings));
     const reloaded = await storage.load();
 
     expect(getClaudeProviderSettings(reloaded).discoveredModels[0].supportedEffortLevels).toEqual([]);

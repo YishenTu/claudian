@@ -1,11 +1,11 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { createHarness, FakeSession, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { createFixture } from '@test/helpers/ChatInputHarness';
 import { within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import type { App } from 'obsidian';
 
 import { ComposerContextTray } from '@/features/chat/composer/ComposerContextTray';
@@ -24,7 +24,7 @@ beforeEach(() => {
   visibility = document.head.appendChild(document.createElement('style'));
   visibility.textContent = '.claudian-hidden { display: none; }';
   const execute = FakeSession.prototype.execute;
-  jest.spyOn(FakeSession.prototype, 'execute').mockImplementation(function (this: FakeSession, request) {
+  vi.spyOn(FakeSession.prototype, 'execute').mockImplementation(function (this: FakeSession, request) {
     const result = execute.call(this, request);
     const run = this.runs.at(-1)!;
     run.events.push({ type: 'turn_started', accepted: true, scope: requestedScope(this, run, 1) });
@@ -33,7 +33,7 @@ beforeEach(() => {
     return result;
   });
 });
-afterEach(() => { visibility.remove(); jest.restoreAllMocks(); document.body.replaceChildren(); });
+afterEach(() => { visibility.remove(); vi.restoreAllMocks(); document.body.replaceChildren(); });
 
 it.each([
   'active canvas', 'own composer', 'background canvas', 'ordinary editor', 'source closed', 'source navigated',

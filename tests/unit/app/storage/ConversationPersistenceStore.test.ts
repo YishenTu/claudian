@@ -1,4 +1,6 @@
 
+import type { Mocked } from 'vitest';
+
 import { ConversationPersistenceStore } from '@/app/storage/ConversationPersistenceStore';
 import {
   type SessionMetadataReadResult,
@@ -12,16 +14,18 @@ import {
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { SessionMetadata } from '@/core/types';
 
-function createAdapter(): jest.Mocked<VaultFileAdapter> {
+
+
+function createAdapter(): Mocked<VaultFileAdapter> {
   return {
-    delete: jest.fn().mockResolvedValue(undefined),
-    ensureFolder: jest.fn().mockResolvedValue(undefined),
-    exists: jest.fn().mockResolvedValue(false),
-    listFiles: jest.fn().mockResolvedValue([]),
-    read: jest.fn(),
-    rename: jest.fn().mockResolvedValue(undefined),
-    write: jest.fn().mockResolvedValue(undefined),
-  } as unknown as jest.Mocked<VaultFileAdapter>;
+    delete: vi.fn().mockResolvedValue(undefined),
+    ensureFolder: vi.fn().mockResolvedValue(undefined),
+    exists: vi.fn().mockResolvedValue(false),
+    listFiles: vi.fn().mockResolvedValue([]),
+    read: vi.fn(),
+    rename: vi.fn().mockResolvedValue(undefined),
+    write: vi.fn().mockResolvedValue(undefined),
+  } as unknown as Mocked<VaultFileAdapter>;
 }
 
 const DEVICE_KEY = `device-${'a'.repeat(64)}`;

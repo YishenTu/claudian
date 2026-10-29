@@ -1,3 +1,5 @@
+import type { MockInstance } from 'vitest';
+
 import type {
   ProviderExecutionBackend,
   ProviderExecutionConfiguration,
@@ -14,6 +16,8 @@ import {
   type MissingProviderSessionResolution,
 } from '@/features/chat/execution/ChatExecutionCoordinator';
 
+
+
 interface ProviderRecoveryTestHarnessOptions {
   readonly backend: ProviderExecutionBackend;
   readonly configuration: ProviderExecutionConfiguration;
@@ -28,7 +32,7 @@ interface ProviderRecoveryTestHarnessOptions {
 
 export interface ProviderRecoveryTestHarness {
   readonly coordinator: ChatExecutionCoordinator;
-  readonly createSessionSpy: jest.SpyInstance;
+  readonly createSessionSpy: MockInstance;
   execute(): Promise<ChatExecutionResult>;
 }
 
@@ -36,10 +40,10 @@ export function createProviderRecoveryTestHarness(
   options: ProviderRecoveryTestHarnessOptions,
 ): ProviderRecoveryTestHarness {
   const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
-  const createSessionSpy = jest.spyOn(options.backend, 'createSession');
+  const createSessionSpy = vi.spyOn(options.backend, 'createSession');
   const persistence: ChatExecutionPersistence = {
-    registerExecutionBinding: jest.fn(),
-    persistExecutionSnapshot: jest.fn(async (
+    registerExecutionBinding: vi.fn(),
+    persistExecutionSnapshot: vi.fn(async (
       _conversationId,
       _bindingId,
       _providerGeneration,
@@ -48,14 +52,14 @@ export function createProviderRecoveryTestHarness(
       applySnapshot(options.conversation, snapshot);
       return true;
     }),
-    releaseExecutionBinding: jest.fn(),
-    recordConversationActivity: jest.fn(async () => undefined),
-    assertConversationExecutionAuthority: jest.fn(async () => undefined),
+    releaseExecutionBinding: vi.fn(),
+    recordConversationActivity: vi.fn(async () => undefined),
+    assertConversationExecutionAuthority: vi.fn(async () => undefined),
   };
   const interactionPort = {
-    askUserQuestion: jest.fn(),
-    dismissInteraction: jest.fn(),
-    requestApproval: jest.fn(),
+    askUserQuestion: vi.fn(),
+    dismissInteraction: vi.fn(),
+    requestApproval: vi.fn(),
   } as unknown as ProviderInteractionPort;
   let nextId = 0;
   const coordinator = new ChatExecutionCoordinator({

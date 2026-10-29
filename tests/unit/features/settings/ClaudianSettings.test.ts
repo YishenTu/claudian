@@ -4,18 +4,18 @@ import { ClaudianSettingTab } from '@/features/settings/ClaudianSettings';
 
 describe('ClaudianSettingTab model option updates', () => {
   it('refreshes provider-scoped chat selectors and the live title model menu together', () => {
-    const refreshModelSelector = jest.fn();
-    const notifyProviderChatOptionsChanged = jest.fn();
+    const refreshModelSelector = vi.fn();
+    const notifyProviderChatOptionsChanged = vi.fn();
     const plugin = {
-      getAllViews: jest.fn(() => [{ refreshModelSelector }]),
+      getAllViews: vi.fn(() => [{ refreshModelSelector }]),
       notifyProviderChatOptionsChanged,
-      notifyAgentSkillsChanged: jest.fn(),
+      notifyAgentSkillsChanged: vi.fn(),
       storage: {
-        getAdapter: jest.fn(() => ({})),
+        getAdapter: vi.fn(() => ({})),
       },
     };
     const tab = new ClaudianSettingTab({} as any, {} as any, plugin as any);
-    const refreshTitleModelOptions = jest.fn();
+    const refreshTitleModelOptions = vi.fn();
     (tab as any).refreshTitleModelOptions = refreshTitleModelOptions;
 
     (tab as any).notifyProviderModelOptionsChanged('codex');
@@ -26,7 +26,7 @@ describe('ClaudianSettingTab model option updates', () => {
   });
 
   it('invalidates provider executions when prompt settings change', async () => {
-    const runProviderExecutionTransition = jest.fn(async (
+    const runProviderExecutionTransition = vi.fn(async (
       _providerIds: string[],
       mutation: () => Promise<void>,
     ) => mutation());
@@ -34,7 +34,7 @@ describe('ClaudianSettingTab model option updates', () => {
       providerHost: { runProviderExecutionTransition },
       settings: {},
       storage: {
-        getAdapter: jest.fn(() => ({})),
+        getAdapter: vi.fn(() => ({})),
       },
     };
     const tab = new ClaudianSettingTab({} as any, {} as any, plugin as any);

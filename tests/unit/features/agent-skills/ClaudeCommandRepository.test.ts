@@ -80,7 +80,7 @@ describe('ClaudeCommandRepository', () => {
   });
 
   it('preserves metadata when editing a UTF-8 BOM command', async () => {
-    addCommand('review.md', `\uFEFF${REVIEW_COMMAND}`);
+    await addCommand('review.md', `\uFEFF${REVIEW_COMMAND}`);
     const repository = new ClaudeCommandRepository(files);
     const [loaded] = (await repository.list()).commands;
 
@@ -300,11 +300,11 @@ describe('ClaudeCommandRepository', () => {
     expect(result.diagnostics).toEqual([]);
 
     const readFailure = new ClaudeCommandRepository({
-      verifyManagedPath: jest.fn().mockResolvedValue(true),
-      listManagedFolderEntries: jest.fn().mockResolvedValue([
+      verifyManagedPath: vi.fn().mockResolvedValue(true),
+      listManagedFolderEntries: vi.fn().mockResolvedValue([
         { path: `${CLAUDE_COMMANDS_ROOT}/broken.md`, type: 'file' },
       ]),
-      readManagedFile: jest.fn().mockRejectedValue(new Error('unreadable')),
+      readManagedFile: vi.fn().mockRejectedValue(new Error('unreadable')),
     } as unknown as VaultFileAdapter);
     await expect(readFailure.list()).resolves.toEqual({
       commands: [],

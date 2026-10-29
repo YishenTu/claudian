@@ -1,11 +1,11 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { holdResponse } from '@test/helpers/ConversationPorts';
 import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { App, Component, TFile } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
@@ -22,7 +22,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   globalThis.ResizeObserver = originalResizeObserver;
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
   await releaseSideChatHarnesses();
 });
 
@@ -91,7 +91,7 @@ it('attaches a queued follow-up to the top of the input box, under the tab bar',
     const box = within(tab.dom.inputWrapper);
     expect(box.queryByRole('button', { name: 'Discard queued message' })).toBeNull();
 
-    jest.spyOn(ProviderRegistry, 'getCapabilities').mockReturnValue({
+    vi.spyOn(ProviderRegistry, 'getCapabilities').mockReturnValue({
       ...ProviderRegistry.getCapabilities('claude'), supportsTurnSteer: true,
     });
     const releaseTurn = holdResponse(tab.session.turns);

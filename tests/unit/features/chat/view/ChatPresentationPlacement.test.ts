@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@test/helpers/ObsidianSettingsDOM';
 
@@ -11,8 +11,8 @@ function createPlacedTab(id: string) {
   const contentEl = document.body.createDiv();
   const messagesWrapperEl = contentEl.createDiv({ cls: 'messages' });
   const inputComposerEl = contentEl.createDiv({ cls: 'composer' });
-  const setSideChatChipHost = jest.fn();
-  const setSideChatFullHeightHost = jest.fn();
+  const setSideChatChipHost = vi.fn();
+  const setSideChatFullHeightHost = vi.fn();
   const dom = {
     contentEl,
     inputComposerEl,

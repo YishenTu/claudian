@@ -6,7 +6,7 @@ import {
 } from '@/core/providers/models/ProviderModelCatalog';
 
 /** A store whose writes apply the patch to a mutable state, as provider configuration writers do. */
-function memoryStore(state: ProviderModelCatalogState, notify = jest.fn()): ProviderModelCatalogStore {
+function memoryStore(state: ProviderModelCatalogState, notify = vi.fn()): ProviderModelCatalogStore {
   return {
     read: () => state,
     write: async change => {
@@ -20,7 +20,7 @@ function memoryStore(state: ProviderModelCatalogState, notify = jest.fn()): Prov
 
 function fixture() {
   let models = [{ id: 'selected', name: 'Selected' }];
-  const discover = jest.fn(async () => ({ changed: true }));
+  const discover = vi.fn(async () => ({ changed: true }));
   const catalog = new ProviderModelCatalogController({
     providerName: 'Example',
     store: { ...memoryStore({ enabled: true, models, selectedIds: ['selected', 'missing'], aliases: {} }),
@@ -116,7 +116,7 @@ it('starts a new forced discovery after abort and drains the old request on disp
 });
 
 it('notifies only for committed selection and alias writes, not discovery or status', async () => {
-  const notify = jest.fn();
+  const notify = vi.fn();
   const catalog = new ProviderModelCatalogController({
     providerName: 'Example',
     store: memoryStore({ enabled: true, models: [], selectedIds: [], aliases: {} }, notify),
@@ -133,8 +133,8 @@ it('notifies only for committed selection and alias writes, not discovery or sta
 
 it('unsubscribes a settings observer without removing other subscribers', () => {
   const { catalog } = fixture();
-  const closed = jest.fn();
-  const active = jest.fn();
+  const closed = vi.fn();
+  const active = vi.fn();
   const unsubscribe = catalog.observe(closed);
   catalog.observe(active);
   expect(typeof unsubscribe).toBe('function');

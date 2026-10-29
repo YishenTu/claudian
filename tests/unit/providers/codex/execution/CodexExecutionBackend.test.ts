@@ -1,5 +1,6 @@
-import type * as fsType from 'node:fs';
+const actualModule0 = await import('node:fs');
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import * as fsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, normalize } from 'node:path';
 
@@ -26,58 +27,61 @@ import { createCodexPathMapper } from '@/providers/codex/runtime/CodexPathMapper
 const fixedRuntime = (runtime: CodexAppServerRuntime) => (): CodexAppServerRuntime => runtime;
 type MutableTestHost = ProviderHost & { settings: ClaudianSettings };
 
-const mockTransportRequest = jest.fn();
-const mockTransportNotify = jest.fn();
-const mockTransportOnNotification = jest.fn();
-const mockTransportOnServerRequest = jest.fn();
-const mockTransportDispose = jest.fn();
-const mockUnsubscribe = jest.fn().mockResolvedValue({});
-const mockTransportStart = jest.fn();
-const mockResolveLaunchSpec = jest.fn();
+const mockTransportRequest = vi.fn();
+const mockTransportNotify = vi.fn();
+const mockTransportOnNotification = vi.fn();
+const mockTransportOnServerRequest = vi.fn();
+const mockTransportDispose = vi.fn();
+const mockUnsubscribe = vi.fn().mockResolvedValue({});
+const mockTransportStart = vi.fn();
+const mockResolveLaunchSpec = vi.fn();
 
-jest.mock('@/providers/codex/runtime/CodexRPCTransport', () => {
-  const actual = jest.requireActual('@/providers/codex/runtime/CodexRPCTransport');
+vi.mock('@/providers/codex/runtime/CodexRPCTransport', async () => {
+  const actual = (await vi.importActual<typeof import('@/providers/codex/runtime/CodexRPCTransport')>('@/providers/codex/runtime/CodexRPCTransport'));
   return {
     ...actual,
-    CodexRPCTransport: jest.fn().mockImplementation(() => ({
+    CodexRPCTransport: vi.fn().mockImplementation(function () { return ({
       request: (method: string, ...args: unknown[]) => method === 'plugin/reconcile' ? Promise.resolve({}) : method === 'thread/unsubscribe' ? mockUnsubscribe(...args) : mockTransportRequest(method, ...(args[1] === 0 ? args.slice(0, 1) : args)),
       notify: mockTransportNotify,
       onNotification: mockTransportOnNotification,
       onServerRequest: mockTransportOnServerRequest,
       dispose: mockTransportDispose,
       start: mockTransportStart,
-    })),
+    }); }),
   };
 });
 
-const mockProcessStart = jest.fn();
-const mockProcessShutdown = jest.fn().mockResolvedValue(undefined);
-const mockProcessIsAlive = jest.fn().mockReturnValue(true);
-const mockProcessOnExit = jest.fn();
-const mockProcessOffExit = jest.fn();
+const mockProcessStart = vi.fn();
+const mockProcessShutdown = vi.fn().mockResolvedValue(undefined);
+const mockProcessIsAlive = vi.fn().mockReturnValue(true);
+const mockProcessOnExit = vi.fn();
+const mockProcessOffExit = vi.fn();
 
-jest.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
-  CodexAppServerProcess: jest.fn().mockImplementation(() => ({
+vi.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
+  CodexAppServerProcess: vi.fn().mockImplementation(function () { return ({
     start: mockProcessStart,
     shutdown: mockProcessShutdown,
     isAlive: mockProcessIsAlive,
     onExit: mockProcessOnExit,
     offExit: mockProcessOffExit,
-  })),
+  }); }),
 }));
 
-jest.mock('@/providers/codex/runtime/codexAppServerSupport', () => {
-  const actual = jest.requireActual('@/providers/codex/runtime/codexAppServerSupport');
+vi.mock('@/providers/codex/runtime/codexAppServerSupport', async () => {
+  const actual = (await vi.importActual<typeof import('@/providers/codex/runtime/codexAppServerSupport')>('@/providers/codex/runtime/codexAppServerSupport'));
   return {
     ...actual,
     resolveCodexAppServerLaunchSpec: (...args: unknown[]) => mockResolveLaunchSpec(...args),
   };
 });
 
+import type { Mock, MockInstance } from 'vitest';
+
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
 import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
 import { CodexRPCResponseError } from '@/providers/codex/runtime/CodexRPCTransport';
 import { updateCodexProviderSettings } from '@/providers/codex/settings';
+
 
 const runtimes: CodexAppServerRuntime[] = [];
 function createBackend(plugin: ProviderHost): CodexExecutionBackend {
@@ -248,15 +252,15 @@ function createPlugin(): MutableTestHost {
 
 function createInteractionPort(): ProviderInteractionPort {
   return {
-    requestApproval: jest.fn().mockImplementation(async request => ({
+    requestApproval: vi.fn().mockImplementation(async request => ({
       interactionId: request.interactionId,
       decision: 'allow',
     })),
-    askUserQuestion: jest.fn().mockImplementation(async request => ({
+    askUserQuestion: vi.fn().mockImplementation(async request => ({
       interactionId: request.interactionId,
       answers: { choice: 'yes' },
     })),
-    dismissInteraction: jest.fn(),
+    dismissInteraction: vi.fn(),
   };
 }
 
@@ -726,7 +730,7 @@ describe('CodexExecutionBackend', () => {
   });
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     captureHandlers();
     mockUnsubscribe.mockReset().mockResolvedValue({});
     mockProcessIsAlive.mockReturnValue(true);
@@ -760,6 +764,7 @@ describe('CodexExecutionBackend', () => {
     const session = createBackend(createPlugin()).createSession(createSessionConfig());
     const updates: ProviderSessionEvent[] = [];
     session.onEvent(event => updates.push(event));
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       const run = session.execute(createRequest());
       const output = collectEvents(run.events);
@@ -775,13 +780,14 @@ describe('CodexExecutionBackend', () => {
       completeTurn('parent', 'parent-turn');
       const settled = await Promise.race([
         output.then(events => JSON.stringify(events)),
-        new Promise<null>(resolve => setTimeout(() => resolve(null), 1_000)),
+        new Promise<null>(resolve => { timeout = setTimeout(() => resolve(null), 1_000); }),
       ]);
       expect(settled).toContain('Parent done.');
       expect(updates).not.toContainEqual(expect.objectContaining({
         subagent: expect.objectContaining({ agentId: 'parent' }),
       }));
     } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
       await session.dispose();
     }
   });
@@ -1259,7 +1265,7 @@ describe('CodexExecutionBackend', () => {
   });
 
   it('recovers a completed turn when the terminal notification is missed', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const threadId = 'thread-missed-completion';
     const turnId = 'turn-missed-completion';
     mockTransportRequest.mockImplementation(async (method: string) => {
@@ -1304,7 +1310,7 @@ describe('CodexExecutionBackend', () => {
         threadId,
         status: { type: 'idle' },
       });
-      await jest.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(5_000);
 
       expect(mockTransportRequest).toHaveBeenCalledWith(
         'thread/read',
@@ -1327,12 +1333,12 @@ describe('CodexExecutionBackend', () => {
       run.cancel();
       await eventsPromise;
       await session.dispose();
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
   it('recovers when the idle status arrives before turn acknowledgement', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const threadId = 'thread-idle-before-ack';
     const turnId = 'turn-idle-before-ack';
     const turnStart = createDeferred<ReturnType<typeof createTurnResult>>();
@@ -1378,7 +1384,7 @@ describe('CodexExecutionBackend', () => {
       });
       turnStart.resolve(createTurnResult(turnId));
       await flushMicrotasks();
-      await jest.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(5_000);
 
       expect(mockTransportRequest).toHaveBeenCalledWith(
         'thread/read',
@@ -1393,12 +1399,12 @@ describe('CodexExecutionBackend', () => {
       run.cancel();
       await eventsPromise;
       await session.dispose();
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
   it('retries stale recovery reads and reconciles partial assistant text once', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const threadId = 'thread-recovery-retry';
     const turnId = 'turn-recovery-retry';
     let readAttempt = 0;
@@ -1463,7 +1469,7 @@ describe('CodexExecutionBackend', () => {
         threadId,
         status: { type: 'idle' },
       });
-      await jest.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(10_000);
 
       const events = await eventsPromise;
       expect(readAttempt).toBe(3);
@@ -1481,12 +1487,12 @@ describe('CodexExecutionBackend', () => {
       run.cancel();
       await eventsPromise;
       await session.dispose();
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
   it('does not overlap recovery reads when idle is reported repeatedly', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const threadId = 'thread-repeated-idle';
     const turnId = 'turn-repeated-idle';
     const threadRead = createDeferred<ReturnType<typeof createThreadResult>>();
@@ -1523,12 +1529,12 @@ describe('CodexExecutionBackend', () => {
         threadId,
         status: { type: 'idle' },
       });
-      await jest.advanceTimersByTimeAsync(1_000);
+      await vi.advanceTimersByTimeAsync(1_000);
       emitNotification('thread/status/changed', {
         threadId,
         status: { type: 'idle' },
       });
-      await jest.advanceTimersByTimeAsync(1_000);
+      await vi.advanceTimersByTimeAsync(1_000);
 
       expect(readAttempt).toBe(1);
       threadRead.resolve(createThreadResult(threadId, [{ id: turnId }]));
@@ -1542,12 +1548,12 @@ describe('CodexExecutionBackend', () => {
       threadRead.resolve(createThreadResult(threadId, [{ id: turnId }]));
       await eventsPromise;
       await session.dispose();
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
   it('fails recoverably after bounded completion recovery failures', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const threadId = 'thread-recovery-failure';
     const turnId = 'turn-recovery-failure';
     let readAttempt = 0;
@@ -1583,7 +1589,7 @@ describe('CodexExecutionBackend', () => {
         threadId,
         status: { type: 'idle' },
       });
-      await jest.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(10_000);
 
       expect(session.getStatus()).toBe('idle');
       expect(readAttempt).toBe(3);
@@ -1596,12 +1602,12 @@ describe('CodexExecutionBackend', () => {
       run.cancel();
       await eventsPromise;
       await session.dispose();
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
   it('does not recover when the terminal notification arrives during the grace period', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const threadId = 'thread-normal-completion';
     const turnId = 'turn-normal-completion';
     mockTransportRequest.mockImplementation(async (method: string) => {
@@ -1632,7 +1638,7 @@ describe('CodexExecutionBackend', () => {
         status: { type: 'idle' },
       });
       completeTurn(threadId, turnId);
-      await jest.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(5_000);
 
       expect(mockTransportRequest).not.toHaveBeenCalledWith(
         'thread/read',
@@ -1647,7 +1653,7 @@ describe('CodexExecutionBackend', () => {
       run.cancel();
       await eventsPromise;
       await session.dispose();
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
@@ -2588,20 +2594,20 @@ describe('CodexExecutionBackend', () => {
   });
 
   describe('when a native thread omits its rollout path', () => {
-    const realFs = jest.requireActual<typeof fsType>('node:fs');
+    const realFs = actualModule0;
     let codexHome: string;
     let sessionsRoot: string;
-    let probes: jest.SpyInstance[];
+    let probes: MockInstance[];
 
     beforeEach(() => {
       codexHome = mkdtempSync(join(tmpdir(), 'claudian-codex-home-'));
       sessionsRoot = join(codexHome, 'sessions');
       mkdirSync(join(sessionsRoot, 'nested'), { recursive: true });
       probes = [
-        jest.spyOn(realFs, 'existsSync'),
-        jest.spyOn(realFs, 'readdirSync'),
-        jest.spyOn(realFs.promises, 'access'),
-        jest.spyOn(realFs.promises, 'readdir'),
+        vi.spyOn(realFs, 'existsSync'),
+        vi.spyOn(realFs, 'readdirSync'),
+        vi.spyOn(fsPromises, 'access'),
+        vi.spyOn(fsPromises, 'readdir'),
       ];
     });
 
@@ -3636,7 +3642,7 @@ describe('CodexExecutionBackend', () => {
 
   it('answers an MCP confirmation received during a native turn and completes that turn', async () => {
     const interactionPort = createInteractionPort();
-    (interactionPort.askUserQuestion as jest.Mock).mockImplementation(async request => ({
+    (interactionPort.askUserQuestion as Mock).mockImplementation(async request => ({
       interactionId: request.interactionId,
       answers: { 'mcp-elicitation-confirmation': 'accept' },
     }));
@@ -3737,8 +3743,8 @@ describe('CodexExecutionBackend', () => {
     );
     await collectEvents(session.execute(createRequest()).events);
 
-    const approvalRequest = (interactionPort.requestApproval as jest.Mock).mock.calls[0][0];
-    const questionRequest = (interactionPort.askUserQuestion as jest.Mock).mock.calls[0][0];
+    const approvalRequest = (interactionPort.requestApproval as Mock).mock.calls[0][0];
+    const questionRequest = (interactionPort.askUserQuestion as Mock).mock.calls[0][0];
     expect(approvalRequest).toEqual(expect.objectContaining({
       interactionId: expect.any(String),
       sessionInstanceId: session.sessionInstanceId,
@@ -4392,3 +4398,7 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 });
+
+vi.mock('node:fs', async () => ({ ...await vi.importActual<typeof import('node:fs')>('node:fs') }));
+
+vi.mock('node:fs/promises', async () => ({ ...await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises') }));

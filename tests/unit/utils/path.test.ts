@@ -1,10 +1,11 @@
+const actualModule0 = await import('fs');
+const actualModule1 = await import('os');
+const actualModule2 = await import('path');
 import type * as fsType from 'fs';
-import type * as osType from 'os';
-import type * as pathType from 'path';
 
-const fs = jest.requireActual<typeof fsType>('fs');
-const os = jest.requireActual<typeof osType>('os');
-const path = jest.requireActual<typeof pathType>('path');
+const fs = actualModule0;
+const os = actualModule1;
+const path = actualModule2;
 
 import {
   expandHomePath,
@@ -16,6 +17,7 @@ import {
   normalizePathForVault,
   translateMsysPath,
 } from '@/utils/path';
+
 
 const isWindows = process.platform === 'win32';
 
@@ -253,24 +255,24 @@ describe('isPathWithinVault', () => {
 
 describe('isPathWithinDirectory', () => {
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('expands home paths before checking containment', () => {
-    jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
+    vi.spyOn(os, 'homedir').mockReturnValue('/home/test');
 
     expect(isPathWithinDirectory('~/.claude/settings.json', '/home/test/.claude', '/vault')).toBe(true);
   });
 
   it('blocks symlink escapes from the allowed directory', () => {
-    const realpathMock = jest.fn((input: fsType.PathLike) => {
+    const realpathMock = vi.fn((input: fsType.PathLike) => {
       const value = String(input);
       if (value === '/home/test/.claude') return '/home/test/.claude';
       if (value === '/home/test/.claude/skills/link') return '/home/test/.ssh';
       return path.resolve(value);
     });
 
-    const realpathSpy = jest.spyOn(fs, 'realpathSync').mockImplementation(realpathMock as any);
+    const realpathSpy = vi.spyOn(fs, 'realpathSync').mockImplementation(realpathMock as any);
     (realpathSpy as any).native = realpathMock;
 
     expect(isPathWithinDirectory('/home/test/.claude/skills/link', '/home/test/.claude', '/vault')).toBe(false);
@@ -465,7 +467,7 @@ describe('relative Vault paths', () => {
 
 describe('Vault boundary edge cases', () => {
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('should block path traversal escaping vault', () => {
@@ -473,7 +475,7 @@ describe('Vault boundary edge cases', () => {
   });
 
   it('should expand tilde and still enforce vault boundary', () => {
-    jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
+    vi.spyOn(os, 'homedir').mockReturnValue('/home/test');
     expect(isPathWithinVault('~/vault/notes/a.md', '/vault')).toBe(false);
   });
 
@@ -484,7 +486,7 @@ describe('Vault boundary edge cases', () => {
 
   it('should handle non-existent paths via fallback resolution', () => {
     // When fs.realpathSync throws (file doesn't exist), path.resolve is used
-    jest.spyOn(fs, 'realpathSync').mockImplementation(() => {
+    vi.spyOn(fs, 'realpathSync').mockImplementation(() => {
       throw new Error('ENOENT');
     });
     // Even with mock throwing, function should still work via fallback
@@ -492,12 +494,12 @@ describe('Vault boundary edge cases', () => {
   });
 
   it('should block symlink escapes for non-existent targets', () => {
-    jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => {
+    vi.spyOn(fs, 'existsSync').mockImplementation((p: any) => {
       const s = String(p);
       return s === '/' || s === '/vault' || s === '/vault/export';
     });
 
-    const realpathSpy = jest.spyOn(fs, 'realpathSync').mockImplementation((p: any) => {
+    const realpathSpy = vi.spyOn(fs, 'realpathSync').mockImplementation((p: any) => {
       const s = String(p);
       if (s === '/') return '/';
       if (s === '/vault') return '/vault';
@@ -519,19 +521,19 @@ describe('Windows separator normalization', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     // Force Windows-style separator to detect regressions when comparisons rely on path.sep.
     Object.defineProperty(path, 'sep', { value: '\\', writable: true });
-    jest.spyOn(path, 'isAbsolute').mockImplementation((p: any) => {
+    vi.spyOn(path, 'isAbsolute').mockImplementation((p: any) => {
       const value = String(p);
       return /^[A-Za-z]:[\\/]/.test(value) || originalIsAbsolute(value);
     });
 
-    const realpathSpy = jest.spyOn(fs, 'realpathSync').mockImplementation((p: any) => String(p) as any);
+    const realpathSpy = vi.spyOn(fs, 'realpathSync').mockImplementation((p: any) => String(p) as any);
     (fs.realpathSync as any).native = realpathSpy;
   });
 
   afterEach(() => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
     Object.defineProperty(path, 'sep', { value: originalSep, writable: true });
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('allows vault paths after slash normalization', () => {
@@ -592,3 +594,9 @@ describe('MSYS translation across simulated platforms', () => {
     });
   });
 });
+
+vi.mock('fs', async () => ({ ...await vi.importActual<typeof import('fs')>('fs') }));
+
+vi.mock('os', async () => ({ ...await vi.importActual<typeof import('os')>('os') }));
+
+vi.mock('path', async () => ({ ...await vi.importActual<typeof import('path')>('path') }));

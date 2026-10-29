@@ -17,7 +17,7 @@ const unavailableProbe = {
 function makeHost(enabled = true) {
   return {
     workingDirectory: '/vault',
-    getResolvedProviderCliPath: jest.fn(async () => '/opt/grok/bin/grok'),
+    getResolvedProviderCliPath: vi.fn(async () => '/opt/grok/bin/grok'),
     settings: {
       providerConfigs: {
         grok: {
@@ -40,7 +40,7 @@ function makeRunner(
   const requests: GrokCatalogCommandRequest[] = [];
   return {
     requests,
-    run: jest.fn(async (request) => {
+    run: vi.fn(async (request) => {
       requests.push(request);
       return request.args[0] === '--version' ? versionResult : modelsResult;
     }),

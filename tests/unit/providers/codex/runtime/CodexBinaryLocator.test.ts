@@ -1,3 +1,6 @@
+const actualModule0 = await import('fs');
+const actualModule1 = await import('fs');
+const actualModule2 = await import('fs');
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -7,6 +10,7 @@ import {
   findCodexBinaryPath,
 } from '@/providers/codex/runtime/CodexBinaryLocator';
 import { CodexCLIResolver } from '@/providers/codex/runtime/CodexCLIResolver';
+
 
 describe('CodexBinaryLocator', () => {
   let tempDir: string;
@@ -44,7 +48,7 @@ describe('CodexBinaryLocator', () => {
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
     Object.defineProperty(process, 'platform', originalPlatform);
     restoreEnvironmentVariable('CODEX_INSTALL_DIR');
     restoreEnvironmentVariable('HOME');
@@ -132,7 +136,7 @@ describe('CodexBinaryLocator', () => {
     fs.utimesSync(second, timestamp, timestamp);
     const entries = fs.readdirSync(root, { withFileTypes: true });
     entries.sort((left, right) => right.name.localeCompare(left.name));
-    jest.spyOn(jest.requireActual<typeof fs>('fs'), 'readdirSync').mockReturnValueOnce(entries as never);
+    vi.spyOn(actualModule0, 'readdirSync').mockReturnValueOnce(entries as never);
 
     expect(findCodexBinaryPath('', 'win32')).toBe(first);
   });
@@ -190,12 +194,12 @@ describe('CodexBinaryLocator', () => {
     const nativeFile = path.join(tempDir, 'codex');
     fs.writeFileSync(nativeFile, '', { mode: 0o755 });
     const fileStat = fs.statSync(nativeFile);
-    jest.spyOn(jest.requireActual<typeof fs>('fs'), 'statSync').mockImplementation(candidate => {
+    vi.spyOn(actualModule1, 'statSync').mockImplementation(candidate => {
       if ([pathBinary, path.join(automaticDir, 'codex')].includes(path.normalize(String(candidate)))) return fileStat;
       throw Object.assign(new Error('No fixture'), { code: 'ENOENT' });
     });
     // This case supplies virtual files; real execute-permission behavior has filesystem integration coverage.
-    jest.spyOn(jest.requireActual<typeof fs>('fs'), 'accessSync').mockImplementation(() => undefined);
+    vi.spyOn(actualModule2, 'accessSync').mockImplementation(() => undefined);
     process.env.PATH = pathDir;
 
     expect(findCodexBinaryPath('', platform)).toBe(pathBinary);
@@ -403,3 +407,5 @@ function resolveCodexCLIPath(
     sharedEnvironmentVariables: envText,
   }, { executionTarget: { ...target, platformFamily: 'unix', platformOs: 'linux' } });
 }
+
+vi.mock('fs', async () => ({ ...await vi.importActual<typeof import('fs')>('fs') }));

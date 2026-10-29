@@ -13,7 +13,7 @@ function createNativeClaude() {
   const launches: sdk.Options[] = [];
   const prompts: Array<{ sessionId: string; context: string[]; text: string }> = [];
   let ordinal = 0;
-  jest.spyOn(sdk, 'query').mockImplementation(({ prompt, options }) => {
+  vi.spyOn(sdk, 'query').mockImplementation(({ prompt, options }) => {
     const config = options!;
     launches.push(config);
     const generator = async function* () {
@@ -64,7 +64,7 @@ function createNativeClaude() {
 
 function createToolingClaude(sideEffect: () => Promise<void>) {
   const requests: Array<{ permissionMode?: string; toolName: string; decision: string }> = [];
-  jest.spyOn(sdk, 'query').mockImplementation(({ prompt, options }) => {
+  vi.spyOn(sdk, 'query').mockImplementation(({ prompt, options }) => {
     const config = options!;
     const generator = async function* () {
       let sessionId = config.resume ?? 'claude-source';
@@ -108,7 +108,7 @@ describe('Claude side-chat native child', () => {
   beforeEach(async () => {
     env = await createForkTestEnvironment();
   });
-  afterEach(async () => { await env.dispose(); jest.restoreAllMocks(); });
+  afterEach(async () => { await env.dispose(); vi.restoreAllMocks(); });
 
   it('answers from source context and its own turns while the parent keeps its own history and Claudian record', async () => {
     const native = createNativeClaude();
@@ -182,7 +182,7 @@ describe('Claude side-chat native child', () => {
     const source = await env.open(backend);
     const checkpoint = await env.send(source, 'Remember A');
     const written = path.join(env.root, 'side-note.md');
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
     const tooling = createToolingClaude(async () => { await fs.writeFile(written, 'from side chat'); });
 
     const child = await traceSideChild(env, source, checkpoint, backend, {
@@ -206,7 +206,7 @@ describe('Claude side-chat native child', () => {
     const source = await env.open(backend);
     const checkpoint = await env.send(source, 'Remember A');
     const written = path.join(env.root, 'denied-note.md');
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
     const tooling = createToolingClaude(async () => { await fs.writeFile(written, 'should not exist'); });
 
     const child = await traceSideChild(env, source, checkpoint, backend, {

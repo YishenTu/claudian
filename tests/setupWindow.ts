@@ -1,11 +1,12 @@
 import { TextDecoder, TextEncoder } from 'node:util';
 import { deserialize, serialize } from 'node:v8';
 
-import type * as JestAxe from 'jest-axe';
+import type * as AxeAdapter from '@test/helpers/accessibility';
+
 
 // Node-only suites do not need to load the accessibility engine.
 if (typeof document !== 'undefined') {
-  const { toHaveNoViolations } = jest.requireActual<typeof JestAxe>('jest-axe');
+  const { toHaveNoViolations } = await vi.importActual<typeof AxeAdapter>('@test/helpers/accessibility');
   expect.extend(toHaveNoViolations);
 }
 

@@ -1,15 +1,15 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 import '@test/helpers/ObsidianSettingsDOM';
 
 import { deserialize, serialize } from 'node:v8';
 
+import { axe } from '@test/helpers/accessibility';
 import { beginExecution, createHarness, createSubmission, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Notice } from 'obsidian';
 
 import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
@@ -17,9 +17,9 @@ import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { ClaudianSettingTab } from '@/features/settings/ClaudianSettings';
 import { t } from '@/i18n/i18n';
 
-jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection() {} }));
-jest.mock('obsidian', () => {
-  const dom = jest.requireActual('@test/helpers/ObsidianSettingsDOM');
+vi.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection() {} }));
+vi.mock('obsidian', async () => {
+  const dom = (await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM'));
   class Setting extends dom.Setting {
     setHeading() { return this; }
     addToggle(callback: (control: unknown) => void) {
@@ -32,20 +32,20 @@ jest.mock('obsidian', () => {
       callback(toggle); return this;
     }
   }
-  return { ...jest.requireActual('@test/__mocks__/obsidian'), ...dom, Setting };
+  return { ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')), ...dom, Setting };
 });
 
-afterEach(() => { document.body.replaceChildren(); jest.clearAllMocks(); });
+afterEach(() => { document.body.replaceChildren(); vi.clearAllMocks(); });
 
 it('retries an unchanged user-name draft on the next blur after a rejected save', async () => {
   globalThis.structuredClone ??= value => deserialize(serialize(value));
   const settings = { ...structuredClone(DEFAULT_CLAUDIAN_SETTINGS), userName: 'Before', enableAutoTitleGeneration: false };
   let saved = JSON.stringify(settings);
-  const persist = jest.fn().mockRejectedValueOnce(new Error('Disk unavailable')).mockImplementation(async draft => {
+  const persist = vi.fn().mockRejectedValueOnce(new Error('Disk unavailable')).mockImplementation(async draft => {
     saved = JSON.stringify(draft);
   });
   const coordinator = new SettingsCoordinator(settings, persist);
-  const runProviderExecutionTransition = jest.fn(async () => undefined);
+  const runProviderExecutionTransition = vi.fn(async () => undefined);
   const host = { settings, mutateSettings: coordinator.mutate.bind(coordinator), providerHost: { runProviderExecutionTransition } };
   const tab = new ClaudianSettingTab({} as never, {} as never, host as never);
   const container = document.body.createDiv();
@@ -136,7 +136,7 @@ it.each([
   let saved = JSON.stringify(settings);
   const coordinator = new SettingsCoordinator(settings, async draft => { saved = JSON.stringify(draft); });
   const execution = createHarness();
-  const transition = jest.spyOn(execution.registry, 'runTransition');
+  const transition = vi.spyOn(execution.registry, 'runTransition');
   const host = {
     settings, mutateSettings: coordinator.mutate.bind(coordinator),
     providerHost: { runProviderExecutionTransition: execution.registry.runTransition.bind(execution.registry) },
@@ -192,9 +192,9 @@ it.each([
     expect(transition).toHaveBeenCalledTimes(1);
     expect(settings[key]).toBe(next);
 
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     fireEvent.input(input, { target: { value: `${next} timer` } });
-    await jest.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(500);
     await tab['textEdits'].flush();
     expect(settings[key]).toBe(`${next} timer`);
     expect(transition).toHaveBeenCalledTimes(2);
@@ -202,7 +202,7 @@ it.each([
     await tab['textEdits'].flush();
     expect(transition).toHaveBeenCalledTimes(2);
   } finally {
-    jest.useRealTimers();
+    vi.useRealTimers();
     await tab['textEdits'].flush();
     await execution.coordinator.dispose();
     await execution.registry.dispose();
@@ -213,10 +213,10 @@ it.each([
 it('does not restart or replay a prompt edit after publication of its durable commit fails', async () => {
   const settings = { ...structuredClone(DEFAULT_CLAUDIAN_SETTINGS), userName: 'Before', enableAutoTitleGeneration: false };
   let saved = '';
-  const persist = jest.fn(async (draft: typeof settings) => { saved = JSON.stringify(draft); });
+  const persist = vi.fn(async (draft: typeof settings) => { saved = JSON.stringify(draft); });
   const coordinator = new SettingsCoordinator(settings, persist, () => { throw new Error('View unavailable'); });
   const execution = createHarness();
-  const transition = jest.spyOn(execution.registry, 'runTransition');
+  const transition = vi.spyOn(execution.registry, 'runTransition');
   const host = { settings, mutateSettings: coordinator.mutate.bind(coordinator), providerHost: { runProviderExecutionTransition: execution.registry.runTransition.bind(execution.registry) } };
   const tab = new ClaudianSettingTab({} as never, {} as never, host as never);
   const container = document.body.createDiv();

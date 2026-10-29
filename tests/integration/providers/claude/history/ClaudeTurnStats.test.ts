@@ -1,3 +1,4 @@
+const actualModule0 = await import('node:fs/promises');
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -8,6 +9,7 @@ import { locateSDKSession } from '@/providers/claude/history/ClaudeHistoryPathRe
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
 import { loadClaudeTurnStats } from '@/providers/claude/history/ClaudeTurnStats';
 import type { SDKNativeMessage } from '@/providers/claude/history/sdkHistoryTypes';
+
 
 it('matches replay across tool-result ancestry and reads a bounded suffix of a long session', async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-turn-'));
@@ -34,10 +36,10 @@ it('matches replay across tool-result ancestry and reads a bounded suffix of a l
   const context = { environment: { CLAUDE_CONFIG_DIR: home } };
   let bytesRead = 0;
   const nativeOpen = fs.open;
-  const spy = jest.spyOn(jest.requireActual<typeof fs>('node:fs/promises'), 'open').mockImplementation(async (...args) => {
+  const spy = vi.spyOn(actualModule0, 'open').mockImplementation(async (...args) => {
     const file = await nativeOpen(...args);
     const read = file.read.bind(file);
-    jest.spyOn(file, 'read').mockImplementation((async (...readArgs: Parameters<typeof file.read>) => {
+    vi.spyOn(file, 'read').mockImplementation((async (...readArgs: Parameters<typeof file.read>) => {
       const result = await read(...readArgs);
       bytesRead += result.bytesRead;
       return result;
@@ -152,3 +154,5 @@ it.each(['archive', 'archive-other'])('reads native history for a long vault pat
     await fs.rm(home, { recursive: true, force: true });
   }
 });
+
+vi.mock('node:fs/promises', async () => ({ ...await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises') }));

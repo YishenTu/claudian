@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
@@ -104,12 +104,12 @@ beforeEach(() => {
     toggleClass(this: HTMLElement, name: string, enabled: boolean) { this.classList.toggle(name, enabled); },
     scrollIntoView() {},
   });
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     (el as HTMLElement).createEl('p', { text: markdown });
   });
 });
 afterEach(() => {
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
   document.body.replaceChildren();
 });
 
@@ -147,7 +147,7 @@ async function createPiView() {
       return kernel;
     },
   });
-  jest.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
+  vi.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
   const plugin = {
     app, settings, providerHost,
     executionPersistence: {

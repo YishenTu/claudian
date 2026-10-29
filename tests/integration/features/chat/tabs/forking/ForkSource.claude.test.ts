@@ -8,7 +8,7 @@ function createNativeClaude() {
   const launches: sdk.Options[] = [];
   const prompts: Array<{ sessionId: string; context: string[] }> = [];
   let ordinal = 0;
-  jest.spyOn(sdk, 'query').mockImplementation(({ prompt, options }) => {
+  vi.spyOn(sdk, 'query').mockImplementation(({ prompt, options }) => {
     const config = options!;
     launches.push(config);
     const generator = async function* () {
@@ -55,7 +55,7 @@ describe('Claude fork integration', () => {
   beforeEach(async () => {
     env = await createForkTestEnvironment();
   });
-  afterEach(async () => { await env.dispose(); jest.restoreAllMocks(); });
+  afterEach(async () => { await env.dispose(); vi.restoreAllMocks(); });
 
   it('resumes at the live SDK UUID in a new session and preserves the source and accepted input prefix', async () => {
     const native = createNativeClaude();

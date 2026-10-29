@@ -1,13 +1,16 @@
 import { createMockEl, type MockElement } from '@test/helpers/MockElement';
 import { FileView, Notice, TFile, TFolder } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import { ComposerInfoRow } from '@/features/chat/composer/ComposerInfoRow';
 import { LinkedContentController } from '@/features/chat/linked-content/LinkedContentController';
 import { createWelcomeElement, renderWelcomeContent } from '@/features/chat/rendering/WelcomeRenderer';
 
-jest.mock('obsidian', () => {
-  const actual = jest.requireActual('obsidian');
-  return { ...actual, Notice: jest.fn(), setIcon: jest.fn() };
+
+
+vi.mock('obsidian', async () => {
+  const actual = (await vi.importActual<typeof import('obsidian')>('obsidian'));
+  return { ...actual, Notice: vi.fn(), setIcon: vi.fn() };
 });
 
 function createFile(path: string): TFile {
@@ -44,25 +47,25 @@ function createHarness(options: {
 } = {}) {
   const root = createFolder('');
   const entries = new Map((options.entries ?? []).map(entry => [entry.path, entry]));
-  const openFile = jest.fn().mockResolvedValue(undefined);
-  const revealInFolder = jest.fn().mockResolvedValue(undefined);
+  const openFile = vi.fn().mockResolvedValue(undefined);
+  const revealInFolder = vi.fn().mockResolvedValue(undefined);
   const explorerLeaf = { view: { revealInFolder } };
   const app = {
     vault: {
-      getRoot: jest.fn(() => root),
-      getAbstractFileByPath: jest.fn((path: string) => entries.get(path) ?? null),
+      getRoot: vi.fn(() => root),
+      getAbstractFileByPath: vi.fn((path: string) => entries.get(path) ?? null),
     },
     workspace: {
-      getActiveFile: jest.fn(() => null),
-      getLeaf: jest.fn(() => ({ openFile })),
-      getLeavesOfType: jest.fn(() => [explorerLeaf]),
-      getLeftLeaf: jest.fn(() => null),
-      iterateRootLeaves: jest.fn((callback: (leaf: { view?: unknown }) => void) => {
+      getActiveFile: vi.fn(() => null),
+      getLeaf: vi.fn(() => ({ openFile })),
+      getLeavesOfType: vi.fn(() => [explorerLeaf]),
+      getLeftLeaf: vi.fn(() => null),
+      iterateRootLeaves: vi.fn((callback: (leaf: { view?: unknown }) => void) => {
         for (const leaf of options.rootLeaves ?? []) callback(leaf);
       }),
-      revealLeaf: jest.fn().mockResolvedValue(undefined),
+      revealLeaf: vi.fn().mockResolvedValue(undefined),
     },
-    metadataCache: { getFileCache: jest.fn(() => null) },
+    metadataCache: { getFileCache: vi.fn(() => null) },
   };
   const controller = new LinkedContentController({
     app: app as never,
@@ -111,7 +114,7 @@ describe('LinkedContentController DOM', () => {
       y: 0,
       toJSON: () => undefined,
     });
-    const focus = jest.spyOn(selector, 'focus');
+    const focus = vi.spyOn(selector, 'focus');
     selector.click();
 
     const picker = welcomeEl.querySelector('.claudian-linked-content-picker')!;
@@ -138,7 +141,7 @@ describe('LinkedContentController DOM', () => {
     search.dispatchEvent({
       type: 'keydown',
       key: 'Enter',
-      preventDefault: jest.fn(),
+      preventDefault: vi.fn(),
       target: search,
     });
 
@@ -157,11 +160,11 @@ describe('LinkedContentController DOM', () => {
     const welcome = createWelcomeElement(createMockEl(), 'Hello') as unknown as MockElement;
     harness.controller.mountWelcome(welcome as unknown as HTMLElement);
     const selector = welcome.querySelector('.claudian-linked-content-selector')!;
-    const focus = jest.spyOn(selector, 'focus');
+    const focus = vi.spyOn(selector, 'focus');
     selector.click();
     const picker = welcome.querySelector('.claudian-linked-content-picker')!;
-    const preventDefault = jest.fn();
-    const stopPropagation = jest.fn();
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
 
     picker.dispatchEvent({
       type: 'keydown',
@@ -185,17 +188,17 @@ describe('LinkedContentController DOM', () => {
     const mount = welcome.querySelector('.claudian-welcome-linked-content')!;
     const selector = welcome.querySelector('.claudian-linked-content-selector')!;
     let capturedKeydown: ((event: KeyboardEvent) => void) | null = null;
-    mount.ownerDocument.defaultView.addEventListener = jest.fn((
+    mount.ownerDocument.defaultView.addEventListener = vi.fn((
       type: string,
       listener: (event: KeyboardEvent) => void,
       capture?: boolean,
     ) => {
       if (type === 'keydown' && capture) capturedKeydown = listener;
     });
-    mount.ownerDocument.defaultView.removeEventListener = jest.fn();
+    mount.ownerDocument.defaultView.removeEventListener = vi.fn();
     selector.click();
-    const preventDefault = jest.fn();
-    const stopPropagation = jest.fn();
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
 
     expect(capturedKeydown).not.toBeNull();
     (capturedKeydown as unknown as (event: KeyboardEvent) => void)({
@@ -247,7 +250,7 @@ describe('LinkedContentController DOM', () => {
     const welcome = createWelcomeElement(createMockEl(), 'Hello') as unknown as MockElement;
     harness.controller.mountWelcome(welcome as unknown as HTMLElement);
     const selector = welcome.querySelector('.claudian-linked-content-selector')!;
-    const focus = jest.spyOn(selector, 'focus');
+    const focus = vi.spyOn(selector, 'focus');
     selector.click();
     const search = welcome.querySelector('.claudian-linked-content-picker-search')!;
     const picker = welcome.querySelector('.claudian-linked-content-picker')!;
@@ -332,7 +335,7 @@ describe('LinkedContentController DOM', () => {
   it('reveals a deferred editor tab whose view state identifies the linked file', async () => {
     const note = createFile('Notes/Restored.md');
     const deferredLeaf = {
-      getViewState: jest.fn(() => ({
+      getViewState: vi.fn(() => ({
         state: { file: note.path },
         type: 'markdown',
       })),
@@ -398,11 +401,11 @@ describe('LinkedContentController DOM', () => {
   it('opens the Files view before revealing a folder when no explorer leaf exists', async () => {
     const folder = createFolder('Projects');
     const harness = createHarness({ entries: [folder] });
-    const setViewState = jest.fn().mockResolvedValue(undefined);
-    const revealInFolder = jest.fn().mockResolvedValue(undefined);
+    const setViewState = vi.fn().mockResolvedValue(undefined);
+    const revealInFolder = vi.fn().mockResolvedValue(undefined);
     const fallbackLeaf = { setViewState, view: { revealInFolder } };
     harness.app.workspace.getLeavesOfType.mockReturnValue([]);
-    (harness.app.workspace.getLeftLeaf as jest.Mock).mockReturnValue(fallbackLeaf);
+    (harness.app.workspace.getLeftLeaf as Mock).mockReturnValue(fallbackLeaf);
     harness.controller.selectExplicit(folder.path);
 
     await harness.controller.activateCurrentContent();

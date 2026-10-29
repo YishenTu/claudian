@@ -1,4 +1,4 @@
-import type * as fsPromisesType from 'fs/promises';
+import * as fsPromises from 'node:fs/promises';
 
 import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
 import { decodeCodexConfig } from '@/providers/codex/config';
@@ -95,7 +95,7 @@ describe('CodexHistoryPathResolver', () => {
   });
 
   it('ends the saved-path check at the lookup deadline when the filesystem stalls', async () => {
-    const access = jest.spyOn(jest.requireActual<typeof fsPromisesType>('fs/promises'), 'access').mockReturnValue(new Promise<never>(() => {}));
+    const access = vi.spyOn(fsPromises, 'access').mockReturnValue(new Promise<never>(() => {}));
     try {
       await expect(resolveCodexRolloutFile('/tmp/stalled/sessions/rollout-thread.jsonl', 'thread', null, {
         environment: { CODEX_HOME: '/tmp/stalled', HOME: '/tmp/home' },
@@ -106,3 +106,5 @@ describe('CodexHistoryPathResolver', () => {
     }
   });
 });
+
+vi.mock('node:fs/promises', async () => ({ ...await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises') }));

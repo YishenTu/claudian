@@ -1,6 +1,6 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
+import { axe } from '@test/helpers/accessibility';
 import { within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 import { renderOpencodeMigrationNotice } from '@/providers/opencode/ui/OpencodeMigrationNotice';
 

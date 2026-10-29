@@ -1,8 +1,11 @@
 import { projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { Notice } from 'obsidian';
+import type { Mock, Mocked } from 'vitest';
 
 import type { ProjectRecord } from '@/core/types';
 import { ConversationLifecycle, type ConversationLifecycleStore } from '@/features/chat/conversation/ConversationLifecycle';
+
+
 
 interface FakeTab {
   id: string;
@@ -13,29 +16,29 @@ interface FakeTab {
 function createManager(initialTabs: FakeTab[]) {
   const manager = {
     tabs: initialTabs,
-    closeTab: jest.fn(async (tabId: string) => {
+    closeTab: vi.fn(async (tabId: string) => {
       manager.tabs = manager.tabs.filter(tab => tab.id !== tabId);
       return true;
     }),
     getTabIdentities: () => manager.tabs,
     isTabWorking: (tabId: string) => manager.tabs.find(tab => tab.id === tabId)?.isWorking ?? false,
-    resetConversationTabs: jest.fn().mockResolvedValue(undefined),
+    resetConversationTabs: vi.fn().mockResolvedValue(undefined),
   };
   return manager;
 }
 
 type FakeManager = ReturnType<typeof createManager>;
 
-function createStore(): jest.Mocked<ConversationLifecycleStore> {
+function createStore(): Mocked<ConversationLifecycleStore> {
   return {
-    getConversationList: jest.fn(() => []),
-    deleteConversation: jest.fn().mockResolvedValue(undefined),
-    setConversationArchived: jest.fn().mockResolvedValue(undefined),
-    setConversationsPlacement: jest.fn().mockResolvedValue(undefined),
-    restoreConversations: jest.fn().mockResolvedValue(undefined),
-    ensureAllConversationMetadataLoaded: jest.fn().mockResolvedValue(undefined),
-    archiveProjectIfEmpty: jest.fn().mockResolvedValue(undefined),
-    archiveConversationsIf: jest.fn(async (ids, shouldArchive) => (
+    getConversationList: vi.fn(() => []),
+    deleteConversation: vi.fn().mockResolvedValue(undefined),
+    setConversationArchived: vi.fn().mockResolvedValue(undefined),
+    setConversationsPlacement: vi.fn().mockResolvedValue(undefined),
+    restoreConversations: vi.fn().mockResolvedValue(undefined),
+    ensureAllConversationMetadataLoaded: vi.fn().mockResolvedValue(undefined),
+    archiveProjectIfEmpty: vi.fn().mockResolvedValue(undefined),
+    archiveConversationsIf: vi.fn(async (ids, shouldArchive) => (
       ids.filter(id => shouldArchive({ id } as never)).length
     )),
   };
@@ -44,8 +47,8 @@ function createStore(): jest.Mocked<ConversationLifecycleStore> {
 function createProjects(records: ProjectRecord[] = []) {
   const live = new Map(records.map(record => [record.id, record]));
   return {
-    get: jest.fn((id: string | undefined) => (id === undefined ? null : live.get(id) ?? null)),
-    setArchived: jest.fn(async (id: string, isArchived: boolean) => {
+    get: vi.fn((id: string | undefined) => (id === undefined ? null : live.get(id) ?? null)),
+    setArchived: vi.fn(async (id: string, isArchived: boolean) => {
       const record = live.get(id);
       if (record) live.set(id, { ...record, isArchived });
     }),
@@ -70,7 +73,7 @@ function createLifecycleWith(projects: ReturnType<typeof createProjects>, ...man
 
 describe('ConversationLifecycle', () => {
   beforeEach(() => {
-    (Notice as unknown as jest.Mock).mockClear();
+    (Notice as unknown as Mock).mockClear();
   });
 
   describe('project archive', () => {
@@ -268,7 +271,7 @@ describe('ConversationLifecycle', () => {
 describe('committed archive mailbox cleanup', () => {
   it('preserves pending messages when an archive write fails without committing', async () => {
     const conversations = createStore();
-    const clear = jest.fn();
+    const clear = vi.fn();
     conversations.getConversationList.mockReturnValue([{ id: 'target', isArchived: false }]);
     conversations.archiveConversationsIf.mockRejectedValue(new Error('write failed'));
     const lifecycle = new ConversationLifecycle({
@@ -283,7 +286,7 @@ describe('committed archive mailbox cleanup', () => {
 
   it.each(['manual', 'batch', 'automatic'] as const)('clears only committed archives after %s persistence settles', async mode => {
     const conversations = createStore();
-    const clear = jest.fn();
+    const clear = vi.fn();
     let archived = false;
     let release!: () => void;
     conversations.getConversationList.mockImplementation(() => [{ id: 'target', isArchived: archived }]);

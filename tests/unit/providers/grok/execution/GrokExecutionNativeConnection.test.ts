@@ -4,7 +4,7 @@ import { PassThrough } from 'node:stream';
 
 import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
 
-jest.mock('cross-spawn', () => jest.fn());
+vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 
 import fixture from '@test/fixtures/providers/grok/extensions/plan-mode-hook.json';
 import commandsList from '@test/fixtures/providers/grok/runtime/commands-list.json';
@@ -31,7 +31,7 @@ function createNativeProcess() {
       return true;
     },
   });
-  jest.mocked(spawn).mockReturnValue(proc as unknown as ChildProcessWithoutNullStreams);
+  vi.mocked(spawn).mockReturnValue(proc as unknown as ChildProcessWithoutNullStreams);
   return proc;
 }
 
@@ -196,7 +196,7 @@ it.each([false, true])('terminates on native exit after prompt settled: %s', asy
     nativeFactory: { create: options => new GrokExecutionNativeConnectionImpl(options) },
   }).createSession({
     workingDirectory: '/tmp', lifecycle: 'persistent', nativePersistence: 'enabled',
-    interactionPort: { askUserQuestion: jest.fn(), dismissInteraction: jest.fn(), requestApproval: jest.fn() },
+    interactionPort: { askUserQuestion: vi.fn(), dismissInteraction: vi.fn(), requestApproval: vi.fn() },
   });
   const request: ProviderExecutionRequest = {
     configuration: { permissionMode: 'normal', systemInstructions: { kind: 'explicit', instructions: 'Answer.' } },

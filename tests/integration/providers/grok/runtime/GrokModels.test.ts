@@ -23,7 +23,7 @@ function makeCatalog(selectedIds: string[] = [], response = nativeCatalog) {
   };
   const host = {
     settings,
-    notifyProviderChatOptionsChanged: jest.fn(),
+    notifyProviderChatOptionsChanged: vi.fn(),
   };
   const discovered = normalizeGrokSessionModelMetadata({ models: response.result });
   const runtime = runtimeHostFor(host, 'grok');

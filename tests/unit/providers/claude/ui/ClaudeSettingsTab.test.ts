@@ -1,29 +1,32 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+const mockedModule0: any = await import('@/core/providers/ProviderSettingsCoordinator');
+import { axe } from '@test/helpers/accessibility';
 import { createMockEl } from '@test/helpers/MockElement';
 import { applyTextInput } from '@test/helpers/settingsControls';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import * as fs from 'fs';
-import { axe } from 'jest-axe';
 import { setImmediate } from 'timers';
+import type { Mock, MockedFunction } from 'vitest';
 
 import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from '@/providers/claude/config';
 import { createClaudeSettingsTabRenderer } from '@/providers/claude/ui/ClaudeSettingsTab';
 
+
 Object.assign(globalThis, { setImmediate });
 
-const mockRenderEnvironmentSettingsSection = jest.fn();
-const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
-const mockCLIResolverReset = jest.fn();
-const mockModelCatalogRefresh = jest.fn().mockResolvedValue({ changed: true });
-const mockModelCatalog = { refresh: mockModelCatalogRefresh, markStale: jest.fn() };
-const mockRenderModelPicker = jest.fn((..._args: unknown[]) => ({ refresh: jest.fn(), dispose: jest.fn() }));
+const mockRenderEnvironmentSettingsSection = vi.fn();
+const mockSaveSettings = vi.fn().mockResolvedValue(undefined);
+const mockCLIResolverReset = vi.fn();
+const mockModelCatalogRefresh = vi.fn().mockResolvedValue({ changed: true });
+const mockModelCatalog = { refresh: mockModelCatalogRefresh, markStale: vi.fn() };
+const mockRenderModelPicker = vi.fn((..._args: unknown[]) => ({ refresh: vi.fn(), dispose: vi.fn() }));
 
-jest.mock('fs');
-jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
+vi.mock('fs');
+vi.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   ProviderSettingsCoordinator: {
-    canApplyProviderEnablement: jest.fn(() => true),
-    applyProviderEnablement: jest.fn((
+    canApplyProviderEnablement: vi.fn(() => true),
+    applyProviderEnablement: vi.fn((
       settings: Record<string, unknown>,
       providerId: string,
       enabled: boolean,
@@ -35,7 +38,7 @@ jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   },
 }));
 
-jest.mock('obsidian', () => {
+vi.mock('obsidian', () => {
   class MockSetting {
     public name = '';
     public desc = '';
@@ -94,7 +97,7 @@ jest.mock('obsidian', () => {
   };
 });
 
-jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
+vi.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
   renderEnvironmentSettingsSection: (...args: unknown[]) => mockRenderEnvironmentSettingsSection(...args),
 }));
 
@@ -107,11 +110,11 @@ function createSettingsRenderer() {
   } as unknown as Parameters<typeof createClaudeSettingsTabRenderer>[0]);
 }
 
-jest.mock('@/shared/settings/ProviderModelsSection', () => ({
+vi.mock('@/shared/settings/ProviderModelsSection', () => ({
   renderProviderModelsSection: (...args: unknown[]) => mockRenderModelPicker(...args),
 }));
 
-jest.mock('@/i18n/i18n', () => ({
+vi.mock('@/i18n/i18n', () => ({
   t: (key: string) => ({
     'settings.claude.responseStyle.name': 'Response style',
     'settings.claude.responseStyle.default': 'Default',
@@ -126,18 +129,18 @@ interface MockInputEl {
   value: string;
   style: Record<string, string>;
   dataset: Record<string, string>;
-  addClass: jest.Mock;
-  toggleClass: jest.Mock;
-  addEventListener: jest.Mock;
+  addClass: Mock;
+  toggleClass: Mock;
+  addEventListener: Mock;
 }
 
 interface MockTextComponent {
   value: string;
   placeholder: string;
   onChangeCallback: ((value: string) => Promise<void> | void) | null;
-  setPlaceholder: jest.MockedFunction<(value: string) => MockTextComponent>;
-  setValue: jest.MockedFunction<(value: string) => MockTextComponent>;
-  onChange: jest.MockedFunction<(callback: (value: string) => Promise<void> | void) => MockTextComponent>;
+  setPlaceholder: MockedFunction<(value: string) => MockTextComponent>;
+  setValue: MockedFunction<(value: string) => MockTextComponent>;
+  onChange: MockedFunction<(callback: (value: string) => Promise<void> | void) => MockTextComponent>;
   inputEl: MockInputEl;
 }
 
@@ -146,16 +149,16 @@ interface MockDropdownComponent {
   value: string;
   options: Array<{ value: string; label: string }>;
   onChangeCallback: ((value: string) => Promise<void> | void) | null;
-  addOption: jest.MockedFunction<(value: string, label: string) => MockDropdownComponent>;
-  setValue: jest.MockedFunction<(value: string) => MockDropdownComponent>;
-  onChange: jest.MockedFunction<(callback: (value: string) => Promise<void> | void) => MockDropdownComponent>;
+  addOption: MockedFunction<(value: string, label: string) => MockDropdownComponent>;
+  setValue: MockedFunction<(value: string) => MockDropdownComponent>;
+  onChange: MockedFunction<(callback: (value: string) => Promise<void> | void) => MockDropdownComponent>;
 }
 
 interface MockToggleComponent {
   value: boolean;
   onChangeCallback: ((value: boolean) => Promise<void> | void) | null;
-  setValue: jest.MockedFunction<(value: boolean) => MockToggleComponent>;
-  onChange: jest.MockedFunction<(callback: (value: boolean) => Promise<void> | void) => MockToggleComponent>;
+  setValue: MockedFunction<(value: boolean) => MockToggleComponent>;
+  onChange: MockedFunction<(callback: (value: boolean) => Promise<void> | void) => MockToggleComponent>;
 }
 
 const createdSettings: Array<{
@@ -176,9 +179,9 @@ function createInputEl(): MockInputEl & { _listeners: Map<string, Array<() => vo
     value: '',
     style: {},
     dataset: {},
-    addClass: jest.fn(),
-    toggleClass: jest.fn(),
-    addEventListener: jest.fn((event: string, handler: () => void) => {
+    addClass: vi.fn(),
+    toggleClass: vi.fn(),
+    addEventListener: vi.fn((event: string, handler: () => void) => {
       const handlers = listeners.get(event) ?? [];
       handlers.push(handler);
       listeners.set(event, handlers);
@@ -193,16 +196,16 @@ function createTextComponent(): MockTextComponent {
   component.placeholder = '';
   component.onChangeCallback = null;
   component.inputEl = createInputEl();
-  component.setPlaceholder = jest.fn((value: string) => {
+  component.setPlaceholder = vi.fn((value: string) => {
     component.placeholder = value;
     return component;
   });
-  component.setValue = jest.fn((value: string) => {
+  component.setValue = vi.fn((value: string) => {
     component.value = value;
     component.inputEl.value = value;
     return component;
   });
-  component.onChange = jest.fn((callback: (value: string) => Promise<void> | void) => {
+  component.onChange = vi.fn((callback: (value: string) => Promise<void> | void) => {
     component.onChangeCallback = callback;
     return component;
   });
@@ -216,17 +219,17 @@ function createDropdownComponent(): MockDropdownComponent {
   component.value = '';
   component.options = [];
   component.onChangeCallback = null;
-  component.addOption = jest.fn((value: string, label: string) => {
+  component.addOption = vi.fn((value: string, label: string) => {
     component.options.push({ value, label });
     component.selectEl.add(new Option(label, value));
     return component;
   });
-  component.setValue = jest.fn((value: string) => {
+  component.setValue = vi.fn((value: string) => {
     component.value = value;
     component.selectEl.value = value;
     return component;
   });
-  component.onChange = jest.fn((callback: (value: string) => Promise<void> | void) => {
+  component.onChange = vi.fn((callback: (value: string) => Promise<void> | void) => {
     component.onChangeCallback = callback;
     component.selectEl.addEventListener('change', () => { void callback(component.selectEl.value); });
     return component;
@@ -239,11 +242,11 @@ function createToggleComponent(): MockToggleComponent {
   const component = {} as MockToggleComponent;
   component.value = false;
   component.onChangeCallback = null;
-  component.setValue = jest.fn((value: boolean) => {
+  component.setValue = vi.fn((value: boolean) => {
     component.value = value;
     return component;
   });
-  component.onChange = jest.fn((callback: (value: boolean) => Promise<void> | void) => {
+  component.onChange = vi.fn((callback: (value: boolean) => Promise<void> | void) => {
     component.onChangeCallback = callback;
     return component;
   });
@@ -258,30 +261,30 @@ function createElement(): any {
     value: '',
     style: {},
     dataset: {},
-    appendText: jest.fn(),
-    createEl: jest.fn(() => createElement()),
-    createDiv: jest.fn(() => createElement()),
-    createSpan: jest.fn(() => createElement()),
-    setText: jest.fn(),
-    empty: jest.fn(),
-    addClass: jest.fn((cls: string) => {
+    appendText: vi.fn(),
+    createEl: vi.fn(() => createElement()),
+    createDiv: vi.fn(() => createElement()),
+    createSpan: vi.fn(() => createElement()),
+    setText: vi.fn(),
+    empty: vi.fn(),
+    addClass: vi.fn((cls: string) => {
       cls.split(/\s+/).filter(Boolean).forEach((item) => classes.add(item));
     }),
-    removeClass: jest.fn((cls: string) => {
+    removeClass: vi.fn((cls: string) => {
       cls.split(/\s+/).filter(Boolean).forEach((item) => classes.delete(item));
     }),
-    toggleClass: jest.fn((cls: string, force: boolean) => {
+    toggleClass: vi.fn((cls: string, force: boolean) => {
       if (force) {
         classes.add(cls);
       } else {
         classes.delete(cls);
       }
     }),
-    hasClass: jest.fn((cls: string) => classes.has(cls)),
+    hasClass: vi.fn((cls: string) => classes.has(cls)),
     classList: {
-      add: jest.fn((cls: string) => classes.add(cls)),
-      remove: jest.fn((cls: string) => classes.delete(cls)),
-      toggle: jest.fn((cls: string, force?: boolean) => {
+      add: vi.fn((cls: string) => classes.add(cls)),
+      remove: vi.fn((cls: string) => classes.delete(cls)),
+      toggle: vi.fn((cls: string, force?: boolean) => {
         if (force === undefined) {
           if (classes.has(cls)) {
             classes.delete(cls);
@@ -297,7 +300,7 @@ function createElement(): any {
         }
         return force;
       }),
-      contains: jest.fn((cls: string) => classes.has(cls)),
+      contains: vi.fn((cls: string) => classes.has(cls)),
     },
   };
 
@@ -306,8 +309,8 @@ function createElement(): any {
 
 function createContainer(): any {
   return {
-    createDiv: jest.fn(() => createElement()),
-    createEl: jest.fn(() => createElement()),
+    createDiv: vi.fn(() => createElement()),
+    createEl: vi.fn(() => createElement()),
   };
 }
 
@@ -328,7 +331,7 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
       ...overrides,
     },
     saveSettings: mockSaveSettings,
-    runProviderExecutionTransition: jest.fn(async (
+    runProviderExecutionTransition: vi.fn(async (
       _providerIds: string[],
       mutation: () => Promise<unknown>,
     ) => mutation()),
@@ -340,11 +343,11 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
       },
     },
   };
-  plugin.mutateSettings = jest.fn(async (mutation: (settings: any) => void | Promise<void>) => {
+  plugin.mutateSettings = vi.fn(async (mutation: (settings: any) => void | Promise<void>) => {
     await mutation(plugin.settings);
     await plugin.saveSettings();
   });
-  plugin.applyProviderRuntimeSettings = jest.fn(async (
+  plugin.applyProviderRuntimeSettings = vi.fn(async (
     providerIds: string[],
     mutation: (settings: any) => void | Promise<void>,
     onApplied?: () => void | Promise<void>,
@@ -358,8 +361,8 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
 function createContext(plugin: any) {
   return {
     plugin,
-    notifyProviderModelOptionsChanged: jest.fn(),
-    renderCustomContextLimits: jest.fn(),
+    notifyProviderModelOptionsChanged: vi.fn(),
+    renderCustomContextLimits: vi.fn(),
   };
 }
 
@@ -371,8 +374,8 @@ function findSetting(name: string) {
   return setting;
 }
 
-jest.mock('@/core/device/InstallationKey', () => ({
-  ...jest.requireActual('@/core/device/InstallationKey'),
+vi.mock('@/core/device/InstallationKey', async () => ({
+  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
   getInstallationKey: () => 'host-a',
 }));
 
@@ -390,12 +393,12 @@ describe('ClaudeSettingsTab', () => {
     expect(mockSaveSettings).toHaveBeenCalled();
   });
 
-  const mockedExistsSync = fs.existsSync as jest.MockedFunction<typeof fs.existsSync>;
-  const mockedStatSync = fs.statSync as jest.MockedFunction<typeof fs.statSync>;
+  const mockedExistsSync = fs.existsSync as MockedFunction<typeof fs.existsSync>;
+  const mockedStatSync = fs.statSync as MockedFunction<typeof fs.statSync>;
 
   beforeEach(() => {
     createdSettings.length = 0;
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockedExistsSync.mockReturnValue(false);
     mockedStatSync.mockReturnValue({ isFile: () => true } as fs.Stats);
   });
@@ -488,7 +491,7 @@ describe('ClaudeSettingsTab', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
     const container = createContainer();
-    const coordinator = jest.requireMock('@/core/providers/ProviderSettingsCoordinator')
+    const coordinator = mockedModule0
       .ProviderSettingsCoordinator;
     coordinator.canApplyProviderEnablement.mockImplementationOnce(() => false);
 

@@ -1,5 +1,9 @@
+import type { Mock } from 'vitest';
+
 import { forkOpencodeHTTPSession } from '@/providers/opencode/history/OpencodeSessionFork';
 import type { OpencodeServerLease } from '@/providers/opencode/http/OpencodeServerService';
+
+
 
 /** A v2 server whose sessions copy messages on fork, honoring the exclusive `before` boundary. */
 function createServer(onForkRequested: () => void = () => undefined) {
@@ -7,7 +11,7 @@ function createServer(onForkRequested: () => void = () => undefined) {
     ['ses_source', [{ id: 'msg_user', type: 'user' }, { id: 'msg_reply', type: 'assistant' }]],
   ]);
   let ordinal = 0;
-  const request = jest.fn(async (route: string, init?: { method?: string; body?: { before?: string } }) => {
+  const request = vi.fn(async (route: string, init?: { method?: string; body?: { before?: string } }) => {
     const [, , , sessionId, action] = route.split('?')[0].split('/');
     const id = decodeURIComponent(sessionId);
     if (action === 'message') return { data: sessions.get(id) ?? [] };
@@ -45,7 +49,7 @@ it('bounds the child at the checkpoint when a source turn lands between the read
 
 it('deletes an unbounded child whose history cannot be verified', async () => {
   const server = createServer();
-  const request = server.client.request as jest.Mock;
+  const request = server.client.request as Mock;
   const serve = request.getMockImplementation()!;
   request.mockImplementation(async (route: string, init?: { method?: string }) => {
     if (route.startsWith('/api/session/ses_child_1/message')) throw new Error('History read failed');

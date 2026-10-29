@@ -1,10 +1,11 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Notice } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
@@ -21,7 +22,9 @@ import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 import { EnvSnippetManager, EnvSnippetModal } from '@/shared/settings/EnvSnippetManager';
 import { ModelSelector } from '@/shared/toolbar/ModelSelector';
 
-jest.mock('obsidian', () => jest.requireActual('../../../helpers/ObsidianSettingsDOM'));
+
+
+vi.mock('obsidian', async () => (await vi.importActual<typeof import('../../../helpers/ObsidianSettingsDOM')>('../../../helpers/ObsidianSettingsDOM')));
 
 type ModalTimerJoin = () => Promise<void>;
 
@@ -40,8 +43,7 @@ afterEach(() => {
 function captureModalFocusTimers(openModal: () => void): ModalTimerJoin {
   const realSetTimeout = window.setTimeout.bind(window);
   const completions: Array<Promise<void>> = [];
-  const spy = jest
-    .spyOn(window, 'setTimeout')
+  const spy = vi.spyOn(window, 'setTimeout')
     .mockImplementation(((handler: string | ((...callbackArgs: unknown[]) => void), timeout?: number, ...args: unknown[]) => {
       if (typeof handler !== 'function') {
         return realSetTimeout(String(handler), timeout);
@@ -69,7 +71,7 @@ function captureModalFocusTimers(openModal: () => void): ModalTimerJoin {
   };
 }
 
-function notifyCalls(notice: jest.Mock): string[] {
+function notifyCalls(notice: Mock): string[] {
   return notice.mock.calls.map((args: unknown[]) => String(args[0]));
 }
 
@@ -85,14 +87,14 @@ it('preserves own context-limit keys when inserting a snippet with production ob
   }];
   const coordinator = new SettingsCoordinator(settings, async () => undefined);
   const host = {
-    notifyProviderChatOptionsChanged: jest.fn(),
+    notifyProviderChatOptionsChanged: vi.fn(),
     settings,
     app: { workspace: { getLeavesOfType: () => [] } },
     applyEnvironmentVariables: async () => undefined,
     mutateSettings: coordinator.mutate.bind(coordinator),
   } as unknown as ProviderHost;
   const container = document.body.createEl('main');
-  const changed = jest.fn();
+  const changed = vi.fn();
   new EnvSnippetManager(container, host, 'provider:claude', changed);
 
   fireEvent.click(within(container).getByRole('button', { name: 'Insert' }));
@@ -105,22 +107,22 @@ it('preserves own context-limit keys when inserting a snippet with production ob
   expect(await axe(container)).toHaveNoViolations();
 });
 
-it.each(aliasCases)('applies snippet aliases through provider settings while preserving unrelated aliases (%p)', async modelAliases => {
+it.each(aliasCases)('applies snippet aliases through provider settings while preserving unrelated aliases (%o)', async modelAliases => {
   const settings = JSON.parse(JSON.stringify(DEFAULT_CLAUDIAN_SETTINGS)) as typeof DEFAULT_CLAUDIAN_SETTINGS;
   updateClaudeProviderSettings(settings, { modelAliases: { custom: 'Old name', other: 'Keep name' }, loadUserSettings: false });
   settings.envSnippets = [{
     id: 'snippet', name: 'Custom endpoint', description: '', scope: 'provider:claude',
     envVars: 'ANTHROPIC_MODEL=custom', modelAliases,
   }];
-  const applyEnvironmentVariables = jest.fn().mockResolvedValue(undefined);
+  const applyEnvironmentVariables = vi.fn().mockResolvedValue(undefined);
   const host = {
-    notifyProviderChatOptionsChanged: jest.fn(),
+    notifyProviderChatOptionsChanged: vi.fn(),
     settings, applyEnvironmentVariables,
     app: { workspace: { getLeavesOfType: () => [] } },
     mutateSettings: async (mutate: Parameters<ProviderHost['mutateSettings']>[0]) => { await mutate(settings); },
   } as unknown as ProviderHost;
   const container = document.body.createEl('main');
-  const onChanged = jest.fn();
+  const onChanged = vi.fn();
   new EnvSnippetManager(container, host, 'provider:claude', onChanged);
   expect(['Insert', 'Edit', 'Delete'].map(name =>
     within(container).getByRole<HTMLButtonElement>('button', { name }).type,
@@ -141,7 +143,7 @@ it('offers saving the current environment from the empty snippet state', async (
   const settings = JSON.parse(JSON.stringify(DEFAULT_CLAUDIAN_SETTINGS)) as typeof DEFAULT_CLAUDIAN_SETTINGS;
   settings.envSnippets = [];
   const host = {
-    notifyProviderChatOptionsChanged: jest.fn(),
+    notifyProviderChatOptionsChanged: vi.fn(),
     settings,
     app: { workspace: { getLeavesOfType: () => [] } },
     getEnvironmentVariablesForScope: () => 'ANTHROPIC_MODEL=custom',
@@ -187,7 +189,7 @@ it.each([
     id: 'snippet', name: 'Custom endpoint', description: '', scope: 'provider:claude' as const,
     envVars: 'ANTHROPIC_MODEL=custom', modelAliases: { custom: 'Old alias' }, contextLimits: { custom: 200000 },
   };
-  const save = jest.fn();
+  const save = vi.fn();
   const host = { settings } as ProviderHost;
   const modal = new EnvSnippetModal({} as ProviderHost['app'], host, snippet, 'provider:claude', save);
   const joinFocusTimers = captureModalFocusTimers(() => { modal.open(); });
@@ -222,7 +224,7 @@ it.each(['de-DE', 'fr-FR', 'ar-EG', 'en-US'])(
         modelAliases: { custom: 'Old alias' },
         contextLimits: { custom: 256500 },
       };
-      const save = jest.fn();
+      const save = vi.fn();
       const host = { settings } as ProviderHost;
       const modal = new EnvSnippetModal({} as ProviderHost['app'], host, snippet, 'provider:claude', save);
       const joinFocusTimers = captureModalFocusTimers(() => { modal.open(); });
@@ -245,7 +247,7 @@ it.each((['Update', 'name Enter', 'Save'] as const).flatMap(action =>
 ))(
   'rejects $invalidContext through $action and saves corrected drafts from the same modal',
   async ({ action, invalidContext }) => {
-    const notice = Notice as unknown as jest.Mock;
+    const notice = Notice as unknown as Mock;
     notice.mockClear();
     const settings = JSON.parse(JSON.stringify(DEFAULT_CLAUDIAN_SETTINGS)) as typeof DEFAULT_CLAUDIAN_SETTINGS;
     const envVars = 'ANTHROPIC_MODEL=sibling\nANTHROPIC_DEFAULT_SONNET_MODEL=custom';
@@ -261,11 +263,11 @@ it.each((['Update', 'name Enter', 'Save'] as const).flatMap(action =>
     settings.envSnippets = action === 'Save' ? [unrelatedSnippet] : [originalSnippet, unrelatedSnippet];
     const originalSettings = structuredClone(settings);
     let completePersistence = (): void => undefined;
-    const persist = jest.fn<Promise<void>, [typeof settings]>(() => new Promise<void>(resolve => {
+    const persist = vi.fn<(...args: [typeof settings]) => Promise<void>>(() => new Promise<void>(resolve => {
       completePersistence = resolve;
     }));
     const coordinator = new SettingsCoordinator(settings, persist);
-    const mutateSettings = jest.fn(coordinator.mutate.bind(coordinator));
+    const mutateSettings = vi.fn(coordinator.mutate.bind(coordinator));
     const host = {
       settings, mutateSettings,
       app: { workspace: { getLeavesOfType: () => [] } },
@@ -362,7 +364,7 @@ it.each((['Update', 'name Enter', 'Save'] as const).flatMap(action =>
 );
 
 it.each(['Save', 'Update'] as const)('retains every %s draft after persistence fails and retries from that same modal', async action => {
-  const notice = Notice as unknown as jest.Mock;
+  const notice = Notice as unknown as Mock;
   notice.mockClear();
   const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
   settings.envSnippets = action === 'Save' ? [] : [{
@@ -370,11 +372,11 @@ it.each(['Save', 'Update'] as const)('retains every %s draft after persistence f
     envVars: 'ANTHROPIC_MODEL=custom',
   }];
   const originalSnippets = structuredClone(settings.envSnippets);
-  const persist = jest.fn<Promise<void>, [typeof settings]>()
+  const persist = vi.fn<(...args: [typeof settings]) => Promise<void>>()
     .mockRejectedValueOnce(new Error('storage unavailable')).mockResolvedValue(undefined);
   const coordinator = new SettingsCoordinator(settings, persist);
   const host = {
-    notifyProviderChatOptionsChanged: jest.fn(),
+    notifyProviderChatOptionsChanged: vi.fn(),
     settings,
     app: { workspace: { getLeavesOfType: () => [] } },
     getEnvironmentVariablesForScope: () => 'ANTHROPIC_MODEL=custom',
@@ -430,15 +432,15 @@ it.each(['Save', 'Update'] as const)('retains every %s draft after persistence f
 });
 
 it.each(['Save', 'Update'] as const)('does not offer another %s after persistence committed but publication failed', async action => {
-  const notice = Notice as unknown as jest.Mock;
+  const notice = Notice as unknown as Mock;
   notice.mockClear();
   const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
   settings.envSnippets = action === 'Save' ? [] : [{
     id: 'snippet', name: 'Existing snippet name', description: '', scope: 'provider:claude',
     envVars: 'ANTHROPIC_MODEL=custom',
   }];
-  const persist = jest.fn<Promise<void>, [typeof settings]>().mockResolvedValue(undefined);
-  const publish = jest.fn(() => { throw new Error('view refresh failed'); });
+  const persist = vi.fn<(...args: [typeof settings]) => Promise<void>>().mockResolvedValue(undefined);
+  const publish = vi.fn(() => { throw new Error('view refresh failed'); });
   const coordinator = new SettingsCoordinator(settings, persist, publish);
   const host = {
     settings,
@@ -467,14 +469,14 @@ it.each(['Save', 'Update'] as const)('does not offer another %s after persistenc
 });
 
 it('saves a snippet through the coordinator and renders it when persistence succeeds', async () => {
-  const notice = Notice as unknown as jest.Mock;
+  const notice = Notice as unknown as Mock;
   notice.mockClear();
   const settings = JSON.parse(JSON.stringify(DEFAULT_CLAUDIAN_SETTINGS)) as typeof DEFAULT_CLAUDIAN_SETTINGS;
   settings.envSnippets = [];
-  const persist = jest.fn<Promise<void>, [typeof settings]>().mockResolvedValue(undefined);
+  const persist = vi.fn<(...args: [typeof settings]) => Promise<void>>().mockResolvedValue(undefined);
   const coordinator = new SettingsCoordinator(settings, persist);
   const host = {
-    notifyProviderChatOptionsChanged: jest.fn(),
+    notifyProviderChatOptionsChanged: vi.fn(),
     settings,
     app: { workspace: { getLeavesOfType: () => [] } },
     getEnvironmentVariablesForScope: () => 'ANTHROPIC_MODEL=custom',
@@ -509,8 +511,8 @@ it('saves a snippet through the coordinator and renders it when persistence succ
   expect(notifyCalls(notice)).not.toContain('Could not complete environment snippet save');
 });
 
-it.each(['', '   '])('clears a context override (%p) through the coordinator while saving valid sibling drafts', async blank => {
-  const notice = Notice as unknown as jest.Mock;
+it.each(['', '   '])('clears a context override (%o) through the coordinator while saving valid sibling drafts', async blank => {
+  const notice = Notice as unknown as Mock;
   notice.mockClear();
   const settings = JSON.parse(JSON.stringify(DEFAULT_CLAUDIAN_SETTINGS)) as typeof DEFAULT_CLAUDIAN_SETTINGS;
   settings.envSnippets = [{
@@ -519,10 +521,10 @@ it.each(['', '   '])('clears a context override (%p) through the coordinator whi
     contextLimits: { custom: 200000, sibling: 100000 },
     modelAliases: { custom: 'Old alias' },
   }];
-  const persist = jest.fn<Promise<void>, [typeof settings]>().mockResolvedValue(undefined);
+  const persist = vi.fn<(...args: [typeof settings]) => Promise<void>>().mockResolvedValue(undefined);
   const coordinator = new SettingsCoordinator(settings, persist);
   const host = {
-    notifyProviderChatOptionsChanged: jest.fn(),
+    notifyProviderChatOptionsChanged: vi.fn(),
     settings,
     app: { workspace: { getLeavesOfType: () => [] } },
     getEnvironmentVariablesForScope: () => 'ANTHROPIC_MODEL=custom',
@@ -581,9 +583,9 @@ it('saves, reloads and inserts snippet overrides for prototype-named custom mode
   } as unknown as VaultFileAdapter;
   const storage = new ClaudianSettingsStorage(adapter, DEFAULT_CLAUDIAN_SETTINGS);
   const coordinator = new SettingsCoordinator(settings, value => storage.save(value));
-  const onChanged = jest.fn();
+  const onChanged = vi.fn();
   const host = {
-    notifyProviderChatOptionsChanged: jest.fn(),
+    notifyProviderChatOptionsChanged: vi.fn(),
     settings, mutateSettings: coordinator.mutate.bind(coordinator),
     app: { workspace: { getLeavesOfType: () => [] } },
     getEnvironmentVariablesForScope: () => envVars,

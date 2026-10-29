@@ -18,7 +18,7 @@ function createTransport() {
 
 describe('PiRPCTransport', () => {
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it('writes command requests with string ids', async () => {
@@ -101,11 +101,11 @@ describe('PiRPCTransport', () => {
   });
 
   it('rejects timed-out requests and removes them from the pending set', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const { input, transport } = createTransport();
     const timedOut = transport.request('prompt', {}, 100);
 
-    jest.advanceTimersByTime(100);
+    vi.advanceTimersByTime(100);
     await expect(timedOut).rejects.toThrow('Request timeout: prompt');
 
     input.write('{"type":"response","id":"req_1","success":true,"result":"late"}\n');
@@ -140,7 +140,7 @@ describe('PiRPCTransport', () => {
       else callback();
     } });
     const transport = new PiRPCTransport({ input, output }, 0);
-    const closed = jest.fn();
+    const closed = vi.fn();
     transport.onClose(closed);
     const pending = Promise.allSettled([transport.request('prompt'), transport.request('get_state')]);
     try {
@@ -175,7 +175,7 @@ describe('PiRPCTransport', () => {
     } });
     const unhandledErrors: unknown[] = [];
     const emit = output.emit.bind(output);
-    jest.spyOn(output, 'emit').mockImplementation((event, ...args) => {
+    vi.spyOn(output, 'emit').mockImplementation((event, ...args) => {
       // Record the otherwise fatal event so a failing implementation does not crash the test runner.
       if (event === 'error' && output.listenerCount('error') === 0) {
         unhandledErrors.push(args[0]);
@@ -184,7 +184,7 @@ describe('PiRPCTransport', () => {
       return emit(event, ...args);
     });
     const transport = new PiRPCTransport({ input, output }, 0);
-    const closed = jest.fn();
+    const closed = vi.fn();
     transport.onClose(closed);
     const pending = transport.request('prompt');
     transport.dispose();

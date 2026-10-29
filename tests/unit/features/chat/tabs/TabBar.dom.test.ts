@@ -1,14 +1,17 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Menu } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import type { TabBarItem } from '@/features/chat/tabs/ChatTab';
 import { TabBar } from '@/features/chat/tabs/TabBar';
 
+
+
 type MockMenu = Menu & {
   items: Array<{ title: string; clickHandler: (() => void) | null }>;
-  showAtMouseEvent: jest.Mock;
+  showAtMouseEvent: Mock;
 };
 
 function item(overrides: Partial<TabBarItem> = {}): TabBarItem {
@@ -27,10 +30,10 @@ function item(overrides: Partial<TabBarItem> = {}): TabBarItem {
 function setup(items: TabBarItem[] = [item(), item({ id: 'tab-2', index: 2, title: 'Second session' })]) {
   const container = document.body.createDiv();
   const callbacks = {
-    onTabClick: jest.fn(),
-    onTabClose: jest.fn(),
-    onTabLabelChange: jest.fn(),
-    onDisplayStateChanged: jest.fn(),
+    onTabClick: vi.fn(),
+    onTabClose: vi.fn(),
+    onTabLabelChange: vi.fn(),
+    onDisplayStateChanged: vi.fn(),
   };
   const tabBar = new TabBar(container, callbacks);
   tabBar.update(items);
@@ -278,7 +281,7 @@ describe('TabBar tab labels', () => {
   });
 
   it('swaps a held rename editor back after a press that ends without a click', () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const { callbacks, tabBar, ui } = setup();
       chooseMenuItem(openMenu(ui.getByRole('button', { name: /^Refactor/ })), 'Rename tab…');
@@ -293,13 +296,13 @@ describe('TabBar tab labels', () => {
       expect(input.isConnected).toBe(true);
       expect(tabBar.handleEscape()).toBe(false);
 
-      jest.runOnlyPendingTimers();
+      vi.runOnlyPendingTimers();
       expect(input.isConnected).toBe(false);
       expect(ui.getByRole('button', { name: /^Docs/ }).textContent).toBe('Docs');
       expect(callbacks.onTabLabelChange).toHaveBeenCalledTimes(1);
       expect(callbacks.onTabClick).not.toHaveBeenCalled();
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 

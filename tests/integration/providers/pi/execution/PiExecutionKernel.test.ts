@@ -9,7 +9,7 @@ import { PiExecutionBackend } from '@/providers/pi/execution/PiExecutionBackend'
 import { PiRPCSessionKernel } from '@/providers/pi/execution/PiExecutionKernel';
 import type { PiRPCRecord } from '@/providers/pi/runtime/PiRPCTransport';
 
-jest.setTimeout(10_000);
+vi.setConfig({ testTimeout: 10_000 });
 
 describe('Pi execution kernel with an external protocol process', () => {
   let root: string;
@@ -97,7 +97,7 @@ describe('Pi session tools through the generated extension', () => {
     sessionFile = path.join(root, '.pi', 'agent', 'sessions', 'source.jsonl');
     await fs.mkdir(path.dirname(sessionFile), { recursive: true });
     await fs.writeFile(sessionFile, JSON.stringify({ type: 'session', version: 3, id: 'pi-source', cwd: root }) + '\n');
-    port = { list: jest.fn().mockResolvedValue({ sessions: [] }), send: jest.fn().mockResolvedValue({ sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' }), read: jest.fn() };
+    port = { list: vi.fn().mockResolvedValue({ sessions: [] }), send: vi.fn().mockResolvedValue({ sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' }), read: vi.fn() };
   });
 
   afterEach(async () => {
@@ -121,7 +121,7 @@ describe('Pi session tools through the generated extension', () => {
         return kernel;
       },
     });
-    session = backend.createSession({ interactionPort: { askUserQuestion: jest.fn(), requestApproval: jest.fn(), dismissInteraction: jest.fn() }, lifecycle: persistent ? 'persistent' : 'ephemeral', nativePersistence: persistent ? 'enabled' : 'disabled-if-supported', workingDirectory: root,
+    session = backend.createSession({ interactionPort: { askUserQuestion: vi.fn(), requestApproval: vi.fn(), dismissInteraction: vi.fn() }, lifecycle: persistent ? 'persistent' : 'ephemeral', nativePersistence: persistent ? 'enabled' : 'disabled-if-supported', workingDirectory: root,
       ...(bound ? { sessionTools: port } : {}),
       resumeSeed: { providerSessionId: 'pi-source', providerState: { sessionId: 'pi-source', sessionFile } },
     });
@@ -199,7 +199,7 @@ describe('Pi session tools through the generated extension', () => {
     const called = new Promise<void>(resolve => { entered = resolve; });
     let callSignal!: AbortSignal;
     let finish!: () => void;
-    port.send = jest.fn((_args, signal) => {
+    port.send = vi.fn<typeof port.send>((_args, signal) => {
       callSignal = signal;
       entered();
       return new Promise(resolve => { finish = () => resolve({ sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' }); });

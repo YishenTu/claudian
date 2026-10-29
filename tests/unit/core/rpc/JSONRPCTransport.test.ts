@@ -1,11 +1,15 @@
 import { createInterface } from 'node:readline';
 import { PassThrough, Writable } from 'node:stream';
 
+import type { Mock } from 'vitest';
+
 import {
   JSONRPCErrorResponse,
   JSONRPCTransport,
   JSONRPCTransportClosedError,
 } from '@/core/rpc/JSONRPCTransport';
+
+
 
 interface TransportHarness {
   close: () => void;
@@ -15,7 +19,7 @@ interface TransportHarness {
   output: PassThrough;
   sendInbound: (message: unknown) => void;
   transport: JSONRPCTransport;
-  unregisterClose: jest.Mock;
+  unregisterClose: Mock;
 }
 
 function createTransportHarness(
@@ -28,7 +32,7 @@ function createTransportHarness(
   const queued: Record<string, unknown>[] = [];
   const waiters: Array<(message: Record<string, unknown>) => void> = [];
   let processClose: ((error?: Error) => void) | undefined;
-  const unregisterClose = jest.fn();
+  const unregisterClose = vi.fn();
 
   reader.on('error', () => {});
 
@@ -80,7 +84,7 @@ describe('JSONRPCTransport', () => {
   afterEach(() => {
     harness.transport.dispose();
     harness.close();
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it('correlates successful and typed error responses with numeric client IDs', async () => {
@@ -108,11 +112,11 @@ describe('JSONRPCTransport', () => {
   });
 
   it('times out and ignores a later response', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const request = harness.transport.request('slow', {}, { timeoutMs: 500 });
     const outbound = await harness.nextOutbound();
 
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
     await expect(request).rejects.toThrow('Request timeout: slow (500ms)');
 
     harness.sendInbound({ id: outbound.id, jsonrpc: '2.0', result: 'late' });
@@ -139,8 +143,8 @@ describe('JSONRPCTransport', () => {
   });
 
   it('sends notifications and dispatches all registered notification handlers', async () => {
-    const first = jest.fn();
-    const second = jest.fn();
+    const first = vi.fn();
+    const second = vi.fn();
     harness.transport.onNotification('turn/updated', first);
     const unsubscribe = harness.transport.onNotification('turn/updated', second);
 
@@ -167,7 +171,7 @@ describe('JSONRPCTransport', () => {
   });
 
   it('exposes the native server-request ID in handler context', async () => {
-    const handler = jest.fn().mockResolvedValue({ decision: 'accept' });
+    const handler = vi.fn().mockResolvedValue({ decision: 'accept' });
     harness.transport.start();
     harness.transport.onRequest('approval/request', handler);
 
@@ -258,7 +262,7 @@ describe('JSONRPCTransport', () => {
   });
 
   it('falls back to the stream-close error after the owner-close grace period', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const deferred = createTransportHarness(30_000, 1_000);
     try {
       const request = deferred.transport.request('pending', {}, { timeoutMs: 0 });
@@ -270,7 +274,7 @@ describe('JSONRPCTransport', () => {
 
       deferred.input.emit('end');
       expect(deferred.transport.isClosed).toBe(false);
-      jest.advanceTimersByTime(1_000);
+      vi.advanceTimersByTime(1_000);
 
       await expect(outcome).resolves.toEqual(expect.objectContaining({
         message: 'JSON-RPC input closed',
@@ -283,7 +287,7 @@ describe('JSONRPCTransport', () => {
   });
 
   it('removes listeners and disposes exactly once', () => {
-    const onClose = jest.fn();
+    const onClose = vi.fn();
     const baseline = {
       inputClose: harness.input.listenerCount('close'),
       inputEnd: harness.input.listenerCount('end'),
@@ -357,7 +361,7 @@ describe('JSONRPCTransport', () => {
     output.end();
   });
 
-  it.each([null, true, 42, 'text'])('ignores parsed JSON primitive %p', async (primitive) => {
+  it.each([null, true, 42, 'text'])('ignores parsed JSON primitive %o', async (primitive) => {
     harness.transport.start();
     harness.sendInbound(primitive);
 
@@ -370,7 +374,7 @@ describe('JSONRPCTransport', () => {
 
   it('contains synchronous notification handler exceptions', async () => {
     harness.transport.start();
-    const workingHandler = jest.fn();
+    const workingHandler = vi.fn();
     harness.transport.onNotification('throwing', () => { throw new Error('handler failed'); });
     harness.transport.onNotification('working', workingHandler);
 

@@ -1,5 +1,7 @@
+const actualModule0 = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
 import type * as FsPromises from 'node:fs/promises';
 import * as path from 'node:path';
+
 
 interface WriteFault {
   folder: string;
@@ -19,11 +21,11 @@ export function clearWriteFaults(): void {
 }
 
 /**
- * `jest.mock('node:fs/promises', () => jest.requireActual('@test/helpers/core/fsWriteFaults')
- * .createFsPromisesWithWriteFaults())` routes writes through the registered faults.
+ * An async vi.mock factory can load this module with vi.importActual and call
+ * createFsPromisesWithWriteFaults to route writes through the registered faults.
  */
 export function createFsPromisesWithWriteFaults(): typeof FsPromises {
-  const actual = jest.requireActual<typeof FsPromises>('node:fs/promises');
+  const actual = actualModule0;
   const writeFile: typeof actual.writeFile = async (file, data, options) => {
     const target = path.resolve(String(file));
     const fault = state.__claudianWriteFaults?.find(candidate => target.startsWith(`${candidate.folder}${path.sep}`));

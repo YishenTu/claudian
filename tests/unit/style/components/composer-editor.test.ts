@@ -1,10 +1,10 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { axe } from '@test/helpers/accessibility';
 import { within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import type { App, Component } from 'obsidian';
 
 import { ComposerEditor } from '@/features/chat/composer/ComposerEditor';

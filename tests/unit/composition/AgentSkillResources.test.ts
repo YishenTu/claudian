@@ -15,13 +15,13 @@ describe('AgentSkillResources', () => {
 
   it('publishes the new generation synchronously before Codex refresh settles', async () => {
     let finishRefresh!: () => void;
-    const refresh = jest.fn().mockReturnValue(new Promise<void>(resolve => {
+    const refresh = vi.fn().mockReturnValue(new Promise<void>(resolve => {
       finishRefresh = resolve;
     }));
     ProviderWorkspaceRegistry.setServices('codex', {
       onAgentSkillsChanged: refresh,
     });
-    const invalidateProviderResources = jest.fn();
+    const invalidateProviderResources = vi.fn();
     const resources = new AgentSkillResources(() => [{ invalidateProviderResources }]);
 
     const pending = resources.notifyChanged();
@@ -39,13 +39,13 @@ describe('AgentSkillResources', () => {
   });
 
   it('invalidates registered skill consumers without initializing their workspaces', async () => {
-    const initialize = jest.fn();
-    const onAgentSkillsChanged = jest.fn();
+    const initialize = vi.fn();
+    const onAgentSkillsChanged = vi.fn();
     ProviderWorkspaceRegistry.register('test-skills', { consumesAgentSkills: true, initialize });
     ProviderWorkspaceRegistry.register('test-lazy', { consumesAgentSkills: true, initialize });
     ProviderWorkspaceRegistry.register('test-unrelated', { initialize });
     ProviderWorkspaceRegistry.setServices('test-skills', { onAgentSkillsChanged });
-    const invalidateProviderResources = jest.fn();
+    const invalidateProviderResources = vi.fn();
     await new AgentSkillResources(() => [{ invalidateProviderResources }]).notifyChanged();
     const [ids] = invalidateProviderResources.mock.calls[0];
     expect(ids).toContain('test-skills');

@@ -74,7 +74,7 @@ describe('SessionNavigation conversation status', () => {
     const status = navigation.getConversationStatus('shared');
     const actions = resolveRowActions('menu', {
       conversation: { id: 'shared' } as never, status, attention: null,
-    }, { sessionActionMode: 'active', onSelectConversation: jest.fn(), onRerender: jest.fn() });
+    }, { sessionActionMode: 'active', onSelectConversation: vi.fn(), onRerender: vi.fn() });
     expect(status.openState).toBe('current');
     expect(actions.find(action => action.kind === 'archive')).toEqual({ kind: 'archive', disabled: true });
   });

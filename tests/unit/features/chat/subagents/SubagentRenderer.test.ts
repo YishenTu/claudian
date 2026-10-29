@@ -1,5 +1,6 @@
 import { createMockEl, type MockElement } from '@test/helpers/MockElement';
 import { setIcon } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import type { SubagentInfo, ToolCallInfo } from '@/core/types';
 import {
@@ -10,6 +11,8 @@ import {
   updateAsyncSubagentBlock,
   updateSubagentBlock,
 } from '@/features/chat/subagents/SubagentRenderer';
+
+
 
 const getTextByClass = (el: MockElement, cls: string): string[] => {
   const results: string[] = [];
@@ -27,7 +30,7 @@ describe('Sync Subagent Renderer', () => {
   let parentEl: MockElement;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     parentEl = createMockEl('div');
   });
 
@@ -114,7 +117,7 @@ describe('keyboard navigation', () => {
   let parentEl: MockElement;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     parentEl = createMockEl('div');
   });
 
@@ -122,7 +125,7 @@ describe('keyboard navigation', () => {
     const state = createSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
 
     // Enter expands the registered header.
-    const enterEvent = { key: 'Enter', preventDefault: jest.fn() };
+    const enterEvent = { key: 'Enter', preventDefault: vi.fn() };
     (state.headerEl as any).dispatchEvent({ type: 'keydown', ...enterEvent });
 
     // The handler should have been called and expanded
@@ -130,7 +133,7 @@ describe('keyboard navigation', () => {
     expect((state.wrapperEl as any).hasClass('expanded')).toBe(true);
 
     // Space to collapse
-    const spaceEvent = { key: ' ', preventDefault: jest.fn() };
+    const spaceEvent = { key: ' ', preventDefault: vi.fn() };
     (state.headerEl as any).dispatchEvent({ type: 'keydown', ...spaceEvent });
 
     expect(state.headerEl.getAttribute('aria-expanded')).toBe('false');
@@ -150,13 +153,13 @@ describe('keyboard navigation', () => {
     const headerEl = (wrapperEl as any).children[0];
 
     // Simulate Enter key
-    const enterEvent = { key: 'Enter', preventDefault: jest.fn() };
+    const enterEvent = { key: 'Enter', preventDefault: vi.fn() };
     headerEl.dispatchEvent({ type: 'keydown', ...enterEvent });
 
     expect((wrapperEl as any).hasClass('expanded')).toBe(true);
 
     // Simulate Space key to collapse
-    const spaceEvent = { key: ' ', preventDefault: jest.fn() };
+    const spaceEvent = { key: ' ', preventDefault: vi.fn() };
     headerEl.dispatchEvent({ type: 'keydown', ...spaceEvent });
 
     expect((wrapperEl as any).hasClass('expanded')).toBe(false);
@@ -167,7 +170,7 @@ describe('Async Subagent Renderer', () => {
   let parentEl: MockElement;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     parentEl = createMockEl('div');
   });
 
@@ -192,7 +195,7 @@ describe('Async Subagent Renderer', () => {
     it('should expand when Enter key is pressed', () => {
       const state = createAsyncSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Test' } });
 
-      const enterEvent = { key: 'Enter', preventDefault: jest.fn() };
+      const enterEvent = { key: 'Enter', preventDefault: vi.fn() };
       (state.headerEl as any).dispatchEvent({ type: 'keydown', ...enterEvent });
 
       expect(state.headerEl.getAttribute('aria-expanded')).toBe('true');
@@ -201,7 +204,7 @@ describe('Async Subagent Renderer', () => {
     it('should expand when Space key is pressed', () => {
       const state = createAsyncSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Test' } });
 
-      const spaceEvent = { key: ' ', preventDefault: jest.fn() };
+      const spaceEvent = { key: ' ', preventDefault: vi.fn() };
       (state.headerEl as any).dispatchEvent({ type: 'keydown', ...spaceEvent });
 
       expect(state.headerEl.getAttribute('aria-expanded')).toBe('true');
@@ -250,7 +253,7 @@ describe('Async Subagent Renderer', () => {
     );
     updateAsyncSubagentBlock(state, { ...state.info, agentId: 'agent-complete', asyncStatus: 'running' });
 
-    (setIcon as jest.Mock).mockClear();
+    (setIcon as Mock).mockClear();
     updateAsyncSubagentBlock(state, { ...state.info, result: 'all done', status: 'completed', asyncStatus: 'completed' });
 
     expect(state.labelEl.textContent).toBe('Background job');
@@ -258,7 +261,7 @@ describe('Async Subagent Renderer', () => {
     expect((state.wrapperEl as any).hasClass('done')).toBe(true);
     const contentText = getTextByClass(state.contentEl as any, 'claudian-subagent-result-output')[0];
     expect(contentText).toBe('all done');
-    const lastIcon = (setIcon as jest.Mock).mock.calls.pop();
+    const lastIcon = (setIcon as Mock).mock.calls.pop();
     expect(lastIcon?.[1]).toBe('check');
   });
 
@@ -266,14 +269,14 @@ describe('Async Subagent Renderer', () => {
     const state = createAsyncSubagentBlock(parentEl as any, { id: 'task-4', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job' } });
     updateAsyncSubagentBlock(state, { ...state.info, agentId: 'agent-error', asyncStatus: 'running' });
 
-    (setIcon as jest.Mock).mockClear();
+    (setIcon as Mock).mockClear();
     updateAsyncSubagentBlock(state, { ...state.info, result: 'failure happened', status: 'error', asyncStatus: 'error' });
 
     expect(state.statusTextEl.textContent).toBe('Error');
     expect((state.wrapperEl as any).hasClass('error')).toBe(true);
     const contentText = getTextByClass(state.contentEl as any, 'claudian-subagent-result-output')[0];
     expect(contentText).toBe('failure happened');
-    const lastIcon = (setIcon as jest.Mock).mock.calls.pop();
+    const lastIcon = (setIcon as Mock).mock.calls.pop();
     expect(lastIcon?.[1]).toBe('x');
   });
 
@@ -303,7 +306,7 @@ describe('Async Subagent Renderer', () => {
       const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
       const headerEl = (wrapperEl as any).children[0];
 
-      const enterEvent = { key: 'Enter', preventDefault: jest.fn() };
+      const enterEvent = { key: 'Enter', preventDefault: vi.fn() };
       headerEl.dispatchEvent({ type: 'keydown', ...enterEvent });
 
       expect((wrapperEl as any).hasClass('expanded')).toBe(true);
@@ -364,7 +367,7 @@ describe('Async Subagent Renderer', () => {
         asyncStatus: 'orphaned',
       };
 
-      (setIcon as jest.Mock).mockClear();
+      (setIcon as Mock).mockClear();
       const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
 
       expect((wrapperEl as any).hasClass('error')).toBe(true);
@@ -417,7 +420,7 @@ describe('tool snapshots', () => {
   let parentEl: MockElement;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     parentEl = createMockEl('div');
   });
 
@@ -485,7 +488,7 @@ describe('tool result snapshots', () => {
   let parentEl: MockElement;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     parentEl = createMockEl('div');
   });
 
@@ -533,14 +536,14 @@ describe('terminal snapshots', () => {
   let parentEl: MockElement;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     parentEl = createMockEl('div');
   });
 
   it('sets status to completed and adds done class', () => {
     const state = createSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
 
-    (setIcon as jest.Mock).mockClear();
+    (setIcon as Mock).mockClear();
     updateSubagentBlock(state, { ...state.info, result: 'All done', status: 'completed' });
 
     expect(state.info.status).toBe('completed');
@@ -552,7 +555,7 @@ describe('terminal snapshots', () => {
   it('sets status to error and adds error class', () => {
     const state = createSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
 
-    (setIcon as jest.Mock).mockClear();
+    (setIcon as Mock).mockClear();
     updateSubagentBlock(state, { ...state.info, result: 'Something failed', status: 'error' });
 
     expect(state.info.status).toBe('error');
@@ -609,7 +612,7 @@ describe('renderStoredSubagent status variants', () => {
   let parentEl: MockElement;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     parentEl = createMockEl('div');
   });
 
@@ -622,7 +625,7 @@ describe('renderStoredSubagent status variants', () => {
       isExpanded: false,
     };
 
-    (setIcon as jest.Mock).mockClear();
+    (setIcon as Mock).mockClear();
     const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
 
     expect((wrapperEl as any).hasClass('done')).toBe(true);
@@ -640,7 +643,7 @@ describe('renderStoredSubagent status variants', () => {
       isExpanded: false,
     };
 
-    (setIcon as jest.Mock).mockClear();
+    (setIcon as Mock).mockClear();
     const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
 
     expect((wrapperEl as any).hasClass('error')).toBe(true);

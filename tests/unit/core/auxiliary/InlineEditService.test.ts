@@ -14,9 +14,9 @@ function createService() {
   const service = new InlineEditService({
     backend,
     interactionPort: {
-      askUserQuestion: jest.fn(),
-      dismissInteraction: jest.fn(),
-      requestApproval: jest.fn(),
+      askUserQuestion: vi.fn(),
+      dismissInteraction: vi.fn(),
+      requestApproval: vi.fn(),
     },
     lifecycleRegistry,
     nativePersistence: 'provider-default',

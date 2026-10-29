@@ -12,7 +12,7 @@ while (args.length && args[0] !== '--') {
   if (flag === '--base' && args[0] && !args[0].startsWith('-')) base = args.shift();
   else if (flag === '--list') list = true;
   else if (flag === '--full') full = true;
-  else throw new Error(`Unknown or incomplete option: ${flag}. Use --base <ref>, --list, --full, or -- <Jest args>.`);
+  else throw new Error(`Unknown or incomplete option: ${flag}. Use --base <ref>, --list, --full, or -- <Vitest args>.`);
 }
 if (args[0] === '--') args.shift();
 const git = (...gitArgs) => execFileSync('git', gitArgs, {

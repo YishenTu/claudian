@@ -25,7 +25,7 @@ describe('loadRuntimeCommands', () => {
   it('checks cancellation before snapshots or isolated discovery', async () => {
     const controller = new AbortController();
     const failure = new Error('cancelled');
-    const discover = jest.fn(async () => [COMMAND]);
+    const discover = vi.fn(async () => [COMMAND]);
     controller.abort(failure);
 
     await expect(load({
@@ -37,7 +37,7 @@ describe('loadRuntimeCommands', () => {
   });
 
   it('normalizes ready and empty snapshots without isolated discovery', async () => {
-    const discover = jest.fn(async () => [COMMAND]);
+    const discover = vi.fn(async () => [COMMAND]);
 
     await expect(load({ discover, readyCommandSnapshot: [COMMAND] })).resolves.toEqual({
       items: [COMMAND],
@@ -50,7 +50,7 @@ describe('loadRuntimeCommands', () => {
   });
 
   it('returns requires-session without isolated discovery', async () => {
-    const discover = jest.fn(async () => [COMMAND]);
+    const discover = vi.fn(async () => [COMMAND]);
 
     await expect(load({
       allowIsolatedMetadataCreation: false,
@@ -92,7 +92,7 @@ describe('loadRuntimeCommands', () => {
   it('rechecks cancellation after isolated discovery and still cleans up', async () => {
     const controller = new AbortController();
     const failure = new Error('cancelled after query');
-    const cleanup = jest.fn(async () => undefined);
+    const cleanup = vi.fn(async () => undefined);
 
     await expect(load({
       cleanup,
@@ -106,7 +106,7 @@ describe('loadRuntimeCommands', () => {
   });
 
   it('cleans up only after isolated discovery and suppresses cleanup failures', async () => {
-    const cleanup = jest.fn(async () => { throw new Error('cleanup failed'); });
+    const cleanup = vi.fn(async () => { throw new Error('cleanup failed'); });
 
     await expect(load({ cleanup })).resolves.toMatchObject({ status: 'ready' });
     expect(cleanup).toHaveBeenCalledTimes(1);

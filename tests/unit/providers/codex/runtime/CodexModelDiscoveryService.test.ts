@@ -3,10 +3,10 @@ import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import type { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
 import { CodexModelDiscoveryService } from '@/providers/codex/runtime/CodexModelDiscoveryService';
 
-const mockTransportRequest = jest.fn();
-const mockAcquire = jest.fn();
-const mockRelease = jest.fn().mockResolvedValue(undefined);
-const mockProcessStderr = jest.fn().mockReturnValue('');
+const mockTransportRequest = vi.fn();
+const mockAcquire = vi.fn();
+const mockRelease = vi.fn().mockResolvedValue(undefined);
+const mockProcessStderr = vi.fn().mockReturnValue('');
 const runtime = { acquire: mockAcquire } as unknown as CodexAppServerRuntime;
 
 function makeWireModel(model: string, isDefault = false) {
@@ -34,7 +34,7 @@ function createPlugin(enabled = true) {
 
 describe('CodexModelDiscoveryService', () => {
   beforeEach(() => {
-    jest.resetAllMocks();
+    vi.resetAllMocks();
     mockAcquire.mockResolvedValue({
       connection: { transport: { request: mockTransportRequest }, process: { getStderrSnapshot: mockProcessStderr } },
       release: mockRelease,

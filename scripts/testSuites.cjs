@@ -33,7 +33,7 @@ const scriptTests = [
   'scripts/check-eslint-config.test.mjs',
   'scripts/check-open-handles.test.mjs',
   'scripts/check-release-version.test.mjs',
-  'scripts/summarize-jest-results.test.mjs',
+  'scripts/summarize-vitest-results.test.mjs',
   'scripts/ciTestSelection.test.mjs',
   'scripts/run-tests.test.mjs',
 ];

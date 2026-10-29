@@ -19,10 +19,10 @@ function createPlugin(): any {
       },
     },
   };
-  const notifyProviderChatOptionsChanged = jest.fn();
+  const notifyProviderChatOptionsChanged = vi.fn();
   const host = runtimeHostFor({ settings, notifyProviderChatOptionsChanged }, 'opencode');
-  host.updateConfig = jest.fn(host.updateConfig);
-  const executionLifecycleRegistry = { registerTransitionHook: jest.fn(() => jest.fn()) };
+  host.updateConfig = vi.fn(host.updateConfig);
+  const executionLifecycleRegistry = { registerTransitionHook: vi.fn(() => vi.fn()) };
   return Object.assign(host, { settings, notifyProviderChatOptionsChanged, executionLifecycleRegistry });
 }
 
@@ -33,10 +33,10 @@ function nativeModel(rawId: string, label: string): OpencodeNativeModel {
 
 function createProbe(overrides: Partial<OpencodeMetadataProbe> = {}): OpencodeMetadataProbe {
   return {
-    dispose: jest.fn(async () => undefined),
-    loadCatalog: jest.fn(async () => ({ models: [nativeModel('anthropic/claude', 'Claude')] })),
-    loadCommands: jest.fn(async () => [{ id: 'opencode-command:review', name: 'review', content: '' }]),
-    warmModel: jest.fn(async (): Promise<OpencodeMetadataWarmResult> => ({
+    dispose: vi.fn(async () => undefined),
+    loadCatalog: vi.fn(async () => ({ models: [nativeModel('anthropic/claude', 'Claude')] })),
+    loadCommands: vi.fn(async () => [{ id: 'opencode-command:review', name: 'review', content: '' }]),
+    warmModel: vi.fn(async (): Promise<OpencodeMetadataWarmResult> => ({
       models: [nativeModel('anthropic/claude', 'Claude')],
       rawModelId: 'anthropic/claude',
       thinkingLevels: ['low', 'high'],
@@ -51,8 +51,8 @@ describe('OpencodeMetadataService', () => {
     plugin.settings.providerConfigs.opencode.visibleModels = ['a/one', 'b/two', 'c/three'];
     const catalog = ['a/one', 'b/two', 'c/three'].map(rawId => nativeModel(rawId, rawId));
     const probe = createProbe({
-      loadCatalog: jest.fn(async () => ({ models: catalog })),
-      warmModel: jest.fn(async rawModelId => {
+      loadCatalog: vi.fn(async () => ({ models: catalog })),
+      warmModel: vi.fn(async rawModelId => {
         if (rawModelId === 'a/one') {
           plugin.settings.providerConfigs.opencode.visibleModels = ['a/one', 'b/two'];
           throw new Error('First model unavailable');
@@ -60,12 +60,12 @@ describe('OpencodeMetadataService', () => {
         return { rawModelId, models: catalog, thinkingLevels: [] };
       }),
     });
-    const create = jest.fn(() => probe);
+    const create = vi.fn(() => probe);
     const service = new OpencodeMetadataService(plugin, plugin.executionLifecycleRegistry, { createProbe: create });
     try {
       await expect(service.discoverModels()).resolves.toEqual({ changed: true });
       expect(create).toHaveBeenCalledTimes(1);
-      expect(jest.mocked(probe.warmModel).mock.calls.map(([id]) => id)).toEqual(['a/one', 'b/two']);
+      expect(vi.mocked(probe.warmModel).mock.calls.map(([id]) => id)).toEqual(['a/one', 'b/two']);
       expect(getOpencodeProviderSettings(plugin.settings).thinkingOptionsByModel['b/two']).toEqual([]);
       expect(probe.dispose).toHaveBeenCalledTimes(1);
     } finally { await service.dispose(); }
@@ -75,7 +75,7 @@ describe('OpencodeMetadataService', () => {
     const plugin = createPlugin();
     const probe = createProbe();
     const service = new OpencodeMetadataService(plugin, plugin.executionLifecycleRegistry, {
-      createProbe: jest.fn(() => probe),
+      createProbe: vi.fn(() => probe),
     });
 
     await expect(service.loadCatalog()).resolves.toBe(true);
@@ -111,7 +111,7 @@ describe('OpencodeMetadataService', () => {
 
   it('registers transition invalidation and unregisters it on disposal', async () => {
     let beforeTransition!: () => Promise<void>;
-    const unregister = jest.fn();
+    const unregister = vi.fn();
     const transitionPlugin = createPlugin();
     transitionPlugin.executionLifecycleRegistry.registerTransitionHook
       .mockImplementation((_providerId: string, hook: {
@@ -123,7 +123,7 @@ describe('OpencodeMetadataService', () => {
     let rejectLoad!: (error: Error) => void;
     let ownedSignal: AbortSignal | undefined;
     const probe = createProbe({
-      loadCatalog: jest.fn((signal) => new Promise((_resolve, reject) => {
+      loadCatalog: vi.fn((signal) => new Promise<never>((_resolve, reject) => {
         ownedSignal = signal;
         rejectLoad = reject;
       })),
@@ -163,11 +163,11 @@ describe('OpencodeMetadataService', () => {
       }) => {
         afterTransition = hook.afterTransition;
         beforeTransition = hook.beforeTransition;
-        return jest.fn();
+        return vi.fn();
       });
     let environment = 'environment-a';
     const probeEnvironments: string[] = [];
-    const createProbeFactory = jest.fn(() => {
+    const createProbeFactory = vi.fn(() => {
       probeEnvironments.push(environment);
       return createProbe();
     });
@@ -214,9 +214,9 @@ describe('OpencodeMetadataService', () => {
       }) => {
         afterTransition = hook.afterTransition;
         beforeTransition = hook.beforeTransition;
-        return jest.fn();
+        return vi.fn();
       });
-    const createProbeFactory = jest.fn(() => createProbe());
+    const createProbeFactory = vi.fn(() => createProbe());
     const service = new OpencodeMetadataService(transitionPlugin, transitionPlugin.executionLifecycleRegistry, {
       createProbe: createProbeFactory,
     });
@@ -252,7 +252,7 @@ it.each(['catalog', 'warm', 'discovery', 'batch'] as const)('does not publish ca
   const waiting = new Promise<void>(resolve => { queued = resolve; });
   const gate = new Promise<void>(resolve => { release = resolve; });
   const updateConfig = host.updateConfig;
-  host.updateConfig = jest.fn(async (mutation: Parameters<typeof updateConfig>[0]) => {
+  host.updateConfig = vi.fn(async (mutation: Parameters<typeof updateConfig>[0]) => {
     queued();
     await gate;
     return await updateConfig(mutation);

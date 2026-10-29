@@ -1,9 +1,12 @@
 import { TFile, TFolder } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import {
   LinkedContentController,
   type LinkedContentControllerOptions,
 } from '@/features/chat/linked-content/LinkedContentController';
+
+
 
 function createFile(path: string): TFile {
   const file = new TFile();
@@ -27,18 +30,18 @@ function createHarness(initialFiles: Array<TFile | TFolder> = []) {
   let activeFile: TFile | null = null;
   const app = {
     vault: {
-      getRoot: jest.fn(() => createFolder('')),
-      getAbstractFileByPath: jest.fn((path: string) => entries.get(path) ?? null),
+      getRoot: vi.fn(() => createFolder('')),
+      getAbstractFileByPath: vi.fn((path: string) => entries.get(path) ?? null),
     },
     workspace: {
-      getActiveFile: jest.fn(() => activeFile),
-      getLeaf: jest.fn(() => ({ openFile: jest.fn().mockResolvedValue(undefined) })),
-      getLeavesOfType: jest.fn(() => []),
-      getLeftLeaf: jest.fn(() => null),
-      revealLeaf: jest.fn().mockResolvedValue(undefined),
+      getActiveFile: vi.fn(() => activeFile),
+      getLeaf: vi.fn(() => ({ openFile: vi.fn().mockResolvedValue(undefined) })),
+      getLeavesOfType: vi.fn(() => []),
+      getLeftLeaf: vi.fn(() => null),
+      revealLeaf: vi.fn().mockResolvedValue(undefined),
     },
     metadataCache: {
-      getFileCache: jest.fn(() => null),
+      getFileCache: vi.fn(() => null),
     },
   };
   const options: LinkedContentControllerOptions = {
@@ -136,7 +139,7 @@ describe('LinkedContentController', () => {
     const markdown = createFile('Notes/Private.md');
     const image = createFile('Images/Diagram.png');
     const harness = createHarness([markdown, image]);
-    (harness.app.metadataCache.getFileCache as jest.Mock).mockReturnValue({
+    (harness.app.metadataCache.getFileCache as Mock).mockReturnValue({
       tags: [{ tag: '#private' }],
     });
     const excludedController = new LinkedContentController({
@@ -161,7 +164,7 @@ describe('LinkedContentController', () => {
   ])('excludes case variants of %s tags before freezing submission', (_kind, cache, excludedTag) => {
     const markdown = createFile('Notes/Private.md');
     const harness = createHarness([markdown]);
-    (harness.app.metadataCache.getFileCache as jest.Mock).mockReturnValue({ tags: [] });
+    (harness.app.metadataCache.getFileCache as Mock).mockReturnValue({ tags: [] });
     const controller = new LinkedContentController({
       app: harness.app as never,
       getExcludedTags: () => [excludedTag],
@@ -172,7 +175,7 @@ describe('LinkedContentController', () => {
     controller.resetAutoDraft();
     expect(controller.getSnapshot().path).toBe(markdown.path);
 
-    (harness.app.metadataCache.getFileCache as jest.Mock).mockReturnValue(cache);
+    (harness.app.metadataCache.getFileCache as Mock).mockReturnValue(cache);
     controller.handleActiveFileMetadataChanged(markdown);
 
     expect(controller.getSnapshot()).toEqual({ mode: 'auto-draft', path: null });
@@ -183,7 +186,7 @@ describe('LinkedContentController', () => {
     const markdown = createFile('Notes/Startup.md');
     const harness = createHarness([markdown]);
     let cache: unknown = null;
-    (harness.app.metadataCache.getFileCache as jest.Mock).mockImplementation(() => cache);
+    (harness.app.metadataCache.getFileCache as Mock).mockImplementation(() => cache);
     const controller = new LinkedContentController({
       app: harness.app as never,
       getExcludedTags: () => ['private'],
@@ -206,7 +209,7 @@ describe('LinkedContentController', () => {
     const markdown = createFile('Notes/Public.md');
     const harness = createHarness([markdown]);
     let cache: unknown = { tags: [] };
-    (harness.app.metadataCache.getFileCache as jest.Mock).mockImplementation(() => cache);
+    (harness.app.metadataCache.getFileCache as Mock).mockImplementation(() => cache);
     const controller = new LinkedContentController({
       app: harness.app as never,
       getExcludedTags: () => ['private'],

@@ -50,7 +50,7 @@ const cleanups: Array<() => Promise<void>> = [];
 export async function releaseSideChatHarnesses(): Promise<void> {
   for (const cleanup of cleanups.splice(0)) await cleanup();
   document.body.replaceChildren();
-  jest.clearAllMocks();
+  vi.clearAllMocks();
 }
 
 export function createHarness(options: {

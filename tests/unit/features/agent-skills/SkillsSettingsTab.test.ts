@@ -1,8 +1,8 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
+import { axe } from '@test/helpers/accessibility';
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import type { App } from 'obsidian';
 
 import type { ClaudianSettings } from '@/core/types';
@@ -11,9 +11,9 @@ import { ClaudeSkillSync } from '@/features/agent-skills/ClaudeSkillSync';
 import { SkillsSettingsTab } from '@/features/agent-skills/SkillsSettingsTab';
 import { t } from '@/i18n/i18n';
 
-jest.mock('obsidian', () => ({
-  ...jest.requireActual('@test/__mocks__/obsidian'),
-  ...jest.requireActual('@test/helpers/ObsidianSettingsDOM'),
+vi.mock('obsidian', async () => ({
+  ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')),
+  ...(await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM')),
 }));
 
 function skill(name: string, description = 'Description'): string {
@@ -41,8 +41,8 @@ describe('SkillsSettingsTab', () => {
     const container = document.body.appendChild(document.createElement('main'));
     tab = new SkillsSettingsTab(container, {} as App, vault.files, {
       settings,
-      mutateSettings: jest.fn(async mutation => { await mutation(settings); }),
-      notifyAgentSkillsChanged: jest.fn(async () => undefined),
+      mutateSettings: vi.fn(async mutation => { await mutation(settings); }),
+      notifyAgentSkillsChanged: vi.fn(async () => undefined),
     });
     return container;
   }

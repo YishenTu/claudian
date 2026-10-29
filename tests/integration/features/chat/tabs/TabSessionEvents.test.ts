@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import { createTabSession } from '@test/helpers/ConversationPorts';
@@ -30,14 +30,14 @@ const QUIET_PERIOD_MS = 60_000;
 
 beforeEach(() => {
   document.body.replaceChildren();
-  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'clearImmediate', 'performance', 'Date'] });
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+  vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'clearImmediate', 'performance', 'Date'] });
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     (el as HTMLElement).createEl('p', { text: markdown });
   });
 });
 
 afterEach(() => {
-  jest.useRealTimers();
+  vi.useRealTimers();
 });
 
 async function createCodexChildTab() {
@@ -45,10 +45,10 @@ async function createCodexChildTab() {
   const saves: ChatMessage[][] = [];
   const plugin = {
     app: {}, settings: { mediaFolder: '', showMessageTimestamps: false },
-    updateConversation: jest.fn(async (_id: string, patch: ConversationMutablePatch) => {
+    updateConversation: vi.fn(async (_id: string, patch: ConversationMutablePatch) => {
       saves.push(structuredClone(patch.messages ?? []));
     }),
-    switchConversation: jest.fn(async (id: string) => ({ id, providerId: 'codex', messages: [], sessionId: null })),
+    switchConversation: vi.fn(async (id: string) => ({ id, providerId: 'codex', messages: [], sessionId: null })),
   } as any;
   const renderer = new MessageRenderer(plugin,
     new Component(), messagesEl,
@@ -72,8 +72,8 @@ async function createCodexChildTab() {
     providerId: 'codex', lifecycleState: 'ready' } as any, coordinator);
   const conversationController = new ConversationController({
     plugin, state, renderer, subagentManager: subagents,
-    session: session.runtime, drafts: { restore: jest.fn() }, clearQueuedMessage: jest.fn(),
-    getLinkedContentController: () => ({ lock: jest.fn() }),
+    session: session.runtime, drafts: { restore: vi.fn() }, clearQueuedMessage: vi.fn(),
+    getLinkedContentController: () => ({ lock: vi.fn() }),
     getWelcomeEl: () => null, setWelcomeEl: () => undefined,
     getExecutionCoordinator: () => coordinator,
     awaitBackgroundWork: () => session.runtime.awaitBackgroundWork(),
@@ -201,7 +201,7 @@ it('coalesces Codex child progress saves between immediate lifecycle saves and k
     expect(view.saves).toHaveLength(0);
     expect(view.workChanges).toEqual([true]);
 
-    await jest.advanceTimersByTimeAsync(QUIET_PERIOD_MS);
+    await vi.advanceTimersByTimeAsync(QUIET_PERIOD_MS);
     await view.settle();
     expect(view.saves).toHaveLength(1);
     expect(view.savedStatus()).toBe('running');
@@ -217,7 +217,7 @@ it('coalesces Codex child progress saves between immediate lifecycle saves and k
     expect(view.saves.at(-1)![0].toolCalls![0].subagent).toMatchObject({ status: 'completed', result: 'Ready.' });
     expect(view.savedChildTool()?.result).toContain('tail\n');
     expect(view.workChanges).toEqual([true, false]);
-    await jest.advanceTimersByTimeAsync(QUIET_PERIOD_MS);
+    await vi.advanceTimersByTimeAsync(QUIET_PERIOD_MS);
     await view.settle();
     expect(view.saves).toHaveLength(2);
   } finally {
@@ -238,7 +238,7 @@ it('flushes pending Codex child progress with the next direct save and does not 
     expect(view.saves).toHaveLength(1);
     expect(view.savedStatus()).toBe('running');
     expect(view.savedChildTool()?.result).toBe('before close\nstill running\n');
-    await jest.advanceTimersByTimeAsync(QUIET_PERIOD_MS);
+    await vi.advanceTimersByTimeAsync(QUIET_PERIOD_MS);
     await view.settle();
     expect(view.saves).toHaveLength(1);
   } finally {

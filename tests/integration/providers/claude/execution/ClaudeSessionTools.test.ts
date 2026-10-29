@@ -39,7 +39,7 @@ function session(port?: ProviderSessionToolPort, lifecycle: ProviderSessionConfi
   }, 'claude');
   return new ClaudeExecutionSession(host, {
     lifecycle, nativePersistence: 'enabled', workingDirectory: '/vault', sessionTools: port,
-    interactionPort: { requestApproval: jest.fn(), askUserQuestion: jest.fn(), dismissInteraction: jest.fn() },
+    interactionPort: { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() },
   });
 }
 async function drain(events: AsyncIterable<unknown>) {
@@ -81,7 +81,7 @@ describe('Claude session tools', () => {
     await drain(unbound.execute(request()).events);
     expect(sdk.getLastOptions()?.mcpServers).toBeUndefined();
     await unbound.dispose();
-    const bound = session({ list: async () => ({ sessions: [] }), send: jest.fn(), read: jest.fn() }, lifecycle);
+    const bound = session({ list: async () => ({ sessions: [] }), send: vi.fn(), read: vi.fn() }, lifecycle);
     try {
       await drain(bound.execute(request()).events);
       const first = sdk.getLastOptions()?.mcpServers?.claudian_sessions;
@@ -106,8 +106,8 @@ describe('Claude session tools', () => {
   ] satisfies ProviderExecutionRequest['toolPolicy'][])('checks $kind policy when the native tool actually calls', async policy => {
     const end = deferred<unknown>();
     sdk.setMockMessages([tool('call'), end.promise], { appendResult: false });
-    const list = jest.fn(async () => ({ sessions: [] }));
-    const bound = session({ list, send: jest.fn(), read: jest.fn() });
+    const list = vi.fn(async () => ({ sessions: [] }));
+    const bound = session({ list, send: vi.fn(), read: vi.fn() });
     const run = bound.execute(request(policy));
     const outputs: unknown[] = [];
     const consume = (async () => { for await (const event of run.events) outputs.push(event); })();
@@ -131,8 +131,8 @@ describe('Claude session tools', () => {
     const start = deferred<unknown>();
     const end = deferred<unknown>();
     sdk.setMockMessages([start.promise, end.promise], { appendResult: false });
-    const list = jest.fn(async () => ({ sessions: [] }));
-    const bound = session({ list, send: jest.fn(), read: jest.fn() });
+    const list = vi.fn(async () => ({ sessions: [] }));
+    const bound = session({ list, send: vi.fn(), read: vi.fn() });
     const consume = drain(bound.execute(request()).events);
     let client: Client | undefined;
     try {
@@ -157,13 +157,13 @@ describe('Claude session tools', () => {
     sendTool.message.content[0].name = 'mcp__claudian_sessions__claudian_send_message';
     sdk.setMockMessages([sendTool, end.promise], { appendResult: false });
     const entered = deferred<AbortSignal>();
-    const send = jest.fn((_args, signal: AbortSignal) => {
+    const send = vi.fn((_args, signal: AbortSignal) => {
       entered.resolve(signal);
       return new Promise<never>((_resolve, reject) => {
         signal.addEventListener('abort', () => reject(new Error('Cancelled')), { once: true });
       });
     });
-    const bound = session({ list: jest.fn(), send, read: jest.fn() });
+    const bound = session({ list: vi.fn(), send, read: vi.fn() });
     const outputs: unknown[] = [];
     const run = bound.execute(request());
     const consume = (async () => { for await (const event of run.events) outputs.push(event); })();
@@ -193,13 +193,13 @@ describe('Claude session tools', () => {
     const end = deferred<unknown>();
     sdk.setMockMessages([tool('old'), end.promise], { appendResult: false });
     const signals: AbortSignal[] = [];
-    const list = jest.fn((_args: unknown, signal: AbortSignal) => {
+    const list = vi.fn((_args: unknown, signal: AbortSignal) => {
       signals.push(signal);
       return new Promise<never>((_resolve, reject) => {
         signal.addEventListener('abort', () => reject(new Error('Cancelled')), { once: true });
       });
     });
-    const bound = session({ list, send: jest.fn(), read: jest.fn() });
+    const bound = session({ list, send: vi.fn(), read: vi.fn() });
     const run = bound.execute(request());
     const outputs: unknown[] = [];
     const consume = (async () => { for await (const event of run.events) outputs.push(event); })();

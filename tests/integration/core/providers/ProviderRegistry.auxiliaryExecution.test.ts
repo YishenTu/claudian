@@ -26,7 +26,7 @@ it.each([true, false])('selects auxiliary persistence from ephemeral support (%s
   const inlineEdit = ProviderRegistry.createInlineEditService(host, 'claude');
   try {
     const results = [
-      title.generateTitle('conversation', 'Draft', jest.fn()),
+      title.generateTitle('conversation', 'Draft', vi.fn()),
       inlineEdit.send({ instruction: 'Improve', mode: 'selection', notePath: 'note.md', selectedText: 'Draft' }),
     ];
     await waitFor(() => backend.sessions.length === 2 && backend.sessions.every(session => session.requests.length === 1));

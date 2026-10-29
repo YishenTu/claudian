@@ -51,7 +51,7 @@ function fixture(conversations: Conversation[]) {
     ...settings.providerConfigs,
     pi: { enabled: true, environmentVariables: `PI_CODING_AGENT_SESSION_DIR=${sessionDir}\nHOME=${root}` },
   };
-  const saveMetadata = jest.fn().mockResolvedValue(undefined);
+  const saveMetadata = vi.fn().mockResolvedValue(undefined);
   const repository = new ConversationRepository({
     providers: ProviderRegistry,
     providerSettings: ProviderSettingsCoordinator,
@@ -59,16 +59,16 @@ function fixture(conversations: Conversation[]) {
     getVaultPath: () => vault,
     persistence: {
       metadataReader: {
-        revalidate: jest.fn().mockResolvedValue([]),
-        load: jest.fn().mockResolvedValue(null),
-        scan: jest.fn().mockResolvedValue({ records: [], complete: true, invalidMetadataCount: 0 }),
-        loadMetadata: jest.fn().mockResolvedValue(null),
-        scanMetadata: jest.fn().mockResolvedValue({ metadata: [], complete: true, invalidMetadataCount: 0 }),
-        listMetadata: jest.fn().mockResolvedValue([]),
+        revalidate: vi.fn().mockResolvedValue([]),
+        load: vi.fn().mockResolvedValue(null),
+        scan: vi.fn().mockResolvedValue({ records: [], complete: true, invalidMetadataCount: 0 }),
+        loadMetadata: vi.fn().mockResolvedValue(null),
+        scanMetadata: vi.fn().mockResolvedValue({ metadata: [], complete: true, invalidMetadataCount: 0 }),
+        listMetadata: vi.fn().mockResolvedValue([]),
       },
       saveMetadata,
-      deleteCurrentMetadata: jest.fn().mockResolvedValue(undefined),
-      assignMetadataToDevice: jest.fn().mockResolvedValue(undefined),
+      deleteCurrentMetadata: vi.fn().mockResolvedValue(undefined),
+      assignMetadataToDevice: vi.fn().mockResolvedValue(undefined),
     } as never,
     onConversationDeleted: async () => undefined,
   });

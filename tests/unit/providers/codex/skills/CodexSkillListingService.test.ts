@@ -2,9 +2,9 @@ import type { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppSe
 import type { SkillMetadata } from '@/providers/codex/runtime/codexAppServerTypes';
 import { CodexSkillListingService } from '@/providers/codex/skills/CodexSkillListingService';
 
-const mockTransportRequest = jest.fn();
-const mockResolveLaunchSpec = jest.fn();
-const release = jest.fn().mockResolvedValue(undefined);
+const mockTransportRequest = vi.fn();
+const mockResolveLaunchSpec = vi.fn();
+const release = vi.fn().mockResolvedValue(undefined);
 function createRuntime(): CodexAppServerRuntime {
   return {
     onSkillsChanged: () => () => undefined,
@@ -34,13 +34,13 @@ async function waitForCondition(condition: () => boolean): Promise<void> {
 
 describe('CodexSkillListingService', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   function createService() {
     const service = new CodexSkillListingService(createRuntime());
-    const fetchSkills = jest.fn<Promise<SkillMetadata[]>, [boolean, AbortSignal?]>();
-    jest.spyOn(service as any, 'fetchSkills').mockImplementation(fetchSkills as (...args: unknown[]) => Promise<SkillMetadata[]>);
+    const fetchSkills = vi.fn<(...args: [boolean, AbortSignal?]) => Promise<SkillMetadata[]>>();
+    vi.spyOn(service as any, 'fetchSkills').mockImplementation(fetchSkills as (...args: unknown[]) => Promise<SkillMetadata[]>);
     return { service, fetchSkills };
   }
 
@@ -185,10 +185,10 @@ describe('CodexSkillListingService', () => {
       env: { OPENAI_API_KEY: 'sk-test' },
       pathMapper: {
         target: { method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' },
-        toTargetPath: jest.fn(),
-        toHostPath: jest.fn((value: string) => value.replace('/mnt/c/repo', 'C:\\repo').replace(/\//g, '\\')),
-        mapTargetPathList: jest.fn(),
-        canRepresentHostPath: jest.fn(),
+        toTargetPath: vi.fn(),
+        toHostPath: vi.fn((value: string) => value.replace('/mnt/c/repo', 'C:\\repo').replace(/\//g, '\\')),
+        mapTargetPathList: vi.fn(),
+        canRepresentHostPath: vi.fn(),
       },
     });
     mockTransportRequest.mockResolvedValue({

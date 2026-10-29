@@ -166,3 +166,17 @@ test('the shared clock rejects fixed calendar anchors', async () => {
     }
   }
 });
+
+
+test('test lint retains alias, callback, focused-test and suite-export checks', async () => {
+  const eslint = new ESLint();
+  for (const [code, rule] of [
+    ["test('alias', () => { expect(vi.fn()).toBeCalled(); });", 'vitest/no-alias-methods'],
+    ["test('callback', done => { expect(true).toBe(true); done(); });", 'vitest/no-done-callback'],
+    ["test.only('focused', () => { expect(true).toBe(true); });", 'vitest/no-focused-tests'],
+    ["export const value = 1; test('export', () => { expect(value).toBe(1); });", 'no-restricted-syntax'],
+  ]) {
+    const [result] = await eslint.lintText(code, { filePath: 'tests/unit/utils/example.test.ts' });
+    assert.ok(result.messages.some(message => message.ruleId === rule), JSON.stringify(result.messages));
+  }
+});

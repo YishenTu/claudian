@@ -10,10 +10,10 @@ function fixture() {
   const retiredPath = '.claude/claudian-settings.json';
   const files = new Map([[retiredPath, JSON.stringify({ userName: 'Retired' })]]);
   const adapter = {
-    exists: jest.fn(async (path: string) => files.has(path)),
-    read: jest.fn(async (path: string) => files.get(path)!),
-    write: jest.fn(async (path: string, content: string) => { files.set(path, content); }),
-    delete: jest.fn(async (path: string) => { files.delete(path); }),
+    exists: vi.fn(async (path: string) => files.has(path)),
+    read: vi.fn(async (path: string) => files.get(path)!),
+    write: vi.fn(async (path: string, content: string) => { files.set(path, content); }),
+    delete: vi.fn(async (path: string) => { files.delete(path); }),
   };
   const storage = new ClaudianSettingsStorage(adapter as unknown as VaultFileAdapter, DEFAULT_CLAUDIAN_SETTINGS);
   const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
@@ -25,7 +25,7 @@ test('loads and saves canonical settings without reading or deleting retired sto
   const { files, adapter, settings, coordinator, storage, retiredPath } = fixture();
   expect((await storage.load()).userName).toBe(DEFAULT_CLAUDIAN_SETTINGS.userName);
   expect(adapter.read).not.toHaveBeenCalled();
-  const publish = jest.fn();
+  const publish = vi.fn();
   await coordinator.mutate(value => { value.userName = 'Updated'; }, publish);
   expect(settings.userName).toBe('Updated');
   expect((await storage.load()).userName).toBe('Updated');

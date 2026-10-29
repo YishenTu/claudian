@@ -1,12 +1,12 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Menu, setIcon } from 'obsidian';
 
 import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
@@ -20,9 +20,9 @@ import { SessionManagerSurface } from '@/features/chat/session-manager/SessionMa
 import { ChatViewPublisher } from '@/features/chat/workspace/ChatViewPublisher';
 import { t } from '@/i18n/i18n';
 
-jest.mock('@/features/chat/projects/projectActions', () => ({
-  ...jest.requireActual('@/features/chat/projects/projectActions'),
-  createProject: jest.fn(),
+vi.mock('@/features/chat/projects/projectActions', async () => ({
+  ...(await vi.importActual<typeof import('@/features/chat/projects/projectActions')>('@/features/chat/projects/projectActions')),
+  createProject: vi.fn(),
 }));
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
@@ -59,22 +59,22 @@ function createSurface() {
     getConversationList: () => conversations,
     projects: createProjectsFake(),
   };
-  const requestNew = jest.fn();
+  const requestNew = vi.fn();
   const surface = new SessionManagerSurface({
     plugin: plugin as unknown as ChatFeatureHost,
     navigation: {
       contentExists: () => true,
       getConversationStatus: () => ({ openState: 'closed', isRunning: false }),
-      openConversation: jest.fn().mockResolvedValue(undefined),
-      openSessionConversation: jest.fn().mockResolvedValue(undefined),
-      startLinkedContentConversation: jest.fn().mockResolvedValue(undefined),
-      startProjectConversation: jest.fn().mockResolvedValue(undefined),
+      openConversation: vi.fn().mockResolvedValue(undefined),
+      openSessionConversation: vi.fn().mockResolvedValue(undefined),
+      startLinkedContentConversation: vi.fn().mockResolvedValue(undefined),
+      startProjectConversation: vi.fn().mockResolvedValue(undefined),
     },
     getActiveTab: () => null,
     isWide: () => true,
     canCreateTab: () => true,
     requestNew,
-    notifyOtherViews: jest.fn(),
+    notifyOtherViews: vi.fn(),
   });
   const host = document.body.createDiv();
   surface.mountSidebar(host);
@@ -114,7 +114,7 @@ it.each(['editing query', 'list invalidation'])('preserves the search caret and 
 });
 
 it.each([false, true])('opens selectable history rows by keyboard (metadata popovers: %s)', async showMetadataPopover => {
-  const onSelectConversation = jest.fn().mockResolvedValue(undefined);
+  const onSelectConversation = vi.fn().mockResolvedValue(undefined);
   const browser = new SessionBrowser({
     plugin: {
       settings: { enableAutoTitleGeneration: false },
@@ -200,7 +200,7 @@ describe('projects section', () => {
   const menus = (): Array<{ items: MenuEntry[] }> => (Menu as unknown as { instances: Array<{ items: MenuEntry[] }> }).instances;
   const sectionName = (name: string, _count: number) => name;
   /** The icon most recently drawn inside a project toggle. */
-  const folderIcon = (toggle: HTMLElement) => jest.mocked(setIcon).mock.calls
+  const folderIcon = (toggle: HTMLElement) => vi.mocked(setIcon).mock.calls
     .filter(([element]) => toggle.contains(element)).at(-1)?.[1];
 
   function createProjectSurface({ wide = true, persisted }: {
@@ -230,7 +230,7 @@ describe('projects section', () => {
         projectRecord({ id: 'launch', name: 'Launch', createdAt: testDate({ days: -10 }).getTime() }),
         projectRecord({ id: 'empty', name: 'Empty', createdAt: testDate({ days: -2 }).getTime() }),
       ]),
-      mutateSettings: jest.fn(async (mutation: (value: ClaudianSettings) => void) => {
+      mutateSettings: vi.fn(async (mutation: (value: ClaudianSettings) => void) => {
         if (coordinator) return coordinator.mutate(mutation);
         mutation(settings);
         views.surface?.invalidate();
@@ -239,10 +239,10 @@ describe('projects section', () => {
     const navigation = {
       contentExists: () => true,
       getConversationStatus: () => ({ openState: 'closed', isRunning: false }) as const,
-      openConversation: jest.fn().mockResolvedValue(undefined),
-      openSessionConversation: jest.fn().mockResolvedValue(undefined),
-      startLinkedContentConversation: jest.fn().mockResolvedValue(undefined),
-      startProjectConversation: jest.fn().mockResolvedValue(undefined),
+      openConversation: vi.fn().mockResolvedValue(undefined),
+      openSessionConversation: vi.fn().mockResolvedValue(undefined),
+      startLinkedContentConversation: vi.fn().mockResolvedValue(undefined),
+      startProjectConversation: vi.fn().mockResolvedValue(undefined),
     };
     const surface = new SessionManagerSurface({
       plugin: plugin as unknown as ChatFeatureHost,
@@ -250,8 +250,8 @@ describe('projects section', () => {
       getActiveTab: () => null,
       isWide: () => wide,
       canCreateTab: () => true,
-      requestNew: jest.fn(),
-      notifyOtherViews: jest.fn(),
+      requestNew: vi.fn(),
+      notifyOtherViews: vi.fn(),
     });
     views.surface = surface;
     const host = document.body.createDiv();
@@ -263,7 +263,7 @@ describe('projects section', () => {
 
   afterEach(() => {
     menus().length = 0;
-    jest.mocked(createProject).mockReset();
+    vi.mocked(createProject).mockReset();
   });
 
   it.each([true, false])('restores project expansion after reloading persisted settings (wide: %s)', async wide => {
@@ -397,7 +397,7 @@ describe('projects section', () => {
     // jsdom has no layout: stack every row 40px tall in document order inside a 400px list.
     const rowSelector = '.claudian-history-item, .claudian-session-group-header, .claudian-history-header, .claudian-history-archive-control';
     const rect = (top: number, height: number) => ({ top, bottom: top + height, height, left: 0, right: 300, width: 300 }) as DOMRect;
-    const layout = jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const layout = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       const list = menuEl.querySelector<HTMLElement>('.claudian-history-list')!;
       if (this === list) return rect(0, 400);
       const rows = Array.from(list.querySelectorAll<HTMLElement>(rowSelector));
@@ -419,7 +419,7 @@ describe('projects section', () => {
     const { host, plugin, surface } = createProjectSurface();
     const sessionList = () => host.querySelector<HTMLElement>('.claudian-session-list-items')!;
     // jsdom has no layout: stack every session row 40px tall in document order.
-    const layout = jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const layout = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       const list = sessionList();
       const index = Array.from(list.querySelectorAll<HTMLElement>('.claudian-history-item, .claudian-session-group-header')).indexOf(this);
       const top = this === list ? 0 : index * 40 - list.scrollTop;

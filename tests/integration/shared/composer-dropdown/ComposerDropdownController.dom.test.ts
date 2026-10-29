@@ -1,9 +1,9 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@test/helpers/ObsidianSettingsDOM';
 
+import { axe } from '@test/helpers/accessibility';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import type { TFile } from 'obsidian';
 import { setIcon } from 'obsidian';
 
@@ -11,7 +11,7 @@ import { ComposerDropdownController } from '@/shared/composer-dropdown/ComposerD
 import { MentionSource } from '@/shared/composer-dropdown/MentionSource';
 
 // jsdom has no layout or scrolling.
-Element.prototype.scrollIntoView = jest.fn();
+Element.prototype.scrollIntoView = vi.fn();
 HTMLElement.prototype.setCssProps = function (props) {
   for (const [name, value] of Object.entries(props)) this.style.setProperty(name, value);
 };
@@ -44,12 +44,12 @@ it('shows vault mentions on the keystroke that requests them and updates the ren
     expect(await axe(container)).toHaveNoViolations();
 
     const firstRow = options()[0];
-    const iconCalls = jest.mocked(setIcon).mock.calls.length;
+    const iconCalls = vi.mocked(setIcon).mock.calls.length;
     type('@Alpha t');
     expect(options().map(option => option.textContent)).toEqual(['Alpha two.md']);
     // Narrowing a query rewrites existing rows instead of rebuilding them and their icons.
     expect(options()[0]).toBe(firstRow);
-    expect(jest.mocked(setIcon).mock.calls.length).toBe(iconCalls);
+    expect(vi.mocked(setIcon).mock.calls.length).toBe(iconCalls);
     expect(options()[0].getAttribute('aria-selected')).toBe('true');
 
     type('@missing');
@@ -83,7 +83,7 @@ it('repositions fixed suggestions from their own window and releases that listen
   const mention = new MentionSource({ getCachedVaultFiles: () => [file('Alpha.md', 1)], getCachedVaultFolders: () => [] });
   const controller = new ComposerDropdownController(container, input, [mention], { fixed: true });
   let top = 250;
-  const measure = jest.spyOn(input, 'getBoundingClientRect').mockImplementation(() => ({
+  const measure = vi.spyOn(input, 'getBoundingClientRect').mockImplementation(() => ({
     top, left: 20, width: 300, height: 28, right: 320, bottom: top + 28,
   } as DOMRect));
   try {

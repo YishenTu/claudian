@@ -1,7 +1,7 @@
 import js from '@eslint/js';
 import tseslint from '@typescript-eslint/eslint-plugin';
 import tsparser from '@typescript-eslint/parser';
-import jestPlugin from 'eslint-plugin-jest';
+import vitestPlugin from '@vitest/eslint-plugin';
 import obsidianmd from 'eslint-plugin-obsidianmd';
 import { DEFAULT_ACRONYMS } from 'eslint-plugin-obsidianmd/dist/lib/rules/ui/acronyms.js';
 import { DEFAULT_BRANDS } from 'eslint-plugin-obsidianmd/dist/lib/rules/ui/brands.js';
@@ -10,7 +10,7 @@ import { defineConfig } from 'eslint/config';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const jestRecommended = jestPlugin.configs['flat/recommended'];
+const vitestRecommended = vitestPlugin.configs.recommended;
 const tsconfigRootDir = dirname(fileURLToPath(import.meta.url));
 const obsidianRuleSeverity = 'error';
 
@@ -246,9 +246,13 @@ export default defineConfig([
   },
   {
     files: ['tests/**/*.ts'],
-    ...jestRecommended,
+    ...vitestRecommended,
     rules: {
-      ...jestRecommended.rules,
+      ...vitestRecommended.rules,
+      'vitest/no-alias-methods': 'error',
+      'vitest/no-done-callback': 'error',
+      'vitest/no-test-prefixes': 'error',
+      '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports', fixStyle: 'separate-type-imports', disallowTypeAnnotations: false }],
       '@typescript-eslint/no-explicit-any': 'off',
       'no-restricted-syntax': [
         'error',
@@ -256,6 +260,19 @@ export default defineConfig([
           selector,
           message: 'Express expiries and clocks with testTime/testDate/testClock from @test/helpers/testClock.',
         })),
+      ],
+    },
+  },
+  {
+    files: ['tests/**/*.test.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...hardCodedTestTimeSelectors.map(selector => ({
+          selector,
+          message: 'Express expiries and clocks with testTime/testDate/testClock from @test/helpers/testClock.',
+        })),
+        { selector: 'ExportNamedDeclaration, ExportDefaultDeclaration, ExportAllDeclaration', message: 'Keep reusable exports in test helpers rather than test suites.' },
       ],
     },
   },

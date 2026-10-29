@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';

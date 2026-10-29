@@ -10,11 +10,11 @@ import {
 function createPlugin(): any {
   const plugin: any = {
     executionLifecycleRegistry: {
-      registerTransitionHook: jest.fn(() => jest.fn()),
+      registerTransitionHook: vi.fn(() => vi.fn()),
     },
-    mutateSettings: jest.fn(async (mutation) => mutation(plugin.settings)),
-    mutateSettingsConditionally: jest.fn(async (mutation) => mutation(plugin.settings)),
-    notifyProviderChatOptionsChanged: jest.fn(),
+    mutateSettings: vi.fn(async (mutation) => mutation(plugin.settings)),
+    mutateSettingsConditionally: vi.fn(async (mutation) => mutation(plugin.settings)),
+    notifyProviderChatOptionsChanged: vi.fn(),
     settings: { providerConfigs: { opencode: { discoveredModels: [], visibleModels: [] } } },
   };
   return plugin;
@@ -22,10 +22,10 @@ function createPlugin(): any {
 
 function createProbe(loadCommands: OpencodeMetadataProbe['loadCommands']): OpencodeMetadataProbe {
   return {
-    dispose: jest.fn(async () => undefined),
-    loadCatalog: jest.fn(async () => ({ models: [] })),
+    dispose: vi.fn(async () => undefined),
+    loadCatalog: vi.fn(async () => ({ models: [] })),
     loadCommands,
-    warmModel: jest.fn(),
+    warmModel: vi.fn(),
   };
 }
 
@@ -37,7 +37,7 @@ describe('OpencodeMetadataService command discovery outcomes', () => {
   it('reports retryable command discovery when the native catalog cannot be read', async () => {
     const plugin = createPlugin();
     const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry, {
-      createProbe: () => createProbe(jest.fn(async () => { throw new Error('catalog unavailable'); })),
+      createProbe: () => createProbe(vi.fn(async () => { throw new Error('catalog unavailable'); })),
     });
     try {
       await expect(new OpencodeCommandLoader(service).loadCommands(createContext(plugin))).resolves.toEqual({
@@ -53,7 +53,7 @@ describe('OpencodeMetadataService command discovery outcomes', () => {
   it('treats an observed empty command catalog as a valid empty catalog', async () => {
     const plugin = createPlugin();
     const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry, {
-      createProbe: () => createProbe(jest.fn(async () => [])),
+      createProbe: () => createProbe(vi.fn(async () => [])),
     });
     try {
       await expect(new OpencodeCommandLoader(service).loadCommands(createContext(plugin)))

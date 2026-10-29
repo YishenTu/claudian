@@ -11,13 +11,15 @@ function buildFromSettings(settings: Record<string, unknown>, cliPath: string): 
 
 describe('buildGrokRuntimeEnv', () => {
   describe('folder trust', () => {
+    const originalEnv = process.env;
     beforeEach(() => {
-      jest.replaceProperty(process, 'env', { ...process.env });
+      process.env = { ...process.env };
       delete process.env.GROK_FOLDER_TRUST;
     });
 
     afterEach(() => {
-      jest.restoreAllMocks();
+      process.env = originalEnv;
+      vi.restoreAllMocks();
     });
 
     it('allows native vault skill discovery without changing the host environment', () => {

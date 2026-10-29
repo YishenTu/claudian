@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
@@ -37,7 +37,7 @@ beforeEach(() => {
 afterEach(() => {
   globalThis.ResizeObserver = originalResizeObserver;
   ProviderWorkspaceRegistry.clear();
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
   document.body.replaceChildren();
 });
 
@@ -46,8 +46,8 @@ function setup() {
   Object.assign(app.vault.adapter, { basePath: '/vault' });
   Object.assign(app.vault, { on: () => ({}), offref() {} });
   const backend = new FakeSideBackend();
-  jest.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
-  jest.spyOn(ProviderRegistry.getConversationHistoryService('claude'), 'buildForkProviderState').mockResolvedValue({});
+  vi.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
+  vi.spyOn(ProviderRegistry.getConversationHistoryService('claude'), 'buildForkProviderState').mockResolvedValue({});
   ProviderWorkspaceRegistry.setServices('claude', {});
   const settings = {
     model: 'claude-sonnet-4-5', permissionMode: 'normal', effortLevel: 'high', excludedTags: [],
@@ -78,7 +78,7 @@ function setup() {
   } as unknown as ChatFeatureHost;
   installSessionRuntimePool(plugin);
   const view = Object.assign(new Component(), { leaf: {}, getTabManager: () => manager });
-  const onTabAttentionChanged = jest.fn();
+  const onTabAttentionChanged = vi.fn();
   const manager: TabManager = new TabManager(
     plugin, document.body.createDiv(), view as never, { onTabAttentionChanged }, new VaultMentionDataProvider(app),
   );

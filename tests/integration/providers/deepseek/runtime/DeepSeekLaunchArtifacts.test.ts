@@ -10,9 +10,9 @@ import { SESSION_TOOL_SPECS } from '@/core/session-tools/sessionToolSpecs';
 import { prepareDeepSeekLaunchArtifacts } from '@/providers/deepseek/runtime/DeepSeekLaunchArtifacts';
 
 // The filesystem stays real; individual tests inject the transient lock errors Windows reports for files in use.
-jest.mock('node:fs/promises', () => {
-  const actual = jest.requireActual('node:fs/promises');
-  return { __esModule: true, ...actual, rename: jest.fn(actual.rename) };
+vi.mock('node:fs/promises', async () => {
+  const actual = (await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises'));
+  return { __esModule: true, ...actual, rename: vi.fn(actual.rename) };
 });
 
 it('gives every preset the session prompt directory and its tool policy while keeping prompt text out of code', async () => {
@@ -119,13 +119,13 @@ it('retries a replacement refused by a transient Windows file lock', async () =>
   const artifacts = await prepareDeepSeekLaunchArtifacts(root);
   try {
     for (const code of ['EPERM', 'EACCES', 'EBUSY']) {
-      jest.mocked(rename).mockRejectedValueOnce(Object.assign(new Error(`${code}: file in use`), { code }));
+      vi.mocked(rename).mockRejectedValueOnce(Object.assign(new Error(`${code}: file in use`), { code }));
       await artifacts.writePrompt('alpha', `after ${code}`);
       expect(await readFile(await sessionPromptFile(artifacts), 'utf8')).toBe(`after ${code}`);
     }
     const promptFile = await sessionPromptFile(artifacts);
     // Other failures are not locks and surface at once.
-    jest.mocked(rename).mockRejectedValueOnce(Object.assign(new Error('ENOSPC: no space left'), { code: 'ENOSPC' }));
+    vi.mocked(rename).mockRejectedValueOnce(Object.assign(new Error('ENOSPC: no space left'), { code: 'ENOSPC' }));
     await expect(artifacts.writePrompt('alpha', 'full disk')).rejects.toThrow('ENOSPC');
     expect(await readFile(promptFile, 'utf8')).toBe('after EBUSY');
   } finally {

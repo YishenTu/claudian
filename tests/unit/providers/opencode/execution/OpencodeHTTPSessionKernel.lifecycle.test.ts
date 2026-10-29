@@ -5,8 +5,8 @@ function createLease() {
   return {
     databasePath: '/db/opencode.db', isReusable: () => true, onRetired: () => {}, onSuperseded: () => {},
     subscribe: async () => {}, registerAgents: async () => ({}), waitForActivation: async () => {}, refreshGlobalForms: async () => {},
-    dispose: jest.fn(async () => {}),
-    request: jest.fn(async (route: string) => route === '/api/model' ? { data: [{ id: 'model', providerID: 'test', enabled: true }] } : { data: {} }),
+    dispose: vi.fn(async () => {}),
+    request: vi.fn(async (route: string) => route === '/api/model' ? { data: [{ id: 'model', providerID: 'test', enabled: true }] } : { data: {} }),
   };
 }
 
@@ -14,10 +14,10 @@ function createKernel() {
   let release!: () => void;
   const admitted = new Promise<void>(resolve => { release = resolve; });
   const lease = createLease();
-  const acquire = jest.fn(async (_cliPath: string, _cwd: string, _environment: NodeJS.ProcessEnv) => { await admitted; return lease; });
-  const config = { workingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: jest.fn() } } as any;
+  const acquire = vi.fn(async (_cliPath: string, _cwd: string, _environment: NodeJS.ProcessEnv) => { await admitted; return lease; });
+  const config = { workingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: vi.fn() } } as any;
   const kernel = new OpencodeHTTPSessionKernel({
-    config, databasePath: '/db/opencode.db', getActiveTurnId: () => null, onClosed: jest.fn(),
+    config, databasePath: '/db/opencode.db', getActiveTurnId: () => null, onClosed: vi.fn(),
     host: { resolveCliPath: async () => '/bin/opencode', environmentText: '' },
   } as any, { acquire } as any, new OpencodeSessionPersistence(config));
   return { kernel, lease, acquire, release };

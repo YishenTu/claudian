@@ -1,22 +1,25 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import type { Mock } from 'vitest';
 
 import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
 import { CodexCLIResolver } from '@/providers/codex/runtime/CodexCLIResolver';
 
-jest.mock('fs');
-const mockedExists = fs.existsSync as jest.Mock;
-const mockedStat = fs.statSync as jest.Mock;
-const mockedDeviceKey = getHostnameKey as jest.Mock;
 
-jest.mock('@/core/device/InstallationKey', () => ({
-  ...jest.requireActual('@/core/device/InstallationKey'),
-  getInstallationKey: jest.fn(() => 'current-host'),
+
+vi.mock('fs');
+const mockedExists = fs.existsSync as Mock;
+const mockedStat = fs.statSync as Mock;
+const mockedDeviceKey = getHostnameKey as Mock;
+
+vi.mock('@/core/device/InstallationKey', async () => ({
+  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
+  getInstallationKey: vi.fn(() => 'current-host'),
 }));
 
 describe('CodexCLIResolver', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockedDeviceKey.mockReturnValue('current-host');
   });
 

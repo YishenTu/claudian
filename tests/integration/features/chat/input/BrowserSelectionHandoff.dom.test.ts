@@ -1,16 +1,19 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { createHarness, FakeSession, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { createFixture, deferred } from '@test/helpers/ChatInputHarness';
 import { within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import type { App } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import { ComposerContextTray } from '@/features/chat/composer/ComposerContextTray';
 import { BrowserSelectionController } from '@/features/chat/input/BrowserSelectionController';
 import { ComposerSelections } from '@/features/chat/input/ComposerSelections';
+
+
 
 Object.assign(HTMLElement.prototype, {
   addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); },
@@ -24,7 +27,7 @@ beforeEach(() => {
   visibility = document.head.appendChild(document.createElement('style'));
   visibility.textContent = '.claudian-hidden { display: none; }';
   const execute = FakeSession.prototype.execute;
-  jest.spyOn(FakeSession.prototype, 'execute').mockImplementation(function (this: FakeSession, request) {
+  vi.spyOn(FakeSession.prototype, 'execute').mockImplementation(function (this: FakeSession, request) {
     const result = execute.call(this, request);
     const run = this.runs.at(-1)!;
     run.events.push({ type: 'turn_started', accepted: true, scope: requestedScope(this, run, 1) });
@@ -33,17 +36,17 @@ beforeEach(() => {
     return result;
   });
 });
-afterEach(() => { visibility.remove(); jest.restoreAllMocks(); document.body.replaceChildren(); });
+afterEach(() => { visibility.remove(); vi.restoreAllMocks(); document.body.replaceChildren(); });
 
 it.each([
   'own composer', 'own composer unfocused', 'other browser', 'ordinary editor', 'other composer',
   'source closed', 'source replaced', 'source navigated', 'clear', 'stop',
 ] as const)('hands pending browser context to its own input only: %s', async action => {
   const source = document.body.createDiv();
-  const webview = document.createElement('webview') as HTMLElement & { executeJavaScript: jest.Mock };
+  const webview = document.createElement('webview') as HTMLElement & { executeJavaScript: Mock };
   source.appendChild(webview);
   const read = deferred<string>();
-  webview.executeJavaScript = jest.fn(() => read.promise);
+  webview.executeJavaScript = vi.fn(() => read.promise);
   const sourceView = { containerEl: source, getViewType: () => 'surfing-view', getDisplayText: () => 'Source page', currentUrl: 'https://source.example/' };
   const sourceLeaf = { view: sourceView };
   const composer = document.body.createDiv();

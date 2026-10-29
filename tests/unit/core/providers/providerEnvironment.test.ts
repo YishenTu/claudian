@@ -68,7 +68,7 @@ describe('providerEnvironment', () => {
       expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
       expect(Object.prototype.hasOwnProperty.call(result, '__proto__')).toBe(true);
       expect(result['__proto__']).toBe(expectedValue);
-      // Keep native spread semantics instead of Jest's ES6 Object.assign transform.
+      // Keep native spread semantics for the prototype-sensitive assertion.
       expect(runInNewContext('({ ...environment })', { environment: result })['__proto__'])
         .toBe(expectedValue);
       expect(result.PATH).toBe('/usr/local/bin');

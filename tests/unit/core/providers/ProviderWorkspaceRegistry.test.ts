@@ -1,5 +1,7 @@
 import '@/providers';
 
+import type { Mock } from 'vitest';
+
 import {
   ProviderExecutionLifecycleRegistry,
   type ProviderExecutionTransitionScope,
@@ -7,6 +9,8 @@ import {
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { ProviderId } from '@/core/providers/types';
+
+
 
 function createProviderHost(): ProviderHost {
   const executionLifecycleRegistry = new ProviderExecutionLifecycleRegistry();
@@ -26,7 +30,7 @@ function createProviderHost(): ProviderHost {
     ),
     settings: {},
     storage: {
-      getAdapter: jest.fn().mockReturnValue({}),
+      getAdapter: vi.fn().mockReturnValue({}),
     },
   } as unknown as ProviderHost;
 }
@@ -41,7 +45,7 @@ describe('ProviderWorkspaceRegistry', () => {
   });
 
   it('rejects a different workspace host until disposal', async () => {
-    const initialize = jest.fn(async () => ({}));
+    const initialize = vi.fn(async () => ({}));
     ProviderWorkspaceRegistry.register('claude', { initialize });
     const owner = createProviderHost();
     const other = createProviderHost();
@@ -56,12 +60,12 @@ describe('ProviderWorkspaceRegistry', () => {
 
   it('returns the assigned catalog for a provider', () => {
     const mockCatalog = {
-      listDropdownEntries: jest.fn(),
-      listVaultEntries: jest.fn(),
-      saveVaultEntry: jest.fn(),
-      deleteVaultEntry: jest.fn(),
-      getDropdownConfig: jest.fn(),
-      refresh: jest.fn(),
+      listDropdownEntries: vi.fn(),
+      listVaultEntries: vi.fn(),
+      saveVaultEntry: vi.fn(),
+      deleteVaultEntry: vi.fn(),
+      getDropdownConfig: vi.fn(),
+      refresh: vi.fn(),
     };
 
     ProviderWorkspaceRegistry.setServices('claude', {
@@ -73,9 +77,9 @@ describe('ProviderWorkspaceRegistry', () => {
 
   it('returns the command loader for a provider', () => {
     const commandLoader = {
-      getCacheFingerprint: jest.fn().mockReturnValue('enabled:bundled-cli'),
-      isAvailable: jest.fn().mockReturnValue(true),
-      loadCommands: jest.fn().mockResolvedValue({ status: 'empty' }),
+      getCacheFingerprint: vi.fn().mockReturnValue('enabled:bundled-cli'),
+      isAvailable: vi.fn().mockReturnValue(true),
+      loadCommands: vi.fn().mockResolvedValue({ status: 'empty' }),
     };
 
     ProviderWorkspaceRegistry.setServices('opencode', {
@@ -86,7 +90,7 @@ describe('ProviderWorkspaceRegistry', () => {
   });
 
   it('deduplicates concurrent provider initialization', async () => {
-    const initialize = jest.fn(async () => ({ commandCatalog: {} as any }));
+    const initialize = vi.fn(async () => ({ commandCatalog: {} as any }));
     ProviderWorkspaceRegistry.register('codex', { initialize });
     const host = createProviderHost();
 
@@ -99,7 +103,7 @@ describe('ProviderWorkspaceRegistry', () => {
   });
 
   it('allows provider initialization to retry after failure', async () => {
-    const initialize = jest.fn()
+    const initialize = vi.fn()
       .mockRejectedValueOnce(new Error('temporary failure'))
       .mockResolvedValueOnce({ commandCatalog: {} as any });
     ProviderWorkspaceRegistry.register('codex', { initialize });
@@ -117,8 +121,8 @@ describe('ProviderWorkspaceRegistry', () => {
   });
 
   it('keeps registrations available after disposing initialized services', async () => {
-    const dispose = jest.fn();
-    const initialize = jest.fn(async () => ({ dispose }));
+    const dispose = vi.fn();
+    const initialize = vi.fn(async () => ({ dispose }));
     ProviderWorkspaceRegistry.register('codex', { initialize });
     const host = createProviderHost();
 
@@ -131,7 +135,7 @@ describe('ProviderWorkspaceRegistry', () => {
   });
 
   it('reinitializes a provider after its assigned services are cleared', async () => {
-    const initialize = jest.fn(async () => ({ commandCatalog: {} as any }));
+    const initialize = vi.fn(async () => ({ commandCatalog: {} as any }));
     ProviderWorkspaceRegistry.register('codex', { initialize });
     const host = createProviderHost();
 
@@ -144,12 +148,12 @@ describe('ProviderWorkspaceRegistry', () => {
   });
 
   it.each(['throw', 'reject'])('disposes every initialized provider when one cleanup fails via %s', async failure => {
-    const disposeClaude = jest.fn(() => {
+    const disposeClaude = vi.fn(() => {
       const error = new Error('cleanup failed');
       if (failure === 'throw') throw error;
       return Promise.reject(error);
     });
-    const disposeCodex = jest.fn().mockResolvedValue(undefined);
+    const disposeCodex = vi.fn().mockResolvedValue(undefined);
     ProviderWorkspaceRegistry.register('claude', { initialize: async () => ({ dispose: disposeClaude }) });
     ProviderWorkspaceRegistry.register('codex', { initialize: async () => ({ dispose: disposeCodex }) });
     const host = createProviderHost();
@@ -167,9 +171,9 @@ describe('ProviderWorkspaceRegistry', () => {
   });
 
   it('disposes services that finish initializing after provider disposal', async () => {
-    let finishInitialization!: (services: { dispose: jest.Mock }) => void;
-    const dispose = jest.fn().mockResolvedValue(undefined);
-    const initialize = jest.fn(() => new Promise<{ dispose: jest.Mock }>((resolve) => {
+    let finishInitialization!: (services: { dispose: Mock }) => void;
+    const dispose = vi.fn().mockResolvedValue(undefined);
+    const initialize = vi.fn(() => new Promise<{ dispose: Mock }>((resolve) => {
       finishInitialization = resolve;
     }));
     ProviderWorkspaceRegistry.register('codex', { initialize });
@@ -202,7 +206,7 @@ describe('ProviderWorkspaceRegistry', () => {
       },
     });
     ProviderWorkspaceRegistry.register('grok', {
-      initialize: jest.fn(async () => {
+      initialize: vi.fn(async () => {
         events.push('initialize');
         return { commandCatalog: {} as any };
       }),
@@ -216,9 +220,9 @@ describe('ProviderWorkspaceRegistry', () => {
 
   it('rejects a nested transition started by async provider initialization', async () => {
     const host = createProviderHost();
-    const nestedMutation = jest.fn(async () => undefined);
+    const nestedMutation = vi.fn(async () => undefined);
     ProviderWorkspaceRegistry.register('grok', {
-      initialize: jest.fn(async (context) => {
+      initialize: vi.fn(async (context) => {
         await Promise.resolve();
         await context.plugin.runProviderExecutionTransition(
           ['grok'],

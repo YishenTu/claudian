@@ -30,7 +30,7 @@ function setup(sourceId = id) {
 
 beforeEach(() => {
   const execute = FakeSession.prototype.execute;
-  jest.spyOn(FakeSession.prototype, 'execute').mockImplementation(function (this: FakeSession, request) {
+  vi.spyOn(FakeSession.prototype, 'execute').mockImplementation(function (this: FakeSession, request) {
     const result = execute.call(this, request);
     const run = this.runs.at(-1)!;
     run.events.push({ type: 'turn_started', accepted: true, scope: requestedScope(this, run, 1) });
@@ -39,7 +39,7 @@ beforeEach(() => {
     return result;
   });
 });
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => vi.restoreAllMocks());
 
 it.each(['\n', '\r\n', '\r'])('sends a picker reference whose saved title contains %j', async newline => {
   const fixture = setup();
@@ -231,7 +231,7 @@ it('withdraws an expired async answer waiting behind busy-main reference prepara
   const mention = fixture.controller.sendMessage();
   await waitForCall(fixture.plugin.getConversationById);
   fixture.input.value = 'Keep this draft';
-  const send = jest.spyOn(fixture.controller, 'sendMessage');
+  const send = vi.spyOn(fixture.controller, 'sendMessage');
   const abort = new AbortController();
   const answer = fixture.controller.answerQuestion(tool, { '0': 'History' }, 'conversation-1', abort.signal)
     .then(() => 'sent', () => 'not sent');
@@ -288,7 +288,7 @@ it.each([false, true])('restores prepared drafts when rewind begins during hydra
   const initialization = deferred<boolean>();
   const source = await fixture.plugin.getConversationById(id);
   fixture.plugin.getConversationById.mockClear().mockReturnValue(hydration.promise);
-  const initialize = jest.fn().mockReturnValue(initialization.promise);
+  const initialize = vi.fn().mockReturnValue(initialization.promise);
   fixture.deps.ensureExecutionInitialized = initialize;
   const conversation = fixture.deps.conversationController;
   fixture.state.messages = [
@@ -326,9 +326,9 @@ it.each([false, true])('restores prepared drafts when rewind begins during hydra
 });
 
 function holdNativeTurns() {
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
   const execute = FakeSession.prototype.execute;
-  return jest.spyOn(FakeSession.prototype, 'execute').mockImplementation(function (this: FakeSession, request) {
+  return vi.spyOn(FakeSession.prototype, 'execute').mockImplementation(function (this: FakeSession, request) {
     const result = execute.call(this, request);
     const run = this.runs.at(-1)!;
     run.events.push({ type: 'turn_started', accepted: true, scope: requestedScope(this, run, 1) });
@@ -456,7 +456,7 @@ it.each(['withdraw', 'cancel', 'initialization'])('restores token text and refre
 
 it.each([false, true])('retains queued priority and captured selections through the timer gap (new selection: %s)', async different => {
   holdNativeTurns();
-  jest.useFakeTimers();
+  vi.useFakeTimers();
   const fixture = setup();
   const source = await fixture.plugin.getConversationById(id);
   const loading = deferred<any>();
@@ -464,7 +464,7 @@ it.each([false, true])('retains queued priority and captured selections through 
   await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   fixture.input.value = 'active turn';
   const active = fixture.controller.sendMessage();
-  await jest.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(0);
   const session = fixture.native.backends.get('claude')!.sessions[0];
   const older = {
     editor: { mode: 'selection' as const, notePath: 'same.md', selectedText: 'older editor' },
@@ -505,14 +505,14 @@ it.each([false, true])('retains queued priority and captured selections through 
     expect(session.requests).toHaveLength(1);
     expect(fixture.state.queuedMessage?.content).toBe('older plain follow-up\n\n@"Current title"');
     await mention;
-    await jest.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
     expect(session.requests[1].input).toEqual([{ type: 'text', text: 'older plain follow-up\n\n@"Current title"' }]);
     expect(session.requests[1].context?.sessionReferences?.[0].id).toBe(id);
     expect(session.requests[1].context?.selections).toEqual(expected);
     expect(fixture.state.messages.filter(message => message.role === 'user').at(-1)
       ?.executionInput?.context).toEqual(session.requests[1].context);
     finishNativeTurn(session, 1);
-    await jest.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
   } finally {
     fixture.controller.cancelStreaming();
     fixture.controller.queue.clear();
@@ -520,13 +520,13 @@ it.each([false, true])('retains queued priority and captured selections through 
     session.runs.forEach(run => run.cancel());
     await Promise.allSettled([active, mention]);
     await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose();
-    jest.useRealTimers();
+    vi.useRealTimers();
   }
 });
 
 it.each(['cancel', 'withdraw', 'discard', 'shutdown', 'replacement'] as const)(
   'retains scheduled queued input through %s without a stray handoff', async action => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const fixture = setup();
     const session = fixture.session;
     fixture.deps.canStartTurn = () => session.acceptsIntents;
@@ -544,7 +544,7 @@ it.each(['cancel', 'withdraw', 'discard', 'shutdown', 'replacement'] as const)(
         case 'replacement': fixture.state.currentConversationId = 'replacement'; break;
         case 'shutdown': session.beginShutdown(); break;
       }
-      await jest.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0);
       expect(fixture.native.backends.get('claude')!.sessions.flatMap(value => value.requests).length).toBe(0);
       expect(fixture.input.value).toBe(['cancel', 'withdraw', 'replacement'].includes(action) ? token : '');
       expect(fixture.native.backends.get('claude')!.sessions.flatMap(value => value.requests)
@@ -552,7 +552,7 @@ it.each(['cancel', 'withdraw', 'discard', 'shutdown', 'replacement'] as const)(
     } finally {
       fixture.controller.queue.clear();
       await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose();
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   },
 );

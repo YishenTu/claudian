@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@test/helpers/ObsidianSettingsDOM';
 
@@ -14,7 +14,7 @@ import { createCodexModels } from '@/providers/codex/runtime/CodexModels';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 import { renderProviderModelsSection } from '@/shared/settings/ProviderModelsSection';
 
-jest.mock('obsidian', () => jest.requireActual('../../../helpers/ObsidianSettingsDOM'));
+vi.mock('obsidian', async () => (await vi.importActual<typeof import('../../../helpers/ObsidianSettingsDOM')>('../../../helpers/ObsidianSettingsDOM')));
 
 const ROW_HEIGHT = 50;
 const ROW_GAP = 6;
@@ -52,7 +52,7 @@ async function setup() {
     discoveredModels: [model('alpha', 'Alpha'), model('beta', 'Beta'), model('gamma', 'Gamma')],
   } } };
   const coordinator = new SettingsCoordinator(settings, async () => {});
-  const notify = jest.fn();
+  const notify = vi.fn();
   const host = {
     settings, mutateSettings: coordinator.mutate.bind(coordinator), notifyProviderChatOptionsChanged: notify,
   } as unknown as ProviderHost;

@@ -3,19 +3,19 @@ import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { probeClaudeCatalog } from '@/providers/claude/runtime/probeClaudeModels';
 
-const mockQuery = jest.fn();
-jest.mock('@/providers/claude/loadClaudeAgentSDK', () => ({ loadClaudeAgentQuery: async () => mockQuery }));
+const mockQuery = vi.fn();
+vi.mock('@/providers/claude/loadClaudeAgentSDK', () => ({ loadClaudeAgentQuery: async () => mockQuery }));
 
 function host(workingDirectory: string | null = '/vault'): ProviderRuntimeHost {
   return runtimeHostFor({
     settings: { providerConfigs: { claude: {} } },
     workingDirectory,
-    getResolvedProviderCliPath: jest.fn().mockResolvedValue('/bin/claude'),
+    getResolvedProviderCliPath: vi.fn().mockResolvedValue('/bin/claude'),
   }, 'claude');
 }
 
 describe('Claude SDK catalog probe', () => {
-  afterEach(() => { jest.clearAllMocks(); });
+  afterEach(() => { vi.clearAllMocks(); });
 
   it('maps reported models and output styles, retaining known effort levels and dropping malformed ones', async () => {
     mockQuery.mockReturnValue({
@@ -26,7 +26,7 @@ describe('Claude SDK catalog probe', () => {
       ], available_output_styles: ['default', ' Concise ', 'My Style', 'Concise', '', 3] }),
       supportedCommands: async () => [],
       next: async () => ({ done: false, value: { type: 'system', subtype: 'init' } }),
-      close: jest.fn(),
+      close: vi.fn(),
     });
     expect(await probeClaudeCatalog(host())).toEqual({
       models: [

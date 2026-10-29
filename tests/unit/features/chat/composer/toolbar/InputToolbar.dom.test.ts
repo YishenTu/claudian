@@ -1,16 +1,19 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { setIcon } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import type { ProviderPermissionModeOption } from '@/core/providers/types';
 import { createInputToolbar } from '@/features/chat/composer/toolbar/InputToolbar';
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 import { codexChatUIConfig } from '@/providers/codex/ui/CodexChatUIConfig';
+
+
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
@@ -54,7 +57,7 @@ function renderToolbar(fixture: FixtureOptions = {}) {
   };
   const uiConfig = {
     getProviderIcon: () => fixture.providerIcon ?? null,
-    getModelOptions: jest.fn(() => fixture.models ?? [
+    getModelOptions: vi.fn(() => fixture.models ?? [
       { value: 'haiku', label: 'Haiku', description: 'Fast and efficient' },
       { value: 'sonnet', label: 'Sonnet' },
       { value: 'opus', label: 'Opus' },
@@ -84,16 +87,16 @@ function renderToolbar(fixture: FixtureOptions = {}) {
     } : null),
   };
   const callbacks = {
-    onModelChange: jest.fn(async (model: string) => { settings.model = model; }),
-    onModeChange: jest.fn(async (mode: string) => { settings.selectedMode = mode; }),
-    onEffortLevelChange: jest.fn(async (effort: string) => { settings.reasoning = effort; }),
-    onServiceTierChange: jest.fn(async (tier: string) => { settings.serviceTier = tier; }),
-    onPermissionModeChange: jest.fn(async (mode: string) => { settings.permissionMode = mode; }),
+    onModelChange: vi.fn(async (model: string) => { settings.model = model; }),
+    onModeChange: vi.fn(async (mode: string) => { settings.selectedMode = mode; }),
+    onEffortLevelChange: vi.fn(async (effort: string) => { settings.reasoning = effort; }),
+    onServiceTierChange: vi.fn(async (tier: string) => { settings.serviceTier = tier; }),
+    onPermissionModeChange: vi.fn(async (mode: string) => { settings.permissionMode = mode; }),
     getSettings: () => settings,
     getEnvironmentVariables: () => 'ANTHROPIC_MODEL=opus',
     getUIConfig: () => uiConfig,
     getCapabilities: () => ({ reasoningControl: fixture.reasoningControl ?? 'effort' }),
-  } as unknown as ToolbarCallbacks & Record<string, jest.Mock>;
+  } as unknown as ToolbarCallbacks & Record<string, Mock>;
   const host = document.body.createDiv();
   const toolbarEl = host.createDiv({ cls: 'claudian-input-toolbar' });
   const outsideEl = host.createEl('button', { text: 'Outside', attr: { type: 'button' } });
@@ -470,10 +473,10 @@ describe('permission button', () => {
   });
 
   it('offers both provider modes, marks the active one, and closes after a choice', async () => {
-    jest.mocked(setIcon).mockClear();
+    vi.mocked(setIcon).mockClear();
     const { callbacks, host, toolbar, ui } = renderToolbar();
     const button = ui.getByRole('button', { name: 'Permission mode: Safe' });
-    const chipIcons = () => jest.mocked(setIcon).mock.calls
+    const chipIcons = () => vi.mocked(setIcon).mock.calls
       .filter(([el]) => button.contains(el as Node)).map(([, icon]) => icon).filter(icon => icon !== 'chevron-down');
     // Only a mode that skips approvals carries an icon.
     expect(chipIcons()).toEqual([]);
@@ -502,7 +505,7 @@ describe('permission button', () => {
     expect(button.classList.contains('claudian-toolbar-chip--alert')).toBe(true);
     expect(chipIcons()).toEqual(['shield-alert']);
     fireEvent.click(button);
-    jest.mocked(setIcon).mockClear();
+    vi.mocked(setIcon).mockClear();
     const iconSlot = button.querySelector('.claudian-toolbar-chip-icon')!;
     iconSlot.appendChild(document.createElement('svg'));
     fireEvent.click(ui.getByRole('menuitemradio', { name: 'Safe' }));

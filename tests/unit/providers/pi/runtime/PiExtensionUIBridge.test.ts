@@ -6,7 +6,7 @@ function createBridge(
   admitDialog: () => boolean = () => true,
 ) {
   const transport = {
-    send: jest.fn(),
+    send: vi.fn(),
   } as unknown as PiRPCTransport;
   const bridge = new PiExtensionUIBridge(
     transport,
@@ -20,7 +20,7 @@ function createBridge(
 describe('PiExtensionUIBridge', () => {
   it('sends dialog responses through the transport', async () => {
     const renderer = {
-      select: jest.fn().mockResolvedValue({ value: 'choice-a' }),
+      select: vi.fn().mockResolvedValue({ value: 'choice-a' }),
     };
     const { bridge, transport } = createBridge(renderer);
 
@@ -37,7 +37,7 @@ describe('PiExtensionUIBridge', () => {
 
   it('cancels dialog requests when no renderer is available', () => {
     const transport = {
-      send: jest.fn(),
+      send: vi.fn(),
     } as unknown as PiRPCTransport;
     const bridge = new PiExtensionUIBridge(transport, null);
 
@@ -52,7 +52,7 @@ describe('PiExtensionUIBridge', () => {
 
   it('cancels a denied dialog before invoking the renderer', () => {
     const renderer = {
-      input: jest.fn().mockResolvedValue({ value: 'must-not-be-sent' }),
+      input: vi.fn().mockResolvedValue({ value: 'must-not-be-sent' }),
     };
     const { bridge, transport } = createBridge(renderer, () => false);
 
@@ -68,7 +68,7 @@ describe('PiExtensionUIBridge', () => {
 
   it('handles notify without sending a response', () => {
     const renderer = {
-      notify: jest.fn(),
+      notify: vi.fn(),
     };
     const { bridge, transport } = createBridge(renderer);
 
@@ -84,7 +84,7 @@ describe('PiExtensionUIBridge', () => {
 
   it('cancels pending dialogs on cleanup', () => {
     const renderer = {
-      input: jest.fn((_request: unknown, signal: AbortSignal) => new Promise<{ cancelled?: boolean }>((resolve) => {
+      input: vi.fn((_request: unknown, signal: AbortSignal) => new Promise<{ cancelled?: boolean }>((resolve) => {
         signal.addEventListener('abort', () => resolve({ cancelled: true }));
       })),
     };
@@ -102,7 +102,7 @@ describe('PiExtensionUIBridge', () => {
 
   it('does not send duplicate cancellation responses when cleanup aborts a rejecting renderer', async () => {
     const renderer = {
-      input: jest.fn((_request: unknown, signal: AbortSignal) => new Promise<never>((_resolve, reject) => {
+      input: vi.fn((_request: unknown, signal: AbortSignal) => new Promise<never>((_resolve, reject) => {
         signal.addEventListener('abort', () => reject(new Error('aborted')));
       })),
     };

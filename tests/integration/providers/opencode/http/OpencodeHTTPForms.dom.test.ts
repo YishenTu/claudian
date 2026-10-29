@@ -1,6 +1,6 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 import { InlineAskUserQuestion } from '@/features/chat/interactions/InlineAskUserQuestion';
 import { projectOpencodeFormQuestions } from '@/providers/opencode/http/OpencodeHTTPForms';
@@ -19,7 +19,7 @@ beforeAll(() => {
 const form = (fields: unknown[]) => ({ title: 'Questions', metadata: { kind: 'question' }, fields });
 function render(fields: unknown[]) {
   const container = document.body.createDiv();
-  const answered = jest.fn();
+  const answered = vi.fn();
   const widget = new InlineAskUserQuestion(container, { questions: projectOpencodeFormQuestions(form(fields)) }, answered);
   widget.render();
   return { container, answered, dispose() { widget.destroy(); container.remove(); } };

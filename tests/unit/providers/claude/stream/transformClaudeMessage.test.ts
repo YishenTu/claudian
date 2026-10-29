@@ -696,7 +696,7 @@ describe('transformSDKMessage', () => {
         content_block: { type: 'tool_use', id: 'stream-tool-1', name: 'Write', input: {} },
       }), { streamState, usageState });
 
-      const parseSpy = jest.spyOn(JSON, 'parse');
+      const parseSpy = vi.spyOn(JSON, 'parse');
       const emitted: unknown[] = [];
       try {
         for (const partialJson of deltas) {

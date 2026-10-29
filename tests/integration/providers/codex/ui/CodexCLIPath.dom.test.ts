@@ -1,25 +1,25 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@test/helpers/ObsidianSettingsDOM';
 
 import { deserialize, serialize } from 'node:v8';
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 import { createCodexSettingsTabRenderer } from '@/providers/codex/ui/CodexSettingsTab';
 
-jest.mock('@/core/device/InstallationKey', () => ({ getInstallationKey: () => 'host-a' }));
-jest.mock('@/providers/codex/runtime/CodexCLIInstallation', () => ({
+vi.mock('@/core/device/InstallationKey', () => ({ getInstallationKey: () => 'host-a' }));
+vi.mock('@/providers/codex/runtime/CodexCLIInstallation', () => ({
   inspectCodexInstallation: async () => ({ path: null, version: null, source: 'auto' }),
 }));
-jest.mock('@/shared/settings/ProviderModelsSection', () => ({
+vi.mock('@/shared/settings/ProviderModelsSection', () => ({
   renderProviderModelsSection: () => ({ refresh() {}, dispose() {} }),
 }));
-jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection() {} }));
-jest.mock('obsidian', () => {
-  const dom = jest.requireActual('@test/helpers/ObsidianSettingsDOM');
+vi.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection() {} }));
+vi.mock('obsidian', async () => {
+  const dom = (await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM'));
   class Setting extends dom.Setting {
     setHeading() { return this; }
     addToggle(callback: (control: unknown) => void) {
@@ -35,7 +35,7 @@ jest.mock('obsidian', () => {
       callback(toggle); return this;
     }
   }
-  return { ...jest.requireActual('@test/__mocks__/obsidian'), ...dom, Setting };
+  return { ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')), ...dom, Setting };
 });
 
 it('preserves spaces typed into the real Codex WSL CLI path until the final commit', async () => {

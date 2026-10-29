@@ -20,7 +20,7 @@ describe('patchSetMaxListenersForElectron', () => {
     patchSetMaxListenersForElectron();
 
     // Simulate a browser-realm AbortSignal that lacks kIsEventTarget symbol
-    const fakeSignal = { aborted: false, addEventListener: jest.fn(), removeEventListener: jest.fn() };
+    const fakeSignal = { aborted: false, addEventListener: vi.fn(), removeEventListener: vi.fn() };
 
     expect(() => events.setMaxListeners(50, fakeSignal)).not.toThrow();
   });
@@ -115,7 +115,7 @@ describe('patchSetMaxListenersForElectron', () => {
       ['genuine Node AbortSignal', () => new AbortController().signal],
       [
         'browser-like AbortSignal',
-        () => ({ aborted: false, addEventListener: jest.fn(), removeEventListener: jest.fn() }),
+        () => ({ aborted: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
       ],
     ];
 
@@ -170,7 +170,7 @@ describe('patchSetMaxListenersForElectron', () => {
       (_label, limit) => {
         patchSetMaxListenersForElectron();
 
-        const target = { aborted: false, addEventListener: jest.fn(), removeEventListener: jest.fn() };
+        const target = { aborted: false, addEventListener: vi.fn(), removeEventListener: vi.fn() };
         const before = events.defaultMaxListeners;
         expect(() => events.setMaxListeners(limit, target)).not.toThrow();
         expect(events.defaultMaxListeners).toBe(before);

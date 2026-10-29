@@ -2,15 +2,15 @@ import { TabStatePersistenceCoordinator } from '@/features/chat/tabs/persistence
 
 describe('TabStatePersistenceCoordinator', () => {
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it('coalesces rapid updates into one write', async () => {
-    const write = jest.fn().mockResolvedValue(undefined);
+    const write = vi.fn().mockResolvedValue(undefined);
     const coordinator = new TabStatePersistenceCoordinator(write, window, 300);
 
     coordinator.update({ openTabs: [], activeTabId: null });
@@ -18,7 +18,7 @@ describe('TabStatePersistenceCoordinator', () => {
       openTabs: [{ tabId: 'tab-1', conversationId: 'conv-1' }],
       activeTabId: 'tab-1',
     });
-    jest.advanceTimersByTime(300);
+    vi.advanceTimersByTime(300);
     await Promise.resolve();
     await Promise.resolve();
 
@@ -30,13 +30,13 @@ describe('TabStatePersistenceCoordinator', () => {
     const firstWrite = new Promise<void>(resolve => {
       finishFirstWrite = resolve;
     });
-    const write = jest.fn()
+    const write = vi.fn()
       .mockReturnValueOnce(firstWrite)
       .mockResolvedValueOnce(undefined);
     const coordinator = new TabStatePersistenceCoordinator(write, window, 300);
 
     coordinator.update({ openTabs: [], activeTabId: null });
-    jest.advanceTimersByTime(300);
+    vi.advanceTimersByTime(300);
     await Promise.resolve();
     coordinator.update({
       openTabs: [{ tabId: 'tab-2', conversationId: null }],
@@ -51,7 +51,7 @@ describe('TabStatePersistenceCoordinator', () => {
   });
 
   it('flushes a change once and does not rewrite an acknowledged state', async () => {
-    const write = jest.fn().mockResolvedValue(undefined);
+    const write = vi.fn().mockResolvedValue(undefined);
     const coordinator = new TabStatePersistenceCoordinator(write, window, 300);
     const state = {
       openTabs: [{ tabId: 'tab-1', conversationId: null }],
@@ -62,7 +62,7 @@ describe('TabStatePersistenceCoordinator', () => {
     await coordinator.flush();
     await coordinator.flush();
     coordinator.update(state);
-    jest.advanceTimersByTime(300);
+    vi.advanceTimersByTime(300);
     await Promise.resolve();
 
     expect(write).toHaveBeenCalledTimes(1);

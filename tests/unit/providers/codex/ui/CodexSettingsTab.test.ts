@@ -1,41 +1,44 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
+import { axe } from '@test/helpers/accessibility';
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 import { createMockEl } from '@test/helpers/MockElement';
 import { withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
 import { applyTextInput } from '@test/helpers/settingsControls';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import * as fs from 'fs';
-import { axe } from 'jest-axe';
 import { setImmediate } from 'timers';
+import type { Mock, MockedFunction } from 'vitest';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { DEFAULT_CODEX_PROVIDER_SETTINGS } from '@/providers/codex/config';
 import { createCodexSettingsTabRenderer } from '@/providers/codex/ui/CodexSettingsTab';
 
+
+
 Object.assign(globalThis, { setImmediate });
 
-const mockGetHostnameKey = jest.fn(() => 'host-a');
-const mockRenderEnvironmentSettingsSection = jest.fn();
-const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
-const mockCodexCLIResolverReset = jest.fn();
-const mockRefreshCodexModelPicker = jest.fn();
-const mockRenderCodexModelPicker = jest.fn((..._args: unknown[]) => ({ refresh: mockRefreshCodexModelPicker, dispose: jest.fn() }));
-const mockRefreshModelCatalog = jest.fn().mockResolvedValue({ changed: false });
+const mockGetHostnameKey = vi.fn(() => 'host-a');
+const mockRenderEnvironmentSettingsSection = vi.fn();
+const mockSaveSettings = vi.fn().mockResolvedValue(undefined);
+const mockCodexCLIResolverReset = vi.fn();
+const mockRefreshCodexModelPicker = vi.fn();
+const mockRenderCodexModelPicker = vi.fn((..._args: unknown[]) => ({ refresh: mockRefreshCodexModelPicker, dispose: vi.fn() }));
+const mockRefreshModelCatalog = vi.fn().mockResolvedValue({ changed: false });
 
-jest.mock('fs');
-jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
+vi.mock('fs');
+vi.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   ProviderSettingsCoordinator: {
-    canApplyProviderEnablement: jest.fn(() => true),
-    applyProviderEnablement: jest.fn((settings: Record<string, unknown>, _providerId: string, enabled: boolean) => {
+    canApplyProviderEnablement: vi.fn(() => true),
+    applyProviderEnablement: vi.fn((settings: Record<string, unknown>, _providerId: string, enabled: boolean) => {
       const providerConfigs = settings.providerConfigs as { codex: { enabled: boolean } };
       providerConfigs.codex.enabled = enabled;
       return true;
     }),
-    normalizeAllModelVariants: jest.fn(),
+    normalizeAllModelVariants: vi.fn(),
   },
 }));
-jest.mock('obsidian', () => {
+vi.mock('obsidian', () => {
   class MockSetting {
     public name = '';
     public desc = '';
@@ -45,9 +48,9 @@ jest.mock('obsidian', () => {
     public toggleComponents: MockToggleComponent[] = [];
     public settingEl = {
       style: {},
-      toggleClass: jest.fn(),
-      addClass: jest.fn(),
-      removeClass: jest.fn(),
+      toggleClass: vi.fn(),
+      addClass: vi.fn(),
+      removeClass: vi.fn(),
     };
 
     constructor(_container: unknown) {
@@ -96,18 +99,18 @@ jest.mock('obsidian', () => {
   };
 });
 
-jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
+vi.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
   renderEnvironmentSettingsSection: (...args: unknown[]) => mockRenderEnvironmentSettingsSection(...args),
 }));
 
 function createSettingsRenderer() {
   return createCodexSettingsTabRenderer({
-    modelCatalog: { refresh: mockRefreshModelCatalog, markStale: jest.fn() },
+    modelCatalog: { refresh: mockRefreshModelCatalog, markStale: vi.fn() },
     cliResolver: { reset: mockCodexCLIResolverReset },
   } as unknown as Parameters<typeof createCodexSettingsTabRenderer>[0]);
 }
 
-jest.mock('@/shared/settings/ProviderModelsSection', () => ({
+vi.mock('@/shared/settings/ProviderModelsSection', () => ({
   renderProviderModelsSection: (...args: unknown[]) => mockRenderCodexModelPicker(...args),
 }));
 
@@ -115,9 +118,9 @@ interface MockTextComponent {
   value: string;
   placeholder: string;
   onChangeCallback: ((value: string) => Promise<void> | void) | null;
-  setPlaceholder: jest.MockedFunction<(value: string) => MockTextComponent>;
-  setValue: jest.MockedFunction<(value: string) => MockTextComponent>;
-  onChange: jest.MockedFunction<(callback: (value: string) => Promise<void> | void) => MockTextComponent>;
+  setPlaceholder: MockedFunction<(value: string) => MockTextComponent>;
+  setValue: MockedFunction<(value: string) => MockTextComponent>;
+  onChange: MockedFunction<(callback: (value: string) => Promise<void> | void) => MockTextComponent>;
   inputEl: MockInputEl;
 }
 
@@ -126,16 +129,16 @@ interface MockDropdownComponent {
   value: string;
   options: Array<{ value: string; label: string }>;
   onChangeCallback: ((value: string) => Promise<void> | void) | null;
-  addOption: jest.MockedFunction<(value: string, label: string) => MockDropdownComponent>;
-  setValue: jest.MockedFunction<(value: string) => MockDropdownComponent>;
-  onChange: jest.MockedFunction<(callback: (value: string) => Promise<void> | void) => MockDropdownComponent>;
+  addOption: MockedFunction<(value: string, label: string) => MockDropdownComponent>;
+  setValue: MockedFunction<(value: string) => MockDropdownComponent>;
+  onChange: MockedFunction<(callback: (value: string) => Promise<void> | void) => MockDropdownComponent>;
 }
 
 interface MockToggleComponent {
   value: boolean;
   onChangeCallback: ((value: boolean) => Promise<void> | void) | null;
-  setValue: jest.MockedFunction<(value: boolean) => MockToggleComponent>;
-  onChange: jest.MockedFunction<(callback: (value: boolean) => Promise<void> | void) => MockToggleComponent>;
+  setValue: MockedFunction<(value: boolean) => MockToggleComponent>;
+  onChange: MockedFunction<(callback: (value: boolean) => Promise<void> | void) => MockToggleComponent>;
 }
 
 const createdSettings: Array<{
@@ -153,9 +156,9 @@ interface MockInputEl {
   cols: number;
   value: string;
   style: Record<string, string>;
-  addClass: jest.Mock;
-  toggleClass: jest.Mock;
-  addEventListener: jest.Mock;
+  addClass: Mock;
+  toggleClass: Mock;
+  addEventListener: Mock;
 }
 
 function createInputEl(): MockInputEl & { _listeners: Map<string, Array<() => void>> } {
@@ -166,9 +169,9 @@ function createInputEl(): MockInputEl & { _listeners: Map<string, Array<() => vo
     cols: 0,
     value: '',
     style: {},
-    addClass: jest.fn(),
-    toggleClass: jest.fn(),
-    addEventListener: jest.fn((event: string, handler: () => void) => {
+    addClass: vi.fn(),
+    toggleClass: vi.fn(),
+    addEventListener: vi.fn((event: string, handler: () => void) => {
       const handlers = listeners.get(event) ?? [];
       handlers.push(handler);
       listeners.set(event, handlers);
@@ -183,16 +186,16 @@ function createTextComponent(): MockTextComponent {
   component.placeholder = '';
   component.onChangeCallback = null;
   component.inputEl = createInputEl();
-  component.setPlaceholder = jest.fn((value: string) => {
+  component.setPlaceholder = vi.fn((value: string) => {
     component.placeholder = value;
     return component;
   });
-  component.setValue = jest.fn((value: string) => {
+  component.setValue = vi.fn((value: string) => {
     component.value = value;
     component.inputEl.value = value;
     return component;
   });
-  component.onChange = jest.fn((callback: (value: string) => Promise<void> | void) => {
+  component.onChange = vi.fn((callback: (value: string) => Promise<void> | void) => {
     component.onChangeCallback = callback;
     return component;
   });
@@ -206,17 +209,17 @@ function createDropdownComponent(): MockDropdownComponent {
   component.value = '';
   component.options = [];
   component.onChangeCallback = null;
-  component.addOption = jest.fn((value: string, label: string) => {
+  component.addOption = vi.fn((value: string, label: string) => {
     component.options.push({ value, label });
     component.selectEl.add(new Option(label, value));
     return component;
   });
-  component.setValue = jest.fn((value: string) => {
+  component.setValue = vi.fn((value: string) => {
     component.value = value;
     component.selectEl.value = value;
     return component;
   });
-  component.onChange = jest.fn((callback: (value: string) => Promise<void> | void) => {
+  component.onChange = vi.fn((callback: (value: string) => Promise<void> | void) => {
     component.onChangeCallback = callback;
     component.selectEl.addEventListener('change', () => { void callback(component.selectEl.value); });
     return component;
@@ -229,11 +232,11 @@ function createToggleComponent(): MockToggleComponent {
   const component = {} as MockToggleComponent;
   component.value = false;
   component.onChangeCallback = null;
-  component.setValue = jest.fn((value: boolean) => {
+  component.setValue = vi.fn((value: boolean) => {
     component.value = value;
     return component;
   });
-  component.onChange = jest.fn((callback: (value: boolean) => Promise<void> | void) => {
+  component.onChange = vi.fn((callback: (value: boolean) => Promise<void> | void) => {
     component.onChangeCallback = callback;
     return component;
   });
@@ -247,30 +250,30 @@ function createElement(): any {
     ...createMockEl('div'),
     value: '',
     style: {},
-    appendText: jest.fn(),
-    createEl: jest.fn(() => createElement()),
-    createDiv: jest.fn(() => createElement()),
-    createSpan: jest.fn(() => createElement()),
-    setText: jest.fn(),
-    empty: jest.fn(),
-    addClass: jest.fn((cls: string) => {
+    appendText: vi.fn(),
+    createEl: vi.fn(() => createElement()),
+    createDiv: vi.fn(() => createElement()),
+    createSpan: vi.fn(() => createElement()),
+    setText: vi.fn(),
+    empty: vi.fn(),
+    addClass: vi.fn((cls: string) => {
       cls.split(/\s+/).filter(Boolean).forEach((item) => classes.add(item));
     }),
-    removeClass: jest.fn((cls: string) => {
+    removeClass: vi.fn((cls: string) => {
       cls.split(/\s+/).filter(Boolean).forEach((item) => classes.delete(item));
     }),
-    toggleClass: jest.fn((cls: string, force: boolean) => {
+    toggleClass: vi.fn((cls: string, force: boolean) => {
       if (force) {
         classes.add(cls);
       } else {
         classes.delete(cls);
       }
     }),
-    hasClass: jest.fn((cls: string) => classes.has(cls)),
+    hasClass: vi.fn((cls: string) => classes.has(cls)),
     classList: {
-      add: jest.fn((cls: string) => classes.add(cls)),
-      remove: jest.fn((cls: string) => classes.delete(cls)),
-      toggle: jest.fn((cls: string, force?: boolean) => {
+      add: vi.fn((cls: string) => classes.add(cls)),
+      remove: vi.fn((cls: string) => classes.delete(cls)),
+      toggle: vi.fn((cls: string, force?: boolean) => {
         if (force === undefined) {
           if (classes.has(cls)) {
             classes.delete(cls);
@@ -286,7 +289,7 @@ function createElement(): any {
         }
         return force;
       }),
-      contains: jest.fn((cls: string) => classes.has(cls)),
+      contains: vi.fn((cls: string) => classes.has(cls)),
     },
   };
 
@@ -295,8 +298,8 @@ function createElement(): any {
 
 function createContainer(): any {
   return {
-    createDiv: jest.fn(() => createElement()),
-    createEl: jest.fn(() => createElement()),
+    createDiv: vi.fn(() => createElement()),
+    createEl: vi.fn(() => createElement()),
   };
 }
 
@@ -328,7 +331,7 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
       ...overrides,
     },
     saveSettings: mockSaveSettings,
-    runProviderExecutionTransition: jest.fn(async (
+    runProviderExecutionTransition: vi.fn(async (
       _providerIds: string[],
       mutation: () => Promise<unknown>,
     ) => mutation()),
@@ -340,11 +343,11 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
       },
     },
   };
-  plugin.mutateSettings = jest.fn(async (mutation: (settings: any) => void | Promise<void>) => {
+  plugin.mutateSettings = vi.fn(async (mutation: (settings: any) => void | Promise<void>) => {
     await mutation(plugin.settings);
     await plugin.saveSettings();
   });
-  plugin.applyProviderRuntimeSettings = jest.fn(async (
+  plugin.applyProviderRuntimeSettings = vi.fn(async (
     providerIds: string[],
     mutation: (settings: any) => void | Promise<void>,
     onApplied?: () => void | Promise<void>,
@@ -358,29 +361,29 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
 function createContext(plugin: any) {
   return {
     plugin,
-    notifyProviderModelOptionsChanged: jest.fn(),
-    renderCustomContextLimits: jest.fn(),
+    notifyProviderModelOptionsChanged: vi.fn(),
+    renderCustomContextLimits: vi.fn(),
   };
 }
 
 function acquireSettingsLease(
   registry: ProviderExecutionLifecycleRegistry,
-): jest.Mock {
-  const dispose = jest.fn().mockResolvedValue(undefined);
+): Mock {
+  const dispose = vi.fn().mockResolvedValue(undefined);
   registry.acquire({
     providerId: 'codex',
     createSession: () => ({
       providerId: 'codex',
       sessionInstanceId: 'codex-settings-session',
-      execute: jest.fn(),
-      cancel: jest.fn(),
-      getSnapshot: jest.fn().mockReturnValue({
+      execute: vi.fn(),
+      cancel: vi.fn(),
+      getSnapshot: vi.fn().mockReturnValue({
         providerId: 'codex',
         revision: 0,
         status: 'idle',
       }),
-      getStatus: jest.fn().mockReturnValue('idle'),
-      onEvent: jest.fn().mockReturnValue(() => undefined),
+      getStatus: vi.fn().mockReturnValue('idle'),
+      onEvent: vi.fn().mockReturnValue(() => undefined),
       dispose,
     }),
   } as any, {} as any, 'chat');
@@ -399,14 +402,14 @@ function findOptionalSetting(name: string) {
   return createdSettings.find(candidate => candidate.name === name);
 }
 
-jest.mock('@/core/device/InstallationKey', () => ({
-  ...jest.requireActual('@/core/device/InstallationKey'),
+vi.mock('@/core/device/InstallationKey', async () => ({
+  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
   getInstallationKey: () => mockGetHostnameKey(),
 }));
 
 describe('CodexSettingsTab', () => {
-  const mockedExistsSync = fs.existsSync as jest.MockedFunction<typeof fs.existsSync>;
-  const mockedStatSync = fs.statSync as jest.MockedFunction<typeof fs.statSync>;
+  const mockedExistsSync = fs.existsSync as MockedFunction<typeof fs.existsSync>;
+  const mockedStatSync = fs.statSync as MockedFunction<typeof fs.statSync>;
   const originalPlatform = process.platform;
 
   afterAll(() => {
@@ -415,7 +418,7 @@ describe('CodexSettingsTab', () => {
 
   beforeEach(() => {
     createdSettings.length = 0;
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockedExistsSync.mockReturnValue(false);
     mockedStatSync.mockReturnValue({ isFile: () => true } as fs.Stats);
   });

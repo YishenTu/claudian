@@ -1,7 +1,7 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 import { InlineAskUserQuestion } from '@/features/chat/interactions/InlineAskUserQuestion';
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
@@ -23,7 +23,7 @@ it.each([
   ['ArrowDown', 'Always allow'],
   ['ArrowUp', 'Allow once'],
 ])('keeps permission selection aligned with native focus before %s', (key, expected) => {
-  const resolve = jest.fn();
+  const resolve = vi.fn();
   const panel = new InlineAskUserQuestion(document.body.createDiv(), {
     questions: [{
       question: 'Allow this command?', header: 'Permission',
@@ -44,7 +44,7 @@ it.each([
 it('checks the multi-select custom answer as soon as text is typed', () => {
   const panel = new InlineAskUserQuestion(document.body.createDiv(), {
     questions: [{ question: 'Which checks?', isOther: true, multiSelect: true, options: [{ label: 'Lint' }] }],
-  }, jest.fn());
+  }, vi.fn());
   panel.render();
   const input = within(document.body).getByRole('textbox', { name: 'Which checks?' });
   const customRow = input.closest('.claudian-ask-custom-item')!;
@@ -57,7 +57,7 @@ it('checks the multi-select custom answer as soon as text is typed', () => {
 });
 
 it('submits a __proto__ question id as an own answer key with exact JSON', async () => {
-  const resolve = jest.fn();
+  const resolve = vi.fn();
   const parent = document.body.createDiv();
   const panel = new InlineAskUserQuestion(parent, {
     questions: [{ id: '__proto__', question: 'Color?', options: [{ label: 'Blue' }, { label: 'Red' }] }],
@@ -80,7 +80,7 @@ it('submits a __proto__ question id as an own answer key with exact JSON', async
 });
 
 it('immediately submits the native option value under an own __proto__ question-text key', () => {
-  const resolve = jest.fn();
+  const resolve = vi.fn();
   const panel = new InlineAskUserQuestion(document.body.createDiv(), {
     questions: [{ question: '__proto__', options: [{ label: 'Blue', value: 'blue-id' }, { label: 'Red', value: 'red-id' }] }],
   }, resolve, undefined, { immediateSelect: true, showCustomInput: false });
@@ -95,7 +95,7 @@ it('immediately submits the native option value under an own __proto__ question-
 });
 
 it('keeps multi-select and custom answers together in one own __proto__ reviewable array', () => {
-  const resolve = jest.fn();
+  const resolve = vi.fn();
   const parent = document.body.createDiv();
   const panel = new InlineAskUserQuestion(parent, {
     questions: [{ id: '__proto__', question: 'Color?', multiSelect: true, isOther: true, options: [{ label: 'Blue' }, { label: 'Red' }] }],
@@ -118,8 +118,8 @@ it('keeps multi-select and custom answers together in one own __proto__ reviewab
 });
 
 it('delivers a custom scalar answer through the async onSubmit path', async () => {
-  const resolve = jest.fn();
-  const onSubmit = jest.fn().mockResolvedValue(undefined);
+  const resolve = vi.fn();
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
   const parent = document.body.createDiv();
   const panel = new InlineAskUserQuestion(parent, {
     questions: [{ question: 'Color?', isOther: true, options: [{ label: 'Blue' }] }],
@@ -141,7 +141,7 @@ it('delivers a custom scalar answer through the async onSubmit path', async () =
 
 it('localizes question chrome while submitting provider-authored options unchanged', async () => {
   setLocale('zh-CN');
-  const resolve = jest.fn();
+  const resolve = vi.fn();
   const parent = document.body.createDiv();
   const panel = new InlineAskUserQuestion(parent, {
     questions: [{ question: 'Which checks?', isOther: true, options: [{ label: 'Lint' }] }],
@@ -193,7 +193,7 @@ it.each(['w', 's', 'i'])('leaves %s in a custom question answer to the native in
   const composer = document.body.createEl('textarea', { attr: { 'aria-label': 'Message' } });
   const navigation = new NavigationController({ getMessagesEl: () => messages, getInputEl: () => composer,
     getSettings: () => ({ scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' }), isStreaming: () => true });
-  const resolve = jest.fn();
+  const resolve = vi.fn();
   const panel = new InlineAskUserQuestion(messages, {
     questions: [{ question: 'Which task?', isOther: true, options: [{ label: 'Default' }] }],
   }, resolve);

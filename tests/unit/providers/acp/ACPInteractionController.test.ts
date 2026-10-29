@@ -1,8 +1,12 @@
+import type { Mocked } from 'vitest';
+
 import type { ProviderInteractionPort } from '@/core/execution';
 import {
   ACPInteractionController,
   type ACPRequestPermissionRequest,
 } from '@/providers/acp';
+
+
 
 const PERMISSION_REQUEST: ACPRequestPermissionRequest = {
   options: [
@@ -17,11 +21,11 @@ const PERMISSION_REQUEST: ACPRequestPermissionRequest = {
   },
 };
 
-function createPort(): jest.Mocked<ProviderInteractionPort> {
+function createPort(): Mocked<ProviderInteractionPort> {
   return {
-    askUserQuestion: jest.fn(),
-    dismissInteraction: jest.fn(),
-    requestApproval: jest.fn(),
+    askUserQuestion: vi.fn(),
+    dismissInteraction: vi.fn(),
+    requestApproval: vi.fn(),
   };
 }
 

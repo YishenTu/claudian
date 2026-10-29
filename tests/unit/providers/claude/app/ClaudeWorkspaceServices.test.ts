@@ -4,6 +4,8 @@ import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ClaudianSettings } from '@/core/types';
 type MutableTestHost = ProviderHost & { settings: ClaudianSettings };
+import type { Mock } from 'vitest';
+
 import type { SlashCommand } from '@/core/types';
 import {
   createClaudeWorkspaceServices,
@@ -11,21 +13,23 @@ import {
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
 import { createClaudeSettingsTabRenderer } from '@/providers/claude/ui/ClaudeSettingsTab';
 
-jest.mock('@/providers/claude/ui/ClaudeSettingsTab', () => ({ createClaudeSettingsTabRenderer: jest.fn(() => ({ render: jest.fn() })) }));
+
+
+vi.mock('@/providers/claude/ui/ClaudeSettingsTab', () => ({ createClaudeSettingsTabRenderer: vi.fn(() => ({ render: vi.fn() })) }));
 
 function createPlugin(
   executionLifecycleRegistry: ProviderExecutionLifecycleRegistry,
 ): MutableTestHost {
   const plugin = {
     app: {
-      workspace: { onLayoutReady: jest.fn() },
+      workspace: { onLayoutReady: vi.fn() },
       vault: {
         adapter: { basePath: '/tmp/claude-workspace' },
       },
     },
     executionLifecycleRegistry,
-    loadData: jest.fn().mockResolvedValue({}),
-    saveData: jest.fn().mockResolvedValue(undefined),
+    loadData: vi.fn().mockResolvedValue({}),
+    saveData: vi.fn().mockResolvedValue(undefined),
     settings: {},
     getRuntimeHost: (id: string) => runtimeHostFor(plugin, id),
   } as unknown as MutableTestHost;
@@ -37,10 +41,10 @@ describe('ClaudeWorkspaceServices', () => {
     const registry = new ProviderExecutionLifecycleRegistry();
     const plugin = createPlugin(registry);
     plugin.settings.providerConfigs = { claude: { enabled, visibleModels: [] } };
-    plugin.notifyProviderChatOptionsChanged = jest.fn();
-    const catalogProbe = jest.fn().mockResolvedValue({ models: [{ value: 'sdk-only', label: 'SDK model', description: '' }], outputStyles: [] });
+    plugin.notifyProviderChatOptionsChanged = vi.fn();
+    const catalogProbe = vi.fn().mockResolvedValue({ models: [{ value: 'sdk-only', label: 'SDK model', description: '' }], outputStyles: [] });
     const services = await createClaudeWorkspaceServices(plugin, { catalogProbe });
-    const ready = plugin.app.workspace.onLayoutReady as jest.Mock;
+    const ready = plugin.app.workspace.onLayoutReady as Mock;
     expect(catalogProbe).not.toHaveBeenCalled();
     await registry.runTransition(['claude'], async () => {});
     expect(services.modelCatalog!.getSnapshot().stale).toBe(true);
@@ -54,13 +58,13 @@ describe('ClaudeWorkspaceServices', () => {
     const registry = new ProviderExecutionLifecycleRegistry();
     const plugin = createPlugin(registry);
     plugin.settings.providerConfigs = { claude: { enabled: true, visibleModels: ['sonnet'] } };
-    plugin.notifyProviderChatOptionsChanged = jest.fn();
+    plugin.notifyProviderChatOptionsChanged = vi.fn();
     let started!: () => void;
     const probeStarted = new Promise<void>(resolve => { started = resolve; });
     let release!: () => void;
     let signal!: AbortSignal;
     const rows = [{ value: 'sonnet', label: 'Sonnet', description: '' }];
-    const catalogProbe = jest.fn((_host, probeSignal) => {
+    const catalogProbe = vi.fn((_host, probeSignal) => {
       signal = probeSignal;
       started();
       return new Promise<{ models: typeof rows; outputStyles: string[] }>(resolve => {
@@ -69,7 +73,7 @@ describe('ClaudeWorkspaceServices', () => {
       });
     });
     const services = await createClaudeWorkspaceServices(plugin, { catalogProbe });
-    const catalog = jest.mocked(createClaudeSettingsTabRenderer).mock.calls.at(-1)![0].modelCatalog;
+    const catalog = vi.mocked(createClaudeSettingsTabRenderer).mock.calls.at(-1)![0].modelCatalog;
     let discovery: Promise<unknown> | undefined;
     const ready = () => { discovery = catalog.refresh(); };
     if (!startDuring) { ready(); await probeStarted; }
@@ -93,7 +97,7 @@ describe('ClaudeWorkspaceServices', () => {
     let releaseProbe!: () => void;
     let releaseMutation!: () => void;
     let probeSignal: AbortSignal | undefined;
-    const commandProbe = jest.fn()
+    const commandProbe = vi.fn()
       .mockImplementationOnce((signal?: AbortSignal) => {
         probeSignal = signal;
         return new Promise<SlashCommand[]>((resolve) => {
@@ -151,12 +155,12 @@ describe('ClaudeWorkspaceServices', () => {
 
   it('unregisters its transition hook and awaits probe abortion on disposal', async () => {
     const registry = new ProviderExecutionLifecycleRegistry();
-    const unregister = jest.fn();
-    jest.spyOn(registry, 'registerTransitionHook').mockReturnValue(unregister);
+    const unregister = vi.fn();
+    vi.spyOn(registry, 'registerTransitionHook').mockReturnValue(unregister);
     const plugin = createPlugin(registry);
     let releaseProbe!: () => void;
     let probeSignal: AbortSignal | undefined;
-    const commandProbe = jest.fn((signal?: AbortSignal) => {
+    const commandProbe = vi.fn((signal?: AbortSignal) => {
       probeSignal = signal;
       return new Promise<[]>((resolve) => {
         releaseProbe = () => resolve([]);

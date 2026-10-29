@@ -3,11 +3,11 @@ import { testDate } from '@test/helpers/testClock';
 import { formatDurationMmSs, getTodayDate } from '@/utils/date';
 
 describe('getTodayDate', () => {
-  afterEach(() => jest.useRealTimers());
+  afterEach(() => vi.useRealTimers());
   it.each([0, 23])('uses the local calendar day in both portions at %i:30', hour => {
     const now = testDate();
     now.setHours(hour, 30, 0, 0);
-    jest.useFakeTimers().setSystemTime(now.getTime());
+    vi.useFakeTimers().setSystemTime(now.getTime());
     const result = getTodayDate();
     const isoMatch = result.match(/\((\d{4}-\d{2}-\d{2})\)$/);
     expect(isoMatch).not.toBeNull();

@@ -1,12 +1,14 @@
+const actualModule0 = await import('fs');
+const actualModule1 = await import('path');
 import type * as fsType from 'fs';
-import type * as pathType from 'path';
 import { runInNewContext } from 'vm';
 
-const fs = jest.requireActual<typeof fsType>('fs');
-const path = jest.requireActual<typeof pathType>('path');
+const fs = actualModule0;
+const path = actualModule1;
 
 import { parsePathEntries } from '@/core/process/cliPath';
 import * as env from '@/core/process/env';
+
 
 const {
   cliPathRequiresNode,
@@ -22,7 +24,7 @@ const SEP = isWindows ? ';' : ':';
 
 /** Narrow `fs.accessSync` boundary: listed candidates are executable, all others fail admission. */
 function mockExecuteAccess(...runnablePaths: string[]): void {
-  jest.spyOn(fs, 'accessSync').mockImplementation(((p: fsType.PathLike) => {
+  vi.spyOn(fs, 'accessSync').mockImplementation(((p: fsType.PathLike) => {
     if (runnablePaths.includes(String(p))) return;
     throw Object.assign(new Error(`EACCES: permission denied, access '${String(p)}'`), { code: 'EACCES' });
   }) as typeof fs.accessSync);
@@ -43,7 +45,7 @@ describe('parseEnvironmentVariables', () => {
       value, enumerable: true, writable: true, configurable: true,
     });
     expect(Object.keys(result)).toEqual(['__proto__']);
-    // Keep native spread semantics instead of Jest's ES6 Object.assign transform.
+    // Keep native spread semantics for the prototype-sensitive assertion.
     const spread = runInNewContext('({ ...environment })', { environment: result });
     expect(Object.keys(spread)).toEqual(['__proto__']);
     expect(spread['__proto__']).toBe(value);
@@ -223,9 +225,7 @@ describe('getEnhancedPath', () => {
     });
   });
 
-  describe('Unix environment variable paths', () => {
-    if (isWindows) return;
-
+  describe.skipIf(isWindows)('Unix environment variable paths', () => {
     it('includes VOLTA_HOME/bin when set', () => {
       process.env.VOLTA_HOME = '/custom/volta';
       const result = getEnhancedPath();
@@ -250,9 +250,7 @@ describe('getEnhancedPath', () => {
       delete process.env.ASDF_DIR;
     });
 
-    describe('fnm aliases (Unix)', () => {
-      if (isWindows) return;
-
+    describe.skipIf(isWindows)('fnm aliases (Unix)', () => {
       it('includes default Node.js bins without the fnm shell hook', () => {
         delete process.env.XDG_DATA_HOME;
         process.env.FNM_DIR = '/custom/fnm';
@@ -267,9 +265,7 @@ describe('getEnhancedPath', () => {
       });
     });
 
-    describe('other Node.js and CLI managers (Unix)', () => {
-      if (isWindows) return;
-
+    describe.skipIf(isWindows)('other Node.js and CLI managers (Unix)', () => {
       const managerVariables = ['NODENV_ROOT', 'PROTO_HOME', 'PNPM_HOME', 'N_PREFIX', 'NVS_HOME', 'XDG_DATA_HOME'];
 
       it('includes default locations without shell variables', () => {
@@ -322,9 +318,7 @@ describe('getEnhancedPath', () => {
       delete process.env.NVM_BIN;
     });
 
-    describe('nvm fallback when NVM_BIN is not set (Unix)', () => {
-      if (isWindows) return;
-
+    describe.skipIf(isWindows)('nvm fallback when NVM_BIN is not set (Unix)', () => {
       let savedNvmBin: string | undefined;
       let savedNvmDir: string | undefined;
       let savedHome: string | undefined;
@@ -339,7 +333,7 @@ describe('getEnhancedPath', () => {
       });
 
       afterEach(() => {
-        jest.restoreAllMocks();
+        vi.restoreAllMocks();
         if (savedNvmBin !== undefined) process.env.NVM_BIN = savedNvmBin;
         else delete process.env.NVM_BIN;
         if (savedNvmDir !== undefined) process.env.NVM_DIR = savedNvmDir;
@@ -357,19 +351,19 @@ describe('getEnhancedPath', () => {
         const { nvmDir, aliasFiles, versions, existingBinDirs } = opts;
         const binDirs = existingBinDirs ?? versions.map(v => path.join(nvmDir, 'versions', 'node', v, 'bin'));
 
-        jest.spyOn(fs, 'existsSync').mockImplementation(p => binDirs.includes(String(p)));
-        jest.spyOn(fs, 'readFileSync').mockImplementation(((p: string) => {
+        vi.spyOn(fs, 'existsSync').mockImplementation(p => binDirs.includes(String(p)));
+        vi.spyOn(fs, 'readFileSync').mockImplementation(((p: string) => {
           const s = String(p);
           for (const [aliasPath, value] of Object.entries(aliasFiles)) {
             if (s === aliasPath) return value;
           }
           throw new Error('not found');
         }) as typeof fs.readFileSync);
-        jest.spyOn(fs, 'readdirSync').mockImplementation(((p: string) => {
+        vi.spyOn(fs, 'readdirSync').mockImplementation(((p: string) => {
           if (String(p) === path.join(nvmDir, 'versions', 'node')) return versions;
           return [];
         }) as typeof fs.readdirSync);
-        jest.spyOn(fs, 'statSync').mockImplementation(
+        vi.spyOn(fs, 'statSync').mockImplementation(
           () => ({ isFile: () => true, isDirectory: () => true }) as fsType.Stats
         );
       }
@@ -467,13 +461,13 @@ describe('getEnhancedPath', () => {
 
   describe('CLI path parameter for Node.js detection', () => {
     afterEach(() => {
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
     });
 
     function mockNodeExecutable(fakeDir: string) {
       const nodePath = path.join(fakeDir, isWindows ? 'node.exe' : 'node');
-      jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === nodePath);
-      jest.spyOn(fs, 'statSync').mockImplementation(
+      vi.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === nodePath);
+      vi.spyOn(fs, 'statSync').mockImplementation(
         p => ({ isFile: () => String(p) === nodePath }) as fsType.Stats
       );
       mockExecuteAccess(nodePath);
@@ -532,13 +526,13 @@ describe('getEnhancedPath', () => {
 
   describe('CLI directory with node executable (nvm/fnm/volta/asdf support)', () => {
     afterEach(() => {
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
     });
 
     function mockCliDirWithNode(cliDir: string) {
       const nodePath = path.join(cliDir, isWindows ? 'node.exe' : 'node');
-      jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === nodePath);
-      jest.spyOn(fs, 'statSync').mockImplementation(
+      vi.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === nodePath);
+      vi.spyOn(fs, 'statSync').mockImplementation(
         p => ({ isFile: () => String(p) === nodePath }) as fsType.Stats
       );
       mockExecuteAccess(nodePath);
@@ -581,7 +575,7 @@ describe('getEnhancedPath', () => {
       const cliPath = path.join(cliDir, isWindows ? 'claude.exe' : 'claude');
 
       // Mock: node does not exist in CLI directory
-      jest.spyOn(fs, 'existsSync').mockReturnValue(false);
+      vi.spyOn(fs, 'existsSync').mockReturnValue(false);
 
       process.env.PATH = isWindows ? 'C:\\Windows\\System32' : '/usr/bin';
       const result = getEnhancedPath(undefined, cliPath);
@@ -595,8 +589,8 @@ describe('getEnhancedPath', () => {
       const cliDir = '/custom/bin';
       const cliPath = path.join(cliDir, 'cli.js');
       const nodePath = path.join(cliDir, 'node');
-      jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === nodePath);
-      jest.spyOn(fs, 'statSync').mockImplementation(
+      vi.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === nodePath);
+      vi.spyOn(fs, 'statSync').mockImplementation(
         p => ({ isFile: () => String(p) === nodePath }) as fsType.Stats
       );
       mockExecuteAccess();
@@ -614,8 +608,8 @@ describe('getEnhancedPath', () => {
 
       // Mock: node exists in CLI directory
       const nodePath = path.join(nvmBinDir, 'node');
-      jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === nodePath);
-      jest.spyOn(fs, 'statSync').mockImplementation(
+      vi.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === nodePath);
+      vi.spyOn(fs, 'statSync').mockImplementation(
         p => ({ isFile: () => String(p) === nodePath }) as fsType.Stats
       );
       mockExecuteAccess(nodePath);
@@ -649,7 +643,7 @@ describe('getEnhancedPath', () => {
 
 describe('cliPathRequiresNode', () => {
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('returns true for .js files', () => {
@@ -675,26 +669,26 @@ describe('cliPathRequiresNode', () => {
     const scriptPath = isWindows ? 'C:\\temp\\claude' : '/tmp/claude';
     const shebang = '#!/usr/bin/env node\nconsole.log("hi");\n';
 
-    jest.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
-    jest.spyOn(fs, 'fstatSync').mockImplementation(
+    vi.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
+    vi.spyOn(fs, 'fstatSync').mockImplementation(
       () => ({ isFile: () => true }) as fsType.Stats
     );
-    jest.spyOn(fs, 'readSync').mockImplementation((_, buffer: ArrayBufferView) => {
+    vi.spyOn(fs, 'readSync').mockImplementation((_, buffer: ArrayBufferView) => {
       Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength).write(shebang);
       return shebang.length;
     });
-    jest.spyOn(fs, 'closeSync').mockImplementation(() => {});
+    vi.spyOn(fs, 'closeSync').mockImplementation(() => {});
 
     expect(cliPathRequiresNode(scriptPath)).toBe(true);
   });
 
   it('returns false when path exists but is a directory', () => {
     const dirPath = isWindows ? 'C:\\temp\\claude' : '/tmp/claude';
-    jest.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
-    jest.spyOn(fs, 'fstatSync').mockImplementation(
+    vi.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
+    vi.spyOn(fs, 'fstatSync').mockImplementation(
       () => ({ isFile: () => false }) as fsType.Stats
     );
-    jest.spyOn(fs, 'closeSync').mockImplementation(() => {});
+    vi.spyOn(fs, 'closeSync').mockImplementation(() => {});
 
     expect(cliPathRequiresNode(dirPath)).toBe(false);
   });
@@ -703,15 +697,15 @@ describe('cliPathRequiresNode', () => {
     const scriptPath = isWindows ? 'C:\\temp\\script' : '/tmp/script';
     const shebang = '#!/usr/bin/env python\nprint("hi")\n';
 
-    jest.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
-    jest.spyOn(fs, 'fstatSync').mockImplementation(
+    vi.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
+    vi.spyOn(fs, 'fstatSync').mockImplementation(
       () => ({ isFile: () => true }) as fsType.Stats
     );
-    jest.spyOn(fs, 'readSync').mockImplementation((_, buffer: ArrayBufferView) => {
+    vi.spyOn(fs, 'readSync').mockImplementation((_, buffer: ArrayBufferView) => {
       Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength).write(shebang);
       return shebang.length;
     });
-    jest.spyOn(fs, 'closeSync').mockImplementation(() => {});
+    vi.spyOn(fs, 'closeSync').mockImplementation(() => {});
 
     expect(cliPathRequiresNode(scriptPath)).toBe(false);
   });
@@ -726,15 +720,15 @@ describe('cliPathRequiresNode', () => {
       '',
     ].join('\n');
 
-    jest.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
-    jest.spyOn(fs, 'fstatSync').mockImplementation(
+    vi.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
+    vi.spyOn(fs, 'fstatSync').mockImplementation(
       () => ({ isFile: () => true }) as fsType.Stats
     );
-    jest.spyOn(fs, 'readSync').mockImplementation((_, buffer: ArrayBufferView) => {
+    vi.spyOn(fs, 'readSync').mockImplementation((_, buffer: ArrayBufferView) => {
       Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength).write(script);
       return script.length;
     });
-    jest.spyOn(fs, 'closeSync').mockImplementation(() => {});
+    vi.spyOn(fs, 'closeSync').mockImplementation(() => {});
 
     expect(cliPathRequiresNode(scriptPath)).toBe(false);
   });
@@ -754,7 +748,7 @@ describe('findNodeDirectory', () => {
   const originalEnv = { ...process.env };
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
     Object.keys(process.env).forEach(key => delete process.env[key]);
     Object.assign(process.env, originalEnv);
   });
@@ -766,8 +760,8 @@ describe('findNodeDirectory', () => {
 
     const nvmSymlink = 'C:\\nvm\\symlink';
     const nodePath = path.join(nvmSymlink, 'node.exe');
-    jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === nodePath);
-    jest.spyOn(fs, 'statSync').mockImplementation(
+    vi.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === nodePath);
+    vi.spyOn(fs, 'statSync').mockImplementation(
       p => ({ isFile: () => String(p) === nodePath }) as fsType.Stats
     );
 
@@ -785,11 +779,11 @@ describe('findNodeDirectory', () => {
     const preferredNode = path.join(preferredDir, nodeExecutable);
     const fallbackNode = path.join(fallbackDir, nodeExecutable);
 
-    jest.spyOn(fs, 'existsSync').mockImplementation(p => {
+    vi.spyOn(fs, 'existsSync').mockImplementation(p => {
       const candidate = String(p);
       return candidate === preferredNode || candidate === fallbackNode;
     });
-    jest.spyOn(fs, 'statSync').mockImplementation(
+    vi.spyOn(fs, 'statSync').mockImplementation(
       () => ({ isFile: () => true }) as fsType.Stats
     );
     mockExecuteAccess(preferredNode, fallbackNode);
@@ -805,8 +799,8 @@ describe('findNodeDirectory', () => {
     const preferredDir = isWindows ? 'C:\\custom\\bin' : '/custom/bin';
     const preferredNode = path.join(preferredDir, nodeExecutable);
 
-    jest.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === preferredNode);
-    jest.spyOn(fs, 'statSync').mockImplementation(
+    vi.spyOn(fs, 'existsSync').mockImplementation(p => String(p) === preferredNode);
+    vi.spyOn(fs, 'statSync').mockImplementation(
       () => ({ isFile: () => true }) as fsType.Stats
     );
     mockExecuteAccess(preferredNode);
@@ -821,11 +815,11 @@ describe('findNodeDirectory', () => {
     const brokenNode = '/broken/bin/node';
     const badNode = '/bad/bin/node';
     const goodNode = '/good/bin/node';
-    jest.spyOn(fs, 'existsSync').mockImplementation(p => {
+    vi.spyOn(fs, 'existsSync').mockImplementation(p => {
       const candidate = String(p);
       return candidate === brokenNode || candidate === badNode || candidate === goodNode;
     });
-    jest.spyOn(fs, 'statSync').mockImplementation(((p: fsType.PathLike) => {
+    vi.spyOn(fs, 'statSync').mockImplementation(((p: fsType.PathLike) => {
       if (String(p) === brokenNode) {
         throw Object.assign(new Error('EACCES: permission denied, stat'), { code: 'EACCES' });
       }
@@ -844,11 +838,11 @@ describe('findNodeDirectory', () => {
 
     const firstNode = '/first/bin/node';
     const secondNode = '/second/bin/node';
-    jest.spyOn(fs, 'existsSync').mockImplementation(p => {
+    vi.spyOn(fs, 'existsSync').mockImplementation(p => {
       const candidate = String(p);
       return candidate === firstNode || candidate === secondNode;
     });
-    jest.spyOn(fs, 'statSync').mockImplementation(
+    vi.spyOn(fs, 'statSync').mockImplementation(
       () => ({ isFile: () => true }) as fsType.Stats
     );
     mockExecuteAccess();
@@ -868,67 +862,66 @@ describe('getExtraBinaryPaths (Windows branches)', () => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
     Object.keys(process.env).forEach(key => delete process.env[key]);
     Object.assign(process.env, originalEnv);
-    jest.resetModules();
+    vi.resetModules();
   });
 
-  function loadWithWindowsPlatform(): typeof env {
-    jest.resetModules();
+  async function loadWithWindowsPlatform(): Promise<typeof env> {
+    vi.resetModules();
     Object.defineProperty(process, 'platform', { value: 'win32', writable: true });
-    // Dynamic require needed to re-evaluate module with mocked platform
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require('@/core/process/env');
+    // Dynamic import needed to re-evaluate module with mocked platform
+    return await import('@/core/process/env');
   }
 
-  it('includes APPDATA npm path when APPDATA is set', () => {
+  it('includes APPDATA npm path when APPDATA is set', async () => {
     process.env.APPDATA = '/mock/AppData/Roaming';
     process.env.LOCALAPPDATA = '/mock/AppData/Local';
     process.env.HOME = '/mock/home';
-    const mod = loadWithWindowsPlatform();
+    const mod = await loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     expect(result).toContain('npm');
     expect(result).toContain('Roaming');
   });
 
-  it('includes LOCALAPPDATA nodejs paths', () => {
+  it('includes LOCALAPPDATA nodejs paths', async () => {
     process.env.LOCALAPPDATA = '/mock/AppData/Local';
     process.env.HOME = '/mock/home';
-    const mod = loadWithWindowsPlatform();
+    const mod = await loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     expect(result).toContain('Local');
     expect(result).toContain('nodejs');
   });
 
-  it('includes NVM_SYMLINK when set', () => {
+  it('includes NVM_SYMLINK when set', async () => {
     process.env.NVM_SYMLINK = '/mock/nvm/symlink';
     process.env.HOME = '/mock/home';
-    const mod = loadWithWindowsPlatform();
+    const mod = await loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     expect(result).toContain('/mock/nvm/symlink');
   });
 
-  it('includes NVM_HOME when set', () => {
+  it('includes NVM_HOME when set', async () => {
     process.env.NVM_HOME = '/mock/nvm/home';
     process.env.HOME = '/mock/home';
-    const mod = loadWithWindowsPlatform();
+    const mod = await loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     expect(result).toContain('/mock/nvm/home');
   });
 
-  it('falls back to APPDATA/nvm when NVM_HOME not set', () => {
+  it('falls back to APPDATA/nvm when NVM_HOME not set', async () => {
     delete process.env.NVM_HOME;
     process.env.APPDATA = '/mock/AppData/Roaming';
     process.env.HOME = '/mock/home';
-    const mod = loadWithWindowsPlatform();
+    const mod = await loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     expect(result).toContain('nvm');
   });
 
-  it('includes fnm default Node.js aliases without the PowerShell hook', () => {
+  it('includes fnm default Node.js aliases without the PowerShell hook', async () => {
     process.env.APPDATA = '/mock/AppData/Roaming';
     process.env.LOCALAPPDATA = '/mock/AppData/Local';
     process.env.HOME = '/mock/home';
     process.env.FNM_DIR = '/mock/fnm';
-    const entries = loadWithWindowsPlatform().getEnhancedPath().split(';');
+    const entries = (await loadWithWindowsPlatform()).getEnhancedPath().split(';');
     expect(entries).toEqual(expect.arrayContaining([
       '/mock/fnm/aliases/default',
       '/mock/AppData/Roaming/fnm/aliases/default',
@@ -937,12 +930,12 @@ describe('getExtraBinaryPaths (Windows branches)', () => {
     expect(entries).not.toContain(path.join('/mock/fnm', 'aliases', 'default', 'bin'));
   });
 
-  it('includes pnpm, proto, nvs, Yarn, and WinGet locations', () => {
+  it('includes pnpm, proto, nvs, Yarn, and WinGet locations', async () => {
     for (const key of ['PNPM_HOME', 'PROTO_HOME', 'NVS_HOME']) delete process.env[key];
     process.env.LOCALAPPDATA = '/mock/AppData/Local';
     process.env.USERPROFILE = '/mock/home';
     process.env.HOME = '/mock/home';
-    let entries = loadWithWindowsPlatform().getEnhancedPath().split(';');
+    let entries = (await loadWithWindowsPlatform()).getEnhancedPath().split(';');
     expect(entries).toEqual(expect.arrayContaining([
       '/mock/AppData/Local/pnpm',
       '/mock/home/.proto/shims',
@@ -955,89 +948,89 @@ describe('getExtraBinaryPaths (Windows branches)', () => {
     process.env.PNPM_HOME = '/custom/pnpm';
     process.env.PROTO_HOME = '/custom/proto';
     process.env.NVS_HOME = '/custom/nvs';
-    entries = loadWithWindowsPlatform().getEnhancedPath().split(';');
+    entries = (await loadWithWindowsPlatform()).getEnhancedPath().split(';');
     expect(entries).toEqual(expect.arrayContaining([
       '/custom/pnpm', path.join('/custom/proto', 'shims'), path.join('/custom/proto', 'bin'), path.join('/custom/nvs', 'default'),
     ]));
   });
 
-  it('includes VOLTA_HOME/bin when set', () => {
+  it('includes VOLTA_HOME/bin when set', async () => {
     process.env.VOLTA_HOME = '/mock/volta';
     process.env.HOME = '/mock/home';
-    const mod = loadWithWindowsPlatform();
+    const mod = await loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     expect(result).toContain('volta');
   });
 
-  it('falls back to home/.volta/bin when VOLTA_HOME not set', () => {
+  it('falls back to home/.volta/bin when VOLTA_HOME not set', async () => {
     delete process.env.VOLTA_HOME;
     process.env.HOME = '/mock/home';
-    const mod = loadWithWindowsPlatform();
+    const mod = await loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     expect(result).toContain('.volta');
   });
 
-  it('includes ChocolateyInstall/bin when set', () => {
+  it('includes ChocolateyInstall/bin when set', async () => {
     process.env.ChocolateyInstall = '/mock/choco';
     process.env.HOME = '/mock/home';
-    const mod = loadWithWindowsPlatform();
+    const mod = await loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     expect(result).toContain('choco');
   });
 
-  it('falls back to ProgramData/chocolatey/bin when ChocolateyInstall not set', () => {
+  it('falls back to ProgramData/chocolatey/bin when ChocolateyInstall not set', async () => {
     delete process.env.ChocolateyInstall;
     process.env.HOME = '/mock/home';
-    const mod = loadWithWindowsPlatform();
+    const mod = await loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     expect(result).toContain('chocolatey');
   });
 
-  it('includes SCOOP paths when set', () => {
+  it('includes SCOOP paths when set', async () => {
     process.env.SCOOP = '/mock/scoop';
     process.env.HOME = '/mock/home';
-    const mod = loadWithWindowsPlatform();
+    const mod = await loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     expect(result).toContain('scoop');
     expect(result).toContain('shims');
   });
 
-  it('falls back to home/scoop when SCOOP not set', () => {
+  it('falls back to home/scoop when SCOOP not set', async () => {
     delete process.env.SCOOP;
     process.env.HOME = '/mock/home';
-    const mod = loadWithWindowsPlatform();
+    const mod = await loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     expect(result).toContain('scoop');
   });
 
-  it('includes Docker path under Program Files', () => {
+  it('includes Docker path under Program Files', async () => {
     process.env.ProgramFiles = '/mock/Program Files';
     process.env.HOME = '/mock/home';
-    const mod = loadWithWindowsPlatform();
+    const mod = await loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     expect(result).toContain('Docker');
   });
 
-  it('includes home/.local/bin on Windows', () => {
+  it('includes home/.local/bin on Windows', async () => {
     process.env.HOME = '/mock/home';
-    const mod = loadWithWindowsPlatform();
+    const mod = await loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     expect(result).toContain('.local');
   });
 
-  it('includes home/.opencode/bin on Windows', () => {
+  it('includes home/.opencode/bin on Windows', async () => {
     process.env.HOME = '/mock/home';
-    const mod = loadWithWindowsPlatform();
+    const mod = await loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     const segments = result.split(';');
 
     expect(segments).toContain(path.join('/mock/home', '.opencode', 'bin'));
   });
 
-  it('uses semicolon separator on Windows', () => {
+  it('uses semicolon separator on Windows', async () => {
     process.env.HOME = '/mock/home';
     process.env.PATH = '/existing';
-    const mod = loadWithWindowsPlatform();
+    const mod = await loadWithWindowsPlatform();
     const result = mod.getEnhancedPath();
     expect(result).toContain(';');
   });
@@ -1053,27 +1046,26 @@ describe('Obsidian CLI path integration', () => {
     Object.defineProperty(process, 'execPath', { value: originalExecPath });
     Object.keys(process.env).forEach(key => delete process.env[key]);
     Object.assign(process.env, originalEnv);
-    jest.resetModules();
+    vi.resetModules();
   });
 
-  function loadWithPlatform(platform: NodeJS.Platform, execPath: string): typeof env {
-    jest.resetModules();
+  async function loadWithPlatform(platform: NodeJS.Platform, execPath: string): Promise<typeof env> {
+    vi.resetModules();
     Object.defineProperty(process, 'platform', { value: platform, writable: true });
     Object.defineProperty(process, 'execPath', { value: execPath, configurable: true });
-    // Dynamic require needed to re-evaluate module with mocked platform/execPath
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require('@/core/process/env');
+    // Dynamic import needed to re-evaluate module with mocked platform/execPath
+    return await import('@/core/process/env');
   }
 
   it.each([
     '/Applications/Obsidian.app/Contents/MacOS/Obsidian',
     '/Applications/Obsidian.app/Contents/Frameworks/Obsidian Helper (Renderer).app/Contents/MacOS/Obsidian Helper (Renderer)',
-  ])('preserves inherited CLI precedence when running %s', (execPath) => {
+  ])('preserves inherited CLI precedence when running %s', async (execPath) => {
     const cliDirectory = '/custom/obsidian-cli/bin';
     const appDirectory = '/Applications/Obsidian.app/Contents/MacOS';
     process.env.PATH = `${cliDirectory}:${appDirectory}`;
 
-    const mod = loadWithPlatform('darwin', execPath);
+    const mod = await loadWithPlatform('darwin', execPath);
     const segments = mod.getEnhancedPath().split(':');
 
     expect(segments).toContain(cliDirectory);
@@ -1081,13 +1073,13 @@ describe('Obsidian CLI path integration', () => {
     expect(segments.indexOf(cliDirectory)).toBeLessThan(segments.indexOf(appDirectory));
   });
 
-  it('does not add transient Linux AppImage mount dirs', () => {
+  it('does not add transient Linux AppImage mount dirs', async () => {
     const appImageExecPath = '/tmp/.mount_Obsidian-abcd1234/usr/bin/obsidian';
     const appImageDir = path.dirname(appImageExecPath);
     process.env.HOME = '/home/test';
     process.env.PATH = '';
 
-    const mod = loadWithPlatform('linux', appImageExecPath);
+    const mod = await loadWithPlatform('linux', appImageExecPath);
     const result = mod.getEnhancedPath();
     const segments = result.split(':');
 
@@ -1154,12 +1146,14 @@ describe('environment variable parsing edge cases', () => {
 });
 
 it('does not reopen a CLI whose directory already supplies Node', () => {
-  const exists = jest.spyOn(fs, 'existsSync').mockReturnValue(true);
-  const stat = jest.spyOn(fs, 'statSync').mockReturnValue({ isFile: () => true } as fsType.Stats);
+  const exists = vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+  const stat = vi.spyOn(fs, 'statSync').mockReturnValue({ isFile: () => true } as fsType.Stats);
   mockExecuteAccess('/cli/node');
-  const open = jest.spyOn(fs, 'openSync').mockImplementation(() => { throw new Error('unnecessary read'); });
+  const open = vi.spyOn(fs, 'openSync').mockImplementation(() => { throw new Error('unnecessary read'); });
   try {
     getEnhancedPath(undefined, '/cli/claude');
     expect(open).not.toHaveBeenCalled();
   } finally { exists.mockRestore(); stat.mockRestore(); open.mockRestore(); }
 });
+
+vi.mock('fs', async () => ({ ...await vi.importActual<typeof import('fs')>('fs') }));

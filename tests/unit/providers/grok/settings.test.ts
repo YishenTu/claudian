@@ -1,4 +1,4 @@
-const mockGetHostnameKey = jest.fn(() => 'device:current');
+const mockGetHostnameKey = vi.fn(() => 'device:current');
 
 import { readGrokCatalog, writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { testDate } from '@test/helpers/testClock';
@@ -14,8 +14,8 @@ import {
   parseGrokProviderState,
 } from '@/providers/grok/types';
 
-jest.mock('@/core/device/InstallationKey', () => ({
-  ...jest.requireActual('@/core/device/InstallationKey'),
+vi.mock('@/core/device/InstallationKey', async () => ({
+  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
   getInstallationKey: () => mockGetHostnameKey(),
 }));
 
@@ -44,7 +44,7 @@ describe('Grok settings', () => {
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockGetHostnameKey.mockReturnValue('device:current');
   });
 

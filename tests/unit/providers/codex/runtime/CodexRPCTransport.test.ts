@@ -1,10 +1,13 @@
 import { Readable, Writable } from 'stream';
+import type { Mock } from 'vitest';
 
 import type { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
 import {
   CodexRPCResponseError,
   CodexRPCTransport,
 } from '@/providers/codex/runtime/CodexRPCTransport';
+
+
 
 function createMockServerProcess(): CodexAppServerProcess & {
   _stdout: Readable;
@@ -25,10 +28,10 @@ function createMockServerProcess(): CodexAppServerProcess & {
     stdin,
     stdout,
     stderr: new Readable({ read() {} }),
-    isAlive: jest.fn().mockReturnValue(true),
-    onExit: jest.fn(),
-    offExit: jest.fn(),
-    getStderrSnapshot: jest.fn().mockReturnValue(''),
+    isAlive: vi.fn().mockReturnValue(true),
+    onExit: vi.fn(),
+    offExit: vi.fn(),
+    getStderrSnapshot: vi.fn().mockReturnValue(''),
     _stdout: stdout,
     _stdin: stdin,
     _written: written,
@@ -136,7 +139,7 @@ describe('CodexRPCTransport', () => {
     });
 
     it('routes server notifications to registered handlers', async () => {
-      const handler = jest.fn();
+      const handler = vi.fn();
       transport.onNotification('item/agentMessage/delta', handler);
 
       proc._pushLine({
@@ -152,7 +155,7 @@ describe('CodexRPCTransport', () => {
 
   describe('server-initiated requests', () => {
     it('routes server requests to handlers and sends back the response', async () => {
-      const handler = jest.fn().mockResolvedValue({ decision: 'accept' });
+      const handler = vi.fn().mockResolvedValue({ decision: 'accept' });
       transport.onServerRequest('item/commandExecution/requestApproval', handler);
 
       proc._pushLine({
@@ -189,7 +192,7 @@ describe('CodexRPCTransport', () => {
     transport.start();
     expect(proc.onExit).toHaveBeenCalledTimes(1);
 
-    const exitHandler = (proc.onExit as jest.Mock).mock.calls[0][0];
+    const exitHandler = (proc.onExit as Mock).mock.calls[0][0];
     transport.dispose();
     transport.dispose();
 
@@ -199,7 +202,7 @@ describe('CodexRPCTransport', () => {
 
   describe('cleanup on process exit', () => {
     it('rejects all pending requests when the process exits', async () => {
-      const exitCb = (proc.onExit as jest.Mock).mock.calls[0][0];
+      const exitCb = (proc.onExit as Mock).mock.calls[0][0];
 
       const promise = transport.request('thread/start', {});
 
@@ -210,10 +213,10 @@ describe('CodexRPCTransport', () => {
     });
 
     it('includes stderr when rejecting pending requests after process exit', async () => {
-      (proc.getStderrSnapshot as jest.Mock).mockReturnValue(
+      (proc.getStderrSnapshot as Mock).mockReturnValue(
         'failed to load configuration: ~/.codex/config.toml: unknown variant priority',
       );
-      const exitCb = (proc.onExit as jest.Mock).mock.calls[0][0];
+      const exitCb = (proc.onExit as Mock).mock.calls[0][0];
 
       const promise = transport.request('initialize', {});
 
@@ -223,7 +226,7 @@ describe('CodexRPCTransport', () => {
     });
 
     it('preserves late stderr when stdout ends before process close', async () => {
-      const exitCb = (proc.onExit as jest.Mock).mock.calls[0][0];
+      const exitCb = (proc.onExit as Mock).mock.calls[0][0];
       const promise = transport.request('initialize', {});
       const outcome = promise.then(
         () => null,
@@ -232,7 +235,7 @@ describe('CodexRPCTransport', () => {
 
       proc._stdout.push(null);
       await new Promise(resolve => setImmediate(resolve));
-      (proc.getStderrSnapshot as jest.Mock).mockReturnValue(
+      (proc.getStderrSnapshot as Mock).mockReturnValue(
         'failed to load configuration: unknown variant priority',
       );
       exitCb(1, null);
@@ -245,15 +248,15 @@ describe('CodexRPCTransport', () => {
 
   describe('request timeout', () => {
     it('rejects a request that times out', async () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
 
       const promise = transport.request('slow/method', {}, 5_000);
 
-      jest.advanceTimersByTime(5_001);
+      vi.advanceTimersByTime(5_001);
 
       await expect(promise).rejects.toThrow(/timeout/i);
 
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
   });
 });

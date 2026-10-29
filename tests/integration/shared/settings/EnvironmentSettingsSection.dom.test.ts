@@ -1,11 +1,12 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import { deserialize, serialize } from 'node:v8';
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Notice } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import type { CLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
@@ -14,10 +15,12 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
 import { renderEnvironmentSettingsSection } from '@/shared/settings/EnvironmentSettingsSection';
 
-jest.mock('obsidian', () => jest.requireActual('@test/helpers/ObsidianSettingsDOM'));
+
+
+vi.mock('obsidian', async () => (await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM')));
 
 afterEach(() => {
-  (Notice as unknown as jest.Mock).mockClear();
+  (Notice as unknown as Mock).mockClear();
   document.body.replaceChildren();
 });
 
@@ -34,9 +37,9 @@ it.each([
   };
   let saved = '';
   const coordinator = new SettingsCoordinator(settings, async draft => { saved = JSON.stringify(draft); });
-  const applyEnvironmentVariables = jest.fn((scope: Parameters<typeof setEnvironmentVariablesForScope>[1], text: string) => coordinator.mutate(draft => { setEnvironmentVariablesForScope(draft, scope, text); }));
-  const applyEnvironmentVariablesBatch = jest.fn((updates: Array<{ scope: Parameters<typeof setEnvironmentVariablesForScope>[1]; envText: string }>) => coordinator.mutate(draft => { for (const update of updates) setEnvironmentVariablesForScope(draft, update.scope, update.envText); }));
-  const mutateSettings = jest.fn(coordinator.mutate.bind(coordinator));
+  const applyEnvironmentVariables = vi.fn((scope: Parameters<typeof setEnvironmentVariablesForScope>[1], text: string) => coordinator.mutate(draft => { setEnvironmentVariablesForScope(draft, scope, text); }));
+  const applyEnvironmentVariablesBatch = vi.fn((updates: Array<{ scope: Parameters<typeof setEnvironmentVariablesForScope>[1]; envText: string }>) => coordinator.mutate(draft => { for (const update of updates) setEnvironmentVariablesForScope(draft, update.scope, update.envText); }));
+  const mutateSettings = vi.fn(coordinator.mutate.bind(coordinator));
   const host = {
     settings,
     app: { workspace: { getLeavesOfType: () => [] } },
@@ -48,8 +51,8 @@ it.each([
   const root = document.body.createDiv({ cls: 'claudian-settings' });
   const general = root.createDiv();
   const specific = root.createDiv();
-  const sharedRefresh = jest.fn();
-  const providerRefresh = jest.fn();
+  const sharedRefresh = vi.fn();
+  const providerRefresh = vi.fn();
   renderEnvironmentSettingsSection({ container: general, plugin: host, scope: 'shared', name: 'Shared environment', desc: '', placeholder: '', renderCustomContextLimits: sharedRefresh });
   renderEnvironmentSettingsSection({ container: specific, plugin: host, scope: 'provider:claude', name: 'Claude environment', desc: '', placeholder: '', renderCustomContextLimits: providerRefresh });
   const originalWarning = within(general).queryByText(/^Review environment ownership/);
@@ -76,7 +79,7 @@ it('shows the generic environment update notice when the detached update fails',
   let rejectApply: (error: Error) => void = () => {
     throw new Error('applyEnvironmentVariables was not invoked');
   };
-  const applyEnvironmentVariables = jest.fn(
+  const applyEnvironmentVariables = vi.fn(
     () => new Promise<void>((_resolve, reject) => {
       rejectApply = reject;
     }),
@@ -116,13 +119,13 @@ it('refreshes the rendered CLI installation after a successful environment updat
   let resolveApply: () => void = () => {
     throw new Error('applyEnvironmentVariables was not invoked');
   };
-  const applyEnvironmentVariables = jest.fn(
+  const applyEnvironmentVariables = vi.fn(
     () => new Promise<void>((resolve) => {
       resolveApply = resolve;
     }),
   );
   let installation: CLIInstallation = { path: '/synthetic/cli-old', version: '1.0.0', source: 'auto' };
-  const inspect = jest.fn(async () => installation);
+  const inspect = vi.fn(async () => installation);
   const host = {
     settings: { envSnippets: [] },
     app: { workspace: { getLeavesOfType: () => [] } },
@@ -169,14 +172,14 @@ it('refreshes the rendered CLI installation after a successful environment updat
 
 it('recovers with a refreshed installation when a later environment update succeeds', async () => {
   const applyResults: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
-  const applyEnvironmentVariables = jest.fn(
+  const applyEnvironmentVariables = vi.fn(
     () => new Promise<void>((resolve, reject) => {
       applyResults.push({ resolve, reject });
     }),
   );
   let installation: CLIInstallation = { path: '/synthetic/cli-before', version: '1.0.0', source: 'auto' };
-  const inspect = jest.fn(async () => installation);
-  const renderCustomContextLimits = jest.fn();
+  const inspect = vi.fn(async () => installation);
+  const renderCustomContextLimits = vi.fn();
   const host = {
     settings: { envSnippets: [] },
     app: { workspace: { getLeavesOfType: () => [] } },
@@ -252,7 +255,7 @@ it.each(applyFailureCases)('shows only generic feedback without leakage for a $l
   let rejectApply: (error: Error) => void = () => {
     throw new Error('applyEnvironmentVariables was not invoked');
   };
-  const applyEnvironmentVariables = jest.fn(
+  const applyEnvironmentVariables = vi.fn(
     () => new Promise<void>((_resolve, reject) => {
       rejectApply = reject;
     }),
@@ -283,7 +286,7 @@ it.each(applyFailureCases)('shows only generic feedback without leakage for a $l
   rejectApply(error);
 
   await waitFor(() => expect(Notice).toHaveBeenCalledWith('Could not complete environment update.'));
-  const noticeMessages = (Notice as unknown as jest.Mock).mock.calls.map((args: unknown[]) => String(args[0]));
+  const noticeMessages = (Notice as unknown as Mock).mock.calls.map((args: unknown[]) => String(args[0]));
   expect(noticeMessages).toEqual(['Could not complete environment update.']);
   const renderedText = document.body.textContent ?? '';
   expect(renderedText).not.toContain('fake-secret-value');

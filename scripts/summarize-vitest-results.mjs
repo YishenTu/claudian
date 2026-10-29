@@ -3,7 +3,7 @@ import path from 'node:path';
 
 const [input, output] = process.argv.slice(2);
 if (!input || !output) {
-  throw new Error('Usage: node scripts/summarize-jest-results.mjs <jest.json> <output-directory>');
+  throw new Error('Usage: node scripts/summarize-vitest-results.mjs <vitest.json> <output-directory>');
 }
 
 const results = JSON.parse(await readFile(input, 'utf8'));
@@ -18,8 +18,8 @@ const tests = results.testResults.flatMap(suite => suite.assertionResults.map(te
   || left.name.localeCompare(right.name)
 ));
 const suites = results.testResults.map(suite => {
-  // Jest synthesizes current timestamps for skipped and module-load failures.
-  const executed = suite.status !== 'skipped' && suite.assertionResults.some(test => test.status !== 'pending' && test.status !== 'todo');
+  // Skipped and collection-error files have no measured test execution interval.
+  const executed = suite.status !== 'skipped' && suite.assertionResults.some(test => !['skipped', 'pending', 'todo'].includes(test.status));
   const startTime = executed && Number.isFinite(suite.startTime) && suite.startTime > 0 ? suite.startTime : null;
   const endTime = startTime !== null && Number.isFinite(suite.endTime) && suite.endTime >= startTime
     ? suite.endTime : null;
@@ -42,7 +42,8 @@ const report = {
   passed: results.numPassedTests,
   failed: results.numFailedTests,
   skipped: results.numPendingTests,
-  failedSuites: results.numFailedTestSuites,
+  failedSuites: suites.filter(suite => suite.status === 'failed').length,
+  runtimeErrors: execution?.unhandledErrors ?? null,
   suiteCount: suites.length,
   execution,
   suites,
@@ -52,12 +53,13 @@ const cell = value => String(value)
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
   .replaceAll('|', '&#124;').replace(/[\r\n]+/g, ' ');
 const summary = [
-  '## Jest timings',
+  '## Vitest timings',
   '',
   `${report.passed} passed, ${report.failed} failed, ${report.skipped} skipped.`,
   `Failed suites: ${report.failedSuites} (including failures before test execution).`,
+  `Unhandled runtime errors: ${report.runtimeErrors ?? 'not recorded'}.`,
   '',
-  `${report.suiteCount} selected suites. Suite durations include setup and teardown; concurrent durations overlap.`,
+  `${report.suiteCount} selected suites. Suite execution durations exclude imports and worker startup; concurrent durations overlap.`,
   ...(execution ? [`Node ${execution.nodeVersion}; ${execution.platform}/${execution.arch}; max workers ${execution.maxWorkers}.`] : []),
   '',
   'Slowest 20 suites. All timings are in the uploaded timing artifact.',

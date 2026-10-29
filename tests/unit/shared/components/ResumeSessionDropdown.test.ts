@@ -1,9 +1,10 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@test/helpers/ObsidianSettingsDOM';
 
 import { createMockEl } from '@test/helpers/MockElement';
 import { fireEvent, screen } from '@testing-library/dom';
+import type { Mock } from 'vitest';
 
 import type { ConversationMeta } from '@/core/types';
 import {
@@ -11,11 +12,13 @@ import {
   type ResumeSessionDropdownCallbacks,
 } from '@/shared/components/ResumeSessionDropdown';
 
+
+
 function createInput(): HTMLTextAreaElement {
   const input = document.createElement('textarea');
-  jest.spyOn(input, 'focus');
-  jest.spyOn(input, 'addEventListener');
-  jest.spyOn(input, 'removeEventListener');
+  vi.spyOn(input, 'focus');
+  vi.spyOn(input, 'addEventListener');
+  vi.spyOn(input, 'removeEventListener');
   return input;
 }
 
@@ -23,8 +26,8 @@ function createMockCallbacks(
   overrides: Partial<ResumeSessionDropdownCallbacks> = {}
 ): ResumeSessionDropdownCallbacks {
   return {
-    onSelect: jest.fn(),
-    onDismiss: jest.fn(),
+    onSelect: vi.fn(),
+    onDismiss: vi.fn(),
     ...overrides,
   };
 }
@@ -184,7 +187,7 @@ describe('ResumeSessionDropdown', () => {
       );
       dropdownEl.removeClass('visible');
 
-      const event = { key: 'ArrowDown', preventDefault: jest.fn() } as any;
+      const event = { key: 'ArrowDown', preventDefault: vi.fn() } as any;
       expect(dropdown.handleKeydown(event)).toBe(false);
       expect(event.preventDefault).not.toHaveBeenCalled();
 
@@ -198,7 +201,7 @@ describe('ResumeSessionDropdown', () => {
       const listbox = containerEl.querySelector('.claudian-resume-list');
       const items = listbox?.querySelectorAll('.claudian-resume-item') ?? [];
 
-      const event = { key: 'ArrowDown', preventDefault: jest.fn() } as any;
+      const event = { key: 'ArrowDown', preventDefault: vi.fn() } as any;
       expect(dropdown.handleKeydown(event)).toBe(true);
       expect(event.preventDefault).toHaveBeenCalled();
 
@@ -217,8 +220,8 @@ describe('ResumeSessionDropdown', () => {
       );
 
       // Go down first, then up
-      dropdown.handleKeydown({ key: 'ArrowDown', preventDefault: jest.fn() } as any);
-      const event = { key: 'ArrowUp', preventDefault: jest.fn() } as any;
+      dropdown.handleKeydown({ key: 'ArrowDown', preventDefault: vi.fn() } as any);
+      const event = { key: 'ArrowUp', preventDefault: vi.fn() } as any;
       const result = dropdown.handleKeydown(event);
 
       expect(result).toBe(true);
@@ -232,7 +235,7 @@ describe('ResumeSessionDropdown', () => {
         containerEl, inputEl, conversations, null, callbacks
       );
 
-      const event = { key: 'Enter', preventDefault: jest.fn() } as any;
+      const event = { key: 'Enter', preventDefault: vi.fn() } as any;
       const result = dropdown.handleKeydown(event);
 
       expect(result).toBe(true);
@@ -248,7 +251,7 @@ describe('ResumeSessionDropdown', () => {
         containerEl, inputEl, conversations, null, callbacks
       );
 
-      const event = { key: 'Tab', preventDefault: jest.fn() } as any;
+      const event = { key: 'Tab', preventDefault: vi.fn() } as any;
       const result = dropdown.handleKeydown(event);
 
       expect(result).toBe(true);
@@ -262,7 +265,7 @@ describe('ResumeSessionDropdown', () => {
         containerEl, inputEl, conversations, null, callbacks
       );
 
-      const event = { key: 'Escape', preventDefault: jest.fn() } as any;
+      const event = { key: 'Escape', preventDefault: vi.fn() } as any;
       const result = dropdown.handleKeydown(event);
 
       expect(result).toBe(true);
@@ -278,7 +281,7 @@ describe('ResumeSessionDropdown', () => {
         containerEl, inputEl, conversations, null, callbacks
       );
 
-      const event = { key: 'a', preventDefault: jest.fn() } as any;
+      const event = { key: 'a', preventDefault: vi.fn() } as any;
       const result = dropdown.handleKeydown(event);
 
       expect(result).toBe(false);
@@ -293,7 +296,7 @@ describe('ResumeSessionDropdown', () => {
       );
 
       // conv-2 is first after sorting (highest lastActivityAt), so Enter selects it
-      const event = { key: 'Enter', preventDefault: jest.fn() } as any;
+      const event = { key: 'Enter', preventDefault: vi.fn() } as any;
       dropdown.handleKeydown(event);
 
       // Should dismiss, not call onSelect
@@ -381,12 +384,12 @@ describe('ResumeSessionDropdown', () => {
   describe('scrolling', () => {
     const rowHeight = 50;
     let list: HTMLElement;
-    let scrollIntoView: jest.Mock;
+    let scrollIntoView: Mock;
     let dropdown: ResumeSessionDropdown;
     const originalScrollIntoView = Element.prototype.scrollIntoView;
 
     beforeEach(() => {
-      scrollIntoView = jest.fn();
+      scrollIntoView = vi.fn();
       Element.prototype.scrollIntoView = scrollIntoView;
       const container = document.body.createDiv();
       const input = container.appendChild(document.createElement('textarea'));

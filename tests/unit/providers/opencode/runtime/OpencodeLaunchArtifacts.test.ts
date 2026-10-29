@@ -1,4 +1,5 @@
-import fs from 'node:fs/promises';
+import * as fs from 'node:fs/promises';
+vi.mock('node:fs/promises', async () => ({ ...await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises') }));
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -206,7 +207,7 @@ describe('prepareOpencodeLaunchArtifacts', () => {
     const file = path.join(root, 'config.json');
     const content = '{"agents":{}}\n';
     await fs.writeFile(file, '{}\n');
-    const rename = jest.spyOn(fs, 'rename').mockImplementationOnce(async () => {
+    const rename = vi.spyOn(fs, 'rename').mockImplementationOnce(async () => {
       if (peerWrites) await fs.writeFile(file, content);
       throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' });
     });

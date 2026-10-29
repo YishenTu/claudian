@@ -1,9 +1,9 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Component, Notice } from 'obsidian';
 
 import type { ChatMessage, Conversation, ToolCallInfo } from '@/core/types';
@@ -34,9 +34,9 @@ const MESSAGE = 'Test message from another Claudian session.\nNo reply needed â€
 
 function setup(known: readonly string[] = [CALLER, RECIPIENT]) {
   document.body.replaceChildren();
-  jest.mocked(Notice).mockClear();
+  vi.mocked(Notice).mockClear();
   const messagesEl = document.body.createDiv();
-  const openConversation = jest.fn(async (_id: string) => undefined);
+  const openConversation = vi.fn(async (_id: string) => undefined);
   const records = new Map(known.map(id => [id, { id, providerId: 'deepseek', title: id } as Conversation]));
   const loaded: string[][] = [];
   const host = {

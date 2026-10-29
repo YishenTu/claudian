@@ -1,3 +1,5 @@
+const actualModule0 = await vi.importActual<typeof fs>('node:fs/promises');
+const actualModule1 = await vi.importActual<typeof fs>('node:fs/promises');
 import '@/providers';
 
 import { existsSync } from 'node:fs';
@@ -25,18 +27,19 @@ import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCo
 import { type Conversation, ProjectMemoryConflictError, ProjectMemoryPathTakenError } from '@/core/types';
 import { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
 
-jest.mock('node:fs/promises', () => {
-  const actual = jest.requireActual<typeof fs>('node:fs/promises');
-  return { ...actual, link: jest.fn(actual.link), rename: jest.fn(actual.rename), writeFile: jest.fn(actual.writeFile) };
+
+vi.mock('node:fs/promises', async () => {
+  const actual = (await vi.importActual<typeof fs>('node:fs/promises'));
+  return { ...actual, link: vi.fn(actual.link), rename: vi.fn(actual.rename), writeFile: vi.fn(actual.writeFile) };
 });
-const actualFs = jest.requireActual<typeof fs>('node:fs/promises');
+const actualFs = actualModule0;
 
 const vaults: DesktopVault[] = [];
 const metadataLoaders: SessionMetadataLoader[] = [];
 afterEach(async () => {
   await Promise.all(metadataLoaders.splice(0).map(loader => loader.dispose()));
   allowWrites();
-  jest.mocked(fs.rename).mockClear();
+  vi.mocked(fs.rename).mockClear();
   await Promise.all(vaults.splice(0).map(vault => vault.dispose()));
 });
 
@@ -48,14 +51,14 @@ async function createVault(): Promise<DesktopVault> {
 
 /** Fails every file write into a vault folder until `allowWrites`. */
 function failWritesInto(vault: DesktopVault, folder: string): void {
-  jest.mocked(fs.writeFile).mockImplementation(async (file, data, options) => {
+  vi.mocked(fs.writeFile).mockImplementation(async (file, data, options) => {
     if (path.dirname(String(file)) === vault.resolve(folder)) throw new Error('disk full');
     return actualFs.writeFile(file, data, options);
   });
 }
 
 function allowWrites(): void {
-  jest.mocked(fs.writeFile).mockImplementation(actualFs.writeFile);
+  vi.mocked(fs.writeFile).mockImplementation(actualFs.writeFile);
 }
 
 const TEMPLATE_SECTIONS = '## Goal\n\n## Requirements\n\n## Decisions\n\n## State\n\n## Open questions\n\n## Dead ends\n';
@@ -76,11 +79,11 @@ async function fixture(options: { vault?: DesktopVault; conversations?: Conversa
   const loaded = await store.load();
   const persistence = {
     metadataReader: {} as never,
-    saveMetadata: jest.fn().mockResolvedValue(undefined),
-    deleteCurrentMetadata: jest.fn().mockResolvedValue(undefined),
-    assignMetadataToDevice: jest.fn().mockResolvedValue(undefined),
+    saveMetadata: vi.fn().mockResolvedValue(undefined),
+    deleteCurrentMetadata: vi.fn().mockResolvedValue(undefined),
+    assignMetadataToDevice: vi.fn().mockResolvedValue(undefined),
   };
-  const onConversationListChanged = jest.fn();
+  const onConversationListChanged = vi.fn();
   const projects = new ProjectService(loaded.records, { store, memory: files });
   const repository = new ConversationRepository({
     providers: ProviderRegistry,
@@ -124,7 +127,7 @@ function readFile(vault: DesktopVault, relativePath: string): Promise<string | u
 describe('ProjectService', () => {
   it('creates a persisted record and a template memory file at the given path, creating its folders', async () => {
     const { vault, projects } = await fixture();
-    const changed = jest.fn();
+    const changed = vi.fn();
     projects.onChanged(changed);
 
     const record = await projects.create({
@@ -173,7 +176,7 @@ describe('ProjectService', () => {
   });
 
   it.each(['../outside.md', 'C:/Docs/MEMORY.md', 'Work/', ''])(
-    'rejects the invalid memory path %p without creating a project',
+    'rejects the invalid memory path %o without creating a project',
     async (memoryPath) => {
       const { vault, projects } = await fixture();
       const before = await vault.snapshot();
@@ -190,7 +193,7 @@ describe('ProjectService', () => {
     await vault.write('Work/MEMORY.md', '# Someone else\n');
     const { projects } = await fixture({ vault });
     const before = await vault.snapshot();
-    const changed = jest.fn();
+    const changed = vi.fn();
     projects.onChanged(changed);
 
     const attempt = projects.create({ name: 'Taken', instructions: '', memoryPath: 'Work/MEMORY.md' });
@@ -204,7 +207,7 @@ describe('ProjectService', () => {
 
   it.each(['ENOTSUP', 'EPERM'])('creates and relocates memory on a vault without hard links (%s)', async code => {
     const vault = await DesktopVault.create();
-    const link = jest.mocked(fs.link).mockRejectedValue(Object.assign(new Error('hard links unsupported'), { code }));
+    const link = vi.mocked(fs.link).mockRejectedValue(Object.assign(new Error('hard links unsupported'), { code }));
     try {
       const store = new ProjectStore(vault.files);
       const projects = new ProjectService([], { store, memory: vault.files });
@@ -217,7 +220,7 @@ describe('ProjectService', () => {
       expect(await vault.exists('Work/MEMORY.md')).toBe(false);
       expect((await store.load()).records).toEqual([{ ...record, memoryPath: 'Moved/MEMORY.md' }]);
     } finally {
-      link.mockReset().mockImplementation(jest.requireActual<typeof fs>('node:fs/promises').link);
+      link.mockReset().mockImplementation(actualModule1.link);
       await vault.dispose();
     }
   });
@@ -247,7 +250,7 @@ describe('ProjectService', () => {
     const read = await projects.readMemory(record.id);
     if ('missing' in read) throw new Error('memory file should exist');
     await projects.saveMemory(record.id, '# Launch\n\nEdited\n', read.revision);
-    const changed = jest.fn();
+    const changed = vi.fn();
     projects.onChanged(changed);
 
     await projects.update(record.id, { name: 'Launch v2', memoryPath });
@@ -281,7 +284,7 @@ describe('ProjectService', () => {
     const record = await projects.create({ name: 'Taken', instructions: 'Keep.', memoryPath: 'Taken/MEMORY.md' });
     await vault.write('Work/Notes.md', '# Someone else\n');
     const before = await vault.snapshot();
-    const changed = jest.fn();
+    const changed = vi.fn();
     projects.onChanged(changed);
 
     const attempt = projects.update(record.id, { name: 'Renamed', instructions: 'New.', memoryPath: 'Work/Notes.md' });
@@ -422,9 +425,9 @@ describe('ProjectService', () => {
     const { vault, projects } = await fixture();
     const record = await projects.create({ name: 'Stay', instructions: '', memoryPath: 'Stay/MEMORY.md' });
     const recordFile = await readFile(vault, `${PROJECTS_PATH}/${record.id}.json`);
-    const changed = jest.fn();
+    const changed = vi.fn();
     projects.onChanged(changed);
-    const memoryMoves = () => jest.mocked(fs.rename).mock.calls.filter(([from]) => from === vault.resolve('Stay/MEMORY.md'));
+    const memoryMoves = () => vi.mocked(fs.rename).mock.calls.filter(([from]) => from === vault.resolve('Stay/MEMORY.md'));
 
     await projects.update(record.id, { memoryPath: '/Stay/./MEMORY' });
     expect(changed).not.toHaveBeenCalled();
@@ -443,7 +446,7 @@ describe('ProjectService', () => {
       id: 'kept', name: 'Kept', instructions: '', memoryPath: 'kept.md', isPinned: true, createdAt: testDate().getTime(),
     }));
     const { projects, store } = await fixture({ vault });
-    const changed = jest.fn();
+    const changed = vi.fn();
     projects.onChanged(changed);
     expect(projects.get('kept')?.isArchived).toBe(false);
 
@@ -574,7 +577,7 @@ describe('ProjectService', () => {
     const scanEntered = deferred<void>();
     const releaseScan = deferred<void>();
     const scan = sessions.scan.bind(sessions);
-    jest.spyOn(sessions, 'scan').mockImplementationOnce(async options => {
+    vi.spyOn(sessions, 'scan').mockImplementationOnce(async options => {
       scanEntered.resolve();
       await releaseScan.promise;
       return scan(options);
@@ -607,7 +610,7 @@ describe('ProjectService', () => {
   it.each(['incomplete', 'failed'] as const)('keeps project state intact after an %s metadata scan and allows retry', async failure => {
     const { projects, conversations, sessions } = await fixture();
     const project = await projects.create({ name: 'Retry scan', instructions: '', memoryPath: 'Retry scan.md' });
-    const scan = jest.spyOn(sessions, 'scan');
+    const scan = vi.spyOn(sessions, 'scan');
     if (failure === 'incomplete') scan.mockResolvedValueOnce({ records: [], complete: false, invalidMetadataCount: 0 });
     else scan.mockRejectedValueOnce(new Error('scan unavailable'));
     const lifecycle = new ConversationLifecycle({
@@ -709,7 +712,7 @@ describe('ProjectService', () => {
       const entered = deferred<void>();
       const release = deferred<void>();
       const save = store.save.bind(store);
-      jest.spyOn(store, 'save').mockImplementationOnce(async record => {
+      vi.spyOn(store, 'save').mockImplementationOnce(async record => {
         entered.resolve();
         await release.promise;
         await save(record);
@@ -744,7 +747,7 @@ describe('ProjectService', () => {
       sessions: { get: () => null, isRunning: () => false, retire: async () => undefined, whenSettled: async () => true },
       views: { getAllViews: () => [] },
     });
-    jest.spyOn(store, 'save').mockRejectedValueOnce(new Error('disk unavailable'));
+    vi.spyOn(store, 'save').mockRejectedValueOnce(new Error('disk unavailable'));
 
     await expect(lifecycle.archiveProject(project.id)).rejects.toThrow('disk unavailable');
     const created = await conversations.createConversation({ projectId: project.id });
@@ -806,7 +809,7 @@ it.each([false, true])('reads committed project memory after a pending relocatio
   let enteredSave!: () => void;
   const saving = new Promise<void>(resolve => { enteredSave = resolve; });
   const save = store.save.bind(store);
-  jest.spyOn(store, 'save').mockImplementationOnce(async record => {
+  vi.spyOn(store, 'save').mockImplementationOnce(async record => {
     enteredSave();
     await new Promise<void>(resolve => { finishSave = resolve; });
     if (failSave) throw new Error('Record save failed');

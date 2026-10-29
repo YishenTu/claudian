@@ -9,7 +9,7 @@ describe('parseCLIVersion', () => {
     ['version unavailable', null],
     ['cli 1.2', null],
     [null, null],
-  ])('extracts a complete version from %p', (output, expected) => {
+  ])('extracts a complete version from %o', (output, expected) => {
     expect(parseCLIVersion(output)).toBe(expected);
   });
 });

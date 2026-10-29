@@ -1,6 +1,7 @@
 import '@/providers';
 
 import { testDate } from '@test/helpers/testClock';
+import type { Mocked } from 'vitest';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import { SessionStorage } from '@/app/storage/SessionStorage';
@@ -11,10 +12,12 @@ import type { ProviderId } from '@/core/providers/types';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { Conversation, SessionMetadata, SubagentInfo, UsageInfo } from '@/core/types';
 
+
+
 const DEVICE_KEY = `device-${'a'.repeat(64)}`;
 
 describe('SessionStorage', () => {
-  let mockAdapter: jest.Mocked<VaultFileAdapter>;
+  let mockAdapter: Mocked<VaultFileAdapter>;
   let storage: SessionStorage;
 
   function toSessionMetadata(conversation: Conversation): SessionMetadata {
@@ -24,7 +27,7 @@ describe('SessionStorage', () => {
       getSettings: () => ({}),
       getVaultPath: () => '/vault',
       persistence: {} as never,
-      onConversationDeleted: jest.fn(),
+      onConversationDeleted: vi.fn(),
     });
     return (
       repository as unknown as {
@@ -35,13 +38,13 @@ describe('SessionStorage', () => {
 
   beforeEach(() => {
     mockAdapter = {
-      exists: jest.fn(),
-      stat: jest.fn().mockResolvedValue(null),
-      read: jest.fn(),
-      write: jest.fn(),
-      delete: jest.fn(),
-      listFiles: jest.fn(),
-    } as unknown as jest.Mocked<VaultFileAdapter>;
+      exists: vi.fn(),
+      stat: vi.fn().mockResolvedValue(null),
+      read: vi.fn(),
+      write: vi.fn(),
+      delete: vi.fn(),
+      listFiles: vi.fn(),
+    } as unknown as Mocked<VaultFileAdapter>;
 
     storage = new SessionStorage(mockAdapter, DEVICE_KEY);
   });
@@ -56,7 +59,7 @@ describe('SessionStorage', () => {
     mockAdapter.listFiles.mockImplementation(async folder => paths.filter(path => path.slice(0, path.lastIndexOf('/')) === folder));
     mockAdapter.exists.mockImplementation(async path => contents.has(path));
     mockAdapter.read.mockImplementation(async path => contents.get(path)!);
-    mockAdapter.stat = jest.fn(async path => contents.has(path) ? { mtime: versions.get(path) ?? now, size: contents.get(path)!.length } : null);
+    mockAdapter.stat = vi.fn(async path => contents.has(path) ? { mtime: versions.get(path) ?? now, size: contents.get(path)!.length } : null);
     const scan = await storage.scan();
     contents.set(paths[1], JSON.stringify({ id: 'edited', title: 'Changed', lastActivityAt: now }));
     versions.set(paths[1], now + 1);
@@ -78,7 +81,7 @@ describe('SessionStorage', () => {
     });
 
     it.each(['', '.', '..', '../escape', 'nested/id', 'nested\\id', '/absolute', '%2Fescape', '%5cescape'])(
-      'rejects unsafe metadata id %p before path construction',
+      'rejects unsafe metadata id %o before path construction',
       (id) => {
         expect(() => storage.getMetadataPath(id)).toThrow('Invalid session metadata id');
       },
@@ -168,7 +171,7 @@ describe('SessionStorage', () => {
       ['project-a', 'project-a', false],
       [42, undefined, true],
       ['../outside', undefined, true],
-    ])('keeps only a safe project id %p and migrates malformed ones', async (stored, expected, needsMigration) => {
+    ])('keeps only a safe project id %o and migrates malformed ones', async (stored, expected, needsMigration) => {
       mockAdapter.exists.mockImplementation(async (path: string) => (
         path === `${SESSIONS_PATH}/session-project.meta.json`
       ));
@@ -517,7 +520,7 @@ describe('SessionStorage', () => {
       const blockedReads = new Promise<void>(resolve => {
         releaseBlockedReads = resolve;
       });
-      const onBatch = jest.fn();
+      const onBatch = vi.fn();
       mockAdapter.listFiles.mockImplementation(async (path: string) => (
         path === SESSIONS_PATH
           ? ids.map(id => `${SESSIONS_PATH}/${id}.meta.json`)
@@ -724,7 +727,7 @@ describe('SessionStorage', () => {
   describe('toSessionMetadata', () => {
     it('does not fall back to unsanitized state when the provider rejects it', () => {
       const service = ProviderRegistry.getConversationHistoryService('claude');
-      const sanitizer = jest.spyOn(service, 'buildPersistedProviderState').mockReturnValue(undefined);
+      const sanitizer = vi.spyOn(service, 'buildPersistedProviderState').mockReturnValue(undefined);
       const conversation: Conversation = {
         id: 'conv-rejected-provider-state',
         providerId: 'claude',

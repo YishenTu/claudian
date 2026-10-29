@@ -1,12 +1,12 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { parseGrokHistoryContent } from '@test/helpers/providers/grokHistory';
 import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Component, Platform } from 'obsidian';
 
 import type { ProviderExecutionEvent, ProviderSessionConfig } from '@/core/execution';
@@ -74,7 +74,7 @@ async function restoreLive(updates: NativeToolUpdates): Promise<ToolCallInfo> {
     shutdown: async () => undefined,
   };
   const config: ProviderSessionConfig = {
-    interactionPort: { askUserQuestion: jest.fn(), dismissInteraction: jest.fn(), requestApproval: jest.fn() },
+    interactionPort: { askUserQuestion: vi.fn(), dismissInteraction: vi.fn(), requestApproval: vi.fn() },
     lifecycle: 'persistent',
     nativePersistence: 'enabled',
     workingDirectory: '/workspace',

@@ -14,7 +14,7 @@ function createContext(
 
 describe('GrokCommandLoader', () => {
   it('uses a ready command snapshot without starting metadata discovery', async () => {
-    const metadataProbe = { load: jest.fn() };
+    const metadataProbe = { load: vi.fn() };
     const loader = new GrokCommandLoader(metadataProbe as any);
 
     await expect(loader.loadCommands(createContext({
@@ -33,7 +33,7 @@ describe('GrokCommandLoader', () => {
   });
 
   it('does not create isolated metadata unless explicitly allowed', async () => {
-    const metadataProbe = { load: jest.fn() };
+    const metadataProbe = { load: vi.fn() };
     const loader = new GrokCommandLoader(metadataProbe as any);
 
     await expect(loader.loadCommands(createContext())).resolves.toMatchObject({
@@ -44,7 +44,7 @@ describe('GrokCommandLoader', () => {
 
   it('loads commands through the provider-owned metadata probe', async () => {
     const metadataProbe = {
-      load: jest.fn().mockResolvedValue([{
+      load: vi.fn().mockResolvedValue([{
         content: '',
         id: 'grok:skill',
         kind: 'skill',
@@ -67,7 +67,7 @@ describe('GrokCommandLoader', () => {
     const controller = new AbortController();
     const failure = new Error('caller cancelled');
     const metadataProbe = {
-      load: jest.fn(async () => {
+      load: vi.fn(async () => {
         controller.abort(failure);
         return [];
       }),
@@ -82,7 +82,7 @@ describe('GrokCommandLoader', () => {
 
   it('maps native discovery failures to the Grok retryable error', async () => {
     const metadataProbe = {
-      load: jest.fn(async () => { throw new Error('native failure'); }),
+      load: vi.fn(async () => { throw new Error('native failure'); }),
     };
     const loader = new GrokCommandLoader(metadataProbe as any);
 

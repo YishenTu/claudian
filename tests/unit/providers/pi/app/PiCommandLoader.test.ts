@@ -16,7 +16,7 @@ function createContext(
 
 describe('PiCommandLoader', () => {
   it('uses a ready command snapshot without starting a metadata probe', async () => {
-    const metadataProbe = { load: jest.fn() };
+    const metadataProbe = { load: vi.fn() };
     const loader = new PiCommandLoader(metadataProbe as any);
 
     await expect(loader.loadCommands(createContext({
@@ -35,7 +35,7 @@ describe('PiCommandLoader', () => {
   });
 
   it('does not probe metadata unless isolated creation is allowed', async () => {
-    const metadataProbe = { load: jest.fn() };
+    const metadataProbe = { load: vi.fn() };
     const loader = new PiCommandLoader(metadataProbe as any);
 
     await expect(loader.loadCommands(createContext())).resolves.toMatchObject({
@@ -46,7 +46,7 @@ describe('PiCommandLoader', () => {
 
   it('loads commands through a no-session metadata probe', async () => {
     const metadataProbe = {
-      load: jest.fn().mockResolvedValue([{
+      load: vi.fn().mockResolvedValue([{
         content: '',
         id: 'pi:skill',
         kind: 'skill',

@@ -6,17 +6,17 @@ import { type RuntimeHostFixture,runtimeHostFor } from '@test/helpers/providerRu
 import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { testDate } from '@test/helpers/testClock';
 
-const mockLoadGrokPromptIndexAfterAssistant = jest.fn();
-const mockResolveGrokSessionDirectory = jest.fn();
+const mockLoadGrokPromptIndexAfterAssistant = vi.fn();
+const mockResolveGrokSessionDirectory = vi.fn();
 
-jest.mock('@/providers/grok/history/GrokHistoryStore', () => ({
-  ...jest.requireActual('@/providers/grok/history/GrokHistoryStore'),
+vi.mock('@/providers/grok/history/GrokHistoryStore', async () => ({
+  ...(await vi.importActual<typeof import('@/providers/grok/history/GrokHistoryStore')>('@/providers/grok/history/GrokHistoryStore')),
   loadGrokPromptIndexAfterAssistant: (...args: unknown[]) => (
     mockLoadGrokPromptIndexAfterAssistant(...args)
   ),
 }));
-jest.mock('@/providers/grok/history/GrokHistoryPathResolver', () => ({
-  ...jest.requireActual('@/providers/grok/history/GrokHistoryPathResolver'),
+vi.mock('@/providers/grok/history/GrokHistoryPathResolver', async () => ({
+  ...(await vi.importActual<typeof import('@/providers/grok/history/GrokHistoryPathResolver')>('@/providers/grok/history/GrokHistoryPathResolver')),
   resolveGrokSessionDirectory: (...args: unknown[]) => mockResolveGrokSessionDirectory(...args),
 }));
 
@@ -65,9 +65,9 @@ function createGrokHost(model = 'grok-4'): ProviderHost {
 }
 
 const interactionPort: ProviderInteractionPort = {
-  askUserQuestion: jest.fn(),
-  dismissInteraction: jest.fn(),
-  requestApproval: jest.fn(),
+  askUserQuestion: vi.fn(),
+  dismissInteraction: vi.fn(),
+  requestApproval: vi.fn(),
 };
 
 const sessionConfig: ProviderSessionConfig = {
@@ -377,11 +377,11 @@ class FakeNativeConnection implements GrokExecutionNativeConnection {
 
 describe('GrokExecutionBackend', () => {
   function sessionToolFixture() {
-    const dispose = jest.fn();
+    const dispose = vi.fn();
     const route = { url: 'http://127.0.0.1:1234/mcp', routeId: 'private-route', headers: { 'X-Claudian-Route': 'private-route' }, dispose };
-    const registerMCPRoute = jest.fn(async (_handler: SessionToolCallHandler) => route);
-    const host = { ...createGrokHost(), sessionToolEndpoint: { registerMCPRoute, registerCallRoute: jest.fn() } };
-    const port = { list: jest.fn(async (_args: SessionToolListDestinationsArgs, _signal: AbortSignal) => ({ sessions: [] })), send: jest.fn(async () => ({ sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' as const })), read: jest.fn() };
+    const registerMCPRoute = vi.fn(async (_handler: SessionToolCallHandler) => route);
+    const host = { ...createGrokHost(), sessionToolEndpoint: { registerMCPRoute, registerCallRoute: vi.fn() } };
+    const port = { list: vi.fn(async (_args: SessionToolListDestinationsArgs, _signal: AbortSignal) => ({ sessions: [] })), send: vi.fn(async () => ({ sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' as const })), read: vi.fn() };
     const servers = [{ type: 'http', name: 'claudian_sessions', url: route.url, headers: [{ name: 'X-Claudian-Route', value: route.routeId }] }];
     return { host, port, route, registerMCPRoute, servers };
   }
@@ -389,7 +389,7 @@ describe('GrokExecutionBackend', () => {
   it.each(['new', 'load', 'fork'] as const)('binds session tools on %s and process replacement, then revokes the route', async mode => {
     const fixture = sessionToolFixture();
     const natives = [new FakeNativeConnection(), new FakeNativeConnection()];
-    const create = jest.fn().mockReturnValueOnce(natives[0]).mockReturnValueOnce(natives[1]);
+    const create = vi.fn().mockReturnValueOnce(natives[0]).mockReturnValueOnce(natives[1]);
     const config = mode === 'fork' ? forkSessionConfig() : mode === 'new' ? { ...sessionConfig, resumeSeed: undefined } : sessionConfig;
     const session = createBackend(fixture.host, { nativeFactory: { create } })
       .createSession({ ...config, sessionTools: fixture.port });
@@ -539,7 +539,7 @@ describe('GrokExecutionBackend', () => {
   it('rejects an unavailable selected model before native startup with a configuration error', async () => {
     const host = createGrokHost();
     host.settings.providerConfigs!.grok!.visibleModels = [];
-    const nativeFactory = { create: jest.fn() };
+    const nativeFactory = { create: vi.fn() };
     const session = createBackend(host, { nativeFactory }).createSession(sessionConfig);
     const events = await collect(session.execute(executionRequest()).events);
     expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error', category: 'configuration' }));
@@ -549,7 +549,7 @@ describe('GrokExecutionBackend', () => {
   });
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockLoadGrokPromptIndexAfterAssistant.mockResolvedValue(3);
     mockResolveGrokSessionDirectory.mockImplementation(
       (_hint: unknown, sessionId: string | undefined) => (
@@ -753,7 +753,7 @@ describe('GrokExecutionBackend', () => {
       });
       return { stopReason: 'end_turn' };
     };
-    const nativeFactory: GrokExecutionNativeFactory = { create: jest.fn(() => native) };
+    const nativeFactory: GrokExecutionNativeFactory = { create: vi.fn(() => native) };
     const backend = createBackend(createGrokHost(), { nativeFactory });
     const session = backend.createSession(sessionConfig);
 
@@ -810,7 +810,7 @@ describe('GrokExecutionBackend', () => {
 
   it('encodes path-only Linked content without changing the Vault-root session CWD', async () => {
     const native = new FakeNativeConnection();
-    const nativeFactory: GrokExecutionNativeFactory = { create: jest.fn(() => native) };
+    const nativeFactory: GrokExecutionNativeFactory = { create: vi.fn(() => native) };
     const session = createBackend(
       createGrokHost(),
       { nativeFactory },
@@ -842,7 +842,7 @@ describe('GrokExecutionBackend', () => {
       sessionId: 'session-existing',
     };
     const host = createGrok45Host();
-    const mergeLiveModels = jest.fn(async (models: GrokDiscoveredModel[]) => {
+    const mergeLiveModels = vi.fn(async (models: GrokDiscoveredModel[]) => {
       persistGrok45Catalog(host, models);
       return { changed: true };
     });
@@ -896,7 +896,7 @@ describe('GrokExecutionBackend', () => {
       sessionId: 'session-existing',
     };
     const host = createGrok45Host();
-    const mergeLiveModels = jest.fn(async (models: GrokDiscoveredModel[]) => {
+    const mergeLiveModels = vi.fn(async (models: GrokDiscoveredModel[]) => {
       persistGrok45Catalog(host, models);
       return { changed: true };
     });
@@ -941,7 +941,7 @@ describe('GrokExecutionBackend', () => {
     });
     const host = createGrok45Host();
     persistGrok45Catalog(host);
-    const mergeLiveModels = jest.fn();
+    const mergeLiveModels = vi.fn();
     const session = createBackend(host, {
       modelCatalogCoordinator: { mergeLiveModels },
       nativeFactory: { create: () => native },
@@ -975,7 +975,7 @@ describe('GrokExecutionBackend', () => {
     });
     const host = createGrok45Host();
     persistGrok45Catalog(host);
-    const mergeLiveModels = jest.fn(async () => {
+    const mergeLiveModels = vi.fn(async () => {
       throw new Error('settings persistence failed');
     });
     const session = createBackend(host, {
@@ -1001,7 +1001,7 @@ describe('GrokExecutionBackend', () => {
     };
     const host = createGrok45Host();
     persistGrok45Catalog(host);
-    const mergeLiveModels = jest.fn(async () => {
+    const mergeLiveModels = vi.fn(async () => {
       throw new Error('settings persistence failed');
     });
     const session = createBackend(host, {
@@ -1019,7 +1019,7 @@ describe('GrokExecutionBackend', () => {
   it('persists live model updates and fences notifications from a quarantined native', async () => {
     const native = new FakeNativeConnection();
     native.promptImplementation = () => new Promise(() => {});
-    const mergeLiveModels = jest.fn(async () => ({ changed: true }));
+    const mergeLiveModels = vi.fn(async () => ({ changed: true }));
     const session = createBackend(createGrok45Host(), {
       modelCatalogCoordinator: { mergeLiveModels },
       nativeFactory: { create: () => native },
@@ -1156,7 +1156,7 @@ describe('GrokExecutionBackend', () => {
   it('keeps one loaded connection for dynamic model changes', async () => {
     const native = new FakeNativeConnection();
     const nativeFactory: GrokExecutionNativeFactory = {
-      create: jest.fn(() => native),
+      create: vi.fn(() => native),
     };
     const session = createBackend(
       createGrokHost(),
@@ -1190,7 +1190,7 @@ describe('GrokExecutionBackend', () => {
     const firstNative = new FakeNativeConnection();
     const secondNative = new FakeNativeConnection();
     const nativeFactory: GrokExecutionNativeFactory = {
-      create: jest.fn()
+      create: vi.fn()
         .mockReturnValueOnce(firstNative)
         .mockReturnValueOnce(secondNative),
     };
@@ -1255,7 +1255,7 @@ describe('GrokExecutionBackend', () => {
     const firstNative = new FakeNativeConnection();
     const secondNative = new FakeNativeConnection();
     const nativeFactory: GrokExecutionNativeFactory = {
-      create: jest.fn()
+      create: vi.fn()
         .mockReturnValueOnce(firstNative)
         .mockReturnValueOnce(secondNative),
     };
@@ -1434,7 +1434,7 @@ describe('GrokExecutionBackend', () => {
     const native = new FakeNativeConnection();
     native.promptImplementation = () => new Promise(() => {});
     let nativeOptions!: GrokExecutionNativeCreateOptions;
-    const requestApproval = jest.fn();
+    const requestApproval = vi.fn();
     const session = createBackend(createGrokHost(), {
       nativeFactory: { create: options => { nativeOptions = options; return native; } },
     }).createSession({
@@ -1468,7 +1468,7 @@ describe('GrokExecutionBackend', () => {
       const native = new FakeNativeConnection();
       native.promptImplementation = () => new Promise(() => {});
       let nativeOptions!: GrokExecutionNativeCreateOptions;
-      const requestApproval = jest.fn(async (request: { interactionId: string }) => ({
+      const requestApproval = vi.fn(async (request: { interactionId: string }) => ({
         decision: 'deny' as const,
         interactionId: request.interactionId,
       }));
@@ -1593,7 +1593,7 @@ describe('GrokExecutionBackend', () => {
 
   it('cancels a pre-aborted request without starting native work', async () => {
     const nativeFactory: GrokExecutionNativeFactory = {
-      create: jest.fn(() => new FakeNativeConnection()),
+      create: vi.fn(() => new FakeNativeConnection()),
     };
     const session = createBackend(
       createGrokHost(),
@@ -1627,7 +1627,7 @@ describe('GrokExecutionBackend', () => {
     const second = new FakeNativeConnection();
     first.promptImplementation = () => new Promise(() => {});
     const nativeFactory: GrokExecutionNativeFactory = {
-      create: jest.fn()
+      create: vi.fn()
         .mockReturnValueOnce(first)
         .mockReturnValueOnce(second),
     };
@@ -1780,7 +1780,7 @@ describe('GrokExecutionBackend', () => {
     };
     retryNative.promptImplementation = () => retryPrompt.promise;
     const nativeFactory: GrokExecutionNativeFactory = {
-      create: jest.fn()
+      create: vi.fn()
         .mockReturnValueOnce(failedNative)
         .mockReturnValueOnce(retryNative),
     };
@@ -1891,7 +1891,7 @@ describe('GrokExecutionBackend', () => {
       rejectPrompt?.(new Error('transport closed while disposing'));
       throw new Error('process shutdown failed after transport disposal');
     };
-    const sessionEvents = jest.fn();
+    const sessionEvents = vi.fn();
     const session = createBackend(
       createGrokHost(),
       { nativeFactory: { create: () => native } },
@@ -2250,7 +2250,7 @@ describe('GrokExecutionBackend', () => {
       await session.previewRewind('user-1', 'assistant-1');
       native.emitPermissionMode('yolo');
       // A replaced process reloads the session and republishes idle state.
-      jest.spyOn(native, 'isAlive').mockReturnValue(false);
+      vi.spyOn(native, 'isAlive').mockReturnValue(false);
       await session.previewRewind('user-1', 'assistant-1');
 
       expect(sessionEvents.map(event => event.type)).toEqual([
@@ -2528,7 +2528,7 @@ describe('GrokExecutionBackend', () => {
     }>();
     first.forkImplementation = () => fork.promise;
     const nativeFactory: GrokExecutionNativeFactory = {
-      create: jest.fn()
+      create: vi.fn()
         .mockReturnValueOnce(first)
         .mockReturnValueOnce(second),
     };
@@ -2702,7 +2702,7 @@ describe('GrokExecutionBackend', () => {
       },
       sessionId: 'session-existing',
     };
-    const mergeLiveModels = jest.fn();
+    const mergeLiveModels = vi.fn();
     let nativeOptions: GrokExecutionNativeCreateOptions | undefined;
     const request = {
       ...executionRequest(),
@@ -2834,7 +2834,7 @@ describe('GrokExecutionBackend', () => {
     const native = new FakeNativeConnection();
     native.promptImplementation = () => new Promise(() => {});
     let nativeOptions: GrokExecutionNativeCreateOptions | undefined;
-    jest.mocked(interactionPort.askUserQuestion).mockImplementation(async request => ({
+    vi.mocked(interactionPort.askUserQuestion).mockImplementation(async request => ({
       answers: { target: 'src' },
       interactionId: request.interactionId,
     }));
@@ -2882,7 +2882,7 @@ describe('GrokExecutionBackend', () => {
     const native = new FakeNativeConnection();
     native.promptImplementation = () => new Promise(() => {});
     let nativeOptions: GrokExecutionNativeCreateOptions | undefined;
-    jest.mocked(interactionPort.askUserQuestion).mockImplementation(async request => ({
+    vi.mocked(interactionPort.askUserQuestion).mockImplementation(async request => ({
       answers: JSON.parse('{"__proto__":["blue-id"],"Extras":["blue-id","red-id"]}'),
       interactionId: request.interactionId,
     }));
@@ -2932,7 +2932,7 @@ describe('GrokExecutionBackend', () => {
     const native = new FakeNativeConnection();
     native.promptImplementation = () => new Promise(() => {});
     let nativeOptions: GrokExecutionNativeCreateOptions | undefined;
-    jest.mocked(interactionPort.askUserQuestion).mockImplementation(async request => ({
+    vi.mocked(interactionPort.askUserQuestion).mockImplementation(async request => ({
       answers: JSON.parse('{"Color?":"blue-id"}'),
       interactionId: request.interactionId,
     }));
@@ -2964,7 +2964,7 @@ describe('GrokExecutionBackend', () => {
     });
     expect(JSON.stringify(result)).toBe('{"annotations":{"Color?":{"preview":"preview-blue"}},"answers":{"Color?":["Blue"]},"outcome":"accepted"}');
 
-    jest.mocked(interactionPort.askUserQuestion).mockImplementation(async request => ({
+    vi.mocked(interactionPort.askUserQuestion).mockImplementation(async request => ({
       answers: Object.create({ 'Color?': 'blue-id' }),
       interactionId: request.interactionId,
     }));
@@ -2982,7 +2982,7 @@ describe('GrokExecutionBackend', () => {
   it.each(['read_file', 'claudian_send_message'])('fails closed before native startup for allow-list containing %s', async name => {
     const fixture = sessionToolFixture();
     const nativeFactory: GrokExecutionNativeFactory = {
-      create: jest.fn(() => new FakeNativeConnection()),
+      create: vi.fn(() => new FakeNativeConnection()),
     };
     const session = createBackend(
       fixture.host,

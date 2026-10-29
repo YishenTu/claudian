@@ -9,9 +9,9 @@ import {
   getToolSummary,
 } from '@/features/chat/rendering/tools/toolPresentation';
 
-jest.mock('obsidian', () => ({
+vi.mock('obsidian', () => ({
   Platform: { resourcePathPrefix: 'app://local/' },
-  setIcon: jest.fn(),
+  setIcon: vi.fn(),
 }));
 
 // Helper to create a basic tool call
@@ -27,7 +27,7 @@ function createToolCall(overrides: Partial<ToolCallInfo> = {}): ToolCallInfo {
 
 describe('toolPresentation', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('getToolLabel', () => {

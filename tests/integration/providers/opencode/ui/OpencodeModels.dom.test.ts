@@ -1,9 +1,9 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import { rmSync, writeFileSync } from 'node:fs';
 
+import { axe } from '@test/helpers/accessibility';
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 import { OpencodeHTTPClient } from '@/providers/opencode/http/OpencodeHTTPClient';
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
@@ -12,15 +12,15 @@ import { createOpencodeSettingsTabRenderer } from '@/providers/opencode/ui/Openc
 
 import { createOpencodeHTTPMetadataFixture } from '../metadata/OpencodeHTTPMetadataFixture';
 
-jest.mock('obsidian', () => {
-  const controls = jest.requireActual('@test/helpers/ObsidianSettingsDOM');
+vi.mock('obsidian', async () => {
+  const controls = (await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM'));
   return { ...controls, Setting: class extends controls.Setting { setHeading() { return this; } } };
 });
 // Other settings controls are outside the discovery/display contract.
-jest.mock('@/shared/settings/CLIInstallationSetting', () => ({ renderCLIInstallationSetting: () => undefined }));
-jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection: () => undefined }));
-jest.mock('@/providers/opencode/ui/OpencodeMigrationNotice', () => ({ renderOpencodeMigrationNotice: () => () => undefined }));
-jest.mock('@/shared/settings/ProviderModelEnablementWarning', () => ({
+vi.mock('@/shared/settings/CLIInstallationSetting', () => ({ renderCLIInstallationSetting: () => undefined }));
+vi.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection: () => undefined }));
+vi.mock('@/providers/opencode/ui/OpencodeMigrationNotice', () => ({ renderOpencodeMigrationNotice: () => () => undefined }));
+vi.mock('@/shared/settings/ProviderModelEnablementWarning', () => ({
   renderLastEnabledProviderWarning: () => ({}),
   renderProviderModelEnablementWarning: () => ({ refresh: () => undefined }),
 }));
@@ -55,7 +55,7 @@ function setup() {
   } };
 }
 
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => vi.restoreAllMocks());
 
 it.each([true, false])('shows the native request failure and only its supplied error ref (%s), then permits retry', async hasRef => {
   const f = setup();
@@ -89,7 +89,7 @@ it('reports a request timeout without inventing an error ref or a successful emp
   const f = setup();
   writeFileSync(f.fixture.environment.CATALOG_FILE! + '.hang', '');
   const request = OpencodeHTTPClient.prototype.request;
-  jest.spyOn(OpencodeHTTPClient.prototype, 'request').mockImplementation(function (this: OpencodeHTTPClient, route, options = {}) {
+  vi.spyOn(OpencodeHTTPClient.prototype, 'request').mockImplementation(function (this: OpencodeHTTPClient, route, options = {}) {
     return request.call(this, route, { ...options, ...(route === '/api/model' ? { timeoutMs: 100 } : {}) });
   });
   expect(f.catalog.getSnapshot().status).toBe('idle');

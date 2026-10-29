@@ -1,7 +1,7 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 const mockRenderedSettingNames: string[] = [];
 const mockSettingDescriptionEls = new Map<string, MockContainer>();
@@ -14,21 +14,21 @@ const mockGitStatusElements: Array<{
   title: string;
 }> = [];
 
-type MockChainableComponent = Record<string, jest.Mock> & {
+type MockChainableComponent = Record<string, Mock> & {
   selectEl?: HTMLSelectElement;
 };
 
-jest.mock('obsidian', () => {
-  const obsidian = jest.requireActual('../../../__mocks__/obsidian');
+vi.mock('obsidian', async () => {
+  const obsidian = (await vi.importActual<typeof import('../../../__mocks__/obsidian')>('../../../__mocks__/obsidian'));
 
   class MockSetting {
     private name = '';
     readonly descEl = createContainer();
     readonly controlEl = {
-      createSpan: jest.fn(() => createGitStatusElement('control')),
+      createSpan: vi.fn(() => createGitStatusElement('control')),
     };
     readonly nameEl = {
-      createSpan: jest.fn(() => createGitStatusElement('name')),
+      createSpan: vi.fn(() => createGitStatusElement('name')),
     };
 
     constructor(_containerEl: HTMLElement) {}
@@ -88,7 +88,7 @@ jest.mock('obsidian', () => {
 
     addText(callback: (text: Record<string, unknown>) => void): this {
       const text = createTextComponent();
-      (text.onChange as jest.Mock).mockImplementation(
+      (text.onChange as Mock).mockImplementation(
         (handler: (value: string) => Promise<void>) => {
           mockTextChanges.set(this.name, handler);
           return text;
@@ -133,7 +133,7 @@ jest.mock('obsidian', () => {
       'setLimits',
       'setDynamicTooltip',
     ]) {
-      component[method] = jest.fn(() => component);
+      component[method] = vi.fn(() => component);
     }
     return component;
   }
@@ -153,8 +153,8 @@ jest.mock('obsidian', () => {
   };
 });
 
-const mockSkillsSettingsTab = jest.fn();
-jest.mock('@/features/agent-skills/SkillsSettingsTab', () => ({
+const mockSkillsSettingsTab = vi.fn();
+vi.mock('@/features/agent-skills/SkillsSettingsTab', () => ({
   SkillsSettingsTab: class MockSkillsSettingsTab {
     constructor(...args: unknown[]) { mockSkillsSettingsTab(...args); }
     flush(): void {}
@@ -163,11 +163,14 @@ jest.mock('@/features/agent-skills/SkillsSettingsTab', () => ({
 }));
 
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+import type { Mock } from 'vitest';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { ClaudianSettingTab } from '@/features/settings/ClaudianSettings';
 import { t } from '@/i18n/i18n';
+
+
 
 function createTab(enableDualPane: boolean): {
   tab: ClaudianSettingTab;
@@ -176,18 +179,18 @@ function createTab(enableDualPane: boolean): {
   const settings = { ...DEFAULT_CLAUDIAN_SETTINGS, enableDualPane };
   const plugin = {
     settings,
-    mutateSettings: jest.fn(async (mutation: (value: typeof settings) => void) => {
+    mutateSettings: vi.fn(async (mutation: (value: typeof settings) => void) => {
       mutation(settings);
     }),
-    getAllViews: jest.fn(() => [{ refreshDualPaneLayout: jest.fn() }]),
-    notifyAgentSkillsChanged: jest.fn(),
+    getAllViews: vi.fn(() => [{ refreshDualPaneLayout: vi.fn() }]),
+    notifyAgentSkillsChanged: vi.fn(),
     storage: {
-      getAdapter: jest.fn(() => ({})),
+      getAdapter: vi.fn(() => ({})),
     },
     providerHost: {
       settings,
-      getEnvironmentVariablesForScope: jest.fn(() => ''),
-      applyEnvironmentVariables: jest.fn(),
+      getEnvironmentVariablesForScope: vi.fn(() => ''),
+      applyEnvironmentVariables: vi.fn(),
     },
   };
 
@@ -212,35 +215,35 @@ function createContainer(options: { text?: string; cls?: string } = {}): MockCon
     children,
     classList: {
       contains: (name: string) => options?.cls?.split(' ').includes(name) ?? false,
-      add: jest.fn(),
-      remove: jest.fn(),
+      add: vi.fn(),
+      remove: vi.fn(),
     },
     ...options,
     click: () => listeners.get('click')?.(),
-    createSpan: jest.fn((childOptions?: { text?: string }) => {
+    createSpan: vi.fn((childOptions?: { text?: string }) => {
       const child = createContainer(childOptions);
       children.push(child);
       return child;
     }),
-    createEl: jest.fn((_tag: string, childOptions?: { text?: string }) => {
+    createEl: vi.fn((_tag: string, childOptions?: { text?: string }) => {
       const child = createContainer(childOptions);
       children.push(child);
       return child;
     }),
-    addEventListener: jest.fn((event: string, listener: () => void) => {
+    addEventListener: vi.fn((event: string, listener: () => void) => {
       listeners.set(event, listener);
     }),
-    addClass: jest.fn(),
-    removeClass: jest.fn(),
-    setAttribute: jest.fn((name: string, value: string) => {
+    addClass: vi.fn(),
+    removeClass: vi.fn(),
+    setAttribute: vi.fn((name: string, value: string) => {
       attributes.set(name, value);
     }),
-    toggleClass: jest.fn(),
+    toggleClass: vi.fn(),
     title: '',
-    empty: jest.fn(),
-    setText: jest.fn(),
+    empty: vi.fn(),
+    setText: vi.fn(),
   };
-  element.createDiv = jest.fn((childOptions?: { text?: string }) => {
+  element.createDiv = vi.fn((childOptions?: { text?: string }) => {
     const child = createContainer(childOptions);
     children.push(child);
     return child;
@@ -290,10 +293,10 @@ describe('ClaudianSettingTab display settings', () => {
   });
 
   it('shows title eligibility guidance and updates it after selection and catalog changes', async () => {
-    jest.spyOn(ProviderRegistry, 'getTitleGenerationModelOptions').mockReturnValue([
+    vi.spyOn(ProviderRegistry, 'getTitleGenerationModelOptions').mockReturnValue([
       { value: 'claude-code/sonnet', label: 'Claude: Sonnet' },
     ]);
-    const eligibility = jest.spyOn(ProviderRegistry, 'resolveTitleGenerationSelection')
+    const eligibility = vi.spyOn(ProviderRegistry, 'resolveTitleGenerationSelection')
       .mockImplementation(settings => settings.titleGenerationModel === 'claude-code/sonnet' ? { providerId: 'claude', model: 'claude-code/sonnet' } : null);
     const { tab, plugin } = createTab(true);
     plugin.settings.enableAutoTitleGeneration = true;
@@ -361,8 +364,8 @@ describe('ClaudianSettingTab display settings', () => {
 
   it('saves timestamp preferences through the application settings owner', async () => {
     const { tab, plugin } = createTab(true);
-    const firstView = { refreshMessageTimestamps: jest.fn() };
-    const secondView = { refreshMessageTimestamps: jest.fn() };
+    const firstView = { refreshMessageTimestamps: vi.fn() };
+    const secondView = { refreshMessageTimestamps: vi.fn() };
     plugin.getAllViews.mockReturnValue([firstView, secondView]);
     let finishSave!: () => void;
     plugin.mutateSettings.mockImplementation(async (mutation: (settings: typeof plugin.settings) => void) => {
@@ -398,7 +401,7 @@ describe('ClaudianSettingTab display settings', () => {
 
   it('rerenders display settings after dual-pane mode changes', async () => {
     const { tab, plugin } = createTab(true);
-    const update = jest.spyOn(tab, 'update').mockImplementation();
+    const update = vi.spyOn(tab, 'update').mockImplementation(() => undefined);
     (tab as any).renderGeneralTab(createContainer());
 
     await mockToggleChanges.get(t('settings.enableDualPane.name'))?.(false);
@@ -423,15 +426,15 @@ describe('ClaudianSettingTab display settings', () => {
   });
 
   it('keeps Provider initialization lazy and does not mutate chat selection on navigation', async () => {
-    jest.spyOn(ProviderRegistry, 'getRegisteredProviderIds')
+    vi.spyOn(ProviderRegistry, 'getRegisteredProviderIds')
       .mockReturnValue(['claude', 'codex']);
-    jest.spyOn(ProviderRegistry, 'getProviderDisplayName')
+    vi.spyOn(ProviderRegistry, 'getProviderDisplayName')
       .mockImplementation(providerId => providerId.toUpperCase());
-    jest.spyOn(ProviderRegistry, 'getTitleGenerationModelOptions').mockReturnValue([]);
-    const ensureInitialized = jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
+    vi.spyOn(ProviderRegistry, 'getTitleGenerationModelOptions').mockReturnValue([]);
+    const ensureInitialized = vi.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
       .mockResolvedValue(undefined);
     ensureInitialized.mockClear();
-    jest.spyOn(ProviderWorkspaceRegistry, 'getSettingsTabRenderer').mockReturnValue(null);
+    vi.spyOn(ProviderWorkspaceRegistry, 'getSettingsTabRenderer').mockReturnValue(null);
     const { tab, plugin } = createTab(true);
     renderSettingsTab(tab);
     expect(ensureInitialized).not.toHaveBeenCalled();
@@ -450,15 +453,15 @@ describe('ClaudianSettingTab display settings', () => {
   });
 
   it('initializes each Provider settings tab once and reuses its rendered content', async () => {
-    jest.spyOn(ProviderRegistry, 'getRegisteredProviderIds')
+    vi.spyOn(ProviderRegistry, 'getRegisteredProviderIds')
       .mockReturnValue(['claude', 'codex']);
-    jest.spyOn(ProviderRegistry, 'getProviderDisplayName')
+    vi.spyOn(ProviderRegistry, 'getProviderDisplayName')
       .mockImplementation(providerId => providerId.toUpperCase());
-    jest.spyOn(ProviderRegistry, 'getTitleGenerationModelOptions').mockReturnValue([]);
-    const ensureInitialized = jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
+    vi.spyOn(ProviderRegistry, 'getTitleGenerationModelOptions').mockReturnValue([]);
+    const ensureInitialized = vi.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
       .mockResolvedValue(undefined);
     ensureInitialized.mockClear();
-    jest.spyOn(ProviderWorkspaceRegistry, 'getSettingsTabRenderer').mockReturnValue(null);
+    vi.spyOn(ProviderWorkspaceRegistry, 'getSettingsTabRenderer').mockReturnValue(null);
     const { tab } = createTab(true);
     const container = createContainer();
     (tab as any).activeTab = 'providers';
@@ -479,17 +482,17 @@ describe('ClaudianSettingTab display settings', () => {
 
   it('collapses a disabled Provider tab and follows later enablement changes', async () => {
     let enabled = false;
-    jest.spyOn(ProviderRegistry, 'getRegisteredProviderIds').mockReturnValue(['codex']);
-    jest.spyOn(ProviderRegistry, 'getProviderDisplayName').mockReturnValue('CODEX');
-    jest.spyOn(ProviderRegistry, 'getTitleGenerationModelOptions').mockReturnValue([]);
-    jest.spyOn(ProviderRegistry, 'isEnabled').mockImplementation(() => enabled);
-    jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized').mockResolvedValue(undefined);
+    vi.spyOn(ProviderRegistry, 'getRegisteredProviderIds').mockReturnValue(['codex']);
+    vi.spyOn(ProviderRegistry, 'getProviderDisplayName').mockReturnValue('CODEX');
+    vi.spyOn(ProviderRegistry, 'getTitleGenerationModelOptions').mockReturnValue([]);
+    vi.spyOn(ProviderRegistry, 'isEnabled').mockImplementation(() => enabled);
+    vi.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized').mockResolvedValue(undefined);
     let notify: ((providerId: 'codex') => void) | null = null;
-    jest.spyOn(ProviderWorkspaceRegistry, 'getSettingsTabRenderer').mockReturnValue({
+    vi.spyOn(ProviderWorkspaceRegistry, 'getSettingsTabRenderer').mockReturnValue({
       render: (_container, context) => { notify = context.notifyProviderModelOptionsChanged; },
     });
     const { tab, plugin } = createTab(true);
-    plugin.notifyProviderChatOptionsChanged = jest.fn();
+    plugin.notifyProviderChatOptionsChanged = vi.fn();
     const container = createContainer();
     (tab as any).activeTab = 'providers';
 
@@ -517,23 +520,23 @@ function findByClass(root: MockContainer, cls: string): MockContainer | null {
 }
 
 it('batches a burst of text edits into one settings mutation and flushes on teardown', async () => {
-  jest.useFakeTimers();
+  vi.useFakeTimers();
   const { tab, plugin } = createTab(false);
   const cleanup = (tab as any).renderSettings(createContainer());
   try {
     const change = mockTextChanges.get(t('settings.userName.name'))!;
     for (let index = 0; index < 20; index++) await change(`Name ${index}`);
     expect(plugin.mutateSettings).not.toHaveBeenCalled();
-    await jest.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(500);
     expect(plugin.mutateSettings).toHaveBeenCalledTimes(1);
     expect(plugin.settings.userName).toBe('Name 19');
     await change('Last edit');
     cleanup();
     await Promise.resolve();
     expect(plugin.settings.userName).toBe('Last edit');
-    await jest.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(plugin.mutateSettings).toHaveBeenCalledTimes(2);
-  } finally { cleanup(); jest.useRealTimers(); }
+  } finally { cleanup(); vi.useRealTimers(); }
 });
 
 it('offers no Projects tab; the doc folder is chosen per project', () => {

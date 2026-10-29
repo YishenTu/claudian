@@ -1,7 +1,7 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 import { NavigationController } from '@/features/chat/navigation/NavigationController';
 
@@ -10,7 +10,7 @@ Object.assign(HTMLElement.prototype, {
   removeClass(this: HTMLElement, name: string) { this.classList.remove(name); },
 });
 
-afterEach(() => { jest.restoreAllMocks(); document.body.replaceChildren(); });
+afterEach(() => { vi.restoreAllMocks(); document.body.replaceChildren(); });
 
 it('stops held-key scrolling when its window blurs and waits for another keydown', async () => {
   const host = document.body.appendChild(document.createElement('div'));
@@ -23,16 +23,16 @@ it('stops held-key scrolling when its window blurs and waits for another keydown
   other.title = 'Other window';
   const frames = new Map<number, FrameRequestCallback>();
   let frameId = 0;
-  jest.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
     frames.set(++frameId, callback); return frameId;
   });
-  jest.spyOn(window, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id); });
+  vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id); });
   const advanceFrame = () => {
     const pending = [...frames.values()]; frames.clear();
     for (const frame of pending) frame(performance.now());
   };
-  const addListener = jest.spyOn(window, 'addEventListener');
-  const removeListener = jest.spyOn(window, 'removeEventListener');
+  const addListener = vi.spyOn(window, 'addEventListener');
+  const removeListener = vi.spyOn(window, 'removeEventListener');
   const controller = new NavigationController({ getMessagesEl: () => messages, getInputEl: () => input,
     getSettings: () => ({ scrollUpKey: 'w', scrollDownKey: 's', focusInputKey: 'i' }), isStreaming: () => false });
   try {

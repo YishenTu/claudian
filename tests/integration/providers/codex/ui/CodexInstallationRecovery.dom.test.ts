@@ -1,10 +1,10 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@test/helpers/ObsidianSettingsDOM';
 
+import { axe } from '@test/helpers/accessibility';
 import type * as SettingsDOM from '@test/helpers/ObsidianSettingsDOM';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { getInstallationKey } from '@/core/device/InstallationKey';
@@ -16,8 +16,8 @@ let mockPending: Promise<void>;
 let mockError: unknown;
 const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
 
-jest.mock('obsidian', () => {
-  const actual = jest.requireActual<typeof SettingsDOM>('../../../../helpers/ObsidianSettingsDOM');
+vi.mock('obsidian', async () => {
+  const actual = (await vi.importActual<typeof SettingsDOM>('../../../../helpers/ObsidianSettingsDOM'));
   return {
     ...actual,
     Setting: class extends actual.Setting {
@@ -46,17 +46,17 @@ jest.mock('obsidian', () => {
     },
   };
 });
-jest.mock('@/providers/codex/runtime/CodexCLIInstallation', () => ({
+vi.mock('@/providers/codex/runtime/CodexCLIInstallation', () => ({
   inspectCodexInstallation: async () => ({ path: null, version: null, source: 'auto' }),
 }));
-jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection() {} }));
-jest.mock('@/shared/settings/ProviderModelsSection', () => ({
+vi.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection() {} }));
+vi.mock('@/shared/settings/ProviderModelsSection', () => ({
   renderProviderModelsSection: () => ({ refresh() {}, dispose() {} }),
 }));
 
 afterEach(() => {
   Object.defineProperty(process, 'platform', originalPlatform);
-  jest.restoreAllMocks(); document.body.replaceChildren();
+  vi.restoreAllMocks(); document.body.replaceChildren();
 });
 
 it.each([
@@ -69,7 +69,7 @@ it.each([
   const settings = { providerConfigs: { codex: {
     enabled: true, installationMethodsByHost: { [key]: initial }, wslDistroOverridesByHost: { [key]: 'Ubuntu' },
   } } };
-  const persist = jest.fn(async () => { if (outcome === 'rejected') throw new Error('Disk full'); });
+  const persist = vi.fn(async () => { if (outcome === 'rejected') throw new Error('Disk full'); });
   const coordinator = new SettingsCoordinator(settings, persist);
   const container = document.body.createDiv();
   mockError = undefined;

@@ -3,9 +3,9 @@ import { createMockEl } from '@test/helpers/MockElement';
 import type { ToolCallInfo } from '@/core/types';
 import { renderStoredToolCall } from '@/features/chat/rendering/tools/ToolCallRenderer';
 
-jest.mock('obsidian', () => ({
+vi.mock('obsidian', () => ({
   Platform: { resourcePathPrefix: 'app://local/' },
-  setIcon: jest.fn(),
+  setIcon: vi.fn(),
 }));
 
 // Helper to create a basic tool call
@@ -21,7 +21,7 @@ function createToolCall(overrides: Partial<ToolCallInfo> = {}): ToolCallInfo {
 
 describe('toolExpandedContent', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('result presentation contracts', () => {

@@ -59,18 +59,18 @@ function makeHost() {
   const host = {
     settings, mutateSettings: coordinator.mutate.bind(coordinator),
     mutateSettingsConditionally: coordinator.mutateConditionally.bind(coordinator),
-    notifyProviderChatOptionsChanged: jest.fn(),
+    notifyProviderChatOptionsChanged: vi.fn(),
     getRuntimeHost: (id: string) => createProviderRuntimeHost(host, coordinator, id),
   } as unknown as ProviderHost;
   return { host, storage, read: () => JSON.parse(content) };
 }
 
 beforeEach(() => {
-  jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized').mockResolvedValue();
+  vi.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized').mockResolvedValue();
 });
 afterEach(() => {
   for (const { id } of cases) ProviderWorkspaceRegistry.setServices(id, undefined);
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
 });
 
 it.each([false, true])('repairs saved Claude family aliases through startup discovery and reload (cached: %s)', async cached => {
@@ -94,7 +94,7 @@ it.each([false, true])('repairs saved Claude family aliases through startup disc
   expect(read().providerConfigs.claude.selectedModels.map((model: { value: string }) => model.value))
     .toEqual(cached ? ['opus[1m]', 'claude-fable-5-10', 'sonnet', 'haiku'] : []);
   Object.assign(host.settings, await storage.load());
-  const probe = jest.fn(async () => ({ models: rows, outputStyles: [] }));
+  const probe = vi.fn(async () => ({ models: rows, outputStyles: [] }));
   const claudeHost = host.getRuntimeHost('claude');
   const catalog = createClaudeModels(claudeHost, signal => discoverClaudeModels(claudeHost, signal, probe));
   ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: catalog });
@@ -128,7 +128,7 @@ it('keeps saved family aliases enabled after discovering a newer unselected vers
     });
   });
   const selected = { value: 'claude-fable-5-10', label: 'Selected Fable', description: '', supportedEffortLevels: ['high'] as const };
-  const probe = jest.fn()
+  const probe = vi.fn()
     .mockResolvedValueOnce({ models: [selected], outputStyles: [] })
     .mockResolvedValueOnce({ models: [selected, {
       value: 'claude-fable-6-0', label: 'New Fable', description: '', resolvedModel: 'claude-fable-6-0', supportedEffortLevels: ['low'],
@@ -182,7 +182,7 @@ it.each(cases.flatMap(entry => [false, true].map(deselectDuringQuery => ({ ...en
         supportsReasoning: true, reasoningEfforts: [{ value: 'high', label: 'High' }] }] });
     writeGrokCatalog(host.settings, { defaultModelId: selectedIds[0], fingerprint: 'old', refreshedAt: 0, models: [] });
   } else config.discoveredModels = [];
-  const discover = jest.fn(async () => {
+  const discover = vi.fn(async () => {
     await host.mutateSettings(settings => {
       if (deselectDuringQuery) update[id](settings, { visibleModels: [] });
       const currentSelection = settings.providerConfigs[id]!.visibleModels;
@@ -230,9 +230,9 @@ it.each(['deselected', 'disabled', 'cancelled'] as const)('rechecks %s state aft
   const { host } = makeHost();
   cases[0].populate(host.settings);
   const controller = new AbortController();
-  const refresh = jest.fn();
+  const refresh = vi.fn();
   ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: { refresh } as any });
-  jest.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockImplementation(async () => {
+  vi.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockImplementation(async () => {
     if (change === 'deselected') updateClaudeProviderSettings(host.settings, { visibleModels: [] });
     if (change === 'disabled') updateClaudeProviderSettings(host.settings, { enabled: false });
     if (change === 'cancelled') controller.abort();
@@ -245,7 +245,7 @@ it('preserves incomplete selections after a failed query and retries on a later 
   const { host } = makeHost();
   cases[0].populate(host.settings);
   const before = structuredClone(host.settings);
-  const refresh = jest.fn().mockRejectedValue(new Error('CLI unavailable'));
+  const refresh = vi.fn().mockRejectedValue(new Error('CLI unavailable'));
   ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: { refresh } as any });
   await migrateSelectedModelMetadata(host, new AbortController().signal);
   await migrateSelectedModelMetadata(host, new AbortController().signal);
@@ -304,7 +304,7 @@ it('cancels an active native query on unload', async () => {
   let aborted = false;
   const catalog = new ProviderModelCatalogController({
     providerName: 'Claude',
-    store: documentStore(host, () => ({ enabled: true, selectedIds: ['sonnet'], models: [], aliases: {} }), jest.fn()),
+    store: documentStore(host, () => ({ enabled: true, selectedIds: ['sonnet'], models: [], aliases: {} }), vi.fn()),
     discover: signal => new Promise(resolve => {
       signal.addEventListener('abort', () => { aborted = true; resolve({ changed: false }); }, { once: true });
       started();

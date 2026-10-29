@@ -105,7 +105,7 @@ describe('Codex models', () => {
     ['GPT-Reserve', 'gpt-reserve', 'GPT-Reserve'],
     ['Codex Auto Review', 'codex-auto-review', 'Codex Auto Review'],
     [undefined, 'gpt-6-astra', 'GPT-6 Astra'],
-  ])('displays app-server name %p for %s as %p', (displayName, model, expected) => {
+  ])('displays app-server name %o for %s as %o', (displayName, model, expected) => {
     expect(normalizeCodexDiscoveredModels([{ ...rawModels[0], id: model, model, displayName }])[0]?.displayName)
       .toBe(expected);
   });

@@ -18,9 +18,9 @@ it('discovers native models lazily and preserves explicit selection order and un
   const settings: any = { providerConfigs: { deepseek: { enabled: true, visibleModels: [second, first], preferredReasoningByModel: { [second]: 'max' } } } };
   const registry = new ProviderExecutionLifecycleRegistry();
   const host = { settings, workingDirectory: '/vault', executionLifecycleRegistry: registry,
-    getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: jest.fn(),
+    getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: vi.fn(),
   } as unknown as ProviderHost;
-  const start = jest.fn(async () => ({ profile: 'web' as const, client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} }));
+  const start = vi.fn(async () => ({ profile: 'web' as const, client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} }));
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
     workspace = createDeepSeekWorkspaceServices(withRuntimeHosts(host), start);
@@ -71,9 +71,9 @@ it('lists vault skills for the dropdown from saved native sessions without activ
   const settings: any = { providerConfigs: { deepseek: { enabled: true, codeMode: true } } };
   const registry = new ProviderExecutionLifecycleRegistry();
   const host = { settings, workingDirectory: '/vault', executionLifecycleRegistry: registry,
-    getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: jest.fn(),
+    getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: vi.fn(),
   } as unknown as ProviderHost;
-  const start = jest.fn(async () => ({ profile: 'web' as const, client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} }));
+  const start = vi.fn(async () => ({ profile: 'web' as const, client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} }));
   // Native list order is not recency order; the newest chat root in the vault owns the catalog.
   const rows = [
     { sessionId: 'older-chat', updatedAt: 1, agentAvailable: false, running: false, blank: false, cwd: '/vault' },
@@ -122,12 +122,12 @@ it('stops the shared Host before a provider transition and restarts it lazily wi
   const registry = new ProviderExecutionLifecycleRegistry();
   let cliPath = '/bin/dsh-before';
   const host = { settings, workingDirectory: '/vault', executionLifecycleRegistry: registry,
-    getResolvedProviderCliPath: async () => cliPath, notifyProviderChatOptionsChanged: jest.fn(),
+    getResolvedProviderCliPath: async () => cliPath, notifyProviderChatOptionsChanged: vi.fn(),
   } as unknown as ProviderHost;
   peer.onCall = method => method === 'session/list' ? { items: [] } : `${method} answered`;
   const launches: Array<{ cliPath: string; home?: string; presetPlugins: unknown }> = [];
   let disposed = 0;
-  const start = jest.fn(async (options: { cliPath: string; environment: NodeJS.ProcessEnv; presetPlugins?: unknown }) => {
+  const start = vi.fn(async (options: { cliPath: string; environment: NodeJS.ProcessEnv; presetPlugins?: unknown }) => {
     launches.push({ cliPath: options.cliPath, home: options.environment.DSH_HOME, presetPlugins: options.presetPlugins });
     const client = await peer.connect();
     return { profile: 'web' as const, client, onExit: () => () => {}, dispose: async () => { client.dispose(); disposed++; }, writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} };
@@ -160,9 +160,9 @@ it('mirrors Claudian archive state onto native sessions in this Host store', asy
   const peer = new NativePeer(); await peer.open();
   const registry = new ProviderExecutionLifecycleRegistry();
   const host = { settings: { providerConfigs: { deepseek: { enabled: true } } }, workingDirectory: '/vault', executionLifecycleRegistry: registry,
-    getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: jest.fn(),
+    getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: vi.fn(),
   } as unknown as ProviderHost;
-  const start = jest.fn(async () => ({ profile: 'web' as const, client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} }));
+  const start = vi.fn(async () => ({ profile: 'web' as const, client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} }));
   peer.onCall = (method, args) => {
     if (method === 'session/list') return { items: [] };
     if (args.request?.sessionId === 'gone') throw Object.assign(new Error('no such session'), { code: 'session/not-found' });
@@ -205,10 +205,10 @@ it('lets an admitted archive finish before a provider transition stops the Host'
   const peer = new NativePeer(); await peer.open();
   const registry = new ProviderExecutionLifecycleRegistry();
   const host = { settings: { providerConfigs: { deepseek: { enabled: true } } }, workingDirectory: '/vault', executionLifecycleRegistry: registry,
-    getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: jest.fn(),
+    getResolvedProviderCliPath: async () => '/bin/dsh', notifyProviderChatOptionsChanged: vi.fn(),
   } as unknown as ProviderHost;
   let disposed = 0;
-  const start = jest.fn(async () => {
+  const start = vi.fn(async () => {
     const client = await peer.connect();
     return { profile: 'web' as const, client, onExit: () => () => {}, dispose: async () => { client.dispose(); disposed++; }, writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} };
   });

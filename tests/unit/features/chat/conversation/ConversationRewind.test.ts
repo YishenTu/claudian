@@ -1,15 +1,18 @@
 import { holdResponse } from '@test/helpers/ConversationPorts';
 import { createConversationControllerDeps } from '@test/helpers/features/chat/ConversationControllerFixture';
 import { Notice } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
 import { confirm } from '@/shared/modals/ConfirmModal';
 
-jest.mock('@/shared/modals/ConfirmModal', () => ({
-  confirm: jest.fn().mockResolvedValue(true),
+
+
+vi.mock('@/shared/modals/ConfirmModal', () => ({
+  confirm: vi.fn().mockResolvedValue(true),
 }));
 
-const mockNotice = Notice as jest.Mock;
+const mockNotice = Notice as Mock;
 
 describe('ConversationRewind', () => {
   let controller: ConversationController;
@@ -17,10 +20,10 @@ describe('ConversationRewind', () => {
   let mockCoordinator: any;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockCoordinator = {
-      previewRewind: jest.fn().mockResolvedValue({ canRewind: true }),
-      rewind: jest.fn().mockResolvedValue({ canRewind: true, filesChanged: ['a.ts'] }),
+      previewRewind: vi.fn().mockResolvedValue({ canRewind: true }),
+      rewind: vi.fn().mockResolvedValue({ canRewind: true, filesChanged: ['a.ts'] }),
     };
     deps = createConversationControllerDeps({
       getExecutionCoordinator: () => mockCoordinator,
@@ -45,7 +48,7 @@ describe('ConversationRewind', () => {
 
   it('should initialize a cold conversation execution before previewing rewind', async () => {
     let coordinator: typeof mockCoordinator | null = null;
-    const ensureExecutionInitialized = jest.fn().mockImplementation(async () => {
+    const ensureExecutionInitialized = vi.fn().mockImplementation(async () => {
       coordinator = mockCoordinator;
       return true;
     });
@@ -74,7 +77,7 @@ describe('ConversationRewind', () => {
 
   it('should reject a second rewind while the first preview is pending', async () => {
     const previewResolvers: Array<(value: { canRewind: true }) => void> = [];
-    mockCoordinator.previewRewind = jest.fn().mockImplementation(() => (
+    mockCoordinator.previewRewind = vi.fn().mockImplementation(() => (
       new Promise(resolve => { previewResolvers.push(resolve); })
     ));
     deps.state.currentConversationId = 'conv-1';
@@ -202,7 +205,7 @@ describe('ConversationRewind', () => {
       { id: 'm3', role: 'assistant', content: 'resp', timestamp: 3, assistantMessageId: 'resp-a' },
     ];
 
-    const truncateSpy = jest.spyOn(deps.state, 'truncateAt');
+    const truncateSpy = vi.spyOn(deps.state, 'truncateAt');
 
     await controller.rewind('m2');
 
@@ -211,7 +214,7 @@ describe('ConversationRewind', () => {
       expect.stringContaining('cannot be undone'),
       'Rewind',
     );
-    expect((confirm as jest.Mock).mock.calls[0][1]).not.toContain('does not affect');
+    expect((confirm as Mock).mock.calls[0][1]).not.toContain('does not affect');
     expect(mockCoordinator.rewind).toHaveBeenCalledWith('user-uuid', 'prev-a', 'code-and-conversation');
     expect(truncateSpy).toHaveBeenCalledWith('m2');
     expect(deps.state.usage).toBeNull();
@@ -317,7 +320,7 @@ describe('ConversationRewind', () => {
       { id: 'm2', role: 'user', content: 'test', timestamp: 2, userMessageId: 'user-uuid' },
       { id: 'm3', role: 'assistant', content: 'resp', timestamp: 3, assistantMessageId: 'resp-a' },
     ];
-    mockCoordinator.previewRewind = jest.fn().mockResolvedValue({
+    mockCoordinator.previewRewind = vi.fn().mockResolvedValue({
       canRewind: true,
       conflicts: [{ conflictType: 'modified_externally', path: 'notes/conflicted.md' }],
       filesChanged: ['notes/conflicted.md'],
@@ -335,7 +338,7 @@ describe('ConversationRewind', () => {
       expect.stringContaining('notes/conflicted.md'),
       'Rewind',
     );
-    expect((confirm as jest.Mock).mock.calls[0][1]).toContain('overwritten');
+    expect((confirm as Mock).mock.calls[0][1]).toContain('overwritten');
     expect(mockCoordinator.rewind).toHaveBeenCalled();
   });
 
@@ -346,7 +349,7 @@ describe('ConversationRewind', () => {
       { id: 'm2', role: 'user', content: 'test', timestamp: 2, userMessageId: 'user-uuid' },
       { id: 'm3', role: 'assistant', content: 'resp', timestamp: 3, assistantMessageId: 'resp-a' },
     ];
-    mockCoordinator.previewRewind = jest.fn().mockResolvedValue({
+    mockCoordinator.previewRewind = vi.fn().mockResolvedValue({
       canRewind: false,
       error: 'Checkpoint is no longer available',
     });
@@ -372,7 +375,7 @@ describe('ConversationRewind', () => {
 
     await controller.rewind('m1');
 
-    const updates = (deps.plugin.updateConversation as jest.Mock).mock.calls[0][1];
+    const updates = (deps.plugin.updateConversation as Mock).mock.calls[0][1];
     expect(updates).toEqual(expect.objectContaining({
       messages: [],
       resumeAtMessageId: undefined,
@@ -388,7 +391,7 @@ describe('ConversationRewind', () => {
       { id: 'm2', role: 'user', content: 'test', timestamp: 2, userMessageId: 'u1' },
       { id: 'm3', role: 'assistant', content: '', timestamp: 3, assistantMessageId: 'a2' },
     ];
-    (confirm as jest.Mock).mockResolvedValueOnce(false);
+    (confirm as Mock).mockResolvedValueOnce(false);
 
     await controller.rewind('m2');
 
@@ -403,9 +406,9 @@ describe('ConversationRewind', () => {
       { id: 'm2', role: 'user', content: 'test', timestamp: 2, userMessageId: 'u1' },
       { id: 'm3', role: 'assistant', content: '', timestamp: 3, assistantMessageId: 'a2' },
     ];
-    (confirm as jest.Mock).mockImplementationOnce(async () => {
+    (confirm as Mock).mockImplementationOnce(async () => {
       // Rewind closes turn admission, so only an outside owner change can make the tab busy here.
-      jest.spyOn(deps.session, 'hasActiveTurn', 'get').mockReturnValue(true);
+      vi.spyOn(deps.session, 'hasActiveTurn', 'get').mockReturnValue(true);
       return true;
     });
 
@@ -423,7 +426,7 @@ describe('ConversationRewind', () => {
       { id: 'm3', role: 'assistant', content: 'resp', timestamp: 3, assistantMessageId: 'resp-a' },
     ];
 
-    (deps.plugin.updateConversation as jest.Mock).mockRejectedValueOnce(new Error('Save failed'));
+    (deps.plugin.updateConversation as Mock).mockRejectedValueOnce(new Error('Save failed'));
 
     await controller.rewind('m2');
 

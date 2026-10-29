@@ -52,7 +52,7 @@ it('scans fragmented records once instead of rescanning the accumulated prefix',
   const stop = subscribePiJSONLLines(stream, line => lines.push(line));
   const original = String.prototype.indexOf;
   let scanned = 0;
-  const spy = jest.spyOn(String.prototype, 'indexOf').mockImplementation(function (this: string, search, position) {
+  const spy = vi.spyOn(String.prototype, 'indexOf').mockImplementation(function (this: string, search, position) {
     if (search === '\n') scanned += this.length - (position ?? 0);
     return original.call(this, search, position);
   });

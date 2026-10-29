@@ -32,22 +32,22 @@ export function createClaudianView(options: ClaudianViewHarnessOptions = {}): an
     app: {
       vault: {
         getAbstractFileByPath: () => null,
-        offref: jest.fn(),
-        on: jest.fn((name: string) => ({ name })),
+        offref: vi.fn(),
+        on: vi.fn((name: string) => ({ name })),
       },
       workspace: {
         layoutReady: true,
-        onLayoutReady: jest.fn((callback: () => void) => callback()),
-        on: jest.fn((name: string) => ({ name })),
-        requestSaveLayout: Object.assign(jest.fn(), { run: jest.fn() }),
+        onLayoutReady: vi.fn((callback: () => void) => callback()),
+        on: vi.fn((name: string) => ({ name })),
+        requestSaveLayout: Object.assign(vi.fn(), { run: vi.fn() }),
       },
-      metadataCache: { on: jest.fn((name: string) => ({ name })) },
+      metadataCache: { on: vi.fn((name: string) => ({ name })) },
     },
     getAllViews: () => [],
     getConversationList: () => [],
     getConversationSummary: () => null,
     findConversationAcrossViews: () => null,
-    registerZenModeSource: jest.fn(() => jest.fn()),
+    registerZenModeSource: vi.fn(() => vi.fn()),
     settings: {},
     ...options.plugin,
   };
@@ -56,9 +56,9 @@ export function createClaudianView(options: ClaudianViewHarnessOptions = {}): an
     plugin as unknown as ChatFeatureHost,
   ) as any;
   Object.assign(view, {
-    app: { scope: new Scope(), workspace: { on: jest.fn(), offref: jest.fn() }, ...options.app },
-    registerDomEvent: jest.fn(),
-    registerEvent: jest.fn(),
+    app: { scope: new Scope(), workspace: { on: vi.fn(), offref: vi.fn() }, ...options.app },
+    registerDomEvent: vi.fn(),
+    registerEvent: vi.fn(),
     containerEl: options.containerEl ?? createMockEl(),
     contentEl: options.contentEl ?? createMockEl(),
     ...(options.tabManager ? { tabManager: options.tabManager } : {}),

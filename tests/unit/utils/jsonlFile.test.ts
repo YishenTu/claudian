@@ -1,14 +1,15 @@
-import type * as fsType from 'fs';
-import type * as osType from 'os';
-import type * as pathType from 'path';
-import type * as zlibType from 'zlib';
+const actualModule0 = await import('fs');
+const actualModule1 = await import('os');
+const actualModule2 = await import('path');
+const actualModule3 = await import('zlib');
 
-const fs = jest.requireActual<typeof fsType>('fs');
-const os = jest.requireActual<typeof osType>('os');
-const path = jest.requireActual<typeof pathType>('path');
-const { zstdCompressSync } = jest.requireActual<typeof zlibType>('zlib');
+const fs = actualModule0;
+const os = actualModule1;
+const path = actualModule2;
+const { zstdCompressSync } = actualModule3;
 
 import { forEachJSONLLine } from '@/utils/jsonlFile';
+
 
 describe('forEachJSONLLine', () => {
   let dir: string;
@@ -64,14 +65,12 @@ describe('forEachJSONLLine', () => {
   });
 
   it('rejects compressed files cleanly when the host lacks Zstandard support', async () => {
-    const uncaught = jest.fn();
+    const uncaught = vi.fn();
     process.on('uncaughtException', uncaught);
     try {
-      let readWithoutZstd: typeof forEachJSONLLine = forEachJSONLLine;
-      jest.isolateModules(() => {
-        jest.doMock('node:zlib', () => ({ ...jest.requireActual<typeof zlibType>('zlib'), createZstdDecompress: undefined }));
-        ({ forEachJSONLLine: readWithoutZstd } = jest.requireActual<{ forEachJSONLLine: typeof forEachJSONLLine }>('@/utils/jsonlFile'));
-      });
+      vi.resetModules();
+      vi.doMock('node:zlib', async () => ({ ...await vi.importActual<typeof import('node:zlib')>('node:zlib'), createZstdDecompress: undefined }));
+      const { forEachJSONLLine: readWithoutZstd } = await import('@/utils/jsonlFile');
       await expect(readWithoutZstd(path.join(dir, 'missing.jsonl.zst'), () => {}))
         .rejects.toThrow('Reading compressed history requires a newer Obsidian installer.');
       // A file opened before the capability check would report ENOENT after the rejection.
@@ -79,7 +78,8 @@ describe('forEachJSONLLine', () => {
       expect(uncaught).not.toHaveBeenCalled();
     } finally {
       process.off('uncaughtException', uncaught);
-      jest.dontMock('node:zlib');
+      vi.doUnmock('node:zlib');
+      vi.resetModules();
     }
   });
 

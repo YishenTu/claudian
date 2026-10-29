@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';

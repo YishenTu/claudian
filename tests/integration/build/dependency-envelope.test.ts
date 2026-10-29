@@ -1,11 +1,14 @@
+const actualModule0 = await import('node:zlib');
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import type * as zlibType from 'node:zlib';
 
 import { build, stop } from 'esbuild';
 
 import * as compressedStaticAssetsHelpers from '../../../scripts/compressedStaticAssets.js';
 import * as desktopRuntimeAliasHelpers from '../../../scripts/desktopRuntimeAliases.js';
+
 
 const { createCompressedStaticAssetsPlugin } = compressedStaticAssetsHelpers;
 const { createDesktopRuntimeAliases } = desktopRuntimeAliasHelpers;
@@ -42,7 +45,7 @@ describe('Desktop dependency envelope', () => {
     const output = result.outputFiles[0].text;
     const module = { exports: [] as unknown[] };
     const decompressed: unknown[] = [];
-    const zlib = jest.requireActual<typeof zlibType>('node:zlib');
+    const zlib = actualModule0;
     Function('module', 'exports', 'require', output)(module, module.exports, (id: string) => id === 'node:zlib' ? {
       ...zlib,
       brotliDecompressSync: (input: Buffer) => {
@@ -50,7 +53,7 @@ describe('Desktop dependency envelope', () => {
         decompressed.push(JSON.parse(bytes.toString('utf8')));
         return bytes;
       },
-    } : jest.requireActual(id));
+    } : require(id));
     expect(decompressed).toEqual(localeFiles.map(file => JSON.parse(readFileSync(path.join(localeDirectory, file), 'utf8'))));
     expect(module.exports).toEqual(localeFiles.map(file => JSON.parse(readFileSync(path.join(localeDirectory, file), 'utf8'))));
   });

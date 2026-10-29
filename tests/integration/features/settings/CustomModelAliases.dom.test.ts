@@ -1,11 +1,11 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 import '@test/helpers/ObsidianSettingsDOM';
 
 import { deserialize, serialize } from 'node:v8';
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Notice } from 'obsidian';
 
 import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
@@ -38,7 +38,7 @@ it.each(['Enter', 'Escape'])('leaves composing %s to the custom model alias edit
     settings,
     getActiveEnvironmentVariables: () => 'ANTHROPIC_MODEL=custom-model',
     mutateSettings: coordinator.mutate.bind(coordinator),
-    notifyProviderChatOptionsChanged: jest.fn(),
+    notifyProviderChatOptionsChanged: vi.fn(),
     storage: { getAdapter: () => ({}) },
   };
   const tab = new ClaudianSettingTab({} as any, {} as any, plugin as any);
@@ -74,7 +74,7 @@ it('keeps the latest alias edit when it restores the committed value during a pe
   const coordinator = new SettingsCoordinator(settings, async () => {
     if (++writes === 1) { started(); await gate; }
   });
-  const notify = jest.fn();
+  const notify = vi.fn();
   const plugin = {
     settings,
     getActiveEnvironmentVariables: () => 'ANTHROPIC_MODEL=custom-model',
@@ -113,7 +113,7 @@ it('persists and clears prototype-named overrides through the general custom mod
   const plugin = {
     settings, mutateSettings: coordinator.mutate.bind(coordinator),
     getActiveEnvironmentVariables: () => 'ANTHROPIC_MODEL=__proto__\nANTHROPIC_DEFAULT_SONNET_MODEL=constructor',
-    notifyProviderChatOptionsChanged: jest.fn(), storage: { getAdapter: () => adapter },
+    notifyProviderChatOptionsChanged: vi.fn(), storage: { getAdapter: () => adapter },
   };
   const tab = new ClaudianSettingTab({} as any, {} as any, plugin as any);
   const container = document.body.appendChild(document.createElement('div'));
@@ -164,12 +164,12 @@ it('persists and clears prototype-named overrides through the general custom mod
 
 it('retains a failed custom alias across rerender and allows retry', async () => {
   const settings = { providerConfigs: { claude: { modelAliases: {} } } };
-  const persist = jest.fn().mockRejectedValueOnce(new Error('storage unavailable')).mockResolvedValue(undefined);
+  const persist = vi.fn().mockRejectedValueOnce(new Error('storage unavailable')).mockResolvedValue(undefined);
   const coordinator = new SettingsCoordinator(settings, persist);
   const plugin = {
     settings, getActiveEnvironmentVariables: () => 'ANTHROPIC_MODEL=custom-model',
     mutateSettings: coordinator.mutate.bind(coordinator),
-    notifyProviderChatOptionsChanged: jest.fn(), storage: { getAdapter: () => ({}) },
+    notifyProviderChatOptionsChanged: vi.fn(), storage: { getAdapter: () => ({}) },
   };
   const tab = new ClaudianSettingTab({} as any, {} as any, plugin as any);
   const container = document.body.appendChild(document.createElement('div'));

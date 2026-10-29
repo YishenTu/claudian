@@ -1,10 +1,11 @@
-import type * as fsType from 'node:fs';
-import type * as osType from 'node:os';
-import type * as pathType from 'node:path';
+const actualModule0 = await vi.importActual<typeof import('node:fs')>('node:fs');
+const actualModule1 = await vi.importActual<typeof import('node:os')>('node:os');
+const actualModule2 = await vi.importActual<typeof import('node:path')>('node:path');
 
-const fs = jest.requireActual<typeof fsType>('node:fs');
-const os = jest.requireActual<typeof osType>('node:os');
-const path = jest.requireActual<typeof pathType>('node:path');
+
+const fs = actualModule0;
+const os = actualModule1;
+const path = actualModule2;
 
 /**
  * Registers a temporary directory for native Claude transcripts, removed after each test.

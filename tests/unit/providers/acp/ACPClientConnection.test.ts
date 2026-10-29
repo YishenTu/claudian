@@ -233,7 +233,7 @@ describe('ACPClientConnection', () => {
 
   it('propagates unsupported methods without retrying a retired alias', async () => {
     const harness = createConnectionHarness(transport => new ACPClientConnection({ transport }));
-    const requestSpy = jest.spyOn(harness.transport, 'request');
+    const requestSpy = vi.spyOn(harness.transport, 'request');
     try {
       const pending = harness.connection.setMode({ modeId: 'plan', sessionId: 'session-1' });
       const outcome = pending.catch(error => error);
@@ -293,7 +293,7 @@ describe('ACPClientConnection', () => {
 
   it('sends one cancel notification using the standard method', async () => {
     const harness = createConnectionHarness(transport => new ACPClientConnection({ transport }));
-    const notifySpy = jest.spyOn(harness.transport, 'notify');
+    const notifySpy = vi.spyOn(harness.transport, 'notify');
     try {
       harness.connection.cancel({ sessionId: 'session-1' });
       await expect(harness.nextOutbound()).resolves.toMatchObject({ method: 'session/cancel', params: { sessionId: 'session-1' } });

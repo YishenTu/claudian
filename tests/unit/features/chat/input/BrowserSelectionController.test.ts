@@ -1,12 +1,16 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
+
+import type { Mock, MockInstance } from 'vitest';
 
 import { BrowserSelectionController } from '@/features/chat/input/BrowserSelectionController';
 import { ComposerSelections } from '@/features/chat/input/ComposerSelections';
 
+
+
 function createMockContextTray() {
   return {
-    setItems: jest.fn(),
-    clearItems: jest.fn(),
+    setItems: vi.fn(),
+    clearItems: vi.fn(),
   };
 }
 
@@ -19,7 +23,7 @@ async function flushMicrotasks(): Promise<void> {
 /** The selection runs under the tab's shared poll cadence; the other sources stay idle. */
 let polling: ComposerSelections | null = null;
 function startPolling(source: BrowserSelectionController): ComposerSelections {
-  const idle = { clear: jest.fn(), getContext: () => null, poll: jest.fn(), start: jest.fn(), stop: jest.fn() };
+  const idle = { clear: vi.fn(), getContext: () => null, poll: vi.fn(), start: vi.fn(), stop: vi.fn() };
   polling = new ComposerSelections({ editor: idle, browser: source, canvas: idle });
   polling.start();
   return polling;
@@ -36,10 +40,10 @@ describe('BrowserSelectionController', () => {
   let inputEl: HTMLTextAreaElement;
   let containerEl: HTMLElement;
   let selectionText = 'selected web snippet';
-  let getSelectionSpy: jest.SpyInstance;
+  let getSelectionSpy: MockInstance;
 
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     selectionText = 'selected web snippet';
 
     contextTray = createMockContextTray();
@@ -49,7 +53,7 @@ describe('BrowserSelectionController', () => {
     const selectionAnchor = document.createElement('span');
     containerEl.appendChild(selectionAnchor);
 
-    getSelectionSpy = jest.spyOn(document, 'getSelection').mockImplementation(() => ({
+    getSelectionSpy = vi.spyOn(document, 'getSelection').mockImplementation(() => ({
       toString: () => selectionText,
       anchorNode: selectionAnchor,
       focusNode: selectionAnchor,
@@ -65,7 +69,7 @@ describe('BrowserSelectionController', () => {
     app = {
       workspace: {
         activeLeaf: { view },
-        getMostRecentLeaf: jest.fn(() => ({ view })),
+        getMostRecentLeaf: vi.fn(() => ({ view })),
       },
     };
 
@@ -76,36 +80,36 @@ describe('BrowserSelectionController', () => {
     stopPolling();
     inputEl.remove();
     getSelectionSpy.mockRestore();
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it.each(['stop', 'clear', 'restart'] as const)('discards pending webview selection across %s', async action => {
     selectionText = '';
-    const webview = document.createElement('webview') as HTMLElement & { executeJavaScript: jest.Mock };
+    const webview = document.createElement('webview') as HTMLElement & { executeJavaScript: Mock };
     let finishRead!: (value: string) => void;
-    webview.executeJavaScript = jest.fn()
+    webview.executeJavaScript = vi.fn()
       .mockImplementationOnce(() => new Promise<string>(resolve => { finishRead = resolve; }))
       .mockResolvedValue('current selection');
     containerEl.appendChild(webview);
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     if (action === 'clear') controller.clear();
     else stopPolling();
     if (action === 'restart') {
       startPolling(controller);
-      await jest.advanceTimersByTimeAsync(250);
+      await vi.advanceTimersByTimeAsync(250);
     }
     expect(controller.getContext()?.selectedText ?? null).toBe(action === 'restart' ? 'current selection' : null);
     const publications = contextTray.setItems.mock.calls.length;
     finishRead('stale selection');
-    await jest.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
     expect(controller.getContext()?.selectedText ?? null).toBe(action === 'restart' ? 'current selection' : null);
     expect(contextTray.setItems).toHaveBeenCalledTimes(publications);
   });
 
   it('captures browser selection and updates indicator', async () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     await flushMicrotasks();
 
     expect(controller.getContext()).toEqual({
@@ -125,9 +129,9 @@ describe('BrowserSelectionController', () => {
   it.each(['view replacement', 'page navigation', 'unchanged page'])('fences a pending native selection across %s', async action => {
     selectionText = '';
     const view = app.workspace.getMostRecentLeaf().view;
-    const webview = document.createElement('webview') as HTMLElement & { executeJavaScript: jest.Mock };
+    const webview = document.createElement('webview') as HTMLElement & { executeJavaScript: Mock };
     let finish!: (value: string) => void;
-    webview.executeJavaScript = jest.fn(() => new Promise<string>(resolve => { finish = resolve; }));
+    webview.executeJavaScript = vi.fn(() => new Promise<string>(resolve => { finish = resolve; }));
     containerEl.appendChild(webview);
     const pending = controller.poll();
     expect(webview.executeJavaScript).toHaveBeenCalledTimes(1);
@@ -148,7 +152,7 @@ describe('BrowserSelectionController', () => {
   it('shows line-based indicator text for multi-line browser selection', async () => {
     selectionText = 'line 1\nline 2';
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     await flushMicrotasks();
 
     expect(contextTray.setItems).toHaveBeenLastCalledWith('browser-selection', [
@@ -158,12 +162,12 @@ describe('BrowserSelectionController', () => {
 
   it('clears selection when text is deselected and input is not focused', async () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     await flushMicrotasks();
     expect(controller.hasSelection()).toBe(true);
 
     selectionText = '';
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     await flushMicrotasks();
 
     expect(controller.hasSelection()).toBe(false);
@@ -172,13 +176,13 @@ describe('BrowserSelectionController', () => {
 
   it('keeps selection while input is focused', async () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     await flushMicrotasks();
     expect(controller.hasSelection()).toBe(true);
 
     selectionText = '';
     inputEl.focus();
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     await flushMicrotasks();
 
     expect(controller.hasSelection()).toBe(true);
@@ -186,7 +190,7 @@ describe('BrowserSelectionController', () => {
 
   it('clears selection when clear is called', async () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     await flushMicrotasks();
     expect(controller.hasSelection()).toBe(true);
 
@@ -198,7 +202,7 @@ describe('BrowserSelectionController', () => {
 
   it('clears selection from the tray remove action', async () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     await flushMicrotasks();
 
     const items = contextTray.setItems.mock.calls[0][1];
@@ -209,11 +213,11 @@ describe('BrowserSelectionController', () => {
   });
 
   it('handles polling errors without unhandled rejection', async () => {
-    const extractSpy = jest.spyOn(controller as any, 'extractSelectedText')
+    const extractSpy = vi.spyOn(controller as any, 'extractSelectedText')
       .mockRejectedValueOnce(new Error('poll failed'));
 
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     await flushMicrotasks();
 
     expect(extractSpy).toHaveBeenCalled();

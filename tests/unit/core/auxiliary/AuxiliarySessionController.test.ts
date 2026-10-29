@@ -37,9 +37,9 @@ function createController() {
     {
       backend,
       interactionPort: {
-        askUserQuestion: jest.fn(),
-        dismissInteraction: jest.fn(),
-        requestApproval: jest.fn(),
+        askUserQuestion: vi.fn(),
+        dismissInteraction: vi.fn(),
+        requestApproval: vi.fn(),
       },
       lifecycleRegistry: new ProviderExecutionLifecycleRegistry(),
       nativePersistence: 'provider-default',

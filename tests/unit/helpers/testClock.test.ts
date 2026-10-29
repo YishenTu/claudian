@@ -1,19 +1,20 @@
-import type * as TestClockHelpers from '@test/helpers/testClock';
 import { testClock, testDate, testTime } from '@test/helpers/testClock';
 
+
 describe('test clock', () => {
-  it('anchors fixtures to the current run, including runs years later', () => {
+  it('anchors fixtures to the current run, including runs years later', async () => {
     const future = Date.now() + 1_100 * 86_400_000;
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
-      jest.setSystemTime(future);
-      jest.isolateModules(() => {
-        const clock = jest.requireActual<typeof TestClockHelpers>('@test/helpers/testClock');
+      vi.setSystemTime(future);
+      vi.resetModules();
+      {
+        const clock = await import('@test/helpers/testClock');
         expect(clock.testDate().getTime()).toBe(future);
         expect(clock.testDate({ days: 1 }).getTime()).toBe(future + 86_400_000);
-      });
+      }
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 

@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn as nodeSpawn } from 'node:child_process';
 import * as path from 'node:path';
 
-jest.mock('cross-spawn', () => jest.fn());
+vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import spawn from 'cross-spawn';
 
@@ -28,7 +28,7 @@ function makeService(scenario = '', timeoutMs = 2_000): GrokModelDiscoveryServic
 beforeEach(() => {
   children = [];
   onWaiting = undefined;
-  jest.mocked(spawn).mockImplementation((_command, args, options) => {
+  vi.mocked(spawn).mockImplementation((_command, args, options) => {
     const child = nodeSpawn(process.execPath, [fixture, ...(args ?? [])], options ?? {});
     children.push(child);
     child.stdout?.on('data', (chunk: Buffer) => {
@@ -42,7 +42,7 @@ afterEach(() => {
   for (const child of children) {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
   }
-  jest.mocked(spawn).mockReset();
+  vi.mocked(spawn).mockReset();
 });
 
 function expectProcessesClosed(): void {

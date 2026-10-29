@@ -20,11 +20,11 @@ async function flushMicrotasks(): Promise<void> {
 
 describe('StreamingRenderCoordinator', () => {
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it('coalesces requests and never overlaps asynchronous renders', async () => {
@@ -32,7 +32,7 @@ describe('StreamingRenderCoordinator', () => {
     const secondRender = createDeferred();
     let activeRenders = 0;
     let maxActiveRenders = 0;
-    const render = jest.fn(async (_content: string) => {
+    const render = vi.fn(async (_content: string) => {
       activeRenders += 1;
       maxActiveRenders = Math.max(maxActiveRenders, activeRenders);
       await (render.mock.calls.length === 1 ? firstRender.promise : secondRender.promise);
@@ -45,12 +45,12 @@ describe('StreamingRenderCoordinator', () => {
     });
 
     coordinator.request('first');
-    jest.advanceTimersByTime(16);
+    vi.advanceTimersByTime(16);
     await flushMicrotasks();
 
     coordinator.request('second');
     coordinator.request('latest');
-    jest.advanceTimersByTime(100);
+    vi.advanceTimersByTime(100);
     await flushMicrotasks();
 
     expect(render).toHaveBeenCalledTimes(1);
@@ -58,7 +58,7 @@ describe('StreamingRenderCoordinator', () => {
 
     firstRender.resolve();
     await flushMicrotasks();
-    jest.advanceTimersByTime(16);
+    vi.advanceTimersByTime(16);
     await flushMicrotasks();
 
     expect(render).toHaveBeenCalledTimes(2);
@@ -70,7 +70,7 @@ describe('StreamingRenderCoordinator', () => {
   });
 
   it('throttles successive renders using the latest requested snapshot', async () => {
-    const render = jest.fn().mockResolvedValue(undefined);
+    const render = vi.fn().mockResolvedValue(undefined);
     const coordinator = new StreamingRenderCoordinator<string>({
       render,
       getOwnerWindow: () => window,
@@ -78,17 +78,17 @@ describe('StreamingRenderCoordinator', () => {
     });
 
     coordinator.request('first');
-    jest.advanceTimersByTime(16);
+    vi.advanceTimersByTime(16);
     await flushMicrotasks();
 
     coordinator.request('second');
     coordinator.request('latest');
-    jest.advanceTimersByTime(149);
+    vi.advanceTimersByTime(149);
     await flushMicrotasks();
 
     expect(render).toHaveBeenCalledTimes(1);
 
-    jest.advanceTimersByTime(17);
+    vi.advanceTimersByTime(17);
     await flushMicrotasks();
 
     expect(render).toHaveBeenCalledTimes(2);
@@ -96,7 +96,7 @@ describe('StreamingRenderCoordinator', () => {
   });
 
   it('retains dirty content while unavailable and catches up when revealed', async () => {
-    const render = jest.fn().mockResolvedValue(undefined);
+    const render = vi.fn().mockResolvedValue(undefined);
     const coordinator = new StreamingRenderCoordinator<string>({
       render,
       getOwnerWindow: () => window,
@@ -106,13 +106,13 @@ describe('StreamingRenderCoordinator', () => {
     coordinator.setAvailable(false);
     coordinator.request('hidden');
     coordinator.request('latest hidden');
-    jest.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1000);
     await flushMicrotasks();
 
     expect(render).not.toHaveBeenCalled();
 
     coordinator.setAvailable(true);
-    jest.advanceTimersByTime(16);
+    vi.advanceTimersByTime(16);
     await flushMicrotasks();
 
     expect(render).toHaveBeenCalledTimes(1);
@@ -120,7 +120,7 @@ describe('StreamingRenderCoordinator', () => {
   });
 
   it('flushes the latest snapshot immediately even while unavailable', async () => {
-    const render = jest.fn().mockResolvedValue(undefined);
+    const render = vi.fn().mockResolvedValue(undefined);
     const coordinator = new StreamingRenderCoordinator<string>({
       render,
       getOwnerWindow: () => window,
@@ -138,7 +138,7 @@ describe('StreamingRenderCoordinator', () => {
 
   it('runs a forced trailing render without waiting for a hidden animation frame', async () => {
     const firstRender = createDeferred();
-    const render = jest.fn((content: string) => (
+    const render = vi.fn((content: string) => (
       content === 'streaming' ? firstRender.promise : Promise.resolve()
     ));
     const coordinator = new StreamingRenderCoordinator<string>({
@@ -148,7 +148,7 @@ describe('StreamingRenderCoordinator', () => {
     });
 
     coordinator.request('streaming');
-    jest.advanceTimersByTime(16);
+    vi.advanceTimersByTime(16);
     await flushMicrotasks();
 
     coordinator.setAvailable(false);
@@ -163,7 +163,7 @@ describe('StreamingRenderCoordinator', () => {
   });
 
   it('cancels scheduled work without rendering stale content', async () => {
-    const render = jest.fn().mockResolvedValue(undefined);
+    const render = vi.fn().mockResolvedValue(undefined);
     const coordinator = new StreamingRenderCoordinator<string>({
       render,
       getOwnerWindow: () => window,
@@ -172,14 +172,14 @@ describe('StreamingRenderCoordinator', () => {
 
     coordinator.request('stale');
     coordinator.cancel();
-    jest.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1000);
     await flushMicrotasks();
 
     expect(render).not.toHaveBeenCalled();
   });
 
   it('does not stall flush when the renderer rejects', async () => {
-    const render = jest.fn().mockRejectedValue(new Error('render failed'));
+    const render = vi.fn().mockRejectedValue(new Error('render failed'));
     const coordinator = new StreamingRenderCoordinator<string>({
       render,
       getOwnerWindow: () => window,
@@ -194,24 +194,24 @@ describe('StreamingRenderCoordinator', () => {
 });
 
 it('backs off after expensive renders while keeping final flush immediate', async () => {
-  jest.useFakeTimers();
+  vi.useFakeTimers();
   let finish!: () => void;
-  const render = jest.fn().mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }))
+  const render = vi.fn().mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }))
     .mockResolvedValue(undefined);
   const options = { render, getOwnerWindow: () => window, minIntervalMs: 150, maxIntervalMs: 500 };
   const coordinator = new StreamingRenderCoordinator<string>(options);
   try {
     coordinator.request('large');
-    await jest.advanceTimersByTimeAsync(16);
-    await jest.advanceTimersByTimeAsync(200);
+    await vi.advanceTimersByTimeAsync(16);
+    await vi.advanceTimersByTimeAsync(200);
     finish();
     await flushMicrotasks();
     coordinator.request('growing');
-    await jest.advanceTimersByTimeAsync(170);
+    await vi.advanceTimersByTimeAsync(170);
     expect(render).toHaveBeenCalledTimes(1);
     coordinator.request('final');
     await coordinator.flush();
     expect(render).toHaveBeenLastCalledWith('final');
     expect(render).toHaveBeenCalledTimes(2);
-  } finally { coordinator.dispose(); jest.useRealTimers(); }
+  } finally { coordinator.dispose(); vi.useRealTimers(); }
 });

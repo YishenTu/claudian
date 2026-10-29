@@ -2,37 +2,37 @@ import '@/providers';
 
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
-const mockTransportRequest = jest.fn();
-const mockTransportSend = jest.fn();
-const mockTransportStart = jest.fn();
-const mockTransportDispose = jest.fn();
-const mockTransportOnEvent = jest.fn();
-const mockRemoveEventListener = jest.fn();
-const mockProcessStart = jest.fn();
-const mockProcessShutdown = jest.fn().mockResolvedValue(undefined);
-const mockProcessOnClose = jest.fn();
-const mockGetStderrSnapshot = jest.fn(() => '');
+const mockTransportRequest = vi.fn();
+const mockTransportSend = vi.fn();
+const mockTransportStart = vi.fn();
+const mockTransportDispose = vi.fn();
+const mockTransportOnEvent = vi.fn();
+const mockRemoveEventListener = vi.fn();
+const mockProcessStart = vi.fn();
+const mockProcessShutdown = vi.fn().mockResolvedValue(undefined);
+const mockProcessOnClose = vi.fn();
+const mockGetStderrSnapshot = vi.fn(() => '');
 let mockEventHandler: ((event: Record<string, unknown>) => void) | null = null;
 
-jest.mock('@/providers/pi/runtime/PiRPCTransport', () => ({
-  PiRPCTransport: jest.fn().mockImplementation(() => ({
+vi.mock('@/providers/pi/runtime/PiRPCTransport', () => ({
+  PiRPCTransport: vi.fn().mockImplementation(function () { return ({
     dispose: mockTransportDispose,
     onEvent: mockTransportOnEvent,
     request: mockTransportRequest,
     send: mockTransportSend,
     start: mockTransportStart,
-  })),
+  }); }),
 }));
 
-jest.mock('@/providers/pi/runtime/PiSubprocess', () => ({
-  PiSubprocess: jest.fn().mockImplementation(() => ({
+vi.mock('@/providers/pi/runtime/PiSubprocess', () => ({
+  PiSubprocess: vi.fn().mockImplementation(function () { return ({
     getStderrSnapshot: mockGetStderrSnapshot,
     onClose: mockProcessOnClose,
     shutdown: mockProcessShutdown,
     start: mockProcessStart,
     stdin: {},
     stdout: {},
-  })),
+  }); }),
 }));
 
 import { PiModelDiscoveryService } from '@/providers/pi/runtime/PiModelDiscoveryService';
@@ -40,7 +40,7 @@ import { PiModelDiscoveryService } from '@/providers/pi/runtime/PiModelDiscovery
 function createPlugin() {
   return {
     workingDirectory: '/tmp/vault',
-    getResolvedProviderCliPath: jest.fn(() => '/usr/local/bin/pi'),
+    getResolvedProviderCliPath: vi.fn(() => '/usr/local/bin/pi'),
     settings: {
       providerConfigs: {
         pi: {
@@ -53,7 +53,7 @@ function createPlugin() {
 
 describe('PiModelDiscoveryService', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockEventHandler = null;
     mockGetStderrSnapshot.mockReturnValue('');
     mockTransportOnEvent.mockImplementation((handler: (event: Record<string, unknown>) => void) => {

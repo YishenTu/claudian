@@ -1,12 +1,12 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import { deserialize, serialize } from 'node:v8';
 
+import { axe } from '@test/helpers/accessibility';
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Component } from 'obsidian';
 
 import type { ChatMessage } from '@/core/types';
@@ -19,7 +19,7 @@ import { ClaudeExecutionEventNormalizer } from '@/providers/claude/execution/Cla
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
 
-jest.mock('node:fs/promises');
+vi.mock('node:fs/promises');
 const writeSession = useClaudeSessionFiles();
 const originalStructuredClone = globalThis.structuredClone;
 beforeAll(() => { globalThis.structuredClone = value => deserialize(serialize(value)); });
@@ -86,7 +86,7 @@ it.each([
           ...(structured ? { toolUseResult: nativeMessages[1].tool_use_result } : {}) },
       ];
       const sessionPath = writeSession(source === 'cache-only' ? entries.slice(0, 2) : entries);
-      const locate = jest.spyOn(historyStore, 'locateSDKSessions').mockResolvedValue(new Map([
+      const locate = vi.spyOn(historyStore, 'locateSDKSessions').mockResolvedValue(new Map([
         ['session', { availability: 'relocated', sessionPath }],
       ]));
       try {
@@ -135,7 +135,7 @@ it('retains a completed cached async result when native launch input omitted bac
       toolUseResult: { isAsync: true, agentId: 'agent-async', status: 'async_launched' } },
   ];
   const sessionPath = writeSession(entries);
-  const locate = jest.spyOn(historyStore, 'locateSDKSessions').mockResolvedValue(new Map([
+  const locate = vi.spyOn(historyStore, 'locateSDKSessions').mockResolvedValue(new Map([
     ['session', { availability: 'relocated', sessionPath }],
   ]));
   try {

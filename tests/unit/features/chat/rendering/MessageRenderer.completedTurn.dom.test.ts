@@ -1,12 +1,12 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { createConversationPorts } from '@test/helpers/ConversationPorts';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
@@ -26,7 +26,7 @@ HTMLElement.prototype.removeClass = function (...classes) { this.classList.remov
 
 function setup(providerId = 'claude') {
   const messagesEl = document.body.createDiv();
-  const fork = jest.fn().mockResolvedValue(undefined);
+  const fork = vi.fn().mockResolvedValue(undefined);
   const settings = { mediaFolder: '', showMessageTimestamps: true };
   const renderer = new MessageRenderer(
     { app: {}, settings } as any,
@@ -59,11 +59,11 @@ function expectInterruptHeader(header: HTMLElement, history: HTMLElement): void 
 
 beforeEach(() => {
   document.body.replaceChildren();
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     (el as HTMLElement).createEl('p', { text: markdown });
   });
   Object.defineProperty(navigator, 'clipboard', {
-    configurable: true, value: { writeText: jest.fn().mockResolvedValue(undefined) },
+    configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) },
   });
 });
 
@@ -536,7 +536,7 @@ it('keeps time after throughput when timestamps are refreshed or toggled', () =>
 
 it('renders accessible Pi branch controls at the prompt and disables them while busy', async () => {
   const messagesEl = document.body.createDiv();
-  const navigate = jest.fn().mockResolvedValue(undefined);
+  const navigate = vi.fn().mockResolvedValue(undefined);
   let busy = false;
   const renderer = new MessageRenderer(
     { app: {}, settings: { mediaFolder: '' } } as any,
@@ -588,7 +588,7 @@ it('renders accessible Pi branch controls at the prompt and disables them while 
 
 it('shows the tree action from the second live prompt before native IDs arrive and enables it without reloading', async () => {
   const messagesEl = document.body.createDiv();
-  const navigate = jest.fn().mockResolvedValue(undefined);
+  const navigate = vi.fn().mockResolvedValue(undefined);
   let busy = true;
   const renderer = new MessageRenderer(
     { app: {}, settings: { mediaFolder: '' } } as any,
@@ -628,12 +628,12 @@ it.each([true, false])('enables branches after switching and native history corr
   const first: ChatMessage = { ...messages[0], treeBranches: ['native-u1'] };
   const second: ChatMessage = { id: 'u2', role: 'user', content: 'Second prompt', timestamp: 2,
     treeBranches: ['native-u2'], ...(hasNativeId ? { userMessageId: 'native-u2' } : {}) };
-  const plugin = { app: {}, settings: { mediaFolder: '' }, updateConversation: jest.fn(),
-    getConversationById: jest.fn().mockResolvedValue({ id: 'pi-chat', messages: [first, second] }),
-    getConversationSummary: jest.fn().mockReturnValue(null), projects: createProjectsFake(), providerHost: { workingDirectory: '/vault' } };
-  const navigateConversationBranch = jest.fn().mockResolvedValue({ status: 'committed', messages: [first] });
+  const plugin = { app: {}, settings: { mediaFolder: '' }, updateConversation: vi.fn(),
+    getConversationById: vi.fn().mockResolvedValue({ id: 'pi-chat', messages: [first, second] }),
+    getConversationSummary: vi.fn().mockReturnValue(null), projects: createProjectsFake(), providerHost: { workingDirectory: '/vault' } };
+  const navigateConversationBranch = vi.fn().mockResolvedValue({ status: 'committed', messages: [first] });
   const coordinator = { navigateConversationBranch, supportsConversationBranches: true,
-    getConversationBranches: jest.fn().mockResolvedValue({ branches: { 'native-u1': ['native-u1'], 'native-u2': ['native-u2'] },
+    getConversationBranches: vi.fn().mockResolvedValue({ branches: { 'native-u1': ['native-u1'], 'native-u2': ['native-u2'] },
       userMessageIds: { u1: 'native-u1', u2: 'native-u2' } }),
   };
   const renderer: MessageRenderer = new MessageRenderer(plugin as any,
@@ -645,11 +645,11 @@ it.each([true, false])('enables branches after switching and native history corr
   let welcomeEl: HTMLElement | null = null;
   const controller = new ConversationController({ plugin, state, renderer,
     ...createConversationPorts({ state, getInputEl: () => inputEl, getImageContextManager: () => null }),
-    subagentManager: { clear: jest.fn() },
+    subagentManager: { clear: vi.fn() },
     getInputEl: () => inputEl, getMessagesEl: () => messagesEl,
     getWelcomeEl: () => welcomeEl, setWelcomeEl: (el: HTMLElement) => { welcomeEl = el; },
-    getLinkedContentController: () => ({ lock: jest.fn() }),
-    getImageContextManager: () => null, clearQueuedMessage: jest.fn(),
+    getLinkedContentController: () => ({ lock: vi.fn() }),
+    getImageContextManager: () => null, clearQueuedMessage: vi.fn(),
     getExecutionCoordinator: () => coordinator,
   } as any);
   state.currentConversationId = 'pi-chat';
@@ -670,13 +670,13 @@ it.each([true, false])('enables branches after switching and native history corr
 
 it('orders the Pi prompt toolbar as branches, tree, copy, time through live and replay refreshes', async () => {
   const messagesEl = document.body.createDiv();
-  const fork = jest.fn().mockResolvedValue(undefined);
+  const fork = vi.fn().mockResolvedValue(undefined);
   const settings = { mediaFolder: '', showMessageTimestamps: true };
   let busy = true;
   const renderer = new MessageRenderer({ app: {}, settings } as any,
     new Component() as any,
     messagesEl, undefined, fork, () => ProviderRegistry.getCapabilities('pi'),
-    { navigate: jest.fn(), isBusy: () => busy });
+    { navigate: vi.fn(), isBusy: () => busy });
   const first: ChatMessage = { ...messages[0], treeBranches: ['native-u1'] };
   const prompt: ChatMessage = { id: 'second', role: 'user', content: 'Try B', timestamp: 2 };
   const reply: ChatMessage = { id: 'reply-b', role: 'assistant', content: 'Answer B', timestamp: 3,
@@ -738,9 +738,9 @@ it('previews a branch without saving it and restores history when focus leaves t
     userMessageId: 'native-b', treeBranches: ['native-b'] };
   const history = [{ ...messages[0], treeBranches: ['native-u1'] }, prompt, messages[2]];
   state.messages = history;
-  const navigateConversationBranch = jest.fn().mockResolvedValue({ status: 'committed', messages: [history[0]] });
+  const navigateConversationBranch = vi.fn().mockResolvedValue({ status: 'committed', messages: [history[0]] });
   const coordinator = { navigateConversationBranch };
-  const plugin = { app: {}, settings: {}, updateConversation: jest.fn() };
+  const plugin = { app: {}, settings: {}, updateConversation: vi.fn() };
   const renderer: MessageRenderer = new MessageRenderer(plugin as any,
     new Component() as any,
     messagesEl, undefined, undefined, () => ProviderRegistry.getCapabilities('pi'),
@@ -748,16 +748,16 @@ it('previews a branch without saving it and restores history when focus leaves t
   const controller = new ConversationController({ plugin, state, renderer,
     ...createConversationPorts({ state, getInputEl: () => inputEl, getImageContextManager: () => null }),
     getInputEl: () => inputEl, getMessagesEl: () => messagesEl,
-    getWelcomeEl: () => null, setWelcomeEl: jest.fn(),
+    getWelcomeEl: () => null, setWelcomeEl: vi.fn(),
     getImageContextManager: () => null,
     getExecutionCoordinator: () => coordinator,
   } as any);
   const cleanup: (() => void)[] = [];
   buildTabRuntimeInputBindings({ dom: { messagesEl, inputEl, inputComposerEl }, state } as any,
-    { navigationSidebar: { setOnScrollIntent: jest.fn() }, composerDropdown: { handleInputChange: jest.fn() } } as any,
-    { conversationController: controller, sideChatController: { handleComposerInput: jest.fn() } } as any,
+    { navigationSidebar: { setOnScrollIntent: vi.fn() }, composerDropdown: { handleInputChange: vi.fn() } } as any,
+    { conversationController: controller, sideChatController: { handleComposerInput: vi.fn() } } as any,
     { plugin, registerCleanup: (_name: string, fn: () => void) => cleanup.push(fn) } as any,
-    { requirePublished: () => ({ lifecycleState: 'open', session: { claimUserOwnership: jest.fn() } }) } as any);
+    { requirePublished: () => ({ lifecycleState: 'open', session: { claimUserOwnership: vi.fn() } }) } as any);
   renderer.renderMessages(history, () => 'Hello');
   fireEvent.click(within(messagesEl).getByRole('button', { name: 'Branch from this prompt' }));
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -782,12 +782,12 @@ it('previews a branch without saving it and restores history when focus leaves t
 
 it('defers Markdown for collapsed thinking and notifications until their own disclosure opens', async () => {
   const { renderer, messagesEl } = setup();
-  jest.mocked(MarkdownRenderer.render).mockClear();
+  vi.mocked(MarkdownRenderer.render).mockClear();
   renderer.renderStoredMessage({ id: 'lazy', role: 'assistant', timestamp: testDate().getTime(), content: 'Answer',
     contentBlocks: [{ type: 'thinking', content: '**Reasoning**' },
       { type: 'task_notification', content: '**Notification**' }, { type: 'text', content: 'Answer' }],
   });
-  expect(jest.mocked(MarkdownRenderer.render).mock.calls.map(call => call[1])).toEqual(['Answer']);
+  expect(vi.mocked(MarkdownRenderer.render).mock.calls.map(call => call[1])).toEqual(['Answer']);
   fireEvent.click(within(messagesEl).getByRole('button', { name: 'Worked' }));
   const thinking = within(messagesEl).getByRole('button', { name: 'Thought' });
   fireEvent.keyDown(thinking, { key: 'Enter' });
@@ -796,19 +796,19 @@ it('defers Markdown for collapsed thinking and notifications until their own dis
   fireEvent.click(notification);
   fireEvent.click(notification);
   await Promise.resolve();
-  expect(jest.mocked(MarkdownRenderer.render).mock.calls.map(call => call[1])).toEqual(['Answer', '**Reasoning**', '**Notification**']);
+  expect(vi.mocked(MarkdownRenderer.render).mock.calls.map(call => call[1])).toEqual(['Answer', '**Reasoning**', '**Notification**']);
   expect((await axe(messagesEl)).violations).toEqual([]);
   renderer.dispose();
 });
 
 it('reuses created message elements instead of searching the growing history for each response', () => {
   const { renderer, messagesEl } = setup();
-  const query = jest.spyOn(messagesEl, 'querySelector');
+  const query = vi.spyOn(messagesEl, 'querySelector');
   const history: ChatMessage[] = Array.from({ length: 100 }, (_, index) => ({
     id: `indexed-${index}`, role: index % 2 ? 'assistant' : 'user', content: `Message ${index}`, timestamp: testDate().getTime(),
   }));
   // The renderer may search copies of the history too, so watch every array of its length.
-  const positionLookup = jest.spyOn(Array.prototype, 'indexOf');
+  const positionLookup = vi.spyOn(Array.prototype, 'indexOf');
   renderer.renderMessages(history, () => 'Hello');
   renderer.revealEarlierMessages(true);
   const historyLookups = positionLookup.mock.contexts.filter(context => Array.isArray(context) && context.length === history.length);

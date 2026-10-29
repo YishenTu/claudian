@@ -5,13 +5,13 @@ import { ClaudeSubagentHistoryService } from '@/providers/claude/history/ClaudeS
 
 describe('ClaudeSubagentHistoryService', () => {
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('loads provider-native sidecar data with Claude-owned path context', async () => {
-    const loadToolCalls = jest.spyOn(ClaudeHistoryStore, 'loadSubagentToolCalls')
+    const loadToolCalls = vi.spyOn(ClaudeHistoryStore, 'loadSubagentToolCalls')
       .mockResolvedValue([{ id: 'tool-1' }] as any);
-    const loadFinalResult = jest.spyOn(ClaudeHistoryStore, 'loadSubagentFinalResult')
+    const loadFinalResult = vi.spyOn(ClaudeHistoryStore, 'loadSubagentFinalResult')
       .mockResolvedValue('Final result');
     const host = { environmentText: 'CLAUDE_CONFIG_DIR=/tmp/claude-config' };
     const service = new ClaudeSubagentHistoryService(host);

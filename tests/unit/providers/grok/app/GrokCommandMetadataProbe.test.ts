@@ -67,11 +67,11 @@ describe('GrokCommandMetadataProbe', () => {
   it('registers a load before a synchronously started transition quiesces', async () => {
     const cliResolution = new Deferred<string | null>();
     const nativeFactory: GrokExecutionNativeFactory = {
-      create: jest.fn(() => new FakeMetadataNative('stale', false)),
+      create: vi.fn(() => new FakeMetadataNative('stale', false)),
     };
     const plugin = {
       workingDirectory: '/tmp/grok-vault',
-      getResolvedProviderCliPath: jest.fn(() => cliResolution.promise),
+      getResolvedProviderCliPath: vi.fn(() => cliResolution.promise),
       manifest: { version: 'test' },
       settings: {},
     };
@@ -103,14 +103,14 @@ describe('GrokCommandMetadataProbe', () => {
     const second = new FakeMetadataNative('from-b', false);
     const createOptions: GrokExecutionNativeCreateOptions[] = [];
     const nativeFactory: GrokExecutionNativeFactory = {
-      create: jest.fn((options) => {
+      create: vi.fn((options) => {
         createOptions.push(options);
         return options.command === '/configured/grok-a' ? first : second;
       }),
     };
     const plugin = {
       workingDirectory: '/tmp/grok-vault',
-      getResolvedProviderCliPath: jest.fn(async () => configuredCli),
+      getResolvedProviderCliPath: vi.fn(async () => configuredCli),
       manifest: { version: 'test' },
       settings: {},
     };
@@ -138,11 +138,11 @@ describe('GrokCommandMetadataProbe', () => {
 
   it('releases aborted and disposed callers waiting behind a transition fence', async () => {
     const nativeFactory: GrokExecutionNativeFactory = {
-      create: jest.fn(() => new FakeMetadataNative('unused', false)),
+      create: vi.fn(() => new FakeMetadataNative('unused', false)),
     };
     const plugin = {
       workingDirectory: '/tmp/grok-vault',
-      getResolvedProviderCliPath: jest.fn(async () => '/configured/grok'),
+      getResolvedProviderCliPath: vi.fn(async () => '/configured/grok'),
       manifest: { version: 'test' },
       settings: {},
     };
@@ -162,11 +162,11 @@ describe('GrokCommandMetadataProbe', () => {
 
   it('normalizes a non-Error abort reason while waiting behind a transition fence', async () => {
     const nativeFactory: GrokExecutionNativeFactory = {
-      create: jest.fn(() => new FakeMetadataNative('unused', false)),
+      create: vi.fn(() => new FakeMetadataNative('unused', false)),
     };
     const plugin = {
       workingDirectory: '/tmp/grok-vault',
-      getResolvedProviderCliPath: jest.fn(async () => '/configured/grok'),
+      getResolvedProviderCliPath: vi.fn(async () => '/configured/grok'),
       manifest: { version: 'test' },
       settings: {},
     };

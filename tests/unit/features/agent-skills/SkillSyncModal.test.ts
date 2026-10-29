@@ -1,25 +1,28 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
+import { axe } from '@test/helpers/accessibility';
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { clearWriteFaults, failWritesUnder } from '@test/helpers/core/fsWriteFaults';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import type { App } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import { AGENT_SKILLS_ROOT, CLAUDE_COMMANDS_ROOT, CLAUDE_SKILLS_ROOT } from '@/features/agent-skills/AgentSkillRepository';
 import { ClaudeSkillSync } from '@/features/agent-skills/ClaudeSkillSync';
 import { SkillSyncModal } from '@/features/agent-skills/SkillSyncModal';
 import { t } from '@/i18n/i18n';
 
-jest.mock('node:fs/promises', () => (
-  jest.requireActual('@test/helpers/core/fsWriteFaults').createFsPromisesWithWriteFaults()
+
+
+vi.mock('node:fs/promises', async () => (
+  (await vi.importActual<typeof import('@test/helpers/core/fsWriteFaults')>('@test/helpers/core/fsWriteFaults')).createFsPromisesWithWriteFaults()
 ));
 
-jest.mock('obsidian', () => ({
-  ...jest.requireActual('@test/__mocks__/obsidian'),
-  ...jest.requireActual('@test/helpers/ObsidianSettingsDOM'),
+vi.mock('obsidian', async () => { const actualModule0 = await vi.importActual<typeof import('js-yaml')>('js-yaml'); return ({
+  ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')),
+  ...(await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM')),
   // Obsidian's parseYaml rejects invalid YAML; the shared mock does not.
-  parseYaml: (source: string) => jest.requireActual('js-yaml').load(source),
-}));
+  parseYaml: (source: string) => actualModule0.load(source),
+}); });
 
 function skill(name: string, description = 'Description'): string {
   return `---\nname: ${name}\ndescription: ${description}\nallowed-tools: [Read]\n---\nInstructions\n`;
@@ -28,13 +31,13 @@ function skill(name: string, description = 'Description'): string {
 describe('SkillSyncModal', () => {
   let vault: DesktopVault;
   let sync: ClaudeSkillSync;
-  let onFinished: jest.Mock;
+  let onFinished: Mock;
 
   beforeEach(async () => {
     document.body.replaceChildren();
     vault = await DesktopVault.create();
     sync = new ClaudeSkillSync(vault.files);
-    onFinished = jest.fn();
+    onFinished = vi.fn();
   });
 
   afterEach(async () => {

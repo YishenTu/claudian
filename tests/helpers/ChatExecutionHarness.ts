@@ -1,6 +1,10 @@
+import type { Mocked } from 'vitest';
+
 import { type ProviderExecutionBackend, type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderExecutionRun, type ProviderExecutionSession, type ProviderInteractionPort, type ProviderSessionConfig, type ProviderSessionEvent, type ProviderSessionSnapshot, type ProviderSessionStatus, type RewindableExecutionSession, type SteerableExecutionSession } from '@/core/execution';
 import type { ProviderId, SlashCommand } from '@/core/types';
 import { ChatExecutionCoordinator, type ChatExecutionCoordinatorDeps, type ChatExecutionEventContext, type ChatExecutionPersistence, type ChatTurnSubmission, type MissingProviderSessionResolution } from '@/features/chat/execution/ChatExecutionCoordinator';
+
+
 
 class EventQueue<T> implements AsyncIterable<T> {
   private readonly values: T[] = [];
@@ -209,30 +213,27 @@ export function createHarness(options: {
     ['codex', new FakeBackend('codex')],
   ]);
   const repository = {
-    registerExecutionBinding: jest.fn(),
-    persistExecutionSnapshot: jest.fn(async () => true),
-    releaseExecutionBinding: jest.fn(),
-    recordConversationActivity: jest.fn(async () => undefined),
-    assertConversationExecutionAuthority: jest.fn(async () => undefined),
-  } as unknown as jest.Mocked<ChatExecutionPersistence>;
+    registerExecutionBinding: vi.fn(),
+    persistExecutionSnapshot: vi.fn(async () => true),
+    releaseExecutionBinding: vi.fn(),
+    recordConversationActivity: vi.fn(async () => undefined),
+    assertConversationExecutionAuthority: vi.fn(async () => undefined),
+  } as unknown as Mocked<ChatExecutionPersistence>;
   const interactionPort = {
-    requestApproval: jest.fn(async ({ interactionId }) => ({
+    requestApproval: vi.fn(async ({ interactionId }) => ({
       interactionId,
       decision: 'allow',
     })),
-    askUserQuestion: jest.fn(async ({ interactionId }) => ({
+    askUserQuestion: vi.fn(async ({ interactionId }) => ({
       interactionId,
       answers: null,
     })),
-    dismissInteraction: jest.fn(),
-  } as unknown as jest.Mocked<ProviderInteractionPort>;
+    dismissInteraction: vi.fn(),
+  } as unknown as Mocked<ProviderInteractionPort>;
   const requestedEvents: ProviderExecutionEvent[] = [];
   const sessionEvents: ProviderSessionEvent[] = [];
   const sessionEventContexts: ChatExecutionEventContext[] = [];
-  const missingSession = jest.fn<
-    Promise<MissingProviderSessionResolution>,
-    [string, string?]
-  >(async () => 'reset');
+  const missingSession = vi.fn<(...args: [string, string?]) => Promise<MissingProviderSessionResolution>>(async () => 'reset');
   let nextId = 0;
   const coordinator = new ChatExecutionCoordinator({
     lifecycleRegistry: registry,

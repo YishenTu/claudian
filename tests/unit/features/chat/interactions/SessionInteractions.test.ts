@@ -25,8 +25,8 @@ describe('SessionInteractions approval details', () => {
     expect(descriptionEl?.getAttribute('role')).toBe('region');
     expect(descriptionEl?.getAttribute('aria-label')).toBe('Bash approval details');
 
-    const stopPropagation = jest.fn();
-    const preventDefault = jest.fn();
+    const stopPropagation = vi.fn();
+    const preventDefault = vi.fn();
     descriptionEl?.dispatchEvent({
       type: 'keydown',
       key: 'ArrowDown',

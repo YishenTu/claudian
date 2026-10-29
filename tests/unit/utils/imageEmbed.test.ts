@@ -442,7 +442,7 @@ describe('replaceImageEmbedsWithHTML', () => {
       'An incomplete embed ![',
     ])('skips parsing text without embed markers: %s', markdown => {
       const app = createMockApp();
-      const parse = jest.spyOn(parser, 'parse');
+      const parse = vi.spyOn(parser, 'parse');
       try {
         expect(replaceImageEmbedsWithHTML(markdown, app)).toBe(markdown);
         expect(parse).not.toHaveBeenCalled();

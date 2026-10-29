@@ -2,13 +2,16 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { Readable, Writable } from 'node:stream';
 
-jest.mock('cross-spawn', () => jest.fn());
+vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 
 import spawn from 'cross-spawn';
+import type { MockedFunction } from 'vitest';
 
 import { ManagedStdioProcess } from '@/core/process/ManagedStdioProcess';
 
-const mockSpawn = spawn as jest.MockedFunction<typeof spawn>;
+
+
+const mockSpawn = spawn as MockedFunction<typeof spawn>;
 
 function createMockProcess(): ChildProcessWithoutNullStreams {
   const proc = new EventEmitter() as unknown as ChildProcessWithoutNullStreams;
@@ -21,7 +24,7 @@ function createMockProcess(): ChildProcessWithoutNullStreams {
     stdin: new Writable({ write: (_chunk, _encoding, callback) => callback() }),
     stdout: new Readable({ read() {} }),
   });
-  proc.kill = jest.fn().mockReturnValue(true);
+  proc.kill = vi.fn().mockReturnValue(true);
   return proc;
 }
 
@@ -42,14 +45,14 @@ describe('ManagedStdioProcess', () => {
   let proc: ChildProcessWithoutNullStreams;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
   });
 
   afterEach(() => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it('starts once and exposes the owned stdio streams and liveness state', () => {
@@ -93,7 +96,7 @@ describe('ManagedStdioProcess', () => {
       throw error;
     });
     const managed = createManagedProcess();
-    const onError = jest.fn();
+    const onError = vi.fn();
     managed.onError(onError);
 
     expect(() => managed.start()).toThrow(error);
@@ -113,9 +116,9 @@ describe('ManagedStdioProcess', () => {
 
   it('observes operational errors without treating them as process exit', () => {
     const managed = createManagedProcess();
-    const onError = jest.fn();
-    const onExit = jest.fn();
-    const onClose = jest.fn();
+    const onError = vi.fn();
+    const onExit = vi.fn();
+    const onClose = vi.fn();
     managed.onError(onError);
     managed.onExit(onExit);
     managed.onClose(onClose);
@@ -229,7 +232,7 @@ describe('ManagedStdioProcess', () => {
 
   it('finalizes pending bytes before close observers and only once', () => {
     const managed = createManagedProcess();
-    const snapshotAtClose = jest.fn(() => managed.getStderrSnapshot());
+    const snapshotAtClose = vi.fn(() => managed.getStderrSnapshot());
     managed.onClose(snapshotAtClose);
     managed.start();
     proc.stderr.emit('data', Buffer.from([0xe4, 0xb8]));
@@ -307,7 +310,7 @@ describe('ManagedStdioProcess', () => {
   });
 
   it('continues SIGKILL escalation when signal delivery emits an error', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const managed = createManagedProcess();
     managed.start();
 
@@ -315,7 +318,7 @@ describe('ManagedStdioProcess', () => {
     proc.emit('error', new Error('kill EPERM'));
 
     expect(managed.isAlive()).toBe(true);
-    jest.advanceTimersByTime(3_000);
+    vi.advanceTimersByTime(3_000);
     expect(proc.kill).toHaveBeenNthCalledWith(1, 'SIGTERM');
     expect(proc.kill).toHaveBeenNthCalledWith(2, 'SIGKILL');
 
@@ -324,18 +327,18 @@ describe('ManagedStdioProcess', () => {
   });
 
   it('escalates to SIGKILL and settles at the final shutdown deadline', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const managed = createManagedProcess();
     managed.start();
     proc.stderr.emit('data', Buffer.from([0xe4, 0xb8]));
     expect(managed.getStderrSnapshot()).toBe('');
 
     const shutdown = managed.shutdown();
-    jest.advanceTimersByTime(3_000);
+    vi.advanceTimersByTime(3_000);
     expect(proc.kill).toHaveBeenNthCalledWith(1, 'SIGTERM');
     expect(proc.kill).toHaveBeenNthCalledWith(2, 'SIGKILL');
 
-    jest.advanceTimersByTime(3_000);
+    vi.advanceTimersByTime(3_000);
     await expect(shutdown).resolves.toBeUndefined();
     expect(managed.getStderrSnapshot()).toBe('\ufffd');
     expect(proc.stderr.listenerCount('data')).toBe(0);

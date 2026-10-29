@@ -1,20 +1,23 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import type { Mock } from 'vitest';
 
 import { OpencodeCLIResolver } from '@/providers/opencode/runtime/OpencodeCLIResolver';
 
-jest.mock('fs');
-const mockedStat = fs.statSync as jest.Mock;
 
-jest.mock('@/core/device/InstallationKey', () => ({
-  ...jest.requireActual('@/core/device/InstallationKey'),
+
+vi.mock('fs');
+const mockedStat = fs.statSync as Mock;
+
+vi.mock('@/core/device/InstallationKey', async () => ({
+  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
   getInstallationKey: () => 'current-host',
 }));
 
 describe('OpencodeCLIResolver', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
-    (fs.existsSync as jest.Mock).mockReturnValue(false);
+    vi.clearAllMocks();
+    (fs.existsSync as Mock).mockReturnValue(false);
   });
 
   it('uses the current host path instead of another synced host path', () => {

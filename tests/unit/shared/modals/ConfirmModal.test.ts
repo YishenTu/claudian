@@ -3,8 +3,8 @@ import { createMockEl } from '@test/helpers/MockElement';
 let lastModalInstance: any;
 let createdButtons: any[] = [];
 
-jest.mock('obsidian', () => {
-  const actual = jest.requireActual('obsidian');
+vi.mock('obsidian', async () => {
+  const actual = (await vi.importActual<typeof import('obsidian')>('obsidian'));
 
   class MockModal {
     app: any;
@@ -19,7 +19,7 @@ jest.mock('obsidian', () => {
       lastModalInstance = this;
     }
 
-    setTitle = jest.fn();
+    setTitle = vi.fn();
 
     open() {
       this.onOpen();
@@ -44,10 +44,10 @@ jest.mock('obsidian', () => {
     addButton(cb: (btn: any) => void) {
       const btn: any = {
         _onClick: null as null | (() => void),
-        setButtonText: jest.fn().mockReturnThis(),
-        setDestructive: jest.fn().mockReturnThis(),
-        setWarning: jest.fn().mockReturnThis(),
-        onClick: jest.fn((handler: () => void) => {
+        setButtonText: vi.fn().mockReturnThis(),
+        setDestructive: vi.fn().mockReturnThis(),
+        setWarning: vi.fn().mockReturnThis(),
+        onClick: vi.fn((handler: () => void) => {
           btn._onClick = handler;
           return btn;
         }),

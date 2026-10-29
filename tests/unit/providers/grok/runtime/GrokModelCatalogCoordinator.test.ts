@@ -1,6 +1,7 @@
-const mockGetHostnameKey = jest.fn(() => 'device:current');
+const mockGetHostnameKey = vi.fn(() => 'device:current');
 
 import { grokEnvironmentHash, readGrokCatalog } from '@test/helpers/providers/grokSettings';
+import type { Mock } from 'vitest';
 
 import { createProviderRuntimeHost } from '@/composition/ClaudianProviderHost';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
@@ -19,6 +20,8 @@ import {
   getGrokProviderSettings,
   updateGrokProviderSettings,
 } from '@/providers/grok/settings';
+
+
 
 function makeModel(rawId: string, displayName = rawId): GrokDiscoveredModel {
   return {
@@ -67,10 +70,10 @@ function makeHost(options: {
 
   return {
     app: {},
-    mutateSettingsConditionally: jest.fn(async (mutation) => {
+    mutateSettingsConditionally: vi.fn(async (mutation) => {
       await mutation(settings as never);
     }),
-    notifyProviderChatOptionsChanged: jest.fn(),
+    notifyProviderChatOptionsChanged: vi.fn(),
     settings,
   } as unknown as ProviderHost;
 }
@@ -89,7 +92,7 @@ function makeService(
   result: GrokModelCatalogDiscoveryResult,
 ): GrokModelDiscoveryServiceLike {
   return {
-    discoverCatalog: jest.fn(async () => result),
+    discoverCatalog: vi.fn(async () => result),
   };
 }
 
@@ -102,7 +105,7 @@ function deferNextConditionalMutation(host: ProviderHost): {
   const queued = new Promise<void>((resolve) => {
     resolveQueued = resolve;
   });
-  (host.mutateSettingsConditionally as jest.Mock).mockImplementationOnce((mutation) =>
+  (host.mutateSettingsConditionally as Mock).mockImplementationOnce((mutation) =>
     new Promise<void>((resolve, reject) => {
       executeMutation = async () => {
         try {
@@ -134,7 +137,7 @@ function deferConditionalMutations(host: ProviderHost, count: number): {
   const queued = new Promise<void>((resolve) => {
     resolveQueued = resolve;
   });
-  (host.mutateSettingsConditionally as jest.Mock).mockImplementation((mutation) =>
+  (host.mutateSettingsConditionally as Mock).mockImplementation((mutation) =>
     new Promise<void>((resolve, reject) => {
       let executed = false;
       executions.push(async () => {
@@ -174,14 +177,14 @@ function completedResult(overrides: Partial<Extract<GrokModelCatalogDiscoveryRes
   };
 }
 
-jest.mock('@/core/device/InstallationKey', () => ({
-  ...jest.requireActual('@/core/device/InstallationKey'),
+vi.mock('@/core/device/InstallationKey', async () => ({
+  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
   getInstallationKey: () => mockGetHostnameKey(),
 }));
 
 describe('GrokModelCatalogCoordinator', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockGetHostnameKey.mockReturnValue('device:current');
   });
 
@@ -191,7 +194,7 @@ describe('GrokModelCatalogCoordinator', () => {
       resolveDiscovery = resolve;
     });
     const service: GrokModelDiscoveryServiceLike = {
-      discoverCatalog: jest.fn(async () => pending),
+      discoverCatalog: vi.fn(async () => pending),
     };
     const coordinator = new GrokModelCatalogCoordinator(runtimeHost(makeHost()), service);
 
@@ -210,7 +213,7 @@ describe('GrokModelCatalogCoordinator', () => {
       resolveDiscovery = resolve;
     });
     const service: GrokModelDiscoveryServiceLike = {
-      discoverCatalog: jest.fn(async (signal) => {
+      discoverCatalog: vi.fn(async (signal) => {
         discoverySignal = signal;
         return pending;
       }),
@@ -266,7 +269,7 @@ describe('GrokModelCatalogCoordinator', () => {
       resolveOwner = resolve;
     });
     const service: GrokModelDiscoveryServiceLike = {
-      discoverCatalog: jest.fn()
+      discoverCatalog: vi.fn()
         .mockImplementationOnce(() => oldDiscovery)
         .mockImplementationOnce(() => ownerDiscovery),
     };
@@ -307,7 +310,7 @@ describe('GrokModelCatalogCoordinator', () => {
       resolveOwner = resolve;
     });
     const service: GrokModelDiscoveryServiceLike = {
-      discoverCatalog: jest.fn()
+      discoverCatalog: vi.fn()
         .mockImplementationOnce(() => oldDiscovery)
         .mockImplementationOnce(() => ownerDiscovery),
     };
@@ -502,7 +505,7 @@ describe('GrokModelCatalogCoordinator', () => {
       resolveDiscovery = resolve;
     });
     const service: GrokModelDiscoveryServiceLike = {
-      discoverCatalog: jest.fn(async () => discovery),
+      discoverCatalog: vi.fn(async () => discovery),
     };
     const host = makeHost({
       catalog: makeCatalog({ defaultModelId: 'old-default', models: [makeModel('shared')] }),
@@ -814,7 +817,7 @@ it('does not reuse canceled discovery for a transition owner or publish its dela
   let finishOld!: (result: GrokModelCatalogDiscoveryResult) => void;
   const fresh = { kind: 'completed' as const, models: [makeModel('fresh-model')], defaultModelId: null, fingerprint: 'fingerprint-current' };
   const service = makeService(fresh);
-  jest.mocked(service.discoverCatalog).mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
+  vi.mocked(service.discoverCatalog).mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
   const catalog = new GrokModelCatalogCoordinator(runtimeHost(host), service);
   const owner = { providerTransitionOwner: true as const };
   const old = catalog.refresh(owner);

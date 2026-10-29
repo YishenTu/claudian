@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import {
   createInlineEditHarness,
@@ -12,7 +12,7 @@ import { InlineEditSession } from '@/features/inline-edit/ui/InlineEditModal';
 
 afterEach(async () => {
   await disposeInlineEditHarnesses();
-  jest.mocked(MarkdownRenderer.render).mockReset();
+  vi.mocked(MarkdownRenderer.render).mockReset();
 });
 
 it('previews and applies a one-line change to a 10,000-line selected note', async () => {
@@ -36,14 +36,14 @@ it('previews and applies a one-line change to a 10,000-line selected note', asyn
   };
   // Only Obsidian rendering is adapted; actual selection, provider response,
   // line diff, Markdown document reconstruction and acceptance run unchanged.
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, target) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, target) => {
     target.textContent = markdown;
   });
   const session = new InlineEditSession(h.app, h.plugin, h.plugin, h.editorView, h.editor,
     { mode: 'selection', selectedText: before }, h.notePath, h.settled, { providerId: 'claude' });
   session.show();
   const accept = await showReplacementPreview(h, after);
-  await waitFor(() => expect(jest.mocked(MarkdownRenderer.render).mock.calls.map(call => call[1])).toEqual([before, after]));
+  await waitFor(() => expect(vi.mocked(MarkdownRenderer.render).mock.calls.map(call => call[1])).toEqual([before, after]));
   expect(screen.getByRole('toolbar', { name: 'Inline edit actions' }).textContent).toContain('+1');
   expect(screen.getByRole('toolbar', { name: 'Inline edit actions' }).textContent).toContain('−1');
   expect(h.editorView.state.doc.toString()).toBe(before);

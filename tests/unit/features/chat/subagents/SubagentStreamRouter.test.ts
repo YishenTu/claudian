@@ -1,6 +1,7 @@
 import '@/providers';
 
 import { createMockEl } from '@test/helpers/MockElement';
+import type { Mock } from 'vitest';
 
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
 import { ChatState } from '@/features/chat/state/ChatState';
@@ -11,19 +12,21 @@ import {
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { SubagentStreamRouter } from '@/features/chat/subagents/SubagentStreamRouter';
 
+
+
 function createHarness() {
   const state = new ChatState({});
   const messagesEl = createMockEl();
   const subagentManager = Object.assign(new SubagentManager(() => undefined), {
-    handleAsyncSubagentCompletion: jest.fn().mockReturnValue(undefined),
-    getByTaskId: jest.fn().mockReturnValue(undefined),
-    refreshAsyncSubagent: jest.fn(),
+    handleAsyncSubagentCompletion: vi.fn().mockReturnValue(undefined),
+    getByTaskId: vi.fn().mockReturnValue(undefined),
+    refreshAsyncSubagent: vi.fn(),
   }) as any;
   const harness = {
     providerSessionId: 'session-1' as string | null,
     historyRecovery: undefined as unknown as AsyncSubagentHistoryRecoveryDeps,
-    indicator: { show: jest.fn() },
-    scrollToBottom: jest.fn(),
+    indicator: { show: vi.fn() },
+    scrollToBottom: vi.fn(),
     state,
     subagentManager,
     router: undefined as unknown as SubagentStreamRouter,
@@ -32,10 +35,10 @@ function createHarness() {
     subagentManager,
     getProviderId: () => 'claude',
     getProviderSessionId: () => harness.providerSessionId,
-    loadSubagentFinalResult: jest.fn().mockResolvedValue(null),
-    loadSubagentToolCalls: jest.fn().mockResolvedValue([]),
+    loadSubagentFinalResult: vi.fn().mockResolvedValue(null),
+    loadSubagentToolCalls: vi.fn().mockResolvedValue([]),
     enqueueBackgroundWork: work => work(),
-    persistConversation: jest.fn().mockResolvedValue(undefined),
+    persistConversation: vi.fn().mockResolvedValue(undefined),
   };
   harness.router = new SubagentStreamRouter({
     state,
@@ -43,7 +46,7 @@ function createHarness() {
     getMessagesEl: () => messagesEl,
     getProviderId: () => 'claude',
     asyncSubagentHistoryRecovery: new AsyncSubagentHistoryRecovery(harness.historyRecovery),
-    tools: { flush: jest.fn(), flushBefore: jest.fn(), detach: jest.fn(), remove: jest.fn() },
+    tools: { flush: vi.fn(), flushBefore: vi.fn(), detach: vi.fn(), remove: vi.fn() },
     indicator: harness.indicator,
     scrollToBottom: harness.scrollToBottom,
   });
@@ -54,12 +57,12 @@ describe('SubagentStreamRouter', () => {
   let harness: ReturnType<typeof createHarness>;
 
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     harness = createHarness();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   describe('onAsyncSubagentStateChange', () => {
@@ -129,14 +132,14 @@ describe('SubagentStreamRouter', () => {
       };
       harness.subagentManager.handleAsyncSubagentCompletion.mockReturnValueOnce(completedSubagent);
       harness.subagentManager.getByTaskId.mockReturnValue(completedSubagent);
-      (harness.historyRecovery.loadSubagentToolCalls as jest.Mock).mockResolvedValueOnce([{
+      (harness.historyRecovery.loadSubagentToolCalls as Mock).mockResolvedValueOnce([{
         id: 'nested-tool',
         input: { path: 'README.md' },
         isExpanded: false,
         name: 'Read',
         status: 'completed',
       }]);
-      (harness.historyRecovery.loadSubagentFinalResult as jest.Mock)
+      (harness.historyRecovery.loadSubagentFinalResult as Mock)
         .mockResolvedValueOnce('Recovered final result');
 
       await expect(harness.router.handleAsyncSubagentCompletion(completion)).resolves.toBe(true);
@@ -178,7 +181,7 @@ describe('SubagentStreamRouter', () => {
       };
       harness.subagentManager.handleAsyncSubagentCompletion.mockReturnValueOnce(completedSubagent);
       harness.subagentManager.getByTaskId.mockReturnValue(completedSubagent);
-      (harness.historyRecovery.loadSubagentFinalResult as jest.Mock).mockResolvedValue(null);
+      (harness.historyRecovery.loadSubagentFinalResult as Mock).mockResolvedValue(null);
 
       await harness.router.handleAsyncSubagentCompletion({
         providerSessionId: 'session-1',
@@ -188,7 +191,7 @@ describe('SubagentStreamRouter', () => {
         type: 'async_subagent_completion',
       });
       harness.providerSessionId = 'session-2';
-      await jest.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(10_000);
 
       expect(harness.historyRecovery.loadSubagentFinalResult).toHaveBeenCalledTimes(1);
       expect(completedSubagent.result).toBe('Notification fallback');
@@ -208,8 +211,8 @@ describe('SubagentStreamRouter', () => {
       };
       harness.subagentManager.handleAsyncSubagentCompletion.mockReturnValueOnce(completedSubagent);
       harness.subagentManager.getByTaskId.mockReturnValue(completedSubagent);
-      (harness.historyRecovery.loadSubagentToolCalls as jest.Mock).mockResolvedValue(undefined);
-      (harness.historyRecovery.loadSubagentFinalResult as jest.Mock).mockResolvedValue(undefined);
+      (harness.historyRecovery.loadSubagentToolCalls as Mock).mockResolvedValue(undefined);
+      (harness.historyRecovery.loadSubagentFinalResult as Mock).mockResolvedValue(undefined);
 
       await harness.router.handleAsyncSubagentCompletion({
         providerSessionId: 'session-1',
@@ -218,7 +221,7 @@ describe('SubagentStreamRouter', () => {
         toolUseId: 'task-1',
         type: 'async_subagent_completion',
       });
-      await jest.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(10_000);
 
       expect(harness.historyRecovery.loadSubagentToolCalls).toHaveBeenCalledTimes(1);
       expect(harness.historyRecovery.loadSubagentFinalResult).not.toHaveBeenCalled();

@@ -36,7 +36,7 @@ it.each([false, true])('edits, switches and resumes native branches without losi
   });
   const createSession = (providerState: Record<string, unknown>) => backend.createSession({
     lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: root,
-    interactionPort: { askUserQuestion: jest.fn(), requestApproval: jest.fn(), dismissInteraction: jest.fn() },
+    interactionPort: { askUserQuestion: vi.fn(), requestApproval: vi.fn(), dismissInteraction: vi.fn() },
     resumeSeed: { providerSessionId: 'pi-source', providerState },
   });
   let session: ProviderExecutionSession = createSession({ sessionFile, sessionId: 'pi-source' });
@@ -78,7 +78,7 @@ it.each([false, true])('edits, switches and resumes native branches without losi
     expect((branchB.status === 'committed' ? branchB.messages : []).map(message => message.content)).toEqual(['B', 'Reply 2']);
     expect(branchB).toMatchObject({ usage: { contextTokens: 2010, contextWindow: 200000 } });
     const requestBeforeLoss = kernel.request.bind(kernel);
-    const lostReply = jest.spyOn(kernel, 'request').mockImplementation((async (type, payload, timeout, signal) => {
+    const lostReply = vi.spyOn(kernel, 'request').mockImplementation((async (type, payload, timeout, signal) => {
       const reply = await requestBeforeLoss(type, payload, timeout, signal);
       if (type === 'claudian_tree' && payload?.operation === 'restore' && payload.leafId === 'pi-assistant-1') {
         throw new Error('Reply lost after native navigation');
@@ -97,7 +97,7 @@ it.each([false, true])('edits, switches and resumes native branches without losi
     const rolledBack = await session.reconcileConversationBranch({ configuration });
     expect(rolledBack).toMatchObject({ status: 'cancelled', usage: { contextTokens: 2010 } });
     expect(('messages' in rolledBack ? rolledBack.messages : [])?.map(message => message.content)).toEqual(['B', 'Reply 2']);
-    const hydration = jest.spyOn(PiConversationHistoryService.prototype, 'hydrateConversationHistory').mockRejectedValueOnce(new Error('History read unavailable'));
+    const hydration = vi.spyOn(PiConversationHistoryService.prototype, 'hydrateConversationHistory').mockRejectedValueOnce(new Error('History read unavailable'));
     expect(await session.navigateConversationBranch({ userMessageId: 'pi-user-2', branchMessageId: 'pi-user-1', configuration }))
       .toMatchObject({ status: 'recovery-required' });
     const recovered = await session.reconcileConversationBranch({ configuration });

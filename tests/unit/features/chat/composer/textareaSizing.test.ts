@@ -1,20 +1,24 @@
 /**
- * @jest-environment jsdom
+ * @vitest-environment jsdom
  */
+
+import type { Mock } from 'vitest';
 
 import { installTextareaSizing } from '@/features/chat/composer/textareaSizing';
 
+
+
 describe('textareaSizing', () => {
   let resizeCallback: ResizeObserverCallback;
-  let disconnect: jest.Mock;
-  let observe: jest.Mock;
+  let disconnect: Mock;
+  let observe: Mock;
   let originalResizeObserver: typeof ResizeObserver | undefined;
 
   beforeEach(() => {
     originalResizeObserver = globalThis.ResizeObserver;
-    disconnect = jest.fn();
-    observe = jest.fn();
-    globalThis.ResizeObserver = jest.fn().mockImplementation((callback) => {
+    disconnect = vi.fn();
+    observe = vi.fn();
+    globalThis.ResizeObserver = vi.fn().mockImplementation(function (callback) {
       resizeCallback = callback;
       return { disconnect, observe };
     }) as unknown as typeof ResizeObserver;
@@ -85,19 +89,19 @@ describe('textareaSizing', () => {
 function createComposer(height: number): {
   container: HTMLDivElement;
   textarea: HTMLTextAreaElement;
-  readContainerHeight: jest.Mock;
-  setCssProps: jest.Mock;
+  readContainerHeight: Mock;
+  setCssProps: Mock;
 } {
   const container = document.createElement('div');
   container.className = 'claudian-container';
   const textarea = document.createElement('textarea');
-  const setCssProps = jest.fn((properties: Record<string, string>) => {
+  const setCssProps = vi.fn((properties: Record<string, string>) => {
     for (const [name, value] of Object.entries(properties)) {
       textarea.style.setProperty(name, value);
     }
   });
   textarea.setCssProps = setCssProps;
-  const readContainerHeight = jest.fn(() => height);
+  const readContainerHeight = vi.fn(() => height);
   Object.defineProperty(container, 'clientHeight', {
     configurable: true,
     get: readContainerHeight,

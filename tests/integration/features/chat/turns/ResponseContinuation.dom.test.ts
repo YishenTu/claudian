@@ -1,12 +1,12 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import { deserialize, serialize } from 'node:v8';
 
+import { axe } from '@test/helpers/accessibility';
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import type { ChatMessage } from '@/core/types';
@@ -19,7 +19,7 @@ import { ClaudeConversationHistoryService } from '@/providers/claude/history/Cla
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
 
-jest.mock('node:fs/promises');
+vi.mock('node:fs/promises');
 const writeSession = useClaudeSessionFiles();
 const originalStructuredClone = globalThis.structuredClone;
 beforeAll(() => { globalThis.structuredClone = value => deserialize(serialize(value)); });
@@ -37,7 +37,7 @@ HTMLElement.prototype.removeClass = function (...classes) { this.classList.remov
 
 beforeEach(() => {
   document.body.replaceChildren();
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     (el as HTMLElement).createEl('p', { text: markdown });
   });
 });
@@ -267,7 +267,7 @@ it.each(['between', 'during-second', 'after-second'])('groups an older task noti
     renderer.renderMessages(replay.messages, () => 'Welcome');
     await Promise.resolve();
     assertPlacement();
-    const locate = jest.spyOn(historyStore, 'locateSDKSessions').mockResolvedValue(new Map([
+    const locate = vi.spyOn(historyStore, 'locateSDKSessions').mockResolvedValue(new Map([
       ['session', { availability: 'relocated', sessionPath }],
     ]));
     try {

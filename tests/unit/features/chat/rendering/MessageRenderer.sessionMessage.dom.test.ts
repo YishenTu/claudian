@@ -1,9 +1,9 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Component, MarkdownRenderer, Notice } from 'obsidian';
 
 import { encodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
@@ -16,15 +16,15 @@ it.each(['live', 'history'])('shows the sender safely in %s and keeps the envelo
   document.body.replaceChildren();
   const host = document.body.createDiv();
   const records = new Map([['source-session', { id: 'source-session', providerId: 'claude' } as Conversation]]);
-  const getCachedConversation = jest.fn((id: string) => records.get(id) ?? null);
-  const openConversation = jest.fn(async (_id: string) => undefined);
+  const getCachedConversation = vi.fn((id: string) => records.get(id) ?? null);
+  const openConversation = vi.fn(async (_id: string) => undefined);
   const renderer = new MessageRenderer({
     app: {}, settings: { mediaFolder: '' },
     ensureConversationMetadataLoaded: async () => undefined,
     getCachedConversation,
     getConversationSummary: (id: string) => records.get(id) ?? null,
   } as any, new Component(), host, undefined, undefined, undefined, undefined, openConversation);
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     el.textContent = markdown;
   });
   const sender = { from: '<img src=x onerror=alert(1)> & Research', sessionId: 'source-session' };
@@ -65,7 +65,7 @@ it.each(['live', 'history'])('shows the sender safely in %s and keeps the envelo
     renderer.addMessage({ ...message, id: 'incoming-again' });
     const stale = within(host.querySelector<HTMLElement>('[data-message-id="incoming-again"]')!).getByRole('button', { name: sender.from });
     expect(stale.getAttribute('title')).toBe('Open session source-session');
-    jest.mocked(Notice).mockClear();
+    vi.mocked(Notice).mockClear();
     fireEvent.click(stale);
     await waitFor(() => expect(Notice).toHaveBeenCalledWith('That session no longer exists.'));
     expect(openConversation).toHaveBeenCalledTimes(1);

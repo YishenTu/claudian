@@ -1,12 +1,13 @@
-import type * as fsType from 'fs';
-import type * as osType from 'os';
+const actualModule0 = await import('fs');
+const actualModule1 = await import('os');
 import * as path from 'path';
 
 import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
 import { ClaudeCLIResolver } from '@/providers/claude/runtime/ClaudeCLIResolver';
 
-const fs = jest.requireActual<typeof fsType>('fs');
-const os = jest.requireActual<typeof osType>('os');
+
+const fs = actualModule0;
+const os = actualModule1;
 
 describe('ClaudeCLIResolver', () => {
   const originalEnv = process.env;
@@ -19,10 +20,10 @@ describe('ClaudeCLIResolver', () => {
     for (const key of ['MISE_SHIMS_DIR', 'MISE_DATA_DIR', 'XDG_DATA_HOME', 'LOCALAPPDATA', 'npm_config_prefix']) {
       delete process.env[key];
     }
-    jest.spyOn(os, 'homedir').mockReturnValue(tempDir);
+    vi.spyOn(os, 'homedir').mockReturnValue(tempDir);
     // Keep discovery independent of CLIs installed on the machine running the test.
     const statSync = fs.statSync;
-    jest.spyOn(fs, 'statSync').mockImplementation(((filePath, options) => {
+    vi.spyOn(fs, 'statSync').mockImplementation(((filePath, options) => {
       if (!String(filePath).startsWith(`${tempDir}${path.sep}`)) {
         throw new Error('Outside fixture directory');
       }
@@ -31,7 +32,7 @@ describe('ClaudeCLIResolver', () => {
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
     process.env = originalEnv;
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
@@ -105,3 +106,7 @@ function resolveClaudeCLIPath(hostnamePath: string | undefined, legacyPath: stri
     sharedEnvironmentVariables: envText,
   });
 }
+
+vi.mock('fs', async () => ({ ...await vi.importActual<typeof import('fs')>('fs') }));
+
+vi.mock('os', async () => ({ ...await vi.importActual<typeof import('os')>('os') }));

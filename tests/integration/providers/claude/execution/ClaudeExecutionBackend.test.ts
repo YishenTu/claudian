@@ -3,15 +3,18 @@ import '@/providers';
 import * as sdkModule from '@anthropic-ai/claude-agent-sdk';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
+import type { Mock } from 'vitest';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { updateClaudeProviderSettings } from '@/providers/claude/settings';
 
+
+
 const sdkMock = sdkModule as unknown as {
   getLastOptions(): sdkModule.Options | undefined;
-  getLastResponse(): { interrupt: jest.Mock } | null;
+  getLastResponse(): { interrupt: Mock } | null;
   resetMockMessages(): void;
   setMockMessages(messages: unknown[]): void;
 };
@@ -43,14 +46,14 @@ function createContext() {
       userName: '',
       loadUserClaudeSettings: false,
     },
-    getResolvedProviderCliPath: jest.fn().mockResolvedValue('/bin/claude'),
+    getResolvedProviderCliPath: vi.fn().mockResolvedValue('/bin/claude'),
   });
   return { host, lifecycleRegistry };
 }
 
 describe('Claude auxiliary execution', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     sdkMock.resetMockMessages();
   });
 
@@ -107,7 +110,7 @@ describe('Claude auxiliary execution', () => {
     updateClaudeProviderSettings(context.host.settings, { promptSuggestions: true });
     ProviderWorkspaceRegistry.setServices('claude', {});
     const service = ProviderRegistry.createTitleGenerationService(context.host);
-    const callback = jest.fn();
+    const callback = vi.fn();
     try {
       respond('A useful title');
       await service.generateTitle('conversation', 'First message', callback);

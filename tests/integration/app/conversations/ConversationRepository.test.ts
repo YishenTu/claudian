@@ -25,16 +25,16 @@ function fixture() {
   };
   const persistence = {
     metadataReader: {
-      revalidate: jest.fn().mockResolvedValue([]),
-      load: jest.fn().mockResolvedValue(null),
-      scan: jest.fn().mockResolvedValue({ records: [], complete: true, invalidMetadataCount: 0 }),
-      loadMetadata: jest.fn().mockResolvedValue(null),
-      scanMetadata: jest.fn().mockResolvedValue({ metadata: [], complete: true, invalidMetadataCount: 0 }),
-      listMetadata: jest.fn().mockResolvedValue([]),
+      revalidate: vi.fn().mockResolvedValue([]),
+      load: vi.fn().mockResolvedValue(null),
+      scan: vi.fn().mockResolvedValue({ records: [], complete: true, invalidMetadataCount: 0 }),
+      loadMetadata: vi.fn().mockResolvedValue(null),
+      scanMetadata: vi.fn().mockResolvedValue({ metadata: [], complete: true, invalidMetadataCount: 0 }),
+      listMetadata: vi.fn().mockResolvedValue([]),
     },
-    saveMetadata: jest.fn().mockResolvedValue(undefined),
-    deleteCurrentMetadata: jest.fn().mockResolvedValue(undefined),
-    assignMetadataToDevice: jest.fn().mockResolvedValue(undefined),
+    saveMetadata: vi.fn().mockResolvedValue(undefined),
+    deleteCurrentMetadata: vi.fn().mockResolvedValue(undefined),
+    assignMetadataToDevice: vi.fn().mockResolvedValue(undefined),
   };
   const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
   const repository = new ConversationRepository({
@@ -201,7 +201,7 @@ test('historical recovery cannot overwrite a model selection whose write is pend
   let finishRecovery!: (model: string) => void;
   const recoveryResult = new Promise<string>(resolve => { finishRecovery = resolve; });
   const history = ProviderRegistry.getConversationHistoryService('claude');
-  const recoverySpy = jest.spyOn(history, 'recoverConversationModelSelection').mockReturnValue(recoveryResult);
+  const recoverySpy = vi.spyOn(history, 'recoverConversationModelSelection').mockReturnValue(recoveryResult);
   let finishWrite!: () => void;
   persistence.saveMetadata.mockImplementationOnce(() => new Promise<void>(resolve => { finishWrite = resolve; }));
   try {
@@ -376,7 +376,7 @@ test('a missing-session check waits for an already-admitted binding write', asyn
   let finishWrite!: () => void;
   persistence.saveMetadata.mockImplementationOnce(() => new Promise<void>(resolve => { finishWrite = resolve; }));
   const history = ProviderRegistry.getConversationHistoryService('claude');
-  const missingSpy = jest.spyOn(history, 'resolveMissingConversationSession').mockImplementation(async draft => ({
+  const missingSpy = vi.spyOn(history, 'resolveMissingConversationSession').mockImplementation(async draft => ({
     outcome: draft.sessionId === 'native-shared' ? 'delete' : 'preserve',
   }));
   try {
@@ -419,7 +419,7 @@ test('failed deletion restores a recovered model committed while deletion was pe
   persistence.saveMetadata.mockImplementationOnce(() => new Promise<void>(resolve => { finishWrite = resolve; }));
   persistence.deleteCurrentMetadata.mockRejectedValueOnce(new Error('deletion failed'));
   const history = ProviderRegistry.getConversationHistoryService('claude');
-  const recoverySpy = jest.spyOn(history, 'recoverConversationModelSelection').mockResolvedValue('sonnet');
+  const recoverySpy = vi.spyOn(history, 'recoverConversationModelSelection').mockResolvedValue('sonnet');
   try {
     const recovery = repository.recoverMissingSelectedModels();
     await waitFor(() => Boolean(finishWrite));
@@ -481,9 +481,9 @@ test('context controls read detached metadata without copying the transcript', a
   }];
   repository.replaceAll([conversation]);
   const settings = { ...DEFAULT_CLAUDIAN_SETTINGS, customContextLimits: { sonnet: 100_000, opus: 200_000 } };
-  const fullRead = jest.spyOn(repository, 'getSync');
-  const summaryRead = jest.spyOn(repository, 'getSummary');
-  const update = jest.fn();
+  const fullRead = vi.spyOn(repository, 'getSync');
+  const summaryRead = vi.spyOn(repository, 'getSummary');
+  const update = vi.fn();
   const tab = {
     conversationId: conversation.id, providerId: 'claude', draftModel: null,
     session: { runtime: { conversationId: conversation.id, providerId: 'claude', draftModel: null, reasoningSelections: new Map(), providerSelections: new Map() } },

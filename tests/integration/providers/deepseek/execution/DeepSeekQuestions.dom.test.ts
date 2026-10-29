@@ -1,14 +1,14 @@
 /**
- * @jest-environment jsdom
- * @jest-environment-options {"customExportConditions":["node","node-addons"]}
+ * @vitest-environment jsdom
+ * @vitest-environment-options {"customExportConditions":["node","node-addons"]}
  */
 
+import { axe } from '@test/helpers/accessibility';
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { NativePeer, rootFollow } from '@test/helpers/deepseek/NativePeer';
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor,within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderExecutionSession, ProviderInteractionPort } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
@@ -51,7 +51,7 @@ async function collect(events: AsyncIterable<ProviderExecutionEvent>, into: Prov
 
 beforeEach(async () => {
   seq = 3; nativeTurn = 0; settings.locale = 'en';
-  port = { requestApproval: jest.fn(), askUserQuestion: jest.fn(), dismissInteraction: jest.fn() };
+  port = { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() };
   peer = new NativePeer();
   const native = nativeDefaults({ seq: () => seq, roster: () => ['root'] });
   peer.onCall = (method, args) => method === 'session/create' ? { sessionId: 'root', agentPreset: 'claudian' } : native.call(method, args);
@@ -313,7 +313,7 @@ it.each([
 
 it('declines a subagent approval natively without presenting it', async () => {
   renderApprovals(); create();
-  const requestApproval = jest.spyOn(port, 'requestApproval');
+  const requestApproval = vi.spyOn(port, 'requestApproval');
   const run = session.execute(request());
   const done = collect(run.events, []);
   try {
@@ -360,13 +360,13 @@ it('falls back to the native reason at the deadline when owned call details neve
     await claimed(events);
     const realTimeout = setTimeout;
     // Only the interaction deadline, armed after this point, runs on the fake clock.
-    jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask'] });
+    vi.useFakeTimers({ toNotFake: ['nextTick', 'queueMicrotask'] });
     try {
       approve('root', 'missing-call');
       await new Promise(resolve => realTimeout(resolve, 50));
       expect(within(document.body).queryByRole('region', { name: /approval details/ })).toBeNull();
-      jest.advanceTimersByTime(10_000);
-    } finally { jest.useRealTimers(); }
+      vi.advanceTimersByTime(10_000);
+    } finally { vi.useRealTimers(); }
     const details = await waitFor(() => within(document.body).getByRole('region', { name: 'Bash approval details' }));
     expect(details.textContent).toBe(nativeReason.displayReason.en);
     expect(session.getStatus()).not.toBe('invalidated');
@@ -378,7 +378,7 @@ it('falls back to the native reason at the deadline when owned call details neve
 
 it('gives each approval its own wait for call details', async () => {
   const requests: Array<{ interactionId: string; description: string }> = [];
-  port.requestApproval = jest.fn((input, signal) => {
+  port.requestApproval = vi.fn<typeof port.requestApproval>((input, signal) => {
     requests.push(input);
     return new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('Approval dismissed.')), { once: true }));
   });
@@ -391,19 +391,19 @@ it('gives each approval its own wait for call details', async () => {
   const settle = () => new Promise(resolve => realTimeout(resolve, 50));
   await settle();
   // Each deadline is armed on the fake clock, which also drives Date.
-  jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask'] });
+  vi.useFakeTimers({ toNotFake: ['nextTick', 'queueMicrotask'] });
   try {
     peer.send('$events', { type: 'waterfall', eventId: 'first', event: 'approval/request', agentId: 'root', request: { toolName: 'bash', callId: 'missing-first', ...nativeReason } });
     await settle();
-    jest.advanceTimersByTime(9_000);
+    vi.advanceTimersByTime(9_000);
     peer.send('$events', { type: 'waterfall', eventId: 'second', event: 'approval/request', agentId: 'root', request: { toolName: 'bash', callId: 'bash-2', ...nativeReason } });
     await settle();
-    jest.advanceTimersByTime(1_000);
+    vi.advanceTimersByTime(1_000);
     await settle();
     expect(requests.map(r => [r.interactionId, r.description])).toEqual([['first', nativeReason.displayReason.en]]);
     event('tool/call', { callId: 'bash-2', name: 'bash', arguments: JSON.stringify({ command: 'ls' }) });
     await settle();
-  } finally { jest.useRealTimers(); }
+  } finally { vi.useRealTimers(); }
   expect(requests.map(r => [r.interactionId, r.description])).toEqual([['first', nativeReason.displayReason.en], ['second', 'Run command: ls']]);
   expect(session.getStatus()).not.toBe('invalidated');
   answer('Done');

@@ -1,16 +1,18 @@
-import type * as ChildProcess from 'child_process';
+const actualModule0 = await import('child_process');
+import type { MockInstance } from 'vitest';
 
 import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
 import { buildCodexLaunchSpec } from '@/providers/codex/runtime/CodexLaunchSpecBuilder';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 
-const childProcess = jest.requireActual<typeof ChildProcess>('child_process');
+
+const childProcess = actualModule0;
 
 describe('buildCodexLaunchSpec', () => {
-  let execFileSyncSpy: jest.SpyInstance;
+  let execFileSyncSpy: MockInstance;
 
   beforeEach(() => {
-    execFileSyncSpy = jest.spyOn(childProcess, 'execFileSync').mockImplementation(() => {
+    execFileSyncSpy = vi.spyOn(childProcess, 'execFileSync').mockImplementation(() => {
       throw Object.assign(new Error('spawnSync wsl.exe ENOENT'), { code: 'ENOENT' });
     });
   });
@@ -274,3 +276,5 @@ describe('buildCodexLaunchSpec', () => {
     );
   });
 });
+
+vi.mock('child_process', async () => ({ ...await vi.importActual<typeof import('child_process')>('child_process') }));

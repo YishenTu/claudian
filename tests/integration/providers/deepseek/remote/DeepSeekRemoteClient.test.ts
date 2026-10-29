@@ -105,7 +105,7 @@ it('rejects untrusted launch origins before authenticating and fences disposed c
 
 it('ends one stream, by cancellation or its own listener rejecting a frame, without disconnecting its siblings', async () => {
   client = await DeepSeekRemoteClient.open(url);
-  const disconnected = jest.fn();
+  const disconnected = vi.fn();
   client.onDisconnect(disconnected);
   const cancel = client.subscribe('job/list', {}, () => {}, () => {});
   cancel();
@@ -134,7 +134,7 @@ it('closes the shared mux on an unknown stream frame instead of guessing its mea
 
 it('keeps the ordinary RPC deadline but waits without one only when asked, still honoring abort', async () => {
   client = await DeepSeekRemoteClient.open(url);
-  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   try {
     const abort = new AbortController();
     const settle = (promise: Promise<unknown>) => promise.then(value => ({ value }), (error: Error) => ({ error: error.message }));
@@ -142,7 +142,7 @@ it('keeps the ordinary RPC deadline but waits without one only when asked, still
     const unbounded = settle(client.call('fixture/held', {}, { timeoutMs: 'none' }));
     const cancelled = settle(client.call('fixture/held', {}, { signal: abort.signal, timeoutMs: 'none' }));
     while (held.length < 3) await new Promise(resolve => setImmediate(resolve));
-    jest.advanceTimersByTime(31_000);
+    vi.advanceTimersByTime(31_000);
     expect(await bounded).toEqual({ error: expect.stringMatching(/timed out/i) });
     abort.abort();
     expect(await cancelled).toEqual({ error: expect.any(String) });
@@ -153,6 +153,6 @@ it('keeps the ordinary RPC deadline but waits without one only when asked, still
     for (const release of held) release();
     expect(await unbounded).toEqual({ value: 'released' });
   } finally {
-    jest.useRealTimers();
+    vi.useRealTimers();
   }
 });

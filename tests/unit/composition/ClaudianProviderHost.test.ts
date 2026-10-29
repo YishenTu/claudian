@@ -14,7 +14,7 @@ function createHost(overrides: Partial<ClaudianProviderHostDeps> = {}): Claudian
     app: {} as ClaudianProviderHostDeps['app'],
     executionLifecycleRegistry: new ProviderExecutionLifecycleRegistry(),
     storage: { installationKey: 'device-key' as never },
-    sessionToolEndpoint: { registerMCPRoute: jest.fn(), registerCallRoute: jest.fn() },
+    sessionToolEndpoint: { registerMCPRoute: vi.fn(), registerCallRoute: vi.fn() },
     settings: new SettingsCoordinator(settings, async () => undefined),
     environment: {} as ClaudianProviderHostDeps['environment'],
     notifyProviderChatOptionsChanged: async () => undefined,
@@ -100,10 +100,10 @@ describe('ClaudianProviderHost', () => {
 
   it('runs provider transitions through the application lifecycle registry', async () => {
     const executionLifecycleRegistry = new ProviderExecutionLifecycleRegistry();
-    const runTransition = jest.spyOn(executionLifecycleRegistry, 'runTransition')
+    const runTransition = vi.spyOn(executionLifecycleRegistry, 'runTransition')
       .mockImplementation(async (_providerIds, mutation) => mutation({} as ProviderExecutionTransitionScope));
     const host = createHost({ executionLifecycleRegistry });
-    const mutation = jest.fn(async () => 'result');
+    const mutation = vi.fn(async () => 'result');
 
     expect(host.executionLifecycleRegistry).toBe(executionLifecycleRegistry);
     await expect(
@@ -117,9 +117,9 @@ describe('ClaudianProviderHost', () => {
   });
 
   it('initializes only session-archive providers before reading their archive', async () => {
-    const sessionArchive = { setSessionsArchived: jest.fn() } as unknown as ProviderSessionArchive;
-    const initializeArchive = jest.fn(async () => ({ sessionArchive }));
-    const initializePlain = jest.fn(async () => ({}));
+    const sessionArchive = { setSessionsArchived: vi.fn() } as unknown as ProviderSessionArchive;
+    const initializeArchive = vi.fn(async () => ({ sessionArchive }));
+    const initializePlain = vi.fn(async () => ({}));
     ProviderWorkspaceRegistry.register('test-archive', {
       providesSessionArchive: true,
       initialize: initializeArchive,

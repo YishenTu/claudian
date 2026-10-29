@@ -1,25 +1,28 @@
 import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk';
+import type { Mock, Mocked } from 'vitest';
 
 import type { ProviderInteractionPort } from '@/core/execution';
 import { ClaudeExecutionInteractionRouter } from '@/providers/claude/execution/ClaudeExecutionInteractionRouter';
 
-function createPort(): jest.Mocked<ProviderInteractionPort> {
+
+
+function createPort(): Mocked<ProviderInteractionPort> {
   return {
-    requestApproval: jest.fn().mockImplementation(async (request) => ({
+    requestApproval: vi.fn().mockImplementation(async (request) => ({
       interactionId: request.interactionId,
       decision: 'allow-always',
     })),
-    askUserQuestion: jest.fn().mockImplementation(async (request) => ({
+    askUserQuestion: vi.fn().mockImplementation(async (request) => ({
       interactionId: request.interactionId,
       answers: { answer: 'yes' },
     })),
-    dismissInteraction: jest.fn(),
+    dismissInteraction: vi.fn(),
   };
 }
 
 function createHandler(
-  port: jest.Mocked<ProviderInteractionPort>,
-  onToolBlocked: jest.Mock = jest.fn(),
+  port: Mocked<ProviderInteractionPort>,
+  onToolBlocked: Mock = vi.fn(),
 ): CanUseTool {
   return new ClaudeExecutionInteractionRouter({
     interactionPort: port,
@@ -41,7 +44,7 @@ describe('ClaudeExecutionInteractionRouter', () => {
     const port = createPort();
     const handler = new ClaudeExecutionInteractionRouter({
       interactionPort: port, sessionInstanceId: 'session', getTurnId: () => null,
-      isToolAllowed: () => false, onToolBlocked: jest.fn(),
+      isToolAllowed: () => false, onToolBlocked: vi.fn(),
     }).canUseTool;
     const input = { text: 'Hello' };
     expect(await handler('mcp__claudian_sessions__claudian_send_message', input, nativeOptions))
@@ -197,7 +200,7 @@ describe('ClaudeExecutionInteractionRouter', () => {
       interactionId: request.interactionId,
       decision: 'deny',
     }));
-    const onToolBlocked = jest.fn();
+    const onToolBlocked = vi.fn();
     const handler = createHandler(port, onToolBlocked);
 
     const result = await handler('Bash', { command: 'rm -rf /' }, nativeOptions);
@@ -248,7 +251,7 @@ describe('ClaudeExecutionInteractionRouter', () => {
       sessionInstanceId: 'session-local',
       getTurnId: () => 'turn-local',
       isToolAllowed: (toolName) => toolName === 'Read',
-      onToolBlocked: jest.fn(),
+      onToolBlocked: vi.fn(),
     }).canUseTool;
 
     const result = await handler('Edit', {}, nativeOptions);
@@ -273,7 +276,7 @@ describe('ClaudeExecutionInteractionRouter', () => {
       sessionInstanceId: 'session-local',
       getTurnId: () => 'turn-local',
       isToolAllowed: () => true,
-      onToolBlocked: jest.fn(),
+      onToolBlocked: vi.fn(),
     });
 
     const pending = handler.canUseTool('Edit', {}, nativeOptions);

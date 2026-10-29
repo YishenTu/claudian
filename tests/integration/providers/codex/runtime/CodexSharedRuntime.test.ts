@@ -35,17 +35,17 @@ let mockHoldSkills = false;
 let mockRequestOverride: ((process: FakeProcess, request: any) => boolean) | null = null;
 const target = { method: 'host-native', platformFamily: 'unix', platformOs: 'linux' } as const;
 
-jest.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
-  CodexAppServerProcess: jest.fn().mockImplementation(() => {
+vi.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
+  CodexAppServerProcess: vi.fn().mockImplementation(function () {
     const process = new FakeProcess();
     mockProcesses.push(process);
     return process;
   }),
 }));
 
-jest.mock('@/providers/codex/runtime/codexAppServerSupport', () => ({
-  ...jest.requireActual('@/providers/codex/runtime/codexAppServerSupport'),
-  resolveCodexAppServerLaunchSpec: jest.fn(async (host: ProviderRuntimeHost) => buildCodexLaunchSpec({
+vi.mock('@/providers/codex/runtime/codexAppServerSupport', async () => ({
+  ...(await vi.importActual<typeof import('@/providers/codex/runtime/codexAppServerSupport')>('@/providers/codex/runtime/codexAppServerSupport')),
+  resolveCodexAppServerLaunchSpec: vi.fn(async (host: ProviderRuntimeHost) => buildCodexLaunchSpec({
     codexSettings: decodeCodexConfig(host.config), resolvedCliCommand: 'codex', env: { KEY: mockLaunchKey }, hostVaultPath: '/vault',
     executionTarget: target,
   })),
@@ -153,7 +153,7 @@ class FakeProcess {
 describe('Codex shared runtime', () => {
   const runtimes: CodexAppServerRuntime[] = [];
   const plugin = { settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } } } } as unknown as ProviderHost;
-  function createRuntime(warn = jest.fn()): CodexAppServerRuntime {
+  function createRuntime(warn = vi.fn()): CodexAppServerRuntime {
     const runtime = new CodexAppServerRuntime(scoped(plugin), warn);
     runtimes.push(runtime);
     return runtime;
@@ -253,7 +253,7 @@ describe('Codex shared runtime', () => {
   });
 
   it.each(['unsupported', 'partial'])('warns once and allows skills after %s reconciliation', async failure => {
-    const warn = jest.fn();
+    const warn = vi.fn();
     const runtime = createRuntime(warn);
     const skills = new CodexSkillListingService(runtime);
     const listing = skills.listSkills();
@@ -284,7 +284,7 @@ describe('Codex shared runtime', () => {
 
   const config: ProviderSessionConfig = {
     lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: '/vault',
-    interactionPort: { requestApproval: jest.fn(), askUserQuestion: jest.fn(), dismissInteraction: jest.fn() },
+    interactionPort: { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() },
   };
   const request: ProviderExecutionRequest = {
     input: [{ type: 'text', text: 'hello' }],
@@ -315,7 +315,7 @@ describe('Codex shared runtime', () => {
 
   it.each([true, false])('registers session specs and their version only with a port (%s)', async ported => {
     mockAutoReconcile = true;
-    const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn(), read: jest.fn() };
+    const port = { list: vi.fn(async () => ({ sessions: [] })), send: vi.fn(), read: vi.fn() };
     const session = createBackend(plugin, createRuntime()).createSession({ ...config, ...(ported ? { sessionTools: port } : {}) });
     const output = collect(session.execute(request).events);
     const process = await waitForRequest('turn/start');
@@ -334,7 +334,7 @@ describe('Codex shared runtime', () => {
   it.each([undefined, 1])('resumes a version %s thread without attempting to replace its fixed specs', async sessionToolVersion => {
     mockAutoReconcile = true;
     const session = createBackend(plugin, createRuntime()).createSession({ ...config,
-      sessionTools: { list: async () => ({ sessions: [] }), send: jest.fn(), read: jest.fn() },
+      sessionTools: { list: async () => ({ sessions: [] }), send: vi.fn(), read: vi.fn() },
       resumeSeed: { providerSessionId: 'existing', providerState: { threadId: 'existing', sessionToolVersion } },
     });
     const output = collect(session.execute(request).events);
@@ -352,7 +352,7 @@ describe('Codex shared runtime', () => {
     { kind: 'read-only' }, { kind: 'passive' },
   ])('denies session calls under $kind on fresh and resumed tool-bearing threads', async toolPolicy => {
     mockAutoReconcile = true;
-    const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn(), read: jest.fn() };
+    const port = { list: vi.fn(async () => ({ sessions: [] })), send: vi.fn(), read: vi.fn() };
     const backend = createBackend(plugin, createRuntime());
     for (const resume of [false, true]) {
       const session = backend.createSession({ ...config, sessionTools: port, ...(resume ? {
@@ -403,7 +403,7 @@ describe('Codex shared runtime', () => {
       runSignal.throwIfAborted();
       admitted.push(args.text!);
       return { sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'started' };
-    }, read: jest.fn() };
+    }, read: vi.fn() };
     const session = createBackend(plugin, createRuntime()).createSession({ ...config, sessionTools: port });
     const run = session.execute(request);
     const output = collect(run.events);
@@ -426,11 +426,11 @@ describe('Codex shared runtime', () => {
     mockAutoReconcile = true;
     const admitted: string[] = [];
     let signal: AbortSignal | undefined;
-    const port: ProviderSessionToolPort = { list: jest.fn(async () => ({ sessions: [] })), send: async (args, runSignal) => {
+    const port: ProviderSessionToolPort = { list: vi.fn(async () => ({ sessions: [] })), send: async (args, runSignal) => {
       signal = runSignal;
       admitted.push(args.text!);
       return { sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'started' };
-    }, read: jest.fn() };
+    }, read: vi.fn() };
     const session = createBackend(plugin, createRuntime()).createSession({ ...config, sessionTools: port });
     const run = session.execute(request);
     const output = collect(run.events);
@@ -452,9 +452,9 @@ describe('Codex shared runtime', () => {
   });
 
   it.each(['recovered completion', 'terminal error', 'exhausted recovery'])('rejects old calls after %s while the next start is unacknowledged', async terminal => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     mockAutoReconcile = true;
-    const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn(), read: jest.fn() };
+    const port = { list: vi.fn(async () => ({ sessions: [] })), send: vi.fn(), read: vi.fn() };
     const session = createBackend(plugin, createRuntime()).createSession({ ...config, sessionTools: port });
     try {
       const output = collect(session.execute(request).events);
@@ -467,7 +467,7 @@ describe('Codex shared runtime', () => {
         oldTurn.status = terminal === 'recovered completion' ? 'completed' : 'inProgress';
         process.notify('thread/status/changed', { threadId: 'thread-1', status: { type: 'idle' } });
       }
-      await jest.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(5_000);
       expect((await output).at(-1)).toMatchObject({ type: terminal === 'recovered completion' ? 'turn_completed' : 'execution_error' });
       let heldStart: number | undefined;
       mockRequestOverride = (_process, call) => {
@@ -489,13 +489,13 @@ describe('Codex shared runtime', () => {
       expect(port.list).not.toHaveBeenCalled();
     } finally {
       await session.dispose();
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
   it('rejects an old native call after the thread is reattached to a new session', async () => {
     mockAutoReconcile = true;
-    const port = { list: jest.fn(async () => ({ sessions: [] })), send: jest.fn(), read: jest.fn() };
+    const port = { list: vi.fn(async () => ({ sessions: [] })), send: vi.fn(), read: vi.fn() };
     const backend = createBackend(plugin, createRuntime());
     const first = backend.createSession({ ...config, sessionTools: port });
     const output = collect(first.execute(request).events);
@@ -529,7 +529,7 @@ describe('Codex shared runtime', () => {
   it.each([false, true])('retains native cleanup after retiring a requested turn (start acknowledged: %s)', async acknowledged => {
     mockAutoReconcile = true;
     const lease = await createRuntime().acquire();
-    const scope = lease.connection.createThreadScope({ notification: jest.fn(), serverRequest: jest.fn(), stop: jest.fn(), workChanged: jest.fn() });
+    const scope = lease.connection.createThreadScope({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     await scope.open('thread/start', {});
     let heldStart: number | undefined;
     mockRequestOverride = (_process, call) => {
@@ -557,7 +557,7 @@ describe('Codex shared runtime', () => {
     const host = {
       settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } } },
     } as unknown as ProviderHost;
-    const runtime = new CodexAppServerRuntime(scoped(host), jest.fn());
+    const runtime = new CodexAppServerRuntime(scoped(host), vi.fn());
     runtimes.push(runtime);
     const session = createBackend(host, runtime).createSession(config);
     try {
@@ -565,7 +565,7 @@ describe('Codex shared runtime', () => {
         updateCodexProviderSettings(host.settings, { responseVerbosity });
         const output = collect(session.execute(request).events);
         const process = await waitForRequest('turn/start', index);
-        const spec = jest.mocked(CodexAppServerProcess).mock.calls.at(-1)![0];
+        const spec = vi.mocked(CodexAppServerProcess).mock.calls.at(-1)![0];
         expect(spec.args).toEqual([
           'app-server', '--listen', 'stdio://',
           ...(responseVerbosity === 'default' ? [] : ['-c', `model_verbosity="${responseVerbosity}"`]),
@@ -661,7 +661,7 @@ describe('Codex shared runtime', () => {
     mockAutoReconcile = true;
     const runtime = createRuntime();
     const lease = await runtime.acquire();
-    const observer = () => ({ notification: jest.fn(), serverRequest: jest.fn(), stop: jest.fn(), workChanged: jest.fn() });
+    const observer = () => ({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     const source = lease.connection.createThreadScope(observer());
     const fork = lease.connection.createThreadScope(observer());
     const process = mockProcesses[0];
@@ -689,7 +689,7 @@ describe('Codex shared runtime', () => {
   it('transfers idle descendants when a closed chat is reopened before native unloading', async () => {
     mockAutoReconcile = true;
     const lease = await createRuntime().acquire();
-    const observer = () => ({ notification: jest.fn(), serverRequest: jest.fn(), stop: jest.fn(), workChanged: jest.fn() });
+    const observer = () => ({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     const original = lease.connection.createThreadScope(observer());
     const reopened = lease.connection.createThreadScope(observer());
     const process = mockProcesses[0];
@@ -713,7 +713,7 @@ describe('Codex shared runtime', () => {
   it('asks for a retry when a chat is reopened while its closed predecessor is still stopping', async () => {
     mockAutoReconcile = true;
     const lease = await createRuntime().acquire();
-    const observer = () => ({ notification: jest.fn(), serverRequest: jest.fn(), stop: jest.fn(), workChanged: jest.fn() });
+    const observer = () => ({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     const original = lease.connection.createThreadScope(observer());
     const reopened = lease.connection.createThreadScope(observer());
     const process = mockProcesses[0];
@@ -742,11 +742,11 @@ describe('Codex shared runtime', () => {
   it('keeps turn inputs while a start fails without a native response', async () => {
     mockAutoReconcile = true;
     const lease = await createRuntime().acquire();
-    const scope = lease.connection.createThreadScope({ notification: jest.fn(), serverRequest: jest.fn(), stop: jest.fn(), workChanged: jest.fn() });
+    const scope = lease.connection.createThreadScope({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     await scope.open('thread/start', {});
     const process = mockProcesses[0];
     mockRequestOverride = (_native, rpc) => rpc.method === 'turn/start';
-    const releaseInput = jest.fn();
+    const releaseInput = vi.fn();
     const starting = scope.startTurn('turn/start', { threadId: 'thread-1', input: [] }, releaseInput);
     await waitForRequest('turn/start');
     process.stdout.emit('error', new Error('read ECONNRESET'));
@@ -763,7 +763,7 @@ describe('Codex shared runtime', () => {
     mockAutoReconcile = true;
     const runtime = createRuntime();
     const lease = await runtime.acquire();
-    const scope = lease.connection.createThreadScope({ notification: jest.fn(), serverRequest: jest.fn(), stop: jest.fn(), workChanged: jest.fn() });
+    const scope = lease.connection.createThreadScope({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     await scope.open('thread/start', {});
     await lease.release();
     const process = mockProcesses[0];
@@ -773,7 +773,7 @@ describe('Codex shared runtime', () => {
       startId = rpc.id;
       return true;
     };
-    const releaseInput = jest.fn();
+    const releaseInput = vi.fn();
     const starting = scope.startTurn('turn/start', { threadId: 'thread-1', input: [] }, releaseInput);
     const stopping = detach ? scope.detach() : scope.stop();
     process.notify('thread/status/changed', { threadId: 'thread-1', status: { type: 'idle' } });
@@ -884,7 +884,7 @@ describe('Codex shared runtime', () => {
   it('routes a native approval exclusively to its owning chat', async () => {
     mockAutoReconcile = true;
     const backend = createBackend(plugin, createRuntime());
-    const approval = () => jest.fn(async interaction => ({ interactionId: interaction.interactionId, decision: 'allow' as const }));
+    const approval = () => vi.fn(async interaction => ({ interactionId: interaction.interactionId, decision: 'allow' as const }));
     const firstApproval = approval();
     const secondApproval = approval();
     const first = backend.createSession({ ...config, interactionPort: { ...config.interactionPort, requestApproval: firstApproval } });
@@ -1101,7 +1101,7 @@ describe('Codex shared runtime', () => {
   it('refreshes remote plugins in the background on the same server without delaying skills', async () => {
     mockAutoReconcile = true;
     const clock = testClock();
-    const now = jest.spyOn(Date, 'now').mockImplementation(() => clock().getTime());
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => clock().getTime());
     const skills = new CodexSkillListingService(createRuntime());
     try {
       await skills.listSkills();
@@ -1173,18 +1173,18 @@ describe('Codex shared runtime', () => {
     const output = collect(session.execute(request).events);
     const process = await waitForRequest('turn/start');
     const lease = await runtime.acquire();
-    const scope = lease.connection.createThreadScope({ notification: jest.fn(), serverRequest: jest.fn(), stop: jest.fn(), workChanged: jest.fn() });
+    const scope = lease.connection.createThreadScope({ notification: vi.fn(), serverRequest: vi.fn(), stop: vi.fn(), workChanged: vi.fn() });
     let creationId!: number;
     mockRequestOverride = (_process, rpc) => {
       if (rpc.method !== method) return false;
       creationId = rpc.id;
       return true;
     };
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const creation = scope.open(method as 'thread/start' | 'thread/fork', { threadId: 'source' });
       const failure = creation.catch(error => error);
-      await jest.advanceTimersByTimeAsync(30_001);
+      await vi.advanceTimersByTimeAsync(30_001);
       expect(await failure).toEqual(expect.objectContaining({ message: `Request timeout: ${method} (30000ms)` }));
       process.respond(creationId, { thread: { id: 'late-thread', turns: [] } });
       for (let i = 0; i < 100 && !process.requests.some(r => r.method === 'thread/unsubscribe'); i++) await Promise.resolve();
@@ -1193,7 +1193,7 @@ describe('Codex shared runtime', () => {
       complete(process, 'thread-1');
       expect((await output).at(-1)?.type).toBe('turn_completed');
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
       await session.dispose();
       await scope.detach();
       await lease.release();
@@ -1208,7 +1208,7 @@ describe('Codex shared runtime', () => {
     const backend = createBackend(plugin, createRuntime());
     const first = backend.createSession(config);
     const second = backend.createSession(config);
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const run = first.execute(request);
       const output = collect(run.events);
@@ -1217,10 +1217,10 @@ describe('Codex shared runtime', () => {
       run.cancel();
       expect((await output).at(-1)?.type).toBe('cancelled');
       // Let the start request and all bounded cleanup attempts time out.
-      await jest.advanceTimersByTimeAsync(90_003);
+      await vi.advanceTimersByTimeAsync(90_003);
       expect(process.requests.filter(r => r.method === 'thread/read' && r.params.threadId === 'thread-1').length).toBeGreaterThan(0);
       const disposal = dispose ? first.dispose() : Promise.resolve();
-      await jest.advanceTimersByTimeAsync(60_002);
+      await vi.advanceTimersByTimeAsync(60_002);
       await disposal;
       holdCleanup = false;
       process.notify('turn/started', { threadId: 'thread-1', turn: { id: 'late-after-cleanup', status: 'inProgress', items: [] } });
@@ -1239,7 +1239,7 @@ describe('Codex shared runtime', () => {
       await retrySession.dispose();
     } finally {
       holdCleanup = false;
-      jest.useRealTimers();
+      vi.useRealTimers();
       await Promise.all([first.dispose(), second.dispose()]);
     }
   });
@@ -1256,13 +1256,13 @@ describe('Codex shared runtime', () => {
     const backend = createBackend(plugin, createRuntime());
     const first = backend.createSession(config);
     const second = backend.createSession(config);
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const failed = collect(first.execute(request).events);
       const process = await waitForRequest('turn/start');
       const surviving = collect(second.execute(request).events);
       for (let i = 0; i < 100 && process.requests.filter(r => r.method === 'turn/start').length < 2; i++) await Promise.resolve();
-      await jest.advanceTimersByTimeAsync(30_001);
+      await vi.advanceTimersByTimeAsync(30_001);
       expect((await failed).at(-1)?.type).toBe('execution_error');
       await first.dispose();
       const interrupt = process.requests.findIndex(r => r.method === 'turn/interrupt' && r.params.threadId === 'thread-1');
@@ -1273,7 +1273,7 @@ describe('Codex shared runtime', () => {
       complete(process, 'thread-2');
       expect((await surviving).at(-1)?.type).toBe('turn_completed');
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
       await Promise.all([first.dispose(), second.dispose()]);
     }
   });
@@ -1286,7 +1286,7 @@ describe('Codex shared runtime', () => {
     const originalShutdown = process.shutdown.bind(process);
     let finishShutdown!: () => void;
     const pending = new Promise<void>(resolve => { finishShutdown = resolve; });
-    jest.spyOn(process, 'shutdown').mockImplementation(async () => { await pending; await originalShutdown(); });
+    vi.spyOn(process, 'shutdown').mockImplementation(async () => { await pending; await originalShutdown(); });
     mockLaunchKey = 'second';
     const replacement = await runtime.acquire();
     const release = old.release();

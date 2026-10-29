@@ -51,7 +51,7 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', li
     ...spec, command: process.execPath, args: [script], cwd: root, enableTreeBridge: false, enableSessionTools: false,
   }, callbacks, ui) });
   const session = backend.createSession({ lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported', workingDirectory: root,
-    interactionPort: { askUserQuestion: jest.fn(), dismissInteraction: jest.fn(), requestApproval: jest.fn() } });
+    interactionPort: { askUserQuestion: vi.fn(), dismissInteraction: vi.fn(), requestApproval: vi.fn() } });
   const history: ChatMessage[] = [{ id: 'previous', role: 'user', content: 'Refactor this', timestamp: testDate().getTime(),
     executionInput: { schemaVersion: 1, canonicalText: 'Refactor this', context: previous } }];
   try {

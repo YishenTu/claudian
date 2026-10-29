@@ -3,9 +3,9 @@ import { createMockEl } from '@test/helpers/MockElement';
 import type { ToolCallInfo } from '@/core/types';
 import { renderStoredToolCall } from '@/features/chat/rendering/tools/ToolCallRenderer';
 
-jest.mock('obsidian', () => ({
+vi.mock('obsidian', () => ({
   Platform: { resourcePathPrefix: 'app://local/' },
-  setIcon: jest.fn(),
+  setIcon: vi.fn(),
 }));
 
 // Helper to create a basic tool call
@@ -28,7 +28,7 @@ function collectRenderedText(toolEl: HTMLElement): string {
 
 describe('webSearchContent', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('WebSearch expanded rendering', () => {

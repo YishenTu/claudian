@@ -12,7 +12,7 @@ function createFile(path: string): TFile {
 
 describe('VaultFolderCache', () => {
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it('excludes root and hidden folders', () => {
@@ -28,7 +28,7 @@ describe('VaultFolderCache', () => {
     ];
     const app = {
       vault: {
-        getAllLoadedFiles: jest.fn(() => loadedFiles),
+        getAllLoadedFiles: vi.fn(() => loadedFiles),
       },
     } as any;
     const cache = new VaultFolderCache(app);
@@ -40,7 +40,7 @@ describe('VaultFolderCache', () => {
 
   it('returns cached folders until marked dirty', () => {
     let loadedFiles = [createFolder('src')];
-    const getAllLoadedFiles = jest.fn(() => loadedFiles);
+    const getAllLoadedFiles = vi.fn(() => loadedFiles);
     const app = {
       vault: { getAllLoadedFiles },
     } as any;
@@ -62,8 +62,8 @@ describe('VaultFolderCache', () => {
   });
 
   it.each(['background', 'queued twice', 'foreground first'])('supports %s initialization without reloading', ordering => {
-    jest.useFakeTimers();
-    const getAllLoadedFiles = jest.fn(() => [createFolder('src')]);
+    vi.useFakeTimers();
+    const getAllLoadedFiles = vi.fn(() => [createFolder('src')]);
     const app = {
       vault: { getAllLoadedFiles },
     } as any;
@@ -76,20 +76,20 @@ describe('VaultFolderCache', () => {
     expect(foregroundFolders).toEqual(ordering === 'foreground first' ? ['src'] : undefined);
     expect(getAllLoadedFiles).toHaveBeenCalledTimes(ordering === 'foreground first' ? 1 : 0);
 
-    jest.runOnlyPendingTimers();
+    vi.runOnlyPendingTimers();
     expect(getAllLoadedFiles).toHaveBeenCalledTimes(1);
 
     const folders = cache.getFolders().map(folder => folder.path);
     expect(folders).toEqual(['src']);
     expect(getAllLoadedFiles).toHaveBeenCalledTimes(1);
     cache.initializeInBackground();
-    jest.runOnlyPendingTimers();
+    vi.runOnlyPendingTimers();
     expect(getAllLoadedFiles).toHaveBeenCalledTimes(1);
   });
 
   it('preserves dirty folders after foreground initialization overtakes the queued callback', () => {
-    jest.useFakeTimers();
-    const getAllLoadedFiles = jest.fn(() => [createFolder('src')]);
+    vi.useFakeTimers();
+    const getAllLoadedFiles = vi.fn(() => [createFolder('src')]);
     const cache = new VaultFolderCache({ vault: { getAllLoadedFiles } } as any);
     cache.initializeInBackground();
     expect(cache.getFolders().map(folder => folder.path)).toEqual(['src']);
@@ -97,7 +97,7 @@ describe('VaultFolderCache', () => {
 
     getAllLoadedFiles.mockReturnValue([createFolder('docs')]);
     cache.markDirty();
-    jest.runOnlyPendingTimers();
+    vi.runOnlyPendingTimers();
 
     expect(getAllLoadedFiles).toHaveBeenCalledTimes(1);
     expect(cache.getFolders().map(folder => folder.path)).toEqual(['docs']);
@@ -107,8 +107,7 @@ describe('VaultFolderCache', () => {
   });
 
   it('returns stale folders if reload fails', () => {
-    const getAllLoadedFiles = jest
-      .fn()
+    const getAllLoadedFiles = vi.fn()
       .mockReturnValueOnce([createFolder('src')])
       .mockImplementation(() => {
         throw new Error('Vault error');
@@ -126,7 +125,7 @@ describe('VaultFolderCache', () => {
   });
 
   it('does not reload repeatedly when vault has no visible folders', () => {
-    const getAllLoadedFiles = jest.fn(() => []);
+    const getAllLoadedFiles = vi.fn(() => []);
     const app = {
       vault: { getAllLoadedFiles },
     } as any;
@@ -139,8 +138,8 @@ describe('VaultFolderCache', () => {
   });
 
   it('marks background initialization as attempted after failure', () => {
-    jest.useFakeTimers();
-    const getAllLoadedFiles = jest.fn((): TFolder[] => {
+    vi.useFakeTimers();
+    const getAllLoadedFiles = vi.fn((): TFolder[] => {
       throw new Error('Vault error');
     });
     const app = {
@@ -150,9 +149,9 @@ describe('VaultFolderCache', () => {
 
     cache.initializeInBackground();
     cache.initializeInBackground();
-    jest.runOnlyPendingTimers();
+    vi.runOnlyPendingTimers();
     cache.initializeInBackground();
-    jest.runOnlyPendingTimers();
+    vi.runOnlyPendingTimers();
 
     expect(getAllLoadedFiles).toHaveBeenCalledTimes(1);
     getAllLoadedFiles.mockImplementation(() => [createFolder('src')]);

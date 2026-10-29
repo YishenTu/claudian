@@ -1,3 +1,9 @@
+const mockedModule0: any = await import('@/features/chat/subagents/SubagentRenderer');
+const mockedModule1: any = await import('@/features/chat/subagents/SubagentRenderer');
+const mockedModule2: any = await import('@/features/chat/subagents/SubagentRenderer');
+const mockedModule3: any = await import('@/features/chat/subagents/SubagentRenderer');
+const mockedModule4: any = await import('@/features/chat/subagents/SubagentRenderer');
+const mockedModule5: any = await import('@/features/chat/subagents/SubagentRenderer');
 import '@/providers';
 
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
@@ -7,11 +13,12 @@ import { join } from 'path';
 import type { SubagentInfo, ToolCallInfo } from '@/core/types';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 
-jest.mock('@/features/chat/subagents/SubagentRenderer', () => ({
-  createSubagentBlock: jest.fn((_parentEl: any, info: SubagentInfo) => ({ info, wrapperEl: {} })),
-  createAsyncSubagentBlock: jest.fn((_parentEl: any, info: SubagentInfo) => ({ info, wrapperEl: {}, statusTextEl: {} })),
-  updateSubagentBlock: jest.fn(),
-  updateAsyncSubagentBlock: jest.fn(),
+
+vi.mock('@/features/chat/subagents/SubagentRenderer', () => ({
+  createSubagentBlock: vi.fn((_parentEl: any, info: SubagentInfo) => ({ info, wrapperEl: {} })),
+  createAsyncSubagentBlock: vi.fn((_parentEl: any, info: SubagentInfo) => ({ info, wrapperEl: {}, statusTextEl: {} })),
+  updateSubagentBlock: vi.fn(),
+  updateAsyncSubagentBlock: vi.fn(),
 }));
 
 const createManager = () => {
@@ -22,11 +29,11 @@ const createManager = () => {
   return { manager, updates };
 };
 
-const createMockEl = () => ({ createDiv: jest.fn(), appendChild: jest.fn() } as any);
+const createMockEl = () => ({ createDiv: vi.fn(), appendChild: vi.fn() } as any);
 
 describe('SubagentManager', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   // ============================================
@@ -1209,7 +1216,7 @@ Only this is the final result.
     });
 
     it('records the task even when its card cannot render', () => {
-      const { createSubagentBlock } = jest.requireMock('@/features/chat/subagents/SubagentRenderer');
+      const { createSubagentBlock } = mockedModule0;
       createSubagentBlock.mockImplementationOnce(() => { throw new Error('DOM error'); });
 
       const { manager } = createManager();
@@ -1407,7 +1414,7 @@ Only this is the final result.
 
   describe('sync subagent operations', () => {
     it('adds tool call to sync subagent', () => {
-      const { updateSubagentBlock } = jest.requireMock('@/features/chat/subagents/SubagentRenderer');
+      const { updateSubagentBlock } = mockedModule1;
       const { manager } = createManager();
       const parentEl = createMockEl();
 
@@ -1426,7 +1433,7 @@ Only this is the final result.
     });
 
     it('updates tool result in sync subagent', () => {
-      const { updateSubagentBlock } = jest.requireMock('@/features/chat/subagents/SubagentRenderer');
+      const { updateSubagentBlock } = mockedModule2;
       const { manager } = createManager();
       const parentEl = createMockEl();
 
@@ -1448,7 +1455,7 @@ Only this is the final result.
     });
 
     it('finalizes sync subagent and removes from map', () => {
-      const { updateSubagentBlock } = jest.requireMock('@/features/chat/subagents/SubagentRenderer');
+      const { updateSubagentBlock } = mockedModule3;
       const { manager } = createManager();
       const parentEl = createMockEl();
 
@@ -1463,7 +1470,7 @@ Only this is the final result.
     });
 
     it('extracts result from SDK toolUseResult.content for sync subagent', () => {
-      const { updateSubagentBlock } = jest.requireMock('@/features/chat/subagents/SubagentRenderer');
+      const { updateSubagentBlock } = mockedModule4;
       const { manager } = createManager();
       const parentEl = createMockEl();
 
@@ -1495,7 +1502,7 @@ Only this is the final result.
     });
 
     it('ignores tool call for nonexistent subagent', () => {
-      const { updateSubagentBlock } = jest.requireMock('@/features/chat/subagents/SubagentRenderer');
+      const { updateSubagentBlock } = mockedModule5;
       const { manager } = createManager();
 
       manager.addSyncToolCall('nonexistent', {

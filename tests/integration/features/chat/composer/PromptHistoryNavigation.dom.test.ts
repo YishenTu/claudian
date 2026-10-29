@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import { readFileSync } from 'node:fs';
@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 import { Prec, StateEffect } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
+import { axe } from '@test/helpers/accessibility';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
@@ -13,7 +14,6 @@ import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRu
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { App, Component } from 'obsidian';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
@@ -52,13 +52,13 @@ beforeEach(() => {
 });
 afterEach(() => {
   globalThis.ResizeObserver = originalResizeObserver;
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
   document.body.replaceChildren();
 });
 
 async function createView(provisional = false, options: { managed?: boolean; draft?: boolean } = {}) {
   const backend = new FakeSideBackend();
-  jest.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
+  vi.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
   const app = new App();
   Object.assign(app.vault.adapter, { basePath: '/vault' });
   Object.assign(app.vault, { on: () => ({}), offref() {} });
@@ -119,7 +119,7 @@ async function createView(provisional = false, options: { managed?: boolean; dra
     await tab.executionCoordinator.bindConversation({ conversationId: conversation.id, providerId: 'claude' });
     await tab.executionCoordinator.prepare();
   }
-  jest.spyOn(tab.dom.messagesEl, 'getClientRects').mockImplementation(() =>
+  vi.spyOn(tab.dom.messagesEl, 'getClientRects').mockImplementation(() =>
     (tab.dom.contentEl.classList.contains('claudian-hidden') ? [] : [{}]) as unknown as DOMRectList);
   activateTab(tab);
   tab.dom.inputEl.focus();
@@ -568,8 +568,8 @@ it('treats recall like typing without admitting a provisional tab and opens a re
   try {
     view.tab.state.messages = [user('one', '/ses')];
     expect(view.tab.lifecycleState).toBe('provisional');
-    const changed = jest.spyOn(view.tab.controllers.sideChatController, 'handleComposerInput');
-    const refreshed = jest.spyOn(view.tab.ui.promptSuggestion, 'refresh');
+    const changed = vi.spyOn(view.tab.controllers.sideChatController, 'handleComposerInput');
+    const refreshed = vi.spyOn(view.tab.ui.promptSuggestion, 'refresh');
     key(view, 'ArrowUp');
     expect(view.tab.lifecycleState).toBe('provisional');
     expect(changed).toHaveBeenCalled();
@@ -633,8 +633,8 @@ it('updates the actual Side draft preview on recall and draft restoration withou
 it('removes owned history keyboard and composition listeners when the real tab is destroyed', async () => {
   const view = await createView();
   try {
-    const keydown = jest.spyOn(PromptHistoryNavigation.prototype, 'handleKeydown');
-    const reset = jest.spyOn(PromptHistoryNavigation.prototype, 'reset');
+    const keydown = vi.spyOn(PromptHistoryNavigation.prototype, 'handleKeydown');
+    const reset = vi.spyOn(PromptHistoryNavigation.prototype, 'reset');
     view.tab.state.messages = [user('one', 'Existing prompt')];
     key(view, 'ArrowUp');
     expect(keydown).toHaveBeenCalled();

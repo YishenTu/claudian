@@ -11,6 +11,7 @@
 npm run typecheck && npm run lint && npm run test && npm run build && npm run check:performance
 ```
 
+- `npm run test` runs the Vitest unit/integration suite and the Node script checks.
 - For focused changes, `npm run test:affected -- --base origin/main` selects related tests; it does not replace typecheck, lint, build, or performance checks. Documentation-only changes need `git diff --check` (CI enforces it on every pull request) and their affected documentation tests, not a production build.
 - Dev and production builds load `.env.local` and may copy artifacts into the configured `OBSIDIAN_VAULT`, including removal of its old `.codex-vendor`. Check that destination before building; clearing the shell variable does not prevent reloading it from the file.
 

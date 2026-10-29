@@ -1,7 +1,7 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 import { ComposerContextTray } from '@/features/chat/composer/ComposerContextTray';
 
@@ -20,11 +20,11 @@ beforeEach(() => {
     removeClass(this: HTMLElement, ...names: string[]) { this.classList.remove(...names); },
     toggleClass(this: HTMLElement, name: string, force: boolean) { this.classList.toggle(name, force); },
   });
-  jest.spyOn(HTMLElement.prototype, 'offsetParent', 'get').mockImplementation(function (this: HTMLElement) { return this.parentElement; });
-  jest.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (this: HTMLElement) {
+  vi.spyOn(HTMLElement.prototype, 'offsetParent', 'get').mockImplementation(function (this: HTMLElement) { return this.parentElement; });
+  vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (this: HTMLElement) {
     return this.dataset.contextId === 'second' ? 40 : 0;
   });
-  jest.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(24);
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(24);
   host = document.body.createDiv();
   tray = new ComposerContextTray(host);
 });
@@ -32,11 +32,11 @@ beforeEach(() => {
 afterEach(() => {
   tray.destroy();
   visibility.remove();
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
 });
 
 it('moves focus to the next remaining remove action after an image is removed', async () => {
-  const second = { id: 'second', kind: 'image' as const, label: 'Second image', onRemove: jest.fn() };
+  const second = { id: 'second', kind: 'image' as const, label: 'Second image', onRemove: vi.fn() };
   tray.setItems('images', [{
     id: 'first', kind: 'image', label: 'First image',
     onRemove: () => tray.setItems('images', [second]),
@@ -51,16 +51,16 @@ it('moves focus to the next remaining remove action after an image is removed', 
 });
 
 it('keeps focus on the same selection action when a different context slot changes', () => {
-  tray.setItems('editor-selection', [{ id: 'editor', kind: 'selection', label: 'Editor selection', onActivate: jest.fn() }]);
+  tray.setItems('editor-selection', [{ id: 'editor', kind: 'selection', label: 'Editor selection', onActivate: vi.fn() }]);
   within(host).getByRole('button', { name: 'Editor selection' }).focus();
-  tray.setItems('images', [{ id: 'first', kind: 'image', label: 'Image', onRemove: jest.fn() }]);
+  tray.setItems('images', [{ id: 'first', kind: 'image', label: 'Image', onRemove: vi.fn() }]);
   expect(document.activeElement).toBe(within(host).getByRole('button', { name: 'Editor selection' }));
 });
 
 it('keeps remaining overflow collapsed when the restored action is already in its visible row', () => {
   const remaining = [
-    { id: 'same-row', kind: 'image' as const, label: 'Visible image', onRemove: jest.fn() },
-    { id: 'second', kind: 'image' as const, label: 'Overflow image', onRemove: jest.fn() },
+    { id: 'same-row', kind: 'image' as const, label: 'Visible image', onRemove: vi.fn() },
+    { id: 'second', kind: 'image' as const, label: 'Overflow image', onRemove: vi.fn() },
   ];
   tray.setItems('images', [{
     id: 'first', kind: 'image', label: 'Removed image',
@@ -77,8 +77,8 @@ it('keeps remaining overflow collapsed when the restored action is already in it
 
 it('expands before restoring a focused action that would otherwise be hidden', () => {
   const items = [
-    { id: 'first', kind: 'image' as const, label: 'First image', onRemove: jest.fn() },
-    { id: 'second', kind: 'image' as const, label: 'Second image', onRemove: jest.fn() },
+    { id: 'first', kind: 'image' as const, label: 'First image', onRemove: vi.fn() },
+    { id: 'second', kind: 'image' as const, label: 'Second image', onRemove: vi.fn() },
   ];
   tray.setItems('images', items);
   tray.refreshLayout();
@@ -92,13 +92,13 @@ it('expands before restoring a focused action that would otherwise be hidden', (
 
 it('does not blur a focused overflow control while recomputing its layout', () => {
   tray.setItems('images', [
-    { id: 'first', kind: 'image', label: 'First image', onRemove: jest.fn() },
-    { id: 'second', kind: 'image', label: 'Second image', onRemove: jest.fn() },
+    { id: 'first', kind: 'image', label: 'First image', onRemove: vi.fn() },
+    { id: 'second', kind: 'image', label: 'Second image', onRemove: vi.fn() },
   ]);
   tray.refreshLayout();
   const more = within(host).getByRole('button', { name: 'Show 1 more context items' });
   more.focus();
-  const blur = jest.fn();
+  const blur = vi.fn();
   more.addEventListener('blur', blur);
   // jsdom omits native display:none focus loss; adapt that host behavior only.
   more.addClass = function (...names) {

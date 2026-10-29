@@ -1,3 +1,4 @@
+const actualModule0 = await vi.importActual<typeof import('@/core/process/cliBinaryLocator')>('@/core/process/cliBinaryLocator');
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import * as os from 'node:os';
 import { dirname, join } from 'node:path';
@@ -5,10 +6,11 @@ import { dirname, join } from 'node:path';
 import { findCLIBinaryPath, resolveConfiguredCLIPath } from '@/core/process/cliBinaryLocator';
 import { DeepSeekCLIResolver } from '@/providers/deepseek/runtime/DeepSeekCLIResolver';
 
-jest.mock('@/core/device/InstallationKey', () => ({ getInstallationKey: () => 'device:test' }));
-jest.mock('node:os', () => ({ ...jest.requireActual('node:os'), homedir: jest.fn() }));
-jest.mock('@/core/process/cliBinaryLocator', () => ({
-  ...jest.requireActual('@/core/process/cliBinaryLocator'), findCLIBinaryPath: jest.fn(), resolveConfiguredCLIPath: jest.fn(),
+
+vi.mock('@/core/device/InstallationKey', () => ({ getInstallationKey: () => 'device:test' }));
+vi.mock('node:os', async () => ({ ...(await vi.importActual<typeof import('node:os')>('node:os')), homedir: vi.fn() }));
+vi.mock('@/core/process/cliBinaryLocator', async () => ({
+  ...(await vi.importActual<typeof import('@/core/process/cliBinaryLocator')>('@/core/process/cliBinaryLocator')), findCLIBinaryPath: vi.fn(), resolveConfiguredCLIPath: vi.fn(),
 }));
 
 describe('DeepSeek installation selection', () => {
@@ -32,11 +34,11 @@ describe('DeepSeek installation selection', () => {
       writeFileSync(join(app, 'DeepSeek Harness.exe'), '');
       process.env.LOCALAPPDATA = join(root, 'AppData', 'Local');
     }
-    jest.mocked(resolveConfiguredCLIPath).mockImplementation(path => path?.startsWith(root)
-      ? jest.requireActual('@/core/process/cliBinaryLocator').resolveConfiguredCLIPath(path) : null);
-    jest.mocked(os.homedir).mockReturnValue(root);
+    vi.mocked(resolveConfiguredCLIPath).mockImplementation(path => path?.startsWith(root)
+      ? actualModule0.resolveConfiguredCLIPath(path) : null);
+    vi.mocked(os.homedir).mockReturnValue(root);
     Object.defineProperty(process, 'platform', { ...platform, value: windows ? 'win32' : 'darwin' });
-    jest.mocked(findCLIBinaryPath).mockReturnValue(null);
+    vi.mocked(findCLIBinaryPath).mockReturnValue(null);
     resolver = new DeepSeekCLIResolver();
   });
 
@@ -59,7 +61,7 @@ describe('DeepSeek installation selection', () => {
   it('keeps npm first in Auto but an explicit app wins, including a renamed Unicode app and symlinks', () => {
     const npm = join(root, 'dsh');
     writeFileSync(npm, '#!/usr/bin/env node\n');
-    jest.mocked(findCLIBinaryPath).mockReturnValue(npm);
+    vi.mocked(findCLIBinaryPath).mockReturnValue(npm);
     expect(resolver.resolveFromSettings(settings())).toBe(npm);
     expect(resolver.resolveFromSettings(settings(app))).toBe(cli);
     const alias = join(root, windows ? '深度 求索' : '深度 求索.app');
@@ -99,7 +101,7 @@ describe('DeepSeek installation selection', () => {
   it('does not silently change installations when the explicit path disappears', () => {
     expect(resolver.resolveFromSettings(settings(app))).toBe(cli);
     rmSync(app, { recursive: true });
-    jest.mocked(findCLIBinaryPath).mockReturnValue('/another/dsh');
+    vi.mocked(findCLIBinaryPath).mockReturnValue('/another/dsh');
     expect(resolver.resolveFromSettings(settings(app))).toBeNull();
   });
 });

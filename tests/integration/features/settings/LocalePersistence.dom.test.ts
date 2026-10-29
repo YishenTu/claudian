@@ -1,12 +1,12 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 import '@test/helpers/ObsidianSettingsDOM';
 
 import { deserialize, serialize } from 'node:v8';
 
+import { axe } from '@test/helpers/accessibility';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { ClaudianSettingTab } from '@/features/settings/ClaudianSettings';
@@ -14,12 +14,12 @@ import { setLocale, t } from '@/i18n/i18n';
 
 const mockChanges: Promise<void>[] = [];
 
-jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection() {} }));
-jest.mock('obsidian', () => {
-  const dom = jest.requireActual('@test/helpers/ObsidianSettingsDOM');
+vi.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection() {} }));
+vi.mock('obsidian', async () => {
+  const dom = (await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM'));
   class Setting extends dom.Setting {
     setHeading() { return this; }
-    addToggle(callback: (control: unknown) => void) {
+    addToggle(callback: (control: any) => void) {
       const toggleEl = this.settingEl.createEl('input', { attr: { type: 'checkbox' } });
       const toggle = {
         toggleEl,
@@ -28,7 +28,7 @@ jest.mock('obsidian', () => {
       };
       callback(toggle); return this;
     }
-    addDropdown(callback: (control: unknown) => void) {
+    addDropdown(callback: (control: any) => void) {
       const selectEl = this.settingEl.createEl('select');
       const control = {
         selectEl,
@@ -47,7 +47,7 @@ jest.mock('obsidian', () => {
       callback(control); return this;
     }
   }
-  return { ...jest.requireActual('@test/__mocks__/obsidian'), ...dom, Setting };
+  return { ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')), ...dom, Setting };
 });
 
 afterEach(() => { setLocale('en'); document.body.replaceChildren(); mockChanges.length = 0; });

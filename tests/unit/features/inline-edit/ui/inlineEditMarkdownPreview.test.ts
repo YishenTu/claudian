@@ -1,11 +1,14 @@
 import { createMockEl } from '@test/helpers/MockElement';
 import { MarkdownRenderer } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import { renderInlineEditMarkdownPreview } from '@/features/inline-edit/ui/inlineEditMarkdownPreview';
 
+
+
 describe('renderInlineEditMarkdownPreview', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('renders markdown and math through Obsidian with the note source path', async () => {
@@ -55,8 +58,7 @@ describe('renderInlineEditMarkdownPreview', () => {
       path: 'math/assets/image.png',
       basename: 'image',
     };
-    const getFirstLinkpathDest = jest
-      .fn()
+    const getFirstLinkpathDest = vi.fn()
       .mockImplementation((linkPath: string, sourcePath: string) => {
         return linkPath === 'image.png' && sourcePath === 'math/note.md'
           ? imageFile
@@ -64,8 +66,8 @@ describe('renderInlineEditMarkdownPreview', () => {
       });
     const app = {
       vault: {
-        getAbstractFileByPath: jest.fn().mockReturnValue(null),
-        getResourcePath: jest.fn().mockReturnValue('app://local/math/assets/image.png'),
+        getAbstractFileByPath: vi.fn().mockReturnValue(null),
+        getResourcePath: vi.fn().mockReturnValue('app://local/math/assets/image.png'),
       },
       metadataCache: {
         getFirstLinkpathDest,
@@ -97,15 +99,14 @@ describe('renderInlineEditMarkdownPreview', () => {
       ['media/image.png', { path: 'media/image.png', basename: 'image' }],
       ['section/image.png', sourceImage],
     ]);
-    const getFirstLinkpathDest = jest
-      .fn()
+    const getFirstLinkpathDest = vi.fn()
       .mockImplementation((linkPath: string, sourcePath: string) =>
         linkPath === 'image.png' && sourcePath === 'section/note.md' ? sourceImage : null
       );
     const app = {
       vault: {
-        getAbstractFileByPath: jest.fn((path: string) => files.get(path) ?? null),
-        getResourcePath: jest.fn((file: { path: string }) => `app://local/${file.path}`),
+        getAbstractFileByPath: vi.fn((path: string) => files.get(path) ?? null),
+        getResourcePath: vi.fn((file: { path: string }) => `app://local/${file.path}`),
       },
       metadataCache: {
         getFirstLinkpathDest,
@@ -129,12 +130,12 @@ describe('renderInlineEditMarkdownPreview', () => {
       'section/note.md',
       component
     );
-    const rendered = (MarkdownRenderer.renderMarkdown as jest.Mock).mock.calls[0][0] as string;
+    const rendered = (MarkdownRenderer.renderMarkdown as Mock).mock.calls[0][0] as string;
     expect(rendered).not.toContain('app://local/media/image.png');
   });
 
   it('falls back to raw markdown when Obsidian rendering fails', async () => {
-    (MarkdownRenderer.renderMarkdown as jest.Mock).mockRejectedValueOnce(new Error('render failed'));
+    (MarkdownRenderer.renderMarkdown as Mock).mockRejectedValueOnce(new Error('render failed'));
 
     const app = { vault: {}, metadataCache: {} } as any;
     const component = {} as any;

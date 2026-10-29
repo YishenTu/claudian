@@ -1001,7 +1001,7 @@ it('parses cursor history records only once per hydration', async () => {
   await fs.writeFile(sessionFile, line);
   const conversation = createConversation(sessionFile);
   conversation.providerState!.treeCursor = { targetId: 'u1', leafId: 'u1', appendId: 'u1' };
-  const parse = jest.spyOn(JSON, 'parse');
+  const parse = vi.spyOn(JSON, 'parse');
   try {
     const result = await new PiConversationHistoryService().hydrateConversationHistory(conversation, null);
     expect(result.messages?.[0].content).toBe('hello');

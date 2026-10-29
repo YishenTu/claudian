@@ -1,6 +1,7 @@
 import { createConversationPorts, createTestSession, holdResponse } from '@test/helpers/ConversationPorts';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { createMockEl } from '@test/helpers/MockElement';
+import type { Mock } from 'vitest';
 
 import type { ProviderExecutionEvent } from '@/core/execution';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
@@ -12,10 +13,12 @@ import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRun
 import { ChatState } from '@/features/chat/state/ChatState';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
+
+
 function createInput(): ComposerInputElement {
   return {
-    dispatchEvent: jest.fn().mockReturnValue(true),
-    focus: jest.fn(),
+    dispatchEvent: vi.fn().mockReturnValue(true),
+    focus: vi.fn(),
     value: '',
   } as unknown as ComposerInputElement;
 }
@@ -34,7 +37,7 @@ export function deferred<T>(): {
   return { promise, reject, resolve };
 }
 
-export async function waitForCall(mock: jest.Mock): Promise<void> {
+export async function waitForCall(mock: Mock): Promise<void> {
   for (let attempt = 0; attempt < 20 && mock.mock.calls.length === 0; attempt++) {
     await Promise.resolve();
   }
@@ -63,11 +66,11 @@ export function requestedUserMessageStarted(
 /** Selection sources whose captured context a test sets through `getContext`. */
 function createSelectionSources() {
   const source = () => ({
-    clear: jest.fn(),
-    getContext: jest.fn().mockReturnValue(null),
-    poll: jest.fn(),
-    start: jest.fn(),
-    stop: jest.fn(),
+    clear: vi.fn(),
+    getContext: vi.fn().mockReturnValue(null),
+    poll: vi.fn(),
+    start: vi.fn(),
+    stop: vi.fn(),
   });
   return { browser: source(), canvas: source(), editor: source() };
 }
@@ -95,70 +98,70 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
   state.queueIndicatorEl = queueIndicator as any;
   let id = 0;
   const coordinator = {
-    acceptSteerFromProviderEvent: jest.fn().mockResolvedValue(true),
-    cancel: jest.fn().mockResolvedValue(undefined),
-    execute: jest.fn().mockResolvedValue({
+    acceptSteerFromProviderEvent: vi.fn().mockResolvedValue(true),
+    cancel: vi.fn().mockResolvedValue(undefined),
+    execute: vi.fn().mockResolvedValue({
       accepted: true,
       status: 'completed',
     }),
-    releaseSteerCorrelation: jest.fn(),
+    releaseSteerCorrelation: vi.fn(),
     state: 'idle',
-    steer: jest.fn().mockResolvedValue({ delivery: 'accepted' }),
+    steer: vi.fn().mockResolvedValue({ delivery: 'accepted' }),
   };
   const plugin = {
-    createConversation: jest.fn(),
-    getConversationById: jest.fn().mockResolvedValue(null),
-    getConversationList: jest.fn().mockReturnValue([]),
+    createConversation: vi.fn(),
+    getConversationById: vi.fn().mockResolvedValue(null),
+    getConversationList: vi.fn().mockReturnValue([]),
     getConversationSummary(id: string) { return this.getConversationSync(id); },
-    getConversationSync: jest.fn().mockReturnValue({
+    getConversationSync: vi.fn().mockReturnValue({
       id: 'conversation-1',
       providerId: 'claude',
     }),
     projects: createProjectsFake([]),
     providerHost: { workingDirectory: '/vault' },
-    renameConversation: jest.fn().mockResolvedValue(undefined),
+    renameConversation: vi.fn().mockResolvedValue(undefined),
     settings: {
       enableAutoTitleGeneration: false,
       titleGenerationModel: '',
       permissionMode: 'normal',
     },
-    updateConversation: jest.fn().mockResolvedValue(undefined),
+    updateConversation: vi.fn().mockResolvedValue(undefined),
   };
   const linkedContentToken = Object.freeze({}) as { readonly path?: string };
   const linkedContentController = {
-    beginSubmission: jest.fn().mockReturnValue(linkedContentToken),
-    commitSubmission: jest.fn().mockReturnValue({ queuedEvents: [] }),
-    getSnapshot: jest.fn().mockReturnValue({
+    beginSubmission: vi.fn().mockReturnValue(linkedContentToken),
+    commitSubmission: vi.fn().mockReturnValue({ queuedEvents: [] }),
+    getSnapshot: vi.fn().mockReturnValue({
       content: null,
       mode: 'locked',
       path: null,
     }),
-    resetAutoDraft: jest.fn(),
-    rollbackSubmission: jest.fn(),
+    resetAutoDraft: vi.fn(),
+    rollbackSubmission: vi.fn(),
   };
   const deps = {
     plugin,
     state,
     renderer: {
-      addMessage: jest.fn().mockImplementation(() => {
+      addMessage: vi.fn().mockImplementation(() => {
         const el = createMockEl();
         el.createDiv({ cls: 'claudian-message-content' });
         return el;
       }),
-      appendInterruptIndicator: jest.fn(),
-      refreshActionButtons: jest.fn(),
-      finalizeResponse: jest.fn(),
-      removeMessage: jest.fn(),
+      appendInterruptIndicator: vi.fn(),
+      refreshActionButtons: vi.fn(),
+      finalizeResponse: vi.fn(),
+      removeMessage: vi.fn(),
     },
     streamController: {
-      beginResponse: jest.fn(),
-      appendText: jest.fn(),
-      appendError: jest.fn(),
-      finalizeCurrentTextBlock: jest.fn(),
-      finalizeCurrentThinkingBlock: jest.fn(),
-      handleStreamChunk: jest.fn(),
-      subagents: { releaseManaged: jest.fn() },
-      thinkingIndicator: { hide: jest.fn(), show: jest.fn() },
+      beginResponse: vi.fn(),
+      appendText: vi.fn(),
+      appendError: vi.fn(),
+      finalizeCurrentTextBlock: vi.fn(),
+      finalizeCurrentThinkingBlock: vi.fn(),
+      handleStreamChunk: vi.fn(),
+      subagents: { releaseManaged: vi.fn() },
+      thinkingIndicator: { hide: vi.fn(), show: vi.fn() },
     },
     selections: new ComposerSelections(selectionSources),
     getInputEl: () => input,
@@ -166,23 +169,23 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
     getMessagesEl: () => createMockEl() as any,
     getLinkedContentController: () => linkedContentController as any,
     getImageContextManager: () => ({
-      clearImages: jest.fn(),
-      getAttachedImages: jest.fn().mockReturnValue([]),
-      hasImages: jest.fn().mockReturnValue(false),
-      setImages: jest.fn(),
+      clearImages: vi.fn(),
+      getAttachedImages: vi.fn().mockReturnValue([]),
+      hasImages: vi.fn().mockReturnValue(false),
+      setImages: vi.fn(),
     }) as any,
     getTitleGenerationService: () => null,
     generateId: () => `id-${++id}`,
     getSettings: () => ({ model: 'claude-model', reasoning: 'high', permissionMode: 'normal', serviceTier: 'standard' }),
     getExecutionCoordinator: () => coordinator,
     getTabProviderId: () => 'claude',
-    ensureExecutionInitialized: jest.fn().mockResolvedValue(true),
+    ensureExecutionInitialized: vi.fn().mockResolvedValue(true),
     canStartTurn: () => true,
     isClosing: () => false,
     ...dependencyOverrides,
     ...(typeof onReviewableSettlement === 'function'
       ? {
-          captureReviewableSettlement: jest.fn(
+          captureReviewableSettlement: vi.fn(
             () => onReviewableSettlement as () => void,
           ),
         }
@@ -200,20 +203,20 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
   // Conversation creation stays real; persistence and reset are observed at their boundary.
   const conversationController = new ConversationController({
     plugin: plugin as any, state, renderer: deps.renderer, drafts: ports.drafts, session,
-    subagentManager: { clear: jest.fn() } as any,
+    subagentManager: { clear: vi.fn() } as any,
     getWelcomeEl: () => null, setWelcomeEl: () => undefined, getMessagesEl: deps.getMessagesEl,
     getLinkedContentController: () => deps.getLinkedContentController(),
     ensureExecutionInitialized: () => deps.ensureExecutionInitialized(),
     getExecutionCoordinator: () => deps.getExecutionCoordinator(),
   });
-  jest.spyOn(conversationController, 'save').mockResolvedValue(undefined);
+  vi.spyOn(conversationController, 'save').mockResolvedValue(undefined);
   const commandOverrides = Object.fromEntries(
     (['openConversation', 'startNewConversation', 'toggleFastMode'] as const)
       .filter(key => key in dependencyOverrides)
       .map(key => [key, dependencyOverrides[key]]),
   ) as Partial<BuiltInCommandControllerDeps>;
-  const openConversation = jest.fn().mockResolvedValue(undefined);
-  const startNewConversation = jest.fn().mockResolvedValue(undefined);
+  const openConversation = vi.fn().mockResolvedValue(undefined);
+  const startNewConversation = vi.fn().mockResolvedValue(undefined);
   const builtInCommands = new BuiltInCommandController({
     plugin,
     getCurrentConversationId: () => state.currentConversationId,

@@ -4,11 +4,11 @@ import { FileContextManager } from '@/features/chat/composer/FileContextManager'
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 let mockVaultPath = '/vault';
-jest.mock('@/utils/path', () => {
-  const actual = jest.requireActual('@/utils/path');
+vi.mock('@/utils/path', async () => {
+  const actual = (await vi.importActual<typeof import('@/utils/path')>('@/utils/path'));
   return {
     ...actual,
-    getVaultPath: jest.fn(() => mockVaultPath),
+    getVaultPath: vi.fn(() => mockVaultPath),
   };
 });
 
@@ -34,8 +34,8 @@ function createMockApp(entries: Array<TFile | TFolder> = []) {
   return {
     app: {
       vault: {
-        getFiles: jest.fn(() => entries.filter((entry): entry is TFile => entry instanceof TFile)),
-        getAllLoadedFiles: jest.fn(() => entries),
+        getFiles: vi.fn(() => entries.filter((entry): entry is TFile => entry instanceof TFile)),
+        getAllLoadedFiles: vi.fn(() => entries),
       },
     } as never,
   };
@@ -63,13 +63,13 @@ describe('FileContextManager', () => {
   });
 
   beforeEach(() => {
-    jest.useFakeTimers();
-    jest.clearAllMocks();
+    vi.useFakeTimers();
+    vi.clearAllMocks();
     mockVaultPath = '/vault';
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it('shares vault cache reads across composers while keeping mention selection independent', async () => {
@@ -83,7 +83,7 @@ describe('FileContextManager', () => {
     expect(second.getCachedVaultFiles()).toEqual([note]);
     expect(first.getCachedVaultFolders()).toEqual([{ name: 'Projects', path: 'Projects' }]);
     expect(second.getCachedVaultFolders()).toEqual([{ name: 'Projects', path: 'Projects' }]);
-    jest.runOnlyPendingTimers();
+    vi.runOnlyPendingTimers();
     expect((app as any).vault.getFiles).toHaveBeenCalledTimes(1);
     expect((app as any).vault.getAllLoadedFiles).toHaveBeenCalledTimes(1);
     first.destroy();

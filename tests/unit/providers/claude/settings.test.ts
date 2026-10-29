@@ -1,20 +1,20 @@
-const mockGetHostnameKey = jest.fn(() => 'device:current');
+const mockGetHostnameKey = vi.fn(() => 'device:current');
 
 import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
 
-jest.mock('@/core/device/InstallationKey', () => ({
-  ...jest.requireActual('@/core/device/InstallationKey'),
+vi.mock('@/core/device/InstallationKey', async () => ({
+  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
   getInstallationKey: () => mockGetHostnameKey(),
 }));
 
 describe('Claude settings normalization', () => {
-  it.each([undefined, null, 'true', 1, false, true])('decodes opt-in prompt suggestions from %p', value => {
+  it.each([undefined, null, 'true', 1, false, true])('decodes opt-in prompt suggestions from %o', value => {
     const settings = { providerConfigs: { claude: { promptSuggestions: value } } };
     expect(getClaudeProviderSettings(settings).promptSuggestions).toBe(value === true);
   });
 
-  it.each(['default', 'My Style', null] as const)('persists the %p output style while preserving other settings', (outputStyle) => {
+  it.each(['default', 'My Style', null] as const)('persists the %o output style while preserving other settings', (outputStyle) => {
     const settings = { providerConfigs: { claude: { customModels: 'custom' } } };
     updateClaudeProviderSettings(settings, { outputStyle });
     expect(getClaudeProviderSettings(settings)).toMatchObject({ outputStyle });
@@ -29,7 +29,7 @@ describe('Claude settings normalization', () => {
     [{ outputStyle: null, responseStyle: 'Concise' }, null],
     [{ outputStyle: ' Explanatory ' }, 'Explanatory'],
     [{ outputStyle: 42 }, null],
-  ])('reads stored style %p as %p', (config, outputStyle) => {
+  ])('reads stored style %o as %o', (config, outputStyle) => {
     expect(getClaudeProviderSettings({ providerConfigs: { claude: config } })).toMatchObject({ outputStyle });
   });
 

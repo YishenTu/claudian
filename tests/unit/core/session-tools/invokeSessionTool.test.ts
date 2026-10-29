@@ -12,13 +12,13 @@ import type {
 
 function createPort() {
   const port = {
-    list: jest.fn<Promise<SessionToolDestinations>, [SessionToolListDestinationsArgs, AbortSignal]>(async () => ({
+    list: vi.fn<(...args: [SessionToolListDestinationsArgs, AbortSignal]) => Promise<SessionToolDestinations>>(async () => ({
       sessions: [{ sessionId: 'conv-2', title: 'Review', provider: 'codex', status: 'idle', active: true }],
     })),
-    send: jest.fn<Promise<SessionToolSendMessageResult>, [SessionToolSendMessageArgs, AbortSignal]>(
+    send: vi.fn<(...args: [SessionToolSendMessageArgs, AbortSignal]) => Promise<SessionToolSendMessageResult>>(
       async () => ({ sessionId: 'conv-2', title: 'Review', provider: 'codex', status: 'queued' }),
     ),
-    read: jest.fn<Promise<SessionToolReadSessionResult>, [SessionToolReadSessionArgs, AbortSignal]>(async () => ({
+    read: vi.fn<(...args: [SessionToolReadSessionArgs, AbortSignal]) => Promise<SessionToolReadSessionResult>>(async () => ({
       sessionId: 'conv-2', title: 'Review', provider: 'codex', status: 'idle',
       content: '# Review', fromTurn: 0, toTurn: 0, totalTurns: 0,
     })),

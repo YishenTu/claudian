@@ -15,17 +15,17 @@ import {
   updateCodexProviderSettings,
 } from '@/providers/codex/settings';
 
-const mockGetHostnameKey = jest.fn(() => 'host-a');
+const mockGetHostnameKey = vi.fn(() => 'host-a');
 const originalPlatform = process.platform;
 
-jest.mock('@/core/device/InstallationKey', () => ({
-  ...jest.requireActual('@/core/device/InstallationKey'),
+vi.mock('@/core/device/InstallationKey', async () => ({
+  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
   getInstallationKey: () => mockGetHostnameKey(),
 }));
 
 describe('codex settings', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockGetHostnameKey.mockReturnValue('host-a');
   });
 
@@ -40,7 +40,7 @@ describe('codex settings', () => {
     expect(settings.providerConfigs.codex).not.toHaveProperty('customModels');
   });
 
-  it.each([undefined, null, '', 'invalid', 42, {}, []])('normalizes invalid response style %p to pragmatic', (responseStyle) => {
+  it.each([undefined, null, '', 'invalid', 42, {}, []])('normalizes invalid response style %o to pragmatic', (responseStyle) => {
     const settings = { providerConfigs: { codex: { responseStyle } } };
     expect(getCodexProviderSettings(settings)).toMatchObject({ responseStyle: 'pragmatic' });
     expect(normalizeCodexStoredConfig(settings).config).toMatchObject({ responseStyle: 'pragmatic' });
@@ -53,7 +53,7 @@ describe('codex settings', () => {
     expect(normalizeCodexStoredConfig(settings).config.responseVerbosity).toBe(responseVerbosity);
   });
 
-  it.each([undefined, null, '', 'invalid', 42, {}, []])('inherits Codex verbosity for invalid saved value %p', (responseVerbosity) => {
+  it.each([undefined, null, '', 'invalid', 42, {}, []])('inherits Codex verbosity for invalid saved value %o', (responseVerbosity) => {
     const settings = { providerConfigs: { codex: { responseVerbosity } } };
     expect(getCodexProviderSettings(settings).responseVerbosity).toBe('default');
     expect(normalizeCodexStoredConfig(settings).config.responseVerbosity).toBe('default');
@@ -155,7 +155,7 @@ describe('codex settings', () => {
     expect(JSON.parse(JSON.stringify(aliases))).toEqual(aliases);
   });
 
-  it.each([null, undefined, 'alias', 42, []])('ignores non-record aliases: %p', value => {
+  it.each([null, undefined, 'alias', 42, []])('ignores non-record aliases: %o', value => {
     expect(normalizeCodexModelAliases(value)).toEqual({});
   });
 

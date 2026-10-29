@@ -1,17 +1,20 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Menu } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import type { ConversationMeta } from '@/core/types';
 import { SessionBrowser, type SessionBrowserDeps } from '@/features/chat/session-manager/SessionBrowser';
 import type { HistoryConversationStatus } from '@/features/chat/session-manager/SessionStatusPresentation';
 import { confirmDelete } from '@/shared/modals/ConfirmModal';
 
-jest.mock('@/shared/modals/ConfirmModal', () => ({ confirmDelete: jest.fn() }));
+
+
+vi.mock('@/shared/modals/ConfirmModal', () => ({ confirmDelete: vi.fn() }));
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
@@ -47,12 +50,12 @@ const conversations = [
 ];
 
 function renderList(options: {
-  onSelectConversation?: jest.Mock;
-  onSetConversationsArchived?: jest.Mock;
+  onSelectConversation?: Mock;
+  onSetConversationsArchived?: Mock;
 } = {}) {
-  const onSetConversationsPinned = jest.fn().mockResolvedValue(undefined);
+  const onSetConversationsPinned = vi.fn().mockResolvedValue(undefined);
   const onSetConversationsArchived = options.onSetConversationsArchived
-    ?? jest.fn().mockResolvedValue(undefined);
+    ?? vi.fn().mockResolvedValue(undefined);
   const controller = new SessionBrowser({
     plugin: { getConversationList: () => conversations, settings: {}, projects: createProjectsFake(), conversationLifecycle: {
       archive: onSetConversationsArchived, setPinned: onSetConversationsPinned,
@@ -63,7 +66,7 @@ function renderList(options: {
   } as unknown as SessionBrowserDeps);
   const container = document.createElement('div');
   document.body.append(container);
-  const onSelectConversation = options.onSelectConversation ?? jest.fn().mockResolvedValue(undefined);
+  const onSelectConversation = options.onSelectConversation ?? vi.fn().mockResolvedValue(undefined);
   const render = (): void => controller.renderHistoryDropdown(container, {
     onSelectConversation,
 
@@ -152,7 +155,7 @@ describe('SessionActions recency divider groups', () => {
     const container = document.createElement('div');
     document.body.append(container);
     controller.renderHistoryDropdown(container, {
-      onSelectConversation: jest.fn().mockResolvedValue(undefined),
+      onSelectConversation: vi.fn().mockResolvedValue(undefined),
       showMetadataPopover: true,
       showPinnedSection: true,
       groupByRecency,
@@ -191,7 +194,7 @@ describe('SessionActions recency divider groups', () => {
   });
 
   it('opens a divider group menu from a focusable native button', async () => {
-    const onSetConversationsArchived = jest.fn().mockResolvedValue(undefined);
+    const onSetConversationsArchived = vi.fn().mockResolvedValue(undefined);
     const container = render(true, [recent('fresh', 2), recent('stale', 60)], {
       sessionActionMode: 'active',
       archive: onSetConversationsArchived,
@@ -205,7 +208,7 @@ describe('SessionActions recency divider groups', () => {
     expect(await axe(container)).toHaveNoViolations();
 
     fireEvent.click(actions);
-    const menu = lastMenu() as MockMenu & { showAtPosition: jest.Mock };
+    const menu = lastMenu() as MockMenu & { showAtPosition: Mock };
     // Under the button, in the window that shows it, which may be a popout.
     expect(menu.showAtPosition).toHaveBeenCalledWith(expect.anything(), actions.ownerDocument);
     expect(menu.items.map(item => item.title)).toEqual(['Archive all sessions']);
@@ -214,7 +217,7 @@ describe('SessionActions recency divider groups', () => {
   });
 
   it('archives every non-running session in a group from its divider menu', () => {
-    const onSetConversationsArchived = jest.fn().mockResolvedValue(undefined);
+    const onSetConversationsArchived = vi.fn().mockResolvedValue(undefined);
     const container = render(true, [
       recent('fresh', 2), recent('stale', 60), recent('stale-running', 70), recent('ancient', 400),
     ], {
@@ -237,7 +240,7 @@ describe('SessionActions archived bulk actions', () => {
   afterEach(() => {
     document.body.replaceChildren();
     (Menu as unknown as { instances: MockMenu[] }).instances.length = 0;
-    jest.mocked(confirmDelete).mockReset();
+    vi.mocked(confirmDelete).mockReset();
   });
 
   function renderArchived() {
@@ -246,8 +249,8 @@ describe('SessionActions archived bulk actions', () => {
       session('two', 'Second archived', { isArchived: true }),
       session('three', 'Third archived', { isArchived: true }),
     ];
-    const onRestoreConversations = jest.fn().mockResolvedValue(undefined);
-    const deleteConversation = jest.fn().mockResolvedValue(undefined);
+    const onRestoreConversations = vi.fn().mockResolvedValue(undefined);
+    const deleteConversation = vi.fn().mockResolvedValue(undefined);
     const controller = new SessionBrowser({
       plugin: { app: {}, getConversationList: () => archived, settings: {}, conversationLifecycle: { delete: deleteConversation, restore: onRestoreConversations } },
       getCurrentConversationId: () => null,
@@ -256,9 +259,9 @@ describe('SessionActions archived bulk actions', () => {
     } as unknown as SessionBrowserDeps);
     const container = document.createElement('div');
     document.body.append(container);
-    const onRerender = jest.fn();
+    const onRerender = vi.fn();
     controller.renderHistoryDropdown(container, {
-      onSelectConversation: jest.fn().mockResolvedValue(undefined),
+      onSelectConversation: vi.fn().mockResolvedValue(undefined),
 
 
       onRerender,
@@ -291,7 +294,7 @@ describe('SessionActions archived bulk actions', () => {
 
   it.each([true, false])('deletes the selected archived sessions only after confirmation (%s)', async (confirmed) => {
     const { item, onRerender, deleteConversation } = renderArchived();
-    jest.mocked(confirmDelete).mockResolvedValue(confirmed);
+    vi.mocked(confirmDelete).mockResolvedValue(confirmed);
 
     fireEvent.click(item('First archived'), { altKey: true });
     fireEvent.click(item('Second archived'), { altKey: true });
@@ -311,9 +314,9 @@ describe('SessionActions archived bulk actions', () => {
       session('plan-b', 'Plan review', { isArchived: true, linkedContentPath: 'Projects/Plan.md' }),
       session('other', 'Other archived', { isArchived: true, linkedContentPath: 'Projects/Other.md' }),
     ];
-    const onRestoreConversations = jest.fn().mockResolvedValue(undefined);
-    const deleteConversation = jest.fn().mockResolvedValue(undefined);
-    jest.mocked(confirmDelete).mockResolvedValue(true);
+    const onRestoreConversations = vi.fn().mockResolvedValue(undefined);
+    const deleteConversation = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(confirmDelete).mockResolvedValue(true);
     const controller = new SessionBrowser({
       plugin: { app: {}, getConversationList: () => archived, settings: {}, conversationLifecycle: { delete: deleteConversation, restore: onRestoreConversations } },
       getCurrentConversationId: () => null,
@@ -323,11 +326,11 @@ describe('SessionActions archived bulk actions', () => {
     const container = document.createElement('div');
     document.body.append(container);
     controller.renderHistoryDropdown(container, {
-      onSelectConversation: jest.fn().mockResolvedValue(undefined),
-      onSetLinkedContentPinned: jest.fn().mockResolvedValue(undefined),
-      onStartLinkedContentConversation: jest.fn().mockResolvedValue(undefined),
+      onSelectConversation: vi.fn().mockResolvedValue(undefined),
+      onSetLinkedContentPinned: vi.fn().mockResolvedValue(undefined),
+      onStartLinkedContentConversation: vi.fn().mockResolvedValue(undefined),
 
-      onRerender: jest.fn(),
+      onRerender: vi.fn(),
       organization: 'linked-content',
       contentExists: () => true,
       contentIsNote: () => true,
@@ -357,9 +360,9 @@ describe('SessionActions archived bulk actions', () => {
       { ...session('stale', 'Stale archived', { isArchived: true }), lastActivityAt: testDate({ days: -60 }).getTime() },
       { ...session('ancient', 'Ancient archived', { isArchived: true }), lastActivityAt: testDate({ days: -400 }).getTime() },
     ];
-    const onRestoreConversations = jest.fn().mockResolvedValue(undefined);
-    const deleteConversation = jest.fn().mockResolvedValue(undefined);
-    jest.mocked(confirmDelete).mockResolvedValue(true);
+    const onRestoreConversations = vi.fn().mockResolvedValue(undefined);
+    const deleteConversation = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(confirmDelete).mockResolvedValue(true);
     const controller = new SessionBrowser({
       plugin: { app: {}, getConversationList: () => archived, settings: {}, conversationLifecycle: { delete: deleteConversation, restore: onRestoreConversations } },
       getCurrentConversationId: () => null,
@@ -369,9 +372,9 @@ describe('SessionActions archived bulk actions', () => {
     const container = document.createElement('div');
     document.body.append(container);
     controller.renderHistoryDropdown(container, {
-      onSelectConversation: jest.fn().mockResolvedValue(undefined),
+      onSelectConversation: vi.fn().mockResolvedValue(undefined),
 
-      onRerender: jest.fn(),
+      onRerender: vi.fn(),
       groupByRecency: true,
       showArchivedSection: true,
       sessionScope: 'archived',

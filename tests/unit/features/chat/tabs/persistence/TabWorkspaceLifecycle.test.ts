@@ -8,19 +8,19 @@ function createHarness(options: {
 } = {}) {
   const workspace = {
     layoutReady: true,
-    onLayoutReady: jest.fn(),
-    requestSaveLayout: Object.assign(jest.fn(), { run: jest.fn() }),
+    onLayoutReady: vi.fn(),
+    requestSaveLayout: Object.assign(vi.fn(), { run: vi.fn() }),
   };
   const plugin = {
     app: { workspace },
-    ensureConversationMetadataLoaded: jest.fn().mockResolvedValue(undefined),
+    ensureConversationMetadataLoaded: vi.fn().mockResolvedValue(undefined),
     settings: { restoreTabsOnStartup: true },
     ...options.plugin,
   };
   const host = {
     manager: options.manager ?? null,
     tabBar: options.tabBar ?? null,
-    onInitialized: jest.fn(),
+    onInitialized: vi.fn(),
   };
   const lifecycle = new TabWorkspaceLifecycle({
     getPlugin: () => plugin as never,
@@ -59,7 +59,7 @@ describe('TabWorkspaceLifecycle', () => {
         openTabs: [{ conversationId: 'conversation-1', tabId: 'tab-1' }, { conversationId: 42, tabId: 'tab-2' }],
       }],
     ])('starts fresh from %s', async (_label, tabWorkspace) => {
-      const restoreState = jest.fn().mockResolvedValue(undefined);
+      const restoreState = vi.fn().mockResolvedValue(undefined);
       const { lifecycle } = createHarness({
         manager: { restoreState, getPersistedState: () => ({ activeTabId: null, openTabs: [] }) },
       });
@@ -87,10 +87,10 @@ describe('TabWorkspaceLifecycle', () => {
 
     it('keeps live persistence authoritative after another delivery to an initialized view', async () => {
       const live = { activeTabId: 'live-tab', openTabs: [{ conversationId: null, tabId: 'live-tab' }] };
-      const restoreState = jest.fn().mockResolvedValue(undefined);
+      const restoreState = vi.fn().mockResolvedValue(undefined);
       const { lifecycle } = createHarness({ manager: { restoreState, getPersistedState: () => live } });
       await lifecycle.setState({});
-      const update = jest.fn();
+      const update = vi.fn();
 
       await lifecycle.setState(viewState({
         activeTabId: 'old-tab',
@@ -106,8 +106,8 @@ describe('TabWorkspaceLifecycle', () => {
 
   describe('restore', () => {
     it('restores every open tab and prepares every bound conversation independently of layout', async () => {
-      const restoreState = jest.fn().mockResolvedValue(undefined);
-      const setExpandedTitleTabIds = jest.fn();
+      const restoreState = vi.fn().mockResolvedValue(undefined);
+      const setExpandedTitleTabIds = vi.fn();
       const state = {
         activeTabId: 'tab-2',
         openTabs: [
@@ -133,7 +133,7 @@ describe('TabWorkspaceLifecycle', () => {
     });
 
     it('starts fresh without preparing saved conversations when restore is off', async () => {
-      const restoreState = jest.fn().mockResolvedValue(undefined);
+      const restoreState = vi.fn().mockResolvedValue(undefined);
       const { lifecycle, plugin } = createHarness({
         plugin: { settings: { restoreTabsOnStartup: false } },
         manager: { restoreState, getPersistedState: () => ({ activeTabId: null, openTabs: [] }) },
@@ -149,7 +149,7 @@ describe('TabWorkspaceLifecycle', () => {
     });
 
     it('defers restoring delivered state until the startup layout is ready', async () => {
-      const restoreState = jest.fn().mockResolvedValue(undefined);
+      const restoreState = vi.fn().mockResolvedValue(undefined);
       const state = { activeTabId: 'tab-1', openTabs: [{ conversationId: null, tabId: 'tab-1' }] };
       const { host, lifecycle, workspace } = createHarness({
         manager: { restoreState, getPersistedState: () => state },
@@ -188,12 +188,12 @@ describe('TabWorkspaceLifecycle', () => {
       const { host, lifecycle } = createHarness();
       await lifecycle.setState(viewState(pendingState));
       const manager = {
-        drainForShutdownSnapshot: jest.fn().mockResolvedValue(undefined),
-        getPersistedState: jest.fn().mockReturnValue(admitted),
-        sealShutdownSnapshot: jest.fn(),
+        drainForShutdownSnapshot: vi.fn().mockResolvedValue(undefined),
+        getPersistedState: vi.fn().mockReturnValue(admitted),
+        sealShutdownSnapshot: vi.fn(),
       };
       host.manager = manager;
-      const persistence = { flush: jest.fn().mockResolvedValue(undefined), update: jest.fn() };
+      const persistence = { flush: vi.fn().mockResolvedValue(undefined), update: vi.fn() };
 
       await lifecycle.snapshotForShutdown(manager as never, persistence);
       host.manager = null;
@@ -207,16 +207,16 @@ describe('TabWorkspaceLifecycle', () => {
     it('drains, then seals and flushes the single identity a reopen restores', async () => {
       const drained = { activeTabId: 'tab-1', openTabs: [{ conversationId: null, tabId: 'tab-1' }] };
       const late = { activeTabId: 'late-tab', openTabs: [{ conversationId: null, tabId: 'late-tab' }] };
-      const restoreState = jest.fn().mockResolvedValue(undefined);
+      const restoreState = vi.fn().mockResolvedValue(undefined);
       const manager = {
-        drainForShutdownSnapshot: jest.fn().mockResolvedValue(undefined),
-        getPersistedState: jest.fn().mockReturnValueOnce(drained).mockReturnValue(late),
+        drainForShutdownSnapshot: vi.fn().mockResolvedValue(undefined),
+        getPersistedState: vi.fn().mockReturnValueOnce(drained).mockReturnValue(late),
         restoreState,
-        sealShutdownSnapshot: jest.fn(),
+        sealShutdownSnapshot: vi.fn(),
       };
       const { host, lifecycle } = createHarness();
       host.manager = manager;
-      const persistence = { flush: jest.fn().mockResolvedValue(undefined), update: jest.fn() };
+      const persistence = { flush: vi.fn().mockResolvedValue(undefined), update: vi.fn() };
 
       lifecycle.beginClose();
       await lifecycle.snapshotForShutdown(manager as never, persistence);
@@ -237,10 +237,10 @@ describe('TabWorkspaceLifecycle', () => {
       const finalized = { activeTabId: 'tab-1', openTabs: [{ conversationId: null, tabId: 'tab-1' }] };
       const live = { activeTabId: null as string | null, openTabs: finalized.openTabs };
       const manager = {
-        drainForShutdownSnapshot: jest.fn().mockResolvedValue(undefined),
-        getPersistedState: jest.fn().mockReturnValue(finalized),
-        restoreState: jest.fn().mockResolvedValue(undefined),
-        sealShutdownSnapshot: jest.fn(),
+        drainForShutdownSnapshot: vi.fn().mockResolvedValue(undefined),
+        getPersistedState: vi.fn().mockReturnValue(finalized),
+        restoreState: vi.fn().mockResolvedValue(undefined),
+        sealShutdownSnapshot: vi.fn(),
       };
       const { host, lifecycle } = createHarness({ manager });
       lifecycle.beginClose();

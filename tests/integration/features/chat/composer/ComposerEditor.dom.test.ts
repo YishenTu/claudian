@@ -1,9 +1,9 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import { EditorView } from '@codemirror/view';
+import { axe } from '@test/helpers/accessibility';
 import { testDate } from '@test/helpers/testClock';
 import { createEvent, fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { type App, Component, MarkdownRenderer, Notice, Platform, TFile } from 'obsidian';
 
 import { createCatalogCommandDiscoveryStore } from '@/core/providers/commands/catalogCommandDiscovery';
@@ -47,9 +47,9 @@ function createApp(): App {
     metadataCache: { getFirstLinkpathDest: () => file },
     vault: {
       getFiles: () => [file], getAllLoadedFiles: () => [file],
-      getAbstractFileByPath: () => file, on: jest.fn(), offref: jest.fn(),
+      getAbstractFileByPath: () => file, on: vi.fn(), offref: vi.fn(),
     },
-    workspace: { iterateAllLeaves: jest.fn(), openLinkText: jest.fn().mockResolvedValue(undefined) },
+    workspace: { iterateAllLeaves: vi.fn(), openLinkText: vi.fn().mockResolvedValue(undefined) },
   } as unknown as App;
 }
 
@@ -63,8 +63,8 @@ beforeEach(() => {
   HTMLElement.prototype.removeClass = function (...names) { this.classList.remove(...names); };
   HTMLElement.prototype.hasClass = function (name) { return this.classList.contains(name); };
   HTMLElement.prototype.toggleClass = function (name, enabled) { for (const cls of Array.isArray(name) ? name : [name]) this.classList.toggle(cls, enabled); };
-  HTMLElement.prototype.scrollIntoView = jest.fn();
-  jest.mocked(MarkdownRenderer.render).mockReset().mockImplementation(async (_app, markdown, container) => {
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+  vi.mocked(MarkdownRenderer.render).mockReset().mockImplementation(async (_app, markdown, container) => {
     const fixture = nativeLinks[markdown];
     if (!fixture) throw new Error(`No native rendering fixture for ${markdown}`);
     (container as HTMLElement).createEl('p').createEl('a', {
@@ -75,11 +75,11 @@ beforeEach(() => {
 
 it('renders a wikilink through Obsidian and opens it without changing the source text', async () => {
   const parent = document.body.createDiv();
-  const openLinkText = jest.fn().mockResolvedValue(undefined);
+  const openLinkText = vi.fn().mockResolvedValue(undefined);
   const app = createApp();
   app.workspace.openLinkText = openLinkText;
   const component = new Component();
-  jest.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, markdown, container) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, markdown, container) => {
     expect(markdown).toBe('[[Notes/A note.md]]');
     (container as HTMLElement).createEl('a', {
       cls: 'internal-link', text: 'A note', attr: { href: 'Notes/A note.md', 'data-href': 'Notes/A note.md' },
@@ -113,7 +113,7 @@ it.each(['delete', 'destroy', 'parent unload'] as const)(
       liveResources++;
       component.register(() => { liveResources--; });
     };
-    jest.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, _markdown, container, _path, scope) => {
+    vi.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, _markdown, container, _path, scope) => {
       (container as HTMLElement).createEl('a', {
         cls: 'internal-link', text: 'A note', attr: { href: 'Notes/A note.md' },
       });
@@ -135,7 +135,7 @@ it.each(['delete', 'destroy', 'parent unload'] as const)(
       expect(liveResources).toBe(2);
       // Rebuilding equivalent decorations must retain the displayed chip's owner.
       editor.element.replaceText!(editor.element.value.length, editor.element.value.length, '!');
-      expect(jest.mocked(MarkdownRenderer.render)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(MarkdownRenderer.render)).toHaveBeenCalledTimes(1);
       expect(liveResources).toBe(2);
       expect(await axe(parent)).toHaveNoViolations();
       if (release === 'delete') editor.element.value = 'A replacement draft';
@@ -265,7 +265,7 @@ it('copies wikilink source and reconstructs links through paste, undo, redo, and
     const draft = input.value;
     input.selectionStart = 0;
     input.selectionEnd = draft.length;
-    const clipboardData = { clearData: jest.fn(), setData: jest.fn() };
+    const clipboardData = { clearData: vi.fn(), setData: vi.fn() };
     fireEvent.copy(content, { clipboardData });
     expect(clipboardData.setData).toHaveBeenCalledWith('text/plain', '[[Notes/A note.md#Heading|My alias]]');
     fireEvent.keyDown(content, { key: 'z', code: 'KeyZ', ctrlKey: true });
@@ -304,7 +304,7 @@ it('refreshes native link resolution after vault changes', async () => {
     editor.element.value = '[[Notes/B.md]]';
     editor.element.focus();
     await waitFor(() => within(parent).getByRole('link', { name: 'B' }));
-    jest.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, _markdown, container) => {
+    vi.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, _markdown, container) => {
       (container as HTMLElement).createEl('a', {
         cls: 'internal-link is-unresolved', text: 'B', attr: { href: 'Notes/B.md' },
       });
@@ -367,7 +367,7 @@ it('reports whether the caret is on the first or last rendered row, including so
   editor.element.value = 'a'.repeat(30);
   // jsdom has no layout: render ten characters per 20px row; a wrap point belongs to the row the side faces.
   let measurable = true;
-  jest.spyOn(EditorView.prototype, 'coordsAtPos').mockImplementation((pos: number, side = 1) => {
+  vi.spyOn(EditorView.prototype, 'coordsAtPos').mockImplementation((pos: number, side = 1) => {
     if (!measurable) return null;
     const row = side < 0 && pos > 0 && pos % 10 === 0 ? pos / 10 - 1 : Math.floor(pos / 10);
     return { top: row * 20, bottom: row * 20 + 18, left: 0, right: 0 };
@@ -389,7 +389,7 @@ it('keeps the explicit send shortcut focused inside the editor', () => {
   const parent = document.body.createDiv();
   const editor = createEditor(parent);
   editor.element.focus();
-  const sendMessage = jest.fn().mockResolvedValue(undefined);
+  const sendMessage = vi.fn().mockResolvedValue(undefined);
   const tab = { dom: { inputEl: editor.element }, controllers: { inputController: { sendMessage } } };
   const event = new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: !Platform.isMacOS, metaKey: Platform.isMacOS, cancelable: true });
   expect(sendTabInputMessageFromExplicitEnterShortcut(tab as never, event, { requireInputFocus: true })).toBe(true);
@@ -401,7 +401,7 @@ it('keeps the explicit send shortcut focused inside the editor', () => {
 it('lets image attachment handling consume image paste before the rich editor inserts fallback text', () => {
   const parent = document.body.createDiv({ cls: 'claudian-input-wrapper' });
   const editor = createEditor(parent);
-  const images = new ImageContextManager({ pushScope: jest.fn(), popScope: jest.fn() }, parent, editor.element, {});
+  const images = new ImageContextManager({ pushScope: vi.fn(), popScope: vi.fn() }, parent, editor.element, {});
   editor.element.value = 'Keep this';
   editor.element.focus();
   const clipboardData = {
@@ -419,17 +419,17 @@ describe('image batch admission through the composer', () => {
     const parent = document.body.createDiv();
     const wrapper = parent.createDiv({ cls: 'claudian-input-wrapper' });
     const editor = createEditor(wrapper);
-    const changed = jest.fn();
-    const images = new ImageContextManager({ pushScope: jest.fn(), popScope: jest.fn() }, parent, editor.element, {
+    const changed = vi.fn();
+    const images = new ImageContextManager({ pushScope: vi.fn(), popScope: vi.fn() }, parent, editor.element, {
       onUserImagesChanged: changed,
     });
     editor.element.value = 'Keep this draft';
     editor.element.focus();
     editor.element.selectionStart = editor.element.selectionEnd = editor.element.value.length;
     const textbox = within(parent).getByRole('textbox', { name: 'Message' });
-    const escapedDrop = jest.fn();
+    const escapedDrop = vi.fn();
     parent.addEventListener('drop', escapedDrop);
-    jest.mocked(Notice).mockClear();
+    vi.mocked(Notice).mockClear();
     return {
       parent, wrapper, editor, images, changed, textbox, escapedDrop,
       destroy: () => { images.destroy(); editor.destroy(); parent.remove(); },
@@ -439,7 +439,7 @@ describe('image batch admission through the composer', () => {
   function imageFile(name: string, type: string, bytes: number[]) {
     const data = new Uint8Array(bytes);
     const file = new File([data], name, { type });
-    const read = jest.fn(async () => data.buffer);
+    const read = vi.fn(async () => data.buffer);
     Object.defineProperty(file, 'arrayBuffer', { value: read });
     return { file, read };
   }
@@ -453,7 +453,7 @@ describe('image batch admission through the composer', () => {
         },
       })
       : createEvent.drop(fixture.wrapper, { dataTransfer: { types: ['Files'], files } });
-    const preventDefault = jest.spyOn(event, 'preventDefault');
+    const preventDefault = vi.spyOn(event, 'preventDefault');
     fireEvent(operation === 'paste' ? fixture.textbox : fixture.wrapper, event);
     return { event, preventDefault };
   }
@@ -565,10 +565,10 @@ it('focuses an already open note when its composer link is clicked', async () =>
   const app = createApp();
   const leaf = {
     getViewState: () => ({ type: 'markdown', state: { file: 'Notes/A note.md' } }),
-    setEphemeralState: jest.fn(),
+    setEphemeralState: vi.fn(),
   };
-  jest.mocked(app.workspace.iterateAllLeaves).mockImplementation(visit => visit(leaf as never));
-  app.workspace.revealLeaf = jest.fn().mockResolvedValue(undefined);
+  vi.mocked(app.workspace.iterateAllLeaves).mockImplementation(visit => visit(leaf as never));
+  app.workspace.revealLeaf = vi.fn().mockResolvedValue(undefined);
   const editor = new ComposerEditor(parent, app, new Component());
   try {
     editor.element.value = 'Read [[Notes/A note.md|A note]] today';
@@ -767,7 +767,7 @@ it('reloads Codex skills for typed tokens while keeping completed chips atomic',
   const parent = document.body.createDiv();
   const editor = createEditor(parent);
   let name = 'first-skill';
-  const nativeRequest = jest.fn(async () => ({ data: [{ cwd: '/vault', skills: [{
+  const nativeRequest = vi.fn(async () => ({ data: [{ cwd: '/vault', skills: [{
     name, path: '/skills/SKILL.md', scope: 'user', enabled: true,
   }] }] }));
   const skills = new CodexSkillListingService({
@@ -786,7 +786,7 @@ it('reloads Codex skills for typed tokens while keeping completed chips atomic',
     // Codex has no command loader; its catalog discovers skills itself.
     providerDiscovery: createCatalogCommandDiscoveryStore(catalog, async () => ({ result: { status: 'empty' } })),
   });
-  const handleInput = jest.fn(() => dropdown.handleInputChange());
+  const handleInput = vi.fn(() => dropdown.handleInputChange());
   editor.element.addEventListener('input', handleInput);
   try {
     editor.element.value = '$';
@@ -837,7 +837,7 @@ it('accepts a visible prompt suggestion with Tab only, without sending', async (
   const parent = document.body.createDiv();
   const editor = createEditor(parent);
   const suggestion = new ComposerPromptSuggestion(editor.element, () => true, parent);
-  const send = jest.fn();
+  const send = vi.fn();
   editor.element.addEventListener('keydown', event => {
     if (suggestion.handleKeydown(event)) return;
     if (event.key === 'Enter') send();
@@ -1063,8 +1063,8 @@ it('localizes the linked content removal button through the info row', async () 
   setLocale('zh-CN');
   const parent = document.body.createDiv();
   const row = new ComposerInfoRow(parent);
-  const remove = jest.fn();
-  const chip = new LinkedContentChip(row, jest.fn(), remove);
+  const remove = vi.fn();
+  const chip = new LinkedContentChip(row, vi.fn(), remove);
   try {
     chip.render({ path: 'Notes/A.md', kind: 'file', label: 'A', icon: 'file-text', missing: false, target: null }, true);
     const button = within(parent).getByRole('button', { name: '移除关联内容：Notes/A.md' });
@@ -1084,7 +1084,7 @@ it('localizes image attachment labels and removal controls', async () => {
   setLocale('zh-CN');
   const parent = document.body.createDiv();
   const editor = createEditor(parent);
-  const images = new ImageContextManager({ pushScope: jest.fn(), popScope: jest.fn() }, parent, editor.element, {});
+  const images = new ImageContextManager({ pushScope: vi.fn(), popScope: vi.fn() }, parent, editor.element, {});
   try {
     images.setImages([{ id: 'image', name: 'photo.png', mediaType: 'image/png', data: 'dGVzdA==', size: 500, source: 'paste' }]);
     fireEvent.click(within(parent).getByRole('button', { name: '图片附件：photo.png · 500 B' }));
@@ -1114,7 +1114,7 @@ it('localizes image overflow controls and updates their accessible names on expa
   const editor = createEditor(parent);
   const trayEl = parent.createDiv();
   const tray = new ComposerContextTray(trayEl);
-  const images = new ImageContextManager({ pushScope: jest.fn(), popScope: jest.fn() }, parent, editor.element, {}, undefined, tray);
+  const images = new ImageContextManager({ pushScope: vi.fn(), popScope: vi.fn() }, parent, editor.element, {}, undefined, tray);
   try {
     images.setImages(Array.from({ length: 4 }, (_, index) => ({
       id: `image-${index}`, name: `photo-${index}.png`, mediaType: 'image/png' as const,

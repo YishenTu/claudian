@@ -17,7 +17,7 @@ function setup(enabled = true) {
   const settings: Record<string, unknown> = { providerConfigs: { claude: { enabled, visibleModels: ['sonnet'], discoveredModels: rows } } };
   const appHost: { settings: Record<string, unknown>; notifyProviderChatOptionsChanged: () => void } = {
     settings,
-    notifyProviderChatOptionsChanged: jest.fn(),
+    notifyProviderChatOptionsChanged: vi.fn(),
   };
   return { settings, host: runtimeHostFor(appHost, 'claude'), appHost };
 }
@@ -40,7 +40,7 @@ function catalogFor(host: ProviderRuntimeHost, probe: ModelProbe) {
 describe('Claude panel model discovery', () => {
   it('stores reported output styles and keeps the previous list when none are reported', async () => {
     const { settings, host } = setup();
-    const probe = jest.fn()
+    const probe = vi.fn()
       .mockResolvedValueOnce({ models: rows, outputStyles: ['default', 'My Style'] })
       .mockResolvedValueOnce({ models: rows, outputStyles: [] });
     await discoverClaudeModels(host, new AbortController().signal, probe);
@@ -178,7 +178,7 @@ describe('Claude panel model discovery', () => {
 
   it('skips disabled providers and fetches when enabled', async () => {
     const { settings, host } = setup(false);
-    const probe = jest.fn().mockResolvedValue(rows);
+    const probe = vi.fn().mockResolvedValue(rows);
     const catalog = catalogFor(host, probe);
     await catalog.refresh();
     expect(probe).not.toHaveBeenCalled();
@@ -191,7 +191,7 @@ describe('Claude panel model discovery', () => {
   it('keeps cached rows during a manual refresh and retains them on configuration invalidation', async () => {
     const { settings, host } = setup();
     let release!: (value: typeof rows) => void;
-    const probe = jest.fn(() => new Promise<typeof rows>(resolve => { release = resolve; }));
+    const probe = vi.fn(() => new Promise<typeof rows>(resolve => { release = resolve; }));
     const catalog = catalogFor(host, probe);
     const refresh = catalog.refresh();
     expect(getClaudeModelOptions(getClaudeModelSource(settings))).toHaveLength(1);
@@ -205,7 +205,7 @@ describe('Claude panel model discovery', () => {
 
   it('reports the failure reason without retries or synthetic models', async () => {
     const { settings, host } = setup();
-    const probe = jest.fn().mockRejectedValue(new Error('Claude Code exited with code 1'));
+    const probe = vi.fn().mockRejectedValue(new Error('Claude Code exited with code 1'));
     const catalog = catalogFor(host, probe);
     const result = await catalog.refresh();
     expect(catalog.getSnapshot()).toMatchObject({ status: 'failed', error: 'Claude Code exited with code 1' });
@@ -219,7 +219,7 @@ describe('Claude panel model discovery', () => {
     let release!: (value: typeof rows) => void;
     let oldSignal!: AbortSignal;
     const freshRows = [{ value: 'haiku', label: 'Fresh model', description: '', resolvedModel: 'new-gateway-model' }];
-    const probe = jest.fn()
+    const probe = vi.fn()
       .mockImplementationOnce((_host, signal) => {
         oldSignal = signal;
         return new Promise<typeof rows>(resolve => { release = resolve; });
@@ -244,7 +244,7 @@ describe('Claude panel model discovery', () => {
     const { settings, host, appHost } = setup();
     let release!: (value: typeof rows) => void;
     let signal!: AbortSignal;
-    const probe = jest.fn((_host: ProviderRuntimeHost, probeSignal: AbortSignal) => {
+    const probe = vi.fn((_host: ProviderRuntimeHost, probeSignal: AbortSignal) => {
       signal = probeSignal;
       return new Promise<typeof rows>(resolve => { release = resolve; });
     });

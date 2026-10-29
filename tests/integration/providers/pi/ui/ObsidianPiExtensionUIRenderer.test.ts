@@ -1,11 +1,11 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import type { App } from 'obsidian';
 
-jest.mock('obsidian', () => {
-  const actual = jest.requireActual('obsidian');
+vi.mock('obsidian', async () => {
+  const actual = (await vi.importActual<typeof import('obsidian')>('obsidian'));
   let nextModalId = 0;
   class Modal {
     modalEl = document.createElement('div');
@@ -128,7 +128,7 @@ it.each(['input', 'editor'] as const)('localizes fallback %s titles and controls
 });
 
 it.each([false, true])('keeps native editor prefill through submission (edited: %s)', async edited => {
-  const send = jest.fn();
+  const send = vi.fn();
   const bridge = new PiExtensionUIBridge({ send } as unknown as PiRPCTransport, new ObsidianPiExtensionUIRenderer({} as App));
   const prefill = '  Initial text\nSecond line  ';
   try {
@@ -150,7 +150,7 @@ it.each([false, true])('keeps native editor prefill through submission (edited: 
 });
 
 it.each(['  Keep indentation', 'Keep trailing space  ', '\tKeep both  '])('returns the original native select option %j', async value => {
-  const send = jest.fn();
+  const send = vi.fn();
   const bridge = new PiExtensionUIBridge({ send } as unknown as PiRPCTransport, new ObsidianPiExtensionUIRenderer({} as App));
   try {
     bridge.handleRequest({ type: 'extension_ui_request', id: 'select-value', method: 'select', title: 'Choose text', options: [value, 'Other'] });

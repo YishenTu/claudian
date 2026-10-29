@@ -8,9 +8,9 @@ describe('renderProviderModelEnablementWarning', () => {
     let enabled = true;
     let hasModels = false;
     const warningEl = createElement();
-    const notifyProviderModelOptionsChanged = jest.fn();
+    const notifyProviderModelOptionsChanged = vi.fn();
     const container = {
-      createDiv: jest.fn(() => warningEl),
+      createDiv: vi.fn(() => warningEl),
     } as unknown as HTMLElement;
 
     const warning = renderProviderModelEnablementWarning(
@@ -46,17 +46,17 @@ describe('renderProviderModelEnablementWarning', () => {
 
 describe('renderLastEnabledProviderWarning', () => {
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it('shows accessibly for ten seconds and then hides', () => {
     const warningEl = createElement();
     const container = {
-      createDiv: jest.fn(() => warningEl),
+      createDiv: vi.fn(() => warningEl),
     } as unknown as HTMLElement;
 
     const warning = renderLastEnabledProviderWarning(container);
@@ -74,35 +74,35 @@ describe('renderLastEnabledProviderWarning', () => {
     warning.showFor();
     expect(warningEl.toggleClass).toHaveBeenLastCalledWith('claudian-hidden', false);
 
-    jest.advanceTimersByTime(9_999);
+    vi.advanceTimersByTime(9_999);
     expect(warningEl.toggleClass).toHaveBeenLastCalledWith('claudian-hidden', false);
 
-    jest.advanceTimersByTime(1);
+    vi.advanceTimersByTime(1);
     expect(warningEl.toggleClass).toHaveBeenLastCalledWith('claudian-hidden', true);
   });
 
   it('restarts the timer on repeated attempts and supports immediate hiding', () => {
     const warningEl = createElement();
     const container = {
-      createDiv: jest.fn(() => warningEl),
+      createDiv: vi.fn(() => warningEl),
     } as unknown as HTMLElement;
     const warning = renderLastEnabledProviderWarning(container);
 
     warning.showFor();
-    jest.advanceTimersByTime(9_000);
+    vi.advanceTimersByTime(9_000);
     warning.showFor();
-    jest.advanceTimersByTime(1_000);
+    vi.advanceTimersByTime(1_000);
     expect(warningEl.toggleClass).toHaveBeenLastCalledWith('claudian-hidden', false);
 
     warning.hide();
     expect(warningEl.toggleClass).toHaveBeenLastCalledWith('claudian-hidden', true);
-    jest.advanceTimersByTime(10_000);
+    vi.advanceTimersByTime(10_000);
     expect(warningEl.toggleClass).toHaveBeenLastCalledWith('claudian-hidden', true);
   });
 });
 
 function createElement(): Pick<HTMLElement, 'toggleClass'> {
   return {
-    toggleClass: jest.fn(),
+    toggleClass: vi.fn(),
   } as unknown as Pick<HTMLElement, 'toggleClass'>;
 }

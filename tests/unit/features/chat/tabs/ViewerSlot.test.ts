@@ -12,37 +12,40 @@ import {
   mockTabs,
   runtimeOptions,
 } from '@test/helpers/features/chat/TabManagerTestHarness';
+import type { Mock } from 'vitest';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 
-jest.mock('@/features/chat/tabs/TabLifecycle', () => (
-  jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').tabLifecycleModuleMock()
+
+
+vi.mock('@/features/chat/tabs/TabLifecycle', async () => (
+  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).tabLifecycleModuleMock()
 ));
-jest.mock('@/features/chat/tabs/tabProviderUI', () => ({ refreshTabWorkspaceServices: jest.fn() }));
-jest.mock('@/features/chat/tabs/tabProviderLifecycle', () => ({ onProviderAvailabilityChanged: jest.fn().mockReturnValue(false) }));
-jest.mock('@/features/chat/tabs/TabRuntimeFactory', () => (
-  jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').tabRuntimeFactoryModuleMock()
+vi.mock('@/features/chat/tabs/tabProviderUI', () => ({ refreshTabWorkspaceServices: vi.fn() }));
+vi.mock('@/features/chat/tabs/tabProviderLifecycle', () => ({ onProviderAvailabilityChanged: vi.fn().mockReturnValue(false) }));
+vi.mock('@/features/chat/tabs/TabRuntimeFactory', async () => (
+  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).tabRuntimeFactoryModuleMock()
 ));
-jest.mock('@/features/chat/tabs/forking/ForkTargetModal', () => (
-  jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').forkTargetModalModuleMock()
+vi.mock('@/features/chat/tabs/forking/ForkTargetModal', async () => (
+  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).forkTargetModalModuleMock()
 ));
-jest.mock('@/core/providers/ProviderWorkspaceRegistry', () => (
-  jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').providerWorkspaceRegistryModuleMock()
+vi.mock('@/core/providers/ProviderWorkspaceRegistry', async () => (
+  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).providerWorkspaceRegistryModuleMock()
 ));
-jest.mock('@/core/providers/ProviderRegistry', () => (
-  jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').providerRegistryModuleMock()
+vi.mock('@/core/providers/ProviderRegistry', async () => (
+  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).providerRegistryModuleMock()
 ));
 
 describe('ViewerSlot', () => {
   beforeEach(() => {
-    jest.mocked(ProviderWorkspaceRegistry.getCommandCatalog).mockReturnValue(commandCatalog as never);
-    jest.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockReturnValue(commandLoader);
-    jest.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockResolvedValue(undefined);
-    jest.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockReturnValue({});
+    vi.mocked(ProviderWorkspaceRegistry.getCommandCatalog).mockReturnValue(commandCatalog as never);
+    vi.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockReturnValue(commandLoader);
+    vi.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockResolvedValue(undefined);
+    vi.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockReturnValue({});
     mockTabs.length = 0;
-    jest.clearAllMocks();
-    (ProviderRegistry.getCapabilities as jest.Mock).mockReturnValue({
+    vi.clearAllMocks();
+    (ProviderRegistry.getCapabilities as Mock).mockReturnValue({
       providerId: 'claude',
       supportsProviderCommands: true,
     });
@@ -53,11 +56,11 @@ describe('ViewerSlot', () => {
   });
 
   it('reuses the provisional preview while browsing unopened sessions', async () => {
-    const getCachedConversation = jest.fn((id: string) => ({
+    const getCachedConversation = vi.fn((id: string) => ({
       id,
       providerId: 'claude',
     }));
-    const { manager } = createManager(createPlugin({ getCachedConversation }));
+    const { manager } = await createManager(createPlugin({ getCachedConversation }));
 
     await manager.viewerSlot.show('conversation-1');
     expect(manager.getActiveTab()?.lifecycleState).toBe('provisional');
@@ -69,11 +72,11 @@ describe('ViewerSlot', () => {
   });
 
   it('keeps the latest provisional selection during overlapping preview hydration', async () => {
-    const getCachedConversation = jest.fn((id: string) => ({
+    const getCachedConversation = vi.fn((id: string) => ({
       id,
       providerId: 'claude',
     }));
-    const { manager } = createManager(createPlugin({ getCachedConversation }));
+    const { manager } = await createManager(createPlugin({ getCachedConversation }));
     await manager.viewerSlot.show('conversation-1');
     const firstHydration = deferred<void>();
     const switchedConversationIds: string[] = [];
@@ -102,11 +105,11 @@ describe('ViewerSlot', () => {
   });
 
   it('does not demote a preview retained while its conversation switch is pending', async () => {
-    const getCachedConversation = jest.fn((id: string) => ({
+    const getCachedConversation = vi.fn((id: string) => ({
       id,
       providerId: 'claude',
     }));
-    const { manager } = createManager(createPlugin({ getCachedConversation }));
+    const { manager } = await createManager(createPlugin({ getCachedConversation }));
     await manager.viewerSlot.show('conversation-1');
     const preview = manager.getActiveTab()!;
     const hydration = deferred<void>();
@@ -125,16 +128,16 @@ describe('ViewerSlot', () => {
   });
 
   it('keeps a stale provisional target that the user retained during initial hydration', async () => {
-    const getCachedConversation = jest.fn((id: string) => ({
+    const getCachedConversation = vi.fn((id: string) => ({
       id,
       providerId: 'claude',
     }));
-    const { manager } = createManager(createPlugin({ getCachedConversation }));
+    const { manager } = await createManager(createPlugin({ getCachedConversation }));
     await manager.createTab();
     const hydration = deferred<void>();
     mockCreateTabRuntime.mockImplementationOnce(async (options) => {
       const target = createMockTab(options);
-      target.session.runtime.model.hydrate = jest.fn(async () => {
+      target.session.runtime.model.hydrate = vi.fn(async () => {
         await hydration.promise;
       });
       return target;
@@ -164,11 +167,11 @@ describe('ViewerSlot', () => {
   });
 
   it('lets an immediate retained-tab selection supersede an in-flight preview', async () => {
-    const getCachedConversation = jest.fn((id: string) => ({
+    const getCachedConversation = vi.fn((id: string) => ({
       id,
       providerId: 'claude',
     }));
-    const { manager } = createManager(createPlugin({ getCachedConversation }));
+    const { manager } = await createManager(createPlugin({ getCachedConversation }));
     const retained = await manager.createTab('retained-conversation');
     await manager.viewerSlot.show('conversation-1');
     const firstHydration = deferred<void>();
@@ -188,11 +191,11 @@ describe('ViewerSlot', () => {
   });
 
   it('drains and invalidates preview navigation before provisional cleanup', async () => {
-    const getCachedConversation = jest.fn((id: string) => ({
+    const getCachedConversation = vi.fn((id: string) => ({
       id,
       providerId: 'claude',
     }));
-    const { manager } = createManager(createPlugin({ getCachedConversation }));
+    const { manager } = await createManager(createPlugin({ getCachedConversation }));
     await manager.viewerSlot.show('conversation-1');
     const firstHydration = deferred<void>();
     const switchTo = mockNextHydration(async () => firstHydration.promise);
@@ -213,11 +216,11 @@ describe('ViewerSlot', () => {
   });
 
   it('prevents queued preview navigation from creating tabs after destroy', async () => {
-    const getCachedConversation = jest.fn((id: string) => ({
+    const getCachedConversation = vi.fn((id: string) => ({
       id,
       providerId: 'claude',
     }));
-    const { manager } = createManager(createPlugin({ getCachedConversation }));
+    const { manager } = await createManager(createPlugin({ getCachedConversation }));
     await manager.viewerSlot.show('conversation-1');
     const firstHydration = deferred<void>();
     const switchTo = mockNextHydration(async () => firstHydration.promise);
@@ -237,11 +240,11 @@ describe('ViewerSlot', () => {
   });
 
   it('discards inactive previews without removing open runtime tabs', async () => {
-    const getCachedConversation = jest.fn((id: string) => ({
+    const getCachedConversation = vi.fn((id: string) => ({
       id,
       providerId: 'claude',
     }));
-    const { manager } = createManager(createPlugin({ getCachedConversation }));
+    const { manager } = await createManager(createPlugin({ getCachedConversation }));
     const first = await manager.createTab('conversation-1');
     const second = await manager.createTab('conversation-2', undefined, { activate: false });
     await manager.viewerSlot.show('conversation-3');
@@ -254,7 +257,7 @@ describe('ViewerSlot', () => {
   });
 
   it('retains the active preview when it is the only tab', async () => {
-    const { manager } = createManager(createPlugin({
+    const { manager } = await createManager(createPlugin({
       getCachedConversation: (id: string) => ({ id, providerId: 'claude' }),
     }));
     await manager.viewerSlot.show('conversation-1');
@@ -288,7 +291,7 @@ describe('ViewerSlot', () => {
   it.each(busyPreviewCases)(
     'rebinds a preview holding %s without retaining its old presentation',
     async (_label, makeBusy) => {
-      const { manager } = createManager(conversationPlugin());
+      const { manager } = await createManager(conversationPlugin());
       await manager.viewerSlot.show('conversation-1');
       const preview = manager.getActiveTab() as any;
       makeBusy(preview);
@@ -308,7 +311,7 @@ describe('ViewerSlot', () => {
   it.each(busyPreviewCases)(
     'detaches a preview holding %s when leaving the wide layout',
     async (_label, makeBusy) => {
-      const { manager } = createManager(conversationPlugin());
+      const { manager } = await createManager(conversationPlugin());
       const retained = await manager.createTab('conversation-1');
       await manager.viewerSlot.show('conversation-2');
       const preview = manager.getActiveTab() as any;
@@ -323,7 +326,7 @@ describe('ViewerSlot', () => {
   );
 
   it('keeps the shown preview as a tab when leaving wide', async () => {
-    const { manager } = createManager(conversationPlugin());
+    const { manager } = await createManager(conversationPlugin());
     const retained = await manager.createTab('conversation-1');
     await manager.viewerSlot.show('conversation-2');
     const preview = manager.getActiveTab()!;
@@ -337,7 +340,7 @@ describe('ViewerSlot', () => {
   });
 
   it('returns to the last active retained tab when the active preview closes', async () => {
-    const { manager } = createManager(conversationPlugin());
+    const { manager } = await createManager(conversationPlugin());
     const lastActive = await manager.createTab('conversation-1');
     const neighbour = await manager.createTab('conversation-2', undefined, { activate: false });
     await manager.viewerSlot.show('conversation-3');
@@ -350,7 +353,7 @@ describe('ViewerSlot', () => {
   });
 
   it('keeps a preview provisional while the user types, holding unsent text per session', async () => {
-    const { manager } = createManager(conversationPlugin());
+    const { manager } = await createManager(conversationPlugin());
     await manager.viewerSlot.show('conversation-1');
     const typeDraft = (text: string) => {
       const tab = manager.getActiveTab()!;
@@ -374,7 +377,7 @@ describe('ViewerSlot', () => {
   });
 
   it("returns a new session's unsent text when another draft starts", async () => {
-    const { manager } = createManager(conversationPlugin());
+    const { manager } = await createManager(conversationPlugin());
     await manager.viewerSlot.startDraft();
     manager.getActiveTab()!.controllers.drafts.restore('main', { content: 'new idea' });
 
@@ -390,16 +393,16 @@ describe('ViewerSlot', () => {
 
   it('keeps a wide selection out of retained tabs when its owner closes during the switch', async () => {
     const plugin = conversationPlugin();
-    const { manager } = createManager(plugin);
+    const { manager } = await createManager(plugin);
     const retained = await manager.createTab('retained-conversation');
     const target = await manager.createTab('conversation-1', undefined, { activate: false });
     const hydration = deferred<void>();
-    target!.session.runtime.model.hydrate = jest.fn(() => hydration.promise);
-    (retained!.session.runtime.model.hydrate as jest.Mock).mockClear();
+    target!.session.runtime.model.hydrate = vi.fn(() => hydration.promise);
+    (retained!.session.runtime.model.hydrate as Mock).mockClear();
     const opening = manager.viewerSlot.show('conversation-1');
     for (let attempt = 0;
       attempt < 20
-        && (target!.session.runtime.model.hydrate as jest.Mock).mock.calls.length === 0;
+        && (target!.session.runtime.model.hydrate as Mock).mock.calls.length === 0;
       attempt += 1) {
       await Promise.resolve();
     }
@@ -416,11 +419,11 @@ describe('ViewerSlot', () => {
   });
 
   it('creates a fresh provisional target when the reused preview closes during switching', async () => {
-    const getCachedConversation = jest.fn((id: string) => ({
+    const getCachedConversation = vi.fn((id: string) => ({
       id,
       providerId: 'claude',
     }));
-    const { manager } = createManager(createPlugin({ getCachedConversation }));
+    const { manager } = await createManager(createPlugin({ getCachedConversation }));
     const source = await manager.createTab();
     await manager.viewerSlot.show('conversation-1');
     const preview = manager.getActiveTab();
@@ -452,7 +455,7 @@ describe('ViewerSlot', () => {
     const shownDraft = (manager: any) => manager.getActiveTab()!.controllers.drafts.capture('main').content;
 
     it('unloads narrow tabs on entering wide and hands the shown session back on leaving', async () => {
-      const { manager } = createManager(conversationPlugin());
+      const { manager } = await createManager(conversationPlugin());
       const first = await manager.createTab('conversation-1');
       const second = await manager.createTab('conversation-2', undefined, { activate: false });
       first!.controllers.drafts.restore('main', { content: 'first note' });
@@ -483,7 +486,7 @@ describe('ViewerSlot', () => {
     });
 
     it('replaces a closed active preview with a draft instead of a narrow tab', async () => {
-      const { manager } = createManager(conversationPlugin(), {}, {}, { showsPreviews: () => true });
+      const { manager } = await createManager(conversationPlugin(), {}, {}, { showsPreviews: () => true });
       const narrow = await manager.createTab('conversation-1');
       await manager.viewerSlot.enter();
       await manager.viewerSlot.show('conversation-2');
@@ -496,7 +499,7 @@ describe('ViewerSlot', () => {
     });
 
     it('enters wide again after a release that overlapped the request', async () => {
-      const { manager } = createManager(conversationPlugin());
+      const { manager } = await createManager(conversationPlugin());
       const narrow = await manager.createTab('conversation-1');
       await manager.viewerSlot.enter();
 
@@ -509,7 +512,7 @@ describe('ViewerSlot', () => {
     });
 
     it('unloads a blank narrow tab too and shows its same session in the viewer', async () => {
-      const { manager } = createManager(conversationPlugin());
+      const { manager } = await createManager(conversationPlugin());
       const blank = await manager.createTab(null);
       const session = blank!.session.runtime;
       blank!.linkedContent.selectExplicit('chosen.md');
@@ -531,7 +534,7 @@ describe('ViewerSlot', () => {
     });
 
     it("seeds a cold wide restore's new session from the saved blank tab selection", async () => {
-      const { manager } = createManager(conversationPlugin(), {}, {}, { showsPreviews: () => true });
+      const { manager } = await createManager(conversationPlugin(), {}, {}, { showsPreviews: () => true });
 
       await manager.restoreState({
         openTabs: [{ tabId: 'draft', conversationId: null, draftModel: 'codex:gpt-5', providerId: 'codex' }],
@@ -543,7 +546,7 @@ describe('ViewerSlot', () => {
     });
 
     it('keeps unsent text with a draft session that creates its conversation while unloaded', async () => {
-      const { manager } = createManager(conversationPlugin());
+      const { manager } = await createManager(conversationPlugin());
       const blank = await manager.createTab(null);
       await manager.viewerSlot.enter();
       const session = manager.getActiveTab()!.session.runtime;
@@ -561,7 +564,7 @@ describe('ViewerSlot', () => {
 
     it('publishes a wide project draft already seeded, so a first input cannot outrun the seed', async () => {
       const seedsWhenActivated: unknown[] = [];
-      const { manager } = createManager(conversationPlugin(), {
+      const { manager } = await createManager(conversationPlugin(), {
         onActiveTabChanged: () => {
           const tab = manager.getActiveTab();
           if (tab && !tab.conversationId) {
@@ -578,7 +581,7 @@ describe('ViewerSlot', () => {
     });
 
     it('starts a project-seeded draft in the compact active tab, as New does there', async () => {
-      const { manager } = createManager(conversationPlugin());
+      const { manager } = await createManager(conversationPlugin());
       const bound = await manager.createTab('conversation-1');
       const draftProject = () => (manager.getActiveTab()!.controllers.conversationController as any).project.projectId;
 
@@ -590,7 +593,7 @@ describe('ViewerSlot', () => {
 
     it('publishes a compact project draft already seeded, so a first input cannot outrun the seed', async () => {
       const seedsWhenActivated: unknown[] = [];
-      const { manager } = createManager(conversationPlugin(), {
+      const { manager } = await createManager(conversationPlugin(), {
         onActiveTabChanged: () => {
           const tab = manager.getActiveTab();
           if (tab && !tab.conversationId) {
@@ -605,7 +608,7 @@ describe('ViewerSlot', () => {
     });
 
     it('seeds the draft its request created even when another tab becomes active during hydration', async () => {
-      const { manager } = createManager(conversationPlugin());
+      const { manager } = await createManager(conversationPlugin());
       const bound = await manager.createTab('conversation-1');
       const other = await manager.createTab(null, undefined, { activate: false });
       await manager.switchToTab(bound!.id);
@@ -624,7 +627,7 @@ describe('ViewerSlot', () => {
     });
 
     it('reattaches a remembered project draft without reseeding it, since its first turn may have frozen the seed', async () => {
-      const { manager } = createManager(conversationPlugin());
+      const { manager } = await createManager(conversationPlugin());
       await manager.createTab(null);
       await manager.viewerSlot.enter();
       await manager.viewerSlot.startDraft({ projectId: 'project-1' });
@@ -638,7 +641,7 @@ describe('ViewerSlot', () => {
     });
 
     it('returns to a blank draft only for the same project, and the seed follows its session leaving wide', async () => {
-      const { manager } = createManager(conversationPlugin());
+      const { manager } = await createManager(conversationPlugin());
       await manager.createTab(null);
       await manager.viewerSlot.enter();
       const blankSession = manager.getActiveTab()!.session.runtime;
@@ -661,7 +664,7 @@ describe('ViewerSlot', () => {
     });
 
     it('returns to the same new session when New follows browsing another session', async () => {
-      const { manager } = createManager(conversationPlugin());
+      const { manager } = await createManager(conversationPlugin());
       await manager.viewerSlot.startDraft();
       const session = manager.getActiveTab()!.session.runtime;
       manager.getActiveTab()!.controllers.drafts.restore('main', { content: 'new idea' });
@@ -678,7 +681,7 @@ describe('ViewerSlot', () => {
       const focus = (path: string) => { activeFile = { path, extension: 'md' }; };
       const plugin = conversationPlugin();
       plugin.app.workspace.getActiveFile = () => activeFile;
-      const { manager } = createManager(plugin);
+      const { manager } = await createManager(plugin);
       const shownLink = () => (manager.getActiveTab()!.linkedContent as any).getSnapshot();
 
       await manager.viewerSlot.startDraft();
@@ -710,7 +713,7 @@ describe('ViewerSlot', () => {
     });
 
     it('starts a fresh new session when the remembered one created its conversation while browsing', async () => {
-      const { manager } = createManager(conversationPlugin());
+      const { manager } = await createManager(conversationPlugin());
       await manager.viewerSlot.startDraft();
       const session = manager.getActiveTab()!.session.runtime;
 
@@ -723,7 +726,7 @@ describe('ViewerSlot', () => {
     });
 
     it('leaves a usable presentation when narrowing supersedes an unloading wide entry', async () => {
-      const { manager } = createManager(conversationPlugin());
+      const { manager } = await createManager(conversationPlugin());
       const narrow = await manager.createTab('conversation-1');
       const unloading = deferred<void>();
       mockDestroyTab.mockImplementationOnce(() => unloading.promise);
@@ -742,7 +745,7 @@ describe('ViewerSlot', () => {
     });
 
     it("returns a blank tab's text after wide browsed another session", async () => {
-      const { manager } = createManager(conversationPlugin());
+      const { manager } = await createManager(conversationPlugin());
       const blank = await manager.createTab(null);
       blank!.controllers.drafts.restore('main', { content: 'new idea' });
 
@@ -755,7 +758,7 @@ describe('ViewerSlot', () => {
     });
 
     it('restores a narrow workspace in wide without assembling its tabs', async () => {
-      const { manager } = createManager(conversationPlugin(), {}, {}, { showsPreviews: () => true });
+      const { manager } = await createManager(conversationPlugin(), {}, {}, { showsPreviews: () => true });
 
       await manager.restoreState({
         openTabs: [{ tabId: 'one', conversationId: 'conversation-1' }, { tabId: 'two', conversationId: 'conversation-2' }],
@@ -776,7 +779,7 @@ describe('ViewerSlot', () => {
     });
 
     it('returns a saved preview to its narrow tab when restoring narrow', async () => {
-      const { manager } = createManager(conversationPlugin());
+      const { manager } = await createManager(conversationPlugin());
 
       await manager.restoreState({
         openTabs: [
@@ -802,7 +805,7 @@ describe('ViewerSlot', () => {
               adapter: { basePath: '/vault' },
               getAbstractFileByPath: (path: string) => (files.has(path) ? { path } : null),
             },
-            workspace: { getActiveFile: () => null, revealLeaf: jest.fn(), setActiveLeaf: jest.fn() },
+            workspace: { getActiveFile: () => null, revealLeaf: vi.fn(), setActiveLeaf: vi.fn() },
           },
           getCachedConversation: (id: string) => ({ id, providerId: 'claude' }),
           ...overrides,
@@ -812,7 +815,7 @@ describe('ViewerSlot', () => {
 
     it('replaces the preview with a focused Linked content draft', async () => {
       const { plugin } = linkedContentPlugin(['Projects/Plan.md']);
-      const { manager } = createManager(plugin);
+      const { manager } = await createManager(plugin);
       const retained = await manager.createTab('retained-conversation');
       await manager.viewerSlot.show('conversation-1');
       const preview = manager.getActiveTab()!;
@@ -830,7 +833,7 @@ describe('ViewerSlot', () => {
 
     it('shows the new draft without passing through the last retained tab', async () => {
       const activations: string[] = [];
-      const { manager } = createManager(conversationPlugin(), {
+      const { manager } = await createManager(conversationPlugin(), {
         onActiveTabChanged: (_from: string | null, to: string) => { activations.push(to); },
       });
       const retained = await manager.createTab('retained-conversation');
@@ -849,7 +852,7 @@ describe('ViewerSlot', () => {
 
     it('does not create a draft for Linked content that no longer exists', async () => {
       const { plugin } = linkedContentPlugin([]);
-      const { manager } = createManager(plugin);
+      const { manager } = await createManager(plugin);
 
       await expect(manager.viewerSlot.startDraft({ linkedContentPath: 'Gone/Plan.md' }))
         .rejects.toThrow('Linked content is no longer available');
@@ -859,7 +862,7 @@ describe('ViewerSlot', () => {
 
     it('closes a draft whose Linked content disappears while it is created', async () => {
       const { files, plugin } = linkedContentPlugin(['Projects/Plan.md']);
-      const { manager } = createManager(plugin);
+      const { manager } = await createManager(plugin);
       const retained = await manager.createTab();
       mockCreateTabRuntime.mockImplementationOnce(async (options) => {
         files.delete('Projects/Plan.md');
@@ -875,11 +878,11 @@ describe('ViewerSlot', () => {
 
     it('closes the draft when selecting its Linked content fails', async () => {
       const { plugin } = linkedContentPlugin(['Projects']);
-      const { manager } = createManager(plugin);
+      const { manager } = await createManager(plugin);
       const retained = await manager.createTab();
       mockCreateTabRuntime.mockImplementationOnce(async (options) => {
         const tab = createMockTab(options);
-        tab.linkedContent.selectExplicit = jest.fn(() => {
+        tab.linkedContent.selectExplicit = vi.fn(() => {
           throw new Error('invalid Linked content');
         });
         return tab;
@@ -893,7 +896,7 @@ describe('ViewerSlot', () => {
 
     it('starts /new from a wide-layout tab as a slot draft, leaving the source tab as it was', async () => {
       let slotManager: any = null;
-      const { manager } = createManager(conversationPlugin(), {}, {}, {
+      const { manager } = await createManager(conversationPlugin(), {}, {}, {
         startNew: async (sourceTab) => {
           await slotManager.viewerSlot.startDraft({ sourceTab });
           return true;
@@ -916,7 +919,7 @@ describe('ViewerSlot', () => {
       ['compact', false],
     ])('starts /new in the source session\'s project, or in none (%s)', async (_layout, wide) => {
       let slotManager: any = null;
-      const { manager } = createManager(conversationPlugin(), {}, {}, {
+      const { manager } = await createManager(conversationPlugin(), {}, {}, {
         // As the view's policy does: the wide layout starts the draft in its slot with the inherited seed.
         startNew: async (sourceTab, seed) => {
           if (!wide) return false;
@@ -940,7 +943,7 @@ describe('ViewerSlot', () => {
     });
 
     it('clears the source tab in place for /new in the compact layout', async () => {
-      const { manager } = createManager(conversationPlugin());
+      const { manager } = await createManager(conversationPlugin());
       const source = await manager.createTab('conversation-1') as any;
 
       await runtimeOptions(0).startNewConversation();

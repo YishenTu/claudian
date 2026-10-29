@@ -1,8 +1,11 @@
 import { createMockEl } from '@test/helpers/MockElement';
 import type { Scope } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import type { ImageAttachment } from '@/core/types';
 import { ImagePreviewModal } from '@/shared/modals/ImagePreviewModal';
+
+
 
 const IMAGE: ImageAttachment = {
   id: 'image-1',
@@ -14,16 +17,16 @@ const IMAGE: ImageAttachment = {
 };
 
 function createDocumentHarness(previouslyFocusedElement: unknown = {
-  focus: jest.fn(),
+  focus: vi.fn(),
   isConnected: true,
 }) {
   const overlayEl = createMockEl();
-  const closeButtonFocus = jest.fn();
+  const closeButtonFocus = vi.fn();
   const createModal = overlayEl.createDiv.bind(overlayEl);
-  overlayEl.createDiv = jest.fn((options: { cls?: string }) => {
+  overlayEl.createDiv = vi.fn((options: { cls?: string }) => {
     const modalEl = createModal(options);
     const createModalChild = modalEl.createEl.bind(modalEl);
-    modalEl.createEl = jest.fn((tag: string, childOptions?: unknown) => {
+    modalEl.createEl = vi.fn((tag: string, childOptions?: unknown) => {
       const child = createModalChild(tag, childOptions);
       if (tag === 'button') child.focus = closeButtonFocus;
       return child;
@@ -31,7 +34,7 @@ function createDocumentHarness(previouslyFocusedElement: unknown = {
     return modalEl;
   });
 
-  const keymap = { pushScope: jest.fn(), popScope: jest.fn() };
+  const keymap = { pushScope: vi.fn(), popScope: vi.fn() };
   const pressKey = (key: string, shiftKey = false) => {
     const scope = keymap.pushScope.mock.calls.at(-1)![0] as Scope & {
       handlers: Array<{ key: string; func: (event: unknown) => unknown }>;
@@ -41,7 +44,7 @@ function createDocumentHarness(previouslyFocusedElement: unknown = {
   const ownerDocument = {
     activeElement: previouslyFocusedElement,
     body: {
-      createDiv: jest.fn().mockReturnValue(overlayEl),
+      createDiv: vi.fn().mockReturnValue(overlayEl),
     },
   } as unknown as Document;
 
@@ -89,10 +92,10 @@ describe('ImagePreviewModal', () => {
 
   it('closes idempotently, releases its scope, and restores connected focus', () => {
     const harness = createDocumentHarness();
-    const previousFocus = (harness.previouslyFocusedElement as { focus: jest.Mock }).focus;
+    const previousFocus = (harness.previouslyFocusedElement as { focus: Mock }).focus;
     const modal = new ImagePreviewModal();
     modal.open(harness.ownerDocument, IMAGE, harness.keymap);
-    const removeOverlay = jest.spyOn(harness.overlayEl, 'remove');
+    const removeOverlay = vi.spyOn(harness.overlayEl, 'remove');
 
     modal.close();
     modal.close();
@@ -107,7 +110,7 @@ describe('ImagePreviewModal', () => {
     const firstHarness = createDocumentHarness();
     const secondHarness = createDocumentHarness();
     const modal = new ImagePreviewModal();
-    const removeFirstOverlay = jest.spyOn(firstHarness.overlayEl, 'remove');
+    const removeFirstOverlay = vi.spyOn(firstHarness.overlayEl, 'remove');
 
     modal.open(firstHarness.ownerDocument, IMAGE, firstHarness.keymap);
     modal.open(secondHarness.ownerDocument, { ...IMAGE, name: 'replacement.png' }, secondHarness.keymap);
@@ -122,21 +125,21 @@ describe('ImagePreviewModal', () => {
     const escapeHarness = createDocumentHarness();
     const escapeModal = new ImagePreviewModal();
     escapeModal.open(escapeHarness.ownerDocument, IMAGE, escapeHarness.keymap);
-    const removeEscapeOverlay = jest.spyOn(escapeHarness.overlayEl, 'remove');
+    const removeEscapeOverlay = vi.spyOn(escapeHarness.overlayEl, 'remove');
     expect(escapeHarness.pressKey('Escape')).toBe(false);
     expect(removeEscapeOverlay).toHaveBeenCalledTimes(1);
 
     const buttonHarness = createDocumentHarness();
     const buttonModal = new ImagePreviewModal();
     buttonModal.open(buttonHarness.ownerDocument, IMAGE, buttonHarness.keymap);
-    const removeButtonOverlay = jest.spyOn(buttonHarness.overlayEl, 'remove');
+    const removeButtonOverlay = vi.spyOn(buttonHarness.overlayEl, 'remove');
     buttonHarness.overlayEl.children[0].children[1].click();
     expect(removeButtonOverlay).toHaveBeenCalledTimes(1);
 
     const overlayHarness = createDocumentHarness();
     const overlayModal = new ImagePreviewModal();
     overlayModal.open(overlayHarness.ownerDocument, IMAGE, overlayHarness.keymap);
-    const removeBackgroundOverlay = jest.spyOn(overlayHarness.overlayEl, 'remove');
+    const removeBackgroundOverlay = vi.spyOn(overlayHarness.overlayEl, 'remove');
     const overlayClick = overlayHarness.overlayEl._eventListeners.get('click')?.[0];
     overlayClick?.({ target: overlayHarness.overlayEl.children[0] });
     expect(removeBackgroundOverlay).not.toHaveBeenCalled();
@@ -145,7 +148,7 @@ describe('ImagePreviewModal', () => {
   });
 
   it('does not restore a disconnected prior focus target', () => {
-    const priorFocusTarget = { focus: jest.fn(), isConnected: false };
+    const priorFocusTarget = { focus: vi.fn(), isConnected: false };
     const harness = createDocumentHarness(priorFocusTarget);
     const modal = new ImagePreviewModal();
     modal.open(harness.ownerDocument, IMAGE, harness.keymap);

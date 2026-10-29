@@ -43,15 +43,15 @@ describe('conversation model resolution', () => {
       options: ['codex/gpt-5', 'codex/gpt-5-mini'],
     };
     providers.empty = { defaultModel: null, options: [] };
-    jest.spyOn(ProviderRegistry, 'getRegisteredProviderIds')
+    vi.spyOn(ProviderRegistry, 'getRegisteredProviderIds')
       .mockReturnValue(Object.keys(providers));
-    jest.spyOn(ProviderRegistry, 'getModelPolicy')
+    vi.spyOn(ProviderRegistry, 'getModelPolicy')
       .mockImplementation(providerId => createUIConfig(providers[providerId ?? 'claude']!));
-    jest.spyOn(ProviderRegistry, 'isEnabled')
+    vi.spyOn(ProviderRegistry, 'isEnabled')
       .mockImplementation((providerId, settings) => (
         ((settings.enabledProviders as string[] | undefined) ?? []).includes(providerId)
       ));
-    jest.spyOn(ProviderRegistry, 'getBlankTabProviderIds')
+    vi.spyOn(ProviderRegistry, 'getBlankTabProviderIds')
       .mockImplementation(settings => (
         ((settings.displayOrder as string[] | undefined) ?? [])
           .filter(providerId => ProviderRegistry.isEnabled(providerId, settings))
@@ -66,7 +66,7 @@ describe('conversation model resolution', () => {
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   describe('resolveNewConversationModel', () => {

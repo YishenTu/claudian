@@ -1,4 +1,4 @@
-const mockGetHostnameKey = jest.fn(() => 'host-a');
+const mockGetHostnameKey = vi.fn(() => 'host-a');
 
 import '@/providers';
 
@@ -10,8 +10,8 @@ import {
   updatePiProviderSettings
 } from '@/providers/pi/settings';
 
-jest.mock('@/core/device/InstallationKey', () => ({
-  ...jest.requireActual('@/core/device/InstallationKey'),
+vi.mock('@/core/device/InstallationKey', async () => ({
+  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
   getInstallationKey: () => mockGetHostnameKey(),
 }));
 
@@ -38,7 +38,7 @@ describe('Pi settings normalization', () => {
   ];
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockGetHostnameKey.mockReturnValue('host-a');
   });
 

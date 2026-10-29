@@ -6,10 +6,10 @@ describe('SharedStorageService', () => {
 
   it('does not create storage directories during read-only initialization', async () => {
     const adapter = {
-      exists: jest.fn().mockResolvedValue(false),
-      read: jest.fn(),
-      write: jest.fn(),
-      mkdir: jest.fn(),
+      exists: vi.fn().mockResolvedValue(false),
+      read: vi.fn(),
+      write: vi.fn(),
+      mkdir: vi.fn(),
     };
     const plugin = {
       app: { vault: { adapter } },

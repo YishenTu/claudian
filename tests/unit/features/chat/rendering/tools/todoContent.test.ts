@@ -4,13 +4,13 @@ import { setIcon } from 'obsidian';
 import type { TodoItem } from '@/core/tools/todo';
 import { renderTodoWriteContent } from '@/features/chat/rendering/tools/todoContent';
 
-jest.mock('obsidian', () => ({
-  setIcon: jest.fn(),
+vi.mock('obsidian', () => ({
+  setIcon: vi.fn(),
 }));
 
 describe('todoContent', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('renderTodoWriteContent', () => {

@@ -7,38 +7,41 @@ import {
   mockTabs,
 } from '@test/helpers/features/chat/TabManagerTestHarness';
 import { Notice } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { OPENCODE_PROVIDER_CAPABILITIES } from '@/providers/opencode/capabilities';
 
-jest.mock('@/features/chat/tabs/TabLifecycle', () => (
-  jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').tabLifecycleModuleMock()
+
+
+vi.mock('@/features/chat/tabs/TabLifecycle', async () => (
+  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).tabLifecycleModuleMock()
 ));
-jest.mock('@/features/chat/tabs/tabProviderUI', () => ({ refreshTabWorkspaceServices: jest.fn() }));
-jest.mock('@/features/chat/tabs/tabProviderLifecycle', () => ({ onProviderAvailabilityChanged: jest.fn().mockReturnValue(false) }));
-jest.mock('@/features/chat/tabs/TabRuntimeFactory', () => (
-  jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').tabRuntimeFactoryModuleMock()
+vi.mock('@/features/chat/tabs/tabProviderUI', () => ({ refreshTabWorkspaceServices: vi.fn() }));
+vi.mock('@/features/chat/tabs/tabProviderLifecycle', () => ({ onProviderAvailabilityChanged: vi.fn().mockReturnValue(false) }));
+vi.mock('@/features/chat/tabs/TabRuntimeFactory', async () => (
+  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).tabRuntimeFactoryModuleMock()
 ));
-jest.mock('@/features/chat/tabs/forking/ForkTargetModal', () => (
-  jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').forkTargetModalModuleMock()
+vi.mock('@/features/chat/tabs/forking/ForkTargetModal', async () => (
+  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).forkTargetModalModuleMock()
 ));
-jest.mock('@/core/providers/ProviderWorkspaceRegistry', () => (
-  jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').providerWorkspaceRegistryModuleMock()
+vi.mock('@/core/providers/ProviderWorkspaceRegistry', async () => (
+  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).providerWorkspaceRegistryModuleMock()
 ));
-jest.mock('@/core/providers/ProviderRegistry', () => (
-  jest.requireActual('@test/helpers/features/chat/TabManagerTestHarness').providerRegistryModuleMock()
+vi.mock('@/core/providers/ProviderRegistry', async () => (
+  (await vi.importActual<typeof import('@test/helpers/features/chat/TabManagerTestHarness')>('@test/helpers/features/chat/TabManagerTestHarness')).providerRegistryModuleMock()
 ));
 
 describe('TabProviderPresence', () => {
   beforeEach(() => {
-    jest.mocked(ProviderWorkspaceRegistry.getCommandCatalog).mockReturnValue(commandCatalog as never);
-    jest.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockReturnValue(commandLoader);
-    jest.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockResolvedValue(undefined);
-    jest.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockReturnValue({});
+    vi.mocked(ProviderWorkspaceRegistry.getCommandCatalog).mockReturnValue(commandCatalog as never);
+    vi.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockReturnValue(commandLoader);
+    vi.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockResolvedValue(undefined);
+    vi.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockReturnValue({});
     mockTabs.length = 0;
-    jest.clearAllMocks();
-    (ProviderRegistry.getCapabilities as jest.Mock).mockReturnValue({
+    vi.clearAllMocks();
+    (ProviderRegistry.getCapabilities as Mock).mockReturnValue({
       providerId: 'claude',
       supportsProviderCommands: true,
     });
@@ -52,12 +55,12 @@ describe('TabProviderPresence', () => {
     { provider: providerId, restored: { conversationId: `${providerId}-history` } },
     { provider: providerId, restored: { conversationId: null, providerId, draftModel: `${providerId}:model` } },
   ]))('starts a shared runtime for an inactive restored provider tab without preparing execution: %o', async ({ provider, restored }) => {
-    const startRuntime = jest.fn().mockResolvedValue(undefined);
-    jest.mocked(ProviderRegistry.getCapabilities).mockImplementation(providerId => (providerId === 'opencode' ? OPENCODE_PROVIDER_CAPABILITIES : {
+    const startRuntime = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(ProviderRegistry.getCapabilities).mockImplementation(providerId => (providerId === 'opencode' ? OPENCODE_PROVIDER_CAPABILITIES : {
       providerId, supportsProviderCommands: true, startsSharedRuntimeOnTabPresence: providerId === provider,
     } as any));
-    jest.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(providerId => providerId === provider ? { startRuntime } : {});
-    const { manager } = createManager(createPlugin({
+    vi.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(providerId => providerId === provider ? { startRuntime } : {});
+    const { manager } = await createManager(createPlugin({
       getCachedConversation: (id: string) => ({ id, providerId: id === `${provider}-history` ? provider : 'claude' }),
     }));
     await manager.restoreState({
@@ -75,12 +78,12 @@ describe('TabProviderPresence', () => {
   });
 
   it.each(['codex', 'opencode'])('starts a shared runtime when a blank tab selects %s without preparing execution', async provider => {
-    const startRuntime = jest.fn().mockResolvedValue(undefined);
-    jest.mocked(ProviderRegistry.getCapabilities).mockImplementation(providerId => (providerId === 'opencode' ? OPENCODE_PROVIDER_CAPABILITIES : {
+    const startRuntime = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(ProviderRegistry.getCapabilities).mockImplementation(providerId => (providerId === 'opencode' ? OPENCODE_PROVIDER_CAPABILITIES : {
       providerId, supportsProviderCommands: true, startsSharedRuntimeOnTabPresence: providerId === provider,
     } as any));
-    jest.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(providerId => providerId === provider ? { startRuntime } : {});
-    const { manager } = createManager();
+    vi.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(providerId => providerId === provider ? { startRuntime } : {});
+    const { manager } = await createManager();
     const tab = await manager.createTab();
     expect(startRuntime).not.toHaveBeenCalled();
     tab!.session.selectDraft(provider, `${provider}:model`);
@@ -92,12 +95,12 @@ describe('TabProviderPresence', () => {
   });
 
   it('keeps repeated passive runtime startup failures silent', async () => {
-    const startRuntime = jest.fn().mockRejectedValue(new Error('Codex missing'));
-    jest.mocked(ProviderRegistry.getCapabilities).mockImplementation(providerId => ({
+    const startRuntime = vi.fn().mockRejectedValue(new Error('Codex missing'));
+    vi.mocked(ProviderRegistry.getCapabilities).mockImplementation(providerId => ({
       providerId, supportsProviderCommands: true, startsSharedRuntimeOnTabPresence: providerId === 'codex',
     } as any));
-    jest.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(providerId => providerId === 'codex' ? { startRuntime } : {});
-    const { manager } = createManager();
+    vi.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(providerId => providerId === 'codex' ? { startRuntime } : {});
+    const { manager } = await createManager();
     const tab = await manager.createTab();
     tab!.session.selectDraft('codex', 'codex:gpt-5');
     const changed = mockCreateTabRuntime.mock.calls[0][0].onDraftModelChanged;

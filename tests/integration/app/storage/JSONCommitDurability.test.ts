@@ -1,3 +1,5 @@
+const actualModule0 = await vi.importActual<typeof fs>('node:fs/promises');
+const actualModule1 = await vi.importActual<typeof fs>('node:fs/promises');
 import '@/providers';
 
 import * as fs from 'node:fs/promises';
@@ -13,9 +15,10 @@ import { ConversationPersistenceStore } from '@/app/storage/ConversationPersiste
 import { CLAUDIAN_SETTINGS_PATH, getDeviceSessionsPath } from '@/core/bootstrap/storagePaths';
 import type { SessionMetadata } from '@/core/types';
 
-jest.mock('node:fs/promises', () => {
-  const actual = jest.requireActual<typeof fs>('node:fs/promises');
-  return { ...actual, writeFile: jest.fn(actual.writeFile) };
+
+vi.mock('node:fs/promises', async () => {
+  const actual = (await vi.importActual<typeof fs>('node:fs/promises'));
+  return { ...actual, writeFile: vi.fn(actual.writeFile) };
 });
 
 const DEVICE_KEY = `device-${'a'.repeat(64)}`;
@@ -23,13 +26,13 @@ let vault: DesktopVault;
 
 beforeEach(async () => { vault = await DesktopVault.create(); });
 afterEach(async () => {
-  jest.mocked(fs.writeFile).mockReset().mockImplementation(jest.requireActual<typeof fs>('node:fs/promises').writeFile);
+  vi.mocked(fs.writeFile).mockReset().mockImplementation(actualModule0.writeFile);
   await vault.dispose();
 });
 
 function failPartialWrite(): void {
-  jest.mocked(fs.writeFile).mockImplementationOnce(async file => {
-    await jest.requireActual<typeof fs>('node:fs/promises').writeFile(file, '{"trunca');
+  vi.mocked(fs.writeFile).mockImplementationOnce(async file => {
+    await actualModule1.writeFile(file, '{"trunca');
     throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
   });
 }

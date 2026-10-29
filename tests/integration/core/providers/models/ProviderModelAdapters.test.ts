@@ -10,8 +10,8 @@ import { createGrokModels } from '@/providers/grok/runtime/GrokModels';
 import { createOpencodeModels } from '@/providers/opencode/runtime/OpencodeModels';
 import { createPiModels } from '@/providers/pi/runtime/PiModels';
 
-const mockPiDiscover = jest.fn();
-jest.mock('@/providers/pi/runtime/PiModelDiscoveryService', () => ({
+const mockPiDiscover = vi.hoisted(() => (vi.fn()));
+vi.mock('@/providers/pi/runtime/PiModelDiscoveryService', () => ({
   PiModelDiscoveryService: class { discoverModels = mockPiDiscover; },
 }));
 
@@ -27,10 +27,10 @@ const browseOrders = {
 it.each(modelCatalogCases)('$id keeps native selection, aliases and metadata behind the common catalog', async ({id, selected, populate, read}) => {
   const settings: Record<string, unknown> = {};
   populate(settings);
-  const persist = jest.fn(async () => undefined);
-  const host = runtimeHostFor({ settings, notifyProviderChatOptionsChanged: jest.fn() }, id, { persist });
-  const discovery = jest.fn(async () => ({ changed: true, refreshed: true, kind: 'completed' as const, catalog: null, models: [], persistedSettingsChanged: false }));
-  const warmModelsMetadata = jest.fn(async () => true);
+  const persist = vi.fn(async () => undefined);
+  const host = runtimeHostFor({ settings, notifyProviderChatOptionsChanged: vi.fn() }, id, { persist });
+  const discovery = vi.fn(async () => ({ changed: true, refreshed: true, kind: 'completed' as const, catalog: null, models: [], persistedSettingsChanged: false }));
+  const warmModelsMetadata = vi.fn(async () => true);
   mockPiDiscover.mockResolvedValue({ kind: 'completed', models: read(settings) });
   const factories: Record<string, () => ProviderModelCatalog> = {
     deepseek: () => createDeepSeekModels(host, async () => { await discovery(); return { groups: [{ id: 'native', models: [{ id: 'selected', name: 'Selected label' }, { id: 'unselected-catalog-entry', name: 'Unselected' }] }] }; }),
@@ -79,7 +79,7 @@ it('preserves OpenCode provider labels for catalog filtering', () => {
       { rawId: 'openai/gpt', label: 'OpenAI/GPT' },
     ],
   } } } }, 'opencode');
-  const catalog = createOpencodeModels(host, { discoverModels: jest.fn(), warmModelsMetadata: jest.fn() });
+  const catalog = createOpencodeModels(host, { discoverModels: vi.fn(), warmModelsMetadata: vi.fn() });
   expect(catalog.getSnapshot().models).toEqual([
     expect.objectContaining({ id: 'openai/gpt', name: 'GPT', providerKey: 'openai', providerLabel: 'OpenAI' }),
     expect.objectContaining({ id: 'anthropic/sonnet', name: 'Sonnet', providerKey: 'anthropic', providerLabel: 'Anthropic' }),

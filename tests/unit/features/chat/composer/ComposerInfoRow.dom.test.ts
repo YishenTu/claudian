@@ -1,7 +1,7 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 import { ComposerInfoRow } from '@/features/chat/composer/ComposerInfoRow';
 
@@ -27,8 +27,8 @@ function mount() {
 
 it('shows the linked note as an activatable button with a remove control only while removable', async () => {
   const { row, rowEl, view } = mount();
-  const onActivate = jest.fn();
-  const onRemove = jest.fn();
+  const onActivate = vi.fn();
+  const onRemove = vi.fn();
 
   row.setLinkedContent({
     label: 'Plan',
@@ -64,7 +64,7 @@ it('keeps missing linked content visible and marked', async () => {
     icon: 'file-question',
     ariaLabel: 'Linked content: Notes/Plan.md. Missing content',
     missing: true,
-    onActivate: jest.fn(),
+    onActivate: vi.fn(),
   });
 
   const note = view.getByRole('button', { name: 'Linked content: Notes/Plan.md. Missing content' });
@@ -79,7 +79,7 @@ it('keeps reserving its row while there is no linked note', () => {
   const { row, rowEl } = mount();
   expect(rowEl.classList.contains('claudian-hidden')).toBe(false);
 
-  row.setLinkedContent({ label: 'Plan', ariaLabel: 'Linked content: Notes/Plan.md', onActivate: jest.fn() });
+  row.setLinkedContent({ label: 'Plan', ariaLabel: 'Linked content: Notes/Plan.md', onActivate: vi.fn() });
   expect(within(rowEl).getByRole('button', { name: 'Linked content: Notes/Plan.md' })).toBeDefined();
 
   row.setLinkedContent(null);
@@ -90,9 +90,9 @@ it('keeps reserving its row while there is no linked note', () => {
 
 it('shows the project in its own slot before the linked note, as a menu button unless disabled', async () => {
   const { row, rowEl, view } = mount();
-  const onActivate = jest.fn();
+  const onActivate = vi.fn();
 
-  row.setLinkedContent({ label: 'Plan', ariaLabel: 'Linked content: Notes/Plan.md', onActivate: jest.fn() });
+  row.setLinkedContent({ label: 'Plan', ariaLabel: 'Linked content: Notes/Plan.md', onActivate: vi.fn() });
   row.setProject({ label: 'Launch', icon: 'folder', ariaLabel: 'Project: Launch', hasPopup: 'menu', onActivate });
 
   const project = view.getByRole('button', { name: 'Project: Launch' });

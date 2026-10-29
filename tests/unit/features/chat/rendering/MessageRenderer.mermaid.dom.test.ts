@@ -1,6 +1,6 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Component, loadMermaid, MarkdownRenderer } from 'obsidian';
 
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
@@ -9,7 +9,7 @@ HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 
 const source = 'graph TD\nA --> B\n';
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><path d="M0 0L100 50"/></svg>';
-const render = jest.fn();
+const render = vi.fn();
 let renderer: MessageRenderer;
 let host: HTMLElement;
 
@@ -19,8 +19,8 @@ beforeEach(() => {
   renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any,
     new Component(), host);
   render.mockReset().mockResolvedValue({ svg });
-  jest.mocked(loadMermaid).mockResolvedValue({ render });
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, target) => {
+  vi.mocked(loadMermaid).mockResolvedValue({ render });
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, target) => {
     // Obsidian boundary fixture: preserve the neutralized language and native copy control.
     const language = markdown.match(/claudian-display-only-fence-\d+/)?.[0];
     const pre = (target as HTMLElement).createEl('pre');
@@ -51,7 +51,7 @@ it.each(['mermaid', 'Mermaid', 'MERMAID'])('renders %s directly and retains acce
   expect(within(host).getByRole('img', { name: 'Mermaid diagram' })).toBeDefined();
   expect(within(host).queryByRole('button', { name: 'Copy' })).toBeNull();
   expect((await axe(host)).violations).toEqual([]);
-  expect(jest.mocked(MarkdownRenderer.render).mock.calls.at(-1)?.[1]).not.toMatch(/```mermaid/i);
+  expect(vi.mocked(MarkdownRenderer.render).mock.calls.at(-1)?.[1]).not.toMatch(/```mermaid/i);
 });
 
 it('renders HTML-serialized label markup as a well-formed SVG image', async () => {

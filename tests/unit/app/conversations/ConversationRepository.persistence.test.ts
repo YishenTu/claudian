@@ -1,5 +1,7 @@
 import '@/providers';
 
+import type { MockedFunction } from 'vitest';
+
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import type { ConversationPersistence } from '@/app/storage/ConversationPersistenceStore';
 import type { SessionMetadataReader } from '@/app/storage/SessionStorage';
@@ -7,6 +9,8 @@ import type { ProviderSessionSnapshot } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { ChatMessage, Conversation } from '@/core/types';
+
+
 
 function createConversation(id = 'conversation-1'): Conversation {
   return {
@@ -21,29 +25,25 @@ function createConversation(id = 'conversation-1'): Conversation {
 }
 
 interface MockPersistence extends ConversationPersistence {
-  saveMetadata: jest.MockedFunction<ConversationPersistence['saveMetadata']>;
-  deleteCurrentMetadata: jest.MockedFunction<
-    ConversationPersistence['deleteCurrentMetadata']
-  >;
-  assignMetadataToDevice: jest.MockedFunction<
-    ConversationPersistence['assignMetadataToDevice']
-  >;
+  saveMetadata: MockedFunction<ConversationPersistence['saveMetadata']>;
+  deleteCurrentMetadata: MockedFunction<ConversationPersistence['deleteCurrentMetadata']>;
+  assignMetadataToDevice: MockedFunction<ConversationPersistence['assignMetadataToDevice']>;
 }
 
 function createPersistence(): MockPersistence {
   const metadataReader: SessionMetadataReader = {
-    revalidate: jest.fn().mockResolvedValue([]),
-    load: jest.fn(),
-    scan: jest.fn(),
-    loadMetadata: jest.fn(),
-    scanMetadata: jest.fn(),
-    listMetadata: jest.fn(),
+    revalidate: vi.fn().mockResolvedValue([]),
+    load: vi.fn(),
+    scan: vi.fn(),
+    loadMetadata: vi.fn(),
+    scanMetadata: vi.fn(),
+    listMetadata: vi.fn(),
   };
   return {
     metadataReader,
-    saveMetadata: jest.fn().mockResolvedValue(undefined),
-    deleteCurrentMetadata: jest.fn().mockResolvedValue(undefined),
-    assignMetadataToDevice: jest.fn().mockResolvedValue(undefined),
+    saveMetadata: vi.fn().mockResolvedValue(undefined),
+    deleteCurrentMetadata: vi.fn().mockResolvedValue(undefined),
+    assignMetadataToDevice: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -51,7 +51,7 @@ function createRepository(
   conversation = createConversation(),
   persistence = createPersistence(),
 ) {
-  const onConversationDeleted = jest.fn().mockResolvedValue(undefined);
+  const onConversationDeleted = vi.fn().mockResolvedValue(undefined);
   const repository = new ConversationRepository({
     providers: ProviderRegistry,
     providerSettings: ProviderSettingsCoordinator,
@@ -80,7 +80,7 @@ function deferred<T = void>(): {
 
 describe('ConversationRepository provider state', () => {
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('drops malformed OpenCode-owned state without clobbering opaque fields', async () => {
@@ -106,7 +106,7 @@ describe('ConversationRepository provider state', () => {
 
 describe('ConversationRepository persistence queue and binding fences', () => {
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('persists only the latest eligible snapshot revision at queued commit time', async () => {
@@ -199,7 +199,7 @@ describe('ConversationRepository persistence queue and binding fences', () => {
       },
     ];
     const blockingSave = repository.rename(conversation.id, 'Queued title');
-    const clone = jest.spyOn(globalThis, 'structuredClone');
+    const clone = vi.spyOn(globalThis, 'structuredClone');
     const saving = repository.update(conversation.id, { messages });
     // The caller keeps mutating live chat state while the save waits in the queue.
     messages[1].toolCalls![0].subagent!.result = 'Changed while queued';
@@ -618,7 +618,7 @@ describe('ConversationRepository persistence queue and binding fences', () => {
 
 describe('ConversationRepository deletion persistence', () => {
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('restores the exact live binding and replays the newest snapshot after removal failure', async () => {

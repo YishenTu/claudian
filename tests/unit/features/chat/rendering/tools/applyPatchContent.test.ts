@@ -8,9 +8,9 @@ import {
   updateToolCallResult,
 } from '@/features/chat/rendering/tools/ToolCallRenderer';
 
-jest.mock('obsidian', () => ({
+vi.mock('obsidian', () => ({
   Platform: { resourcePathPrefix: 'app://local/' },
-  setIcon: jest.fn(),
+  setIcon: vi.fn(),
 }));
 
 // Helper to create a basic tool call
@@ -26,7 +26,7 @@ function createToolCall(overrides: Partial<ToolCallInfo> = {}): ToolCallInfo {
 
 describe('applyPatchContent', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('apply_patch expanded rendering', () => {
@@ -195,7 +195,7 @@ describe('applyPatchContent', () => {
 
 
       const toolEl = renderToolCall(parentEl, toolCall);
-      jest.clearAllMocks();
+      vi.clearAllMocks();
 
       toolCall.status = 'completed';
       toolCall.result = 'Applied patch';

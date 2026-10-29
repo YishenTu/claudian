@@ -1,7 +1,8 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
+import type { Mock } from 'vitest';
 
 import {
   appendQuoteToComposer,
@@ -9,6 +10,8 @@ import {
   MessageQuoteController,
 } from '@/features/chat/input/MessageQuoteController';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
+
+
 
 function createMessages(): { wrapperEl: HTMLElement; messagesEl: HTMLElement; assistantText: Text; userText: Text } {
   const wrapperEl = document.createElement('div');
@@ -55,18 +58,18 @@ function getQuoteButton(wrapperEl: HTMLElement): HTMLButtonElement | null {
 
 describe('MessageQuoteController', () => {
   let controller: MessageQuoteController;
-  let onQuote: jest.Mock;
+  let onQuote: Mock;
   let dom: ReturnType<typeof createMessages>;
 
   beforeEach(() => {
     dom = createMessages();
-    onQuote = jest.fn();
+    onQuote = vi.fn();
     controller = new MessageQuoteController({ messagesEl: dom.messagesEl, label: 'Quote', onQuote });
   });
 
   afterEach(() => {
     controller.dispose();
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
     document.getSelection()?.removeAllRanges();
     document.body.replaceChildren();
   });
@@ -148,7 +151,7 @@ describe('MessageQuoteController', () => {
     selection.removeAllRanges();
     selection.addRange(range);
     // JSDOM has no layout; supply Chromium's rendered selection text at the browser boundary.
-    jest.spyOn(selection, 'toString').mockReturnValue(renderedText);
+    vi.spyOn(selection, 'toString').mockReturnValue(renderedText);
     releaseMouse(message);
 
     getQuoteButton(dom.wrapperEl)!.click();
@@ -256,7 +259,7 @@ describe('appendQuoteToComposer', () => {
 
   it('inserts the quote into an empty composer and leaves the caret below it', () => {
     const inputEl = createInput('');
-    const onInput = jest.fn();
+    const onInput = vi.fn();
     inputEl.addEventListener('input', onInput);
 
     appendQuoteToComposer(inputEl, '> quoted');
@@ -277,7 +280,7 @@ describe('appendQuoteToComposer', () => {
 
   it('uses the rich editor replaceText when available', () => {
     const inputEl = createInput('Draft\n');
-    const replaceText = jest.fn((from: number, to: number, text: string) => {
+    const replaceText = vi.fn((from: number, to: number, text: string) => {
       inputEl.value = inputEl.value.slice(0, from) + text + inputEl.value.slice(to);
     });
     inputEl.replaceText = replaceText;

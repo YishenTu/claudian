@@ -1,4 +1,6 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
+const actualModule0 = await vi.importActual<typeof CLIProbe>('@/core/providers/cli/CLIInstallationProbe');
+const actualModule1 = await vi.importActual<typeof CLIProbe>('@/core/providers/cli/CLIInstallationProbe');
 import '@/providers';
 import '@test/helpers/ObsidianSettingsDOM';
 
@@ -6,8 +8,8 @@ import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpath
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import * as ProcessProbe from '@/core/process/ProcessProbe';
@@ -16,7 +18,8 @@ import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe'
 import { getDeepSeekProviderSettings } from '@/providers/deepseek/settings';
 import { createDeepSeekSettingsTabRenderer } from '@/providers/deepseek/ui/DeepSeekSettingsTab';
 
-jest.mock('obsidian', () => {
+
+vi.mock('obsidian', () => {
   class Setting {
     settingEl: HTMLElement;
     controlEl: HTMLElement;
@@ -64,15 +67,15 @@ jest.mock('obsidian', () => {
   }
   return { Setting, Modal: class {}, Notice: class {}, setIcon() {} };
 });
-jest.mock('@/core/device/InstallationKey', () => ({
-  ...jest.requireActual('@/core/device/InstallationKey'),
+vi.mock('@/core/device/InstallationKey', async () => ({
+  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
   getInstallationKey: () => 'device:current',
 }));
-jest.mock('@/core/providers/cli/CLIInstallationProbe', () => ({
-  probeCLIInstallation: jest.fn(async ({ path }: { path: string | null }) => ({ path, version: path ? '0.2.0-rc.2' : null, source: 'auto' })),
+vi.mock('@/core/providers/cli/CLIInstallationProbe', () => ({
+  probeCLIInstallation: vi.fn(async ({ path }: { path: string | null }) => ({ path, version: path ? '0.2.0-rc.2' : null, source: 'auto' })),
 }));
-jest.mock('@/shared/settings/ProviderModelsSection', () => ({ renderProviderModelsSection: () => ({ refresh: jest.fn() }) }));
-jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection: jest.fn() }));
+vi.mock('@/shared/settings/ProviderModelsSection', () => ({ renderProviderModelsSection: () => ({ refresh: vi.fn() }) }));
+vi.mock('@/shared/settings/EnvironmentSettingsSection', () => ({ renderEnvironmentSettingsSection: vi.fn() }));
 
 function createHost(deepseekEnabled: boolean) {
   const transitions: string[][] = [];
@@ -82,17 +85,17 @@ function createHost(deepseekEnabled: boolean) {
     settings: { providerConfigs: { claude: { enabled: !deepseekEnabled }, deepseek: { enabled: deepseekEnabled } } },
     storage: { installationKey: 'device:current' },
     getResolvedProviderCliPath: async () => null,
-    mutateSettings: jest.fn(async (mutation: (settings: Record<string, unknown>) => void) => {
+    mutateSettings: vi.fn(async (mutation: (settings: Record<string, unknown>) => void) => {
       mutationsInsideTransition.push(transitionActive);
       mutation(host.settings);
     }),
-    runProviderExecutionTransition: jest.fn(async (providerIds: string[], run: () => Promise<unknown>) => {
+    runProviderExecutionTransition: vi.fn(async (providerIds: string[], run: () => Promise<unknown>) => {
       transitions.push(providerIds);
       transitionActive = true;
       try { return await run(); } finally { transitionActive = false; }
     }),
   };
-  host.applyProviderRuntimeSettings = jest.fn(async (
+  host.applyProviderRuntimeSettings = vi.fn(async (
     providerIds: string[], mutation: (settings: Record<string, unknown>) => void, onApplied?: () => void,
   ) => host.runProviderExecutionTransition(providerIds, async () => {
     await host.mutateSettings(mutation);
@@ -108,9 +111,9 @@ function render(deepseekEnabled = true, resolvedPath: string | null = null, conf
   const fixture = createHost(deepseekEnabled);
   fixture.host.getResolvedProviderCliPath = async () => resolvedPath;
   fixture.host.settings.providerConfigs.deepseek.cliPathsByHost = { 'device:current': configuredPath };
-  const cliResolver = { reset: jest.fn() };
+  const cliResolver = { reset: vi.fn() };
   const container = document.body.createDiv();
-  const context = { plugin: fixture.host, notifyProviderModelOptionsChanged: jest.fn(), renderCustomContextLimits: jest.fn() };
+  const context = { plugin: fixture.host, notifyProviderModelOptionsChanged: vi.fn(), renderCustomContextLimits: vi.fn() };
   createDeepSeekSettingsTabRenderer({ cliResolver: cliResolver as never, modelCatalog: {} as never })
     .render(container, context as never);
   return { ...fixture, cliResolver, context, container, ui: within(container) };
@@ -144,7 +147,7 @@ describe('DeepSeekSettingsTab', () => {
   it('keeps the latest validation error when an older preset persistence attempt rejects', async () => {
     const { host, ui, container } = render();
     let fail!: (cause: Error) => void;
-    const persist = jest.fn(() => new Promise<void>((_resolve, reject) => { fail = reject; }));
+    const persist = vi.fn(() => new Promise<void>((_resolve, reject) => { fail = reject; }));
     const coordinator = new SettingsCoordinator(host.settings, persist);
     host.mutateSettings.mockImplementation((mutation: Parameters<typeof coordinator.mutate>[0]) => coordinator.mutate(mutation));
     const field = ui.getByRole('textbox', { name: 'Additional preset plugins' });
@@ -190,8 +193,8 @@ describe('DeepSeekSettingsTab', () => {
     for (const file of [cli, executable]) chmodSync(file, 0o700);
     writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', bin: { dsh: 'lib/bin.js' } }));
     writeFileSync(bin, `if (process.env.ELECTRON_RUN_AS_NODE !== '1' || process.argv[2] !== '--version') process.exit(9); console.log('dsh 0.2.0-rc.9');`);
-    const actual = jest.requireActual<typeof CLIProbe>('@/core/providers/cli/CLIInstallationProbe');
-    jest.mocked(probeCLIInstallation).mockImplementationOnce(actual.probeCLIInstallation);
+    const actual = actualModule0;
+    vi.mocked(probeCLIInstallation).mockImplementationOnce(actual.probeCLIInstallation);
     try {
       const { ui, container } = render(true, cli, app);
       await waitFor(() => expect(ui.getByText('Custom path')).toBeTruthy());
@@ -226,9 +229,9 @@ describe('DeepSeekSettingsTab', () => {
     writeFileSync(cmdShim, `@node "${bin}" %*\r\n`);
     if (kind === 'ps1') writeFileSync(command, '# PowerShell launcher boundary');
     for (const file of [command, cmdShim, executable]) chmodSync(file, 0o700);
-    const probe = jest.spyOn(ProcessProbe, 'runProcessProbe').mockResolvedValue('dsh 0.2.0-rc.9');
-    const actual = jest.requireActual<typeof CLIProbe>('@/core/providers/cli/CLIInstallationProbe');
-    jest.mocked(probeCLIInstallation).mockImplementationOnce(actual.probeCLIInstallation);
+    const probe = vi.spyOn(ProcessProbe, 'runProcessProbe').mockResolvedValue('dsh 0.2.0-rc.9');
+    const actual = actualModule1;
+    vi.mocked(probeCLIInstallation).mockImplementationOnce(actual.probeCLIInstallation);
     Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
     try {
       const { ui } = render(true, command, command);

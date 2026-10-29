@@ -1,11 +1,12 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import type { ModalScope } from '@test/helpers/ObsidianSettingsDOM';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import type { App } from 'obsidian';
 import { Component, MarkdownRenderer, Notice } from 'obsidian';
+import type { MockedFunction } from 'vitest';
 
 import {
   ProjectMemoryConflictError,
@@ -16,9 +17,11 @@ import {
 import { ProjectMemoryModal } from '@/features/chat/projects/ProjectMemoryModal';
 import { t } from '@/i18n/i18n';
 
-jest.mock('obsidian', () => ({
-  ...jest.requireActual('@test/__mocks__/obsidian'),
-  ...jest.requireActual('@test/helpers/ObsidianSettingsDOM'),
+
+
+vi.mock('obsidian', async () => ({
+  ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')),
+  ...(await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM')),
   getFrontMatterInfo: (markdown: string) => ({ contentStart: /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.exec(markdown)?.[0].length ?? 0 }),
 }));
 
@@ -51,9 +54,9 @@ class InMemoryProjectMemory implements ProjectMemoryOperations {
     this.modifiedAt = Date.now();
   }
 
-  readMemory = jest.fn(async () => (this.content === null ? { missing: true as const } : this.snapshot()));
+  readMemory = vi.fn(async () => (this.content === null ? { missing: true as const } : this.snapshot()));
 
-  saveMemory = jest.fn(async (_id: string, content: string, expectedRevision: string, options?: { overwrite?: boolean }) => {
+  saveMemory = vi.fn(async (_id: string, content: string, expectedRevision: string, options?: { overwrite?: boolean }) => {
     if (!options?.overwrite && (this.content === null || expectedRevision !== `r${this.version}`)) {
       throw new ProjectMemoryConflictError(project.id);
     }
@@ -61,13 +64,13 @@ class InMemoryProjectMemory implements ProjectMemoryOperations {
     return this.snapshot();
   });
 
-  recreateMemory = jest.fn(async () => {
+  recreateMemory = vi.fn(async () => {
     this.writeExternally(TEMPLATE);
     return this.snapshot();
   });
 }
 
-const render = MarkdownRenderer.render as jest.MockedFunction<typeof MarkdownRenderer.render>;
+const render = MarkdownRenderer.render as MockedFunction<typeof MarkdownRenderer.render>;
 const title = t('chat.projects.memory.title', { name: 'Launch' });
 const edit = t('chat.projects.memory.edit');
 const preview = t('chat.projects.memory.preview');
@@ -127,7 +130,7 @@ let released: string[] = [];
 
 beforeEach(() => {
   document.body.replaceChildren();
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   released = [];
   render.mockImplementation(async (_app, markdown, el, sourcePath, component) => {
     for (const line of markdown.split('\n')) {
@@ -142,7 +145,7 @@ beforeEach(() => {
 afterEach(() => {
   // Stops each modal's refresh timer.
   for (const modal of opened.splice(0)) modal.onClose();
-  jest.useRealTimers();
+  vi.useRealTimers();
 });
 
 it('opens to read the rendered memory with its path, last update, and only Edit', async () => {
@@ -227,43 +230,43 @@ it('asks before discarding edits on Cancel or close, and keeps them when decline
 });
 
 it('follows agent edits on disk while reading, and offers Reload or Keep my edits while editing', async () => {
-  jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] });
+  vi.useFakeTimers({ toNotFake: ['queueMicrotask', 'nextTick'] });
   const memory = new InMemoryProjectMemory(FILLED);
   const { dialog, controls, textarea } = await open(memory);
-  await jest.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(0);
   expect(renderedText(dialog)).toBe(`rendered:${project.memoryPath}:${FILLED}`);
 
   memory.writeExternally(`${FILLED}Agent 1\n`);
-  await jest.advanceTimersByTimeAsync(2_000);
+  await vi.advanceTimersByTimeAsync(2_000);
   expect(renderedText(dialog)).toBe(`rendered:${project.memoryPath}:${FILLED}Agent 1\n`);
   expect(controls.queryByRole('alert')).toBeNull();
 
   type(dialog, textarea, 'Mine');
   memory.writeExternally(`${FILLED}Agent 2\n`);
-  await jest.advanceTimersByTimeAsync(2_000);
+  await vi.advanceTimersByTimeAsync(2_000);
   expect(controls.getByRole('alert').textContent).toBe(t('chat.projects.memory.changedOutside'));
   expect(textarea.value).toBe('Mine');
 
   fireEvent.click(controls.getByRole('button', { name: t('chat.projects.memory.keepMine') }));
   expect(controls.queryByRole('alert')).toBeNull();
-  await jest.advanceTimersByTimeAsync(2_000);
+  await vi.advanceTimersByTimeAsync(2_000);
   // The declined version is not offered again.
   expect(controls.queryByRole('alert')).toBeNull();
   fireEvent.click(controls.getByRole('button', { name: t('common.save') }));
-  await jest.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(0);
   expect(memory.content).toBe('Mine');
   expect(screen.queryByRole('dialog')).toBeNull();
 });
 
 it('after Keep my edits, measures unsaved changes against the agent version now on disk', async () => {
-  jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] });
+  vi.useFakeTimers({ toNotFake: ['queueMicrotask', 'nextTick'] });
   const memory = new InMemoryProjectMemory(FILLED);
   const { dialog, controls, textarea } = await open(memory);
-  await jest.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(0);
 
   type(dialog, textarea, 'Mine');
   memory.writeExternally('Agent');
-  await jest.advanceTimersByTimeAsync(2_000);
+  await vi.advanceTimersByTimeAsync(2_000);
   fireEvent.click(controls.getByRole('button', { name: t('chat.projects.memory.keepMine') }));
 
   // Back to the opening text, which no longer matches the file: still unsaved.
@@ -278,14 +281,14 @@ it('after Keep my edits, measures unsaved changes against the agent version now 
 });
 
 it('reloads the agent version from the on-disk change notice, discarding the edits', async () => {
-  jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] });
+  vi.useFakeTimers({ toNotFake: ['queueMicrotask', 'nextTick'] });
   const memory = new InMemoryProjectMemory(FILLED);
   const { dialog, controls, textarea } = await open(memory);
-  await jest.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(0);
 
   type(dialog, textarea, 'Mine');
   memory.writeExternally('Agent');
-  await jest.advanceTimersByTimeAsync(2_000);
+  await vi.advanceTimersByTimeAsync(2_000);
   fireEvent.click(within(controls.getByRole('alert').parentElement!).getByRole('button', {
     name: t('chat.projects.memory.reload'),
   }));
@@ -480,10 +483,10 @@ it.each(['edit', 'close'])('releases Markdown embed resources registered after t
   let finished!: () => void;
   const gate = new Promise<void>(resolve => { finish = resolve; });
   const completed = new Promise<void>(resolve => { finished = resolve; });
-  const cleanup = jest.fn();
-  const childCleanup = jest.fn();
-  const embedEvent = jest.fn();
-  const childEvent = jest.fn();
+  const cleanup = vi.fn();
+  const childCleanup = vi.fn();
+  const embedEvent = vi.fn();
+  const childEvent = vi.fn();
   const eventName = 'memory-preview-embed-event';
   render.mockImplementationOnce(async (_app, _markdown, element, _sourcePath, component) => {
     element.createEl('p', { text: 'Loading embed' });

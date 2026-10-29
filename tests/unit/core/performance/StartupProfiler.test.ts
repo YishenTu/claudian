@@ -52,7 +52,7 @@ describe('StartupProfiler', () => {
   });
 
   it('copies report to clipboard', async () => {
-    const writeText = jest.fn().mockResolvedValue(undefined);
+    const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(global.navigator, 'clipboard', {
       configurable: true,
       value: { writeText },
@@ -72,7 +72,7 @@ describe('StartupProfiler', () => {
   it('returns false when clipboard write fails', async () => {
     Object.defineProperty(global.navigator, 'clipboard', {
       configurable: true,
-      value: { writeText: jest.fn().mockRejectedValue(new Error('denied')) },
+      value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
     });
 
     const copied = await StartupProfiler.copyToClipboard();

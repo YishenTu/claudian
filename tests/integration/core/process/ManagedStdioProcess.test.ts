@@ -10,7 +10,7 @@ import {
   type ManagedStdioProcessOptions,
 } from '@/core/process/ManagedStdioProcess';
 
-jest.setTimeout(45_000);
+vi.setConfig({ testTimeout: 45_000 });
 
 let directory: string;
 const processes: ManagedStdioProcess[] = [];

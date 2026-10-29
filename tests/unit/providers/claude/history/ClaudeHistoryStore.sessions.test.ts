@@ -1,3 +1,5 @@
+const actualModule1 = await vi.importActual<typeof fsType>('fs');
+const actualModule2 = await vi.importActual<typeof fsType>('fs');
 import { runInNewContext } from 'node:vm';
 
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
@@ -7,6 +9,7 @@ import * as fsPromises from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import type * as streamType from 'stream';
+import type { Mocked, MockedFunction } from 'vitest';
 
 import { extractToolResultContent } from '@/core/tools/toolResultContent';
 import {
@@ -30,20 +33,21 @@ import type { SDKNativeMessage } from '@/providers/claude/history/sdkHistoryType
 import { collectAsyncSubagentResults, parseSDKMessageToChat } from '@/providers/claude/history/sdkMessageParsing';
 import { parseClaudeTaskNotification } from '@/providers/claude/normalization/claudeTaskNotification';
 
+
 // Mock fs, fs/promises, and os modules. The mocked filesystem serves each file's
 // `readFile` content to streaming readers as well, so history reads run the real line reader.
-jest.mock('fs', () => {
-  const { Readable } = jest.requireActual<typeof streamType>('stream');
-  const mockedFsPromises = jest.requireMock<typeof fsPromises>('fs/promises');
+vi.mock('fs', async () => {
+  const { Readable } = (await vi.importActual<typeof streamType>('stream'));
+  const mockedFsPromises = await import('fs/promises');
   return {
-    existsSync: jest.fn(),
-    createReadStream: jest.fn((filePath: string) => Readable.from((async function* () {
+    existsSync: vi.fn(),
+    createReadStream: vi.fn((filePath: string) => Readable.from((async function* () {
       yield String(await mockedFsPromises.readFile(filePath, 'utf-8'));
     })())),
   };
 });
-jest.mock('fs/promises');
-jest.mock('os');
+vi.mock('fs/promises');
+vi.mock('os');
 
 // Fixed native paths keep Windows drive letters independent of the runner's cwd.
 const fixturePath = (value: string): string => process.platform === 'win32'
@@ -51,15 +55,15 @@ const fixturePath = (value: string): string => process.platform === 'win32'
 const vaultPath = fixturePath('/Users/test/vault');
 const encodedDrive = process.platform === 'win32' ? 'C-' : '';
 
-const mockExistsSync = existsSync as jest.MockedFunction<typeof existsSync>;
-const mockCreateReadStream = jest.mocked(createReadStream);
+const mockExistsSync = existsSync as MockedFunction<typeof existsSync>;
+const mockCreateReadStream = vi.mocked(createReadStream);
 const writeSessionFile = useClaudeSessionFiles();
-const mockFsPromises = fsPromises as jest.Mocked<typeof fsPromises>;
-const mockOs = os as jest.Mocked<typeof os>;
+const mockFsPromises = fsPromises as Mocked<typeof fsPromises>;
+const mockOs = os as Mocked<typeof os>;
 
 describe('sdkSession', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockOs.homedir.mockReturnValue(fixturePath('/Users/test'));
   });
 
@@ -445,7 +449,7 @@ describe('sdkSession', () => {
     });
 
     it('streams a multi-chunk transcript between UI tasks and retains both sides of compaction', async () => {
-      mockCreateReadStream.mockImplementationOnce(jest.requireActual<typeof fsType>('fs').createReadStream);
+      mockCreateReadStream.mockImplementationOnce(actualModule1.createReadStream);
       const entries = Array.from({ length: 300 }, (_, index) => ({
         type: 'user', uuid: `u${index}`, message: { content: '汉字🙂'.repeat(4096) },
       }));
@@ -454,7 +458,7 @@ describe('sdkSession', () => {
       const lines = records.map(record => JSON.stringify(record));
       // About 12 MiB with CRLF endings, blank lines, and one malformed record.
       const sessionPath = writeSessionFile([...lines.slice(0, 150), '', 'not json', '   ', ...lines.slice(150)].join('\r\n'));
-      const parse = jest.spyOn(JSON, 'parse');
+      const parse = vi.spyOn(JSON, 'parse');
       const parsedAtTicks: number[] = [];
       const ticker = setInterval(() => parsedAtTicks.push(parse.mock.calls.length), 0);
       try {
@@ -468,7 +472,7 @@ describe('sdkSession', () => {
     });
 
     it('reports a native read failure from the real file stream', async () => {
-      mockCreateReadStream.mockImplementationOnce(jest.requireActual<typeof fsType>('fs').createReadStream);
+      mockCreateReadStream.mockImplementationOnce(actualModule2.createReadStream);
       const directory = path.dirname(writeSessionFile(''));
 
       const result = await readSDKSessionFile(directory);
@@ -1971,7 +1975,7 @@ describe('sdkSession', () => {
   });
 
   describe('filterActiveBranch', () => {
-    // A Jest timeout cannot interrupt a synchronous infinite loop.
+    // A test timeout cannot interrupt a synchronous infinite loop.
     function filterCyclicBranch(entries: SDKNativeMessage[], resumeAtMessageId?: string): SDKNativeMessage[] {
       return runInNewContext('filterActiveBranch(entries, resumeAtMessageId)', {
         filterActiveBranch, entries, resumeAtMessageId,

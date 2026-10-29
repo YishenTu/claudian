@@ -9,7 +9,7 @@ describe('normalizeLinkedContentPath', () => {
     ['Notes\\Plan.md', 'Notes/Plan.md'],
     ['./Projects//Roadmap/./Draft.md/', 'Projects/Roadmap/Draft.md'],
     ['Missing/Future.md', 'Missing/Future.md'],
-  ])('normalizes %p to %p', (input, expected) => {
+  ])('normalizes %o to %o', (input, expected) => {
     expect(normalizeLinkedContentPath(input)).toBe(expected);
   });
 
@@ -25,7 +25,7 @@ describe('normalizeLinkedContentPath', () => {
     'Notes/../escape.md',
     'Notes/\u0000bad.md',
     'Notes/\u001fbad.md',
-  ])('rejects unsafe path %p', (input) => {
+  ])('rejects unsafe path %o', (input) => {
     expect(normalizeLinkedContentPath(input)).toBeNull();
   });
 });

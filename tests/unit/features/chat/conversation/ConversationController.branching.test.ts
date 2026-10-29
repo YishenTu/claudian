@@ -6,15 +6,15 @@ import { buildSystemPrompt } from '@/core/prompt/mainAgent';
 import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
 
-jest.mock('@/shared/modals/ConfirmModal', () => ({
-  confirm: jest.fn().mockResolvedValue(true),
+vi.mock('@/shared/modals/ConfirmModal', () => ({
+  confirm: vi.fn().mockResolvedValue(true),
 }));
 
 describe('ConversationBranching', () => {
   it.each([undefined, 'other-user'])('restores only the selected history and restores the edited prompt with images (target %s)', async target => {
     const retained = [{ id: 'shared', role: 'assistant' as const, content: 'Shared answer', timestamp: Date.now() }];
     const usage = { contextTokens: 12500, inputTokens: 12500, contextWindow: 200000, percentage: 6 };
-    const navigateConversationBranch = jest.fn().mockResolvedValue({ status: 'committed', messages: retained, usage });
+    const navigateConversationBranch = vi.fn().mockResolvedValue({ status: 'committed', messages: retained, usage });
     const coordinator = { navigateConversationBranch };
     const deps = createConversationControllerDeps({
       getExecutionCoordinator: () => coordinator });
@@ -36,7 +36,7 @@ describe('ConversationBranching', () => {
   });
 
   it('preserves a draft and cancelled navigation without replacing history', async () => {
-    const navigateConversationBranch = jest.fn().mockResolvedValue({ status: 'cancelled' });
+    const navigateConversationBranch = vi.fn().mockResolvedValue({ status: 'cancelled' });
     const coordinator = { navigateConversationBranch };
     const deps = createConversationControllerDeps({ getExecutionCoordinator: () => coordinator });
     deps.state.currentConversationId = 'conversation';
@@ -62,13 +62,13 @@ it('reconciles a moved branch after save failure without replaying navigation or
   const first = { id: 'first', role: 'user' as const, content: 'First', timestamp: testDate().getTime() };
   const prompt = { id: 'second', role: 'user' as const, content: 'Second', timestamp: testDate().getTime(), userMessageId: 'native-second' };
   const coordinator = {
-    navigateConversationBranch: jest.fn().mockResolvedValue({ status: 'committed', messages: [first] }),
-    reconcileConversationBranch: jest.fn().mockResolvedValue({ status: 'committed', messages: [first] }),
+    navigateConversationBranch: vi.fn().mockResolvedValue({ status: 'committed', messages: [first] }),
+    reconcileConversationBranch: vi.fn().mockResolvedValue({ status: 'committed', messages: [first] }),
   };
   const deps = createConversationControllerDeps({ getExecutionCoordinator: () => coordinator });
   deps.state.currentConversationId = 'conversation';
   deps.state.messages = [first, prompt];
-  jest.mocked(deps.plugin.updateConversation).mockRejectedValueOnce(new Error('Save unavailable'));
+  vi.mocked(deps.plugin.updateConversation).mockRejectedValueOnce(new Error('Save unavailable'));
   const controller = new ConversationController(deps);
   await controller.navigateBranch('second');
   deps.getInputEl().value = 'Edited';
@@ -86,9 +86,9 @@ it('keeps an unconfirmed branch edit retryable after reconciliation replaces mes
   const first = { id: 'first', role: 'user' as const, content: 'First', timestamp: testDate().getTime() };
   const prompt = { id: 'second', role: 'user' as const, content: 'Second', timestamp: testDate().getTime(), userMessageId: 'native-second' };
   const coordinator = {
-    navigateConversationBranch: jest.fn().mockResolvedValueOnce({ status: 'recovery-required', error: 'Reply lost' })
+    navigateConversationBranch: vi.fn().mockResolvedValueOnce({ status: 'recovery-required', error: 'Reply lost' })
       .mockResolvedValue({ status: 'committed', messages: [first] }),
-    reconcileConversationBranch: jest.fn().mockResolvedValue({ status: 'cancelled', messages: [first, { ...prompt, id: 'reloaded' }] }),
+    reconcileConversationBranch: vi.fn().mockResolvedValue({ status: 'cancelled', messages: [first, { ...prompt, id: 'reloaded' }] }),
   };
   const deps = createConversationControllerDeps({ getExecutionCoordinator: () => coordinator });
   deps.state.currentConversationId = 'conversation';
@@ -106,8 +106,8 @@ it.each(['conversation', 'coordinator'])('does not publish recovery after its %s
   const first = { id: 'first', role: 'user' as const, content: 'First', timestamp: testDate().getTime() };
   const prompt = { id: 'second', role: 'user' as const, content: 'Second', timestamp: testDate().getTime(), userMessageId: 'native-second' };
   const coordinator = {
-    navigateConversationBranch: jest.fn().mockResolvedValue({ status: 'recovery-required', error: 'Reply lost' }),
-    reconcileConversationBranch: jest.fn(),
+    navigateConversationBranch: vi.fn().mockResolvedValue({ status: 'recovery-required', error: 'Reply lost' }),
+    reconcileConversationBranch: vi.fn(),
   };
   const deps = createConversationControllerDeps({ getExecutionCoordinator: () => coordinator });
   deps.state.currentConversationId = 'conversation';
@@ -131,8 +131,8 @@ it('carries the live project paragraph on branch navigation and recovery, and dr
   const prompt = { id: 'second', role: 'user' as const, content: 'Second', timestamp: testDate().getTime(), userMessageId: 'native-second' };
   const coordinator = {
     workingDirectory: '/vault',
-    navigateConversationBranch: jest.fn().mockResolvedValue({ status: 'recovery-required', error: 'Moved' }),
-    reconcileConversationBranch: jest.fn().mockResolvedValue({ status: 'recovery-required', error: 'Still moving' }),
+    navigateConversationBranch: vi.fn().mockResolvedValue({ status: 'recovery-required', error: 'Moved' }),
+    reconcileConversationBranch: vi.fn().mockResolvedValue({ status: 'recovery-required', error: 'Still moving' }),
   };
   const deps = createConversationControllerDeps({ getExecutionCoordinator: () => coordinator, getSelectedModel: () => 'model-a' });
   Object.assign(deps.plugin, {

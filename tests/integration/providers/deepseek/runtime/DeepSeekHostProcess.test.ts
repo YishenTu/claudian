@@ -6,6 +6,7 @@ import type { Writable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
 import { NativePeer } from '@test/helpers/deepseek/NativePeer';
+import { testDate } from '@test/helpers/testClock';
 
 import { DeepSeekHostProcess } from '@/providers/deepseek/runtime/DeepSeekHostProcess';
 
@@ -16,7 +17,7 @@ interface Invocation { pid: number; cwd: string; args: string[] }
 const WINDOWS = process.platform === 'win32';
 
 // Launch, transport setup and process cleanup are real; their speed is not the assertion.
-jest.setTimeout(45_000);
+vi.setConfig({ testTimeout: 45_000 });
 
 describe('native Host process', () => {
   let root: string;
@@ -36,7 +37,7 @@ describe('native Host process', () => {
   });
 
   afterEach(async () => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
     await peer.close();
     await rm(root, { recursive: true, force: true });
   });
@@ -148,7 +149,7 @@ describe('native Host process', () => {
     ['inside the login token while stderr logs', (url: string) => url.length - 3, { FAKE_DSH_GAP_LOG: 'loading MCP servers' }],
   ])('connects to the launch URL split %s and removes the process and its launch files on dispose', async (_split, offset, extra) => {
     const hostProcess = await start('serve', { FAKE_DSH_SPLIT: String(offset(peer.url)), ...extra });
-    const exited = jest.fn();
+    const exited = vi.fn();
     hostProcess.onExit(exited);
     const invocation = await launched();
     try {
@@ -185,7 +186,7 @@ describe('native Host process', () => {
     await expectGone(invocation);
 
     const disposed = await start('serve');
-    const late = jest.fn();
+    const late = vi.fn();
     const disposal = disposed.dispose();
     disposed.onExit(late);
     await disposal;
@@ -249,7 +250,7 @@ describe('native Host process', () => {
 
     await rm(log);
     const deadline = new AbortController();
-    jest.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(deadline.signal);
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(deadline.signal);
     const timing = start('hang');
     const second = await launched();
     deadline.abort();
@@ -268,12 +269,27 @@ describe('native Host process', () => {
       await expectGone(invocation);
     });
 
-    // Waits out the real grace period, then the forced stop.
+    // Advance only the idle grace deadline; the child and its forced termination stay real.
     it('still stops a Host that outlives its owner\'s end of stdin', async () => {
       const hostProcess = await start('untethered');
       const invocation = await launched();
-      await expect(hostProcess.dispose()).resolves.toBeUndefined();
-      await expectGone(invocation);
+      vi.useFakeTimers({ now: testDate(), toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+      const disposal = hostProcess.dispose();
+      let settled = false;
+      void disposal.then(() => { settled = true; }, () => { settled = true; });
+      try {
+        expect(window.setTimeout).toBe(setTimeout);
+        for (let elapsed = 0; !settled && elapsed < 6_000; elapsed += 50) await vi.advanceTimersByTimeAsync(50);
+        vi.useRealTimers();
+        await vi.waitFor(() => expect(settled).toBe(true), { timeout: 3_000 });
+        await expect(disposal).resolves.toBeUndefined();
+        await expectGone(invocation);
+      } finally {
+        vi.useRealTimers();
+        // Also clean up a surviving real child when the deadline/escalation regression fails.
+        try { process.kill(invocation.pid, 'SIGKILL'); } catch { /* Already exited. */ }
+        await hostProcess.dispose();
+      }
     }, 20_000);
   });
 });

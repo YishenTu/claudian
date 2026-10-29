@@ -17,8 +17,8 @@ function setup() {
   const sent: string[] = [];
   const completions: Array<ReturnType<typeof deferred<void>>> = [];
   const callbacks: Array<{ assertBeforeHandoff(): void; onUnsent(reason: 'deferred' | 'failed'): void }> = [];
-  const stops = jest.fn();
-  const coordinator = { hasBackgroundWork: false, cancel: jest.fn(), dispose: async () => undefined } as unknown as ChatExecutionCoordinator;
+  const stops = vi.fn();
+  const coordinator = { hasBackgroundWork: false, cancel: vi.fn(), dispose: async () => undefined } as unknown as ChatExecutionCoordinator;
   const runtime = new ChatSessionRuntime({ conversationId: 'target', providerId: 'claude', draftModel: null }, coordinator, session => {
     const model = createSessionModelStub(session);
     model.hydrate = () => hydrate.promise;
@@ -36,7 +36,7 @@ function setup() {
     Object.defineProperty(model.inputController, 'canStartSessionMessage', { get: () => !userQueued && !runtime.turns.isActive });
     return model;
   });
-  const discarded = jest.fn();
+  const discarded = vi.fn();
   const mailbox = new SessionMailbox({ runtime, isTargetAvailable: () => available, onDiscard: discarded });
   runtime.installMailbox(mailbox);
   const send = (text: string, mode?: 'interrupt') => mailbox.deliver({ message: message(text), mode, signal });

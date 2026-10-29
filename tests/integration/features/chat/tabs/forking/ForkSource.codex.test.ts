@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-jest.mock('cross-spawn', () => jest.fn());
+vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 import { createForkTestEnvironment, type ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
 import { createNativeRPCProcess } from '@test/helpers/providers/NativeRPCTestProcess';
 import spawn from 'cross-spawn';
@@ -30,7 +30,7 @@ function createNativeCodex(env: ForkTestEnvironment) {
     thread: { id, path: sourceFile, turns: (threads.get(id) ?? []).map(turnId => ({ id: turnId, items: [], status: 'completed' })) },
     sandbox: { type: 'workspaceWrite' },
   });
-  jest.mocked(spawn).mockImplementation(() => createNativeRPCProcess(async (method, params, notify) => {
+  vi.mocked(spawn).mockImplementation(() => createNativeRPCProcess(async (method, params, notify) => {
     operations.push({ method, params });
     if (method === 'initialize') return { userAgent: 'test', codexHome: env.root, platformFamily: process.platform === 'win32' ? 'windows' : 'unix', platformOs: process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux' };
     if (method === 'plugin/reconcile' || method === 'thread/unsubscribe') return {};
@@ -83,7 +83,7 @@ function createNativeCodex(env: ForkTestEnvironment) {
 describe('Codex fork integration', () => {
   let env: ForkTestEnvironment;
   beforeEach(async () => { env = await createForkTestEnvironment(); });
-  afterEach(async () => { await env.dispose(); jest.mocked(spawn).mockReset(); });
+  afterEach(async () => { await env.dispose(); vi.mocked(spawn).mockReset(); });
 
   it('forks through the live turn checkpoint and continues both conversations independently', async () => {
     const native = createNativeCodex(env);

@@ -8,6 +8,7 @@ import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { childFollow, jobsOf, NativePeer, type NativePeerLifecycle, rootFollow } from '@test/helpers/deepseek/NativePeer';
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
+import type { Mock } from 'vitest';
 
 import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderExecutionSession, ProviderInteractionPort, ProviderSessionConfig } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
@@ -18,6 +19,8 @@ import { DEEPSEEK_EPHEMERAL_PREFIX } from '@/providers/deepseek/runtime/DeepSeek
 import { getDeepSeekHome } from '@/providers/deepseek/runtime/DeepSeekHome';
 import { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
 import { type DeepSeekLaunchArtifacts, prepareDeepSeekLaunchArtifacts } from '@/providers/deepseek/runtime/DeepSeekLaunchArtifacts';
+
+
 
 const time = testDate().getTime();
 // Fixture polling keeps the real clock while tests drive native deadlines on the fake one.
@@ -81,13 +84,13 @@ beforeEach(async () => {
   ({ deepseek, lifecycle } = peer.host());
 });
 afterEach(async () => {
-  jest.useRealTimers();
+  vi.useRealTimers();
   await Promise.all(sessions.map(session => session.dispose()));
   await deepseek.dispose(); await peer.close();
 });
 
-function port(): ProviderInteractionPort & { askUserQuestion: jest.Mock } {
-  return { requestApproval: jest.fn(), askUserQuestion: jest.fn(() => new Promise<never>(() => {})), dismissInteraction: jest.fn() };
+function port(): ProviderInteractionPort & { askUserQuestion: Mock } {
+  return { requestApproval: vi.fn(), askUserQuestion: vi.fn(() => new Promise<never>(() => {})), dismissInteraction: vi.fn() };
 }
 
 function open(interactionPort = port(), resume?: string, lifecycle: ProviderSessionConfig['lifecycle'] = 'persistent', sessionTools?: ProviderSessionConfig['sessionTools']): ProviderExecutionSession {
@@ -305,7 +308,7 @@ it('refuses a second live view of the same native conversation', async () => {
 });
 
 it('waits for a reloaded Host to release the writer, then names the other process', async () => {
-  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   const backoff = elapseWaitsUpTo(1_000);
   const held = new DeepSeekRemoteError('session "alpha" is already owned by an active write handle', 'session/writer-held');
   let attempts = 0;
@@ -387,16 +390,16 @@ it.each([
   const alpha = open();
   await run(alpha, request('Prompt'), 'ready');
   // The ownership deadline is the only timer armed on the fake clock.
-  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   // Routed by the roster, but no native turn is followed yet to own it.
   peer.send('$events', { type: 'waterfall', eventId: 'early', event: 'approval/request', agentId: 'alpha', request: {} });
-  await until(() => jest.getTimerCount() === 1);
+  await until(() => vi.getTimerCount() === 1);
   if (reconnect) {
     const reconnected = peer.calls.filter(c => c.method === 'session/list').length + 1;
     for (const stream of peer.streams.values()) stream.socket.terminate();
     await until(() => peer.calls.filter(c => c.method === 'session/list').length === reconnected);
   }
-  jest.advanceTimersByTime(10_000);
+  vi.advanceTimersByTime(10_000);
   expect(alpha.getStatus()).toBe(status);
 });
 
@@ -419,14 +422,14 @@ async function until(predicate: () => boolean): Promise<void> {
 
 /** Advances the fake clock through each scheduled wait of at most `limit` ms, never through in-flight RPC deadlines. */
 function elapseWaitsUpTo(limit: number): () => void {
-  const timers = jest.spyOn(window, 'setTimeout');
+  const timers = vi.spyOn(window, 'setTimeout');
   let seen = 0;
   let active = true;
   void (async () => {
     while (active) {
       for (; seen < timers.mock.calls.length; seen++) {
         const ms = timers.mock.calls[seen][1];
-        if (typeof ms === 'number' && ms <= limit) jest.advanceTimersByTime(ms);
+        if (typeof ms === 'number' && ms <= limit) vi.advanceTimersByTime(ms);
       }
       await new Promise(resolve => realTimeout(resolve, 1));
     }
@@ -437,9 +440,9 @@ function elapseWaitsUpTo(limit: number): () => void {
 /** Keep the production Host, roster and execution session; replace only the native process and endpoint port. */
 function sessionToolEndpoint() {
   let handler: SessionToolRoutedCallHandler | undefined;
-  const route: SessionToolRoute = { url: 'http://127.0.0.1:1234/call', routeId: 'host-route', headers: { 'X-Claudian-Route': 'host-route' }, dispose: jest.fn() };
-  const registerCallRoute = jest.fn(async (call: SessionToolRoutedCallHandler) => { handler = call; return route; });
-  const starts = jest.fn();
+  const route: SessionToolRoute = { url: 'http://127.0.0.1:1234/call', routeId: 'host-route', headers: { 'X-Claudian-Route': 'host-route' }, dispose: vi.fn() };
+  const registerCallRoute = vi.fn(async (call: SessionToolRoutedCallHandler) => { handler = call; return route; });
+  const starts = vi.fn();
   deepseek = new DeepSeekHost(async () => ({ cliPath: '/dsh', cwd: '/vault', environment: process.env }), async options => {
     starts(options);
     const client = await peer.connect();
@@ -447,7 +450,7 @@ function sessionToolEndpoint() {
       writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false,
       offerEphemeralFork: async () => async () => {},
     };
-  }, undefined, { registerCallRoute, registerMCPRoute: jest.fn() });
+  }, undefined, { registerCallRoute, registerMCPRoute: vi.fn() });
   return { route, registerCallRoute, starts, call: (callerNativeId: string, name = 'claudian_list_destinations', args: unknown = {}, signal = new AbortController().signal) => {
     expect(handler).toBeDefined();
     return handler!({ name, args, callerNativeId, signal });
@@ -468,9 +471,9 @@ async function startSessionToolTurn(session: ProviderExecutionSession, nativeId:
 
 it('routes session tools through one Host route to the claimed root, denying unknown and unported callers', async () => {
   const endpoint = sessionToolEndpoint();
-  const list = jest.fn(async () => ({ sessions: [] }));
-  const send = jest.fn(async () => ({ sessionId: 'target', title: 'Review', provider: 'codex', status: 'queued' as const }));
-  const alpha = open(port(), undefined, 'persistent', { list, send, read: jest.fn() });
+  const list = vi.fn(async () => ({ sessions: [] }));
+  const send = vi.fn(async () => ({ sessionId: 'target', title: 'Review', provider: 'codex', status: 'queued' as const }));
+  const alpha = open(port(), undefined, 'persistent', { list, send, read: vi.fn() });
   const a = await startSessionToolTurn(alpha, 'alpha');
   const b = await startSessionToolTurn(open(), 'beta');
   expect(endpoint.registerCallRoute).toHaveBeenCalledTimes(1);
@@ -527,9 +530,9 @@ it('routes session tools through one Host route to the claimed root, denying unk
 
 it.each(['passive', 'read-only', 'allow-list'] as const)('denies %s at call time even when the native Agent has session tools', async kind => {
   const endpoint = sessionToolEndpoint();
-  const list = jest.fn(async () => ({ sessions: [] }));
+  const list = vi.fn(async () => ({ sessions: [] }));
   const input = request('Prompt');
-  const turn = await startSessionToolTurn(open(port(), undefined, 'persistent', { list, send: jest.fn(), read: jest.fn() }), 'alpha', input);
+  const turn = await startSessionToolTurn(open(port(), undefined, 'persistent', { list, send: vi.fn(), read: vi.fn() }), 'alpha', input);
   // Native retains a chat preset; policy must be checked by the dispatcher, independently of native permissions.
   Object.assign(input.toolPolicy, { kind, ...(kind === 'allow-list' ? { names: ['claudian_list_destinations'] } : {}) });
   expect(await endpoint.call('alpha')).toMatchObject({ isError: true });
@@ -541,11 +544,11 @@ it.each(['passive', 'read-only', 'allow-list'] as const)('denies %s at call time
 it.each(['cancel', 'terminal', 'release'] as const)('revokes session tool calls on %s without lending a later run its signal', async ending => {
   const endpoint = sessionToolEndpoint();
   const signals: AbortSignal[] = [];
-  const list = jest.fn((_args: unknown, signal: AbortSignal) => {
+  const list = vi.fn((_args: unknown, signal: AbortSignal) => {
     signals.push(signal);
     return new Promise<{ sessions: [] }>(resolve => signal.addEventListener('abort', () => resolve({ sessions: [] }), { once: true }));
   });
-  const session = open(port(), undefined, 'persistent', { list, send: jest.fn(), read: jest.fn() });
+  const session = open(port(), undefined, 'persistent', { list, send: vi.fn(), read: vi.fn() });
   const first = await startSessionToolTurn(session, 'alpha');
   const pending = endpoint.call('alpha');
   await until(() => signals.length === 1);
@@ -569,8 +572,8 @@ it.each(['cancel', 'terminal', 'release'] as const)('revokes session tool calls 
 
 it('resolves nested child session-tool ownership when the root creation catalog arrives last', async () => {
   const endpoint = sessionToolEndpoint();
-  const list = jest.fn(async () => ({ sessions: [] }));
-  const session = open(port(), undefined, 'persistent', { list, send: jest.fn(), read: jest.fn() });
+  const list = vi.fn(async () => ({ sessions: [] }));
+  const session = open(port(), undefined, 'persistent', { list, send: vi.fn(), read: vi.fn() });
   const turn = await startSessionToolTurn(session, 'alpha');
   for (const [id, parent] of [['child', 'alpha'], ['grandchild', 'child']]) {
     peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: id, parentSessionId: parent, origin: 'subagent', agentAvailable: true, running: true }] });
@@ -600,8 +603,8 @@ it('resolves nested child session-tool ownership when the root creation catalog 
 // admits it: native's own call event need not have arrived.
 it('reconciles one root session-tool invocation that arrives before native claims its run', async () => {
   const endpoint = sessionToolEndpoint();
-  const list = jest.fn(async () => ({ sessions: [] }));
-  const session = open(port(), undefined, 'persistent', { list, send: jest.fn(), read: jest.fn() });
+  const list = vi.fn(async () => ({ sessions: [] }));
+  const session = open(port(), undefined, 'persistent', { list, send: vi.fn(), read: vi.fn() });
   const execution = session.execute(request('Prompt'));
   const events: ProviderExecutionEvent[] = [];
   const done = (async () => { for await (const event of execution.events) events.push(event); })();
@@ -619,8 +622,8 @@ it('reconciles one root session-tool invocation that arrives before native claim
 
 it.each(['native', 'request', 'session'] as const)('cancels a pending session-tool invocation with its %s lifetime', async ending => {
   const endpoint = sessionToolEndpoint();
-  const list = jest.fn(async () => ({ sessions: [] }));
-  const session = open(port(), undefined, 'persistent', { list, send: jest.fn(), read: jest.fn() });
+  const list = vi.fn(async () => ({ sessions: [] }));
+  const session = open(port(), undefined, 'persistent', { list, send: vi.fn(), read: vi.fn() });
   const execution = session.execute(request('Prompt'));
   const events: ProviderExecutionEvent[] = [];
   const done = (async () => { for await (const event of execution.events) events.push(event); })();
@@ -652,21 +655,21 @@ it.each(['native', 'request', 'session'] as const)('cancels a pending session-to
 
 it('bounds ownership reconciliation and denies a call whose run native never claims', async () => {
   const endpoint = sessionToolEndpoint();
-  const list = jest.fn(async () => ({ sessions: [] }));
-  const session = open(port(), undefined, 'persistent', { list, send: jest.fn(), read: jest.fn() });
+  const list = vi.fn(async () => ({ sessions: [] }));
+  const session = open(port(), undefined, 'persistent', { list, send: vi.fn(), read: vi.fn() });
   const execution = session.execute(request('Prompt'));
   const events: ProviderExecutionEvent[] = [];
   const done = (async () => { for await (const event of execution.events) events.push(event); })();
   await until(() => peer.calls.some(call => call.method === 'session/prompt' && call.args.request.requestId === execution.executionId));
-  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   const pending = endpoint.call('alpha');
   let settled = false;
   void pending.then(() => { settled = true; });
   await Promise.resolve();
   expect(settled).toBe(false);
-  jest.advanceTimersByTime(10_000);
+  vi.advanceTimersByTime(10_000);
   expect(await pending).toMatchObject({ isError: true });
-  jest.useRealTimers();
+  vi.useRealTimers();
   emit('alpha', 'turn/start', { turn: seq });
   emit('alpha', 'user/message', { source: { kind: 'user', rpcId: execution.executionId }, content: [] });
   emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
@@ -678,25 +681,25 @@ it.each(['native', 'request', 'timeout'] as const)('denies a pre-announcement ch
   const nativeCall = peer.onCall;
   peer.onCall = (method, args) => method === 'session/cancel' ? {} : nativeCall(method, args);
   const endpoint = sessionToolEndpoint();
-  const list = jest.fn(async () => ({ sessions: [] }));
-  const session = open(port(), undefined, 'persistent', { list, send: jest.fn(), read: jest.fn() });
+  const list = vi.fn(async () => ({ sessions: [] }));
+  const session = open(port(), undefined, 'persistent', { list, send: vi.fn(), read: vi.fn() });
   const first = await startSessionToolTurn(session, 'alpha');
   // Another live claim keeps an unresolved caller ambiguous when alpha ends.
-  const otherList = jest.fn(async () => ({ sessions: [] }));
-  const other = await startSessionToolTurn(open(port(), undefined, 'persistent', { list: otherList, send: jest.fn(), read: jest.fn() }), 'beta');
+  const otherList = vi.fn(async () => ({ sessions: [] }));
+  const other = await startSessionToolTurn(open(port(), undefined, 'persistent', { list: otherList, send: vi.fn(), read: vi.fn() }), 'beta');
   const native = new AbortController();
-  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   const pending = endpoint.call('child', 'claudian_list_destinations', {}, native.signal);
   let settled = false;
   void pending.then(() => { settled = true; });
   await new Promise(resolve => realTimeout(resolve, 10));
   const settledBeforeEnding = settled;
   if (ending === 'native') native.abort();
-  if (ending === 'timeout') jest.advanceTimersByTime(10_000);
+  if (ending === 'timeout') vi.advanceTimersByTime(10_000);
   if (ending === 'request') first.execution.cancel();
   await new Promise(resolve => realTimeout(resolve, 10));
   const settledAfterEnding = settled;
-  jest.useRealTimers();
+  vi.useRealTimers();
   emit('alpha', 'turn/end', { turn: seq, reason: { kind: 'completed' } });
   await first.done;
   const next = await startSessionToolTurn(session, 'alpha');

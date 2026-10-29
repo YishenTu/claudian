@@ -1,3 +1,4 @@
+const actualModule0 = await vi.importActual<typeof fs>('node:fs/promises');
 import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
@@ -7,9 +8,10 @@ import { testDate, testTime } from '@test/helpers/testClock';
 import { encodeVaultPathForSDK } from '@/providers/claude/history/ClaudeHistoryPathResolver';
 import { recoverSDKSessionIdByTime } from '@/providers/claude/history/ClaudeSessionRecovery';
 
-jest.mock('node:fs/promises', () => {
-  const actual = jest.requireActual<typeof fs>('node:fs/promises');
-  return { ...actual, open: jest.fn(actual.open) };
+
+vi.mock('node:fs/promises', async () => {
+  const actual = (await vi.importActual<typeof fs>('node:fs/promises'));
+  return { ...actual, open: vi.fn(actual.open) };
 });
 
 let root: string;
@@ -22,10 +24,10 @@ const end = testDate({ seconds: 30 }).getTime();
 
 beforeEach(async () => {
   handles = [];
-  jest.mocked(fs.open).mockImplementation(async (file, flags, mode) => {
-    const actual = jest.requireActual<typeof fs>('node:fs/promises');
+  vi.mocked(fs.open).mockImplementation(async (file, flags, mode) => {
+    const actual = actualModule0;
     const handle = await actual.open(file, flags, mode);
-    jest.spyOn(handle, 'read');
+    vi.spyOn(handle, 'read');
     handles.push(handle);
     return handle;
   });
@@ -47,7 +49,7 @@ async function recover(lines: string[]): Promise<string | null> {
 }
 
 async function bytesRead(): Promise<number> {
-  const results = await Promise.all(handles.flatMap(handle => jest.mocked(handle.read).mock.results
+  const results = await Promise.all(handles.flatMap(handle => vi.mocked(handle.read).mock.results
     .map(result => result.value as Promise<{ bytesRead: number }>)));
   return results.reduce((total, result) => total + result.bytesRead, 0);
 }

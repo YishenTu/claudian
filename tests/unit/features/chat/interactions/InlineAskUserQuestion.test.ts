@@ -1,6 +1,9 @@
 import { createMockEl } from '@test/helpers/MockElement';
+import type { Mock } from 'vitest';
 
 import { type InlineAskQuestionConfig, InlineAskUserQuestion } from '@/features/chat/interactions/InlineAskUserQuestion';
+
+
 
 beforeAll(() => {
   globalThis.requestAnimationFrame = (cb: FrameRequestCallback) => {
@@ -26,9 +29,9 @@ function makeInput(
 function renderWidget(
   input: Record<string, unknown>,
   signal?: AbortSignal,
-): { container: any; resolve: jest.Mock; widget: InlineAskUserQuestion } {
+): { container: any; resolve: Mock; widget: InlineAskUserQuestion } {
   const container = createMockEl();
-  const resolve = jest.fn();
+  const resolve = vi.fn();
   const widget = new InlineAskUserQuestion(container, input, resolve, signal);
   widget.render();
   return { container, resolve, widget };
@@ -44,8 +47,8 @@ function fireKeyDown(
     key,
     shiftKey: opts.shiftKey ?? false,
     isComposing: opts.isComposing ?? false,
-    preventDefault: jest.fn(),
-    stopPropagation: jest.fn(),
+    preventDefault: vi.fn(),
+    stopPropagation: vi.fn(),
   };
   root.dispatchEvent(event);
 }
@@ -272,7 +275,7 @@ describe('InlineAskUserQuestion', () => {
 
   describe('selectOption', () => {
     it('selects single-select option via click', () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
       const input = makeInput([
         { question: 'Pick one', options: ['A', 'B'] },
       ]);
@@ -283,7 +286,7 @@ describe('InlineAskUserQuestion', () => {
         (i: any) => !i.hasClass('claudian-ask-custom-item'),
       );
       items[0]?.click();
-      jest.advanceTimersByTime(200);
+      vi.advanceTimersByTime(200);
 
       // Auto-advanced to submit tab — now submit
       const submitItems = container.querySelectorAll('claudian-ask-item');
@@ -293,7 +296,7 @@ describe('InlineAskUserQuestion', () => {
       submitRow?.click();
 
       expect(resolve).toHaveBeenCalledWith({ 'Pick one': 'A' });
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     it('toggles multi-select options', () => {
@@ -345,7 +348,7 @@ describe('InlineAskUserQuestion', () => {
     });
 
     it('submits answers with correct question-answer mapping', () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
       const input = makeInput([
         { question: 'Color?', options: ['Red', 'Blue'] },
         { question: 'Size?', options: ['S', 'M', 'L'] },
@@ -357,14 +360,14 @@ describe('InlineAskUserQuestion', () => {
         (i: any) => !i.hasClass('claudian-ask-custom-item'),
       );
       items[0]?.click();
-      jest.advanceTimersByTime(200);
+      vi.advanceTimersByTime(200);
 
       // Now on Q2 — select "M" (index 1)
       const q2Items = findItems(container).filter(
         (i: any) => !i.hasClass('claudian-ask-custom-item'),
       );
       q2Items[1]?.click();
-      jest.advanceTimersByTime(200);
+      vi.advanceTimersByTime(200);
 
       // Now on submit tab — click submit
       const submitItems = container.querySelectorAll('claudian-ask-item');
@@ -377,7 +380,7 @@ describe('InlineAskUserQuestion', () => {
         'Color?': 'Red',
         'Size?': 'M',
       });
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     it('submits multi-select answers as arrays instead of joining them into one string', () => {
@@ -420,7 +423,7 @@ describe('InlineAskUserQuestion', () => {
 
   describe('question id keying', () => {
     it('keys submit results by question id when id is provided', () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
       const input = {
         questions: [
           { id: 'color_q', question: 'Favorite color?', options: ['Red', 'Blue'], header: 'Color' },
@@ -434,14 +437,14 @@ describe('InlineAskUserQuestion', () => {
         (i: any) => !i.hasClass('claudian-ask-custom-item'),
       );
       items[0]?.click();
-      jest.advanceTimersByTime(200);
+      vi.advanceTimersByTime(200);
 
       // Select "M" for Q2
       const q2Items = findItems(container).filter(
         (i: any) => !i.hasClass('claudian-ask-custom-item'),
       );
       q2Items[1]?.click();
-      jest.advanceTimersByTime(200);
+      vi.advanceTimersByTime(200);
 
       // Submit
       const submitItems = container.querySelectorAll('claudian-ask-item');
@@ -454,7 +457,7 @@ describe('InlineAskUserQuestion', () => {
         color_q: 'Red',
         size_q: 'M',
       });
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
   });
 
@@ -471,8 +474,8 @@ describe('InlineAskUserQuestion', () => {
 
     it('does not double-resolve on abort after manual resolve', () => {
       const controller = new AbortController();
-      const addListener = jest.spyOn(controller.signal, 'addEventListener');
-      const removeListener = jest.spyOn(controller.signal, 'removeEventListener');
+      const addListener = vi.spyOn(controller.signal, 'addEventListener');
+      const removeListener = vi.spyOn(controller.signal, 'removeEventListener');
       try {
         const input = makeInput([{ question: 'Q', options: ['A'] }]);
         const { container, resolve } = renderWidget(input, controller.signal);
@@ -558,7 +561,7 @@ describe('InlineAskUserQuestion', () => {
     it('ArrowDown clamps at last option when custom input is hidden', () => {
       const input = makeInput([{ question: 'Q', options: ['A', 'B'] }]);
       const container = createMockEl();
-      const resolve = jest.fn();
+      const resolve = vi.fn();
       const widget = new InlineAskUserQuestion(container, input, resolve, undefined, { showCustomInput: false });
       widget.render();
       const root = findRoot(container);
@@ -632,7 +635,7 @@ describe('InlineAskUserQuestion', () => {
     });
 
     it('Enter on submit tab calls handleSubmit', () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
       const input = makeInput([{ question: 'Q', options: ['A'] }]);
       const { container, resolve } = renderWidget(input);
       const root = findRoot(container);
@@ -642,17 +645,17 @@ describe('InlineAskUserQuestion', () => {
         (i: any) => !i.hasClass('claudian-ask-custom-item'),
       );
       items[0]?.click();
-      jest.advanceTimersByTime(200);
+      vi.advanceTimersByTime(200);
 
       // Now on submit tab, Enter should submit
       fireKeyDown(root, 'Enter');
 
       expect(resolve).toHaveBeenCalledWith({ Q: 'A' });
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     it('Enter on cancel row resolves null', () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
       const input = makeInput([{ question: 'Q', options: ['A'] }]);
       const { container, resolve } = renderWidget(input);
       const root = findRoot(container);
@@ -662,32 +665,32 @@ describe('InlineAskUserQuestion', () => {
         (i: any) => !i.hasClass('claudian-ask-custom-item'),
       );
       items[0]?.click();
-      jest.advanceTimersByTime(200);
+      vi.advanceTimersByTime(200);
 
       // Move focus to cancel row
       fireKeyDown(root, 'ArrowDown');
       fireKeyDown(root, 'Enter');
 
       expect(resolve).toHaveBeenCalledWith(null);
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     it('Enter on question option selects it', () => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
       const input = makeInput([{ question: 'Q', options: ['A', 'B'] }]);
       const { container } = renderWidget(input);
       const root = findRoot(container);
 
       // Focus is on item 0, press Enter to select
       fireKeyDown(root, 'Enter');
-      jest.advanceTimersByTime(200);
+      vi.advanceTimersByTime(200);
 
       // After auto-advance we should be on submit tab
       const tabs = container.querySelectorAll('claudian-ask-tab');
       const submitTab = tabs[tabs.length - 1];
       expect(submitTab?.hasClass('is-active')).toBe(true);
 
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     it('click on custom row focuses it', () => {
@@ -840,9 +843,9 @@ describe('InlineAskUserQuestion', () => {
 function renderImmediateWidget(
   input: Record<string, unknown>,
   config?: InlineAskQuestionConfig,
-): { container: any; resolve: jest.Mock; widget: InlineAskUserQuestion } {
+): { container: any; resolve: Mock; widget: InlineAskUserQuestion } {
   const container = createMockEl();
-  const resolve = jest.fn();
+  const resolve = vi.fn();
   const widget = new InlineAskUserQuestion(
     container,
     input,

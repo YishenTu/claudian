@@ -1,20 +1,23 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import type { Mock } from 'vitest';
 
 import { GrokCLIResolver } from '@/providers/grok/runtime/GrokCLIResolver';
 
-jest.mock('fs');
-const mockedStat = fs.statSync as jest.Mock;
 
-jest.mock('@/core/device/InstallationKey', () => ({
-  ...jest.requireActual('@/core/device/InstallationKey'),
+
+vi.mock('fs');
+const mockedStat = fs.statSync as Mock;
+
+vi.mock('@/core/device/InstallationKey', async () => ({
+  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
   getInstallationKey: () => 'current-host',
 }));
 
 describe('GrokCLIResolver', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
-    (fs.existsSync as jest.Mock).mockReturnValue(false);
+    vi.clearAllMocks();
+    (fs.existsSync as Mock).mockReturnValue(false);
   });
 
   it('prefers the current host path over synced paths and the legacy path', () => {

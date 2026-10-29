@@ -5,19 +5,22 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 
-jest.mock('cross-spawn', () => jest.fn());
-jest.mock('node:child_process', () => ({
-  ...jest.requireActual('node:child_process'),
-  spawn: jest.fn(),
+vi.mock('cross-spawn', () => ({ default: vi.fn() }));
+vi.mock('node:child_process', async () => ({
+  ...(await vi.importActual<typeof import('node:child_process')>('node:child_process')),
+  spawn: vi.fn(),
 }));
 
 import spawn from 'cross-spawn';
+import type { MockedFunction } from 'vitest';
 
 import * as env from '@/core/process/env';
 import { PiSubprocess } from '@/providers/pi/runtime/PiSubprocess';
 
-const mockSpawn = spawn as jest.MockedFunction<typeof spawn>;
-const mockNativeSpawn = jest.mocked(nativeSpawn);
+
+
+const mockSpawn = spawn as MockedFunction<typeof spawn>;
+const mockNativeSpawn = vi.mocked(nativeSpawn);
 
 function createMockProcess(): any {
   const proc = new EventEmitter() as any;
@@ -27,7 +30,7 @@ function createMockProcess(): any {
   proc.exitCode = null;
   proc.killed = false;
   proc.pid = 12345;
-  proc.kill = jest.fn((signal?: string) => {
+  proc.kill = vi.fn((signal?: string) => {
     proc.killed = signal === 'SIGKILL';
     return true;
   });
@@ -159,7 +162,7 @@ describe('PiSubprocess', () => {
   });
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
     mockNativeSpawn.mockReturnValue(proc);
@@ -167,8 +170,8 @@ describe('PiSubprocess', () => {
 
   afterEach(() => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
-    jest.restoreAllMocks();
-    jest.useRealTimers();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it('spawns Pi RPC with the launch spec args, cwd, stdio, and enhanced PATH', () => {
@@ -234,7 +237,7 @@ describe('PiSubprocess', () => {
 
   it('attempts node when discovery misses it and reports the process error', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
-    jest.spyOn(env, 'findNodeExecutable').mockReturnValue(null);
+    vi.spyOn(env, 'findNodeExecutable').mockReturnValue(null);
     proc.pid = undefined;
     const subprocess = new PiSubprocess({
       args: ['--mode', 'rpc'],
@@ -242,7 +245,7 @@ describe('PiSubprocess', () => {
       cwd: 'C:\\Vault',
       env: { PATH: '' },
     });
-    const onClose = jest.fn();
+    const onClose = vi.fn();
     subprocess.onClose(onClose);
     subprocess.start();
 
@@ -438,21 +441,21 @@ describe('PiSubprocess', () => {
   });
 
   it('notifies close listeners and escalates shutdown after timeout', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const subprocess = new PiSubprocess({
       args: ['--mode', 'rpc'],
       command: 'pi',
       cwd: '/vault',
       env: {},
     });
-    const onClose = jest.fn();
+    const onClose = vi.fn();
     subprocess.onClose(onClose);
     subprocess.start();
 
     const shutdown = subprocess.shutdown();
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM');
 
-    jest.advanceTimersByTime(3_000);
+    vi.advanceTimersByTime(3_000);
     expect(proc.kill).toHaveBeenCalledWith('SIGKILL');
 
     proc.exitCode = 1;

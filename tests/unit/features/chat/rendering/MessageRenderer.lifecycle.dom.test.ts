@@ -1,9 +1,12 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import { Component, MarkdownRenderer } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import { MarkdownContentRenderer } from '@/features/chat/rendering/markdown/MarkdownContentRenderer';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+
+
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 
@@ -11,7 +14,7 @@ let renderer: MessageRenderer;
 let owner: Component;
 let host: HTMLElement;
 let activeEmbeds: Set<Component>;
-let cleanups: jest.Mock;
+let cleanups: Mock;
 
 function addEmbed(scope: Component): Component {
   const embed = new Component();
@@ -31,11 +34,11 @@ beforeEach(() => {
   owner = new Component();
   owner.load();
   activeEmbeds = new Set();
-  cleanups = jest.fn();
+  cleanups = vi.fn();
   renderer = new MessageRenderer(
     { app: {}, settings: { mediaFolder: '' } } as any, owner, host,
   );
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el, _path, scope) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el, _path, scope) => {
     el.textContent = markdown;
     if (markdown === 'embed') addEmbed(scope);
   });
@@ -88,8 +91,8 @@ it('preserves embeds when their message is moved within the container', async ()
 it.each(['replacement', 'disposal', 'owner unload'])(
   'cleans late registrations after %s', async action => {
     let finish!: () => void;
-    const lateCleanup = jest.fn();
-    jest.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, _markdown, _el, _path, scope) => {
+    const lateCleanup = vi.fn();
+    vi.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, _markdown, _el, _path, scope) => {
       addEmbed(scope);
       await new Promise<void>(resolve => { finish = resolve; });
       addEmbed(scope);
@@ -110,7 +113,7 @@ it.each(['replacement', 'disposal', 'owner unload'])(
 
 it('cleans a failed render and suppresses errors from a superseded render', async () => {
   let reject!: (error: Error) => void;
-  jest.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, _markdown, _el, _path, scope) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, _markdown, _el, _path, scope) => {
     addEmbed(scope);
     await new Promise<void>((_resolve, rejectRender) => { reject = rejectRender; });
   });
@@ -122,7 +125,7 @@ it('cleans a failed render and suppresses errors from a superseded render', asyn
   expect(target.textContent).toBe('plain');
   expect(activeEmbeds.size).toBe(0);
 
-  jest.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, _markdown, _el, _path, scope) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, _markdown, _el, _path, scope) => {
     addEmbed(scope);
     throw new Error('render failure');
   });
@@ -140,8 +143,8 @@ it('does not start another render after disposal', async () => {
 
 it.each(['user scroll', 'history replacement', 'disposal', 'following growth'])('fences deferred tail scrolling across %s', action => {
   let pending!: FrameRequestCallback;
-  const request = jest.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { pending = callback; return 91; });
-  const cancel = jest.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+  const request = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { pending = callback; return 91; });
+  const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
   let height = 1000;
   Object.defineProperties(host, {
     scrollHeight: { configurable: true, get: () => height },
@@ -173,7 +176,7 @@ it.each(['user scroll', 'history replacement', 'disposal', 'following growth'])(
 
 it('releases a late child even when its onload throws', async () => {
   let finish!: () => void;
-  jest.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, _markdown, _el, _path, scope) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, _markdown, _el, _path, scope) => {
     await new Promise<void>(resolve => { finish = resolve; });
     const child = new Component();
     child.onload = () => {
@@ -199,7 +202,7 @@ it('releases nested render scopes without visiting every highlighted span', asyn
     for (let span = 0; span < 100; span += 1) content.createSpan({ text: 'token' });
   }
   await Promise.resolve();
-  const release = jest.spyOn(MarkdownContentRenderer.prototype, 'releaseRemoved');
+  const release = vi.spyOn(MarkdownContentRenderer.prototype, 'releaseRemoved');
   try {
     const destination = host.createDiv();
     destination.append(wrapper);

@@ -6,9 +6,9 @@ import { TabBar, type TabBarCallbacks } from '@/features/chat/tabs/TabBar';
 // Helper to create mock callbacks
 function createMockCallbacks(): TabBarCallbacks {
   return {
-    onTabClick: jest.fn(),
-    onTabClose: jest.fn(),
-    onTabLabelChange: jest.fn(),
+    onTabClick: vi.fn(),
+    onTabClose: vi.fn(),
+    onTabLabelChange: vi.fn(),
   };
 }
 
@@ -54,14 +54,14 @@ describe('TabBar', () => {
       const containerEl = createMockEl();
       const callbacks = {
         ...createMockCallbacks(),
-        onDisplayStateChanged: jest.fn(),
+        onDisplayStateChanged: vi.fn(),
       };
       const tabBar = new TabBar(containerEl, callbacks);
 
       tabBar.update([createTabBarItem({ id: 'tab-2', index: 5, title: 'My Conversation' })]);
 
       const badge = containerEl._children[0];
-      const event = { preventDefault: jest.fn(), stopPropagation: jest.fn() };
+      const event = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
 
       expect(badge.textContent).toBe('5');
       badge.dispatchEvent('dblclick', event);
@@ -74,7 +74,7 @@ describe('TabBar', () => {
       expect(callbacks.onDisplayStateChanged).toHaveBeenCalledTimes(1);
       expect(tabBar.getExpandedTitleTabIds()).toEqual(['tab-2']);
 
-      badge.dispatchEvent('dblclick', { preventDefault: jest.fn(), stopPropagation: jest.fn() });
+      badge.dispatchEvent('dblclick', { preventDefault: vi.fn(), stopPropagation: vi.fn() });
 
       expect(badge.textContent).toBe('5');
       expect(badge.hasClass('claudian-tab-badge-expanded')).toBe(false);
@@ -104,8 +104,8 @@ describe('TabBar', () => {
 
       tabBar.update([createTabBarItem({ title })]);
       containerEl._children[0].dispatchEvent('dblclick', {
-        preventDefault: jest.fn(),
-        stopPropagation: jest.fn(),
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
       });
 
       expect(containerEl._children[0].textContent).toBe('ABCDEFGHIJKLMNOPQRSTUVWXYZ012...');
@@ -118,8 +118,8 @@ describe('TabBar', () => {
 
       tabBar.update([createTabBarItem({ id: 'tab-1', index: 1, title: 'First Title' })]);
       containerEl._children[0].dispatchEvent('dblclick', {
-        preventDefault: jest.fn(),
-        stopPropagation: jest.fn(),
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
       });
 
       tabBar.update([createTabBarItem({ id: 'tab-1', index: 1, title: 'Renamed Title' })]);

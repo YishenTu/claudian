@@ -15,7 +15,7 @@ function deferred<T>(): {
 describe('ProviderCommandDiscoveryStore', () => {
   it('shares an in-flight load and caches its terminal result', async () => {
     const response = deferred<ProviderCommandDiscoveryResult<string>>();
-    const loader = jest.fn().mockReturnValue(response.promise);
+    const loader = vi.fn().mockReturnValue(response.promise);
     const store = new ProviderCommandDiscoveryStore(loader);
 
     const first = store.load();
@@ -34,7 +34,7 @@ describe('ProviderCommandDiscoveryStore', () => {
   });
 
   it('notifies subscribers when loading and terminal state change', async () => {
-    const loader = jest.fn().mockResolvedValue({ status: 'empty' });
+    const loader = vi.fn().mockResolvedValue({ status: 'empty' });
     const store = new ProviderCommandDiscoveryStore<string>(loader);
     const statuses: string[] = [];
     const unsubscribe = store.subscribe(() => {
@@ -50,7 +50,7 @@ describe('ProviderCommandDiscoveryStore', () => {
   it('invalidates a cached result and ignores stale completion', async () => {
     const stale = deferred<ProviderCommandDiscoveryResult<string>>();
     const signals: AbortSignal[] = [];
-    const loader = jest.fn((signal: AbortSignal) => {
+    const loader = vi.fn((signal: AbortSignal) => {
       signals.push(signal);
       return signals.length === 1
         ? stale.promise
@@ -77,7 +77,7 @@ describe('ProviderCommandDiscoveryStore', () => {
   });
 
   it('keeps errors cached until retry is requested', async () => {
-    const loader = jest.fn()
+    const loader = vi.fn()
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce({ status: 'ready', items: ['review'] });
     const store = new ProviderCommandDiscoveryStore<string>(loader);
@@ -99,7 +99,7 @@ describe('ProviderCommandDiscoveryStore', () => {
 
   it('prepares external cache state before notifying subscribers of a retry', async () => {
     let retryPrepared = false;
-    const loader = jest.fn()
+    const loader = vi.fn()
       .mockResolvedValueOnce({
         status: 'error',
         message: 'Offline',
@@ -126,7 +126,7 @@ describe('ProviderCommandDiscoveryStore', () => {
   });
 
   it('turns an unresponsive load into a retryable timeout', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       let loaderSignal: AbortSignal | null = null;
       const store = new ProviderCommandDiscoveryStore<string>(
@@ -138,7 +138,7 @@ describe('ProviderCommandDiscoveryStore', () => {
       );
 
       const load = store.load();
-      await jest.advanceTimersByTimeAsync(100);
+      await vi.advanceTimersByTimeAsync(100);
       await load;
 
       expect((loaderSignal as AbortSignal | null)?.aborted).toBe(true);
@@ -148,12 +148,12 @@ describe('ProviderCommandDiscoveryStore', () => {
         retryable: true,
       });
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
   it('lets provider-owned discovery outlive the shared deadline', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const response = deferred<ProviderCommandDiscoveryResult<string>>();
       let loaderSignal: AbortSignal | null = null;
@@ -166,7 +166,7 @@ describe('ProviderCommandDiscoveryStore', () => {
       );
 
       const load = store.load();
-      await jest.advanceTimersByTimeAsync(8_000);
+      await vi.advanceTimersByTimeAsync(8_000);
 
       expect((loaderSignal as AbortSignal | null)?.aborted).toBe(false);
       expect(store.getSnapshot()).toEqual({ status: 'loading' });
@@ -175,12 +175,12 @@ describe('ProviderCommandDiscoveryStore', () => {
       await expect(load).resolves.toEqual({ status: 'ready', items: ['review'] });
       expect(store.getSnapshot()).toEqual({ status: 'ready', items: ['review'] });
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
   it('resolves the shared deadline again after invalidation', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const first = deferred<ProviderCommandDiscoveryResult<string>>();
       let timeoutMs: number | null = null;
@@ -196,7 +196,7 @@ describe('ProviderCommandDiscoveryStore', () => {
       );
 
       const firstLoad = store.load();
-      await jest.advanceTimersByTimeAsync(8_000);
+      await vi.advanceTimersByTimeAsync(8_000);
       expect(store.getSnapshot()).toEqual({ status: 'loading' });
 
       store.invalidate();
@@ -204,7 +204,7 @@ describe('ProviderCommandDiscoveryStore', () => {
       timeoutMs = 100;
 
       const secondLoad = store.load();
-      await jest.advanceTimersByTimeAsync(100);
+      await vi.advanceTimersByTimeAsync(100);
       await secondLoad;
 
       expect(signals[1]?.aborted).toBe(true);
@@ -216,7 +216,7 @@ describe('ProviderCommandDiscoveryStore', () => {
         retryable: true,
       });
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 });

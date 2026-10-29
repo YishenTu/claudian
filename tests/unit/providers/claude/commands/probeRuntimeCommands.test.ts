@@ -3,8 +3,8 @@ import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { probeRuntimeCommands } from '@/providers/claude/commands/probeRuntimeCommands';
 
-const mockQuery = jest.fn();
-jest.mock('@/providers/claude/loadClaudeAgentSDK', () => ({ loadClaudeAgentQuery: async () => mockQuery }));
+const mockQuery = vi.fn();
+vi.mock('@/providers/claude/loadClaudeAgentSDK', () => ({ loadClaudeAgentQuery: async () => mockQuery }));
 
 function createMockPlugin(
   cliPath: string | null = '/mock/claude',
@@ -13,7 +13,7 @@ function createMockPlugin(
   return runtimeHostFor({
     settings: {},
     workingDirectory,
-    getResolvedProviderCliPath: jest.fn().mockResolvedValue(cliPath),
+    getResolvedProviderCliPath: vi.fn().mockResolvedValue(cliPath),
   }, 'claude');
 }
 
@@ -21,13 +21,13 @@ function initializeWith(initializationResult: () => Promise<{ commands?: unknown
   mockQuery.mockReturnValue({
     initializationResult,
     supportedCommands: async () => (await initializationResult()).commands,
-    next: jest.fn().mockResolvedValue({ done: false, value: { type: 'system', subtype: 'init', skills } }),
-    close: jest.fn(),
+    next: vi.fn().mockResolvedValue({ done: false, value: { type: 'system', subtype: 'init', skills } }),
+    close: vi.fn(),
   });
 }
 
 describe('probeRuntimeCommands', () => {
-  afterEach(() => { jest.clearAllMocks(); });
+  afterEach(() => { vi.clearAllMocks(); });
 
   it('maps initialization commands and keeps Claude Code built-ins and skills distinguishable', async () => {
     initializeWith(async () => ({ commands: [

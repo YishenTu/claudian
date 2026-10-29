@@ -14,15 +14,14 @@ describe('VaultFileCache', () => {
 
     mockApp = {
       vault: {
-        getFiles: jest.fn().mockReturnValue(mockFiles),
+        getFiles: vi.fn().mockReturnValue(mockFiles),
       },
     } as any;
   });
 
   describe('getFiles', () => {
     it('should return stale files if reload fails', () => {
-      const getFiles = jest
-        .fn()
+      const getFiles = vi.fn()
         .mockReturnValueOnce(mockFiles)
         .mockImplementation(() => {
           throw new Error('Vault error');
@@ -39,10 +38,10 @@ describe('VaultFileCache', () => {
 
     it('should invoke onLoadError callback when getFiles fails', () => {
       const error = new Error('Vault error');
-      mockApp.vault.getFiles = jest.fn(() => {
+      mockApp.vault.getFiles = vi.fn(() => {
         throw error;
       });
-      const onLoadError = jest.fn();
+      const onLoadError = vi.fn();
 
       const cache = new VaultFileCache(mockApp, { onLoadError });
       cache.getFiles();
@@ -51,7 +50,7 @@ describe('VaultFileCache', () => {
     });
 
     it('should not reload repeatedly when vault has no files', () => {
-      mockApp.vault.getFiles = jest.fn().mockReturnValue([]);
+      mockApp.vault.getFiles = vi.fn().mockReturnValue([]);
       const cache = new VaultFileCache(mockApp);
 
       expect(cache.getFiles()).toEqual([]);
@@ -63,11 +62,11 @@ describe('VaultFileCache', () => {
 
   describe('initializeInBackground', () => {
     beforeEach(() => {
-      jest.useFakeTimers();
+      vi.useFakeTimers();
     });
 
     afterEach(() => {
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     it.each(['background', 'queued twice', 'foreground first'])('should populate cache once with %s initialization', ordering => {
@@ -80,14 +79,14 @@ describe('VaultFileCache', () => {
       expect(foregroundFiles).toEqual(ordering === 'foreground first' ? mockFiles : undefined);
       expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(ordering === 'foreground first' ? 1 : 0);
 
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
       expect(cache.getFiles()).toEqual(mockFiles);
       expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
 
       cache.initializeInBackground();
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
     });
@@ -99,9 +98,9 @@ describe('VaultFileCache', () => {
       expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
 
       const newFiles = [{ path: 'note3.md', name: 'note3.md' } as TFile];
-      jest.mocked(mockApp.vault.getFiles).mockReturnValue(newFiles);
+      vi.mocked(mockApp.vault.getFiles).mockReturnValue(newFiles);
       cache.markDirty();
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
       expect(cache.getFiles()).toEqual(newFiles);
@@ -112,33 +111,33 @@ describe('VaultFileCache', () => {
 
     it('should invoke onLoadError callback when initialization fails', () => {
       const error = new Error('Vault error');
-      mockApp.vault.getFiles = jest.fn(() => {
+      mockApp.vault.getFiles = vi.fn(() => {
         throw error;
       });
-      const onLoadError = jest.fn();
+      const onLoadError = vi.fn();
 
       const cache = new VaultFileCache(mockApp, { onLoadError });
       cache.initializeInBackground();
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(onLoadError).toHaveBeenCalledWith(error);
     });
 
     it('should mark initialization attempted even if loading fails', () => {
-      mockApp.vault.getFiles = jest.fn(() => {
+      mockApp.vault.getFiles = vi.fn(() => {
         throw new Error('Vault error');
       });
 
       const cache = new VaultFileCache(mockApp);
       cache.initializeInBackground();
       cache.initializeInBackground();
-      expect(() => jest.runAllTimers()).not.toThrow();
+      expect(() => vi.runAllTimers()).not.toThrow();
 
       cache.initializeInBackground();
-      jest.runOnlyPendingTimers();
+      vi.runOnlyPendingTimers();
 
       expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
-      jest.mocked(mockApp.vault.getFiles).mockReturnValue(mockFiles);
+      vi.mocked(mockApp.vault.getFiles).mockReturnValue(mockFiles);
       expect(cache.getFiles()).toEqual(mockFiles);
       expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(2);
       expect(cache.getFiles()).toEqual(mockFiles);
@@ -157,7 +156,7 @@ describe('VaultFileCache', () => {
       expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
 
       const newFiles = [{ path: 'note3.md', name: 'note3.md' } as TFile];
-      jest.mocked(mockApp.vault.getFiles).mockReturnValue(newFiles);
+      vi.mocked(mockApp.vault.getFiles).mockReturnValue(newFiles);
 
       cache.markDirty();
       const files = cache.getFiles();

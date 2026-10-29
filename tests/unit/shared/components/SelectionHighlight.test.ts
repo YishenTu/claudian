@@ -1,5 +1,5 @@
 /**
- * @jest-environment jsdom
+ * @vitest-environment jsdom
  */
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';

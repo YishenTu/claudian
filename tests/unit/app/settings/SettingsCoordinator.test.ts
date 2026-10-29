@@ -58,8 +58,8 @@ describe('SettingsCoordinator', () => {
       nested: { committed: true },
     };
     const writeError = new Error('write failed');
-    const commit = jest.fn();
-    const persist = jest.fn()
+    const commit = vi.fn();
+    const persist = vi.fn()
       .mockRejectedValueOnce(writeError)
       .mockResolvedValueOnce(undefined);
     const coordinator = new SettingsCoordinator(settings, persist);
@@ -85,7 +85,7 @@ describe('SettingsCoordinator', () => {
   it('restores the snapshot when the mutation itself rejects', async () => {
     const originalError = new Error('mutation failed');
     const settings: Record<string, unknown> = { value: 'committed' };
-    const persist = jest.fn().mockResolvedValue(undefined);
+    const persist = vi.fn().mockResolvedValue(undefined);
     const coordinator = new SettingsCoordinator(settings, persist);
 
     await expect(coordinator.mutate(async current => {
@@ -150,7 +150,7 @@ describe('SettingsCoordinator', () => {
     const settings: Record<string, unknown> = { rejected: 0, accepted: 0 };
     const persisted: Array<Record<string, unknown>> = [];
     const published: Array<Record<string, unknown>> = [];
-    const commit = jest.fn();
+    const commit = vi.fn();
     const coordinator = new SettingsCoordinator(
       settings,
       async current => { persisted.push({ ...current }); },

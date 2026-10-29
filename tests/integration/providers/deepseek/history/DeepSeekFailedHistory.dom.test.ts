@@ -1,16 +1,16 @@
 /**
- * @jest-environment jsdom
- * @jest-environment-options {"customExportConditions":["node","node-addons"]}
+ * @vitest-environment jsdom
+ * @vitest-environment-options {"customExportConditions":["node","node-addons"]}
  */
 
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { NativePeer, rootFollow } from '@test/helpers/deepseek/NativePeer';
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import type { ProviderExecutionEvent, ProviderExecutionSession } from '@/core/execution';
@@ -37,7 +37,7 @@ let renderer: MessageRenderer;
 
 beforeEach(async () => {
   document.body.replaceChildren();
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     (el as HTMLElement).createEl('p', { text: markdown });
   });
   peer = new NativePeer();
@@ -49,7 +49,7 @@ beforeEach(async () => {
   ({ deepseek } = peer.host());
   session = new DeepSeekExecutionBackend(runtimeHostFor(host, 'deepseek'), () => deepseek).createSession({
     lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: '/vault',
-    interactionPort: { requestApproval: jest.fn(), askUserQuestion: jest.fn(), dismissInteraction: jest.fn() },
+    interactionPort: { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() },
   });
 });
 
@@ -103,7 +103,7 @@ it.each([
     ['user', 'Please continue'], ['assistant', 'Committed partial reply'],
   ]);
   const messagesEl = document.body.createDiv();
-  const fork = jest.fn().mockResolvedValue(undefined);
+  const fork = vi.fn().mockResolvedValue(undefined);
   renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '', showMessageTimestamps: true } } as any,
     new Component() as any, messagesEl, undefined, fork, () => ProviderRegistry.getCapabilities('deepseek'));
   renderer.renderMessages(messages, () => 'Hello');

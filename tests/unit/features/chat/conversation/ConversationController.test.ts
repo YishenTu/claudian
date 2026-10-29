@@ -1,9 +1,12 @@
 import { createConversationControllerDeps } from '@test/helpers/features/chat/ConversationControllerFixture';
+import type { Mock } from 'vitest';
 
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
 
-jest.mock('@/shared/modals/ConfirmModal', () => ({
-  confirm: jest.fn().mockResolvedValue(true),
+
+
+vi.mock('@/shared/modals/ConfirmModal', () => ({
+  confirm: vi.fn().mockResolvedValue(true),
 }));
 
 describe('ConversationController', () => {
@@ -11,7 +14,7 @@ describe('ConversationController', () => {
   let deps: ReturnType<typeof createConversationControllerDeps>;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     deps = createConversationControllerDeps();
     controller = new ConversationController(deps);
   });
@@ -40,7 +43,7 @@ describe('ConversationController', () => {
       it('should update welcome visibility after loading a conversation with messages', async () => {
         deps.state.currentConversationId = 'new-conv';
         deps.state.messages = [];
-        (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+        (deps.plugin.getConversationById as Mock).mockResolvedValue({
           id: 'new-conv',
           messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
           sessionId: null,
@@ -67,10 +70,10 @@ describe('ConversationController', () => {
 
     it('should only add greeting if not already present', () => {
       const welcomeEl = deps.getWelcomeEl()!;
-      const setWelcomeEl = jest.fn();
+      const setWelcomeEl = vi.fn();
       deps.setWelcomeEl = setWelcomeEl;
       const linkedContentController = deps.getLinkedContentController();
-      const createDivSpy = jest.spyOn(welcomeEl, 'createDiv');
+      const createDivSpy = vi.spyOn(welcomeEl, 'createDiv');
 
       controller.initializeWelcome();
       const initialCallCount = createDivSpy.mock.calls.length;
@@ -115,7 +118,7 @@ describe('ConversationController', () => {
 
       await controller.save(true);
 
-      const call = (deps.plugin.updateConversation as jest.Mock).mock.calls[0];
+      const call = (deps.plugin.updateConversation as Mock).mock.calls[0];
       const updates = call[1];
       expect(updates).not.toHaveProperty('resumeAtMessageId');
       expect(updates.lastActivityAt).toBeDefined();
@@ -129,7 +132,7 @@ describe('ConversationController', () => {
 
       await controller.save(true, { resumeAtMessageId: undefined });
 
-      const call = (deps.plugin.updateConversation as jest.Mock).mock.calls[0];
+      const call = (deps.plugin.updateConversation as Mock).mock.calls[0];
       const updates = call[1];
       expect(updates.resumeAtMessageId).toBeUndefined();
       // Verify it's explicitly set (not just missing)
@@ -144,7 +147,7 @@ describe('ConversationController', () => {
 
       await controller.save(false);
 
-      const call = (deps.plugin.updateConversation as jest.Mock).mock.calls[0];
+      const call = (deps.plugin.updateConversation as Mock).mock.calls[0];
       const updates = call[1];
       expect(updates).not.toHaveProperty('resumeAtMessageId');
       expect(deps.state.hasPendingConversationSave).toBe(false);
@@ -155,7 +158,7 @@ describe('ConversationController', () => {
     it('should restore linkedContentPath when conversation has one', async () => {
       const linkedContentController = deps.getLinkedContentController();
       deps.state.currentConversationId = 'conv-with-note';
-      (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+      (deps.plugin.getConversationById as Mock).mockResolvedValue({
         id: 'conv-with-note',
         messages: [{ id: '1', role: 'user', content: 'test', timestamp: Date.now() }],
         sessionId: null,
@@ -171,14 +174,14 @@ describe('ConversationController', () => {
         expect.any(Array),
         expect.any(Function),
       );
-      const greetingFn = (deps.renderer.renderMessages as jest.Mock).mock.calls[0][1];
+      const greetingFn = (deps.renderer.renderMessages as Mock).mock.calls[0][1];
       expect(greetingFn().length).toBeGreaterThan(0);
     });
 
     it('locks an empty existing Conversation even without Linked content', async () => {
       const linkedContentController = deps.getLinkedContentController();
       deps.state.currentConversationId = 'empty-conv';
-      (deps.plugin.getConversationById as jest.Mock).mockResolvedValue({
+      (deps.plugin.getConversationById as Mock).mockResolvedValue({
         id: 'empty-conv',
         messages: [],
         sessionId: null,
@@ -193,7 +196,7 @@ describe('ConversationController', () => {
 
   describe('loadActive with greeting', () => {
     it('should show welcome and return early when no conversation exists', async () => {
-      const onConversationLoaded = jest.fn();
+      const onConversationLoaded = vi.fn();
       deps = createConversationControllerDeps();
       controller = new ConversationController(deps, { onConversationLoaded });
       deps.state.currentConversationId = null;
@@ -209,7 +212,7 @@ describe('ConversationController', () => {
 
 describe('ConversationController - provider hydration', () => {
   it('should ensure the tab service matches the loaded conversation provider', async () => {
-    const ensureExecutionForConversation = jest.fn().mockResolvedValue(undefined);
+    const ensureExecutionForConversation = vi.fn().mockResolvedValue(undefined);
     const switchedConversation = {
       id: 'new-conv',
       providerId: 'codex',
@@ -223,7 +226,7 @@ describe('ConversationController - provider hydration', () => {
       ensureExecutionForConversation,
       plugin: {
         ...createConversationControllerDeps().plugin,
-        getConversationById: jest.fn().mockResolvedValue(switchedConversation),
+        getConversationById: vi.fn().mockResolvedValue(switchedConversation),
       } as any,
     });
     const controller = new ConversationController(deps);

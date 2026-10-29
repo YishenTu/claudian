@@ -66,7 +66,7 @@ describe('ClaudeCommandCatalog', () => {
     });
 
     it('probes SDK when the request carries no snapshot', async () => {
-      const probe = jest.fn().mockResolvedValue([
+      const probe = vi.fn().mockResolvedValue([
         { id: 'sdk:commit', name: 'commit', description: 'Create git commit', content: '', source: 'sdk' },
       ]);
       const catalog = new ClaudeCommandCatalog(probe);
@@ -80,7 +80,7 @@ describe('ClaudeCommandCatalog', () => {
     });
 
     it('reports a failed probe and probes again on the next request', async () => {
-      const probe = jest.fn()
+      const probe = vi.fn()
         .mockRejectedValueOnce(new Error('Claude CLI exited'))
         .mockResolvedValueOnce([
           { id: 'sdk:user-skill', name: 'user-skill', description: 'User skill', content: '', source: 'sdk' },
@@ -98,7 +98,7 @@ describe('ClaudeCommandCatalog', () => {
     });
 
     it('does not probe when the request carries a live session snapshot', async () => {
-      const probe = jest.fn().mockResolvedValue([]);
+      const probe = vi.fn().mockResolvedValue([]);
       const catalog = new ClaudeCommandCatalog(probe);
 
       await catalog.listDropdownEntries({ includeBuiltIns: false, commandSnapshot: [
@@ -109,7 +109,7 @@ describe('ClaudeCommandCatalog', () => {
     });
 
     it('deduplicates concurrent probe calls', async () => {
-      const probe = jest.fn().mockResolvedValue([
+      const probe = vi.fn().mockResolvedValue([
         { id: 'sdk:commit', name: 'commit', description: 'Commit', content: '', source: 'sdk' },
       ]);
       const catalog = new ClaudeCommandCatalog(probe);
@@ -127,7 +127,7 @@ describe('ClaudeCommandCatalog', () => {
     it('aborts and awaits an owned probe while fencing its old-environment result', async () => {
       let releaseOldProbe!: (commands: SlashCommand[]) => void;
       let oldProbeSignal: AbortSignal | undefined;
-      const probe = jest.fn()
+      const probe = vi.fn()
         .mockImplementationOnce((signal?: AbortSignal) => {
           oldProbeSignal = signal;
           return new Promise<SlashCommand[]>((resolve) => {
@@ -172,7 +172,7 @@ describe('ClaudeCommandCatalog', () => {
     });
 
     it('clears cached probed commands when the provider environment changes', async () => {
-      const probe = jest.fn()
+      const probe = vi.fn()
         .mockResolvedValueOnce([
           { id: 'sdk:old', name: 'old', description: 'Old', content: '', source: 'sdk' },
         ])
@@ -209,7 +209,7 @@ describe('ClaudeCommandCatalog', () => {
         content: '',
         source: 'sdk',
       }];
-      const probe = jest.fn()
+      const probe = vi.fn()
         .mockReturnValueOnce(firstProbe)
         .mockResolvedValueOnce(freshCommands);
       const catalog = new ClaudeCommandCatalog(probe);

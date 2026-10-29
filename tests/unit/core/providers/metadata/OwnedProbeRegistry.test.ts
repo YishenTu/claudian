@@ -67,7 +67,7 @@ describe('OwnedProbeRegistry', () => {
   it('tracks concurrent probes and disposes every resource exactly once', async () => {
     const firstQuery = new Deferred<string>();
     const secondQuery = new Deferred<string>();
-    const dispose = jest.fn();
+    const dispose = vi.fn();
     const registry = createRegistry(dispose);
 
     const first = registry.run({
@@ -88,10 +88,10 @@ describe('OwnedProbeRegistry', () => {
   });
 
   it('propagates caller cancellation and removes its abort listener', async () => {
-    const dispose = jest.fn();
+    const dispose = vi.fn();
     const registry = createRegistry(dispose);
     const controller = new AbortController();
-    const removeListener = jest.spyOn(controller.signal, 'removeEventListener');
+    const removeListener = vi.spyOn(controller.signal, 'removeEventListener');
     let ownedSignal!: AbortSignal;
     const queryStarted = new Deferred<void>();
     const failure = new Error('caller cancelled');
@@ -117,7 +117,7 @@ describe('OwnedProbeRegistry', () => {
   });
 
   it('cleans up initialization and query failures and remains usable after creation failure', async () => {
-    const dispose = jest.fn();
+    const dispose = vi.fn();
     const registry = createRegistry(dispose);
 
     await expect(registry.run({
@@ -141,7 +141,7 @@ describe('OwnedProbeRegistry', () => {
   });
 
   it('suppresses cleanup failure while preserving exactly-once disposal', async () => {
-    const dispose = jest.fn(async () => { throw new Error('cleanup failed'); });
+    const dispose = vi.fn(async () => { throw new Error('cleanup failed'); });
     const registry = createRegistry(dispose);
 
     await expect(registry.run({
@@ -182,7 +182,7 @@ describe('OwnedProbeRegistry', () => {
 
   it('safely disposes during an active probe and rejects future runs', async () => {
     const cleanup = new Deferred<void>();
-    const disposeResource = jest.fn(() => cleanup.promise);
+    const disposeResource = vi.fn(() => cleanup.promise);
     const registry = createRegistry(disposeResource);
     const queryStarted = new Deferred<void>();
     const run = registry.run({

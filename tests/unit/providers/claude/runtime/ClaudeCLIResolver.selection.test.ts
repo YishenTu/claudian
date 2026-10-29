@@ -1,30 +1,33 @@
 import * as fs from 'fs';
+import type { Mock } from 'vitest';
 
 import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
 import { findClaudeBinaryPath } from '@/providers/claude/runtime/ClaudeBinaryLocator';
 import { ClaudeCLIResolver } from '@/providers/claude/runtime/ClaudeCLIResolver';
 
-jest.mock('fs');
-jest.mock('@/providers/claude/runtime/ClaudeBinaryLocator', () => {
-  const actual = jest.requireActual('@/providers/claude/runtime/ClaudeBinaryLocator');
+
+
+vi.mock('fs');
+vi.mock('@/providers/claude/runtime/ClaudeBinaryLocator', async () => {
+  const actual = (await vi.importActual<typeof import('@/providers/claude/runtime/ClaudeBinaryLocator')>('@/providers/claude/runtime/ClaudeBinaryLocator'));
   return {
     ...actual,
-    findClaudeBinaryPath: jest.fn(),
+    findClaudeBinaryPath: vi.fn(),
   };
 });
 
-const mockedStat = fs.statSync as jest.Mock;
-const mockedFind = findClaudeBinaryPath as jest.Mock;
-const mockedDeviceKey = getHostnameKey as jest.Mock;
+const mockedStat = fs.statSync as Mock;
+const mockedFind = findClaudeBinaryPath as Mock;
+const mockedDeviceKey = getHostnameKey as Mock;
 
-jest.mock('@/core/device/InstallationKey', () => ({
-  ...jest.requireActual('@/core/device/InstallationKey'),
-  getInstallationKey: jest.fn(() => 'test-host'),
+vi.mock('@/core/device/InstallationKey', async () => ({
+  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
+  getInstallationKey: vi.fn(() => 'test-host'),
 }));
 
 describe('ClaudeCLIResolver', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockedDeviceKey.mockReturnValue('test-host');
   });
 
@@ -170,7 +173,7 @@ describe('ClaudeCLIResolver', () => {
 
 describe('ClaudeCLIResolver path selection', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('should return hostname path when valid file exists', () => {

@@ -1,7 +1,7 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { configureAxe } from '@test/helpers/accessibility';
 import { within } from '@testing-library/dom';
-import { configureAxe } from 'jest-axe';
 
 import { chooseForkTarget } from '@/features/chat/tabs/forking/ForkTargetModal';
 
@@ -12,8 +12,8 @@ const checkAccessibility = configureAxe({
   },
 });
 
-jest.mock('obsidian', () => {
-  const actual = jest.requireActual('obsidian');
+vi.mock('obsidian', async () => {
+  const actual = (await vi.importActual<typeof import('obsidian')>('obsidian'));
 
   class MockModal {
     app: any;
@@ -29,7 +29,7 @@ jest.mock('obsidian', () => {
       lastModalInstance = this;
     }
 
-    setTitle = jest.fn();
+    setTitle = vi.fn();
 
     open() {
       this.onOpen();

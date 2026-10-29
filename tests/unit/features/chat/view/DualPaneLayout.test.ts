@@ -1,7 +1,10 @@
 import { createMockEl } from '@test/helpers/MockElement';
 import { Notice } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import { DualPaneLayout,type DualPaneLayoutSettings } from '@/features/chat/view/DualPaneLayout';
+
+
 
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
@@ -24,19 +27,19 @@ function createLayoutHarness(options: {
 } = {}) {
   let width = options.width ?? 400;
   const containerEl = createMockEl();
-  containerEl.getBoundingClientRect = jest.fn(() => ({ width }));
-  containerEl.style.setProperty = jest.fn();
+  containerEl.getBoundingClientRect = vi.fn(() => ({ width }));
+  containerEl.style.setProperty = vi.fn();
   const resizerEl = createMockEl();
   const sidebarEl = createMockEl();
-  sidebarEl.getBoundingClientRect = jest.fn().mockReturnValue({ width: 240 });
+  sidebarEl.getBoundingClientRect = vi.fn().mockReturnValue({ width: 240 });
   const calls: string[] = [];
   const hooks = {
     getSettings: () => options.settings ?? {},
-    onWideChanged: jest.fn(() => { calls.push('wide-changed'); }),
-    onEnterWide: jest.fn(() => { calls.push('enter-wide'); }),
-    renderSidebar: jest.fn(() => { calls.push('render-sidebar'); }),
-    onLeaveWideRequested: jest.fn(() => { calls.push('leave-wide'); }),
-    releaseViewerSlot: jest.fn(() => {
+    onWideChanged: vi.fn(() => { calls.push('wide-changed'); }),
+    onEnterWide: vi.fn(() => { calls.push('enter-wide'); }),
+    renderSidebar: vi.fn(() => { calls.push('render-sidebar'); }),
+    onLeaveWideRequested: vi.fn(() => { calls.push('leave-wide'); }),
+    releaseViewerSlot: vi.fn(() => {
       calls.push('discard');
       return options.releaseViewerSlot?.();
     }),
@@ -57,8 +60,8 @@ function createLayoutHarness(options: {
 /** Initializes compact, then observes a wide container through the resize observer. */
 function observeWidths(harness: ReturnType<typeof createLayoutHarness>) {
   let resizeCallback: ResizeObserverCallback = () => {};
-  const observe = jest.fn();
-  const disconnect = jest.fn();
+  const observe = vi.fn();
+  const disconnect = vi.fn();
   harness.containerEl.ownerDocument.defaultView.ResizeObserver = class {
     constructor(callback: ResizeObserverCallback) {
       resizeCallback = callback;
@@ -185,7 +188,7 @@ describe('DualPaneLayout', () => {
       releaseViewerSlot: () => sharedCleanup.promise,
     });
     const observer = observeWidths(harness);
-    (Notice as unknown as jest.Mock).mockClear();
+    (Notice as unknown as Mock).mockClear();
 
     observer.resize(599);
     observer.resize(600);
@@ -239,10 +242,10 @@ describe('DualPaneLayout', () => {
     harness.initialize();
     const documentListeners = new Map<string, EventListener>();
     const ownerDocument = {
-      addEventListener: jest.fn((event: string, listener: EventListener) => {
+      addEventListener: vi.fn((event: string, listener: EventListener) => {
         documentListeners.set(event, listener);
       }),
-      removeEventListener: jest.fn((event: string) => {
+      removeEventListener: vi.fn((event: string) => {
         documentListeners.delete(event);
       }),
     };
@@ -252,7 +255,7 @@ describe('DualPaneLayout', () => {
       button: 0,
       clientX: 500,
       currentTarget: { ownerDocument },
-      preventDefault: jest.fn(),
+      preventDefault: vi.fn(),
     });
     documentListeners.get('pointermove')?.({ clientX: 450 } as unknown as Event);
 
@@ -276,10 +279,10 @@ describe('DualPaneLayout', () => {
     harness.initialize();
     const documentListeners = new Map<string, EventListener>();
     const ownerDocument = {
-      addEventListener: jest.fn((event: string, listener: EventListener) => {
+      addEventListener: vi.fn((event: string, listener: EventListener) => {
         documentListeners.set(event, listener);
       }),
-      removeEventListener: jest.fn(),
+      removeEventListener: vi.fn(),
     };
 
     harness.resizerEl.dispatchEvent({
@@ -287,7 +290,7 @@ describe('DualPaneLayout', () => {
       button: 0,
       clientX: 500,
       currentTarget: { ownerDocument },
-      preventDefault: jest.fn(),
+      preventDefault: vi.fn(),
     });
     documentListeners.get('pointermove')?.({ clientX: 550 } as unknown as Event);
 
@@ -300,7 +303,7 @@ describe('DualPaneLayout', () => {
   it('clamps the resized session column to preserve the minimum chat width', () => {
     const harness = createLayoutHarness({ width: 700 });
     harness.initialize();
-    const preventDefault = jest.fn();
+    const preventDefault = vi.fn();
 
     for (let step = 0; step < 20; step += 1) {
       harness.resizerEl.dispatchEvent({ type: 'keydown', key: 'ArrowLeft', preventDefault });
@@ -317,7 +320,7 @@ describe('DualPaneLayout', () => {
   it('ignores resize input while compact', () => {
     const harness = createLayoutHarness({ width: 400 });
     harness.initialize();
-    const preventDefault = jest.fn();
+    const preventDefault = vi.fn();
 
     harness.resizerEl.dispatchEvent({ type: 'keydown', key: 'ArrowLeft', preventDefault });
 

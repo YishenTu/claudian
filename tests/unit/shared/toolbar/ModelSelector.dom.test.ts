@@ -1,10 +1,10 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { TEST_CODEX_CATALOG } from '@test/helpers/codexModels';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 import type { ToolbarCallbacks } from '@/features/chat/composer/toolbar/types';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
@@ -149,7 +149,7 @@ it('lists a new session\'s providers in their own column and shows one provider\
       grok: { enabled: false },
     },
   };
-  const onModelChange = jest.fn(async (model: string) => { settings.model = model; });
+  const onModelChange = vi.fn(async (model: string) => { settings.model = model; });
   const callbacks = {
     getSettings: () => settings,
     getUIConfig: () => ({

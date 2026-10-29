@@ -1,8 +1,8 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { setIcon } from 'obsidian';
 
 import type { ConversationMeta } from '@/core/types';
@@ -26,7 +26,7 @@ function createController(conversations?: ConversationMeta[]): SessionBrowser {
 
   return new SessionBrowser({
     plugin: {
-      getConversationList: jest.fn().mockReturnValue(conversations ?? [{
+      getConversationList: vi.fn().mockReturnValue(conversations ?? [{
         id: 'session-1',
         providerId: 'codex',
         title: 'Review architecture',
@@ -42,12 +42,12 @@ function createController(conversations?: ConversationMeta[]): SessionBrowser {
     subagentManager: {},
     getHistoryDropdown: () => null,
     getWelcomeEl: () => null,
-    setWelcomeEl: jest.fn(),
+    setWelcomeEl: vi.fn(),
     getMessagesEl: () => messagesEl,
     getInputEl: () => inputEl,
     getLinkedContentController: () => ({}),
     getImageContextManager: () => ({}),
-    clearQueuedMessage: jest.fn(),
+    clearQueuedMessage: vi.fn(),
     getTitleGenerationService: () => null,
     getExecutionCoordinator: () => null,
   } as unknown as SessionBrowserDeps);
@@ -55,7 +55,7 @@ function createController(conversations?: ConversationMeta[]): SessionBrowser {
 
 describe('SessionBrowser session metadata popover', () => {
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
     document.body.replaceChildren();
   });
 
@@ -73,13 +73,13 @@ describe('SessionBrowser session metadata popover', () => {
     const container = document.createElement('div');
     document.body.append(container);
     controller.renderHistoryDropdown(container, {
-      onSelectConversation: jest.fn().mockResolvedValue(undefined), showMetadataPopover: true,
+      onSelectConversation: vi.fn().mockResolvedValue(undefined), showMetadataPopover: true,
       organization: 'linked-content', language: 'en', contentExists: () => true, contentIsNote: () => false,
       getProviderIcon: () => OPENAI_PROVIDER_ICON, getModelLabel: () => 'GPT-5.1 Codex',
     });
     const content = within(container).getByRole('button', { name: /Review architecture/ });
     const item = content.closest<HTMLElement>('.claudian-history-item')!;
-    jest.spyOn(item, 'getBoundingClientRect').mockReturnValue({
+    vi.spyOn(item, 'getBoundingClientRect').mockReturnValue({
       top: 120, left: 20, right: 220, bottom: 148, width: 200, height: 28, x: 20, y: 120, toJSON: () => ({}),
     });
     expect(item.getAttribute('tabindex')).toBeNull();
@@ -114,7 +114,7 @@ describe('SessionBrowser session metadata popover', () => {
     const container = document.createElement('div');
     document.body.append(container);
     controller.renderHistoryDropdown(container, {
-      onSelectConversation: jest.fn().mockResolvedValue(undefined), showMetadataPopover: true,
+      onSelectConversation: vi.fn().mockResolvedValue(undefined), showMetadataPopover: true,
       getProviderIcon: () => OPENAI_PROVIDER_ICON, getModelLabel: () => 'GPT-5.1 Codex',
     });
     const content = container.querySelector<HTMLElement>('.claudian-history-item-content')!;
@@ -136,7 +136,7 @@ describe('SessionBrowser session metadata popover', () => {
     document.body.append(container);
     const icon = { viewBox: '0 0 16 16', path: 'M0 0h8v8z' };
     controller.renderHistoryDropdown(container, {
-      onSelectConversation: jest.fn().mockResolvedValue(undefined), showMetadataPopover: true,
+      onSelectConversation: vi.fn().mockResolvedValue(undefined), showMetadataPopover: true,
       getProviderIcon: () => ({ ...icon }),
       getModelLabel: conversation => conversation.id === 'one' ? 'Model one' : 'Model two',
     });
@@ -150,7 +150,7 @@ describe('SessionBrowser session metadata popover', () => {
     expect(tooltip.textContent).toContain('Model one');
     expect(tooltip.textContent).toContain('First');
     expect(firstButton.getAttribute('aria-describedby')).toBe(tooltip.id);
-    jest.mocked(setIcon).mockClear();
+    vi.mocked(setIcon).mockClear();
     fireEvent.focusIn(secondButton);
     expect(within(document.body).getByRole('tooltip')).toBe(tooltip);
     expect(tooltip.children).toHaveLength(rows.length);
@@ -160,7 +160,7 @@ describe('SessionBrowser session metadata popover', () => {
     expect(tooltip.textContent).toContain('Model two');
     expect(firstButton.hasAttribute('aria-describedby')).toBe(false);
     expect(secondButton.getAttribute('aria-describedby')).toBe(tooltip.id);
-    expect(jest.mocked(setIcon)).not.toHaveBeenCalled();
+    expect(vi.mocked(setIcon)).not.toHaveBeenCalled();
     expect((await axe(tooltip)).violations).toEqual([]);
     fireEvent.keyDown(secondButton, { key: 'Escape' });
     expect(within(document.body).queryByRole('tooltip')).toBeNull();
@@ -183,7 +183,7 @@ describe('SessionBrowser session metadata popover', () => {
     document.body.append(container);
     const abort = new AbortController();
     controller.renderHistoryDropdown(container, {
-      onSelectConversation: jest.fn().mockResolvedValue(undefined), showMetadataPopover: true, signal: abort.signal,
+      onSelectConversation: vi.fn().mockResolvedValue(undefined), showMetadataPopover: true, signal: abort.signal,
     });
     const button = within(container).getByRole('button', { name: /Review architecture/ });
     fireEvent.focusIn(button);
@@ -192,7 +192,7 @@ describe('SessionBrowser session metadata popover', () => {
     expect(tooltip.isConnected).toBe(false);
     expect(button.hasAttribute('aria-describedby')).toBe(false);
     controller.renderHistoryDropdown(container, {
-      onSelectConversation: jest.fn().mockResolvedValue(undefined), showMetadataPopover: true,
+      onSelectConversation: vi.fn().mockResolvedValue(undefined), showMetadataPopover: true,
     });
     const nextButton = within(container).getByRole('button', { name: /Review architecture/ });
     fireEvent.focusIn(nextButton);
@@ -208,7 +208,7 @@ describe('SessionBrowser session metadata popover', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     controller.renderHistoryDropdown(container, {
-      onSelectConversation: jest.fn().mockResolvedValue(undefined),
+      onSelectConversation: vi.fn().mockResolvedValue(undefined),
       showMetadataPopover: true,
     });
 

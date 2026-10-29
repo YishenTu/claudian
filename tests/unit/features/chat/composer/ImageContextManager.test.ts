@@ -5,12 +5,12 @@ import { Notice } from 'obsidian';
 import type { ImageAttachment } from '@/core/types';
 import { ImageContextManager } from '@/features/chat/composer/ImageContextManager';
 
-const keymap = { pushScope: jest.fn(), popScope: jest.fn() };
+const keymap = { pushScope: vi.fn(), popScope: vi.fn() };
 
 // Mock document.createElementNS for SVG elements created in setupDragAndDrop
 const mockSvgElement = () => {
   const el = createMockEl('svg');
-  el.appendChild = jest.fn();
+  el.appendChild = vi.fn();
   return el;
 };
 
@@ -18,12 +18,12 @@ beforeAll(() => {
   if (typeof globalThis.document === 'undefined') {
     (globalThis as any).document = {};
   }
-  (globalThis.document as any).createElementNS = jest.fn(() => mockSvgElement());
+  (globalThis.document as any).createElementNS = vi.fn(() => mockSvgElement());
 });
 
 function createMockCallbacks() {
   return {
-    onUserImagesChanged: jest.fn(),
+    onUserImagesChanged: vi.fn(),
   };
 }
 
@@ -58,7 +58,7 @@ describe('ImageContextManager', () => {
   let manager: ImageContextManager;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     const { container: c } = createContainerWithInputWrapper();
     container = c;
     inputEl = createMockTextArea();
@@ -75,10 +75,10 @@ describe('ImageContextManager', () => {
       } as File;
       const second = {
         name: 'second.png', type: 'image/png', size: 3,
-        arrayBuffer: jest.fn(async () => new Uint8Array([4, 5, 6]).buffer),
+        arrayBuffer: vi.fn(async () => new Uint8Array([4, 5, 6]).buffer),
       } as unknown as File;
       const pending = manager['handleDrop']({
-        dataTransfer: { files: [first, second] }, preventDefault: jest.fn(), stopPropagation: jest.fn(),
+        dataTransfer: { files: [first, second] }, preventDefault: vi.fn(), stopPropagation: vi.fn(),
       } as unknown as DragEvent);
       const replacement = createImageAttachment({ id: 'replacement' });
       if (action === 'replace-draft') manager.setImages([replacement]);
@@ -178,7 +178,7 @@ describe('ImageContextManager - Private Helpers', () => {
   let callbacks: ReturnType<typeof createMockCallbacks>;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     const { container } = createContainerWithInputWrapper();
     const inputEl = createMockTextArea();
     callbacks = createMockCallbacks();
@@ -276,7 +276,7 @@ describe('ImageContextManager - Private Helpers', () => {
         name: 'huge.png',
         type: 'image/png',
         size: 6 * 1024 * 1024, // 6MB > 5MB limit
-        arrayBuffer: jest.fn(),
+        arrayBuffer: vi.fn(),
       } as unknown as File;
 
       const result = await manager['addImageFromFile'](file, 'paste');
@@ -289,7 +289,7 @@ describe('ImageContextManager - Private Helpers', () => {
         name: 'test.bmp',
         type,
         size: 1024,
-        arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(4)),
+        arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(4)),
       } as unknown as File;
 
       const result = await manager['addImageFromFile'](file, 'paste');
@@ -305,9 +305,9 @@ describe('ImageContextManager - Private Helpers', () => {
         name: 'test.png',
         type: 'image/png',
         size: 5,
-        arrayBuffer: jest.fn().mockResolvedValue(new TextEncoder().encode('hello').buffer),
+        arrayBuffer: vi.fn().mockResolvedValue(new TextEncoder().encode('hello').buffer),
       } as unknown as File;
-      const now = jest.spyOn(Date, 'now').mockReturnValue(testDate().getTime());
+      const now = vi.spyOn(Date, 'now').mockReturnValue(testDate().getTime());
 
       try {
         const result = await manager['addImageFromFile'](file, 'paste');
@@ -342,7 +342,7 @@ describe('ImageContextManager - Private Helpers', () => {
         name: 'test.png',
         type: 'image/png',
         size: 1024,
-        arrayBuffer: jest.fn().mockRejectedValue(new Error('Read failed')),
+        arrayBuffer: vi.fn().mockRejectedValue(new Error('Read failed')),
       } as unknown as File;
 
       const result = await manager['addImageFromFile'](file, 'drop');
@@ -356,7 +356,7 @@ describe('ImageContextManager - Private Helpers', () => {
         name: '',
         type: 'image/png',
         size: 512,
-        arrayBuffer: jest.fn().mockResolvedValue(mockBuffer),
+        arrayBuffer: vi.fn().mockResolvedValue(mockBuffer),
       } as unknown as File;
 
       const callbacks = createMockCallbacks();
@@ -380,7 +380,7 @@ describe('ImageContextManager - Private Helpers', () => {
         name: 'clipboard',
         type,
         size: 5,
-        arrayBuffer: jest.fn().mockResolvedValue(new TextEncoder().encode('hello').buffer),
+        arrayBuffer: vi.fn().mockResolvedValue(new TextEncoder().encode('hello').buffer),
       } as unknown as File;
 
       const result = await manager['addImageFromFile'](file, 'paste');
@@ -394,8 +394,8 @@ describe('ImageContextManager - Private Helpers', () => {
   describe('Drag and Drop handlers', () => {
     it('handleDragEnter should show overlay when dragging files', () => {
       const event = {
-        preventDefault: jest.fn(),
-        stopPropagation: jest.fn(),
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
         dataTransfer: { types: ['Files'] },
       };
 
@@ -408,8 +408,8 @@ describe('ImageContextManager - Private Helpers', () => {
 
     it('handleDragEnter should not show overlay when not dragging files', () => {
       const event = {
-        preventDefault: jest.fn(),
-        stopPropagation: jest.fn(),
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
         dataTransfer: { types: ['text/plain'] },
       };
 
@@ -420,8 +420,8 @@ describe('ImageContextManager - Private Helpers', () => {
 
     it('handleDragOver should prevent default', () => {
       const event = {
-        preventDefault: jest.fn(),
-        stopPropagation: jest.fn(),
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
       };
 
       manager['handleDragOver'](event as any);
@@ -435,8 +435,8 @@ describe('ImageContextManager - Private Helpers', () => {
       manager['dropOverlay']?.addClass('visible');
 
       const event = {
-        preventDefault: jest.fn(),
-        stopPropagation: jest.fn(),
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
         clientX: -1, // Outside bounds
         clientY: -1,
       };
@@ -449,12 +449,12 @@ describe('ImageContextManager - Private Helpers', () => {
 
     it('handleDrop should hide overlay and process image files', async () => {
       manager['dropOverlay']?.addClass('visible');
-      const addImageSpy = jest.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
+      const addImageSpy = vi.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
 
       const mockFile = { type: 'image/png', name: 'test.png', size: 1024 };
       const event = {
-        preventDefault: jest.fn(),
-        stopPropagation: jest.fn(),
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
         dataTransfer: { files: { length: 1, 0: mockFile, [Symbol.iterator]: function* () { yield mockFile; } } },
       };
 
@@ -468,13 +468,13 @@ describe('ImageContextManager - Private Helpers', () => {
     });
 
     it('handleDrop should skip non-image files', async () => {
-      const addImageSpy = jest.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
-      jest.spyOn(manager as any, 'isImageFile').mockReturnValue(false);
+      const addImageSpy = vi.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
+      vi.spyOn(manager as any, 'isImageFile').mockReturnValue(false);
 
       const mockFile = { type: 'application/pdf', name: 'doc.pdf', size: 1024 };
       const event = {
-        preventDefault: jest.fn(),
-        stopPropagation: jest.fn(),
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
         dataTransfer: { files: { length: 1, 0: mockFile } },
       };
 
@@ -486,8 +486,8 @@ describe('ImageContextManager - Private Helpers', () => {
 
     it('handleDrop should handle no files gracefully', async () => {
       const event = {
-        preventDefault: jest.fn(),
-        stopPropagation: jest.fn(),
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
         dataTransfer: { files: undefined },
       };
 
@@ -500,11 +500,11 @@ describe('ImageContextManager - Private Helpers', () => {
   describe('Paste handler', () => {
 
     it('paste handler should process image items', async () => {
-      const addImageSpy = jest.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
+      const addImageSpy = vi.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
       const mockFile = { name: 'pasted.png', type: 'image/png', size: 1024 };
       const pasteEvent = {
         type: 'paste',
-        preventDefault: jest.fn(),
+        preventDefault: vi.fn(),
         clipboardData: {
           items: {
             length: 1,
@@ -526,12 +526,12 @@ describe('ImageContextManager - Private Helpers', () => {
     });
 
     it('paste handler should attach every pasted image', async () => {
-      const addImageSpy = jest.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
+      const addImageSpy = vi.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
       const first = { name: 'first.jpg', type: 'image/jpeg', size: 1024 };
       const second = { name: 'second.png', type: 'image/png', size: 2048 };
       const pasteEvent = {
         type: 'paste',
-        preventDefault: jest.fn(),
+        preventDefault: vi.fn(),
         clipboardData: {
           items: {
             length: 3,
@@ -551,10 +551,10 @@ describe('ImageContextManager - Private Helpers', () => {
     });
 
     it('paste handler should ignore non-image items', async () => {
-      const addImageSpy = jest.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
+      const addImageSpy = vi.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
       const pasteEvent = {
         type: 'paste',
-        preventDefault: jest.fn(),
+        preventDefault: vi.fn(),
         clipboardData: {
           items: {
             length: 1,
@@ -575,10 +575,10 @@ describe('ImageContextManager - Private Helpers', () => {
     });
 
     it('paste handler should handle null clipboardData', async () => {
-      const addImageSpy = jest.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
+      const addImageSpy = vi.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
       const pasteEvent = {
         type: 'paste',
-        preventDefault: jest.fn(),
+        preventDefault: vi.fn(),
         clipboardData: null,
       };
 
@@ -598,11 +598,11 @@ describe('ImageContextManager - Private Helpers', () => {
         name: 'pasted.png',
         type: 'image/png',
         size: 1024,
-        arrayBuffer: jest.fn(() => arrayBuffer),
+        arrayBuffer: vi.fn(() => arrayBuffer),
       };
       const pasteEvent = {
         type: 'paste',
-        preventDefault: jest.fn(),
+        preventDefault: vi.fn(),
         clipboardData: {
           items: {
             length: 1,
@@ -652,14 +652,14 @@ describe('ImageContextManager - Private Helpers', () => {
 
     it('opens an image preview from the rendered attachment control and closes it on destroy', () => {
       const overlayEl = createMockEl();
-      const removeOverlay = jest.spyOn(overlayEl, 'remove');
-      const mockBody = { createDiv: jest.fn().mockReturnValue(overlayEl) };
+      const removeOverlay = vi.spyOn(overlayEl, 'remove');
+      const mockBody = { createDiv: vi.fn().mockReturnValue(overlayEl) };
       const originalDocument = globalThis.document;
       (globalThis as any).document = {
         activeElement: null,
         body: mockBody,
-        addEventListener: jest.fn(),
-        removeEventListener: jest.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
       };
 
       try {
@@ -733,7 +733,7 @@ describe('ImageContextManager - Private Helpers', () => {
       const trayEl = mgr['contextTray']['containerEl'];
       const firstChip = trayEl.querySelector('.claudian-context-chip--image');
       const removeEl = firstChip.querySelector('.claudian-context-chip-remove');
-      removeEl.dispatchEvent({ type: 'click', stopPropagation: jest.fn() });
+      removeEl.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
 
       expect(mgr.getAttachedImages()).toHaveLength(1);
       expect(mgr.getAttachedImages()[0].id).toBe('img-2');

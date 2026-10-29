@@ -1,4 +1,5 @@
 import { createMockEl } from '@test/helpers/MockElement';
+import type { Mock } from 'vitest';
 
 import { ComposerDropdownController } from '@/shared/composer-dropdown/ComposerDropdownController';
 import type {
@@ -7,17 +8,19 @@ import type {
   ComposerTriggerMatch,
 } from '@/shared/composer-dropdown/types';
 
+
+
 function createInput(): HTMLTextAreaElement {
   const attributes = new Map<string, string>();
   return {
     value: '',
     selectionStart: 0,
     selectionEnd: 0,
-    focus: jest.fn(),
+    focus: vi.fn(),
     getAttribute: (name: string) => attributes.get(name) ?? null,
-    setAttribute: jest.fn((name: string, value: string) => { attributes.set(name, value); }),
-    removeAttribute: jest.fn((name: string) => { attributes.delete(name); }),
-    getBoundingClientRect: jest.fn().mockReturnValue({ top: 0, left: 0, width: 300 }),
+    setAttribute: vi.fn((name: string, value: string) => { attributes.set(name, value); }),
+    removeAttribute: vi.fn((name: string) => { attributes.delete(name); }),
+    getBoundingClientRect: vi.fn().mockReturnValue({ top: 0, left: 0, width: 300 }),
     ownerDocument: { defaultView: { innerHeight: 800 } },
   } as unknown as HTMLTextAreaElement;
 }
@@ -26,7 +29,7 @@ function key(key: string): KeyboardEvent {
   return {
     isComposing: false,
     key,
-    preventDefault: jest.fn(),
+    preventDefault: vi.fn(),
   } as unknown as KeyboardEvent;
 }
 
@@ -44,7 +47,7 @@ function source(
       if (/\s/.test(query)) return null;
       return { atInputStart: index === 0, end: cursor, query, start: index, trigger };
     },
-    load: jest.fn().mockResolvedValue(items),
+    load: vi.fn().mockResolvedValue(items),
     select: item => item.kind === 'value'
       ? { kind: 'replace', text: item.replacement }
       : { kind: 'none' },
@@ -56,14 +59,14 @@ describe('ComposerDropdownController', () => {
     const input = createInput();
     let resolve!: (items: readonly ComposerDropdownItem[]) => void;
     const delayed = source('@', []);
-    (delayed.load as jest.Mock).mockReturnValue(new Promise(done => { resolve = done; }));
+    (delayed.load as Mock).mockReturnValue(new Promise(done => { resolve = done; }));
     const controller = new ComposerDropdownController(createMockEl(), input, [delayed]);
 
     input.value = '@a';
     input.selectionStart = input.selectionEnd = 2;
     controller.handleInputChange();
     expect(controller.isVisible()).toBe(true);
-    const signal = (delayed.load as jest.Mock).mock.calls[0][1] as AbortSignal;
+    const signal = (delayed.load as Mock).mock.calls[0][1] as AbortSignal;
     controller.hide();
     resolve([{ id: 'late', kind: 'value', label: '@late', replacement: '@late ' }]);
     await Promise.resolve();
@@ -181,7 +184,7 @@ describe('ComposerDropdownController', () => {
       resolveFirst = resolve;
     });
     const delayed = source('@', []);
-    (delayed.load as jest.Mock)
+    (delayed.load as Mock)
       .mockReturnValueOnce(first)
       .mockResolvedValueOnce([
         { id: 'new', kind: 'value', label: '@new', replacement: '@new ' },
@@ -191,7 +194,7 @@ describe('ComposerDropdownController', () => {
     input.value = '@a';
     input.selectionStart = input.selectionEnd = 2;
     controller.handleInputChange();
-    const firstSignal = (delayed.load as jest.Mock).mock.calls[0][1] as AbortSignal;
+    const firstSignal = (delayed.load as Mock).mock.calls[0][1] as AbortSignal;
     input.value = '@b';
     input.selectionStart = input.selectionEnd = 2;
     controller.handleInputChange();
@@ -209,7 +212,7 @@ describe('ComposerDropdownController', () => {
     let resolve!: (items: readonly ComposerDropdownItem[]) => void;
     const pending = new Promise<readonly ComposerDropdownItem[]>(done => { resolve = done; });
     const delayed = source('/', []);
-    (delayed.load as jest.Mock).mockReturnValue(pending);
+    (delayed.load as Mock).mockReturnValue(pending);
     const controller = new ComposerDropdownController(createMockEl(), input, [delayed]);
 
     input.value = '/';

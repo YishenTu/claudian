@@ -2,8 +2,8 @@ import { createMockEl } from '@test/helpers/MockElement';
 
 import { ComposerContextTray } from '@/features/chat/composer/ComposerContextTray';
 
-jest.mock('obsidian', () => ({
-  setIcon: jest.fn(),
+vi.mock('obsidian', () => ({
+  setIcon: vi.fn(),
 }));
 
 describe('ComposerContextTray', () => {
@@ -12,7 +12,7 @@ describe('ComposerContextTray', () => {
     const tray = new ComposerContextTray(containerEl as unknown as HTMLElement);
     const item = { id: 'editor-selection', kind: 'selection' as const, label: '3 lines · Draft.md' };
 
-    tray.setItems('editor-selection', [{ ...item, onRemove: jest.fn() }]);
+    tray.setItems('editor-selection', [{ ...item, onRemove: vi.fn() }]);
     expect(containerEl.querySelector('.claudian-context-chip-remove')).not.toBeNull();
 
     tray.setItems('editor-selection', [item]);
@@ -23,7 +23,7 @@ describe('ComposerContextTray', () => {
 
   it('releases its observer when construction fails after observation starts', () => {
     const containerEl = createMockEl();
-    const disconnect = jest.fn();
+    const disconnect = vi.fn();
     const ResizeObserverConstructor = class {
       observe(): void {}
       disconnect(): void {
@@ -53,21 +53,21 @@ describe('ComposerContextTray', () => {
       id: 'image-1',
       kind: 'image',
       label: 'Image',
-      onRemove: jest.fn(),
+      onRemove: vi.fn(),
     }]);
     tray.setItems('editor-selection', [{
       id: 'editor-selection',
       kind: 'selection',
       label: '3 lines · Draft.md',
       icon: 'text-select',
-      onRemove: jest.fn(),
+      onRemove: vi.fn(),
     }]);
     tray.setItems('browser-selection', [{
       id: 'browser-selection',
       kind: 'selection',
       label: 'Selection · example.com',
       icon: 'globe',
-      onRemove: jest.fn(),
+      onRemove: vi.fn(),
     }]);
 
     expect(containerEl.hasClass('has-content')).toBe(true);
@@ -82,8 +82,8 @@ describe('ComposerContextTray', () => {
 
   it('uses separate keyboard-focusable controls for activation and removal', () => {
     const containerEl = createMockEl();
-    const onActivate = jest.fn();
-    const onRemove = jest.fn();
+    const onActivate = vi.fn();
+    const onRemove = vi.fn();
     const tray = new ComposerContextTray(containerEl as unknown as HTMLElement);
 
     tray.setItems('editor-selection', [{
@@ -118,7 +118,7 @@ describe('ComposerContextTray', () => {
       id: `image-${index}`,
       kind: 'image' as const,
       label: `image-${index}.png`,
-      onRemove: jest.fn(),
+      onRemove: vi.fn(),
     })));
 
     const chips = containerEl.querySelectorAll('.claudian-context-chip');
@@ -148,19 +148,19 @@ describe('ComposerContextTray', () => {
       id: 'browser',
       kind: 'selection',
       label: 'Selection · example.com',
-      onRemove: jest.fn(),
+      onRemove: vi.fn(),
     }]);
     tray.setItems('editor-selection', [{
       id: 'selection',
       kind: 'selection',
       label: '1 line selected',
-      onRemove: jest.fn(),
+      onRemove: vi.fn(),
     }]);
     tray.setItems('images', [{
       id: 'image',
       kind: 'image',
       label: 'Image',
-      onRemove: jest.fn(),
+      onRemove: vi.fn(),
     }]);
 
     const chips = containerEl.querySelectorAll('.claudian-context-chip');
@@ -179,12 +179,12 @@ describe('ComposerContextTray', () => {
   it('measures rows from rendered chips only, ignoring chips a presentation hides', () => {
     const containerEl = createMockEl();
     const tray = new ComposerContextTray(containerEl as unknown as HTMLElement);
-    tray.setItems('editor-selection', [{ id: 'selection', kind: 'selection', label: '1 line selected', onRemove: jest.fn() }]);
+    tray.setItems('editor-selection', [{ id: 'selection', kind: 'selection', label: '1 line selected', onRemove: vi.fn() }]);
     tray.setItems('images', Array.from({ length: 3 }, (_, index) => ({
       id: `image-${index}`,
       kind: 'image' as const,
       label: `image-${index}.png`,
-      onRemove: jest.fn(),
+      onRemove: vi.fn(),
     })));
 
     // Hidden elements report no offset parent and a zero position.
@@ -217,7 +217,7 @@ describe('ComposerContextTray', () => {
       id: 'canvas-selection',
       kind: 'selection',
       label: '2 nodes · Board.canvas',
-      onRemove: jest.fn(),
+      onRemove: vi.fn(),
     }]);
     tray.clearItems('canvas-selection');
 

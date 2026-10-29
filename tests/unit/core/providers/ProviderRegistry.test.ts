@@ -14,12 +14,12 @@ describe('ProviderRegistry', () => {
     ProviderWorkspaceRegistry.clear();
     ProviderWorkspaceRegistry.setServices('claude', {
     } as any);
-    jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
+    vi.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
       .mockResolvedValue(undefined);
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('returns capabilities for the default provider', () => {
@@ -224,7 +224,7 @@ describe('ProviderRegistry', () => {
         },
       },
     } as any);
-    const callback = jest.fn();
+    const callback = vi.fn();
 
     await service.generateTitle('conv-1', 'hello', callback);
 
@@ -247,7 +247,7 @@ describe('ProviderRegistry', () => {
       },
     } as any);
 
-    const callback = jest.fn();
+    const callback = vi.fn();
     await service.generateTitle('conv-1', 'hello', callback);
 
     expect(ProviderWorkspaceRegistry.ensureInitialized).not.toHaveBeenCalled();
@@ -270,7 +270,7 @@ describe('ProviderRegistry', () => {
       },
     } as any);
 
-    const callback = jest.fn();
+    const callback = vi.fn();
     await service.generateTitle('conv-1', 'hello', callback);
 
     expect(ProviderWorkspaceRegistry.ensureInitialized).not.toHaveBeenCalled();
@@ -289,7 +289,7 @@ describe('ProviderRegistry', () => {
           codex: { enabled: true, visibleModels: [], discoveredModels: TEST_CODEX_CATALOG },
         },
       };
-      const callback = jest.fn();
+      const callback = vi.fn();
       const service = ProviderRegistry.createTitleGenerationService({ settings } as any);
       await service.generateTitle('conversation', 'hello', callback);
       expect(ProviderWorkspaceRegistry.ensureInitialized).not.toHaveBeenCalled();
@@ -308,12 +308,12 @@ describe('ProviderRegistry', () => {
         codex: { enabled: true, visibleModels: [TEST_CODEX_MODEL], discoveredModels: TEST_CODEX_CATALOG },
       },
     };
-    jest.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockImplementation(async () => {
+    vi.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockImplementation(async () => {
       settings.providerConfigs.codex.enabled = false;
     });
-    const createBackend = jest.spyOn(ProviderRegistry, 'createExecutionBackend');
+    const createBackend = vi.spyOn(ProviderRegistry, 'createExecutionBackend');
     const service = ProviderRegistry.createTitleGenerationService({ settings } as any);
-    const callback = jest.fn();
+    const callback = vi.fn();
     await service.generateTitle('conversation', 'hello', callback);
     expect(createBackend).not.toHaveBeenCalled();
     expect(callback).toHaveBeenCalledWith('conversation', {

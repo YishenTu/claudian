@@ -16,15 +16,15 @@ import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/prov
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 
-// Real CLI probing, server startup and cleanup can exceed Jest's default on Windows runners.
-jest.setTimeout(45_000);
+// Real CLI probing, server startup and cleanup can exceed the default test timeout on Windows runners.
+vi.setConfig({ testTimeout: 45_000 });
 // A cold first turn includes the version probe and the HTTP server's 10-second readiness budget.
 const NATIVE_STARTUP_TIMEOUT_MS = 40_000;
 
 // Keep the native probe real, with the same cold-launch allowance as OpencodeSharedServer.
 // Explicit probe deadlines still apply; this suite does not test the production default deadline.
-jest.mock('@/core/process/ProcessProbe', () => {
-  const actual: typeof ProcessProbe = jest.requireActual('@/core/process/ProcessProbe');
+vi.mock('@/core/process/ProcessProbe', async () => {
+  const actual: typeof ProcessProbe = (await vi.importActual<typeof import('@/core/process/ProcessProbe')>('@/core/process/ProcessProbe'));
   return {
     ...actual,
     runProcessProbe: (options: ManagedStdioProcessOptions, timeoutMs = 30_000) => actual.runProcessProbe(options, timeoutMs),
@@ -131,8 +131,9 @@ const server = http.createServer(async (req, res) => {
     const data = ordered.slice(start, start + limit);
     const encode = (id, direction) => Buffer.from(JSON.stringify({ id, order, direction })).toString('base64url');
     if (process.env.HOLD_HISTORY) {
-      if (process.env.CLOSE_EVENTS_ON_HOLD === '1') feed?.end();
       require('node:fs').writeFileSync(process.env.HOLD_HISTORY, '');
+      // Publish the barrier before stream closure can trigger process shutdown.
+      if (process.env.CLOSE_EVENTS_ON_HOLD === '1') feed?.end();
       while (require('node:fs').existsSync(process.env.HOLD_HISTORY)) await new Promise(resolve => setTimeout(resolve, 10));
     }
     res.end(JSON.stringify({ data, cursor: { previous: data.length ? encode(data[0].id, 'previous') : null, next: data.length ? encode(data.at(-1).id, 'next') : null } })); return;
@@ -840,7 +841,7 @@ it('reports a disconnected event stream as a failed turn instead of successful c
 });
 
 it('allows a slash command to wait for approval beyond the ordinary HTTP deadline', async () => {
-  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'clearImmediate', 'performance'] });
+  vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'clearImmediate', 'performance'] });
   let reached!: () => void, release!: () => void;
   const requested = new Promise<void>(resolve => { reached = resolve; });
   const gate = new Promise<void>(resolve => { release = resolve; });
@@ -849,11 +850,11 @@ it('allows a slash command to wait for approval beyond the ordinary HTTP deadlin
     const events: ProviderExecutionEvent[] = [];
     const done = (async () => { for await (const event of f.session.execute(request('/review slow')).events) events.push(event); })();
     await requested;
-    await jest.advanceTimersByTimeAsync(31_000);
+    await vi.advanceTimersByTimeAsync(31_000);
     release();
     await done;
     expect(events.at(-1)?.type).toBe('turn_completed');
-  } finally { release(); jest.useRealTimers(); await f.dispose(); }
+  } finally { release(); vi.useRealTimers(); await f.dispose(); }
 });
 
 it('keeps repeated native tool IDs distinct across assistant messages and turns', async () => {

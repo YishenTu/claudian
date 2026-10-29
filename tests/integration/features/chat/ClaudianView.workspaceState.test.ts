@@ -12,20 +12,20 @@ test('a later delivered view snapshot supersedes a restore still loading metadat
   let restored: AppTabManagerState | null = null;
   view.tabManager = {
     getActiveTab: () => null,
-    restoreState: jest.fn(async (state: AppTabManagerState) => { restored = state; }),
+    restoreState: vi.fn(async (state: AppTabManagerState) => { restored = state; }),
     getPersistedState: () => restored,
   };
-  const persistence = { update: jest.fn(), flush: jest.fn().mockResolvedValue(undefined) };
+  const persistence = { update: vi.fn(), flush: vi.fn().mockResolvedValue(undefined) };
   view.tabWorkspace.persistence = persistence;
   view.plugin = {
     ...view.plugin,
     settings: { restoreTabsOnStartup: true },
-    ensureConversationMetadataLoaded: jest.fn(async () => {
+    ensureConversationMetadataLoaded: vi.fn(async () => {
       markLoading();
       await new Promise<void>(resolve => { finishLoad = resolve; });
     }),
   };
-  for (const name of ['syncProviderBrandColor', 'updateTabBar', 'notifyConversationNavigationChanged']) view[name] = jest.fn();
+  for (const name of ['syncProviderBrandColor', 'updateTabBar', 'notifyConversationNavigationChanged']) view[name] = vi.fn();
   const firstDelivery = view.setState({ tabWorkspace: { version: 1, ...earlier } }, { history: false });
   await loading;
   const secondDelivery = view.setState({ tabWorkspace: { version: 1, ...current } }, { history: false });

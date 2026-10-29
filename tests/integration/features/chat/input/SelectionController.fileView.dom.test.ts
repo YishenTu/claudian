@@ -1,6 +1,6 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { type App, FileView, ItemView, TextFileView, type TFile, type WorkspaceLeaf } from 'obsidian';
 
 import { appendEditorContext } from '@/core/prompt/editorContext';
@@ -126,7 +126,7 @@ afterEach(() => {
   active = undefined;
   document.getSelection()?.removeAllRanges();
   document.body.replaceChildren();
-  jest.useRealTimers();
+  vi.useRealTimers();
 });
 
 it.each([false, true])('attaches a selection from any text file view with its exact source line (reverse=%s)', async reverse => {
@@ -178,7 +178,7 @@ it('attaches a selection from a non-text file view without a line range', () => 
 });
 
 it('keeps the selection while focus moves into the chat, then clears it on deselection', () => {
-  jest.useFakeTimers();
+  vi.useFakeTimers();
   const view = new SourceViewer(SOURCE);
   active = fixture(view);
   active.select(view.code, SOURCE.indexOf('value ='), SOURCE.indexOf('print(value)'));
@@ -187,7 +187,7 @@ it('keeps the selection while focus moves into the chat, then clears it on desel
   active.input.focus();
   document.getSelection()?.removeAllRanges();
   active.activate(new PanelView(NO_LEAF));
-  jest.advanceTimersByTime(2000);
+  vi.advanceTimersByTime(2000);
   active.controller.poll();
   expect(active.selections.capture().editorSelection).toMatchObject({ selectedText: 'value = "中文"\n', startLine: 2 });
 
@@ -217,7 +217,7 @@ it('gates the highlight style on only while the chat shows a mock selection high
   Object.assign(window, { Highlight: class { constructor(...ranges: Range[]) { Object.assign(this, { ranges }); } } });
   const highlightStyled = () => document.body.classList.contains('claudian-selection-highlight-active');
   try {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const view = new SourceViewer(SOURCE);
     active = fixture(view);
     active.select(view.code, SOURCE.indexOf('value ='), SOURCE.indexOf('print(value)'));
@@ -230,7 +230,7 @@ it('gates the highlight style on only while the chat shows a mock selection high
     expect(highlightStyled()).toBe(true);
 
     active.input.blur();
-    jest.advanceTimersByTime(2000);
+    vi.advanceTimersByTime(2000);
     active.controller.poll();
     expect(active.selections.capture()).toEqual({});
     expect(highlights.has('claudian-selection')).toBe(false);

@@ -1,24 +1,33 @@
+const actualModule0 = await vi.importActual<typeof fs>('node:fs/promises');
+const actualModule1 = await vi.importActual<typeof fs>('node:fs/promises');
+const actualModule2 = await vi.importActual<typeof fs>('node:fs/promises');
+const actualModule3 = await vi.importActual<typeof fs>('node:fs/promises');
+const actualModule4 = await vi.importActual<typeof fs>('node:fs/promises');
+const actualModule5 = await vi.importActual<typeof fs>('node:fs/promises');
+const actualModule6 = await vi.importActual<typeof fs>('node:fs/promises');
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
 import type { App } from 'obsidian';
+import type { Mocked } from 'vitest';
 
 import {
   ManagedResourceCollisionError,
   VaultFileAdapter,
 } from '@/core/storage/VaultFileAdapter';
 
-jest.mock('node:fs/promises', () => {
-  const actual = jest.requireActual<typeof fs>('node:fs/promises');
+
+vi.mock('node:fs/promises', async () => {
+  const actual = (await vi.importActual<typeof fs>('node:fs/promises'));
   return {
     ...actual,
-    link: jest.fn(actual.link),
-    lstat: jest.fn(actual.lstat),
-    mkdir: jest.fn(actual.mkdir),
-    rename: jest.fn(actual.rename),
-    symlink: jest.fn(actual.symlink),
-    writeFile: jest.fn(actual.writeFile),
+    link: vi.fn(actual.link),
+    lstat: vi.fn(actual.lstat),
+    mkdir: vi.fn(actual.mkdir),
+    rename: vi.fn(actual.rename),
+    symlink: vi.fn(actual.symlink),
+    writeFile: vi.fn(actual.writeFile),
   };
 });
 
@@ -52,7 +61,7 @@ function createDesktopFsAdapter(root: string): any {
 }
 
 describe('VaultFileAdapter', () => {
-  let mockAdapter: jest.Mocked<any>;
+  let mockAdapter: Mocked<any>;
   let vaultAdapter: VaultFileAdapter;
 
   const mockApp: Partial<App> = {
@@ -61,17 +70,17 @@ describe('VaultFileAdapter', () => {
 
   beforeEach(() => {
     mockAdapter = {
-      exists: jest.fn(),
-      read: jest.fn(),
-      write: jest.fn(),
-      remove: jest.fn(),
-      rename: jest.fn(),
-      list: jest.fn(),
-      mkdir: jest.fn(),
-      rmdir: jest.fn(),
-      stat: jest.fn(),
-      trashSystem: jest.fn(),
-      trashLocal: jest.fn(),
+      exists: vi.fn(),
+      read: vi.fn(),
+      write: vi.fn(),
+      remove: vi.fn(),
+      rename: vi.fn(),
+      list: vi.fn(),
+      mkdir: vi.fn(),
+      rmdir: vi.fn(),
+      stat: vi.fn(),
+      trashSystem: vi.fn(),
+      trashLocal: vi.fn(),
     };
 
     mockApp.vault = { adapter: mockAdapter } as any;
@@ -258,7 +267,7 @@ describe('VaultFileAdapter', () => {
 
     it('handles folder with only subfolders and no files', async () => {
       mockAdapter.exists.mockResolvedValue(true);
-      const mockList = jest.fn();
+      const mockList = vi.fn();
       mockList
         .mockResolvedValueOnce({ files: [], folders: ['sub'] })
         .mockResolvedValueOnce({ files: [], folders: [] });
@@ -272,7 +281,7 @@ describe('VaultFileAdapter', () => {
 
     it('handles deeply nested structure', async () => {
       mockAdapter.exists.mockResolvedValue(true);
-      const mockList = jest.fn();
+      const mockList = vi.fn();
       mockList
         .mockResolvedValueOnce({ files: ['a.txt'], folders: ['b'] })
         .mockResolvedValueOnce({ files: ['b/b.txt'], folders: ['b/c'] })
@@ -407,7 +416,7 @@ describe('VaultFileAdapter', () => {
 
     it('moves a complete package without requiring hard-link support', async () => {
       const vaultPath = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-vault-'));
-      const link = jest.mocked(fs.link).mockRejectedValue(Object.assign(new Error('unsupported'), { code: 'ENOTSUP' }));
+      const link = vi.mocked(fs.link).mockRejectedValue(Object.assign(new Error('unsupported'), { code: 'ENOTSUP' }));
       try {
         await fs.mkdir(path.join(vaultPath, '.agents/skills/old/assets'), { recursive: true });
         await fs.writeFile(path.join(vaultPath, '.agents/skills/old/assets/example.txt'), 'asset');
@@ -423,14 +432,14 @@ describe('VaultFileAdapter', () => {
           .resolves.toBe('skill');
         await expect(fs.stat(path.join(vaultPath, '.agents/skills/old'))).rejects.toMatchObject({ code: 'ENOENT' });
       } finally {
-        link.mockReset().mockImplementation(jest.requireActual<typeof fs>('node:fs/promises').link);
+        link.mockReset().mockImplementation(actualModule0.link);
         await fs.rm(vaultPath, { recursive: true, force: true });
       }
     });
 
     it('leaves the whole source in place when the directory move fails', async () => {
       const vaultPath = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-vault-'));
-      const rename = jest.mocked(fs.rename).mockRejectedValue(
+      const rename = vi.mocked(fs.rename).mockRejectedValue(
         Object.assign(new Error('denied at /private/vault'), { code: 'EPERM' }),
       );
       try {
@@ -451,15 +460,15 @@ describe('VaultFileAdapter', () => {
           .resolves.toBe('skill');
         await expect(fs.stat(path.join(vaultPath, '.agents/skills/new'))).rejects.toMatchObject({ code: 'ENOENT' });
       } finally {
-        rename.mockReset().mockImplementation(jest.requireActual<typeof fs>('node:fs/promises').rename);
+        rename.mockReset().mockImplementation(actualModule1.rename);
         await fs.rm(vaultPath, { recursive: true, force: true });
       }
     });
 
     it.each(['empty', 'nonempty', 'racing-nonempty', 'racing-nonempty-EPERM'])('preserves a %s destination', async kind => {
       const vaultPath = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-vault-'));
-      const renameDirectory = jest.requireActual<typeof fs>('node:fs/promises').rename;
-      const rename = jest.mocked(fs.rename);
+      const renameDirectory = actualModule2.rename;
+      const rename = vi.mocked(fs.rename);
       try {
         const source = path.join(vaultPath, '.agents/skills/old');
         const target = path.join(vaultPath, '.agents/skills/new');
@@ -488,7 +497,7 @@ describe('VaultFileAdapter', () => {
         const contents = await Promise.all((await fs.readdir(target)).map(name => fs.readFile(path.join(target, name), 'utf8')));
         expect(contents).toEqual(kind === 'empty' ? [] : ['racer']);
       } finally {
-        rename.mockReset().mockImplementation(jest.requireActual<typeof fs>('node:fs/promises').rename);
+        rename.mockReset().mockImplementation(actualModule3.rename);
         await fs.rm(vaultPath, { recursive: true, force: true });
       }
     });
@@ -532,8 +541,8 @@ describe('VaultFileAdapter', () => {
       files = new VaultFileAdapter({
         vault: { adapter: createDesktopFsAdapter(vaultPath) },
       } as unknown as App);
-      jest.mocked(fs.lstat).mockClear();
-      jest.mocked(fs.mkdir).mockClear();
+      vi.mocked(fs.lstat).mockClear();
+      vi.mocked(fs.mkdir).mockClear();
     });
 
     afterEach(async () => {
@@ -550,7 +559,7 @@ describe('VaultFileAdapter', () => {
     });
 
     it('validates an existing folder chain once', async () => {
-      await jest.requireActual<typeof fs>('node:fs/promises')
+      await actualModule4
         .mkdir(path.join(vaultPath, '.agents/skills/package/assets/nested/images'), { recursive: true });
 
       await files.ensureManagedFolder('.agents/skills/package/assets/nested/images');
@@ -581,7 +590,7 @@ describe('VaultFileAdapter', () => {
 
     it('rejects an exclusive directory claim when the target already exists', async () => {
       await fs.mkdir(path.join(vaultPath, '.agents/skills/existing/kept'), { recursive: true });
-      jest.mocked(fs.mkdir).mockClear();
+      vi.mocked(fs.mkdir).mockClear();
 
       await expect(files.createManagedFolderExclusive('.agents/skills/existing'))
         .rejects.toBeInstanceOf(ManagedResourceCollisionError);
@@ -591,8 +600,8 @@ describe('VaultFileAdapter', () => {
 
     it('reports a race-lost exclusive directory claim as a collision', async () => {
       await fs.mkdir(path.join(vaultPath, '.agents/skills'), { recursive: true });
-      const actual = jest.requireActual<typeof fs>('node:fs/promises');
-      jest.mocked(fs.mkdir).mockImplementationOnce(async (target, options) => {
+      const actual = actualModule5;
+      vi.mocked(fs.mkdir).mockImplementationOnce(async (target, options) => {
         // Another writer claims the folder between the existence check and the claim.
         await actual.mkdir(target);
         return actual.mkdir(target, options);
@@ -604,7 +613,7 @@ describe('VaultFileAdapter', () => {
 
     it('propagates an exclusive claim failure when no competing target exists', async () => {
       await fs.mkdir(path.join(vaultPath, '.agents/skills'), { recursive: true });
-      jest.mocked(fs.mkdir).mockRejectedValueOnce(Object.assign(new Error('Permission denied'), { code: 'EACCES' }));
+      vi.mocked(fs.mkdir).mockRejectedValueOnce(Object.assign(new Error('Permission denied'), { code: 'EACCES' }));
 
       await expect(files.createManagedFolderExclusive('.agents/skills/failing'))
         .rejects.toThrow('Could not exclusively create');
@@ -637,8 +646,8 @@ describe('VaultFileAdapter', () => {
     });
 
     it('keeps the previous content when a write fails partway', async () => {
-      const actual = jest.requireActual<typeof fs>('node:fs/promises');
-      jest.mocked(fs.writeFile).mockImplementationOnce(async file => {
+      const actual = actualModule6;
+      vi.mocked(fs.writeFile).mockImplementationOnce(async file => {
         await actual.writeFile(file, 'torn');
         throw new Error('ENOSPC: no space left on device');
       });
@@ -711,7 +720,7 @@ describe('VaultFileAdapter', () => {
     });
 
     afterEach(async () => {
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
       await fs.rm(vaultPath, { recursive: true, force: true });
     });
 
@@ -778,7 +787,7 @@ describe('VaultFileAdapter', () => {
       await fs.mkdir(path.join(vaultPath, '.agents/skills'), { recursive: true });
       const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
       Object.defineProperty(process, 'platform', { value: 'win32' });
-      const symlink = jest.mocked(fs.symlink).mockResolvedValueOnce(undefined);
+      const symlink = vi.mocked(fs.symlink).mockResolvedValueOnce(undefined);
       try {
         await files.createFolderLink('.claude/skills', '.agents/skills');
       } finally {

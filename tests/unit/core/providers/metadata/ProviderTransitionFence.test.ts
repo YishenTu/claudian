@@ -63,8 +63,8 @@ describe('ProviderTransitionFence', () => {
     });
     const releasedController = new AbortController();
     const abortedController = new AbortController();
-    const releasedRemove = jest.spyOn(releasedController.signal, 'removeEventListener');
-    const abortedRemove = jest.spyOn(abortedController.signal, 'removeEventListener');
+    const releasedRemove = vi.spyOn(releasedController.signal, 'removeEventListener');
+    const abortedRemove = vi.spyOn(abortedController.signal, 'removeEventListener');
     fence.beginTransition();
 
     const released = fence.waitUntilAvailable(releasedController.signal);

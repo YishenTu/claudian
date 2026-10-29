@@ -1,8 +1,8 @@
 import { NavigationSidebar } from '@/features/chat/navigation/NavigationSidebar';
 
 // Mock obsidian
-jest.mock('obsidian', () => ({
-  setIcon: jest.fn((el: any, iconName: string) => {
+vi.mock('obsidian', () => ({
+  setIcon: vi.fn((el: any, iconName: string) => {
     el.setAttribute('data-icon', iconName);
   }),
 }));
@@ -152,7 +152,7 @@ class MockElement {
   }
 
   click(): void {
-    this.dispatchEvent({ type: 'click', stopPropagation: jest.fn(), preventDefault: jest.fn() });
+    this.dispatchEvent({ type: 'click', stopPropagation: vi.fn(), preventDefault: vi.fn() });
   }
 
   empty(): void {
@@ -217,7 +217,7 @@ describe('NavigationSidebar', () => {
   let mutationCallback: MutationCallback | null;
 
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     originalWindow = (globalThis as { window?: Window }).window;
     originalMutationObserver = (globalThis as { MutationObserver?: typeof MutationObserver }).MutationObserver;
     mutationCallback = null;
@@ -273,17 +273,17 @@ describe('NavigationSidebar', () => {
         configurable: true,
       });
     }
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   describe('initialization', () => {
     it('rolls back global listeners and DOM when observer setup fails', () => {
       const initializationError = new Error('Navigation observer failed');
-      const disconnect = jest.fn();
-      const removeScrollListener = jest.spyOn(messagesEl, 'removeEventListener');
-      const removeDocumentListener = jest.fn();
+      const disconnect = vi.fn();
+      const removeScrollListener = vi.spyOn(messagesEl, 'removeEventListener');
+      const removeDocumentListener = vi.fn();
       Object.assign(parentEl.ownerDocument, {
-        addEventListener: jest.fn(),
+        addEventListener: vi.fn(),
         removeEventListener: removeDocumentListener,
       });
       Object.defineProperty(globalThis, 'MutationObserver', {
@@ -342,7 +342,7 @@ describe('NavigationSidebar', () => {
     });
 
     it('should batch visibility updates until the next animation frame', () => {
-      const requestFrame = jest.spyOn(window, 'requestAnimationFrame');
+      const requestFrame = vi.spyOn(window, 'requestAnimationFrame');
       try {
         messagesEl.scrollHeight = 500;
         messagesEl.clientHeight = 500;
@@ -361,7 +361,7 @@ describe('NavigationSidebar', () => {
         expect(container!.classList.contains('visible')).toBe(false);
         expect(requestFrame).toHaveBeenCalledTimes(1);
 
-        jest.advanceTimersByTime(16);
+        vi.advanceTimersByTime(16);
 
         expect(container!.classList.contains('visible')).toBe(true);
       } finally {
@@ -714,7 +714,7 @@ describe('NavigationSidebar', () => {
       mutationCallback?.([{
         type: 'childList', target: messagesEl, addedNodes: [newUser], removedNodes: [],
       } as unknown as MutationRecord], {} as MutationObserver);
-      jest.advanceTimersByTime(16);
+      vi.advanceTimersByTime(16);
       expect(parentEl.querySelector('.claudian-nav-toc-empty')).toBeNull();
       const items = parentEl.querySelectorAll('.claudian-nav-toc-item');
       expect(items).toHaveLength(1);
@@ -746,7 +746,7 @@ describe('NavigationSidebar', () => {
           removedNodes: [userMsg],
         } as unknown as MutationRecord,
       ], {} as MutationObserver);
-      jest.advanceTimersByTime(16);
+      vi.advanceTimersByTime(16);
 
       const emptyState = parentEl.querySelector('.claudian-nav-toc-empty');
       expect(directoryBtn.classList.contains('claudian-hidden')).toBe(false);
@@ -780,7 +780,7 @@ describe('NavigationSidebar', () => {
           removedNodes: [],
         } as unknown as MutationRecord,
       ], {} as MutationObserver);
-      jest.advanceTimersByTime(16);
+      vi.advanceTimersByTime(16);
 
       expect(parentEl.querySelector('.claudian-nav-toc-popover')).toBe(originalPopover);
     });
@@ -807,7 +807,7 @@ describe('NavigationSidebar', () => {
           attributeName: 'data-toc-title',
         } as unknown as MutationRecord,
       ], {} as MutationObserver);
-      jest.advanceTimersByTime(16);
+      vi.advanceTimersByTime(16);
 
       const updatedPopover = parentEl.querySelector('.claudian-nav-toc-popover');
       const items = parentEl.querySelectorAll('.claudian-nav-toc-item');

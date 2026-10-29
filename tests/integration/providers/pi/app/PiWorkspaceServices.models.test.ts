@@ -14,13 +14,13 @@ it('drains canceled model discovery before the provider transition mutation', as
   let release!: () => void;
   let canceled!: () => void;
   const cancellation = new Promise<void>(resolve => { canceled = resolve; });
-  const probe = jest.spyOn(PiModelDiscoveryService.prototype, 'discoverModels').mockImplementation(signal => {
+  const probe = vi.spyOn(PiModelDiscoveryService.prototype, 'discoverModels').mockImplementation(signal => {
     signal!.addEventListener('abort', canceled, { once: true });
     return new Promise(resolve => { release = () => resolve({ kind: 'completed', models: [] }); });
   });
   const services = await createPiWorkspaceServices(withRuntimeHosts(host));
   const discovery = services.modelCatalog!.refresh();
-  const mutation = jest.fn(async () => undefined);
+  const mutation = vi.fn(async () => undefined);
   const transition = registry.runTransition(['pi'], mutation);
   await cancellation;
   // Let a transition which fails to join discovery reach its mutation.

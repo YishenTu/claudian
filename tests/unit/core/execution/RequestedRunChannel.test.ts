@@ -9,7 +9,7 @@ async function collect(events: AsyncIterable<ProviderExecutionEvent>): Promise<P
   return collected;
 }
 
-function createChannel(onCancel = jest.fn()) {
+function createChannel(onCancel = vi.fn()) {
   return {
     onCancel,
     run: new RequestedRunChannel({ onCancel, sessionInstanceId: 'session-1' }),

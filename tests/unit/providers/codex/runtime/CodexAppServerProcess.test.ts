@@ -1,14 +1,17 @@
 import type { ChildProcess } from 'child_process';
 import { EventEmitter, Readable, Writable } from 'stream';
 
-jest.mock('cross-spawn', () => jest.fn());
+vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 
 import spawn from 'cross-spawn';
+import type { MockedFunction } from 'vitest';
 
 import { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
 import type { CodexLaunchSpec } from '@/providers/codex/runtime/codexLaunchTypes';
 
-const mockSpawn = spawn as jest.MockedFunction<typeof spawn>;
+
+
+const mockSpawn = spawn as MockedFunction<typeof spawn>;
 
 function createLaunchSpec(overrides: Partial<CodexLaunchSpec> = {}): CodexLaunchSpec {
   return {
@@ -28,10 +31,10 @@ function createLaunchSpec(overrides: Partial<CodexLaunchSpec> = {}): CodexLaunch
         platformFamily: 'unix',
         platformOs: 'linux',
       },
-      toTargetPath: jest.fn(),
-      toHostPath: jest.fn(),
-      mapTargetPathList: jest.fn(),
-      canRepresentHostPath: jest.fn(),
+      toTargetPath: vi.fn(),
+      toHostPath: vi.fn(),
+      mapTargetPathList: vi.fn(),
+      canRepresentHostPath: vi.fn(),
     },
     ...overrides,
   };
@@ -44,7 +47,7 @@ function createMockProcess(): ChildProcess {
   (proc as any).stderr = new Readable({ read() {} });
   (proc as any).pid = 12345;
   (proc as any).killed = false;
-  (proc as any).kill = jest.fn().mockReturnValue(true);
+  (proc as any).kill = vi.fn().mockReturnValue(true);
   return proc;
 }
 
@@ -53,7 +56,7 @@ describe('CodexAppServerProcess', () => {
   let mockProc: ChildProcess;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockProc = createMockProcess();
     mockSpawn.mockReturnValue(mockProc);
   });
@@ -169,7 +172,7 @@ describe('CodexAppServerProcess', () => {
   describe('onExit', () => {
     it('calls registered exit callback when process closes', () => {
       const server = new CodexAppServerProcess(createLaunchSpec());
-      const exitCallback = jest.fn();
+      const exitCallback = vi.fn();
       server.onExit(exitCallback);
       server.start();
 
@@ -182,7 +185,7 @@ describe('CodexAppServerProcess', () => {
       const server = new CodexAppServerProcess(createLaunchSpec());
       server.start();
 
-      const exitCallback = jest.fn();
+      const exitCallback = vi.fn();
       server.onExit(exitCallback);
 
       mockProc.emit('close', 0, null);
@@ -192,7 +195,7 @@ describe('CodexAppServerProcess', () => {
 
     it('waits for close before notifying so late stderr is included', () => {
       const server = new CodexAppServerProcess(createLaunchSpec());
-      const exitCallback = jest.fn(() => server.getStderrSnapshot());
+      const exitCallback = vi.fn(() => server.getStderrSnapshot());
       server.onExit(exitCallback);
       server.start();
 

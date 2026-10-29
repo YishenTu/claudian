@@ -2,6 +2,7 @@ import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { createMockEl } from '@test/helpers/MockElement';
 import { testDate } from '@test/helpers/testClock';
 import { Menu, setIcon } from 'obsidian';
+import type { MockInstance } from 'vitest';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ConversationMeta } from '@/core/types';
@@ -11,6 +12,8 @@ import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import { SessionManagerSurface } from '@/features/chat/session-manager/SessionManagerSurface';
 import type { SessionSurfaceNavigation } from '@/features/chat/session-manager/SessionSurfaceShared';
 import { ChatViewPublisher } from '@/features/chat/workspace/ChatViewPublisher';
+
+
 
 /** A document click whose dispatch path never entered the history control. */
 const outsideClick = () => ({ composedPath: () => [] }) as unknown as Event;
@@ -50,40 +53,40 @@ function createHarness(options: HarnessOptions = {}) {
     ...options.settings,
   };
   const plugin = {
-    app: { vault: { getAbstractFileByPath: jest.fn(() => null) } },
+    app: { vault: { getAbstractFileByPath: vi.fn(() => null) } },
     settings,
     getConversationList: () => conversations,
     projects: createProjectsFake(),
     conversationLifecycle: options.conversationLifecycle ?? {
-      archive: jest.fn().mockResolvedValue(undefined),
-      delete: jest.fn().mockResolvedValue(undefined),
-      restore: jest.fn().mockResolvedValue(undefined),
-      setArchived: jest.fn().mockResolvedValue(undefined),
-      setPinned: jest.fn().mockResolvedValue(undefined),
+      archive: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+      restore: vi.fn().mockResolvedValue(undefined),
+      setArchived: vi.fn().mockResolvedValue(undefined),
+      setPinned: vi.fn().mockResolvedValue(undefined),
     },
-    assignConversationToCurrentDevice: jest.fn().mockResolvedValue(undefined),
-    mutateSettings: jest.fn(async (mutation: (value: Record<string, unknown>) => void) => {
+    assignConversationToCurrentDevice: vi.fn().mockResolvedValue(undefined),
+    mutateSettings: vi.fn(async (mutation: (value: Record<string, unknown>) => void) => {
       const previous = { ...settings };
       mutation(settings);
       publisher.publishSettings(settings as never, previous as never);
     }),
-    renameConversation: jest.fn().mockResolvedValue(undefined),
-    setLinkedContentPinned: jest.fn().mockResolvedValue(undefined),
+    renameConversation: vi.fn().mockResolvedValue(undefined),
+    setLinkedContentPinned: vi.fn().mockResolvedValue(undefined),
   };
   const navigation = {
-    contentExists: jest.fn((_contentPath: string) => true),
-    getConversationStatus: jest.fn((_id: string) => ({ openState: 'closed' as const, isRunning: false })),
-    openConversation: jest.fn().mockResolvedValue(undefined),
-    openSessionConversation: jest.fn().mockResolvedValue(undefined),
-    startLinkedContentConversation: jest.fn().mockResolvedValue(undefined),
-    startProjectConversation: jest.fn().mockResolvedValue(undefined),
+    contentExists: vi.fn((_contentPath: string) => true),
+    getConversationStatus: vi.fn((_id: string) => ({ openState: 'closed' as const, isRunning: false })),
+    openConversation: vi.fn().mockResolvedValue(undefined),
+    openSessionConversation: vi.fn().mockResolvedValue(undefined),
+    startLinkedContentConversation: vi.fn().mockResolvedValue(undefined),
+    startProjectConversation: vi.fn().mockResolvedValue(undefined),
   } satisfies SessionSurfaceNavigation;
   const state = {
     wide: options.wide ?? true,
     canCreateTab: options.canCreateTab === undefined ? true : options.canCreateTab,
   };
-  const requestNew = jest.fn();
-  const notifyOtherViews = jest.fn();
+  const requestNew = vi.fn();
+  const notifyOtherViews = vi.fn();
   const surface = new SessionManagerSurface({
     plugin: plugin as unknown as ChatFeatureHost,
     navigation,
@@ -98,7 +101,7 @@ function createHarness(options: HarnessOptions = {}) {
       { notifyConversationListChanged: () => surface.invalidate() },
       { notifyConversationListChanged: notifyOtherViews },
     ] as never },
-    zenMode: { reconcile: jest.fn() }, inactiveSessions: { request: jest.fn() },
+    zenMode: { reconcile: vi.fn() }, inactiveSessions: { request: vi.fn() },
     hasLoadedAllSessionMetadata: () => true,
   });
   const sidebarEl = createMockEl();
@@ -157,7 +160,7 @@ function headerActions(container: any): any {
 }
 
 afterEach(() => {
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
   menuInstances().length = 0;
 });
 
@@ -261,8 +264,8 @@ describe('SessionManagerSurface session header', () => {
       type: 'keydown',
       key: 'Escape',
       isComposing: true,
-      preventDefault: jest.fn(),
-      stopPropagation: jest.fn(),
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
     };
     composingInput.dispatchEvent(composingEscape);
     expect(searchInput(container)).toBe(composingInput);
@@ -281,8 +284,8 @@ describe('SessionManagerSurface session header', () => {
       type: 'keydown',
       key: 'Escape',
       isComposing: false,
-      preventDefault: jest.fn(),
-      stopPropagation: jest.fn(),
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
     };
     committedInput.dispatchEvent(escape);
     expect(escape.preventDefault).toHaveBeenCalledTimes(1);
@@ -330,10 +333,10 @@ describe('SessionManagerSurface session header', () => {
       const listeners = new Map<string, (event: Event) => void>();
       container.querySelector('.claudian-session-search-control').click();
       const ownerDocument = searchInput(container).ownerDocument;
-      ownerDocument.addEventListener = jest.fn((type: string, listener: (event: Event) => void) => {
+      ownerDocument.addEventListener = vi.fn((type: string, listener: (event: Event) => void) => {
         listeners.set(type, listener);
       });
-      ownerDocument.removeEventListener = jest.fn();
+      ownerDocument.removeEventListener = vi.fn();
       return { listeners, ownerDocument };
     };
     const isSearchOpen = () => searchInput(container) !== null;
@@ -446,8 +449,8 @@ describe('SessionManagerSurface session header', () => {
 
     groupHeader.dispatchEvent({
       type: 'contextmenu',
-      preventDefault: jest.fn(),
-      stopPropagation: jest.fn(),
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
     });
     menuInstances().at(-1)!.items
       .find(item => item.title === 'Pin Linked content')!.clickHandler!();
@@ -533,7 +536,7 @@ describe('SessionManagerSurface session column rendering', () => {
     container.querySelector('.claudian-session-search-control').click();
     const input = searchInput(container);
     input.dispatchEvent('compositionstart');
-    const render = jest.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown');
+    const render = vi.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown');
 
     h.conversations.push(conversation('second', { lastActivityAt: testDate().getTime() }));
     h.surface.invalidate();
@@ -560,7 +563,7 @@ describe('SessionManagerSurface session column rendering', () => {
     const container = h.sessionSurfaceEl;
     const renderList = SessionBrowser.prototype.renderHistoryDropdown;
     const listsSeenByRender: unknown[] = [];
-    const render = jest.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown')
+    const render = vi.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown')
       .mockImplementation(function (this: SessionBrowser, target, options) {
         listsSeenByRender.push(target.querySelector('.claudian-history-list'));
         renderList.call(this, target, options);
@@ -629,13 +632,13 @@ describe('SessionManagerSurface session column rendering', () => {
     sessionOptions.onRerender();
     expect(render).toHaveBeenCalledTimes(2);
 
-    const ownerRequestAnimationFrame = jest.fn((callback: FrameRequestCallback) => {
+    const ownerRequestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
       callback(0);
       return 1;
     });
     container.ownerDocument.defaultView.requestAnimationFrame = ownerRequestAnimationFrame;
     const staleItem = findItem(container, 'roadmap');
-    const beginRename = jest.fn();
+    const beginRename = vi.fn();
 
     sessionOptions.onRequestInlineRename({ beginRename, conversationId: 'roadmap' });
 
@@ -666,14 +669,14 @@ describe('SessionManagerSurface session column rendering', () => {
   });
 
   it('formats persisted model metadata for the session hover card', () => {
-    jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
-      getModelOptions: jest.fn().mockReturnValue([
+    vi.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
+      getModelOptions: vi.fn().mockReturnValue([
         { value: 'gpt-5.1-codex', label: 'GPT-5.1 Codex' },
       ]),
       getReasoningOptions: () => [],
       supportsReasoningEffort: () => false,
     } as any);
-    const render = jest.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown');
+    const render = vi.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown');
     const h = createHarness({ conversations: [conversation('first')] });
 
     h.surface.renderSidebar();
@@ -684,10 +687,10 @@ describe('SessionManagerSurface session column rendering', () => {
   });
 
   it('ignores malformed persisted model metadata in the session hover card', () => {
-    const render = jest.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown');
+    const render = vi.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown');
     const h = createHarness({ conversations: [conversation('first')] });
     h.surface.renderSidebar();
-    const getChatUIConfig = jest.spyOn(ProviderRegistry, 'getChatUIConfig');
+    const getChatUIConfig = vi.spyOn(ProviderRegistry, 'getChatUIConfig');
 
     const { getModelLabel } = render.mock.calls[0][1] as any;
 
@@ -742,7 +745,7 @@ describe('SessionManagerSurface history dropdown', () => {
     const archiveControl = list.querySelector('.claudian-history-archive-control');
     expect(list.children[0]).toBe(archiveControl);
     expect(navLabel(archiveControl)).toBe('Archive');
-    const stopPropagation = jest.fn();
+    const stopPropagation = vi.fn();
     archiveControl.dispatchEvent({ type: 'click', stopPropagation });
 
     expect(stopPropagation).toHaveBeenCalledTimes(1);
@@ -753,13 +756,13 @@ describe('SessionManagerSurface history dropdown', () => {
 
   it('keeps tab-aware navigation on the single-mode history surface', () => {
     const h = createHarness({ conversations: [conversation('conversation-1')], wide: false });
-    const render = jest.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown');
-    const ownerRequestAnimationFrame = jest.fn((callback: FrameRequestCallback) => {
+    const render = vi.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown');
+    const ownerRequestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
       callback(0);
       return 1;
     });
     h.historyMenu.ownerDocument.defaultView.requestAnimationFrame = ownerRequestAnimationFrame;
-    const globalRequestAnimationFrame = jest.spyOn(window, 'requestAnimationFrame');
+    const globalRequestAnimationFrame = vi.spyOn(window, 'requestAnimationFrame');
 
     h.historyButton.click();
 
@@ -779,7 +782,7 @@ describe('SessionManagerSurface history dropdown', () => {
     // An outside click hides the menu without abandoning the rendered list.
     h.surface.dismissDropdownFor(outsideClick());
     expect(h.historyMenu.hasClass('visible')).toBe(false);
-    const beginRename = jest.fn();
+    const beginRename = vi.fn();
     options.onRequestInlineRename({ beginRename, conversationId: 'conversation-1' });
 
     expect(h.historyMenu.hasClass('visible')).toBe(true);
@@ -794,7 +797,7 @@ describe('SessionManagerSurface history dropdown', () => {
     const content = findItem(h.historyMenu, 'conversation-1')
       .querySelector('.claudian-history-item-content');
 
-    content.dispatchEvent({ type: 'click', stopPropagation: jest.fn() });
+    content.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
     await new Promise(resolve => setImmediate(resolve));
 
     expect(h.navigation.openConversation).toHaveBeenCalledWith('conversation-1', undefined);
@@ -806,7 +809,7 @@ describe('SessionManagerSurface history dropdown', () => {
       conversations: [conversation('active'), conversation('archived', { isArchived: true })],
       wide: false,
     });
-    const render = jest.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown');
+    const render = vi.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown');
 
     h.historyButton.click();
 
@@ -843,7 +846,7 @@ describe('SessionManagerSurface history dropdown', () => {
 
   it('defers hidden history rendering and coalesces invalidations until the dropdown opens', () => {
     const h = createHarness({ wide: false });
-    const render = jest.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown');
+    const render = vi.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown');
     const signalOf = (call: number) => (render.mock.calls[call][1] as { signal: AbortSignal }).signal;
 
     h.surface.invalidate();
@@ -894,9 +897,9 @@ describe('SessionManagerSurface history dropdown', () => {
       getTab: (id: string) => [activeTab, backgroundTab].find(tab => tab.id === id) ?? null,
       getAllTabs: () => [activeTab, backgroundTab],
       isTabWorking: (id: string) => id === 'active-tab' || id === 'background-tab',
-      resetConversationTabs: jest.fn().mockResolvedValue(undefined),
+      resetConversationTabs: vi.fn().mockResolvedValue(undefined),
     };
-    const deleteConversation = jest.fn().mockResolvedValue(undefined);
+    const deleteConversation = vi.fn().mockResolvedValue(undefined);
     const h = createHarness({
       conversations: [
         conversation('running', { title: 'Running', isArchived: true }),
@@ -915,7 +918,7 @@ describe('SessionManagerSurface history dropdown', () => {
     h.historyMenu.querySelector('.claudian-history-archive-control').click();
 
     const deleteButton = findItem(h.historyMenu, targetId).querySelector('.claudian-delete-btn');
-    deleteButton.dispatchEvent({ type: 'click', stopPropagation: jest.fn() });
+    deleteButton.dispatchEvent({ type: 'click', stopPropagation: vi.fn() });
     await new Promise(resolve => setImmediate(resolve));
 
     expect(deleteConversation.mock.calls).toEqual(shouldDelete ? [[targetId]] : []);
@@ -923,13 +926,13 @@ describe('SessionManagerSurface history dropdown', () => {
 });
 
 describe('SessionManagerSurface wide layout transitions', () => {
-  const signalOf = (render: jest.SpyInstance, call: number) => (
+  const signalOf = (render: MockInstance, call: number) => (
     (render.mock.calls[call][1] as { signal: AbortSignal }).signal
   );
 
   it('hides the history dropdown and abandons its render when entering wide', () => {
     const h = createHarness({ conversations: [conversation('first')], wide: false });
-    const render = jest.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown');
+    const render = vi.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown');
     h.historyButton.click();
     expect(h.historyMenu.hasClass('visible')).toBe(true);
     expect(signalOf(render, 0).aborted).toBe(false);
@@ -985,7 +988,7 @@ describe('SessionManagerSurface wide layout transitions', () => {
     container.querySelector('.claudian-session-search-control').click();
     typeSearch(container, 'roadmap');
     expect(renderedIds(container)).toEqual(['roadmap']);
-    const render = jest.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown');
+    const render = vi.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown');
 
     h.surface.leaveWide();
 
@@ -1013,7 +1016,7 @@ describe('SessionManagerSurface Escape handling', () => {
 
   it('exits inline rename before handling other scoped Escape actions', () => {
     const h = createSearchingHarness();
-    const cancelInlineRename = jest.spyOn(SessionBrowser.prototype, 'cancelInlineRename')
+    const cancelInlineRename = vi.spyOn(SessionBrowser.prototype, 'cancelInlineRename')
       .mockReturnValue(true);
 
     expect(h.surface.handleEscape()).toBe(true);

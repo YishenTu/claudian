@@ -1,4 +1,5 @@
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import type { Mock } from 'vitest';
 
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
@@ -13,9 +14,11 @@ import type {
 } from '@/providers/codex/runtime/CodexModelDiscoveryService';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 
-jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
+
+
+vi.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   ProviderSettingsCoordinator: {
-    normalizeAllModelVariants: jest.fn(() => false),
+    normalizeAllModelVariants: vi.fn(() => false),
   },
 }));
 
@@ -65,7 +68,7 @@ function createFakeHost(overrides: {
         },
       },
       workspace: {
-        onLayoutReady: jest.fn(),
+        onLayoutReady: vi.fn(),
       },
     },
     settings: {
@@ -82,10 +85,10 @@ function createFakeHost(overrides: {
       },
       environmentVariables: {},
     },
-    getResolvedProviderCliPath: jest.fn(() => resolvedCliPath),
-    getActiveEnvironmentVariables: jest.fn(() => envText),
-    notifyProviderChatOptionsChanged: jest.fn(),
-    mutateSettingsConditionally: jest.fn(async (mutation) => {
+    getResolvedProviderCliPath: vi.fn(() => resolvedCliPath),
+    getActiveEnvironmentVariables: vi.fn(() => envText),
+    notifyProviderChatOptionsChanged: vi.fn(),
+    mutateSettingsConditionally: vi.fn(async (mutation) => {
       return mutation({
         ...DEFAULT_CODEX_PROVIDER_SETTINGS,
         providerConfigs: {
@@ -115,7 +118,7 @@ function createCoordinator(host: ProviderHost, discovery: CodexModelDiscoverySer
 
 function createDiscovery(result: CodexModelDiscoveryResult): CodexModelDiscoveryServiceLike {
   return {
-    discoverModels: jest.fn(async () => result),
+    discoverModels: vi.fn(async () => result),
   };
 }
 
@@ -139,7 +142,7 @@ function deferConditionalMutations(host: ProviderHost, count: number): {
   const executions: Array<() => Promise<boolean | void>> = [];
   let resolveQueued!: () => void;
   const queued = new Promise<void>(resolve => { resolveQueued = resolve; });
-  (host.mutateSettingsConditionally as jest.Mock).mockImplementation((mutation) => (
+  (host.mutateSettingsConditionally as Mock).mockImplementation((mutation) => (
     new Promise<boolean | void>((resolve, reject) => {
       executions.push(async () => {
         try {
@@ -165,7 +168,7 @@ function deferConditionalMutations(host: ProviderHost, count: number): {
 
 describe('CodexModelCatalogCoordinator', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('does not expose environment secrets in the catalog fingerprint', () => {
@@ -206,7 +209,7 @@ describe('CodexModelCatalogCoordinator', () => {
     const host = createFakeHost();
     let calls = 0;
     const discovery: CodexModelDiscoveryServiceLike = {
-      discoverModels: jest.fn(async () => {
+      discoverModels: vi.fn(async () => {
         calls += 1;
         return { kind: 'completed', models: [makeModel('gpt-4o')] } as CodexModelDiscoveryResult;
       }),
@@ -233,12 +236,12 @@ describe('CodexModelCatalogCoordinator', () => {
       resolveDiscovery = resolve;
     });
     const discovery: CodexModelDiscoveryServiceLike = {
-      discoverModels: jest.fn(async () => {
+      discoverModels: vi.fn(async () => {
         signalDiscoveryStarted();
         return discoveryResult;
       }),
     };
-    (host.mutateSettingsConditionally as jest.Mock).mockImplementation(async (mutation) => {
+    (host.mutateSettingsConditionally as Mock).mockImplementation(async (mutation) => {
       await mutation(host.settings);
     });
     const coordinator = createCoordinator(host, discovery);
@@ -259,7 +262,7 @@ describe('CodexModelCatalogCoordinator', () => {
     const firstDiscovery = deferred<CodexModelDiscoveryResult>();
     const secondDiscovery = deferred<CodexModelDiscoveryResult>();
     const discovery: CodexModelDiscoveryServiceLike = {
-      discoverModels: jest.fn()
+      discoverModels: vi.fn()
         .mockImplementationOnce(() => firstDiscovery.promise)
         .mockImplementationOnce(() => secondDiscovery.promise),
     };
@@ -267,13 +270,13 @@ describe('CodexModelCatalogCoordinator', () => {
     const coordinator = createCoordinator(host, discovery);
 
     const oldRefresh = coordinator.refresh();
-    while ((discovery.discoverModels as jest.Mock).mock.calls.length < 1) {
+    while ((discovery.discoverModels as Mock).mock.calls.length < 1) {
       await Promise.resolve();
     }
     firstDiscovery.resolve({ kind: 'completed', models: [makeModel('old-model')] });
     await new Promise(resolve => setImmediate(resolve));
     const ownerRefresh = coordinator.refresh({ providerTransitionOwner: true });
-    while ((discovery.discoverModels as jest.Mock).mock.calls.length < 2) {
+    while ((discovery.discoverModels as Mock).mock.calls.length < 2) {
       await Promise.resolve();
     }
     secondDiscovery.resolve({ kind: 'completed', models: [makeModel('new-model')] });
@@ -346,7 +349,7 @@ describe('CodexModelCatalogCoordinator', () => {
     const oldDiscovery = deferred<CodexModelDiscoveryResult>();
     let discoverySignal: AbortSignal | undefined;
     const discovery: CodexModelDiscoveryServiceLike = {
-      discoverModels: jest.fn((signal?: AbortSignal) => {
+      discoverModels: vi.fn((signal?: AbortSignal) => {
         discoverySignal = signal;
         return oldDiscovery.promise;
       }),
@@ -380,7 +383,7 @@ describe('CodexModelCatalogCoordinator', () => {
     const host = createFakeHost();
     const observedEnvironments: string[] = [];
     const discovery: CodexModelDiscoveryServiceLike = {
-      discoverModels: jest.fn(async () => {
+      discoverModels: vi.fn(async () => {
         observedEnvironments.push(host.getActiveEnvironmentVariables('codex'));
         return {
           kind: 'completed' as const,
@@ -397,7 +400,7 @@ describe('CodexModelCatalogCoordinator', () => {
       await Promise.resolve();
       expect(discovery.discoverModels).not.toHaveBeenCalled();
 
-      (host.getActiveEnvironmentVariables as jest.Mock).mockReturnValue('NEW_API_KEY=updated');
+      (host.getActiveEnvironmentVariables as Mock).mockReturnValue('NEW_API_KEY=updated');
       coordinator.endEnvironmentTransition();
       await expect(refresh).resolves.toMatchObject({ kind: 'completed' });
     } finally {
@@ -453,16 +456,16 @@ describe('CodexModelCatalogCoordinator', () => {
 
     expect(host.mutateSettingsConditionally).toHaveBeenCalled();
     await expect(
-      (host.mutateSettingsConditionally as jest.Mock).mock.results[0].value,
+      (host.mutateSettingsConditionally as Mock).mock.results[0].value,
     ).resolves.toBe(true);
   });
 });
 
 it('does not join canceled discovery from a new native caller or publish its delayed result', async () => {
   const host = createFakeHost();
-  jest.mocked(host.mutateSettingsConditionally).mockImplementation(async mutation => { await mutation(host.settings); });
+  vi.mocked(host.mutateSettingsConditionally).mockImplementation(async mutation => { await mutation(host.settings); });
   const oldResult = deferred<CodexModelDiscoveryResult>();
-  const discoverModels = jest.fn()
+  const discoverModels = vi.fn()
     .mockImplementationOnce(() => oldResult.promise)
     .mockResolvedValueOnce({ kind: 'completed', models: [makeModel('fresh-model')] });
   const catalog = createCoordinator(host, { discoverModels });

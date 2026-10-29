@@ -20,13 +20,13 @@ describe('PiCommandMetadataProbe', () => {
   it('registers a load before a synchronously started transition quiesces', async () => {
     const cliResolution = new Deferred<string | null>();
     const kernel = {
-      request: jest.fn(async () => ({ commands: [] })),
-      shutdown: jest.fn(async () => undefined),
-      start: jest.fn(),
+      request: vi.fn(async () => ({ commands: [] })),
+      shutdown: vi.fn(async () => undefined),
+      start: vi.fn(),
     };
-    const createKernel = jest.fn(() => kernel as any);
+    const createKernel = vi.fn(() => kernel as any);
     const host = {
-      resolveCliPath: jest.fn(() => cliResolution.promise),
+      resolveCliPath: vi.fn(() => cliResolution.promise),
       config: {}, selection: { referencedModelIds: [] }, environmentText: '',
     } as unknown as ProviderRuntimeHost;
     const probe = new PiCommandMetadataProbe(host, createKernel);
@@ -52,7 +52,7 @@ describe('PiCommandMetadataProbe', () => {
   });
 
   it('normalizes a non-Error abort reason while waiting behind a transition fence', async () => {
-    const createKernel = jest.fn();
+    const createKernel = vi.fn();
     const probe = new PiCommandMetadataProbe(
       {} as ProviderRuntimeHost,
       createKernel,
@@ -73,13 +73,13 @@ describe('PiCommandMetadataProbe', () => {
 
   it('falls back to a pushed command catalog when get_commands is unsupported', async () => {
     const kernel = {
-      request: jest.fn(async () => {
+      request: vi.fn(async () => {
         throw new Error('Request timeout: get_commands (10000ms)');
       }),
-      shutdown: jest.fn(async () => undefined),
-      start: jest.fn(),
+      shutdown: vi.fn(async () => undefined),
+      start: vi.fn(),
     };
-    const createKernel = jest.fn((_spec, callbacks) => {
+    const createKernel = vi.fn((_spec, callbacks) => {
       queueMicrotask(() => callbacks.onEvent({
         commands: [
           { name: 'skill:project-probe', source: 'skill' },
@@ -90,7 +90,7 @@ describe('PiCommandMetadataProbe', () => {
       return kernel as any;
     });
     const host = {
-      resolveCliPath: jest.fn(async () => '/bin/pi'),
+      resolveCliPath: vi.fn(async () => '/bin/pi'),
       config: {}, selection: { referencedModelIds: [] }, environmentText: '',
     } as unknown as ProviderRuntimeHost;
     const probe = new PiCommandMetadataProbe(host, createKernel);
@@ -117,10 +117,10 @@ describe('PiCommandMetadataProbe', () => {
   });
 
   it('lets the pushed fallback settle after the provider-owned RPC deadline', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const kernel = {
-        request: jest.fn((_method, _params, timeoutMs: number, signal?: AbortSignal) =>
+        request: vi.fn((_method, _params, timeoutMs: number, signal?: AbortSignal) =>
           new Promise((_resolve, reject) => {
             const timer = window.setTimeout(
               () => reject(new Error(`Request timeout: get_commands (${timeoutMs}ms)`)),
@@ -131,10 +131,10 @@ describe('PiCommandMetadataProbe', () => {
               reject(signal.reason ?? new Error('aborted'));
             }, { once: true });
           })),
-        shutdown: jest.fn(async () => undefined),
-        start: jest.fn(),
+        shutdown: vi.fn(async () => undefined),
+        start: vi.fn(),
       };
-      const createKernel = jest.fn((_spec, callbacks) => {
+      const createKernel = vi.fn((_spec, callbacks) => {
         queueMicrotask(() => callbacks.onEvent({
           commands: [{ name: 'skill:project-probe', source: 'skill' }],
           type: 'available_commands_update',
@@ -142,7 +142,7 @@ describe('PiCommandMetadataProbe', () => {
         return kernel as any;
       });
       const host = {
-        resolveCliPath: jest.fn(async () => '/bin/pi'),
+        resolveCliPath: vi.fn(async () => '/bin/pi'),
         config: {}, selection: { referencedModelIds: [] }, environmentText: '',
       } as unknown as ProviderRuntimeHost;
       const probe = new PiCommandMetadataProbe(host, createKernel);
@@ -162,11 +162,11 @@ describe('PiCommandMetadataProbe', () => {
       );
 
       const load = store.load();
-      await jest.advanceTimersByTimeAsync(8_000);
+      await vi.advanceTimersByTimeAsync(8_000);
 
       expect(store.getSnapshot()).toEqual({ status: 'loading' });
 
-      await jest.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(2_000);
       await expect(load).resolves.toEqual({
         status: 'ready',
         items: ['skill:project-probe'],
@@ -177,7 +177,7 @@ describe('PiCommandMetadataProbe', () => {
       });
       await probe.dispose();
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 });

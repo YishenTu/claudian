@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const script = fileURLToPath(new URL('./summarize-jest-results.mjs', import.meta.url));
+const script = fileURLToPath(new URL('./summarize-vitest-results.mjs', import.meta.url));
 
 test('reports every test, retains failed timings, and summarizes the slowest cases', async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'claudian-jest-report-'));
+  const directory = await mkdtemp(path.join(tmpdir(), 'claudian-vitest-report-'));
   try {
-    const input = path.join(directory, 'jest.json');
+    const input = path.join(directory, 'vitest.json');
     const output = path.join(directory, 'timings');
     const summary = path.join(directory, 'summary.md');
     await writeFile(input, JSON.stringify({
@@ -21,7 +21,7 @@ test('reports every test, retains failed timings, and summarizes the slowest cas
         name: path.join(root, 'tests/integration/recovery.test.ts'),
         startTime: 1000, endTime: 32000, status: 'failed',
         assertionResults: [
-          { fullName: 'recovery skipped', status: 'pending', duration: null },
+          { fullName: 'recovery skipped', status: 'skipped', duration: null },
           { fullName: 'recovery immediate', status: 'passed', duration: 0 },
           { fullName: 'recovery <target> | restart', status: 'failed', duration: 30001,
             failureMessages: ['private assertion payload'] },
@@ -40,6 +40,7 @@ test('reports every test, retains failed timings, and summarizes the slowest cas
       passed: 1, failed: 1, skipped: 1, failedSuites: 2,
       suiteCount: 2,
       execution: null,
+      runtimeErrors: null,
       suites: [
         { file: 'tests/integration/recovery.test.ts', status: 'failed', startTime: 1000, endTime: 32000, durationMs: 31000 },
         { file: 'tests/integration/load-error.test.ts', status: 'failed', startTime: null, endTime: null, durationMs: null },
@@ -47,7 +48,7 @@ test('reports every test, retains failed timings, and summarizes the slowest cas
       tests: [
         { file: 'tests/integration/recovery.test.ts', name: 'recovery <target> | restart', status: 'failed', durationMs: 30001 },
         { file: 'tests/integration/recovery.test.ts', name: 'recovery immediate', status: 'passed', durationMs: 0 },
-        { file: 'tests/integration/recovery.test.ts', name: 'recovery skipped', status: 'pending', durationMs: null },
+        { file: 'tests/integration/recovery.test.ts', name: 'recovery skipped', status: 'skipped', durationMs: null },
       ],
     });
     const markdown = await readFile(path.join(output, 'slowest-tests.md'), 'utf8');
@@ -63,9 +64,9 @@ test('reports every test, retains failed timings, and summarizes the slowest cas
 });
 
 test('bounds the summary while retaining timings for all tests', async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'claudian-jest-report-'));
+  const directory = await mkdtemp(path.join(tmpdir(), 'claudian-vitest-report-'));
   try {
-    const input = path.join(directory, 'jest.json');
+    const input = path.join(directory, 'vitest.json');
     const output = path.join(directory, 'timings');
     await writeFile(input, JSON.stringify({
       numPassedTests: 25, numFailedTests: 0, numPendingTests: 0, numFailedTestSuites: 0,
@@ -91,34 +92,43 @@ test('bounds the summary while retaining timings for all tests', async () => {
   }
 });
 
-test('real Jest execution records resolved workers and environment alongside suite timings', async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'claudian-jest-metadata-'));
+test('real Vitest execution records resolved workers and environment alongside suite timings', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'claudian-vitest-metadata-'));
   try {
-    const input = path.join(directory, 'jest.json');
+    const input = path.join(directory, 'vitest.json');
     const output = path.join(directory, 'timings');
     await writeFile(path.join(directory, 'example.test.js'), "test('example', () => expect(2 + 3).toBe(5));");
-    const config = {
-      rootDir: directory,
-      testMatch: ['<rootDir>/*.test.js'],
-      reporters: [path.join(root, 'scripts/jestTimingReporter.cjs')],
-    };
+    const config = path.join(directory, 'vitest.config.mjs');
+    await writeFile(config, `export default ${JSON.stringify({ root: directory, test: { globals: true, include: ['*.test.js'] } })};`);
     const env = { ...process.env, GITHUB_STEP_SUMMARY: '' };
     delete env.NODE_TEST_CONTEXT;
     const run = spawnSync(process.execPath, [
-      path.join(root, 'scripts/run-jest.js'), '--config', JSON.stringify(config),
-      '--runInBand', '--json', '--outputFile', input,
+      path.join(root, 'scripts/run-vitest.js'), '--config', config,
+      '--maxWorkers=1', '--outputFile', input,
     ], { cwd: root, encoding: 'utf8', env });
     assert.equal(run.status, 0, run.stderr);
     const summary = spawnSync(process.execPath, [script, input, output], { cwd: root, encoding: 'utf8', env });
     assert.equal(summary.status, 0, summary.stderr);
     const report = JSON.parse(await readFile(path.join(output, 'timings.json'), 'utf8'));
     assert.equal(report.execution.maxWorkers, 1);
+    assert.equal(report.runtimeErrors, 0);
     assert.equal(report.execution.nodeVersion, process.version);
     assert.equal(report.execution.platform, process.platform);
     assert.equal(report.execution.arch, process.arch);
     assert.equal(report.suiteCount, 1);
     assert.ok(report.suites[0].durationMs > 0);
     assert.equal(report.tests[0].name, 'example');
+    assert.deepEqual(JSON.parse(await readFile(`${input}.progress.json`, 'utf8')).activeModules, []);
+    // JSON alone can claim success despite an unhandled runtime error.
+    await writeFile(path.join(directory, 'example.test.js'), "test('runtime error', async () => { setTimeout(() => { Promise.reject(new Error('fixture rejection')); }, 0); await new Promise(resolve => setTimeout(resolve, 20)); });");
+    const rejected = spawnSync(process.execPath, [
+      path.join(root, 'scripts/run-vitest.js'), '--config', config,
+      '--maxWorkers=1', '--outputFile', input,
+    ], { cwd: root, encoding: 'utf8', env });
+    assert.equal(rejected.status, 1, rejected.stderr);
+    const rejectedMetadata = JSON.parse(await readFile(`${input}.metadata.json`, 'utf8'));
+    assert.equal(rejectedMetadata.unhandledErrors, 1);
+
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -126,17 +136,19 @@ test('real Jest execution records resolved workers and environment alongside sui
 
 
 test('real skipped and load-error suites have no measured execution duration', async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'claudian-jest-unexecuted-'));
+  const directory = await mkdtemp(path.join(tmpdir(), 'claudian-vitest-unexecuted-'));
   try {
-    const input = path.join(directory, 'jest.json');
+    const input = path.join(directory, 'vitest.json');
     const output = path.join(directory, 'timings');
     await writeFile(path.join(directory, 'skipped.test.js'), "test.skip('skipped', () => {});");
     await writeFile(path.join(directory, 'load-error.test.js'), "throw new Error('fixture load error');");
     const env = { ...process.env, GITHUB_STEP_SUMMARY: '' };
     delete env.NODE_TEST_CONTEXT;
+    const config = path.join(directory, 'vitest.config.mjs');
+    await writeFile(config, `export default ${JSON.stringify({ root: directory, test: { globals: true, include: ['*.test.js'] } })};`);
     const run = spawnSync(process.execPath, [
-      path.join(root, 'scripts/run-jest.js'), '--config', JSON.stringify({ rootDir: directory }),
-      '--runInBand', '--json', '--outputFile', input,
+      path.join(root, 'scripts/run-vitest.js'), '--config', config,
+      '--maxWorkers=1', '--outputFile', input,
     ], { cwd: root, encoding: 'utf8', env });
     assert.equal(run.status, 1, run.stderr);
     const summary = spawnSync(process.execPath, [script, input, output], { cwd: root, encoding: 'utf8', env });
@@ -151,6 +163,43 @@ test('real skipped and load-error suites have no measured execution duration', a
       assert.equal(suite.endTime, null);
     }
   } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+// The final JSON report cannot help when a worker blocks before the run finishes.
+test('interrupted Vitest execution leaves the active module available for CI diagnostics', async () => {
+  const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'claudian-vitest-interrupted-')));
+  let child;
+  try {
+    const input = path.join(directory, 'vitest.json');
+    const fixture = path.join(directory, 'blocked.test.js');
+    await writeFile(fixture, "test('blocked', () => { process.stdout.write('HANG_READY\\n'); for (;;) {} });");
+    const config = path.join(directory, 'vitest.config.mjs');
+    await writeFile(config, `export default ${JSON.stringify({ root: directory, test: { globals: true, pool: 'vmThreads', include: ['*.test.js'] } })};`);
+    const env = { ...process.env };
+    delete env.NODE_TEST_CONTEXT;
+    child = spawn(process.execPath, [
+      path.join(root, 'node_modules/vitest/vitest.mjs'), 'run', '--config', config,
+      '--maxWorkers=1', '--outputFile', input,
+      `--reporter=${path.join(root, 'scripts/vitestMetadataReporter.mjs')}`,
+    ], { cwd: directory, env });
+    let output = '';
+    const watchdog = setTimeout(() => child.kill('SIGKILL'), 15_000);
+    try {
+      child.stdout.on('data', data => {
+        output += data;
+        if (output.includes('HANG_READY')) child.kill('SIGKILL');
+      });
+      child.stderr.on('data', data => { output += data; });
+      await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); });
+    } finally { clearTimeout(watchdog); }
+    assert.ok(output.includes('HANG_READY'), output);
+    const progress = JSON.parse(await readFile(`${input}.progress.json`, 'utf8'));
+    assert.equal(progress.activeModules.length, 1);
+    assert.equal(path.normalize(progress.activeModules[0]), path.normalize(fixture));
+  } finally {
+    child?.kill('SIGKILL');
     await rm(directory, { recursive: true, force: true });
   }
 });

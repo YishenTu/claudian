@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
@@ -29,7 +29,7 @@ function setup() {
   const app = new App();
   Object.assign(app.vault.adapter, { basePath: '/vault' });
   const backend = new FakeSideBackend();
-  jest.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
+  vi.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
   ProviderWorkspaceRegistry.setServices('claude', {});
   const settings = {
     model: sonnet, permissionMode: 'normal', effortLevel: 'high', excludedTags: [],
@@ -41,10 +41,10 @@ function setup() {
     createdAt: testDate().getTime(), lastActivityAt: testDate().getTime(),
   }));
   const stored = new Map<string, SessionMetadata>();
-  const saveMetadata = jest.fn<Promise<void>, [SessionMetadata]>(async metadata => { stored.set(metadata.id, structuredClone(metadata)); });
+  const saveMetadata = vi.fn<(...args: [SessionMetadata]) => Promise<void>>(async metadata => { stored.set(metadata.id, structuredClone(metadata)); });
   const persistence = {
-    metadataReader: { revalidate: jest.fn(), load: jest.fn(), scan: jest.fn(), loadMetadata: jest.fn(), scanMetadata: jest.fn(), listMetadata: jest.fn() },
-    saveMetadata, deleteCurrentMetadata: jest.fn(), assignMetadataToDevice: jest.fn(),
+    metadataReader: { revalidate: vi.fn(), load: vi.fn(), scan: vi.fn(), loadMetadata: vi.fn(), scanMetadata: vi.fn(), listMetadata: vi.fn() },
+    saveMetadata, deleteCurrentMetadata: vi.fn(), assignMetadataToDevice: vi.fn(),
   } as ConversationPersistence;
   const repository = new ConversationRepository({
     persistence, providers: ProviderRegistry, providerSettings: ProviderSettingsCoordinator,
@@ -60,12 +60,12 @@ function setup() {
     getConversationById: async (id: string) => repository.getSync(id),
     getConversationList: () => repository.list(), ensureConversationMetadataLoaded: async () => undefined,
     renameConversation: (id: string, title: string) => repository.rename(id, title),
-    updateConversation: jest.fn((id: string, patch: ConversationMutablePatch) => repository.update(id, patch)),
+    updateConversation: vi.fn((id: string, patch: ConversationMutablePatch) => repository.update(id, patch)),
     executionPersistence: repository,
     projects: createProjectsFake(),
   } as unknown as ChatFeatureHost;
   const pool = installSessionRuntimePool(host);
-  const refreshModelControls = jest.fn();
+  const refreshModelControls = vi.fn();
   const service = new SessionMessagingService({ getHost: () => host, getActiveConversationId: () => null, refreshModelControls });
   Object.assign(host, { bindSessionTools: (id: string) => service.bindSessionTools(id) });
   const runtime = pool.ensure({ conversationId: 'recipient', providerId: 'claude', draftModel: null });
@@ -85,11 +85,11 @@ function setup() {
     });
     return { entered: entered.promise, release: () => release.resolve() };
   };
-  const waitForSend = () => waitFor(() => expect(runtime.mailbox!.hasPending || jest.mocked(host.updateConversation).mock.calls.length > 0 || refreshModelControls.mock.calls.length > 0).toBe(true));
+  const waitForSend = () => waitFor(() => expect(runtime.mailbox!.hasPending || vi.mocked(host.updateConversation).mock.calls.length > 0 || refreshModelControls.mock.calls.length > 0).toBe(true));
   return { host, repository, runtime, backend, refreshModelControls, saveMetadata, stored, send, pauseWrite, waitForSend, reasoningBefore };
 }
 
-afterEach(() => { ProviderWorkspaceRegistry.clear(); jest.restoreAllMocks(); });
+afterEach(() => { ProviderWorkspaceRegistry.clear(); vi.restoreAllMocks(); });
 
 it('does not reject a committed switch when its presentation refresh throws', async () => {
   const h = setup();

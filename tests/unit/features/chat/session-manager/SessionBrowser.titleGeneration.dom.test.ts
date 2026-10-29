@@ -1,10 +1,10 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Notice } from 'obsidian';
 
 import { RoutedTitleGenerationService } from '@/core/auxiliary/RoutedTitleGenerationService';
@@ -25,28 +25,28 @@ function setup(status?: Conversation['titleGenerationStatus'], enabled = true) {
     enableAutoTitleGeneration: enabled, titleGenerationModel: 'haiku',
     providerConfigs: { claude: claudeCatalogFixture(['haiku']) },
   };
-  const generateTitle = jest.fn(async (id, _text, callback) => callback(id, { success: true, title: 'Code explained' }));
-  const completeConversationTitleGeneration = jest.fn(async (_id, _expectedTitle, title) => {
+  const generateTitle = vi.fn(async (id, _text, callback) => callback(id, { success: true, title: 'Code explained' }));
+  const completeConversationTitleGeneration = vi.fn(async (_id, _expectedTitle, title) => {
     if (title !== null) conversation.title = title;
     conversation.titleGenerationStatus = title === null ? 'failed' : 'success';
   });
-  const updateConversation = jest.fn(async (_id, patch) => { Object.assign(conversation, patch); });
+  const updateConversation = vi.fn(async (_id, patch) => { Object.assign(conversation, patch); });
   const container = document.body.appendChild(document.createElement('div'));
-  const onSelectConversation = jest.fn();
+  const onSelectConversation = vi.fn();
   const browser = new SessionBrowser({
     plugin: {
       settings, getConversationList: () => [conversation],
       getConversationById: async () => conversation, completeConversationTitleGeneration, updateConversation,
     },
     getCurrentConversationId: () => null,
-    getTitleGenerationService: () => ({ generateTitle, cancel: jest.fn() }),
+    getTitleGenerationService: () => ({ generateTitle, cancel: vi.fn() }),
     onListChanged: () => browser.renderHistoryDropdown(container, { onSelectConversation }),
   } as unknown as SessionBrowserDeps);
   browser.renderHistoryDropdown(container, { onSelectConversation });
   return { browser, container, settings, conversation, generateTitle, completeConversationTitleGeneration, onSelectConversation };
 }
 
-afterEach(() => { document.body.replaceChildren(); jest.clearAllMocks(); });
+afterEach(() => { document.body.replaceChildren(); vi.clearAllMocks(); });
 
 it('generates a title for a previously skipped chat after selecting an available model', async () => {
   const fixture = setup();

@@ -1,15 +1,18 @@
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { createMockEl } from '@test/helpers/MockElement';
+import type { Mock } from 'vitest';
 
 import { SessionBrowser, type SessionBrowserDeps } from '@/features/chat/session-manager/SessionBrowser';
+
+
 
 function createFixture() {
   const deps = {
     plugin: {
       app: {},
-      getConversationList: jest.fn().mockReturnValue([]),
-      renameConversation: jest.fn().mockResolvedValue(undefined),
-      conversationLifecycle: { delete: jest.fn().mockResolvedValue(undefined) },
+      getConversationList: vi.fn().mockReturnValue([]),
+      renameConversation: vi.fn().mockResolvedValue(undefined),
+      conversationLifecycle: { delete: vi.fn().mockResolvedValue(undefined) },
       settings: { enableAutoTitleGeneration: true },
       projects: createProjectsFake(),
     },
@@ -30,13 +33,13 @@ describe('SessionListPosition', () => {
   let deps: ReturnType<typeof createFixture>['deps'];
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     ({ controller, deps } = createFixture());
   });
 
   it('preserves grouped-list position and loaded count across an external rerender', () => {
     const container = createMockEl();
-    (deps.plugin.getConversationList as jest.Mock).mockReturnValue(
+    (deps.plugin.getConversationList as Mock).mockReturnValue(
       Array.from({ length: 75 }, (_, index) => ({
         id: `conv-${index}`,
         title: `Conversation ${index}`,
@@ -45,7 +48,7 @@ describe('SessionListPosition', () => {
       })),
     );
     const options = {
-      onSelectConversation: jest.fn(),
+      onSelectConversation: vi.fn(),
       organization: 'linked-content' as const,
       sort: 'last-updated' as const,
       language: 'en',
@@ -71,7 +74,7 @@ describe('SessionListPosition', () => {
       deps.plugin.projects.put(projectRecord({ id: `project-${index}`, name: `Project ${index}` }));
     }
     const options = {
-      onSelectConversation: jest.fn(),
+      onSelectConversation: vi.fn(),
       showPinnedSection: true,
       scrollLayout: 'sections' as const,
       sessionScope: 'active' as const,
@@ -88,12 +91,12 @@ describe('SessionListPosition', () => {
   it('preserves the compact menu scroll, which moves its projects and sessions as one list', () => {
     const container = createMockEl();
     deps.plugin.projects.put(projectRecord({ id: 'project-1', name: 'Project 1' }));
-    (deps.plugin.getConversationList as jest.Mock).mockReturnValue(
+    (deps.plugin.getConversationList as Mock).mockReturnValue(
       Array.from({ length: 40 }, (_, index) => ({ id: `conv-${index}`, title: `Conversation ${index}`, createdAt: 40 - index })),
     );
     // The drop-up lists projects without the sidebar's Pinned section.
     const options = {
-      onSelectConversation: jest.fn(),
+      onSelectConversation: vi.fn(),
       sessionScope: 'active' as const,
       preserveListState: true,
     };
@@ -109,7 +112,7 @@ describe('SessionListPosition', () => {
 
   it('preserves flat session-list position and loaded count across an external rerender', () => {
     const container = createMockEl();
-    (deps.plugin.getConversationList as jest.Mock).mockReturnValue(
+    (deps.plugin.getConversationList as Mock).mockReturnValue(
       Array.from({ length: 75 }, (_, index) => ({
         id: `conv-${index}`,
         title: `Conversation ${index}`,
@@ -117,7 +120,7 @@ describe('SessionListPosition', () => {
       })),
     );
     const options = {
-      onSelectConversation: jest.fn(),
+      onSelectConversation: vi.fn(),
       organization: 'list' as const,
       sort: 'last-updated' as const,
       pageSize: 25,
@@ -138,7 +141,7 @@ describe('SessionListPosition', () => {
 
   it('preserves the loaded session count through an empty search result', () => {
     const container = createMockEl();
-    (deps.plugin.getConversationList as jest.Mock).mockReturnValue(
+    (deps.plugin.getConversationList as Mock).mockReturnValue(
       Array.from({ length: 75 }, (_, index) => ({
         id: `conv-${index}`,
         title: `Conversation ${index}`,
@@ -146,7 +149,7 @@ describe('SessionListPosition', () => {
       })),
     );
     const options = {
-      onSelectConversation: jest.fn(),
+      onSelectConversation: vi.fn(),
       pageSize: 25,
       preserveListState: true,
       showPinnedSection: true,
@@ -170,7 +173,7 @@ describe('SessionListPosition', () => {
 
   it('preserves dual-mode pinned and session scroll positions across a rerender', () => {
     const container = createMockEl();
-    (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+    (deps.plugin.getConversationList as Mock).mockReturnValue([
       { id: 'pinned', title: 'Pinned', createdAt: 100, isPinned: true },
       ...Array.from({ length: 40 }, (_, index) => ({
         id: `session-${index}`,
@@ -179,7 +182,7 @@ describe('SessionListPosition', () => {
       })),
     ]);
     const options = {
-      onSelectConversation: jest.fn(),
+      onSelectConversation: vi.fn(),
       showPinnedSection: true,
       scrollLayout: 'sections' as const,
       pageSize: 50,
@@ -210,9 +213,9 @@ describe('SessionListPosition', () => {
       createdAt: 1,
       isArchived: false,
     };
-    (deps.plugin.getConversationList as jest.Mock).mockImplementation(() => [conversation]);
+    (deps.plugin.getConversationList as Mock).mockImplementation(() => [conversation]);
     const options = {
-      onSelectConversation: jest.fn(),
+      onSelectConversation: vi.fn(),
       sessionScope: 'active' as const,
       sessionActionMode: 'active' as const,
       preserveListState: true,
@@ -229,11 +232,11 @@ describe('SessionListPosition', () => {
 
   it('installs surface controls before restoring preserved list position', () => {
     const container = createMockEl();
-    (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
+    (deps.plugin.getConversationList as Mock).mockReturnValue([
       { id: 'conv-1', title: 'Conversation', createdAt: 1 },
     ]);
     const options = {
-      onSelectConversation: jest.fn(),
+      onSelectConversation: vi.fn(),
       preserveListState: true,
       onBeforeRestoreListState: (listContainer: HTMLElement) => {
         const list = listContainer.querySelector<HTMLElement>('.claudian-history-list')!;
@@ -255,14 +258,14 @@ describe('SessionListPosition', () => {
     'installs surface controls when the %s session scope is empty',
     (sessionScope) => {
       const container = createMockEl();
-      const onBeforeRestoreListState = jest.fn((listContainer: HTMLElement) => {
+      const onBeforeRestoreListState = vi.fn((listContainer: HTMLElement) => {
         const list = listContainer.querySelector('.claudian-history-list')!;
         list.insertBefore(createMockEl(), list.firstChild);
       });
-      (deps.plugin.getConversationList as jest.Mock).mockReturnValue([]);
+      (deps.plugin.getConversationList as Mock).mockReturnValue([]);
 
       controller.renderHistoryDropdown(container, {
-        onSelectConversation: jest.fn(),
+        onSelectConversation: vi.fn(),
         sessionScope,
         preserveListState: true,
         onBeforeRestoreListState,

@@ -123,7 +123,7 @@ export function createInlineEditHarness() {
     replaceRange: (text: string) => editorView.dispatch({ changes: { from: 0, to: end, insert: text } }),
   };
   const context = { mode: 'selection' as const, selectedText: 'hello' };
-  const settled = jest.fn();
+  const settled = vi.fn();
   const notePath = 'note.md';
   const createSession = () => new InlineEditSession(
     app, plugin, plugin, editorView, editor, context, notePath, settled, { providerId: 'claude' },

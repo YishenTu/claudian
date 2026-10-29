@@ -35,8 +35,8 @@ import { PiRPCResponseError, PiRPCTransport } from '@/providers/pi/runtime/PiRPC
 class FakeKernel implements PiExecutionKernel {
   readonly requests: Array<{ payload: Record<string, unknown>; type: string }> = [];
   readonly sent: Array<Record<string, unknown>> = [];
-  readonly shutdown = jest.fn(async () => undefined);
-  readonly start = jest.fn();
+  readonly shutdown = vi.fn(async () => undefined);
+  readonly start = vi.fn();
   stderr = '';
 
   constructor(
@@ -89,7 +89,7 @@ function createHost(): any {
   return {
     workingDirectory: '/vault',
     executionLifecycleRegistry: new ProviderExecutionLifecycleRegistry(),
-    getResolvedProviderCliPath: jest.fn(async () => '/bin/pi'),
+    getResolvedProviderCliPath: vi.fn(async () => '/bin/pi'),
     settings: {
       effortLevel: 'off',
       mediaFolder: 'media',
@@ -129,9 +129,9 @@ function createConfig(
 
 function createInteractionPort(): ProviderInteractionPort {
   return {
-    askUserQuestion: jest.fn(),
-    dismissInteraction: jest.fn(),
-    requestApproval: jest.fn(),
+    askUserQuestion: vi.fn(),
+    dismissInteraction: vi.fn(),
+    requestApproval: vi.fn(),
   };
 }
 
@@ -310,7 +310,7 @@ describe('PiExecutionBackend', () => {
   });
 
   it.each(['complete', 'cancel'] as const)('keeps manual compaction pending beyond the control deadline until %s', async outcome => {
-    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
+    vi.useFakeTimers({ toNotFake: ['setImmediate', 'nextTick'] });
     const nativeOutput = new PassThrough();
     const nativeInput = new PassThrough();
     const transport = new PiRPCTransport({ input: nativeOutput, output: nativeInput });
@@ -326,7 +326,7 @@ describe('PiExecutionBackend', () => {
       await flush();
       const compact = JSON.parse(nativeInput.read().toString());
       expect(compact.type).toBe('compact');
-      await jest.advanceTimersByTimeAsync(30_001);
+      await vi.advanceTimersByTimeAsync(30_001);
       expect(events.filter(event => event.type === 'execution_error')).toEqual([]);
       expect(harness.kernels[0].shutdown).not.toHaveBeenCalled();
       if (outcome === 'complete') {
@@ -344,7 +344,7 @@ describe('PiExecutionBackend', () => {
       transport.dispose();
       await collecting;
       await harness.session.dispose();
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
@@ -627,7 +627,7 @@ describe('PiExecutionBackend', () => {
         return kernel;
       },
     );
-    const quiesce = jest.spyOn(probe, 'quiesceForEnvironmentChange');
+    const quiesce = vi.spyOn(probe, 'quiesceForEnvironmentChange');
     const services = await createPiWorkspaceServices(withRuntimeHosts(host), {
       commandMetadataProbe: probe,
     });
@@ -2586,8 +2586,8 @@ describe('PiExecutionBackend', () => {
       };
       const creation = createRejectableDeferred<typeof createdFork>();
       const rollback = createDeferred();
-      const createForkSessionFile = jest.fn(() => creation.promise);
-      const rollbackForkSessionFile = jest.fn(() => rollback.promise);
+      const createForkSessionFile = vi.fn(() => creation.promise);
+      const rollbackForkSessionFile = vi.fn(() => rollback.promise);
       const harness = createHarness(createConfig({
         resumeSeed: {
           providerState: {
@@ -2662,11 +2662,11 @@ describe('PiExecutionBackend', () => {
         sessionId: 'new-fork',
       };
       const rollback = createDeferred();
-      const rollbackForkSessionFile = jest.fn(() => rollback.promise);
+      const rollbackForkSessionFile = vi.fn(() => rollback.promise);
       let disposePromise: Promise<void> | undefined;
       const runHolder: { run?: ProviderExecutionRun } = {};
       const harnessHolder: { harness?: ReturnType<typeof createHarness> } = {};
-      const createForkSessionFile = jest.fn(async () => {
+      const createForkSessionFile = vi.fn(async () => {
         await Promise.resolve();
         if (teardown === 'cancel') runHolder.run?.cancel();
         else disposePromise = harnessHolder.harness?.session.dispose();
@@ -2732,10 +2732,10 @@ describe('PiExecutionBackend', () => {
     };
     const firstCreation = createRejectableDeferred<typeof firstTarget>();
     const rollback = createDeferred();
-    const createForkSessionFile = jest.fn()
+    const createForkSessionFile = vi.fn()
       .mockImplementationOnce(() => firstCreation.promise)
       .mockResolvedValueOnce(retryTarget);
-    const rollbackForkSessionFile = jest.fn(() => rollback.promise);
+    const rollbackForkSessionFile = vi.fn(() => rollback.promise);
     const harness = createHarness(createConfig({
       resumeSeed: {
         providerState: {
@@ -2808,10 +2808,10 @@ describe('PiExecutionBackend', () => {
       sessionId: 'fork-b',
     };
     const firstCreation = createRejectableDeferred<typeof firstTarget>();
-    const createForkSessionFile = jest.fn()
+    const createForkSessionFile = vi.fn()
       .mockImplementationOnce(() => firstCreation.promise)
       .mockResolvedValueOnce(retryTarget);
-    const rollbackForkSessionFile = jest.fn(async () => {
+    const rollbackForkSessionFile = vi.fn(async () => {
       throw new Error('fork rollback failed');
     });
     const harness = createHarness(createConfig({
@@ -2866,10 +2866,10 @@ describe('PiExecutionBackend', () => {
       sessionId: 'fork-b',
     };
     const firstCreation = createRejectableDeferred<typeof retryTarget>();
-    const createForkSessionFile = jest.fn()
+    const createForkSessionFile = vi.fn()
       .mockImplementationOnce(() => firstCreation.promise)
       .mockResolvedValueOnce(retryTarget);
-    const rollbackForkSessionFile = jest.fn(async () => undefined);
+    const rollbackForkSessionFile = vi.fn(async () => undefined);
     const harness = createHarness(createConfig({
       resumeSeed: {
         providerState: {
@@ -2918,10 +2918,10 @@ describe('PiExecutionBackend', () => {
     };
     let disposePromise: Promise<void> | undefined;
     const harnessHolder: { harness?: ReturnType<typeof createHarness> } = {};
-    const rollbackForkSessionFile = jest.fn(async () => {
+    const rollbackForkSessionFile = vi.fn(async () => {
       throw new Error('fork rollback failed');
     });
-    const createForkSessionFile = jest.fn(async () => {
+    const createForkSessionFile = vi.fn(async () => {
       await Promise.resolve();
       disposePromise = harnessHolder.harness?.session.dispose();
       return createdFork;

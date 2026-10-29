@@ -1,10 +1,10 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 import type { ProviderCapabilities } from '@/core/providers/types';
 import { NavigationSidebar } from '@/features/chat/navigation/NavigationSidebar';
@@ -33,7 +33,7 @@ function mount(scrollable: boolean) {
   }
   Object.defineProperty(messagesEl, 'scrollHeight', { configurable: true, value: scrollable ? 2_000 : 400 });
   Object.defineProperty(messagesEl, 'clientHeight', { configurable: true, value: 400 });
-  messagesEl.scrollTo = jest.fn() as never;
+  messagesEl.scrollTo = vi.fn() as never;
 
   const sidebar = new NavigationSidebar(parentEl, messagesEl);
   sidebars.push(sidebar);

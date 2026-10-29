@@ -11,12 +11,12 @@ function createHarness() {
   const state = new ChatState({});
   state.currentConversationId = 'conversation-1';
   const coordinator = {
-    steer: jest.fn(),
-    acceptSteerFromProviderEvent: jest.fn().mockResolvedValue(true),
-    releaseSteerCorrelation: jest.fn(),
+    steer: vi.fn(),
+    acceptSteerFromProviderEvent: vi.fn().mockResolvedValue(true),
+    releaseSteerCorrelation: vi.fn(),
   };
-  const returnUnsent = jest.fn();
-  const reportFailure = jest.fn();
+  const returnUnsent = vi.fn();
+  const reportFailure = vi.fn();
   const steering = new TurnSteering({
     state,
     turns: { isResponding: true },
@@ -32,12 +32,12 @@ function createHarness() {
       configuration: { model: 'model' } as ChatTurnSubmission['configuration'],
       toolPolicy: {} as ChatTurnSubmission['toolPolicy'],
     }),
-    onVisibleSteerChanged: jest.fn(),
+    onVisibleSteerChanged: vi.fn(),
     returnUnsent,
   });
   const message: QueuedMessage = {
     content: 'follow up',
-    onDelivery: jest.fn(),
+    onDelivery: vi.fn(),
     turnRequest: { text: 'follow up' } as QueuedMessage['turnRequest'],
   };
   return { coordinator, message, reportFailure, returnUnsent, steering };

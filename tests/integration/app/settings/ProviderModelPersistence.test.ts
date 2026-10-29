@@ -20,10 +20,10 @@ it.each(cases)('$id persists selected metadata without saving the available cata
   populate(settings);
   let content = '';
   const adapter = {
-    exists: jest.fn(async () => Boolean(content)),
-    read: jest.fn(async () => content),
-    write: jest.fn(async (_path: string, value: string) => { content = value; }),
-    delete: jest.fn(async () => undefined),
+    exists: vi.fn(async () => Boolean(content)),
+    read: vi.fn(async () => content),
+    write: vi.fn(async (_path: string, value: string) => { content = value; }),
+    delete: vi.fn(async () => undefined),
   } as unknown as VaultFileAdapter;
   const storage = new ClaudianSettingsStorage(adapter, DEFAULT_CLAUDIAN_SETTINGS);
   const expectedMetadata = read(settings)[0];

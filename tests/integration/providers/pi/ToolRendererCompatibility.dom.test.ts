@@ -1,14 +1,14 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { axe } from '@test/helpers/accessibility';
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import { getToolIcon } from '@/core/tools/toolIcons';
@@ -35,7 +35,7 @@ HTMLElement.prototype.scrollIntoView = function () {};
 HTMLElement.prototype.setText = function (text) { this.textContent = String(text); };
 
 // Vault refresh after file edits is an Obsidian boundary; the listing spy observes it.
-const listVaultFolder = jest.fn(async (_dir: string) => ({ files: [], folders: [] }));
+const listVaultFolder = vi.fn(async (_dir: string) => ({ files: [], folders: [] }));
 
 beforeEach(() => {
   document.body.replaceChildren();
@@ -449,7 +449,7 @@ it('streams a running script\'s nested calls through the Pi session and refreshe
   });
   const session = backend.createSession({
     lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported', workingDirectory: root,
-    interactionPort: { askUserQuestion: jest.fn(), requestApproval: jest.fn(), dismissInteraction: jest.fn() },
+    interactionPort: { askUserQuestion: vi.fn(), requestApproval: vi.fn(), dismissInteraction: vi.fn() },
   });
   const { stream, response, close } = createChatStream();
   try {
@@ -483,7 +483,7 @@ it('streams a running script\'s nested calls through the Pi session and refreshe
 
 it('presents a native Pi retry as a warning rather than a blocked action', async () => {
   const { stream, response, messages, close } = createChatStream();
-  const render = jest.spyOn(MarkdownRenderer, 'render').mockImplementation(async (_app, markdown, element) => { element.textContent = markdown; });
+  const render = vi.spyOn(MarkdownRenderer, 'render').mockImplementation(async (_app, markdown, element) => { element.textContent = markdown; });
   try {
     const state = createPiEventNormalizationState();
     for (const chunk of normalizePiRPCEvent({ type: 'auto_retry_start' }, state)) {

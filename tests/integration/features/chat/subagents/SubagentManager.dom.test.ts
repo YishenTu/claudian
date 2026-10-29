@@ -1,11 +1,11 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, screen, within } from '@testing-library/dom';
 import fs from 'fs';
-import { axe } from 'jest-axe';
 import { Component } from 'obsidian';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -356,7 +356,7 @@ it.each(['unrelated', 'running'] as const)('defers output-file recovery for %s r
   const directory = fs.mkdtempSync(join(tmpdir(), 'claudian-managed-output-'));
   const outputPath = join(directory, 'task.output');
   fs.writeFileSync(outputPath, JSON.stringify({ message: { role: 'assistant', content: [{ type: 'text', text: 'Recovered task answer' }] } }));
-  const read = jest.spyOn(fs, 'readFileSync');
+  const read = vi.spyOn(fs, 'readFileSync');
   const manager = new SubagentManager(() => {}, new ClaudeTaskResultInterpreter());
   const parent = document.createElement('div');
   document.body.append(parent);

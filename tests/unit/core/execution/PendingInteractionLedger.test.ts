@@ -1,7 +1,7 @@
 import { PendingInteractionLedger } from '@/core/execution';
 
 function createLedger() {
-  const port = { dismissInteraction: jest.fn() };
+  const port = { dismissInteraction: vi.fn() };
   return { ledger: new PendingInteractionLedger(port), port };
 }
 

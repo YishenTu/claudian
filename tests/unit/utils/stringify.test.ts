@@ -6,7 +6,7 @@ describe('stringifyUnknown', () => {
     [null, 'null'], [undefined, 'undefined'],
     [{ message: 'failure' }, '{"message":"failure"}'],
     [[1, 'two'], '[1,"two"]'],
-  ])('renders %p as readable text', (value, expected) => {
+  ])('renders %o as readable text', (value, expected) => {
     expect(stringifyUnknown(value)).toBe(expected);
   });
 

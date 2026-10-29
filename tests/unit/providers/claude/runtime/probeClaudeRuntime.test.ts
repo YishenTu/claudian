@@ -4,10 +4,10 @@ import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { buildClaudeLaunchOptions, probeClaudeRuntime } from '@/providers/claude/runtime/probeClaudeRuntime';
 
-const mockQuery = jest.fn();
-jest.mock('@/providers/claude/loadClaudeAgentSDK', () => ({ loadClaudeAgentQuery: async () => mockQuery }));
-jest.mock('@/core/process/env', () => ({
-  ...jest.requireActual('@/core/process/env'), getEnhancedPath: () => '/enhanced/bin',
+const mockQuery = vi.fn();
+vi.mock('@/providers/claude/loadClaudeAgentSDK', () => ({ loadClaudeAgentQuery: async () => mockQuery }));
+vi.mock('@/core/process/env', async () => ({
+  ...(await vi.importActual<typeof import('@/core/process/env')>('@/core/process/env')), getEnhancedPath: () => '/enhanced/bin',
 }));
 
 const initialization = {
@@ -23,7 +23,7 @@ function host(config: Record<string, unknown> = {}, environment = ''): ProviderR
   return runtimeHostFor({
     settings: { model: 'chat-model', sharedEnvironmentVariables: environment, providerConfigs: { claude: config } },
     workingDirectory: '/vault',
-    getResolvedProviderCliPath: jest.fn().mockResolvedValue('/bin/claude'),
+    getResolvedProviderCliPath: vi.fn().mockResolvedValue('/bin/claude'),
   }, 'claude');
 }
 
@@ -37,16 +37,16 @@ function nativeQuery(
   const pending = [...messages];
   let latestCommands: unknown;
   const conversation = {
-    initializationResult: jest.fn(init),
-    supportedCommands: jest.fn(async () => latestCommands ?? (await init()).commands),
-    supportedModels: jest.fn(),
-    next: jest.fn(async () => {
+    initializationResult: vi.fn(init),
+    supportedCommands: vi.fn(async () => latestCommands ?? (await init()).commands),
+    supportedModels: vi.fn(),
+    next: vi.fn(async () => {
       const value = pending.shift();
       if (!value) return { done: true, value: undefined };
       if (value.subtype === 'commands_changed') latestCommands = value.commands;
       return { done: false, value };
     }),
-    close: jest.fn(),
+    close: vi.fn(),
   };
   mockQuery.mockReturnValue(conversation);
   return conversation;
@@ -56,7 +56,7 @@ function lastLaunch(): { options: Options; prompt: unknown } {
   return mockQuery.mock.calls.at(-1)![0] as { options: Options; prompt: unknown };
 }
 
-afterEach(() => { jest.clearAllMocks(); });
+afterEach(() => { vi.clearAllMocks(); });
 
 describe('Claude runtime probe', () => {
   it('reads the initialization answer and session-init skills, without a model or persisted session', async () => {

@@ -1,9 +1,12 @@
 import { holdResponse } from '@test/helpers/ConversationPorts';
 import { createMockEl } from '@test/helpers/MockElement';
+import type { Mock } from 'vitest';
 
 import { ChatState } from '@/features/chat/state/ChatState';
 import { ThinkingIndicator } from '@/features/chat/turns/ThinkingIndicator';
 import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
+
+
 
 const originalWindow = (globalThis as { window?: Window }).window;
 
@@ -34,19 +37,19 @@ function restoreTestWindow(): void {
 describe('ThinkingIndicator', () => {
   let turns: TurnCoordinator;
   let state: ChatState;
-  let updateQueueIndicator: jest.Mock;
-  let scrollToBottom: jest.Mock;
+  let updateQueueIndicator: Mock;
+  let scrollToBottom: Mock;
   let indicator: ThinkingIndicator;
 
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     installTestWindow();
     turns = new TurnCoordinator();
     state = new ChatState({}, undefined, turns);
     state.currentContentEl = createMockEl();
     const messagesEl = createMockEl();
-    updateQueueIndicator = jest.fn();
-    scrollToBottom = jest.fn();
+    updateQueueIndicator = vi.fn();
+    scrollToBottom = vi.fn();
     indicator = new ThinkingIndicator({
       state,
       getMessagesEl: () => messagesEl,
@@ -59,16 +62,16 @@ describe('ThinkingIndicator', () => {
     state.clearThinkingIndicatorTimeout();
     state.clearFlavorTimerInterval();
     restoreTestWindow();
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it('appears after its debounce delay and scrolls it into view', () => {
     indicator.show();
-    jest.advanceTimersByTime(399);
+    vi.advanceTimersByTime(399);
     expect(state.thinkingEl).toBeNull();
     expect(scrollToBottom).not.toHaveBeenCalled();
 
-    jest.advanceTimersByTime(1);
+    vi.advanceTimersByTime(1);
     expect(state.thinkingEl).not.toBeNull();
     expect(state.waitingStatus).not.toBeNull();
     expect(scrollToBottom).toHaveBeenCalled();
@@ -76,26 +79,26 @@ describe('ThinkingIndicator', () => {
 
   it('returns after a text pause only while the response streams', async () => {
     indicator.afterTextPause();
-    jest.advanceTimersByTime(2_000);
+    vi.advanceTimersByTime(2_000);
     expect(state.thinkingEl).toBeNull();
 
     const finish = holdResponse(turns);
     indicator.afterTextPause();
-    jest.advanceTimersByTime(400);
+    vi.advanceTimersByTime(400);
     expect(state.thinkingEl).toBeNull();
-    jest.advanceTimersByTime(1_100);
+    vi.advanceTimersByTime(1_100);
     expect(state.thinkingEl).not.toBeNull();
     await finish();
   });
 
   it('resumes only while the response streams', async () => {
     indicator.resume(state.streamGeneration);
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
     expect(state.thinkingEl).toBeNull();
 
     const finish = holdResponse(turns);
     indicator.resume(state.streamGeneration);
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
     expect(state.thinkingEl).not.toBeNull();
     await finish();
   });
@@ -107,7 +110,7 @@ describe('ThinkingIndicator', () => {
     await finish();
     const finishNext = holdResponse(turns);
     indicator.resume(generation);
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
     expect(state.thinkingEl).toBeNull();
     await finishNext();
   });
@@ -120,7 +123,7 @@ describe('ThinkingIndicator', () => {
       const finishCurrent = holdResponse(turns);
       state.setActionRequired(true);
       indicator.show();
-      jest.advanceTimersByTime(500);
+      vi.advanceTimersByTime(500);
       expect(state.thinkingEl).toBeNull();
       state.setActionRequired(false);
       return { earlier, finishCurrent };
@@ -129,7 +132,7 @@ describe('ThinkingIndicator', () => {
     it('shows the current response indicator', async () => {
       const { earlier, finishCurrent } = await withholdCurrentIndicator();
       indicator.resume(earlier);
-      jest.advanceTimersByTime(500);
+      vi.advanceTimersByTime(500);
       expect(state.thinkingEl).not.toBeNull();
       await finishCurrent();
     });
@@ -138,7 +141,7 @@ describe('ThinkingIndicator', () => {
       const { earlier, finishCurrent } = await withholdCurrentIndicator();
       indicator.hide();
       indicator.resume(earlier);
-      jest.advanceTimersByTime(500);
+      vi.advanceTimersByTime(500);
       expect(state.thinkingEl).toBeNull();
       await finishCurrent();
     });
@@ -147,7 +150,7 @@ describe('ThinkingIndicator', () => {
       const { earlier, finishCurrent } = await withholdCurrentIndicator();
       await finishCurrent();
       indicator.resume(earlier);
-      jest.advanceTimersByTime(500);
+      vi.advanceTimersByTime(500);
       expect(state.thinkingEl).toBeNull();
     });
   });
@@ -156,7 +159,7 @@ describe('ThinkingIndicator', () => {
     state.responseStartTime = performance.now();
 
     indicator.show();
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
     expect(state.flavorTimerInterval).not.toBeNull();
 
     indicator.hide();
@@ -167,16 +170,16 @@ describe('ThinkingIndicator', () => {
   });
 
   it('uses the content owner window for thinking timers', () => {
-    const ownerSetTimeout = jest.fn<ReturnType<Window['setTimeout']>, Parameters<Window['setTimeout']>>(
+    const ownerSetTimeout = vi.fn<(...args: Parameters<Window['setTimeout']>) => ReturnType<Window['setTimeout']>>(
       (callback, timeout) => globalThis.setTimeout(callback, timeout) as unknown as number,
     );
-    const ownerClearTimeout = jest.fn<void, [number]>((handle) => {
+    const ownerClearTimeout = vi.fn<(...args: [number]) => void>((handle) => {
       globalThis.clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
     });
-    const ownerSetInterval = jest.fn<ReturnType<Window['setInterval']>, Parameters<Window['setInterval']>>(
+    const ownerSetInterval = vi.fn<(...args: Parameters<Window['setInterval']>) => ReturnType<Window['setInterval']>>(
       (callback, timeout) => globalThis.setInterval(callback, timeout) as unknown as number,
     );
-    const ownerClearInterval = jest.fn<void, [number]>((handle) => {
+    const ownerClearInterval = vi.fn<(...args: [number]) => void>((handle) => {
       globalThis.clearInterval(handle as unknown as ReturnType<typeof setInterval>);
     });
     const ownerWindow = {
@@ -200,7 +203,7 @@ describe('ThinkingIndicator', () => {
     expect(ownerClearTimeout).toHaveBeenCalled();
 
     indicator.show();
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
     expect(ownerSetInterval).toHaveBeenCalledWith(expect.any(Function), 1000);
 
     indicator.hide();
@@ -211,7 +214,7 @@ describe('ThinkingIndicator', () => {
     state.currentContentEl = null;
 
     indicator.show();
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
 
     expect(state.thinkingEl).toBeNull();
   });
@@ -220,25 +223,25 @@ describe('ThinkingIndicator', () => {
     state.currentThinkingBlock = { content: 'thinking...', startTime: Date.now() };
 
     indicator.show();
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
 
     expect(state.thinkingEl).toBeNull();
   });
 
   it('keeps an explicit status across hide and resume until it ends', () => {
     indicator.show('Compacting...', 'claudian-thinking--compact');
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
     expect(state.waitingStatus).toBe('Compacting...');
 
     indicator.hide();
     indicator.show();
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
     expect(state.waitingStatus).toBe('Compacting...');
 
     indicator.endExplicit();
     expect(state.thinkingEl).toBeNull();
     indicator.show();
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
     expect(state.waitingStatus).not.toBeNull();
     expect(state.waitingStatus).not.toBe('Compacting...');
   });
@@ -248,29 +251,29 @@ describe('ThinkingIndicator', () => {
     const supersede = () => holdResponse(turns)();
     indicator.show();
     await supersede();
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
     expect(state.thinkingEl).toBeNull();
     expect(state.waitingStatus).toBeNull();
 
     indicator.show();
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
     const staleEl = state.thinkingEl;
     expect(staleEl).not.toBeNull();
     await supersede();
 
     indicator.show();
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
     expect(state.thinkingEl).not.toBeNull();
     expect(state.thinkingEl).not.toBe(staleEl);
   });
 
   it('keeps the pending delay when asked to show again before it elapses', () => {
     indicator.show();
-    jest.advanceTimersByTime(300);
+    vi.advanceTimersByTime(300);
     indicator.show();
-    jest.advanceTimersByTime(300);
+    vi.advanceTimersByTime(300);
     indicator.show();
-    jest.advanceTimersByTime(100);
+    vi.advanceTimersByTime(100);
 
     expect(state.thinkingEl).not.toBeNull();
   });
@@ -279,7 +282,7 @@ describe('ThinkingIndicator', () => {
     state.responseStartTime = performance.now();
 
     indicator.show();
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
 
     const thinkingEl = state.thinkingEl;
     const firstInterval = state.flavorTimerInterval;
@@ -291,18 +294,18 @@ describe('ThinkingIndicator', () => {
     expect(state.thinkingEl).toBe(thinkingEl);
     expect(updateQueueIndicator).toHaveBeenCalled();
 
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
     expect(state.flavorTimerInterval).toBe(firstInterval);
   });
 
   it('should clear interval when timerSpan becomes disconnected from DOM', () => {
     // Use a non-zero value: with fake timers, performance.now() starts at 0,
     // and !0 is truthy which would cause updateTimer to return early.
-    jest.advanceTimersByTime(1);
+    vi.advanceTimersByTime(1);
     state.responseStartTime = performance.now();
 
     indicator.show();
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
 
     expect(state.flavorTimerInterval).not.toBeNull();
     const thinkingEl = state.thinkingEl;
@@ -316,26 +319,26 @@ describe('ThinkingIndicator', () => {
     // so first set it to true so the timer runs normally on its first tick.
     Object.defineProperty(timerSpan, 'isConnected', { value: true, writable: true, configurable: true });
 
-    jest.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1000);
     expect(state.flavorTimerInterval).not.toBeNull();
     expect((timerSpan as any).textContent).toContain('esc to interrupt');
 
     (timerSpan as any).isConnected = false;
-    jest.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1000);
 
     expect(state.flavorTimerInterval).toBeNull();
   });
 
   it('should clear pre-existing interval before creating new one', () => {
-    jest.advanceTimersByTime(1);
+    vi.advanceTimersByTime(1);
     state.responseStartTime = performance.now();
     const activeWindow = state.currentContentEl!.ownerDocument.defaultView!;
-    const clearIntervalSpy = jest.spyOn(activeWindow, 'clearInterval');
+    const clearIntervalSpy = vi.spyOn(activeWindow, 'clearInterval');
 
     state.setFlavorTimerInterval(activeWindow.setInterval(() => {}, 9999), activeWindow);
 
     indicator.show();
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
 
     expect(clearIntervalSpy).toHaveBeenCalled();
     expect(state.flavorTimerInterval).not.toBeNull();
@@ -344,11 +347,11 @@ describe('ThinkingIndicator', () => {
   });
 
   it('should not update timer text when responseStartTime is null', () => {
-    jest.advanceTimersByTime(1);
+    vi.advanceTimersByTime(1);
     state.responseStartTime = performance.now();
 
     indicator.show();
-    jest.advanceTimersByTime(500);
+    vi.advanceTimersByTime(500);
 
     expect(state.thinkingEl).not.toBeNull();
 
@@ -357,7 +360,7 @@ describe('ThinkingIndicator', () => {
     timerSpan.setText('Existing timer text');
 
     state.responseStartTime = null;
-    jest.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1000);
 
     expect(timerSpan.textContent).toBe('Existing timer text');
     // The interval is not cleared by the null check.

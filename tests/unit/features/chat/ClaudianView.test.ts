@@ -1,6 +1,7 @@
 import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
 import { createMockEl } from '@test/helpers/MockElement';
 import { Platform, Scope } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
@@ -11,10 +12,11 @@ import { ChatPresentationPlacement } from '@/features/chat/view/ChatPresentation
 import { createChatTabCommands } from '@/features/chat/workspace/ChatTabCommands';
 import type { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
-const mockTabManagerConstructor = jest.fn();
-jest.mock('@/features/chat/tabs/TabManager', () => ({
-  TabManager: jest.fn().mockImplementation((...args: unknown[]) =>
-    mockTabManagerConstructor(...args)),
+
+
+const mockTabManagerConstructor = vi.fn();
+vi.mock('@/features/chat/tabs/TabManager', () => ({
+  TabManager: vi.fn().mockImplementation(function (...args: unknown[]) { return mockTabManagerConstructor(...args); }),
 }));
 
 const MockScope = Scope as typeof Scope & { instances: Scope[] };
@@ -34,27 +36,27 @@ function deferred<T>(): {
 function createFakeTabManager(overrides: Record<string, unknown> = {}): any {
   const manager: any = {
     callbacks: null,
-    beginShutdown: jest.fn(),
-    canCreateTab: jest.fn().mockReturnValue(true),
-    createNewConversation: jest.fn().mockResolvedValue(undefined),
-    createTab: jest.fn().mockResolvedValue(null),
-    destroy: jest.fn().mockResolvedValue(undefined),
-    drainForShutdownSnapshot: jest.fn().mockResolvedValue(undefined),
-    getActiveTab: jest.fn().mockReturnValue(null),
-    getAllTabs: jest.fn().mockReturnValue([]),
-    getPersistedState: jest.fn().mockReturnValue({ activeTabId: null, openTabs: [] }),
-    getTab: jest.fn().mockReturnValue(null),
-    getTabBarItems: jest.fn().mockReturnValue([]),
-    getTabCount: jest.fn().mockReturnValue(1),
-    getTabIdentities: jest.fn().mockReturnValue([]),
-    restoreState: jest.fn().mockResolvedValue(undefined),
-    sealShutdownSnapshot: jest.fn(),
-    setTabLabel: jest.fn(),
+    beginShutdown: vi.fn(),
+    canCreateTab: vi.fn().mockReturnValue(true),
+    createNewConversation: vi.fn().mockResolvedValue(undefined),
+    createTab: vi.fn().mockResolvedValue(null),
+    destroy: vi.fn().mockResolvedValue(undefined),
+    drainForShutdownSnapshot: vi.fn().mockResolvedValue(undefined),
+    getActiveTab: vi.fn().mockReturnValue(null),
+    getAllTabs: vi.fn().mockReturnValue([]),
+    getPersistedState: vi.fn().mockReturnValue({ activeTabId: null, openTabs: [] }),
+    getTab: vi.fn().mockReturnValue(null),
+    getTabBarItems: vi.fn().mockReturnValue([]),
+    getTabCount: vi.fn().mockReturnValue(1),
+    getTabIdentities: vi.fn().mockReturnValue([]),
+    restoreState: vi.fn().mockResolvedValue(undefined),
+    sealShutdownSnapshot: vi.fn(),
+    setTabLabel: vi.fn(),
     viewerSlot: {
-      enter: jest.fn().mockResolvedValue(undefined),
-      release: jest.fn().mockResolvedValue(undefined),
-      show: jest.fn().mockResolvedValue(undefined),
-      startDraft: jest.fn().mockResolvedValue(undefined),
+      enter: vi.fn().mockResolvedValue(undefined),
+      release: vi.fn().mockResolvedValue(undefined),
+      show: vi.fn().mockResolvedValue(undefined),
+      startDraft: vi.fn().mockResolvedValue(undefined),
     },
     ...overrides,
   };
@@ -73,7 +75,7 @@ function installTabManager(manager: any): void {
 
 function createOpenablePlugin(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    ensureConversationMetadataLoaded: jest.fn().mockResolvedValue(undefined),
+    ensureConversationMetadataLoaded: vi.fn().mockResolvedValue(undefined),
     settings: { restoreTabsOnStartup: true },
     ...overrides,
   };
@@ -81,8 +83,8 @@ function createOpenablePlugin(overrides: Record<string, unknown> = {}): Record<s
 
 function createSizedContentEl(width: number) {
   const contentEl = createMockEl();
-  contentEl.getBoundingClientRect = jest.fn(() => ({ width }));
-  contentEl.style.setProperty = jest.fn();
+  contentEl.getBoundingClientRect = vi.fn(() => ({ width }));
+  contentEl.style.setProperty = vi.fn();
   return contentEl;
 }
 
@@ -94,11 +96,11 @@ function captureResizeObserver(contentEl: any): (width: number) => void {
       resizeCallback = callback;
     }
 
-    observe = jest.fn();
-    disconnect = jest.fn();
+    observe = vi.fn();
+    disconnect = vi.fn();
   };
   return (width: number) => {
-    contentEl.getBoundingClientRect = jest.fn(() => ({ width }));
+    contentEl.getBoundingClientRect = vi.fn(() => ({ width }));
     resizeCallback([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver);
   };
 }
@@ -128,19 +130,19 @@ function createModelRefreshTab(providerId: 'codex' | 'grok', conversationId: str
     draftModel: null,
     lifecycleState: 'open',
     providerId,
-    refreshProviderControls: jest.fn(),
+    refreshProviderControls: vi.fn(),
   };
 }
 
 afterEach(async () => {
   // Closing cancels scheduled tab bar renders before the next test replaces the fakes.
   for (const view of openedViews.splice(0)) await view.onClose();
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe('ClaudianView model refresh routing', () => {
   it('refreshes provider controls only for tabs the changed provider can affect', () => {
-    jest.spyOn(ProviderSettingsCoordinator, 'getProviderSettingsSnapshot')
+    vi.spyOn(ProviderSettingsCoordinator, 'getProviderSettingsSnapshot')
       .mockImplementation((_settings, providerId) => ({
         customContextLimits: {},
         model: `${providerId}-model`,
@@ -150,8 +152,8 @@ describe('ClaudianView model refresh routing', () => {
     const grokTab = createModelRefreshTab('grok', 'grok-conversation');
     const blankGrokTab = createModelRefreshTab('grok', null);
     const tabManager = {
-      getAllTabs: jest.fn().mockReturnValue([codexTab, grokTab, blankGrokTab]),
-      reconcileProviderAvailability: jest.fn(),
+      getAllTabs: vi.fn().mockReturnValue([codexTab, grokTab, blankGrokTab]),
+      reconcileProviderAvailability: vi.fn(),
     };
     const view = createClaudianView({ tabManager });
 
@@ -201,8 +203,8 @@ describe('ClaudianView tab controls', () => {
   });
 
   it('keeps tab controls in the view-owned input row', async () => {
-    const captureScrollPosition = jest.spyOn(TabBar.prototype, 'captureScrollPosition');
-    const restoreScrollPosition = jest.spyOn(TabBar.prototype, 'restoreScrollPosition');
+    const captureScrollPosition = vi.spyOn(TabBar.prototype, 'captureScrollPosition');
+    const restoreScrollPosition = vi.spyOn(TabBar.prototype, 'restoreScrollPosition');
 
     const { contentEl, view } = await openView();
 
@@ -218,10 +220,10 @@ describe('ClaudianView tab controls', () => {
   });
 
   it('focuses the composer after creating a new tab', async () => {
-    const focus = jest.fn();
+    const focus = vi.fn();
     const tab = { composer: { focus } };
     const view = createClaudianView({
-      tabManager: { createTab: jest.fn().mockResolvedValue(tab), getActiveTab: () => null },
+      tabManager: { createTab: vi.fn().mockResolvedValue(tab), getActiveTab: () => null },
     });
 
     await expect(view.createNewTab()).resolves.toBe(tab);
@@ -230,10 +232,10 @@ describe('ClaudianView tab controls', () => {
   });
 
   it('routes active-file changes only to the active tab Linked content owner', () => {
-    const handleActiveFileChanged = jest.fn();
+    const handleActiveFileChanged = vi.fn();
     const view = createClaudianView({
       tabManager: {
-        getActiveTab: jest.fn().mockReturnValue({ linkedContent: { handleActiveFileChanged } }),
+        getActiveTab: vi.fn().mockReturnValue({ linkedContent: { handleActiveFileChanged } }),
       },
     });
     view.wireEventHandlers();
@@ -270,15 +272,15 @@ describe('ClaudianView tab controls', () => {
 
   it('offers tab renaming exactly while the compact tab bar is shown, restored shells included', async () => {
     const manager = createFakeTabManager({
-      getActiveTabId: jest.fn().mockReturnValue('tab-1'),
+      getActiveTabId: vi.fn().mockReturnValue('tab-1'),
       // One assembled runtime and one restored shell that has not been activated yet.
-      getAllTabs: jest.fn().mockReturnValue([{ id: 'tab-1' }]),
-      getTabCount: jest.fn().mockReturnValue(2),
+      getAllTabs: vi.fn().mockReturnValue([{ id: 'tab-1' }]),
+      getTabCount: vi.fn().mockReturnValue(2),
     });
     const { contentEl, view } = await openView({ manager, width: 400 });
     const rename = createChatTabCommands({
       workspace: { getLeavesOfType: () => [] },
-      views: { getView: () => view, activateView: jest.fn() },
+      views: { getView: () => view, activateView: vi.fn() },
     }).find(command => command.id === 'rename-current-tab')!;
     view.refreshTabControls();
 
@@ -293,7 +295,7 @@ describe('ClaudianView tab controls', () => {
   });
 
   it('lends the footer chip slot to the active tab only while the view is compact', async () => {
-    const setSideChatChipHost = jest.fn();
+    const setSideChatChipHost = vi.fn();
     const dom = {
       contentEl: createMockEl(),
       inputComposerEl: createMockEl(),
@@ -307,8 +309,8 @@ describe('ClaudianView tab controls', () => {
       placement: createTabPlacementPort(dom as never, setSideChatChipHost, () => {}),
     };
     const manager = createFakeTabManager({
-      getActiveTab: jest.fn().mockReturnValue(tab),
-      getTab: jest.fn().mockReturnValue(tab),
+      getActiveTab: vi.fn().mockReturnValue(tab),
+      getTab: vi.fn().mockReturnValue(tab),
     });
     const contentEl = createSizedContentEl(400);
     const resize = captureResizeObserver(contentEl);
@@ -348,8 +350,8 @@ describe('ClaudianView tab controls', () => {
     ['wide', 640, true],
     ['compact', 400, false],
   ])('starts New the %s layout way', async (_label, width, wide) => {
-    const tab = { id: 'new-tab', composer: { focus: jest.fn() } };
-    const manager = createFakeTabManager({ createTab: jest.fn().mockResolvedValue(tab) });
+    const tab = { id: 'new-tab', composer: { focus: vi.fn() } };
+    const manager = createFakeTabManager({ createTab: vi.fn().mockResolvedValue(tab) });
     const { view } = await openView({ manager, width });
 
     await view.startNewConversation();
@@ -491,7 +493,7 @@ describe('ClaudianView dual-pane wiring', () => {
   });
 
   it('notifies other open views when runtime session navigation changes', async () => {
-    const otherView = { notifyConversationListChanged: jest.fn() };
+    const otherView = { notifyConversationListChanged: vi.fn() };
     let view: any = null;
     const opened = await openView({
       plugin: { getAllViews: () => (view ? [view, otherView] : []) },
@@ -515,7 +517,7 @@ describe('ClaudianView mention data provider', () => {
     expect(vault.offref).not.toHaveBeenCalled();
     // Vault events invalidate the same provider the tab manager hands to every tab.
     const tabProvider = mockTabManagerConstructor.mock.calls[0][4] as VaultMentionDataProvider;
-    const markFilesDirty = jest.spyOn(tabProvider, 'markFilesDirty');
+    const markFilesDirty = vi.spyOn(tabProvider, 'markFilesDirty');
     const onCreate = vault.on.mock.calls.find((call: unknown[]) => call[0] === 'create')[1];
     onCreate();
     expect(markFilesDirty).toHaveBeenCalledTimes(1);
@@ -540,17 +542,17 @@ describe('ClaudianView mention data provider', () => {
 
 describe('ClaudianView runtime tab initialization', () => {
   it('waits for Obsidian state delivery before creating a fresh runtime tab', async () => {
-    const createTab = jest.fn().mockResolvedValue({});
+    const createTab = vi.fn().mockResolvedValue({});
     const manager = createFakeTabManager({
       createTab,
-      getPersistedState: jest.fn().mockReturnValue({
+      getPersistedState: vi.fn().mockReturnValue({
         activeTabId: 'restored-2',
         openTabs: [
           { conversationId: null, tabId: 'restored-1' },
           { conversationId: null, tabId: 'restored-2' },
         ],
       }),
-      restoreState: jest.fn(async () => {
+      restoreState: vi.fn(async () => {
         manager.callbacks.onTabCreated({ id: 'restored-1' });
         await Promise.resolve();
         manager.callbacks.onTabCreated({ id: 'restored-2' });
@@ -560,15 +562,16 @@ describe('ClaudianView runtime tab initialization', () => {
     installTabManager(manager);
     const contentEl = createSizedContentEl(640);
     const view = createClaudianView({ plugin: createOpenablePlugin(), contentEl });
+    openedViews.push(view);
     // Restoration plans and the nav row see the measured wide layout before the tab manager exists.
-    const attachNavRow = jest.spyOn(ChatPresentationPlacement.prototype, 'attachNavRow')
+    const attachNavRow = vi.spyOn(ChatPresentationPlacement.prototype, 'attachNavRow')
       .mockImplementation(() => {
         expect(view.layout.isWide).toBe(true);
         expect(contentEl.hasClass('claudian-wide-session-layout')).toBe(true);
       });
-    const updateTabBar = jest.spyOn(view, 'updateTabBar');
-    const notifyNavigation = jest.spyOn(view, 'notifyConversationNavigationChanged');
-    const syncProviderBrandColor = jest.spyOn(view, 'syncProviderBrandColor');
+    const updateTabBar = vi.spyOn(view, 'updateTabBar');
+    const notifyNavigation = vi.spyOn(view, 'notifyConversationNavigationChanged');
+    const syncProviderBrandColor = vi.spyOn(view, 'syncProviderBrandColor');
 
     await view.onOpen();
 
@@ -583,7 +586,7 @@ describe('ClaudianView runtime tab initialization', () => {
     expect(manager.callbacks).not.toHaveProperty('onPersistedStateChanged');
     expect(updateTabBar).toHaveBeenCalledTimes(1);
 
-    view.tabWorkspace.persist = jest.fn();
+    view.tabWorkspace.persist = vi.fn();
     updateTabBar.mockClear();
     manager.callbacks.onActiveTabChanged('restored-1', 'restored-2');
     expect(view.tabWorkspace.persist).not.toHaveBeenCalled();
@@ -618,24 +621,24 @@ describe('ClaudianView runtime tab initialization', () => {
     const metadataLoad = deferred<void>();
     const manager = createFakeTabManager();
     installTabManager(manager);
-    const unregisterZen = jest.fn();
+    const unregisterZen = vi.fn();
     const plugin = createOpenablePlugin({
-      ensureConversationMetadataLoaded: jest.fn(() => metadataLoad.promise),
-      registerZenModeSource: jest.fn(() => unregisterZen),
+      ensureConversationMetadataLoaded: vi.fn(() => metadataLoad.promise),
+      registerZenModeSource: vi.fn(() => unregisterZen),
     });
     const contentEl = createSizedContentEl(400);
-    const resizeObserverConstructed = jest.fn();
+    const resizeObserverConstructed = vi.fn();
     contentEl.ownerDocument.defaultView.ResizeObserver = class {
       constructor() {
         resizeObserverConstructed();
       }
 
-      observe = jest.fn();
-      disconnect = jest.fn();
+      observe = vi.fn();
+      disconnect = vi.fn();
     };
     const view = createClaudianView({ plugin, contentEl });
-    const syncProviderBrandColor = jest.spyOn(view, 'syncProviderBrandColor');
-    const restoreAll = jest.spyOn(ChatPresentationPlacement.prototype, 'restoreAll');
+    const syncProviderBrandColor = vi.spyOn(view, 'syncProviderBrandColor');
+    const restoreAll = vi.spyOn(ChatPresentationPlacement.prototype, 'restoreAll');
 
     await view.onOpen();
     expect(plugin.registerZenModeSource).toHaveBeenCalledWith(view);
@@ -675,18 +678,18 @@ describe('ClaudianView runtime tab initialization', () => {
   it('reuses closing persistence and restores the whole workspace when reopening wide', async () => {
     const pendingFlush = deferred<void>();
     const persistence = {
-      dispose: jest.fn(),
-      flush: jest.fn(() => pendingFlush.promise),
-      update: jest.fn(),
+      dispose: vi.fn(),
+      flush: vi.fn(() => pendingFlush.promise),
+      update: vi.fn(),
     };
-    const createTab = jest.fn().mockResolvedValue({});
+    const createTab = vi.fn().mockResolvedValue({});
     const manager = createFakeTabManager({
       createTab,
-      getPersistedState: jest.fn().mockReturnValue({
+      getPersistedState: vi.fn().mockReturnValue({
         activeTabId: 'closing-tab-2',
         openTabs: [{ conversationId: null, tabId: 'closing-tab-2' }],
       }),
-      restoreState: jest.fn(async () => {
+      restoreState: vi.fn(async () => {
         await createTab();
       }),
     });
@@ -732,21 +735,21 @@ describe('ClaudianView runtime tab initialization', () => {
   it('waits for the closing shutdown snapshot before restoring a reopened view', async () => {
     const shutdownSnapshot = deferred<void>();
     const persistence = {
-      dispose: jest.fn(),
-      flush: jest.fn().mockResolvedValue(undefined),
-      update: jest.fn(),
+      dispose: vi.fn(),
+      flush: vi.fn().mockResolvedValue(undefined),
+      update: vi.fn(),
     };
-    const createTab = jest.fn().mockResolvedValue({});
+    const createTab = vi.fn().mockResolvedValue({});
     const manager = createFakeTabManager({
       createTab,
-      getPersistedState: jest.fn().mockReturnValue({
+      getPersistedState: vi.fn().mockReturnValue({
         activeTabId: 'finalized-tab-2',
         openTabs: [
           { conversationId: 'conversation-1', tabId: 'finalized-tab-1' },
           { conversationId: null, tabId: 'finalized-tab-2' },
         ],
       }),
-      restoreState: jest.fn(async () => {
+      restoreState: vi.fn(async () => {
         await createTab();
       }),
     });
@@ -790,19 +793,19 @@ describe('ClaudianView runtime tab initialization', () => {
 describe('ClaudianView composer input', () => {
   function createComposerHarness(existingContent: string): {
     inputEl: HTMLTextAreaElement;
-    inputHandler: jest.Mock;
+    inputHandler: Mock;
     view: any;
   } {
     const inputEl = createMockEl('textarea') as unknown as HTMLTextAreaElement;
-    const inputHandler = jest.fn();
+    const inputHandler = vi.fn();
     inputEl.value = existingContent;
     inputEl.selectionStart = 0;
     inputEl.selectionEnd = 0;
-    inputEl.focus = jest.fn();
+    inputEl.focus = vi.fn();
     inputEl.addEventListener('input', inputHandler);
 
     const tabManager = {
-      getActiveTab: jest.fn().mockReturnValue({
+      getActiveTab: vi.fn().mockReturnValue({
         id: 'active-tab',
         composer: createTabComposerPort(inputEl as never, {} as never),
       }),
@@ -843,7 +846,7 @@ describe('ClaudianView composer input', () => {
 
   it('returns false when there is no active composer', () => {
     const view = createClaudianView({
-      tabManager: { getActiveTab: jest.fn().mockReturnValue(null) },
+      tabManager: { getActiveTab: vi.fn().mockReturnValue(null) },
     });
 
     expect(view.appendToActiveInput('@projects/plan.md ')).toBe(false);
@@ -853,27 +856,27 @@ describe('ClaudianView composer input', () => {
 describe('ClaudianView shutdown', () => {
   function createClosingTabBar() {
     return {
-      destroy: jest.fn(),
-      getExpandedTitleTabIds: jest.fn().mockReturnValue([]),
-      getTabLabels: jest.fn().mockReturnValue({}),
+      destroy: vi.fn(),
+      getExpandedTitleTabIds: vi.fn().mockReturnValue([]),
+      getTabLabels: vi.fn().mockReturnValue({}),
     };
   }
 
   it('prepares plugin unload through one shared drained snapshot', async () => {
     const drain = deferred<void>();
-    const flush = jest.fn().mockResolvedValue(undefined);
+    const flush = vi.fn().mockResolvedValue(undefined);
     const manager = {
-      beginShutdown: jest.fn(),
-      drainForShutdownSnapshot: jest.fn(() => drain.promise),
-      getPersistedState: jest.fn().mockReturnValue({
+      beginShutdown: vi.fn(),
+      drainForShutdownSnapshot: vi.fn(() => drain.promise),
+      getPersistedState: vi.fn().mockReturnValue({
         activeTabId: 'tab-1',
         openTabs: [{ conversationId: 'conversation-1', tabId: 'tab-1' }],
       }),
-      sealShutdownSnapshot: jest.fn(),
+      sealShutdownSnapshot: vi.fn(),
     };
     const persistence = {
       flush,
-      update: jest.fn(),
+      update: vi.fn(),
     };
     const view = createClaudianView({ tabManager: manager });
     Object.assign(view.tabWorkspace, { persistence });
@@ -898,14 +901,14 @@ describe('ClaudianView shutdown', () => {
   it('drains active turns before sealing and flushing the final tab identity', async () => {
     const drain = deferred<void>();
     const activeTab = { conversationId: null as string | null, id: 'tab-1' };
-    const update = jest.fn();
-    const flush = jest.fn().mockResolvedValue(undefined);
-    const sealShutdownSnapshot = jest.fn();
+    const update = vi.fn();
+    const flush = vi.fn().mockResolvedValue(undefined);
+    const sealShutdownSnapshot = vi.fn();
     const manager = {
-      beginShutdown: jest.fn(),
-      destroy: jest.fn().mockResolvedValue(undefined),
-      drainForShutdownSnapshot: jest.fn(() => drain.promise),
-      getPersistedState: jest.fn(() => ({
+      beginShutdown: vi.fn(),
+      destroy: vi.fn().mockResolvedValue(undefined),
+      drainForShutdownSnapshot: vi.fn(() => drain.promise),
+      getPersistedState: vi.fn(() => ({
         activeTabId: activeTab.id,
         openTabs: [{ conversationId: activeTab.conversationId, tabId: activeTab.id }],
       })),
@@ -914,7 +917,7 @@ describe('ClaudianView shutdown', () => {
     const view = createClaudianView({ tabManager: manager });
     Object.assign(view, { scope: {}, tabBar: createClosingTabBar() });
     Object.assign(view.tabWorkspace, {
-      persistence: { dispose: jest.fn(), flush, update },
+      persistence: { dispose: vi.fn(), flush, update },
     });
 
     const closing = view.onClose();
@@ -948,25 +951,25 @@ describe('ClaudianView shutdown', () => {
       openTabs: [{ conversationId: 'conversation-1', tabId: 'tab-1' }],
     };
     const manager = {
-      beginShutdown: jest.fn(),
-      destroy: jest.fn(() => {
+      beginShutdown: vi.fn(),
+      destroy: vi.fn(() => {
         teardownStarted = true;
         return destruction.promise;
       }),
-      drainForShutdownSnapshot: jest.fn().mockResolvedValue(undefined),
-      getPersistedState: jest.fn(() => teardownStarted
+      drainForShutdownSnapshot: vi.fn().mockResolvedValue(undefined),
+      getPersistedState: vi.fn(() => teardownStarted
         ? { activeTabId: null, openTabs: [] }
         : finalState),
-      sealShutdownSnapshot: jest.fn(),
+      sealShutdownSnapshot: vi.fn(),
     };
     const view = createClaudianView({ tabManager: manager });
     Object.assign(view, { scope: {}, tabBar: createClosingTabBar() });
     Object.assign(view.tabWorkspace, {
       pendingState: null,
       persistence: {
-        dispose: jest.fn(),
-        flush: jest.fn().mockResolvedValue(undefined),
-        update: jest.fn(),
+        dispose: vi.fn(),
+        flush: vi.fn().mockResolvedValue(undefined),
+        update: vi.fn(),
       },
     });
 
@@ -988,21 +991,21 @@ describe('ClaudianView shutdown', () => {
   });
 
   it('flushes the current tab identity before disposing view resources', async () => {
-    const beginShutdown = jest.fn();
-    const destroy = jest.fn().mockResolvedValue(undefined);
-    const sealShutdownSnapshot = jest.fn();
-    const disposePersistence = jest.fn();
+    const beginShutdown = vi.fn();
+    const destroy = vi.fn().mockResolvedValue(undefined);
+    const sealShutdownSnapshot = vi.fn();
+    const disposePersistence = vi.fn();
     let resolveFlush!: () => void;
-    const flushPersistence = jest.fn(() => new Promise<void>(resolve => {
+    const flushPersistence = vi.fn(() => new Promise<void>(resolve => {
       resolveFlush = resolve;
     }));
-    const updatePersistence = jest.fn();
+    const updatePersistence = vi.fn();
     const tabBar = createClosingTabBar();
     const view = createClaudianView({
       tabManager: {
         beginShutdown,
         destroy,
-        getPersistedState: jest.fn().mockReturnValue({
+        getPersistedState: vi.fn().mockReturnValue({
           activeTabId: 'tab-1',
           openTabs: [{ conversationId: 'conversation-1', tabId: 'tab-1' }],
         }),
@@ -1017,7 +1020,7 @@ describe('ClaudianView shutdown', () => {
         update: updatePersistence,
       },
     });
-    const restoreAll = jest.spyOn(ChatPresentationPlacement.prototype, 'restoreAll');
+    const restoreAll = vi.spyOn(ChatPresentationPlacement.prototype, 'restoreAll');
 
     const closing = view.onClose();
 
@@ -1043,25 +1046,25 @@ describe('ClaudianView shutdown', () => {
   });
 
   it('still disposes view resources when the current-tab flush fails', async () => {
-    const destroy = jest.fn().mockResolvedValue(undefined);
-    const disposePersistence = jest.fn();
+    const destroy = vi.fn().mockResolvedValue(undefined);
+    const disposePersistence = vi.fn();
     const view = createClaudianView({
       tabManager: {
-        beginShutdown: jest.fn(),
+        beginShutdown: vi.fn(),
         destroy,
-        getPersistedState: jest.fn().mockReturnValue({
+        getPersistedState: vi.fn().mockReturnValue({
           activeTabId: 'tab-1',
           openTabs: [{ conversationId: null, tabId: 'tab-1' }],
         }),
-        sealShutdownSnapshot: jest.fn(),
+        sealShutdownSnapshot: vi.fn(),
       },
     });
     Object.assign(view, { scope: {}, tabBar: createClosingTabBar() });
     Object.assign(view.tabWorkspace, {
       persistence: {
         dispose: disposePersistence,
-        flush: jest.fn().mockRejectedValue(new Error('disk full')),
-        update: jest.fn(),
+        flush: vi.fn().mockRejectedValue(new Error('disk full')),
+        update: vi.fn(),
       },
     });
 
@@ -1075,21 +1078,21 @@ describe('ClaudianView shutdown', () => {
   it('does not let an older close finalizer clear resources from a newer open', async () => {
     const flush = deferred<void>();
     const oldManager = {
-      beginShutdown: jest.fn(),
-      destroy: jest.fn().mockResolvedValue(undefined),
-      getPersistedState: jest.fn().mockReturnValue({
+      beginShutdown: vi.fn(),
+      destroy: vi.fn().mockResolvedValue(undefined),
+      getPersistedState: vi.fn().mockReturnValue({
         activeTabId: 'old-tab',
         openTabs: [{ conversationId: null, tabId: 'old-tab' }],
       }),
-      sealShutdownSnapshot: jest.fn(),
+      sealShutdownSnapshot: vi.fn(),
     };
     const oldPersistence = {
-      dispose: jest.fn(),
-      flush: jest.fn(() => flush.promise),
-      update: jest.fn(),
+      dispose: vi.fn(),
+      flush: vi.fn(() => flush.promise),
+      update: vi.fn(),
     };
     const oldTabBar = createClosingTabBar();
-    const oldReleaseMentionCacheEvents = jest.fn();
+    const oldReleaseMentionCacheEvents = vi.fn();
     const view = createClaudianView({ tabManager: oldManager });
     Object.assign(view, {
       releaseMentionCacheEvents: oldReleaseMentionCacheEvents,
@@ -1102,8 +1105,8 @@ describe('ClaudianView shutdown', () => {
     expect(oldReleaseMentionCacheEvents).toHaveBeenCalledTimes(1);
     const newManager = {};
     const newPersistence = {};
-    const newTabBar = { destroy: jest.fn() };
-    const newReleaseMentionCacheEvents = jest.fn();
+    const newTabBar = { destroy: vi.fn() };
+    const newReleaseMentionCacheEvents = vi.fn();
     const newScope = {};
     Object.assign(view, {
       releaseMentionCacheEvents: newReleaseMentionCacheEvents,
@@ -1130,18 +1133,18 @@ describe('ClaudianView shutdown', () => {
   it('does not dispose persistence retained by a newer open lifecycle', async () => {
     const flush = deferred<void>();
     const persistence = {
-      dispose: jest.fn(),
-      flush: jest.fn(() => flush.promise),
-      update: jest.fn(),
+      dispose: vi.fn(),
+      flush: vi.fn(() => flush.promise),
+      update: vi.fn(),
     };
     const oldManager = {
-      beginShutdown: jest.fn(),
-      destroy: jest.fn().mockResolvedValue(undefined),
-      getPersistedState: jest.fn().mockReturnValue({
+      beginShutdown: vi.fn(),
+      destroy: vi.fn().mockResolvedValue(undefined),
+      getPersistedState: vi.fn().mockReturnValue({
         activeTabId: 'old-tab',
         openTabs: [{ conversationId: null, tabId: 'old-tab' }],
       }),
-      sealShutdownSnapshot: jest.fn(),
+      sealShutdownSnapshot: vi.fn(),
     };
     const view = createClaudianView({ tabManager: oldManager });
     Object.assign(view, { scope: {}, tabBar: createClosingTabBar() });
@@ -1175,21 +1178,21 @@ describe('ClaudianView Escape handling', () => {
     backgroundWork?: boolean;
     escapeConsumer?: EscapeConsumer;
   }): {
-    cancelStreaming: jest.Mock;
-    closeOpenMenu: jest.Mock;
+    cancelStreaming: Mock;
+    closeOpenMenu: Mock;
     escape: (event?: Partial<KeyboardEvent>) => unknown;
     view: any;
   } {
-    const cancelStreaming = jest.fn();
+    const cancelStreaming = vi.fn();
     let toolbarMenuOpen = options.toolbarMenuOpen ?? false;
-    const closeOpenMenu = jest.fn(() => {
+    const closeOpenMenu = vi.fn(() => {
       const wasOpen = toolbarMenuOpen;
       toolbarMenuOpen = false;
       return wasOpen;
     });
     const view = createClaudianView({
       tabManager: {
-        getActiveTab: jest.fn().mockReturnValue({
+        getActiveTab: vi.fn().mockReturnValue({
           state: { isStreaming: options.isStreaming },
           session: { hasMainBackgroundWork: options.backgroundWork ?? false, runtime: { mailbox: null } },
           ui: {
@@ -1203,7 +1206,7 @@ describe('ClaudianView Escape handling', () => {
             promptHistoryNavigation: { handleKeydown: () => false },
           },
           composer: { closeOpenMenu },
-          linkedContent: { handleActiveFileMetadataChanged: jest.fn() },
+          linkedContent: { handleActiveFileMetadataChanged: vi.fn() },
         }),
       },
     });
@@ -1220,10 +1223,10 @@ describe('ClaudianView Escape handling', () => {
   function createScopedSendHarness(options: {
     inputFocused: boolean;
   }): {
-    sendMessage: jest.Mock;
+    sendMessage: Mock;
     view: any;
   } {
-    const sendMessage = jest.fn();
+    const sendMessage = vi.fn();
     const inputEl = createMockEl('textarea') as unknown as HTMLTextAreaElement;
     Object.defineProperty(inputEl.ownerDocument, 'activeElement', {
       configurable: true,
@@ -1231,7 +1234,7 @@ describe('ClaudianView Escape handling', () => {
     });
     const view = createClaudianView({
       tabManager: {
-        getActiveTab: jest.fn().mockReturnValue({
+        getActiveTab: vi.fn().mockReturnValue({
           state: { isStreaming: false },
           dom: { inputEl },
           controllers: {
@@ -1303,7 +1306,7 @@ describe('ClaudianView Escape handling', () => {
   );
 
   it('exits session inline rename before handling other scoped Escape actions', () => {
-    const cancelInlineRename = jest.spyOn(SessionBrowser.prototype, 'cancelInlineRename')
+    const cancelInlineRename = vi.spyOn(SessionBrowser.prototype, 'cancelInlineRename')
       .mockReturnValue(true);
     const { cancelStreaming, closeOpenMenu, escape } = createEscapeHarness({
       isStreaming: true,
@@ -1317,7 +1320,7 @@ describe('ClaudianView Escape handling', () => {
   });
 
   it('lets the session surface consume scoped Escape before cancelling the turn', () => {
-    const handleEscape = jest.spyOn(SessionManagerSurface.prototype, 'handleEscape')
+    const handleEscape = vi.spyOn(SessionManagerSurface.prototype, 'handleEscape')
       .mockReturnValue(true);
     const { cancelStreaming, escape } = createEscapeHarness({ isStreaming: true });
 
@@ -1332,7 +1335,7 @@ describe('ClaudianView Escape handling', () => {
       toolbarMenuOpen: true,
     });
     let renaming = true;
-    view.tabBar = { handleEscape: jest.fn(() => { const was = renaming; renaming = false; return was; }) };
+    view.tabBar = { handleEscape: vi.fn(() => { const was = renaming; renaming = false; return was; }) };
 
     expect(escape()).toBe(false);
     expect(view.tabBar.handleEscape).toHaveBeenCalledTimes(1);
@@ -1345,8 +1348,8 @@ describe('ClaudianView Escape handling', () => {
   });
 
   it('leaves Escape to session search IME composition', () => {
-    jest.spyOn(SessionManagerSurface.prototype, 'isComposing', 'get').mockReturnValue(true);
-    const handleEscape = jest.spyOn(SessionManagerSurface.prototype, 'handleEscape');
+    vi.spyOn(SessionManagerSurface.prototype, 'isComposing', 'get').mockReturnValue(true);
+    const handleEscape = vi.spyOn(SessionManagerSurface.prototype, 'handleEscape');
     const { cancelStreaming, escape } = createEscapeHarness({ isStreaming: true });
 
     expect(escape()).toBeUndefined();
@@ -1363,7 +1366,7 @@ describe('ClaudianView Escape handling', () => {
 
   it('routes metadata cache refreshes to the active tab Linked content owner', () => {
     const { view } = createEscapeHarness({ isStreaming: false });
-    const handleActiveFileMetadataChanged = jest.fn();
+    const handleActiveFileMetadataChanged = vi.fn();
     view.tabManager.getActiveTab.mockReturnValue({
       linkedContent: { handleActiveFileMetadataChanged },
     });
@@ -1400,7 +1403,7 @@ describe('ClaudianView Escape handling', () => {
       altKey: false,
       isComposing: false,
       defaultPrevented: false,
-      preventDefault: jest.fn(),
+      preventDefault: vi.fn(),
     } as unknown as KeyboardEvent;
     const result = sendHandler.func(event);
 

@@ -1,15 +1,18 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, screen } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Menu } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import { createSessionHeaderMenuAction } from '@/features/chat/session-manager/SessionSurfaceShared';
 
+
+
 interface MockMenu {
-  showAtMouseEvent: jest.Mock;
-  showAtPosition: jest.Mock;
-  hide: jest.Mock;
+  showAtMouseEvent: Mock;
+  showAtPosition: Mock;
+  hide: Mock;
 }
 
 const menus = (): MockMenu[] => (Menu as unknown as { instances: MockMenu[] }).instances;

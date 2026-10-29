@@ -4,7 +4,7 @@ import type { ClaudianSettings } from '@/core/types';
 
 function createFixture(
   initialPaths: string[] = [],
-  persist = jest.fn().mockResolvedValue(undefined),
+  persist = vi.fn().mockResolvedValue(undefined),
 ) {
   const settings = {
     pinnedLinkedContentPaths: [...initialPaths],
@@ -58,7 +58,7 @@ describe('PinnedLinkedContentPathCoordinator', () => {
   });
 
   it('rolls back a failed write before the next pinned-path mutation', async () => {
-    const persist = jest.fn()
+    const persist = vi.fn()
       .mockRejectedValueOnce(new Error('write failed'))
       .mockResolvedValueOnce(undefined);
     const { paths, settings } = createFixture(['Notes/Plan.md'], persist);

@@ -6,6 +6,7 @@ import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { jobsOf, NATIVE_RESET, NativePeer, type NativePeerHostOptions, type NativePeerLifecycle, rootFollow } from '@test/helpers/deepseek/NativePeer';
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
+import type { Mock } from 'vitest';
 
 import { isSteerableExecutionSession, type ProviderExecutionEvent, type ProviderExecutionRequest, type ProviderExecutionSession, type ProviderInteractionPort, type ProviderSessionConfig, type ProviderSessionEvent } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
@@ -13,6 +14,8 @@ import type { ImageAttachment } from '@/core/types';
 import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSeekExecutionBackend';
 import { getDeepSeekHome } from '@/providers/deepseek/runtime/DeepSeekHome';
 import type { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
+
+
 
 let peer: NativePeer;
 let deepseek: DeepSeekHost;
@@ -50,7 +53,7 @@ async function collect(events: AsyncIterable<ProviderExecutionEvent>, into: Prov
 
 beforeEach(async () => {
   permission = 'workspace-write'; inbox = []; seq = 3; nativeTurn = 0; followed = 'root'; sessionEvents = [];
-  port = { requestApproval: jest.fn(), askUserQuestion: jest.fn(), dismissInteraction: jest.fn() };
+  port = { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() };
   peer = new NativePeer();
   const native = nativeDefaults({
     seq: () => seq, roster: () => ['root'], permission: () => permission, setPermission: (_id, value) => { permission = value; },
@@ -541,7 +544,7 @@ it('stops owned jobs after a requested turn and drains their automatic wakeup', 
 
 it('routes automatic questions under their background turn and fences late answers', async () => {
   let reply!: (value: any) => void;
-  port.askUserQuestion = jest.fn(() => new Promise(resolve => { reply = resolve; }));
+  port.askUserQuestion = vi.fn<typeof port.askUserQuestion>(() => new Promise(resolve => { reply = resolve; }));
   create(); const run = session.execute(request()); const events: ProviderExecutionEvent[] = [];
   const done = collect(run.events, events);
   await until(() => peer.calls.some(c => c.method === 'session/prompt'));
@@ -552,7 +555,7 @@ it('routes automatic questions under their background turn and fences late answe
   const started = sessionEvents.find(e => e.type === 'background_turn_started')!;
   expect(port.askUserQuestion).toHaveBeenCalledWith(expect.objectContaining({ turnId: started.scope.kind === 'background' ? started.scope.turnId : undefined }), expect.any(AbortSignal));
   peer.send('$events', { type: 'cancel', eventId: 'question' });
-  await until(() => (port.dismissInteraction as jest.Mock).mock.calls.length > 0);
+  await until(() => (port.dismissInteraction as Mock).mock.calls.length > 0);
   reply({ interactionId: 'question', answers: { q: 'Yes' } });
   answer('cancelled question');
   await until(() => !session.hasBackgroundWork?.());
@@ -562,7 +565,7 @@ it('routes automatic questions under their background turn and fences late answe
 
 it('buffers an early child question until its native turn is observed while the root is idle', async () => {
   let reply!: (value: any) => void;
-  port.askUserQuestion = jest.fn(() => new Promise(resolve => { reply = resolve; }));
+  port.askUserQuestion = vi.fn<typeof port.askUserQuestion>(() => new Promise(resolve => { reply = resolve; }));
   const ordinaryOpen = peer.onOpen;
   let childFollow!: (value: unknown) => void;
   peer.onOpen = (endpoint, args, send) => {
@@ -774,7 +777,7 @@ it.each(['completes', 'stops'])('keeps a native compaction slower than the RPC d
   peer.onCall = (method, args) => method === 'commands/execute' && args.line === '/compact'
     ? new Promise(resolve => { respond = resolve; }) : ordinary(method, args);
   const settle = async (predicate: () => boolean) => { while (!predicate()) await new Promise(resolve => setImmediate(resolve)); };
-  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   let done: Promise<void>;
   const events: ProviderExecutionEvent[] = [];
   try {
@@ -782,12 +785,12 @@ it.each(['completes', 'stops'])('keeps a native compaction slower than the RPC d
     const run = session.execute(request('/compact'));
     done = collect(run.events, events);
     await settle(() => !!respond);
-    jest.advanceTimersByTime(31_000);
+    vi.advanceTimersByTime(31_000);
     for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve));
     expect(events.some(e => ['turn_completed', 'cancelled', 'execution_error'].includes(e.type))).toBe(false);
     if (outcome === 'completes') respond!({ result: { kind: 'success', text: 'Compacted.' } });
     else run.cancel();
-  } finally { jest.useRealTimers(); }
+  } finally { vi.useRealTimers(); }
   await done!;
   expect(events.at(-1)?.type).toBe(outcome === 'completes' ? 'turn_completed' : 'cancelled');
   expect(events.filter(e => e.type === 'text_delta').map(e => e.text)).toEqual(outcome === 'completes' ? ['Compacted.'] : []);
@@ -846,7 +849,7 @@ async function settle(): Promise<void> {
 
 /** Drives the fake clock in 250 ms steps for up to `ms`, or until `done` holds, settling fixture I/O after each. */
 async function elapse(ms: number, done: () => boolean = () => false): Promise<void> {
-  for (let elapsed = 0; elapsed < ms && !done(); elapsed += 250) { jest.advanceTimersByTime(250); await settle(); }
+  for (let elapsed = 0; elapsed < ms && !done(); elapsed += 250) { vi.advanceTimersByTime(250); await settle(); }
 }
 
 it('fails a conversation whose reconnect replay read fails without stopping the native work the live process keeps', async () => {
@@ -899,7 +902,7 @@ it('keeps native work when withdrawing after a failed automatic turn outwaits Ho
   let recovered = false;
   const ordinaryCall = peer.onCall;
   peer.onCall = (method, args) => method === 'session/list' && !recovered ? Promise.reject(new Error('roster unavailable')) : ordinaryCall(method, args);
-  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   try {
     // The automatic turn fails just before native's heartbeat drops the client, so the withdrawal waits on recovery.
     failAutomatic();
@@ -909,7 +912,7 @@ it('keeps native work when withdrawing after a failed automatic turn outwaits Ho
     recovered = true;
     // The withdrawal's deadline resumes with the transport and then expires; native never shows the queued input.
     await elapse(14_000, () => events.some(e => e.type === 'execution_error'));
-  } finally { jest.useRealTimers(); }
+  } finally { vi.useRealTimers(); }
   await done;
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true });
   expect(peer.calls.some(c => c.method === 'session/cancel' || c.method === 'job/kill' || c.method === 'session/updateQueue')).toBe(false);
@@ -950,7 +953,7 @@ it.each([false, true])('rebinds a send after a retained transport failure withou
   let resets = 0;
   const ordinaryCall = peer.onCall;
   peer.onCall = (method, args) => method === '$events/result' && !resets++ ? NATIVE_RESET : ordinaryCall(method, args);
-  port.askUserQuestion = jest.fn(async () => ({ interactionId: 'question', answers: { q: 'Yes' } }));
+  port.askUserQuestion = vi.fn<typeof port.askUserQuestion>(async () => ({ interactionId: 'question', answers: { q: 'Yes' } }));
   create(); const run = session.execute(request()); const events: ProviderExecutionEvent[] = [];
   const done = collect(run.events, events);
   await until(() => peer.calls.some(c => c.method === 'session/prompt'));
@@ -972,13 +975,13 @@ it('fails a send whose initial control baseline never arrives instead of waiting
   const ordinaryOpen = peer.onOpen;
   // A healthy socket that never baselines native control state; no Host recovery is in progress.
   peer.onOpen = (endpoint, args, send) => { if (endpoint !== 'session/control') ordinaryOpen(endpoint, args, send); };
-  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   const events: ProviderExecutionEvent[] = [];
   try {
     create(); const run = session.execute(request());
     void collect(run.events, events);
     await elapse(120_000, () => events.some(e => e.type === 'execution_error'));
-  } finally { jest.useRealTimers(); }
+  } finally { vi.useRealTimers(); }
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true });
   expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(false);
 });
@@ -991,7 +994,7 @@ it('holds a message sent during a long Host recovery until the transport returns
   let recovered = false;
   const ordinaryCall = peer.onCall;
   peer.onCall = (method, args) => method === 'session/list' && !recovered ? Promise.reject(new Error('roster unavailable')) : ordinaryCall(method, args);
-  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   const events: ProviderExecutionEvent[] = [];
   const prompts = (): number => peer.calls.filter(c => c.method === 'session/prompt').length;
   let run!: ReturnType<ProviderExecutionSession['execute']>;
@@ -1007,7 +1010,7 @@ it('holds a message sent during a long Host recovery until the transport returns
     expect(prompts()).toBe(1);
     recovered = true;
     await elapse(6_000, () => prompts() === 2);
-  } finally { jest.useRealTimers(); }
+  } finally { vi.useRealTimers(); }
   await until(() => prompts() === 2);
   begin(run.executionId); answer('after recovery'); await done;
   expect(events.at(-1)?.type).toBe('turn_completed');
@@ -1028,7 +1031,7 @@ it('finishes a background Stop once a Host recovery longer than its deadline com
   };
   create(); await completeRequest();
   expect(session.hasBackgroundWork?.()).toBe(true);
-  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   const kills = (): number => peer.calls.filter(c => c.method === 'job/kill').length;
   try {
     dropped = true;
@@ -1040,7 +1043,7 @@ it('finishes a background Stop once a Host recovery longer than its deadline com
     expect(kills()).toBe(0);
     recovered = true;
     await elapse(6_000, () => kills() > 0);
-  } finally { jest.useRealTimers(); }
+  } finally { vi.useRealTimers(); }
   await until(() => kills() === 1 && !session.hasBackgroundWork?.());
   expect(jobs).toEqual([]);
   expect(session.getStatus()).toBe('idle');
@@ -1114,7 +1117,7 @@ it('fails the conversation on a transport failure without stopping the native wo
     if (method === 'job/kill') { jobs = []; peer.send('job/list', { type: 'rows', jobs }, jobsOf('root')); return { status: 'requested' }; }
     return ordinaryCall(method, args);
   };
-  port.askUserQuestion = jest.fn(async () => ({ interactionId: 'question', answers: { q: 'Yes' } }));
+  port.askUserQuestion = vi.fn<typeof port.askUserQuestion>(async () => ({ interactionId: 'question', answers: { q: 'Yes' } }));
   create(); const run = session.execute(request()); const events: ProviderExecutionEvent[] = [];
   const done = collect(run.events, events);
   await until(() => peer.calls.some(c => c.method === 'session/prompt'));
@@ -1216,7 +1219,7 @@ it('cancels admission during shared Host startup without binding a native sessio
 
 it('reports a failed shared Host startup as a request error and keeps the session bindable', async () => {
   await deepseek.dispose();
-  const start = jest.fn(async () => {}).mockRejectedValueOnce(new Error('DeepSeek Harness CLI was not found.'));
+  const start = vi.fn(async () => {}).mockRejectedValueOnce(new Error('DeepSeek Harness CLI was not found.'));
   ({ deepseek, lifecycle } = peer.host({ beforeStart: start }));
   create();
   const sessionEvents: string[] = [];
@@ -1274,7 +1277,7 @@ it('checks the permission boundary after reading native permission state', async
 });
 
 async function createMainChat(options: Omit<NativePeerHostOptions, 'beforeStart'> = {}, settings: Record<string, unknown> = { model: '', permissionMode: 'normal' }) {
-  const start = jest.fn(async (_signal: AbortSignal) => {});
+  const start = vi.fn(async (_signal: AbortSignal) => {});
   await deepseek.dispose();
   ({ deepseek, lifecycle } = peer.host({ ...options, beforeStart: start }));
   const coordinator = createCoordinator({
@@ -1489,7 +1492,7 @@ it.each(['root', 'child'])('closes %s background scope on process exit and waits
     lifecycle.exit();
     await until(() => lifecycle.disposed === 1);
     expect(chat.sessionEvents.filter(e => e.type === 'background_turn_completed')).toMatchObject([{ reason: 'provider-ended' }]);
-    const attach = jest.spyOn(deepseek, 'attach');
+    const attach = vi.spyOn(deepseek, 'attach');
     chat.fixture.input.value = 'after restart'; const retry = chat.fixture.controller.sendMessage();
     // A replacement start follows an attachment request within microtasks unless the Host waits for teardown.
     await until(() => attach.mock.calls.length > 0);
@@ -1831,21 +1834,21 @@ it('fails the session recoverably when background Stop does not settle before it
   create(); await completeRequest();
   expect(session.hasBackgroundWork?.()).toBe(true);
   const flush = async (): Promise<void> => { for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve)); };
-  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   try {
     session.cancel();
     await flush();
-    jest.advanceTimersByTime(9_000); await flush();
+    vi.advanceTimersByTime(9_000); await flush();
     expect(session.getStatus()).toBe('cancelling');
-    for (let i = 0; i < 40 && session.getStatus() !== 'invalidated'; i++) { jest.advanceTimersByTime(100); await flush(); }
+    for (let i = 0; i < 40 && session.getStatus() !== 'invalidated'; i++) { vi.advanceTimersByTime(100); await flush(); }
     expect(session.getStatus()).toBe('invalidated');
     expect(sessionEvents.filter(e => e.type === 'session_error')).toMatchObject([{ category: 'transport', recoverable: true, message: expect.stringContaining('did not settle') }]);
     // The job ends natively; the failed binding's own stop then settles and releases the Host.
     jobs = [{ id: 'job', owner: 'root', status: 'killed' }];
     peer.send('job/list', { type: 'rows', jobs }, jobsOf('root'));
-    for (let i = 0; i < 40 && session.hasBackgroundWork?.(); i++) { jest.advanceTimersByTime(100); await flush(); }
+    for (let i = 0; i < 40 && session.hasBackgroundWork?.(); i++) { vi.advanceTimersByTime(100); await flush(); }
     expect(session.hasBackgroundWork?.()).toBe(false);
-  } finally { jest.useRealTimers(); }
+  } finally { vi.useRealTimers(); }
   expect(peer.calls.filter(c => c.method === 'job/kill').length).toBeGreaterThanOrEqual(1);
   expect(lifecycle.disposed).toBe(0);
 });

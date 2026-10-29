@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import test from 'node:test';
+import { pathToFileURL } from 'node:url';
 
 import { selectCiTests, selectRelatedCiTests } from './ciTestSelection.mjs';
 
@@ -212,14 +213,14 @@ test('native Pi launch runs only when affected', () => {
   assert.equal(select(['src/features/chat/ClaudianView.ts'], [panel]).piWindows, false);
 });
 
-test('script edits select their script tests without unrelated Jest work', () => {
-  const result = select(['scripts/summarize-jest-results.mjs']);
+test('script edits select their script tests without unrelated Vitest work', () => {
+  const result = select(['scripts/summarize-vitest-results.mjs']);
   assert.deepEqual(result.testFiles, []);
-  assert.deepEqual(result.scriptTests, ['scripts/summarize-jest-results.test.mjs']);
+  assert.deepEqual(result.scriptTests, ['scripts/summarize-vitest-results.test.mjs']);
   assert.equal(result.crossPlatform, false);
 });
 
-test('native script regressions retain a Windows job without selecting unrelated Jest suites', () => {
+test('native script regressions retain a Windows job without selecting unrelated Vitest suites', () => {
   for (const script of ['scripts/ciTestSelection.test.mjs', 'scripts/run-tests.test.mjs']) {
     const result = select([script]);
     assert.deepEqual(result.scriptTests, [script]);
@@ -233,7 +234,7 @@ test('unsafe deletions and global or unknown changes retain full verification', 
   for (const change of [
     { status: 'D', path: 'src/core/prompt/mainAgent.ts' },
     { status: 'D', path: 'tests/helpers/testClock.ts' },
-    ...['package-lock.json', 'jest.config.js', 'tests/setupWindow.ts',
+    ...['package-lock.json', 'vitest.config.mts', 'scripts/vitest-open-handles.config.mts', 'tests/setupWindow.ts',
       'scripts/ciTestSelection.mjs', '.github/workflows/ci.yml', 'unknown-config'].map(path => ({ status: 'M', path })),
   ]) {
     const result = select([change]);
@@ -252,7 +253,7 @@ test('scheduled and reusable verification retain full coverage', () => {
 
 test('real dependency graph preserves prompt and provider coverage without Collab suites', () => {
   const relatedTests = JSON.parse(execFileSync(process.execPath, [
-    'scripts/run-jest.js', '--listTests', '--json', '--findRelatedTests', 'src/core/prompt/mainAgent.ts',
+    'scripts/list-related-tests.mjs', 'src/core/prompt/mainAgent.ts',
   ], { encoding: 'utf8' })).map(file => file.split(path.sep).join('/'));
   assert.ok(relatedTests.some(file => file.endsWith('/core/prompt/mainAgent.systemPrompt.test.ts')));
   assert.ok(relatedTests.some(file => file.includes('/providers/')));
@@ -267,10 +268,13 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
   try {
     for (const directory of ['scripts', 'src', 'tests/unit']) mkdirSync(path.join(root, directory), { recursive: true });
     for (const file of ['ciTestSelection.mjs', 'testSuites.cjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
-    writeFileSync(path.join(root, 'scripts/run-jest.js'), `require(${JSON.stringify(path.resolve('scripts/run-jest.js'))});`);
-    writeFileSync(path.join(root, 'jest.config.js'), `module.exports = { testMatch: ['<rootDir>/tests/unit/**/*.test.ts'] };`);
+    writeFileSync(path.join(root, 'scripts/run-vitest.js'), `require(${JSON.stringify(path.resolve('scripts/run-vitest.js'))});`);
+    writeFileSync(path.join(root, 'scripts/list-related-tests.mjs'), `import ${JSON.stringify(pathToFileURL(path.resolve('scripts/list-related-tests.mjs')).href)};`);
+    writeFileSync(path.join(root, 'vitest.config.mjs'), `export default { test: { globals: true, maxWorkers: 1, include: ['tests/unit/**/*.test.ts'] } };`);
     writeFileSync(path.join(root, 'src/value.ts'), 'export const value = 1;');
+    writeFileSync(path.join(root, 'tests/unit/types.test.ts'), "import type { value } from '../../src/value'; const example: typeof value = 1; test('type-only', () => expect(example).toBe(1));");
     writeFileSync(path.join(root, 'tests/unit/value.test.ts'), "import { value } from '../../src/value'; test('value', () => expect(value).toBe(1));");
+    writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n');
     const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
     git('init');
     git('config', 'user.name', 'CI fixture');
@@ -313,8 +317,8 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
       assert.equal(full['test-files'], null);
       assert.deepEqual(full['test-shards'], ['1/2', '2/2']);
     }
-    // Release scope must work before dependency installation, without invoking Jest.
-    writeFileSync(path.join(root, 'scripts/run-jest.js'), "throw new Error('Jest is unavailable');");
+    // Release scope must work before dependency installation, without invoking Vitest.
+    writeFileSync(path.join(root, 'scripts/run-vitest.js'), "throw new Error('Vitest is unavailable');");
     const tag = scope(deleted, { GITHUB_REF: 'refs/tags/2.3.0' });
     assert.equal(tag['test-files'], null);
     assert.equal(tag['script-tests'], null);
@@ -325,8 +329,10 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
   }
 });
 
-test('locale changes retain the dependency envelope', () => {
-  assert.ok(select(['src/i18n/locales/en.json']).testFiles.includes('tests/integration/build/dependency-envelope.test.ts'));
+test('locale changes retain the dependency envelope and lazy CommonJS loader coverage', () => {
+  const result = selectRelatedCiTests({ changes: [{ status: 'M', path: 'src/i18n/locales/de.json' }] });
+  assert.ok(result.testFiles.includes('tests/integration/build/dependency-envelope.test.ts'));
+  assert.ok(result.testFiles.includes('tests/unit/i18n/i18n.test.ts'));
 });
 
 test('local selection includes committed, staged, unstaged and untracked edits with safe fallbacks', async () => {
@@ -337,11 +343,13 @@ test('local selection includes committed, staged, unstaged and untracked edits w
   try {
     for (const directory of ['scripts', 'src', 'tests/unit']) mkdirSync(path.join(root, directory), { recursive: true });
     for (const file of ['ciTestSelection.mjs', 'testSuites.cjs', 'run-affected-tests.mjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
-    writeFileSync(path.join(root, 'scripts/run-jest.js'), `require(${JSON.stringify(path.resolve('scripts/run-jest.js'))});`);
-    writeFileSync(path.join(root, 'jest.config.js'), `module.exports = { testMatch: ['<rootDir>/tests/unit/**/*.test.ts'] };`);
+    writeFileSync(path.join(root, 'scripts/run-vitest.js'), `require(${JSON.stringify(path.resolve('scripts/run-vitest.js'))});`);
+    writeFileSync(path.join(root, 'scripts/list-related-tests.mjs'), `import ${JSON.stringify(pathToFileURL(path.resolve('scripts/list-related-tests.mjs')).href)};`);
+    writeFileSync(path.join(root, 'vitest.config.mjs'), `export default { test: { globals: true, maxWorkers: 1, include: ['tests/unit/**/*.test.ts'] } };`);
     for (const name of ['committed', 'staged', 'unstaged', 'deleted']) {
       writeFileSync(path.join(root, `tests/unit/${name}.test.ts`), "test('example', () => {});");
     }
+    writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n');
     const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
     git('init'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.test');
     git('config', 'commit.gpgsign', 'false'); git('add', '.'); git('commit', '-m', 'Baseline');

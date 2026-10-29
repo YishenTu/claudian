@@ -6,9 +6,9 @@ const SELECTION_POLL_INTERVAL = 250;
 
 function createSources() {
   return {
-    editor: { start: jest.fn(), stop: jest.fn(), poll: jest.fn(), getContext: jest.fn(() => null) },
-    browser: { poll: jest.fn(async () => undefined), clear: jest.fn(), getContext: jest.fn(() => null) },
-    canvas: { poll: jest.fn(), clear: jest.fn(), getContext: jest.fn(() => null) },
+    editor: { start: vi.fn(), stop: vi.fn(), poll: vi.fn(), getContext: vi.fn(() => null) },
+    browser: { poll: vi.fn(async () => undefined), clear: vi.fn(), getContext: vi.fn(() => null) },
+    canvas: { poll: vi.fn(), clear: vi.fn(), getContext: vi.fn(() => null) },
   } satisfies ComposerSelectionSources;
 }
 
@@ -16,13 +16,13 @@ describe('ComposerSelections polling', () => {
   let selections: ComposerSelections | null = null;
 
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
     selections?.stop();
     selections = null;
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it('polls every source on the shared cadence', () => {
@@ -30,15 +30,15 @@ describe('ComposerSelections polling', () => {
     selections = new ComposerSelections(sources);
     selections.start();
 
-    jest.advanceTimersByTime(SELECTION_POLL_INTERVAL - 1);
+    vi.advanceTimersByTime(SELECTION_POLL_INTERVAL - 1);
     expect(sources.editor.poll).not.toHaveBeenCalled();
 
-    jest.advanceTimersByTime(1);
+    vi.advanceTimersByTime(1);
     expect(sources.editor.poll).toHaveBeenCalledTimes(1);
     expect(sources.browser.poll).toHaveBeenCalledTimes(1);
     expect(sources.canvas.poll).toHaveBeenCalledTimes(1);
 
-    jest.advanceTimersByTime(SELECTION_POLL_INTERVAL);
+    vi.advanceTimersByTime(SELECTION_POLL_INTERVAL);
     expect(sources.canvas.poll).toHaveBeenCalledTimes(2);
   });
 
@@ -49,7 +49,7 @@ describe('ComposerSelections polling', () => {
     selections.start();
 
     expect(sources.editor.start).toHaveBeenCalledTimes(1);
-    jest.advanceTimersByTime(SELECTION_POLL_INTERVAL);
+    vi.advanceTimersByTime(SELECTION_POLL_INTERVAL);
     expect(sources.canvas.poll).toHaveBeenCalledTimes(1);
   });
 
@@ -62,7 +62,7 @@ describe('ComposerSelections polling', () => {
     expect(sources.editor.stop).toHaveBeenCalledTimes(1);
     expect(sources.browser.clear).toHaveBeenCalledTimes(1);
     expect(sources.canvas.clear).toHaveBeenCalledTimes(1);
-    jest.advanceTimersByTime(SELECTION_POLL_INTERVAL * 4);
+    vi.advanceTimersByTime(SELECTION_POLL_INTERVAL * 4);
     expect(sources.editor.poll).not.toHaveBeenCalled();
     expect(sources.browser.poll).not.toHaveBeenCalled();
     expect(sources.canvas.poll).not.toHaveBeenCalled();
@@ -75,7 +75,7 @@ describe('ComposerSelections polling', () => {
     selections.stop();
     selections.start();
 
-    jest.advanceTimersByTime(SELECTION_POLL_INTERVAL);
+    vi.advanceTimersByTime(SELECTION_POLL_INTERVAL);
     expect(sources.canvas.poll).toHaveBeenCalledTimes(1);
   });
 
@@ -90,7 +90,7 @@ describe('ComposerSelections polling', () => {
     selections = new ComposerSelections(sources);
     selections.start();
 
-    expect(() => jest.advanceTimersByTime(SELECTION_POLL_INTERVAL * 2)).not.toThrow();
+    expect(() => vi.advanceTimersByTime(SELECTION_POLL_INTERVAL * 2)).not.toThrow();
     await Promise.resolve();
 
     expect(sources.editor.poll).toHaveBeenCalledTimes(2);

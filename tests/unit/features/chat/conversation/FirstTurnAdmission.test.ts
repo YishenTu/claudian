@@ -4,11 +4,11 @@ import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ChatExecutionPreHandoffError, type ChatTurnSubmission } from '@/features/chat/execution/ChatExecutionCoordinator';
 
-jest.mock('@/core/providers/ProviderRegistry', () => ({
+vi.mock('@/core/providers/ProviderRegistry', () => ({
   ProviderRegistry: {
-    formatQuestionReply: jest.fn(),
-    resolveTitleGenerationSelection: jest.fn().mockReturnValue(null),
-    getCapabilities: jest.fn().mockReturnValue({
+    formatQuestionReply: vi.fn(),
+    resolveTitleGenerationSelection: vi.fn().mockReturnValue(null),
+    getCapabilities: vi.fn().mockReturnValue({
       providerId: 'claude',
       supportsFork: true,
       supportsNativeHistory: true,
@@ -19,8 +19,8 @@ jest.mock('@/core/providers/ProviderRegistry', () => ({
 
 describe('FirstTurnAdmission', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
-    jest.mocked(ProviderRegistry.getCapabilities).mockReturnValue({
+    vi.clearAllMocks();
+    vi.mocked(ProviderRegistry.getCapabilities).mockReturnValue({
       providerId: 'claude',
       supportsFork: true,
       supportsNativeHistory: true,
@@ -30,8 +30,8 @@ describe('FirstTurnAdmission', () => {
   });
 
   it('skips title generation when no enabled title selection resolves', async () => {
-    jest.mocked(ProviderRegistry.resolveTitleGenerationSelection).mockReturnValueOnce(null);
-    const generateTitle = jest.fn().mockResolvedValue(undefined);
+    vi.mocked(ProviderRegistry.resolveTitleGenerationSelection).mockReturnValueOnce(null);
+    const generateTitle = vi.fn().mockResolvedValue(undefined);
     const fixture = createFixture({ getTitleGenerationService: () => ({ generateTitle }) as any });
     fixture.plugin.settings.enableAutoTitleGeneration = true;
     fixture.plugin.settings.titleGenerationModel = 'removed-title-model';
@@ -44,8 +44,8 @@ describe('FirstTurnAdmission', () => {
   });
 
   it('starts title generation independently of the execution session', async () => {
-    jest.mocked(ProviderRegistry.resolveTitleGenerationSelection).mockReturnValueOnce({ providerId: 'claude', model: 'sonnet' });
-    const generateTitle = jest.fn().mockResolvedValue(undefined);
+    vi.mocked(ProviderRegistry.resolveTitleGenerationSelection).mockReturnValueOnce({ providerId: 'claude', model: 'sonnet' });
+    const generateTitle = vi.fn().mockResolvedValue(undefined);
     const fixture = createFixture({
       getTitleGenerationService: () => ({ generateTitle }) as any,
     });
@@ -65,16 +65,16 @@ describe('FirstTurnAdmission', () => {
   it('creates the first-turn conversation with its frozen Linked content', async () => {
     const token = Object.freeze({ path: 'Projects/Plan.md' });
     const linkedContentController = {
-      beginSubmission: jest.fn().mockReturnValue(token),
-      commitSubmission: jest.fn().mockReturnValue({
+      beginSubmission: vi.fn().mockReturnValue(token),
+      commitSubmission: vi.fn().mockReturnValue({
         linkedContentPath: 'Projects/Plan.md',
         queuedEvents: [],
       }),
-      getSnapshot: jest.fn().mockReturnValue({
+      getSnapshot: vi.fn().mockReturnValue({
         mode: 'explicit-draft',
         path: 'Projects/Plan.md',
       }),
-      rollbackSubmission: jest.fn(),
+      rollbackSubmission: vi.fn(),
     };
     const fixture = createFixture({
       getLinkedContentController: () => linkedContentController,
@@ -104,13 +104,13 @@ describe('FirstTurnAdmission', () => {
   it('restores the reconciled Linked content draft when Conversation creation fails', async () => {
     const token = Object.freeze({ path: 'Projects/Plan.md' });
     const linkedContentController = {
-      beginSubmission: jest.fn().mockReturnValue(token),
-      commitSubmission: jest.fn(),
-      getSnapshot: jest.fn().mockReturnValue({
+      beginSubmission: vi.fn().mockReturnValue(token),
+      commitSubmission: vi.fn(),
+      getSnapshot: vi.fn().mockReturnValue({
         mode: 'explicit-draft',
         path: 'Projects/Plan.md',
       }),
-      rollbackSubmission: jest.fn(),
+      rollbackSubmission: vi.fn(),
     };
     const fixture = createFixture({
       getLinkedContentController: () => linkedContentController,
@@ -149,16 +149,16 @@ describe('FirstTurnAdmission', () => {
   it('keeps a created zero-message Conversation locked and retries ordinal one', async () => {
     const token = Object.freeze({ path: 'Projects/Plan.md' });
     const linkedContentController = {
-      beginSubmission: jest.fn().mockReturnValue(token),
-      commitSubmission: jest.fn().mockReturnValue({
+      beginSubmission: vi.fn().mockReturnValue(token),
+      commitSubmission: vi.fn().mockReturnValue({
         linkedContentPath: 'Projects/Plan.md',
         queuedEvents: [],
       }),
-      getSnapshot: jest.fn().mockReturnValue({
+      getSnapshot: vi.fn().mockReturnValue({
         mode: 'locked',
         path: 'Projects/Plan.md',
       }),
-      rollbackSubmission: jest.fn(),
+      rollbackSubmission: vi.fn(),
     };
     const fixture = createFixture({
       getLinkedContentController: () => linkedContentController,
@@ -227,15 +227,15 @@ describe('FirstTurnAdmission', () => {
     let currentPath = 'Projects/Old';
     const token = Object.freeze({ path: currentPath });
     const linkedContentController = {
-      beginSubmission: jest.fn().mockReturnValue(token),
-      commitSubmission: jest.fn().mockImplementation(() => {
+      beginSubmission: vi.fn().mockReturnValue(token),
+      commitSubmission: vi.fn().mockImplementation(() => {
         currentPath = 'Projects/New';
       }),
-      getSnapshot: jest.fn().mockImplementation(() => ({
+      getSnapshot: vi.fn().mockImplementation(() => ({
         mode: currentPath === 'Projects/Old' ? 'explicit-draft' : 'locked',
         path: currentPath,
       })),
-      rollbackSubmission: jest.fn(),
+      rollbackSubmission: vi.fn(),
     };
     const fixture = createFixture({
       getLinkedContentController: () => linkedContentController,
@@ -274,10 +274,10 @@ describe('FirstTurnAdmission', () => {
 it('does not steer Linked content captured while the first turn resolves session references', async () => {
   const token = Object.freeze({ path: 'Projects/Plan.md' });
   const linkedContentController = {
-    beginSubmission: jest.fn().mockReturnValue(token),
-    commitSubmission: jest.fn().mockReturnValue({ linkedContentPath: 'Projects/Plan.md', queuedEvents: [] }),
-    getSnapshot: jest.fn().mockReturnValue({ mode: 'explicit-draft', path: 'Projects/Plan.md' }),
-    rollbackSubmission: jest.fn(),
+    beginSubmission: vi.fn().mockReturnValue(token),
+    commitSubmission: vi.fn().mockReturnValue({ linkedContentPath: 'Projects/Plan.md', queuedEvents: [] }),
+    getSnapshot: vi.fn().mockReturnValue({ mode: 'explicit-draft', path: 'Projects/Plan.md' }),
+    rollbackSubmission: vi.fn(),
   };
   const fixture = createFixture({ getLinkedContentController: () => linkedContentController });
   fixture.state.currentConversationId = null;

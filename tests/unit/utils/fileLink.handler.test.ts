@@ -1,7 +1,7 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Keymap, Notice } from 'obsidian';
 
 import { registerFileLinkHandler } from '@/utils/fileLink';
@@ -22,7 +22,7 @@ async function nextTurn() {
 }
 
 beforeEach(() => {
-  jest.mocked(Notice).mockClear();
+  vi.mocked(Notice).mockClear();
 });
 
 describe('registerFileLinkHandler', () => {
@@ -31,8 +31,8 @@ describe('registerFileLinkHandler', () => {
     ['href="note^block"', 'note^block'],
   ])('opens the delegated target and removes the handler: %s', async (attributes, expectedTarget) => {
     const app = {
-      metadataCache: { getFirstLinkpathDest: jest.fn().mockReturnValue(null) },
-      workspace: { openLinkText: jest.fn().mockResolvedValue(undefined) },
+      metadataCache: { getFirstLinkpathDest: vi.fn().mockReturnValue(null) },
+      workspace: { openLinkText: vi.fn().mockResolvedValue(undefined) },
     };
     const container = document.createElement('div');
     container.innerHTML = `<a class="internal-link" ${attributes}><span>Note</span></a>`;
@@ -68,19 +68,19 @@ describe('registerFileLinkHandler', () => {
     const fail = () => delayed ? pending.promise : Promise.reject(failure);
     const existingLeaf = {
       getViewState: () => ({ type: 'markdown', state: { file: 'Notes/Plan.md' } }),
-      setEphemeralState: jest.fn(),
+      setEphemeralState: vi.fn(),
     };
     const otherLeaf = {
       getViewState: () => ({ type: 'markdown', state: { file: 'Archive/Plan.md' } }),
     };
     const app = {
       metadataCache: {
-        getFirstLinkpathDest: jest.fn().mockReturnValue(operation === 'reveal' ? { path: 'Notes/Plan.md' } : null),
+        getFirstLinkpathDest: vi.fn().mockReturnValue(operation === 'reveal' ? { path: 'Notes/Plan.md' } : null),
       },
       workspace: {
         iterateAllLeaves: (visit: (leaf: unknown) => void) => [otherLeaf, existingLeaf].forEach(visit),
-        openLinkText: jest.fn().mockResolvedValue(undefined),
-        revealLeaf: jest.fn().mockResolvedValue(undefined),
+        openLinkText: vi.fn().mockResolvedValue(undefined),
+        revealLeaf: vi.fn().mockResolvedValue(undefined),
       },
     };
     const activate = operation === 'open' ? app.workspace.openLinkText : app.workspace.revealLeaf;
@@ -105,7 +105,7 @@ describe('registerFileLinkHandler', () => {
       }
       await waitFor(() => expect(Notice).toHaveBeenCalledTimes(1));
       await nextTurn();
-      expect(jest.mocked(Notice).mock.calls).toEqual([['Failed to open file.']]);
+      expect(vi.mocked(Notice).mock.calls).toEqual([['Failed to open file.']]);
       expect(existingLeaf.setEphemeralState).not.toHaveBeenCalled();
       expect(app.workspace.openLinkText).toHaveBeenCalledTimes(operation === 'reveal' ? 0 : 1);
 
@@ -119,7 +119,7 @@ describe('registerFileLinkHandler', () => {
         operation === 'reveal' ? [[{ focus: true, subpath: '#Heading' }]] : []
       );
       expect(app.workspace.openLinkText).toHaveBeenCalledTimes(operation === 'reveal' ? 0 : 2);
-      expect(jest.mocked(Notice).mock.calls).toEqual([['Failed to open file.']]);
+      expect(vi.mocked(Notice).mock.calls).toEqual([['Failed to open file.']]);
       cleanup();
       link.addEventListener('click', event => event.preventDefault(), { once: true });
       fireEvent.click(link.firstElementChild!);
@@ -155,17 +155,17 @@ it.each([
   const existingLeaf = {
     isDeferred,
     getViewState: () => ({ type: 'markdown', state: { file: 'Notes/Plan.md' } }),
-    setEphemeralState: jest.fn(),
+    setEphemeralState: vi.fn(),
   };
   const otherLeaf = {
     getViewState: () => ({ type: 'markdown', state: { file: 'Archive/Plan.md' } }),
   };
   const app = {
-    metadataCache: { getFirstLinkpathDest: jest.fn().mockReturnValue({ path: 'Notes/Plan.md' }) },
+    metadataCache: { getFirstLinkpathDest: vi.fn().mockReturnValue({ path: 'Notes/Plan.md' }) },
     workspace: {
       iterateAllLeaves: (visit: (leaf: unknown) => void) => [otherLeaf, existingLeaf].forEach(visit),
-      revealLeaf: jest.fn().mockReturnValue(reveal.promise),
-      openLinkText: jest.fn(),
+      revealLeaf: vi.fn().mockReturnValue(reveal.promise),
+      openLinkText: vi.fn(),
     },
   };
   const container = document.createElement('div');
@@ -196,19 +196,19 @@ it.each([
   ['click', { ctrlKey: true, altKey: true, shiftKey: true }, 'window'],
   ['auxclick', { button: 1 }, 'tab'],
 ] as const)('honors Obsidian pane intent for %s %j instead of revealing an existing note', async (eventType, init, pane) => {
-  const leaf = { getViewState: () => ({ state: { file: 'Notes/Target.md' } }), setEphemeralState: jest.fn() };
+  const leaf = { getViewState: () => ({ state: { file: 'Notes/Target.md' } }), setEphemeralState: vi.fn() };
   const app = {
-    metadataCache: { getFirstLinkpathDest: jest.fn(() => ({ path: 'Notes/Target.md' })) },
+    metadataCache: { getFirstLinkpathDest: vi.fn(() => ({ path: 'Notes/Target.md' })) },
     workspace: {
       iterateAllLeaves: (visit: (value: typeof leaf) => void) => visit(leaf),
-      revealLeaf: jest.fn().mockResolvedValue(undefined), openLinkText: jest.fn().mockResolvedValue(undefined),
+      revealLeaf: vi.fn().mockResolvedValue(undefined), openLinkText: vi.fn().mockResolvedValue(undefined),
     },
   };
   const container = document.body.appendChild(document.createElement('div'));
   container.innerHTML = '<a class="claudian-file-link" href="Target#Heading">Target</a>';
   const link = within(container).getByRole('link', { name: 'Target' });
   const release = registerFileLinkHandler(app as any, container, 'Notes/Source.md');
-  jest.mocked(Keymap.isModEvent).mockReturnValueOnce(pane);
+  vi.mocked(Keymap.isModEvent).mockReturnValueOnce(pane);
   try {
     const event = new MouseEvent(eventType, { bubbles: true, cancelable: true, ...init });
     fireEvent(link, event);
@@ -225,14 +225,14 @@ it.each([
     await nextTurn();
     expect(app.workspace.openLinkText).toHaveBeenCalledTimes(1);
   } finally {
-    jest.mocked(Keymap.isModEvent).mockReset().mockReturnValue(false);
+    vi.mocked(Keymap.isModEvent).mockReset().mockReturnValue(false);
     release(); container.remove();
   }
 });
 
 
 it('leaves right-button auxiliary clicks to the native context menu', () => {
-  const app = { metadataCache: { getFirstLinkpathDest: jest.fn(() => null) }, workspace: { openLinkText: jest.fn() } };
+  const app = { metadataCache: { getFirstLinkpathDest: vi.fn(() => null) }, workspace: { openLinkText: vi.fn() } };
   const container = document.body.appendChild(document.createElement('div'));
   container.innerHTML = '<a class="internal-link" href="Target">Target</a>';
   const release = registerFileLinkHandler(app as any, container);

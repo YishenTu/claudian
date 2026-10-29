@@ -1,10 +1,13 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
+const actualModule0 = await vi.importActual<typeof fs>('node:fs/promises');
+const actualModule1 = await vi.importActual<typeof fs>('node:fs/promises');
 import * as fs from 'node:fs/promises';
 
+import { axe } from '@test/helpers/accessibility';
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Notice } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import { AgentSkillManagementCoordinator } from '@/features/agent-skills/AgentSkillManagementCoordinator';
 import {
@@ -18,13 +21,14 @@ import { AgentSkillSettings } from '@/features/agent-skills/AgentSkillSettings';
 import { ClaudeCommandRepository } from '@/features/agent-skills/ClaudeCommandRepository';
 import { t } from '@/i18n/i18n';
 
-jest.mock('obsidian', () => ({
-  ...jest.requireActual('@test/__mocks__/obsidian'),
-  ...jest.requireActual('@test/helpers/ObsidianSettingsDOM'),
+
+vi.mock('obsidian', async () => ({
+  ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')),
+  ...(await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM')),
 }));
-jest.mock('node:fs/promises', () => {
-  const actual = jest.requireActual<typeof fs>('node:fs/promises');
-  return { ...actual, writeFile: jest.fn(actual.writeFile) };
+vi.mock('node:fs/promises', async () => {
+  const actual = (await vi.importActual<typeof fs>('node:fs/promises'));
+  return { ...actual, writeFile: vi.fn(actual.writeFile) };
 });
 
 const vaults: DesktopVault[] = [];
@@ -61,9 +65,9 @@ function save(dialog: HTMLElement) {
   fireEvent.click(within(dialog).getByRole('button', { name: t('common.save') }));
 }
 
-beforeEach(() => { document.body.replaceChildren(); jest.clearAllMocks(); });
+beforeEach(() => { document.body.replaceChildren(); vi.clearAllMocks(); });
 afterEach(async () => {
-  jest.mocked(fs.writeFile).mockImplementation(jest.requireActual<typeof fs>('node:fs/promises').writeFile);
+  vi.mocked(fs.writeFile).mockImplementation(actualModule0.writeFile);
   await Promise.all(vaults.splice(0).map(vault => vault.dispose()));
 });
 
@@ -85,11 +89,11 @@ describe('AgentSkillSettings', () => {
 
   it('admits one save while the skill write is pending and locks the captured editor fields', async () => {
     const { coordinator, repository } = await setup();
-    const create = jest.spyOn(coordinator, 'create');
+    const create = vi.spyOn(coordinator, 'create');
     let finish!: () => void;
     const gate = new Promise<void>(resolve => { finish = resolve; });
-    const actualWrite = jest.requireActual<typeof fs>('node:fs/promises').writeFile;
-    jest.mocked(fs.writeFile).mockImplementationOnce(async (...args) => { await gate; await actualWrite(...args); });
+    const actualWrite = actualModule1.writeFile;
+    vi.mocked(fs.writeFile).mockImplementationOnce(async (...args) => { await gate; await actualWrite(...args); });
     const dialog = await openAdd();
     fill(dialog);
     const button = within(dialog).getByRole('button', { name: t('common.save') }) as HTMLButtonElement;
@@ -110,7 +114,7 @@ describe('AgentSkillSettings', () => {
 
   it('unlocks the skill editor and retains its draft after a failed write so it can be retried', async () => {
     const { repository } = await setup();
-    jest.mocked(fs.writeFile).mockRejectedValueOnce(new Error('Disk unavailable'));
+    vi.mocked(fs.writeFile).mockRejectedValueOnce(new Error('Disk unavailable'));
     const dialog = await openAdd();
     fill(dialog);
     save(dialog);
@@ -168,10 +172,10 @@ describe('AgentSkillSettings', () => {
 
   it('hides private storage paths when saving fails', async () => {
     await setup();
-    jest.mocked(fs.writeFile).mockRejectedValue(new Error('EACCES: /private/vault/.agents/skills/shared-skill/SKILL.md'));
+    vi.mocked(fs.writeFile).mockRejectedValue(new Error('EACCES: /private/vault/.agents/skills/shared-skill/SKILL.md'));
     const dialog = await openAdd(); fill(dialog); save(dialog);
     await waitFor(() => expect(Notice).toHaveBeenCalledWith(expect.stringContaining('Failed to save shared skill:')));
-    expect((Notice as jest.Mock).mock.calls.flat().join(' ')).not.toContain('/private/vault');
+    expect((Notice as Mock).mock.calls.flat().join(' ')).not.toContain('/private/vault');
     expect(screen.getByRole('dialog')).toBe(dialog);
   });
 

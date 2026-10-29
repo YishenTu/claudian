@@ -26,8 +26,8 @@ function createFixture(result: TitleGenerationResult = { success: true, title: '
   };
   const persistence = {
     metadataReader: {},
-    saveMetadata: jest.fn().mockResolvedValue(undefined),
-    deleteCurrentMetadata: jest.fn().mockResolvedValue(undefined),
+    saveMetadata: vi.fn().mockResolvedValue(undefined),
+    deleteCurrentMetadata: vi.fn().mockResolvedValue(undefined),
   } as unknown as ConversationPersistence;
   const repository = new ConversationRepository({
     providers: ProviderRegistry,
@@ -70,7 +70,7 @@ it.each(['pending', 'committed'])('preserves a manual rename whose metadata writ
 
   const writing = deferred<void>();
   const finishManualSave = deferred<void>();
-  jest.mocked(persistence.saveMetadata).mockImplementationOnce(async () => {
+  vi.mocked(persistence.saveMetadata).mockImplementationOnce(async () => {
     writing.resolve();
     await finishManualSave.promise;
   });
@@ -101,7 +101,7 @@ it.each([true, false])('commits the generated title and its status together (suc
   const regeneration = titles.regenerate(conversation.id);
   await started.promise;
   const saved: Array<{ title: string; titleGenerationStatus: Conversation['titleGenerationStatus'] }> = [];
-  jest.mocked(persistence.saveMetadata).mockImplementation(async metadata => {
+  vi.mocked(persistence.saveMetadata).mockImplementation(async metadata => {
     saved.push({ title: metadata.title, titleGenerationStatus: metadata.titleGenerationStatus });
   });
   finishGeneration.resolve();
@@ -120,7 +120,7 @@ it('does not recreate a conversation deleted before title completion', async () 
   const regeneration = titles.regenerate(conversation.id);
   await started.promise;
   await repository.delete(conversation.id);
-  jest.mocked(persistence.saveMetadata).mockClear();
+  vi.mocked(persistence.saveMetadata).mockClear();
   finishGeneration.resolve();
   await regeneration;
 

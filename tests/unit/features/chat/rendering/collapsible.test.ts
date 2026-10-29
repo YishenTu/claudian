@@ -1,7 +1,7 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 import {
   collapseElement,
@@ -91,7 +91,7 @@ describe('collapsible', () => {
     });
 
     it('calls onToggle with the new state', () => {
-      const onToggle = jest.fn();
+      const onToggle = vi.fn();
       const { wrapper } = buildCollapsible({ onToggle });
       const header = within(wrapper).getByRole('button', { name: 'Section' });
 
@@ -102,7 +102,7 @@ describe('collapsible', () => {
     });
 
     it('does not call onToggle during setup', () => {
-      const onToggle = jest.fn();
+      const onToggle = vi.fn();
       buildCollapsible({ initiallyExpanded: true, onToggle });
 
       expect(onToggle).not.toHaveBeenCalled();
@@ -128,8 +128,8 @@ describe('collapsible', () => {
       const header = wrapper.createDiv({ text: 'Summary' });
       const content = wrapper.createDiv();
       const state = { isExpanded: false };
-      const onToggle = jest.fn();
-      const onFirstExpand = jest.fn();
+      const onToggle = vi.fn();
+      const onFirstExpand = vi.fn();
       let label = 'Original';
       const refresh = setupCollapsible(wrapper, header, content, state, {
         initiallyExpanded, baseAriaLabel: () => label, onToggle, onFirstExpand,
@@ -163,7 +163,7 @@ describe('collapsible', () => {
         const wrapper = document.body.createDiv();
         const header = wrapper.createDiv({ text: 'Section' });
         const content = wrapper.createDiv();
-        const onFirstExpand = jest.fn(() => {
+        const onFirstExpand = vi.fn(() => {
           visibleWhenRun.push(!content.classList.contains('claudian-hidden'));
         });
         setupCollapsible(wrapper, header, content, { isExpanded: false }, { onFirstExpand });
@@ -179,7 +179,7 @@ describe('collapsible', () => {
       });
 
       it('runs during setup when initially expanded and never again', () => {
-        const onFirstExpand = jest.fn();
+        const onFirstExpand = vi.fn();
         const { header } = buildCollapsible({ initiallyExpanded: true, onFirstExpand });
         expect(onFirstExpand).toHaveBeenCalledTimes(1);
 
@@ -256,7 +256,7 @@ describe('collapsible', () => {
     it('runs onFirstExpand once, before the body is first shown', () => {
       const hiddenWhenRun: boolean[] = [];
       const bodyRef: { current?: HTMLElement } = {};
-      const onFirstExpand = jest.fn(() => { hiddenWhenRun.push(bodyRef.current!.hasAttribute('hidden')); });
+      const onFirstExpand = vi.fn(() => { hiddenWhenRun.push(bodyRef.current!.hasAttribute('hidden')); });
       const built = buildDisclosure(onFirstExpand);
       bodyRef.current = built.body;
       expect(onFirstExpand).not.toHaveBeenCalled();

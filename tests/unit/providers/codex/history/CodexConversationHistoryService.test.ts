@@ -1,14 +1,18 @@
+const actualModule0 = await import('fs');
+const actualModule1 = await import('os');
+const actualModule2 = await import('path');
 import type * as fsType from 'fs';
-import type * as osType from 'os';
-import type * as pathType from 'path';
-import type * as zlibType from 'zlib';
+const actualModule3 = await import('zlib');
 
-const fs = jest.requireActual<typeof fsType>('fs');
-const os = jest.requireActual<typeof osType>('os');
-const path = jest.requireActual<typeof pathType>('path');
-const { zstdCompressSync } = jest.requireActual<typeof zlibType>('zlib');
+const fs = actualModule0;
+const os = actualModule1;
+const path = actualModule2;
+const { zstdCompressSync } = actualModule3;
+
+import * as fsPromises from 'node:fs/promises';
 
 import { testDate } from '@test/helpers/testClock';
+import type { MockInstance } from 'vitest';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { encodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
@@ -18,13 +22,14 @@ import { CodexConversationHistoryService } from '@/providers/codex/history/Codex
 import * as CodexHistoryStore from '@/providers/codex/history/CodexHistoryStore';
 import { getCodexState } from '@/providers/codex/types';
 
+
 describe('CodexConversationHistoryService', () => {
-  let homeDirSpy: jest.SpyInstance<string, []>;
+  let homeDirSpy: MockInstance<(...args: []) => string>;
   let tempHome: string;
 
   beforeEach(() => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'claudian-codex-home-'));
-    homeDirSpy = jest.spyOn(os, 'homedir').mockReturnValue(tempHome);
+    homeDirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tempHome);
   });
 
   afterEach(() => {
@@ -119,7 +124,7 @@ describe('CodexConversationHistoryService', () => {
     const source = { forkSource: { sessionId: 'parent', resumeAt: 'parent-turn' }, forkSourceSessionFilePath: parentPath, forkSourceTranscriptRootPath: root };
     const providerState = mode === 'normal' ? { threadId: 'parent', sessionFilePath: parentPath, transcriptRootPath: root }
       : mode === 'pending fork' ? source : { ...source, threadId: 'fork', sessionFilePath: forkPath, transcriptRootPath: root };
-    const openStream = jest.spyOn(fs, 'createReadStream');
+    const openStream = vi.spyOn(fs, 'createReadStream');
     try {
       const result = await new CodexConversationHistoryService().hydrateConversationHistory({
         id: 'conversation', sessionId: mode === 'pending fork' ? null : mode === 'normal' ? 'parent' : 'fork', providerState, messages: [],
@@ -243,7 +248,7 @@ describe('CodexConversationHistoryService', () => {
       + '\n' + (JSON.stringify({ type: 'irrelevant', payload: 'x'.repeat(1024) }) + '\n').repeat(2048));
     const streams: fsType.ReadStream[] = [];
     const create = fs.createReadStream;
-    const spy = jest.spyOn(fs, 'createReadStream').mockImplementation((...args) => {
+    const spy = vi.spyOn(fs, 'createReadStream').mockImplementation((...args) => {
       const stream = create(...args); streams.push(stream); return stream;
     });
     try {
@@ -259,10 +264,10 @@ describe('CodexConversationHistoryService', () => {
 
   it('trusts a WSL transcript only when the caller configuration selects a WSL installation', async () => {
     const sessionPath = '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\2026\\07\\12\\rollout-thread.jsonl';
-    const readModel = jest.spyOn(CodexHistoryStore, 'readCodexSessionModel').mockResolvedValue('gpt-5.5');
-    const find = jest.spyOn(CodexHistoryStore, 'findCodexSessionFileAsync').mockResolvedValue(null);
+    const readModel = vi.spyOn(CodexHistoryStore, 'readCodexSessionModel').mockResolvedValue('gpt-5.5');
+    const find = vi.spyOn(CodexHistoryStore, 'findCodexSessionFileAsync').mockResolvedValue(null);
     // The WSL share is not mounted on the test host; report the trusted saved path as present.
-    const access = jest.spyOn(fs.promises, 'access').mockResolvedValue();
+    const access = vi.spyOn(fsPromises, 'access').mockResolvedValue();
     const service = new CodexConversationHistoryService();
     const conversation = { sessionId: 'thread', providerState: { sessionFilePath: sessionPath, threadId: 'thread' }, messages: [] };
     const context = (installationMethod: 'wsl' | 'native-windows') => ({
@@ -1274,8 +1279,8 @@ describe('CodexConversationHistoryService', () => {
       conversation.providerState = { ...conversation.providerState, threadId: 'thread-found' };
       const realNow = Date.now.bind(Date);
       let elapsed = 0;
-      const now = jest.spyOn(Date, 'now').mockImplementation(() => realNow() + elapsed);
-      const lookup = jest.spyOn(CodexHistoryStore, 'findCodexSessionFileAsync')
+      const now = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + elapsed);
+      const lookup = vi.spyOn(CodexHistoryStore, 'findCodexSessionFileAsync')
         .mockImplementation(async (threadId, root, timeoutMs) => {
           if (threadId !== 'thread-lost') return findSessionFile(threadId, root, timeoutMs);
           // An unavailable earlier segment exhausts whatever budget its search is given.
@@ -1500,7 +1505,7 @@ describe('CodexConversationHistoryService', () => {
       };
 
       const service = new CodexConversationHistoryService();
-      const parse = jest.spyOn(JSON, 'parse');
+      const parse = vi.spyOn(JSON, 'parse');
       let sourceRecordReads: number;
       try {
         Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
@@ -1681,3 +1686,8 @@ test('missing-session recovery returns an update without mutating its input', as
   expect(conversation).toEqual(before);
   expect(result).toMatchObject({ outcome: 'reset', changes: { sessionId: null } });
 });
+
+vi.mock('os', async () => ({ ...await vi.importActual('os') }));
+
+vi.mock('fs', async () => ({ ...await vi.importActual<typeof import('fs')>('fs') }));
+vi.mock('node:fs/promises', async () => ({ ...await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises') }));

@@ -24,7 +24,7 @@ describe('session ownership across presentations', () => {
 
   it('reserves one attachment before awaits, promotes a running draft in place, and ignores stale detach', async () => {
     const { pool } = setup();
-    const owner = { reveal: jest.fn() };
+    const owner = { reveal: vi.fn() };
     const first = pool.acquire({ conversationId: null, providerId: 'claude', draftModel: 'model' }, owner);
     const runtime = first.attachment.runtime;
     const held = deferred<void>();
@@ -41,13 +41,13 @@ describe('session ownership across presentations', () => {
     expect(signal.aborted).toBe(false);
     const store = {
       getConversationList: () => [],
-      deleteConversation: jest.fn(async () => undefined),
-      setConversationArchived: jest.fn(async () => undefined),
-      setConversationsPlacement: jest.fn(async () => undefined),
-      restoreConversations: jest.fn(async () => undefined),
-      ensureAllConversationMetadataLoaded: jest.fn().mockResolvedValue(undefined),
-      archiveProjectIfEmpty: jest.fn(async () => undefined),
-      archiveConversationsIf: jest.fn(async () => 1),
+      deleteConversation: vi.fn(async () => undefined),
+      setConversationArchived: vi.fn(async () => undefined),
+      setConversationsPlacement: vi.fn(async () => undefined),
+      restoreConversations: vi.fn(async () => undefined),
+      ensureAllConversationMetadataLoaded: vi.fn().mockResolvedValue(undefined),
+      archiveProjectIfEmpty: vi.fn(async () => undefined),
+      archiveConversationsIf: vi.fn(async () => 1),
     };
     const lifecycle = new ConversationLifecycle({ sessions: pool, conversations: store, projects: { get: () => null, setArchived: async () => undefined }, views: { getAllViews: () => [] } });
     await lifecycle.setArchived('created', true);
@@ -59,7 +59,7 @@ describe('session ownership across presentations', () => {
     expect(second.acquired).toBe(true);
     expect(second.attachment.runtime).toBe(runtime);
     pool.release(first.attachment);
-    const duplicate = pool.acquire({ conversationId: 'created', providerId: 'claude', draftModel: null }, { reveal: jest.fn() });
+    const duplicate = pool.acquire({ conversationId: 'created', providerId: 'claude', draftModel: null }, { reveal: vi.fn() });
     expect(duplicate.acquired).toBe(false);
     expect(duplicate.attachment).toBe(second.attachment);
     held.resolve();
@@ -73,13 +73,13 @@ describe('session ownership across presentations', () => {
 
   it('fences admissions synchronously and drains a session after its last view detached', async () => {
     const { pool, harness } = setup();
-    const { attachment } = pool.acquire({ conversationId: 'running', providerId: 'claude', draftModel: null }, { reveal: jest.fn() });
+    const { attachment } = pool.acquire({ conversationId: 'running', providerId: 'claude', draftModel: null }, { reveal: vi.fn() });
     const runtime = attachment.runtime;
     const turn = runtime.turns.run(signal => new Promise<void>(resolve => signal.addEventListener('abort', () => resolve())));
     pool.release(attachment);
     pool.beginShutdown();
     expect(runtime.acceptsIntents).toBe(false);
-    expect(() => pool.acquire({ conversationId: null, providerId: null, draftModel: null }, { reveal: jest.fn() })).toThrow();
+    expect(() => pool.acquire({ conversationId: null, providerId: null, draftModel: null }, { reveal: vi.fn() })).toThrow();
     await pool.dispose();
     await turn;
     expect(harness.coordinator.state).toBe('disposed');
@@ -87,14 +87,14 @@ describe('session ownership across presentations', () => {
 
   it('joins a retired session whose provider cleanup is still running after removal', async () => {
     const { pool, harness } = setup();
-    const { attachment } = pool.acquire({ conversationId: 'deleted', providerId: 'claude', draftModel: null }, { reveal: jest.fn() });
+    const { attachment } = pool.acquire({ conversationId: 'deleted', providerId: 'claude', draftModel: null }, { reveal: vi.fn() });
     await harness.coordinator.bindConversation({ conversationId: 'deleted', providerId: 'claude' });
     await harness.coordinator.prepare();
     const native = harness.backends.get('claude')!.sessions[0];
     const enteredCleanup = deferred<void>();
     const releaseCleanup = deferred<void>();
     const dispose = native.dispose.bind(native);
-    jest.spyOn(native, 'dispose').mockImplementation(async () => {
+    vi.spyOn(native, 'dispose').mockImplementation(async () => {
       enteredCleanup.resolve();
       await releaseCleanup.promise;
       await dispose();
@@ -121,7 +121,7 @@ describe('session ownership across presentations', () => {
 
   it('keeps a held detached draft reachable by its key, through promotion, until the hold ends', async () => {
     const { pool } = setup();
-    const owner = { reveal: jest.fn() };
+    const owner = { reveal: vi.fn() };
     const flush = async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve(); };
     const draft = pool.acquire({ conversationId: null, providerId: 'claude', draftModel: 'model' }, owner).attachment;
     const runtime = draft.runtime;
@@ -154,7 +154,7 @@ describe('session ownership across presentations', () => {
   it('keeps the most recently viewed idle sessions loaded and releases the least recent beyond the limit', async () => {
     const released: string[] = [];
     const { pool } = setup({ retainedDetachedSessions: 2, releaseHistory: async id => { released.push(id); return true; } });
-    const owner = { reveal: jest.fn() };
+    const owner = { reveal: vi.fn() };
     const flush = async () => { for (let i = 0; i < 10; i += 1) await Promise.resolve(); };
     const view = (id: string) => {
       const { attachment } = pool.acquire({ conversationId: id, providerId: 'claude', draftModel: null }, owner);
@@ -192,16 +192,16 @@ describe('session ownership across presentations', () => {
 
   it('flushes a retained session\'s pending save on detach and reports a failed retry, keeping its history', async () => {
     const released: string[] = [];
-    const onError = jest.fn();
+    const onError = vi.fn();
     const { pool } = setup({ retainedDetachedSessions: 2, onError, releaseHistory: async id => { released.push(id); return true; } });
     const flush = async () => { for (let i = 0; i < 10; i += 1) await Promise.resolve(); };
-    const { attachment } = pool.acquire({ conversationId: 'unsaved', providerId: 'claude', draftModel: null }, { reveal: jest.fn() });
+    const { attachment } = pool.acquire({ conversationId: 'unsaved', providerId: 'claude', draftModel: null }, { reveal: vi.fn() });
     const model = attachment.runtime.model;
     // A save that failed at the end of a turn left the conversation dirty.
     const state = { isRewinding: false, hasPendingConversationSave: true };
     Object.defineProperty(model, 'state', { get: () => state });
     const failure = new Error('Vault unavailable');
-    const save = jest.spyOn(model.conversationController, 'save').mockRejectedValueOnce(failure);
+    const save = vi.spyOn(model.conversationController, 'save').mockRejectedValueOnce(failure);
 
     pool.release(attachment);
     await flush();
@@ -212,7 +212,7 @@ describe('session ownership across presentations', () => {
 
     // Viewing another session does not retry this session's failing save again.
     save.mockRejectedValue(failure);
-    const other = pool.acquire({ conversationId: 'other', providerId: 'claude', draftModel: null }, { reveal: jest.fn() });
+    const other = pool.acquire({ conversationId: 'other', providerId: 'claude', draftModel: null }, { reveal: vi.fn() });
     void other.attachment.runtime.model;
     pool.release(other.attachment);
     await flush();

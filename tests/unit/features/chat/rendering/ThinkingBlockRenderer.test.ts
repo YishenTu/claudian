@@ -7,22 +7,22 @@ import {
 } from '@/features/chat/rendering/ThinkingBlockRenderer';
 
 // Mock renderContent function
-const mockRenderContent = jest.fn().mockResolvedValue(undefined);
+const mockRenderContent = vi.fn().mockResolvedValue(undefined);
 
 describe('ThinkingBlockRenderer', () => {
   beforeEach(() => {
-    jest.useFakeTimers();
-    jest.clearAllMocks();
+    vi.useFakeTimers();
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   describe('createThinkingBlock', () => {
     it('reports expansion state without rendering content itself', () => {
       const parentEl = createMockEl();
-      const onToggle = jest.fn();
+      const onToggle = vi.fn();
       const state = createThinkingBlock(parentEl, { startTime: Date.now(), onToggle });
       const header = (state.wrapperEl as any)._children[0];
       const clickHandlers = header._eventListeners.get('click') || [];
@@ -60,7 +60,7 @@ describe('ThinkingBlockRenderer', () => {
       expect(state.timerInterval).not.toBeNull();
 
       // Advance time by 5 seconds
-      jest.advanceTimersByTime(5000);
+      vi.advanceTimersByTime(5000);
 
       expect(state.labelEl.textContent).toBe('Thinking 5s...');
       finalizeThinkingBlock(state, 5);

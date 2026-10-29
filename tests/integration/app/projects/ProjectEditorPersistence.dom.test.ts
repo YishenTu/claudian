@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { createPopoutDocument } from '@test/helpers/dom/popoutDocument';
@@ -10,13 +10,13 @@ import { editProject } from '@/features/chat/projects/projectActions';
 import { t } from '@/i18n/i18n';
 
 let mockModalDocument: Document | undefined;
-jest.mock('obsidian', () => {
-  const dom = jest.requireActual('@test/helpers/ObsidianSettingsDOM');
+vi.mock('obsidian', async () => {
+  const dom = (await vi.importActual<typeof import('@test/helpers/ObsidianSettingsDOM')>('@test/helpers/ObsidianSettingsDOM'));
   class Modal extends dom.Modal {
     // Adapt only Obsidian's active-window selection. The editor, actions and persistence stay real.
     open() { (mockModalDocument ?? document).body.appendChild(this.modalEl); this.onOpen(); }
   }
-  return { ...jest.requireActual('@test/__mocks__/obsidian'), ...dom, Modal };
+  return { ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')), ...dom, Modal };
 });
 
 afterEach(() => { mockModalDocument = undefined; document.body.replaceChildren(); });

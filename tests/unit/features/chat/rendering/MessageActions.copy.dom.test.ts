@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
@@ -34,16 +34,16 @@ const copyButtonSources = [
 ] as const;
 
 function writeTextReturning(result: () => Promise<void>) {
-  const writeText = jest.fn(result);
+  const writeText = vi.fn(result);
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
   return writeText;
 }
 
 beforeEach(() => {
   document.body.replaceChildren();
-  jest.useFakeTimers();
+  vi.useFakeTimers();
   // Obsidian renders icons; expose the requested icon so restoration is observable.
-  jest.mocked(setIcon).mockImplementation((el, icon) => {
+  vi.mocked(setIcon).mockImplementation((el, icon) => {
     el.replaceChildren(el.ownerDocument.createElement('svg'));
     el.firstElementChild!.setAttribute('data-icon', icon);
   });
@@ -51,8 +51,8 @@ beforeEach(() => {
 
 afterEach(() => {
   setLocale('en');
-  jest.useRealTimers();
-  jest.mocked(setIcon).mockReset();
+  vi.useRealTimers();
+  vi.mocked(setIcon).mockReset();
   Reflect.deleteProperty(navigator, 'clipboard');
 });
 
@@ -69,16 +69,16 @@ describe.each(copyButtonSources)('%s copy button', (_name, copiedText, render) =
     expect(button.querySelector('[data-icon="copy"]')).not.toBeNull();
 
     fireEvent.click(button);
-    await jest.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(writeText).toHaveBeenCalledWith(copiedText);
     expect(button.textContent).toBe('Copied!');
     expect(button.classList.contains('copied')).toBe(true);
 
-    await jest.advanceTimersByTimeAsync(COPY_FEEDBACK_MS - 1);
+    await vi.advanceTimersByTimeAsync(COPY_FEEDBACK_MS - 1);
     expect(button.textContent).toBe('Copied!');
 
-    await jest.advanceTimersByTimeAsync(1);
+    await vi.advanceTimersByTimeAsync(1);
     expect(button.textContent).toBe('');
     expect(button.classList.contains('copied')).toBe(false);
     expect(button.querySelector('[data-icon="copy"]')).not.toBeNull();
@@ -91,7 +91,7 @@ describe.each(copyButtonSources)('%s copy button', (_name, copiedText, render) =
     render(actions, messagesEl);
     const button = within(messagesEl).getByRole('button', { name: '复制消息' });
     fireEvent.click(button);
-    await jest.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
     expect(writeText).toHaveBeenCalledWith(copiedText);
     expect(button.textContent).toBe('已复制！');
   });
@@ -101,13 +101,13 @@ describe.each(copyButtonSources)('%s copy button', (_name, copiedText, render) =
     const button = mountButton();
 
     fireEvent.click(button);
-    await jest.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(writeText).toHaveBeenCalledTimes(1);
     expect(button.textContent).not.toBe('Copied!');
     expect(button.classList.contains('copied')).toBe(false);
     expect(button.querySelector('[data-icon="copy"]')).not.toBeNull();
-    expect(jest.getTimerCount()).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('restarts the feedback window when clicked again before the first one ends', async () => {
@@ -115,16 +115,16 @@ describe.each(copyButtonSources)('%s copy button', (_name, copiedText, render) =
     const button = mountButton();
 
     fireEvent.click(button);
-    await jest.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1_000);
     fireEvent.click(button);
-    await jest.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
 
     // The first click's timer would have fired by now had it not been cleared.
-    await jest.advanceTimersByTimeAsync(COPY_FEEDBACK_MS - 1_000 + 1);
+    await vi.advanceTimersByTimeAsync(COPY_FEEDBACK_MS - 1_000 + 1);
     expect(button.textContent).toBe('Copied!');
     expect(button.classList.contains('copied')).toBe(true);
 
-    await jest.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1_000);
     expect(button.classList.contains('copied')).toBe(false);
     expect(button.querySelector('[data-icon="copy"]')).not.toBeNull();
   });
@@ -132,7 +132,7 @@ describe.each(copyButtonSources)('%s copy button', (_name, copiedText, render) =
   it('keeps the click from reaching the surrounding message', () => {
     writeTextReturning(() => Promise.resolve());
     const button = mountButton();
-    const onMessageClick = jest.fn();
+    const onMessageClick = vi.fn();
     button.parentElement!.parentElement!.addEventListener('click', onMessageClick);
 
     fireEvent.click(button);

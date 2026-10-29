@@ -12,7 +12,7 @@ const fullSelection = {
 const docsTest = 'tests/unit/docs/Documentation.test.ts';
 const piTest = 'tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts';
 const isDocumentation = file => file.endsWith('.md') || file.startsWith('docs/');
-const isJestTest = file => /^tests\/(?:unit|integration)\/.*\.test\.ts$/.test(file);
+const isVitestTest = file => /^tests\/(?:unit|integration)\/.*\.test\.ts$/.test(file);
 const isGraphInput = file => /^(?:src|tests)\/.*\.(?:[cm]?[jt]sx?|json)$/.test(file);
 
 const repositoryRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -24,10 +24,11 @@ const styleSuites = (existsSync(styleSuiteDirectory) ? readdirSync(styleSuiteDir
   .filter(file => file.endsWith('.test.ts'))
   .sort();
 
-// These consumers read files through fs rather than imports, so Jest cannot find their edges.
+// Runtime imports drive related selection; type-only dependents are covered by typecheck.
+// These consumers read files through fs rather than imports, so Vitest cannot find their edges.
 const fileConsumers = [
   [/^(?:tests\/fixtures\/providers\/models\/|src\/providers\/(?:grok|opencode)\/(?:settings|config|models|discoveryState|internal\/compareCollections)\.ts$|src\/core\/(?:device\/InstallationKey\.ts|providers\/(?:providerConfig\.ts|settings\/|models\/)))/, ['tests/integration/app/settings/ProviderModelDictionaryPersistence.test.ts']],
-  [/^src\/i18n\/locales\/.*\.json$/, ['tests/integration/build/dependency-envelope.test.ts']],
+  [/^src\/i18n\/locales\/.*\.json$/, ['tests/integration/build/dependency-envelope.test.ts', 'tests/unit/i18n/i18n.test.ts']],
   [/^src\/style\//, [
     ...styleSuites,
     'tests/unit/features/chat/navigation/NavigationSidebar.dom.test.ts',
@@ -59,8 +60,8 @@ const scriptConsumers = new Map(suites.scriptTests.flatMap(file => [
 ]));
 const globalInputs = new Set([
   'src/main.ts', 'tests/setupWindow.ts', 'scripts/ciTestSelection.mjs',
-  'scripts/run-tests.js', 'scripts/run-jest.js', 'scripts/run-cross-platform-tests.js',
-  'scripts/testSuites.cjs',
+  'scripts/run-tests.js', 'scripts/run-vitest.js', 'scripts/run-cross-platform-tests.js',
+  'scripts/testSuites.cjs', 'scripts/list-related-tests.mjs', 'scripts/vitestMetadataReporter.mjs',
 ]);
 
 export function selectCiTests({ changes, relatedTests, eventName }) {
@@ -68,11 +69,11 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
   const files = new Set(relatedTests);
   const scripts = new Set();
   for (const { status, path: file } of changes) {
-    if (status === 'D' && !isJestTest(file) && !isDocumentation(file)) return { ...fullSelection };
+    if (status === 'D' && !isVitestTest(file) && !isDocumentation(file)) return { ...fullSelection };
     if (file.startsWith('tests/fixtures/') && !isDocumentation(file)
       && !file.endsWith('.json') && !fileConsumers.some(([pattern]) => pattern.test(file))) return { ...fullSelection };
     if (globalInputs.has(file)) return { ...fullSelection };
-    if (isJestTest(file)) {
+    if (isVitestTest(file)) {
       if (status !== 'D') files.add(file);
     } else if (isDocumentation(file)) {
       files.add(docsTest);
@@ -110,7 +111,7 @@ export function selectRelatedCiTests({ changes, eventName = 'pull_request' }) {
     .map(change => change.path);
   if (selection.testFiles !== null && inputs.length > 0) {
     const relatedTests = JSON.parse(execFileSync(process.execPath, [
-      'scripts/run-jest.js', '--listTests', '--json', '--findRelatedTests', ...inputs,
+      'scripts/list-related-tests.mjs', ...inputs,
     ], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }))
       .map(file => path.relative(realpathSync.native(process.cwd()), realpathSync.native(file)).split(path.sep).join('/'));
     selection = selectCiTests({ changes, relatedTests, eventName });

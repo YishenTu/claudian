@@ -102,5 +102,5 @@ class ButtonComponent {
   onClick(callback: () => void): this { this.buttonEl.addEventListener('click', callback); return this; }
 }
 
-export const Notice = jest.fn();
-export const setIcon = jest.fn();
+export const Notice = vi.fn();
+export const setIcon = vi.fn();

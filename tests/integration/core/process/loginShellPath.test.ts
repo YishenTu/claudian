@@ -13,7 +13,7 @@ describeUnix('login shell PATH for GUI-launched processes', () => {
   let loginBin: string;
 
   beforeEach(() => {
-    jest.resetModules();
+    vi.resetModules();
     directory = mkdtempSync(path.join(tmpdir(), 'claudian login shell '));
     loginBin = path.join(directory, 'login only bin');
     mkdirSync(loginBin);
@@ -66,7 +66,7 @@ describeUnix('login shell PATH for GUI-launched processes', () => {
       storage: { installationKey: 'device-key' as never },
       settings: new SettingsCoordinator({} as ClaudianSettings, async () => undefined),
       environment: {} as ClaudianProviderHostDeps['environment'],
-      sessionToolEndpoint: { registerMCPRoute: jest.fn(), registerCallRoute: jest.fn() },
+      sessionToolEndpoint: { registerMCPRoute: vi.fn(), registerCallRoute: vi.fn() },
       notifyProviderChatOptionsChanged: async () => undefined,
     });
   }

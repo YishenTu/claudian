@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { setTimeout as yieldToIO } from 'node:timers/promises';
 
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
+import { testDate } from '@test/helpers/testClock';
 
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 import { OpencodeHTTPMetadataProbe } from '@/providers/opencode/metadata/OpencodeHTTPMetadataProbe';
@@ -69,12 +71,26 @@ it('bounds the readiness wait and aborts its request without stopping the retain
   fixture.environment.INTEGRATION_STATUS = 'hang';
   const plugin = fixture.createPlugin();
   const service = new OpencodeMetadataService(runtimeHostFor(plugin, 'opencode'), plugin.executionLifecycleRegistry);
+  vi.useFakeTimers({ now: testDate(), toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+  const loading = service.loadCatalog();
+  let settled = false;
+  void loading.then(() => { settled = true; }, () => { settled = true; });
   try {
-    await expect(service.loadCatalog()).resolves.toBe(true);
+    expect(window.setTimeout).toBe(setTimeout);
+    // The native request must arrive before advancing its deadline; startup and socket I/O stay real.
+    for (const started = performance.now(); !existsSync(fixture.environment.ENDPOINT_FILE! + '.integration');) {
+      if (settled || performance.now() - started > 40_000) throw new Error('Readiness request did not arrive.');
+      await yieldToIO(10);
+    }
+    for (let elapsed = 0; !settled && elapsed < 8_000; elapsed += 50) await vi.advanceTimersByTimeAsync(50);
+    vi.useRealTimers();
+    // Only allow real I/O to settle after the deadline; a longer/missing deadline must fail.
+    await vi.waitFor(() => expect(settled).toBe(true), { timeout: 3_000 });
+    await expect(loading).resolves.toBe(true);
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([
       { rawId: 'deepseek/chat', label: 'deepseek/DeepSeek Chat' },
     ]);
     await waitUntil(() => existsSync(fixture.environment.ENDPOINT_FILE! + '.integration-aborted'));
     expect((await fetch(readFileSync(fixture.environment.ENDPOINT_FILE!, 'utf8'))).status).toBe(403);
-  } finally { await service.dispose(); }
+  } finally { vi.useRealTimers(); await service.dispose(); }
 });

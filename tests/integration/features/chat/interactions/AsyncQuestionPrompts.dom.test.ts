@@ -1,12 +1,12 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { createHarness as createExecutionHarness, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { createFixture, deferred } from '@test/helpers/ChatInputHarness';
 import { createTestSession } from '@test/helpers/ConversationPorts';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Component } from 'obsidian';
 
 import type { ChatMessage, ToolCallInfo } from '@/core/types';
@@ -41,7 +41,7 @@ it.each(['asking', 'later'] as const)('keeps an unanswered question usable after
     getTabProviderId: () => 'codex', getInputContainerEl: () => composer,
     getExecutionCoordinator: () => execution.coordinator,
   });
-  Object.assign(fixture.deps.renderer, { updateQuestionTool: jest.fn() });
+  Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   await execution.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'codex' });
   const running = fixture.controller.sendMessage({ content: 'Start work' });
   const backend = execution.backends.get('codex')!;
@@ -68,7 +68,7 @@ it.each(['asking', 'later'] as const)('keeps an unanswered question usable after
     expect(tool.questionStatus).toBe('pending');
     expect(within(host).getByRole('region', { name: 'Question' })).toBeTruthy();
     expect(fixture.state.requiresAction).toBe(true);
-    const send = jest.spyOn(fixture.controller, 'sendMessage');
+    const send = vi.spyOn(fixture.controller, 'sendMessage');
     fireEvent.click(within(host).getByRole('button', { name: 'Submit answers' }));
     await waitFor(() => expect(native.requests).toHaveLength(cancelledTurn === 'later' ? 3 : 2));
     expect(native.requests.at(-1)!.input).toEqual([{ type: 'text', text: expect.stringContaining('"answer":"History"') }]);
@@ -93,7 +93,7 @@ it.each(['authority', 'cancel-and-replace'] as const)('fences an expired answer 
     getTabProviderId: () => 'codex', getInputContainerEl: () => composer,
     getExecutionCoordinator: () => execution.coordinator,
   });
-  Object.assign(fixture.deps.renderer, { updateQuestionTool: jest.fn() });
+  Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   await execution.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'codex' });
   const running = fixture.controller.sendMessage({ content: 'Start work' });
   const backend = execution.backends.get('codex')!;
@@ -102,14 +102,14 @@ it.each(['authority', 'cancel-and-replace'] as const)('fences an expired answer 
   const run = native.runs[0];
   run.events.push({ type: 'turn_started', accepted: true, scope: requestedScope(native, run, 1) });
   const authority = deferred<void>();
-  const entered = jest.fn();
+  const entered = vi.fn();
   execution.repository.assertConversationExecutionAuthority.mockImplementationOnce(() => { entered(); return authority.promise; });
   const tool: ToolCallInfo = { id: 'ask', name: 'AskUserQuestion', status: 'completed', input: {
     replyMode: 'user-message', questions: [{ id: '0', question: 'Which check?', options: [{ label: 'History' }] }],
   } };
   fixture.state.messages.at(-1)!.toolCalls = [tool];
   fixture.controller.updateAsyncQuestion(tool);
-  const answer = jest.spyOn(fixture.controller, 'answerQuestion');
+  const answer = vi.spyOn(fixture.controller, 'answerQuestion');
   const question = within(host).getByRole('region', { name: 'Question' });
   fireEvent.click(within(question).getByRole('button', { name: 'History' }));
   fireEvent.click(within(question).getByRole('button', { name: 'Submit answers' }));
@@ -145,7 +145,7 @@ it.each(['initialization', 'authority', 'cancelled-initialization', 'failed-init
     getTabProviderId: () => 'codex', getInputContainerEl: () => composer,
     getExecutionCoordinator: () => execution.coordinator,
   });
-  Object.assign(fixture.deps.renderer, { updateQuestionTool: jest.fn() });
+  Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   await execution.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'codex' });
   const running = fixture.controller.sendMessage({ content: 'Start work' });
   const backend = execution.backends.get('codex')!;
@@ -163,21 +163,21 @@ it.each(['initialization', 'authority', 'cancelled-initialization', 'failed-init
   fixture.input.value = 'Keep this draft';
   const authority = deferred<void>();
   const initialization = deferred<boolean>();
-  const entered = jest.fn();
+  const entered = vi.fn();
   if (phase !== 'authority') {
     fixture.deps.ensureExecutionInitialized = () => { entered(); return initialization.promise; };
   } else {
     execution.repository.assertConversationExecutionAuthority.mockImplementationOnce(() => { entered(); return authority.promise; });
   }
   const execute = native.execute.bind(native);
-  jest.spyOn(native, 'execute').mockImplementation(request => {
+  vi.spyOn(native, 'execute').mockImplementation(request => {
     execute(request);
     const next = native.runs.at(-1)!;
     next.events.push({ type: 'turn_completed', reason: 'completed', scope: requestedScope(native, next, 1) });
     next.events.end();
     return next;
   });
-  const send = jest.spyOn(fixture.controller, 'sendMessage');
+  const send = vi.spyOn(fixture.controller, 'sendMessage');
   fireEvent.click(within(host).getByRole('button', { name: 'History' }));
   fireEvent.click(within(host).getByRole('button', { name: 'Submit answers' }));
   await waitFor(() => expect(entered).toHaveBeenCalledTimes(1));
@@ -202,7 +202,7 @@ it('does not restart main chat when an answer outlives cancellation during hando
   const host = document.body.createDiv();
   const composer = host.createDiv();
   const fixture = createFixture({ getTabProviderId: () => 'codex', getInputContainerEl: () => composer });
-  Object.assign(fixture.deps.renderer, { updateQuestionTool: jest.fn() });
+  Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   const execution = deferred<{ accepted: boolean; status: string }>();
   fixture.coordinator.execute.mockReturnValueOnce(execution.promise);
   const running = fixture.controller.sendMessage({ content: 'Start work' });
@@ -235,7 +235,7 @@ it.each([true, false])('settles an active-turn answer without consuming the draf
   const host = document.body.createDiv();
   const composer = host.createDiv();
   const fixture = createFixture({ getTabProviderId: () => 'codex', getInputContainerEl: () => composer });
-  Object.assign(fixture.deps.renderer, { updateQuestionTool: jest.fn() });
+  Object.assign(fixture.deps.renderer, { updateQuestionTool: vi.fn() });
   fixture.state.queueIndicatorEl = composer.createDiv();
   fixture.holdResponse();
   fixture.coordinator.steer.mockResolvedValueOnce({ delivery: accepted ? 'accepted' : 'not-sent' });
@@ -292,7 +292,7 @@ function createSurface() {
       getSuppressedEl: () => composer,
     }),
   } as unknown as InputControllerDeps);
-  const delivery = jest.spyOn(input, 'answerQuestion').mockResolvedValue(undefined);
+  const delivery = vi.spyOn(input, 'answerQuestion').mockResolvedValue(undefined);
   const response: ChatMessage = { id: 'response', role: 'assistant', timestamp: testDate().getTime(), content: '', contentBlocks: [] };
   state.addMessage(response);
   state.currentContentEl = renderer.addMessage(response).querySelector('.claudian-message-content');

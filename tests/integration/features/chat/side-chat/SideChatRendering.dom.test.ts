@@ -1,16 +1,19 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import { createHarness, releaseSideChatHarnesses, startSideChat } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { waitFor } from '@testing-library/dom';
+import type { Mock } from 'vitest';
+
+
 
 afterEach(releaseSideChatHarnesses);
 
 it('defers hidden side-chat Markdown, catches up when visible, and releases viewport observation', async () => {
   const original = window.IntersectionObserver;
-  const observers: Array<{ callback: IntersectionObserverCallback; target?: Element; disconnect: jest.Mock }> = [];
-  window.IntersectionObserver = jest.fn((callback: IntersectionObserverCallback) => {
-    const observer = { callback, target: undefined as Element | undefined, disconnect: jest.fn() };
+  const observers: Array<{ callback: IntersectionObserverCallback; target?: Element; disconnect: Mock }> = [];
+  window.IntersectionObserver = vi.fn(function (callback: IntersectionObserverCallback) {
+    const observer = { callback, target: undefined as Element | undefined, disconnect: vi.fn() };
     observers.push(observer);
     return { observe: (target: Element) => { observer.target = target; }, disconnect: observer.disconnect };
   }) as unknown as typeof IntersectionObserver;
@@ -22,7 +25,7 @@ it('defers hidden side-chat Markdown, catches up when visible, and releases view
     const { started } = await startSideChat(harness);
     harness.backend.latest.establishChild('side-session');
     const runtime = harness.controller.runtime!;
-    const render = jest.spyOn(runtime.renderer!, 'renderContent');
+    const render = vi.spyOn(runtime.renderer!, 'renderContent');
     harness.controller.collapse();
     visible(false);
     harness.backend.latest.emitText('Hidden output');

@@ -35,7 +35,7 @@ describe('MentionSource', () => {
       getCachedVaultFiles: () => files,
       getCachedVaultFolders: () => [],
     });
-    const compare = jest.spyOn(String.prototype, 'localeCompare');
+    const compare = vi.spyOn(String.prototype, 'localeCompare');
     let items;
     let comparisons;
     try {
@@ -79,7 +79,7 @@ describe('MentionSource', () => {
   it('formats only retained suggestions while preserving file and folder ranking', async () => {
     const now = testDate().getTime();
     const files = Array.from({ length: 250 }, (_, index) => file(`folder${index % 60}/Note ${index}.md`, now + index + 1));
-    const formatVaultFileMention = jest.fn((path: string) => `@${path} `);
+    const formatVaultFileMention = vi.fn((path: string) => `@${path} `);
     const { source: value } = source({
       getCachedVaultFiles: () => files,
       getCachedVaultFolders: () => Array.from({ length: 60 }, (_, index) => ({ name: `folder${index}`, path: `folder${index}` })),

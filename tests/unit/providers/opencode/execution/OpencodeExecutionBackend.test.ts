@@ -151,11 +151,11 @@ function createPlugin(): any {
         adapter: { basePath: '/vault' },
       },
     },
-    getResolvedProviderCliPath: jest.fn(async () => '/bin/opencode'),
+    getResolvedProviderCliPath: vi.fn(async () => '/bin/opencode'),
     manifest: { version: 'test' },
-    mutateSettings: jest.fn(async (mutation) => mutation(plugin.settings)),
-    mutateSettingsConditionally: jest.fn(async (mutation) => mutation(plugin.settings)),
-    notifyProviderChatOptionsChanged: jest.fn(),
+    mutateSettings: vi.fn(async (mutation) => mutation(plugin.settings)),
+    mutateSettingsConditionally: vi.fn(async (mutation) => mutation(plugin.settings)),
+    notifyProviderChatOptionsChanged: vi.fn(),
     settings: {
       effortLevel: 'high',
       model: 'opencode:anthropic/claude',
@@ -177,12 +177,12 @@ const plugin = createPlugin();
 
 function createConfig(overrides: Partial<ProviderSessionConfig> = {}): ProviderSessionConfig {
   const interactionPort: ProviderInteractionPort = {
-    requestApproval: jest.fn(async ({ interactionId }) => ({
+    requestApproval: vi.fn(async ({ interactionId }) => ({
       interactionId,
       decision: 'allow' as const,
     })),
-    askUserQuestion: jest.fn(),
-    dismissInteraction: jest.fn(),
+    askUserQuestion: vi.fn(),
+    dismissInteraction: vi.fn(),
   };
   return {
     interactionPort,
@@ -268,15 +268,15 @@ describe('OpencodeExecutionBackend', () => {
   });
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('does not acquire a native server when a turn is cancelled during CLI resolution', async () => {
     const cliPath = createDeferred<string | null>();
     const host = createPlugin();
-    host.getResolvedProviderCliPath = jest.fn(() => cliPath.promise);
+    host.getResolvedProviderCliPath = vi.fn(() => cliPath.promise);
     const serverService = new OpencodeServerService();
-    const acquire = jest.spyOn(serverService, 'acquire');
+    const acquire = vi.spyOn(serverService, 'acquire');
     const session = new OpencodeExecutionBackend(runtimeHostFor(host, 'opencode'), { serverService }).createSession(createConfig());
     const run = session.execute(createRequest());
     const events = collect(run.events);

@@ -1,9 +1,9 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Notice } from 'obsidian';
 
 import type { ConversationMeta } from '@/core/types';
@@ -50,9 +50,9 @@ function setup(conversations: ConversationMeta[] = [
   conversation('pinned-member', { isPinned: true, projectId: 'launch' }),
 ], options: { launchPinned?: boolean } = {}) {
   const lifecycle = {
-    setPinned: jest.fn().mockResolvedValue(undefined),
-    setPlacement: jest.fn().mockResolvedValue(undefined),
-    archive: jest.fn(),
+    setPinned: vi.fn().mockResolvedValue(undefined),
+    setPlacement: vi.fn().mockResolvedValue(undefined),
+    archive: vi.fn(),
   };
   const projects = createProjectsFake([
     projectRecord({
@@ -63,7 +63,7 @@ function setup(conversations: ConversationMeta[] = [
   const plugin = {
     app: { vault: { getAbstractFileByPath: () => null } },
     settings: { enableAutoTitleGeneration: false, sessionManagerOrganization: 'list' },
-    mutateSettings: jest.fn(async (mutation: (settings: Record<string, unknown>) => void) => {
+    mutateSettings: vi.fn(async (mutation: (settings: Record<string, unknown>) => void) => {
       mutation(plugin.settings);
     }),
     getConversationList: () => conversations,
@@ -75,16 +75,16 @@ function setup(conversations: ConversationMeta[] = [
     navigation: {
       contentExists: () => true,
       getConversationStatus: () => ({ openState: 'closed', isRunning: false }),
-      openConversation: jest.fn().mockResolvedValue(undefined),
-      openSessionConversation: jest.fn().mockResolvedValue(undefined),
-      startLinkedContentConversation: jest.fn().mockResolvedValue(undefined),
-      startProjectConversation: jest.fn().mockResolvedValue(undefined),
+      openConversation: vi.fn().mockResolvedValue(undefined),
+      openSessionConversation: vi.fn().mockResolvedValue(undefined),
+      startLinkedContentConversation: vi.fn().mockResolvedValue(undefined),
+      startProjectConversation: vi.fn().mockResolvedValue(undefined),
     },
     getActiveTab: () => null,
     isWide: () => true,
     canCreateTab: () => true,
-    requestNew: jest.fn(),
-    notifyOtherViews: jest.fn(),
+    requestNew: vi.fn(),
+    notifyOtherViews: vi.fn(),
   });
   const host = document.body.createDiv();
   surface.mountSidebar(host);
@@ -116,7 +116,7 @@ function setup(conversations: ConversationMeta[] = [
 
 afterEach(() => {
   document.body.replaceChildren();
-  jest.mocked(Notice).mockClear();
+  vi.mocked(Notice).mockClear();
 });
 
 it('moves a loose session into a project by dropping it on the project row, highlighting the target', async () => {

@@ -1,9 +1,9 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, isInaccessible, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
-jest.mock('obsidian', () => {
+vi.mock('obsidian', () => {
   class Setting {
     settingEl: HTMLElement;
     descEl: HTMLElement;

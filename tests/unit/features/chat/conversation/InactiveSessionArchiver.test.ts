@@ -1,8 +1,11 @@
 import { testClock } from '@test/helpers/testClock';
 import { Notice } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import type { ConversationMeta, SessionAutoArchiveAfter } from '@/core/types';
 import { InactiveSessionArchiver } from '@/features/chat/conversation/InactiveSessionArchiver';
+
+
 
 describe('InactiveSessionArchiver', () => {
   const clock = testClock();
@@ -16,7 +19,7 @@ describe('InactiveSessionArchiver', () => {
   }
 
   function createArchiver(after: SessionAutoArchiveAfter, conversations: ConversationMeta[]) {
-    const archiveConversations = jest.fn(async (
+    const archiveConversations = vi.fn(async (
       ids: readonly string[],
       shouldArchive: (conversation: ConversationMeta) => boolean,
     ) => ids.filter(id => shouldArchive(conversations.find(conversation => conversation.id === id)!)).length);
@@ -38,7 +41,7 @@ describe('InactiveSessionArchiver', () => {
     session('open-old', 40),
   ];
 
-  beforeEach(() => { (Notice as unknown as jest.Mock).mockClear(); });
+  beforeEach(() => { (Notice as unknown as Mock).mockClear(); });
 
   it.each<[SessionAutoArchiveAfter, string[]]>([
     ['7d', ['old', 'older']],

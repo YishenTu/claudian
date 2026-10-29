@@ -2,7 +2,7 @@ import { toggleServiceTier } from '@/features/chat/composer/toggleServiceTier';
 
 describe('toggleServiceTier', () => {
   it('persists the active tier when the current tier is inactive', async () => {
-    const onServiceTierChange = jest.fn().mockResolvedValue(undefined);
+    const onServiceTierChange = vi.fn().mockResolvedValue(undefined);
 
     await expect(toggleServiceTier({
       getSettings: () => ({ serviceTier: 'default' }),
@@ -22,7 +22,7 @@ describe('toggleServiceTier', () => {
   });
 
   it('uses the provider-resolved active state instead of the raw setting', async () => {
-    const onServiceTierChange = jest.fn().mockResolvedValue(undefined);
+    const onServiceTierChange = vi.fn().mockResolvedValue(undefined);
 
     await expect(toggleServiceTier({
       getSettings: () => ({ serviceTier: 'fast' }),
@@ -42,7 +42,7 @@ describe('toggleServiceTier', () => {
   });
 
   it('returns false without persisting when the provider has no service-tier toggle', async () => {
-    const onServiceTierChange = jest.fn().mockResolvedValue(undefined);
+    const onServiceTierChange = vi.fn().mockResolvedValue(undefined);
 
     await expect(toggleServiceTier({
       getSettings: () => ({ serviceTier: 'default' }),
@@ -67,7 +67,7 @@ describe('toggleServiceTier', () => {
           isActive: true,
         }),
       }),
-      onServiceTierChange: jest.fn().mockRejectedValue(failure),
+      onServiceTierChange: vi.fn().mockRejectedValue(failure),
     })).rejects.toBe(failure);
   });
 });

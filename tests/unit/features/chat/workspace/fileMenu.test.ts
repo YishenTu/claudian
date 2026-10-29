@@ -18,20 +18,20 @@ describe('Claudian file menu', () => {
   function createHost(options: { appendResult?: boolean } = {}) {
     let fileMenuHandler: ((menu: Menu, file: TFile | TFolder) => void) | null = null;
     const eventRef = { id: 'file-menu-ref' };
-    const appendToActiveInput = jest.fn().mockReturnValue(options.appendResult ?? true);
+    const appendToActiveInput = vi.fn().mockReturnValue(options.appendResult ?? true);
     const view = { appendToActiveInput };
     const host = {
       app: {
         workspace: {
-          on: jest.fn((event: string, handler: typeof fileMenuHandler) => {
+          on: vi.fn((event: string, handler: typeof fileMenuHandler) => {
             if (event === 'file-menu') fileMenuHandler = handler;
             return eventRef;
           }),
         },
       },
-      registerEvent: jest.fn(),
-      activateView: jest.fn().mockResolvedValue(undefined),
-      getView: jest.fn().mockReturnValue(view),
+      registerEvent: vi.fn(),
+      activateView: vi.fn().mockResolvedValue(undefined),
+      getView: vi.fn().mockReturnValue(view),
     };
 
     return {

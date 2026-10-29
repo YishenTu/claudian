@@ -62,7 +62,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
   await fs.rm(root, { recursive: true, force: true });
 });
 
@@ -81,7 +81,7 @@ test('execution snapshots avoid history payload serialization while persistence 
       status: 'completed' as const, isExpanded: false, result: 'Full tool output' }],
   };
   const subagentData = { [subagent.id]: subagent };
-  const serializeHistory = jest.fn(() => ({ [subagent.id]: subagent }));
+  const serializeHistory = vi.fn(() => ({ [subagent.id]: subagent }));
   Object.defineProperty(subagentData, 'toJSON', { value: serializeHistory });
   const providerState = { providerSessionId: 'native-1', subagentData, futureField: { cursor: 'keep' } };
   const conversation: Conversation = {
@@ -149,7 +149,7 @@ test.each([
   repository.mergeMetadataConversations([conversation], 'unscoped');
   const before = repository.getSync(conversation.id);
   const history = ProviderRegistry.getConversationHistoryService('claude');
-  const hydrate = jest.spyOn(history, 'hydrateConversationHistory');
+  const hydrate = vi.spyOn(history, 'hydrateConversationHistory');
 
   // Assignment persists an unloaded shell with its existing state intact.
   await repository.assignToCurrentDevice(conversation.id);
@@ -403,7 +403,7 @@ test('compacts stored subagent copies in the background after all metadata loads
   // Observe when the real background pass settles instead of polling files mid-write.
   const compact = repository.compactPersistedProviderState.bind(repository);
   const passSettled = new Promise<number>(resolve => {
-    jest.spyOn(repository, 'compactPersistedProviderState').mockImplementation(async isStopped => {
+    vi.spyOn(repository, 'compactPersistedProviderState').mockImplementation(async isStopped => {
       const count = await compact(isStopped);
       resolve(count);
       return count;
@@ -462,7 +462,7 @@ test('metadata scan and revalidation read unchanged payloads once through the st
   for (let index = 0; index < 25; index++) {
     await store.saveMetadata({ ...metadata, id: `saved-${index}` });
   }
-  const read = jest.spyOn(adapter, 'read');
+  const read = vi.spyOn(adapter, 'read');
   const scan = await store.metadataReader.scan();
   const records = await store.metadataReader.revalidate(scan.records);
   expect(records).toHaveLength(25);
@@ -476,7 +476,7 @@ test('preserves higher-priority metadata authority when its stat is unavailable'
   const scanned = await store.metadataReader.scan();
   await store.saveMetadata({ ...metadata, title: 'Device owner' });
   const stat = app.vault.adapter.stat.bind(app.vault.adapter);
-  jest.spyOn(app.vault.adapter, 'stat').mockImplementation(async file => {
+  vi.spyOn(app.vault.adapter, 'stat').mockImplementation(async file => {
     if (file === `${DEVICE_PATH}/${metadata.id}.meta.json`) throw new Error('Stat temporarily unavailable');
     return stat(file);
   });
@@ -523,7 +523,7 @@ test('reopening uses provider messages as the authoritative history', async () =
     id: 'native-message', userMessageId: 'native-user', role: 'user' as const,
     content: 'Provider text', displayContent: 'Provider text', timestamp: 2,
   };
-  jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+  vi.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
     hydrateConversationHistory: async () => ({ messages: [nativeMessage] }),
   } as unknown as ReturnType<typeof ProviderRegistry.getConversationHistoryService>);
   await adapter.write(`${SESSIONS_PATH}/${metadata.id}.inputs.json`, JSON.stringify({
@@ -658,7 +658,7 @@ test('migration continues when a listed assignment disappears before it is read'
   await adapter.write(assignmentPath, '{}');
   await adapter.write(`${SESSIONS_PATH}/${metadata.id}.inputs.json`, '{}');
   const read = app.vault.adapter.read.bind(app.vault.adapter);
-  jest.spyOn(app.vault.adapter, 'read').mockImplementation(async (file) => {
+  vi.spyOn(app.vault.adapter, 'read').mockImplementation(async (file) => {
     if (file === assignmentPath) await fs.unlink(path.join(root, file));
     return read(file);
   });
@@ -680,12 +680,12 @@ test('initialization loads settings while sidecar discovery is pending and waits
   const listingStarted = new Promise<void>(resolve => { entered = resolve; });
   let release!: () => void;
   const listingGate = new Promise<void>(resolve => { release = resolve; });
-  jest.spyOn(app.vault.adapter, 'list').mockImplementation(async folder => {
+  vi.spyOn(app.vault.adapter, 'list').mockImplementation(async folder => {
     entered();
     await listingGate;
     return list(folder);
   });
-  const exists = jest.spyOn(app.vault.adapter, 'exists');
+  const exists = vi.spyOn(app.vault.adapter, 'exists');
   const storage = new SharedStorageService({ app } as Plugin, DEFAULT_CLAUDIAN_SETTINGS);
   let finished = false;
   const initializing = storage.initialize().then(result => { finished = true; return result; });
@@ -709,7 +709,7 @@ test('initialization joins recovery before reporting a settings failure', async 
   await adapter.write(CLAUDIAN_SETTINGS_PATH, '{}');
   const failure = new Error('Settings unavailable');
   const read = app.vault.adapter.read.bind(app.vault.adapter);
-  jest.spyOn(app.vault.adapter, 'read').mockImplementation(file => {
+  vi.spyOn(app.vault.adapter, 'read').mockImplementation(file => {
     if (file === CLAUDIAN_SETTINGS_PATH) return Promise.reject(failure);
     return read(file);
   });
@@ -730,14 +730,14 @@ test.each(['list', 'read', 'rename'] as const)(
     const storage = new SharedStorageService({ app } as Plugin, DEFAULT_CLAUDIAN_SETTINGS);
     const original = app.vault.adapter[operation].bind(app.vault.adapter) as (...args: string[]) => ReturnType<App['vault']['adapter'][typeof operation]>;
     let failed = false;
-    jest.spyOn(app.vault.adapter, operation).mockImplementation((...args: string[]): ReturnType<App['vault']['adapter'][typeof operation]> => {
+    (vi.spyOn(app.vault.adapter, operation) as import('vitest').MockInstance<(...args: string[]) => ReturnType<App['vault']['adapter'][typeof operation]>>).mockImplementation((...args: string[]): ReturnType<App['vault']['adapter'][typeof operation]> => {
       if (!failed && args[0].startsWith(SESSIONS_PATH)) {
         failed = true;
         throw new Error('Storage unavailable');
       }
       return original(...args);
     });
-    jest.mocked(Notice).mockClear();
+    vi.mocked(Notice).mockClear();
 
     await expect(storage.initialize()).resolves.toMatchObject({ claudian: { userName: 'Example' } });
     expect(Notice).toHaveBeenCalledWith('Failed to clean up obsolete session files; will retry next launch');
@@ -749,7 +749,7 @@ test.each(['list', 'read', 'rename'] as const)(
 );
 
 
-test.each([null, 42, {}, [], undefined])('leaves a malformed title record untouched and keeps the session list usable (%p)', async title => {
+test.each([null, 42, {}, [], undefined])('leaves a malformed title record untouched and keeps the session list usable (%o)', async title => {
   const invalid = { ...metadata, id: 'zz-bad-title', title };
   const invalidPath = `${DEVICE_PATH}/${invalid.id}.meta.json`;
   await store.saveMetadata(metadata);

@@ -1,11 +1,11 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@test/helpers/ObsidianSettingsDOM';
 
 import { deserialize, serialize } from 'node:v8';
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Notice } from 'obsidian';
 
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
@@ -15,7 +15,7 @@ import { createCodexModels } from '@/providers/codex/runtime/CodexModels';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 import { renderProviderModelsSection } from '@/shared/settings/ProviderModelsSection';
 
-jest.mock('obsidian', () => jest.requireActual('../../../helpers/ObsidianSettingsDOM'));
+vi.mock('obsidian', async () => (await vi.importActual<typeof import('../../../helpers/ObsidianSettingsDOM')>('../../../helpers/ObsidianSettingsDOM')));
 
 // Obsidian's createEl applies the native type option as well as attr.
 const originalCreateEl = HTMLElement.prototype.createEl;
@@ -40,7 +40,7 @@ it.each(['Enter', 'Escape'])('leaves composing %s to the provider alias editor',
   } } };
   let saved = '';
   const coordinator = new SettingsCoordinator(settings, async draft => { saved = JSON.stringify(draft); });
-  const host = { settings, mutateSettings: coordinator.mutate.bind(coordinator), notifyProviderChatOptionsChanged: jest.fn() } as unknown as ProviderHost;
+  const host = { settings, mutateSettings: coordinator.mutate.bind(coordinator), notifyProviderChatOptionsChanged: vi.fn() } as unknown as ProviderHost;
   const catalog = createCodexModels(createProviderRuntimeHost(host, coordinator, 'codex'), { refresh: async () => ({ kind: 'skipped', models: [], refreshed: false }) });
   await catalog.refresh();
   const container = document.body.createDiv();
@@ -77,7 +77,7 @@ it.each(['constructor', 'toString', '__proto__'])('edits and clears an alias for
   } } };
   let saved = '';
   const coordinator = new SettingsCoordinator(settings, async draft => { saved = JSON.stringify(draft); });
-  const notify = jest.fn();
+  const notify = vi.fn();
   const host = {
     settings, mutateSettings: coordinator.mutate.bind(coordinator), notifyProviderChatOptionsChanged: notify,
   } as unknown as ProviderHost;
@@ -130,9 +130,9 @@ it('retains a failed alias draft across refresh and allows a successful retry', 
   } } };
   let rejectSave!: (reason: Error) => void;
   const save = new Promise<void>((_resolve, reject) => { rejectSave = reject; });
-  const persist = jest.fn().mockImplementationOnce(async () => save).mockResolvedValue(undefined);
+  const persist = vi.fn().mockImplementationOnce(async () => save).mockResolvedValue(undefined);
   const coordinator = new SettingsCoordinator(settings, persist);
-  const host = { settings, mutateSettings: coordinator.mutate.bind(coordinator), notifyProviderChatOptionsChanged: jest.fn() } as unknown as ProviderHost;
+  const host = { settings, mutateSettings: coordinator.mutate.bind(coordinator), notifyProviderChatOptionsChanged: vi.fn() } as unknown as ProviderHost;
   const catalog = createCodexModels(createProviderRuntimeHost(host, coordinator, 'codex'), { refresh: async () => ({ kind: 'skipped', models: [], refreshed: false }) });
   await catalog.refresh();
   const container = document.body.createDiv();

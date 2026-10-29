@@ -1,13 +1,15 @@
+const actualModule0 = (await vi.importActual<{ default: typeof spawn }>('cross-spawn')).default;
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-jest.mock('cross-spawn', () => jest.fn());
+vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 import { createForkTestEnvironment, type ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
 import spawn from 'cross-spawn';
 
 import { PiExecutionBackend } from '@/providers/pi/execution/PiExecutionBackend';
 
 import { capturedImage, traceSideChild } from './SideChatNativeTracer';
+
 
 async function readRecords(file: string) {
   return (await fs.readFile(file, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
@@ -16,8 +18,8 @@ async function readRecords(file: string) {
 async function createNativePi(env: ForkTestEnvironment) {
   const sourceFile = path.join(env.root, 'source.jsonl');
   await fs.writeFile(sourceFile, JSON.stringify({ cwd: env.root, id: 'pi-source', type: 'session', version: 3 }) + '\n');
-  const realSpawn = jest.requireActual<typeof spawn>('cross-spawn');
-  jest.mocked(spawn).mockImplementation((_command, args = [], options = {}) => realSpawn(
+  const realSpawn = actualModule0;
+  vi.mocked(spawn).mockImplementation((_command, args = [], options = {}) => realSpawn(
     process.execPath,
     [path.resolve('tests/fixtures/providers/pi/PiSessionProcess.mjs'), ...args],
     { ...options, env: { ...options.env, CLAUDIAN_TEST_PI_MISMATCH: '0', CLAUDIAN_TEST_PI_ROOT: env.root } },
@@ -32,7 +34,7 @@ async function createNativePi(env: ForkTestEnvironment) {
 describe('Pi side-chat native child', () => {
   let env: ForkTestEnvironment;
   beforeEach(async () => { env = await createForkTestEnvironment(); });
-  afterEach(async () => { await env.dispose(); jest.mocked(spawn).mockReset(); });
+  afterEach(async () => { await env.dispose(); vi.mocked(spawn).mockReset(); });
 
   it('continues in a no-session process from captured context without writing a child file', async () => {
     const native = await createNativePi(env);

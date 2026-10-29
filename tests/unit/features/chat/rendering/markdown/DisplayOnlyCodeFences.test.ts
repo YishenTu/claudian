@@ -1,6 +1,7 @@
 import { parser } from '@lezer/markdown';
 import { createMockEl } from '@test/helpers/MockElement';
 import { loadPrism } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import {
   hasDeferredDiagramFence,
@@ -8,9 +9,11 @@ import {
   restoreDisplayOnlyCodeFences,
 } from '@/features/chat/rendering/markdown/DisplayOnlyCodeFences';
 
+
+
 describe('DisplayOnlyCodeFences', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it.each([
@@ -18,7 +21,7 @@ describe('DisplayOnlyCodeFences', () => {
     'Inline `code` and ``two backticks`` with ~ and ~~strikethrough~~.',
     '    indented code\n\nMore prose.',
   ])('skips full parsing when fence preparation cannot change the source: %s', markdown => {
-    const parse = jest.spyOn(parser, 'parse');
+    const parse = vi.spyOn(parser, 'parse');
     try {
       expect(prepareDisplayOnlyCodeFences(markdown)).toEqual({ markdown, fences: [] });
       expect(hasDeferredDiagramFence(markdown, new Set(['dataview']))).toBe(false);
@@ -106,8 +109,8 @@ describe('DisplayOnlyCodeFences', () => {
   });
 
   it('restores original language classes and reapplies Prism highlighting', async () => {
-    const highlightElement = jest.fn();
-    (loadPrism as jest.Mock).mockResolvedValueOnce({ highlightElement });
+    const highlightElement = vi.fn();
+    (loadPrism as Mock).mockResolvedValueOnce({ highlightElement });
     const container = createMockEl();
     const code = container.createEl('code', {
       cls: 'language-claudian-display-only-fence-0 extra-class',
@@ -126,12 +129,12 @@ describe('DisplayOnlyCodeFences', () => {
   });
 
   it('restores the nested code element when Prism copies the placeholder class to pre', async () => {
-    const highlightElement = jest.fn((element: { tagName: string; empty: () => void }) => {
+    const highlightElement = vi.fn((element: { tagName: string; empty: () => void }) => {
       if (element.tagName === 'PRE') {
         element.empty();
       }
     });
-    (loadPrism as jest.Mock).mockResolvedValueOnce({ highlightElement });
+    (loadPrism as Mock).mockResolvedValueOnce({ highlightElement });
     const container = createMockEl();
     const placeholderClass = 'language-claudian-display-only-fence-0';
     const pre = container.createEl('pre', { cls: placeholderClass });
@@ -153,7 +156,7 @@ describe('DisplayOnlyCodeFences', () => {
   });
 
   it('restores language classes even when Prism loading fails', async () => {
-    (loadPrism as jest.Mock).mockRejectedValueOnce(new Error('Prism unavailable'));
+    (loadPrism as Mock).mockRejectedValueOnce(new Error('Prism unavailable'));
     const container = createMockEl();
     const code = container.createEl('code', {
       cls: 'language-claudian-display-only-fence-0',

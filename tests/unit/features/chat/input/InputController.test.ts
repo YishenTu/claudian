@@ -7,11 +7,11 @@ import type { ToolCallInfo } from '@/core/types';
 import type { ChatSteerOutcome } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { ChatExecutionPreHandoffError } from '@/features/chat/execution/ChatExecutionCoordinator';
 
-jest.mock('@/core/providers/ProviderRegistry', () => ({
+vi.mock('@/core/providers/ProviderRegistry', () => ({
   ProviderRegistry: {
-    formatQuestionReply: jest.fn(),
-    resolveTitleGenerationSelection: jest.fn().mockReturnValue(null),
-    getCapabilities: jest.fn().mockReturnValue({
+    formatQuestionReply: vi.fn(),
+    resolveTitleGenerationSelection: vi.fn().mockReturnValue(null),
+    getCapabilities: vi.fn().mockReturnValue({
       providerId: 'claude',
       supportsFork: true,
       supportsNativeHistory: true,
@@ -26,8 +26,8 @@ describe('mailbox input', () => {
   it('keeps the composer and unread state, and submits a sender envelope without captured context', async () => {
     const fixture = createFixture();
     fixture.input.value = 'My unsent draft';
-    const acknowledge = jest.spyOn(fixture.state, 'acknowledgeReview');
-    const onUnsent = jest.fn();
+    const acknowledge = vi.spyOn(fixture.state, 'acknowledgeReview');
+    const onUnsent = vi.fn();
     await fixture.controller.sendSessionMessage(message, { onUnsent, assertBeforeHandoff: () => undefined });
     const submission = fixture.coordinator.execute.mock.calls[0][0];
     expect(decodeSessionMessage(submission.canonicalText)).toEqual(message);
@@ -42,7 +42,7 @@ describe('mailbox input', () => {
   it('reports terminal preparation failure without putting the envelope in the composer', async () => {
     const fixture = createFixture({ ensureExecutionInitialized: async () => false });
     fixture.input.value = 'My draft';
-    const onUnsent = jest.fn();
+    const onUnsent = vi.fn();
     await fixture.controller.sendSessionMessage(message, { onUnsent, assertBeforeHandoff: () => undefined });
     expect(onUnsent).toHaveBeenCalledWith('failed');
     expect(fixture.coordinator.execute).not.toHaveBeenCalled();
@@ -52,7 +52,7 @@ describe('mailbox input', () => {
   it('reports Stop during preparation with the cancellation reason and never submits', async () => {
     const ready = deferred<boolean>();
     const fixture = createFixture({ ensureExecutionInitialized: () => ready.promise });
-    const onUnsent = jest.fn();
+    const onUnsent = vi.fn();
     const sending = fixture.controller.sendSessionMessage(message, { onUnsent, assertBeforeHandoff: () => undefined });
     await Promise.resolve();
     fixture.controller.cancelStreaming();
@@ -66,7 +66,7 @@ describe('mailbox input', () => {
   it.each([true, false])('discards only an unaccepted error (accepted: %s)', async accepted => {
     const fixture = createFixture();
     fixture.coordinator.execute.mockResolvedValue({ accepted, status: 'error' });
-    const onUnsent = jest.fn();
+    const onUnsent = vi.fn();
     await fixture.controller.sendSessionMessage(message, { onUnsent, assertBeforeHandoff: () => undefined });
     expect(onUnsent.mock.calls).toEqual(accepted ? [] : [['failed']]);
     expect(fixture.state.messages).toHaveLength(accepted ? 2 : 0);
@@ -128,8 +128,8 @@ describe('composer wikilinks', () => {
 
 describe('InputController admission', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
-    jest.mocked(ProviderRegistry.getCapabilities).mockReturnValue({
+    vi.clearAllMocks();
+    vi.mocked(ProviderRegistry.getCapabilities).mockReturnValue({
       providerId: 'claude',
       supportsFork: true,
       supportsNativeHistory: true,
@@ -151,7 +151,7 @@ describe('InputController admission', () => {
   });
 
   it('does not start a turn when its tab session has closed intent admission', async () => {
-    const canStartTurn = jest.fn().mockReturnValue(false);
+    const canStartTurn = vi.fn().mockReturnValue(false);
     const fixture = createFixture({ canStartTurn });
     fixture.input.value = 'do not send';
 
@@ -174,10 +174,10 @@ describe('InputController admission', () => {
   });
 
   it('reports deferred review before a non-replacing built-in command', async () => {
-    const onReviewableSettlement = jest.fn();
+    const onReviewableSettlement = vi.fn();
     const fixture = createFixture({ onReviewableSettlement });
     // The first turn settles while a continuation owns queued work.
-    jest.spyOn(fixture.controller.queue, 'scheduleContinuation').mockReturnValueOnce(true);
+    vi.spyOn(fixture.controller.queue, 'scheduleContinuation').mockReturnValueOnce(true);
 
     await fixture.controller.sendMessage({ content: 'first turn' });
     await fixture.controller.sendMessage({ content: '/resume' });
@@ -186,10 +186,10 @@ describe('InputController admission', () => {
   });
 
   it('discards deferred review when clear replaces the conversation', async () => {
-    const onReviewableSettlement = jest.fn();
+    const onReviewableSettlement = vi.fn();
     const fixture = createFixture({ onReviewableSettlement });
     // The first turn settles while a continuation owns queued work.
-    jest.spyOn(fixture.controller.queue, 'scheduleContinuation').mockReturnValueOnce(true);
+    vi.spyOn(fixture.controller.queue, 'scheduleContinuation').mockReturnValueOnce(true);
 
     await fixture.controller.sendMessage({ content: 'first turn' });
     await fixture.controller.sendMessage({ content: '/clear' });
@@ -204,7 +204,7 @@ describe('async question answer submission', () => {
   });
 
   beforeEach(() => {
-    jest.mocked(ProviderRegistry.formatQuestionReply).mockReturnValue({ content: 'native reply payload', displayContent: '' });
+    vi.mocked(ProviderRegistry.formatQuestionReply).mockReturnValue({ content: 'native reply payload', displayContent: '' });
   });
 
   it('uses the native payload for execution and friendly text for display without consuming the composer draft', async () => {
@@ -248,7 +248,7 @@ describe('async question answer submission', () => {
     const fixture = createFixture();
     const tool = createQuestion();
     fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
-    jest.mocked(ProviderRegistry.formatQuestionReply).mockReturnValue({ content: 'native reply payload', displayContent: `${command}\nYes` });
+    vi.mocked(ProviderRegistry.formatQuestionReply).mockReturnValue({ content: 'native reply payload', displayContent: `${command}\nYes` });
     await fixture.controller.answerQuestion(tool, { '0': 'Yes' }, 'conversation-1');
     expect(fixture.coordinator.execute.mock.calls[0][0]).toMatchObject({ canonicalText: 'native reply payload', rawDisplayText: `${command}\nYes` });
     expect(fixture.startNewConversation).not.toHaveBeenCalled();

@@ -98,7 +98,7 @@ describe('LoopbackSessionToolServer', () => {
   });
 
   it('issues distinct unguessable route ids', async () => {
-    const handler = jest.fn();
+    const handler = vi.fn();
     const routes = await Promise.all([server.registerCallRoute(handler), server.registerMCPRoute(handler)]);
 
     expect(routes[0].routeId).not.toBe(routes[1].routeId);
@@ -127,7 +127,7 @@ describe('LoopbackSessionToolServer', () => {
     ['invalid JSON', () => ({ body: '{' }), 400],
     ['a call without caller identity', () => ({ body: JSON.stringify({ tool: 'claudian_list_destinations', args: {} }) }), 400],
   ])('rejects %s before reaching the handler', async (_label, build, status) => {
-    const handler = jest.fn(async () => ({ isError: false, text: '[]' }));
+    const handler = vi.fn(async () => ({ isError: false, text: '[]' }));
     const route = await server.registerCallRoute(handler);
 
     const response = await routeRequest(route, { body: listCall, ...build(route) });
@@ -138,7 +138,7 @@ describe('LoopbackSessionToolServer', () => {
   });
 
   it('accepts the localhost Host and a JSON content type with parameters', async () => {
-    const handler = jest.fn(async () => ({ isError: false, text: '[]' }));
+    const handler = vi.fn(async () => ({ isError: false, text: '[]' }));
     const route = await server.registerCallRoute(handler);
 
     const response = await routeRequest(route, {
@@ -168,7 +168,7 @@ describe('LoopbackSessionToolServer', () => {
   });
 
   it('does not dispatch a request revoked while its body is still arriving', async () => {
-    const handler = jest.fn(async () => ({ isError: false, text: '[]' }));
+    const handler = vi.fn(async () => ({ isError: false, text: '[]' }));
     const route = await server.registerCallRoute(handler);
     const url = new URL(route.url);
     let continued = false;
@@ -237,7 +237,7 @@ describe('LoopbackSessionToolServer', () => {
 
     expect(signal.aborted).toBe(true);
     await pending;
-    await expect(server.registerMCPRoute(jest.fn())).rejects.toThrow(/closed/);
+    await expect(server.registerMCPRoute(vi.fn())).rejects.toThrow(/closed/);
   });
 });
 
@@ -265,7 +265,7 @@ describe('LoopbackSessionToolServer request timeouts', () => {
   });
 
   it('drops a request whose body stalls past the request timeout without calling the handler', async () => {
-    const handler = jest.fn(async () => ({ isError: false, text: '[]' }));
+    const handler = vi.fn(async () => ({ isError: false, text: '[]' }));
     const route = await server.registerCallRoute(handler);
     const url = new URL(route.url);
 
@@ -353,7 +353,7 @@ describe('LoopbackSessionToolServer MCP route through the MCP SDK Streamable HTT
   });
 
   it('answers MCP parse errors with a JSON-RPC error', async () => {
-    const route = await server.registerMCPRoute(jest.fn());
+    const route = await server.registerMCPRoute(vi.fn());
 
     const response = await routeRequest(route, { body: '{' });
 

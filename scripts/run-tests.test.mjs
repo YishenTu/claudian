@@ -6,33 +6,33 @@ import path from 'node:path';
 import test from 'node:test';
 
 // Exercise the real runner in an isolated checkout with observable child programs.
-test('the runner executes only selected Jest and script suites, and handles empty selections', () => {
+test('the runner executes only selected Vitest and script suites, and handles empty selections', () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'claudian-test-runner-'));
   try {
     mkdirSync(path.join(root, 'scripts'));
     for (const file of ['run-tests.js', 'run-cross-platform-tests.js', 'testSuites.cjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
-    writeFileSync(path.join(root, 'scripts/run-jest.js'), `require('node:fs').writeFileSync('jest-args.json', JSON.stringify(process.argv.slice(2)));`);
-    writeFileSync(path.join(root, 'scripts/summarize-jest-results.test.mjs'), `import { writeFileSync } from 'node:fs'; writeFileSync('script-ran', 'yes');`);
+    writeFileSync(path.join(root, 'scripts/run-vitest.js'), `require('node:fs').writeFileSync('vitest-args.json', JSON.stringify(process.argv.slice(2)));`);
+    writeFileSync(path.join(root, 'scripts/summarize-vitest-results.test.mjs'), `import { writeFileSync } from 'node:fs'; writeFileSync('script-ran', 'yes');`);
     const env = { ...process.env };
     delete env.NODE_TEST_CONTEXT;
     const run = (...args) => execFileSync(process.execPath, ['scripts/run-tests.js', ...args], { cwd: root, encoding: 'utf8', env });
     run('--selection', '[]', '--script-selection', '[]');
     const selected = ['tests/unit/example.test.ts'];
-    run('--selection', JSON.stringify(selected), '--script-selection', '["scripts/summarize-jest-results.test.mjs"]');
-    assert.deepEqual(JSON.parse(readFileSync(path.join(root, 'jest-args.json'))), ['--runTestsByPath', ...selected]);
+    run('--selection', JSON.stringify(selected), '--script-selection', '["scripts/summarize-vitest-results.test.mjs"]');
+    assert.deepEqual(JSON.parse(readFileSync(path.join(root, 'vitest-args.json'))), [...selected]);
     assert.equal(readFileSync(path.join(root, 'script-ran'), 'utf8'), 'yes');
-    rmSync(path.join(root, 'jest-args.json'));
+    rmSync(path.join(root, 'vitest-args.json'));
     rmSync(path.join(root, 'script-ran'));
     run('--selection', '[]', '--script-selection', '[]');
-    assert.throws(() => readFileSync(path.join(root, 'jest-args.json')), { code: 'ENOENT' });
+    assert.throws(() => readFileSync(path.join(root, 'vitest-args.json')), { code: 'ENOENT' });
     assert.throws(() => readFileSync(path.join(root, 'script-ran')), { code: 'ENOENT' });
     const nativeTest = 'tests/integration/core/process/ManagedStdioProcess.test.ts';
     execFileSync(process.execPath, ['scripts/run-cross-platform-tests.js', '--selection', JSON.stringify([nativeTest])], { cwd: root, env });
-    assert.deepEqual(JSON.parse(readFileSync(path.join(root, 'jest-args.json'))), ['--runInBand', '--runTestsByPath', nativeTest]);
+    assert.deepEqual(JSON.parse(readFileSync(path.join(root, 'vitest-args.json'))), ['--maxWorkers=1', nativeTest]);
     execFileSync(process.execPath, ['scripts/run-cross-platform-tests.js', '--selection', JSON.stringify([nativeTest]), '--maxWorkers=2'], { cwd: root, env });
-    assert.deepEqual(JSON.parse(readFileSync(path.join(root, 'jest-args.json'))), ['--maxWorkers=2', '--runTestsByPath', nativeTest]);
+    assert.deepEqual(JSON.parse(readFileSync(path.join(root, 'vitest-args.json'))), ['--maxWorkers=2', nativeTest]);
     execFileSync(process.execPath, ['scripts/run-cross-platform-tests.js', '--selection', JSON.stringify([nativeTest]), '--maxWorkers', '4'], { cwd: root, env });
-    assert.deepEqual(JSON.parse(readFileSync(path.join(root, 'jest-args.json'))), ['--maxWorkers', '4', '--runTestsByPath', nativeTest]);
+    assert.deepEqual(JSON.parse(readFileSync(path.join(root, 'vitest-args.json'))), ['--maxWorkers', '4', nativeTest]);
     const invalid = spawnSync(process.execPath, ['scripts/run-tests.js', '--selection', '[]', '--script-selection', '["scripts/unknown.mjs"]'], { cwd: root });
     assert.notEqual(invalid.status, 0);
   } finally {
@@ -40,15 +40,15 @@ test('the runner executes only selected Jest and script suites, and handles empt
   }
 });
 
-test('full Jest shards cover every suite once and propagate failures from either shard', () => {
+test('full Vitest shards cover every suite once and propagate failures from either shard', () => {
   const root = realpathSync.native(mkdtempSync(path.join(os.tmpdir(), 'claudian-sharded-tests-')));
   try {
     mkdirSync(path.join(root, 'scripts'));
     mkdirSync(path.join(root, 'tests/unit'), { recursive: true });
     for (const file of ['run-tests.js', 'testSuites.cjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
-    writeFileSync(path.join(root, 'scripts/run-jest.js'), `require(${JSON.stringify(path.resolve('scripts/run-jest.js'))});`);
-    writeFileSync(path.join(root, 'jest.config.js'), `module.exports = { testMatch: ['<rootDir>/tests/unit/**/*.test.ts'] };`);
-    const script = 'scripts/summarize-jest-results.test.mjs';
+    writeFileSync(path.join(root, 'scripts/run-vitest.js'), `require(${JSON.stringify(path.resolve('scripts/run-vitest.js'))});`);
+    writeFileSync(path.join(root, 'vitest.config.mjs'), `export default { test: { globals: true, maxWorkers: 1, include: ['tests/unit/**/*.test.ts'] } };`);
+    const script = 'scripts/summarize-vitest-results.test.mjs';
     writeFileSync(path.join(root, script), `import { appendFileSync } from 'node:fs'; appendFileSync('script-runs', 'ran\\n');`);
     const names = ['alpha', 'beta', 'gamma', 'delta'];
     const sources = names.map(name => path.join(root, 'tests/unit', `${name}.test.ts`));
@@ -59,7 +59,7 @@ test('full Jest shards cover every suite once and propagate failures from either
       const output = path.join(root, `shard-${shard}.json`);
       const result = spawnSync(process.execPath, [
         'scripts/run-tests.js', '--script-selection', JSON.stringify(scripts),
-        '--runInBand', `--shard=${shard}/2`, '--json', `--outputFile=${output}`,
+        '--maxWorkers=1', `--shard=${shard}/2`, '--reporter=json', `--outputFile=${output}`,
       ], { cwd: root, encoding: 'utf8', env });
       return { result, report: JSON.parse(readFileSync(output, 'utf8')) };
     };
@@ -70,7 +70,7 @@ test('full Jest shards cover every suite once and propagate failures from either
     const firstFiles = first.report.testResults.map(suite => suite.name);
     const secondFiles = second.report.testResults.map(suite => suite.name);
     assert.equal(firstFiles.some(file => secondFiles.includes(file)), false);
-    assert.deepEqual([...firstFiles, ...secondFiles].sort(), sources.sort());
+    assert.deepEqual([...firstFiles, ...secondFiles].sort(), sources.map(source => source.split(path.sep).join('/')).sort());
     assert.equal(readFileSync(path.join(root, 'script-runs'), 'utf8'), 'ran\n');
     for (const [index, files] of [firstFiles, secondFiles].entries()) {
       const source = files[0];

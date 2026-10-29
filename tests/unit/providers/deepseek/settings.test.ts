@@ -7,7 +7,7 @@ import {
 } from '@/providers/deepseek/settings';
 import { decodeDeepSeekState } from '@/providers/deepseek/types';
 
-jest.mock('@/core/device/InstallationKey', () => ({ getInstallationKey: () => 'device:test' }));
+vi.mock('@/core/device/InstallationKey', () => ({ getInstallationKey: () => 'device:test' }));
 
 describe('DeepSeek saved configuration contracts', () => {
   it('keeps native provider/model pairs distinct, including separators and escapes', () => {

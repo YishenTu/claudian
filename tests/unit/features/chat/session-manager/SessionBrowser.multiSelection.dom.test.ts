@@ -1,15 +1,18 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { createPopoutDocument } from '@test/helpers/dom/popoutDocument';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Menu } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import type { ConversationMeta } from '@/core/types';
 import { SessionBrowser, type SessionBrowserDeps } from '@/features/chat/session-manager/SessionBrowser';
 import type { HistoryConversationStatus } from '@/features/chat/session-manager/SessionStatusPresentation';
+
+
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
@@ -49,12 +52,12 @@ const conversations = [
 ];
 
 function renderList(options: {
-  onSelectConversation?: jest.Mock;
-  onSetConversationsArchived?: jest.Mock;
+  onSelectConversation?: Mock;
+  onSetConversationsArchived?: Mock;
 } = {}) {
-  const onSetConversationsPinned = jest.fn().mockResolvedValue(undefined);
+  const onSetConversationsPinned = vi.fn().mockResolvedValue(undefined);
   const onSetConversationsArchived = options.onSetConversationsArchived
-    ?? jest.fn().mockResolvedValue(undefined);
+    ?? vi.fn().mockResolvedValue(undefined);
   const controller = new SessionBrowser({
     plugin: { getConversationList: () => conversations, settings: {}, projects: createProjectsFake(), conversationLifecycle: {
       archive: onSetConversationsArchived, setPinned: onSetConversationsPinned,
@@ -65,7 +68,7 @@ function renderList(options: {
   } as unknown as SessionBrowserDeps);
   const container = document.createElement('div');
   document.body.append(container);
-  const onSelectConversation = options.onSelectConversation ?? jest.fn().mockResolvedValue(undefined);
+  const onSelectConversation = options.onSelectConversation ?? vi.fn().mockResolvedValue(undefined);
   const render = (): void => controller.renderHistoryDropdown(container, {
     onSelectConversation,
 
@@ -148,7 +151,7 @@ describe('SessionBrowser multi-select archive', () => {
     const container = popoutDocument.createElement('div');
     popoutDocument.body.append(container);
     controller.renderHistoryDropdown(container, {
-      onSelectConversation: jest.fn().mockResolvedValue(undefined),
+      onSelectConversation: vi.fn().mockResolvedValue(undefined),
 
       showMetadataPopover: true,
       sessionActionMode: 'active',

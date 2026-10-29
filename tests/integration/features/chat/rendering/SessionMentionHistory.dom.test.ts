@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
@@ -22,7 +22,7 @@ beforeEach(() => {
   HTMLElement.prototype.empty = function () { this.replaceChildren(); };
   HTMLElement.prototype.addClass = function (...names) { this.classList.add(...names); };
   HTMLElement.prototype.removeClass = function (...names) { this.classList.remove(...names); };
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     el.createEl('p', { text: markdown });
   });
 });

@@ -1,11 +1,11 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { createTabSession } from '@test/helpers/ConversationPorts';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import type { ProviderBackgroundEventScope, ProviderBackgroundOutputEvent } from '@/core/execution';
@@ -27,7 +27,7 @@ function backgroundScope(sequence: number): ProviderBackgroundEventScope {
 
 beforeEach(() => {
   document.body.replaceChildren();
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     (el as HTMLElement).createEl('p', { text: markdown });
   });
 });
@@ -185,7 +185,7 @@ it.each(['text', 'image', 'image-only'])('keeps preceding output before a %s pro
   let release!: () => void;
   const entered = new Promise<void>(resolve => { rendering = resolve; });
   const gate = new Promise<void>(resolve => { release = resolve; });
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     if (markdown === 'Earlier automatic output') { rendering(); await gate; }
     (el as HTMLElement).textContent = markdown;
   });
@@ -250,7 +250,7 @@ it.each([false, true])('keeps automatic Agent results across requested settlemen
   let release!: () => void;
   const rendering = new Promise<void>(resolve => { entered = resolve; });
   const gate = new Promise<void>(resolve => { release = resolve; });
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     if (markdown === 'Automatic continuation') { entered(); await gate; }
     (el as HTMLElement).textContent = markdown;
   });

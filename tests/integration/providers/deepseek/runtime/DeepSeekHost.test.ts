@@ -7,7 +7,7 @@ beforeEach(async () => {
   peer.onCall = method => method === 'session/list' ? { items: [] } : `${method} answered`;
   await peer.open();
 });
-afterEach(async () => { jest.useRealTimers(); await peer.close(); });
+afterEach(async () => { vi.useRealTimers(); await peer.close(); });
 
 it('runs one fork at a time and lets only an ephemeral fork hold a token, withdrawn even when native refuses', async () => {
   let releaseFirst!: () => void;
@@ -67,7 +67,7 @@ it('keeps an ephemeral fork token until native work ends: no client deadline, an
   try {
     const lease = await deepseek.attach();
     // Only the client deadline is virtual; the fixture server answers on immediates.
-    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+    vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
     const forking = lease.fork({ sessionId: 'saved', atSeq: 1 }, true);
     forking.catch(() => undefined);
     for (let turns = 0; !peer.calls.some(call => call.method === 'session/fork'); turns++) {
@@ -75,14 +75,14 @@ it('keeps an ephemeral fork token until native work ends: no client deadline, an
       await flush();
     }
     // Native forks have no cancellation; a client deadline would withdraw the token while native still forks.
-    jest.advanceTimersByTime(120_000);
+    vi.advanceTimersByTime(120_000);
     await flush();
     expect(lifecycle.ephemeralForks[0].forksAtWithdraw).toBeUndefined();
     finish();
     expect(await forking).toBe('slow-fork');
-    jest.useRealTimers();
+    vi.useRealTimers();
 
-    const lost = jest.fn();
+    const lost = vi.fn();
     lease.onLost(lost);
     await expect(lease.fork({ sessionId: 'saved', atSeq: 2 }, true)).rejects.toThrow('connection reset');
     // The token stays published until the process that might still claim it is gone.
@@ -106,7 +106,7 @@ it.each([false, true])('retires the process after an unclassified failure of any
     // A native refusal proves no fork exists and keeps the process.
     await expect(lease.fork({ sessionId: 'saved', atSeq: 9 }, ephemeralFork)).rejects.toThrow('native refused');
     expect(lifecycle.disposed).toBe(0);
-    const lost = jest.fn();
+    const lost = vi.fn();
     lease.onLost(lost);
     await expect(lease.fork({ sessionId: 'saved', atSeq: 2 }, ephemeralFork)).rejects.toThrow('connection reset');
     expect(lifecycle.disposed).toBe(1);
@@ -127,22 +127,22 @@ it.each([true, false])('retires the process when a native fork never settles ins
   const { deepseek, lifecycle } = peer.host({ ephemeralReady: ready });
   try {
     const lease = await deepseek.attach();
-    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+    vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
     // Without the plugin the unfinished fork could still persist an orphan after Claudian reported it failed.
     const hung = lease.fork({ sessionId: 'saved', atSeq: 1 }, ready);
     const queued = lease.fork({ sessionId: 'saved', atSeq: 1 }, false);
-    const settled = jest.fn();
+    const settled = vi.fn();
     hung.then(settled, settled); queued.then(settled, settled);
     for (let turns = 0; !peer.calls.some(call => call.method === 'session/fork'); turns++) {
       if (turns > 10_000) throw new Error('Fork never reached native.');
       await flush();
     }
     // Native forks may legitimately wait on MCP discovery; minutes pass before the Host gives up.
-    jest.advanceTimersByTime(4 * 60_000);
+    vi.advanceTimersByTime(4 * 60_000);
     await flush();
     expect(settled).not.toHaveBeenCalled();
-    jest.advanceTimersByTime(60_000);
-    jest.useRealTimers();
+    vi.advanceTimersByTime(60_000);
+    vi.useRealTimers();
     await expect(hung).rejects.toThrow(/did not finish/);
     await expect(queued).rejects.toThrow();
     expect(lifecycle.disposed).toBe(1);
@@ -232,7 +232,7 @@ it('shares one startup between attachments and reads, then stops only after the 
   let release!: () => void;
   const startup = new Promise<void>(resolve => { release = resolve; });
   // Idle timers are virtual so no wall-clock delay can stand in for the lease holding the process.
-  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+  vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   const { deepseek, lifecycle } = peer.host({ idleMs: 30, beforeStart: () => startup });
   try {
     const attaching = deepseek.attach();
@@ -242,15 +242,15 @@ it('shares one startup between attachments and reads, then stops only after the 
     expect(await reading).toBe('session/modelCatalog answered');
     expect(lifecycle.starts).toBe(1);
     // The read has left; only the held lease keeps the process past many idle periods.
-    jest.advanceTimersByTime(300);
+    vi.advanceTimersByTime(300);
     await flush();
     expect(lifecycle.disposed).toBe(0);
     lease.release();
-    jest.advanceTimersByTime(29);
+    vi.advanceTimersByTime(29);
     await flush();
     expect(lifecycle.disposed).toBe(0);
-    jest.advanceTimersByTime(1);
-    jest.useRealTimers();
+    vi.advanceTimersByTime(1);
+    vi.useRealTimers();
     await until(() => lifecycle.disposed === 1);
     expect(await deepseek.read(reader => reader.call('session/projections', { request: { sessionId: 'saved' } }))).toBe('session/projections answered');
     expect(lifecycle.starts).toBe(2);
@@ -285,7 +285,7 @@ it('notifies attachments when the process exits and starts a replacement only af
   const { deepseek, lifecycle } = peer.host({ onDispose: () => teardown });
   try {
     const lease = await deepseek.attach();
-    const lost = jest.fn();
+    const lost = vi.fn();
     lease.onLost(lost);
     lifecycle.exit();
     expect(lost).toHaveBeenCalledWith('process-exited', expect.any(Error));
@@ -357,12 +357,12 @@ it('retries a failed reconnection of the live process, failing attached sessions
     peer.onCall = method => method !== 'session/list' ? `${method} answered`
       : hang ? (hung++, new Promise<never>(() => {})) : Promise.reject(new Error('roster unavailable'));
     // The fixture server answers on immediates; reconnection waits and client deadlines run on the fake clock.
-    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+    vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
     dropHost();
     for (let elapsed = 0; elapsed < 55_000; elapsed += 250) {
       hang = elapsed >= 50_000;
       const attempts = lists();
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
       for (let turns = 0; lists() === attempts && turns < 50; turns++) await flush();
     }
     expect(lists()).toBeGreaterThan(5);
@@ -370,9 +370,9 @@ it('retries a failed reconnection of the live process, failing attached sessions
     expect(hung).toBe(1);
     expect(losses).toEqual([]);
     expect(lifecycle.disposed).toBe(0);
-    jest.advanceTimersByTime(6_000);
+    vi.advanceTimersByTime(6_000);
     for (let turns = 0; !losses.length && turns < 1_000; turns++) await flush();
-    jest.useRealTimers();
+    vi.useRealTimers();
     expect(losses).toHaveLength(1);
     const [[loss, error]] = losses;
     expect(loss).toBe('transport');

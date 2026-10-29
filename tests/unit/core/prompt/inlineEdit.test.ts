@@ -1,4 +1,4 @@
-jest.mock('@/utils/date', () => ({
+vi.mock('@/utils/date', () => ({
   getTodayDate: () => 'Mocked Date',
 }));
 

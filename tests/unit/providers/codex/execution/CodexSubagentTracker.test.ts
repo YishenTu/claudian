@@ -13,7 +13,7 @@ const child = (text: string): Thread => ({
 it('fences completion reads across a follow-up and deduplicates native completion', async () => {
   const updates: SubagentInfo[] = [];
   let resolveRead!: (thread: Thread) => void;
-  const read = jest.fn(() => new Promise<Thread>(resolve => { resolveRead = resolve; }));
+  const read = vi.fn(() => new Promise<Thread>(resolve => { resolveRead = resolve; }));
   const tracker = new CodexSubagentTracker(info => updates.push(info), read);
   tracker.activity(started, 'parent-1');
   tracker.activity({ ...started, id: 'complete', kind: 'completed' }, 'parent-1');
@@ -34,7 +34,7 @@ it('fences completion reads across a follow-up and deduplicates native completio
 });
 
 it('fences a pending child read after the native process is released', async () => {
-  const publish = jest.fn();
+  const publish = vi.fn();
   let resolveRead!: (thread: Thread) => void;
   const tracker = new CodexSubagentTracker(publish, () => new Promise(resolve => { resolveRead = resolve; }));
   tracker.activity(started, 'parent');
@@ -46,7 +46,7 @@ it('fences a pending child read after the native process is released', async () 
 });
 
 it('restores agent identity on resume and assigns a separate card to new child turns', async () => {
-  const publish = jest.fn();
+  const publish = vi.fn();
   const tracker = new CodexSubagentTracker(publish, async () => child('Ready.'));
   tracker.seed({ ...child(''), id: 'parent', turns: [{ id: 'parent-turn', status: 'completed', error: null,
     items: [started, { ...started, id: 'complete', kind: 'completed' }],
@@ -59,7 +59,7 @@ it('restores agent identity on resume and assigns a separate card to new child t
 });
 
 it('does not restart an idle child when native send_message reports interacted', async () => {
-  const publish = jest.fn();
+  const publish = vi.fn();
   const tracker = new CodexSubagentTracker(publish, async () => child('Ready.'));
   tracker.activity(started, 'first');
   tracker.turnStarted('child', 'child-turn');
@@ -71,7 +71,7 @@ it('does not restart an idle child when native send_message reports interacted',
 });
 
 it('hydrates identity when native child turn start overtakes the initial read', async () => {
-  const publish = jest.fn();
+  const publish = vi.fn();
   const responses: Array<(thread: Thread) => void> = [];
   const tracker = new CodexSubagentTracker(publish, () => new Promise(resolve => responses.push(resolve)));
   tracker.activity(started, 'parent-turn');
@@ -85,7 +85,7 @@ it('hydrates identity when native child turn start overtakes the initial read', 
 });
 
 it('preserves a failed child outcome when the parent subsequently reports completed activity', async () => {
-  const publish = jest.fn();
+  const publish = vi.fn();
   const tracker = new CodexSubagentTracker(publish, async () => { throw new Error('Read unavailable'); });
   tracker.activity(started, 'parent-turn');
   tracker.turnStarted('child', 'child-turn');
@@ -98,7 +98,7 @@ it('preserves a failed child outcome when the parent subsequently reports comple
 });
 
 it('keeps native web sources on the single child search card', () => {
-  const publish = jest.fn();
+  const publish = vi.fn();
   const tracker = new CodexSubagentTracker(publish, () => new Promise(() => undefined));
   tracker.activity(started, 'parent-turn');
   tracker.turnStarted('child', 'child-turn');
@@ -109,7 +109,7 @@ it('keeps native web sources on the single child search card', () => {
   notify('item/started', { type: 'webSearch', id: 'native-search', query: '' });
   notify('item/completed', { type: 'webSearch', id: 'native-search', query: 'HBM supply', action: { type: 'search', query: 'HBM supply' },
     results: [{ type: 'text_result', title: 'Source', url: 'https://example.com/source', snippet: 'Snippet' }] });
-  expect(publish.mock.lastCall[0].toolCalls).toEqual([expect.objectContaining({
+  expect(publish.mock.lastCall![0].toolCalls).toEqual([expect.objectContaining({
     id: 'search', name: 'WebSearch', status: 'completed', input: expect.objectContaining({ query: 'HBM supply' }),
     webSearchResults: [{ title: 'Source', url: 'https://example.com/source', snippet: 'Snippet' }],
   })]);

@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@/providers';
 
@@ -7,6 +7,7 @@ import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
+import type { MockedFunction } from 'vitest';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
@@ -17,6 +18,8 @@ import type { TitleGenerationService } from '@/core/providers/types';
 import type { Conversation } from '@/core/types';
 import { SessionBrowser, type SessionBrowserDeps } from '@/features/chat/session-manager/SessionBrowser';
 import { ChatViewPublisher } from '@/features/chat/workspace/ChatViewPublisher';
+
+
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
@@ -45,9 +48,9 @@ it('hides failed-title retry while title generation is disabled and restores wor
     titleGenerationStatus: 'failed', messages: [{ id: 'user', role: 'user', content: 'Explain the code', timestamp: testDate().getTime() }],
   };
   repository.replaceAll([conversation, { ...conversation, id: 'skipped-title', titleGenerationStatus: undefined }]);
-  const generateTitle: jest.MockedFunction<TitleGenerationService['generateTitle']> = jest.fn(async (id, _text, callback) => { callback(id, { success: true, title: 'Code explained' }); });
+  const generateTitle: MockedFunction<TitleGenerationService['generateTitle']> = vi.fn(async (id, _text, callback) => { callback(id, { success: true, title: 'Code explained' }); });
   const container = document.body.appendChild(document.createElement('div'));
-  const render = () => browser.renderHistoryDropdown(container, { onSelectConversation: jest.fn() });
+  const render = () => browser.renderHistoryDropdown(container, { onSelectConversation: vi.fn() });
   const browser = new SessionBrowser({
     plugin: {
       settings, getConversationList: () => repository.list(),

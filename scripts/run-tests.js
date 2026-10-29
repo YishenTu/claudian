@@ -35,9 +35,9 @@ while (args[0] === '--selection' || args[0] === '--script-selection') {
 }
 if (selectedTests === null || selectedTests.length > 0) {
   run([
-    path.join(__dirname, 'run-jest.js'),
+    path.join(__dirname, 'run-vitest.js'),
     ...args,
-    ...(selectedTests === null ? [] : ['--runTestsByPath', ...selectedTests]),
+    ...(selectedTests === null ? [] : selectedTests),
   ]);
 }
 if (selectedScripts.length > 0) run(['--test', ...selectedScripts.map(file => path.join(root, file))]);

@@ -1,4 +1,5 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
+import { axe } from '@test/helpers/accessibility';
 import {
   createInlineEditHarness as createHarness,
   disposeInlineEditHarnesses,
@@ -9,7 +10,6 @@ import {
   typeInstruction,
 } from '@test/helpers/features/inline-edit/InlineEditDOMHarness';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Component, MarkdownRenderer, Notice, TFolder } from 'obsidian';
 
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -17,10 +17,10 @@ import { InlineEditSession } from '@/features/inline-edit/ui/InlineEditModal';
 
 afterEach(async () => {
   await disposeInlineEditHarnesses();
-  jest.mocked(MarkdownRenderer.render).mockReset();
-  jest.clearAllMocks();
+  vi.mocked(MarkdownRenderer.render).mockReset();
+  vi.clearAllMocks();
   // Held provider starts must not outlive their test.
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe('editor resolution', () => {
@@ -90,7 +90,7 @@ describe('provider and model resolution', () => {
 function holdProviderStart(heldProviderId: string) {
   let pending: { promise: Promise<void>; resolve: () => void; reject: (error: Error) => void } | null = null;
   const ensureInitialized = ProviderWorkspaceRegistry.ensureInitialized.bind(ProviderWorkspaceRegistry);
-  jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized').mockImplementation((host, providerId, reason) => {
+  vi.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized').mockImplementation((host, providerId, reason) => {
     if (providerId !== heldProviderId) return ensureInitialized(host, providerId, reason);
     if (!pending) {
       let resolve = (): void => {};
@@ -265,7 +265,7 @@ it('keeps open inline suggestions anchored after note scroll and viewport resize
   session.show();
   let top = 320;
   let left = 80;
-  const measure = jest.spyOn(input(), 'getBoundingClientRect').mockImplementation(() => ({
+  const measure = vi.spyOn(input(), 'getBoundingClientRect').mockImplementation(() => ({
     top, bottom: top + 28, left, right: left + 300, width: 300, height: 28,
   } as DOMRect));
   typeInstruction('@s');
@@ -305,7 +305,7 @@ it('keeps open inline suggestions anchored after note scroll and viewport resize
 it('shows only the newest clarification when an older render finishes last', async () => {
   const h = createHarness();
   const renders: Array<() => void> = [];
-  jest.mocked(MarkdownRenderer.render).mockImplementation((_app, markdown, element) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation((_app, markdown, element) => {
     (element as HTMLElement).textContent = markdown;
     return new Promise<void>(resolve => renders.push(resolve));
   });
@@ -335,7 +335,7 @@ it('shows only the newest clarification when an older render finishes last', asy
 
 it('previews the selected source as deleted and the replacement as inserted Markdown', async () => {
   const h = createHarness();
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, element) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, element) => {
     (element as HTMLElement).textContent = markdown;
   });
   h.createSession().show();
@@ -353,7 +353,7 @@ it('previews the selected source as deleted and the replacement as inserted Mark
 it('releases Markdown resources when clarification previews are replaced and the edit closes', async () => {
   const h = createHarness();
   const released: string[] = [];
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, element, _path, component) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, element, _path, component) => {
     component.register(() => released.push(markdown));
     (element as HTMLElement).textContent = markdown;
   });
@@ -378,10 +378,10 @@ it('releases Markdown resources when clarification previews are replaced and the
 
 it('releases late Markdown registrations after a preview is rejected', async () => {
   const h = createHarness();
-  const released = jest.fn();
-  const childReleased = jest.fn();
+  const released = vi.fn();
+  const childReleased = vi.fn();
   let finishRender!: () => void;
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, _markdown, _element, _path, component) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, _markdown, _element, _path, component) => {
     await new Promise<void>(resolve => { finishRender = resolve; });
     component.register(released);
     const child = new Component();
@@ -405,7 +405,7 @@ it('releases late Markdown registrations after a preview is rejected', async () 
 it('releases both Markdown diff documents when review is rejected', async () => {
   const h = createHarness();
   const released: string[] = [];
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, element, _path, component) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, element, _path, component) => {
     component.register(() => released.push(markdown));
     (element as HTMLElement).textContent = markdown;
   });
@@ -434,8 +434,8 @@ it('keeps the floating model menu inside the viewport near the top and after scr
     return { top, bottom: top + height };
   };
   const rect = (top: number, height: number) => ({ top, bottom: top + height, left: 100, right: 200, width: 100, height } as DOMRect);
-  jest.spyOn(chip, 'getBoundingClientRect').mockImplementation(() => rect(chipTop, 28));
-  const measureMenu = jest.spyOn(menu, 'getBoundingClientRect').mockImplementation(() => rect(0, menu.hidden ? 0 : 196));
+  vi.spyOn(chip, 'getBoundingClientRect').mockImplementation(() => rect(chipTop, 28));
+  const measureMenu = vi.spyOn(menu, 'getBoundingClientRect').mockImplementation(() => rect(0, menu.hidden ? 0 : 196));
   fireEvent.click(chip);
   expect(screen.getByRole('dialog', { name: 'Model options' })).toBe(menu);
   expect(bounds().top).toBeGreaterThanOrEqual(8);
@@ -460,7 +460,8 @@ it('keeps the floating model menu inside the viewport near the top and after scr
   expect(menu.style.getPropertyValue('--claudian-toolbar-popover-top')).toBe('auto');
   expect(menu.style.getPropertyValue('--claudian-toolbar-popover-bottom')).toBe('68px');
   expect(chip.hasAttribute('data-menu-placement')).toBe(false);
-  const viewport = jest.replaceProperty(window, 'innerHeight', 120);
+  const viewport = window.innerHeight;
+  window.innerHeight = 120;
   try {
     chipTop = 24;
     fireEvent.resize(window);
@@ -468,7 +469,7 @@ it('keeps the floating model menu inside the viewport near the top and after scr
     expect(bounds().top).toBeGreaterThanOrEqual(8);
     expect(bounds().bottom).toBeLessThanOrEqual(window.innerHeight - 8);
   } finally {
-    viewport.restore();
+    window.innerHeight = viewport;
   }
   fireEvent.keyDown(menu, { key: 'Escape' });
   expect(menu.hidden).toBe(true);
@@ -500,16 +501,16 @@ it.each([false, true].flatMap(alreadyOpen => [
   const h = createHarness();
   const sourcePath = 'Section/note.md';
   const file = { path: samePage ? sourcePath : 'Section/target.md', basename: samePage ? 'note' : 'target' };
-  h.app.vault.getAbstractFileByPath = jest.fn((path: string) => path === sourcePath ? file : null);
-  const leaf = { getViewState: () => ({ state: { file: file.path } }), setEphemeralState: jest.fn() };
-  const unrelated = { getViewState: () => ({ state: { file: 'Elsewhere/target.md' } }), setEphemeralState: jest.fn() };
-  h.app.metadataCache = { getFirstLinkpathDest: jest.fn((_path: string, source: string) => source === sourcePath ? file : { path: 'Elsewhere/target.md' }) };
+  h.app.vault.getAbstractFileByPath = vi.fn((path: string) => path === sourcePath ? file : null);
+  const leaf = { getViewState: () => ({ state: { file: file.path } }), setEphemeralState: vi.fn() };
+  const unrelated = { getViewState: () => ({ state: { file: 'Elsewhere/target.md' } }), setEphemeralState: vi.fn() };
+  h.app.metadataCache = { getFirstLinkpathDest: vi.fn((_path: string, source: string) => source === sourcePath ? file : { path: 'Elsewhere/target.md' }) };
   h.app.workspace = {
     iterateAllLeaves: (visit: (entry: typeof leaf) => void) => [unrelated, ...(alreadyOpen ? [leaf] : [])].forEach(visit),
-    revealLeaf: jest.fn().mockResolvedValue(undefined),
-    openLinkText: jest.fn().mockResolvedValue(undefined),
+    revealLeaf: vi.fn().mockResolvedValue(undefined),
+    openLinkText: vi.fn().mockResolvedValue(undefined),
   };
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, element) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, element) => {
     expect(markdown).toBe(`Check \`[[${target}|${label}]]\`.`);
     const code = element.createEl('code');
     code.textContent = `[[${target}|${label}]]`;

@@ -1,29 +1,30 @@
-const mockDiscoverModels = jest.fn();
-const mockNormalizeAllModelVariants = jest.fn().mockReturnValue(false);
-const mockSkillBeginTransition = jest.fn();
-const mockSkillQuiesce = jest.fn().mockResolvedValue(undefined);
-const mockSkillEndTransition = jest.fn();
-const mockSkillDispose = jest.fn().mockResolvedValue(undefined);
+const actualModule0 = await vi.importActual<typeof import('@/providers/codex/skills/CodexSkillListingService')>('@/providers/codex/skills/CodexSkillListingService');
+const mockDiscoverModels = vi.fn();
+const mockNormalizeAllModelVariants = vi.fn().mockReturnValue(false);
+const mockSkillBeginTransition = vi.fn();
+const mockSkillQuiesce = vi.fn().mockResolvedValue(undefined);
+const mockSkillEndTransition = vi.fn();
+const mockSkillDispose = vi.fn().mockResolvedValue(undefined);
 
-jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
+vi.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   ProviderSettingsCoordinator: {
     normalizeAllModelVariants: (...args: unknown[]) => mockNormalizeAllModelVariants(...args),
   },
 }));
 
-jest.mock('@/providers/codex/runtime/CodexModelDiscoveryService', () => ({
-  CodexModelDiscoveryService: jest.fn().mockImplementation(() => ({
+vi.mock('@/providers/codex/runtime/CodexModelDiscoveryService', () => ({
+  CodexModelDiscoveryService: vi.fn().mockImplementation(function () { return ({
     discoverModels: mockDiscoverModels,
-  })),
+  }); }),
 }));
 
-jest.mock('@/providers/codex/skills/CodexSkillListingService', () => ({
-  CodexSkillListingService: jest.fn().mockImplementation(() => ({
+vi.mock('@/providers/codex/skills/CodexSkillListingService', () => ({
+  CodexSkillListingService: vi.fn().mockImplementation(function () { return ({
     beginEnvironmentTransition: mockSkillBeginTransition,
     dispose: mockSkillDispose,
     endEnvironmentTransition: mockSkillEndTransition,
     quiesceForEnvironmentChange: mockSkillQuiesce,
-  })),
+  }); }),
 }));
 
 import { withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
@@ -33,6 +34,7 @@ import { createCodexModelCatalogCommit, createCodexWorkspaceServices } from '@/p
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 import type { CodexSkillListingService } from '@/providers/codex/skills/CodexSkillListingService';
+
 
 function makeDiscoveredModel(model: string) {
   return {
@@ -63,23 +65,23 @@ function createPlugin(
         },
       },
     },
-    saveSettings: jest.fn().mockResolvedValue(undefined),
-    notifyProviderChatOptionsChanged: jest.fn(),
+    saveSettings: vi.fn().mockResolvedValue(undefined),
+    notifyProviderChatOptionsChanged: vi.fn(),
     executionLifecycleRegistry: {
-      registerTransitionHook: jest.fn(),
+      registerTransitionHook: vi.fn(),
     },
-    getResolvedProviderCliPath: jest.fn(),
-    getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
+    getResolvedProviderCliPath: vi.fn(),
+    getActiveEnvironmentVariables: vi.fn().mockReturnValue(''),
     app: {
       vault: {
         adapter: { basePath: '/workspace' },
       },
       workspace: {
-        onLayoutReady: jest.fn(),
+        onLayoutReady: vi.fn(),
       },
     },
   };
-  plugin.unregisterTransitionHook = jest.fn();
+  plugin.unregisterTransitionHook = vi.fn();
   plugin.executionLifecycleRegistry.registerTransitionHook.mockImplementation(
     (_providerId: string, hook: {
       afterTransition(): void;
@@ -89,7 +91,7 @@ function createPlugin(
       return plugin.unregisterTransitionHook;
     },
   );
-  plugin.mutateSettingsConditionally = jest.fn(async (
+  plugin.mutateSettingsConditionally = vi.fn(async (
     mutation: (settings: any) => boolean | Promise<boolean>,
   ) => {
     if (await mutation(plugin.settings)) {
@@ -101,12 +103,12 @@ function createPlugin(
 
 describe('CodexWorkspaceServices', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('refreshes native skill listings when shared agent skills change', async () => {
-    const invalidate = jest.fn();
-    const listSkills = jest.fn().mockResolvedValue([]);
+    const invalidate = vi.fn();
+    const listSkills = vi.fn().mockResolvedValue([]);
     const services = await createCodexWorkspaceServices(createPlugin(true), {
       skillListingService: { invalidate, listSkills } as unknown as CodexSkillListingService,
     });
@@ -142,7 +144,7 @@ describe('CodexWorkspaceServices', () => {
     mockNormalizeAllModelVariants.mockReturnValue(false);
     const services = await createCodexWorkspaceServices(plugin);
     const now = testClock();
-    const dateNow = jest.spyOn(Date, 'now').mockImplementation(() => now().getTime());
+    const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => now().getTime());
 
     try {
       await services.modelCatalog!.refresh({ force: true });
@@ -242,16 +244,16 @@ describe('CodexWorkspaceServices', () => {
     const modelQuiescence = new Promise<void>(resolve => { releaseModel = resolve; });
     const skillQuiescence = new Promise<void>(resolve => { releaseSkills = resolve; });
     const modelCatalogCoordinator = {
-      beginEnvironmentTransition: jest.fn(),
-      dispose: jest.fn().mockResolvedValue(undefined),
-      endEnvironmentTransition: jest.fn(),
-      quiesceForEnvironmentChange: jest.fn(() => modelQuiescence),
+      beginEnvironmentTransition: vi.fn(),
+      dispose: vi.fn().mockResolvedValue(undefined),
+      endEnvironmentTransition: vi.fn(),
+      quiesceForEnvironmentChange: vi.fn(() => modelQuiescence),
     };
     const skillListingService = {
-      beginEnvironmentTransition: jest.fn(),
-      dispose: jest.fn().mockResolvedValue(undefined),
-      endEnvironmentTransition: jest.fn(),
-      quiesceForEnvironmentChange: jest.fn(() => skillQuiescence),
+      beginEnvironmentTransition: vi.fn(),
+      dispose: vi.fn().mockResolvedValue(undefined),
+      endEnvironmentTransition: vi.fn(),
+      quiesceForEnvironmentChange: vi.fn(() => skillQuiescence),
     };
     await createCodexWorkspaceServices(plugin, {
       modelCatalogCoordinator: modelCatalogCoordinator as any,
@@ -297,7 +299,7 @@ describe('CodexWorkspaceServices', () => {
     plugin.getActiveEnvironmentVariables.mockImplementation(() => environment);
     const observedModelEnvironments: string[] = [];
     const modelDiscovery = {
-      discoverModels: jest.fn(async () => {
+      discoverModels: vi.fn(async () => {
         observedModelEnvironments.push(plugin.getActiveEnvironmentVariables('codex'));
         return {
           kind: 'completed' as const,
@@ -310,12 +312,10 @@ describe('CodexWorkspaceServices', () => {
       modelDiscovery,
       createCodexModelCatalogCommit(plugin),
     );
-    const { CodexSkillListingService: ActualCodexSkillListingService } = jest.requireActual(
-      '@/providers/codex/skills/CodexSkillListingService',
-    ) as { CodexSkillListingService: typeof CodexSkillListingService };
+    const { CodexSkillListingService: ActualCodexSkillListingService } = actualModule0 as { CodexSkillListingService: typeof CodexSkillListingService };
     const skillListingService = new ActualCodexSkillListingService({ onSkillsChanged: () => () => undefined } as any);
     const observedSkillEnvironments: string[] = [];
-    jest.spyOn(skillListingService as any, 'fetchSkills').mockImplementation(async () => {
+    vi.spyOn(skillListingService as any, 'fetchSkills').mockImplementation(async () => {
       observedSkillEnvironments.push(plugin.getActiveEnvironmentVariables('codex'));
       return [{
         name: 'new-environment-skill',
@@ -368,16 +368,16 @@ describe('CodexWorkspaceServices', () => {
     const modelDisposal = new Promise<void>(resolve => { releaseModel = resolve; });
     const skillDisposal = new Promise<void>(resolve => { releaseSkills = resolve; });
     const modelCatalogCoordinator = {
-      beginEnvironmentTransition: jest.fn(),
-      dispose: jest.fn(() => modelDisposal),
-      endEnvironmentTransition: jest.fn(),
-      quiesceForEnvironmentChange: jest.fn().mockResolvedValue(undefined),
+      beginEnvironmentTransition: vi.fn(),
+      dispose: vi.fn(() => modelDisposal),
+      endEnvironmentTransition: vi.fn(),
+      quiesceForEnvironmentChange: vi.fn().mockResolvedValue(undefined),
     };
     const skillListingService = {
-      beginEnvironmentTransition: jest.fn(),
-      dispose: jest.fn(() => skillDisposal),
-      endEnvironmentTransition: jest.fn(),
-      quiesceForEnvironmentChange: jest.fn().mockResolvedValue(undefined),
+      beginEnvironmentTransition: vi.fn(),
+      dispose: vi.fn(() => skillDisposal),
+      endEnvironmentTransition: vi.fn(),
+      quiesceForEnvironmentChange: vi.fn().mockResolvedValue(undefined),
     };
     const services = await createCodexWorkspaceServices(plugin, {
       modelCatalogCoordinator: modelCatalogCoordinator as any,

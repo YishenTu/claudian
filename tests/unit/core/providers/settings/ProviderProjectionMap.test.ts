@@ -6,7 +6,7 @@ normalizeProviderProjectionMap
 describe('ProviderProjectionMap', () => {
 
   it.each([null, undefined, 'model', 1, true, []])(
-    'rejects non-map input %p',
+    'rejects non-map input %o',
     (value) => {
       expect(normalizeProviderProjectionMap(value)).toEqual({});
     },

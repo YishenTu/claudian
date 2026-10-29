@@ -1,9 +1,9 @@
-const mockDiscoverCatalog = jest.fn();
+const mockDiscoverCatalog = vi.fn();
 
-jest.mock('@/providers/grok/runtime/GrokModelDiscoveryService', () => ({
-  GrokModelDiscoveryService: jest.fn().mockImplementation(() => ({
+vi.mock('@/providers/grok/runtime/GrokModelDiscoveryService', () => ({
+  GrokModelDiscoveryService: vi.fn().mockImplementation(function () { return ({
     discoverCatalog: mockDiscoverCatalog,
-  })),
+  }); }),
 }));
 
 import { withRuntimeHosts } from '@test/helpers/providerRuntimeHost';
@@ -36,22 +36,22 @@ function createPlugin(cached = true): any {
   return withRuntimeHosts({
     workingDirectory: '/tmp/grok-workspace',
     executionLifecycleRegistry: {
-      registerTransitionHook: jest.fn(() => jest.fn()),
+      registerTransitionHook: vi.fn(() => vi.fn()),
     },
-    getResolvedProviderCliPath: jest.fn().mockResolvedValue('/opt/grok/bin/grok'),
-    notifyProviderChatOptionsChanged: jest.fn(),
+    getResolvedProviderCliPath: vi.fn().mockResolvedValue('/opt/grok/bin/grok'),
+    notifyProviderChatOptionsChanged: vi.fn(),
     settings,
   });
 }
 
-jest.mock('@/core/device/InstallationKey', () => ({
-  ...jest.requireActual('@/core/device/InstallationKey'),
+vi.mock('@/core/device/InstallationKey', async () => ({
+  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
   getInstallationKey: () => 'device:current',
 }));
 
 describe('GrokWorkspaceServices', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockDiscoverCatalog.mockResolvedValue({
       defaultModelId: 'grok-4.5',
       fingerprint: 'fresh-fingerprint',
@@ -89,7 +89,7 @@ describe('GrokWorkspaceServices', () => {
     let releaseRefresh!: (value: unknown) => void;
     mockDiscoverCatalog.mockReturnValue(new Promise(resolve => { releaseRefresh = resolve; }));
     const services = await createGrokWorkspaceServices(createPlugin());
-    const dispose = jest.spyOn(services.modelCatalogCoordinator, 'dispose');
+    const dispose = vi.spyOn(services.modelCatalogCoordinator, 'dispose');
 
     const refresh = services.modelCatalog!.refresh();
     expect(mockDiscoverCatalog).toHaveBeenCalledTimes(1);
@@ -103,13 +103,13 @@ describe('GrokWorkspaceServices', () => {
 
   it('registers a transition hook that drains model probes and unregisters on dispose', async () => {
     const plugin = createPlugin();
-    const unregister = jest.fn();
+    const unregister = vi.fn();
     const commandMetadataProbe = {
-      beginEnvironmentTransition: jest.fn(),
-      dispose: jest.fn().mockResolvedValue(undefined),
-      endEnvironmentTransition: jest.fn(),
-      load: jest.fn(),
-      quiesceForEnvironmentChange: jest.fn().mockResolvedValue(undefined),
+      beginEnvironmentTransition: vi.fn(),
+      dispose: vi.fn().mockResolvedValue(undefined),
+      endEnvironmentTransition: vi.fn(),
+      load: vi.fn(),
+      quiesceForEnvironmentChange: vi.fn().mockResolvedValue(undefined),
     };
     let hook: {
       afterTransition(): Promise<void>;
@@ -124,7 +124,7 @@ describe('GrokWorkspaceServices', () => {
     const services = await createGrokWorkspaceServices(plugin, {
       commandMetadataProbe: commandMetadataProbe as any,
     });
-    const quiesce = jest.spyOn(
+    const quiesce = vi.spyOn(
       services.modelCatalogCoordinator,
       'quiesceForEnvironmentChange',
     ).mockResolvedValue();
@@ -149,23 +149,23 @@ describe('GrokWorkspaceServices', () => {
     const plugin = createPlugin();
     let cliPath = '/configured/grok-a';
     plugin.getResolvedProviderCliPath.mockImplementation(async () => cliPath);
-    const nativeCreate = jest.fn((options: any) => ({
-      cancel: jest.fn(),
-      initialize: jest.fn(async () => undefined),
-      listCommands: jest.fn(async () => [{
+    const nativeCreate = vi.fn((options: any) => ({
+      cancel: vi.fn(),
+      initialize: vi.fn(async () => undefined),
+      listCommands: vi.fn(async () => [{
         content: '',
         id: `grok:${options.command}`,
         kind: 'command' as const,
         name: `from-${options.command}`,
         source: 'sdk' as const,
       }]),
-      loadSession: jest.fn(),
-      newSession: jest.fn(),
-      onNotification: jest.fn(() => jest.fn()),
-      prompt: jest.fn(),
-      setMode: jest.fn(),
-      setModel: jest.fn(),
-      shutdown: jest.fn(async () => undefined),
+      loadSession: vi.fn(),
+      newSession: vi.fn(),
+      onNotification: vi.fn(() => vi.fn()),
+      prompt: vi.fn(),
+      setMode: vi.fn(),
+      setModel: vi.fn(),
+      shutdown: vi.fn(async () => undefined),
     }));
     const commandMetadataProbe = new GrokCommandMetadataProbe(
       plugin.getRuntimeHost('grok'),
@@ -178,7 +178,7 @@ describe('GrokWorkspaceServices', () => {
     plugin.executionLifecycleRegistry.registerTransitionHook.mockImplementation(
       (_providerId: string, registeredHook: typeof hook) => {
         hook = registeredHook;
-        return jest.fn();
+        return vi.fn();
       },
     );
     const services = await createGrokWorkspaceServices(plugin, {

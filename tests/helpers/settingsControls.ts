@@ -1,3 +1,6 @@
+
+import type { Mock } from 'vitest';
+
 /** Edits an Obsidian text control and commits it with the native Enter handler. */
 export async function applyTextInput(
   text: {
@@ -6,7 +9,7 @@ export async function applyTextInput(
   },
   value: string,
 ): Promise<void> {
-  const input = text.inputEl as { value: string; addEventListener: jest.Mock };
+  const input = text.inputEl as { value: string; addEventListener: Mock };
   input.value = value;
   await text.onChangeCallback?.(value);
   const entry = input.addEventListener.mock.calls.find(([event]) => event === 'keydown');

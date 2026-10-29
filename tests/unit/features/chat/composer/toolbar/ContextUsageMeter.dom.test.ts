@@ -1,7 +1,7 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 import type { UsageInfo } from '@/core/types';
 import { ContextUsageMeter } from '@/features/chat/composer/toolbar/ContextUsageMeter';
@@ -53,7 +53,7 @@ it('shows accessible context usage with one native tooltip and warns only above 
 });
 
 it.each([null, { contextTokens: 0, contextWindow: 200000, percentage: 0 } as UsageInfo])(
-  'hides the context meter for %p, including after a visible report', emptyUsage => {
+  'hides the context meter for %o, including after a visible report', emptyUsage => {
     const host = document.body.createDiv();
     const meter = new ContextUsageMeter(host);
     meter.update(emptyUsage);

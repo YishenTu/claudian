@@ -1,15 +1,15 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
 import { deserialize, serialize } from 'node:v8';
 
+import { axe } from '@test/helpers/accessibility';
 import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { FakeSideSession } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { modelCatalogCases } from '@test/helpers/providerModelCatalogs';
 import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { App, Component, Notice } from 'obsidian';
 
 import { ChatModelSelectionCoordinator } from '@/app/settings/ChatModelSelectionCoordinator';
@@ -41,7 +41,7 @@ afterEach(async () => {
   globalThis.ResizeObserver = originalResizeObserver;
   globalThis.structuredClone = originalStructuredClone;
   ProviderWorkspaceRegistry.clear();
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
   await releaseSideChatHarnesses();
 });
 
@@ -81,9 +81,9 @@ function createChatHarness(settings: ClaudianSettings, id: ProviderId, selected:
   const conversations: Conversation[] = [];
   const tabs: AssembledTabRuntime[] = [];
   const sessions: FakeSideSession[] = [];
-  const persist = jest.fn(async () => undefined);
+  const persist = vi.fn(async () => undefined);
   const settingsCoordinator = new SettingsCoordinator(settings, persist);
-  jest.spyOn(ProviderRegistry, 'createExecutionBackend').mockImplementation((_host, providerId = 'claude') => ({
+  vi.spyOn(ProviderRegistry, 'createExecutionBackend').mockImplementation((_host, providerId = 'claude') => ({
     providerId,
     createSession: config => {
       const session = new FakeSideSession(config);
@@ -492,7 +492,7 @@ it.each([true, false])('seeds tabs from committed reasoning while a save is pend
     resolveSave = resolve;
     rejectSave = reject;
   });
-  const mutate = jest.spyOn(plugin, 'mutateSettings');
+  const mutate = vi.spyOn(plugin, 'mutateSettings');
   const saveError = new Error('disk full');
   try {
     const source = await createTab();

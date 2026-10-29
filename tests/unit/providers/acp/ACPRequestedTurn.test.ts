@@ -2,7 +2,7 @@ import { type ProviderExecutionEvent, RequestedRunChannel } from '@/core/executi
 import { ACPRequestedTurn, type ACPRequestedTurnOptions } from '@/providers/acp';
 
 function createTurn(options: Partial<Omit<ACPRequestedTurnOptions, 'run'>> = {}) {
-  const run = new RequestedRunChannel({ onCancel: jest.fn(), sessionInstanceId: 'session-1' });
+  const run = new RequestedRunChannel({ onCancel: vi.fn(), sessionInstanceId: 'session-1' });
   const turn = new ACPRequestedTurn({ ...options, run });
   return { run, turn };
 }
@@ -34,7 +34,7 @@ describe('ACPRequestedTurn', () => {
   });
 
   it('drops replayed output before the live prompt, then accepts once and re-sequences live events', async () => {
-    const onAccept = jest.fn();
+    const onAccept = vi.fn();
     const { run, turn } = createTurn({ onAccept });
 
     turn.handleUpdate(textChunk('replayed history'));

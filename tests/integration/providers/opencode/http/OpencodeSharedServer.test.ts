@@ -26,12 +26,12 @@ import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 import { SlashCommandSource } from '@/shared/composer-dropdown/SlashCommandSource';
 
 // Spawning the fake server is slow on Windows CI runners.
-jest.setTimeout(45_000);
+vi.setConfig({ testTimeout: 45_000 });
 
 // A cold Windows runner can exceed the product's 5-second version probe deadline even after the
 // warmup below. This suite is not about that deadline, so give probes a budget under the test timeout.
-jest.mock('@/core/process/ProcessProbe', () => {
-  const actual: typeof ProcessProbe = jest.requireActual('@/core/process/ProcessProbe');
+vi.mock('@/core/process/ProcessProbe', async () => {
+  const actual: typeof ProcessProbe = (await vi.importActual<typeof import('@/core/process/ProcessProbe')>('@/core/process/ProcessProbe'));
   return { ...actual, runProcessProbe: (options: ManagedStdioProcessOptions) => actual.runProcessProbe(options, 30_000) };
 });
 
@@ -144,7 +144,7 @@ async function createFixture(version = '2.0.14') {
   writeFileSync(cli, fixture.replace("console.log('2.0.14')", `console.log('${version}')`), { mode: 0o700 });
   writeFileSync(path.join(root, 'native.db'), '');
   const endpoint = new LoopbackSessionToolServer();
-  const register = jest.spyOn(endpoint, 'registerCallRoute');
+  const register = vi.spyOn(endpoint, 'registerCallRoute');
   const plugin: any = {
     sessionToolEndpoint: endpoint,
     workingDirectory: root,
@@ -725,7 +725,7 @@ it('keeps global forms and stream failures routed after the first subscriber clo
   try {
     const first = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
     const peer = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
-    const firstEvent = jest.fn(), firstError = jest.fn();
+    const firstEvent = vi.fn(), firstError = vi.fn();
     let receiveForm!: () => void, receiveError!: () => void;
     const receivedForm = new Promise<void>(resolve => { receiveForm = resolve; });
     const receivedError = new Promise<void>(resolve => { receiveError = resolve; });
@@ -1292,9 +1292,9 @@ it.each([
 it('loads a module plugin folder once per shared server and forwards the native caller to its port', async () => {
   const f = await createFixture();
   await f.workspace.metadataService.loadCatalog();
-  const list = jest.fn().mockResolvedValue({ sessions: [{ sessionId: 'target' }] });
-  const send = jest.fn().mockResolvedValue({ sessionId: 'target', title: 'Review', provider: 'codex', status: 'queued' });
-  const session = f.createSession({ sessionTools: { list, send, read: jest.fn() } });
+  const list = vi.fn().mockResolvedValue({ sessions: [{ sessionId: 'target' }] });
+  const send = vi.fn().mockResolvedValue({ sessionId: 'target', title: 'Review', provider: 'codex', status: 'queued' });
+  const session = f.createSession({ sessionTools: { list, send, read: vi.fn() } });
   const control = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
   const events: ProviderExecutionEvent[] = [];
   const run = (async () => { for await (const e of session.execute(turn('hold')).events) events.push(e); })();

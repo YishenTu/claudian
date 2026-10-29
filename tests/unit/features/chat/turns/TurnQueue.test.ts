@@ -6,11 +6,11 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ChatExecutionPreHandoffError, type ChatSteerOutcome, type ChatTurnSubmission } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { createQueuedMessage } from '@/features/chat/state/chatTurnRequest';
 
-jest.mock('@/core/providers/ProviderRegistry', () => ({
+vi.mock('@/core/providers/ProviderRegistry', () => ({
   ProviderRegistry: {
-    formatQuestionReply: jest.fn(),
-    resolveTitleGenerationSelection: jest.fn().mockReturnValue(null),
-    getCapabilities: jest.fn().mockReturnValue({
+    formatQuestionReply: vi.fn(),
+    resolveTitleGenerationSelection: vi.fn().mockReturnValue(null),
+    getCapabilities: vi.fn().mockReturnValue({
       providerId: 'claude',
       supportsFork: true,
       supportsNativeHistory: true,
@@ -21,8 +21,8 @@ jest.mock('@/core/providers/ProviderRegistry', () => ({
 
 describe('TurnQueue', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
-    jest.mocked(ProviderRegistry.getCapabilities).mockReturnValue({
+    vi.clearAllMocks();
+    vi.mocked(ProviderRegistry.getCapabilities).mockReturnValue({
       providerId: 'claude',
       supportsFork: true,
       supportsNativeHistory: true,
@@ -35,7 +35,7 @@ describe('TurnQueue', () => {
     let canStart = false;
     const fixture = createFixture({ canStartTurn: () => canStart });
     const scheduled: Array<() => void> = [];
-    const timeoutSpy = jest.spyOn(globalThis, 'setTimeout').mockImplementation((callback: any) => {
+    const timeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback: any) => {
       scheduled.push(callback);
       return scheduled.length as unknown as ReturnType<typeof window.setTimeout>;
     });
@@ -334,7 +334,7 @@ describe('TurnQueue', () => {
       status: 'completed';
     }>();
     const nativeResult = deferred<ChatSteerOutcome>();
-    const timeoutSpy = jest.spyOn(globalThis, 'setTimeout').mockImplementation(
+    const timeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(
       () => 0 as unknown as ReturnType<typeof window.setTimeout>,
     );
     fixture.coordinator.execute.mockReturnValueOnce(mainResult.promise);
@@ -368,7 +368,7 @@ describe('TurnQueue', () => {
       status: 'completed';
     }>();
     const nativeResult = deferred<ChatSteerOutcome>();
-    const timeoutSpy = jest.spyOn(globalThis, 'setTimeout').mockImplementation(
+    const timeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(
       () => 0 as unknown as ReturnType<typeof window.setTimeout>,
     );
     fixture.coordinator.execute.mockReturnValueOnce(mainResult.promise);
@@ -601,8 +601,8 @@ describe('TurnQueue', () => {
     await waitForCall(fixture.coordinator.steer);
     const replacementCoordinator = {
       ...fixture.coordinator,
-      acceptSteerFromProviderEvent: jest.fn().mockResolvedValue(true),
-      releaseSteerCorrelation: jest.fn(),
+      acceptSteerFromProviderEvent: vi.fn().mockResolvedValue(true),
+      releaseSteerCorrelation: vi.fn(),
     };
     activeCoordinator = replacementCoordinator;
     await fixture.controller.handleExecutionEvent(requestedUserMessageStarted(
@@ -777,10 +777,10 @@ describe('TurnQueue', () => {
   });
 
   it('reports deferred review when the continuation fails before handoff', async () => {
-    const onReviewableSettlement = jest.fn();
+    const onReviewableSettlement = vi.fn();
     const fixture = createFixture({ onReviewableSettlement });
     // The first turn settles while a continuation owns queued work.
-    jest.spyOn(fixture.controller.queue, 'scheduleContinuation').mockReturnValueOnce(true);
+    vi.spyOn(fixture.controller.queue, 'scheduleContinuation').mockReturnValueOnce(true);
 
     await fixture.controller.sendMessage({ content: 'first turn' });
     expect(onReviewableSettlement).not.toHaveBeenCalled();
@@ -794,13 +794,13 @@ describe('TurnQueue', () => {
   });
 
   it('reports deferred review when continuation initialization fails', async () => {
-    const onReviewableSettlement = jest.fn();
+    const onReviewableSettlement = vi.fn();
     const fixture = createFixture({ onReviewableSettlement });
     // The first turn settles while a continuation owns queued work.
-    jest.spyOn(fixture.controller.queue, 'scheduleContinuation').mockReturnValueOnce(true);
+    vi.spyOn(fixture.controller.queue, 'scheduleContinuation').mockReturnValueOnce(true);
 
     await fixture.controller.sendMessage({ content: 'first turn' });
-    jest.mocked(fixture.deps.ensureExecutionInitialized!).mockResolvedValueOnce(false);
+    vi.mocked(fixture.deps.ensureExecutionInitialized!).mockResolvedValueOnce(false);
 
     await fixture.controller.sendMessage({ content: 'continue' });
 
@@ -808,13 +808,13 @@ describe('TurnQueue', () => {
   });
 
   it('reports deferred review when continuation exits during preflight', async () => {
-    const onReviewableSettlement = jest.fn();
+    const onReviewableSettlement = vi.fn();
     const fixture = createFixture({ onReviewableSettlement });
     // The first turn settles while a continuation owns queued work.
-    jest.spyOn(fixture.controller.queue, 'scheduleContinuation').mockReturnValueOnce(true);
+    vi.spyOn(fixture.controller.queue, 'scheduleContinuation').mockReturnValueOnce(true);
 
     await fixture.controller.sendMessage({ content: 'first turn' });
-    jest.spyOn(fixture.state, 'isRewinding', 'get').mockReturnValue(true);
+    vi.spyOn(fixture.state, 'isRewinding', 'get').mockReturnValue(true);
 
     await fixture.controller.sendMessage({ content: 'continue' });
 

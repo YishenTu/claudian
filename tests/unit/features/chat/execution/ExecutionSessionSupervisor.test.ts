@@ -50,7 +50,7 @@ describe('ExecutionSessionSupervisor', () => {
     const session = new SupervisorSession();
     const backend: ProviderExecutionBackend = {
       providerId: 'claude',
-      createSession: jest.fn(() => session),
+      createSession: vi.fn(() => session),
     };
     const interactionPort = {} as ProviderInteractionPort;
     const config: ProviderSessionConfig = {
@@ -59,7 +59,7 @@ describe('ExecutionSessionSupervisor', () => {
       workingDirectory: '/vault',
       interactionPort,
     };
-    const invalidated = jest.fn();
+    const invalidated = vi.fn();
     const supervisor = new ExecutionSessionSupervisor(registry);
 
     const first = supervisor.acquire(backend, config, invalidated);

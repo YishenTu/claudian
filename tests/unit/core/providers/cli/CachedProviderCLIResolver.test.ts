@@ -7,17 +7,17 @@ import {
   type ProviderCLISettingsProjection,
 } from '@/core/providers/cli/CachedProviderCLIResolver';
 
-jest.mock('@/core/process/cliBinaryLocator', () => ({
-  findCLIBinaryPath: jest.fn(),
-  resolveConfiguredCLIPath: jest.fn(),
+vi.mock('@/core/process/cliBinaryLocator', () => ({
+  findCLIBinaryPath: vi.fn(),
+  resolveConfiguredCLIPath: vi.fn(),
 }));
 
-const mockedFindCLIBinaryPath = jest.mocked(findCLIBinaryPath);
-const mockedResolveConfiguredCLIPath = jest.mocked(resolveConfiguredCLIPath);
+const mockedFindCLIBinaryPath = vi.mocked(findCLIBinaryPath);
+const mockedResolveConfiguredCLIPath = vi.mocked(resolveConfiguredCLIPath);
 
 describe('CachedProviderCLIResolver', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockedResolveConfiguredCLIPath.mockReturnValue(null);
     mockedFindCLIBinaryPath.mockReturnValue(null);
   });
@@ -60,7 +60,7 @@ describe('CachedProviderCLIResolver', () => {
   });
 
   it('caches successful and null resolutions until reset', () => {
-    const positiveResolution = jest.fn(() => '/resolved/provider');
+    const positiveResolution = vi.fn(() => '/resolved/provider');
     const positive = createResolver(positiveResolution);
     const projection = createProjection();
 
@@ -71,7 +71,7 @@ describe('CachedProviderCLIResolver', () => {
     expect(positive.resolve(projection)).toBe('/resolved/provider');
     expect(positiveResolution).toHaveBeenCalledTimes(2);
 
-    const negativeResolution = jest.fn(() => null);
+    const negativeResolution = vi.fn(() => null);
     const negative = createResolver(negativeResolution);
     expect(negative.resolve(projection)).toBeNull();
     expect(negative.resolve(projection)).toBeNull();
@@ -82,7 +82,7 @@ describe('CachedProviderCLIResolver', () => {
   });
 
   it('invalidates the cache for every resolution input', () => {
-    const resolution = jest.fn(() => '/resolved/provider');
+    const resolution = vi.fn(() => '/resolved/provider');
     const resolver = createResolver(resolution);
     const baseline = createProjection();
 
@@ -102,7 +102,7 @@ describe('CachedProviderCLIResolver', () => {
   });
 
   it('uses provider discovery only after configured paths fail', () => {
-    const findBinaryPath = jest.fn(() => '/native/provider');
+    const findBinaryPath = vi.fn(() => '/native/provider');
     const resolver = new CachedProviderCLIResolver({
       binaryName: 'provider',
       getSettingsProjection: () => createProjection(),
@@ -122,7 +122,7 @@ describe('CachedProviderCLIResolver', () => {
   });
 
   it('retries uncached misses and refreshes provider targets that disable caching', () => {
-    const resolution = jest.fn<string | null, []>(() => null);
+    const resolution = vi.fn<(...args: []) => string | null>(() => null);
     const resolver = new CachedProviderCLIResolver({
       binaryName: 'provider',
       getSettingsProjection: () => createProjection(),
@@ -145,7 +145,7 @@ describe('CachedProviderCLIResolver', () => {
   });
 
   it('projects settings before resolving and ignores unrelated settings fields', () => {
-    const resolution = jest.fn(() => '/resolved/provider');
+    const resolution = vi.fn(() => '/resolved/provider');
     const resolver = new CachedProviderCLIResolver({
       binaryName: 'provider',
       getSettingsProjection: settings => settings.cli as ProviderCLISettingsProjection,

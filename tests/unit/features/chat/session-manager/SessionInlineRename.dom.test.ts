@@ -1,7 +1,7 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Notice } from 'obsidian';
 
 import { SessionInlineRename } from '@/features/chat/session-manager/SessionInlineRename';
@@ -14,9 +14,9 @@ function renderRow(title: string): { container: HTMLElement; item: HTMLElement }
   return { container, item };
 }
 
-function setup(currentTitle = 'Original title', rename = jest.fn().mockResolvedValue(undefined)) {
+function setup(currentTitle = 'Original title', rename = vi.fn().mockResolvedValue(undefined)) {
   const { container, item } = renderRow(currentTitle);
-  const onFinished = jest.fn();
+  const onFinished = vi.fn();
   const inlineRename = new SessionInlineRename();
   inlineRename.begin(item, { currentTitle, rename, onFinished });
   const input = within(item).getByRole('textbox', { name: 'Conversation title' }) as HTMLInputElement;
@@ -26,13 +26,13 @@ function setup(currentTitle = 'Original title', rename = jest.fn().mockResolvedV
 describe('SessionInlineRename', () => {
   afterEach(() => {
     document.body.replaceChildren();
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('replaces the row title with a named, focused editor holding the current title', async () => {
     const { item } = renderRow('Test Title');
     new SessionInlineRename().begin(item, {
-      currentTitle: 'Test Title', rename: jest.fn(), onFinished: jest.fn(),
+      currentTitle: 'Test Title', rename: vi.fn(), onFinished: vi.fn(),
     });
 
     expect((await axe(item, { runOnly: { type: 'rule', values: ['label'] } })).violations).toEqual([]);
@@ -112,7 +112,7 @@ describe('SessionInlineRename', () => {
 
   it('can cancel the unfocused editor after a failed rename without retrying the failed title', async () => {
     const { input, inlineRename, rename, onFinished } = setup(
-      'Original title', jest.fn().mockRejectedValue(new Error('disk full')),
+      'Original title', vi.fn().mockRejectedValue(new Error('disk full')),
     );
     input.value = 'Failed title';
     input.blur();
@@ -130,7 +130,7 @@ describe('SessionInlineRename', () => {
 
   it('does not cancel or resubmit a rename that is already being saved', async () => {
     let resolveRename!: () => void;
-    const rename = jest.fn(() => new Promise<void>(resolve => { resolveRename = resolve; }));
+    const rename = vi.fn(() => new Promise<void>(resolve => { resolveRename = resolve; }));
     const { input, inlineRename, onFinished } = setup('Original title', rename);
     input.value = 'Saving title';
     input.blur();
@@ -147,7 +147,7 @@ describe('SessionInlineRename', () => {
   });
 
   it('allows retrying the edited title after a failed rename', async () => {
-    const rename = jest.fn()
+    const rename = vi.fn()
       .mockRejectedValueOnce(new Error('disk full'))
       .mockResolvedValueOnce(undefined);
     const { input, onFinished } = setup('Original title', rename);
@@ -165,7 +165,7 @@ describe('SessionInlineRename', () => {
   });
 
   it('reports a failed rename once', async () => {
-    const { input, onFinished } = setup('Original title', jest.fn().mockRejectedValue(new Error('disk full')));
+    const { input, onFinished } = setup('Original title', vi.fn().mockRejectedValue(new Error('disk full')));
 
     input.value = 'New title';
     input.blur();

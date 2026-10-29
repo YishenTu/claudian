@@ -1,22 +1,25 @@
+const mockedModule0: any = await import('@/core/providers/ProviderSettingsCoordinator');
 import * as fs from 'node:fs';
 
 import { createMockEl } from '@test/helpers/MockElement';
 import { applyTextInput } from '@test/helpers/settingsControls';
+import type { Mock, MockedFunction } from 'vitest';
 
 import { getGrokProviderSettings } from '@/providers/grok/settings';
 import { grokSettingsTabRenderer } from '@/providers/grok/ui/GrokSettingsTab';
 
-const mockGetHostnameKey = jest.fn(() => 'device:current');
-const mockRenderEnvironmentSettingsSection = jest.fn();
-const mockCLIResolverReset = jest.fn();
-const mockRefreshModelCatalog = jest.fn().mockResolvedValue({ changed: false });
-const mockGetServices = jest.fn(() => ({
+
+const mockGetHostnameKey = vi.fn(() => 'device:current');
+const mockRenderEnvironmentSettingsSection = vi.fn();
+const mockCLIResolverReset = vi.fn();
+const mockRefreshModelCatalog = vi.fn().mockResolvedValue({ changed: false });
+const mockGetServices = vi.fn(() => ({
   cliResolver: { reset: mockCLIResolverReset },
-  modelCatalog: { refresh: mockRefreshModelCatalog, markStale: jest.fn() },
+  modelCatalog: { refresh: mockRefreshModelCatalog, markStale: vi.fn() },
 }));
 
-jest.mock('node:fs');
-jest.mock('obsidian', () => {
+vi.mock('node:fs');
+vi.mock('obsidian', () => {
   class MockSetting {
     public name = '';
     public desc = '';
@@ -60,28 +63,28 @@ jest.mock('obsidian', () => {
 
   return { Setting: MockSetting };
 });
-jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
+vi.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   ProviderSettingsCoordinator: {
-    canApplyProviderEnablement: jest.fn(() => true),
-    applyProviderEnablement: jest.fn((settings: Record<string, any>, providerId: string, enabled: boolean) => {
+    canApplyProviderEnablement: vi.fn(() => true),
+    applyProviderEnablement: vi.fn((settings: Record<string, any>, providerId: string, enabled: boolean) => {
       settings.providerConfigs[providerId].enabled = enabled;
       return true;
     }),
   },
 }));
-jest.mock('@/core/providers/ProviderWorkspaceRegistry', () => ({
+vi.mock('@/core/providers/ProviderWorkspaceRegistry', () => ({
   ProviderWorkspaceRegistry: {
     requireServices: (_providerId: string) => mockGetServices(),
   },
 }));
-jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
+vi.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
   renderEnvironmentSettingsSection: (...args: unknown[]) => mockRenderEnvironmentSettingsSection(...args),
 }));
 interface MockTextComponent {
   inputEl: {
     [key: string]: unknown;
-    addClass: jest.Mock;
-    toggleClass: jest.Mock;
+    addClass: Mock;
+    toggleClass: Mock;
     value: string;
   };
   onChangeCallback: ((value: string) => Promise<void> | void) | null;
@@ -126,9 +129,9 @@ function createTextComponent(): MockTextComponent {
   const component: MockTextComponent = {
     inputEl: {
       ...createMockEl('input'),
-      addEventListener: jest.fn(),
-      addClass: jest.fn(),
-      toggleClass: jest.fn(),
+      addEventListener: vi.fn(),
+      addClass: vi.fn(),
+      toggleClass: vi.fn(),
       value: '',
     },
     onChangeCallback: null,
@@ -194,7 +197,7 @@ function createElement(
     setText(value) {
       element.text = value;
     },
-    toggleClass: jest.fn(),
+    toggleClass: vi.fn(),
   };
   return element;
 }
@@ -234,11 +237,11 @@ function makeCatalog() {
 function createPlugin(): any {
   const plugin: any = {
     storage: { installationKey: mockGetHostnameKey() },
-    getEnvironmentVariablesForScope: jest.fn(() => ''),
-    mutateSettings: jest.fn(async (mutation: (settings: Record<string, unknown>) => void | Promise<void>) => {
+    getEnvironmentVariablesForScope: vi.fn(() => ''),
+    mutateSettings: vi.fn(async (mutation: (settings: Record<string, unknown>) => void | Promise<void>) => {
       await mutation(plugin.settings);
     }),
-    runProviderExecutionTransition: jest.fn(async (
+    runProviderExecutionTransition: vi.fn(async (
       _providerIds: string[],
       mutation: () => Promise<unknown>,
     ) => mutation()),
@@ -255,7 +258,7 @@ function createPlugin(): any {
       },
     },
   };
-  plugin.applyProviderRuntimeSettings = jest.fn(async (
+  plugin.applyProviderRuntimeSettings = vi.fn(async (
     providerIds: string[],
     mutation: (settings: Record<string, unknown>) => void | Promise<void>,
     onApplied?: () => void | Promise<void>,
@@ -269,8 +272,8 @@ function createPlugin(): any {
 function createContext(plugin: any): any {
   return {
     plugin,
-    notifyProviderModelOptionsChanged: jest.fn(),
-    renderCustomContextLimits: jest.fn(),
+    notifyProviderModelOptionsChanged: vi.fn(),
+    renderCustomContextLimits: vi.fn(),
   };
 }
 
@@ -282,22 +285,22 @@ function findSetting(name: string): MockSetting {
   return setting;
 }
 
-jest.mock('@/core/device/InstallationKey', () => ({
-  ...jest.requireActual('@/core/device/InstallationKey'),
+vi.mock('@/core/device/InstallationKey', async () => ({
+  ...(await vi.importActual<typeof import('@/core/device/InstallationKey')>('@/core/device/InstallationKey')),
   getInstallationKey: () => mockGetHostnameKey(),
 }));
 
 describe('GrokSettingsTab', () => {
-  const mockedExistsSync = fs.existsSync as jest.MockedFunction<typeof fs.existsSync>;
-  const mockedStatSync = fs.statSync as jest.MockedFunction<typeof fs.statSync>;
-  const mockedAccessSync = fs.accessSync as jest.MockedFunction<typeof fs.accessSync>;
+  const mockedExistsSync = fs.existsSync as MockedFunction<typeof fs.existsSync>;
+  const mockedStatSync = fs.statSync as MockedFunction<typeof fs.statSync>;
+  const mockedAccessSync = fs.accessSync as MockedFunction<typeof fs.accessSync>;
 
   beforeEach(() => {
     createdSettings.length = 0;
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockGetServices.mockReturnValue({
       cliResolver: { reset: mockCLIResolverReset },
-      modelCatalog: { refresh: mockRefreshModelCatalog, markStale: jest.fn() },
+      modelCatalog: { refresh: mockRefreshModelCatalog, markStale: vi.fn() },
     });
     mockRefreshModelCatalog.mockResolvedValue({ changed: false });
     mockedExistsSync.mockReturnValue(true);
@@ -346,7 +349,7 @@ describe('GrokSettingsTab', () => {
     const context = createContext(plugin);
     grokSettingsTabRenderer.render(createContainer(), context);
     const toggle = findSetting('Enable Grok Build').toggleComponents[0];
-    const coordinator = jest.requireMock('@/core/providers/ProviderSettingsCoordinator')
+    const coordinator = mockedModule0
       .ProviderSettingsCoordinator;
     coordinator.canApplyProviderEnablement.mockImplementationOnce(() => false);
     toggle.value = false;
@@ -533,4 +536,4 @@ describe('GrokSettingsTab', () => {
   });
 });
 
-jest.mock('@/shared/settings/ProviderModelsSection', () => ({ renderProviderModelsSection: jest.fn(() => ({ refresh: jest.fn() })) }));
+vi.mock('@/shared/settings/ProviderModelsSection', () => ({ renderProviderModelsSection: vi.fn(() => ({ refresh: vi.fn() })) }));

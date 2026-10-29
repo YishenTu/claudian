@@ -1,3 +1,6 @@
+
+import type { Mock } from 'vitest';
+
 // Mock for @anthropic-ai/claude-agent-sdk
 
 export interface HookCallbackMatcher {
@@ -132,15 +135,15 @@ let mockSupportedModels: ModelInfo[] = [];
 let mockOutputStyles: string[] = [];
 let mockContextUsage: { rawMaxTokens: number } | null = null;
 let lastResponse: (AsyncGenerator<any> & {
-  interrupt: jest.Mock;
-  setModel: jest.Mock;
-  setMaxThinkingTokens: jest.Mock;
-  setPermissionMode: jest.Mock;
-  applyFlagSettings: jest.Mock;
-  setMcpServers: jest.Mock;
-  supportedCommands: jest.Mock;
-  initializationResult: jest.Mock;
-  getContextUsage: jest.Mock;
+  interrupt: Mock;
+  setModel: Mock;
+  setMaxThinkingTokens: Mock;
+  setPermissionMode: Mock;
+  applyFlagSettings: Mock;
+  setMcpServers: Mock;
+  supportedCommands: Mock;
+  initializationResult: Mock;
+  getContextUsage: Mock;
 }) | null = null;
 
 let queryCallCount = 0;
@@ -248,29 +251,29 @@ export function query({ prompt, options }: { prompt: any; options: Options }): A
   };
 
   const gen = generator() as AsyncGenerator<any> & {
-    interrupt: jest.Mock;
-    setModel: jest.Mock;
-    setMaxThinkingTokens: jest.Mock;
-    setPermissionMode: jest.Mock;
-    applyFlagSettings: jest.Mock;
-    setMcpServers: jest.Mock;
-    supportedCommands: jest.Mock;
-    initializationResult: jest.Mock;
-    getContextUsage: jest.Mock;
+    interrupt: Mock;
+    setModel: Mock;
+    setMaxThinkingTokens: Mock;
+    setPermissionMode: Mock;
+    applyFlagSettings: Mock;
+    setMcpServers: Mock;
+    supportedCommands: Mock;
+    initializationResult: Mock;
+    getContextUsage: Mock;
   };
-  gen.interrupt = jest.fn().mockResolvedValue(undefined);
+  gen.interrupt = vi.fn().mockResolvedValue(undefined);
   // Dynamic update methods for persistent queries
-  gen.setModel = jest.fn().mockResolvedValue(undefined);
-  gen.setMaxThinkingTokens = jest.fn().mockResolvedValue(undefined);
-  gen.setPermissionMode = jest.fn().mockResolvedValue(undefined);
-  gen.applyFlagSettings = jest.fn().mockResolvedValue(undefined);
-  gen.setMcpServers = jest.fn().mockResolvedValue({ added: [], removed: [], errors: {} });
-  gen.supportedCommands = jest.fn().mockImplementation(() => (
+  gen.setModel = vi.fn().mockResolvedValue(undefined);
+  gen.setMaxThinkingTokens = vi.fn().mockResolvedValue(undefined);
+  gen.setPermissionMode = vi.fn().mockResolvedValue(undefined);
+  gen.applyFlagSettings = vi.fn().mockResolvedValue(undefined);
+  gen.setMcpServers = vi.fn().mockResolvedValue({ added: [], removed: [], errors: {} });
+  gen.supportedCommands = vi.fn().mockImplementation(() => (
     mockSupportedCommandsImplementation
       ? mockSupportedCommandsImplementation()
       : Promise.resolve(mockSupportedCommands)
   ));
-  gen.initializationResult = jest.fn().mockImplementation(async () => ({
+  gen.initializationResult = vi.fn().mockImplementation(async () => ({
     commands: mockSupportedCommands,
     models: mockSupportedModels,
     agents: [],
@@ -278,7 +281,7 @@ export function query({ prompt, options }: { prompt: any; options: Options }): A
     output_style: 'default',
     available_output_styles: mockOutputStyles,
   }));
-  gen.getContextUsage = jest.fn().mockImplementation(() => (
+  gen.getContextUsage = vi.fn().mockImplementation(() => (
     mockContextUsage
       ? Promise.resolve(mockContextUsage)
       : Promise.reject(new Error('Context usage unavailable'))

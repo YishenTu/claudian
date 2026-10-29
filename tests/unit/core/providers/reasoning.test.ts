@@ -10,7 +10,7 @@ describe('provider reasoning helpers', () => {
       ['xhigh', 'xHigh'],
       [' XHIGH ', 'xHigh'],
       ['', ''],
-    ])('formats %p as %p', (value, expected) => {
+    ])('formats %o as %o', (value, expected) => {
       expect(formatReasoningValueLabel(value)).toBe(expected);
     });
   });

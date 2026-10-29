@@ -122,25 +122,39 @@ jobs:
       # Run about three years ahead so a test that depends on today's date fails here, not on the day its fixture expires.
       - name: Test
         id: tests
+        timeout-minutes: 5
         env:
           FAKETIME_DONT_FAKE_MONOTONIC: '1'
+          # Native process tests kill children. A killed stat() call can leave
+          # libfaketime's shared semaphore locked across the entire process tree.
+          # A relative offset needs no shared ticking clock.
+          FAKETIME_DISABLE_SHM: '1'
           TEST_SELECTION: ${{ needs.test-scope.outputs.test-files }}
           SCRIPT_SELECTION: ${{ matrix.shard == '2/2' && '[]' || needs.test-scope.outputs.script-tests }}
           TEST_SHARD: ${{ matrix.shard }}
         run: |
           mkdir -p test-results
-          faketime -f +1100d npm run test -- --selection "$TEST_SELECTION" --script-selection "$SCRIPT_SELECTION" --shard="$TEST_SHARD" --maxWorkers=3 --json --outputFile=test-results/jest.json
+          faketime -m -f +1100d npm run test -- --selection "$TEST_SELECTION" --script-selection "$SCRIPT_SELECTION" --shard="$TEST_SHARD" --maxWorkers=3 --reporter=default --reporter=json --outputFile=test-results/vitest.json
+
+      - name: Show interrupted test progress
+        if: always() && steps.tests.outcome != 'success'
+        run: |
+          if [ -f test-results/vitest.json.progress.json ]; then
+            cat test-results/vitest.json.progress.json
+          fi
 
       - name: Summarize test timings
-        if: always() && steps.tests.outcome != 'skipped' && needs.test-scope.outputs.test-files != '[]'
-        run: node scripts/summarize-jest-results.mjs test-results/jest.json test-results/timings
+        if: always() && hashFiles('test-results/vitest.json') != ''
+        run: node scripts/summarize-vitest-results.mjs test-results/vitest.json test-results/timings
 
       - name: Upload test timings
         if: always() && steps.tests.outcome != 'skipped' && needs.test-scope.outputs.test-files != '[]'
         uses: actions/upload-artifact@v7
         with:
-          name: jest-timings-${{ strategy.job-index }}
-          path: test-results/timings/
+          name: vitest-timings-${{ strategy.job-index }}
+          path: |
+            test-results/timings/
+            test-results/vitest.json.progress.json
           if-no-files-found: error
           retention-days: 14
 
@@ -241,24 +255,24 @@ jobs:
           TEST_WORKERS: ${{ runner.os == 'Windows' && '1' || '3' }}
         run: |
           mkdir -p test-results
-          npm run test:cross-platform -- --selection "$TEST_SELECTION" --maxWorkers="$TEST_WORKERS" --json --outputFile=test-results/native.json
+          npm run test:cross-platform -- --selection "$TEST_SELECTION" --maxWorkers="$TEST_WORKERS" --reporter=default --reporter=json --outputFile=test-results/native.json
 
       - name: Summarize native test timings
         if: always() && steps.native-tests.outcome != 'skipped' && needs.test-scope.outputs.cross-platform-tests != '[]'
-        run: node scripts/summarize-jest-results.mjs test-results/native.json test-results/native-timings
+        run: node scripts/summarize-vitest-results.mjs test-results/native.json test-results/native-timings
 
       - name: Upload native test timings
         if: always() && steps.native-tests.outcome != 'skipped' && needs.test-scope.outputs.cross-platform-tests != '[]'
         uses: actions/upload-artifact@v7
         with:
-          name: jest-native-timings-${{ runner.os }}-${{ strategy.job-index }}
+          name: vitest-native-timings-${{ runner.os }}-${{ strategy.job-index }}
           path: test-results/native-timings/
           if-no-files-found: error
           retention-days: 14
 
       - name: Run Windows Pi launch integration
         if: runner.os == 'Windows' && needs.test-scope.outputs.pi-windows == 'true'
-        run: npm run test:unit -- --runInBand tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts
+        run: npm run test:unit -- --maxWorkers=1 tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts
 
   build-artifacts:
     runs-on: ubuntu-latest

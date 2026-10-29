@@ -1,13 +1,13 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import {
   createHarness,
   releaseSideChatHarnesses,
   startSideChat,
 } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 
 import { createTabPlacementPort } from '@/features/chat/tabs/runtime/TabRuntimePorts';
 import { ChatPresentationPlacement } from '@/features/chat/view/ChatPresentationPlacement';

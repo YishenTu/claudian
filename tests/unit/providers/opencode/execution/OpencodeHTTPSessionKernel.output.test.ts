@@ -1,3 +1,5 @@
+import type { Mock } from 'vitest';
+
 import type { ProviderToolPolicy } from '@/core/execution';
 import { invokeSessionTool, type SessionToolInvocation } from '@/core/session-tools/invokeSessionTool';
 import { OpencodeHTTPSessionKernel } from '@/providers/opencode/execution/OpencodeHTTPSessionKernel';
@@ -5,12 +7,14 @@ import type { OpencodeNativeOutput } from '@/providers/opencode/execution/Openco
 import { OpencodeSessionPersistence } from '@/providers/opencode/execution/OpencodeSessionPersistence';
 import type { OpencodeHTTPEvent } from '@/providers/opencode/http/OpencodeHTTPClient';
 
+
+
 let resolveCaller: ((id: string) => SessionToolInvocation | undefined) | undefined;
 let sessionConfig: any;
 let kernel: OpencodeHTTPSessionKernel;
 let receive: (event: OpencodeHTTPEvent) => void;
 let output: Array<{ event: OpencodeNativeOutput; session?: string }>;
-let read: jest.Mock;
+let read: Mock;
 let requests: string[];
 let bodies: unknown[];
 let skills: () => Promise<unknown>;
@@ -25,10 +29,10 @@ function start(sessionID = 'ses_main', id = 'tool_shell') {
 const previews = () => output.flatMap(({ event }) => event.type === 'tool_output' ? [event.content] : []);
 
 beforeEach(async () => {
-  jest.useFakeTimers();
+  vi.useFakeTimers();
   output = []; requests = []; bodies = [];
   skills = async () => ({ data: [] });
-  read = jest.fn().mockResolvedValue({ data: { output: '', cursor: 0, size: 0, truncated: false } });
+  read = vi.fn().mockResolvedValue({ data: { output: '', cursor: 0, size: 0, truncated: false } });
   const lease = {
     databasePath: null, isReusable: () => true, onRetired: () => {}, onSuperseded: () => {},
     subscribe: async (callback: typeof receive, _error: unknown, _interactive: unknown, resolver: typeof resolveCaller) => { receive = callback; resolveCaller = resolver; },
@@ -44,23 +48,23 @@ beforeEach(async () => {
       return { data: { id: 'ses_main' } };
     },
   };
-  const config = { workingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: jest.fn() } } as any;
+  const config = { workingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: vi.fn() } } as any;
   sessionConfig = config;
   kernel = new OpencodeHTTPSessionKernel({ config, host: { resolveCliPath: async () => '/opencode', environmentText: '' }, getActiveTurnId: () => 'turn',
-    onNativeOutput: (event: OpencodeNativeOutput, session?: string) => output.push({ event, session }), onNativeTurn: jest.fn(), onClosed: jest.fn(),
+    onNativeOutput: (event: OpencodeNativeOutput, session?: string) => output.push({ event, session }), onNativeTurn: vi.fn(), onClosed: vi.fn(),
   } as any, { acquire: async () => lease } as any, new OpencodeSessionPersistence(config));
   await kernel.connect({ profile: 'managed', systemPrompt: '' });
   await kernel.openSession();
 });
 
-afterEach(async () => { await kernel.dispose(); jest.useRealTimers(); });
+afterEach(async () => { await kernel.dispose(); vi.useRealTimers(); });
 
 it('reads native shell deltas by byte cursor before completion, once per tool', async () => {
   read.mockResolvedValueOnce({ data: { output: '你', cursor: 3, size: 3, truncated: false } })
     .mockResolvedValueOnce({ data: { output: '好', cursor: 6, size: 6, truncated: false } });
   start();
   event('session.tool.progress', { metadata: { shellID: 'sh_tool_shell' } });
-  await jest.advanceTimersByTimeAsync(150);
+  await vi.advanceTimersByTimeAsync(150);
   expect(previews().join('')).toBe('你好');
   expect(output.some(({ event }) => event.type === 'tool_completed')).toBe(false);
   const routes = requests.filter(route => route.startsWith('/api/shell/'));
@@ -69,7 +73,7 @@ it('reads native shell deltas by byte cursor before completion, once per tool', 
   expect(routes.every(route => route.includes('limit=65536'))).toBe(true);
   event('session.tool.success', { content: [{ text: '你好 final' }] });
   const calls = read.mock.calls.length;
-  await jest.advanceTimersByTimeAsync(1000);
+  await vi.advanceTimersByTimeAsync(1000);
   expect(read).toHaveBeenCalledTimes(calls);
 });
 
@@ -85,7 +89,7 @@ it.each(['tool completion', 'turn completion', 'cancel', 'dispose'])(
     if (ending === 'dispose') await kernel.dispose();
     expect(read).toHaveBeenCalledTimes(1);
     resolve({ data: { output: 'late', cursor: 4, size: 4, truncated: false } });
-    await jest.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(previews()).toEqual([]);
     expect(read).toHaveBeenCalledTimes(1);
   },
@@ -100,14 +104,14 @@ it('isolates other sessions and keeps an owned background child streaming after 
   read.mockResolvedValueOnce({ data: { output: 'child', cursor: 5, size: 5, truncated: false } });
   start('ses_child');
   event('session.execution.succeeded');
-  await jest.advanceTimersByTimeAsync(1);
+  await vi.advanceTimersByTimeAsync(1);
   expect(previews()).toEqual(['child']);
   expect(output.find(({ event }) => event.type === 'tool_output')).toMatchObject({ session: 'ses_child', event: {
     toolCallId: 'ses_child:tool_shell', toolScope: { kind: 'subagent', subagentId: 'spawn' },
   } });
   event('session.execution.succeeded', { sessionID: 'ses_child' });
   const count = read.mock.calls.length;
-  await jest.advanceTimersByTimeAsync(1000);
+  await vi.advanceTimersByTimeAsync(1000);
   expect(read).toHaveBeenCalledTimes(count);
 });
 
@@ -124,13 +128,13 @@ it('normalizes cumulative metadata and freezes non-prefix updates until the fina
 it('treats preview failure as best effort and bounds retained live output', async () => {
   read.mockRejectedValueOnce(new Error('shell no longer available'));
   start();
-  await jest.advanceTimersByTimeAsync(1000);
+  await vi.advanceTimersByTimeAsync(1000);
   expect(read).toHaveBeenCalledTimes(1);
   event('session.tool.success', { content: [{ text: 'final' }] });
   expect(output.at(-1)?.event).toMatchObject({ type: 'tool_completed', content: 'final' });
   read.mockResolvedValue({ data: { output: 'bounded', cursor: 1024 * 1024, size: 1024 * 1024, truncated: true } });
   start('ses_main', 'second');
-  await jest.advanceTimersByTimeAsync(1000);
+  await vi.advanceTimersByTimeAsync(1000);
   expect(read).toHaveBeenCalledTimes(2);
 });
 
@@ -143,24 +147,24 @@ it('blocks queued preview admission after cancellation without stopping a peer c
   event('session.execution.started');
   start('ses_main', 'queued');
   event('session.tool.progress', { id: 'queued', metadata: { output: 'cancelled snapshot' } });
-  await jest.advanceTimersByTimeAsync(1);
+  await vi.advanceTimersByTimeAsync(1);
   expect(read).not.toHaveBeenCalled();
   expect(previews()).toEqual([]);
 
   read.mockResolvedValueOnce({ data: { output: 'child', cursor: 5 } });
   start('ses_child', 'child-tool');
-  await jest.advanceTimersByTimeAsync(1);
+  await vi.advanceTimersByTimeAsync(1);
   expect(previews()).toEqual(['child']);
   event('session.tool.success', { sessionID: 'ses_child', id: 'child-tool', content: [{ text: 'child final' }] });
 
   event('session.execution.interrupted');
   start('ses_main', 'late');
-  await jest.advanceTimersByTimeAsync(1);
+  await vi.advanceTimersByTimeAsync(1);
   expect(read).toHaveBeenCalledTimes(1);
   event('session.execution.started');
   read.mockResolvedValueOnce({ data: { output: 'new run', cursor: 7 } });
   start('ses_main', 'new');
-  await jest.advanceTimersByTimeAsync(1);
+  await vi.advanceTimersByTimeAsync(1);
   expect(previews()).toEqual(['child', 'new run']);
 });
 
@@ -189,14 +193,14 @@ it('admits steers in submission order while a skill lookup is pending', async ()
   let release!: () => void;
   // Disposal settles the open run and undelivered steers.
   void kernel.prompt('ses_main', { text: 'work', files: [], userText: { start: 0, end: 4 } }).catch(() => undefined);
-  await jest.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(0);
   skills = () => new Promise(resolve => { release = () => resolve({ data: [{ id: 'writing' }] }); });
   const first = 'Use /writing';
   void kernel.steer('ses_main', { text: first, files: [], userText: { start: 0, end: first.length } }).catch(() => undefined);
   void kernel.steer('ses_main', { text: 'Then this', files: [], userText: { start: 0, end: 9 } }).catch(() => undefined);
-  await jest.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(0);
   release();
-  await jest.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(0);
   const steers = bodies.filter((body): body is { text: string } => (body as { delivery?: string }).delivery === 'steer');
   expect(steers.map(body => body.text)).toEqual([first, 'Then this']);
   expect(steers[0]).toMatchObject({ skills: [{ id: 'writing', mention: { start: 4, end: 12, text: '/writing' } }] });
@@ -205,19 +209,19 @@ it('admits steers in submission order while a skill lookup is pending', async ()
 it('keeps later steers behind an earlier pending lookup when a middle lookup fails', async () => {
   const lookups: Array<{ resolve: (value: unknown) => void; reject: (error: Error) => void }> = [];
   void kernel.prompt('ses_main', { text: 'work', files: [], userText: { start: 0, end: 4 } }).catch(() => undefined);
-  await jest.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(0);
   skills = () => new Promise((resolve, reject) => { lookups.push({ resolve, reject }); });
   const steer = (text: string, range = { start: 0, end: text.length }) =>
     kernel.steer('ses_main', { text, files: [], userText: range }).catch(() => undefined);
   void steer('First /writing');
   void steer('Second /writing');
-  await jest.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(0);
   lookups[1].reject(new Error('lookup failed'));
-  await jest.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(0);
   void steer('Third');
-  await jest.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(0);
   lookups[0].resolve({ data: [{ id: 'writing' }] });
-  await jest.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(0);
   const steers = bodies.filter((body): body is { text: string } => (body as { delivery?: string }).delivery === 'steer');
   expect(steers.map(body => body.text)).toEqual(['First /writing', 'Third']);
 });
@@ -229,13 +233,13 @@ const startToolRun = async (policy: ProviderToolPolicy = {kind:'provider-default
   // The third parameter is the captured execution request, forwarded only by the HTTP path.
   const completion = kernel.prompt('ses_main', {text:'work',files:[],userText:null}, {toolPolicy:policy,signal:new AbortController().signal});
   void completion.catch(() => undefined);
-  await jest.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(0);
   event('session.execution.started');
   return {completion};
 };
 it.each<ProviderToolPolicy>([{kind:'provider-default'},{kind:'unrestricted'},{kind:'read-only'},{kind:'passive'},{kind:'allow-list',names:['claudian_list_destinations']}])('dispatches session tools with the owning policy %j', async policy => {
-  const list = jest.fn().mockResolvedValue({ sessions: [] });
-  sessionConfig.sessionTools = {list,send:jest.fn()};
+  const list = vi.fn().mockResolvedValue({ sessions: [] });
+  sessionConfig.sessionTools = {list,send:vi.fn()};
   const {completion} = await startToolRun(policy);
   const allowed = ['provider-default','unrestricted'].includes(policy.kind);
   expect((await callSessionTool()).isError).toBe(!allowed);
@@ -247,8 +251,8 @@ it('denies an unbound caller and pins child calls to the original run through se
   const unbound = await startToolRun();
   expect((await callSessionTool()).isError).toBe(true);
   event('session.execution.succeeded'); await unbound.completion;
-  const list = jest.fn().mockResolvedValue({ sessions: [] });
-  sessionConfig.sessionTools = {list,send:jest.fn()};
+  const list = vi.fn().mockResolvedValue({ sessions: [] });
+  sessionConfig.sessionTools = {list,send:vi.fn()};
   const first = await startToolRun();
   event('session.tool.input.started',{id:'spawn',name:'subagent'});
   event('session.tool.called',{id:'spawn',input:{background:true}});
@@ -273,8 +277,8 @@ it('normalizes native session tools in live output without losing the raw name',
 });
 
 it.each(['cancel', 'completion', 'failure'])('aborts an in-flight child session-tool call on child %s without cancelling the parent', async ending => {
-  const list = jest.fn().mockResolvedValue({ sessions: [] });
-  sessionConfig.sessionTools = { list, send: jest.fn() };
+  const list = vi.fn().mockResolvedValue({ sessions: [] });
+  sessionConfig.sessionTools = { list, send: vi.fn() };
   const { completion } = await startToolRun();
   event('session.tool.input.started', { id: 'spawn', name: 'subagent' });
   event('session.tool.called', { id: 'spawn', input: {} });
@@ -291,9 +295,9 @@ it.each(['cancel', 'completion', 'failure'])('aborts an in-flight child session-
 });
 
 it('auto-approves native session-tool permission requests without opening approval UI', async () => {
-  sessionConfig.interactionPort.requestApproval = jest.fn().mockResolvedValue({ interactionId: 'tool_shell', decision: 'deny' });
+  sessionConfig.interactionPort.requestApproval = vi.fn().mockResolvedValue({ interactionId: 'tool_shell', decision: 'deny' });
   event('permission.asked', { action: 'claudian_send_message', resources: ['*'] });
-  await jest.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(0);
   expect(sessionConfig.interactionPort.requestApproval).not.toHaveBeenCalled();
   expect(requests).toContain('/api/session/ses_main/permission/tool_shell/reply');
   expect(bodies).toContainEqual({ decision: 'once' });

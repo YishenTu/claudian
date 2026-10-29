@@ -1,5 +1,5 @@
 // Pane selection is an Obsidian boundary; callers can provide its native decision.
-export const Keymap = { isModEvent: jest.fn((_event?: unknown): boolean | 'tab' | 'split' | 'window' => false) };
+export const Keymap = { isModEvent: vi.fn((_event?: unknown): boolean | 'tab' | 'split' | 'window' => false) };
 
 // Mock for Obsidian API
 
@@ -56,13 +56,13 @@ export class Plugin {
     this.manifest = manifest;
   }
 
-  addRibbonIcon = jest.fn();
-  addCommand = jest.fn();
-  addSettingTab = jest.fn();
-  registerView = jest.fn();
-  registerEvent = jest.fn();
-  loadData = jest.fn().mockResolvedValue({});
-  saveData = jest.fn().mockResolvedValue(undefined);
+  addRibbonIcon = vi.fn();
+  addCommand = vi.fn();
+  addSettingTab = vi.fn();
+  registerView = vi.fn();
+  registerEvent = vi.fn();
+  loadData = vi.fn().mockResolvedValue({});
+  saveData = vi.fn().mockResolvedValue(undefined);
 }
 
 export class PluginSettingTab {
@@ -70,9 +70,9 @@ export class PluginSettingTab {
   plugin: any;
   settingItems: any[] = [];
   containerEl: any = {
-    empty: jest.fn(),
-    createEl: jest.fn().mockReturnValue({ createEl: jest.fn(), createDiv: jest.fn() }),
-    createDiv: jest.fn().mockReturnValue({ createEl: jest.fn(), createDiv: jest.fn() }),
+    empty: vi.fn(),
+    createEl: vi.fn().mockReturnValue({ createEl: vi.fn(), createDiv: vi.fn() }),
+    createDiv: vi.fn().mockReturnValue({ createEl: vi.fn(), createDiv: vi.fn() }),
   };
 
   constructor(app: any, plugin: any) {
@@ -90,13 +90,13 @@ export class PluginSettingTab {
 }
 
 export class ItemView {
-  app: any = { workspace: { on: jest.fn(), offref: jest.fn() } };
+  app: any = { workspace: { on: vi.fn(), offref: vi.fn() } };
   leaf: any;
   containerEl: any = {
     isShown: () => true,
-    children: [{}, { empty: jest.fn(), addClass: jest.fn(), createDiv: jest.fn().mockReturnValue({
-      createEl: jest.fn().mockReturnValue({ addEventListener: jest.fn(), setAttribute: jest.fn() }),
-      createDiv: jest.fn().mockReturnValue({ createEl: jest.fn().mockReturnValue({ addEventListener: jest.fn() }) }),
+    children: [{}, { empty: vi.fn(), addClass: vi.fn(), createDiv: vi.fn().mockReturnValue({
+      createEl: vi.fn().mockReturnValue({ addEventListener: vi.fn(), setAttribute: vi.fn() }),
+      createDiv: vi.fn().mockReturnValue({ createEl: vi.fn().mockReturnValue({ addEventListener: vi.fn() }) }),
     }) }],
   };
 
@@ -148,7 +148,7 @@ export class Scope {
     Scope.instances.push(this);
   }
 
-  register = jest.fn((
+  register = vi.fn((
     modifiers: string[] | null,
     key: string | null,
     func: (evt: KeyboardEvent, ctx?: unknown) => false | unknown
@@ -158,7 +158,7 @@ export class Scope {
     return handler;
   });
 
-  unregister = jest.fn((handler: unknown) => {
+  unregister = vi.fn((handler: unknown) => {
     this.handlers = this.handlers.filter((entry) => entry !== handler);
   });
 }
@@ -175,18 +175,18 @@ export class App {
     },
   };
   workspace: any = {
-    getLeavesOfType: jest.fn().mockReturnValue([]),
-    getRightLeaf: jest.fn().mockReturnValue({
-      setViewState: jest.fn().mockResolvedValue(undefined),
+    getLeavesOfType: vi.fn().mockReturnValue([]),
+    getRightLeaf: vi.fn().mockReturnValue({
+      setViewState: vi.fn().mockResolvedValue(undefined),
     }),
-    getLeftLeaf: jest.fn().mockReturnValue({
-      setViewState: jest.fn().mockResolvedValue(undefined),
+    getLeftLeaf: vi.fn().mockReturnValue({
+      setViewState: vi.fn().mockResolvedValue(undefined),
     }),
-    getLeaf: jest.fn().mockReturnValue({
-      setViewState: jest.fn().mockResolvedValue(undefined),
+    getLeaf: vi.fn().mockReturnValue({
+      setViewState: vi.fn().mockResolvedValue(undefined),
     }),
-    setActiveLeaf: jest.fn(),
-    revealLeaf: jest.fn(),
+    setActiveLeaf: vi.fn(),
+    revealLeaf: vi.fn(),
   };
 }
 
@@ -202,55 +202,55 @@ export class MarkdownView {
 
 export class Setting {
   constructor(_containerEl: any) {}
-  setName = jest.fn().mockReturnThis();
-  setDesc = jest.fn().mockReturnThis();
-  addToggle = jest.fn().mockReturnThis();
-  addTextArea = jest.fn().mockReturnThis();
+  setName = vi.fn().mockReturnThis();
+  setDesc = vi.fn().mockReturnThis();
+  addToggle = vi.fn().mockReturnThis();
+  addTextArea = vi.fn().mockReturnThis();
 }
 
 export class Modal {
   app: any;
   containerEl: any = {
-    createDiv: jest.fn().mockReturnValue({
-      createEl: jest.fn().mockReturnValue({ addEventListener: jest.fn() }),
-      createDiv: jest.fn().mockReturnValue({
-        createEl: jest.fn().mockReturnValue({ addEventListener: jest.fn() }),
-        createDiv: jest.fn().mockReturnValue({
-          createEl: jest.fn(),
+    createDiv: vi.fn().mockReturnValue({
+      createEl: vi.fn().mockReturnValue({ addEventListener: vi.fn() }),
+      createDiv: vi.fn().mockReturnValue({
+        createEl: vi.fn().mockReturnValue({ addEventListener: vi.fn() }),
+        createDiv: vi.fn().mockReturnValue({
+          createEl: vi.fn(),
         }),
-        setText: jest.fn(),
+        setText: vi.fn(),
       }),
-      addClass: jest.fn(),
-      setText: jest.fn(),
+      addClass: vi.fn(),
+      setText: vi.fn(),
     }),
-    empty: jest.fn(),
-    addClass: jest.fn(),
+    empty: vi.fn(),
+    addClass: vi.fn(),
   };
   contentEl: any = {
-    createDiv: jest.fn().mockReturnValue({
-      createEl: jest.fn().mockReturnValue({ addEventListener: jest.fn() }),
-      createDiv: jest.fn().mockReturnValue({
-        createEl: jest.fn().mockReturnValue({ addEventListener: jest.fn() }),
-        createDiv: jest.fn().mockReturnValue({
-          createEl: jest.fn(),
+    createDiv: vi.fn().mockReturnValue({
+      createEl: vi.fn().mockReturnValue({ addEventListener: vi.fn() }),
+      createDiv: vi.fn().mockReturnValue({
+        createEl: vi.fn().mockReturnValue({ addEventListener: vi.fn() }),
+        createDiv: vi.fn().mockReturnValue({
+          createEl: vi.fn(),
         }),
-        setText: jest.fn(),
+        setText: vi.fn(),
       }),
-      addClass: jest.fn(),
-      setText: jest.fn(),
+      addClass: vi.fn(),
+      setText: vi.fn(),
     }),
-    empty: jest.fn(),
-    addClass: jest.fn(),
+    empty: vi.fn(),
+    addClass: vi.fn(),
   };
 
   constructor(app: any) {
     this.app = app;
   }
 
-  open = jest.fn();
-  close = jest.fn();
-  onOpen = jest.fn();
-  onClose = jest.fn();
+  open = vi.fn();
+  close = vi.fn();
+  onOpen = vi.fn();
+  onClose = vi.fn();
 }
 
 class MockMenuItem {
@@ -261,34 +261,34 @@ class MockMenuItem {
   isLabel = false;
   clickHandler: (() => void) | null = null;
 
-  setTitle = jest.fn((title: string) => {
+  setTitle = vi.fn((title: string) => {
     this.title = title;
     return this;
   });
 
-  setIcon = jest.fn((icon: string) => {
+  setIcon = vi.fn((icon: string) => {
     this.icon = icon;
     return this;
   });
 
-  setDisabled = jest.fn((disabled: boolean) => {
+  setDisabled = vi.fn((disabled: boolean) => {
     this.disabled = disabled;
     return this;
   });
 
-  setChecked = jest.fn((checked: boolean | null) => {
+  setChecked = vi.fn((checked: boolean | null) => {
     this.checked = checked;
     return this;
   });
 
-  setIsLabel = jest.fn((isLabel: boolean) => {
+  setIsLabel = vi.fn((isLabel: boolean) => {
     this.isLabel = isLabel;
     return this;
   });
 
-  setWarning = jest.fn((_isWarning: boolean) => this);
+  setWarning = vi.fn((_isWarning: boolean) => this);
 
-  onClick = jest.fn((handler: () => void) => {
+  onClick = vi.fn((handler: () => void) => {
     this.clickHandler = handler;
     return this;
   });
@@ -299,8 +299,8 @@ export class Menu {
 
   items: MockMenuItem[] = [];
   useNativeMenu: boolean | null = null;
-  showAtMouseEvent = jest.fn();
-  showAtPosition = jest.fn();
+  showAtMouseEvent = vi.fn();
+  showAtPosition = vi.fn();
 
   constructor() {
     Menu.instances.push(this);
@@ -317,43 +317,43 @@ export class Menu {
     return this;
   }
 
-  setUseNativeMenu = jest.fn((useNativeMenu: boolean) => {
+  setUseNativeMenu = vi.fn((useNativeMenu: boolean) => {
     this.useNativeMenu = useNativeMenu;
     return this;
   });
 
   private hideCallbacks: Array<() => void> = [];
 
-  onHide = jest.fn((callback: () => void) => {
+  onHide = vi.fn((callback: () => void) => {
     this.hideCallbacks.push(callback);
   });
 
   /** Runs the hide callbacks once, as Obsidian does when a shown menu closes. */
-  hide = jest.fn(() => {
+  hide = vi.fn(() => {
     for (const callback of this.hideCallbacks.splice(0)) callback();
     return this;
   });
 }
 
-const renderMarkdownMock = jest.fn<Promise<void>, [string, unknown, string, unknown]>().mockResolvedValue(undefined);
+const renderMarkdownMock = vi.fn<(...args: [string, unknown, string, unknown]) => Promise<void>>().mockResolvedValue(undefined);
 
 export const MarkdownRenderer = {
-  render: jest.fn<Promise<void>, [unknown, string, unknown, string, unknown]>(
+  render: vi.fn<(...args: [unknown, string, unknown, string, unknown]) => Promise<void>>(
     (_app, markdown, el, sourcePath, component) => renderMarkdownMock(markdown, el, sourcePath, component),
   ),
   renderMarkdown: renderMarkdownMock,
 };
 
-export const loadMermaid = jest.fn();
+export const loadMermaid = vi.fn();
 
-export const loadPrism = jest.fn().mockResolvedValue({
-  highlightElement: jest.fn(),
+export const loadPrism = vi.fn().mockResolvedValue({
+  highlightElement: vi.fn(),
 });
 
-export const setIcon = jest.fn();
+export const setIcon = vi.fn();
 
 // Notice mock that tracks constructor calls
-export const Notice = jest.fn().mockImplementation((_message: string, _timeout?: number) => {});
+export const Notice = vi.fn().mockImplementation(function (_message: string, _timeout?: number) {});
 
 function unquoteYaml(value: string): string {
   if (
@@ -521,3 +521,6 @@ export class TFolder {
     this.name = path.split('/').pop() || '';
   }
 }
+
+// The host serializer is optional; retain the existing fallback exercised by tests.
+export const stringifyYaml = undefined;

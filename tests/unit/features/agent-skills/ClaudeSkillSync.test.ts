@@ -13,13 +13,13 @@ import {
 } from '@/features/agent-skills/ClaudeSkillSync';
 
 // Obsidian's parseYaml rejects invalid YAML; the shared mock does not.
-jest.mock('obsidian', () => ({
-  ...jest.requireActual('@test/__mocks__/obsidian'),
-  parseYaml: (source: string) => jest.requireActual('js-yaml').load(source),
-}));
+vi.mock('obsidian', async () => { const actualModule0 = await vi.importActual<typeof import('js-yaml')>('js-yaml'); return ({
+  ...(await vi.importActual<typeof import('@test/__mocks__/obsidian')>('@test/__mocks__/obsidian')),
+  parseYaml: (source: string) => actualModule0.load(source),
+}); });
 
-jest.mock('node:fs/promises', () => (
-  jest.requireActual('@test/helpers/core/fsWriteFaults').createFsPromisesWithWriteFaults()
+vi.mock('node:fs/promises', async () => (
+  (await vi.importActual<typeof import('@test/helpers/core/fsWriteFaults')>('@test/helpers/core/fsWriteFaults')).createFsPromisesWithWriteFaults()
 ));
 
 function skill(name: string, description = 'Description', body = 'Instructions', extra = ''): string {
@@ -334,7 +334,7 @@ describe('ClaudeSkillSync', () => {
       const adapter = vault.app.vault.adapter as typeof vault.app.vault.adapter & {
         trashSystem(path: string): Promise<boolean>;
       };
-      const trash = jest.spyOn(adapter, 'trashSystem').mockRejectedValueOnce(new Error('Trash unavailable'));
+      const trash = vi.spyOn(adapter, 'trashSystem').mockRejectedValueOnce(new Error('Trash unavailable'));
       const first = await sync.execute(await sync.plan(), resolutions());
 
       expect(first.linked).toBe(false);
@@ -358,7 +358,7 @@ describe('ClaudeSkillSync', () => {
       const adapter = vault.app.vault.adapter as typeof vault.app.vault.adapter & {
         trashSystem(path: string): Promise<boolean>;
       };
-      jest.spyOn(adapter, 'trashSystem').mockRejectedValueOnce(new Error('Command trash failed'))
+      vi.spyOn(adapter, 'trashSystem').mockRejectedValueOnce(new Error('Command trash failed'))
         .mockRejectedValueOnce(new Error('Skill trash failed'));
 
       const result = await sync.execute(await sync.plan(), resolutions());

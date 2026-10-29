@@ -18,7 +18,7 @@ function createTab(model: string, customContextLimits: Record<string, number>, u
     percentage: 0,
     ...usageOverrides,
   };
-  const update = jest.fn();
+  const update = vi.fn();
   const tab = {
     conversationId: null,
     providerId: 'claude',

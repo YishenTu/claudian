@@ -9,7 +9,7 @@ describe('normalizeProjectMemoryPath', () => {
     ['MEMORY.md', 'MEMORY.md'],
     ['Work/Notes.MD', 'Work/Notes.MD'],
     ['.claudian/projects/launch/MEMORY.md', '.claudian/projects/launch/MEMORY.md'],
-  ])('normalizes %p to the vault-relative file %p', (input, expected) => {
+  ])('normalizes %o to the vault-relative file %o', (input, expected) => {
     expect(normalizeProjectMemoryPath(input)).toBe(expected);
   });
 
@@ -17,7 +17,7 @@ describe('normalizeProjectMemoryPath', () => {
     ['Work/MEMORY', 'Work/MEMORY.md'],
     ['Work/notes.txt', 'Work/notes.txt.md'],
     ['plan', 'plan.md'],
-  ])('appends the missing .md extension to %p', (input, expected) => {
+  ])('appends the missing .md extension to %o', (input, expected) => {
     expect(normalizeProjectMemoryPath(input)).toBe(expected);
   });
 
@@ -45,7 +45,7 @@ describe('normalizeProjectMemoryPath', () => {
     'Wo|rk/plan.md',
     'Work/"plan".md',
     'Work/*.md',
-  ])('rejects %p', (input) => {
+  ])('rejects %o', (input) => {
     expect(normalizeProjectMemoryPath(input)).toBeNull();
   });
 });
@@ -60,7 +60,7 @@ describe('defaultProjectMemoryPath', () => {
     ['LPT1', '.claudian/projects/project-lpt1/MEMORY.md'],
     ['Console', '.claudian/projects/console/MEMORY.md'],
     ['a'.repeat(80), `.claudian/projects/${'a'.repeat(48)}/MEMORY.md`],
-  ])('derives the default for %p as %p', (name, expected) => {
+  ])('derives the default for %o as %o', (name, expected) => {
     expect(defaultProjectMemoryPath(name)).toBe(expected);
     expect(normalizeProjectMemoryPath(expected)).toBe(expected);
   });

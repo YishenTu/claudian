@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 
-jest.mock('cross-spawn', () => jest.fn());
+vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 
 import spawn from 'cross-spawn';
 
@@ -16,7 +16,7 @@ function childProcess() {
     stdin: new PassThrough(),
     stdout: new PassThrough(),
     stderr: new PassThrough(),
-    kill: jest.fn((signal: string) => {
+    kill: vi.fn((signal: string) => {
       child.emit('exit', null, signal);
       child.emit('close', null, signal);
       return true;
@@ -26,11 +26,11 @@ function childProcess() {
 }
 
 describe('process probe bounds', () => {
-  afterEach(() => { jest.useRealTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
 
   it.each([0, 16_382])('preserves split UTF-8 bytes after %i ASCII bytes', async prefixLength => {
     const child = childProcess();
-    jest.mocked(spawn).mockReturnValueOnce(child as never);
+    vi.mocked(spawn).mockReturnValueOnce(child as never);
     const result = runProcessProbe({ command: 'test', args: [], cwd: '/tmp', env: {} });
     child.stdout.write(Buffer.concat([Buffer.alloc(prefixLength, 120), Buffer.from([0xc3])]));
     child.stdout.write(Buffer.from([0xa9]));
@@ -41,18 +41,18 @@ describe('process probe bounds', () => {
   });
 
   it('terminates a command that does not finish within the deadline', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     const child = childProcess();
-    jest.mocked(spawn).mockReturnValueOnce(child as never);
+    vi.mocked(spawn).mockReturnValueOnce(child as never);
     const result = runProcessProbe({ command: 'test', args: [], cwd: '/tmp', env: {} }, 50);
-    await jest.advanceTimersByTimeAsync(50);
+    await vi.advanceTimersByTimeAsync(50);
     expect(await result).toBeNull();
     expect(child.kill).toHaveBeenCalledWith('SIGTERM');
   });
 
   it('terminates a command that exceeds the output limit', async () => {
     const child = childProcess();
-    jest.mocked(spawn).mockReturnValueOnce(child as never);
+    vi.mocked(spawn).mockReturnValueOnce(child as never);
     const result = runProcessProbe({ command: 'test', args: [], cwd: '/tmp', env: {} });
     child.stdout.write('x'.repeat(16_385));
     expect(await result).toBeNull();
@@ -61,7 +61,7 @@ describe('process probe bounds', () => {
 
   it('accepts stdout exactly at the byte limit across multiple chunks', async () => {
     const child = childProcess();
-    jest.mocked(spawn).mockReturnValueOnce(child as never);
+    vi.mocked(spawn).mockReturnValueOnce(child as never);
     const result = runProcessProbe({ command: 'test', args: [], cwd: '/tmp', env: {} });
     child.stdout.write('x'.repeat(8_192));
     child.stdout.write('y'.repeat(8_192));
@@ -73,7 +73,7 @@ describe('process probe bounds', () => {
 
   it('bounds output by UTF-8 bytes rather than character count', async () => {
     const child = childProcess();
-    jest.mocked(spawn).mockReturnValueOnce(child as never);
+    vi.mocked(spawn).mockReturnValueOnce(child as never);
     const result = runProcessProbe({ command: 'test', args: [], cwd: '/tmp', env: {} });
     child.stdout.write('é'.repeat(8_193));
     child.emit('exit', 0, null);

@@ -1,7 +1,7 @@
 import { OpencodeSSEDecoder } from '@/providers/opencode/http/OpencodeHTTPClient';
 
 it('preserves fragmented CRLF, multiline data, comments and multiple frames', () => {
-  const receive = jest.fn();
+  const receive = vi.fn();
   const decoder = new OpencodeSSEDecoder(receive);
   const frame = ': heartbeat\r\ndata: {"type":"example",\r\ndata: "data":{"text":"你好"}}\r\n\r\n';
   for (const character of frame) decoder.push(character);
@@ -19,12 +19,12 @@ it('rejects malformed and oversized events across lines', () => {
 });
 
 it('scans large fragmented events in linear work', () => {
-  const receive = jest.fn();
+  const receive = vi.fn();
   const decoder = new OpencodeSSEDecoder(receive);
   const frame = `data: ${JSON.stringify({ type: 'large', data: { text: 'x'.repeat(65536) } })}\n\n`;
   const original = String.prototype.indexOf;
   let scanned = 0;
-  const spy = jest.spyOn(String.prototype, 'indexOf').mockImplementation(function (this: string, search, position) {
+  const spy = vi.spyOn(String.prototype, 'indexOf').mockImplementation(function (this: string, search, position) {
     if (search === '\n') scanned += this.length - (position ?? 0);
     return original.call(this, search, position);
   });

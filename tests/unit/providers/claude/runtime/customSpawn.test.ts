@@ -1,19 +1,22 @@
 import type { SpawnOptions } from '@anthropic-ai/claude-agent-sdk';
 import { spawn as nativeSpawn } from 'child_process';
 import spawn from 'cross-spawn';
+import type { MockedFunction } from 'vitest';
 
 import * as env from '@/core/process/env';
 import { createCustomSpawnFunction } from '@/providers/claude/runtime/customSpawn';
 
-jest.mock('cross-spawn', () => jest.fn());
-jest.mock('child_process', () => ({
-  ...jest.requireActual('child_process'),
-  spawn: jest.fn(),
+
+
+vi.mock('cross-spawn', () => ({ default: vi.fn() }));
+vi.mock('child_process', async () => ({
+  ...(await vi.importActual<typeof import('child_process')>('child_process')),
+  spawn: vi.fn(),
 }));
 
 describe('createCustomSpawnFunction', () => {
   const originalPlatform = process.platform;
-  const spawnMock = spawn as jest.MockedFunction<typeof spawn>;
+  const spawnMock = spawn as MockedFunction<typeof spawn>;
 
   beforeEach(() => {
     Object.defineProperty(process, 'platform', { value: 'linux' });
@@ -21,13 +24,13 @@ describe('createCustomSpawnFunction', () => {
 
   afterEach(() => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
     spawnMock.mockReset();
-    jest.mocked(nativeSpawn).mockReset();
+    vi.mocked(nativeSpawn).mockReset();
   });
 
   const createMockProcess = () => {
-    const stderr = { on: jest.fn() } as unknown as NodeJS.ReadableStream;
+    const stderr = { on: vi.fn() } as unknown as NodeJS.ReadableStream;
     return {
       stdin: {} as NodeJS.WritableStream,
       stdout: {} as NodeJS.ReadableStream,
@@ -35,10 +38,10 @@ describe('createCustomSpawnFunction', () => {
       pid: 12345,
       killed: false,
       exitCode: null,
-      kill: jest.fn(),
-      on: jest.fn(),
-      once: jest.fn(),
-      off: jest.fn(),
+      kill: vi.fn(),
+      on: vi.fn(),
+      once: vi.fn(),
+      off: vi.fn(),
     };
   };
 
@@ -46,8 +49,7 @@ describe('createCustomSpawnFunction', () => {
     const mockProcess = createMockProcess();
     spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
 
-    const findNodeExecutable = jest
-      .spyOn(env, 'findNodeExecutable')
+    const findNodeExecutable = vi.spyOn(env, 'findNodeExecutable')
       .mockReturnValue('/custom/node');
 
     const spawnFn = createCustomSpawnFunction('/enhanced/path');
@@ -74,8 +76,7 @@ describe('createCustomSpawnFunction', () => {
     const mockProcess = createMockProcess();
     spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
 
-    const findNodeExecutable = jest
-      .spyOn(env, 'findNodeExecutable')
+    const findNodeExecutable = vi.spyOn(env, 'findNodeExecutable')
       .mockReturnValue('/custom/node');
 
     const spawnFn = createCustomSpawnFunction('/enhanced/path');
@@ -100,7 +101,7 @@ describe('createCustomSpawnFunction', () => {
     const mockProcess = createMockProcess();
     spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
 
-    jest.spyOn(env, 'findNodeExecutable').mockReturnValue(null);
+    vi.spyOn(env, 'findNodeExecutable').mockReturnValue(null);
 
     const spawnFn = createCustomSpawnFunction('/enhanced/path');
     spawnFn({
@@ -120,9 +121,9 @@ describe('createCustomSpawnFunction', () => {
   it.each([null, 'C:\\nodejs\\node.exe'])('uses direct spawning on Windows with Node discovery returning %s', (nodePath) => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const mockProcess = createMockProcess();
-    jest.mocked(nativeSpawn).mockReturnValue(mockProcess as unknown as ReturnType<typeof nativeSpawn>);
+    vi.mocked(nativeSpawn).mockReturnValue(mockProcess as unknown as ReturnType<typeof nativeSpawn>);
     spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
-    jest.spyOn(env, 'findNodeExecutable').mockReturnValue(nodePath);
+    vi.spyOn(env, 'findNodeExecutable').mockReturnValue(nodePath);
 
     const spawnFn = createCustomSpawnFunction('/enhanced/path');
     spawnFn({
@@ -183,10 +184,10 @@ describe('createCustomSpawnFunction', () => {
       stderr: null,
       killed: false,
       exitCode: null,
-      kill: jest.fn(),
-      on: jest.fn(),
-      once: jest.fn(),
-      off: jest.fn(),
+      kill: vi.fn(),
+      on: vi.fn(),
+      once: vi.fn(),
+      off: vi.fn(),
     };
     spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
 
@@ -206,7 +207,7 @@ describe('createCustomSpawnFunction', () => {
     const mockProcess = createMockProcess();
     spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
 
-    jest.spyOn(env, 'findNodeExecutable').mockReturnValue(null);
+    vi.spyOn(env, 'findNodeExecutable').mockReturnValue(null);
 
     const spawnFn = createCustomSpawnFunction('/enhanced/path');
     const signal = new AbortController().signal;
@@ -226,7 +227,7 @@ describe('createCustomSpawnFunction', () => {
     const mockProcess = createMockProcess();
     spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
 
-    const findNodeExecutable = jest.spyOn(env, 'findNodeExecutable');
+    const findNodeExecutable = vi.spyOn(env, 'findNodeExecutable');
 
     const spawnFn = createCustomSpawnFunction('/enhanced/path');
     const signal = new AbortController().signal;
@@ -275,7 +276,7 @@ describe('createCustomSpawnFunction', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const mockProcess = createMockProcess();
     const originalKill = mockProcess.kill;
-    const findNodeExecutable = jest.spyOn(env, 'findNodeExecutable');
+    const findNodeExecutable = vi.spyOn(env, 'findNodeExecutable');
     spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
 
     const spawnFn = createCustomSpawnFunction('/enhanced/path');

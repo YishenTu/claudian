@@ -1,9 +1,9 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Component } from 'obsidian';
 
 import type { ProviderExecutionEvent } from '@/core/execution';
@@ -55,9 +55,9 @@ async function restoreLiveV2(call: NativeToolCall): Promise<ToolCallInfo> {
       return { data: { id: 'ses_main' } };
     },
   };
-  const config = { workingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: jest.fn() } } as any;
+  const config = { workingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: vi.fn() } } as any;
   const kernel = new OpencodeHTTPSessionKernel({ config, host: { resolveCliPath: async () => '/opencode', environmentText: '' }, getActiveTurnId: () => 'turn',
-    onNativeOutput: (event: ProviderExecutionEvent) => output.push(event), onNativeTurn: jest.fn(), onClosed: jest.fn(),
+    onNativeOutput: (event: ProviderExecutionEvent) => output.push(event), onNativeTurn: vi.fn(), onClosed: vi.fn(),
   } as any, { acquire: async () => lease } as any, new OpencodeSessionPersistence(config));
   try {
     await kernel.connect({ profile: 'managed', systemPrompt: '' });

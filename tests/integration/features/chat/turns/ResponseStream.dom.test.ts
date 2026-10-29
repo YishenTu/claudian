@@ -1,11 +1,11 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
 import { parseGrokHistoryContent } from '@test/helpers/providers/grokHistory';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
@@ -25,7 +25,7 @@ import { parseCodexSessionTurns } from '@/providers/codex/history/CodexHistorySt
 import { mapOpencodeNativeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
 import { parsePiSessionContent } from '@/providers/pi/history/PiHistoryStore';
 
-jest.mock('node:fs/promises');
+vi.mock('node:fs/promises');
 const writeSession = useClaudeSessionFiles();
 HTMLElement.prototype.appendText = function (text) { this.append(document.createTextNode(text)); };
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
@@ -34,7 +34,7 @@ HTMLElement.prototype.removeClass = function (...classes) { this.classList.remov
 
 const cleanups: Array<() => void> = [];
 beforeEach(() => {
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     (el as HTMLElement).createEl('p', { text: markdown });
   });
 });
@@ -365,9 +365,9 @@ it.each([true, false].flatMap(defer => [
   const { response, stream, plugin } = createSession();
   plugin.settings.deferMathRenderingDuringStreaming = defer;
   const message = response.start();
-  jest.mocked(MarkdownRenderer.render).mockClear();
+  vi.mocked(MarkdownRenderer.render).mockClear();
   await stream.handleStreamChunk({ type: 'text', content: markdown }, message);
-  await waitFor(() => expect(jest.mocked(MarkdownRenderer.render).mock.calls.at(-1)?.[1]).toBe(defer ? streaming : final));
+  await waitFor(() => expect(vi.mocked(MarkdownRenderer.render).mock.calls.at(-1)?.[1]).toBe(defer ? streaming : final));
   await response.finish(message, { interrupted: false, failed: false });
-  expect(jest.mocked(MarkdownRenderer.render).mock.calls.at(-1)?.[1]).toBe(final);
+  expect(vi.mocked(MarkdownRenderer.render).mock.calls.at(-1)?.[1]).toBe(final);
 });

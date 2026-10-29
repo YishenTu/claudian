@@ -1,13 +1,16 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@test/helpers/ObsidianSettingsDOM';
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Notice, TFolder } from 'obsidian';
+import type { Mock, MockInstance } from 'vitest';
 
 import { ComposerInfoRow } from '@/features/chat/composer/ComposerInfoRow';
 import { LinkedContentController } from '@/features/chat/linked-content/LinkedContentController';
+
+
 
 const FAILURE_MESSAGE = 'Folder reveal failed';
 const EXPECTED_NOTICE = 'Failed to open Linked content: Folder reveal failed';
@@ -29,7 +32,7 @@ interface MountResult {
   row: ComposerInfoRow;
   rowEl: HTMLElement;
   view: ReturnType<typeof within>;
-  activateSpy: jest.SpyInstance<Promise<void>, []>;
+  activateSpy: MockInstance<(...args: []) => Promise<void>>;
   outstanding: Array<Promise<ActivationOutcome>>;
   clickAndCapture: () => Promise<ActivationOutcome>;
   cleanup: () => Promise<void>;
@@ -37,7 +40,7 @@ interface MountResult {
 }
 
 function noticeMessages(): string[] {
-  return jest.mocked(Notice).mock.calls.map(call => String(call[0]));
+  return vi.mocked(Notice).mock.calls.map(call => String(call[0]));
 }
 
 function createFolder(path: string): TFolder {
@@ -50,7 +53,7 @@ function mount(
   workspace: Record<string, unknown>,
   folder: TFolder,
 ): MountResult {
-  jest.mocked(Notice).mockClear();
+  vi.mocked(Notice).mockClear();
   const app = {
     vault: { getAbstractFileByPath: (path: string) => (path === folder.path ? folder : null) },
     workspace,
@@ -68,7 +71,7 @@ function mount(
   controller.mountInfoRow(row);
   controller.selectExplicit('Projects');
   const view = within(rowEl);
-  const activateSpy = jest.spyOn(controller, 'activateCurrentContent');
+  const activateSpy = vi.spyOn(controller, 'activateCurrentContent');
   const outstanding: Array<Promise<ActivationOutcome>> = [];
 
   const clickAndCapture = (): Promise<ActivationOutcome> => {
@@ -95,23 +98,23 @@ function mount(
     row.destroy();
     root.remove();
     activateSpy.mockRestore();
-    jest.mocked(Notice).mockClear();
+    vi.mocked(Notice).mockClear();
   };
 
   return { controller, row, rowEl, view, activateSpy, outstanding, clickAndCapture, cleanup, folder };
 }
 
 function createExplorerWorkspace(options: {
-  revealLeaf: jest.Mock<Promise<void>, [unknown]>;
-  revealInFolder: jest.Mock<void | Promise<void>, [TFolder]>;
+  revealLeaf: Mock<(...args: [unknown]) => Promise<void>>;
+  revealInFolder: Mock<(...args: [TFolder]) => void | Promise<void>>;
 }): Record<string, unknown> {
   const explorerLeaf = { view: { revealInFolder: options.revealInFolder } };
   return {
     getActiveFile: () => null,
-    getLeavesOfType: jest.fn((type: string) => (type === 'file-explorer' ? [explorerLeaf] : [])),
-    getLeftLeaf: jest.fn(() => null),
-    getLeaf: jest.fn(() => ({ openFile: jest.fn().mockResolvedValue(undefined) })),
-    iterateRootLeaves: jest.fn(() => {}),
+    getLeavesOfType: vi.fn((type: string) => (type === 'file-explorer' ? [explorerLeaf] : [])),
+    getLeftLeaf: vi.fn(() => null),
+    getLeaf: vi.fn(() => ({ openFile: vi.fn().mockResolvedValue(undefined) })),
+    iterateRootLeaves: vi.fn(() => {}),
     revealLeaf: options.revealLeaf,
   };
 }
@@ -132,8 +135,8 @@ const FOLDER_FAILURE_CASES: FolderFailureCase[] = [
   {
     surface: 'the existing explorer revealLeaf',
     makeWorkspace: () => {
-      const revealLeaf = jest.fn<Promise<void>, [unknown]>().mockRejectedValue(new Error(FAILURE_MESSAGE));
-      const revealInFolder = jest.fn<void | Promise<void>, [TFolder]>().mockResolvedValue(undefined);
+      const revealLeaf = vi.fn<(...args: [unknown]) => Promise<void>>().mockRejectedValue(new Error(FAILURE_MESSAGE));
+      const revealInFolder = vi.fn<(...args: [TFolder]) => void | Promise<void>>().mockResolvedValue(undefined);
       return {
         workspace: createExplorerWorkspace({ revealLeaf, revealInFolder }),
         assertPorts: () => {
@@ -146,8 +149,8 @@ const FOLDER_FAILURE_CASES: FolderFailureCase[] = [
   {
     surface: 'the explorer revealInFolder',
     makeWorkspace: () => {
-      const revealLeaf = jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined);
-      const revealInFolder = jest.fn<void | Promise<void>, [TFolder]>().mockRejectedValue(new Error(FAILURE_MESSAGE));
+      const revealLeaf = vi.fn<(...args: [unknown]) => Promise<void>>().mockResolvedValue(undefined);
+      const revealInFolder = vi.fn<(...args: [TFolder]) => void | Promise<void>>().mockRejectedValue(new Error(FAILURE_MESSAGE));
       return {
         workspace: createExplorerWorkspace({ revealLeaf, revealInFolder }),
         assertPorts: (folder: TFolder) => {
@@ -161,15 +164,15 @@ const FOLDER_FAILURE_CASES: FolderFailureCase[] = [
   {
     surface: 'the fallback explorer setViewState',
     makeWorkspace: () => {
-      const revealLeaf = jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined);
-      const revealInFolder = jest.fn<void | Promise<void>, [TFolder]>().mockResolvedValue(undefined);
-      const setViewState = jest.fn<Promise<void>, [unknown]>().mockRejectedValue(new Error(FAILURE_MESSAGE));
+      const revealLeaf = vi.fn<(...args: [unknown]) => Promise<void>>().mockResolvedValue(undefined);
+      const revealInFolder = vi.fn<(...args: [TFolder]) => void | Promise<void>>().mockResolvedValue(undefined);
+      const setViewState = vi.fn<(...args: [unknown]) => Promise<void>>().mockRejectedValue(new Error(FAILURE_MESSAGE));
       const workspace = {
         getActiveFile: () => null,
-        getLeavesOfType: jest.fn(() => []),
-        getLeftLeaf: jest.fn(() => ({ view: { revealInFolder }, setViewState })),
-        getLeaf: jest.fn(() => ({ openFile: jest.fn().mockResolvedValue(undefined) })),
-        iterateRootLeaves: jest.fn(() => {}),
+        getLeavesOfType: vi.fn(() => []),
+        getLeftLeaf: vi.fn(() => ({ view: { revealInFolder }, setViewState })),
+        getLeaf: vi.fn(() => ({ openFile: vi.fn().mockResolvedValue(undefined) })),
+        iterateRootLeaves: vi.fn(() => {}),
         revealLeaf,
       };
       return {
@@ -215,8 +218,8 @@ describe.each(FOLDER_FAILURE_CASES)('folder activation failure on $surface', ({ 
 
 it('completes a rendered folder reveal without a Notice and keeps a locked row activatable without removal', async () => {
   const folder = createFolder('Projects');
-  const revealLeaf = jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined);
-  const revealInFolder = jest.fn<void | Promise<void>, [TFolder]>().mockResolvedValue(undefined);
+  const revealLeaf = vi.fn<(...args: [unknown]) => Promise<void>>().mockResolvedValue(undefined);
+  const revealInFolder = vi.fn<(...args: [TFolder]) => void | Promise<void>>().mockResolvedValue(undefined);
   const mountResult = mount(createExplorerWorkspace({ revealLeaf, revealInFolder }), folder);
   const { controller, rowEl, view, clickAndCapture, cleanup } = mountResult;
   try {

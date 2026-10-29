@@ -2,15 +2,19 @@ import { mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
+import type { MockInstance } from 'vitest';
+
 import * as ProcessProbe from '@/core/process/ProcessProbe';
 
+
+
 // These suites test native metadata and lifecycle behavior, not cold-launch speed.
-jest.setTimeout(45_000);
+vi.setConfig({ testTimeout: 45_000 });
 // Keep probing real, with the same default allowance as the other native OpenCode suites.
 const runProcessProbe = ProcessProbe.runProcessProbe;
-let probe: jest.SpyInstance;
+let probe: MockInstance;
 beforeEach(() => {
-  probe = jest.spyOn(ProcessProbe, 'runProcessProbe').mockImplementation((options, timeoutMs = 30_000) => runProcessProbe(options, timeoutMs));
+  probe = vi.spyOn(ProcessProbe, 'runProcessProbe').mockImplementation((options, timeoutMs = 30_000) => runProcessProbe(options, timeoutMs));
 });
 afterEach(() => probe.mockRestore());
 
@@ -131,7 +135,7 @@ export function createOpencodeHTTPMetadataFixture(): OpencodeHTTPMetadataFixture
     const plugin: any = {
       workingDirectory: root,
       getResolvedProviderCliPath: async () => cliPath,
-      executionLifecycleRegistry: { registerTransitionHook: jest.fn(() => () => undefined) },
+      executionLifecycleRegistry: { registerTransitionHook: vi.fn(() => () => undefined) },
       notifyProviderChatOptionsChanged: () => undefined,
       settings: { providerConfigs: { opencode: {
         enabled: true,

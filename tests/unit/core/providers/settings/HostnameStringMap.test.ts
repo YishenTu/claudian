@@ -2,7 +2,7 @@ import { normalizeHostnameStringMap } from '@/core/providers/settings/HostnameSt
 
 describe('normalizeHostnameStringMap', () => {
   it.each([null, undefined, 'path', 1, true, []])(
-    'rejects non-map input %p',
+    'rejects non-map input %o',
     (value) => {
       expect(normalizeHostnameStringMap(value)).toEqual({});
     },

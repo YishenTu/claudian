@@ -42,7 +42,7 @@ key: value
   });
 
   it('handles empty frontmatter block', () => {
-    jest.spyOn(obsidian, 'parseYaml').mockReturnValueOnce({});
+    vi.spyOn(obsidian, 'parseYaml').mockReturnValueOnce({});
     const content = `---
 
 ---
@@ -79,7 +79,7 @@ Prompt`;
 
 describe('parseFrontmatter non-object return', () => {
   it('returns null when parseYaml returns a string', () => {
-    jest.spyOn(obsidian, 'parseYaml').mockReturnValueOnce('just a string' as any);
+    vi.spyOn(obsidian, 'parseYaml').mockReturnValueOnce('just a string' as any);
     const content = `---
 just a string
 ---
@@ -88,7 +88,7 @@ Body`;
   });
 
   it('returns null when parseYaml returns a number', () => {
-    jest.spyOn(obsidian, 'parseYaml').mockReturnValueOnce(42 as any);
+    vi.spyOn(obsidian, 'parseYaml').mockReturnValueOnce(42 as any);
     const content = `---
 42
 ---
@@ -99,13 +99,13 @@ Body`;
 
 describe('parseFrontmatter fallback parser', () => {
   beforeEach(() => {
-    jest.spyOn(obsidian, 'parseYaml').mockImplementation(() => {
+    vi.spyOn(obsidian, 'parseYaml').mockImplementation(() => {
       throw new Error('YAML parse error');
     });
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('falls back to line-by-line parsing when parseYaml throws', () => {

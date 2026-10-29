@@ -1,8 +1,8 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Notice } from 'obsidian';
 
 import type { ToolCallInfo } from '@/core/types';
@@ -41,7 +41,7 @@ it('keeps answer drafts and an in-flight submission across presentation disposal
   const prompts = new SessionInteractions({ getPromptParentEl: () => parent });
   let fail!: (error: Error) => void;
   const delivery = new Promise<void>((_resolve, reject) => { fail = reject; });
-  const answer = jest.fn().mockReturnValueOnce(delivery).mockResolvedValue(undefined);
+  const answer = vi.fn().mockReturnValueOnce(delivery).mockResolvedValue(undefined);
   let settled = false;
   const pending = prompts.askUserQuestion('question', { questions: [
     { id: 'scope', question: 'Which scope?', isOther: true, options: [{ label: 'All' }] },
@@ -77,7 +77,7 @@ it.each([false, true])('localizes explicit Claude approval choices through the r
   const prompts = new SessionInteractions({ getPromptParentEl: () => parent });
   const router = new ClaudeExecutionInteractionRouter({
     interactionPort: createInteractionPromptPort(() => prompts),
-    sessionInstanceId: 'localized', getTurnId: () => 'turn', isToolAllowed: () => true, onToolBlocked: jest.fn(),
+    sessionInstanceId: 'localized', getTurnId: () => 'turn', isToolAllowed: () => true, onToolBlocked: vi.fn(),
   });
   // Construct the adapter before selecting the locale to catch eagerly translated option arrays.
   setLocale('zh-CN');
@@ -114,8 +114,8 @@ it.each([
   const tool: ToolCallInfo = { id: 'question', name: 'AskUserQuestion', status: 'completed', questionStatus: 'pending', input: {
     replyMode: 'user-message', questions: [{ id: '0', question: 'Which check?', options: [{ label: 'History' }] }],
   } };
-  const steer = jest.fn(async (onDelivery: (accepted: boolean) => void) => { onDelivery(false); return 'accepted' as const; });
-  const submit = jest.fn();
+  const steer = vi.fn(async (onDelivery: (accepted: boolean) => void) => { onDelivery(false); return 'accepted' as const; });
+  const submit = vi.fn();
   const pending = prompts.askUserQuestion('question', tool.input, undefined, {
     onSubmit: answers => deliverAsyncQuestion(tool, answers, {
       providerId: failure === 'unsupported' ? 'claude' : 'codex', assertCurrent: () => undefined,
@@ -141,8 +141,8 @@ it('localizes uncertain answer-delivery feedback without requeueing the native r
   const tool: ToolCallInfo = { id: 'question', name: 'AskUserQuestion', status: 'completed', questionStatus: 'pending', input: {
     replyMode: 'user-message', questions: [{ id: '0', question: 'Which check?', options: [{ label: 'History' }] }],
   } };
-  const submit = jest.fn();
-  const prepare = jest.fn((_reply: { content: string }) => ({ steer: async () => 'uncertain' as const, submit }));
+  const submit = vi.fn();
+  const prepare = vi.fn((_reply: { content: string }) => ({ steer: async () => 'uncertain' as const, submit }));
   await deliverAsyncQuestion(tool, { '0': 'History' }, { providerId: 'codex', assertCurrent: () => undefined, prepare });
   expect(Notice).toHaveBeenCalledWith('无法确认回答是否送达。为避免重复发送，未将其重新加入队列。');
   expect(submit).not.toHaveBeenCalled();

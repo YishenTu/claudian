@@ -1,10 +1,11 @@
-import type * as osType from 'os';
-import type * as pathType from 'path';
+const actualModule0 = await import('os');
+const actualModule1 = await import('path');
 
-const os = jest.requireActual<typeof osType>('os');
-const path = jest.requireActual<typeof pathType>('path');
+const os = actualModule0;
+const path = actualModule1;
 
 import { normalizeConfiguredCLIPath, parsePathEntries } from '@/core/process/cliPath';
+
 
 const isWindows = process.platform === 'win32';
 

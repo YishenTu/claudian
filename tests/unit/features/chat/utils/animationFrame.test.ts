@@ -5,16 +5,16 @@ import {
 
 describe('animationFrame scheduling', () => {
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('schedules and cancels RAF on the owner window', () => {
-    const callback = jest.fn();
-    const ownerRequestAnimationFrame = jest.fn<ReturnType<Window['requestAnimationFrame']>, Parameters<Window['requestAnimationFrame']>>()
+    const callback = vi.fn();
+    const ownerRequestAnimationFrame = vi.fn<(...args: Parameters<Window['requestAnimationFrame']>) => ReturnType<Window['requestAnimationFrame']>>()
       .mockReturnValue(123);
-    const ownerCancelAnimationFrame = jest.fn<void, [number]>();
-    const globalRequestAnimationFrame = jest.spyOn(window, 'requestAnimationFrame');
-    const globalCancelAnimationFrame = jest.spyOn(window, 'cancelAnimationFrame');
+    const ownerCancelAnimationFrame = vi.fn<(...args: [number]) => void>();
+    const globalRequestAnimationFrame = vi.spyOn(window, 'requestAnimationFrame');
+    const globalCancelAnimationFrame = vi.spyOn(window, 'cancelAnimationFrame');
     const ownerWindow = {
       requestAnimationFrame: ownerRequestAnimationFrame,
       cancelAnimationFrame: ownerCancelAnimationFrame,
@@ -33,12 +33,12 @@ describe('animationFrame scheduling', () => {
   });
 
   it('schedules and clears timeout fallback on the owner window', () => {
-    const callback = jest.fn();
-    const ownerSetTimeout = jest.fn<ReturnType<Window['setTimeout']>, Parameters<Window['setTimeout']>>()
+    const callback = vi.fn();
+    const ownerSetTimeout = vi.fn<(...args: Parameters<Window['setTimeout']>) => ReturnType<Window['setTimeout']>>()
       .mockReturnValue(456);
-    const ownerClearTimeout = jest.fn<void, [number]>();
-    const globalSetTimeout = jest.spyOn(window, 'setTimeout');
-    const globalClearTimeout = jest.spyOn(window, 'clearTimeout');
+    const ownerClearTimeout = vi.fn<(...args: [number]) => void>();
+    const globalSetTimeout = vi.spyOn(window, 'setTimeout');
+    const globalClearTimeout = vi.spyOn(window, 'clearTimeout');
     const ownerWindow = {
       requestAnimationFrame: undefined,
       setTimeout: ownerSetTimeout,

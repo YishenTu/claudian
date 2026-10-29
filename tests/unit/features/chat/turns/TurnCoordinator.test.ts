@@ -4,7 +4,7 @@ describe('TurnCoordinator', () => {
   it('owns the admitted turn, rejects overlap, and drains through settlement', async () => {
     let release!: () => void;
     const pending = new Promise<void>(resolve => { release = resolve; });
-    const changed = jest.fn();
+    const changed = vi.fn();
     const coordinator = new TurnCoordinator();
     coordinator.subscribe(changed);
     const run = coordinator.run(() => pending);
@@ -79,8 +79,8 @@ describe('TurnCoordinator', () => {
 test('admits main work synchronously and drains it even when a work observer fails', async () => {
   let release!: () => void;
   const execution = new Promise<void>(resolve => { release = resolve; });
-  const execute = jest.fn(() => execution);
-  const observer = jest.fn().mockImplementationOnce(() => { throw new Error('view detached'); });
+  const execute = vi.fn(() => execution);
+  const observer = vi.fn().mockImplementationOnce(() => { throw new Error('view detached'); });
   const coordinator = new TurnCoordinator();
   coordinator.subscribe(observer);
   const result = coordinator.run(execute);

@@ -22,18 +22,18 @@ export function createConversationControllerDeps(
     hasPendingWork: work.hasDetachedWork,
   });
   const state: ChatState = new ChatState({}, undefined, session.turns);
-  const inputEl = { value: '', focus: jest.fn(), dispatchEvent: jest.fn() } as unknown as HTMLTextAreaElement;
+  const inputEl = { value: '', focus: vi.fn(), dispatchEvent: vi.fn() } as unknown as HTMLTextAreaElement;
   let welcomeEl: any = createMockEl();
   const messagesEl = createMockEl();
 
   const linkedContentController = {
-    resetAutoDraft: jest.fn(),
-    lock: jest.fn(),
+    resetAutoDraft: vi.fn(),
+    lock: vi.fn(),
   };
 
   const deps = {
     plugin: {
-      createConversation: jest.fn().mockResolvedValue({
+      createConversation: vi.fn().mockResolvedValue({
         id: 'new-conv',
         title: 'New Conversation',
         messages: [],
@@ -41,7 +41,7 @@ export function createConversationControllerDeps(
         createdAt: Date.now(),
         lastActivityAt: Date.now(),
       }),
-      switchConversation: jest.fn().mockResolvedValue({
+      switchConversation: vi.fn().mockResolvedValue({
         id: 'switched-conv',
         title: 'Switched Conversation',
         messages: [],
@@ -49,11 +49,11 @@ export function createConversationControllerDeps(
         createdAt: Date.now(),
         lastActivityAt: Date.now(),
       }),
-      getConversationById: jest.fn().mockResolvedValue(null),
-      getConversationSummary: jest.fn().mockReturnValue(null),
+      getConversationById: vi.fn().mockResolvedValue(null),
+      getConversationSummary: vi.fn().mockReturnValue(null),
       projects: createProjectsFake([]),
       providerHost: { workingDirectory: '/vault' },
-      updateConversation: jest.fn().mockResolvedValue(undefined),
+      updateConversation: vi.fn().mockResolvedValue(undefined),
       settings: {
         userName: '',
         enableAutoTitleGeneration: true,
@@ -62,14 +62,14 @@ export function createConversationControllerDeps(
     } as any,
     state,
     renderer: {
-      renderMessages: jest.fn().mockReturnValue(createMockEl()),
-      refreshBranchButtons: jest.fn(),
-      refreshBranchButtonState: jest.fn(),
-      captureReadingAnchor: jest.fn(() => null),
-      restoreReadingAnchor: jest.fn(),
+      renderMessages: vi.fn().mockReturnValue(createMockEl()),
+      refreshBranchButtons: vi.fn(),
+      refreshBranchButtonState: vi.fn(),
+      captureReadingAnchor: vi.fn(() => null),
+      restoreReadingAnchor: vi.fn(),
     } as any,
     subagentManager: {
-      clear: jest.fn(),
+      clear: vi.fn(),
     } as any,
     getWelcomeEl: () => welcomeEl,
     setWelcomeEl: (el: any) => { welcomeEl = el; },
@@ -77,8 +77,8 @@ export function createConversationControllerDeps(
     getInputEl: () => inputEl,
     getLinkedContentController: () => linkedContentController as any,
     getImageContextManager: () => ({
-      clearImages: jest.fn(),
-      hasImages: jest.fn().mockReturnValue(false), getAttachedImages: jest.fn().mockReturnValue([]), setImages: jest.fn(),
+      clearImages: vi.fn(),
+      hasImages: vi.fn().mockReturnValue(false), getAttachedImages: vi.fn().mockReturnValue([]), setImages: vi.fn(),
     }) as any,
     getExecutionCoordinator: () => null,
     ...overrides,

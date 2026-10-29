@@ -1,6 +1,7 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { deferred } from '@test/helpers/ChatInputHarness';
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
@@ -8,8 +9,8 @@ import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRu
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { App, Component, MarkdownRenderer, Menu, TFile, TFolder } from 'obsidian';
+import type { Mock } from 'vitest';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
@@ -23,10 +24,12 @@ import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import { t } from '@/i18n/i18n';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
+
+
 const originalResizeObserver = globalThis.ResizeObserver;
 beforeEach(() => {
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => { el.textContent = markdown; });
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => { el.textContent = markdown; });
   Object.assign(HTMLElement.prototype, {
     hasClass(this: HTMLElement, name: string) { return this.classList.contains(name); },
     addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); },
@@ -41,14 +44,14 @@ beforeEach(() => {
     scrollIntoView() {},
   });
 });
-afterEach(() => { globalThis.ResizeObserver = originalResizeObserver; ProviderWorkspaceRegistry.clear(); jest.restoreAllMocks(); document.body.replaceChildren(); });
+afterEach(() => { globalThis.ResizeObserver = originalResizeObserver; ProviderWorkspaceRegistry.clear(); vi.restoreAllMocks(); document.body.replaceChildren(); });
 
 function setup() {
   const app = new App();
   Object.assign(app.vault.adapter, { basePath: '/vault' });
   Object.assign(app.vault, { on: () => ({}), offref() {} });
   const backend = new FakeSideBackend();
-  jest.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
+  vi.spyOn(ProviderRegistry, 'createExecutionBackend').mockReturnValue(backend);
   ProviderWorkspaceRegistry.setServices('claude', {});
   const registry = new ProviderExecutionLifecycleRegistry();
   const settings = {
@@ -67,7 +70,7 @@ function setup() {
     getCommittedSettings: () => settings, getActiveEnvironmentVariables: () => '',
     getConversationSummary: () => conversation, getConversationSync: () => conversation,
     getCachedConversation: () => conversation,
-    getConversationById: jest.fn(async () => ({ ...conversation, messages: structuredClone(nativeHistory) })),
+    getConversationById: vi.fn(async () => ({ ...conversation, messages: structuredClone(nativeHistory) })),
     getConversationList: () => [conversation], renameConversation: async () => undefined,
     findConversationAcrossViews: () => null,
     updateConversation: async (_id: string, patch: ConversationMutablePatch) => { saves.push(structuredClone(patch)); },
@@ -79,7 +82,7 @@ function setup() {
     },
     projects: createProjectsFake(),
   } as unknown as ChatFeatureHost;
-  const statusChanges = jest.fn();
+  const statusChanges = vi.fn();
   const pool = installSessionRuntimePool(plugin, { onChanged: statusChanges });
   const attach = async (options: { blank?: boolean; openConversation?: (id: string) => Promise<void> } = {}) => {
     const tab = await createTabRuntime({
@@ -157,16 +160,16 @@ it('opens a reattached conversation at its latest message after rendering it in 
   // Browser geometry: a transcript inside a hidden tab has no box and ignores scroll writes.
   const scrollTops = new WeakMap<Element, number>();
   const isLaidOut = (el: Element) => !el.closest('.claudian-hidden');
-  jest.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
     return isLaidOut(this) ? 400 : 0;
   });
-  jest.spyOn(Element.prototype, 'scrollHeight', 'get').mockImplementation(function (this: Element) {
+  vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockImplementation(function (this: Element) {
     return isLaidOut(this) ? 2000 : 0;
   });
-  jest.spyOn(Element.prototype, 'scrollTop', 'get').mockImplementation(function (this: Element) {
+  vi.spyOn(Element.prototype, 'scrollTop', 'get').mockImplementation(function (this: Element) {
     return scrollTops.get(this) ?? 0;
   });
-  jest.spyOn(Element.prototype, 'scrollTop', 'set').mockImplementation(function (this: Element, value: number) {
+  vi.spyOn(Element.prototype, 'scrollTop', 'set').mockImplementation(function (this: Element, value: number) {
     if (isLaidOut(this)) scrollTops.set(this, Math.max(0, Math.min(value, this.scrollHeight - this.clientHeight)));
   });
   const resizeCallbacks: Array<() => void> = [];
@@ -208,7 +211,7 @@ it('lists every prompt of a long transcript in the directory, including prompts 
   expect(entries.map(entry => entry.textContent)).toEqual(Array.from({ length: 30 }, (_, index) => `${index + 1}. Prompt ${index}`));
   expect(view.getByRole('button', { name: 'Show earlier messages' })).toBeTruthy();
   expect(within(tab.dom.messagesEl).queryByText('Prompt 0')).toBeNull();
-  tab.dom.messagesEl.scrollTo = jest.fn();
+  tab.dom.messagesEl.scrollTo = vi.fn();
   fireEvent.click(entries[0]);
   expect(within(tab.dom.messagesEl).getByText('Prompt 0')).toBeTruthy();
   expect(view.queryByRole('button', { name: 'Show earlier messages' })).toBeNull();
@@ -248,12 +251,12 @@ it('keeps a detached parent while its side chat is still resolving the source', 
   const resolving = deferred<void>();
   const coordinator = first.executionCoordinator;
   const resolve = coordinator.resolveForkSource.bind(coordinator);
-  const resolveSource = jest.spyOn(coordinator, 'resolveForkSource').mockImplementation(async (...args) => {
+  const resolveSource = vi.spyOn(coordinator, 'resolveForkSource').mockImplementation(async (...args) => {
     const source = await resolve(...args);
     await resolving.promise;
     return source;
   });
-  jest.spyOn(history, 'buildForkProviderState').mockResolvedValue({});
+  vi.spyOn(history, 'buildForkProviderState').mockResolvedValue({});
   const starting = first.controllers.sideChatController.handleCommandSubmission('Explain the answer', []);
   await waitFor(() => expect(resolveSource).toHaveBeenCalled());
   await destroyTab(first);
@@ -284,8 +287,8 @@ it('lists Linked content choices from the attached view\'s cached vault index', 
   const vault = h.plugin.app.vault as unknown as Record<string, unknown>;
   const note = Object.assign(new TFile(), { path: 'Notes/Plan.md', name: 'Plan.md', basename: 'Plan', extension: 'md' });
   const folder = Object.assign(new TFolder(), { path: 'Notes', name: 'Notes' });
-  const getFiles = jest.fn(() => [note]);
-  const getAllLoadedFiles = jest.fn(() => [folder, note]);
+  const getFiles = vi.fn(() => [note]);
+  const getAllLoadedFiles = vi.fn(() => [folder, note]);
   Object.assign(vault, { getFiles, getAllLoadedFiles });
   Object.assign(h.plugin.app.workspace, { getActiveFile: () => null });
   const tab = await h.attach({ blank: true });
@@ -310,7 +313,7 @@ it('retains failed queued reference preparation as session recovery after its ta
   const sending = first.controllers.inputController.sendMessage();
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   const reference = deferred<Conversation | null>();
-  jest.mocked(h.plugin.getConversationById).mockImplementationOnce(() => reference.promise);
+  vi.mocked(h.plugin.getConversationById).mockImplementationOnce(() => reference.promise);
   const original = '@[Reference](claudian-session:conv-1-source)';
   first.controllers.drafts.restore('main', { content: original });
   const preparing = first.controllers.inputController.sendMessage();
@@ -339,7 +342,7 @@ it('preserves raw drafts when multiple reference preparations recover after deta
   const sending = first.controllers.inputController.sendMessage();
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   const reference = deferred<Conversation | null>();
-  jest.mocked(h.plugin.getConversationById)
+  vi.mocked(h.plugin.getConversationById)
     .mockImplementationOnce(() => reference.promise)
     .mockResolvedValueOnce(null);
   const firstDraft = '    keepIndented()\n\n@[First](claudian-session:conv-1-source)  \n';
@@ -370,7 +373,7 @@ it('fences a detached side queue synchronously before the plugin shutdown drain'
     { id: 'user', role: 'user', content: 'Parent task', timestamp: testDate().getTime() },
     { id: 'answer', role: 'assistant', content: 'Parent answer', assistantMessageId: 'checkpoint', timestamp: testDate().getTime() },
   ];
-  jest.spyOn(ProviderRegistry.getConversationHistoryService('claude'), 'buildForkProviderState').mockResolvedValue({});
+  vi.spyOn(ProviderRegistry.getConversationHistoryService('claude'), 'buildForkProviderState').mockResolvedValue({});
   const sending = first.controllers.sideChatController.handleCommandSubmission('First child request', []);
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   const child = first.controllers.sideChatController.runtime!;
@@ -408,7 +411,7 @@ it('joins a first-turn title request admitted while the plugin shutdown drain be
   const h = setup();
   Object.assign(h.plugin.settings, { enableAutoTitleGeneration: true, titleGenerationModel: 'claude-sonnet-4-5' });
   const fallbackTitleWritten = deferred<void>();
-  const rename = jest.spyOn(h.plugin, 'renameConversation').mockImplementation(() => fallbackTitleWritten.promise);
+  const rename = vi.spyOn(h.plugin, 'renameConversation').mockImplementation(() => fallbackTitleWritten.promise);
   const tab = await h.attach();
   tab.controllers.drafts.restore('main', { content: 'First turn' });
   const sending = tab.controllers.inputController.sendMessage();
@@ -450,7 +453,7 @@ it.each([false, true])('keeps completed detached work unread until its transcrip
   const h = setup();
   const first = await h.attach();
   if (hasReference) {
-    jest.mocked(h.plugin.getConversationById).mockResolvedValueOnce({
+    vi.mocked(h.plugin.getConversationById).mockResolvedValueOnce({
       ...h.plugin.getConversationSummary('conversation'), id: 'conv-1-source',
       messages: [{ id: 'reference', role: 'user', content: 'Reference text', timestamp: testDate().getTime() }],
     } as Conversation);
@@ -468,8 +471,8 @@ it.each([false, true])('keeps completed detached work unread until its transcrip
   const second = await h.attach();
   runtime.model.acknowledgeReviewIfVisible();
   expect(runtime.statusAttention?.kind).toBe('review');
-  jest.spyOn(second.dom.messagesEl, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList);
-  const visibility = jest.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+  vi.spyOn(second.dom.messagesEl, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList);
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
   runtime.model.acknowledgeReviewIfVisible();
   expect(runtime.statusAttention?.kind).toBe('review');
   visibility.mockReturnValue('visible');
@@ -485,7 +488,7 @@ it('persists a detached transcript whose background save failed before releasing
   const first = await h.attach();
   await first.session.runtime.model.ensureExecutionInitialized();
   const runtime = first.session.runtime;
-  const update = jest.spyOn(h.plugin, 'updateConversation').mockRejectedValueOnce(new Error('Disk full'));
+  const update = vi.spyOn(h.plugin, 'updateConversation').mockRejectedValueOnce(new Error('Disk full'));
   h.backend.latest.emitSessionEvent({ type: 'task_notification', content: 'Unsaved result' });
   await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
   expect(h.saves).toEqual([]);
@@ -520,7 +523,7 @@ it('publishes session status only when its list projection changes', async () =>
 it('keeps a newer composer draft when first conversation creation fails', async () => {
   const h = setup();
   const creating = deferred<Conversation>();
-  Object.assign(h.plugin, { createConversation: jest.fn(() => creating.promise) });
+  Object.assign(h.plugin, { createConversation: vi.fn(() => creating.promise) });
   Object.assign(h.plugin.app.workspace, { getActiveFile: () => null });
   const tab = await h.attach({ blank: true });
   tab.controllers.drafts.restore('main', { content: 'First request' });
@@ -545,7 +548,7 @@ it('keeps a newer composer draft when first conversation creation fails', async 
 it('releases a closed blank tab whose conversation creation failed with no presentation to recover into', async () => {
   const h = setup();
   const creating = deferred<Conversation>();
-  Object.assign(h.plugin, { createConversation: jest.fn(() => creating.promise) });
+  Object.assign(h.plugin, { createConversation: vi.fn(() => creating.promise) });
   Object.assign(h.plugin.app.workspace, { getActiveFile: () => null });
   const tab = await h.attach({ blank: true });
   const runtime = tab.session.runtime;
@@ -570,7 +573,7 @@ describe('composer project chip', () => {
     Object.assign(h.plugin.app.workspace, { getActiveFile: () => null });
     const created = h.plugin.getConversationSummary('conversation') as Conversation;
     // The record keeps whatever project the first-turn creation asked for.
-    const createConversation = jest.fn(async (options: { projectId?: string } = {}) => {
+    const createConversation = vi.fn(async (options: { projectId?: string } = {}) => {
       Object.assign(created, { messages: [] }, options.projectId ? { projectId: options.projectId } : {});
       return created;
     });
@@ -610,7 +613,7 @@ describe('composer project chip', () => {
   });
 
   type MenuEntry = { title: string; checked: boolean | null; clickHandler: (() => void) | null };
-  type MockMenu = { items: MenuEntry[]; showAtPosition: jest.Mock };
+  type MockMenu = { items: MenuEntry[]; showAtPosition: Mock };
   const menus = () => (Menu as unknown as { instances: MockMenu[] }).instances;
   afterEach(() => { menus().length = 0; });
 
@@ -776,7 +779,7 @@ it('leaves a branch preview when its presentation detaches from a retained model
   expect(first.dom.messagesEl.textContent).not.toContain('Second answer');
   // A save in flight retains the detached model across the rebind.
   const held = deferred<void>();
-  jest.spyOn(h.plugin, 'updateConversation').mockImplementationOnce(() => held.promise);
+  vi.spyOn(h.plugin, 'updateConversation').mockImplementationOnce(() => held.promise);
   const saving = first.controllers.conversationController.save();
   const model = first.session.runtime.model;
   await destroyTab(first);
@@ -803,8 +806,8 @@ it('retains a detached model until its uncertain branch navigation is reconciled
   const first = await h.attach();
   const coordinator = first.executionCoordinator;
   const uncertain = { status: 'recovery-required' as const, error: 'Branch state is uncertain' };
-  jest.spyOn(coordinator, 'navigateConversationBranch').mockResolvedValue(uncertain);
-  const reconcile = jest.spyOn(coordinator, 'reconcileConversationBranch').mockResolvedValue(uncertain);
+  vi.spyOn(coordinator, 'navigateConversationBranch').mockResolvedValue(uncertain);
+  const reconcile = vi.spyOn(coordinator, 'reconcileConversationBranch').mockResolvedValue(uncertain);
   await first.controllers.conversationController.navigateBranch('u2', 'native-sibling');
   expect(reconcile).toHaveBeenCalledTimes(1);
   await destroyTab(first);
@@ -900,7 +903,7 @@ it('copies the parent session selections into a new side chat after another sess
   expect(getSessionSettingsSnapshot(runtime, h.plugin)).toMatchObject({
     permissionMode: 'manual', reasoning: 'low', serviceTier: 'fast',
   });
-  jest.spyOn(ProviderRegistry.getConversationHistoryService('claude'), 'buildForkProviderState').mockResolvedValue({});
+  vi.spyOn(ProviderRegistry.getConversationHistoryService('claude'), 'buildForkProviderState').mockResolvedValue({});
   const sending = tab.controllers.sideChatController.handleCommandSubmission('Explore independently', []);
   await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
   const configuration = h.backend.latest.requests[0].configuration;
@@ -934,7 +937,7 @@ it('keeps archived sessions out of the composer resume picker', async () => {
   const archived = { ...current, id: 'archived-session', title: 'Archived task', isArchived: true,
     lastActivityAt: testDate({ minutes: 1 }).getTime() };
   Object.assign(h.plugin, { getConversationList: () => [archived, active] });
-  const openConversation = jest.fn(async () => undefined);
+  const openConversation = vi.fn(async () => undefined);
   const tab = await h.attach({ openConversation });
   tab.dom.inputEl.value = '/sessions';
   await tab.controllers.inputController.sendMessage();
@@ -971,7 +974,7 @@ it.each(['main', 'side'] as const)('keeps native requested permission changes fo
       { id: 'parent-user', role: 'user', content: 'Parent task', timestamp: testDate().getTime() },
       { id: 'parent-answer', role: 'assistant', content: 'Parent answer', assistantMessageId: 'checkpoint', timestamp: testDate().getTime() },
     ];
-    jest.spyOn(ProviderRegistry.getConversationHistoryService('claude'), 'buildForkProviderState').mockResolvedValue({});
+    vi.spyOn(ProviderRegistry.getConversationHistoryService('claude'), 'buildForkProviderState').mockResolvedValue({});
     sending = tab.controllers.sideChatController.handleCommandSubmission('Explore independently', []);
   } else {
     tab.controllers.drafts.restore('main', { content: 'First request' });
@@ -1009,7 +1012,7 @@ it('returns unsent queued input when a completed response cannot be saved', asyn
   const newerDraft = '    keepThisDraft()\n';
   tab.controllers.drafts.restore('main', { content: newerDraft });
   const saveError = new Error('Disk full');
-  jest.spyOn(h.plugin, 'updateConversation').mockRejectedValueOnce(saveError);
+  vi.spyOn(h.plugin, 'updateConversation').mockRejectedValueOnce(saveError);
   h.backend.latest.emitText('Completed response');
   h.backend.latest.complete();
   await expect(sending).rejects.toBe(saveError);

@@ -12,9 +12,9 @@ function createService() {
   const service = new TitleGenerationService({
     backend,
     interactionPort: {
-      askUserQuestion: jest.fn(),
-      dismissInteraction: jest.fn(),
-      requestApproval: jest.fn(),
+      askUserQuestion: vi.fn(),
+      dismissInteraction: vi.fn(),
+      requestApproval: vi.fn(),
     },
     lifecycleRegistry,
     resolveLocale: () => 'ja',
@@ -28,7 +28,7 @@ function createService() {
 describe('TitleGenerationService', () => {
   it('uses a one-shot passive session and preserves prompt parsing', async () => {
     const { backend, service } = createService();
-    const callback = jest.fn();
+    const callback = vi.fn();
     const generation = service.generateTitle('conversation-1', 'First request', callback);
     await waitFor(() => backend.sessions[0]?.requests.length === 1);
 
@@ -57,7 +57,7 @@ describe('TitleGenerationService', () => {
 
   it('cancels only the matching active generation and releases its lease', async () => {
     const { backend, service } = createService();
-    const callback = jest.fn();
+    const callback = vi.fn();
     const generation = service.generateTitle('conversation-1', 'Request', callback);
     await waitFor(() => backend.sessions[0]?.requests.length === 1);
 
@@ -74,7 +74,7 @@ describe('TitleGenerationService', () => {
 
   it('completes an in-flight title call when a provider transition invalidates it', async () => {
     const { backend, lifecycleRegistry, service } = createService();
-    const callback = jest.fn();
+    const callback = vi.fn();
     const generation = service.generateTitle('conversation-1', 'Request', callback);
     await waitFor(() => backend.sessions[0]?.requests.length === 1);
 
@@ -90,7 +90,7 @@ describe('TitleGenerationService', () => {
 
   it('does not acquire a session when cancelled during asynchronous startup', async () => {
     const { backend, service } = createService();
-    const callback = jest.fn();
+    const callback = vi.fn();
 
     const generation = service.generateTitle('conversation-1', 'Request', callback);
     service.cancel();
@@ -111,7 +111,7 @@ describe('TitleGenerationService', () => {
     ['quoted punctuation-only blank with trailing spaces', '"...   "'],
   ])('rejects %s as a parse failure instead of a blank success title', async (_name, payload) => {
     const { backend, service } = createService();
-    const callback = jest.fn();
+    const callback = vi.fn();
     const generation = service.generateTitle('conversation-1', 'Request', callback);
     await waitFor(() => backend.sessions[0]?.requests.length === 1);
 
@@ -133,7 +133,7 @@ describe('TitleGenerationService', () => {
     ['"  Fix   login bug.  "', 'Fix   login bug'],
   ])('removes quote-boundary padding before returning a generated title: %s', async (payload, title) => {
     const { backend, service } = createService();
-    const callback = jest.fn();
+    const callback = vi.fn();
     const generation = service.generateTitle('conversation-1', 'Request', callback);
     await waitFor(() => backend.sessions[0]?.requests.length === 1);
 
@@ -147,7 +147,7 @@ describe('TitleGenerationService', () => {
 
   it('keeps quoted nonblank titles with meaningful internal spaces', async () => {
     const { backend, service } = createService();
-    const callback = jest.fn();
+    const callback = vi.fn();
     const generation = service.generateTitle('conversation-1', 'Request', callback);
     await waitFor(() => backend.sessions[0]?.requests.length === 1);
 
@@ -164,7 +164,7 @@ describe('TitleGenerationService', () => {
 
   it('keeps truncating nonblank titles at fifty characters', async () => {
     const { backend, service } = createService();
-    const callback = jest.fn();
+    const callback = vi.fn();
     const generation = service.generateTitle('conversation-1', 'Request', callback);
     await waitFor(() => backend.sessions[0]?.requests.length === 1);
 
@@ -192,7 +192,7 @@ describe('TitleGenerationService', () => {
     ],
   ])('truncates the captured prompt input safely: %s', async (_name, input, expectedPrompt) => {
     const { backend, service } = createService();
-    const callback = jest.fn();
+    const callback = vi.fn();
     const generation = service.generateTitle('conversation-1', input, callback);
     await waitFor(() => backend.sessions[0]?.requests.length === 1);
 
@@ -224,7 +224,7 @@ describe('TitleGenerationService', () => {
     ],
   ])('truncates the generated title safely: %s', async (_name, payload, expectedTitle) => {
     const { backend, service } = createService();
-    const callback = jest.fn();
+    const callback = vi.fn();
     const generation = service.generateTitle('conversation-1', 'Request', callback);
     await waitFor(() => backend.sessions[0]?.requests.length === 1);
 

@@ -1,10 +1,10 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import { getToolIcon } from '@/core/tools/toolIcons';
@@ -368,7 +368,7 @@ it('submits a selected option and a free-text answer once, then restores both an
   const tool = restoreTool('history', 'request_user_input_async', input, '{"accepted":true}');
   let reply = '';
   let finish!: () => void;
-  const onAnswer = jest.fn(async answers => {
+  const onAnswer = vi.fn(async answers => {
     reply = formatCodexQuestionReply(tool, answers)!.content;
     await new Promise<void>(resolve => { finish = resolve; });
   });
@@ -430,7 +430,7 @@ it('submits a selected option and a free-text answer once, then restores both an
 
 it('keeps answer controls usable after rejected submission and disables controls on a failed tool', async () => {
   const tool = restoreTool('history', 'request_user_input_async', { questions: [{ title: 'Which check?', options: ['History'] }] }, '{"accepted":true}');
-  const onAnswer = jest.fn().mockRejectedValue(new Error('Conversation changed.'));
+  const onAnswer = vi.fn().mockRejectedValue(new Error('Conversation changed.'));
   const { block, panelHost, composer, prompts } = showQuestion(tool, onAnswer);
   fireEvent.click(within(panelHost).getByRole('button', { name: 'History' }));
   fireEvent.click(within(panelHost).getByRole('button', { name: 'Submit answers' }));
@@ -473,7 +473,7 @@ it('shows js source before output arrives and preserves it after a live failure'
 
 it('expires dismissed questions and keeps history replay read-only', async () => {
   const tool = restoreTool('history', 'request_user_input_async', { questions: [{ title: 'Which check?', options: ['History'] }] }, '{"accepted":true}');
-  const onAnswer = jest.fn();
+  const onAnswer = vi.fn();
   const { panelHost, composer, block, prompts } = showQuestion(tool, onAnswer);
   const panel = within(panelHost).getByRole('region', { name: 'Question' });
   expect((await axe(panel)).violations).toEqual([]);
@@ -542,13 +542,13 @@ it.each(['add', 'delete', 'update'] as const)('renders native %s file contents l
 
 it.each([false, true].flatMap(lateNative => ['text', 'thinking'].map(boundary => ({ lateNative, boundary }))))(
   'keeps streamed raw-only patches before $boundary (late native item: $lateNative)', async ({ lateNative, boundary }) => {
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     (el as HTMLElement).createEl('p', { text: markdown });
   });
   const messagesEl = document.body.createDiv();
   const vault = {
-    getAbstractFileByPath: jest.fn(() => null),
-    adapter: { list: jest.fn(async () => ({ files: [], folders: [] })) },
+    getAbstractFileByPath: vi.fn(() => null),
+    adapter: { list: vi.fn(async () => ({ files: [], folders: [] })) },
   };
   const plugin = { app: { vault }, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
@@ -566,7 +566,7 @@ it.each([false, true].flatMap(lateNative => ['text', 'thinking'].map(boundary =>
   const realSetTimeout = timerWindow.setTimeout.bind(timerWindow);
   const vaultNotifications: Promise<void>[] = [];
   // Keep real notification timing, but join this case's callbacks before releasing its fixture.
-  const timeoutSpy = jest.spyOn(timerWindow, 'setTimeout').mockImplementation((handler, delay, ...args) => {
+  const timeoutSpy = vi.spyOn(timerWindow, 'setTimeout').mockImplementation((handler, delay, ...args) => {
     if (delay !== 200 || typeof handler !== 'function') return realSetTimeout(handler, delay, ...args);
     let complete!: () => void;
     vaultNotifications.push(new Promise<void>(resolve => { complete = resolve; }));

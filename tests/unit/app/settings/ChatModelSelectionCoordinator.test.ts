@@ -67,7 +67,7 @@ describe('ChatModelSelectionCoordinator', () => {
   });
 
   it('does not advance committed order when a newer intent fails persistence', async () => {
-    const persist = jest.fn()
+    const persist = vi.fn()
       .mockRejectedValueOnce(new Error('disk full'))
       .mockResolvedValueOnce(undefined);
     const { coordinator, settings } = createCoordinator(persist);
@@ -93,7 +93,7 @@ describe('ChatModelSelectionCoordinator', () => {
   it('preserves newer durable intent ordering when settings publication fails', async () => {
     const persisted: string[] = [];
     const publicationError = new Error('listener failed');
-    const publish = jest.fn().mockRejectedValueOnce(publicationError);
+    const publish = vi.fn().mockRejectedValueOnce(publicationError);
     const { coordinator, settings } = createCoordinator(async current => {
       persisted.push(current.lastSelectedChatModel?.model ?? 'none');
     }, publish);

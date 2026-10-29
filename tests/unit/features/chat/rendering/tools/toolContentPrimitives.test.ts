@@ -4,14 +4,14 @@ import { setIcon } from 'obsidian';
 import { setToolIcon } from '@/features/chat/rendering/tools/toolContentPrimitives';
 import { renderExpandedContent } from '@/features/chat/rendering/tools/toolPresentation';
 
-jest.mock('obsidian', () => ({
+vi.mock('obsidian', () => ({
   Platform: { resourcePathPrefix: 'app://local/' },
-  setIcon: jest.fn(),
+  setIcon: vi.fn(),
 }));
 
 describe('toolContentPrimitives', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('setToolIcon', () => {
@@ -34,7 +34,7 @@ it('keeps a large tool preview bounded without splitting the undisplayed lines',
   const result = Array.from({ length: 10000 }, (_, index) => `line-${index}`).join('\r\n');
   const split = String.prototype.split;
   let splitWholeOutput = false;
-  const spy = jest.spyOn(String.prototype, 'split').mockImplementation(function (this: string, ...args: Parameters<typeof split>) {
+  const spy = vi.spyOn(String.prototype, 'split').mockImplementation(function (this: string, ...args: Parameters<typeof split>) {
     if (String(this) === result && args[1] === undefined) splitWholeOutput = true;
     return split.apply(this, args);
   });

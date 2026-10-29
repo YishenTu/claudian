@@ -1,9 +1,9 @@
 import { CodexThreadArchiveService } from '@/providers/codex/history/CodexThreadArchiveService';
 import type { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
 import { CodexRPCResponseError } from '@/providers/codex/runtime/CodexRPCTransport';
-const mockTransportRequest = jest.fn();
-const mockRelease = jest.fn().mockResolvedValue(undefined);
-const mockAcquire = jest.fn(async () => ({ connection: { transport: { request: mockTransportRequest } }, release: mockRelease }));
+const mockTransportRequest = vi.fn();
+const mockRelease = vi.fn().mockResolvedValue(undefined);
+const mockAcquire = vi.fn(async () => ({ connection: { transport: { request: mockTransportRequest } }, release: mockRelease }));
 const runtime = { acquire: mockAcquire } as unknown as CodexAppServerRuntime;
 
 const conversation = (sessionId: string | null, providerState?: Record<string, unknown>) => ({
@@ -18,7 +18,7 @@ const change = (
 
 describe('CodexThreadArchiveService', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockTransportRequest.mockResolvedValue({});
     mockAcquire.mockResolvedValue({ connection: { transport: { request: mockTransportRequest } }, release: mockRelease });
   });

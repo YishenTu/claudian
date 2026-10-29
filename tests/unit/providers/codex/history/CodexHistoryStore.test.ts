@@ -61,11 +61,11 @@ describe('CodexHistoryStore', () => {
   });
 
   it('settles lookup at the deadline when a directory read never resolves', async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const root = '/virtual/codex/sessions';
-      const pathExists = jest.fn(async (value: string) => value === root);
-      const readDirectory = jest.fn(() => new Promise<never>(() => {}));
+      const pathExists = vi.fn(async (value: string) => value === root);
+      const readDirectory = vi.fn(() => new Promise<never>(() => {}));
       const lookup = findCodexSessionFileAsync('thread', root, 10, {
         pathExists,
         readDirectory,
@@ -76,11 +76,11 @@ describe('CodexHistoryStore', () => {
       }
       expect(pathExists).toHaveBeenCalled();
       expect(readDirectory).toHaveBeenCalled();
-      jest.advanceTimersByTime(11);
+      vi.advanceTimersByTime(11);
 
       await expect(lookup).resolves.toBeNull();
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 

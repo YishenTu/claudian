@@ -35,7 +35,7 @@ describe('session tool MCP server through the MCP SDK client', () => {
   });
 
   it('initializes and lists always-loaded tools with the shared JSON Schemas', async () => {
-    client = await connect(jest.fn());
+    client = await connect(vi.fn());
 
     expect(client.getServerVersion()).toMatchObject({ name: 'claudian_sessions' });
     expect(client.getServerCapabilities()).toMatchObject({ tools: {} });
@@ -129,7 +129,7 @@ describe('session tool MCP server through the MCP SDK client', () => {
 });
 
 describe('session tool MCP dispatcher', () => {
-  const dispatcher = createSessionToolMCPDispatcher(jest.fn());
+  const dispatcher = createSessionToolMCPDispatcher(vi.fn());
 
   it.each([
     ['echoes a supported protocol version', '2024-11-05', '2024-11-05'],

@@ -3,7 +3,7 @@ import { requestGrokRewind } from '@/providers/grok/runtime/GrokExtensionRequest
 
 describe('GrokExtensionRequests rewind', () => {
   it('preserves dry-run conflicts even though native preview success is false', async () => {
-    const request = jest.fn().mockResolvedValue({
+    const request = vi.fn().mockResolvedValue({
       clean_files: ['src/clean.ts'],
       conflicts: [{ conflict_type: 'modified_externally', path: 'src/conflicted.ts' }],
       error: 'External modifications detected. Confirm to revert anyway.',
@@ -44,7 +44,7 @@ describe('GrokExtensionRequests rewind', () => {
 
   it('rejects malformed native rewind responses', async () => {
     const transport = {
-      request: jest.fn().mockResolvedValue({ success: true }),
+      request: vi.fn().mockResolvedValue({ success: true }),
     } as unknown as ACPJSONRPCTransport;
 
     await expect(requestGrokRewind(transport, {
@@ -56,7 +56,7 @@ describe('GrokExtensionRequests rewind', () => {
   });
 
   it('does not release a forced rewind before the provider outcome is known', async () => {
-    const request = jest.fn().mockResolvedValue({
+    const request = vi.fn().mockResolvedValue({
       clean_files: [],
       conflicts: [],
       error: null,

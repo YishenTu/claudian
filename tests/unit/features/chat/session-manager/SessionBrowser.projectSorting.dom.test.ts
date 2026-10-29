@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import { firePointer } from '@test/helpers/dom/pointer';
 import { createPopoutDocument } from '@test/helpers/dom/popoutDocument';
@@ -89,7 +89,7 @@ function setup(options: {
   const plugin = {
     app: { vault: { getAbstractFileByPath: () => null } },
     settings: { enableAutoTitleGeneration: false, sessionManagerOrganization: 'list' } as Record<string, unknown>,
-    mutateSettings: jest.fn(async (mutation: (settings: Record<string, unknown>) => void) => {
+    mutateSettings: vi.fn(async (mutation: (settings: Record<string, unknown>) => void) => {
       const draft = structuredClone(plugin.settings);
       mutation(draft);
       await saveResult;
@@ -98,7 +98,7 @@ function setup(options: {
       surface.invalidate();
     }),
     getConversationList: () => conversations,
-    conversationLifecycle: { setPinned: jest.fn(), setPlacement: jest.fn() },
+    conversationLifecycle: { setPinned: vi.fn(), setPlacement: vi.fn() },
     projects,
   };
   const surface = new SessionManagerSurface({
@@ -106,16 +106,16 @@ function setup(options: {
     navigation: {
       contentExists: () => true,
       getConversationStatus: () => ({ openState: 'closed', isRunning: false }),
-      openConversation: jest.fn().mockResolvedValue(undefined),
-      openSessionConversation: jest.fn().mockResolvedValue(undefined),
-      startLinkedContentConversation: jest.fn().mockResolvedValue(undefined),
-      startProjectConversation: jest.fn().mockResolvedValue(undefined),
+      openConversation: vi.fn().mockResolvedValue(undefined),
+      openSessionConversation: vi.fn().mockResolvedValue(undefined),
+      startLinkedContentConversation: vi.fn().mockResolvedValue(undefined),
+      startProjectConversation: vi.fn().mockResolvedValue(undefined),
     },
     getActiveTab: () => null,
     isWide: () => true,
     canCreateTab: () => true,
-    requestNew: jest.fn(),
-    notifyOtherViews: jest.fn(),
+    requestNew: vi.fn(),
+    notifyOtherViews: vi.fn(),
   });
   const host = (options.doc ?? document).body.createDiv();
   surface.mountSidebar(host);
@@ -150,7 +150,7 @@ beforeEach(() => { restoreLayout = installListLayout(); });
 afterEach(() => {
   restoreLayout();
   document.body.replaceChildren();
-  jest.mocked(Notice).mockClear();
+  vi.mocked(Notice).mockClear();
 });
 
 it('lifts a project and slides the others aside while it moves, saving the order on release', async () => {

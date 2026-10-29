@@ -25,7 +25,7 @@ function createPendingCatalog(
         commandPrefix: '/',
         ...(discoveryTimeoutMs !== undefined ? { discoveryTimeoutMs } : {}),
       }),
-      listDropdownEntries: jest.fn(() => pending),
+      listDropdownEntries: vi.fn(() => pending),
     } as unknown as ProviderCommandCatalog,
     resolve,
   };
@@ -57,11 +57,11 @@ const timedOut = {
 
 describe('createCatalogCommandDiscoveryStore', () => {
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it('lets a provider-owned deadline outlive the shared picker deadline', async () => {
@@ -69,7 +69,7 @@ describe('createCatalogCommandDiscoveryStore', () => {
     const discovery = createCatalogCommandDiscoveryStore(catalog, noLoader);
 
     const load = discovery.load();
-    await jest.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(10_000);
     expect(discovery.getSnapshot()).toEqual({ status: 'loading' });
 
     resolve([reviewEntry]);
@@ -81,10 +81,10 @@ describe('createCatalogCommandDiscoveryStore', () => {
     const discovery = createCatalogCommandDiscoveryStore(catalog, noLoader);
 
     const load = discovery.load();
-    await jest.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(10_000);
     expect(discovery.getSnapshot()).toEqual({ status: 'loading' });
 
-    await jest.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(10_000);
     await expect(load).resolves.toEqual(timedOut);
   });
 
@@ -93,7 +93,7 @@ describe('createCatalogCommandDiscoveryStore', () => {
     const discovery = createCatalogCommandDiscoveryStore(catalog, noLoader);
 
     const load = discovery.load();
-    await jest.advanceTimersByTimeAsync(8_000);
+    await vi.advanceTimersByTimeAsync(8_000);
 
     await expect(load).resolves.toEqual(timedOut);
   });

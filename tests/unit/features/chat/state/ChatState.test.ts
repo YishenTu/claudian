@@ -64,7 +64,7 @@ describe('ChatState', () => {
 
   describe('streaming control', () => {
     it('derives streaming from its turn owner and reports each change once', async () => {
-      const onStreamingStateChanged = jest.fn();
+      const onStreamingStateChanged = vi.fn();
       const turns = new TurnCoordinator();
       const chatState = new ChatState({ onStreamingStateChanged }, undefined, turns);
 
@@ -79,7 +79,7 @@ describe('ChatState', () => {
 
   describe('conversation', () => {
     it('fires onConversationChanged for a value and when cleared', () => {
-      const onConversationChanged = jest.fn();
+      const onConversationChanged = vi.fn();
       const chatState = new ChatState({ onConversationChanged });
       chatState.currentConversationId = 'conv-1';
       expect(onConversationChanged).toHaveBeenCalledWith('conv-1');
@@ -171,7 +171,7 @@ describe('ChatState', () => {
 
   describe('usage', () => {
     it('fires onUsageChanged for a value and when cleared', () => {
-      const onUsageChanged = jest.fn();
+      const onUsageChanged = vi.fn();
       const chatState = new ChatState({ onUsageChanged });
       const usage = { inputTokens: 100, outputTokens: 50 } as any;
       chatState.usage = usage;
@@ -185,12 +185,12 @@ describe('ChatState', () => {
 
   describe('attention', () => {
     afterEach(() => {
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
     });
 
     it('marks and acknowledges review attention', () => {
-      jest.spyOn(Date, 'now').mockReturnValue(123);
-      const onAttentionChanged = jest.fn();
+      vi.spyOn(Date, 'now').mockReturnValue(123);
+      const onAttentionChanged = vi.fn();
       const chatState = new ChatState({ onAttentionChanged });
 
       expect(chatState.attention).toBeNull();
@@ -225,10 +225,10 @@ describe('ChatState', () => {
     });
 
     it('preserves action attention while the session still reports pending requests', () => {
-      jest.spyOn(Date, 'now')
+      vi.spyOn(Date, 'now')
         .mockReturnValueOnce(100)
         .mockReturnValueOnce(200);
-      const onAttentionChanged = jest.fn();
+      const onAttentionChanged = vi.fn();
       const chatState = new ChatState({ onAttentionChanged });
 
       chatState.setActionRequired(true);
@@ -257,7 +257,7 @@ describe('ChatState', () => {
     });
 
     it('reveals review attention after the last action-required interaction settles', () => {
-      jest.spyOn(Date, 'now')
+      vi.spyOn(Date, 'now')
         .mockReturnValueOnce(100)
         .mockReturnValueOnce(200);
       const chatState = new ChatState();
@@ -274,7 +274,7 @@ describe('ChatState', () => {
     });
 
     it('restores existing review after action-required attention settles', () => {
-      jest.spyOn(Date, 'now')
+      vi.spyOn(Date, 'now')
         .mockReturnValueOnce(100)
         .mockReturnValueOnce(200);
       const chatState = new ChatState();
@@ -302,7 +302,7 @@ describe('ChatState', () => {
     });
 
     it('treats unchanged interaction projections as idempotent', () => {
-      const onAttentionChanged = jest.fn();
+      const onAttentionChanged = vi.fn();
       const chatState = new ChatState({ onAttentionChanged });
 
       chatState.setActionRequired(true);
@@ -316,10 +316,10 @@ describe('ChatState', () => {
     });
 
     it('does not reset review time or emit redundant callbacks', () => {
-      jest.spyOn(Date, 'now')
+      vi.spyOn(Date, 'now')
         .mockReturnValueOnce(100)
         .mockReturnValueOnce(200);
-      const onAttentionChanged = jest.fn();
+      const onAttentionChanged = vi.fn();
       const chatState = new ChatState({ onAttentionChanged });
 
       chatState.markReviewRequired();
@@ -334,7 +334,7 @@ describe('ChatState', () => {
     });
 
     it('upgrades unread completion attention when a later result fails', () => {
-      jest.spyOn(Date, 'now')
+      vi.spyOn(Date, 'now')
         .mockReturnValueOnce(100)
         .mockReturnValueOnce(200);
       const chatState = new ChatState();
@@ -350,7 +350,7 @@ describe('ChatState', () => {
     });
 
     it('restores the strongest unread outcome after action-required settles', () => {
-      jest.spyOn(Date, 'now')
+      vi.spyOn(Date, 'now')
         .mockReturnValueOnce(100)
         .mockReturnValueOnce(200)
         .mockReturnValueOnce(300);
@@ -371,7 +371,7 @@ describe('ChatState', () => {
 
   describe('autoScrollEnabled', () => {
     it('notifies only when auto-scroll changes', () => {
-      const onAutoScrollChanged = jest.fn();
+      const onAutoScrollChanged = vi.fn();
       const chatState = new ChatState({ onAutoScrollChanged });
       chatState.autoScrollEnabled = true;
       expect(onAutoScrollChanged).not.toHaveBeenCalled();
@@ -393,7 +393,7 @@ describe('ChatState', () => {
   describe('clearFlavorTimerInterval', () => {
     it('clears active interval', () => {
       const chatState = new ChatState();
-      const clearSpy = jest.spyOn(window, 'clearInterval');
+      const clearSpy = vi.spyOn(window, 'clearInterval');
       const interval = window.setInterval(() => {}, 1000);
       chatState.setFlavorTimerInterval(interval, window);
 
@@ -406,7 +406,7 @@ describe('ChatState', () => {
 
     it('is a no-op when no interval is active', () => {
       const chatState = new ChatState();
-      const clearSpy = jest.spyOn(window, 'clearInterval');
+      const clearSpy = vi.spyOn(window, 'clearInterval');
 
       chatState.clearFlavorTimerInterval();
 

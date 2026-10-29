@@ -1,11 +1,15 @@
+import type { Mocked } from 'vitest';
+
 import { CodexCommandCatalog } from '@/providers/codex/commands/CodexCommandCatalog';
 import type { SkillMetadata } from '@/providers/codex/runtime/codexAppServerTypes';
 import type { CodexSkillListProvider } from '@/providers/codex/skills/CodexSkillListingService';
 
-function createListProvider(skills: SkillMetadata[] = []): jest.Mocked<CodexSkillListProvider> {
+
+
+function createListProvider(skills: SkillMetadata[] = []): Mocked<CodexSkillListProvider> {
   return {
-    listSkills: jest.fn().mockResolvedValue(skills),
-    invalidate: jest.fn(),
+    listSkills: vi.fn().mockResolvedValue(skills),
+    invalidate: vi.fn(),
   };
 }
 

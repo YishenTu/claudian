@@ -1,12 +1,12 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@/providers';
 
+import { axe } from '@test/helpers/accessibility';
 import { createConversationPorts } from '@test/helpers/ConversationPorts';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
-import { axe } from 'jest-axe';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
@@ -45,7 +45,7 @@ function transcript(): ChatMessage[] {
   return messages;
 }
 
-function setup(providerId?: string, navigate: (id: string, target?: string) => Promise<void> = jest.fn()) {
+function setup(providerId?: string, navigate: (id: string, target?: string) => Promise<void> = vi.fn()) {
   const messagesEl = document.body.createDiv();
   // jsdom has no layout: a 500px viewport over top-level nodes 100px tall each.
   let scrollTop = 0;
@@ -53,7 +53,7 @@ function setup(providerId?: string, navigate: (id: string, target?: string) => P
   Object.defineProperty(messagesEl, 'scrollTop', { configurable: true, get: () => scrollTop, set: value => { scrollTop = value; } });
   Object.defineProperty(messagesEl, 'clientHeight', { configurable: true, get: () => 500 });
   messagesEl.getBoundingClientRect = () => ({ top: 0, bottom: 500 }) as DOMRect;
-  jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
     const top = Array.from(messagesEl.children).indexOf(this) * 100 - scrollTop;
     return { top, bottom: top + 100 } as DOMRect;
   });
@@ -69,11 +69,11 @@ function renderedPrompts(messagesEl: HTMLElement): string[] {
   return Array.from(messagesEl.querySelectorAll<HTMLElement>('[data-role="user"]'), el => el.textContent ?? '');
 }
 
-afterEach(() => { jest.restoreAllMocks(); });
+afterEach(() => { vi.restoreAllMocks(); });
 
 beforeEach(() => {
   document.body.replaceChildren();
-  jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
+  vi.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, el) => {
     (el as HTMLElement).createEl('p', { text: markdown });
   });
 });
@@ -125,8 +125,8 @@ it('lists every prompt without rendering earlier bodies and reveals only through
   const { renderer, messagesEl } = setup();
   const parent = document.body.createDiv();
   parent.append(messagesEl);
-  messagesEl.scrollTo = jest.fn();
-  jest.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (this: HTMLElement) {
+  messagesEl.scrollTo = vi.fn();
+  vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (this: HTMLElement) {
     return Array.from(messagesEl.children).indexOf(this) * 100;
   });
   const messages = Array.from({ length: 60 }, (_, index) => turn(index)).flat();
@@ -134,11 +134,11 @@ it('lists every prompt without rendering earlier bodies and reveals only through
   renderer.renderMessages(messages, () => 'Hello');
   const sidebar = new NavigationSidebar(parent, messagesEl, () => renderer.getDirectoryEntries());
   try {
-    const rendersBefore = jest.mocked(MarkdownRenderer.render).mock.calls.length;
+    const rendersBefore = vi.mocked(MarkdownRenderer.render).mock.calls.length;
     fireEvent.click(within(parent).getByRole('button', { name: 'Conversation directory' }));
     expect(within(parent).getAllByRole('button', { name: /^\d+\. / })).toHaveLength(60);
     expect(within(parent).getByRole('button', { name: '11. Visible prompt ten' })).toBeDefined();
-    expect(jest.mocked(MarkdownRenderer.render)).toHaveBeenCalledTimes(rendersBefore);
+    expect(vi.mocked(MarkdownRenderer.render)).toHaveBeenCalledTimes(rendersBefore);
     expect(renderedPrompts(messagesEl)).toHaveLength(20);
 
     fireEvent.click(within(parent).getByRole('button', { name: '11. Visible prompt ten' }));
@@ -183,18 +183,18 @@ it('returns to the reading position after cancelling a branch preview of a revea
   const inputEl = document.body.createEl('textarea');
   const history = Array.from({ length: 30 }, (_, index) => turn(index)).flat()
     .map(message => message.role === 'user' ? { ...message, userMessageId: `native-${message.id}`, treeBranches: [`native-${message.id}`] } : message);
-  const plugin = { app: {}, settings: { mediaFolder: '' }, updateConversation: jest.fn(),
-    getConversationById: jest.fn().mockResolvedValue({ id: 'pi-chat', messages: history }),
-    getConversationSummary: jest.fn().mockReturnValue(null), projects: createProjectsFake() };
+  const plugin = { app: {}, settings: { mediaFolder: '' }, updateConversation: vi.fn(),
+    getConversationById: vi.fn().mockResolvedValue({ id: 'pi-chat', messages: history }),
+    getConversationSummary: vi.fn().mockReturnValue(null), projects: createProjectsFake() };
   const { renderer, messagesEl } = setup('pi', (id, target) => controller.navigateBranch(id, target));
   let welcomeEl: HTMLElement | null = null;
   const controller: ConversationController = new ConversationController({ plugin, state, renderer,
     ...createConversationPorts({ state, getInputEl: () => inputEl, getImageContextManager: () => null }),
-    subagentManager: { clear: jest.fn() },
+    subagentManager: { clear: vi.fn() },
     getInputEl: () => inputEl, getMessagesEl: () => messagesEl,
     getWelcomeEl: () => welcomeEl, setWelcomeEl: (el: HTMLElement) => { welcomeEl = el; },
-    getLinkedContentController: () => ({ lock: jest.fn() }),
-    getImageContextManager: () => null, clearQueuedMessage: jest.fn(),
+    getLinkedContentController: () => ({ lock: vi.fn() }),
+    getImageContextManager: () => null, clearQueuedMessage: vi.fn(),
     getExecutionCoordinator: () => ({ supportsConversationBranches: true }),
   } as any);
   state.currentConversationId = 'pi-chat';

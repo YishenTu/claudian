@@ -1,12 +1,15 @@
 import { createMockEl } from '@test/helpers/MockElement';
+import type { Mock } from 'vitest';
 
 import { ComposerSelections } from '@/features/chat/input/ComposerSelections';
 import { SelectionController } from '@/features/chat/input/SelectionController';
 import { hideSelectionHighlight, showSelectionHighlight } from '@/shared/components/SelectionHighlight';
 
-jest.mock('@/shared/components/SelectionHighlight', () => ({
-  showSelectionHighlight: jest.fn(),
-  hideSelectionHighlight: jest.fn(),
+
+
+vi.mock('@/shared/components/SelectionHighlight', () => ({
+  showSelectionHighlight: vi.fn(),
+  hideSelectionHighlight: vi.fn(),
 }));
 
 function createMockDOMRange(overrides: Partial<{
@@ -23,7 +26,7 @@ function createMockDOMRange(overrides: Partial<{
     endOffset: 0,
     ...overrides,
   };
-  range.cloneRange = jest.fn(() => range);
+  range.cloneRange = vi.fn(() => range);
   return range;
 }
 
@@ -34,8 +37,8 @@ function createMockDOMSelection(text: string, anchorNode: any, focusNode?: any, 
     anchorNode,
     focusNode: focusNode ?? anchorNode,
     rangeCount: 1,
-    getRangeAt: jest.fn(() => resolvedRange),
-    removeAllRanges: jest.fn(),
+    getRangeAt: vi.fn(() => resolvedRange),
+    removeAllRanges: vi.fn(),
     _range: resolvedRange,
   };
 }
@@ -45,18 +48,18 @@ function createMockEventTarget() {
   const containedNodes = new Set<unknown>();
   const el: any = {
     ownerDocument: createMockEl().ownerDocument,
-    addEventListener: jest.fn((event: string, listener: (...args: unknown[]) => void) => {
+    addEventListener: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
       const handlers = listeners.get(event) ?? new Set<(...args: unknown[]) => void>();
       handlers.add(listener);
       listeners.set(event, handlers);
     }),
-    removeEventListener: jest.fn((event: string, listener: (...args: unknown[]) => void) => {
+    removeEventListener: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
       listeners.get(event)?.delete(listener);
     }),
     trigger: (event: string, eventData: unknown = {}) => {
       listeners.get(event)?.forEach(handler => handler(eventData));
     },
-    contains: jest.fn((node: unknown) => node === el || containedNodes.has(node)),
+    contains: vi.fn((node: unknown) => node === el || containedNodes.has(node)),
     addContainedNode: (node: unknown) => {
       containedNodes.add(node);
     },
@@ -66,8 +69,8 @@ function createMockEventTarget() {
 
 function createMockContextTray() {
   return {
-    setItems: jest.fn(),
-    clearItems: jest.fn(),
+    setItems: vi.fn(),
+    clearItems: vi.fn(),
   };
 }
 
@@ -75,7 +78,7 @@ function createMockContextTray() {
 /** The selection runs under the tab's shared poll cadence; the other sources stay idle. */
 let polling: ComposerSelections | null = null;
 function startPolling(source: SelectionController): ComposerSelections {
-  const idle = { clear: jest.fn(), getContext: () => null, poll: jest.fn(), start: jest.fn(), stop: jest.fn() };
+  const idle = { clear: vi.fn(), getContext: () => null, poll: vi.fn(), start: vi.fn(), stop: vi.fn() };
   polling = new ComposerSelections({ editor: source, browser: idle, canvas: idle });
   polling.start();
   return polling;
@@ -98,11 +101,11 @@ describe('SelectionController', () => {
 
   beforeEach(() => {
     // Mock Highlight constructor for CSS Custom Highlight API tests
-    (global as any).Highlight = jest.fn((...ranges: any[]) => ({ ranges }));
+    (global as any).Highlight = vi.fn(function (...ranges: any[]) { return ({ ranges }); });
     originalCSS = (global as any).CSS;
-    jest.useFakeTimers();
-    (showSelectionHighlight as jest.Mock).mockClear();
-    (hideSelectionHighlight as jest.Mock).mockClear();
+    vi.useFakeTimers();
+    (showSelectionHighlight as Mock).mockClear();
+    (hideSelectionHighlight as Mock).mockClear();
 
     contextTray = createMockContextTray();
     inputEl = createMockEventTarget();
@@ -113,22 +116,22 @@ describe('SelectionController', () => {
       id: 'editor-view',
       dom: createMockEventTarget(),
       state: { selection: { main: { head: 4 } } },
-      dispatch: jest.fn(),
+      dispatch: vi.fn(),
     };
     editor = {
-      getSelection: jest.fn().mockReturnValue('selected text'),
-      getCursor: jest.fn((which: 'from' | 'to') => {
+      getSelection: vi.fn().mockReturnValue('selected text'),
+      getCursor: vi.fn((which: 'from' | 'to') => {
         if (which === 'from') return { line: 0, ch: 0 };
         return { line: 0, ch: 4 };
       }),
-      posToOffset: jest.fn((pos: { line: number; ch: number }) => pos.line * 100 + pos.ch),
+      posToOffset: vi.fn((pos: { line: number; ch: number }) => pos.line * 100 + pos.ch),
       cm: editorView,
     };
 
     const view = { editor, getMode: () => 'source', file: { path: 'notes/test.md' } };
     app = {
       workspace: {
-        getActiveViewOfType: jest.fn().mockReturnValue(view),
+        getActiveViewOfType: vi.fn().mockReturnValue(view),
       },
     };
 
@@ -140,7 +143,7 @@ describe('SelectionController', () => {
 
   afterEach(() => {
     stopPolling();
-    jest.useRealTimers();
+    vi.useRealTimers();
     (global as any).document = originalDocument;
     (global as any).CSS = originalCSS;
     delete (global as any).Highlight;
@@ -148,7 +151,7 @@ describe('SelectionController', () => {
 
   it('captures selection and updates indicator', () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     expect(controller.hasSelection()).toBe(true);
     expect(controller.getContext()).toEqual({
@@ -169,11 +172,11 @@ describe('SelectionController', () => {
 
   it('clears selection immediately when deselected without input handoff intent', () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     editor.getSelection.mockReturnValue('');
     (global as any).document.activeElement = null;
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     expect(controller.hasSelection()).toBe(false);
     expect(contextTray.clearItems).toHaveBeenCalledWith('editor-selection');
@@ -182,7 +185,7 @@ describe('SelectionController', () => {
 
   it('clears a sticky selection from the tray remove action', () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     const items = contextTray.setItems.mock.calls[0][1];
     items[0].onRemove();
@@ -193,14 +196,14 @@ describe('SelectionController', () => {
 
   it('preserves selection when focus moves into the chat sidebar', () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     expect(controller.hasSelection()).toBe(true);
 
     app.workspace.getActiveViewOfType.mockReturnValue(null);
     const sidebarButton = {};
     focusScopeEl.addContainedNode(sidebarButton);
     (global as any).document.activeElement = sidebarButton;
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     expect(controller.hasSelection()).toBe(true);
     expect(contextTray.clearItems).not.toHaveBeenCalledWith('editor-selection');
@@ -208,7 +211,7 @@ describe('SelectionController', () => {
 
   it('preserves selection when the owning chat view is active in a detached window', () => {
     const owningLeaf = {};
-    app.workspace.getMostRecentLeaf = jest.fn().mockReturnValue(owningLeaf);
+    app.workspace.getMostRecentLeaf = vi.fn().mockReturnValue(owningLeaf);
     controller = new SelectionController(
       app,
       contextTray as any,
@@ -218,12 +221,12 @@ describe('SelectionController', () => {
       owningLeaf as any,
     );
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     expect(controller.hasSelection()).toBe(true);
 
     app.workspace.getActiveViewOfType.mockReturnValue(null);
     (global as any).document.activeElement = null;
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     expect(app.workspace.getMostRecentLeaf).toHaveBeenCalled();
     expect(controller.hasSelection()).toBe(true);
@@ -232,7 +235,7 @@ describe('SelectionController', () => {
 
   it('clears selection when a different chat leaf is active', () => {
     const owningLeaf = {};
-    app.workspace.getMostRecentLeaf = jest.fn().mockReturnValue({});
+    app.workspace.getMostRecentLeaf = vi.fn().mockReturnValue({});
     controller = new SelectionController(
       app,
       contextTray as any,
@@ -242,12 +245,12 @@ describe('SelectionController', () => {
       owningLeaf as any,
     );
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     expect(controller.hasSelection()).toBe(true);
 
     app.workspace.getActiveViewOfType.mockReturnValue(null);
     (global as any).document.activeElement = null;
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     expect(controller.hasSelection()).toBe(false);
     expect(contextTray.clearItems).toHaveBeenCalledWith('editor-selection');
@@ -265,12 +268,12 @@ describe('SelectionController', () => {
     );
 
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     expect(controller.hasSelection()).toBe(true);
 
     app.workspace.getActiveViewOfType.mockReturnValue(null);
     (global as any).document.activeElement = inputEl;
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     expect(controller.hasSelection()).toBe(true);
     expect(contextTray.clearItems).not.toHaveBeenCalledWith('editor-selection');
@@ -290,12 +293,12 @@ describe('SelectionController', () => {
     );
 
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     expect(controller.hasSelection()).toBe(true);
 
     app.workspace.getActiveViewOfType.mockReturnValue(null);
     (global as any).document.activeElement = historyButton;
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     expect(controller.hasSelection()).toBe(true);
     expect(contextTray.clearItems).not.toHaveBeenCalledWith('editor-selection');
@@ -310,8 +313,8 @@ describe('SelectionController', () => {
       [focusScopeEl, footerScopeEl],
     );
     startPolling(controller);
-    jest.advanceTimersByTime(250);
-    (showSelectionHighlight as jest.Mock).mockClear();
+    vi.advanceTimersByTime(250);
+    (showSelectionHighlight as Mock).mockClear();
 
     footerScopeEl.trigger('focusin', { relatedTarget: null });
 
@@ -329,8 +332,8 @@ describe('SelectionController', () => {
       [focusScopeEl, footerScopeEl],
     );
     startPolling(controller);
-    jest.advanceTimersByTime(250);
-    (showSelectionHighlight as jest.Mock).mockClear();
+    vi.advanceTimersByTime(250);
+    (showSelectionHighlight as Mock).mockClear();
 
     focusScopeEl.trigger('focusin', { relatedTarget: footerButton });
 
@@ -339,7 +342,7 @@ describe('SelectionController', () => {
 
   it('shows fake highlight when focus moves to another sidebar control in edit mode', () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     const sidebarButton = {};
     focusScopeEl.addContainedNode(sidebarButton);
@@ -354,12 +357,12 @@ describe('SelectionController', () => {
 
   it('clears selection when focus leaves markdown and the chat sidebar is not focused', () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
     expect(controller.hasSelection()).toBe(true);
 
     app.workspace.getActiveViewOfType.mockReturnValue(null);
     (global as any).document.activeElement = null;
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     expect(controller.hasSelection()).toBe(false);
     expect(contextTray.clearItems).toHaveBeenCalledWith('editor-selection');
@@ -368,18 +371,18 @@ describe('SelectionController', () => {
 
   it('preserves selection when input focus arrives after a slow editor blur handoff', () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     inputEl.trigger('pointerdown');
     editor.getSelection.mockReturnValue('');
     (global as any).document.activeElement = null;
 
     // Simulate delayed focus handoff under UI load.
-    jest.advanceTimersByTime(1250);
+    vi.advanceTimersByTime(1250);
     expect(controller.hasSelection()).toBe(true);
 
     (global as any).document.activeElement = inputEl;
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     expect(controller.hasSelection()).toBe(true);
     expect(hideSelectionHighlight).not.toHaveBeenCalled();
@@ -387,16 +390,16 @@ describe('SelectionController', () => {
 
   it('clears selection after handoff grace expires when input never receives focus', () => {
     startPolling(controller);
-    jest.advanceTimersByTime(250);
+    vi.advanceTimersByTime(250);
 
     inputEl.trigger('pointerdown');
     editor.getSelection.mockReturnValue('');
     (global as any).document.activeElement = null;
 
-    jest.advanceTimersByTime(1250);
+    vi.advanceTimersByTime(1250);
     expect(controller.hasSelection()).toBe(true);
 
-    jest.advanceTimersByTime(750);
+    vi.advanceTimersByTime(750);
     expect(controller.hasSelection()).toBe(false);
     expect(hideSelectionHighlight).toHaveBeenCalledWith(editorView);
   });
@@ -407,7 +410,7 @@ describe('SelectionController', () => {
 
     beforeEach(() => {
       containerEl = {
-        contains: jest.fn().mockReturnValue(true),
+        contains: vi.fn().mockReturnValue(true),
       };
       readingView = {
         editor,
@@ -423,11 +426,11 @@ describe('SelectionController', () => {
       const mockSel = createMockDOMSelection('reading selection', anchorNode);
       (global as any).document = {
         activeElement: null,
-        getSelection: jest.fn().mockReturnValue(mockSel),
+        getSelection: vi.fn().mockReturnValue(mockSel),
       };
 
       startPolling(controller);
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
 
       expect(controller.hasSelection()).toBe(true);
       expect(controller.getContext()).toEqual({
@@ -445,13 +448,13 @@ describe('SelectionController', () => {
       const anchorNode = {};
       (global as any).document = {
         activeElement: null,
-        getSelection: jest.fn().mockReturnValue(
+        getSelection: vi.fn().mockReturnValue(
           createMockDOMSelection('  reading selection\nsecond line  ', anchorNode),
         ),
       };
 
       startPolling(controller);
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
 
       expect(controller.getContext()).toEqual({
         notePath: 'notes/reading.md',
@@ -469,13 +472,13 @@ describe('SelectionController', () => {
       const mockSel = createMockDOMSelection('reading selection', anchorNode);
       (global as any).document = {
         activeElement: null,
-        getSelection: jest.fn().mockReturnValue(mockSel),
+        getSelection: vi.fn().mockReturnValue(mockSel),
       };
-      const mockHighlights = { set: jest.fn(), delete: jest.fn() };
+      const mockHighlights = { set: vi.fn(), delete: vi.fn() };
       (global as any).CSS = { highlights: mockHighlights };
 
       startPolling(controller);
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
 
       controller.showHighlight();
       expect(mockHighlights.set).not.toHaveBeenCalled();
@@ -484,7 +487,7 @@ describe('SelectionController', () => {
         startContainer: {}, startOffset: 0,
         endContainer: {}, endOffset: 0,
       };
-      (global as any).document.getSelection = jest.fn().mockReturnValue({
+      (global as any).document.getSelection = vi.fn().mockReturnValue({
         rangeCount: 1,
         getRangeAt: () => differentRange,
       });
@@ -504,13 +507,13 @@ describe('SelectionController', () => {
       focusScopeEl.addContainedNode(sidebarButton);
       (global as any).document = {
         activeElement: null,
-        getSelection: jest.fn().mockReturnValue(mockSel),
+        getSelection: vi.fn().mockReturnValue(mockSel),
       };
-      const mockHighlights = { set: jest.fn(), delete: jest.fn() };
+      const mockHighlights = { set: vi.fn(), delete: vi.fn() };
       (global as any).CSS = { highlights: mockHighlights };
 
       startPolling(controller);
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
 
       (global as any).document.activeElement = sidebarButton;
       controller.showHighlight();
@@ -523,24 +526,24 @@ describe('SelectionController', () => {
 
     it('clears selection when deselected in reading mode', () => {
       const anchorNode = {};
-      const mockHighlights = { set: jest.fn(), delete: jest.fn() };
+      const mockHighlights = { set: vi.fn(), delete: vi.fn() };
       (global as any).CSS = { highlights: mockHighlights };
       (global as any).document = {
         activeElement: null,
-        getSelection: jest.fn().mockReturnValue(
+        getSelection: vi.fn().mockReturnValue(
           createMockDOMSelection('reading selection', anchorNode),
         ),
       };
 
       startPolling(controller);
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
       expect(controller.hasSelection()).toBe(true);
 
       mockHighlights.delete.mockClear();
       (global as any).document.getSelection.mockReturnValue(
         createMockDOMSelection('', null),
       );
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
 
       expect(mockHighlights.delete).toHaveBeenCalledWith('claudian-selection');
       expect(controller.hasSelection()).toBe(false);
@@ -551,20 +554,20 @@ describe('SelectionController', () => {
       const anchorNode = {};
       (global as any).document = {
         activeElement: null,
-        getSelection: jest.fn().mockReturnValue(
+        getSelection: vi.fn().mockReturnValue(
           createMockDOMSelection('reading selection', anchorNode),
         ),
       };
 
       startPolling(controller);
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
       expect(controller.hasSelection()).toBe(true);
 
       (global as any).document.getSelection.mockReturnValue(
         createMockDOMSelection('', null),
       );
       (global as any).document.activeElement = inputEl;
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
 
       expect(controller.hasSelection()).toBe(true);
     });
@@ -573,20 +576,20 @@ describe('SelectionController', () => {
       const anchorNode = {};
       (global as any).document = {
         activeElement: null,
-        getSelection: jest.fn().mockReturnValue(
+        getSelection: vi.fn().mockReturnValue(
           createMockDOMSelection('reading selection', anchorNode),
         ),
       };
 
       startPolling(controller);
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
       expect(controller.hasSelection()).toBe(true);
 
       app.workspace.getActiveViewOfType.mockReturnValue(null);
       const sidebarButton = {};
       focusScopeEl.addContainedNode(sidebarButton);
       (global as any).document.activeElement = sidebarButton;
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
 
       expect(controller.hasSelection()).toBe(true);
       expect(contextTray.clearItems).not.toHaveBeenCalledWith('editor-selection');
@@ -597,13 +600,13 @@ describe('SelectionController', () => {
       const mockSel = createMockDOMSelection('reading selection', anchorNode);
       (global as any).document = {
         activeElement: null,
-        getSelection: jest.fn().mockReturnValue(mockSel),
+        getSelection: vi.fn().mockReturnValue(mockSel),
       };
 
       startPolling(controller);
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
 
-      const mockHighlights = { set: jest.fn(), delete: jest.fn() };
+      const mockHighlights = { set: vi.fn(), delete: vi.fn() };
       (global as any).CSS = { highlights: mockHighlights };
 
       (global as any).document.activeElement = inputEl;
@@ -637,16 +640,16 @@ describe('SelectionController', () => {
       let currentSelection = createMockDOMSelection('repeat', firstAnchorNode, undefined, firstRange);
       (global as any).document = {
         activeElement: null,
-        getSelection: jest.fn(() => currentSelection),
+        getSelection: vi.fn(() => currentSelection),
       };
-      const mockHighlights = { set: jest.fn(), delete: jest.fn() };
+      const mockHighlights = { set: vi.fn(), delete: vi.fn() };
       (global as any).CSS = { highlights: mockHighlights };
 
       startPolling(controller);
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
 
       currentSelection = createMockDOMSelection('repeat', secondAnchorNode, undefined, secondRange);
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
 
       (global as any).document.activeElement = inputEl;
       controller.showHighlight();
@@ -662,13 +665,13 @@ describe('SelectionController', () => {
       const anchorNode = {};
       (global as any).document = {
         activeElement: null,
-        getSelection: jest.fn().mockReturnValue(
+        getSelection: vi.fn().mockReturnValue(
           createMockDOMSelection('outside selection', anchorNode),
         ),
       };
 
       startPolling(controller);
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
 
       expect(controller.hasSelection()).toBe(false);
     });
@@ -679,13 +682,13 @@ describe('SelectionController', () => {
       containerEl.contains.mockImplementation((node: unknown) => node === focusNode);
       (global as any).document = {
         activeElement: null,
-        getSelection: jest.fn().mockReturnValue(
+        getSelection: vi.fn().mockReturnValue(
           createMockDOMSelection('reading selection', anchorNode, focusNode),
         ),
       };
 
       startPolling(controller);
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
 
       expect(controller.hasSelection()).toBe(true);
     });
@@ -695,20 +698,20 @@ describe('SelectionController', () => {
       app.workspace.getActiveViewOfType.mockReturnValue(sourceView);
 
       startPolling(controller);
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
 
       const previewAnchorNode = {};
       readingView.file.path = 'notes/test.md';
       app.workspace.getActiveViewOfType.mockReturnValue(readingView);
       (global as any).document = {
         activeElement: null,
-        getSelection: jest.fn().mockReturnValue(
+        getSelection: vi.fn().mockReturnValue(
           createMockDOMSelection('selected text', previewAnchorNode),
         ),
       };
-      (showSelectionHighlight as jest.Mock).mockClear();
+      (showSelectionHighlight as Mock).mockClear();
 
-      jest.advanceTimersByTime(250);
+      vi.advanceTimersByTime(250);
       controller.showHighlight();
 
       expect(controller.getContext()).toEqual({

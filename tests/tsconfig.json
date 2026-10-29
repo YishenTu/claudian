@@ -1,7 +1,10 @@
 {
-  "extends": "../tsconfig.jest.json",
+  "extends": "../tsconfig.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    "target": "ES2018",
+    "useDefineForClassFields": false,
+    "types": ["node", "vitest/globals"]
   },
   "include": ["**/*.ts"]
 }

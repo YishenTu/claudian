@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 
-jest.mock('cross-spawn', () => jest.fn());
+vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import spawn from 'cross-spawn';
@@ -19,7 +19,7 @@ function respond(stdout: string, code = 0) {
     stdin: new PassThrough(),
     stdout: new PassThrough(),
     stderr: new PassThrough(),
-    kill: jest.fn(),
+    kill: vi.fn(),
   });
   setImmediate(() => {
     child.stdout.end(stdout);
@@ -33,7 +33,7 @@ describe('Codex CLI installation', () => {
   const platform = process.platform;
   beforeEach(() => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
-    jest.mocked(spawn).mockReset();
+    vi.mocked(spawn).mockReset();
   });
   afterEach(() => Object.defineProperty(process, 'platform', { value: platform }));
 
@@ -53,25 +53,25 @@ describe('Codex CLI installation', () => {
   }
 
   it('resolves the real WSL binary before reading its version', async () => {
-    jest.mocked(spawn)
+    vi.mocked(spawn)
       .mockImplementationOnce(() => respond('/home/me/.local/bin/codex\n') as never)
       .mockImplementationOnce(() => respond('codex-cli 0.154.0\n') as never);
     expect(await inspectCodexInstallation(host())).toEqual({
       path: '/home/me/.local/bin/codex', version: '0.154.0', source: 'auto',
     });
-    expect(jest.mocked(spawn).mock.calls.at(-1)?.slice(0, 2)).toEqual(['wsl.exe', [
+    expect(vi.mocked(spawn).mock.calls.at(-1)?.slice(0, 2)).toEqual(['wsl.exe', [
       '--distribution', 'Ubuntu', '--cd', '/mnt/c/vault', "'/home/me/.local/bin/codex'", '--version',
     ]]);
   });
 
   it('looks up relative commands in the vault through the default WSL shell', async () => {
-    jest.mocked(spawn)
+    vi.mocked(spawn)
       .mockImplementationOnce(() => respond('./my bin/codex\n') as never)
       .mockImplementationOnce(() => respond('codex-cli 0.154.0\n') as never);
     expect(await inspectCodexInstallation(host('./my bin/codex'))).toEqual({
       path: '/mnt/c/vault/my bin/codex', version: '0.154.0', source: 'custom',
     });
-    const lookup = jest.mocked(spawn).mock.calls[0];
+    const lookup = vi.mocked(spawn).mock.calls[0];
     expect(lookup[0]).toBe('wsl.exe');
     expect(lookup[2]).toMatchObject({ windowsVerbatimArguments: true, cwd: 'C:\\vault' });
     expect(lookup[1]).toEqual([
@@ -82,7 +82,7 @@ describe('Codex CLI installation', () => {
   });
 
   it('does not treat the WSL resolver command fallback as a detected binary', async () => {
-    jest.mocked(spawn).mockImplementationOnce(() => respond('', 1) as never);
+    vi.mocked(spawn).mockImplementationOnce(() => respond('', 1) as never);
     expect(await inspectCodexInstallation(host())).toEqual({ path: null, version: null, source: 'auto' });
   });
 });

@@ -25,12 +25,12 @@ function createHarness() {
     model: 'claude-default',
   };
   const initializations = new Map<string, Deferred>();
-  const initializeProvider = jest.fn((providerId: string) => {
+  const initializeProvider = vi.fn((providerId: string) => {
     const transition = initializations.get(providerId) ?? deferred();
     initializations.set(providerId, transition);
     return transition.promise;
   });
-  const restoreDraft = jest.fn((restored: TabModelSelectionDraft) => {
+  const restoreDraft = vi.fn((restored: TabModelSelectionDraft) => {
     draft = { ...restored };
   });
   let ownerIsLive = true;

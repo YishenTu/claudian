@@ -1,4 +1,4 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
 import '@/providers';
 
@@ -25,7 +25,7 @@ HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...c
 HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
 HTMLElement.prototype.hasClass = function (className) { return this.classList.contains(className); };
 
-afterEach(() => { document.body.replaceChildren(); jest.restoreAllMocks(); });
+afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); });
 
 async function fixture() {
   const vault = await DesktopVault.create();
@@ -60,7 +60,7 @@ async function fixture() {
     generateTitle: async (id, _text, callback) => { callback(id, { success: true, title: 'Recovered title' }); },
     cancel: () => undefined,
   };
-  const render = () => browser.renderHistoryDropdown(container, { onSelectConversation: jest.fn() });
+  const render = () => browser.renderHistoryDropdown(container, { onSelectConversation: vi.fn() });
   const browser = new SessionBrowser({
     plugin: {
       settings, getConversationList: () => repository.list(),
@@ -80,7 +80,7 @@ it('offers and completes title retry after loading an interrupted job from disk'
   try {
     // Provider history is an external port; storage, metadata restoration, repository and title policy remain real.
     const history = ProviderRegistry.getConversationHistoryService('claude');
-    jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
+    vi.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
       ...history,
       hydrateConversationHistory: async () => ({ messages: [{ id: 'user', role: 'user', content: 'Explain the code', timestamp: testDate().getTime() }] }),
     });

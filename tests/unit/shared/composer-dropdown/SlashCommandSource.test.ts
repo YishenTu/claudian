@@ -1,7 +1,11 @@
+import type { Mocked } from 'vitest';
+
 import type { ProviderCommandDiscoveryResult } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
 import type { ProviderCommandDiscoverySource } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
 import { SlashCommandSource } from '@/shared/composer-dropdown/SlashCommandSource';
+
+
 
 const ENTRY: ProviderCommandEntry = {
   content: '',
@@ -23,19 +27,19 @@ function discovery(
     status: 'ready',
     items: [ENTRY],
   },
-): jest.Mocked<ProviderCommandDiscoverySource<ProviderCommandEntry>> {
+): Mocked<ProviderCommandDiscoverySource<ProviderCommandEntry>> {
   const ready: ProviderCommandDiscoveryResult<ProviderCommandEntry> = {
     status: 'ready',
     items: [ENTRY],
   };
   return {
-    getSnapshot: jest.fn(() => snapshot),
-    load: jest.fn(async () => snapshot.status === 'idle' || snapshot.status === 'loading'
+    getSnapshot: vi.fn(() => snapshot),
+    load: vi.fn(async () => snapshot.status === 'idle' || snapshot.status === 'loading'
       ? { status: 'empty' }
       : snapshot as ProviderCommandDiscoveryResult<ProviderCommandEntry>),
-    retry: jest.fn(async () => ready),
-    subscribe: jest.fn((_listener: () => void) => jest.fn()),
-  } as jest.Mocked<ProviderCommandDiscoverySource<ProviderCommandEntry>>;
+    retry: vi.fn(async () => ready),
+    subscribe: vi.fn((_listener: () => void) => vi.fn()),
+  } as Mocked<ProviderCommandDiscoverySource<ProviderCommandEntry>>;
 }
 
 function match(trigger: string, query = '', atInputStart = true) {

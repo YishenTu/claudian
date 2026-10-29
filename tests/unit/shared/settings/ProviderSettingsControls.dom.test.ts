@@ -1,6 +1,6 @@
-/** @jest-environment jsdom */
+/** @vitest-environment jsdom */
 
-jest.mock('obsidian', () => {
+vi.mock('obsidian', () => {
   class MockToggleComponent {
     disabled = false;
     toggleEl = document.createElement('button');
@@ -134,7 +134,7 @@ describe('provider settings controls', () => {
   });
 
   it('does not invoke enablement callbacks while disabled', async () => {
-    const onChange = jest.fn();
+    const onChange = vi.fn();
     const control = renderProviderEnablementSetting({
       container: document.createElement('div'),
       description: 'Description',
@@ -214,7 +214,7 @@ describe('provider settings controls', () => {
   });
 
   it('supports disabled CLI controls and dynamic presentation updates', async () => {
-    const onChange = jest.fn();
+    const onChange = vi.fn();
     const control = renderHostnameCLIPathSetting({
       container: document.createElement('div'),
       description: 'Initial description',

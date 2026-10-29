@@ -11,13 +11,17 @@ import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 
 // Provider history readers touch the filesystem through Node's fs.
-jest.mock('fs');
+vi.mock('fs');
 
 import '@/providers';
 
+import type { Mock } from 'vitest';
+
+
+
 describe('startApplication', () => {
   let mockApp: any;
-  let plugin: { app: any; loadData: jest.Mock; saveData: jest.Mock };
+  let plugin: { app: any; loadData: Mock; saveData: Mock };
   const disposals: Array<() => Promise<void>> = [];
 
   async function loadApplication(
@@ -56,13 +60,13 @@ describe('startApplication', () => {
   }
 
   beforeEach(() => {
-    jest.restoreAllMocks();
-    jest.clearAllMocks();
-    jest.spyOn(sdkSession, 'locateSDKSession').mockImplementation(async (_vaultPath, sessionId) => ({
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+    vi.spyOn(sdkSession, 'locateSDKSession').mockImplementation(async (_vaultPath, sessionId) => ({
       availability: 'available',
       sessionPath: `/test/claude-project/${sessionId}.jsonl`,
     }));
-    jest.spyOn(sdkSession, 'locateSDKSessions').mockImplementation(async (_vaultPath, sessionIds) => new Map(
+    vi.spyOn(sdkSession, 'locateSDKSessions').mockImplementation(async (_vaultPath, sessionIds) => new Map(
       sessionIds.map(sessionId => [sessionId, {
         availability: 'available' as const,
         sessionPath: `/test/claude-project/${sessionId}.jsonl`,
@@ -72,25 +76,25 @@ describe('startApplication', () => {
       vault: {
         adapter: {
           basePath: '/test/vault',
-          exists: jest.fn().mockResolvedValue(false),
-          read: jest.fn().mockResolvedValue(''),
-          write: jest.fn().mockResolvedValue(undefined),
-          remove: jest.fn().mockResolvedValue(undefined),
-          mkdir: jest.fn().mockResolvedValue(undefined),
-          list: jest.fn().mockResolvedValue({ files: [], folders: [] }),
-          stat: jest.fn().mockResolvedValue(null),
-          rename: jest.fn().mockResolvedValue(undefined),
+          exists: vi.fn().mockResolvedValue(false),
+          read: vi.fn().mockResolvedValue(''),
+          write: vi.fn().mockResolvedValue(undefined),
+          remove: vi.fn().mockResolvedValue(undefined),
+          mkdir: vi.fn().mockResolvedValue(undefined),
+          list: vi.fn().mockResolvedValue({ files: [], folders: [] }),
+          stat: vi.fn().mockResolvedValue(null),
+          rename: vi.fn().mockResolvedValue(undefined),
         },
       },
       workspace: {
         layoutReady: true,
-        onLayoutReady: jest.fn((callback: () => void) => callback()),
+        onLayoutReady: vi.fn((callback: () => void) => callback()),
       },
     };
     plugin = {
       app: mockApp,
-      loadData: jest.fn().mockResolvedValue({}),
-      saveData: jest.fn().mockResolvedValue(undefined),
+      loadData: vi.fn().mockResolvedValue({}),
+      saveData: vi.fn().mockResolvedValue(undefined),
     };
   });
 
@@ -156,7 +160,7 @@ describe('startApplication', () => {
         return '';
       });
 
-      const saveSpy = jest.spyOn(SettingsCoordinator.prototype, 'persistCurrent');
+      const saveSpy = vi.spyOn(SettingsCoordinator.prototype, 'persistCurrent');
       const domains = await loadApplication();
 
       expect(domains.settings.getCommittedSettings().model).toBe(DEFAULT_CLAUDIAN_SETTINGS.model);
@@ -356,7 +360,7 @@ describe('startApplication', () => {
       const loaded = await domains.conversations.getConversationById('conv-saved-1');
       expect(loaded?.sessionId).toBeNull();
 
-      const sessionWrite = (mockApp.vault.adapter.write as jest.Mock).mock.calls.find(
+      const sessionWrite = (mockApp.vault.adapter.write as Mock).mock.calls.find(
         ([path]) => path === '.claudian/sessions/conv-saved-1.meta.json'
       );
       expect(sessionWrite).toBeDefined();

@@ -34,7 +34,7 @@ function createFakeHost(): ProviderHost {
     app: {
       vault: { adapter: { basePath: '/vault' } },
       workspace: {
-        onLayoutReady: jest.fn(),
+        onLayoutReady: vi.fn(),
       },
     },
     executionLifecycleRegistry,
@@ -48,11 +48,11 @@ function createFakeHost(): ProviderHost {
       environmentVariables: {},
     },
     storage: {
-      getAdapter: jest.fn(),
+      getAdapter: vi.fn(),
     } as unknown as ProviderHost['storage'],
-    getResolvedProviderCliPath: jest.fn(() => '/usr/bin/codex'),
-    getActiveEnvironmentVariables: jest.fn(() => 'OPENAI_API_KEY=test'),
-    mutateSettingsConditionally: jest.fn(async () => false),
+    getResolvedProviderCliPath: vi.fn(() => '/usr/bin/codex'),
+    getActiveEnvironmentVariables: vi.fn(() => 'OPENAI_API_KEY=test'),
+    mutateSettingsConditionally: vi.fn(async () => false),
     runProviderExecutionTransition: <T>(
       providerIds: ProviderId[],
       mutation: () => Promise<T>,
@@ -75,7 +75,7 @@ describe('Startup optimization', () => {
 
   it('initializes the workspace without discovering Codex models until explicit refresh', async () => {
     const discovery: CodexModelDiscoveryServiceLike = {
-      discoverModels: jest.fn(async () => ({
+      discoverModels: vi.fn(async () => ({
         kind: 'completed',
         models: [makeModel('gpt-4o')],
       } as CodexModelDiscoveryResult)),

@@ -351,28 +351,28 @@ describe('ProviderSettingsCoordinator', () => {
   describe('reconcileProviders', () => {
     it('defaults existing providers to invalidation and separates reload-policy changes', () => {
       const defaultReconciler: ProviderSettingsReconciler = {
-        invalidateConversationSessions: jest.fn(conversations => conversations),
-        reconcileModelWithEnvironment: jest.fn(() => ({ changed: true })),
-        normalizeModelVariantSettings: jest.fn(() => false),
+        invalidateConversationSessions: vi.fn(conversations => conversations),
+        reconcileModelWithEnvironment: vi.fn(() => ({ changed: true })),
+        normalizeModelVariantSettings: vi.fn(() => false),
       };
       const reloadReconciler: ProviderSettingsReconciler = {
-        invalidateConversationSessions: jest.fn(conversations => conversations),
-        reconcileModelWithEnvironment: jest.fn(() => ({ changed: true, sessionPolicy: 'reload' })),
-        normalizeModelVariantSettings: jest.fn(() => false),
+        invalidateConversationSessions: vi.fn(conversations => conversations),
+        reconcileModelWithEnvironment: vi.fn(() => ({ changed: true, sessionPolicy: 'reload' as const })),
+        normalizeModelVariantSettings: vi.fn(() => false),
       };
       const originalGetSettingsReconciler = ProviderRegistry.getSettingsReconciler.bind(
         ProviderRegistry,
       );
       const originalGetChatUIConfig = ProviderRegistry.getModelPolicy.bind(ProviderRegistry);
-      const reconcilerSpy = jest.spyOn(ProviderRegistry, 'getSettingsReconciler')
+      const reconcilerSpy = vi.spyOn(ProviderRegistry, 'getSettingsReconciler')
         .mockImplementation((providerId) => {
           if (providerId === 'fake-invalidate') return defaultReconciler;
           if (providerId === 'fake-reload') return reloadReconciler;
           return originalGetSettingsReconciler(providerId);
         });
-      const settingsProviderSpy = jest.spyOn(ProviderRegistry, 'resolveSettingsProviderId')
+      const settingsProviderSpy = vi.spyOn(ProviderRegistry, 'resolveSettingsProviderId')
         .mockReturnValue('fake-invalidate');
-      const uiConfigSpy = jest.spyOn(ProviderRegistry, 'getModelPolicy')
+      const uiConfigSpy = vi.spyOn(ProviderRegistry, 'getModelPolicy')
         .mockImplementation((providerId) => (
           providerId === 'fake-invalidate' || providerId === 'fake-reload'
             ? originalGetChatUIConfig('claude')
@@ -698,7 +698,7 @@ describe('ProviderSettingsCoordinator', () => {
       ['acceptEdits', 'acceptEdits'],
       ['auto', 'auto'],
       [['auto'], 'manual'],
-    ])('migrates a legacy Claude Safe selection with safe mode %p to %s', (safeMode, expected) => {
+    ])('migrates a legacy Claude Safe selection with safe mode %o to %s', (safeMode, expected) => {
       const providerConfigs = safeMode ? { claude: { safeMode } } : {};
       for (const saved of [{ claude: 'normal' }, {}]) {
         const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot({

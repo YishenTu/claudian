@@ -13,7 +13,7 @@ describe('markdownMath', () => {
       String.raw`Unmatched closing delimiters \) and \].`,
       String.raw`An escaped price \$5 and dollar math $x$.`,
     ])('skips parsing without a LaTeX opening delimiter: %s', markdown => {
-      const parse = jest.spyOn(parser, 'parse');
+      const parse = vi.spyOn(parser, 'parse');
       try {
         expect(normalizeLatexMathDelimiters(markdown)).toBe(markdown);
         expect(parse).not.toHaveBeenCalled();

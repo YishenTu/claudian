@@ -28,7 +28,7 @@ describe('ExecutionEventQueue', () => {
   });
 
   it('reports an early return while the stream is still open', async () => {
-    const onEarlyReturn = jest.fn();
+    const onEarlyReturn = vi.fn();
     const queue = new ExecutionEventQueue<string>(onEarlyReturn);
     queue.push('only');
 
@@ -42,7 +42,7 @@ describe('ExecutionEventQueue', () => {
   });
 
   it('does not report an early return once the producer has closed the stream', async () => {
-    const onEarlyReturn = jest.fn();
+    const onEarlyReturn = vi.fn();
     const queue = new ExecutionEventQueue<string>(onEarlyReturn);
     queue.push('terminal');
     queue.push('trailing');
