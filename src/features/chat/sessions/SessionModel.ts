@@ -139,6 +139,7 @@ export class SessionModel {
       onQuestionToolChanged: tool => this.inputController.updateAsyncQuestion(tool),
       updateQueueIndicator: () => this.inputController.queue.updateIndicator(),
       asyncSubagentHistoryRecovery: recovery,
+      onProgress: progress => session.signal({ type: 'progress', progress }),
     });
     this.transcript = new SessionTranscript(this.state, this.streamController, this.subagentManager);
     this.inlinePrompts = new SessionInteractions({
@@ -149,6 +150,7 @@ export class SessionModel {
         this.streamController.thinkingIndicator.hide();
         return () => this.streamController.thinkingIndicator.resume(generation);
       },
+      onPendingChanged: (interactionId, pending) => session.signal({ type: 'interaction', interactionId, pending }),
     });
     this.conversationController = new ConversationController({
       plugin, state: this.state, session, drafts: this.composer, subagentManager: this.subagentManager,

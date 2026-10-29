@@ -7,6 +7,7 @@ import * as path from 'node:path';
 
 import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { unmodeledChatViews } from '@test/helpers/features/chat/ClaudianAPIViews';
 import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { testDate } from '@test/helpers/testClock';
 import { hasNativeWSL } from '@test/helpers/WSLNativeTarget';
@@ -149,7 +150,7 @@ describe.skipIf(!available || !cli)('native OpenCode WSL adoption', () => {
         getConversationById: id => repository.getById(id),
       });
       messaging = new SessionMessagingService({ getHost: () => chatHost, getActiveConversationId: () => null, refreshModelControls: () => undefined });
-      expect(await createClaudianAPI(messaging).read('conversation')).toContain('Reply from OpenCode in WSL.');
+      expect(await createClaudianAPI(messaging, unmodeledChatViews).read('conversation')).toContain('Reply from OpenCode in WSL.');
       const requests = (await readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line) as { messages?: Array<{ role: string; content: unknown }> });
       expect(requests.flatMap(request => request.messages ?? [])).toEqual(expect.arrayContaining([expect.objectContaining({ role: 'tool', content: expect.stringContaining('WSL relay 中文') })]));
     } finally {

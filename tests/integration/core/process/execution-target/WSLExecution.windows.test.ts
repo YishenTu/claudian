@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { unmodeledChatViews } from '@test/helpers/features/chat/ClaudianAPIViews';
 import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
@@ -191,7 +192,7 @@ describe.skipIf(!available)('native Windows to WSL execution', { timeout: 60_000
         sessionRuntimes: createSessionRuntimePool(() => host),
       });
       const messaging = new SessionMessagingService({ getHost: () => host, getActiveConversationId: () => null, refreshModelControls() {} });
-      expect(await createClaudianAPI(messaging).read('pi-chat')).toBe('Reply stored in WSL.');
+      expect(await createClaudianAPI(messaging, unmodeledChatViews).read('pi-chat')).toBe('Reply stored in WSL.');
       const fork = await createPiForkSessionFile(sessionFile, 'answer-1', { targetCwd: piTargetPath(hostCwd, resolvedTarget), parentSession: piTargetPath(sessionFile, resolvedTarget) });
       expect((await readPiSessionEntries(fork.sessionFile)).header).toMatchObject({ cwd: piTargetPath(hostCwd, resolvedTarget), parentSession: piTargetPath(sessionFile, resolvedTarget) });
       expect(fork.parentSession).toBe(sessionFile);

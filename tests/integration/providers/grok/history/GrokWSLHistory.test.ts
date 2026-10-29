@@ -6,6 +6,7 @@ import * as path from 'node:path';
 
 import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { unmodeledChatViews } from '@test/helpers/features/chat/ClaudianAPIViews';
 import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { grokWSLToolUpdates } from '@test/helpers/providers/grokWSLTools';
 import { testDate } from '@test/helpers/testClock';
@@ -73,7 +74,7 @@ describe.skipIf(path.sep === '\\')('Grok WSL history on a simulated Windows host
     });
     const service = new SessionMessagingService({ getHost: () => host, getActiveConversationId: () => null, refreshModelControls: () => undefined });
     try {
-      expect(await createClaudianAPI(service).read('conversation')).toBe('Reply from Linux');
+      expect(await createClaudianAPI(service, unmodeledChatViews).read('conversation')).toBe('Reply from Linux');
       const tools = repository.getSync('conversation')?.messages.flatMap(message => message.toolCalls ?? []);
       expect(tools).toContainEqual(expect.objectContaining({ name: 'LS', input: expect.objectContaining({ path: 'C:\\vault\\notes' }) }));
       expect(tools).toContainEqual(expect.objectContaining({ name: 'Edit', diffData: expect.objectContaining({ filePath: 'C:\\vault\\note.md' }) }));

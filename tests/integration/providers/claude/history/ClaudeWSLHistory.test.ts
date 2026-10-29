@@ -7,6 +7,7 @@ import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
+import { unmodeledChatViews } from '@test/helpers/features/chat/ClaudianAPIViews';
 import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { testDate } from '@test/helpers/testClock';
 import { createWindowsHostFS } from '@test/helpers/WindowsHostFS';
@@ -84,7 +85,7 @@ it.skipIf(onWindows)('plugin API read hydrates a WSL transcript through the repo
   });
   const service = new SessionMessagingService({ getHost: () => chatHost, getActiveConversationId: () => null, refreshModelControls: () => {} });
   try {
-    expect(await createClaudianAPI(service).read('conversation-1')).toBe('Answer from WSL history');
+    expect(await createClaudianAPI(service, unmodeledChatViews).read('conversation-1')).toBe('Answer from WSL history');
     // The Linux HOME comes from distro environment probes (availability, then the read), run from the host vault.
     expect(native.requests.length).toBeGreaterThan(0);
     for (const request of native.requests) {

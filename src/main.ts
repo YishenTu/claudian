@@ -40,6 +40,7 @@ import {
   type ClaudianAPI,
   type ClaudianTurnEndedEvent,
   createClaudianAPI,
+  toClaudianWorkspaceEvent,
 } from './features/chat/session-messaging/ClaudianAPI';
 import { SessionMessagingService } from './features/chat/session-messaging/SessionMessagingService';
 import { createChatSessionRuntime } from './features/chat/sessions/createChatSessionRuntime';
@@ -285,6 +286,10 @@ export default class ClaudianPlugin extends Plugin {
       onSessionSettled: sessionId => {
         this.app.workspace.trigger(CLAUDIAN_TURN_ENDED_EVENT, { sessionId } satisfies ClaudianTurnEndedEvent);
       },
+      onSessionSignal: (sessionId, signal) => {
+        const event = toClaudianWorkspaceEvent(sessionId, signal);
+        this.app.workspace.trigger(event.name, event.payload);
+      },
       onError: () => { new Notice('Session state could not be saved. It remains in memory.'); },
     });
     this.sessionMessaging = new SessionMessagingService({
@@ -292,7 +297,7 @@ export default class ClaudianPlugin extends Plugin {
       getActiveConversationId: () => this.views.getInputFocusView(this.zenMode.getActiveLeaf())?.getActiveTab()?.conversationId ?? null,
       refreshModelControls: providerId => this.chatViews.refreshModelSelector(providerId),
     });
-    this.api = createClaudianAPI(this.sessionMessaging);
+    this.api = createClaudianAPI(this.sessionMessaging, { openSession: (id, options) => this.views.openSession(id, options) });
     this.conversationLifecycle = new ConversationLifecycle({
       conversations: domains.conversations,
       projects: domains.projects,

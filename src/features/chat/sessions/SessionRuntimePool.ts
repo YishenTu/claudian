@@ -1,4 +1,4 @@
-import type { ChatSessionRuntime, SessionIdentity } from './ChatSessionRuntime';
+import type { ChatSessionRuntime, SessionIdentity, SessionSignal } from './ChatSessionRuntime';
 
 export interface SessionRevealOptions {
   /** Navigation may wait for a closing presentation to release its attachment before choosing another owner. */
@@ -71,6 +71,8 @@ export class SessionRuntimePool {
     onChanged(): void;
     /** A conversation's session finished its work: running turns, background work and side chat. */
     onSessionSettled?(conversationId: string): void;
+    /** A conversation's session streamed output or changed a pending interaction; drafts have no id yet. */
+    onSessionSignal?(conversationId: string, signal: SessionSignal): void;
     onError(error: unknown): void;
   }) {}
 
@@ -131,7 +133,12 @@ export class SessionRuntimePool {
     this.records.set(runtime, record);
     this.keys.set(runtime.sessionKey, record);
     if (record.status.conversationId) this.conversations.set(record.status.conversationId, record);
-    record.unsubscribe = runtime.subscribe(() => this.changed(record));
+    const unsubscribeChanges = runtime.subscribe(() => this.changed(record));
+    const unsubscribeSignals = runtime.subscribeSignals(signal => {
+      const conversationId = runtime.conversationId;
+      if (conversationId) this.deps.onSessionSignal?.(conversationId, signal);
+    });
+    record.unsubscribe = () => { unsubscribeChanges(); unsubscribeSignals(); };
     return record;
   }
 
