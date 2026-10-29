@@ -787,9 +787,7 @@
     },
     "deepseek": {
       "installation": {
-        "desc": "La détection automatique privilégie dsh, puis cherche Desktop sur macOS ou Windows. Si les deux sont installés, saisissez le chemin .app de Desktop ou son dossier d’installation Windows pour le choisir. Ouvrez d’abord Desktop pour terminer sa configuration.",
-        "desktop": "Utilisation de votre profil Desktop natif.",
-        "web": "Utilisation de votre profil Web natif."
+        "desc": "La détection automatique privilégie dsh, puis cherche Desktop sur macOS ou Windows. Si les deux sont installés, saisissez le chemin .app de Desktop ou son dossier d’installation Windows pour le choisir. Ouvrez d’abord Desktop pour terminer sa configuration."
       },
       "preset": "Preset",
       "codeMode": {

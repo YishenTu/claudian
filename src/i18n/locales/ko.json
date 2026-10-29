@@ -787,9 +787,7 @@
     },
     "deepseek": {
       "installation": {
-        "desc": "자동 감지는 dsh를 우선하고 다음으로 macOS 또는 Windows의 Desktop을 찾습니다. 둘 다 설치된 경우 Desktop의 .app 경로 또는 Windows 설치 폴더를 입력하면 선택할 수 있습니다. 먼저 Desktop을 열어 초기 설정을 완료하세요.",
-        "desktop": "네이티브 Desktop 프로필을 사용합니다.",
-        "web": "네이티브 Web 프로필을 사용합니다."
+        "desc": "자동 감지는 dsh를 우선하고 다음으로 macOS 또는 Windows의 Desktop을 찾습니다. 둘 다 설치된 경우 Desktop의 .app 경로 또는 Windows 설치 폴더를 입력하면 선택할 수 있습니다. 먼저 Desktop을 열어 초기 설정을 완료하세요."
       },
       "preset": "프리셋",
       "codeMode": {

@@ -159,14 +159,16 @@ describe('DeepSeekSettingsTab', () => {
     expect(await axe(container)).toHaveNoViolations();
   });
 
-  it('identifies an explicitly selected Desktop app and explains installation selection', async () => {
+  it('shows a selected Desktop app with installation instructions under its CLI path', async () => {
     const app = process.platform === 'win32' ? 'C:\\test\\DeepSeek Harness.exe' : '/test/DeepSeek Harness.app';
     const cli = process.platform === 'win32' ? 'C:\\test\\resources\\runtime\\cli\\bin\\dsh.cmd' : `${app}/Contents/Resources/runtime/cli/bin/dsh`;
     const { ui, container } = render(true, cli, app);
-    await waitFor(() => expect(ui.getByText('Using your native Desktop profile.')).toBeTruthy());
-    expect(ui.getByText(/Auto prefers dsh/)).toBeTruthy();
     fireEvent.click(ui.getByRole('button', { name: 'DeepSeek Harness installation' }));
-    expect((ui.getByRole('textbox', { name: 'CLI path' }) as HTMLInputElement).value).toBe(app);
+    const input = ui.getByRole('textbox', { name: 'CLI path' }) as HTMLInputElement;
+    expect(input.value).toBe(app);
+    const instructions = ui.getByText(/Auto prefers dsh/);
+    expect(input.compareDocumentPosition(instructions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(input.closest('.claudian-cli-installation-body')?.contains(instructions)).toBe(true);
     expect(await ui.findByText('Custom path')).toBeTruthy();
     expect(await axe(container)).toHaveNoViolations();
   });

@@ -14,7 +14,7 @@ import { renderLastEnabledProviderWarning, renderProviderModelEnablementWarning 
 import { renderProviderModelsSection } from '@/shared/settings/ProviderModelsSection';
 
 import type { DeepSeekCLIResolver } from '../runtime/DeepSeekCLIResolver';
-import { getDeepSeekDesktopInstallation, prepareDeepSeekVersionProbe } from '../runtime/DeepSeekInstallation';
+import { prepareDeepSeekVersionProbe } from '../runtime/DeepSeekInstallation';
 import { type DeepSeekPresetPlugin, parseDeepSeekPresetPlugins, renderDeepSeekPresetPreview } from '../runtime/DeepSeekPresetPlugins';
 import { getDeepSeekProviderSettings, updateDeepSeekProviderSettings } from '../settings';
 
@@ -28,8 +28,6 @@ export function createDeepSeekSettingsTabRenderer(workspace: { cliResolver: Deep
       const host = context.plugin;
       const settings = (): ReturnType<typeof getDeepSeekProviderSettings> => getDeepSeekProviderSettings(host.settings);
       const installation = container.createDiv({ cls: 'claudian-deepseek-installation' });
-      installation.createEl('p', { cls: 'setting-item-description', text: t('settings.deepseek.installation.desc') });
-      const profile = installation.createEl('p', { cls: 'setting-item-description', attr: { role: 'status' } });
       const warning = renderLastEnabledProviderWarning(container);
       const modelWarning = renderProviderModelEnablementWarning(container, context, { providerId: 'deepseek', providerName: 'DeepSeek Harness',
         getHasEnabledModels: () => settings().visibleModels.length > 0, getIsEnabled: () => settings().enabled,
@@ -39,7 +37,6 @@ export function createDeepSeekSettingsTabRenderer(workspace: { cliResolver: Deep
         inspect: async () => {
           const path = await host.getResolvedProviderCliPath('deepseek');
           const configuredPath = settings().cliPathsByHost[host.storage.installationKey] ?? settings().cliPath;
-          profile.setText(path ? t(getDeepSeekDesktopInstallation(path) ? 'settings.deepseek.installation.desktop' : 'settings.deepseek.installation.web') : '');
           const result = await probeCLIInstallation({ path, configuredPath,
             args: ['--version'], env: { ...process.env, ...getRuntimeEnvironmentVariables(host.settings, 'deepseek') },
             prepareLaunch: prepareDeepSeekVersionProbe,
@@ -48,6 +45,9 @@ export function createDeepSeekSettingsTabRenderer(workspace: { cliResolver: Deep
         },
         onChange: async cliPath => {
           await host.applyProviderRuntimeSettings(['deepseek'], settings => { updateDeepSeekProviderSettings(settings, { cliPath }); }, () => workspace.cliResolver.reset());
+        },
+        renderDetails: (details) => {
+          details.createEl('p', { cls: 'setting-item-description', text: t('settings.deepseek.installation.desc') });
         },
         enablement: { name: t('settings.providerEnablement.name', { provider: 'DeepSeek Harness' }), getValue: () => settings().enabled,
           onChange: async enabled => {

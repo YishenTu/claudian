@@ -241,6 +241,18 @@
   border-color: var(--text-error);
 }
 
+.claudian-cli-installation-details {
+  margin: calc(-1 * var(--size-4-2)) var(--size-4-4) var(--size-4-4);
+}
+
+.claudian-cli-installation-details > p {
+  margin: 0 0 var(--size-4-2);
+}
+
+.claudian-cli-installation-details > p:last-child {
+  margin-bottom: 0;
+}
+
 .claudian-cli-installation-body .claudian-cli-path-validation {
   grid-column: 1 / -1;
   margin: 0 var(--size-4-4) var(--size-4-4);

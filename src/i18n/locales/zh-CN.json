@@ -787,9 +787,7 @@
     },
     "deepseek": {
       "installation": {
-        "desc": "自动模式优先使用 dsh，其次检测 macOS 或 Windows 上的 Desktop。两者都已安装时，输入 Desktop 的 .app 路径或 Windows 安装文件夹即可选择它。请先打开 Desktop 完成初始设置。",
-        "desktop": "使用你的原生 Desktop 配置文件。",
-        "web": "使用你的原生 Web 配置文件。"
+        "desc": "自动模式优先使用 dsh，其次检测 macOS 或 Windows 上的 Desktop。两者都已安装时，输入 Desktop 的 .app 路径或 Windows 安装文件夹即可选择它。请先打开 Desktop 完成初始设置。"
       },
       "preset": "预设",
       "codeMode": {

@@ -787,9 +787,7 @@
     },
     "deepseek": {
       "installation": {
-        "desc": "La detección automática prioriza dsh y después busca Desktop en macOS o Windows. Si ambos están instalados, introduce la ruta .app de Desktop o su carpeta de instalación de Windows para seleccionarlo. Abre Desktop primero para completar su configuración.",
-        "desktop": "Se usa tu perfil nativo de Desktop.",
-        "web": "Se usa tu perfil web nativo."
+        "desc": "La detección automática prioriza dsh y después busca Desktop en macOS o Windows. Si ambos están instalados, introduce la ruta .app de Desktop o su carpeta de instalación de Windows para seleccionarlo. Abre Desktop primero para completar su configuración."
       },
       "preset": "Preset",
       "codeMode": {

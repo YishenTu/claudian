@@ -787,9 +787,7 @@
     },
     "deepseek": {
       "installation": {
-        "desc": "Auto prefers dsh, then discovers Desktop on macOS or Windows. To use Desktop when both are installed, enter its .app path or Windows install folder. Open Desktop once to complete setup.",
-        "desktop": "Using your native Desktop profile.",
-        "web": "Using your native Web profile."
+        "desc": "Auto prefers dsh, then discovers Desktop on macOS or Windows. To use Desktop when both are installed, enter its .app path or Windows install folder. Open Desktop once to complete setup."
       },
       "preset": "Preset",
       "codeMode": {

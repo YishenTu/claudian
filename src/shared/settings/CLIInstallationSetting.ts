@@ -15,6 +15,8 @@ export interface CLIInstallationSettingOptions extends Omit<HostnameCLIPathSetti
   cliName: string;
   icon?: ProviderIconSvg;
   inspect: () => Promise<CLIInstallation>;
+  /** Renders provider-specific notes under the CLI path input. */
+  renderDetails?: (container: HTMLElement) => void;
 }
 
 export interface CLIInstallationSettingControl extends HostnameCLIPathSettingControl {
@@ -83,6 +85,7 @@ export function renderCLIInstallationSetting(
   control.text.inputEl.setAttribute('aria-describedby', `${body.id}-error`);
   control.validationEl.id = `${body.id}-error`;
   control.validationEl.setAttribute('role', 'alert');
+  if (options.renderDetails) options.renderDetails(body.createDiv({ cls: 'claudian-cli-installation-details' }));
 
   const refresh = async (): Promise<void> => {
     const current = ++generation;
