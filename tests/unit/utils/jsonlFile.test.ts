@@ -1,10 +1,12 @@
 import type * as fsType from 'fs';
 import type * as osType from 'os';
 import type * as pathType from 'path';
+import type * as zlibType from 'zlib';
 
 const fs = jest.requireActual<typeof fsType>('fs');
 const os = jest.requireActual<typeof osType>('os');
 const path = jest.requireActual<typeof pathType>('path');
+const { zstdCompressSync } = jest.requireActual<typeof zlibType>('zlib');
 
 import { forEachJSONLLine } from '@/utils/jsonlFile';
 
@@ -47,6 +49,38 @@ describe('forEachJSONLLine', () => {
     await expect(forEachJSONLLine(file, line => { lines.push(line); }, { maxLineLength: 4 }))
       .rejects.toThrow(new Error('Line exceeded the size limit.'));
     expect(lines).toEqual(['0']);
+  });
+
+  it('streams Zstandard-compressed files and surfaces their open and decode failures', async () => {
+    const compressed = path.join(dir, 'history.jsonl.zst');
+    fs.writeFileSync(compressed, zstdCompressSync('{"x":1}\nlast'));
+    await expect(collect(compressed)).resolves.toEqual(['{"x":1}', 'last']);
+
+    // Codex history maps ENOENT to a missing transcript, so it must not become a decode error or timeout.
+    await expect(collect(path.join(dir, 'missing.jsonl.zst'))).rejects.toMatchObject({ code: 'ENOENT' });
+
+    fs.writeFileSync(compressed, '{"x":1}\n');
+    await expect(collect(compressed)).rejects.toMatchObject({ code: 'ZSTD_error_prefix_unknown' });
+  });
+
+  it('rejects compressed files cleanly when the host lacks Zstandard support', async () => {
+    const uncaught = jest.fn();
+    process.on('uncaughtException', uncaught);
+    try {
+      let readWithoutZstd: typeof forEachJSONLLine = forEachJSONLLine;
+      jest.isolateModules(() => {
+        jest.doMock('node:zlib', () => ({ ...jest.requireActual<typeof zlibType>('zlib'), createZstdDecompress: undefined }));
+        ({ forEachJSONLLine: readWithoutZstd } = jest.requireActual<{ forEachJSONLLine: typeof forEachJSONLLine }>('@/utils/jsonlFile'));
+      });
+      await expect(readWithoutZstd(path.join(dir, 'missing.jsonl.zst'), () => {}))
+        .rejects.toThrow('Reading compressed history requires a newer Obsidian installer.');
+      // A file opened before the capability check would report ENOENT after the rejection.
+      await new Promise(resolve => setTimeout(resolve, 50));
+      expect(uncaught).not.toHaveBeenCalled();
+    } finally {
+      process.off('uncaughtException', uncaught);
+      jest.dontMock('node:zlib');
+    }
   });
 
   it('stops when the handler returns false', async () => {

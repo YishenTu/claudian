@@ -1,6 +1,4 @@
-import { createReadStream } from 'node:fs';
 import * as fsp from 'node:fs/promises';
-import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 import type * as fs from 'fs';
@@ -1485,6 +1483,8 @@ export async function findCodexSessionFileAsync(
     return null;
   }
 
+  // Codex compresses older rollouts in place.
+  const rolloutNames = [`-${threadId}.jsonl`, `-${threadId}.jsonl.zst`];
   const deadline = Date.now() + Math.max(0, timeoutMs);
   const pathExists = dependencies.pathExists ?? defaultPathExists;
   const readDirectory = dependencies.readDirectory
@@ -1519,7 +1519,7 @@ export async function findCodexSessionFileAsync(
       const fullPath = path.join(current, entry.name);
       if (entry.isDirectory()) {
         stack.push(fullPath);
-      } else if (entry.isFile() && entry.name.endsWith(`-${threadId}.jsonl`)) {
+      } else if (entry.isFile() && rolloutNames.some(name => entry.name.endsWith(name))) {
         return fullPath;
       }
     }
@@ -1532,7 +1532,8 @@ export interface CodexSessionFileLookupDependencies {
   readDirectory?: (value: string) => Promise<fs.Dirent[]>;
 }
 
-async function runBeforeDeadline<T>(
+/** Rejects once the deadline passes, so a stalled filesystem cannot hold a bounded lookup open. */
+export async function runBeforeDeadline<T>(
   operation: () => Promise<T>,
   deadline: number,
 ): Promise<T> {
@@ -1552,7 +1553,8 @@ async function runBeforeDeadline<T>(
       },
       (error) => {
         window.clearTimeout(timer);
-        reject(error instanceof Error ? error : new Error(String(error)));
+        // Keep error objects intact; callers branch on codes such as ENOENT.
+        reject(typeof error === 'object' && error !== null ? error as Error : new Error(String(error)));
       },
     );
   });
@@ -1598,6 +1600,8 @@ export interface CodexParsedTurn {
 }
 
 /** Shared checkpoint rules for in-memory and streaming model recovery. */
+const MODEL_RECOVERY_CHUNK_BYTES = 64 * 1024;
+
 class SessionModelReader {
   model: string | null = null;
   reached = false;
@@ -1618,21 +1622,12 @@ class SessionModelReader {
 
 /** Stream model metadata; checkpoint recovery does not read the remainder of the file. */
 export async function readCodexSessionModel(file: string, resumeAtTurnId?: string): Promise<string | null> {
-  const input = createReadStream(file, { encoding: 'utf8' });
-  const lines = createInterface({ input, crlfDelay: Infinity });
-  const timer = window.setTimeout(() => input.destroy(new Error('Codex model recovery timed out.')), 10_000);
   const reader = new SessionModelReader(resumeAtTurnId);
-  try {
-    for await (const line of lines) {
-      reader.accept(line);
-      if (reader.reached) break;
-    }
-    return reader.result();
-  } finally {
-    window.clearTimeout(timer);
-    lines.close();
-    input.destroy();
-  }
+  await forEachJSONLLine(file, (line) => {
+    reader.accept(line);
+    return !reader.reached;
+  }, { chunkBytes: MODEL_RECOVERY_CHUNK_BYTES });
+  return reader.result();
 }
 
 export function parseCodexSessionRecordLines(lines: readonly string[]): CodexSessionRecord[] {

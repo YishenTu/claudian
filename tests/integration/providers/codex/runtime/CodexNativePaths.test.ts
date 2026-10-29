@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { resolveCodexSessionFileHint } from '@/providers/codex/history/CodexHistoryPathResolver';
+import { resolveCodexRolloutFile } from '@/providers/codex/history/CodexHistoryPathResolver';
 import { deriveCodexSessionsRootFromSessionPath, findCodexSessionFileAsync } from '@/providers/codex/history/CodexHistoryStore';
 import { buildCodexLaunchSpec } from '@/providers/codex/runtime/CodexLaunchSpecBuilder';
 import { createCodexRuntimeContext } from '@/providers/codex/runtime/CodexRuntimeContext';
@@ -50,7 +50,7 @@ describePosix('native Codex paths containing literal backslashes', () => {
     const transcript = path.join(sessions, 'rollout-thread.jsonl');
     await fs.writeFile(transcript, JSON.stringify({ type: 'session_meta', payload: { id: 'thread' } }) + '\n');
     expect(deriveCodexSessionsRootFromSessionPath(transcript)).toBe(sessions);
-    await expect(resolveCodexSessionFileHint(transcript, 'thread', {
+    await expect(resolveCodexRolloutFile(transcript, 'thread', null, {
       environment: { HOME: home }, hostPlatform: process.platform, vaultPath: vault,
     })).resolves.toBe(transcript);
     await expect(findCodexSessionFileAsync('thread', sessions)).resolves.toBe(transcript);

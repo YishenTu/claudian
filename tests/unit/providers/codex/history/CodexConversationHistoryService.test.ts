@@ -1,10 +1,12 @@
 import type * as fsType from 'fs';
 import type * as osType from 'os';
 import type * as pathType from 'path';
+import type * as zlibType from 'zlib';
 
 const fs = jest.requireActual<typeof fsType>('fs');
 const os = jest.requireActual<typeof osType>('os');
 const path = jest.requireActual<typeof pathType>('path');
+const { zstdCompressSync } = jest.requireActual<typeof zlibType>('zlib');
 
 import { testDate } from '@test/helpers/testClock';
 
@@ -259,6 +261,8 @@ describe('CodexConversationHistoryService', () => {
     const sessionPath = '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\2026\\07\\12\\rollout-thread.jsonl';
     const readModel = jest.spyOn(CodexHistoryStore, 'readCodexSessionModel').mockResolvedValue('gpt-5.5');
     const find = jest.spyOn(CodexHistoryStore, 'findCodexSessionFileAsync').mockResolvedValue(null);
+    // The WSL share is not mounted on the test host; report the trusted saved path as present.
+    const access = jest.spyOn(fs.promises, 'access').mockResolvedValue();
     const service = new CodexConversationHistoryService();
     const conversation = { sessionId: 'thread', providerState: { sessionFilePath: sessionPath, threadId: 'thread' }, messages: [] };
     const context = (installationMethod: 'wsl' | 'native-windows') => ({
@@ -279,6 +283,7 @@ describe('CodexConversationHistoryService', () => {
     } finally {
       readModel.mockRestore();
       find.mockRestore();
+      access.mockRestore();
     }
   });
 
@@ -596,6 +601,44 @@ describe('CodexConversationHistoryService', () => {
       content: 'Recovered from transcript root.',
     });
     expect((conversation.providerState as Record<string, unknown>).sessionFilePath).toBe(transcriptPath);
+  });
+
+  it.each([
+    { location: 'compressed in place', archived: false, compressed: true },
+    { location: 'archived', archived: true, compressed: false },
+    { location: 'archived and compressed', archived: true, compressed: true },
+  ])('hydrates the live thread and its model after Codex moves its saved rollout: $location', async ({ archived, compressed }) => {
+    const threadId = 'thread-moved-live';
+    const sessionsRoot = path.join(tempHome, '.codex', 'sessions');
+    const fileName = `rollout-2026-03-27T00-00-00-${threadId}.jsonl`;
+    const savedPath = path.join(sessionsRoot, '2026', '03', '27', fileName);
+    const movedDir = archived ? path.join(tempHome, '.codex', 'archived_sessions') : path.dirname(savedPath);
+    fs.mkdirSync(path.dirname(savedPath), { recursive: true });
+    fs.mkdirSync(movedDir, { recursive: true });
+    const content = [
+      { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn' } },
+      { type: 'turn_context', payload: { model: 'gpt-5.5', turn_id: 'turn' } },
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'MovedQ' }] } },
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'MovedA' }] } },
+      { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn' } },
+    ].map((record, seconds) => JSON.stringify({ timestamp: testDate({ seconds }).toISOString(), ...record })).join('\n');
+    const movedPath = path.join(movedDir, compressed ? `${fileName}.zst` : fileName);
+    fs.writeFileSync(movedPath, compressed ? zstdCompressSync(content) : content);
+
+    const conversation: Conversation = {
+      id: 'conv-moved-live', providerId: 'codex', title: 'Moved', sessionId: threadId, messages: [],
+      createdAt: testDate().getTime(), lastActivityAt: testDate({ seconds: 4 }).getTime(),
+      providerState: { threadId, sessionFilePath: savedPath, transcriptRootPath: sessionsRoot },
+    };
+    const service = new CodexConversationHistoryService();
+    // Model recovery can run before hydration has corrected the saved path.
+    await expect(service.recoverConversationModelSelection(conversation, null)).resolves.toBe('openai-codex/gpt-5.5');
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
+
+    expect(conversation.messages.map(message => [message.role, message.content])).toEqual([
+      ['user', 'MovedQ'], ['assistant', 'MovedA'],
+    ]);
+    expect(getCodexState(conversation.providerState).sessionFilePath).toBe(movedPath);
   });
 
   it('backfills transcriptRootPath from sessionFilePath when only the session path is known', async () => {
@@ -1143,6 +1186,26 @@ describe('CodexConversationHistoryService', () => {
       Object.assign(conversation, reset.changes);
 
       expect(visible(await hydrate(conversation))).toEqual(sourcePrefix);
+    });
+
+    it.each(['live', 'invalidated'])('never shows a %s fork child whole when its source rollout is gone', async mode => {
+      const sourcePath = writeRollout('source', [['s1', 'SrcQ1', 'SrcA1'], ['s2', 'SrcQ2', 'SrcA2']]);
+      // The child rollout repeats the source turns, including the one after the checkpoint.
+      const childPath = writeRollout('fork', [['s1', 'SrcQ1', 'SrcA1'], ['s2', 'SrcQ2', 'SrcA2'], ['f1', 'ForkQ', 'ForkA']]);
+      const conversation = codexConversation('fork', {
+        forkSource: { sessionId: 'source', resumeAt: 's1' },
+        forkSourceSessionFilePath: sourcePath,
+        threadId: 'fork',
+        sessionFilePath: childPath,
+      });
+      expect(visible(await hydrate(conversation))).toEqual([
+        ['user', 'SrcQ1'], ['assistant', 'SrcA1'], ['user', 'ForkQ'], ['assistant', 'ForkA'],
+      ]);
+      if (mode === 'invalidated') codexSettingsReconciler.invalidateConversationSessions([conversation]);
+
+      fs.unlinkSync(sourcePath);
+
+      expect(visible(await hydrate(conversation))).toEqual([]);
     });
 
     it('hydrates earlier segments before a replacement thread that replayed them', async () => {

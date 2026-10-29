@@ -1,5 +1,3 @@
-import { access } from 'node:fs/promises';
-
 import { copyProviderHistoryState } from '@/core/providers/providerHistory';
 
 import type {
@@ -19,7 +17,7 @@ import {
   CODEX_HISTORY_LOOKUP_TIMEOUT_MS,
   type CodexHistoryPathContext,
   getCodexArchivedTranscriptRoots,
-  resolveCodexSessionFileHint,
+  resolveCodexRolloutFile,
   resolveCodexTranscriptRootHint,
 } from './CodexHistoryPathResolver';
 import {
@@ -114,9 +112,10 @@ export class CodexConversationHistoryService implements ProviderConversationHist
         return null;
       }
     }
-    const resolvedPath = await resolveCodexSessionFileHint(
+    const resolvedPath = await resolveCodexRolloutFile(
       persistedPath,
       threadId,
+      transcriptRootPath,
       pathContext,
       deadline,
     );
@@ -217,30 +216,30 @@ export class CodexConversationHistoryService implements ProviderConversationHist
         pathContext,
         lookupDeadline,
       );
-      const forkSessionFile = await this.#resolveThreadSessionFile(
+      // Without its source the checkpoint cannot be verified, so the child transcript is never shown whole.
+      if (!sourceSessionFile) return null;
+      const forkSessionFile = await resolveCodexRolloutFile(
         state.sessionFilePath,
         state.threadId,
         transcriptRootPath,
         pathContext,
         lookupDeadline,
       );
-
-      if (sourceSessionFile && forkSessionFile) {
-        const messages = await this.#readEstablishedForkMessages(
-          state,
-          sourceSessionFile,
-          forkSessionFile,
-          await readSessionTurns(forkSessionFile),
-          transcriptRootPath,
-          pathContext,
-        );
-        return messages && messages.length > 0 ? messages : null;
-      }
+      // A missing fork child still shows its source prefix.
+      const messages = await this.#readEstablishedForkMessages(
+        state,
+        sourceSessionFile,
+        forkSessionFile,
+        forkSessionFile ? await readSessionTurns(forkSessionFile) : [],
+        transcriptRootPath,
+        pathContext,
+      );
+      return messages && messages.length > 0 ? messages : null;
     }
 
     // Normal hydration
     const threadId = state.threadId ?? conversation.sessionId ?? null;
-    const sessionFilePath = await this.#resolveThreadSessionFile(
+    const sessionFilePath = await resolveCodexRolloutFile(
       state.sessionFilePath,
       threadId,
       transcriptRootPath,
@@ -314,16 +313,17 @@ export class CodexConversationHistoryService implements ProviderConversationHist
           pathContext,
           lookupDeadline,
         );
-        if (sourceSessionFile) {
-          return await this.#readEstablishedForkMessages(
-            segment,
-            sourceSessionFile,
-            sessionFile,
-            turns,
-            transcriptRootPath,
-            pathContext,
-          ) ?? [];
-        }
+        // As for the live thread, an unverifiable checkpoint shows nothing rather than the whole child.
+        return sourceSessionFile
+          ? await this.#readEstablishedForkMessages(
+              segment,
+              sourceSessionFile,
+              sessionFile,
+              turns,
+              transcriptRootPath,
+              pathContext,
+            ) ?? []
+          : [];
       }
       const messages = turns.flatMap(turn => turn.messages);
       await this.#hydrateSubagents(messages, sessionFile, transcriptRootPath, pathContext);
@@ -360,7 +360,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
   async #readEstablishedForkMessages(
     state: CodexPreviousSegment,
     sourceSessionFile: string,
-    forkSessionFile: string,
+    forkSessionFile: string | null,
     forkTurns: CodexParsedTurn[],
     transcriptRootPath: string | null,
     pathContext: CodexHistoryPathContext | undefined,
@@ -380,29 +380,10 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     const forkMessages = forkOnlyTurns.flatMap(t => t.messages);
 
     await this.#hydrateSubagents(sourceMessages, sourceSessionFile, state.forkSourceTranscriptRootPath, pathContext);
-    await this.#hydrateSubagents(forkMessages, forkSessionFile, transcriptRootPath, pathContext);
+    if (forkSessionFile) {
+      await this.#hydrateSubagents(forkMessages, forkSessionFile, transcriptRootPath, pathContext);
+    }
     return [...sourceMessages, ...forkMessages];
-  }
-
-  async #resolveThreadSessionFile(
-    persistedPath: string | undefined,
-    threadId: string | null,
-    transcriptRootPath: string | null,
-    pathContext: CodexHistoryPathContext | undefined,
-    lookupDeadline: number,
-  ): Promise<string | null> {
-    return await resolveCodexSessionFileHint(
-      persistedPath,
-      threadId,
-      pathContext,
-      lookupDeadline,
-    ) ?? (threadId && transcriptRootPath
-      ? await findCodexSessionFileAsync(
-          threadId,
-          transcriptRootPath,
-          Math.max(0, lookupDeadline - Date.now()),
-        )
-      : null);
   }
 
   /**
@@ -415,7 +396,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     pathContext: CodexHistoryPathContext | undefined,
     lookupDeadline: number,
   ): Promise<{ sessionFile: string; turns: CodexParsedTurn[] } | null> {
-    const resolved = await this.#resolveThreadSessionFile(
+    const resolved = await resolveCodexRolloutFile(
       segment.sessionFilePath,
       segment.threadId ?? null,
       transcriptRootPath,
@@ -581,36 +562,13 @@ export class CodexConversationHistoryService implements ProviderConversationHist
         ?? deriveCodexSessionsRootFromSessionPath(state.forkSourceSessionFilePath),
       pathContext,
     );
-    const resolved = await resolveCodexSessionFileHint(
+    return await resolveCodexRolloutFile(
       state.forkSourceSessionFilePath,
       state.forkSource.sessionId,
+      sourceTranscriptRootPath,
       pathContext,
       lookupDeadline,
     );
-    if (resolved) {
-      try {
-        await access(resolved);
-        return resolved;
-      } catch (error) {
-        // Preserve read errors; only a missing path can indicate native archive movement.
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return resolved;
-      }
-      const active = await resolveCodexSessionFileHint(
-        undefined, state.forkSource.sessionId, pathContext, lookupDeadline,
-      );
-      if (active) return active;
-    }
-    const roots = [
-      ...(sourceTranscriptRootPath ? [sourceTranscriptRootPath] : []),
-      ...getCodexArchivedTranscriptRoots(pathContext, sourceTranscriptRootPath ? [sourceTranscriptRootPath] : []),
-    ];
-    for (const root of roots) {
-      const remainingMs = Math.max(0, lookupDeadline - Date.now());
-      if (remainingMs === 0) break;
-      const candidate = await findCodexSessionFileAsync(state.forkSource.sessionId, root, remainingMs);
-      if (candidate) return candidate;
-    }
-    return resolved;
   }
 
   #truncateTurnsAtCheckpoint(

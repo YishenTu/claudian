@@ -1,3 +1,4 @@
+import { access } from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
@@ -6,7 +7,7 @@ import { isPathWithinRoot } from '../../../core/storage/pathContainment';
 import type { CodexProviderSettings } from '../config';
 import { inferWslDistroFromWindowsPath } from '../runtime/CodexExecutionTargetResolver';
 import { createCodexPathMapper } from '../runtime/CodexPathMapper';
-import { findCodexSessionFileAsync } from './CodexHistoryStore';
+import { findCodexSessionFileAsync, runBeforeDeadline } from './CodexHistoryStore';
 
 export const CODEX_HISTORY_LOOKUP_TIMEOUT_MS = 10_000;
 
@@ -155,38 +156,61 @@ export function resolveCodexTranscriptRootHint(
     : null;
 }
 
-export async function resolveCodexSessionFileHint(
+/** The saved rollout path when it lies under a trusted session root; without a host context it is taken as is. */
+export function resolveCodexSessionFileHint(
   persistedPath: string | null | undefined,
-  logicalSessionId: string | null | undefined,
+  context?: CodexHistoryPathContext,
+): string | null {
+  if (!persistedPath) return null;
+  if (!context) return persistedPath;
+  return getTrustedSessionRoots(context, [persistedPath]).some(root => isPathWithinRoot(persistedPath, root))
+    ? persistedPath
+    : null;
+}
+
+/** Present or unreadable keeps the saved path so reads surface the failure; null when the lookup deadline passes. */
+async function isPresentOrUnreadable(filePath: string, deadline: number): Promise<boolean | null> {
+  try {
+    await runBeforeDeadline(() => access(filePath), deadline);
+    return true;
+  } catch (error) {
+    if (Date.now() >= deadline) return null;
+    return (error as NodeJS.ErrnoException).code !== 'ENOENT';
+  }
+}
+
+/**
+ * A thread's rollout: the trusted saved path while it exists, otherwise a search of the active,
+ * transcript and archived roots, because Codex moves rollouts it archives or compresses. Access
+ * failures other than ENOENT keep the saved path so reads surface them; the whole lookup, including
+ * the saved-path check, ends at the deadline.
+ */
+export async function resolveCodexRolloutFile(
+  persistedPath: string | null | undefined,
+  threadId: string | null | undefined,
+  transcriptRootPath: string | null,
   context?: CodexHistoryPathContext,
   deadline = Date.now() + CODEX_HISTORY_LOOKUP_TIMEOUT_MS,
 ): Promise<string | null> {
-  if (!context) {
-    return persistedPath ?? (
-      logicalSessionId
-        ? findCodexSessionFileAsync(logicalSessionId, undefined, Math.max(0, deadline - Date.now()))
-        : null
-    );
+  const trusted = resolveCodexSessionFileHint(persistedPath, context);
+  if (trusted) {
+    const present = await isPresentOrUnreadable(trusted, deadline);
+    if (present === null) return null;
+    if (present) return trusted;
   }
+  if (!threadId) return null;
 
-  const roots = getTrustedSessionRoots(context, [persistedPath]);
-  if (persistedPath && roots.some(root => isPathWithinRoot(persistedPath, root))) {
-    return persistedPath;
-  }
-
-  if (!logicalSessionId) {
-    return null;
-  }
-
+  const rootHints = transcriptRootPath ? [transcriptRootPath] : [];
+  const roots = new Set([
+    ...(context ? getTrustedSessionRoots(context, [persistedPath]) : [path.join(os.homedir(), '.codex', 'sessions')]),
+    ...rootHints,
+    ...getCodexArchivedTranscriptRoots(context, rootHints),
+  ]);
   for (const root of roots) {
     const remainingMs = Math.max(0, deadline - Date.now());
-    if (remainingMs === 0) {
-      return null;
-    }
-    const resolved = await findCodexSessionFileAsync(logicalSessionId, root, remainingMs);
-    if (resolved) {
-      return resolved;
-    }
+    if (remainingMs === 0) return null;
+    const found = await findCodexSessionFileAsync(threadId, root, remainingMs);
+    if (found) return found;
   }
   return null;
 }
