@@ -128,6 +128,14 @@ export interface TurnActivity {
   subscribe(listener: () => void): () => void;
 }
 
+/**
+ * One streamed block as received, for session observers. Text and thinking carry everything so far
+ * in their block, located by the response message and the block's position in it; tools by id.
+ */
+export type ResponseProgress =
+  | { readonly kind: 'text' | 'thinking'; readonly messageId: string; readonly blockIndex: number; readonly text: string }
+  | { readonly kind: 'tool'; readonly messageId: string; readonly toolId: string; readonly toolName: string; readonly status: ToolCallInfo['status'] };
+
 /** Callbacks for ChatState changes. */
 export interface ChatStateCallbacks {
   onStreamingStateChanged?: (isStreaming: boolean) => void;
