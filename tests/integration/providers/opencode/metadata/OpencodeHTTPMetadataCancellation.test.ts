@@ -3,16 +3,16 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
+import { OpencodeHTTPMetadataProbe } from '@/providers/opencode/metadata/OpencodeHTTPMetadataProbe';
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
-import { OpencodeV2MetadataProbe } from '@/providers/opencode/metadata/OpencodeV2MetadataProbe';
 import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 
-import { createOpencodeV2MetadataFixture, type OpencodeV2MetadataFixture, waitUntil } from './OpencodeV2MetadataFixture';
+import { createOpencodeHTTPMetadataFixture, type OpencodeHTTPMetadataFixture, waitUntil } from './OpencodeHTTPMetadataFixture';
 
 // OpenCode v2 metadata reader cancellation, invalidation, and disposal during startup and polling.
-let fixture: OpencodeV2MetadataFixture;
+let fixture: OpencodeHTTPMetadataFixture;
 
-beforeEach(() => { fixture = createOpencodeV2MetadataFixture(); });
+beforeEach(() => { fixture = createOpencodeHTTPMetadataFixture(); });
 
 afterEach(() => fixture.dispose());
 
@@ -40,7 +40,7 @@ it('cancels one activation wait without publishing or stopping another reader', 
 it('cancels a probe waiting for native catalog initialization and closes its server', async () => {
   writeFileSync(fixture.environment.CATALOG_FILE!, '[]');
   const servers = new OpencodeServerService();
-  const probe = new OpencodeV2MetadataProbe(await servers.acquire(fixture.cliPath, fixture.root, fixture.environment));
+  const probe = new OpencodeHTTPMetadataProbe(await servers.acquire(fixture.cliPath, fixture.root, fixture.environment));
   const controller = new AbortController();
   const pending = probe.loadCatalog(controller.signal);
   const timer = setTimeout(() => controller.abort(), 150);

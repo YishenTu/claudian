@@ -18,7 +18,7 @@ import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
 import { OpencodeHTTPSessionKernel } from '@/providers/opencode/execution/OpencodeHTTPSessionKernel';
 import { OpencodeSessionPersistence } from '@/providers/opencode/execution/OpencodeSessionPersistence';
-import { mapOpencodeV2NativeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
+import { mapOpencodeNativeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
 import type { OpencodeHTTPEvent } from '@/providers/opencode/http/OpencodeHTTPClient';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
@@ -105,7 +105,7 @@ function restoreV2History(call: NativeToolCall): ToolCallInfo {
   const state = call.error
     ? { status: 'error', input: call.input, error: call.error, metadata: call.metadata ?? null, content: null }
     : { status: 'completed', input: call.input, metadata: call.metadata, content: (call.content ?? []).map(text => ({ type: 'text', text })) };
-  const [message] = mapOpencodeV2NativeMessages([{
+  const [message] = mapOpencodeNativeMessages([{
     id: 'msg', type: 'assistant', time_created: testDate().getTime(),
     content: [{ type: 'tool', id: 'tool', name: call.name, state }],
   }]);

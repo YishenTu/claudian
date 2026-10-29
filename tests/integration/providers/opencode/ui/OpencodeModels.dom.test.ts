@@ -10,7 +10,7 @@ import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeM
 import { createOpencodeModels } from '@/providers/opencode/runtime/OpencodeModels';
 import { createOpencodeSettingsTabRenderer } from '@/providers/opencode/ui/OpencodeSettingsTab';
 
-import { createOpencodeV2MetadataFixture } from '../metadata/OpencodeV2MetadataFixture';
+import { createOpencodeHTTPMetadataFixture } from '../metadata/OpencodeHTTPMetadataFixture';
 
 jest.mock('obsidian', () => {
   const controls = jest.requireActual('@test/helpers/ObsidianSettingsDOM');
@@ -37,7 +37,7 @@ HTMLElement.prototype.createEl = function <K extends keyof HTMLElementTagNameMap
 };
 
 function setup() {
-  const fixture = createOpencodeV2MetadataFixture();
+  const fixture = createOpencodeHTTPMetadataFixture();
   const host = fixture.createPlugin();
   host.storage = { installationKey: 'test' };
   const runtimeHost = runtimeHostFor(host, 'opencode');

@@ -406,7 +406,7 @@ function markInterruptedTurn(messages: ChatMessage[], turnStart: number, marker:
 }
 
 /** v2 control entries delimit turns even when they have no chat presentation. */
-export function mapOpencodeV2NativeMessages(messages: StoredRow[]): ChatMessage[] {
+export function mapOpencodeNativeMessages(messages: StoredRow[]): ChatMessage[] {
   const result: ChatMessage[] = [];
   let segment: ChatMessage[] = [];
   const stats = new OpencodeTurnStats();

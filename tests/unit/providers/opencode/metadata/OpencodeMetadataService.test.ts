@@ -2,12 +2,12 @@ import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
 import type { OpencodeNativeModel } from '@/providers/opencode/http/OpencodeNativeModelCatalog';
 import type { OpencodeServerLease } from '@/providers/opencode/http/OpencodeServerService';
+import { OpencodeHTTPMetadataProbe } from '@/providers/opencode/metadata/OpencodeHTTPMetadataProbe';
 import {
   type OpencodeMetadataProbe,
   OpencodeMetadataService,
   type OpencodeMetadataWarmResult,
 } from '@/providers/opencode/metadata/OpencodeMetadataService';
-import { OpencodeV2MetadataProbe } from '@/providers/opencode/metadata/OpencodeV2MetadataProbe';
 import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 
 function createPlugin(): any {
@@ -292,7 +292,7 @@ it('publishes enabled native models without reading the command catalog', async 
     },
     dispose: async () => undefined,
   } as unknown as OpencodeServerLease;
-  const service = new OpencodeMetadataService(host, host.executionLifecycleRegistry, { createProbe: () => new OpencodeV2MetadataProbe(lease) });
+  const service = new OpencodeMetadataService(host, host.executionLifecycleRegistry, { createProbe: () => new OpencodeHTTPMetadataProbe(lease) });
   try {
     await expect(service.loadCatalog()).resolves.toBe(true);
     // Disabled and malformed entries are not selectable; a missing name falls back to the native ID.

@@ -4,7 +4,7 @@ import { encodeRecoveryPrompt } from '@/core/prompt/recoveryPrompt';
 import { encodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import {
   createOpencodeHydrationDiagnosticMessage,
-  mapOpencodeV2NativeMessages,
+  mapOpencodeNativeMessages,
 } from '@/providers/opencode/history/OpencodeHistoryStore';
 
 it('preserves Windows paths as literal code in hydration diagnostics', () => {
@@ -25,10 +25,10 @@ it('preserves Windows paths as literal code in hydration diagnostics', () => {
   ].join('\n'));
 });
 
-describe('mapOpencodeV2NativeMessages', () => {
+describe('mapOpencodeNativeMessages', () => {
   it('keeps native control entries as turn boundaries and file tool content as raw output', () => {
     const fileContent = [{ type: 'text', text: '/vault' }, { type: 'file', uri: 'file:///vault/report.txt', mime: 'text/plain' }];
-    const messages = mapOpencodeV2NativeMessages([
+    const messages = mapOpencodeNativeMessages([
       { id: 'z-user', type: 'user', text: 'Current prompt', time: { created: 1000 } },
       { id: 'a-assistant', type: 'assistant', time: { created: 2000, completed: 5000 }, content: [
         { type: 'reasoning', text: 'Think', time: { created: 2000, completed: 3000 } },
@@ -55,7 +55,7 @@ describe('mapOpencodeV2NativeMessages', () => {
       output: 'read ok',
       status: 'completed',
     };
-    const messages = mapOpencodeV2NativeMessages([
+    const messages = mapOpencodeNativeMessages([
       {
         id: 'msg-user',
         type: 'user',
@@ -122,7 +122,7 @@ describe('mapOpencodeV2NativeMessages', () => {
   });
 
   it('replays a persisted late unknown tool title without remapping it', () => {
-    const messages = mapOpencodeV2NativeMessages([
+    const messages = mapOpencodeNativeMessages([
       { id: 'msg-user-future', type: 'user', text: 'Use future tool', time: { created: 1_000 } },
       {
         id: 'msg-assistant-future',
@@ -151,7 +151,7 @@ describe('mapOpencodeV2NativeMessages', () => {
   });
 
   it('rehydrates user file image parts', () => {
-    const messages = mapOpencodeV2NativeMessages([
+    const messages = mapOpencodeNativeMessages([
       {
         id: 'msg-user',
         type: 'user',
@@ -198,7 +198,7 @@ describe('mapOpencodeV2NativeMessages', () => {
       output: 'User has answered your questions.',
       status: 'completed',
     };
-    const messages = mapOpencodeV2NativeMessages([
+    const messages = mapOpencodeNativeMessages([
       {
         id: 'msg-assistant',
         type: 'assistant',
@@ -256,7 +256,7 @@ describe('mapOpencodeV2NativeMessages', () => {
       output: 'Search complete',
       status: 'completed',
     };
-    const messages = mapOpencodeV2NativeMessages([
+    const messages = mapOpencodeNativeMessages([
       { id: 'msg-user', type: 'user', text: 'Search it', time: { created: 1_000 } },
       {
         id: 'msg-assistant-1',
@@ -329,7 +329,7 @@ describe('mapOpencodeV2NativeMessages', () => {
 });
 
 it('restores OpenCode output plus reasoning across tool steps', () => {
-  const messages = mapOpencodeV2NativeMessages([
+  const messages = mapOpencodeNativeMessages([
     { id: 'u', type: 'user', text: 'Work', time: { created: 1000 } },
     { id: 'a', type: 'assistant', time: { created: 1200, completed: 2000 },
       finish: 'tool-calls', tokens: { output: 20, reasoning: 80 }, content: [{ type: 'text', text: 'Text' }] },
@@ -340,7 +340,7 @@ it('restores OpenCode output plus reasoning across tool steps', () => {
 });
 
 it('omits OpenCode throughput if any step lacks usage', () => {
-  const messages = mapOpencodeV2NativeMessages([
+  const messages = mapOpencodeNativeMessages([
     { id: 'u', type: 'user', text: 'Work', time: { created: 1000 } },
     { id: 'a', type: 'assistant', time: { created: 1200, completed: 2000 }, content: [] },
     { id: 'final', type: 'assistant', time: { created: 2500, completed: 3500 },
@@ -370,7 +370,7 @@ it('marks a v2 turn whose idle outcome is interrupted as interrupted', () => {
       content: [{ type: 'text', text: 'Hi' }], finish: 'stop' },
     { id: 'idle3', type: 'idle', time: { created: created + 33_500 }, outcome: 'succeeded' },
   ];
-  const messages = mapOpencodeV2NativeMessages(entries);
+  const messages = mapOpencodeNativeMessages(entries);
 
   expect(messages.map(({ role, content, isInterrupt, durationSeconds, completedAt, turnStats }) => (
     { role, content, isInterrupt, durationSeconds, completedAt, turnStats }))).toEqual([
@@ -387,7 +387,7 @@ it('marks a v2 turn whose idle outcome is interrupted as interrupted', () => {
 
 it.each([true, false])('applies a v2 interruption to the whole turn across compaction (output after compaction: %s)', after => {
   const created = testDate().getTime();
-  const messages = mapOpencodeV2NativeMessages([
+  const messages = mapOpencodeNativeMessages([
     { id: 'u1', type: 'user', time: { created }, text: 'Long task' },
     { id: 'a1', type: 'assistant', time: { created: created + 1_000, completed: created + 5_000 }, content: [{ type: 'text', text: 'Before compaction.' }] },
     { id: 'compact', type: 'compaction', time: { created: created + 6_000 }, status: 'completed', summary: 'Internal summary' },
@@ -402,7 +402,7 @@ it.each([true, false])('applies a v2 interruption to the whole turn across compa
 describe('OpenCode compaction boundaries', () => {
   const created = testDate().getTime();
   it.each(['completed', 'running', 'failed'])('restores only completed V2 compaction (%s)', status => {
-    const messages = mapOpencodeV2NativeMessages([
+    const messages = mapOpencodeNativeMessages([
       { id: 'a1', type: 'assistant', time: { created }, content: [{ type: 'text', text: 'Before' }] },
       { id: 'compact', type: 'compaction', time: { created: created + 1 }, status, summary: 'Internal summary', recent: 'Internal context' },
       { id: 'a2', type: 'assistant', time: { created: created + 2 }, content: [{ type: 'text', text: 'After' }] },
@@ -417,7 +417,7 @@ describe('OpenCode compaction boundaries', () => {
 
 it('decodes v2 session-message attribution before stripping prompt tags and preserves neutral tool names', () => {
   const text = encodeSessionMessage({ from: 'Research', sessionId: 'source', text: 'The result' });
-  const messages = mapOpencodeV2NativeMessages([
+  const messages = mapOpencodeNativeMessages([
     { id: 'user', type: 'user', text: text + '\n\n<current_note>note.md</current_note>' },
     { id: 'assistant', type: 'assistant', content: [{ type: 'tool', id: 'call', name: 'claudian_send_message', state: { status: 'completed', input: {text:'Hello'}, content: [{type:'text',text:'{}'}] } }] },
   ]);
@@ -428,7 +428,7 @@ it('decodes v2 session-message attribution before stripping prompt tags and pres
 it('hides replayed history in user prompts', () => {
   const replayed = encodeRecoveryPrompt('User: Earlier\n\nAssistant: Reply', 'Follow up\n\n<current_note>note.md</current_note>');
   const replayOnly = encodeRecoveryPrompt('User: Earlier', null);
-  const messages = mapOpencodeV2NativeMessages([replayed, replayOnly].map((text, index) => ({
+  const messages = mapOpencodeNativeMessages([replayed, replayOnly].map((text, index) => ({
     id: `user-${index}`, type: 'user', text, time: { created: 1_000 + index },
   })));
   expect(messages.map(message => [message.id, message.content])).toEqual([['user-0', 'Follow up']]);

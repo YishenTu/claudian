@@ -26,10 +26,10 @@ import {
 import {
   createOpencodeHydrationDiagnosticMessage,
   isOpencodeSessionHydrationDiagnosticMessage,
-  mapOpencodeV2NativeMessages,
+  mapOpencodeNativeMessages,
 } from './OpencodeHistoryStore';
 import { forkOpencodeSession } from './OpencodeSessionFork';
-import { hydrateOpencodeV2Subagents } from './OpencodeSubagentHistory';
+import { hydrateOpencodeSubagents } from './OpencodeSubagentHistory';
 
 export interface OpencodeConversationHistoryServiceOptions {
   readonly getServerService?: (context?: ProviderHistoryPathContext) => Promise<OpencodeServerService | null | undefined>;
@@ -118,9 +118,9 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       return [createOpencodeHydrationDiagnosticMessage({ sessionId, databasePath, reason: 'The recorded OpenCode database is not accessible with the current settings.' })];
     }
     return this.withHttp(database.accessible, vaultPath, pathContext, async client => {
-      const read = async (id: string) => mapOpencodeV2NativeMessages(await readOpencodeHTTPMessages(client, id));
+      const read = async (id: string) => mapOpencodeNativeMessages(await readOpencodeHTTPMessages(client, id));
       const messages = await read(sessionId);
-      await hydrateOpencodeV2Subagents(messages, read);
+      await hydrateOpencodeSubagents(messages, read);
       return messages;
     }).catch(error => [createOpencodeHydrationDiagnosticMessage({ sessionId, databasePath, reason: error instanceof Error ? error.message : String(error) })]);
   }

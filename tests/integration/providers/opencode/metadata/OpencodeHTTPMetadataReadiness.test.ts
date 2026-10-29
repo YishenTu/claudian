@@ -3,23 +3,23 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
+import { OpencodeHTTPMetadataProbe } from '@/providers/opencode/metadata/OpencodeHTTPMetadataProbe';
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
-import { OpencodeV2MetadataProbe } from '@/providers/opencode/metadata/OpencodeV2MetadataProbe';
 import { assertOpencodeModelAvailable } from '@/providers/opencode/runtime/OpencodeModelAvailability';
 import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 
-import { createOpencodeV2MetadataFixture, type OpencodeV2MetadataFixture, waitUntil } from './OpencodeV2MetadataFixture';
+import { createOpencodeHTTPMetadataFixture, type OpencodeHTTPMetadataFixture, waitUntil } from './OpencodeHTTPMetadataFixture';
 
 // OpenCode v2 metadata readiness: loopback validation, the optional integration endpoint, and account activation.
-let fixture: OpencodeV2MetadataFixture;
+let fixture: OpencodeHTTPMetadataFixture;
 
-beforeEach(() => { fixture = createOpencodeV2MetadataFixture(); });
+beforeEach(() => { fixture = createOpencodeHTTPMetadataFixture(); });
 
 afterEach(() => fixture.dispose());
 
 it('rejects a non-loopback readiness endpoint before sending authorization', async () => {
   const servers = new OpencodeServerService();
-  const probe = new OpencodeV2MetadataProbe(await servers.acquire(fixture.cliPath, fixture.root, { ...fixture.environment, INVALID_READY: '1' }));
+  const probe = new OpencodeHTTPMetadataProbe(await servers.acquire(fixture.cliPath, fixture.root, { ...fixture.environment, INVALID_READY: '1' }));
   try {
     await expect(probe.loadCatalog()).rejects.toThrow('Invalid OpenCode catalog server readiness response');
   } finally { await probe.dispose(); await servers.dispose(); }

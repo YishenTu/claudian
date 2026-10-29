@@ -12,8 +12,8 @@ import type { OpencodeNativeModel } from '../http/OpencodeNativeModelCatalog';
 import { OpencodeServerService } from '../http/OpencodeServerService';
 import { decodeOpencodeModelId } from '../models';
 import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
+import { OpencodeHTTPMetadataProbe } from './OpencodeHTTPMetadataProbe';
 import { projectOpencodeMetadata } from './OpencodeMetadataProjection';
-import { OpencodeV2MetadataProbe } from './OpencodeV2MetadataProbe';
 
 export interface OpencodeMetadataCatalogResult {
   readonly models: readonly OpencodeNativeModel[];
@@ -64,7 +64,7 @@ export class OpencodeMetadataService {
       ?? (async (signal) => {
         const cliPath = await host.resolveCliPath() ?? 'opencode';
         const environment = buildOpencodeRuntimeEnv(host.environmentText, cliPath);
-        return new OpencodeV2MetadataProbe(await this.serverService.acquire(cliPath, resolveVaultPath(host), environment, signal));
+        return new OpencodeHTTPMetadataProbe(await this.serverService.acquire(cliPath, resolveVaultPath(host), environment, signal));
       });
     this.probes = new OwnedProbeRegistry({
       abortMessage: 'OpenCode metadata probe aborted',

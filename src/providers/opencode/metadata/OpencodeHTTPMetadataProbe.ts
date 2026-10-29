@@ -10,7 +10,7 @@ import type {
 } from './OpencodeMetadataService';
 
 /** V2 catalog reads share native credentials without creating a native session. */
-export class OpencodeV2MetadataProbe implements OpencodeMetadataProbe {
+export class OpencodeHTTPMetadataProbe implements OpencodeMetadataProbe {
   private models: OpencodeNativeModel[] | null = null;
 
   constructor(private readonly client: OpencodeServerLease) {}

@@ -8,12 +8,12 @@ import { assertOpencodeModelAvailable } from '@/providers/opencode/runtime/Openc
 import { createOpencodeModels } from '@/providers/opencode/runtime/OpencodeModels';
 import { getOpencodeProviderSettings, projectOpencodeModelSettings } from '@/providers/opencode/settings';
 
-import { createOpencodeV2MetadataFixture, type OpencodeV2MetadataFixture, waitUntil } from './OpencodeV2MetadataFixture';
+import { createOpencodeHTTPMetadataFixture, type OpencodeHTTPMetadataFixture, waitUntil } from './OpencodeHTTPMetadataFixture';
 
 // OpenCode v2 metadata catalog discovery, refresh, and models that appear after startup.
-let fixture: OpencodeV2MetadataFixture;
+let fixture: OpencodeHTTPMetadataFixture;
 
-beforeEach(() => { fixture = createOpencodeV2MetadataFixture(); });
+beforeEach(() => { fixture = createOpencodeHTTPMetadataFixture(); });
 
 afterEach(() => fixture.dispose());
 

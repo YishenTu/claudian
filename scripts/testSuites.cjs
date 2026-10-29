@@ -15,7 +15,7 @@ const crossPlatformTests = [
   'tests/unit/providers/deepseek/ui/DeepSeekSettingsTab.test.ts',
   'tests/integration/providers/claude/history/ClaudeTurnStats.test.ts',
   'tests/integration/providers/deepseek/app/DeepSeekWorkspaceServices.test.ts',
-  'tests/integration/providers/opencode/execution/OpencodeV2Execution.test.ts',
+  'tests/integration/providers/opencode/execution/OpencodeHTTPExecution.test.ts',
   'tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts',
   'tests/integration/providers/deepseek/runtime/DeepSeekLaunchArtifacts.test.ts',
   'tests/integration/core/process/ProcessProbe.test.ts',

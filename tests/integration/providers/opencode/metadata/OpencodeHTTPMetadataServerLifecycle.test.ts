@@ -6,12 +6,12 @@ import { runtimeHostFor } from '@test/helpers/providerRuntimeHost';
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
 import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 
-import { createOpencodeV2MetadataFixture, type OpencodeV2MetadataFixture, waitUntil } from './OpencodeV2MetadataFixture';
+import { createOpencodeHTTPMetadataFixture, type OpencodeHTTPMetadataFixture, waitUntil } from './OpencodeHTTPMetadataFixture';
 
 // OpenCode v2 retained metadata server recovery across transitions, crashes, invalid catalogs, and timeouts.
-let fixture: OpencodeV2MetadataFixture;
+let fixture: OpencodeHTTPMetadataFixture;
 
-beforeEach(() => { fixture = createOpencodeV2MetadataFixture(); });
+beforeEach(() => { fixture = createOpencodeHTTPMetadataFixture(); });
 
 afterEach(() => fixture.dispose());
 

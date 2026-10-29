@@ -9,7 +9,7 @@ const MAX_CHILD_DEPTH = 3;
  * V2 keeps each subagent's work in its own native session. Hydration reads those
  * sessions so reloaded cards show the child's tools; an unreadable child keeps the plain card.
  */
-export async function hydrateOpencodeV2Subagents(
+export async function hydrateOpencodeSubagents(
   messages: ChatMessage[],
   readChildMessages: (sessionId: string) => Promise<ChatMessage[]>,
   depth = 0,
@@ -30,7 +30,7 @@ export async function hydrateOpencodeV2Subagents(
     } catch {
       return;
     }
-    await hydrateOpencodeV2Subagents(child, readChildMessages, depth + 1);
+    await hydrateOpencodeSubagents(child, readChildMessages, depth + 1);
     const turns = assignChildTurns(spawns, splitChildTurns(child));
     spawns.forEach((spawn, index) => {
       const turn = turns[index];

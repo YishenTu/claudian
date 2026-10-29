@@ -95,7 +95,7 @@ const pluginEnvironmentKeys = [
   'INTEGRATION_STATUS',
 ];
 
-export interface OpencodeV2MetadataFixture {
+export interface OpencodeHTTPMetadataFixture {
   readonly root: string;
   readonly cliPath: string;
   readonly environment: NodeJS.ProcessEnv;
@@ -105,7 +105,7 @@ export interface OpencodeV2MetadataFixture {
 }
 
 /** Creates an isolated native OpenCode CLI fixture with its catalog and endpoint files. */
-export function createOpencodeV2MetadataFixture(): OpencodeV2MetadataFixture {
+export function createOpencodeHTTPMetadataFixture(): OpencodeHTTPMetadataFixture {
   const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-opencode-catalog-')));
   const cliPath = path.join(root, 'opencode.cjs');
   writeFileSync(cliPath, cliFixture, { mode: 0o700 });
