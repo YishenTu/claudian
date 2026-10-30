@@ -1,6 +1,6 @@
 import { testDate } from '@test/helpers/testClock';
 
-import { DeepSeekOutput, type DeepSeekOutputEvent } from '@/providers/deepseek/normalization/DeepSeekOutput';
+import { DeepSeekOutput, type DeepSeekOutputEvent, DeepSeekReplayError } from '@/providers/deepseek/normalization/DeepSeekOutput';
 
 const now = testDate().getTime();
 let events: DeepSeekOutputEvent[];
@@ -9,6 +9,66 @@ const start = { type: 'start', attemptId: 'attempt', revision: 1, startedAfterSe
 const textChunk = (text: string, index = 0, revision = index + 2) => ({ type: 'chunk', attemptId: 'attempt', revision, index, time: now, chunk: { type: 'text-delta', index: 0, text } });
 const baseline = (text: string) => ({ revision: 4, activeAttempt: { attemptId: 'attempt', startedAfterSeq: 10, turn: 1, step: 0, nextIndex: 2, stream: [{ type: 'text-chunks', time0: now, index: 0, dt: [0, 1], texts: [text.slice(0, 2), text.slice(2)] }] } });
 beforeEach(() => { events = []; output = new DeepSeekOutput(event => events.push(event)); });
+
+describe('reasoning whitespace normalization', () => {
+  const chunk = (index: number, value: unknown) => output.frame({ type: 'chunk', attemptId: 'attempt', revision: index + 2, index, chunk: value });
+  const delta = (index: number, text: string) => chunk(index, { type: 'reasoning-delta', index: 0, text });
+  const settle = (path: string, text: string, kind = 'reasoning') => {
+    const block = { type: kind, text };
+    if (path === 'live') chunk(1, { type: 'block-end', index: 0, block });
+    else if (path === 'reconnect') output.baseline({ revision: 3, activeAttempt: { ...start, nextIndex: 2, stream: [
+      { type: 'reasoning-chunks', index: 0, texts: ['Example reasoning\n\n'] },
+      { type: 'chunk', chunk: { type: 'block-end', index: 0, block } },
+    ] } });
+    else output.record({ type: 'assistant/message', seq: 11, data: { turn: 1, step: 0, message: { content: [block] } } });
+  };
+  const thinking = () => events.filter(e => e.type === 'thinking_delta').map(e => e.text).join('');
+
+  it.each(['live', 'reconnect', 'durable'])('accepts trailing whitespace normalization through %s and durable reconciliation', path => {
+    output.frame(start); delta(0, 'Example reasoning\n\n');
+    settle(path, 'Example reasoning');
+    settle('durable', 'Example reasoning');
+    expect(thinking()).toBe('Example reasoning');
+    expect(events.filter(e => e.type === 'assistant_message_started')).toHaveLength(1);
+  });
+
+  it.each([
+    ['live', ''], ['live', '\n'], ['reconnect', ''], ['reconnect', '\n'],
+  ])('continues after %s normalization with suffix %j without duplicated whitespace', (path, whitespace) => {
+    output.frame(start); delta(0, 'Example reasoning\n\n');
+    settle(path, `Example reasoning${whitespace}`);
+    delta(2, '\n'); delta(3, 'continued\t ');
+    const expected = `Example reasoning${whitespace}\ncontinued`;
+    settle('durable', expected);
+    expect(thinking()).toBe(expected);
+  });
+
+  it('preserves internal whitespace across append-only reasoning deltas and settlement', () => {
+    output.frame(start); delta(0, 'Example '); delta(1, '\n\t'); delta(2, 'reasoning');
+    chunk(3, { type: 'block-end', index: 0, block: { type: 'reasoning', text: 'Example \n\treasoning completed\n\n' } });
+    settle('durable', 'Example \n\treasoning completed');
+    expect(thinking()).toBe('Example \n\treasoning completed');
+  });
+
+  describe.each(['live', 'reconnect', 'durable'])('%s divergence', path => {
+    it.each([
+      ['replacement', 'Different reasoning', 'reasoning'],
+      ['truncation', 'Example reason', 'reasoning'],
+      ['internal whitespace replacement', 'Example\nreasoning', 'reasoning'],
+      ['kind change', 'Example reasoning', 'text'],
+    ])('rejects %s', (_name, text, kind) => {
+      output.frame(start); delta(0, 'Example reasoning\n\n');
+      const before = [...events];
+      expect(() => settle(path, text, kind)).toThrow(DeepSeekReplayError);
+      expect(events).toEqual(before);
+    });
+  });
+
+  it.each(['live', 'reconnect', 'durable'])('keeps text whitespace strict through %s', path => {
+    output.frame(start); output.frame(textChunk('Example reasoning\n\n'));
+    expect(() => settle(path, 'Example reasoning', 'text')).toThrow(DeepSeekReplayError);
+  });
+});
 
 it('reconciles matching reconnect and durable prefixes without duplicated output', () => {
   output.frame(start); output.frame(textChunk('He'));

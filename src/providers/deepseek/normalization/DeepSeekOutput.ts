@@ -154,15 +154,14 @@ export class DeepSeekOutput {
     // Validate the complete prefix before emitting any suffix.
     for (const [index, previous] of attempt.blocks) {
       const next = blocks.get(index);
-      if (!next || previous.kind !== next.kind || !next.text.startsWith(previous.text)) throw new DeepSeekReplayError();
+      if (!next) throw new DeepSeekReplayError();
+      blockSuffix(previous, next);
     }
     for (const [index, block] of blocks) this.block(attempt, index, block);
   }
 
   private block(attempt: Attempt, index: number, block: Block): void {
-    const previous = attempt.blocks.get(index);
-    if (previous && (previous.kind !== block.kind || !block.text.startsWith(previous.text))) throw new DeepSeekReplayError();
-    const suffix = block.text.slice(previous?.text.length ?? 0);
+    const suffix = blockSuffix(attempt.blocks.get(index), block);
     attempt.blocks.set(index, block);
     if (!suffix) return;
     this.begin();
@@ -252,6 +251,15 @@ function attemptKey(value: Record<string, unknown>): string {
 function decodeBlock(value: Record<string, unknown>): Block | undefined {
   return (value.type === 'text' || value.type === 'reasoning') && typeof value.text === 'string'
     ? { kind: value.type, text: value.text } : undefined;
+}
+
+function blockSuffix(previous: Block | undefined, next: Block): string {
+  // Native may normalize trailing reasoning whitespace at settlement. Keep raw text in
+  // the block for later deltas, but emit whitespace only once more substantive text follows.
+  const text = next.kind === 'reasoning' ? next.text.trimEnd() : next.text;
+  const prefix = previous ? previous.kind === 'reasoning' ? previous.text.trimEnd() : previous.text : '';
+  if (previous && (previous.kind !== next.kind || !text.startsWith(prefix))) throw new DeepSeekReplayError();
+  return text.slice(prefix.length);
 }
 
 function contentBlocks(content: unknown[]): Map<number, Block> {

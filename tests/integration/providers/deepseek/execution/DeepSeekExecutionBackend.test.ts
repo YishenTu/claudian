@@ -1565,6 +1565,28 @@ it('stops owned work promptly when closing races a pending child snapshot', asyn
   expect(peer.calls.filter(c => c.method === 'subagents/interruptByParent')).toMatchObject([{ args: { childSessionId: 'child', parentSessionId: 'root', mode: 'continuable' } }]);
 });
 
+it('completes normalized reasoning and permits the next send on the same session', async () => {
+  create(); const events: ProviderExecutionEvent[] = [];
+  const run = session.execute(request()); const done = collect(run.events, events);
+  await until(() => peer.calls.some(c => c.method === 'session/prompt'));
+  begin(run.executionId);
+  const frame = (value: unknown) => peer.send('session/follow', { type: 'assistant-stream', frame: value }, rootFollow('root'));
+  frame({ type: 'start', attemptId: 'attempt', revision: 1, turn: nativeTurn, step: 0 });
+  frame({ type: 'chunk', attemptId: 'attempt', revision: 2, index: 0, chunk: { type: 'reasoning-delta', index: 0, text: 'Example reasoning\n\n' } });
+  frame({ type: 'chunk', attemptId: 'attempt', revision: 3, index: 1, chunk: { type: 'block-end', index: 0, block: { type: 'reasoning', text: 'Example reasoning' } } });
+  event('assistant/message', { turn: nativeTurn, step: 0, message: { content: [
+    { type: 'reasoning', text: 'Example reasoning' }, { type: 'text', text: 'Answer' },
+  ] } });
+  event('turn/end', { turn: nativeTurn, reason: { kind: 'completed' } });
+  await done;
+  expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
+  expect(events.filter(e => e.type === 'thinking_delta' || e.type === 'text_delta')).toMatchObject([
+    { type: 'thinking_delta', text: 'Example reasoning' }, { type: 'text_delta', text: 'Answer' },
+  ]);
+  await completeRequest('next turn');
+  expect(peer.calls.filter(c => c.method === 'session/prompt')).toHaveLength(2);
+});
+
 it('keeps reload guidance after transcript divergence instead of rebinding or resending', async () => {
   create(); const events: ProviderExecutionEvent[] = [];
   const run = session.execute(request()); const done = collect(run.events, events);
