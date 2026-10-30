@@ -72,6 +72,10 @@ export interface ProviderRegistration {
   modelPolicy: ProviderModelPolicy;
   chatUIConfig: ProviderChatUIConfig;
   settingsReconciler: ProviderSettingsReconciler;
+  /** Project the host Vault root for generated runtime context; omitted means identity.
+   * Resolve with the same target/settings as launch. Do not start a session or rewrite prompts.
+   */
+  resolveExecutionWorkingDirectory?: (plugin: ProviderHost, hostWorkingDirectory: string) => string | Promise<string>;
   createExecutionBackend: (plugin: ProviderHost) => ProviderExecutionBackend;
   createSubagentHistoryService?: (plugin: ProviderHost) => ProviderSubagentHistoryService;
   historyService: ProviderConversationHistoryService;
@@ -107,6 +111,11 @@ export interface ProviderEnvironmentReconciliation {
   sessionPolicy?: ProviderEnvironmentSessionPolicy;
 }
 
+export interface ProviderSettingsReconciliationContext {
+  /** Host workspace used by the provider's launch and native history. */
+  vaultPath?: string | null;
+}
+
 export interface ProviderSettingsReconciler {
   handleEnvironmentChange?(settings: Record<string, unknown>): boolean;
 
@@ -123,9 +132,9 @@ export interface ProviderSettingsReconciler {
    */
   preservesConversationSession?(conversation: Conversation): boolean;
 
-  reconcileModelWithEnvironment(settings: Record<string, unknown>): ProviderEnvironmentReconciliation;
+  reconcileModelWithEnvironment(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): ProviderEnvironmentReconciliation;
 
-  normalizeModelVariantSettings?(settings: Record<string, unknown>): boolean;
+  normalizeModelVariantSettings?(settings: Record<string, unknown>, context?: ProviderSettingsReconciliationContext): boolean;
 }
 
 // ---------------------------------------------------------------------------

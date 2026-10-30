@@ -2,6 +2,7 @@ import { Notice } from 'obsidian';
 
 import { parseCompactCommand } from '@/core/commands/compactCommand';
 import type { ProviderExecutionEvent, ProviderTurnEventScope } from '@/core/execution';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderId } from '@/core/providers/types';
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import type { ChatMessage, ImageAttachment } from '@/core/types';
@@ -292,7 +293,7 @@ export class MainTurnExecution {
       userMsg.content = admittedTurnRequest.text;
       userMsg.linkedContentPath = admittedTurnRequest.linkedContentPath;
       this.activeDelivery = turn.onDelivery;
-      const submission = this.createSubmission(
+      const submission = await this.createSubmission(
         displayContent,
         admittedTurnRequest,
         userMsg,
@@ -446,16 +447,17 @@ export class MainTurnExecution {
     }
   }
 
-  createSubmission(
+  async createSubmission(
     displayContent: string,
     request: ChatTurnRequest,
     user?: ChatMessage,
     assistant?: ChatMessage,
-  ): ChatTurnSubmission {
+  ): Promise<ChatTurnSubmission> {
     const { plugin, state } = this.deps;
-    const settings = this.deps.getSettings();
-    const images = [...(request.images ?? [])];
-    const selections = captureSelectionSnapshots(request);
+    const settings = { ...this.deps.getSettings() };
+    const { systemPrompt, mediaFolder, userName } = plugin.settings;
+    const providerId = this.deps.getProviderId();
+    const workingDirectory = this.deps.getExecutionCoordinator()?.workingDirectory ?? getChatWorkingDirectory(plugin);
     // Membership and project edits apply from the next submission; a steer joins with the same prompt.
     const conversationId = state.currentConversationId;
     const sessionInstructions = resolveSessionInstructions(
@@ -463,20 +465,38 @@ export class MainTurnExecution {
       conversationId ? plugin.getConversationSummary(conversationId) : null,
     );
 
+    const submission = this.#captureSubmission(displayContent, request, user, assistant);
+    const executionWorkingDirectory = await ProviderRegistry.resolveExecutionWorkingDirectory(plugin.providerHost, providerId, workingDirectory);
     return {
-      canonicalText: request.text,
+      ...submission,
       configuration: {
-        ...buildChatExecutionConfiguration(
-          settings,
-          resolveChatSystemInstructions(
-            plugin.settings,
-            // The prompt names the directory the session runs in, not a later host value.
-            this.deps.getExecutionCoordinator()?.workingDirectory ?? getChatWorkingDirectory(plugin),
-            sessionInstructions,
-          ),
-        ),
+        ...buildChatExecutionConfiguration(settings, resolveChatSystemInstructions(
+          { systemPrompt, mediaFolder, userName }, executionWorkingDirectory, sessionInstructions,
+        )),
         promptSuggestions: true,
       },
+    };
+  }
+
+  createSteerSubmission(displayContent: string, request: ChatTurnRequest): ChatTurnSubmission {
+    const systemInstructions = this.deps.getExecutionCoordinator()?.systemInstructions;
+    if (!systemInstructions) throw new Error('There is no active turn to steer.');
+    return {
+      ...this.#captureSubmission(displayContent, request),
+      configuration: buildChatExecutionConfiguration(this.deps.getSettings(), systemInstructions),
+    };
+  }
+
+  #captureSubmission(
+    displayContent: string,
+    request: ChatTurnRequest,
+    user?: ChatMessage,
+    assistant?: ChatMessage,
+  ): Omit<ChatTurnSubmission, 'configuration'> {
+    const images = [...(request.images ?? [])];
+    const selections = captureSelectionSnapshots(request);
+    return {
+      canonicalText: request.text,
       context: {
         ...(selections.length ? { selections } : {}),
         ...(request.sessionReferences?.length ? { sessionReferences: request.sessionReferences } : {}),

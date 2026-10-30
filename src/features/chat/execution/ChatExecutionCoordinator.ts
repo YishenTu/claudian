@@ -19,6 +19,7 @@ import type {
   ProviderNativeResumeSeed,
   ProviderSessionEvent,
   ProviderSessionSnapshot,
+  ProviderSystemInstructions,
   ProviderToolPolicy,
 } from '@/core/execution';
 import {
@@ -254,6 +255,11 @@ export class ChatExecutionCoordinator {
     if (this.#activeExecution) return 'active';
     if (this.#stale) return 'stale';
     return this.#sessionBinding ? 'idle' : 'absent';
+  }
+
+  /** Steering joins the active request's already-resolved instructions. */
+  get systemInstructions(): ProviderSystemInstructions | null {
+    return this.#activeExecution?.submission.configuration.systemInstructions ?? null;
   }
 
   get snapshot(): ProviderSessionSnapshot | null {

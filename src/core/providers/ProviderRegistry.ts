@@ -55,6 +55,15 @@ export class ProviderRegistry {
     return registration;
   }
 
+  static async resolveExecutionWorkingDirectory(
+    plugin: ProviderHost,
+    providerId: ProviderId,
+    hostWorkingDirectory: string,
+  ): Promise<string> {
+    const resolve = this.getProviderRegistration(providerId).resolveExecutionWorkingDirectory;
+    return resolve ? resolve(plugin, hostWorkingDirectory) : hostWorkingDirectory;
+  }
+
   static createExecutionBackend(
     plugin: ProviderHost,
     providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID,
@@ -123,6 +132,7 @@ export class ProviderRegistry {
       interactionPort: PASSIVE_AUXILIARY_INTERACTION_PORT,
       lifecycleRegistry: plugin.executionLifecycleRegistry,
       workingDirectory: plugin.workingDirectory ?? '.',
+      resolveExecutionWorkingDirectory: workingDirectory => this.resolveExecutionWorkingDirectory(plugin, providerId, workingDirectory),
     };
   }
 

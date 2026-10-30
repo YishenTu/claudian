@@ -10,6 +10,7 @@ vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 
 import spawn from 'cross-spawn';
 
+import { probeTargetEnvironment } from '@/core/process/execution-target/TargetEnvironmentProbe';
 import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
 import { runProcessProbe } from '@/core/process/ProcessProbe';
 import { probeTargetCLIInstallation } from '@/core/providers/cli/TargetCLIInstallationProbe';
@@ -68,6 +69,18 @@ for (const { name, executable } of shells) {
       });
       expect((await runProcessProbe({ ...spec, cwd: root }))?.split('\0').slice(0, 2))
         .toEqual(['caller-key', '/caller-home']);
+    });
+
+    it('reads target environment after startup with unset, empty and literal values preserved', async () => {
+      const literal = 'quotes " \' \n$HOME; `pwd`';
+      const env = { WSL_TEST_EMPTY: '', WSL_TEST_LITERAL: literal, OPENAI_API_KEY: 'caller-key' };
+      const result = await probeTargetEnvironment({
+        target, hostCwd: 'C:\\vault', env,
+        variables: ['HOME', 'CODEX_HOME', 'OPENAI_API_KEY', 'WSL_TEST_EMPTY', 'WSL_TEST_MISSING', 'WSL_TEST_LITERAL', 'WSL_TEST_MISSING'],
+        forwardEnvironment: Object.keys(env).map(key => ({ key })),
+      });
+      expect(result).toEqual({ HOME: root, CODEX_HOME: `${root}/codex-home`, OPENAI_API_KEY: 'caller-key',
+        WSL_TEST_EMPTY: '', WSL_TEST_MISSING: undefined, WSL_TEST_LITERAL: literal });
     });
 
     it('preserves configured HOME when the platform supplies the account home', async () => {

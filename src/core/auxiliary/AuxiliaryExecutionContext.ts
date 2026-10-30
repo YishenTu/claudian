@@ -11,4 +11,5 @@ export interface AuxiliaryExecutionContext {
   readonly interactionPort: ProviderInteractionPort;
   readonly lifecycleRegistry: ProviderExecutionLifecycleRegistry;
   readonly workingDirectory: string;
+  readonly resolveExecutionWorkingDirectory?: (hostWorkingDirectory: string) => Promise<string>;
 }

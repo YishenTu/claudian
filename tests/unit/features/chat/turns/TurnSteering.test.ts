@@ -11,6 +11,7 @@ function createHarness() {
   const state = new ChatState({});
   state.currentConversationId = 'conversation-1';
   const coordinator = {
+    systemInstructions: { kind: 'main-agent', instructions: 'Active instructions' },
     steer: vi.fn(),
     acceptSteerFromProviderEvent: vi.fn().mockResolvedValue(true),
     releaseSteerCorrelation: vi.fn(),

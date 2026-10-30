@@ -123,7 +123,7 @@ export class InputController {
         displayContent: message.content,
         request: message.turnRequest,
       }),
-      createSubmission: (displayContent, request) => this.execution.createSubmission(displayContent, request),
+      createSubmission: (displayContent, request) => this.execution.createSteerSubmission(displayContent, request),
       onVisibleSteerChanged: () => this.queue.updateIndicator(),
       returnUnsent: message => this.queue.returnUnsent(message),
     });

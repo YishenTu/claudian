@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import { WSL_LITERAL_ARGS, type WSLShellBehavior, wslShellFixtureFiles } from '@test/helpers/WSLShellFixture';
 
 import { resolveExecutionTarget, resolveExecutionTargetAsync } from '@/core/process/execution-target/ExecutionTargetResolver';
+import { probeTargetEnvironment } from '@/core/process/execution-target/TargetEnvironmentProbe';
 import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
 import type { ExecutionTarget, TargetLaunchSpec } from '@/core/process/execution-target/types';
 import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
@@ -99,6 +100,16 @@ describe.skipIf(!available)('native Windows to WSL execution', { timeout: 60_000
       `${mapper.toTargetPath(hostCwd)}:${mapper.toTargetPath(path.join(hostCwd, 'second'))}`,
       ...baseline!.split('\0').slice(0, -1),
     ]);
+  });
+
+  it('probes the native target environment and distinguishes unset from empty values', async () => {
+    const nativeHome = await probe(buildTargetLaunchSpec({ target: resolvedTarget, hostCwd, env, command: '/bin/sh', args: ['-c', 'printf "%s" "$HOME"'] }));
+    const literal = 'quotes " \' \n$HOME; `pwd`';
+    expect(await probeTargetEnvironment({ target: resolvedTarget, hostCwd,
+      env: { ...env, WSL_TEST_EMPTY: '', WSL_TEST_LITERAL: literal },
+      variables: ['HOME', 'WSL_TEST_EMPTY', 'WSL_TEST_MISSING', 'WSL_TEST_LITERAL'],
+      forwardEnvironment: [{ key: 'WSL_TEST_EMPTY' }, { key: 'WSL_TEST_LITERAL' }],
+    })).toEqual({ HOME: nativeHome, WSL_TEST_EMPTY: '', WSL_TEST_MISSING: undefined, WSL_TEST_LITERAL: literal });
   });
 
   it('launches wsl.exe when explicitly forwarding a Linux-only PATH', async () => {

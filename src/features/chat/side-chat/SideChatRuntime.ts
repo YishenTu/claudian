@@ -81,7 +81,7 @@ export class SideChatRuntime {
   readonly #prompts: SessionInteractions;
   readonly #settings: SideChatSettingsProjection;
   /** Fixed for the child's lifetime: its native context cannot follow later prompt-setting changes. */
-  readonly #systemInstructions: ProviderSystemInstructions;
+  readonly #getSystemInstructions: () => Promise<ProviderSystemInstructions>;
   #activeDelivery: SideChatSubmission['onDelivery'];
   readonly #steeredAnswers = new Map<string, { message: ChatMessage; echoed: boolean }>();
   #sawInitialProviderUserMessage = false;
@@ -106,8 +106,13 @@ export class SideChatRuntime {
 
   constructor(private readonly deps: SideChatRuntimeDeps) {
     this.#settings = { ...deps.settings };
-    this.#systemInstructions = resolveChatSystemInstructions(
-      deps.plugin.settings, deps.workingDirectory, deps.source.sessionInstructions,
+    const promptSettings = { ...deps.plugin.settings };
+    const sessionInstructions = deps.source.sessionInstructions;
+    let systemInstructions: ProviderSystemInstructions | undefined;
+    this.#getSystemInstructions = async () => systemInstructions ??= resolveChatSystemInstructions(
+      promptSettings,
+      await ProviderRegistry.resolveExecutionWorkingDirectory(deps.plugin.providerHost, deps.source.providerId, deps.workingDirectory),
+      sessionInstructions,
     );
     this.state = new ChatState({
       onAttentionChanged: () => this.#refreshStatus(),
@@ -389,10 +394,10 @@ export class SideChatRuntime {
     const images = [...(submission.images ?? [])];
     if (!content && images.length === 0) return;
     if (this.#turns.isActive) return;
-    await this.#turns.run(() => this.#respond(submission, content, images));
+    await this.#turns.run(signal => this.#respond(submission, content, images, signal));
   }
 
-  async #respond(submission: SideChatSubmission, content: string, images: ImageAttachment[]): Promise<void> {
+  async #respond(submission: SideChatSubmission, content: string, images: ImageAttachment[], signal: AbortSignal): Promise<void> {
     this.#lastError = null;
     const userMessage: ChatMessage = {
       content,
@@ -423,10 +428,15 @@ export class SideChatRuntime {
     let completed = false;
     try {
       this.#activeDelivery = submission.onDelivery;
+      const systemInstructions = await this.#getSystemInstructions();
+      if (signal.aborted) {
+        interrupted = true;
+        return;
+      }
       const result = await this.#session.execute({
         assertBeforeHandoff: submission.assertBeforeHandoff,
         ...(submission.context ? { context: submission.context } : {}),
-        configuration: buildChatExecutionConfiguration(this.#settings, this.#systemInstructions),
+        configuration: buildChatExecutionConfiguration(this.#settings, systemInstructions),
         conversationHistory: [
           ...this.deps.source.messages,
           ...this.state.messages.slice(0, -2),

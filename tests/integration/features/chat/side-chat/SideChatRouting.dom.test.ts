@@ -1,3 +1,4 @@
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 /** @vitest-environment jsdom */
 import '@/providers';
 
@@ -154,6 +155,24 @@ it('routes ordinary composer input to the selected destination', async () => {
   await routing.controller.sendMessage();
   expect(routing.mainExecutions).toEqual(['Back in main']);
   expect(harness.backend.latest.requests).toHaveLength(2);
+});
+
+it('does not launch a side turn stopped while resolving the execution directory', async () => {
+  const harness = createHarness();
+  const projection = deferred<string>();
+  const resolver = vi.spyOn(ProviderRegistry, 'resolveExecutionWorkingDirectory').mockReturnValue(projection.promise);
+  try {
+    let settled = false;
+    const started = harness.controller.handleCommandSubmission('Cancelled input', []).then(() => { settled = true; });
+    await waitFor(() => expect(resolver).toHaveBeenCalled());
+    harness.controller.cancelSide();
+    projection.resolve('/target/vault');
+    await waitFor(() => expect(settled || harness.backend.sessions.some(session => session.requests.length > 0)).toBe(true));
+    const requests = harness.backend.sessions.flatMap(session => session.requests);
+    for (const session of harness.backend.sessions) session.complete();
+    await started;
+    expect(requests).toHaveLength(0);
+  } finally { resolver.mockRestore(); }
 });
 
 it('cancels only the selected destination', async () => {

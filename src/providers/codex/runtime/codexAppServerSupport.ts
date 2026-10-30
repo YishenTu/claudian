@@ -2,6 +2,7 @@ import { getEnhancedPath, parseEnvironmentVariables } from '@/core/process/env';
 import { resolveExecutionTargetAsync } from '@/core/process/execution-target/ExecutionTargetResolver';
 import type { ExecutionTarget } from '@/core/process/execution-target/types';
 import type { TargetLaunchSpec } from '@/core/process/execution-target/types';
+import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
 
 import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { ProviderTransitionOwnerContext } from '../../../core/providers/types';
@@ -36,15 +37,24 @@ export function buildCodexAppServerEnvironment(
   };
 }
 
+function resolveCodexExecutionTarget(host: ProviderRuntimeHost, hostVaultPath: string): Promise<ExecutionTarget> {
+  return resolveExecutionTargetAsync({ settings: decodeCodexConfig(host.config), hostVaultPath });
+}
+
+export async function resolveCodexExecutionWorkingDirectory(host: ProviderRuntimeHost, hostWorkingDirectory: string): Promise<string> {
+  const target = await resolveCodexExecutionTarget(host, hostWorkingDirectory);
+  if (target.method !== 'wsl') return hostWorkingDirectory;
+  const targetPath = createExecutionPathMapper(target).toTargetPath(hostWorkingDirectory);
+  if (!targetPath) throw new Error('The Vault path cannot be represented in the selected WSL distro.');
+  return targetPath;
+}
+
 export async function resolveCodexAppServerLaunchSpec(
   host: ProviderRuntimeHost,
   context?: ProviderTransitionOwnerContext,
 ): Promise<TargetLaunchSpec> {
   const hostVaultPath = getCodexAppServerWorkingDirectory(host);
-  const executionTarget = await resolveExecutionTargetAsync({
-    settings: decodeCodexConfig(host.config),
-    hostVaultPath,
-  });
+  const executionTarget = await resolveCodexExecutionTarget(host, hostVaultPath);
 
   return buildCodexLaunchSpec({
     codexSettings: decodeCodexConfig(host.config),

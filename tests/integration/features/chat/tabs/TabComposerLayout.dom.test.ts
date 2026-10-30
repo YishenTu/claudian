@@ -95,6 +95,7 @@ it('attaches a queued follow-up to the top of the input box, under the tab bar',
     vi.spyOn(ProviderRegistry, 'getCapabilities').mockReturnValue({
       ...ProviderRegistry.getCapabilities('claude'), supportsTurnSteer: true,
     });
+    vi.spyOn(tab.executionCoordinator, 'systemInstructions', 'get').mockReturnValue({ kind: 'main-agent', instructions: 'Active instructions' });
     const releaseTurn = holdResponse(tab.session.turns);
     tab.controllers.inputController.queue.enqueue({
       content: 'also add a created date', turnRequest: { text: 'also add a created date' },
