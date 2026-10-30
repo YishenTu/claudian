@@ -29,6 +29,9 @@ describe('session ownership across presentations', () => {
     const owner = { reveal: vi.fn() };
     const first = pool.acquire({ conversationId: null, providerId: 'claude', draftModel: 'model' }, owner);
     const runtime = first.attachment.runtime;
+    expect(runtime.peekModel).toBeNull();
+    await expect(pool.awaitConversationCreations()).resolves.toBeUndefined();
+    expect(runtime.peekModel).toBeNull();
     const held = deferred<void>();
     let signal!: AbortSignal;
     const turn = runtime.turns.run(async current => { signal = current; await held.promise; });
@@ -78,6 +81,12 @@ describe('session ownership across presentations', () => {
     await lifecycle.delete(['created']);
     expect(store.archiveConversationsIf).toHaveBeenCalledWith(['created'], expect.any(Function));
     expect(store.deleteConversation).toHaveBeenCalledWith('created');
+    const competing = pool.acquire({ conversationId: null, providerId: 'claude', draftModel: 'model' }, owner);
+    expect(() => competing.attachment.runtime.setConversationId('created')).toThrow();
+    expect(pool.get('created') === runtime).toBe(true);
+    const stillOwned = pool.acquire({ conversationId: 'created', providerId: 'claude', draftModel: null }, { reveal: vi.fn() });
+    expect(stillOwned.acquired).toBe(false);
+    expect(stillOwned.attachment === second.attachment).toBe(true);
     await pool.dispose();
   });
 

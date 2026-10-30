@@ -24,6 +24,7 @@ import { type ClaudianSettings, type Conversation, type SessionMetadata, VIEW_TY
 import { ConversationTitleGeneration } from '@/features/chat/conversation/ConversationTitleGeneration';
 import { resolveSessionMentions } from '@/features/chat/input/resolveSessionMentions';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
+import { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool';
 import { ZenModeController } from '@/features/chat/zen/ZenModeController';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
 import { createCodexModelCatalogCommit } from '@/providers/codex/app/CodexWorkspaceServices';
@@ -1283,6 +1284,90 @@ describe('ClaudianPlugin', () => {
       expect(host.sessionRuntimes.get(ids[0])).toBe(runtime);
       expect((await host.getConversationById(ids[0]))?.messages).toEqual(messages);
       expect(repository.getSync(ids[0])?.messages).toEqual([]);
+    });
+
+    async function prepareHeldHistoryRelease() {
+      const fixture = await setupHistoryReads();
+      const pool = fixture.host.sessionRuntimes;
+      if (!(pool instanceof SessionRuntimePool)) throw new Error('Expected the composed session runtime pool');
+      const id = fixture.ids[0];
+      const runtime = pool.ensure({ conversationId: id, providerId: 'codex', draftModel: null });
+      const model = await runtime.ensureModel();
+      const started = deferred<void>();
+      const finish = deferred<void>();
+      const released = deferred<boolean>();
+      const release = fixture.repository.releaseHistory.bind(fixture.repository);
+      vi.spyOn(fixture.repository, 'releaseHistory').mockImplementationOnce(async (conversationId, eligible) => {
+        started.resolve();
+        await finish.promise;
+        const result = await release(conversationId, eligible);
+        released.resolve(result);
+        return result;
+      });
+      return { ...fixture, pool, id, runtime, model, started, finish, released };
+    }
+
+    it.each(['reattach', 'work'] as const)('preserves model and cached history when %s interrupts a held release', async action => {
+      const h = await prepareHeldHistoryRelease();
+      const finishWork = deferred<void>();
+      let attachment: ReturnType<typeof h.pool.acquire>['attachment'] | undefined;
+      let work: Promise<void> | undefined;
+      try {
+        h.runtime.notifyChanged();
+        await h.started.promise;
+        if (action === 'reattach') {
+          attachment = h.pool.acquire({ conversationId: h.id, providerId: 'codex', draftModel: null }, { reveal() {} }).attachment;
+        } else {
+          work = h.runtime.turns.run(() => finishWork.promise);
+        }
+        await new Promise<void>(resolve => setImmediate(resolve));
+        expect(h.runtime.peekModel === h.model).toBe(true);
+        expect(h.repository.getSync(h.id)?.messages).toEqual(h.messages);
+
+        h.finish.resolve();
+        await expect(h.released.promise).resolves.toBe(false);
+        await new Promise<void>(resolve => setImmediate(resolve));
+        expect(h.runtime.peekModel === h.model).toBe(true);
+        expect(h.repository.getSync(h.id)?.messages).toEqual(h.messages);
+
+        if (attachment) h.pool.release(attachment);
+        finishWork.resolve();
+        await work;
+        await new Promise<void>(resolve => setImmediate(resolve));
+        // A viewed session enters the retention budget; a headless settled session can release again.
+        expect(h.runtime.peekModel === h.model).toBe(action === 'reattach');
+        expect(h.repository.getSync(h.id)?.messages).toEqual(action === 'reattach' ? h.messages : []);
+      } finally {
+        h.finish.resolve();
+        finishWork.resolve();
+        if (attachment) h.pool.release(attachment);
+        await work;
+      }
+    });
+
+    it.each(['retire', 'shutdown'] as const)('joins an in-flight history release before %s completes', async action => {
+      const h = await prepareHeldHistoryRelease();
+      let completion: Promise<void> | undefined;
+      let completed = false;
+      try {
+        h.runtime.notifyChanged();
+        await h.started.promise;
+        completion = (action === 'retire' ? h.pool.retire(h.id) : h.pool.dispose())
+          .then(() => { completed = true; });
+        await new Promise<void>(resolve => setImmediate(resolve));
+        expect(completed).toBe(false);
+        expect(h.runtime.peekModel === h.model).toBe(true);
+        expect(h.repository.getSync(h.id)?.messages).toEqual(h.messages);
+
+        h.finish.resolve();
+        await completion;
+        expect(completed).toBe(true);
+        expect(h.runtime.peekModel).toBeNull();
+        expect(h.pool.get(h.id)).toBeNull();
+      } finally {
+        h.finish.resolve();
+        await completion;
+      }
     });
 
     it('returns both overlapping read snapshots and releases the cached history', async () => {
