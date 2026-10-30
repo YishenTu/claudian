@@ -1,6 +1,4 @@
-vi.mock('@/utils/date', () => ({
-  getTodayDate: () => 'Mocked Date',
-}));
+import { testDate } from '@test/helpers/testClock';
 
 import {
   buildInlineEditPrompt,
@@ -46,12 +44,20 @@ describe('buildInlineEditPrompt', () => {
 
 describe('getInlineEditSystemPrompt', () => {
   it('injects the current date and Vault absolute path into runtime context', () => {
-    const prompt = getInlineEditSystemPrompt('/vault');
+    vi.useFakeTimers({ now: testDate() });
+    try {
+      const prompt = getInlineEditSystemPrompt('/vault');
 
-    expect(prompt).toContain('## Runtime Context');
-    expect(prompt).toContain('Current date: Mocked Date.');
-    expect(prompt).toContain('Vault absolute path: /vault');
-    expect(prompt).toContain('current working directory is the Vault root');
+      expect(prompt).toContain('## Runtime Context');
+      const date = testDate();
+      const readable = date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      const iso = [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+      expect(prompt).toContain(`Current date: ${readable} (${iso}).`);
+      expect(prompt).toContain('Vault absolute path: /vault');
+      expect(prompt).toContain('current working directory is the Vault root');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('uses provider-neutral read-only tool guidance with one path-resolution rule', () => {

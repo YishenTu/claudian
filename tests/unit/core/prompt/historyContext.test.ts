@@ -708,7 +708,7 @@ describe('history context', () => {
     it('skips messages with unknown roles', () => {
       const messages = [
         { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1000 },
-        { id: 'msg-2', role: 'system' as any, content: 'System msg', timestamp: 1500 },
+        { id: 'msg-2', role: 'system', content: 'System msg', timestamp: 1500 },
         { id: 'msg-3', role: 'assistant', content: 'Response', timestamp: 2000 },
       ] as ChatMessage[];
 

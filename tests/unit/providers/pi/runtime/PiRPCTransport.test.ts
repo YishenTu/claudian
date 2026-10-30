@@ -119,7 +119,7 @@ describe('PiRPCTransport', () => {
 
     await expect(request).rejects.toThrow('Request aborted: get_commands');
     input.write('{"type":"response","id":"req_1","success":true,"result":[]}\n');
-    expect((transport as any).pending).toHaveProperty('size', 0);
+    expect(transport['pending']).toHaveProperty('size', 0);
   });
 
   it.each(['write error', 'output close'] as const)('closes pending requests on %s without waiting for a response', async failure => {

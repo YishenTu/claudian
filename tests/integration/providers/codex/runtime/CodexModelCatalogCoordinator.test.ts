@@ -4,16 +4,13 @@ import { CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeH
 import { createCodexWorkspaceHarness } from '@test/helpers/providers/codex/CodexWorkspaceHarness';
 
 import { createCodexModelCatalogCommit } from '@/providers/codex/app/CodexWorkspaceServices';
-import type { CodexLaunchSpec } from '@/providers/codex/runtime/codexLaunchTypes';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
 import type { CodexModelDiscoveryResult } from '@/providers/codex/runtime/CodexModelDiscoveryService';
 import { CodexModelDiscoveryService } from '@/providers/codex/runtime/CodexModelDiscoveryService';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 
 const native = new CodexRuntimeHarness();
-vi.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
-  CodexAppServerProcess: vi.fn().mockImplementation(function (spec: CodexLaunchSpec) { return native.createProcess(spec.target); }),
-}));
+vi.mock('cross-spawn', () => ({ default: vi.fn(() => native.createProcess()) }));
 let fixture: Awaited<ReturnType<typeof createCodexWorkspaceHarness>>;
 let catalog: CodexModelCatalogCoordinator;
 beforeEach(async () => {
@@ -137,9 +134,8 @@ it('blocks native discovery during a transition and uses the newly committed env
   await answer('new-environment-model');
   expect(await refresh).toMatchObject({ kind: 'completed' });
   expect(modelIDs()).toEqual(['new-environment-model']);
-  // The native process constructor receives the real launch environment.
-  const { CodexAppServerProcess } = await import('@/providers/codex/runtime/CodexAppServerProcess');
-  expect(vi.mocked(CodexAppServerProcess).mock.calls.at(-1)![0].env.OPENAI_API_KEY).toBe('updated');
+  const { default: spawn } = await import('cross-spawn');
+  expect(vi.mocked(spawn).mock.calls.at(-1)![2]?.env?.OPENAI_API_KEY).toBe('updated');
 });
 
 it('releases blocked requests on disposal and rejects later refreshes without starting native discovery', async () => {

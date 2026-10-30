@@ -87,10 +87,10 @@ export class Component {
 }
 
 export class Plugin {
-  app: any;
-  manifest: any;
+  app: import('obsidian').App;
+  manifest: import('obsidian').PluginManifest;
 
-  constructor(app?: any, manifest?: any) {
+  constructor(app: import('obsidian').App, manifest: import('obsidian').PluginManifest) {
     this.app = app;
     this.manifest = manifest;
   }
@@ -105,15 +105,15 @@ export class Plugin {
 }
 
 export class PluginSettingTab {
-  app: any;
-  plugin: any;
+  app: import('obsidian').App;
+  plugin: import('obsidian').Plugin;
   settingItems: SettingDefinitionItem[] = [];
   private cleanup: (() => void) | undefined;
   private container: HTMLElement | undefined;
   get containerEl(): HTMLElement { return this.container ??= hostDocument().createElement('div'); }
   set containerEl(element: HTMLElement) { this.container = element; }
 
-  constructor(app: any, plugin: any) {
+  constructor(app: import('obsidian').App, plugin: import('obsidian').Plugin) {
     this.app = app;
     this.plugin = plugin;
   }
@@ -136,8 +136,8 @@ export class PluginSettingTab {
 }
 
 export class View extends Component {
-  app: any = { workspace: { on: vi.fn(), offref: vi.fn() } };
-  leaf: any;
+  app: App | import('obsidian').App;
+  leaf: import('obsidian').WorkspaceLeaf;
   private container: HTMLElement | undefined;
   get containerEl(): HTMLElement {
     return this.container ??= this.createContainer();
@@ -150,10 +150,10 @@ export class View extends Component {
     return container;
   }
 
-  constructor(leaf: any) {
+  constructor(leaf: import('obsidian').WorkspaceLeaf & { app?: import('obsidian').App }) {
     super();
     this.leaf = leaf;
-    if (leaf?.app) this.app = leaf.app;
+    this.app = leaf?.app ?? new App();
   }
 
   getViewType(): string {
@@ -192,7 +192,7 @@ export class ItemView extends View {
 
 export class FileView extends ItemView {
   allowNoFile = false;
-  file: any = null;
+  file: import('obsidian').TFile | null = null;
   navigation = true;
 }
 
@@ -314,11 +314,11 @@ export class App {
 }
 
 export class MarkdownView {
-  editor: any;
-  file?: any;
+  editor: import('obsidian').Editor | undefined;
+  file?: import('obsidian').TFile;
   containerEl: HTMLElement;
 
-  constructor(editor?: any, file?: any) {
+  constructor(editor?: import('obsidian').Editor, file?: import('obsidian').TFile) {
     this.editor = editor;
     this.file = file;
     this.containerEl = typeof document === 'undefined' ? undefined! : hostDocument().createElement('div');
@@ -715,7 +715,7 @@ export class TFile {
 export class TFolder {
   path: string;
   name: string;
-  children: any[] = [];
+  children: Array<TFile | TFolder> = [];
 
   constructor(path: string = '') {
     this.path = path;

@@ -1,3 +1,4 @@
+import { nativeRequest, nativeSessionId, requiredNativeString } from '@test/helpers/deepseek/NativeRequest';
 import { testDate } from '@test/helpers/testClock';
 
 import type { NativePeer } from './NativePeer';
@@ -34,20 +35,20 @@ export type NativeOpen = NativePeer['onOpen'];
 export function nativeDefaults(options: NativeDefaultsOptions): { call: (...args: NativeCall) => unknown; open: NativeOpen } {
   const time = testDate().getTime();
   const permission = (sessionId: string): string => options.permission?.(sessionId) ?? 'workspace-write';
-  const call = (method: string, args: Record<string, any>): unknown => {
+  const call = (method: string, args: Record<string, unknown>): unknown => {
     if (method === 'session/list') return { items: options.roster().map(sessionId => ({ sessionId, agentAvailable: true, running: false, cwd: options.cwd?.(sessionId) ?? '/vault' })) };
     if (method === 'commands/list') return options.commands ?? [{ name: 'permission' }];
     if (method === 'skills/list') return { skills: options.skills ?? [] };
     if (method === 'commands/execute' && options.setPermission && typeof args.line === 'string' && args.line.startsWith('/permission ')) {
-      options.setPermission(args.agentId, args.line.slice('/permission '.length));
+      options.setPermission(requiredNativeString(args.agentId), args.line.slice('/permission '.length));
       return { result: { kind: 'success' } };
     }
     if (method === 'session/projections') {
-      const sessionId = args.request.sessionId as string;
+      const sessionId = nativeSessionId(args);
       return { asOfSeq: options.seq(), values: { agentPreset: 'claudian', permissions: { currentValue: permission(sessionId) }, ...options.projections?.(sessionId) } };
     }
     if (method === 'session/page') {
-      const mode = permission(args.request.address.sessionId ?? args.request.address.childSessionId);
+      const mode = permission(requiredNativeString(nativeRequest(args).address!.sessionId ?? nativeRequest(args).address!.childSessionId));
       return { hasMore: false, records: [
         { type: 'event', event: { type: 'sandbox/mode', seq: 1, time, data: { mode } } },
         { type: 'event', event: { type: 'approval/policy', seq: 2, time, data: { policy: mode === 'danger-full-access' ? 'never' : 'ask' } } },
@@ -66,7 +67,7 @@ export function nativeDefaults(options: NativeDefaultsOptions): { call: (...args
         : {} } });
     }
     if (endpoint === 'session/follow') send({ type: 'snapshot', cursor: options.seq(), records: [] });
-    if (endpoint === 'job/list') send({ type: 'rows', jobs: options.jobs?.(args.request.sessionId) ?? [] });
+    if (endpoint === 'job/list') send({ type: 'rows', jobs: options.jobs?.(nativeSessionId(args)) ?? [] });
   };
   return { call, open };
 }

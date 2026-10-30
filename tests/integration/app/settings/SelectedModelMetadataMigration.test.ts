@@ -106,6 +106,17 @@ it.each([false, true])('repairs saved Claude family aliases through startup disc
   await catalog.dispose();
 });
 
+function catalogWith(overrides: Partial<import('@/core/providers/models/ProviderModelCatalog').ProviderModelCatalog>) {
+  return Object.assign(new ProviderModelCatalogController({
+    providerName: 'Test',
+    store: {
+      read: () => ({ enabled: true, models: [], selectedIds: [], aliases: {} }),
+      write: async () => {}, notifyChatOptionsChanged: () => {},
+    },
+    discover: async () => ({ changed: false }),
+  }), overrides);
+}
+
 it('keeps saved family aliases enabled after discovering a newer unselected version', async () => {
   const { host, storage } = await makeHost();
   await host.mutateSettings(settings => {
@@ -160,7 +171,7 @@ it.each(cases.flatMap(entry => [false, true].map(deselectDuringQuery => ({ ...en
   const config = host.settings.providerConfigs[id]!;
   const selectedIds = [...config.visibleModels as string[]];
   const complete = structuredClone(host.settings);
-  if (id === 'claude') (complete.providerConfigs.claude!.discoveredModels as any[])[0].supportedEffortLevels = ['low', 'high'];
+  if (id === 'claude') (complete.providerConfigs.claude!.discoveredModels as Array<Record<string, unknown>>)[0].supportedEffortLevels = ['low', 'high'];
   if (id === 'opencode') complete.providerConfigs.opencode!.thinkingOptionsByModel = {
     [selectedIds[0]]: [{ value: 'high', label: 'High' }],
   };
@@ -219,7 +230,7 @@ it.each(['deselected', 'disabled', 'cancelled'] as const)('rechecks %s state aft
   cases[0].populate(host.settings);
   const controller = new AbortController();
   const refresh = vi.fn();
-  ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: { refresh } as any });
+  ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: catalogWith({ refresh }) });
   vi.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockImplementation(async () => {
     if (change === 'deselected') updateClaudeProviderSettings(host.settings, { visibleModels: [] });
     if (change === 'disabled') updateClaudeProviderSettings(host.settings, { enabled: false });
@@ -234,7 +245,7 @@ it('preserves incomplete selections after a failed query and retries on a later 
   cases[0].populate(host.settings);
   const before = structuredClone(host.settings);
   const refresh = vi.fn().mockRejectedValue(new Error('CLI unavailable'));
-  ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: { refresh } as any });
+  ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: catalogWith({ refresh }) });
   await migrateSelectedModelMetadata(host, new AbortController().signal);
   await migrateSelectedModelMetadata(host, new AbortController().signal);
   expect(refresh).toHaveBeenCalledTimes(2);
@@ -245,9 +256,9 @@ it.each(cases)('$id detects missing effort fields in an otherwise present select
   const { host } = await makeHost();
   populate(host.settings);
   const config = host.settings.providerConfigs[id]!;
-  if (id === 'deepseek') delete (config.discoveredModels as any[])[0].reasoning;
-  if (id === 'codex') delete (config.discoveredModels as any[])[0].supportedReasoningEfforts;
-  if (id === 'pi') delete (config.discoveredModels as any[])[0].thinkingLevels;
+  if (id === 'deepseek') delete (config.discoveredModels as Array<Record<string, unknown>>)[0].reasoning;
+  if (id === 'codex') delete (config.discoveredModels as Array<Record<string, unknown>>)[0].supportedReasoningEfforts;
+  if (id === 'pi') delete (config.discoveredModels as Array<Record<string, unknown>>)[0].thinkingLevels;
   expect(ProviderRegistry.getSettingsStorageAdapter(id).needsReasoningMetadata!(host.settings)).toBe(true);
 });
 
@@ -267,10 +278,10 @@ it.each(['claude', 'grok', 'opencode', 'pi'] as const)('%s retains confirmed non
   cases.find(entry => entry.id === id)!.populate(host.settings);
   const config = host.settings.providerConfigs[id]!;
   const selected = (config.visibleModels as string[])[0];
-  if (id === 'claude') Object.assign((config.discoveredModels as any[])[0], {
+  if (id === 'claude') Object.assign((config.discoveredModels as Array<Record<string, unknown>>)[0], {
     supportedEffortLevels: [], reasoningMetadataResolved: true,
   });
-  if (id === 'pi') Object.assign((config.discoveredModels as any[])[0], {
+  if (id === 'pi') Object.assign((config.discoveredModels as Array<Record<string, unknown>>)[0], {
     thinkingLevels: ['off'], reasoning: false,
   });
   if (id === 'opencode') config.thinkingOptionsByModel = { [selected]: [] };

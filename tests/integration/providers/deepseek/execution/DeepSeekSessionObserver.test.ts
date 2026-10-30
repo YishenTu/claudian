@@ -1,4 +1,5 @@
 import { NativePeer, rootFollow } from '@test/helpers/deepseek/NativePeer';
+import { nativeRequest } from '@test/helpers/deepseek/NativeRequest';
 import { testDate } from '@test/helpers/testClock';
 
 import { DeepSeekSessionObserver } from '@/providers/deepseek/execution/DeepSeekSessionObserver';
@@ -28,7 +29,7 @@ it('keeps status changes during roster loading and waits for descendant job base
     if (endpoint === 'session/control') send({ type: 'baseline', value: { projections: { root: { values: { subagentCatalog: [{ id: 'child', mode: 'one-shot' }, { id: 'cold', mode: 'continuable' }] } }, child: { values: { subagent: { mode: 'one-shot', seq: 1 } } } } } });
     if (endpoint === 'session/follow') send({ type: 'snapshot', cursor: 0, records: [], projections: { asOfSeq: 0, values: {} } });
     if (endpoint === 'job/list') {
-      if (args.request.sessionId === 'child') childJobs = send;
+      if (nativeRequest(args).sessionId === 'child') childJobs = send;
       else send({ type: 'rows', jobs: [{ id: 'unowned', status: 'running' }] });
     }
   };
@@ -48,7 +49,7 @@ it('keeps status changes during roster loading and waits for descendant job base
   await until(() => observer!.permissionBoundaryAvailable());
   expect(observer.hasWork()).toBe(true);
   expect(observer.ownedJobs()).toEqual([{ id: 'child-job', owner: 'child', status: 'running' }]);
-  expect([...peer.streams.values()].filter(s => s.endpoint === 'session/follow').map(s => s.args.request.address)).toEqual(expect.arrayContaining([
+  expect([...peer.streams.values()].filter(s => s.endpoint === 'session/follow').map(s => nativeRequest(s.args).address)).toEqual(expect.arrayContaining([
     { kind: 'session', sessionId: 'root' }, { kind: 'subagent', childSessionId: 'child', parentSessionId: 'root', mode: 'one-shot' },
   ]));
   expect([...peer.streams.values()].some(s => JSON.stringify(s.args).includes('cold'))).toBe(false);
@@ -64,8 +65,8 @@ it('follows a native child only after its durable identity, and keeps it busy un
     if (endpoint === 'session/control') send({ type: 'baseline', value: { projections: { root: { values: { subagentCatalog: [{ id: 'child', mode: 'one-shot', label: 'task' }] } }, child: { values: { subagent: null } } } } });
     if (endpoint === 'session/follow') {
       // rc.2 validates the child's durable descriptor identity before following.
-      if (args.request.address.kind === 'subagent' && !(roster.projection('child')?.subagent)) {
-        rejected.push(args.request.address); fail!({ code: 'subagent/catalog-diagnostic', message: 'subagent descriptor is corrupt' }); return;
+      if (nativeRequest(args).address!.kind === 'subagent' && !(roster.projection('child')?.subagent)) {
+        rejected.push(nativeRequest(args).address); fail!({ code: 'subagent/catalog-diagnostic', message: 'subagent descriptor is corrupt' }); return;
       }
       send({ type: 'snapshot', cursor: 0, records: [], projections: { asOfSeq: 0, values: {} } });
     }
@@ -82,7 +83,7 @@ it('follows a native child only after its durable identity, and keeps it busy un
   expect(observer.hasWork()).toBe(true);
   peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { mode: 'one-shot', label: 'task', seq: 3 }, seq: 3 });
   await ready;
-  expect([...peer.streams.values()].filter(s => s.endpoint === 'session/follow').map(s => s.args.request.address)).toContainEqual(
+  expect([...peer.streams.values()].filter(s => s.endpoint === 'session/follow').map(s => nativeRequest(s.args).address)).toContainEqual(
     { kind: 'subagent', childSessionId: 'child', parentSessionId: 'root', mode: 'one-shot' });
   expect(rejected).toEqual([]);
   expect(errors).toEqual([]);

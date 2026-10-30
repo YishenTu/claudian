@@ -4,19 +4,17 @@ import { existsSync, readFileSync } from 'node:fs';
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
-import { type CodexNativeTestProcess as FakeProcess,CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
+import { type CodexNativeRequest, type CodexNativeTestProcess as FakeProcess,CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
 import { testClock } from '@test/helpers/testClock';
+import spawn from 'cross-spawn';
 
 import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderSessionConfig, ProviderSessionToolPort, ProviderToolPolicy } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
 import { createCodexWorkspaceServices } from '@/providers/codex/app/CodexWorkspaceServices';
 import { CodexCommandCatalog } from '@/providers/codex/commands/CodexCommandCatalog';
-import { decodeCodexConfig } from '@/providers/codex/config';
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
-import { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
 import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
-import { buildCodexLaunchSpec } from '@/providers/codex/runtime/CodexLaunchSpecBuilder';
 import { CodexModelDiscoveryService } from '@/providers/codex/runtime/CodexModelDiscoveryService';
 import { updateCodexProviderSettings } from '@/providers/codex/settings';
 import { CodexSkillListingService } from '@/providers/codex/skills/CodexSkillListingService';
@@ -30,21 +28,10 @@ const createBackend = (host: ProviderHost, runtime: CodexAppServerRuntime): Code
 );
 
 const mockNative = new CodexRuntimeHarness();
-const target = { method: 'host-native', platformFamily: 'unix', platformOs: 'linux' } as const;
 
-vi.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
-  CodexAppServerProcess: vi.fn().mockImplementation(function () {
-    return mockNative.createProcess();
-  }),
-}));
+vi.mock('cross-spawn', () => ({ default: vi.fn(() => mockNative.createProcess()) }));
 
-vi.mock('@/providers/codex/runtime/codexAppServerSupport', async () => ({
-  ...(await vi.importActual<typeof import('@/providers/codex/runtime/codexAppServerSupport')>('@/providers/codex/runtime/codexAppServerSupport')),
-  resolveCodexAppServerLaunchSpec: vi.fn(async (host: ProviderRuntimeHost) => buildCodexLaunchSpec({
-    codexSettings: decodeCodexConfig(host.config), resolvedCliCommand: 'codex', env: { KEY: mockNative.launchKey }, hostVaultPath: '/vault',
-    executionTarget: target,
-  })),
-}));
+
 
 describe('Codex shared runtime', () => {
   const runtimes: CodexAppServerRuntime[] = [];
@@ -56,7 +43,7 @@ describe('Codex shared runtime', () => {
   }
   beforeEach(async () => {
     mockNative.reset();
-    plugin = (await createProviderHostFixture({ vault: sharedVault, settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } } } })).host;
+    plugin = (await createProviderHostFixture({ vault: sharedVault, overrides: { getResolvedProviderCliPath: async () => '/native/codex' }, settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } } } })).host;
   });
   afterEach(async () => {
     await Promise.all(runtimes.splice(0).map(runtime => runtime.dispose()));
@@ -86,7 +73,7 @@ describe('Codex shared runtime', () => {
       await listing;
       await skills.dispose();
       await runtime.dispose();
-      await Promise.all(mockNative.processes.map(process => process.shutdown()));
+      mockNative.processes.forEach(process => process.exit());
     }
   });
 
@@ -174,7 +161,7 @@ describe('Codex shared runtime', () => {
     await Promise.resolve();
     await skills.listSkills();
     expect(process.requests.filter(request => request.method === 'skills/list')).toHaveLength(3);
-    await process.shutdown();
+    process.exit();
     expect(mockNative.processes).toHaveLength(1);
     const restarted = skills.listSkills();
     const replacement = await waitForRequest('plugin/reconcile', 1);
@@ -186,7 +173,7 @@ describe('Codex shared runtime', () => {
   it('drains the old fingerprint while new consumers use its replacement', async () => {
     const runtime = createRuntime();
     const old = await runtime.acquire({ readiness: 'initialized' });
-    mockNative.launchKey = 'second';
+    plugin.settings.providerConfigs.codex!.environmentVariables = 'KEY=second';
     const replacement = await runtime.acquire({ readiness: 'initialized' });
     expect(mockNative.processes).toHaveLength(2);
     expect(old.connection.isRetired()).toBe(true);
@@ -248,15 +235,9 @@ describe('Codex shared runtime', () => {
 
   async function sessionToolCall(process: FakeProcess, threadId: string, tool = 'claudian_list_destinations', args: unknown = {}, turnId = process.turns.get(threadId)!.id) {
     const id = `session-call-${process.requests.length}`;
-    process.stdout.write(`${JSON.stringify({ id, method: 'item/tool/call', params: {
+    return process.requestFromServer(id, 'item/tool/call', {
       threadId, turnId, callId: id, namespace: 'claudian_sessions', tool, arguments: args,
-    } })}\n`);
-    for (let count = 0; count < 1000; count++) {
-      const response = process.requests.find(response => String(response.id) === id) as any;
-      if (response) return response;
-      await Promise.resolve();
-    }
-    throw new Error('Session tool response did not arrive');
+    });
   }
 
   it.each([true, false])('registers session specs and their version only with a port (%s)', async ported => {
@@ -266,9 +247,9 @@ describe('Codex shared runtime', () => {
     const output = collect(session.execute(request).events);
     const process = await waitForRequest('turn/start');
     const specs = process.requests.find(call => call.method === 'thread/start')!.params.dynamicTools ?? [];
-    expect(specs.filter((spec: any) => spec.namespace === 'claudian_sessions').map((spec: any) => spec.name))
+    expect(specs.filter((spec) => spec.namespace === 'claudian_sessions').map((spec) => spec.name))
       .toEqual(ported ? ['claudian_list_destinations', 'claudian_send_message', 'claudian_read_session'] : []);
-    expect(specs.every((spec: any) => !('type' in spec))).toBe(true);
+    expect(specs.every((spec) => !('type' in spec))).toBe(true);
     expect(session.getSnapshot().providerState?.sessionToolVersion).toBe(ported ? 4 : undefined);
     expect(await sessionToolCall(process, 'thread-1')).toMatchObject({ result: { success: ported } });
     expect(port.list.mock.calls).toHaveLength(ported ? 1 : 0);
@@ -509,8 +490,8 @@ describe('Codex shared runtime', () => {
         updateCodexProviderSettings(host.settings, { responseVerbosity });
         const output = collect(session.execute(request).events);
         const process = await waitForRequest('turn/start', index);
-        const spec = vi.mocked(CodexAppServerProcess).mock.calls.at(-1)![0];
-        expect(spec.args).toEqual([
+        const args = vi.mocked(spawn).mock.calls.at(-1)![1];
+        expect(args).toEqual([
           'app-server', '--listen', 'stdio://',
           ...(responseVerbosity === 'default' ? [] : ['-c', `model_verbosity="${responseVerbosity}"`]),
         ]);
@@ -536,7 +517,7 @@ describe('Codex shared runtime', () => {
     await output;
     await session.dispose();
     expect(process.requests.filter(r => r.method === 'thread/unsubscribe').map(r => r.params.threadId)).toContain('thread-1');
-    mockNative.launchKey = 'replacement';
+    plugin.settings.providerConfigs.codex!.environmentVariables = 'KEY=replacement';
     const next = await runtime.acquire();
     expect(process.isAlive()).toBe(false);
     await next.release();
@@ -698,7 +679,7 @@ describe('Codex shared runtime', () => {
     await expect(starting).rejects.toThrow('read ECONNRESET');
     expect(releaseInput).not.toHaveBeenCalled();
 
-    await process.shutdown();
+    process.exit();
     expect(releaseInput).toHaveBeenCalledTimes(1);
     await lease.release();
   });
@@ -722,7 +703,7 @@ describe('Codex shared runtime', () => {
     const stopping = detach ? scope.detach() : scope.stop();
     process.notify('thread/status/changed', { threadId: 'thread-1', status: { type: 'idle' } });
     for (let i = 0; i < 100; i++) await Promise.resolve();
-    mockNative.launchKey = 'replacement';
+    plugin.settings.providerConfigs.codex!.environmentVariables = 'KEY=replacement';
     const replacement = await runtime.acquire();
     try {
       expect(process.isAlive()).toBe(true);
@@ -751,7 +732,7 @@ describe('Codex shared runtime', () => {
     const process = await waitForRequest('turn/start');
     const turn = { id: 'delayed', status: 'inProgress', items: [] };
     process.notify('turn/started', { threadId: 'thread-1', turn });
-    mockNative.launchKey = 'replacement';
+    plugin.settings.providerConfigs.codex!.environmentVariables = 'KEY=replacement';
     const replacement = await runtime.acquire();
     try {
       expect(process.isAlive()).toBe(true);
@@ -791,7 +772,7 @@ describe('Codex shared runtime', () => {
     const secondEvents = collect(second.events);
     for (let i = 0; i < 100 && starts.length < 2; i++) await Promise.resolve();
     expect(starts).toHaveLength(2);
-    const imageInput = starts[1].params.input.find((item: { type: string }) => item.type === 'localImage');
+    const imageInput = starts[1].params.input!.find(item => item.type === 'localImage')!;
     const inputPath: string = imageInput.path;
     try {
       expect(readFileSync(inputPath)).toEqual(Buffer.from('hello'));
@@ -898,7 +879,7 @@ describe('Codex shared runtime', () => {
     const firstEvents = collect(first.session.execute(request).events);
     try {
       const old = await waitForRequest('turn/start');
-      await registry.runTransition(['codex'], async () => { mockNative.launchKey = 'second'; });
+      await registry.runTransition(['codex'], async () => { plugin.settings.providerConfigs.codex!.environmentVariables = 'KEY=second'; });
       expect(first.isCurrent()).toBe(true);
       expect(old.isAlive()).toBe(true);
       const second = registry.acquire(backend, config, 'chat');
@@ -933,7 +914,7 @@ describe('Codex shared runtime', () => {
     const runs = [first, second].map(session => collect(session.execute(request).events));
     const process = await waitForRequest('turn/start');
     for (let i = 0; i < 100 && process.requests.filter(r => r.method === 'turn/start').length < 2; i++) await Promise.resolve();
-    await process.shutdown();
+    process.exit();
     const failed = await Promise.all(runs);
     for (const events of failed) expect(events.at(-1)).toMatchObject({ type: 'execution_error', category: 'process-exited' });
     expect(mockNative.processes).toHaveLength(1);
@@ -952,7 +933,7 @@ describe('Codex shared runtime', () => {
 
   it('allows retry when a cancelled turn completes before its late start response and interrupt rejection', async () => {
     mockNative.autoReconcile = true;
-    let pendingStart: any;
+    let pendingStart: CodexNativeRequest | undefined;
     mockNative.requestOverride = (process, rpc) => {
       if (rpc.method === 'turn/start') {
         if (!pendingStart) pendingStart = rpc;
@@ -970,7 +951,7 @@ describe('Codex shared runtime', () => {
     const process = await waitForRequest('turn/start');
     run.cancel();
     complete(process, 'thread-1');
-    process.respond(pendingStart.id, { turn: { id: 'turn-thread-1', status: 'inProgress' } });
+    process.respond(pendingStart!.id, { turn: { id: 'turn-thread-1', status: 'inProgress' } });
     await collect(run.events);
     for (let i = 0; i < 50; i++) await Promise.resolve();
     const retry = collect(session.execute(request).events);
@@ -1238,20 +1219,20 @@ describe('Codex shared runtime', () => {
     const runtime = createRuntime();
     const old = await runtime.acquire();
     const process = mockNative.processes[0];
-    const originalShutdown = process.shutdown.bind(process);
-    let finishShutdown!: () => void;
-    const pending = new Promise<void>(resolve => { finishShutdown = resolve; });
-    vi.spyOn(process, 'shutdown').mockImplementation(async () => { await pending; await originalShutdown(); });
-    mockNative.launchKey = 'second';
+    let shutdownStarted!: () => void;
+    const started = new Promise<void>(resolve => { shutdownStarted = resolve; });
+    vi.spyOn(process, 'kill').mockImplementation(() => { shutdownStarted(); return true; });
+    plugin.settings.providerConfigs.codex!.environmentVariables = 'KEY=second';
     const replacement = await runtime.acquire();
     const release = old.release();
     let disposed = false;
     const disposal = runtime.dispose().then(() => { disposed = true; });
     try {
-      for (let i = 0; i < 30; i++) await Promise.resolve();
+      await started;
+      await new Promise<void>(resolve => setImmediate(resolve));
       expect(disposed).toBe(false);
     } finally {
-      finishShutdown();
+      process.exit();
       await Promise.all([release, disposal, replacement.release()]);
     }
   });

@@ -5,25 +5,15 @@ import { CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeH
 import { createCodexWorkspaceHarness } from '@test/helpers/providers/codex/CodexWorkspaceHarness';
 import { testClock } from '@test/helpers/testClock';
 
-import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
-import { decodeCodexConfig } from '@/providers/codex/config';
-import { buildCodexLaunchSpec } from '@/providers/codex/runtime/CodexLaunchSpecBuilder';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 
 const mockNative = new CodexRuntimeHarness();
-vi.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
-  CodexAppServerProcess: vi.fn().mockImplementation(function () { return mockNative.createProcess(); }),
-}));
-vi.mock('@/providers/codex/runtime/codexAppServerSupport', async () => ({
-  ...(await vi.importActual<typeof import('@/providers/codex/runtime/codexAppServerSupport')>('@/providers/codex/runtime/codexAppServerSupport')),
-  resolveCodexAppServerLaunchSpec: async (host: ProviderRuntimeHost) => buildCodexLaunchSpec({
-    codexSettings: decodeCodexConfig(host.config), resolvedCliCommand: 'codex', env: { KEY: mockNative.launchKey }, hostVaultPath: host.workingDirectory ?? '/vault',
-    executionTarget: { method: 'host-native', platformFamily: 'unix', platformOs: 'linux' },
-  }),
-}));
+vi.mock('cross-spawn', () => ({ default: vi.fn(() => mockNative.createProcess()) }));
+
 const fixtures: Awaited<ReturnType<typeof createCodexWorkspaceHarness>>[] = [];
 async function create(config: Record<string, unknown> = {}) {
   const fixture = await createCodexWorkspaceHarness(config);
+  fixture.resolveCliPath.mockResolvedValue('/native/codex');
   fixtures.push(fixture);
   return fixture;
 }
@@ -113,7 +103,7 @@ it('blocks metadata during a workspace transition and reads only the new native 
   let finishMutation!: () => void;
   const entered = new Promise<void>(resolve => { startMutation = resolve; });
   const held = new Promise<void>(resolve => { finishMutation = resolve; });
-  const transition = h.registry.runTransition(['codex'], async () => { startMutation(); await held; mockNative.launchKey = 'new'; });
+  const transition = h.registry.runTransition(['codex'], async () => { startMutation(); await held; h.settings.providerConfigs.codex!.environmentVariables = 'KEY=new'; });
   await entered;
   const modelRefresh = h.services.modelCatalogCoordinator.refresh();
   const skillListing = h.services.commandCatalog.listDropdownEntries({ includeBuiltIns: false });
@@ -123,7 +113,7 @@ it('blocks metadata during a workspace transition and reads only the new native 
     await Promise.resolve();
     expect(mockNative.processes).toEqual([]);
     expect(settled).toBe(false);
-    mockNative.launchKey = 'new';
+    h.settings.providerConfigs.codex!.environmentVariables = 'KEY=new';
     await h.services.modelCatalogCoordinator.refresh({ providerTransitionOwner: true });
     expect(mockNative.processes).toHaveLength(1);
     expect(mockNative.processes[0].requests.filter(rpc => rpc.method === 'skills/list')).toEqual([]);

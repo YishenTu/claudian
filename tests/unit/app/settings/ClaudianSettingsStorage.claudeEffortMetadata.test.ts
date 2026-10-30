@@ -20,7 +20,7 @@ function createStorage(initial: Record<string, unknown>) {
   return {
     adapter,
     storage: new ClaudianSettingsStorage(adapter, DEFAULT_CLAUDIAN_SETTINGS),
-    read: () => JSON.parse(content) as Record<string, any>,
+    read: () => JSON.parse(content) as { effortLevel?: string; providerConfigs: { claude: { effortMetadataMigrated?: boolean; defaultModel?: string; visibleModels?: string[]; selectedModels: Array<{ value: string; label: string; description: string; supportedEffortLevels?: string[] }> } } },
   };
 }
 
@@ -42,7 +42,7 @@ describe('Claude effort metadata migration', () => {
 
     const stored = read().providerConfigs.claude;
     expect(stored.effortMetadataMigrated).toBeUndefined();
-    expect(stored.selectedModels.map((model: any) => [model.value, model.supportedEffortLevels])).toEqual([
+    expect(stored.selectedModels.map((model) => [model.value, model.supportedEffortLevels])).toEqual([
       ['haiku', undefined],
       ['opus', undefined],
       ['claude-fable-5-1[1m]', undefined],

@@ -5,6 +5,7 @@ import { testDate } from '@test/helpers/testClock';
 
 import { buildSystemPrompt } from '@/core/prompt/mainAgent';
 import { renderProjectMemberInstructions } from '@/core/prompt/projectPrompt';
+import type { ImageAttachment } from '@/core/types';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
 
 describe('ConversationBranching', () => {
@@ -16,9 +17,9 @@ describe('ConversationBranching', () => {
     const deps = (await createConversationControllerDeps({
       getExecutionCoordinator: () => coordinator }));
     deps.state.currentConversationId = 'conversation';
-    const images = [{ id: 'image', name: 'image.png', data: 'abc', mimeType: 'image/png' }];
+    const images: ImageAttachment[] = [{ id: 'image', name: 'image.png', data: 'abc', mediaType: 'image/png', size: 3, source: 'file' }];
     deps.state.messages = [{ id: 'first', role: 'user', content: 'First', timestamp: 1 }, { id: 'user', role: 'user', content: 'raw', displayContent: 'Visible prompt', timestamp: Date.now(),
-      images: images as any, userMessageId: 'native-user' }];
+      images: images, userMessageId: 'native-user' }];
     const controller = new ConversationController(deps);
     await controller.navigateBranch('user', target);
     expect(navigateConversationBranch).toHaveBeenCalledTimes(target ? 1 : 0);

@@ -1,6 +1,6 @@
 import { runInNewContext } from 'node:vm';
 
-import { createReadStream, existsSync } from 'fs';
+import { createReadStream, Dirent, existsSync, type PathLike } from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -34,6 +34,7 @@ vi.mock('fs', async () => {
   const { Readable } = (await vi.importActual<typeof streamType>('stream'));
   const mockedFsPromises = await import('fs/promises');
   return {
+    Dirent: (await vi.importActual<typeof import('fs')>('fs')).Dirent,
     existsSync: vi.fn(),
     createReadStream: vi.fn((filePath: string) => Readable.from((async function* () {
       yield String(await mockedFsPromises.readFile(filePath, 'utf-8'));
@@ -52,6 +53,12 @@ const encodedDrive = process.platform === 'win32' ? 'C-' : '';
 const mockExistsSync = existsSync as MockedFunction<typeof existsSync>;
 const mockCreateReadStream = vi.mocked(createReadStream);
 const mockFsPromises = fsPromises as Mocked<typeof fsPromises>;
+const mockReaddir = vi.mocked<(path: PathLike, options: { withFileTypes: true }) => Promise<Dirent[]>>(fsPromises.readdir);
+const directoryEntry = (name: string, kind: 'directory' | 'file' | 'symlink'): Dirent => Object.assign(new Dirent(), {
+  name, parentPath: '',
+  isDirectory: () => kind === 'directory', isFile: () => kind === 'file', isSymbolicLink: () => kind === 'symlink',
+  isBlockDevice: () => false, isCharacterDevice: () => false, isFIFO: () => false, isSocket: () => false,
+});
 const mockOs = os as Mocked<typeof os>;
 
 describe('sdkSession', () => {
@@ -307,7 +314,7 @@ describe('sdkSession', () => {
       mockFsPromises.access.mockRejectedValue(
         Object.assign(new Error('Missing'), { code: 'ENOENT' }),
       );
-      mockFsPromises.readdir.mockResolvedValue([]);
+      mockReaddir.mockResolvedValue([]);
 
       await expect(locateSDKSession(
         vaultPath,
@@ -319,17 +326,9 @@ describe('sdkSession', () => {
       mockFsPromises.access.mockRejectedValue(
         Object.assign(new Error('Missing'), { code: 'ENOENT' }),
       );
-      mockFsPromises.readdir
-        .mockResolvedValueOnce([{
-          isDirectory: () => true,
-          isFile: () => false,
-          name: '-Users-test-previous-vault',
-        }] as any)
-        .mockResolvedValueOnce([{
-          isDirectory: () => false,
-          isFile: () => true,
-          name: 'session-relocated.jsonl',
-        }] as any);
+      mockReaddir
+        .mockResolvedValueOnce([directoryEntry('-Users-test-previous-vault', 'directory')])
+        .mockResolvedValueOnce([directoryEntry('session-relocated.jsonl', 'file')]);
 
       await expect(locateSDKSession(
         vaultPath,
@@ -341,22 +340,10 @@ describe('sdkSession', () => {
       mockFsPromises.access.mockRejectedValue(
         Object.assign(new Error('Missing'), { code: 'ENOENT' }),
       );
-      mockFsPromises.readdir
-        .mockResolvedValueOnce([{
-          isDirectory: () => true,
-          isFile: () => false,
-          name: '-Users-test-current-project',
-        }] as any)
-        .mockResolvedValueOnce([{
-          isDirectory: () => true,
-          isFile: () => false,
-          name: '-Users-test-previous-vault',
-        }] as any)
-        .mockResolvedValueOnce([{
-          isDirectory: () => false,
-          isFile: () => true,
-          name: 'session-nested.jsonl',
-        }] as any);
+      mockReaddir
+        .mockResolvedValueOnce([directoryEntry('-Users-test-current-project', 'directory')])
+        .mockResolvedValueOnce([directoryEntry('-Users-test-previous-vault', 'directory')])
+        .mockResolvedValueOnce([directoryEntry('session-nested.jsonl', 'file')]);
 
       await expect(locateSDKSession(
         vaultPath,
@@ -368,7 +355,7 @@ describe('sdkSession', () => {
       mockFsPromises.access.mockRejectedValue(
         Object.assign(new Error('Missing'), { code: 'ENOENT' }),
       );
-      mockFsPromises.readdir.mockRejectedValue(
+      mockReaddir.mockRejectedValue(
         Object.assign(new Error('Missing root'), { code: 'ENOENT' }),
       );
 
@@ -393,12 +380,7 @@ describe('sdkSession', () => {
       mockFsPromises.access.mockRejectedValue(
         Object.assign(new Error('Missing'), { code: 'ENOENT' }),
       );
-      mockFsPromises.readdir.mockResolvedValue([{
-        isDirectory: () => false,
-        isFile: () => false,
-        isSymbolicLink: () => true,
-        name: 'linked-project',
-      }] as any);
+      mockReaddir.mockResolvedValue([directoryEntry('linked-project', 'symlink')]);
 
       await expect(locateSDKSession(
         vaultPath,

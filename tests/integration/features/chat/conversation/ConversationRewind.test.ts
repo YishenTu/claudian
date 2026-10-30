@@ -3,9 +3,11 @@ import { holdResponse } from '@test/helpers/ConversationPorts';
 import { createConversationControllerDeps } from '@test/helpers/features/chat/ConversationControllerFixture';
 import { fireEvent, within } from '@testing-library/dom';
 import { Modal, Notice } from 'obsidian';
-import type { Mock } from 'vitest';
+import type { Mock, Mocked } from 'vitest';
 
+import type { ImageAttachment } from '@/core/types';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
+import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import * as confirmation from '@/shared/modals/ConfirmModal';
 
 const mockNotice = Notice as Mock;
@@ -29,7 +31,7 @@ afterEach(() => { vi.restoreAllMocks(); document.body.replaceChildren(); });
 describe('ConversationRewind', () => {
   let controller: ConversationController;
   let deps: Awaited<ReturnType<typeof createConversationControllerDeps>>;
-  let mockCoordinator: any;
+  let mockCoordinator: Mocked<Pick<ChatExecutionCoordinator, 'previewRewind' | 'rewind'>>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -210,7 +212,7 @@ describe('ConversationRewind', () => {
 
   it('should truncateAt, save with resumeAtMessageId, and renderMessages on success', async () => {
     deps.state.currentConversationId = 'conv-1';
-    deps.state.usage = { inputTokens: 100, outputTokens: 50 } as any;
+    deps.state.usage = { inputTokens: 100, contextTokens: 100, contextWindow: 200000, percentage: 0.05 };
     deps.state.messages = [
       { id: 'm1', role: 'assistant', content: '', timestamp: 1, assistantMessageId: 'prev-a' },
       { id: 'm2', role: 'user', content: 'test', timestamp: 2, userMessageId: 'user-uuid' },
@@ -256,7 +258,7 @@ describe('ConversationRewind', () => {
       getExecutionCoordinator: () => mockCoordinator,
     }));
     controller = new ConversationController(deps);
-    const images = [{ id: 'image-1', name: 'reference.png' }];
+    const images: ImageAttachment[] = [{ id: 'image-1', name: 'reference.png', mediaType: 'image/png', data: 'aA==', size: 1, source: 'file' }];
     deps.state.currentConversationId = 'conv-1';
     deps.state.messages = [
       { id: 'm1', role: 'assistant', content: '', timestamp: 1, assistantMessageId: 'prev-a' },
@@ -264,7 +266,7 @@ describe('ConversationRewind', () => {
         content: '',
         displayContent: 'restore this prompt',
         id: 'm2',
-        images: images as any,
+        images: images,
         role: 'user',
         timestamp: 2,
         userMessageId: 'user-uuid',

@@ -3,18 +3,22 @@ import { FakeSession, requestedScope } from '@test/helpers/ChatExecutionHarness'
 import { holdResponse } from '@test/helpers/ConversationPorts';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { registerChatTestProvider } from '@test/helpers/features/chat/ChatProviderFixture';
+import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
+import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBrowserTestHarness';
 import { fireEvent } from '@testing-library/dom';
-import { App, Component, MarkdownRenderer } from 'obsidian';
+import { App, Component, MarkdownRenderer, WorkspaceLeaf } from 'obsidian';
 import type { Mock, MockInstance } from 'vitest';
 
 import { RoutedTitleGenerationService } from '@/core/auxiliary/RoutedTitleGenerationService';
 import type { ProviderSessionEvent } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import type { Conversation, ToolCallInfo } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ConversationLifecycle } from '@/features/chat/conversation/ConversationLifecycle';
 import type { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
+import { SelectionController } from '@/features/chat/input/SelectionController';
 import { NavigationController } from '@/features/chat/navigation/NavigationController';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
@@ -131,12 +135,12 @@ function createTabManager(
   onTestFinished(() => component.unload());
   const view = Object.assign(component, {
     getTabManager: vi.fn(),
-    leaf: {},
+    leaf: new WorkspaceLeaf(),
     ...viewOverrides,
-  }) as any;
+  });
   return new TabManager(
     plugin,
-    containerEl as any,
+    containerEl,
     view,
     callbacks,
     new VaultMentionDataProvider(plugin.app),
@@ -144,9 +148,9 @@ function createTabManager(
 }
 
 function expectTabManagerMetadataReleased(manager: TabManager, tabId: string): void {
-  const internals = manager as any;
+  const discovery = manager['commandDiscovery'];
   // Discovery state can outlive membership, so a released tab must leave no tracked entry.
-  expect(internals.commandDiscovery.getTrackedTabIds()).not.toContain(tabId);
+  expect(discovery.getTrackedTabIds()).not.toContain(tabId);
 }
 
 function createTrackedTabContainer(): {
@@ -183,7 +187,7 @@ async function waitForCondition(condition: () => boolean): Promise<void> {
   expect(condition()).toBe(true);
 }
 
-const directlyCreatedTabs: any[] = [];
+const directlyCreatedTabs: AssembledTabRuntime[] = [];
 
 async function createTestTab(
   options: Pick<TabRuntimeFactoryOptions, 'containerEl' | 'plugin'> &
@@ -192,7 +196,7 @@ async function createTestTab(
       'component' | 'containerEl' | 'getProviderCatalogConfig' | 'plugin'
     >>,
   assembly: {
-    forkRequestCallback?: (forkContext: any) => Promise<void>;
+    forkRequestCallback?: TabRuntimeFactoryOptions['forkRequestCallback'];
     getProviderCatalogConfig?: TabRuntimeFactoryOptions['getProviderCatalogConfig'];
     onProviderChanged?: (providerId: string) => void | Promise<void>;
     openConversation?: (conversationId: string) => Promise<void>;
@@ -220,7 +224,7 @@ async function createTestTab(
   return tab;
 }
 
-function createConversation() {
+function createConversation(): Conversation {
   return {
     id: 'conversation-1',
     providerId: 'claude',
@@ -232,7 +236,7 @@ function createConversation() {
     messages: [],
     createdAt: 1,
     lastActivityAt: 1,
-  } as any;
+  };
 }
 
 function browseProvider(tab: { dom: { inputWrapper: HTMLElement } }, providerId: string): void {
@@ -282,7 +286,7 @@ describe('Tab provider execution ownership', () => {
   });
 
   it('does not carry a branch preview prompt into the conversation a tab rebinds to', async () => {
-    const first = {
+    const first: Conversation = {
       ...createConversation(),
       messages: [
         { id: 'u1', role: 'user', content: 'First prompt', userMessageId: 'native-u1', timestamp: 1 },
@@ -312,18 +316,20 @@ describe('Tab provider execution ownership', () => {
 
   it('disposes a deleted session once a tab that failed to reset lets it go', async () => {
     const conversation = createConversation();
-    let cached: any = conversation;
+    let cached: Conversation | null = conversation;
     const plugin = await createPlugin({
       getCachedConversation: vi.fn(() => cached),
       getConversationById: vi.fn(async () => cached),
       getConversationSync: vi.fn(() => cached),
     });
     const manager = createTabManager(plugin);
+    const view = await createClaudianView({ host: plugin, tabManager: manager });
+    const { store } = await createSessionBrowserHost();
     const lifecycle = new ConversationLifecycle({
       sessions: plugin.sessionRuntimes,
       projects: { get: () => null, setArchived: async () => undefined },
-      conversations: {} as any,
-      views: { getAllViews: () => [{ getTabManager: () => manager }] as any },
+      conversations: store,
+      views: { getAllViews: () => [view] },
     });
     const tab = (await manager.createTab(conversation.id))!;
     const runtime = tab.session.runtime;
@@ -341,7 +347,7 @@ describe('Tab provider execution ownership', () => {
 
   it('resets a tab after native deletion settles its turn, carrying the unsent and queued input', async () => {
     const conversation = createConversation();
-    let cached: any = conversation;
+    let cached: Conversation | null = conversation;
     const plugin = await createPlugin({
       getCachedConversation: vi.fn(() => cached),
       getConversationById: vi.fn(async () => cached),
@@ -349,11 +355,13 @@ describe('Tab provider execution ownership', () => {
       renameConversation: vi.fn().mockResolvedValue(undefined),
     });
     const manager = createTabManager(plugin);
+    const view = await createClaudianView({ host: plugin, tabManager: manager });
+    const { store } = await createSessionBrowserHost();
     const lifecycle = new ConversationLifecycle({
       sessions: plugin.sessionRuntimes,
       projects: { get: () => null, setArchived: async () => undefined },
-      conversations: {} as any,
-      views: { getAllViews: () => [{ getTabManager: () => manager }] as any },
+      conversations: store,
+      views: { getAllViews: () => [view] },
     });
     plugin.handleMissingProviderSession.mockImplementation(async (id: string) => {
       // The repository removes the record, then awaits the deletion callback.
@@ -462,7 +470,7 @@ describe('Tab provider execution ownership', () => {
     const onWorkChanged = vi.fn();
     const tab = await createTestTab({
       plugin: await createPlugin(),
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
       onWorkChanged,
     });
 
@@ -489,16 +497,16 @@ describe('Tab provider execution ownership', () => {
   it('refreshes every provider control without starting command discovery', async () => {
     const getProviderCatalogConfig = vi.fn().mockReturnValue(null);
     const tab = await createTestTab(
-      { plugin: await createPlugin(), containerEl: document.createElement('div') as any },
+      { plugin: await createPlugin(), containerEl: document.createElement('div') },
       { getProviderCatalogConfig },
     );
     const controls = [
       tab.ui.modelSelector, tab.ui.modeSelector, tab.ui.effortSelector,
       tab.ui.permissionToggle, tab.ui.serviceTierToggle,
     ];
-    const updates = controls.map((control: any) => vi.spyOn(control, 'updateDisplay'));
+    const updates = controls.map((control) => vi.spyOn(control, 'updateDisplay'));
     const optionRenders = [tab.ui.modelSelector, tab.ui.modeSelector]
-      .map((control: any) => vi.spyOn(control, 'renderOptions'));
+      .map((control) => vi.spyOn(control, 'renderOptions'));
     getProviderCatalogConfig.mockClear();
 
     tab.refreshProviderControls();
@@ -508,7 +516,7 @@ describe('Tab provider execution ownership', () => {
   });
 
   it('counts detached async subagent work as tab work outside the foreground turn', async () => {
-    const tab = await createTestTab({ plugin: await createPlugin(), containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin: await createPlugin(), containerEl: document.createElement('div') });
     expect(tab.session.isWorking).toBe(false);
 
     vi.spyOn(tab.services.subagentManager, 'hasActiveAsyncSubagents').mockReturnValue(true);
@@ -518,7 +526,7 @@ describe('Tab provider execution ownership', () => {
   });
 
   it('blocks branch admission until the main turn has finished its finalization', async () => {
-    const tab = await createTestTab({ plugin: await createPlugin(), containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin: await createPlugin(), containerEl: document.createElement('div') });
     tab.state.currentConversationId = 'conversation';
     tab.state.messages = [
       { id: 'first', role: 'user', content: 'First', timestamp: Date.now(), userMessageId: 'native-first' },
@@ -544,7 +552,7 @@ describe('Tab provider execution ownership', () => {
   it('leaves Enter on a composer link available for native link activation', async () => {
     const tab = await createTestTab({
       plugin: await createPlugin(),
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
     });
     const link = tab.dom.inputEl.createEl('a', { href: 'Notes/A.md', text: 'A' });
     const sendMessage = vi.spyOn(tab.controllers.inputController, 'sendMessage');
@@ -565,7 +573,7 @@ describe('Tab provider execution ownership', () => {
     };
     const tab = await createTestTab({
       plugin,
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
     });
     Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { configurable: true, value: 1_000 });
     Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { configurable: true, value: 500 });
@@ -660,16 +668,16 @@ describe('Tab provider execution ownership', () => {
   });
 
   describe('waiting indicator around an earlier turn question', () => {
-    const question = {
+    const question: ToolCallInfo = {
       id: 'ask',
       name: 'AskUserQuestion',
       status: 'completed',
       input: { replyMode: 'user-message', questions: [{ question: 'Which check?', options: [{ label: 'History' }] }] },
-    } as any;
+    };
 
     /** Opens a question in one turn and starts the next turn while it is still pending. */
     async function startLaterTurnUnderQuestion() {
-      const tab = await createTestTab({ plugin: await createPlugin(), containerEl: document.createElement('div') as any });
+      const tab = await createTestTab({ plugin: await createPlugin(), containerEl: document.createElement('div') });
       tab.state.currentContentEl = document.createElement('div');
       document.createElement('div').appendChild(tab.dom.inputContainerEl);
       const finishAsking = holdResponse(tab.session.turns);
@@ -721,7 +729,7 @@ describe('Tab provider execution ownership', () => {
     plugin.settings.enableAutoScroll = false;
     const tab = await createTestTab({
       plugin,
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
     });
     tab.state.autoScrollEnabled = false;
     tab.dom.messagesEl.scrollTo = vi.fn();
@@ -736,7 +744,7 @@ describe('Tab provider execution ownership', () => {
     try {
       const tab = await createTestTab({
         plugin: await createPlugin(),
-        containerEl: document.createElement('div') as any,
+        containerEl: document.createElement('div'),
       });
       holdResponse(tab.session.turns);
       Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { configurable: true, value: 1_000 });
@@ -773,7 +781,7 @@ describe('Tab provider execution ownership', () => {
     try {
       const tab = await createTestTab({
         plugin: await createPlugin(),
-        containerEl: document.createElement('div') as any,
+        containerEl: document.createElement('div'),
       });
       holdResponse(tab.session.turns);
       Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { configurable: true, value: 1_000 });
@@ -812,7 +820,7 @@ describe('Tab provider execution ownership', () => {
     try {
       const tab = await createTestTab({
         plugin: await createPlugin(),
-        containerEl: document.createElement('div') as any,
+        containerEl: document.createElement('div'),
       });
       Object.defineProperty(tab.dom.messagesEl, 'scrollHeight', { configurable: true, value: 1_000 });
       Object.defineProperty(tab.dom.messagesEl, 'clientHeight', { configurable: true, value: 500 });
@@ -836,9 +844,9 @@ describe('Tab provider execution ownership', () => {
     const removed = vi.spyOn(HTMLElement.prototype, 'removeEventListener');
     const tab = await createTestTab({
       plugin: await createPlugin(),
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
     });
-    const messagesEl = tab.dom.messagesEl as any;
+    const messagesEl = tab.dom.messagesEl;
 
     const handlers = added.mock.calls.filter((call, index) => call[0] === 'click' && added.mock.contexts[index] === messagesEl).map(call => call[1]);
     expect(handlers).toHaveLength(2);
@@ -852,7 +860,7 @@ describe('Tab provider execution ownership', () => {
     const tab = await createTestTab(
       {
         plugin: await createPlugin(),
-        containerEl: document.createElement('div') as any,
+        containerEl: document.createElement('div'),
       },
       { getProviderCatalogConfig },
     );
@@ -1084,11 +1092,11 @@ describe('Tab provider execution ownership', () => {
     const initializeSpy = vi.spyOn(NavigationController.prototype, 'initialize')
       .mockImplementation(function(this: NavigationController) {
         originalInitialize.call(this);
-        const inputEl = (this as any).deps.getInputEl();
+        const inputEl = this['deps'].getInputEl();
         const addEventListener = inputEl.addEventListener.bind(inputEl);
-        inputEl.addEventListener = vi.fn((event: string, ...args: unknown[]) => {
+        inputEl.addEventListener = vi.fn<typeof inputEl.addEventListener>((event: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) => {
           if (event === 'keydown') throw wiringError;
-          return addEventListener(event, ...args);
+          return addEventListener(event, listener, options);
         });
       });
     const disposeSpy = vi.spyOn(NavigationController.prototype, 'dispose');
@@ -1147,13 +1155,13 @@ describe('Tab provider execution ownership', () => {
       providerId: 'claude',
       model: 'claude-default',
     };
-    const existing = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
+    const existing = await createTestTab({ plugin, containerEl: document.createElement('div') });
 
     plugin.settings.lastSelectedChatModel = {
       providerId: 'claude',
       model: 'claude-alternate',
     };
-    const next = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
+    const next = await createTestTab({ plugin, containerEl: document.createElement('div') });
 
     expect(existing.draftModel).toBe('claude-default');
     expect(next.draftModel).toBe('claude-alternate');
@@ -1164,7 +1172,7 @@ describe('Tab provider execution ownership', () => {
     const plugin = await createPlugin();
     const uiConfig = ProviderRegistry.getChatUIConfig('claude');
     plugin.settings.lastSelectedChatModel = { providerId: 'claude', model: 'claude-default' };
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') });
     (uiConfig.getModelOptions as Mock).mockReturnValue([]);
     onProviderAvailabilityChanged(tab, plugin);
     expect(tab.draftModel).toBe('claude-default');
@@ -1178,7 +1186,7 @@ describe('Tab provider execution ownership', () => {
   it('preserves an unavailable last-selected model when creating a blank tab and publishing availability', async () => {
     const plugin = await createPlugin();
     plugin.settings.lastSelectedChatModel = { providerId: 'claude', model: 'retired' };
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') });
     onProviderAvailabilityChanged(tab, plugin);
     expect(tab.providerId).toBe('claude');
     expect(tab.draftModel).toBe('retired');
@@ -1186,7 +1194,7 @@ describe('Tab provider execution ownership', () => {
 
   it('restores a draft on its recorded provider even when model ownership is unresolved', async () => {
     const plugin = await createPlugin();
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any,
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div'),
       draftModel: 'retired-endpoint', providerId: 'codex',
     });
     expect(tab.providerId).toBe('codex');
@@ -1195,7 +1203,7 @@ describe('Tab provider execution ownership', () => {
 
   it('restores an ownerless legacy draft as a blocked tab', async () => {
     const plugin = await createPlugin();
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any, draftModel: 'retired-endpoint' });
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div'), draftModel: 'retired-endpoint' });
     expect(tab.providerId).toBeNull();
     expect(tab.draftModel).toBe('retired-endpoint');
     await expect(tab.session.runtime.model.ensureExecutionInitialized()).resolves.toBe(false);
@@ -1206,7 +1214,7 @@ describe('Tab provider execution ownership', () => {
   it('persists and reopens an unresolved draft without starting provider services', async () => {
     const plugin = await createPlugin();
     plugin.app.workspace.getActiveViewOfType = vi.fn().mockReturnValue(null);
-    const manager = createTabManager(plugin, document.createElement('div') as any);
+    const manager = createTabManager(plugin, document.createElement('div'));
     await manager.restoreState({
       openTabs: [{ tabId: 'blocked', conversationId: null, draftModel: 'retired-endpoint' }],
       activeTabId: 'blocked',
@@ -1221,7 +1229,7 @@ describe('Tab provider execution ownership', () => {
       tabId: 'blocked', conversationId: null, draftModel: 'retired-endpoint', providerId: null,
     }]);
     await manager.destroy();
-    const reopened = createTabManager(plugin, document.createElement('div') as any);
+    const reopened = createTabManager(plugin, document.createElement('div'));
     await reopened.restoreState(saved);
     expect(reopened.getActiveTab()?.providerId).toBeNull();
     expect(ensureInitialized).not.toHaveBeenCalled();
@@ -1239,7 +1247,7 @@ describe('Tab provider execution ownership', () => {
 
   it('keeps a legacy Codex draft on its recorded provider when that provider is disabled', async () => {
     const plugin = await createPlugin();
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') });
     tab.session.selectDraft('codex', tab.draftModel);
     tab.session.selectDraft(tab.providerId, 'gpt-5.4');
     plugin.settings.providerConfigs = { ...plugin.settings.providerConfigs, codex: { enabled: false } };
@@ -1254,7 +1262,7 @@ describe('Tab provider execution ownership', () => {
     const uiConfig = ProviderRegistry.getChatUIConfig('claude');
     (uiConfig.getDefaultModel as Mock).mockReturnValue(null);
     (uiConfig.getModelOptions as Mock).mockReturnValue([]);
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') });
 
     expect(tab.draftModel).toBeNull();
 
@@ -1273,7 +1281,7 @@ describe('Tab provider execution ownership', () => {
     const onDraftModelChanged = vi.fn();
     const tab = await createTestTab({
       plugin,
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
       onDraftModelChanged,
     });
     const modelOptions = Array.from(
@@ -1303,7 +1311,7 @@ describe('Tab provider execution ownership', () => {
 
     {
       const plugin = await createPlugin({ settings: { providerConfigs: { codex: { enabled: true } } } });
-      const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any }, {
+      const tab = await createTestTab({ plugin, containerEl: document.createElement('div') }, {
         onProviderChanged,
       });
       const modelOptions = Array.from(
@@ -1336,7 +1344,7 @@ describe('Tab provider execution ownership', () => {
 
     {
       const plugin = await createPlugin({ settings: { providerConfigs: { codex: { enabled: true } } } });
-      const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any }, {
+      const tab = await createTestTab({ plugin, containerEl: document.createElement('div') }, {
         onProviderChanged,
       });
       // A new session shows one provider's models at a time; browse to Codex first.
@@ -1379,7 +1387,7 @@ describe('Tab provider execution ownership', () => {
       plugin.settings.lastSelectedChatModel = selection;
       return true;
     });
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') });
     const modelOptions = Array.from(
       [...tab.dom.inputWrapper.querySelectorAll<HTMLElement>(
         '.claudian-model-option',
@@ -1411,7 +1419,7 @@ describe('Tab provider execution ownership', () => {
 
     {
       const plugin = await createPlugin({ settings: { providerConfigs: { codex: { enabled: true } } } });
-      const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any }, {
+      const tab = await createTestTab({ plugin, containerEl: document.createElement('div') }, {
         onProviderChanged: () => codexSwitch,
       });
       // A new session shows one provider's models at a time; browse to Codex first.
@@ -1451,7 +1459,7 @@ describe('Tab provider execution ownership', () => {
     });
     const tab = await createTestTab({
       plugin,
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
       conversation,
     });
     const modelOptions = Array.from(
@@ -1494,7 +1502,7 @@ describe('Tab provider execution ownership', () => {
     });
     const tab = await createTestTab({
       plugin,
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
       conversation,
     });
     const modelOptions = Array.from(
@@ -1527,7 +1535,7 @@ describe('Tab provider execution ownership', () => {
     });
     const tab = await createTestTab({
       plugin,
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
       conversation,
     });
     const modelOptions = Array.from(
@@ -1563,7 +1571,7 @@ describe('Tab provider execution ownership', () => {
     });
     const tab = await createTestTab({
       plugin,
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
       conversation,
     });
     const coordinator = coordinatorInstances[0];
@@ -1591,7 +1599,7 @@ describe('Tab provider execution ownership', () => {
     const plugin = await createPlugin();
     const tab = await createTestTab({
       plugin,
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
     });
     const coordinator = coordinatorInstances[0];
 
@@ -1607,7 +1615,7 @@ describe('Tab provider execution ownership', () => {
     const startNewConversation = vi.fn().mockResolvedValue(undefined);
     const tab = await createTestTab({
       plugin,
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
       conversation,
     }, { startNewConversation });
     tab.dom.inputEl.value = '/clear';
@@ -1621,7 +1629,7 @@ describe('Tab provider execution ownership', () => {
 
   it('hands a /clear submission with a newline separator to provider execution instead of the manager', async () => {
     const conversation = createConversation();
-    const cached: any = conversation;
+    const cached: Conversation = conversation;
     const plugin = await createPlugin({
       getCachedConversation: vi.fn(() => cached),
       getConversationById: vi.fn(async () => cached),
@@ -1631,7 +1639,7 @@ describe('Tab provider execution ownership', () => {
     const startNewConversation = vi.fn().mockResolvedValue(undefined);
     const tab = await createTestTab({
       plugin,
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
       conversation,
     }, { startNewConversation });
     tab.dom.inputEl.value = '/clear\nExplain this command';
@@ -1648,7 +1656,7 @@ describe('Tab provider execution ownership', () => {
     const startNewConversation = vi.fn().mockResolvedValue(undefined);
     const tab = await createTestTab({
       plugin: await createPlugin(),
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
       conversation: createConversation(),
     }, { startNewConversation });
     tab.session.beginClose();
@@ -1663,13 +1671,13 @@ describe('Tab provider execution ownership', () => {
     const plugin = await createPlugin();
     const tab = await createTestTab({
       plugin,
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
       lifecycleState: 'provisional',
     });
     expect(tab.session.isUserClaimed).toBe(false);
 
     tab.dom.inputEl.value = 'Keep this draft';
-    fireEvent.input((tab.dom.inputEl as any));
+    fireEvent.input((tab.dom.inputEl));
 
     expect(tab.lifecycleState).toBe('provisional');
     expect(tab.session.isUserClaimed).toBe(true);
@@ -1678,7 +1686,7 @@ describe('Tab provider execution ownership', () => {
   it('does not read textarea geometry when the user types', async () => {
     const tab = await createTestTab({
       plugin: await createPlugin(),
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
     });
     const readOffsetHeight = vi.fn(() => 102);
     const readScrollHeight = vi.fn(() => 102);
@@ -1688,7 +1696,7 @@ describe('Tab provider execution ownership', () => {
     });
 
     tab.dom.inputEl.value = 'Keep this runtime';
-    fireEvent.input((tab.dom.inputEl as any));
+    fireEvent.input((tab.dom.inputEl));
 
     expect(tab.lifecycleState).toBe('open');
     expect(tab.session.isUserClaimed).toBe(true);
@@ -1700,15 +1708,13 @@ describe('Tab provider execution ownership', () => {
     const plugin = await createPlugin();
     const tab = await createTestTab({
       plugin,
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
       lifecycleState: 'provisional',
     });
-    const attached = await (tab.ui.imageContextManager as any).addImageFromFile({
-      arrayBuffer: async () => new Uint8Array([1]).buffer,
-      name: 'draft.png',
-      size: 1,
-      type: 'image/png',
-    }, 'paste');
+    const file = new File([new Uint8Array([1])], 'draft.png', { type: 'image/png' });
+    // jsdom's File lacks the browser Blob.arrayBuffer API.
+    file.arrayBuffer = async () => new Uint8Array([1]).buffer;
+    const attached = await tab.ui.imageContextManager['addImageFromFile'](file, 'paste');
 
     expect(attached).toBe(true);
     expect(tab.lifecycleState).toBe('provisional');
@@ -1719,20 +1725,21 @@ describe('Tab provider execution ownership', () => {
     const plugin = await createPlugin();
     const tab = await createTestTab({
       plugin,
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
       lifecycleState: 'provisional',
     });
-    const selectionController = (tab.controllers.composerSelections as any).editor;
-    selectionController.storedSelection = {
+    const selectionController = tab.controllers.composerSelections['editor'];
+    assert(selectionController instanceof SelectionController);
+    selectionController['storedSelection'] = {
       lineCount: 1,
       notePath: 'note.md',
       selectedText: 'draft context',
     };
-    selectionController.updateIndicator();
+    selectionController['updateIndicator']();
 
     const removeButton = tab.dom.contextRowEl.querySelector<HTMLElement>(
       '.claudian-context-chip-remove',
-    )! as any;
+    )!;
     fireEvent.click(removeButton);
 
     expect(tab.lifecycleState).toBe('provisional');
@@ -1749,7 +1756,7 @@ describe('Tab provider execution ownership', () => {
     });
     const tab = await createTestTab({
       plugin,
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
       conversation,
       lifecycleState: 'provisional',
     });
@@ -1762,7 +1769,7 @@ describe('Tab provider execution ownership', () => {
     const conversation = createConversation();
     const onCommandContextChanged = vi.fn();
     const plugin = await createPlugin({ getConversationById: vi.fn().mockResolvedValue(conversation) });
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any, conversation, onCommandContextChanged });
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div'), conversation, onCommandContextChanged });
     const activated = vi.spyOn(tab.controllers.inputController, 'onConversationActivated');
     onCommandContextChanged.mockClear();
     const binding = deferred<void>();
@@ -1800,7 +1807,7 @@ describe('Tab provider execution ownership', () => {
 
   it('keeps provider interactions action-required until they settle', async () => {
     const plugin = await createPlugin();
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') });
     const handleApprovalRequest = vi.spyOn(tab.controllers.inlinePrompts, 'requestApproval');
 
     const session = await nativeSession();
@@ -1838,7 +1845,7 @@ describe('Tab provider execution ownership', () => {
 
   it('releases idle tab sessions after 30 minutes and treats review-only tabs as idle', async () => {
     const plugin = await createPlugin();
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') });
 
     tab.state.markReviewRequired();
 
@@ -1866,7 +1873,7 @@ describe('Tab provider execution ownership', () => {
     }],
     ['a rewind', (tab: AssembledTabRuntime) => { vi.spyOn(tab.state, 'isRewinding', 'get').mockReturnValue(true); }],
   ])('keeps the tab session through %s', async (_label, hold) => {
-    const tab = await createTestTab({ plugin: await createPlugin(), containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin: await createPlugin(), containerEl: document.createElement('div') });
     expect(runtimes[0].isIdle).toBe(true);
 
     hold(tab);
@@ -1877,7 +1884,7 @@ describe('Tab provider execution ownership', () => {
   it('publishes background review only after persistence and respects acknowledgement during that save', async () => {
     const saving = deferred<void>();
     const plugin = await createPlugin({ updateConversation: vi.fn(() => saving.promise) });
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') });
     tab.state.currentConversationId = 'conversation';
     const scope = { kind: 'background' as const, sequence: 1, sessionInstanceId: 'native', turnId: 'background' };
     await emitSessionEvent({ type: 'background_turn_started', scope });
@@ -1894,7 +1901,7 @@ describe('Tab provider execution ownership', () => {
   it('records background completion activity without requesting review for empty or metadata-only output', async () => {
     for (const usage of [false, true]) {
       const plugin = await createPlugin();
-      const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
+      const tab = await createTestTab({ plugin, containerEl: document.createElement('div') });
       tab.state.currentConversationId = 'conversation';
       const index = coordinatorInstances.length - 1;
       const scope = { kind: 'background' as const, sequence: 1, sessionInstanceId: 'native', turnId: 'background' };
@@ -1912,7 +1919,7 @@ describe('Tab provider execution ownership', () => {
 
   it('rejects stale provider binding events before touching the transcript', async () => {
     const plugin = await createPlugin();
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') });
     const session = await nativeSession();
     await coordinatorInstances[0].bindConversation(null);
     session.emit({ type: 'task_notification', content: 'Stale result', scope: { kind: 'session', sequence: 1, sessionInstanceId: session.sessionInstanceId } });
@@ -1923,7 +1930,7 @@ describe('Tab provider execution ownership', () => {
 
   it('routes async subagent completion to the session owner and persists its outcome', async () => {
     const plugin = await createPlugin();
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') });
     tab.state.currentConversationId = 'conversation';
     tab.services.subagentManager.handleTaskToolUse('task-1', { description: 'Background', prompt: 'Read', run_in_background: true }, tab.dom.messagesEl);
     tab.services.subagentManager.handleTaskToolResult('task-1', 'agent_id: subagent-1');
@@ -1941,7 +1948,7 @@ describe('Tab provider execution ownership', () => {
   });
 
   it('applies subagent progress without waiting behind queued background work', async () => {
-    const tab = await createTestTab({ plugin: await createPlugin(), containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin: await createPlugin(), containerEl: document.createElement('div') });
     const session = await nativeSession();
     const handleSubagentProgress = vi.spyOn(tab.controllers.streamController.subagents, 'handleSubagentProgress');
     let releaseBackground!: () => void;
@@ -2023,7 +2030,7 @@ describe('Tab provider execution ownership', () => {
   it('rejects replacing the factory-owned runtime resource owner', async () => {
     const tab = await createTestTab({
       plugin: await createPlugin(),
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
     });
     const replacementOwner = {
       dispose: vi.fn().mockResolvedValue([]),
@@ -2047,7 +2054,7 @@ describe('Tab provider execution ownership', () => {
       return { disconnect, observe: vi.fn() };
     }) as unknown as typeof ResizeObserver;
     const { containerEl, removeTabRoot } = createTrackedTabContainer();
-    const tab = await createTestTab({ plugin: await createPlugin(), containerEl: containerEl as any });
+    const tab = await createTestTab({ plugin: await createPlugin(), containerEl: containerEl });
     const failedDispose = vi.fn(() => {
       throw cleanupError;
     });
@@ -2070,7 +2077,7 @@ describe('Tab provider execution ownership', () => {
 
   it('plugin shutdown cancels and drains a session after its tab was destroyed', async () => {
     const plugin = await createPlugin();
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') });
     tab.state.currentConversationId = 'active-conversation';
     const turn = tab.session.turns.run((signal: AbortSignal) => new Promise<void>(resolve => signal.addEventListener('abort', () => resolve())));
     await destroyTab(tab);
@@ -2082,8 +2089,9 @@ describe('Tab provider execution ownership', () => {
   });
 
   it.each(['creation', 'hydration'] as const)('retains submitted input when close overlaps %s', async phase => {
-    const pending = deferred<any>();
-    const conversation = { providerId: 'claude', messages: [], sessionId: null, selectedModel: 'claude-default', id: 'created-during-close' };
+    const pending = deferred<Conversation>();
+    const conversation: Conversation = { providerId: 'claude', messages: [], sessionId: null,
+      selectedModel: 'claude-default', id: 'created-during-close', title: 'Created', createdAt: 1, lastActivityAt: 1 };
     const blocked = deferred<void>();
     const createConversation = vi.fn(() => { if (phase === 'creation') blocked.resolve(); return phase === 'creation' ? pending.promise : Promise.resolve(conversation); });
     const getConversationById = vi.fn(() => { if (phase === 'hydration') blocked.resolve(); return pending.promise; });
@@ -2092,7 +2100,7 @@ describe('Tab provider execution ownership', () => {
       createConversation, getConversationById, updateConversation,
       renameConversation: vi.fn().mockResolvedValue(undefined),
     });
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') });
     const sending = tab.controllers.inputController.sendMessage({ content: 'Preserve admitted first prompt' });
     const blockedCall = phase === 'creation' ? createConversation : getConversationById;
     await blocked.promise;
@@ -2109,7 +2117,7 @@ describe('Tab provider execution ownership', () => {
   });
 
   it('snapshots a bound session without cancelling or waiting for its response', async () => {
-    const tab = await createTestTab({ plugin: await createPlugin(), containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin: await createPlugin(), containerEl: document.createElement('div') });
     tab.state.currentConversationId = 'active-conversation';
     const release = holdResponse(tab.session.turns);
     try {
@@ -2129,7 +2137,7 @@ describe('Tab provider execution ownership', () => {
     const forkRequest = vi.fn().mockResolvedValue(undefined);
     const tab = await createTestTab({
       plugin,
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
       conversation,
     }, {
       forkRequestCallback: forkRequest,
@@ -2208,7 +2216,7 @@ describe('Tab provider execution ownership', () => {
     const plugin = await createPlugin();
     const tab = await createTestTab({
       plugin,
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
       conversation: createConversation(),
     }, { forkRequestCallback: forkRequest });
     plugin.getConversationSync.mockReturnValue(createConversation());
@@ -2258,7 +2266,7 @@ describe('Tab provider execution ownership', () => {
     const plugin = await createPlugin();
     const tab = await createTestTab({
       plugin,
-      containerEl: document.createElement('div') as any,
+      containerEl: document.createElement('div'),
       conversation,
     }, { forkRequestCallback: forkRequest });
     plugin.getConversationSync.mockReturnValue(createConversation());
@@ -2296,7 +2304,7 @@ describe('Tab provider execution ownership', () => {
 
   it.each(['normal', 'yolo'] as const)('applies normalized %s permission events to tab settings', async (permissionMode) => {
     const plugin = await createPlugin();
-    await createTestTab({ plugin, containerEl: document.createElement('div') as any });
+    await createTestTab({ plugin, containerEl: document.createElement('div') });
     plugin.settings.permissionMode = permissionMode === 'normal' ? 'yolo' : 'normal';
 
     await emitSessionEvent({
@@ -2311,7 +2319,7 @@ describe('Tab provider execution ownership', () => {
 
   it('updates permission settings for an unbound tab', async () => {
     const plugin = await createPlugin();
-    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') as any });
+    const tab = await createTestTab({ plugin, containerEl: document.createElement('div') });
 
     plugin.settings.permissionMode = 'yolo';
     expect(plugin.settings.permissionMode).toBe('yolo');

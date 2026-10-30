@@ -11,25 +11,14 @@ import * as fs from 'fs';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import { ProviderExecutionTransitionError } from '@/core/execution';
-import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
-import { decodeCodexConfig } from '@/providers/codex/config';
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
-import { buildCodexLaunchSpec } from '@/providers/codex/runtime/CodexLaunchSpecBuilder';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
 import { codexChatUIConfig } from '@/providers/codex/ui/CodexChatUIConfig';
 
 const mockNative = new CodexRuntimeHarness();
 vi.mock('fs', async () => ({ ...(await vi.importActual<typeof import('fs')>('fs')) }));
-vi.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
-  CodexAppServerProcess: vi.fn().mockImplementation(function () { return mockNative.createProcess(); }),
-}));
-vi.mock('@/providers/codex/runtime/codexAppServerSupport', async () => ({
-  ...(await vi.importActual<typeof import('@/providers/codex/runtime/codexAppServerSupport')>('@/providers/codex/runtime/codexAppServerSupport')),
-  resolveCodexAppServerLaunchSpec: async (host: ProviderRuntimeHost) => buildCodexLaunchSpec({
-    codexSettings: decodeCodexConfig(host.config), resolvedCliCommand: 'codex', env: {}, hostVaultPath: '/vault',
-    executionTarget: { method: 'host-native', platformFamily: 'unix', platformOs: 'linux' },
-  }),
-}));
+vi.mock('cross-spawn', () => ({ default: vi.fn(() => mockNative.createProcess()) }));
+
 const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
 const fixtures: Awaited<ReturnType<typeof createCodexWorkspaceHarness>>[] = [];
 const controls: Array<{ dispose(): void }> = [];
@@ -46,6 +35,7 @@ afterEach(async () => {
 });
 async function render(config: Record<string, unknown> = {}) {
   const fixture = await createCodexWorkspaceHarness(config);
+  fixture.resolveCliPath.mockResolvedValue('/native/codex');
   fixtures.push(fixture);
   const container = document.body.createDiv();
   const notify = vi.fn();

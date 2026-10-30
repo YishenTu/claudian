@@ -26,6 +26,8 @@ beforeEach(() => {
   registerChatTestProvider('claude');
 });
 
+const { Scope: HostScope } = await vi.importActual<typeof import('@test/__mocks__/obsidian')>('obsidian');
+
 const openedViews: Awaited<ReturnType<typeof createClaudianView>>[] = [];
 
 async function createView(options: {
@@ -185,7 +187,7 @@ describe('ClaudianView real tab lifecycle', () => {
     const entered = deferred<void>();
     const save = deferred<void>();
     saveLayout.mockImplementationOnce(() => { entered.resolve(); return save.promise; });
-    const persistence = view.tabWorkspace.currentPersistence;
+    const persistence = view['tabWorkspace'].currentPersistence;
     const closing = view.onClose();
     await entered.promise;
     resize(640);
@@ -198,10 +200,10 @@ describe('ClaudianView real tab lifecycle', () => {
     expect(reopened.getTabIdentities().map(tab => tab.id)).toEqual(expect.arrayContaining(['restored-1', 'restored-2']));
     expect(reopened.getTabCount()).toBe(3);
     expect(reopened.getActiveTab()!.conversationId).toBeNull();
-    expect(view.tabWorkspace.currentPersistence).toBe(persistence);
+    expect(view['tabWorkspace'].currentPersistence).toBe(persistence);
     expect(view.scope).toBeInstanceOf(Scope);
-    expect(view.tabBar).not.toBeNull();
-    expect(view.releaseMentionCacheEvents).toEqual(expect.any(Function));
+    expect(view['tabBar']).not.toBeNull();
+    expect(view['releaseMentionCacheEvents']).toEqual(expect.any(Function));
     expect(view.getState()).toMatchObject({ tabWorkspace: { openTabs: expect.arrayContaining(workspaceState().tabWorkspace.openTabs) } });
     // Reused persistence must remain writable after the old close finalizer runs.
     await reopened.createTab();
@@ -268,7 +270,7 @@ describe('ClaudianView provider and presentation wiring', () => {
     const { view, manager, contentEl, resize } = await openView();
     const tab = manager.getActiveTab()!;
     const chip = vi.spyOn(tab.controllers.sideChatController, 'setCollapsedHost');
-    view.presentation.update();
+    view['presentation'].update();
     const slot = contentEl.querySelector('.claudian-side-chat-chip-slot');
     expect(chip).toHaveBeenLastCalledWith(slot);
     expect(contentEl.querySelector('.claudian-active-input-slot')?.contains(tab.dom.inputComposerEl)).toBe(true);
@@ -365,7 +367,7 @@ describe('ClaudianView tab controls and layout', () => {
     }).find(command => command.id === 'rename-current-tab')!;
     expect(manager.getTabCount()).toBe(2);
     expect(rename.checkCallback!(true)).toBe(true);
-    view.tabBar.callbacks.onTabLabelChange('restored-2', 'Research');
+    view['tabBar']!['callbacks'].onTabLabelChange('restored-2', 'Research');
     expect(manager.getTabBarItems().find(tab => tab.id === 'restored-2')).toMatchObject({ label: 'Research' });
     await manager.closeTab('restored-1');
     view.refreshTabControls();
@@ -430,7 +432,7 @@ describe('ClaudianView tab controls and layout', () => {
 
   it('releases mention invalidation listeners on close and replaces them on reopen', async () => {
     const { view, plugin } = await openView();
-    const markFilesDirty = vi.spyOn(view.mentionDataProvider, 'markFilesDirty');
+    const markFilesDirty = vi.spyOn(view['mentionDataProvider'], 'markFilesDirty');
     plugin.app.vault.trigger('create');
     expect(markFilesDirty).toHaveBeenCalledTimes(1);
     await view.onClose();
@@ -453,9 +455,13 @@ describe('ClaudianView tab controls and layout', () => {
 
 describe('ClaudianView composer and scoped keys', () => {
   function scoped(view: Awaited<ReturnType<typeof createClaudianView>>, key: string, event: Partial<KeyboardEvent> = {}) {
-    return view.scope.handlers.find((handler: { key: string }) => handler.key === key).func({
-      key, isComposing: false, preventDefault() {}, stopPropagation() {}, ...event,
-    });
+    assert(view.scope instanceof HostScope);
+    const handler = view.scope.handlers.find(handler => handler.key === key);
+    assert(handler);
+    const keyEvent = new KeyboardEvent('keydown', { key, cancelable: true, ...event });
+    if (event.defaultPrevented) keyEvent.preventDefault();
+    if (event.preventDefault) keyEvent.preventDefault = event.preventDefault;
+    return handler.func(keyEvent, { key, vkey: key, modifiers: '' });
   }
 
   it.each([['Hello', 'Hello @projects/plan.md '], ['Hello ', 'Hello @projects/plan.md ']])('appends to %j and focuses the real composer', async (existing, expected) => {
@@ -479,6 +485,7 @@ describe('ClaudianView composer and scoped keys', () => {
     const cancel = vi.spyOn(tab.session.turns, 'cancel');
     const release = holdResponse(tab.session.runtime.turns);
     expect(view.scope).toBeInstanceOf(Scope);
+    assert(view.scope instanceof HostScope);
     expect(view.scope.parent).toBe(view.app.scope);
     expect(view.registerDomEvent).not.toHaveBeenCalledWith(expect.anything(), 'keydown', expect.any(Function), { capture: true });
     expect(scoped(view, 'Escape', { defaultPrevented: true })).toBe(false);
@@ -535,7 +542,7 @@ describe('ClaudianView composer and scoped keys', () => {
       isOpen = () => tab.ui.composerDropdown.isVisible();
     } else {
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-      view.tabBar.beginRename(tab.id);
+      view['tabBar']!.beginRename(tab.id);
       isOpen = () => within(contentEl).queryByRole('textbox', { name: 'Tab name' }) !== null;
     }
     expect(isOpen()).toBe(true);

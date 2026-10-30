@@ -1,10 +1,12 @@
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
+
 import {
   renderLastEnabledProviderWarning,
   renderProviderModelEnablementWarning,
 } from '@/shared/settings/ProviderModelEnablementWarning';
 
 describe('renderProviderModelEnablementWarning', () => {
-  it('shows only while the provider is enabled without an available model', () => {
+  it('shows only while the provider is enabled without an available model', async () => {
     let enabled = true;
     let hasModels = false;
     const warningEl = createElement();
@@ -16,8 +18,10 @@ describe('renderProviderModelEnablementWarning', () => {
     const warning = renderProviderModelEnablementWarning(
       container,
       {
+        plugin: (await createProviderHostFixture()).host,
+        renderCustomContextLimits: vi.fn(),
         notifyProviderModelOptionsChanged,
-      } as any,
+      },
       {
         getHasEnabledModels: () => hasModels,
         getIsEnabled: () => enabled,

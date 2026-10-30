@@ -267,7 +267,7 @@ describe('SubagentManager', () => {
       manager.handleTaskToolUse('task-array', { description: 'Background', run_in_background: true }, parentEl);
       manager.handleTaskToolResult(
         'task-array',
-        [{ type: 'text', text: '{"agent_id":"agent-array-1"}' }] as any,
+        [{ type: 'text', text: '{"agent_id":"agent-array-1"}' }],
       );
 
       const running = manager.getByTaskId('task-array');
@@ -1042,7 +1042,8 @@ Only this is the final result.
 
       expect(manager.subagentsSpawnedThisStream).toBe(1);
       expect(result.action).toBe('created_sync');
-      expect((result as any).info.id).toBe('task-sync');
+      assert(result.action === 'created_sync');
+      expect((result).info.id).toBe('task-sync');
       const state = manager.getSyncSubagent('task-sync');
       expect(state).toBeDefined();
       expect(state?.id).toBe('task-sync');
@@ -1061,8 +1062,9 @@ Only this is the final result.
 
       expect(manager.subagentsSpawnedThisStream).toBe(1);
       expect(result.action).toBe('created_async');
-      expect((result as any).info.id).toBe('task-async');
-      expect((result as any).info.asyncStatus).toBe('pending');
+      assert(result.action === 'created_async');
+      expect((result).info.id).toBe('task-async');
+      expect((result).info.asyncStatus).toBe('pending');
     });
 
     it('upgrades buffered task to async when run_in_background=true arrives later', () => {
@@ -1084,7 +1086,8 @@ Only this is the final result.
       );
 
       expect(second.action).toBe('created_async');
-      expect((second as any).info.id).toBe('task-upgrade');
+      assert(second.action === 'created_async');
+      expect((second).info.id).toBe('task-upgrade');
       expect(manager.hasPendingTask('task-upgrade')).toBe(false);
     });
 
@@ -1147,8 +1150,9 @@ Only this is the final result.
       );
 
       expect(result.action).toBe('created_sync');
-      expect((result as any).info.description).toBe('Initial description');
-      expect((result as any).info.prompt).toBe('latest prompt');
+      assert(result.action === 'created_sync');
+      expect((result).info.description).toBe('Initial description');
+      expect((result).info.prompt).toBe('latest prompt');
       expect(manager.hasPendingTask('task-1')).toBe(false);
     });
 
@@ -1247,7 +1251,7 @@ Only this is the final result.
       manager.handleTaskToolUse('task-1', { prompt: 'test' }, parentEl);
       const result = manager.resolvePendingTaskFromTaskResult(
         'task-1',
-        [{ type: 'text', text: '{"agent_id":"agent-structured"}' }] as any,
+        [{ type: 'text', text: '{"agent_id":"agent-structured"}' }],
         false
       );
 

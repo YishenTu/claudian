@@ -33,6 +33,8 @@ import { TabManager } from '@/features/chat/tabs/TabManager';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
+const { Scope: HostScope } = await vi.importActual<typeof import('@test/__mocks__/obsidian')>('obsidian');
+
 const originalResizeObserver = globalThis.ResizeObserver;
 const hiddenStyle = document.head.appendChild(document.createElement('style'));
 hiddenStyle.textContent = readFileSync(join(process.cwd(), 'src/style/base/visibility.css'), 'utf8');
@@ -202,11 +204,13 @@ it.each([false, true])('restores history before the actual View Scope consumes E
     const cancellations = native.cancelCalls;
     const root = await createClaudianView({ host: view.plugin, containerEl: view.tab.dom.contentEl,
       contentEl: view.tab.dom.contentEl, tabManager: { getActiveTab: () => view.tab } });
-    root.wireEventHandlers();
-    const handler = root.scope.handlers.find((entry: { key: string }) => entry.key === 'Escape');
+    root['wireEventHandlers']();
+    assert(root.scope instanceof HostScope);
+    const handler = root.scope.handlers.find(entry => entry.key === 'Escape');
+    assert(handler);
     const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
     // Obsidian consumes a false-returning Scope handler before the same event reaches the DOM.
-    expect(handler.func(event)).toBe(false);
+    expect(handler.func(event, { key: 'Escape', vkey: 'Escape', modifiers: '' })).toBe(false);
     event.preventDefault();
     textbox(view).dispatchEvent(event);
     expect(view.tab.dom.inputEl.value).toBe('');

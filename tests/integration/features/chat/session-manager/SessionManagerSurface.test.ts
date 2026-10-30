@@ -1,6 +1,7 @@
 import { createPopoutDocument } from '@test/helpers/dom/popoutDocument';
 import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
 /** @vitest-environment jsdom */
+import { registerChatTestProvider } from '@test/helpers/features/chat/ChatProviderFixture';
 import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBrowserTestHarness';
 import { testDate } from '@test/helpers/testClock';
 import { createEvent, fireEvent } from '@testing-library/dom';
@@ -345,8 +346,8 @@ describe('SessionManagerSurface session header', () => {
     const groupHeader = (kind: string) => [...container.querySelectorAll<HTMLElement>('.claudian-session-group-header')]
       .find((header: HTMLElement) => header.getAttribute('data-group-kind') === kind)!;
     const collapsedBodies = () => [...container.querySelectorAll<HTMLElement>('.claudian-session-group-body')]
-      .filter((body: any) => body.hasClass('claudian-session-group-body--collapsed'))
-      .map((body: any) => body.getAttribute('data-group-key'))
+      .filter((body) => body.hasClass('claudian-session-group-body--collapsed'))
+      .map((body) => body.getAttribute('data-group-key'))
       .sort();
 
     expect(headerActions(container).children).toHaveLength(2);
@@ -572,19 +573,18 @@ describe('SessionManagerSurface session column rendering', () => {
     h.surface.renderSidebar();
     expect(render).toHaveBeenCalledTimes(1);
 
-    const sessionOptions = render.mock.calls[0][1] as any;
-    const historicalProviderConversation = {
-      id: 'historical-provider-conversation',
+    const sessionOptions = render.mock.calls[0][1];
+    const historicalProviderConversation = conversation('historical-provider-conversation', {
       providerId: 'removed-provider',
       selectedModel: 'removed-provider/opaque-model',
-    };
-    expect(sessionOptions.getProviderIcon(historicalProviderConversation)).toBeUndefined();
-    expect(sessionOptions.getModelLabel(historicalProviderConversation))
+    });
+    expect(sessionOptions.getProviderIcon!(historicalProviderConversation)).toBeUndefined();
+    expect(sessionOptions.getModelLabel!(historicalProviderConversation))
       .toBe('removed-provider/opaque-model');
-    sessionOptions.onGroupCollapseChange('content:Projects/Plan.md', true);
-    expect(sessionOptions.isGroupCollapsed('content:Projects/Plan.md')).toBe(true);
+    sessionOptions.onGroupCollapseChange!('content:Projects/Plan.md', true);
+    expect(sessionOptions.isGroupCollapsed!('content:Projects/Plan.md')).toBe(true);
 
-    sessionOptions.onRerender();
+    sessionOptions.onRerender!();
     expect(render).toHaveBeenCalledTimes(2);
 
     const ownerRequestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
@@ -595,7 +595,7 @@ describe('SessionManagerSurface session column rendering', () => {
     const staleItem = findItem(container, 'roadmap');
     const beginRename = vi.fn();
 
-    sessionOptions.onRequestInlineRename({ beginRename, conversationId: 'roadmap' });
+    sessionOptions.onRequestInlineRename!({ beginRename, conversationId: 'roadmap' });
 
     expect(searchInput(container)).toBeNull();
     expect(container.querySelector<HTMLInputElement>('.claudian-session-search-control')!).not.toBeNull();
@@ -624,20 +624,16 @@ describe('SessionManagerSurface session column rendering', () => {
   });
 
   it('formats persisted model metadata for the session hover card', async () => {
-    vi.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
-      getModelOptions: vi.fn().mockReturnValue([
-        { value: 'gpt-5.1-codex', label: 'GPT-5.1 Codex' },
-      ]),
-      getReasoningOptions: () => [],
-      supportsReasoningEffort: () => false,
-    } as any);
+    registerChatTestProvider('codex', { models: [
+      { value: 'gpt-5.1-codex', label: 'GPT-5.1 Codex' },
+    ] });
     const render = vi.spyOn(SessionBrowser.prototype, 'renderHistoryDropdown');
     const h = await createHarness({ conversations: [conversation('first')] });
 
     h.surface.renderSidebar();
 
-    const { getModelLabel } = render.mock.calls[0][1] as any;
-    expect(getModelLabel({ providerId: 'codex', selectedModel: 'gpt-5.1-codex' }))
+    const { getModelLabel } = render.mock.calls[0][1];
+    expect(getModelLabel!(conversation('first', { providerId: 'codex', selectedModel: 'gpt-5.1-codex' })))
       .toBe('GPT-5.1 Codex');
   });
 
@@ -647,9 +643,11 @@ describe('SessionManagerSurface session column rendering', () => {
     h.surface.renderSidebar();
     const getChatUIConfig = vi.spyOn(ProviderRegistry, 'getChatUIConfig');
 
-    const { getModelLabel } = render.mock.calls[0][1] as any;
+    const { getModelLabel } = render.mock.calls[0][1];
 
-    expect(getModelLabel({ providerId: 'claude', selectedModel: 42 })).toBe('');
+    // Deliberately malformed persisted metadata exercises the legacy-data guard.
+    const malformed = { ...conversation('first'), selectedModel: 42 } as unknown as ConversationMeta;
+    expect(getModelLabel!(malformed)).toBe('');
     expect(getChatUIConfig).not.toHaveBeenCalled();
   });
 });
@@ -723,7 +721,7 @@ describe('SessionManagerSurface history dropdown', () => {
 
     h.historyButton.click();
 
-    const options = render.mock.calls[0]?.[1] as any;
+    const options = render.mock.calls[0]?.[1];
     expect(options.showOpenStateLabels).toBe(true);
     expect(options.showOpenStateActions).toBe(true);
     expect(options.showInlinePinAction).toBe(false);
@@ -741,7 +739,7 @@ describe('SessionManagerSurface history dropdown', () => {
     expect(h.historyMenu.hasClass('visible')).toBe(false);
     const beginRename = vi.fn();
     globalRequestAnimationFrame.mockClear();
-    options.onRequestInlineRename({ beginRename, conversationId: 'conversation-1' });
+    options.onRequestInlineRename!({ beginRename, conversationId: 'conversation-1' });
 
     expect(h.historyMenu.hasClass('visible')).toBe(true);
     expect(beginRename).toHaveBeenCalledWith(item);

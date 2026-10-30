@@ -2,8 +2,10 @@ import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHo
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { App, Scope } from 'obsidian';
 
-import type { ChatFeatureHost, ChatViewHost } from '@/features/chat/ChatFeatureHost';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ClaudianView } from '@/features/chat/ClaudianView';
+import { TabManager } from '@/features/chat/tabs/TabManager';
+import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 export interface ClaudianViewHarnessOptions {
   /** Merged over a minimal feature host; read by every view collaborator at construction. */
@@ -16,15 +18,14 @@ export interface ClaudianViewHarnessOptions {
   containerEl?: HTMLElement;
   contentEl?: HTMLElement;
   /** Installs a tab manager without running `onOpen`, for tests of a single view operation. */
-  tabManager?: unknown;
+  tabManager?: Partial<TabManager>;
   leaf?: unknown;
 }
 
 /**
- * Constructs a real `ClaudianView` with its real collaborators. Returned untyped so tests
- * can drive the lifecycle seams (`tabManager`, `tabWorkspace`, `scope`) that Obsidian owns.
+ * Constructs a real `ClaudianView` with its real collaborators and public lifecycle.
  */
-export async function createClaudianView(options: ClaudianViewHarnessOptions = {}): Promise<Record<string, any> & ChatViewHost & Pick<ClaudianView, 'containerEl' | 'contentEl'>> {
+export async function createClaudianView(options: ClaudianViewHarnessOptions = {}): Promise<ClaudianView> {
   const app = options.host?.app ?? options.plugin?.fixture?.host.app ?? options.plugin?.app ?? new App();
   vi.spyOn(app.workspace, 'onLayoutReady');
   vi.spyOn(app.workspace, 'requestSaveLayout');
@@ -40,13 +41,17 @@ export async function createClaudianView(options: ClaudianViewHarnessOptions = {
   const view = new ClaudianView(
     (options.leaf ?? {}) as never,
     plugin,
-  ) as any;
+  );
   Object.assign(view, {
     app: Object.assign(plugin.app, { scope: new Scope() }, options.app),
     containerEl: options.containerEl ?? document.createElement('div'),
     contentEl: options.contentEl ?? document.createElement('div'),
-    ...(options.tabManager ? { tabManager: options.tabManager } : {}),
   });
+  if (options.tabManager) {
+    view['tabManager'] = options.tabManager instanceof TabManager ? options.tabManager
+      : Object.assign(new TabManager(plugin, view.contentEl, view, {},
+        new VaultMentionDataProvider(plugin.app)), options.tabManager);
+  }
   vi.spyOn(view, 'registerDomEvent');
   vi.spyOn(view, 'registerEvent');
   return view;

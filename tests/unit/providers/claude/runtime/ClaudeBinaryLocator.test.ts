@@ -40,8 +40,8 @@ describe('findClaudeBinaryPath', () => {
 
     function mockExistingFile(...paths: string[]) {
       const pathSet = new Set(paths.map(value => path.normalize(value)));
-      vi.spyOn(fs, 'existsSync').mockImplementation((p: any) => pathSet.has(p));
-      vi.spyOn(fs, 'statSync').mockImplementation((p: any) => ({
+      vi.spyOn(fs, 'existsSync').mockImplementation((p) => pathSet.has(String(p)));
+      vi.spyOn(fs, 'statSync').mockImplementation((p) => ({
         isFile: () => pathSet.has(String(p)),
       }) as fsType.Stats);
     }
@@ -85,7 +85,7 @@ describe('findClaudeBinaryPath', () => {
     it('should not return a directory path even if it exists', () => {
       vi.spyOn(os, 'homedir').mockReturnValue('/home/test');
       const dirPath = path.join('/home/test', '.local', 'bin', 'claude');
-      vi.spyOn(fs, 'existsSync').mockImplementation((p: any) => p === dirPath);
+      vi.spyOn(fs, 'existsSync').mockImplementation((p) => p === dirPath);
       vi.spyOn(fs, 'statSync').mockImplementation(() => ({
         isFile: () => false,
       }) as fsType.Stats);
@@ -107,8 +107,8 @@ describe('findClaudeBinaryPath', () => {
 
     function mockExistingFile(...paths: string[]) {
       const pathSet = new Set(paths);
-      vi.spyOn(fs, 'existsSync').mockImplementation((p: any) => pathSet.has(p));
-      vi.spyOn(fs, 'statSync').mockImplementation((p: any) => ({
+      vi.spyOn(fs, 'existsSync').mockImplementation((p) => pathSet.has(String(p)));
+      vi.spyOn(fs, 'statSync').mockImplementation((p) => ({
         isFile: () => pathSet.has(String(p)),
       }) as fsType.Stats);
     }
@@ -222,7 +222,7 @@ describe('findClaudeBinaryPath', () => {
       vi.spyOn(os, 'homedir').mockReturnValue('C:\\Users\\test');
       const dirPath = path.join('C:\\Users\\test', '.claude', 'local', 'claude');
       // Simulate a directory named 'claude' (exists but isFile returns false)
-      vi.spyOn(fs, 'existsSync').mockImplementation((p: any) => p === dirPath);
+      vi.spyOn(fs, 'existsSync').mockImplementation((p) => p === dirPath);
       vi.spyOn(fs, 'statSync').mockImplementation(() => ({
         isFile: () => false,
       }) as fsType.Stats);

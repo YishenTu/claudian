@@ -6,6 +6,7 @@ import { deserialize, serialize } from 'node:v8';
 import { axe } from '@test/helpers/accessibility';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
+import { buildSDKMessage } from '@test/helpers/sdkMessages';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { Component } from 'obsidian';
@@ -72,7 +73,7 @@ it.each([
       },
     ] as const;
     if (source === 'live') for (const native of nativeMessages) {
-      for (const event of normalizer.normalize(native as any, 'requested')) {
+      for (const event of normalizer.normalize(buildSDKMessage(native), 'requested')) {
         if (event.type !== 'output') continue;
         const scope = { kind: 'requested' as const, sessionInstanceId: 'session', executionId: 'execution', turnId: 'turn', sequence: ++sequence };
         const chunk = providerOutputEventToStreamChunk({ ...event.event, scope });

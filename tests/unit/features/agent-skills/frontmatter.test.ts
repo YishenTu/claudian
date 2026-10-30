@@ -79,7 +79,7 @@ Prompt`;
 
 describe('parseFrontmatter non-object return', () => {
   it('returns null when parseYaml returns a string', () => {
-    vi.spyOn(obsidian, 'parseYaml').mockReturnValueOnce('just a string' as any);
+    vi.spyOn(obsidian, 'parseYaml').mockReturnValueOnce('just a string');
     const content = `---
 just a string
 ---
@@ -88,7 +88,7 @@ Body`;
   });
 
   it('returns null when parseYaml returns a number', () => {
-    vi.spyOn(obsidian, 'parseYaml').mockReturnValueOnce(42 as any);
+    vi.spyOn(obsidian, 'parseYaml').mockReturnValueOnce(42);
     const content = `---
 42
 ---

@@ -4,7 +4,8 @@ import '@/providers';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
-import { App, Component, Menu } from 'obsidian';
+import { App, Component } from 'obsidian';
+const { Menu } = await vi.importActual<typeof import('@test/__mocks__/obsidian')>('obsidian');
 
 import {
   TOOL_AGENT_OUTPUT,
@@ -14,7 +15,7 @@ import {
   TOOL_WRITE_STDIN,
 } from '@/core/tools/toolNames';
 import type { ClaudianSettings } from '@/core/types';
-import type { ChatMessage, ImageAttachment } from '@/core/types';
+import type { ChatMessage, ImageAttachment, ToolCallInfo } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 
 let plugin: Awaited<ReturnType<typeof createChatFeatureHost>>;
@@ -90,7 +91,7 @@ describe('MessageRenderer', () => {
   beforeEach(async () => {
     plugin = await createChatFeatureHost({ app: new App(), settings: { showMessageTimestamps: false } });
     vi.clearAllMocks();
-    (Menu as typeof Menu & { instances: unknown[] }).instances.length = 0;
+    Menu.instances.length = 0;
   });
 
   afterEach(async () => {
@@ -311,7 +312,7 @@ describe('MessageRenderer', () => {
     expect(messagesEl.querySelector('.claudian-message-image')?.children[0]).not.toBeNull();
     // Only the images container, no message bubble
     const bubbles = Array.from(messagesEl.children).filter(
-      (c: any) => c.hasClass('claudian-message')
+      c => c.hasClass('claudian-message')
     );
     expect(bubbles.length).toBe(0);
   });
@@ -406,9 +407,9 @@ describe('MessageRenderer', () => {
 
     const pointerEvent = new MouseEvent('click', { detail: 1, bubbles: true });
     btn!.dispatchEvent(pointerEvent);
-    const menu = (Menu as typeof Menu & { instances: any[] }).instances[0];
+    const menu = Menu.instances[0];
     expect(menu.showAtMouseEvent).toHaveBeenCalledWith(pointerEvent);
-    expect(menu.items.map((item: any) => item.title)).toEqual([
+    expect(menu.items.map(item => item.title)).toEqual([
       'Rewind conversation only',
       'Rewind code + conversation',
     ]);
@@ -421,7 +422,7 @@ describe('MessageRenderer', () => {
     btn!.getBoundingClientRect = vi.fn().mockReturnValue({ bottom: 48, left: 24 });
     fireEvent.click(btn!, { detail: 0 });
 
-    const keyboardMenu = (Menu as typeof Menu & { instances: any[] }).instances[1];
+    const keyboardMenu = Menu.instances[1];
     expect(keyboardMenu.showAtPosition).toHaveBeenCalledWith(
       { x: 24, y: 48 },
       btn!.ownerDocument,
@@ -487,23 +488,23 @@ describe('MessageRenderer', () => {
           input: { description: 'Async subagent' },
           status: 'running',
           subagent: { id: 'sub-1', description: 'Async subagent', mode: 'async', status: 'running', toolCalls: [], isExpanded: false },
-        } as any,
+        },
         {
           id: 'sub-2',
           name: TOOL_SUBAGENT,
           input: { description: 'Sync subagent' },
           status: 'running',
           subagent: { id: 'sub-2', description: 'Sync subagent', mode: 'sync', status: 'running', toolCalls: [], isExpanded: false },
-        } as any,
+        },
       ],
       contentBlocks: [
-        { type: 'thinking', content: 'thinking', durationSeconds: 2 } as any,
-        { type: 'text', content: 'Text block' } as any,
-        { type: 'tool_use', toolId: 'todo' } as any,
-        { type: 'tool_use', toolId: 'edit' } as any,
-        { type: 'tool_use', toolId: 'read' } as any,
-        { type: 'subagent', subagentId: 'sub-1', mode: 'async' } as any,
-        { type: 'subagent', subagentId: 'sub-2' } as any,
+        { type: 'thinking', content: 'thinking', durationSeconds: 2 },
+        { type: 'text', content: 'Text block' },
+        { type: 'tool_use', toolId: 'todo' },
+        { type: 'tool_use', toolId: 'edit' },
+        { type: 'tool_use', toolId: 'read' },
+        { type: 'subagent', subagentId: 'sub-1', mode: 'async' },
+        { type: 'subagent', subagentId: 'sub-2' },
       ],
     };
 
@@ -539,9 +540,9 @@ describe('MessageRenderer', () => {
       content: '',
       timestamp: Date.now(),
       contentBlocks: [
-        { type: 'text', content: '' } as any,
-        { type: 'text', content: '   ' } as any,
-        { type: 'text', content: 'Real content' } as any,
+        { type: 'text', content: '' },
+        { type: 'text', content: '   ' },
+        { type: 'text', content: 'Real content' },
       ],
     };
 
@@ -568,10 +569,10 @@ describe('MessageRenderer', () => {
           input: { session_id: '2404', chars: '' },
           status: 'completed',
           result: 'poll output',
-        } as any,
+        },
       ],
       contentBlocks: [
-        { type: 'tool_use', toolId: 'stdin-1' } as any,
+        { type: 'tool_use', toolId: 'stdin-1' },
       ],
     };
 
@@ -597,10 +598,10 @@ describe('MessageRenderer', () => {
           input: { session_id: '2404', chars: 'y\n' },
           status: 'completed',
           result: 'Input sent.',
-        } as any,
+        },
       ],
       contentBlocks: [
-        { type: 'tool_use', toolId: 'stdin-1' } as any,
+        { type: 'tool_use', toolId: 'stdin-1' },
       ],
     };
 
@@ -626,7 +627,7 @@ describe('MessageRenderer', () => {
       content: 'Legacy response text',
       timestamp: Date.now(),
       toolCalls: [
-        { id: 'read-1', name: 'Read', input: { file_path: 'test.md' }, status: 'completed' } as any,
+        { id: 'read-1', name: 'Read', input: { file_path: 'test.md' }, status: 'completed' },
       ],
     };
 
@@ -657,10 +658,10 @@ describe('MessageRenderer', () => {
       content: '',
       timestamp: Date.now(),
       toolCalls: [
-        { id: 'read-1', name: 'Read', input: { file_path: 'a.md' }, status: 'completed' } as any,
+        { id: 'read-1', name: 'Read', input: { file_path: 'a.md' }, status: 'completed' },
       ],
       contentBlocks: [
-        { type: 'text', content: 'Only text block persisted' } as any,
+        { type: 'text', content: 'Only text block persisted' },
       ],
     };
 
@@ -692,10 +693,10 @@ describe('MessageRenderer', () => {
           input: { description: 'Run tests' },
           status: 'completed',
           result: 'All passed',
-        } as any,
+        },
       ],
       contentBlocks: [
-        { type: 'tool_use', toolId: 'task-1' } as any,
+        { type: 'tool_use', toolId: 'task-1' },
       ],
     };
 
@@ -732,10 +733,10 @@ describe('MessageRenderer', () => {
             toolCalls: [],
             isExpanded: false,
           },
-        } as any,
+        },
       ],
       contentBlocks: [
-        { type: 'tool_use', toolId: 'task-async-1' } as any,
+        { type: 'tool_use', toolId: 'task-async-1' },
       ],
     };
 
@@ -768,10 +769,10 @@ describe('MessageRenderer', () => {
             toolCalls: [],
             isExpanded: false,
           },
-        } as any,
+        },
       ],
       contentBlocks: [
-        { type: 'subagent', subagentId: 'task-hint-1', mode: 'async' } as any,
+        { type: 'subagent', subagentId: 'task-hint-1', mode: 'async' },
       ],
     };
 
@@ -798,10 +799,10 @@ describe('MessageRenderer', () => {
       content: '',
       timestamp: Date.now(),
       toolCalls: [
-        { id: 'agent-output-1', name: TOOL_AGENT_OUTPUT, input: { task_id: 'abc', block: true } } as any,
+        { id: 'agent-output-1', name: TOOL_AGENT_OUTPUT, input: { task_id: 'abc', block: true }, status: 'running' },
       ],
       contentBlocks: [
-        { type: 'tool_use', toolId: 'agent-output-1' } as any,
+        { type: 'tool_use', toolId: 'agent-output-1' },
       ],
     };
 
@@ -823,14 +824,14 @@ describe('MessageRenderer', () => {
       content: '',
       timestamp: Date.now(),
       toolCalls: [
-        { id: 'read-1', name: 'Read', input: { file_path: 'test.md' }, status: 'completed' } as any,
-        { id: 'agent-output-1', name: TOOL_AGENT_OUTPUT, input: { task_id: 'abc' } } as any,
-        { id: 'grep-1', name: 'Grep', input: { pattern: 'test' }, status: 'completed' } as any,
+        { id: 'read-1', name: 'Read', input: { file_path: 'test.md' }, status: 'completed' },
+        { id: 'agent-output-1', name: TOOL_AGENT_OUTPUT, input: { task_id: 'abc' }, status: 'running' },
+        { id: 'grep-1', name: 'Grep', input: { pattern: 'test' }, status: 'completed' },
       ],
       contentBlocks: [
-        { type: 'tool_use', toolId: 'read-1' } as any,
-        { type: 'tool_use', toolId: 'agent-output-1' } as any,
-        { type: 'tool_use', toolId: 'grep-1' } as any,
+        { type: 'tool_use', toolId: 'read-1' },
+        { type: 'tool_use', toolId: 'agent-output-1' },
+        { type: 'tool_use', toolId: 'grep-1' },
       ],
     };
 
@@ -954,7 +955,7 @@ describe('MessageRenderer', () => {
     expect(containerEl.children.length).toBe(1);
     const imagesContainer = containerEl.children[0];
     expect(imagesContainer.hasClass('claudian-message-images')).toBe(true);
-    expect(Array.from(imagesContainer.children).filter((child: any) => child.hasClass('claudian-message-image'))).toHaveLength(2);
+    expect(Array.from(imagesContainer.children).filter(child => child.hasClass('claudian-message-image'))).toHaveLength(2);
   });
 
   it('renders the attachment data URI', async () => {
@@ -999,14 +1000,14 @@ describe('MessageRenderer', () => {
 
     // Mock requestAnimationFrame
     const origRAF = globalThis.requestAnimationFrame;
-    (globalThis as any).requestAnimationFrame = (cb: () => void) => { cb(); return 0; };
+    (globalThis).requestAnimationFrame = (cb: FrameRequestCallback) => { cb(0); return 0; };
 
     try {
       renderer.scrollToBottomIfNeeded();
       // Near bottom (1000 - 950 - 0 = 50, < 100 threshold) → scrolls
       expect(messagesEl.scrollTop).toBe(1000);
     } finally {
-      (globalThis as any).requestAnimationFrame = origRAF;
+      (globalThis).requestAnimationFrame = origRAF;
     }
   });
 
@@ -1073,17 +1074,17 @@ describe('MessageRenderer', () => {
             },
             status: 'completed',
             result: '{"agent_id":"agent-1","nickname":"Zeno"}',
-          } as any,
+          },
           {
             id: 'wait-1',
             name: TOOL_WAIT_AGENT,
             input: { targets: ['agent-1'], timeout_ms: 30000 },
             status: 'completed',
             result: '{"status":{"agent-1":{"completed":"Patched utils.ts and verified imports."}},"timed_out":false}',
-          } as any,
+          },
         ],
         contentBlocks: [
-          { type: 'tool_use', toolId: 'spawn-1' } as any,
+          { type: 'tool_use', toolId: 'spawn-1' },
         ],
       };
 
@@ -1116,7 +1117,7 @@ describe('MessageRenderer', () => {
             },
             status: 'completed',
             result: 'Spawned task-1',
-          } as any,
+          },
           {
             id: 'output-1',
             name: 'get_command_or_subagent_output',
@@ -1130,9 +1131,9 @@ describe('MessageRenderer', () => {
             },
             status: 'completed',
             result: 'All mappings verified.',
-          } as any,
+          },
         ],
-        contentBlocks: [{ type: 'tool_use', toolId: 'spawn-1' } as any],
+        contentBlocks: [{ type: 'tool_use', toolId: 'spawn-1' }],
       };
 
       renderer.renderStoredMessage(msg);
@@ -1146,20 +1147,20 @@ describe('MessageRenderer', () => {
     it('renders Grok output calls that target background commands', async () => {
       const messagesEl = document.body.createDiv();
       const { renderer } = createRenderer(messagesEl, 'grok');
-      const outputToolCall = {
+      const outputToolCall: ToolCallInfo = {
         id: 'output-command',
         name: 'get_command_or_subagent_output',
         input: { task_id: 'command-1' },
         status: 'completed',
         result: 'Command finished.',
-      } as any;
+      };
       const msg: ChatMessage = {
         id: 'm-grok-command-output',
         role: 'assistant',
         content: '',
         timestamp: Date.now(),
         toolCalls: [outputToolCall],
-        contentBlocks: [{ type: 'tool_use', toolId: 'output-command' } as any],
+        contentBlocks: [{ type: 'tool_use', toolId: 'output-command' }],
       };
 
       renderer.renderStoredMessage(msg);
@@ -1172,13 +1173,13 @@ describe('MessageRenderer', () => {
     it('renders stored Grok output calls with mixed command and subagent targets', async () => {
       const messagesEl = document.body.createDiv();
       const { renderer } = createRenderer(messagesEl, 'grok');
-      const outputToolCall = {
+      const outputToolCall: ToolCallInfo = {
         id: 'output-mixed',
         name: 'get_command_or_subagent_output',
         input: { task_ids: ['task-1', 'command-1'] },
         status: 'completed',
         result: 'Subagent and command finished.',
-      } as any;
+      };
       const msg: ChatMessage = {
         id: 'm-grok-mixed-output',
         role: 'assistant',
@@ -1195,12 +1196,12 @@ describe('MessageRenderer', () => {
             },
             status: 'completed',
             result: 'Spawned task-1',
-          } as any,
+          },
           outputToolCall,
         ],
         contentBlocks: [
-          { type: 'tool_use', toolId: 'spawn-1' } as any,
-          { type: 'tool_use', toolId: 'output-mixed' } as any,
+          { type: 'tool_use', toolId: 'spawn-1' },
+          { type: 'tool_use', toolId: 'output-mixed' },
         ],
       };
 

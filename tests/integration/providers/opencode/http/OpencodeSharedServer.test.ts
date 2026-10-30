@@ -3,6 +3,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import { createFixture, turn, waitFor } from '@test/helpers/providers/opencode/OpencodeSharedServerFixture';
 
 import { type ProviderExecutionEvent, type ProviderExecutionRequest } from '@/core/execution';
@@ -11,6 +12,8 @@ import { ProviderCommandDiscoveryStore } from '@/core/providers/commands/Provide
 import { opencodeSettingsReconciler } from '@/providers/opencode/env/OpencodeSettingsReconciler';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from '@/providers/opencode/settings';
 import { SlashCommandSource } from '@/shared/composer-dropdown/SlashCommandSource';
+
+interface NativeConfig { plugins: Array<{ package: string; options?: Record<string, unknown> }>; agent: Record<string, { prompt: string }> }
 
 it('prewarms concurrent tab-presence requests without creating native draft sessions', async () => {
   const f = await createFixture();
@@ -27,7 +30,7 @@ it('prewarms concurrent tab-presence requests without creating native draft sess
 });
 
 it('retains a v2 conversation database binding when runtime settings move to another database', () => {
-  const conversation: any = { providerId: 'opencode', sessionId: 'original', providerState: { sessionId: 'original', databasePath: '/original.db' } };
+  const conversation = conversationRecord('test', { providerId: 'opencode', sessionId: 'original', providerState: { sessionId: 'original', databasePath: '/original.db' } });
   const settings = { providerConfigs: { opencode: { enabled: true, environmentHash: 'old', environmentVariables: 'OPENCODE_DB=/replacement.db' } } };
   expect(opencodeSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true });
   expect(opencodeSettingsReconciler.invalidateConversationSessions([conversation])).toEqual([]);
@@ -246,7 +249,7 @@ it('preserves explicit user config references and watches edits without overwrit
     const content = JSON.stringify({ plugins: [{ package: './plugin.ts', options: { unchanged: true } }], agent: { user: { prompt: '{file:./instructions.md}' } } });
     writeFileSync(source, content);
     const lease = await f.workspace.serverService.acquire(f.cli, f.root, { ...f.environment, OPENCODE_CONFIG: source });
-    const effective = await lease.request<{ data: { config: any; path: string } }>('/fixture/config');
+    const effective = await lease.request<{ data: { config: NativeConfig; path: string } }>('/fixture/config');
     expect(effective.data.path.startsWith(f.root + path.sep)).toBe(false);
     expect(effective.data.config.plugins[0]).toEqual({ package: pathToFileURL(path.join(f.root, 'plugin.ts')).href, options: { unchanged: true } });
     expect(effective.data.config.agent.user.prompt).toBe('User prompt with {env:LITERAL_TEXT}');
@@ -256,7 +259,7 @@ it('preserves explicit user config references and watches edits without overwrit
     const deadline = Date.now() + 3000;
     let observed = '';
     do {
-      const current = await lease.request<{ data: { config: any } }>('/fixture/config');
+      const current = await lease.request<{ data: { config: NativeConfig } }>('/fixture/config');
       observed = current.data.config.agent.user.prompt;
       if (observed === 'Updated user instructions') break;
       await new Promise(resolve => setTimeout(resolve, 25));
@@ -369,16 +372,16 @@ it('loads a module plugin folder once per shared server and forwards the native 
   const run = (async () => { for await (const e of session.execute(turn('hold')).events) events.push(e); })();
   try {
     await waitFor(() => events.some(e => e.type === 'text_delta'));
-    const { data } = await control.request<any>('/fixture/config');
+    const { data } = await control.request<{ data: { config: NativeConfig; path: string; url: string; routeId: string } }>('/fixture/config');
     const configPath = data.path;
     expect(data.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/call$/);
     expect(data.routeId).toEqual(expect.any(String));
-    const entry = data.config.plugins.find((p: any) => p.package.includes('/session-tools'));
+    const entry = data.config.plugins.find((p) => p.package.includes('/session-tools'))!;
     const dir = fileURLToPath(entry.package);
     expect(path.dirname(dir)).toBe(path.dirname(data.path));
     expect(JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'))).toEqual({ type: 'module' });
     expect(existsSync(path.join(dir, 'index.js'))).toBe(true);
-    const call = (sessionID: string) => control.request<any>('/fixture/session-tool', { method: 'POST', body: { tool: 'claudian_list_destinations', args: {}, sessionID } });
+    const call = (sessionID: string) => control.request<{ data: { isError?: boolean; result: { output: string } } }>('/fixture/session-tool', { method: 'POST', body: { tool: 'claudian_list_destinations', args: {}, sessionID } });
     expect((await call('ses_1')).data).toMatchObject({ specs: [
       { name: 'claudian_list_destinations', options: { codemode: false } },
       { name: 'claudian_send_message', options: { codemode: false } },
@@ -387,10 +390,10 @@ it('loads a module plugin folder once per shared server and forwards the native 
     expect(list).toHaveBeenCalledTimes(1);
     expect((await call('unknown')).data.isError).toBe(true);
     expect(list).toHaveBeenCalledTimes(1);
-    const aborted = await control.request<any>('/fixture/session-tool', { method: 'POST', body: { tool: 'claudian_list_destinations', args: {}, sessionID: 'ses_1', aborted: true } });
+    const aborted = await control.request<{ data: { isError?: boolean; result: { output: string } } }>('/fixture/session-tool', { method: 'POST', body: { tool: 'claudian_list_destinations', args: {}, sessionID: 'ses_1', aborted: true } });
     expect(aborted.data.isError).toBe(true);
     expect(list).toHaveBeenCalledTimes(1);
-    const sent = await control.request<any>('/fixture/session-tool', { method: 'POST', body: { tool: 'claudian_send_message', args: { sessionId: 'target', text: 'Hello' }, sessionID: 'ses_1' } });
+    const sent = await control.request<{ data: { isError?: boolean; result: { output: string } } }>('/fixture/session-tool', { method: 'POST', body: { tool: 'claudian_send_message', args: { sessionId: 'target', text: 'Hello' }, sessionID: 'ses_1' } });
     expect(sent.data.result.output).toBe('{"sessionId":"target","title":"Review","provider":"codex","status":"queued"}');
     expect(send).toHaveBeenCalledWith({ sessionId: 'target', text: 'Hello' }, expect.any(AbortSignal));
     const peer = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);

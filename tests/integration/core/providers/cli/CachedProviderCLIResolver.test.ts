@@ -1,62 +1,35 @@
-import {
-  findCLIBinaryPath,
-  resolveConfiguredCLIPath,
-} from '@/core/process/cliBinaryLocator';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import {
   CachedProviderCLIResolver,
   type ProviderCLISettingsProjection,
 } from '@/core/providers/cli/CachedProviderCLIResolver';
 
-vi.mock('@/core/process/cliBinaryLocator', () => ({
-  findCLIBinaryPath: vi.fn(),
-  resolveConfiguredCLIPath: vi.fn(),
-}));
-
-const mockedFindCLIBinaryPath = vi.mocked(findCLIBinaryPath);
-const mockedResolveConfiguredCLIPath = vi.mocked(resolveConfiguredCLIPath);
-
 describe('CachedProviderCLIResolver', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockedResolveConfiguredCLIPath.mockReturnValue(null);
-    mockedFindCLIBinaryPath.mockReturnValue(null);
-  });
+  let root: string;
+  beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'provider-resolution-')); });
+  afterEach(() => { rmSync(root, { recursive: true, force: true }); });
+  function binary(name: string): string {
+    const path = join(root, name);
+    writeFileSync(path, '', { mode: 0o700 });
+    return path;
+  }
 
   it('preserves current-host, legacy, then runtime PATH lookup order', () => {
-    mockedResolveConfiguredCLIPath.mockImplementation((candidate) => (
-      candidate === '/current/provider' ? '/resolved/current' : null
-    ));
+    const current = binary('current');
+    const legacy = binary('legacy');
+    const auto = binary('provider');
     const resolver = createResolver();
-
-    expect(resolver.resolve({
-      cliPathsByHost: { current: '/current/provider' },
-      environmentText: 'PATH=/provider/bin',
-      legacyCliPath: '/legacy/provider',
-    })).toBe('/resolved/current');
-    expect(mockedResolveConfiguredCLIPath.mock.calls).toEqual([
-      ['/current/provider'],
-    ]);
-    expect(mockedFindCLIBinaryPath).not.toHaveBeenCalled();
-
+    const projection = { cliPathsByHost: { current }, legacyCliPath: legacy, environmentText: `PATH=${root}` };
+    expect(resolver.resolve(projection)).toBe(current);
+    rmSync(current);
     resolver.reset();
-    mockedResolveConfiguredCLIPath.mockImplementation((candidate) => (
-      candidate === '/legacy/provider' ? '/resolved/legacy' : null
-    ));
-    expect(resolver.resolve({
-      cliPathsByHost: { current: '/missing/current' },
-      environmentText: 'PATH=/provider/bin',
-      legacyCliPath: '/legacy/provider',
-    })).toBe('/resolved/legacy');
-
+    expect(resolver.resolve(projection)).toBe(legacy);
+    rmSync(legacy);
     resolver.reset();
-    mockedResolveConfiguredCLIPath.mockReturnValue(null);
-    mockedFindCLIBinaryPath.mockReturnValue('/provider/bin/provider');
-    expect(resolver.resolve({
-      cliPathsByHost: {},
-      environmentText: 'PATH=/provider/bin',
-      legacyCliPath: '',
-    })).toBe('/provider/bin/provider');
-    expect(mockedFindCLIBinaryPath).toHaveBeenCalledWith('provider', '/provider/bin');
+    expect(resolver.resolve(projection)).toBe(auto);
   });
 
   it('caches successful and null resolutions until reset', () => {
@@ -110,15 +83,15 @@ describe('CachedProviderCLIResolver', () => {
       providerId: 'test-provider',
       findBinaryPath,
     });
-    mockedResolveConfiguredCLIPath.mockReturnValue('/configured/provider');
-    expect(resolver.resolveFromSettings({})).toBe('/configured/provider');
+    const configured = binary('configured');
+    const projection = { ...createProjection(), cliPathsByHost: { current: configured } };
+    expect(resolver.resolve(projection)).toBe(configured);
     expect(findBinaryPath).not.toHaveBeenCalled();
 
+    rmSync(configured);
     resolver.reset();
-    mockedResolveConfiguredCLIPath.mockReturnValue(null);
-    expect(resolver.resolveFromSettings({})).toBe('/native/provider');
+    expect(resolver.resolve(projection)).toBe('/native/provider');
     expect(findBinaryPath).toHaveBeenCalledWith('/provider/bin');
-    expect(mockedFindCLIBinaryPath).not.toHaveBeenCalled();
   });
 
   it('retries uncached misses and refreshes provider targets that disable caching', () => {

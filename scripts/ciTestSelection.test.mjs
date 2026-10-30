@@ -95,6 +95,7 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/providers/codex/execution/CodexExecutionBackend.test.ts',
     'tests/integration/providers/codex/runtime/CodexSharedRuntime.test.ts',
     'tests/integration/providers/deepseek/app/DeepSeekWorkspaceServices.test.ts',
+    'tests/integration/providers/deepseek/runtime/DeepSeekCLIResolver.test.ts',
     'tests/integration/providers/deepseek/runtime/DeepSeekHostProcess.test.ts',
     'tests/integration/providers/deepseek/ui/DeepSeekSettingsTab.dom.test.ts',
     'tests/integration/providers/grok/app/GrokWorkspaceServices.test.ts',
@@ -114,7 +115,6 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/providers/opencode/http/OpencodeSharedServer.transitions.test.ts',
     'tests/integration/providers/pi/execution/PiExecutionKernel.test.ts',
     'tests/integration/providers/pi/execution/PiRecoveryContext.test.ts',
-    'tests/unit/providers/deepseek/runtime/DeepSeekCLIResolver.test.ts',
     'tests/unit/providers/deepseek/runtime/DeepSeekInstallation.test.ts',
   ]);
   assert.equal(result.piWindows, true);

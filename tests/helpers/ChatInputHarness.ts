@@ -1,16 +1,22 @@
+import '@/providers';
+
 import { createConversationPorts, createTestSession, holdResponse } from '@test/helpers/ConversationPorts';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
+import { App } from 'obsidian';
 import type { Mock } from 'vitest';
 
 import type { ProviderExecutionEvent } from '@/core/execution';
+import { ImageContextManager } from '@/features/chat/composer/ImageContextManager';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
 import { BuiltInCommandController, type BuiltInCommandControllerDeps } from '@/features/chat/input/BuiltInCommandController';
 import { ComposerSelections } from '@/features/chat/input/ComposerSelections';
 import { InputController, type InputControllerDeps } from '@/features/chat/input/InputController';
 import { SessionInteractions } from '@/features/chat/interactions/SessionInteractions';
+import { LinkedContentController } from '@/features/chat/linked-content';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { ChatState } from '@/features/chat/state/ChatState';
+import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 
@@ -93,8 +99,10 @@ export async function createFixture(overrides: Record<string, unknown> = {}) {
   const state: ChatState = (dependencyOverrides.state as ChatState | undefined) ?? new ChatState({}, undefined, session.turns);
   state.currentConversationId = 'conversation-1';
   const input = createInput();
+  const images = new ImageContextManager(new App().keymap, document.createElement('div'), input, {});
+  for (const method of ['clearImages', 'getAttachedImages', 'hasImages', 'setImages'] as const) vi.spyOn(images, method);
   const queueIndicator = document.createElement('div');
-  state.queueIndicatorEl = queueIndicator as any;
+  state.queueIndicatorEl = queueIndicator;
   let id = 0;
   const coordinator = {
     acceptSteerFromProviderEvent: vi.fn().mockResolvedValue(true),
@@ -125,18 +133,11 @@ export async function createFixture(overrides: Record<string, unknown> = {}) {
     },
     updateConversation: vi.fn().mockResolvedValue(undefined),
   }));
-  const linkedContentToken = Object.freeze({}) as { readonly path?: string };
-  const linkedContentController = {
-    beginSubmission: vi.fn().mockReturnValue(linkedContentToken),
-    commitSubmission: vi.fn().mockReturnValue({ queuedEvents: [] }),
-    getSnapshot: vi.fn().mockReturnValue({
-      content: null,
-      mode: 'locked',
-      path: null,
-    }),
-    resetAutoDraft: vi.fn(),
-    rollbackSubmission: vi.fn(),
-  };
+  const linkedContentController = new LinkedContentController({
+    app: plugin.app, getExcludedTags: () => [], getCachedVaultFiles: () => [], getCachedVaultFolders: () => [],
+  });
+  for (const method of ['beginSubmission', 'commitSubmission', 'getSnapshot', 'resetAutoDraft', 'rollbackSubmission'] as const) vi.spyOn(linkedContentController, method);
+  onTestFinished(() => { images.destroy(); linkedContentController.destroy(); });
   const deps = {
     plugin,
     state,
@@ -164,14 +165,9 @@ export async function createFixture(overrides: Record<string, unknown> = {}) {
     selections: new ComposerSelections(selectionSources),
     getInputEl: () => input,
     getWelcomeEl: () => null,
-    getMessagesEl: () => document.createElement('div') as any,
-    getLinkedContentController: () => linkedContentController as any,
-    getImageContextManager: () => ({
-      clearImages: vi.fn(),
-      getAttachedImages: vi.fn().mockReturnValue([]),
-      hasImages: vi.fn().mockReturnValue(false),
-      setImages: vi.fn(),
-    }) as any,
+    getMessagesEl: () => document.createElement('div'),
+    getLinkedContentController: () => linkedContentController,
+    getImageContextManager: () => images,
     getTitleGenerationService: () => null,
     generateId: () => `id-${++id}`,
     getSettings: () => ({ model: 'claude-model', reasoning: 'high', permissionMode: 'normal', serviceTier: 'standard' }),
@@ -188,7 +184,7 @@ export async function createFixture(overrides: Record<string, unknown> = {}) {
           ),
         }
       : {}),
-  } as unknown as InputControllerDeps & { renderer: NonNullable<InputControllerDeps['renderer']> };
+  } as unknown as InputControllerDeps & { renderer: NonNullable<InputControllerDeps['renderer']>; getImageContextManager: () => ImageContextManager | null };
   if (!('inlinePrompts' in dependencyOverrides)) {
     Object.assign(deps, {
       inlinePrompts: new SessionInteractions({
@@ -197,11 +193,11 @@ export async function createFixture(overrides: Record<string, unknown> = {}) {
       }),
     });
   }
-  const ports = createConversationPorts({ ...(deps as any), session });
+  const ports = createConversationPorts({ state, getInputEl: () => deps.getInputEl()!, getImageContextManager: deps.getImageContextManager, session });
   // Conversation creation stays real; persistence and reset are observed at their boundary.
   const conversationController = new ConversationController({
     plugin, state, renderer: deps.renderer, drafts: ports.drafts, session,
-    subagentManager: { clear: vi.fn() } as any,
+    subagentManager: new SubagentManager(() => undefined),
     getWelcomeEl: () => null, setWelcomeEl: () => undefined, getMessagesEl: deps.getMessagesEl,
     getLinkedContentController: () => deps.getLinkedContentController(),
     ensureExecutionInitialized: () => deps.ensureExecutionInitialized(),

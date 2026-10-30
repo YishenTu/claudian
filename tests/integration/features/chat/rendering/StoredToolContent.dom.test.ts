@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
-
 import { axe } from '@test/helpers/accessibility';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { testClock } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 
@@ -529,12 +529,12 @@ describe('file tool card accessible labels', () => {
   });
 });
 
-it('omits silent write_stdin polling cards from the live response while preserving real input', () => {
+it('omits silent write_stdin polling cards from the live response while preserving real input', async () => {
   const parent = document.body.createDiv();
   const state = new ChatState();
   state.currentContentEl = parent;
   const stream = new ToolCallStream({
-    state, plugin: { app: {}, settings: {} } as any,
+    state, plugin: await createChatFeatureHost(),
     indicator: { show: () => undefined }, getMessagesEl: () => parent, scrollToBottom: () => undefined,
   });
   const message = { id: 'response', role: 'assistant' as const, content: '', timestamp: Date.now(), toolCalls: [] };

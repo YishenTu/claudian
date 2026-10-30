@@ -2,8 +2,9 @@ import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { FakeAuxiliaryBackend } from '@test/helpers/core/auxiliary/AuxiliaryExecutionTestHarness';
 import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
+import { createObsidianEditor } from '@test/helpers/ObsidianEditor';
 import { fireEvent, screen, waitFor } from '@testing-library/dom';
-import { App, Component } from 'obsidian';
+import { App, Component, type Editor, MarkdownView, WorkspaceLeaf } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -111,12 +112,12 @@ export async function createInlineEditHarness() {
     extensions: EditorView.contentAttributes.of({ 'aria-label': 'Note editor' }),
   });
   let end = 5;
-  const editor: any = {
+  const editor: Editor & { cm: EditorView } = Object.assign(createObsidianEditor(editorView), {
     cm: editorView,
-    getCursor: (which: string) => ({ line: 0, ch: which === 'from' ? 0 : end }),
+    getCursor: (which = 'head') => ({ line: 0, ch: which === 'from' ? 0 : end }),
     getSelection: () => 'hello world'.slice(0, end),
     replaceRange: (text: string) => editorView.dispatch({ changes: { from: 0, to: end, insert: text } }),
-  };
+  });
   const context = { mode: 'selection' as const, selectedText: 'hello' };
   const settled = vi.fn();
   const notePath = 'note.md';
@@ -124,8 +125,11 @@ export async function createInlineEditHarness() {
     app, plugin, component, editorView, editor, context, notePath, settled, { providerId: 'claude' },
   );
   /** Mirrors Obsidian's editorCallback: a callback editor plus the view that owns the current editor. */
-  const createModal = (callbackEditor: any = editor, viewEditor: any = editor) =>
-    new InlineEditModal(app, plugin, component, callbackEditor, { editor: viewEditor } as any, context, notePath, owner);
+  const createModal = (callbackEditor: Editor = editor, viewEditor: Editor = editor) => {
+    const view = new MarkdownView(new WorkspaceLeaf());
+    view.editor = viewEditor;
+    return new InlineEditModal(app, plugin, component, callbackEditor, view, context, notePath, owner);
+  };
   cleanups.push(async () => {
     owner.dispose();
     editorView.destroy();

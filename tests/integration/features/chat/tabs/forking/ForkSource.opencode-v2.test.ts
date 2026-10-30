@@ -34,7 +34,8 @@ describe('OpenCode v2 checkpoint forks', () => {
   beforeEach(async () => {
     env = await createForkTestEnvironment();
     server = new OpencodeServerService();
-    ProviderWorkspaceRegistry.setServices('opencode', { serverService: server } as any);
+    const services = { serverService: server, dispose: () => server.dispose() };
+    ProviderWorkspaceRegistry.setServices('opencode', services);
     history = new OpencodeConversationHistoryService({ getServerService: async () => server });
     backend = new OpencodeExecutionBackend(env.host.getRuntimeHost('opencode'), { serverService: server });
     databasePath = path.join(env.root, 'native.db');

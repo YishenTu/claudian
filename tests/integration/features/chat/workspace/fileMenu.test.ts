@@ -7,6 +7,8 @@ import {
   registerFileMenu,
 } from '@/features/chat/workspace/fileMenu';
 
+const { Menu: HostMenu } = await vi.importActual<typeof import('@test/__mocks__/obsidian')>('obsidian');
+
 describe('Claudian file menu', () => {
   function createFile(path: string): TFile {
     const file = new TFile();
@@ -44,11 +46,12 @@ describe('Claudian file menu', () => {
 
     registerFileMenu(host);
     const menu = new Menu();
+    assert(menu instanceof HostMenu);
     fireFileMenu(menu, createFile('projects/plan.md'));
 
     expect(host.registerEvent).toHaveBeenCalledTimes(1);
-    expect((menu as any).items).toHaveLength(1);
-    expect((menu as any).items[0].title).toBe('Add to Claudian');
+    expect((menu).items).toHaveLength(1);
+    expect((menu).items[0].title).toBe('Add to Claudian');
   });
 
   it('does not add the action for folders', () => {
@@ -56,9 +59,10 @@ describe('Claudian file menu', () => {
 
     registerFileMenu(host);
     const menu = new Menu();
+    assert(menu instanceof HostMenu);
     fireFileMenu(menu, new TFolder());
 
-    expect((menu as any).items).toHaveLength(0);
+    expect((menu).items).toHaveLength(0);
   });
 
   it('reveals Claudian and appends the vault-relative mention', async () => {

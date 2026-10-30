@@ -199,7 +199,7 @@ it('refreshes side completion timestamps when the view timestamp setting changes
     harness.plugin,
     () => { throw new Error('Timestamp refresh must not read the runtime'); },
   );
-  const view = await createClaudianView({ tabManager: { getAllTabs: () => [tab] } });
+  const view = await createClaudianView({ tabManager: { getAllTabs: () => [Object.assign(harness.tab, tab)] } });
   const clock = vi.spyOn(Date, 'now').mockReturnValue(testDate().getTime());
   try {
     const { started } = await startSideChat(harness);

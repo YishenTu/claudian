@@ -1,8 +1,9 @@
 import { CODEX_SPARK_MODEL, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 
+import type { CodexDiscoveredModel } from '@/providers/codex/models';
 import { codexChatUIConfig } from '@/providers/codex/ui/CodexChatUIConfig';
 
-const DISCOVERED_MODELS = [
+const DISCOVERED_MODELS: CodexDiscoveredModel[] = [
   {
     model: 'gpt-5.4-mini',
     displayName: 'GPT-5.4 Mini',
@@ -31,7 +32,7 @@ const DISCOVERED_MODELS = [
   },
 ];
 
-function withDiscoveredModels(settings: Record<string, unknown> = {}): Record<string, unknown> {
+function withDiscoveredModels(settings: Record<string, unknown> = {}) {
   const providerConfigs = settings.providerConfigs as Record<string, Record<string, unknown>> | undefined;
   return {
     ...settings,
@@ -469,7 +470,7 @@ describe('CodexChatUIConfig', () => {
 
     it('prefers high over the app-server default when the model supports it', () => {
       const settings = withDiscoveredModels({ model: TEST_CODEX_MODEL });
-      const config = settings.providerConfigs as { codex: { discoveredModels: any[] } };
+      const config = settings.providerConfigs;
       config.codex.discoveredModels[1] = {
         ...config.codex.discoveredModels[1],
         supportedReasoningEfforts: [
@@ -620,7 +621,7 @@ describe('CodexChatUIConfig', () => {
         model: TEST_CODEX_MODEL,
         serviceTier: 'default',
       });
-      const config = settings.providerConfigs as { codex: { discoveredModels: any[] } };
+      const config = settings.providerConfigs;
       config.codex.discoveredModels[1] = {
         ...config.codex.discoveredModels[1],
         serviceTiers: [{ id: 'priority', name: 'Fast', description: '1.5x speed' }],
@@ -642,7 +643,7 @@ describe('CodexChatUIConfig', () => {
         model: TEST_CODEX_MODEL,
         serviceTier: 'fast',
       });
-      const config = settings.providerConfigs as { codex: { discoveredModels: any[] } };
+      const config = settings.providerConfigs;
       config.codex.discoveredModels[1] = {
         ...config.codex.discoveredModels[1],
         serviceTiers: [{ id: 'priority', name: 'Fast', description: '1.5x speed' }],
@@ -663,7 +664,7 @@ describe('CodexChatUIConfig', () => {
 
     it('ignores service tiers that are not Fast mode', () => {
       const settings = withDiscoveredModels({ model: TEST_CODEX_MODEL });
-      const config = settings.providerConfigs as { codex: { discoveredModels: any[] } };
+      const config = settings.providerConfigs;
       config.codex.discoveredModels[1] = {
         ...config.codex.discoveredModels[1],
         serviceTiers: [{ id: 'batch', name: 'Batch', description: 'Background work' }],
@@ -676,7 +677,7 @@ describe('CodexChatUIConfig', () => {
 
 it('uses explicit provider IDs for chat options and recognizes all native catalog identities', () => {
   const settings = withDiscoveredModels({ providerConfigs: { codex: { enabled: true, visibleModels: ['gpt-5.5'] } } });
-  const config = (settings.providerConfigs as any).codex;
+  const config = settings.providerConfigs.codex;
   config.discoveredModels = [
     { ...DISCOVERED_MODELS[0], model: 'gpt-5.5' },
     { ...DISCOVERED_MODELS[0], model: 'native-endpoint-model' },

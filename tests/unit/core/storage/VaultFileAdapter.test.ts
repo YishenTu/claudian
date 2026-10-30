@@ -10,7 +10,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import type { App } from 'obsidian';
+import { App, type DataAdapter } from 'obsidian';
 import type { Mocked } from 'vitest';
 
 import {
@@ -32,7 +32,7 @@ vi.mock('node:fs/promises', async () => {
   };
 });
 
-function createDesktopFsAdapter(root: string): any {
+function createDesktopFsAdapter(root: string) {
   const resolve = (relativePath: string) => path.join(root, ...relativePath.split('/'));
   return {
     exists: async (relativePath: string) => fs.access(resolve(relativePath)).then(
@@ -62,12 +62,10 @@ function createDesktopFsAdapter(root: string): any {
 }
 
 describe('VaultFileAdapter', () => {
-  let mockAdapter: Mocked<any>;
+  let mockAdapter: Mocked<Pick<DataAdapter, 'exists' | 'read' | 'write' | 'remove' | 'rename' | 'list' | 'mkdir' | 'rmdir' | 'stat' | 'trashSystem' | 'trashLocal'>>;
   let vaultAdapter: VaultFileAdapter;
 
-  const mockApp: Partial<App> = {
-    vault: {} as any,
-  };
+  const mockApp = new App();
 
   beforeEach(() => {
     mockAdapter = {
@@ -84,8 +82,8 @@ describe('VaultFileAdapter', () => {
       trashLocal: vi.fn(),
     };
 
-    mockApp.vault = { adapter: mockAdapter } as any;
-    vaultAdapter = new VaultFileAdapter(mockApp as App);
+    Object.assign(mockApp.vault.adapter, mockAdapter);
+    vaultAdapter = new VaultFileAdapter(mockApp);
   });
 
   describe('exists', () => {
@@ -121,7 +119,7 @@ describe('VaultFileAdapter', () => {
   describe('write', () => {
     it('writes file when folder exists', async () => {
       mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.write.mockResolvedValue();
+      mockAdapter.write.mockResolvedValue(undefined);
 
       await vaultAdapter.write('folder/file.md', 'content');
 
@@ -131,7 +129,7 @@ describe('VaultFileAdapter', () => {
     });
 
     it('handles file in root (no folder)', async () => {
-      mockAdapter.write.mockResolvedValue();
+      mockAdapter.write.mockResolvedValue(undefined);
 
       await vaultAdapter.write('file.md', 'content');
 
@@ -142,8 +140,8 @@ describe('VaultFileAdapter', () => {
 
     it('creates a missing parent folder chain in one call', async () => {
       mockAdapter.exists.mockResolvedValue(false);
-      mockAdapter.mkdir.mockResolvedValue();
-      mockAdapter.write.mockResolvedValue();
+      mockAdapter.mkdir.mockResolvedValue(undefined);
+      mockAdapter.write.mockResolvedValue(undefined);
 
       await vaultAdapter.write('level1/level2/level3/file.md', 'content');
 
@@ -155,7 +153,7 @@ describe('VaultFileAdapter', () => {
   describe('delete', () => {
     it('deletes file when it exists', async () => {
       mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.remove.mockResolvedValue();
+      mockAdapter.remove.mockResolvedValue(undefined);
 
       await vaultAdapter.delete('folder/subfolder/file.md');
 
@@ -313,7 +311,7 @@ describe('VaultFileAdapter', () => {
 
     it('creates a missing folder chain in one call', async () => {
       mockAdapter.exists.mockResolvedValue(false);
-      mockAdapter.mkdir.mockResolvedValue();
+      mockAdapter.mkdir.mockResolvedValue(undefined);
 
       await vaultAdapter.ensureFolder('a/b/c');
 
@@ -324,7 +322,7 @@ describe('VaultFileAdapter', () => {
 
   describe('rename', () => {
     it('moves file across folders', async () => {
-      mockAdapter.rename.mockResolvedValue();
+      mockAdapter.rename.mockResolvedValue(undefined);
 
       await vaultAdapter.rename('folder1/old.md', 'folder2/new.md');
 
@@ -334,7 +332,7 @@ describe('VaultFileAdapter', () => {
 
   describe('stat', () => {
     it('returns file stats for existing file', async () => {
-      mockAdapter.stat.mockResolvedValue({ mtime: 1234567890, size: 1024 });
+      mockAdapter.stat.mockResolvedValue({ type: 'file', ctime: 0, mtime: 1234567890, size: 1024 });
 
       const result = await vaultAdapter.stat('folder/subfolder/file.md');
 
@@ -359,7 +357,7 @@ describe('VaultFileAdapter', () => {
     });
 
     it('handles zero-sized file', async () => {
-      mockAdapter.stat.mockResolvedValue({ mtime: 1234567890, size: 0 });
+      mockAdapter.stat.mockResolvedValue({ type: 'file', ctime: 0, mtime: 1234567890, size: 0 });
 
       const result = await vaultAdapter.stat('empty.md');
 

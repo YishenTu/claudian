@@ -1,4 +1,5 @@
 // @test-ci {"native":true}
+import { buildSDKMessage } from '@test/helpers/sdkMessages';
 const actualModule0 = await import('node:fs/promises');
 const actualModule1 = await import('node:fs/promises');
 import '@/providers';
@@ -3888,20 +3889,20 @@ it.each([
   const events: ProviderSessionEvent[] = [];
   session.onEvent(event => events.push(event));
   try {
-    if (scenario.cancel) await session.handleNativeMessage({ type: 'assistant', message: { id: 'before', content: [{ type: 'text', text: 'Before cancellation' }] } } as any, 1);
-    await session.handleNativeMessage({ type: 'system', subtype: 'task_started', task_id: 'task', is_backgrounded: scenario.background } as any, 1);
-    if (scenario.transition) await session.handleNativeMessage({ type: 'system', subtype: 'task_updated', task_id: 'task', patch: { is_backgrounded: true } } as any, 1);
-    await session.handleNativeMessage({ type: 'system', subtype: 'task_notification', session_id: 'session-1',
-      task_id: 'task', status: 'completed', summary: 'Task result', skip_transcript: scenario.skip } as any, 1);
+    if (scenario.cancel) await session.handleNativeMessage(buildSDKMessage({ type: 'assistant', message: { id: 'before', content: [{ type: 'text', text: 'Before cancellation' }] } }), 1);
+    await session.handleNativeMessage(buildSDKMessage({ type: 'system', subtype: 'task_started', task_id: 'task', is_backgrounded: scenario.background }), 1);
+    if (scenario.transition) await session.handleNativeMessage(buildSDKMessage({ type: 'system', subtype: 'task_updated', task_id: 'task', patch: { is_backgrounded: true } }), 1);
+    await session.handleNativeMessage(buildSDKMessage({ type: 'system', subtype: 'task_notification', session_id: 'session-1',
+      task_id: 'task', status: 'completed', summary: 'Task result', skip_transcript: scenario.skip }), 1);
     expect(events.filter(event => event.type === 'task_notification')).toHaveLength(0);
     expect(events.filter(event => event.type === 'async_subagent_completed')).toHaveLength(1);
     if (scenario.cancel) {
       session.cancel();
-      await session.handleNativeMessage({ type: 'result', subtype: 'success' } as any, 1);
+      await session.handleNativeMessage(buildSDKMessage({ type: 'result', subtype: 'success' }), 1);
     }
     if (scenario.replacement) session.handleNativeQueryOpened({} as sdkModule.Query);
-    await session.handleNativeMessage({ type: 'system', subtype: 'init', session_id: 'session-1' } as any, scenario.replacement ? 2 : 1);
-    await session.handleNativeMessage({ type: 'assistant', message: { id: 'after', content: [{ type: 'text', text: 'Automatic output' }] } } as any, scenario.replacement ? 2 : 1);
+    await session.handleNativeMessage(buildSDKMessage({ type: 'system', subtype: 'init', session_id: 'session-1' }), scenario.replacement ? 2 : 1);
+    await session.handleNativeMessage(buildSDKMessage({ type: 'assistant', message: { id: 'after', content: [{ type: 'text', text: 'Automatic output' }] } }), scenario.replacement ? 2 : 1);
     const expected = scenario.expected ? ['Task result'] : [];
     expect(events.filter(event => event.type === 'task_notification').map(event => event.content)).toEqual(expected);
   } finally { await session.dispose(); }
@@ -3909,25 +3910,25 @@ it.each([
 
 it('blocks idle release while Claude Code reports a live background task', async () => {
   const session = new ClaudeExecutionSession((await createHost()).host.getRuntimeHost('claude'), createConfig());
-  const tasksChanged = (tasks: unknown[]) => ({ type: 'system', subtype: 'background_tasks_changed', session_id: 'session-1', uuid: 'tasks', tasks });
+  const tasksChanged = (tasks: sdkModule.SDKBackgroundTasksChangedMessage['tasks']) => buildSDKMessage({ type: 'system', subtype: 'background_tasks_changed', session_id: 'session-1', tasks });
   const shell = { task_id: 'shell', task_type: 'local_bash', description: 'Wait for the build' };
   try {
     expect(session.blocksIdleRelease()).toBe(false);
-    await session.handleNativeMessage(tasksChanged([{ task_id: 'watcher', task_type: 'monitor', description: 'Watch', ambient: true }]) as any, 1);
+    await session.handleNativeMessage(tasksChanged([{ task_id: 'watcher', task_type: 'monitor', description: 'Watch', ambient: true }]), 1);
     expect(session.blocksIdleRelease()).toBe(false);
-    await session.handleNativeMessage(tasksChanged([shell]) as any, 1);
+    await session.handleNativeMessage(tasksChanged([shell]), 1);
     expect(session.blocksIdleRelease()).toBe(true);
     // The level replaces the set, so a missed task_notification cannot keep the task running.
-    await session.handleNativeMessage(tasksChanged([]) as any, 1);
+    await session.handleNativeMessage(tasksChanged([]), 1);
     expect(session.blocksIdleRelease()).toBe(false);
-    await session.handleNativeMessage(tasksChanged([shell]) as any, 1);
+    await session.handleNativeMessage(tasksChanged([shell]), 1);
     // Cancelling automatic output keeps the process, so its task level still applies.
-    await session.handleNativeMessage({ type: 'assistant', message: { id: 'automatic', content: [{ type: 'text', text: 'Automatic output' }] } } as any, 1);
+    await session.handleNativeMessage(buildSDKMessage({ type: 'assistant', message: { id: 'automatic', content: [{ type: 'text', text: 'Automatic output' }] } }), 1);
     session.cancel();
-    await session.handleNativeMessage(tasksChanged([]) as any, 1);
-    await session.handleNativeMessage({ type: 'result', subtype: 'success' } as any, 1);
+    await session.handleNativeMessage(tasksChanged([]), 1);
+    await session.handleNativeMessage(buildSDKMessage({ type: 'result', subtype: 'success' }), 1);
     expect(session.blocksIdleRelease()).toBe(false);
-    await session.handleNativeMessage(tasksChanged([shell]) as any, 1);
+    await session.handleNativeMessage(tasksChanged([shell]), 1);
     // A new CLI process starts with no background tasks.
     session.handleNativeQueryOpened({} as sdkModule.Query);
     expect(session.blocksIdleRelease()).toBe(false);
@@ -3975,7 +3976,7 @@ it('keeps a completion during automatic request startup for the following turn',
   });
   try {
     // Captured SDK order: A completes, automatic init, B completes, first A chunk.
-    for (const message of [
+    for (const message of ([
       { type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'a', status: 'completed', summary: 'FIRST_DONE' },
       { type: 'system', subtype: 'init', session_id: 'session-1' },
       { type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'b', status: 'completed', summary: 'SECOND_DONE' },
@@ -3985,7 +3986,7 @@ it('keeps a completion during automatic request startup for the following turn',
       { type: 'system', subtype: 'init', session_id: 'session-1' },
       { type: 'assistant', message: { id: 'second', content: [{ type: 'text', text: 'Second automatic answer' }] } },
       { type: 'result', subtype: 'success' },
-    ]) await session.handleNativeMessage(message as any, 1);
+    ] satisfies Parameters<typeof buildSDKMessage>[0][]).map(buildSDKMessage)) await session.handleNativeMessage(message, 1);
     expect(order).toEqual(['FIRST_DONE', 'First automatic answer', 'SECOND_DONE', 'Second automatic answer']);
   } finally { await session.dispose(); }
 });

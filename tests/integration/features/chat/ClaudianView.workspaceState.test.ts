@@ -2,15 +2,16 @@
 import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarness';
 
 import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
-import type { TabWorkspaceLifecycle } from '@/features/chat/tabs/persistence/TabWorkspaceLifecycle';
+import { TabManager } from '@/features/chat/tabs/TabManager';
+import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 beforeEach(() => { vi.useFakeTimers(); });
 afterEach(() => { vi.useRealTimers(); });
 
 async function installPersistence(view: Awaited<ReturnType<typeof createClaudianView>>) {
-  const lifecycle = view.tabWorkspace as TabWorkspaceLifecycle;
+  const lifecycle = view['tabWorkspace'];
   const saved: Record<string, unknown>[] = [];
-  const save = view.plugin.app.workspace.requestSaveLayout.run;
+  const save = vi.spyOn(view.app.workspace.requestSaveLayout, 'run');
   save.mockImplementation(async () => { saved.push(structuredClone(view.getState())); });
   const persistence = (await lifecycle.preparePersistence(lifecycle.beginOpen()))!;
   return { lifecycle, persistence, saved, save };
@@ -23,27 +24,28 @@ test('a later delivered view snapshot supersedes a restore still loading metadat
   let finishLoad!: () => void;
   let markLoading!: () => void;
   const loading = new Promise<void>(resolve => { markLoading = resolve; });
-  const view = await createClaudianView();
-  let restored: AppTabManagerState | null = null;
-  view.tabManager = {
+  const view = await createClaudianView({ plugin: { settings: { restoreTabsOnStartup: true } } });
+  let restored: AppTabManagerState = { openTabs: [], activeTabId: null };
+  const manager = new TabManager(view['plugin'], view.contentEl, view, {}, new VaultMentionDataProvider(view.app));
+  view['tabManager'] = manager;
+  Object.assign(manager, {
     getActiveTab: () => null,
     restoreState: vi.fn(async (state: AppTabManagerState) => { restored = state; }),
     getPersistedState: () => restored,
-  };
+  });
   const { persistence, saved } = await installPersistence(view);
-  view.plugin.settings.restoreTabsOnStartup = true;
-  view.plugin.ensureConversationMetadataLoaded = vi.fn(async () => {
+  view['plugin'].ensureConversationMetadataLoaded = vi.fn(async () => {
       markLoading();
       await new Promise<void>(resolve => { finishLoad = resolve; });
     });
-  for (const name of ['syncProviderBrandColor', 'updateTabBar', 'notifyConversationNavigationChanged']) view[name] = vi.fn();
+  for (const name of ['syncProviderBrandColor', 'updateTabBar', 'notifyConversationNavigationChanged'] as const) view[name] = vi.fn();
   const firstDelivery = view.setState({ tabWorkspace: { version: 1, ...earlier } }, { history: false });
   await loading;
   const secondDelivery = view.setState({ tabWorkspace: { version: 1, ...current } }, { history: false });
   finishLoad();
   await Promise.all([firstDelivery, secondDelivery]);
-  expect(view.tabManager.restoreState).toHaveBeenCalledTimes(1);
-  expect(view.tabManager.restoreState).toHaveBeenLastCalledWith(current);
+  expect(manager.restoreState).toHaveBeenCalledTimes(1);
+  expect(manager.restoreState).toHaveBeenLastCalledWith(current);
   await persistence.flush();
   expect(saved).toEqual([{ tabWorkspace: { version: 1, ...current } }]);
   persistence.dispose();

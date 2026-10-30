@@ -1,5 +1,8 @@
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
+import { createOpencodeKernelLease } from '@test/helpers/providers/opencode/OpencodeKernelFixture';
 import type { Mock } from 'vitest';
 
+import type { ProviderSessionConfig, ProviderSessionToolPort } from '@/core/execution';
 import type { ProviderToolPolicy } from '@/core/execution';
 import { invokeSessionTool, type SessionToolInvocation } from '@/core/session-tools/invokeSessionTool';
 import { OpencodeHTTPSessionKernel } from '@/providers/opencode/execution/OpencodeHTTPSessionKernel';
@@ -10,7 +13,7 @@ import type { OpencodeHTTPEvent } from '@/providers/opencode/http/OpencodeHTTPCl
 
 
 let resolveCaller: ((id: string) => SessionToolInvocation | undefined) | undefined;
-let sessionConfig: any;
+let sessionConfig: { -readonly [K in keyof ProviderSessionConfig]: ProviderSessionConfig[K] };
 let kernel: OpencodeHTTPSessionKernel;
 let receive: (event: OpencodeHTTPEvent) => void;
 let output: Array<{ event: OpencodeNativeOutput; session?: string }>;
@@ -29,16 +32,14 @@ function start(sessionID = 'ses_main', id = 'tool_shell') {
 const previews = () => output.flatMap(({ event }) => event.type === 'tool_output' ? [event.content] : []);
 
 beforeEach(async () => {
+  const { host } = await createProviderHostFixture({ overrides: { getResolvedProviderCliPath: async () => '/opencode' } });
   vi.useFakeTimers();
   output = []; requests = []; bodies = [];
   skills = async () => ({ data: [] });
   read = vi.fn().mockResolvedValue({ data: { output: '', cursor: 0, size: 0, truncated: false } });
-  const lease = {
-    databasePath: null, isReusable: () => true, onRetired: () => {}, onSuperseded: () => {},
-    subscribe: async (callback: typeof receive, _error: unknown, _interactive: unknown, resolver: typeof resolveCaller) => { receive = callback; resolveCaller = resolver; },
-    registerAgents: async () => ({}), waitForActivation: async () => {}, refreshGlobalForms: async () => {},
-    dispose: async () => {},
-    request: async (route: string, options?: { body?: unknown }) => {
+  const { lease, service } = createOpencodeKernelLease();
+  vi.mocked(lease.subscribe).mockImplementation(async (callback, _error, _interactive, resolver) => { receive = callback; resolveCaller = resolver; });
+  vi.mocked(lease.request).mockImplementation(async (route: string, options?: { body?: unknown }) => {
       requests.push(route);
       if (options?.body !== undefined) bodies.push(options.body);
       if (route === '/api/skill') return skills();
@@ -46,13 +47,12 @@ beforeEach(async () => {
       if (route === '/api/model') return { data: [{ id: 'model', providerID: 'test', enabled: true }, { id: {}, providerID: 'test', enabled: true }] };
       if (route === '/api/command') return { data: [] };
       return { data: { id: 'ses_main' } };
-    },
-  };
-  const config = { workingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: vi.fn() } } as any;
+    });
+  const config: typeof sessionConfig = { workingDirectory: '/workspace', lifecycle: 'persistent', nativePersistence: 'provider-default', interactionPort: { dismissInteraction: vi.fn(), requestApproval: vi.fn(() => { throw new Error('Unexpected approval'); }), askUserQuestion: vi.fn(() => { throw new Error('Unexpected question'); }) } };
   sessionConfig = config;
-  kernel = new OpencodeHTTPSessionKernel({ config, host: { resolveCliPath: async () => '/opencode', environmentText: '' }, getActiveTurnId: () => 'turn',
+  kernel = new OpencodeHTTPSessionKernel({ config, host: host.getRuntimeHost('opencode'), sessionInstanceId: 'kernel', getActiveTurnId: () => 'turn',
     onNativeOutput: (event: OpencodeNativeOutput, session?: string) => output.push({ event, session }), onNativeTurn: vi.fn(), onClosed: vi.fn(),
-  } as any, { acquire: async () => lease } as any, new OpencodeSessionPersistence(config));
+  }, service, new OpencodeSessionPersistence(config));
   await kernel.connect({ profile: 'managed', systemPrompt: '' });
   await kernel.openSession();
 });
@@ -238,8 +238,8 @@ const startToolRun = async (policy: ProviderToolPolicy = {kind:'provider-default
   return {completion};
 };
 it.each<ProviderToolPolicy>([{kind:'provider-default'},{kind:'unrestricted'},{kind:'read-only'},{kind:'passive'},{kind:'allow-list',names:['claudian_list_destinations']}])('dispatches session tools with the owning policy %j', async policy => {
-  const list = vi.fn().mockResolvedValue({ sessions: [] });
-  sessionConfig.sessionTools = {list,send:vi.fn()};
+  const list = vi.fn<ProviderSessionToolPort['list']>().mockResolvedValue({ sessions: [] });
+  sessionConfig.sessionTools = { list, send: vi.fn(() => { throw new Error('Unexpected send'); }), read: vi.fn(() => { throw new Error('Unexpected read'); }) };
   const {completion} = await startToolRun(policy);
   const allowed = ['provider-default','unrestricted'].includes(policy.kind);
   expect((await callSessionTool()).isError).toBe(!allowed);
@@ -251,8 +251,8 @@ it('denies an unbound caller and pins child calls to the original run through se
   const unbound = await startToolRun();
   expect((await callSessionTool()).isError).toBe(true);
   event('session.execution.succeeded'); await unbound.completion;
-  const list = vi.fn().mockResolvedValue({ sessions: [] });
-  sessionConfig.sessionTools = {list,send:vi.fn()};
+  const list = vi.fn<ProviderSessionToolPort['list']>().mockResolvedValue({ sessions: [] });
+  sessionConfig.sessionTools = { list, send: vi.fn(() => { throw new Error('Unexpected send'); }), read: vi.fn(() => { throw new Error('Unexpected read'); }) };
   const first = await startToolRun();
   event('session.tool.input.started',{id:'spawn',name:'subagent'});
   event('session.tool.called',{id:'spawn',input:{background:true}});
@@ -277,8 +277,8 @@ it('normalizes native session tools in live output without losing the raw name',
 });
 
 it.each(['cancel', 'completion', 'failure'])('aborts an in-flight child session-tool call on child %s without cancelling the parent', async ending => {
-  const list = vi.fn().mockResolvedValue({ sessions: [] });
-  sessionConfig.sessionTools = { list, send: vi.fn() };
+  const list = vi.fn<ProviderSessionToolPort['list']>().mockResolvedValue({ sessions: [] });
+  sessionConfig.sessionTools = { list, send: vi.fn(() => { throw new Error('Unexpected send'); }), read: vi.fn(() => { throw new Error('Unexpected read'); }) };
   const { completion } = await startToolRun();
   event('session.tool.input.started', { id: 'spawn', name: 'subagent' });
   event('session.tool.called', { id: 'spawn', input: {} });

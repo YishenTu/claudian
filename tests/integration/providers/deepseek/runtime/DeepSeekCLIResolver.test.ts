@@ -1,17 +1,14 @@
 // @test-ci {"native":true}
-import { getInstallationKey } from '@/core/device/InstallationKey';
-const actualModule0 = await vi.importActual<typeof import('@/core/process/cliBinaryLocator')>('@/core/process/cliBinaryLocator');
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import * as fs from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import * as os from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { findCLIBinaryPath, resolveConfiguredCLIPath } from '@/core/process/cliBinaryLocator';
+import { getInstallationKey } from '@/core/device/InstallationKey';
 import { DeepSeekCLIResolver } from '@/providers/deepseek/runtime/DeepSeekCLIResolver';
 
 vi.mock('node:os', async () => ({ ...(await vi.importActual<typeof import('node:os')>('node:os')), homedir: vi.fn() }));
-vi.mock('@/core/process/cliBinaryLocator', async () => ({
-  ...(await vi.importActual<typeof import('@/core/process/cliBinaryLocator')>('@/core/process/cliBinaryLocator')), findCLIBinaryPath: vi.fn(), resolveConfiguredCLIPath: vi.fn(),
-}));
+vi.mock('node:fs', async () => ({ ...(await vi.importActual<typeof import('node:fs')>('node:fs')) }));
 
 describe('DeepSeek installation selection', () => {
   const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
@@ -34,17 +31,23 @@ describe('DeepSeek installation selection', () => {
       writeFileSync(join(app, 'DeepSeek Harness.exe'), '');
       process.env.LOCALAPPDATA = join(root, 'AppData', 'Local');
     }
-    vi.mocked(resolveConfiguredCLIPath).mockImplementation(path => path?.startsWith(root)
-      ? actualModule0.resolveConfiguredCLIPath(path) : null);
+    const actualStat = fs.statSync;
+    // Hide installations outside the test root at the filesystem boundary, keeping lookup real.
+    vi.spyOn(fs, 'statSync').mockImplementation((...args: Parameters<typeof fs.statSync>) => {
+      if (!String(args[0]).startsWith(root)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      return actualStat(...args);
+    });
     vi.mocked(os.homedir).mockReturnValue(root);
     Object.defineProperty(process, 'platform', { ...platform, value: windows ? 'win32' : 'darwin' });
-    vi.mocked(findCLIBinaryPath).mockReturnValue(null);
+    vi.stubEnv('PATH', root);
     resolver = new DeepSeekCLIResolver();
   });
 
   afterEach(() => {
     Object.defineProperty(process, 'platform', platform);
     if (localAppData === undefined) delete process.env.LOCALAPPDATA; else process.env.LOCALAPPDATA = localAppData;
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -61,7 +64,7 @@ describe('DeepSeek installation selection', () => {
   it('keeps npm first in Auto but an explicit app wins, including a renamed Unicode app and symlinks', () => {
     const npm = join(root, 'dsh');
     writeFileSync(npm, '#!/usr/bin/env node\n');
-    vi.mocked(findCLIBinaryPath).mockReturnValue(npm);
+    chmodSync(npm, 0o700);
     expect(resolver.resolveFromSettings(settings())).toBe(npm);
     expect(resolver.resolveFromSettings(settings(app))).toBe(cli);
     const alias = join(root, windows ? '深度 求索' : '深度 求索.app');
@@ -101,7 +104,7 @@ describe('DeepSeek installation selection', () => {
   it('does not silently change installations when the explicit path disappears', () => {
     expect(resolver.resolveFromSettings(settings(app))).toBe(cli);
     rmSync(app, { recursive: true });
-    vi.mocked(findCLIBinaryPath).mockReturnValue('/another/dsh');
+    writeFileSync(join(root, 'dsh'), '#!/usr/bin/env node\n', { mode: 0o700 });
     expect(resolver.resolveFromSettings(settings(app))).toBeNull();
   });
 });

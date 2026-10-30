@@ -40,7 +40,7 @@ class FakeMetadataNative implements GrokExecutionNativeConnection {
     return {};
   }
 
-  async listCommands(_cwd: string, signal?: AbortSignal): Promise<any[]> {
+  async listCommands(_cwd: string, signal?: AbortSignal): ReturnType<GrokExecutionNativeConnection['listCommands']> {
     this.listStarted.resolve();
     if (this.waitForAbort) {
       await new Promise<void>((_resolve, reject) => {

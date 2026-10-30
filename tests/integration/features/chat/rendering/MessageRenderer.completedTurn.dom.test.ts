@@ -1,24 +1,30 @@
 /** @vitest-environment jsdom */
-
 import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
+import { createHarness as createExecutionHarness } from '@test/helpers/ChatExecutionHarness';
 import { createConversationPorts } from '@test/helpers/ConversationPorts';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
+import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage, ToolCallInfo } from '@/core/types';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
+import { LinkedContentController } from '@/features/chat/linked-content';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { createResponseTextBlock } from '@/features/chat/rendering/ResponseLayout';
 import { createThinkingBlock, finalizeThinkingBlock } from '@/features/chat/rendering/ThinkingBlockRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { buildTabRuntimeInputBindings } from '@/features/chat/tabs/runtime/TabRuntimeInputBindings';
+import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
+import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
+import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import { setLocale } from '@/i18n/i18n';
+import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
 let defaultHost: Awaited<ReturnType<typeof createChatFeatureHost>>;
 
@@ -629,10 +635,11 @@ it.each([true, false])('enables branches after switching and native history corr
     getConversationById: vi.fn().mockResolvedValue({ id: 'pi-chat', messages: [first, second] }),
     getConversationSummary: vi.fn().mockReturnValue(null), projects: createProjectsFake() });
   const navigateConversationBranch = vi.fn().mockResolvedValue({ status: 'committed', messages: [first] });
-  const coordinator = { navigateConversationBranch, supportsConversationBranches: true,
-    getConversationBranches: vi.fn().mockResolvedValue({ branches: { 'native-u1': ['native-u1'], 'native-u2': ['native-u2'] },
-      userMessageIds: { u1: 'native-u1', u2: 'native-u2' } }),
-  };
+  const { coordinator, registry } = createExecutionHarness();
+  vi.spyOn(coordinator, 'navigateConversationBranch').mockImplementation(navigateConversationBranch);
+  vi.spyOn(coordinator, 'supportsConversationBranches', 'get').mockReturnValue(true);
+  vi.spyOn(coordinator, 'getConversationBranches').mockResolvedValue({ branches: { 'native-u1': ['native-u1'], 'native-u2': ['native-u2'] }, userMessageIds: { u1: 'native-u1', u2: 'native-u2' } });
+  onTestFinished(async () => { await coordinator.dispose(); await registry.dispose(); });
   const renderer: MessageRenderer = new MessageRenderer(plugin,
     new Component(),
     messagesEl, undefined, undefined, () => ProviderRegistry.getCapabilities('pi'), {
@@ -642,13 +649,12 @@ it.each([true, false])('enables branches after switching and native history corr
   let welcomeEl: HTMLElement | null = null;
   const controller = new ConversationController({ plugin, state, renderer,
     ...createConversationPorts({ state, getInputEl: () => inputEl, getImageContextManager: () => null }),
-    subagentManager: { clear: vi.fn() },
-    getInputEl: () => inputEl, getMessagesEl: () => messagesEl,
-    getWelcomeEl: () => welcomeEl, setWelcomeEl: (el: HTMLElement) => { welcomeEl = el; },
-    getLinkedContentController: () => ({ lock: vi.fn() }),
-    getImageContextManager: () => null, clearQueuedMessage: vi.fn(),
+    subagentManager: new SubagentManager(() => undefined),
+    getMessagesEl: () => messagesEl,
+    getWelcomeEl: () => welcomeEl, setWelcomeEl: (el: HTMLElement | null) => { welcomeEl = el; },
+    getLinkedContentController: () => new LinkedContentController({ app: plugin.app, getExcludedTags: () => [], getCachedVaultFiles: () => [], getCachedVaultFolders: () => [] }),
     getExecutionCoordinator: () => coordinator,
-  } as any);
+  });
   state.currentConversationId = 'pi-chat';
   await controller.loadActive();
   expect((within(messagesEl).getByRole('button', { name: 'Branch from this prompt' }) as HTMLButtonElement).disabled).toBe(!hasNativeId);
@@ -723,37 +729,36 @@ it('orders the Pi prompt toolbar as branches, tree, copy, time through live and 
 });
 
 it('previews a branch without saving it and restores history when focus leaves the composer', async () => {
-  const messagesEl = document.body.createDiv();
-  const inputComposerEl = document.body.createDiv();
-  const inputEl = inputComposerEl.createEl('textarea');
-  const send = inputComposerEl.createEl('button', { text: 'Send', attr: { type: 'button' } });
-  const outside = document.body.createEl('button', { text: 'Outside', attr: { type: 'button' } });
-  const state = new ChatState();
-  state.currentConversationId = 'pi-chat';
   const prompt: ChatMessage = { id: 'second', role: 'user', content: 'Try B', timestamp: 2,
     userMessageId: 'native-b', treeBranches: ['native-b'] };
   const history = [{ ...messages[0], treeBranches: ['native-u1'] }, prompt, messages[2]];
+  const pool = createSessionRuntimePool(() => plugin);
+  const plugin: ChatFeatureHost = await createChatFeatureHost({
+    sessionRuntimes: pool, updateConversation: vi.fn(), projects: createProjectsFake(),
+    executionPersistence: {
+      registerExecutionBinding: vi.fn(), releaseExecutionBinding: vi.fn(),
+      assertConversationExecutionAuthority: vi.fn(), recordConversationActivity: vi.fn(),
+      persistExecutionSnapshot: async () => true,
+    },
+  });
+  const component = new Component();
+  const tab = await createTabRuntime({
+    plugin, component, containerEl: document.body.createDiv(),
+    conversation: { id: 'pi-chat', providerId: 'pi', title: 'History', messages: history,
+      sessionId: null, createdAt: testDate().getTime(), lastActivityAt: testDate().getTime() },
+    mentionDataProvider: new VaultMentionDataProvider(plugin.app), getProviderCatalogConfig: () => null,
+    isRuntimeLive: () => true, openConversation: async () => undefined, startNewConversation: async () => undefined,
+  });
+  onTestFinished(async () => { await destroyTab(tab); component.unload(); });
+  const { state, renderer } = tab;
+  const { messagesEl, inputComposerEl, inputEl } = tab.dom;
+  const controller = tab.controllers.conversationController;
+  const navigateConversationBranch = vi.spyOn(tab.executionCoordinator, 'navigateConversationBranch')
+    .mockResolvedValue({ status: 'committed', messages: [history[0]] });
   state.messages = history;
-  const navigateConversationBranch = vi.fn().mockResolvedValue({ status: 'committed', messages: [history[0]] });
-  const coordinator = { navigateConversationBranch };
-  const plugin = await createChatFeatureHost({ updateConversation: vi.fn() });
-  const renderer: MessageRenderer = new MessageRenderer(plugin,
-    new Component(),
-    messagesEl, undefined, undefined, () => ProviderRegistry.getCapabilities('pi'),
-    { navigate: (id, target) => controller.navigateBranch(id, target), isBusy: () => state.isRewinding });
-  const controller = new ConversationController({ plugin, state, renderer,
-    ...createConversationPorts({ state, getInputEl: () => inputEl, getImageContextManager: () => null }),
-    getInputEl: () => inputEl, getMessagesEl: () => messagesEl,
-    getWelcomeEl: () => null, setWelcomeEl: vi.fn(),
-    getImageContextManager: () => null,
-    getExecutionCoordinator: () => coordinator,
-  } as any);
-  const cleanup: (() => void)[] = [];
-  buildTabRuntimeInputBindings({ dom: { messagesEl, inputEl, inputComposerEl }, state } as any,
-    { navigationSidebar: { setOnScrollIntent: vi.fn() }, composerDropdown: { handleInputChange: vi.fn() } } as any,
-    { conversationController: controller, sideChatController: { handleComposerInput: vi.fn() } } as any,
-    { plugin, registerCleanup: (_name: string, fn: () => void) => cleanup.push(fn) } as any,
-    { requirePublished: () => ({ lifecycleState: 'open', session: { claimUserOwnership: vi.fn() } }) } as any);
+  tab.hydrationState = 'ready';
+  const send = inputComposerEl.createEl('button', { text: 'Send', attr: { type: 'button' } });
+  const outside = document.body.createEl('button', { text: 'Outside', attr: { type: 'button' } });
   renderer.renderMessages(history, () => 'Hello');
   fireEvent.click(within(messagesEl).getByRole('button', { name: 'Branch from this prompt' }));
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -772,8 +777,7 @@ it('previews a branch without saving it and restores history when focus leaves t
   expect(messagesEl.querySelector('[data-message-id="second"]')).not.toBeNull();
   expect(messagesEl.querySelector('[data-message-id="a2"]')).not.toBeNull();
   expect(navigateConversationBranch).not.toHaveBeenCalled();
-  for (const dispose of cleanup) dispose();
-  renderer.dispose();
+
 });
 
 it('defers Markdown for collapsed thinking and notifications until their own disclosure opens', async () => {

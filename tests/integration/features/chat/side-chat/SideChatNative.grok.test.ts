@@ -5,6 +5,7 @@ import initializeFixture from '@test/fixtures/providers/grok/extensions/plan-mod
 
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 import { createForkTestEnvironment, type ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
+import { grokForkRequest, grokTextPromptRequest } from '@test/helpers/providers/grok/GrokRequests';
 import { createNativeRPCProcess } from '@test/helpers/providers/NativeRPCTestProcess';
 import spawn from 'cross-spawn';
 
@@ -14,7 +15,7 @@ import { traceSideChild } from './SideChatNativeTracer';
 
 function createNativeGrok(env: ForkTestEnvironment) {
   const sessions = new Map<string, string[]>([['grok-source', []]]);
-  const operations: Array<{ method: string; params: Record<string, any> }> = [];
+  const operations: Array<{ method: string; params: Record<string, unknown> }> = [];
   const prompts: Array<{ sessionId: string; context: string[] }> = [];
   const directory = (id: string) => path.join(env.root, 'grok', 'sessions', encodeURIComponent(env.root), id);
   const sourceFile = path.join(directory('grok-source'), 'updates.jsonl');
@@ -28,19 +29,20 @@ function createNativeGrok(env: ForkTestEnvironment) {
     }
     if (method === 'session/set_mode' || method === 'session/set_model') return {};
     if (method === '_x.ai/session/fork') {
-      sessions.set('grok-child', sessions.get(params.sourceSessionId)!.slice(0, params.targetPromptIndex));
+      const request = grokForkRequest(params);
+      sessions.set('grok-child', sessions.get(request.sourceSessionId)!.slice(0, request.targetPromptIndex));
       await fs.mkdir(directory('grok-child'), { recursive: true });
-      return { newCwd: params.newCwd, newSessionId: 'grok-child', parentSessionId: params.sourceSessionId };
+      return { newCwd: request.newCwd, newSessionId: 'grok-child', parentSessionId: request.sourceSessionId };
     }
     if (method === 'session/load') return {};
     if (method === 'session/prompt') {
-      const sessionId = params.sessionId as string;
+      const { sessionId, prompt } = grokTextPromptRequest(params);
       const context = sessions.get(sessionId)!;
       prompts.push({ context: [...context], sessionId });
       const turn = ++ordinal;
       const assistantId = `grok-assistant-${turn}`;
       const updates = [
-        { _meta: { promptIndex: context.length }, content: { text: params.prompt[0].text, type: 'text' }, messageId: `grok-user-${turn}`, sessionUpdate: 'user_message_chunk' },
+        { _meta: { promptIndex: context.length }, content: { text: prompt[0].text, type: 'text' }, messageId: `grok-user-${turn}`, sessionUpdate: 'user_message_chunk' },
         { _meta: { eventId: assistantId }, content: { text: `Reply ${turn}`, type: 'text' }, sessionUpdate: 'agent_message_chunk' },
         { sessionUpdate: 'turn_completed' },
       ];

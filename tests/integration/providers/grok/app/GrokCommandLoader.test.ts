@@ -1,3 +1,25 @@
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
+import { GrokNativeProcess } from '@test/helpers/providers/grok/GrokNativeProcess';
+import spawn from 'cross-spawn';
+
+import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { GrokCommandMetadataProbe } from '@/providers/grok/app/GrokCommandMetadataProbe';
+
+vi.mock('cross-spawn', () => ({ default: vi.fn() }));
+
+let host: ProviderHost;
+let native: GrokNativeProcess;
+let probe: GrokCommandMetadataProbe;
+let loader: GrokCommandLoader;
+beforeEach(async () => {
+  ({ host } = await createProviderHostFixture());
+  native = new GrokNativeProcess();
+  vi.mocked(spawn).mockReturnValue(native.child);
+  probe = new GrokCommandMetadataProbe(host.getRuntimeHost('grok'));
+  loader = new GrokCommandLoader(probe);
+});
+afterEach(async () => { await probe.dispose(); vi.clearAllMocks(); });
+
 import type { ProviderCommandLoaderContext } from '@/core/providers/types';
 import { GrokCommandLoader } from '@/providers/grok/app/GrokCommandLoader';
 
@@ -7,15 +29,13 @@ function createContext(
   return {
     allowIsolatedMetadataCreation: false,
     conversation: null,
-    plugin: {} as any,
+    plugin: host,
     ...overrides,
   };
 }
 
 describe('GrokCommandLoader', () => {
   it('uses a ready command snapshot without starting metadata discovery', async () => {
-    const metadataProbe = { load: vi.fn() };
-    const loader = new GrokCommandLoader(metadataProbe as any);
 
     await expect(loader.loadCommands(createContext({
       readyCommandSnapshot: [{
@@ -29,30 +49,21 @@ describe('GrokCommandLoader', () => {
       items: [expect.objectContaining({ name: 'test' })],
       status: 'ready',
     });
-    expect(metadataProbe.load).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+    expect(native.commandRequests).toHaveLength(0);
   });
 
   it('does not create isolated metadata unless explicitly allowed', async () => {
-    const metadataProbe = { load: vi.fn() };
-    const loader = new GrokCommandLoader(metadataProbe as any);
 
     await expect(loader.loadCommands(createContext())).resolves.toMatchObject({
       status: 'requires-session',
     });
-    expect(metadataProbe.load).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+    expect(native.commandRequests).toHaveLength(0);
   });
 
   it('loads commands through the provider-owned metadata probe', async () => {
-    const metadataProbe = {
-      load: vi.fn().mockResolvedValue([{
-        content: '',
-        id: 'grok:skill',
-        kind: 'skill',
-        name: 'skill',
-        source: 'sdk',
-      }]),
-    };
-    const loader = new GrokCommandLoader(metadataProbe as any);
+    native.commandsImplementation = () => ({ commands: [{ name: 'skill', description: '', _meta: { path: '/skills/test/SKILL.md' } }] });
 
     await expect(loader.loadCommands(createContext({
       allowIsolatedMetadataCreation: true,
@@ -60,19 +71,13 @@ describe('GrokCommandLoader', () => {
       items: [expect.objectContaining({ name: 'skill' })],
       status: 'ready',
     });
-    expect(metadataProbe.load).toHaveBeenCalledTimes(1);
+    expect(native.commandRequests).toHaveLength(1);
   });
 
-  it('preserves caller cancellation after isolated discovery', async () => {
+  it('preserves caller cancellation during native command discovery', async () => {
     const controller = new AbortController();
     const failure = new Error('caller cancelled');
-    const metadataProbe = {
-      load: vi.fn(async () => {
-        controller.abort(failure);
-        return [];
-      }),
-    };
-    const loader = new GrokCommandLoader(metadataProbe as any);
+    native.commandsImplementation = () => { controller.abort(failure); return { commands: [] }; };
 
     await expect(loader.loadCommands(createContext({
       allowIsolatedMetadataCreation: true,
@@ -81,10 +86,7 @@ describe('GrokCommandLoader', () => {
   });
 
   it('maps native discovery failures to the Grok retryable error', async () => {
-    const metadataProbe = {
-      load: vi.fn(async () => { throw new Error('native failure'); }),
-    };
-    const loader = new GrokCommandLoader(metadataProbe as any);
+    native.commandsImplementation = () => { throw new Error('native failure'); };
 
     await expect(loader.loadCommands(createContext({
       allowIsolatedMetadataCreation: true,

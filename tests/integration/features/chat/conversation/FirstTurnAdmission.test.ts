@@ -21,18 +21,19 @@ describe('FirstTurnAdmission', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(ProviderRegistry.getCapabilities).mockReturnValue({
+      ...nativeCapabilities,
       providerId: 'claude',
       supportsFork: true,
       supportsNativeHistory: true,
       supportsTurnSteer: true,
-    } as any);
+    });
 
   });
 
   it('skips title generation when no enabled title selection resolves', async () => {
     vi.mocked(ProviderRegistry.resolveTitleGenerationSelection).mockReturnValueOnce(null);
     const generateTitle = vi.fn().mockResolvedValue(undefined);
-    const fixture = (await createFixture({ getTitleGenerationService: () => ({ generateTitle }) as any }));
+    const fixture = (await createFixture({ getTitleGenerationService: () => ({ generateTitle }) }));
     fixture.plugin.settings.enableAutoTitleGeneration = true;
     fixture.plugin.settings.titleGenerationModel = 'removed-title-model';
     await fixture.controller.sendMessage({ content: 'keep this fallback' });
@@ -47,7 +48,7 @@ describe('FirstTurnAdmission', () => {
     vi.mocked(ProviderRegistry.resolveTitleGenerationSelection).mockReturnValueOnce({ providerId: 'claude', model: 'sonnet' });
     const generateTitle = vi.fn().mockResolvedValue(undefined);
     const fixture = (await createFixture({
-      getTitleGenerationService: () => ({ generateTitle }) as any,
+      getTitleGenerationService: () => ({ generateTitle }),
     }));
     fixture.plugin.settings.enableAutoTitleGeneration = true;
     fixture.plugin.settings.titleGenerationModel = 'sonnet';

@@ -128,11 +128,12 @@ describe('InputController admission', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(ProviderRegistry.getCapabilities).mockReturnValue({
+      ...nativeCapabilities,
       providerId: 'claude',
       supportsFork: true,
       supportsNativeHistory: true,
       supportsTurnSteer: true,
-    } as any);
+    });
 
   });
 

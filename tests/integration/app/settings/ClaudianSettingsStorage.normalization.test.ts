@@ -869,7 +869,7 @@ describe('ClaudianSettingsStorage', () => {
         'gpt-5.5': 'Primary',
       });
       expect(getCodexProviderSettings(reloaded).discoveredModels).toEqual(TEST_CODEX_CATALOG);
-      updateCodexProviderSettings(reloaded, { discoveredModels: TEST_CODEX_CATALOG as any });
+      updateCodexProviderSettings(reloaded, { discoveredModels: TEST_CODEX_CATALOG });
       expect(getCodexProviderSettings(reloaded).modelAliases).toEqual({
         'gpt-5.5': 'Primary',
       });

@@ -3,6 +3,7 @@ import { createConversationControllerDeps } from '@test/helpers/features/chat/Co
 import type { Mock } from 'vitest';
 
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
+import { createWriteEditBlock } from '@/features/chat/rendering/tools/WriteEditRenderer';
 
 describe('ConversationController', () => {
   let controller: ConversationController;
@@ -160,7 +161,7 @@ describe('ConversationController', () => {
         linkedContentPath: 'notes/my-note.md',
       });
 
-      deps.state.writeEditStates.set('old-tool', {} as any);
+      deps.state.writeEditStates.set('old-tool', createWriteEditBlock(document.createElement('div'), { id: 'old-tool', name: 'Edit', input: {}, status: 'running' }));
       await controller.loadActive();
       expect(deps.state.writeEditStates.size).toBe(0);
 

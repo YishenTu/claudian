@@ -430,22 +430,22 @@ describe('Claude task notification presentation', () => {
   it.each([false, true])('settles tasks without inserting transcript content with background transition=%s', backgrounded => {
     const normalizer = new ClaudeExecutionEventNormalizer();
     normalizer.normalize(msg({ type: 'system', subtype: 'task_started', task_id: 'sync',
-      tool_use_id: 'sync-tool', is_backgrounded: false } as any), 'requested');
+      tool_use_id: 'sync-tool', is_backgrounded: false }), 'requested');
     if (backgrounded) {
       normalizer.normalize(msg({ type: 'system', subtype: 'task_updated', task_id: 'sync',
-        patch: { is_backgrounded: true } } as any), 'requested');
+        patch: { is_backgrounded: true } }), 'requested');
     }
     // Native tasks outlive requested turns and may complete on the background channel.
     normalizer.reset('requested');
     const events = normalizer.normalize(msg({ type: 'system', subtype: 'task_notification',
-      task_id: 'sync', tool_use_id: 'sync-tool', status: 'completed', summary: 'Agent answer' } as any), 'background');
+      task_id: 'sync', tool_use_id: 'sync-tool', status: 'completed', summary: 'Agent answer' }), 'background');
     expect(events).toContainEqual(expect.objectContaining({ type: 'async_subagent_completion' }));
     expect(events.filter(event => event.type === 'output')).toEqual([]);
     // Resuming a foreground agent registers it in the background under the same task ID.
     normalizer.normalize(msg({ type: 'system', subtype: 'task_started', task_id: 'sync',
-      is_backgrounded: true } as any), 'requested');
+      is_backgrounded: true }), 'requested');
     const resumed = normalizer.normalize(msg({ type: 'system', subtype: 'task_notification',
-      task_id: 'sync', status: 'completed', summary: 'Second answer' } as any), 'background');
+      task_id: 'sync', status: 'completed', summary: 'Second answer' }), 'background');
     expect(resumed).toContainEqual(expect.objectContaining({ type: 'async_subagent_completion' }));
     expect(resumed.filter(event => event.type === 'output')).toEqual([]);
   });
@@ -454,7 +454,7 @@ describe('Claude task notification presentation', () => {
     const events = new ClaudeExecutionEventNormalizer().normalize(msg({
       type: 'system', subtype: 'task_notification', task_id: taskId,
       status: 'completed', summary: 'Background work finished.',
-    } as any), 'background');
+    }), 'background');
     expect(events).toContainEqual({
       type: 'async_subagent_completion', event: expect.objectContaining({ result: 'Background work finished.' }),
     });
@@ -464,7 +464,7 @@ describe('Claude task notification presentation', () => {
     const events = new ClaudeExecutionEventNormalizer().normalize(msg({
       type: 'system', subtype: 'task_notification', task_id: 'watcher',
       status: 'completed', summary: 'Watcher update.', skip_transcript: true,
-    } as any), 'background');
+    }), 'background');
     expect(events.filter(event => event.type === 'output')).toEqual([]);
   });
 });

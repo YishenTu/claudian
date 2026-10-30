@@ -670,7 +670,7 @@ describe('cliPathRequiresNode', () => {
     const scriptPath = isWindows ? 'C:\\temp\\claude' : '/tmp/claude';
     const shebang = '#!/usr/bin/env node\nconsole.log("hi");\n';
 
-    vi.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
+    vi.spyOn(fs, 'openSync').mockImplementation(() => 1);
     vi.spyOn(fs, 'fstatSync').mockImplementation(
       () => ({ isFile: () => true }) as fsType.Stats
     );
@@ -685,7 +685,7 @@ describe('cliPathRequiresNode', () => {
 
   it('returns false when path exists but is a directory', () => {
     const dirPath = isWindows ? 'C:\\temp\\claude' : '/tmp/claude';
-    vi.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
+    vi.spyOn(fs, 'openSync').mockImplementation(() => 1);
     vi.spyOn(fs, 'fstatSync').mockImplementation(
       () => ({ isFile: () => false }) as fsType.Stats
     );
@@ -698,7 +698,7 @@ describe('cliPathRequiresNode', () => {
     const scriptPath = isWindows ? 'C:\\temp\\script' : '/tmp/script';
     const shebang = '#!/usr/bin/env python\nprint("hi")\n';
 
-    vi.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
+    vi.spyOn(fs, 'openSync').mockImplementation(() => 1);
     vi.spyOn(fs, 'fstatSync').mockImplementation(
       () => ({ isFile: () => true }) as fsType.Stats
     );
@@ -721,7 +721,7 @@ describe('cliPathRequiresNode', () => {
       '',
     ].join('\n');
 
-    vi.spyOn(fs, 'openSync').mockImplementation(() => 1 as any);
+    vi.spyOn(fs, 'openSync').mockImplementation(() => 1);
     vi.spyOn(fs, 'fstatSync').mockImplementation(
       () => ({ isFile: () => true }) as fsType.Stats
     );

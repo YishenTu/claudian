@@ -1,15 +1,15 @@
+import { App, MarkdownView, WorkspaceLeaf } from 'obsidian';
 /** @vitest-environment jsdom */
-
 import type { Mock, MockInstance } from 'vitest';
 
+import { ComposerContextTray } from '@/features/chat/composer/ComposerContextTray';
 import { BrowserSelectionController } from '@/features/chat/input/BrowserSelectionController';
 import { ComposerSelections } from '@/features/chat/input/ComposerSelections';
 
 function createMockContextTray() {
-  return {
-    setItems: vi.fn(),
-    clearItems: vi.fn(),
-  };
+  const tray = new ComposerContextTray(document.createElement('div'));
+  return Object.assign(tray, { setItems: vi.spyOn(tray, 'setItems'), clearItems: vi.spyOn(tray, 'clearItems') });
+
 }
 
 async function flushMicrotasks(): Promise<void> {
@@ -33,7 +33,8 @@ function stopPolling(): void {
 
 describe('BrowserSelectionController', () => {
   let controller: BrowserSelectionController;
-  let app: any;
+  let app: App;
+  let browserView: MarkdownView & { currentUrl: string };
   let contextTray: ReturnType<typeof createMockContextTray>;
   let inputEl: HTMLTextAreaElement;
   let containerEl: HTMLElement;
@@ -57,26 +58,26 @@ describe('BrowserSelectionController', () => {
       focusNode: selectionAnchor,
     } as unknown as Selection));
 
-    const view = {
+    const view = browserView = Object.assign(new MarkdownView(new WorkspaceLeaf()), {
       getViewType: () => 'surfing-view',
       getDisplayText: () => 'Surfing',
       containerEl,
       currentUrl: 'https://example.com',
-    };
+    });
 
-    app = {
-      workspace: {
-        activeLeaf: { view },
-        getMostRecentLeaf: vi.fn(() => ({ view })),
-      },
-    };
+    app = new App();
+    const leaf = Object.assign(new WorkspaceLeaf(), { view });
+    app.workspace.activeLeaf = leaf;
+    app.workspace.getMostRecentLeaf = vi.fn(() => leaf);
 
-    controller = new BrowserSelectionController(app, contextTray as any, inputEl);
+
+    controller = new BrowserSelectionController(app, contextTray, inputEl);
   });
 
   afterEach(() => {
     stopPolling();
     inputEl.remove();
+    contextTray.destroy();
     getSelectionSpy.mockRestore();
     vi.useRealTimers();
   });
@@ -126,7 +127,7 @@ describe('BrowserSelectionController', () => {
 
   it.each(['view replacement', 'page navigation', 'unchanged page'])('fences a pending native selection across %s', async action => {
     selectionText = '';
-    const view = app.workspace.getMostRecentLeaf().view;
+    const view = browserView;
     const webview = document.createElement('webview') as HTMLElement & { executeJavaScript: Mock };
     let finish!: (value: string) => void;
     webview.executeJavaScript = vi.fn(() => new Promise<string>(resolve => { finish = resolve; }));
@@ -134,9 +135,7 @@ describe('BrowserSelectionController', () => {
     const pending = controller.poll();
     expect(webview.executeJavaScript).toHaveBeenCalledTimes(1);
     if (action === 'view replacement') {
-      app.workspace.getMostRecentLeaf.mockReturnValue({ view: {
-        ...view, containerEl: document.createElement('div'), currentUrl: 'https://different.example/',
-      } });
+      vi.mocked(app.workspace.getMostRecentLeaf).mockReturnValue(Object.assign(new WorkspaceLeaf(), { view: Object.assign(new MarkdownView(new WorkspaceLeaf()), { containerEl: document.createElement('div'), currentUrl: 'https://different.example/' }) }));
     }
     if (action === 'page navigation') view.currentUrl = 'https://different.example/';
     finish('native selected text');
@@ -204,15 +203,17 @@ describe('BrowserSelectionController', () => {
     await flushMicrotasks();
 
     const items = contextTray.setItems.mock.calls[0][1];
-    items[0].onRemove();
+    items[0].onRemove!();
 
     expect(controller.hasSelection()).toBe(false);
     expect(contextTray.clearItems).toHaveBeenCalledWith('browser-selection');
   });
 
   it('handles polling errors without unhandled rejection', async () => {
-    const extractSpy = vi.spyOn(controller as any, 'extractSelectedText')
-      .mockRejectedValueOnce(new Error('poll failed'));
+    selectionText = '';
+    const extractSpy = vi.fn().mockRejectedValueOnce(new Error('poll failed'));
+    const webview = Object.assign(document.createElement('webview'), { executeJavaScript: extractSpy });
+    containerEl.appendChild(webview);
 
     startPolling(controller);
     vi.advanceTimersByTime(250);

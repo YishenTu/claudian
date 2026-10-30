@@ -10,7 +10,7 @@ import {
   typeInstruction,
 } from '@test/helpers/features/inline-edit/InlineEditDOMHarness';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
-import { Component, MarkdownRenderer, Notice, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
+import { Component, type Editor, MarkdownRenderer, Notice, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { InlineEditSession } from '@/features/inline-edit/ui/InlineEditModal';
@@ -26,7 +26,7 @@ afterEach(async () => {
 describe('editor resolution', () => {
   it('opens on the view editor when the callback editor has no CodeMirror view', async () => {
     const h = await createHarness();
-    const result = h.createModal({}, h.editor).openAndWait();
+    const result = h.createModal({} as Editor, h.editor).openAndWait();
     expect(await screen.findByRole('textbox', { name: 'Edit instructions' })).toBeDefined();
     fireEvent.keyDown(h.editorView.contentDOM, { key: 'Escape' });
     await expect(result).resolves.toEqual({ decision: 'reject' });
@@ -34,7 +34,7 @@ describe('editor resolution', () => {
 
   it('rejects with a notice when neither editor exposes a CodeMirror view', async () => {
     const h = await createHarness();
-    await expect(h.createModal({}, {}).openAndWait()).resolves.toEqual({ decision: 'reject' });
+    await expect(h.createModal({} as Editor, {} as Editor).openAndWait()).resolves.toEqual({ decision: 'reject' });
     expect(Notice).toHaveBeenCalledWith(
       'Inline edit unavailable: could not access the active editor. Try reopening the note.',
     );

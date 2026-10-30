@@ -1,6 +1,5 @@
 // @test-ci {"native":true}
 /** @vitest-environment jsdom */
-const actualCLIProbe = await vi.importActual<typeof CLIProbe>('@/core/providers/cli/CLIInstallationProbe');
 import '@/providers';
 
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -14,8 +13,7 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { getInstallationKey } from '@/core/device/InstallationKey';
 import type { ProviderExecutionTransitionScope } from '@/core/execution';
 import * as ProcessProbe from '@/core/process/ProcessProbe';
-import type * as CLIProbe from '@/core/providers/cli/CLIInstallationProbe';
-import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
+import * as CLIProbe from '@/core/providers/cli/CLIInstallationProbe';
 import type { ProviderId } from '@/core/providers/types';
 import type { ClaudianSettings } from '@/core/types';
 import { DeepSeekCLIResolver } from '@/providers/deepseek/runtime/DeepSeekCLIResolver';
@@ -24,15 +22,12 @@ import { getDeepSeekProviderSettings, updateDeepSeekProviderSettings } from '@/p
 import { createDeepSeekSettingsTabRenderer } from '@/providers/deepseek/ui/DeepSeekSettingsTab';
 
 const deviceKey = getInstallationKey();
-vi.mock('@/core/providers/cli/CLIInstallationProbe', () => ({
-  probeCLIInstallation: vi.fn(async ({ path }: { path: string | null }) => ({ path, version: path ? '0.2.0-rc.2' : null, source: 'auto' })),
-}));
-
 /** Observe the real probe completion before starting the DOM-render assertion deadline. */
 function observeActualCLIProbe(): Promise<CLIProbe.CLIInstallation> {
+  const probe = CLIProbe.probeCLIInstallation;
   return new Promise(resolve => {
-    vi.mocked(probeCLIInstallation).mockImplementationOnce(options => {
-      const pending = actualCLIProbe.probeCLIInstallation(options);
+    vi.spyOn(CLIProbe, 'probeCLIInstallation').mockImplementationOnce(options => {
+      const pending = probe(options);
       resolve(pending);
       return pending;
     });
@@ -122,7 +117,7 @@ describe('DeepSeekSettingsTab', () => {
 
   it('shows a selected Desktop app with installation instructions under its CLI path', async () => {
     const app = process.platform === 'win32' ? 'C:\\test\\DeepSeek Harness.exe' : '/test/DeepSeek Harness.app';
-    const cli = process.platform === 'win32' ? 'C:\\test\\resources\\runtime\\cli\\bin\\dsh.cmd' : `${app}/Contents/Resources/runtime/cli/bin/dsh`;
+    const cli = process.execPath;
     const { ui, container } = await render(true, cli, app);
     fireEvent.click(ui.getByRole('button', { name: 'DeepSeek Harness installation' }));
     const input = ui.getByRole('textbox', { name: 'CLI path' }) as HTMLInputElement;

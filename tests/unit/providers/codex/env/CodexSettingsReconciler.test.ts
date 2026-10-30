@@ -6,6 +6,8 @@ import type { Conversation } from '@/core/types';
 import { codexSettingsReconciler } from '@/providers/codex/env/CodexSettingsReconciler';
 import { computeCodexEnvHash } from '@/providers/codex/runtime/codexEnvironmentHash';
 
+type CodexSettingsDocument = Record<string, unknown> & { providerConfigs: { codex: Record<string, unknown> } };
+
 function establishedConversation(threadId: string): Conversation {
   return {
     providerId: 'codex',
@@ -23,19 +25,19 @@ function establishedConversation(threadId: string): Conversation {
 
 describe('codexSettingsReconciler', () => {
   it.each(['CODEX_HOME', 'HOME', 'USERPROFILE'])('invalidates native bindings when configured %s changes or is removed', key => {
-    const settings: Record<string, unknown> = {
+    const settings: CodexSettingsDocument = {
       providerConfigs: { codex: { enabled: true, environmentVariables: `${key}=/old-home` } },
     };
     codexSettingsReconciler.reconcileModelWithEnvironment(settings);
     for (const nextEnvironment of [`${key}=/new-home`, '']) {
-      (settings.providerConfigs as any).codex.environmentVariables = nextEnvironment;
+      settings.providerConfigs.codex.environmentVariables = nextEnvironment;
       expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings))
         .toEqual({ changed: true, sessionPolicy: 'invalidate' });
     }
   });
 
   it('finalizes an empty legacy fingerprint before later runtime inputs change', () => {
-    const settings: Record<string, unknown> = {
+    const settings: CodexSettingsDocument = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
         codex: {
@@ -49,14 +51,14 @@ describe('codexSettingsReconciler', () => {
 
     expect(codexSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
     expect(isVersionedRuntimeInputFingerprint(
-      (settings.providerConfigs as any).codex.environmentHash,
+      settings.providerConfigs.codex.environmentHash,
     )).toBe(true);
     expect(isVersionedRuntimeInputFingerprint(
-      (settings.providerConfigs as any).codex.sessionEnvironmentHash,
+      settings.providerConfigs.codex.sessionEnvironmentHash,
     )).toBe(true);
     expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
 
-    (settings.providerConfigs as any).codex.environmentVariables = 'OPENAI_BASE_URL=https://new.example.com/v1';
+    settings.providerConfigs.codex.environmentVariables = 'OPENAI_BASE_URL=https://new.example.com/v1';
 
     expect(codexSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(false);
     expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings))
@@ -87,7 +89,7 @@ describe('codexSettingsReconciler', () => {
     ['PATH', (codex: Record<string, unknown>) => { codex.environmentVariables = 'PATH=/opt/codex/bin:/usr/bin'; }],
     ['OPENAI_MODEL', (codex: Record<string, unknown>) => { codex.environmentVariables = `OPENAI_MODEL=${TEST_CODEX_MODEL}`; }],
   ])('reloads without invalidating bindings when only the %s changes', (_input, change) => {
-    const settings: Record<string, unknown> = {
+    const settings: CodexSettingsDocument = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
         codex: {
@@ -99,15 +101,15 @@ describe('codexSettingsReconciler', () => {
       },
     };
     codexSettingsReconciler.normalizeModelVariantSettings(settings);
-    const savedSessionHash = (settings.providerConfigs as any).codex.sessionEnvironmentHash;
-    const savedRuntimeHash = (settings.providerConfigs as any).codex.environmentHash;
+    const savedSessionHash = settings.providerConfigs.codex.sessionEnvironmentHash;
+    const savedRuntimeHash = settings.providerConfigs.codex.environmentHash;
 
-    change((settings.providerConfigs as any).codex);
+    change(settings.providerConfigs.codex);
 
     expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings))
       .toEqual({ changed: true, sessionPolicy: 'reload' });
-    expect((settings.providerConfigs as any).codex.environmentHash).not.toBe(savedRuntimeHash);
-    expect((settings.providerConfigs as any).codex.sessionEnvironmentHash).toBe(savedSessionHash);
+    expect(settings.providerConfigs.codex.environmentHash).not.toBe(savedRuntimeHash);
+    expect(settings.providerConfigs.codex.sessionEnvironmentHash).toBe(savedSessionHash);
   });
 
   it.each([
@@ -116,7 +118,7 @@ describe('codexSettingsReconciler', () => {
     ['installation method', (codex: Record<string, unknown>) => { codex.installationMethodsByHost = { [getInstallationKey()]: 'wsl' }; }],
     ['WSL distro', (codex: Record<string, unknown>) => { codex.wslDistroOverridesByHost = { [getInstallationKey()]: 'Ubuntu' }; }],
   ])('invalidates bindings when the %s changes', (_input, change) => {
-    const settings: Record<string, unknown> = {
+    const settings: CodexSettingsDocument = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
         codex: {
@@ -129,14 +131,14 @@ describe('codexSettingsReconciler', () => {
     };
     codexSettingsReconciler.normalizeModelVariantSettings(settings);
 
-    change((settings.providerConfigs as any).codex);
+    change(settings.providerConfigs.codex);
 
     expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings))
       .toEqual({ changed: true, sessionPolicy: 'invalidate' });
   });
 
   it('backfills the session fingerprint without invalidating when runtime inputs are unchanged', () => {
-    const settings: Record<string, unknown> = {
+    const settings: CodexSettingsDocument = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
         codex: {
@@ -149,21 +151,21 @@ describe('codexSettingsReconciler', () => {
       },
     };
     codexSettingsReconciler.reconcileModelWithEnvironment(settings);
-    (settings.providerConfigs as any).codex.sessionEnvironmentHash = '';
+    settings.providerConfigs.codex.sessionEnvironmentHash = '';
 
     expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings))
       .toEqual({ changed: true, sessionPolicy: 'reload' });
     expect(isVersionedRuntimeInputFingerprint(
-      (settings.providerConfigs as any).codex.sessionEnvironmentHash,
+      settings.providerConfigs.codex.sessionEnvironmentHash,
     )).toBe(true);
 
-    (settings.providerConfigs as any).codex.cliPath = '/usr/local/bin/codex';
+    settings.providerConfigs.codex.cliPath = '/usr/local/bin/codex';
     expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings))
       .toEqual({ changed: true, sessionPolicy: 'reload' });
   });
 
   it('migrates a legacy fingerprint with an existing CLI path without reporting a change', () => {
-    const settings: Record<string, unknown> = {
+    const settings: CodexSettingsDocument = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
         codex: {
@@ -179,15 +181,15 @@ describe('codexSettingsReconciler', () => {
     expect(codexSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
     expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
     expect(isVersionedRuntimeInputFingerprint(
-      (settings.providerConfigs as any).codex.environmentHash,
+      settings.providerConfigs.codex.environmentHash,
     )).toBe(true);
     expect(isVersionedRuntimeInputFingerprint(
-      (settings.providerConfigs as any).codex.sessionEnvironmentHash,
+      settings.providerConfigs.codex.sessionEnvironmentHash,
     )).toBe(true);
   });
 
   it('migrates a matching legacy environment fingerprint without reporting a change', () => {
-    const settings: Record<string, unknown> = {
+    const settings: CodexSettingsDocument = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
         codex: {
@@ -202,12 +204,12 @@ describe('codexSettingsReconciler', () => {
     expect(codexSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
     expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
     expect(isVersionedRuntimeInputFingerprint(
-      (settings.providerConfigs as any).codex.environmentHash,
+      settings.providerConfigs.codex.environmentHash,
     )).toBe(true);
   });
 
   it('invalidates bindings when legacy settings contain a real environment change', () => {
-    const settings: Record<string, unknown> = {
+    const settings: CodexSettingsDocument = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
         codex: {
@@ -230,7 +232,7 @@ describe('codexSettingsReconciler', () => {
     ['OPENAI_BASE_URL', { environmentVariables: 'OPENAI_BASE_URL=https://new.example.com/v1' }, 'invalidate'],
     ['CODEX_HOME', { environmentVariables: 'CODEX_HOME=/data/codex' }, 'invalidate'],
   ] as const)('scopes a first %s input on a never-fingerprinted config', (_input, inputs, sessionPolicy) => {
-    const settings: Record<string, unknown> = {
+    const settings: CodexSettingsDocument = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
         codex: {
@@ -249,7 +251,7 @@ describe('codexSettingsReconciler', () => {
   });
 
   it('preserves the selected model when OPENAI_MODEL changes', () => {
-    const settings: Record<string, unknown> = {
+    const settings: CodexSettingsDocument = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
         codex: {
@@ -267,7 +269,7 @@ describe('codexSettingsReconciler', () => {
   });
 
   it('preserves an active settings-defined custom model across non-model env changes', () => {
-    const settings: Record<string, unknown> = {
+    const settings: CodexSettingsDocument = {
       model: 'my-custom-model',
       providerConfigs: {
         codex: {
@@ -283,13 +285,13 @@ describe('codexSettingsReconciler', () => {
 
     expect(result).toEqual({ changed: true, sessionPolicy: 'invalidate' });
     expect(settings.model).toBe('my-custom-model');
-    const fingerprint = (settings.providerConfigs as any).codex.environmentHash;
+    const fingerprint = settings.providerConfigs.codex.environmentHash;
     expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
     expect(fingerprint).not.toContain('https://api.example.com/v1');
   });
 
   it('preserves the selected custom model after its configuration is removed', () => {
-    const settings: Record<string, unknown> = {
+    const settings: CodexSettingsDocument = {
       model: 'my-custom-model',
       providerConfigs: {
         codex: {
@@ -307,7 +309,7 @@ describe('codexSettingsReconciler', () => {
     expect(result.changed).toBe(true);
     expect(settings.model).toBe('my-custom-model');
     expect(isVersionedRuntimeInputFingerprint(
-      (settings.providerConfigs as any).codex.environmentHash,
+      settings.providerConfigs.codex.environmentHash,
     )).toBe(true);
   });
 

@@ -16,12 +16,7 @@ class Deferred<T> {
 describe('PiCommandMetadataProbe', () => {
   it('registers a load before a synchronously started transition quiesces', async () => {
     const cliResolution = new Deferred<string | null>();
-    const kernel = {
-      request: vi.fn(async () => ({ commands: [] })),
-      shutdown: vi.fn(async () => undefined),
-      start: vi.fn(),
-    };
-    const createKernel = vi.fn(() => kernel as any);
+    const createKernel = vi.fn(() => { throw new Error('Unexpected kernel creation'); });
     const { host } = await createProviderHostFixture({ overrides: { getResolvedProviderCliPath: () => cliResolution.promise } });
     const probe = new PiCommandMetadataProbe(host.getRuntimeHost('pi'), createKernel);
 

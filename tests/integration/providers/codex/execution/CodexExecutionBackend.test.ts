@@ -6,27 +6,18 @@ import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import { testDate } from '@test/helpers/testClock';
+import spawn from 'cross-spawn';
 
 import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderInteractionPort, ProviderSessionConfig } from '@/core/execution';
 import { isSteerableExecutionSession } from '@/core/execution';
-import type { ProviderRuntimeHost } from '@/core/providers/ProviderRuntimeHost';
-import { decodeCodexConfig } from '@/providers/codex/config';
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
+import { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
 import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
-import { buildCodexLaunchSpec } from '@/providers/codex/runtime/CodexLaunchSpecBuilder';
 import { CodexRPCTransport } from '@/providers/codex/runtime/CodexRPCTransport';
 
 const mockNative = new CodexRuntimeHarness();
-vi.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
-  CodexAppServerProcess: vi.fn().mockImplementation(function () { return mockNative.createProcess(); }),
-}));
-vi.mock('@/providers/codex/runtime/codexAppServerSupport', async () => ({
-  ...(await vi.importActual<typeof import('@/providers/codex/runtime/codexAppServerSupport')>('@/providers/codex/runtime/codexAppServerSupport')),
-  resolveCodexAppServerLaunchSpec: async (host: ProviderRuntimeHost) => buildCodexLaunchSpec({
-    codexSettings: decodeCodexConfig(host.config), resolvedCliCommand: 'codex', env: {}, hostVaultPath: '/vault',
-    executionTarget: { method: 'host-native', platformFamily: 'unix', platformOs: 'linux' },
-  }),
-}));
+vi.mock('cross-spawn', () => ({ default: vi.fn(() => mockNative.createProcess()) }));
+
 
 const request: ProviderExecutionRequest = {
   input: [{ type: 'text', text: 'hello' }],
@@ -57,14 +48,14 @@ function complete(threadId = 'thread-1') {
   const process = mockNative.processes[0];
   process.notify('turn/completed', { threadId, turn: { ...process.turns.get(threadId), status: 'completed' } });
 }
-function serverRequest(id: string, method: string, params: Record<string, unknown>) {
-  return mockNative.processes[0].requestFromServer(id, method, params);
+async function serverRequest(id: string, method: string, params: Record<string, unknown>) {
+  return (await mockNative.processes[0].requestFromServer(id, method, params)).result;
 }
 
 beforeEach(async () => {
   mockNative.reset();
   mockNative.autoReconcile = true;
-  const fixture = await createProviderHostFixture({ vault: sharedVault, settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG, responseStyle: 'pragmatic' } } } });
+  const fixture = await createProviderHostFixture({ vault: sharedVault, overrides: { getResolvedProviderCliPath: async () => '/native/codex' }, settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG, responseStyle: 'pragmatic', environmentVariables: `HOME=${sharedVault.root}\nUSERPROFILE=${sharedVault.root}` } } } });
   settings = fixture.settings;
   const host = fixture.host.getRuntimeHost('codex');
   runtime = new CodexAppServerRuntime(host, () => undefined);
@@ -77,12 +68,10 @@ afterEach(async () => {
 });
 
 it('preserves a pre-spawn failure in the execution error and cleans up exactly once', async () => {
-  const process = mockNative.createProcess();
-  vi.spyOn(mockNative, 'createProcess').mockReturnValueOnce(process);
-  vi.spyOn(process, 'start').mockImplementationOnce(() => {
+  vi.mocked(spawn).mockImplementationOnce(() => {
     throw new Error('Failed before Codex process spawned');
   });
-  const shutdown = vi.spyOn(process, 'shutdown');
+  const shutdown = vi.spyOn(CodexAppServerProcess.prototype, 'shutdown');
   const disposeTransport = vi.spyOn(CodexRPCTransport.prototype, 'dispose');
   const session = createSession();
 
@@ -91,8 +80,7 @@ it('preserves a pre-spawn failure in the execution error and cleans up exactly o
   expect(events.at(-1)).toMatchObject({
     type: 'execution_error', message: expect.stringContaining('Failed before Codex process spawned'),
   });
-  expect(process.isAlive()).toBe(false);
-  expect(process.requests).toEqual([]);
+  expect(mockNative.processes).toEqual([]);
   expect(shutdown).toHaveBeenCalledTimes(1);
   expect(disposeTransport).toHaveBeenCalledTimes(1);
   await session.dispose();
@@ -169,7 +157,7 @@ it('replays retired history once and restores only visible user input from the n
   expect(JSON.stringify(inputs[0])).toContain('prior answer');
   expect(JSON.stringify(inputs[1])).not.toContain('prior question');
   expect(JSON.stringify(inputs[1])).toContain('Follow up');
-  const replayed = inputs[0].find((item: { type: string }) => item.type === 'text').text;
+  const replayed = inputs[0]!.find(item => item.type === 'text')!.text;
   const rollout = [
     { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-thread-1' } },
     { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: replayed }] } },
@@ -231,7 +219,7 @@ it('requires a new ephemeral session after its native process exits', async () =
   complete();
   await first;
   expect(process.requests.find(rpc => rpc.method === 'thread/start')!.params).toMatchObject({ ephemeral: true, persistExtendedHistory: false });
-  await process.shutdown();
+  process.exit();
   const events = await collect(session.execute({ ...request, conversationHistory: [
     { id: 'u', role: 'user', content: 'Remember A', timestamp: testDate().getTime(), images: [{ id: 'image', name: 'image.png', data: 'aW1hZ2U=', mediaType: 'image/png', source: 'paste', size: 5 }] },
     { id: 'a', role: 'assistant', content: 'Noted A', timestamp: testDate({ seconds: 1 }).getTime() },

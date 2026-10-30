@@ -7,7 +7,7 @@ import { createSessionBrowserHost } from '@test/helpers/features/chat/SessionBro
 import { testDate } from '@test/helpers/testClock';
 import { createEvent, fireEvent, waitFor, within } from '@testing-library/dom';
 import { Menu, setIcon } from 'obsidian';
-import type { Mock } from 'vitest';
+import type { Mock, Mocked } from 'vitest';
 
 import type { TitleGenerationService } from '@/core/providers/types';
 import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
@@ -59,13 +59,13 @@ function renderDropdown(browser: SessionBrowser, deps: Awaited<ReturnType<typeof
 }
 
 describe('SessionBrowser', () => {
-  let mockTitleService: any;
+  let mockTitleService: Mocked<TitleGenerationService>;
   let controller: SessionBrowser;
   let deps: Awaited<ReturnType<typeof createMockDeps>>;
   beforeEach(async () => {
     vi.clearAllMocks();
     (Menu as typeof Menu & { instances: unknown[] }).instances.length = 0;
-    mockTitleService = { generateTitle: vi.fn().mockResolvedValue(undefined), cancel: vi.fn() };
+    mockTitleService = { generateTitle: vi.fn<TitleGenerationService['generateTitle']>().mockResolvedValue(undefined), cancel: vi.fn<TitleGenerationService['cancel']>() };
     deps = await createMockDeps({ getTitleGenerationService: () => mockTitleService });
     vi.spyOn(deps.plugin.conversationLifecycle, 'delete');
     controller = createBrowser(deps);
@@ -201,23 +201,23 @@ describe('SessionBrowser', () => {
 
         const pinnedSection = container.querySelector<HTMLElement>('.claudian-history-section--pinned')!;
         const pinnedHeaders = [...pinnedSection.querySelectorAll<HTMLElement>('.claudian-session-group-header')];
-        expect(pinnedHeaders.map((header: any) => header.getAttribute('data-content-path'))).toEqual([
+        expect(pinnedHeaders.map((header) => header.getAttribute('data-content-path'))).toEqual([
           'Projects/Plan.md',
           'Projects/Empty.md',
         ]);
         expect([...pinnedSection.querySelectorAll('.claudian-session-group-body')[0]
           .querySelectorAll<HTMLElement>('.claudian-history-item-title')]
-          .map((item: any) => item.textContent))
+          .map((item) => item.textContent))
           .toEqual(['Note regular', 'Note pinned session']);
         expect([...pinnedSection.querySelectorAll<HTMLElement>('.claudian-history-item-title')]
-          .map((item: any) => item.textContent))
+          .map((item) => item.textContent))
           .toEqual(['Note regular', 'Note pinned session', 'Standalone pinned']);
 
         const sessionsSection = container.querySelector<HTMLElement>('.claudian-history-section--sessions')!;
         expect([...sessionsSection.querySelectorAll<HTMLElement>('.claudian-history-item-title')]
-          .map((item: any) => item.textContent))
+          .map((item) => item.textContent))
           .toEqual(['Regular']);
-        expect([...container.querySelectorAll<HTMLElement>('.claudian-history-item')].filter((item: any) => (
+        expect([...container.querySelectorAll<HTMLElement>('.claudian-history-item')].filter((item) => (
           item.getAttribute('data-conversation-id') === 'note-pinned-session'
         ))).toHaveLength(1);
       });
@@ -1304,10 +1304,10 @@ describe('SessionBrowser', () => {
 
     it('should call regenerateTitle when clicking regenerate button on failed item', async () => {
       const mockTitleService = {
-        generateTitle: vi.fn().mockResolvedValue(undefined),
-        cancel: vi.fn(),
+        generateTitle: vi.fn<TitleGenerationService['generateTitle']>().mockResolvedValue(undefined),
+        cancel: vi.fn<TitleGenerationService['cancel']>(),
       };
-      deps.getTitleGenerationService = () => mockTitleService as any;
+      deps.getTitleGenerationService = () => mockTitleService;
 
       (deps.plugin.getConversationList as Mock).mockReturnValue([
         { id: 'conv-1', title: 'Failed', createdAt: 1000, lastActivityAt: 1000, titleGenerationStatus: 'failed' },

@@ -19,6 +19,8 @@ import { activateTab, destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
 
+const { Scope: HostScope } = await vi.importActual<typeof import('@test/__mocks__/obsidian')>('obsidian');
+
 const originalResizeObserver = globalThis.ResizeObserver;
 beforeEach(() => {
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
@@ -92,9 +94,11 @@ async function createView() {
   // The active view scope sits below modal scopes in the shared host keymap.
   const root = await createClaudianView({ host: plugin, containerEl: tab.dom.contentEl,
     contentEl: tab.dom.contentEl, tabManager: { getActiveTab: () => tab } });
-  root.wireEventHandlers();
-  app.keymap.pushScope(root.scope);
-  const scopeKeys = vi.spyOn(root.scope, 'handleKey');
+  root['wireEventHandlers']();
+  const scope = root.scope;
+  assert(scope instanceof HostScope);
+  app.keymap.pushScope(scope);
+  const scopeKeys = vi.spyOn(scope, 'handleKey');
   return { get tab() { return tab; }, backend, conversation, plugin, scopeKeys,
     dispose: async () => {
       try {
@@ -103,7 +107,7 @@ async function createView() {
         await messaging.dispose();
         await plugin.providerHost.executionLifecycleRegistry.dispose();
       } finally {
-        app.keymap.popScope(root.scope);
+        app.keymap.popScope(scope);
       }
     } };
 }

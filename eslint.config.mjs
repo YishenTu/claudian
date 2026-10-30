@@ -338,7 +338,6 @@ export default defineConfig([
       'vitest/no-done-callback': 'error',
       'vitest/no-test-prefixes': 'error',
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports', fixStyle: 'separate-type-imports', disallowTypeAnnotations: false }],
-      '@typescript-eslint/no-explicit-any': 'off',
       'no-restricted-syntax': [
         'error',
         ...sharedBoundaryMockRestrictions,

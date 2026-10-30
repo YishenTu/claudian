@@ -1,11 +1,24 @@
+import { ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { PassThrough, Writable } from 'node:stream';
 
-import type { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
-import type { JSONRPCError } from '@/providers/codex/runtime/codexAppServerTypes';
+import type { JSONRPCError, LegacyDynamicToolSpec, UserInput } from '@/providers/codex/runtime/codexAppServerTypes';
 import type { CodexLaunchSpec } from '@/providers/codex/runtime/codexLaunchTypes';
 
-type NativeProcessPort = Pick<CodexAppServerProcess, keyof CodexAppServerProcess>;
-type ExitCallback = Parameters<CodexAppServerProcess['onExit']>[0];
+import { codexThreadId } from './CodexRequests';
+
+/** Native request fields exercised by this peer; other protocol fields remain opaque. */
+export interface CodexNativeRequest {
+  id: number;
+  method: string;
+  params: Record<string, unknown> & {
+    threadId?: string;
+    turnId?: string;
+    baseInstructions?: string;
+    input?: UserInput[];
+    dynamicTools?: LegacyDynamicToolSpec[];
+  };
+}
+interface CodexClientResponse { id: string; result?: unknown; error?: JSONRPCError }
 
 /** A native JSON-RPC error payload, serialized before the client sees it. */
 export class CodexNativeResponseError extends Error {
@@ -17,11 +30,10 @@ export class CodexNativeResponseError extends Error {
 /** Native app-server boundary shared by Codex execution and settings integration. */
 export class CodexRuntimeHarness {
   readonly processes: CodexNativeTestProcess[] = [];
-  launchKey = 'first';
   autoReconcile = false;
   threadCounter = 0;
   holdSkills = false;
-  requestOverride: ((process: CodexNativeTestProcess, request: any) => boolean) | null = null;
+  requestOverride: ((process: CodexNativeTestProcess, request: CodexNativeRequest) => boolean) | null = null;
 
   createProcess(target?: Pick<CodexLaunchSpec['target'], 'platformFamily' | 'platformOs'>): CodexNativeTestProcess {
     const process = new CodexNativeTestProcess(this, target);
@@ -31,7 +43,6 @@ export class CodexRuntimeHarness {
 
   reset(): void {
     this.processes.length = 0;
-    this.launchKey = 'first';
     this.autoReconcile = false;
     this.threadCounter = 0;
     this.holdSkills = false;
@@ -60,17 +71,19 @@ export class CodexRuntimeHarness {
 
 }
 
-export class CodexNativeTestProcess implements NativeProcessPort {
+export class CodexNativeTestProcess extends ChildProcess implements ChildProcessWithoutNullStreams {
   constructor(
     private readonly harness: CodexRuntimeHarness,
-    private readonly target: Pick<CodexLaunchSpec['target'], 'platformFamily' | 'platformOs'> = { platformFamily: 'unix', platformOs: 'linux' },
-  ) {}
-  private readonly pendingResponses = new Map<string, (response: unknown) => void>();
-  readonly stdout = new PassThrough();
-  readonly stderr = new PassThrough();
+    private readonly target: Pick<CodexLaunchSpec['target'], 'platformFamily' | 'platformOs'> = {
+      platformFamily: process.platform === 'win32' ? 'windows' : 'unix',
+      platformOs: process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux',
+    },
+  ) { super(); }
+  private readonly pendingResponses = new Map<string, (response: CodexClientResponse) => void>();
+  override readonly stdout = new PassThrough();
+  override readonly stderr = new PassThrough();
   readonly notifications: Array<{ method: string; params?: unknown }> = [];
-  readonly requests: Array<{ id: number; method: string; params: any }> = [];
-  readonly exits = new Set<ExitCallback>();
+  readonly requests: CodexNativeRequest[] = [];
   readonly turns = new Map<string, { id: string; status: string; items: unknown[] }>();
   readonly subscribed = new Set<string>();
   readonly unsubscribed = new Set<string>();
@@ -79,22 +92,25 @@ export class CodexNativeTestProcess implements NativeProcessPort {
   readonly instructions = new Map<string, string>();
   readonly turnInstructions: string[] = [];
   readonly turnCounts = new Map<string, number>();
-  stderrText = '';
-  alive = false;
+  override pid: number | undefined = 12345;
+  override killed = false;
+  override exitCode: number | null = null;
+  override signalCode: NodeJS.Signals | null = null;
   reconciled = false;
-  readonly stdin = new Writable({
+  override readonly stdin = new Writable({
     write: (data, _encoding, callback) => {
-      const request = JSON.parse(data.toString());
-      if (request.id !== undefined) {
+      const message: CodexNativeRequest | CodexClientResponse | { method: string; params?: unknown } = JSON.parse(data.toString());
+      if (!('method' in message)) {
+        const respond = this.pendingResponses.get(message.id);
+        this.pendingResponses.delete(message.id);
+        respond?.(message);
+        callback();
+        return;
+      }
+      if ('id' in message) {
+        const request = message;
         this.requests.push(request);
         this.harness.receivedRequest();
-        const respond = this.pendingResponses.get(String(request.id));
-        if (respond) {
-          this.pendingResponses.delete(String(request.id));
-          respond(request.result);
-          callback();
-          return;
-        }
         if (this.harness.requestOverride?.(this, request)) { callback(); return; }
         if (request.method === 'initialize') this.respond(request.id, {
           userAgent: 'codex/0.160.0',
@@ -105,36 +121,40 @@ export class CodexNativeTestProcess implements NativeProcessPort {
         if (request.method === 'plugin/reconcile' && this.harness.autoReconcile) this.completeReconcile();
         if (request.method === 'thread/start' || request.method === 'thread/resume') {
           const id = request.params.threadId ?? `thread-${++this.harness.threadCounter}`;
-          if (!this.subscribed.has(id)) this.instructions.set(id, request.params.baseInstructions);
+          if (!this.subscribed.has(id)) this.instructions.set(id, request.params.baseInstructions ?? '');
           this.subscribed.add(id);
           this.unsubscribed.delete(id);
           if (request.params.ephemeral) this.ephemeral.add(id);
           this.respond(request.id, { thread: { id, path: `/tmp/${id}.jsonl`, turns: [] }, sandbox: { type: 'dangerFullAccess' } });
         }
         if (request.method === 'turn/start') {
-          this.turnInstructions.push(this.instructions.get(request.params.threadId) ?? '');
-          const count = (this.turnCounts.get(request.params.threadId) ?? 0) + 1;
-          this.turnCounts.set(request.params.threadId, count);
-          const turn = { id: `turn-${request.params.threadId}${count === 1 ? '' : `-${count}`}`, status: 'inProgress', items: [] };
-          this.turns.set(request.params.threadId, turn);
+          const threadId = codexThreadId(request.params);
+          this.turnInstructions.push(this.instructions.get(threadId) ?? '');
+          const count = (this.turnCounts.get(threadId) ?? 0) + 1;
+          this.turnCounts.set(threadId, count);
+          const turn = { id: `turn-${threadId}${count === 1 ? '' : `-${count}`}`, status: 'inProgress', items: [] };
+          this.turns.set(threadId, turn);
           this.respond(request.id, { turn });
         }
         if (request.method === 'turn/interrupt') {
-          this.notify('turn/completed', { threadId: request.params.threadId, turn: { id: request.params.turnId || this.turns.get(request.params.threadId)?.id || 'startup', status: 'interrupted', items: [] } });
-          this.notify('thread/status/changed', { threadId: request.params.threadId, status: { type: 'idle' } });
+          const threadId = codexThreadId(request.params);
+          this.notify('turn/completed', { threadId, turn: { id: request.params.turnId || this.turns.get(threadId)?.id || 'startup', status: 'interrupted', items: [] } });
+          this.notify('thread/status/changed', { threadId, status: { type: 'idle' } });
           this.respond(request.id, {});
         }
         if (request.method === 'thread/read') {
-          if (request.params.includeTurns && this.ephemeral.has(request.params.threadId)) {
+          const threadId = codexThreadId(request.params);
+          if (request.params.includeTurns && this.ephemeral.has(threadId)) {
             this.stdout.write(`${JSON.stringify({ id: request.id, error: { code: -32600, message: 'ephemeral threads do not support includeTurns' } })}\n`);
           } else {
-            const turn = this.turns.get(request.params.threadId);
-            this.respond(request.id, { thread: { id: request.params.threadId, parentThreadId: this.parents.get(request.params.threadId) ?? null, status: { type: turn?.status === 'inProgress' ? 'active' : 'idle' }, ephemeral: this.ephemeral.has(request.params.threadId), turns: request.params.includeTurns && turn ? [turn] : [] } });
+            const turn = this.turns.get(threadId);
+            this.respond(request.id, { thread: { id: threadId, parentThreadId: this.parents.get(threadId) ?? null, status: { type: turn?.status === 'inProgress' ? 'active' : 'idle' }, ephemeral: this.ephemeral.has(threadId), turns: request.params.includeTurns && turn ? [turn] : [] } });
           }
         }
         if (request.method === 'thread/unsubscribe') {
-          this.subscribed.delete(request.params.threadId);
-          this.unsubscribed.add(request.params.threadId);
+          const threadId = codexThreadId(request.params);
+          this.subscribed.delete(threadId);
+          this.unsubscribed.add(threadId);
           this.respond(request.id, { status: 'unsubscribed' });
         }
         if (request.method === 'skills/list' && !this.harness.holdSkills) this.respond(request.id, {
@@ -143,21 +163,25 @@ export class CodexNativeTestProcess implements NativeProcessPort {
           }] : [] }],
         });
       }
-      if (request.id === undefined) this.notifications.push(request);
+      if (!('id' in message)) this.notifications.push(message);
       callback();
     },
   });
-  start(): void { this.alive = true; }
-  isAlive(): boolean { return this.alive; }
-  getStderrSnapshot(): string { return this.stderrText; }
-  onExit(callback: ExitCallback): void { this.exits.add(callback); }
-  offExit(callback: ExitCallback): void { this.exits.delete(callback); }
-  async shutdown(): Promise<void> { if (this.alive) this.exit(); }
-  exit(): void {
-    this.alive = false;
-    for (const callback of [...this.exits]) callback(null, null);
+  override readonly stdio: ChildProcessWithoutNullStreams['stdio'] = [this.stdin, this.stdout, this.stderr, null, null];
+  isAlive(): boolean { return this.exitCode === null && this.signalCode === null; }
+  override kill(signal: NodeJS.Signals | number = 'SIGTERM'): boolean {
+    this.killed = true;
+    this.exit(null, typeof signal === 'string' ? signal : 'SIGTERM');
+    return true;
   }
-  requestFromServer(id: string, method: string, params: unknown): Promise<unknown> {
+  exit(code: number | null = 0, signal: NodeJS.Signals | null = null): void {
+    if (!this.isAlive()) return;
+    this.exitCode = code;
+    this.signalCode = signal;
+    this.emit('exit', code, signal);
+    this.emit('close', code, signal);
+  }
+  requestFromServer(id: string, method: string, params: unknown): Promise<CodexClientResponse> {
     return new Promise(resolve => {
       this.pendingResponses.set(id, resolve);
       this.stdout.write(`${JSON.stringify({ id, method, params })}\n`);

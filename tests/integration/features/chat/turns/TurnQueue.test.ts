@@ -22,11 +22,12 @@ describe('TurnQueue', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(ProviderRegistry.getCapabilities).mockReturnValue({
+      ...nativeCapabilities,
       providerId: 'claude',
       supportsFork: true,
       supportsNativeHistory: true,
       supportsTurnSteer: true,
-    } as any);
+    });
 
   });
 
@@ -34,8 +35,9 @@ describe('TurnQueue', () => {
     let canStart = false;
     const fixture = (await createFixture({ canStartTurn: () => canStart }));
     const scheduled: Array<() => void> = [];
-    const timeoutSpy = vi.spyOn(window, 'setTimeout').mockImplementation((callback: any) => {
-      scheduled.push(callback);
+    const timeoutSpy = vi.spyOn(window, 'setTimeout').mockImplementation(callback => {
+      if (typeof callback !== 'function') throw new Error('Expected scheduled callback');
+      scheduled.push(() => callback());
       return scheduled.length as unknown as ReturnType<typeof window.setTimeout>;
     });
     fixture.controller.queue.enqueue(createQueuedMessage('queued during close', { text: 'queued during close' }));
@@ -82,7 +84,7 @@ describe('TurnQueue', () => {
     expect(fixture.state.queuedMessage).toMatchObject({
       content: 'definitely unsent',
     });
-    expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
   });
 
@@ -96,7 +98,7 @@ describe('TurnQueue', () => {
     await fixture.controller.queue.steerNow();
 
     expect(fixture.state.queuedMessage).toMatchObject({ content: 'staging failed' });
-    expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
     expect(Notice).toHaveBeenCalledWith(
       'Failed to steer the queued message. It is still available.',
@@ -116,7 +118,7 @@ describe('TurnQueue', () => {
     expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1);
     expect(fixture.state.queuedMessage).toBeNull();
     expect(fixture.input.value).toBe('');
-    expect((fixture.controller as any).steering.pendingSteersByConversation.get('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].get('conversation-1'))
       .toMatchObject({
         correlationState: 'pending',
         expectedProviderMessage: expect.objectContaining({ displayContent: 'possibly delivered' }),
@@ -140,7 +142,7 @@ describe('TurnQueue', () => {
 
     expect(fixture.state.queuedMessage).toBeNull();
     expect(fixture.input.value).toBe('');
-    expect((fixture.controller as any).steering.pendingSteersByConversation.get('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].get('conversation-1'))
       .toMatchObject({
         correlationState: 'pending',
         expectedProviderMessage: expect.objectContaining({
@@ -170,7 +172,7 @@ describe('TurnQueue', () => {
 
     expect(fixture.input.value).toBe('');
     expect(fixture.state.queuedMessage).toBeNull();
-    expect((fixture.controller as any).steering.pendingSteersByConversation.get('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].get('conversation-1'))
       .toMatchObject({
         correlationState: 'pending',
         providerDisposition: 'accepted-awaiting-correlation',
@@ -196,7 +198,7 @@ describe('TurnQueue', () => {
 
     expect(fixture.input.value).toBe('rejected while cancelling');
     expect(fixture.state.queuedMessage).toBeNull();
-    expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
   });
 
@@ -216,7 +218,7 @@ describe('TurnQueue', () => {
 
     expect(fixture.input.value).toBe('');
     expect(fixture.state.queuedMessage).toBeNull();
-    expect((fixture.controller as any).steering.pendingSteersByConversation.get('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].get('conversation-1'))
       .toMatchObject({
         correlationState: 'pending',
         providerDisposition: 'ambiguous-awaiting-reconciliation',
@@ -243,13 +245,13 @@ describe('TurnQueue', () => {
     expect(fixture.linkedContentController.commitSubmission).not.toHaveBeenCalled();
     expect(fixture.input.value).toBe('');
     expect(fixture.state.queuedMessage).toBeNull();
-    expect((fixture.controller as any).steering.pendingSteersByConversation.get('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].get('conversation-1'))
       .toMatchObject({
         providerDisposition: 'accepted-awaiting-correlation',
         retryState: 'blocked',
         uiState: 'cleared',
       });
-    expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-2'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-2'))
       .toBe(false);
   });
 
@@ -271,7 +273,7 @@ describe('TurnQueue', () => {
 
     expect(fixture.input.value).toBe('conversation B draft');
     expect(fixture.state.queuedMessage).toBeNull();
-    expect((fixture.controller as any).steering.pendingSteersByConversation.get('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].get('conversation-1'))
       .toMatchObject({
         providerDisposition: 'definitely-unsent',
         retryState: 'parked',
@@ -283,7 +285,7 @@ describe('TurnQueue', () => {
     fixture.controller.onConversationActivated();
 
     expect(fixture.input.value).toBe('conversation A retry');
-    expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
   });
 
@@ -305,12 +307,12 @@ describe('TurnQueue', () => {
 
     expect(fixture.state.queuedMessage).toMatchObject({ content: 'conversation B queued' });
     expect(fixture.input.value).toBe('');
-    expect((fixture.controller as any).steering.pendingSteersByConversation.get('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].get('conversation-1'))
       .toMatchObject({ retryState: 'parked' });
 
     fixture.controller.cancelStreaming();
     expect(fixture.input.value).toBe('conversation B queued');
-    expect((fixture.controller as any).steering.pendingSteersByConversation.get('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].get('conversation-1'))
       .toMatchObject({ retryState: 'parked' });
 
     fixture.state.currentConversationId = 'conversation-1';
@@ -354,7 +356,7 @@ describe('TurnQueue', () => {
     expect(fixture.state.queuedMessage).toBeNull();
     await vi.runOnlyPendingTimersAsync();
     expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
-    expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
   });
 
@@ -385,7 +387,7 @@ describe('TurnQueue', () => {
     expect(fixture.state.queuedMessage).toBeNull();
     await vi.runOnlyPendingTimersAsync();
     expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
-    expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
   });
 
@@ -403,7 +405,7 @@ describe('TurnQueue', () => {
 
     expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1);
     expect(fixture.state.queuedMessage).toMatchObject({ content: 'queued B' });
-    expect((fixture.controller as any).steering.pendingSteersByConversation.get('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].get('conversation-1'))
       .toMatchObject({
         expectedProviderMessage: expect.objectContaining({ displayContent: 'ambiguous A' }),
         providerDisposition: 'ambiguous-awaiting-reconciliation',
@@ -426,14 +428,14 @@ describe('TurnQueue', () => {
     await fixture.controller.sendMessage();
     await fixture.controller.queue.steerNow();
 
-    expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(true);
 
     mainResult.resolve({ accepted: true, status: 'completed' });
     await mainTurn;
 
     expect(fixture.input.value).toBe('');
-    expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
 
     fixture.holdResponse();
@@ -487,7 +489,7 @@ describe('TurnQueue', () => {
       ))).toMatchObject({ userMessageId: 'native-steer-user' });
       expect(fixture.input.value).toBe('');
       expect(fixture.state.queuedMessage).toBeNull();
-      expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
+      expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
         .toBe(false);
       expect(fixture.coordinator.releaseSteerCorrelation).toHaveBeenCalledWith(
         submission.submissionId,
@@ -529,7 +531,7 @@ describe('TurnQueue', () => {
       content: 'acknowledged before live event',
       userMessageId: 'native-after-ack',
     });
-    expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
 
     mainResult.resolve({ accepted: true, status: 'completed' });
@@ -556,7 +558,7 @@ describe('TurnQueue', () => {
     mainResult.resolve({ accepted: true, status: 'completed' });
     await mainTurn;
 
-    expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
     expect(fixture.coordinator.releaseSteerCorrelation).not.toHaveBeenCalledWith(
       submission.submissionId,
@@ -613,7 +615,7 @@ describe('TurnQueue', () => {
 
     expect(fixture.input.value).toBe('conversation B draft');
     expect(fixture.state.queuedMessage).toBeNull();
-    expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
     expect(fixture.coordinator.acceptSteerFromProviderEvent).toHaveBeenCalledTimes(1);
     expect(replacementCoordinator.acceptSteerFromProviderEvent).not.toHaveBeenCalled();
@@ -649,7 +651,7 @@ describe('TurnQueue', () => {
 
     mainResult.resolve({ accepted: true, status: 'completed' });
     await mainTurn;
-    expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
 
     fixture.holdResponse();
@@ -695,7 +697,7 @@ describe('TurnQueue', () => {
     ))).toHaveLength(1);
     expect(fixture.input.value).toBe('');
     expect(fixture.state.queuedMessage).toBeNull();
-    expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
   });
 
@@ -743,7 +745,7 @@ describe('TurnQueue', () => {
         content: 'ambiguous live steer',
         displayContent: 'ambiguous live steer',
       });
-    expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
 
     mainResult.resolve({ accepted: true, status: 'completed' });
@@ -767,7 +769,7 @@ describe('TurnQueue', () => {
 
     expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1);
     expect(fixture.input.value).toBe('retry after cleanup failure');
-    expect((fixture.controller as any).steering.pendingSteersByConversation.has('conversation-1'))
+    expect(fixture.controller['steering']['pendingSteersByConversation'].has('conversation-1'))
       .toBe(false);
   });
 
@@ -851,7 +853,7 @@ it('does not lose a cancel to native completion when a rejected steer settles af
 it('queuing another input must retain the running turn drain handle', async () => {
   const fixture = (await createFixture());
   const gate = deferred<{ accepted: boolean; status: string }>();
-  fixture.coordinator.execute.mockImplementationOnce(() => gate.promise as any);
+  fixture.coordinator.execute.mockImplementationOnce(() => gate.promise);
   const first = fixture.controller.sendMessage({ content: 'first turn' });
   await waitForCall(fixture.coordinator.execute);
   try {

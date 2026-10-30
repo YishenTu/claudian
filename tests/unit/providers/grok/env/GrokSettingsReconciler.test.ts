@@ -1,6 +1,7 @@
 import { grokEnvironmentHash } from '@test/helpers/providers/grokSettings';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import type { Conversation } from '@/core/types';
 import { grokSettingsReconciler } from '@/providers/grok/env/GrokSettingsReconciler';
@@ -142,8 +143,7 @@ describe('GrokSettingsReconciler', () => {
         },
       },
     };
-    (settings.providerConfigs as Record<string, any>).grok.environmentHash =
-      grokEnvironmentHash(settings);
+    setProviderConfig(settings, 'grok', { ...getProviderConfig(settings, 'grok'), environmentHash: grokEnvironmentHash(settings) });
 
     expect(grokSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
     expect(getGrokProviderSettings(settings).currentCatalog).toEqual(catalog('current-model'));

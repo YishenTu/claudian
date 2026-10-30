@@ -2,12 +2,12 @@
  * @vitest-environment jsdom
  * @vitest-environment-options {"customExportConditions":["node","node-addons"]}
  */
-
 import { EventEmitter, once } from 'node:events';
 
 import { axe } from '@test/helpers/accessibility';
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { NativePeer, rootFollow } from '@test/helpers/deepseek/NativePeer';
+import { nativeRequest } from '@test/helpers/deepseek/NativeRequest';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor,within } from '@testing-library/dom';
@@ -244,13 +244,13 @@ async function startChild(): Promise<(value: unknown) => void> {
   let childFollow: ((value: unknown) => void) | undefined;
   const ordinaryOpen = peer.onOpen;
   peer.onOpen = (endpoint, args, send) => {
-    if (endpoint === 'session/follow' && args.request.address.childSessionId === 'child') { childFollow = send; return; }
+    if (endpoint === 'session/follow' && nativeRequest(args).address!.childSessionId === 'child') { childFollow = send; return; }
     ordinaryOpen(endpoint, args, send);
   };
   peer.send('session/control', { type: 'projection', sessionId: 'root', key: 'subagentCatalog', value: [{ id: 'child', mode: 'continuable', label: 'child task' }] });
   peer.send('session/control', { type: 'projection', sessionId: 'child', key: 'subagent', value: { mode: 'continuable', label: 'child task', seq: 0 } });
   peer.send('$events', { type: 'emit', event: 'api-session/added', args: [{ sessionId: 'child', parentSessionId: 'root', origin: 'subagent', agentAvailable: true, running: true }] });
-  await waitFor(() => expect([...peer.streams.values()].map(stream => stream.args.request?.address?.childSessionId)).toContain('child'));
+  await waitFor(() => expect([...peer.streams.values()].filter(stream => stream.endpoint === 'session/follow').map(stream => nativeRequest(stream.args).address?.childSessionId)).toContain('child'));
   childFollow!({ type: 'snapshot', cursor: 0, records: [{ type: 'event', event: { type: 'turn/start', seq: 0, time, data: { turn: 0 } } }] });
   return childFollow!;
 }

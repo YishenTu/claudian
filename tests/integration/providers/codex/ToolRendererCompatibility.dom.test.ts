@@ -2,6 +2,7 @@
 import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
+import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
@@ -17,6 +18,7 @@ import { renderStoredToolCall, renderToolCall, updateToolCallResult } from '@/fe
 import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
+import { CODEX_PROVIDER_CAPABILITIES } from '@/providers/codex/capabilities';
 import { formatCodexQuestionReply } from '@/providers/codex/normalization/codexQuestionNormalization';
 import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 
@@ -406,10 +408,10 @@ it('submits a selected option and a free-text answer once, then restores both an
   expect(messages.find(message => message.role === 'user')?.displayContent).toBe('');
   const transcript = document.body.createDiv();
   const renderer = new MessageRenderer(
-    { app: {}, settings: {} } as any,
+    await createChatFeatureHost(),
     new Component(),
     transcript, undefined, undefined,
-    () => ({ providerId: 'codex', supportsConversationBranches: true }) as any,
+    () => CODEX_PROVIDER_CAPABILITIES,
     { navigate: async () => undefined, isBusy: () => false },
   );
   renderer.addMessage(messages.find(message => message.role === 'user')!);
@@ -544,11 +546,10 @@ it.each([false, true].flatMap(lateNative => ['text', 'thinking'].map(boundary =>
   });
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   const messagesEl = document.body.createDiv();
-  const vault = {
-    getAbstractFileByPath: vi.fn(() => null),
-    adapter: { list: vi.fn(async () => ({ files: [], folders: [] })) },
-  };
-  const plugin = { app: { vault }, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
+  const vault = plugin.app.vault;
+  vi.spyOn(vault, 'getAbstractFileByPath').mockReturnValue(null);
+  vi.spyOn(vault.adapter, 'list').mockResolvedValue({ files: [], folders: [] });
   const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
   const state = new ChatState();
   const subagents = new SubagentManager(() => undefined);

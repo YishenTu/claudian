@@ -24,9 +24,9 @@ it('previews and applies a one-line change to a 10,000-line selected note', asyn
   h.editorView.dispatch({ changes: { from: 0, to: h.editorView.state.doc.length, insert: before } });
   const lastLine = h.editorView.state.doc.line(h.editorView.state.doc.lines);
   h.editor.getSelection = () => before;
-  h.editor.getCursor = (which: string) => which === 'from'
+  h.editor.getCursor = (which = 'head') => which === 'from'
     ? { line: 0, ch: 0 } : { line: lastLine.number - 1, ch: lastLine.length };
-  h.editor.replaceRange = (text: string, from: { line: number; ch: number }, to: { line: number; ch: number }) => {
+  h.editor.replaceRange = (text, from, to = from) => {
     const doc = h.editorView.state.doc;
     h.editorView.dispatch({ changes: {
       from: doc.line(from.line + 1).from + from.ch,

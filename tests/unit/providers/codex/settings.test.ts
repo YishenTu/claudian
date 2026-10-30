@@ -114,9 +114,9 @@ describe('codex settings', () => {
 
   it('treats a null visibility filter as all discovered models', () => {
     const discoveredModels = [
-      { model: 'gpt-5.5' },
-      { model: 'gpt-5.4-mini' },
-    ] as any;
+      { ...TEST_CODEX_CATALOG[0], model: 'gpt-5.5' },
+      { ...TEST_CODEX_CATALOG[1], model: 'gpt-5.4-mini' },
+    ];
 
     expect(getVisibleCodexModelIds(null, discoveredModels)).toEqual([
       'gpt-5.5',

@@ -68,7 +68,7 @@ describe('SessionActions', () => {
     });
 
     const groupHeaders = [...container.querySelectorAll<HTMLElement>('.claudian-session-group-header')];
-    const pinnedHeader = groupHeaders.find((header: any) => (
+    const pinnedHeader = groupHeaders.find((header) => (
       header.getAttribute('data-content-path') === 'Projects/Plan.md'
     ))!;
     fireEvent.contextMenu(pinnedHeader, {preventDefault: vi.fn(), stopPropagation: vi.fn()});
@@ -80,7 +80,7 @@ describe('SessionActions', () => {
     await Promise.resolve();
     expect(onSetLinkedContentPinned).toHaveBeenCalledWith('Projects/Plan.md', false);
 
-    const regularHeader = groupHeaders.find((header: any) => (
+    const regularHeader = groupHeaders.find((header) => (
       header.getAttribute('data-content-path') === 'Projects/Other.md'
     ))!;
     fireEvent.contextMenu(regularHeader, {preventDefault: vi.fn(), stopPropagation: vi.fn()});
@@ -137,7 +137,7 @@ describe('SessionActions', () => {
     });
 
     const groupHeaders = [...container.querySelectorAll<HTMLElement>('.claudian-session-group-header')];
-    const planHeader = groupHeaders.find((header: any) => (
+    const planHeader = groupHeaders.find((header) => (
       header.getAttribute('data-content-path') === 'Projects/Plan.md'
     ))!;
     fireEvent.contextMenu(planHeader, {preventDefault: vi.fn(), stopPropagation: vi.fn()});

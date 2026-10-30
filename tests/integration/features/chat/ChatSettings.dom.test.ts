@@ -105,7 +105,7 @@ async function createChatHarness(settings: ClaudianSettings, id: ProviderId, sel
       recordConversationActivity: async () => undefined,
     },
     getActiveEnvironmentVariables: () => '',
-    getConversationSummary(id: string) { return (this as unknown as { getConversationSync: (id: string) => any }).getConversationSync(id); },
+    getConversationSummary(id: string) { return this.getConversationSync!(id); },
     getConversationSync: (conversationId: string) => conversations.find(entry => entry.id === conversationId),
     getConversationById: async (conversationId: string) => conversations.find(entry => entry.id === conversationId),
     getConversationList: () => conversations,

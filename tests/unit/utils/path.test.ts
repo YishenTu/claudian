@@ -1,3 +1,4 @@
+import { App } from 'obsidian';
 const actualModule0 = await import('fs');
 const actualModule1 = await import('os');
 const actualModule2 = await import('path');
@@ -21,15 +22,16 @@ import {
 
 const isWindows = process.platform === 'win32';
 
+// Adapter shape is deliberately variable: these cases exercise wrapped/malformed host adapters.
+function appWithAdapter(adapter: unknown): App {
+  const app = new App();
+  Object.defineProperty(app.vault, 'adapter', { value: adapter, configurable: true });
+  return app;
+}
+
 describe('getVaultPath', () => {
   it('returns basePath when adapter exposes the property directly', () => {
-    const mockApp = {
-      vault: {
-        adapter: {
-          basePath: '/Users/test/my-vault',
-        },
-      },
-    } as any;
+    const mockApp = appWithAdapter({ basePath: '/Users/test/my-vault' });
 
     expect(getVaultPath(mockApp)).toBe('/Users/test/my-vault');
   });
@@ -43,24 +45,24 @@ describe('getVaultPath', () => {
     );
 
     expect('basePath' in adapter).toBe(false);
-    expect(getVaultPath({ vault: { adapter } } as any)).toBe('/Users/test/wrapped-vault');
+    expect(getVaultPath(appWithAdapter(adapter))).toBe('/Users/test/wrapped-vault');
   });
 
   it('returns null when adapter does not expose a string basePath', () => {
-    expect(getVaultPath({ vault: { adapter: {} } } as any)).toBeNull();
-    expect(getVaultPath({ vault: { adapter: { basePath: 123 } } } as any)).toBeNull();
+    expect(getVaultPath(appWithAdapter({}))).toBeNull();
+    expect(getVaultPath(appWithAdapter({ basePath: 123 }))).toBeNull();
   });
 
   it('returns null when adapter is undefined', () => {
-    expect(getVaultPath({ vault: { adapter: undefined } } as any)).toBeNull();
+    expect(getVaultPath(appWithAdapter(undefined))).toBeNull();
   });
 
   it('preserves empty and platform-specific base paths', () => {
-    expect(getVaultPath({ vault: { adapter: { basePath: '' } } } as any)).toBe('');
-    expect(getVaultPath({ vault: { adapter: { basePath: '/Users/test/My Obsidian Vault' } } } as any)).toBe(
+    expect(getVaultPath(appWithAdapter({ basePath: '' }))).toBe('');
+    expect(getVaultPath(appWithAdapter({ basePath: '/Users/test/My Obsidian Vault' }))).toBe(
       '/Users/test/My Obsidian Vault',
     );
-    expect(getVaultPath({ vault: { adapter: { basePath: 'C:\\Users\\test\\vault' } } } as any)).toBe(
+    expect(getVaultPath(appWithAdapter({ basePath: 'C:\\Users\\test\\vault' }))).toBe(
       'C:\\Users\\test\\vault',
     );
   });
@@ -143,12 +145,12 @@ describe('normalizePathForFilesystem', () => {
   });
 
   it('returns empty string for null-like input', () => {
-    expect(normalizePathForFilesystem(null as any)).toBe('');
-    expect(normalizePathForFilesystem(undefined as any)).toBe('');
+    expect(normalizePathForFilesystem(null as unknown as string)).toBe('');
+    expect(normalizePathForFilesystem(undefined as unknown as string)).toBe('');
   });
 
   it('returns empty string for non-string input', () => {
-    expect(normalizePathForFilesystem(123 as any)).toBe('');
+    expect(normalizePathForFilesystem(123 as unknown as string)).toBe('');
   });
 
   it('normalizes a regular path', () => {
@@ -195,8 +197,8 @@ describe('normalizePathForComparison', () => {
   });
 
   it('returns empty string for null-like input', () => {
-    expect(normalizePathForComparison(null as any)).toBe('');
-    expect(normalizePathForComparison(undefined as any)).toBe('');
+    expect(normalizePathForComparison(null as unknown as string)).toBe('');
+    expect(normalizePathForComparison(undefined as unknown as string)).toBe('');
   });
 
   it('removes trailing slash', () => {
@@ -272,8 +274,8 @@ describe('isPathWithinDirectory', () => {
       return path.resolve(value);
     });
 
-    const realpathSpy = vi.spyOn(fs, 'realpathSync').mockImplementation(realpathMock as any);
-    (realpathSpy as any).native = realpathMock;
+    const realpathSpy = vi.spyOn(fs, 'realpathSync').mockImplementation(realpathMock);
+    Object.assign(realpathSpy, { native: realpathMock });
 
     expect(isPathWithinDirectory('/home/test/.claude/skills/link', '/home/test/.claude', '/vault')).toBe(false);
   });
@@ -494,19 +496,19 @@ describe('Vault boundary edge cases', () => {
   });
 
   it('should block symlink escapes for non-existent targets', () => {
-    vi.spyOn(fs, 'existsSync').mockImplementation((p: any) => {
+    vi.spyOn(fs, 'existsSync').mockImplementation((p) => {
       const s = String(p);
       return s === '/' || s === '/vault' || s === '/vault/export';
     });
 
-    const realpathSpy = vi.spyOn(fs, 'realpathSync').mockImplementation((p: any) => {
+    const realpathSpy = vi.spyOn(fs, 'realpathSync').mockImplementation((p) => {
       const s = String(p);
       if (s === '/') return '/';
       if (s === '/vault') return '/vault';
       if (s === '/vault/export') return '/tmp/export';
       throw new Error('ENOENT');
     });
-    (fs.realpathSync as any).native = realpathSpy;
+    Object.assign(fs.realpathSync, { native: realpathSpy });
 
     expect(isPathWithinVault('export/newfile.txt', '/vault')).toBe(false);
   });
@@ -521,13 +523,13 @@ describe('Windows separator normalization', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     // Force Windows-style separator to detect regressions when comparisons rely on path.sep.
     Object.defineProperty(path, 'sep', { value: '\\', writable: true });
-    vi.spyOn(path, 'isAbsolute').mockImplementation((p: any) => {
+    vi.spyOn(path, 'isAbsolute').mockImplementation((p) => {
       const value = String(p);
       return /^[A-Za-z]:[\\/]/.test(value) || originalIsAbsolute(value);
     });
 
-    const realpathSpy = vi.spyOn(fs, 'realpathSync').mockImplementation((p: any) => String(p) as any);
-    (fs.realpathSync as any).native = realpathSpy;
+    const realpathSpy = vi.spyOn(fs, 'realpathSync').mockImplementation((p) => String(p));
+    Object.assign(fs.realpathSync, { native: realpathSpy });
   });
 
   afterEach(() => {

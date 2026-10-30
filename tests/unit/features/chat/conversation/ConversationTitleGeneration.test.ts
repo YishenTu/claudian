@@ -1,11 +1,13 @@
 import '@/providers';
 
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
+import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { testDate } from '@test/helpers/testClock';
 import { Notice } from 'obsidian';
 import type { Mock } from 'vitest';
 
 import type { TitleGenerationService } from '@/core/providers/types';
+import type { ClaudianSettings } from '@/core/types';
 import {
   ConversationTitleGeneration,
   fallbackConversationTitle,
@@ -35,7 +37,7 @@ describe('fallbackConversationTitle', () => {
 
 describe('ConversationTitleGeneration', () => {
   let host: {
-    settings: Record<string, unknown>;
+    settings: ClaudianSettings;
     getConversationById: Mock;
     renameConversation: Mock;
     completeConversationTitleGeneration: Mock;
@@ -45,13 +47,14 @@ describe('ConversationTitleGeneration', () => {
   let titles: ConversationTitleGeneration;
 
   function createTitles(getService: () => TitleGenerationService | null): ConversationTitleGeneration {
-    return new ConversationTitleGeneration({ host: host as any, getService });
+    return new ConversationTitleGeneration({ host: host, getService });
   }
 
   beforeEach(() => {
     vi.clearAllMocks();
     host = {
       settings: {
+        ...DEFAULT_CLAUDIAN_SETTINGS,
         enableAutoTitleGeneration: true,
         titleGenerationModel: 'haiku',
         providerConfigs: { claude: claudeCatalogFixture(['haiku']) },
@@ -200,7 +203,7 @@ describe('ConversationTitleGeneration', () => {
       ],
     });
     service.generateTitle.mockImplementation(
-      async (convId: string, _user: string, callback: any) => {
+      async (convId: string, _user: string, callback: Parameters<TitleGenerationService['generateTitle']>[2]) => {
         await callback(convId, { success: true, title: 'New Generated Title' });
       },
     );
@@ -225,7 +228,7 @@ describe('ConversationTitleGeneration', () => {
 
     it('commits a failed generation against the captured title', async () => {
       service.generateTitle.mockImplementation(
-        async (_convId: string, _user: string, callback: any) => {
+        async (_convId: string, _user: string, callback: Parameters<TitleGenerationService['generateTitle']>[2]) => {
           await callback('conv-1', { success: false, error: 'Unavailable' });
         },
       );

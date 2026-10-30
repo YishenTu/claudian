@@ -11,6 +11,7 @@ import {
 } from '@test/helpers/features/inline-edit/InlineEditDOMHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
+import { MarkdownView, WorkspaceLeaf } from 'obsidian';
 import { MarkdownRenderer, Notice, TFile } from 'obsidian';
 import type { Mock } from 'vitest';
 
@@ -157,7 +158,7 @@ it.each(['cursor', 'selection'] as const)('rejects changed %s context during pro
     async initialize() { initialized = true; await gate; return {}; },
   });
   const modal = new InlineEditModal(
-    h.app, h.plugin, h.component, h.editor, { editor: h.editor } as any, context, h.notePath, h.owner,
+    h.app, h.plugin, h.component, h.editor, Object.assign(new MarkdownView(new WorkspaceLeaf()), { editor: h.editor }), context, h.notePath, h.owner,
   );
   const settled = vi.fn();
   const result = modal.openAndWait().then(settled);

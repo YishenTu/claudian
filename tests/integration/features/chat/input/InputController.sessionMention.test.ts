@@ -6,7 +6,7 @@ import { createFixture, deferred, waitForCall } from '@test/helpers/ChatInputHar
 import { testDate } from '@test/helpers/testClock';
 import { Notice } from 'obsidian';
 
-import type { ToolCallInfo } from '@/core/types';
+import type { Conversation, ToolCallInfo } from '@/core/types';
 import { FileContextManager } from '@/features/chat/composer/FileContextManager';
 import { cancelSelectedDestinationTurn } from '@/features/chat/tabs/TabInputEvents';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
@@ -190,7 +190,7 @@ it('restores a plain follow-up queued during failed snapshot preparation', async
 
 it('preserves submission order when a busy-main mention hydrates more slowly than a later plain send', async () => {
   const fixture = (await setup());
-  const gate = deferred<any>();
+  const gate = deferred<Conversation | null>();
   const source = await fixture.plugin.getConversationById(id);
   fixture.plugin.getConversationById.mockClear().mockReturnValue(gate.promise);
   fixture.holdResponse();
@@ -264,7 +264,7 @@ it('withdraws an expired async answer waiting behind busy-main reference prepara
 it('cancels and drains queued snapshot preparation before plugin shutdown finishes', async () => {
   const fixture = (await setup());
   const session = fixture.session;
-  const gate = deferred<any>();
+  const gate = deferred<Conversation | null>();
   const source = await fixture.plugin.getConversationById(id);
   fixture.plugin.getConversationById.mockClear().mockReturnValue(gate.promise);
   fixture.holdResponse();
@@ -285,7 +285,7 @@ it('cancels and drains queued snapshot preparation before plugin shutdown finish
 
 it.each([false, true])('restores prepared drafts when rewind begins during hydration (plain follow-up: %s)', async followUp => {
   const fixture = (await setup());
-  const hydration = deferred<any>();
+  const hydration = deferred<Conversation | null>();
   const initialization = deferred<boolean>();
   const source = await fixture.plugin.getConversationById(id);
   fixture.plugin.getConversationById.mockClear().mockReturnValue(hydration.promise);
@@ -354,7 +354,7 @@ it('dispatches an older queued message before a newer mention still hydrating', 
   const execute = holdNativeTurns();
   const fixture = (await setup());
   const source = await fixture.plugin.getConversationById(id);
-  const hydration = deferred<any>();
+  const hydration = deferred<Conversation | null>();
   fixture.plugin.getConversationById.mockClear().mockReturnValue(hydration.promise);
   await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   fixture.input.value = 'active turn';
@@ -392,7 +392,7 @@ it.each([false, true])('releases preparation ordering at admission while the nex
   const execute = holdNativeTurns();
   const fixture = (await setup());
   const source = await fixture.plugin.getConversationById(id);
-  const hydration = deferred<any>();
+  const hydration = deferred<Conversation | null>();
   fixture.plugin.getConversationById.mockClear().mockReturnValue(hydration.promise);
   await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   fixture.input.value = 'active turn';
@@ -460,7 +460,7 @@ it.each([false, true])('retains queued priority and captured selections through 
   vi.useFakeTimers();
   const fixture = (await setup());
   const source = await fixture.plugin.getConversationById(id);
-  const loading = deferred<any>();
+  const loading = deferred<Conversation | null>();
   fixture.plugin.getConversationById.mockClear().mockReturnValue(loading.promise);
   await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   fixture.input.value = 'active turn';
@@ -562,7 +562,7 @@ it('cancels a still-hydrating queued mention after the active turn completes', a
   const execute = holdNativeTurns();
   const fixture = (await setup());
   const source = await fixture.plugin.getConversationById(id);
-  const hydration = deferred<any>();
+  const hydration = deferred<Conversation | null>();
   fixture.plugin.getConversationById.mockClear().mockReturnValue(hydration.promise);
   await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   fixture.input.value = 'active turn';

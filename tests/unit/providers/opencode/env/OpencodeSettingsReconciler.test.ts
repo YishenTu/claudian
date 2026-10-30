@@ -55,7 +55,7 @@ describe('opencodeSettingsReconciler.reconcileModelWithEnvironment', () => {
         providerState: { providerSessionId: 'claude-session' },
         sessionId: 'claude-session',
       },
-    ] as any;
+    ].map(conversation => ({ title: 'Test', createdAt: 1, lastActivityAt: 1, ...conversation }));
 
     const result = opencodeSettingsReconciler.reconcileModelWithEnvironment(settings);
     const invalidated = opencodeSettingsReconciler.invalidateConversationSessions(conversations);
@@ -73,7 +73,7 @@ describe('opencodeSettingsReconciler.reconcileModelWithEnvironment', () => {
       nativeConversationContextEstablished: false,
       previousSessions: [{ sessionId: 'session-2' }],
     });
-    const fingerprint = (settings.providerConfigs as any).opencode.environmentHash;
+    const fingerprint = getProviderConfig(settings, 'opencode').environmentHash;
     expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
     expect(fingerprint).not.toContain('/new/opencode.db');
   });

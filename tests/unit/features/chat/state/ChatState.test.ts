@@ -1,43 +1,13 @@
+/** @vitest-environment jsdom */
 import { holdResponse } from '@test/helpers/ConversationPorts';
 
+import type { ToolCallInfo, UsageInfo } from '@/core/types';
+import type { ThinkingBlockState } from '@/features/chat/rendering/ThinkingBlockRenderer';
+import type { WriteEditState } from '@/features/chat/rendering/tools/WriteEditRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 
 describe('ChatState', () => {
-  const originalWindow = (globalThis as { window?: Window }).window;
-
-  beforeAll(() => {
-    const testWindow = {
-      setTimeout: (callback: () => void, timeout: number): number =>
-        globalThis.setTimeout(callback, timeout) as unknown as number,
-      clearTimeout: (handle: number): void => {
-        globalThis.clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
-      },
-      setInterval: (callback: () => void, timeout: number): number =>
-        globalThis.setInterval(callback, timeout) as unknown as number,
-      clearInterval: (handle: number): void => {
-        globalThis.clearInterval(handle as unknown as ReturnType<typeof setInterval>);
-      },
-    } as Window;
-
-    Object.defineProperty(globalThis, 'window', {
-      value: testWindow,
-      configurable: true,
-    });
-  });
-
-  afterAll(() => {
-    if (originalWindow === undefined) {
-      delete (globalThis as { window?: Window }).window;
-      return;
-    }
-
-    Object.defineProperty(globalThis, 'window', {
-      value: originalWindow,
-      configurable: true,
-    });
-  });
-
   describe('messages', () => {
     it('returns a copy of messages', () => {
       const chatState = new ChatState();
@@ -106,14 +76,14 @@ describe('ChatState', () => {
   describe('streaming DOM state', () => {
     it('stores currentContentEl', () => {
       const chatState = new ChatState();
-      const el = {} as HTMLElement;
+      const el = document.createElement('div');
       chatState.currentContentEl = el;
       expect(chatState.currentContentEl).toBe(el);
     });
 
     it('stores currentTextEl', () => {
       const chatState = new ChatState();
-      const el = {} as HTMLElement;
+      const el = document.createElement('div');
       chatState.currentTextEl = el;
       expect(chatState.currentTextEl).toBe(el);
     });
@@ -126,21 +96,24 @@ describe('ChatState', () => {
 
     it('stores currentThinkingState', () => {
       const chatState = new ChatState();
-      const state = { content: 'thinking' } as any;
+      const state: ThinkingBlockState = {
+        wrapperEl: document.createElement('div'), contentEl: document.createElement('div'),
+        labelEl: document.createElement('span'), timerInterval: null, isExpanded: false,
+      };
       chatState.currentThinkingState = state;
       expect(chatState.currentThinkingState).toBe(state);
     });
 
     it('stores thinkingEl', () => {
       const chatState = new ChatState();
-      const el = {} as HTMLElement;
+      const el = document.createElement('div');
       chatState.thinkingEl = el;
       expect(chatState.thinkingEl).toBe(el);
     });
 
     it('stores queueIndicatorEl', () => {
       const chatState = new ChatState();
-      const el = {} as HTMLElement;
+      const el = document.createElement('div');
       chatState.queueIndicatorEl = el;
       expect(chatState.queueIndicatorEl).toBe(el);
     });
@@ -149,21 +122,29 @@ describe('ChatState', () => {
   describe('tool tracking maps', () => {
     it('returns mutable toolCallElements map', () => {
       const chatState = new ChatState();
-      const el = {} as HTMLElement;
+      const el = document.createElement('div');
       chatState.toolCallElements.set('tool-1', el);
       expect(chatState.toolCallElements.get('tool-1')).toBe(el);
     });
 
     it('returns mutable writeEditStates map', () => {
       const chatState = new ChatState();
-      const state = {} as any;
+      const state: WriteEditState = {
+        wrapperEl: document.createElement('div'), contentEl: document.createElement('div'),
+        headerEl: document.createElement('div'), nameEl: document.createElement('span'),
+        summaryEl: document.createElement('span'), statsEl: document.createElement('span'),
+        statusEl: document.createElement('span'),
+        toolCall: { id: 'write', name: 'Write', input: {}, status: 'running' },
+        isExpanded: false, refreshHeader: () => undefined,
+      };
       chatState.writeEditStates.set('we-1', state);
       expect(chatState.writeEditStates.get('we-1')).toBe(state);
     });
 
     it('returns mutable pendingTools map', () => {
       const chatState = new ChatState();
-      const pt = { toolCall: {} as any, parentEl: null };
+      const toolCall: ToolCallInfo = { id: 'tool', name: 'Read', input: {}, status: 'running' };
+      const pt = { toolCall, parentEl: null };
       chatState.pendingTools.set('pt-1', pt);
       expect(chatState.pendingTools.get('pt-1')).toBe(pt);
     });
@@ -173,7 +154,7 @@ describe('ChatState', () => {
     it('fires onUsageChanged for a value and when cleared', () => {
       const onUsageChanged = vi.fn();
       const chatState = new ChatState({ onUsageChanged });
-      const usage = { inputTokens: 100, outputTokens: 50 } as any;
+      const usage: UsageInfo = { inputTokens: 100, contextWindow: 1000, contextTokens: 100, percentage: 10 };
       chatState.usage = usage;
       expect(onUsageChanged).toHaveBeenCalledWith(usage);
 

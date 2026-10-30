@@ -5,6 +5,8 @@ import { axe } from '@test/helpers/accessibility';
 import { createTabSession } from '@test/helpers/ConversationPorts';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
+import { buildSDKMessage } from '@test/helpers/sdkMessages';
 import { testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { Component, MarkdownRenderer } from 'obsidian';
@@ -13,6 +15,7 @@ import type { ProviderBackgroundEventScope, ProviderBackgroundOutputEvent } from
 import type { ChatMessage } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/providerOutputChunks';
+import { SessionEvents } from '@/features/chat/sessions/SessionEvents';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { StreamController } from '@/features/chat/turns/StreamController';
@@ -39,8 +42,8 @@ it.each([false, true])('renders a native notification and its follow-up through 
   const subagentManager = new SubagentManager(() => undefined);
   const stream = new StreamController({ plugin, state, renderer, subagentManager,
     getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
-  const session = new ClaudeExecutionSession({} as any, {
-    lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: '/vault', interactionPort: {} as any,
+  const session = new ClaudeExecutionSession((await createProviderHostFixture()).host.getRuntimeHost('claude'), {
+    lifecycle: 'persistent', nativePersistence: 'enabled', workingDirectory: '/vault', interactionPort: { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() },
   });
   let id = 0;
   const host = { state, renderer, stream, createMessageId: () => `message-${++id}` };
@@ -53,18 +56,18 @@ it.each([false, true])('renders a native notification and its follow-up through 
     }
   });
   try {
-    await session.handleNativeMessage({ type: 'system', subtype: 'task_notification', session_id: 'session', task_id: 'task',
-      status: 'completed', summary: 'There are 22 Markdown files.', uuid: 'completion' } as any, 1);
+    await session.handleNativeMessage(buildSDKMessage({ type: 'system', subtype: 'task_notification', session_id: 'session', task_id: 'task',
+      status: 'completed', summary: 'There are 22 Markdown files.', uuid: '00000000-0000-4000-8000-000000000001' }), 1);
     expect(within(messagesEl).queryByRole('button', { name: 'Task notification' })).toBeNull();
-    await session.handleNativeMessage({ type: 'user', parent_tool_use_id: 'agent', message: { content: [{ type: 'tool_result', tool_use_id: 'child-bash', content: '(Bash completed with no output)' }] } } as any, 1);
-    await session.handleNativeMessage({ type: 'system', subtype: 'init', session_id: 'session' } as any, 1);
-    if (echoed) await session.handleNativeMessage({ type: 'user', session_id: 'session', uuid: '00000000-0000-4000-8000-000000000001', parent_tool_use_id: null,
+    await session.handleNativeMessage(buildSDKMessage({ type: 'user', parent_tool_use_id: 'agent', message: { content: [{ type: 'tool_result', tool_use_id: 'child-bash', content: '(Bash completed with no output)' }] } }), 1);
+    await session.handleNativeMessage(buildSDKMessage({ type: 'system', subtype: 'init', session_id: 'session' }), 1);
+    if (echoed) await session.handleNativeMessage(buildSDKMessage({ type: 'user', session_id: 'session', uuid: '00000000-0000-4000-8000-000000000001', parent_tool_use_id: null,
       isReplay: true, isSynthetic: true, timestamp: testTime(), message: { role: 'user', content:
-        '<task-notification><task-id>task</task-id><status>completed</status><summary>There are 22 Markdown files.</summary></task-notification>' } }, 1);
-    await session.handleNativeMessage({ type: 'assistant', parent_tool_use_id: 'agent', message: { id: 'child', content: [{ type: 'text', text: 'Child output' }] } } as any, 1);
+        '<task-notification><task-id>task</task-id><status>completed</status><summary>There are 22 Markdown files.</summary></task-notification>' } }), 1);
+    await session.handleNativeMessage(buildSDKMessage({ type: 'assistant', parent_tool_use_id: 'agent', message: { id: 'child', content: [{ type: 'text', text: 'Child output' }] } }), 1);
     expect(within(messagesEl).queryByRole('button', { name: 'Task notification' }) !== null).toBe(echoed);
-    await session.handleNativeMessage({ type: 'assistant', message: { id: 'followup', content: [{ type: 'text', text: 'Agent complete: 22 files.' }] } } as any, 1);
-    await session.handleNativeMessage({ type: 'result', subtype: 'success' } as any, 1);
+    await session.handleNativeMessage(buildSDKMessage({ type: 'assistant', message: { id: 'followup', content: [{ type: 'text', text: 'Agent complete: 22 files.' }] } }), 1);
+    await session.handleNativeMessage(buildSDKMessage({ type: 'result', subtype: 'success' }), 1);
     await renderAutoTriggeredTurn(host, { spans: [{ events: output }], metadata: {} }, () => true);
 
     const header = within(messagesEl).getByRole('button', { name: 'Task notification' });
@@ -90,7 +93,7 @@ it.each([false, true])('renders a native notification and its follow-up through 
 it.each([false, true])('shows a session notification immediately with streaming=%s without disturbing the response', async (streaming) => {
   const { ProviderExecutionLifecycleRegistry } = await import('@/core/execution');
   const { ChatExecutionCoordinator } = await import('@/features/chat/execution/ChatExecutionCoordinator');
-  const { enqueueTabSessionEvent } = await import('@test/helpers/features/chat/SessionEventsHarness');
+  const { createTabMessageId } = await import('@test/helpers/features/chat/SessionEventsHarness');
   const messagesEl = document.body.createDiv();
   const plugin = await createChatFeatureHost({ settings: { mediaFolder: '', showMessageTimestamps: false } });
   const renderer = new MessageRenderer(plugin,
@@ -101,18 +104,20 @@ it.each([false, true])('shows a session notification immediately with streaming=
     getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
   const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   const backend = new FakeSideBackend();
-  const coordinator = new ChatExecutionCoordinator({
+  const coordinator: InstanceType<typeof ChatExecutionCoordinator> = new ChatExecutionCoordinator({
     lifecycleRegistry, resolveBackend: () => backend,
-    persistence: { persistExecutionSnapshot: async () => true, registerExecutionBinding: () => undefined, releaseExecutionBinding: () => undefined } as any,
-    interactionPort: {} as any, workingDirectory: '/vault', createId: () => 'binding',
+    persistence: { persistExecutionSnapshot: async () => true, registerExecutionBinding: () => undefined, releaseExecutionBinding: () => undefined, assertConversationExecutionAuthority: async () => undefined, recordConversationActivity: async () => undefined },
+    interactionPort: { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() }, workingDirectory: '/vault', createId: () => 'binding',
     resolveMissingProviderSession: async () => 'not_found',
-    onSessionEvent: (event, context) => enqueueTabSessionEvent(tab, plugin, event, context),
+    onSessionEvent: (event, context) => events.enqueue(event, context),
   });
   const session = createTabSession({ id: 'tab', conversationId: 'conversation', draftModel: null,
-    providerId: 'claude', lifecycleState: 'ready' } as any, coordinator);
-  const tab = { state, renderer, session, executionCoordinator: coordinator, lifecycleState: 'ready',
-    dom: { contentEl: messagesEl }, services: { subagentManager: subagents },
-    controllers: { streamController: stream, conversationController: { save: async () => undefined } } } as any;
+    providerId: 'claude', lifecycleState: 'open' }, coordinator);
+  const events: SessionEvents = new SessionEvents({ state, renderer, stream, session: session.runtime, executionCoordinator: coordinator,
+    persistence: { save: async () => undefined, scheduleProgressSave: () => undefined },
+    createMessageId: createTabMessageId, updatePermissionMode: async () => undefined,
+    receiveSuggestion: () => undefined, discardSuggestion: () => undefined, canAcceptBackgroundWork: () => true,
+  });
   try {
     await coordinator.bindConversation({ conversationId: 'conversation', providerId: 'claude' });
     await coordinator.prepare();
@@ -171,7 +176,7 @@ it.each(['text', 'image', 'image-only'])('keeps preceding output before a %s pro
   const target = reserveBackgroundTurn({ state, renderer, createMessageId: () => 'automatic' });
   const user: ChatMessage = { id: 'followup', role: 'user', timestamp: 2,
     content: kind === 'image-only' ? '' : 'Follow up',
-    images: kind === 'text' ? undefined : [{ id: 'image', name: 'example.png', mediaType: 'image/png', data: 'aW1hZ2U=', size: 5, source: 'file' } as any],
+    images: kind === 'text' ? undefined : [{ id: 'image', name: 'example.png', mediaType: 'image/png', data: 'aW1hZ2U=', size: 5, source: 'file' }],
   };
   const response: ChatMessage = { id: 'response', role: 'assistant', timestamp: 3, content: '', contentBlocks: [] };
   state.addMessage(user); renderer.addMessage(user);

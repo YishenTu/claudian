@@ -211,6 +211,27 @@ test('test imports require declared packages, including Vitest factory imports',
   }
 });
 
+test('test suites and shared fixtures reject explicit any but accept unknown', async () => {
+  const eslint = new ESLint();
+  const rule = '@typescript-eslint/no-explicit-any';
+  for (const filePath of [
+    'tests/unit/utils/example.test.ts',
+    'tests/integration/app/example.test.ts',
+    'tests/helpers/example.ts',
+    'tests/__mocks__/example.ts',
+  ]) {
+    for (const code of [
+      'export type Fixture = any;',
+      'export const fixture = {} as any;',
+    ]) {
+      const [result] = await eslint.lintText(code, { filePath });
+      assert.ok(result.messages.some(message => message.ruleId === rule), `${filePath}: ${code}`);
+    }
+    const [result] = await eslint.lintText('export type Fixture = unknown;', { filePath });
+    assert.equal(result.messages.filter(message => message.ruleId === rule).length, 0, filePath);
+  }
+});
+
 test('tests use the shared Obsidian fake and seeded installation key instead of per-file module mocks', async () => {
   const eslint = new ESLint();
   const filePaths = [

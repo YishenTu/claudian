@@ -9,7 +9,7 @@ describe('i18n/constants', () => {
   });
 
   it('getLocaleInfo returns undefined for unknown locale', () => {
-    expect(getLocaleInfo('xx' as any)).toBeUndefined();
+    expect(getLocaleInfo('xx')).toBeUndefined();
   });
 });
 

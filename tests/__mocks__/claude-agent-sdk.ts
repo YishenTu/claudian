@@ -3,32 +3,8 @@ import type { Mock } from 'vitest';
 
 // Mock for @anthropic-ai/claude-agent-sdk
 
-export interface HookCallbackMatcher {
-  matcher?: string;
-  hooks: Array<(hookInput: any, toolUseID: string, options: any) => Promise<{ continue: boolean; hookSpecificOutput?: any }>>;
-}
-
-export interface SpawnOptions {
-  command: string;
-  args: string[];
-  cwd?: string;
-  env: {
-    [envVar: string]: string | undefined;
-  };
-  signal: AbortSignal;
-}
-
-export interface SpawnedProcess {
-  stdin: NodeJS.WritableStream;
-  stdout: NodeJS.ReadableStream;
-  stderr?: NodeJS.ReadableStream | null;
-  killed: boolean;
-  exitCode: number | null;
-  kill: (signal?: NodeJS.Signals) => void;
-  on: (event: 'exit' | 'error', listener: (...args: any[]) => void) => void;
-  once: (event: 'exit' | 'error', listener: (...args: any[]) => void) => void;
-  off: (event: 'exit' | 'error', listener: (...args: any[]) => void) => void;
-}
+export type { HookCallbackMatcher, SpawnedProcess,SpawnOptions } from '@anthropic-ai/claude-agent-sdk';
+import type { HookCallbackMatcher, SpawnedProcess,SpawnOptions } from '@anthropic-ai/claude-agent-sdk';
 
 export interface Options {
   cwd?: string;
@@ -122,7 +98,7 @@ const mockMessages = [
   { type: 'result', subtype: 'success', result: 'completed' },
 ];
 
-let customMockMessages: any[] | null = null;
+let customMockMessages: unknown[] | null = null;
 let appendResultMessage = true;
 let lastOptions: Options | undefined;
 let lastPrompt: unknown;
@@ -136,7 +112,7 @@ let mockSupportedCommandsImplementation: (() => Promise<Array<{
 let mockSupportedModels: ModelInfo[] = [];
 let mockOutputStyles: string[] = [];
 let mockContextUsage: { rawMaxTokens: number } | null = null;
-let lastResponse: (AsyncGenerator<any> & {
+let lastResponse: (AsyncGenerator<unknown> & {
   interrupt: Mock<Query['interrupt']>;
   setModel: Mock<Query['setModel']>;
   setMaxThinkingTokens: Mock;
@@ -153,7 +129,7 @@ let queryCallCount = 0;
 let receivedMessages: unknown[] = [];
 
 // Allow tests to set custom mock messages
-export function setMockMessages(messages: any[], options?: { appendResult?: boolean }) {
+export function setMockMessages(messages: unknown[], options?: { appendResult?: boolean }) {
   customMockMessages = messages;
   appendResultMessage = options?.appendResult ?? true;
 }
@@ -229,29 +205,31 @@ export function getLastResponse(): typeof lastResponse {
 }
 
 // Mock query function that returns an async generator
-function isAsyncIterable(value: any): value is AsyncIterable<any> {
-  return !!value && typeof value[Symbol.asyncIterator] === 'function';
+function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
+  return !!value && typeof value === 'object' && Symbol.asyncIterator in value && typeof value[Symbol.asyncIterator] === 'function';
 }
 
-function getMessagesForPrompt(): any[] {
+function getMessagesForPrompt(): unknown[] {
   const baseMessages = customMockMessages || mockMessages;
   const messages = [...baseMessages];
-  if (appendResultMessage && !messages.some((msg) => msg.type === 'result')) {
+  if (appendResultMessage && !messages.some((msg) => msg !== null && typeof msg === 'object' && 'type' in msg && msg.type === 'result')) {
     messages.push({ type: 'result', subtype: 'success' });
   }
   return messages;
 }
 
 // Pending entries act as barriers; one that resolves to null emits nothing.
-async function* emitMessages(messages: any[]) {
+async function* emitMessages(messages: unknown[]) {
   for (const pendingMessage of messages) {
     const message = await pendingMessage;
-    if (message?.type === 'system' && message.subtype === 'commands_changed') mockSupportedCommands = message.commands;
+    if (message && typeof message === 'object' && 'type' in message && message.type === 'system' && 'subtype' in message && message.subtype === 'commands_changed' && 'commands' in message) {
+      mockSupportedCommands = message.commands as Awaited<ReturnType<Query['supportedCommands']>>;
+    }
     if (message != null) yield message;
   }
 }
 
-export function query({ prompt, options }: { prompt: any; options: Options }): AsyncGenerator<any> & Pick<Query, 'interrupt'> {
+export function query({ prompt, options }: { prompt: string | AsyncIterable<SDKUserMessage>; options: Options }): AsyncGenerator<unknown> & Pick<Query, 'interrupt'> {
   lastOptions = options;
   lastPrompt = prompt;
   queryCallCount++;
@@ -270,7 +248,7 @@ export function query({ prompt, options }: { prompt: any; options: Options }): A
     yield* emitMessages(messages);
   };
 
-  const gen = generator() as AsyncGenerator<any> & {
+  const gen = generator() as AsyncGenerator<unknown> & {
     interrupt: Mock<Query['interrupt']>;
     setModel: Mock<Query['setModel']>;
     setMaxThinkingTokens: Mock;

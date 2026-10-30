@@ -2,6 +2,8 @@
 import { resolve } from 'node:path';
 
 import { NativePeer } from '@test/helpers/deepseek/NativePeer';
+import { nativeRequest, nativeSessionId } from '@test/helpers/deepseek/NativeRequest';
+import { conversationRecord } from '@test/helpers/features/chat/ConversationFixture';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 
 import { createDeepSeekWorkspaceServices, deepseekWorkspaceRegistration, type DeepSeekWorkspaceServices } from '@/providers/deepseek/app/DeepSeekWorkspaceServices';
@@ -81,26 +83,26 @@ it('lists vault skills for the dropdown from saved native sessions without activ
   ];
   const presets: Record<string, string> = { 'older-chat': 'claudian', elsewhere: 'claudian', title: 'claudian-passive', child: 'claudian', chat: 'claudian', saved: 'claudian-code', relocated: 'claudian' };
   let listFailure: Error | undefined;
-  peer.onCall = (method, args: any) => {
+  peer.onCall = (method, args) => {
     if (method === 'session/list') { if (listFailure) throw listFailure; return { items: rows }; }
-    if (method === 'session/projections') return { asOfSeq: 1, values: { agentPreset: presets[args.request.sessionId] } };
-    if (method === 'skills/list') return { skills: [{ name: `skill-of-${args.request.sessionId}`, description: 'Native skill', modelInvocable: true }] };
+    if (method === 'session/projections') return { asOfSeq: 1, values: { agentPreset: presets[nativeSessionId(args)] } };
+    if (method === 'skills/list') return { skills: [{ name: `skill-of-${nativeRequest(args).sessionId}`, description: 'Native skill', modelInvocable: true }] };
     throw new Error(`Skill discovery called ${method}.`);
   };
   let workspace: DeepSeekWorkspaceServices | undefined;
   try {
     workspace = createDeepSeekWorkspaceServices(host, start);
-    const load = (conversation: any, allowIsolatedMetadataCreation = true) => workspace!.commandLoader!.loadCommands({ allowIsolatedMetadataCreation, conversation, plugin: host });
+    const load = (conversation: import('@/core/providers/types').ProviderCommandLoaderContext['conversation'], allowIsolatedMetadataCreation = true) => workspace!.commandLoader!.loadCommands({ allowIsolatedMetadataCreation, conversation, plugin: host });
     // Background tabs never start discovery work.
     expect(await load(null, false)).toMatchObject({ status: 'requires-session' });
     expect(start).not.toHaveBeenCalled();
     const home = getDeepSeekHome(process.env, process.cwd());
-    const saved = { sessionId: 'saved', providerState: { schemaVersion: 1, home, profile: 'web', preset: 'claudian-code' } };
+    const saved = conversationRecord('saved', { sessionId: 'saved', providerState: { schemaVersion: 1, home, profile: 'web', preset: 'claudian-code' } });
     expect(await load(saved)).toMatchObject({ status: 'ready', items: [{ name: 'skill-of-saved', kind: 'skill' }] });
     // Both chat presets mount the same skills (code mode changes tools only); a passive root is never the catalog.
     expect(await load(null)).toMatchObject({ status: 'ready', items: [{ name: 'skill-of-chat', kind: 'skill' }] });
     // A conversation saved against another native store cannot name a session in this Host's store.
-    const relocated = { sessionId: 'relocated', providerState: { schemaVersion: 1, home: `${home}-relocated`, profile: 'web', preset: 'claudian' } };
+    const relocated = conversationRecord('relocated', { sessionId: 'relocated', providerState: { schemaVersion: 1, home: `${home}-relocated`, profile: 'web', preset: 'claudian' } });
     expect(await load(relocated)).toMatchObject({ status: 'ready', items: [{ name: 'skill-of-chat', kind: 'skill' }] });
     listFailure = new Error('native store busy');
     expect(await load(null)).toEqual({ status: 'error', message: 'Could not load DeepSeek skills.', retryable: true });
@@ -161,8 +163,8 @@ it('mirrors Claudian archive state onto native sessions in this Host store', asy
   const start = vi.fn(async () => ({ profile: 'web' as const, client: await peer.connect(), onExit: () => () => {}, dispose: async () => {}, writePrompt: async () => {}, removePrompt: async () => {}, writeCodeMode: async () => {}, readEphemeralReady: async () => false, offerEphemeralFork: async () => async () => {} }));
   peer.onCall = (method, args) => {
     if (method === 'session/list') return { items: [] };
-    if (args.request?.sessionId === 'gone') throw Object.assign(new Error('no such session'), { code: 'session/not-found' });
-    if (args.request?.sessionId === 'broken') throw new Error('disk full');
+    if (nativeRequest(args)?.sessionId === 'gone') throw Object.assign(new Error('no such session'), { code: 'session/not-found' });
+    if (nativeRequest(args)?.sessionId === 'broken') throw new Error('disk full');
     return { archivedSessionIds: [] };
   };
   const home = getDeepSeekHome(process.env, process.cwd());
@@ -180,7 +182,7 @@ it('mirrors Claudian archive state onto native sessions in this Host store', asy
       change('gone', true),
       change('restored', false),
     ]);
-    const mutations = () => peer.calls.filter(call => call.method.startsWith('workspace/')).map(call => [call.method, call.args.request]);
+    const mutations = () => peer.calls.filter(call => call.method.startsWith('workspace/')).map(call => [call.method, nativeRequest(call.args)]);
     expect(mutations()).toEqual([
       // Claudian archives only closed sessions; leftover native work must not refuse the archive.
       ['workspace/archiveSession', { sessionId: 'chat', stopActivity: true }],

@@ -1,5 +1,5 @@
-import type { ChildProcess } from 'child_process';
-import { EventEmitter, Readable, Writable } from 'stream';
+import type { CodexNativeTestProcess} from '@test/helpers/providers/codex/CodexRuntimeHarness';
+import { CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
 
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 
@@ -40,29 +40,20 @@ function createLaunchSpec(overrides: Partial<CodexLaunchSpec> = {}): CodexLaunch
   };
 }
 
-function createMockProcess(): ChildProcess {
-  const proc = new EventEmitter() as unknown as ChildProcess;
-  (proc as any).stdin = new Writable({ write: (_chunk, _enc, cb) => cb() });
-  (proc as any).stdout = new Readable({ read() {} });
-  (proc as any).stderr = new Readable({ read() {} });
-  (proc as any).pid = 12345;
-  (proc as any).killed = false;
-  (proc as any).kill = vi.fn().mockReturnValue(true);
-  return proc;
-}
-
 describe('CodexAppServerProcess', () => {
   const originalPlatform = process.platform;
-  let mockProc: ChildProcess;
+  let mockProc: CodexNativeTestProcess;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockProc = createMockProcess();
+    mockProc = new CodexRuntimeHarness().createProcess();
+    vi.spyOn(mockProc, 'kill').mockReturnValue(true);
     mockSpawn.mockReturnValue(mockProc);
   });
 
   afterEach(() => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
+    vi.restoreAllMocks();
   });
 
   describe('spawn', () => {
@@ -254,7 +245,7 @@ describe('CodexAppServerProcess', () => {
 
   describe('error handling', () => {
     it('marks process as not alive on spawn error', () => {
-      (mockProc as any).pid = undefined;
+      mockProc.pid = undefined;
       const server = new CodexAppServerProcess(createLaunchSpec());
       server.start();
 

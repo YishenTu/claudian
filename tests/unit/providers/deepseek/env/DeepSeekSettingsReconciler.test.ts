@@ -1,3 +1,4 @@
+import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import type { Conversation } from '@/core/types';
 import { deepseekSettingsReconciler } from '@/providers/deepseek/env/DeepSeekSettingsReconciler';
@@ -40,12 +41,12 @@ describe('DeepSeekSettingsReconciler', () => {
     expect(reconcile(settings)).toEqual(changed);
     const legacy = getDeepSeekProviderSettings(settings).environmentHash;
 
-    (settings.providerConfigs as Record<string, any>).deepseek.cliPath = '/legacy/dsh-2';
+    setProviderConfig(settings, 'deepseek', { ...getProviderConfig(settings, 'deepseek'), cliPath: '/legacy/dsh-2' });
     expect(reconcile(settings)).toEqual(changed);
     const legacyChanged = getDeepSeekProviderSettings(settings).environmentHash;
     expect(legacyChanged).not.toBe(legacy);
 
-    (settings.providerConfigs as Record<string, any>).deepseek.cliPathsByHost['device:other'] = '/other/dsh-2';
+    setProviderConfig(settings, 'deepseek', { ...getProviderConfig(settings, 'deepseek'), cliPathsByHost: { 'device:other': '/other/dsh-2' } });
     expect(reconcile(settings)).toEqual(unchanged);
 
     updateDeepSeekProviderSettings(settings, { cliPath: '/opt/dsh' });

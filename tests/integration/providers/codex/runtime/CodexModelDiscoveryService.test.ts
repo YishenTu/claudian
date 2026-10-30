@@ -3,14 +3,11 @@ import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
 
 import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
-import type { CodexLaunchSpec } from '@/providers/codex/runtime/codexLaunchTypes';
 import { CodexModelDiscoveryService } from '@/providers/codex/runtime/CodexModelDiscoveryService';
 
 const native = new CodexRuntimeHarness();
 let launchError: Error | undefined;
-vi.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
-  CodexAppServerProcess: vi.fn().mockImplementation(function (spec: CodexLaunchSpec) { return native.createProcess(spec.target); }),
-}));
+vi.mock('cross-spawn', () => ({ default: vi.fn(() => native.createProcess()) }));
 let vault: DesktopVault;
 let fixture: Awaited<ReturnType<typeof createProviderHostFixture>>;
 let runtime: CodexAppServerRuntime;
@@ -78,7 +75,7 @@ it('loads and normalizes every native model page without retaining a server leas
 it('surfaces native error and stderr diagnostics without retaining the failed lease', async () => {
   native.requestOverride = (process, request) => {
     if (request.method !== 'model/list') return false;
-    process.stderrText = 'codex app-server stderr';
+    process.stderr.write('codex app-server stderr');
     process.respondError(request.id, 'Method not found', -32601);
     return true;
   };

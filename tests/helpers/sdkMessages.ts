@@ -1,13 +1,18 @@
 import type {
   SDKAssistantMessage,
   SDKAuthStatusMessage,
+  SDKBackgroundTasksChangedMessage,
   SDKCompactBoundaryMessage,
   SDKMessage,
   SDKPartialAssistantMessage,
+  SDKPermissionDeniedMessage,
   SDKResultError,
   SDKResultSuccess,
   SDKStatusMessage,
   SDKSystemMessage,
+  SDKTaskNotificationMessage,
+  SDKTaskStartedMessage,
+  SDKTaskUpdatedMessage,
   SDKToolProgressMessage,
   SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
@@ -80,7 +85,15 @@ export type AuthStatusMessageInput = {
   type: 'auth_status';
 } & Partial<Omit<SDKAuthStatusMessage, 'type'>>;
 
+type NativeSystemInput<T extends { type: 'system'; subtype: string }> =
+  Pick<T, 'type' | 'subtype'> & Partial<Omit<T, 'type' | 'subtype'>>;
+
 export type SDKTestMessageInput =
+  | NativeSystemInput<SDKTaskStartedMessage>
+  | NativeSystemInput<SDKTaskUpdatedMessage>
+  | NativeSystemInput<SDKTaskNotificationMessage>
+  | NativeSystemInput<SDKBackgroundTasksChangedMessage>
+  | NativeSystemInput<SDKPermissionDeniedMessage>
   | SystemInitMessageInput
   | SystemStatusMessageInput
   | CompactBoundaryMessageInput
@@ -260,7 +273,12 @@ export function buildSDKMessage(input: SDKTestMessageInput): SDKMessage {
     case 'system':
       if (input.subtype === 'init') return buildSystemInitMessage(input);
       if (input.subtype === 'status') return buildSystemStatusMessage(input);
-      return buildCompactBoundaryMessage(input);
+      if (input.subtype === 'compact_boundary') return buildCompactBoundaryMessage(input);
+      if (input.subtype === 'task_started') return { task_id: 'task', description: '', uuid: TEST_UUID, session_id: TEST_SESSION_ID, ...input };
+      if (input.subtype === 'task_updated') return { task_id: 'task', patch: {}, uuid: TEST_UUID, session_id: TEST_SESSION_ID, ...input };
+      if (input.subtype === 'task_notification') return { task_id: 'task', status: 'completed', output_file: '', summary: '', uuid: TEST_UUID, session_id: TEST_SESSION_ID, ...input };
+      if (input.subtype === 'background_tasks_changed') return { tasks: [], uuid: TEST_UUID, session_id: TEST_SESSION_ID, ...input };
+      return { tool_name: '', tool_use_id: '', message: '', uuid: TEST_UUID, session_id: TEST_SESSION_ID, ...input };
     case 'assistant':
       return buildAssistantMessage(input);
     case 'user':

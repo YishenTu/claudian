@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 import { fireEvent } from '@testing-library/dom';
 import { setIcon } from 'obsidian';
-import type { Mock } from 'vitest';
 
 import type { SubagentInfo, ToolCallInfo } from '@/core/types';
 import {
@@ -13,7 +12,7 @@ import {
   updateSubagentBlock,
 } from '@/features/chat/subagents/SubagentRenderer';
 
-const getTextByClass = (el: HTMLElement, cls: string): string[] => {
+const getTextByClass = (el: Element, cls: string): string[] => {
   const results: string[] = [];
   const visit = (node: Element) => {
     if (node.hasClass(cls)) {
@@ -36,15 +35,15 @@ describe('Sync Subagent Renderer', () => {
   describe('createSubagentBlock', () => {
 
     it('should show description in label', () => {
-      const state = createSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'My task description' } });
+      const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'My task description' } });
 
       expect(state.labelEl.textContent).toBe('My task description');
     });
 
     it('should not show a tool count badge in the header', () => {
-      const state = createSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+      const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
 
-      expect(getTextByClass(state.wrapperEl as any, 'claudian-subagent-count')).toEqual([]);
+      expect(getTextByClass(state.wrapperEl, 'claudian-subagent-count')).toEqual([]);
     });
   });
 
@@ -58,25 +57,25 @@ describe('Sync Subagent Renderer', () => {
         isExpanded: false,
       };
 
-      const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
-      const headerEl = (wrapperEl as any).children[0];
-      const contentEl = (wrapperEl as any).children[1];
+      const wrapperEl = renderStoredSubagent(parentEl, subagent);
+      const headerEl = (wrapperEl).children[0];
+      const contentEl = (wrapperEl).children[1];
 
       // Initially collapsed
-      expect((wrapperEl as any).hasClass('expanded')).toBe(false);
+      expect((wrapperEl).hasClass('expanded')).toBe(false);
       expect(contentEl.classList.contains('claudian-hidden')).toBe(true);
 
       expect(headerEl.getAttribute('aria-expanded')).toBe('false');
 
       // Click to expand
-      headerEl.click();
-      expect((wrapperEl as any).hasClass('expanded')).toBe(true);
+      fireEvent.click(headerEl);
+      expect((wrapperEl).hasClass('expanded')).toBe(true);
       expect(contentEl.hasClass('claudian-hidden')).toBe(false);
       expect(headerEl.getAttribute('aria-expanded')).toBe('true');
 
       // Click to collapse
-      headerEl.click();
-      expect((wrapperEl as any).hasClass('expanded')).toBe(false);
+      fireEvent.click(headerEl);
+      expect((wrapperEl).hasClass('expanded')).toBe(false);
       expect(contentEl.classList.contains('claudian-hidden')).toBe(true);
       expect(headerEl.getAttribute('aria-expanded')).toBe('false');
     });
@@ -100,20 +99,20 @@ describe('keyboard navigation', () => {
       isExpanded: false,
     };
 
-    const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
-    const headerEl = (wrapperEl as any).children[0];
+    const wrapperEl = renderStoredSubagent(parentEl, subagent);
+    const headerEl = (wrapperEl).children[0];
 
     // Simulate Enter key
     const enterEvent = { key: 'Enter' };
     fireEvent.keyDown(headerEl, {...enterEvent});
 
-    expect((wrapperEl as any).hasClass('expanded')).toBe(true);
+    expect((wrapperEl).hasClass('expanded')).toBe(true);
 
     // Simulate Space key to collapse
     const spaceEvent = { key: ' ' };
     fireEvent.keyDown(headerEl, {...spaceEvent});
 
-    expect((wrapperEl as any).hasClass('expanded')).toBe(false);
+    expect((wrapperEl).hasClass('expanded')).toBe(false);
   });
 });
 
@@ -126,27 +125,27 @@ describe('Async Subagent Renderer', () => {
   });
 
   it('shows label immediately and initializing status text', () => {
-    const state = createAsyncSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job' } });
+    const state = createAsyncSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job' } });
 
     expect(state.labelEl.textContent).toBe('Background job');
     expect(state.statusTextEl.textContent).toBe('Initializing');
-    expect((state.wrapperEl as any).className.split(' ')).toEqual(expect.arrayContaining(['async', 'pending']));
+    expect((state.wrapperEl).className.split(' ')).toEqual(expect.arrayContaining(['async', 'pending']));
   });
 
   it('shows prompt in content and keeps label visible while running', () => {
-    const state = createAsyncSubagentBlock(parentEl as any, { id: 'task-2', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job', prompt: 'Do the work' } });
+    const state = createAsyncSubagentBlock(parentEl, { id: 'task-2', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job', prompt: 'Do the work' } });
 
     updateAsyncSubagentBlock(state, { ...state.info, agentId: 'agent-xyz', asyncStatus: 'running' });
 
     expect(state.labelEl.textContent).toBe('Background job');
     expect(state.statusTextEl.textContent).toBe('');
-    const contentText = getTextByClass(state.contentEl as any, 'claudian-subagent-prompt-text')[0];
+    const contentText = getTextByClass(state.contentEl, 'claudian-subagent-prompt-text')[0];
     expect(contentText).toContain('Do the work');
-    expect((state.wrapperEl as any).className.split(' ')).toEqual(expect.arrayContaining(['running', 'async']));
+    expect((state.wrapperEl).className.split(' ')).toEqual(expect.arrayContaining(['running', 'async']));
   });
 
   it('finalizes to completed and reveals description', () => {
-    const state = createAsyncSubagentBlock(parentEl as any, { id: 'task-3', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job' } });
+    const state = createAsyncSubagentBlock(parentEl, { id: 'task-3', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job' } });
     state.info.toolCalls.push(
       {
         id: 'tool-1',
@@ -167,41 +166,41 @@ describe('Async Subagent Renderer', () => {
     );
     updateAsyncSubagentBlock(state, { ...state.info, agentId: 'agent-complete', asyncStatus: 'running' });
 
-    (setIcon as Mock).mockClear();
+    vi.mocked(setIcon).mockClear();
     updateAsyncSubagentBlock(state, { ...state.info, result: 'all done', status: 'completed', asyncStatus: 'completed' });
 
     expect(state.labelEl.textContent).toBe('Background job');
     expect(state.statusTextEl.textContent).toBe('');
-    expect((state.wrapperEl as any).hasClass('done')).toBe(true);
-    const contentText = getTextByClass(state.contentEl as any, 'claudian-subagent-result-output')[0];
+    expect((state.wrapperEl).hasClass('done')).toBe(true);
+    const contentText = getTextByClass(state.contentEl, 'claudian-subagent-result-output')[0];
     expect(contentText).toBe('all done');
-    const lastIcon = (setIcon as Mock).mock.calls.pop();
+    const lastIcon = vi.mocked(setIcon).mock.calls.pop();
     expect(lastIcon?.[1]).toBe('check');
   });
 
   it('finalizes to error and displays result text', () => {
-    const state = createAsyncSubagentBlock(parentEl as any, { id: 'task-4', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job' } });
+    const state = createAsyncSubagentBlock(parentEl, { id: 'task-4', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job' } });
     updateAsyncSubagentBlock(state, { ...state.info, agentId: 'agent-error', asyncStatus: 'running' });
 
-    (setIcon as Mock).mockClear();
+    vi.mocked(setIcon).mockClear();
     updateAsyncSubagentBlock(state, { ...state.info, result: 'failure happened', status: 'error', asyncStatus: 'error' });
 
     expect(state.statusTextEl.textContent).toBe('Error');
-    expect((state.wrapperEl as any).hasClass('error')).toBe(true);
-    const contentText = getTextByClass(state.contentEl as any, 'claudian-subagent-result-output')[0];
+    expect((state.wrapperEl).hasClass('error')).toBe(true);
+    const contentText = getTextByClass(state.contentEl, 'claudian-subagent-result-output')[0];
     expect(contentText).toBe('failure happened');
-    const lastIcon = (setIcon as Mock).mock.calls.pop();
+    const lastIcon = vi.mocked(setIcon).mock.calls.pop();
     expect(lastIcon?.[1]).toBe('x');
   });
 
   it('marks async subagent as orphaned', () => {
-    const state = createAsyncSubagentBlock(parentEl as any, { id: 'task-5', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job' } });
+    const state = createAsyncSubagentBlock(parentEl, { id: 'task-5', status: 'running', toolCalls: [], isExpanded: false, mode: 'async', asyncStatus: 'pending', ...{ description: 'Background job' } });
 
     updateAsyncSubagentBlock(state, { ...state.info, status: 'error', asyncStatus: 'orphaned' });
 
     expect(state.statusTextEl.textContent).toBe('Orphaned');
-    expect((state.wrapperEl as any).hasClass('orphaned')).toBe(true);
-    const contentText = getTextByClass(state.contentEl as any, 'claudian-subagent-result-output')[0];
+    expect((state.wrapperEl).hasClass('orphaned')).toBe(true);
+    const contentText = getTextByClass(state.contentEl, 'claudian-subagent-result-output')[0];
     expect(contentText).toContain('Conversation ended before task completed');
   });
 
@@ -217,13 +216,13 @@ describe('Async Subagent Renderer', () => {
         asyncStatus: 'completed',
       };
 
-      const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
-      const headerEl = (wrapperEl as any).children[0];
+      const wrapperEl = renderStoredAsyncSubagent(parentEl, subagent);
+      const headerEl = (wrapperEl).children[0];
 
       const enterEvent = { key: 'Enter' };
       fireEvent.keyDown(headerEl, {...enterEvent});
 
-      expect((wrapperEl as any).hasClass('expanded')).toBe(true);
+      expect((wrapperEl).hasClass('expanded')).toBe(true);
     });
 
     it('should toggle expansion on repeated clicks', () => {
@@ -237,19 +236,19 @@ describe('Async Subagent Renderer', () => {
         asyncStatus: 'completed',
       };
 
-      const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
+      const wrapperEl = renderStoredAsyncSubagent(parentEl, subagent);
       expect(wrapperEl).toBeDefined();
-      expect((wrapperEl as any).hasClass('claudian-subagent-list')).toBe(true);
-      const headerEl = (wrapperEl as any).children[0];
+      expect((wrapperEl).hasClass('claudian-subagent-list')).toBe(true);
+      const headerEl = (wrapperEl).children[0];
       expect(headerEl.getAttribute('aria-label')).toContain('click to expand');
 
       // Click to expand
-      headerEl.click();
-      expect((wrapperEl as any).hasClass('expanded')).toBe(true);
+      fireEvent.click(headerEl);
+      expect((wrapperEl).hasClass('expanded')).toBe(true);
 
       // Click to collapse
-      headerEl.click();
-      expect((wrapperEl as any).hasClass('expanded')).toBe(false);
+      fireEvent.click(headerEl);
+      expect((wrapperEl).hasClass('expanded')).toBe(false);
     });
 
     it('renders error status correctly', () => {
@@ -263,10 +262,10 @@ describe('Async Subagent Renderer', () => {
         asyncStatus: 'error',
       };
 
-      const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
+      const wrapperEl = renderStoredAsyncSubagent(parentEl, subagent);
 
-      expect((wrapperEl as any).hasClass('error')).toBe(true);
-      const contentText = getTextByClass(wrapperEl as any, 'claudian-subagent-result-output')[0];
+      expect((wrapperEl).hasClass('error')).toBe(true);
+      const contentText = getTextByClass(wrapperEl, 'claudian-subagent-result-output')[0];
       expect(contentText).toBe('ERROR');
     });
 
@@ -281,12 +280,12 @@ describe('Async Subagent Renderer', () => {
         asyncStatus: 'orphaned',
       };
 
-      (setIcon as Mock).mockClear();
-      const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
+      vi.mocked(setIcon).mockClear();
+      const wrapperEl = renderStoredAsyncSubagent(parentEl, subagent);
 
-      expect((wrapperEl as any).hasClass('error')).toBe(true);
-      expect((wrapperEl as any).hasClass('orphaned')).toBe(true);
-      const contentText = getTextByClass(wrapperEl as any, 'claudian-subagent-result-output')[0];
+      expect((wrapperEl).hasClass('error')).toBe(true);
+      expect((wrapperEl).hasClass('orphaned')).toBe(true);
+      const contentText = getTextByClass(wrapperEl, 'claudian-subagent-result-output')[0];
       expect(contentText).toContain('Conversation ended before task completed');
       // Should use alert-circle icon
       expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'alert-circle');
@@ -304,10 +303,10 @@ describe('Async Subagent Renderer', () => {
         prompt: 'Do some work',
       };
 
-      const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
+      const wrapperEl = renderStoredAsyncSubagent(parentEl, subagent);
 
-      expect((wrapperEl as any).hasClass('running')).toBe(true);
-      const contentText = getTextByClass(wrapperEl as any, 'claudian-subagent-prompt-text')[0];
+      expect((wrapperEl).hasClass('running')).toBe(true);
+      const contentText = getTextByClass(wrapperEl, 'claudian-subagent-prompt-text')[0];
       expect(contentText).toContain('Do some work');
     });
 
@@ -322,10 +321,10 @@ describe('Async Subagent Renderer', () => {
         asyncStatus: 'pending',
       };
 
-      const wrapperEl = renderStoredAsyncSubagent(parentEl as any, subagent);
+      const wrapperEl = renderStoredAsyncSubagent(parentEl, subagent);
 
       // Pending cards retain their initializing state.
-      expect((wrapperEl as any).hasClass('pending')).toBe(true);
+      expect((wrapperEl).hasClass('pending')).toBe(true);
     });
   });
 });
@@ -339,7 +338,7 @@ describe('tool snapshots', () => {
   });
 
   it('retains distinct tool calls without rendering a header count', () => {
-    const state = createSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+    const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
 
     const toolCall1: ToolCallInfo = {
       id: 'tool-1',
@@ -350,7 +349,7 @@ describe('tool snapshots', () => {
     };
     updateSubagentBlock(state, { ...state.info, toolCalls: [...state.info.toolCalls, toolCall1] });
     expect(state.info.toolCalls).toHaveLength(1);
-    expect(getTextByClass(state.wrapperEl as any, 'claudian-subagent-count')).toEqual([]);
+    expect(getTextByClass(state.wrapperEl, 'claudian-subagent-count')).toEqual([]);
 
     const toolCall2: ToolCallInfo = {
       id: 'tool-2',
@@ -362,12 +361,12 @@ describe('tool snapshots', () => {
     updateSubagentBlock(state, { ...state.info, toolCalls: [...state.info.toolCalls, toolCall2] });
 
     expect(state.info.toolCalls).toHaveLength(2);
-    expect(getTextByClass(state.wrapperEl as any, 'claudian-subagent-count')).toEqual([]);
+    expect(getTextByClass(state.wrapperEl, 'claudian-subagent-count')).toEqual([]);
   });
 
   it('updates the same tool row from successive snapshots', () => {
-    const state = createSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
-    (state.headerEl as any).click();
+    const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+    (state.headerEl).click();
 
     updateSubagentBlock(state, { ...state.info, toolCalls: [...state.info.toolCalls, {
       id: 'tool-1',
@@ -392,9 +391,9 @@ describe('tool snapshots', () => {
         input: { file_path: 'notes.md' },
       })
     );
-    expect(getTextByClass(state.wrapperEl as any, 'claudian-subagent-count')).toEqual([]);
-    expect(getTextByClass(state.toolsContainerEl as any, 'claudian-subagent-tool-name')).toEqual(['Write']);
-    expect(getTextByClass(state.toolsContainerEl as any, 'claudian-subagent-tool-summary')).toEqual(['notes.md']);
+    expect(getTextByClass(state.wrapperEl, 'claudian-subagent-count')).toEqual([]);
+    expect(getTextByClass(state.toolsContainerEl, 'claudian-subagent-tool-name')).toEqual(['Write']);
+    expect(getTextByClass(state.toolsContainerEl, 'claudian-subagent-tool-summary')).toEqual(['notes.md']);
   });
 });
 
@@ -407,7 +406,7 @@ describe('tool result snapshots', () => {
   });
 
   it('updates tool call status in state', () => {
-    const state = createSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+    const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
 
     const toolCall: ToolCallInfo = {
       id: 'tool-1',
@@ -429,7 +428,7 @@ describe('tool result snapshots', () => {
   });
 
   it('removes tool rows absent from the next snapshot', () => {
-    const state = createSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+    const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
 
     const toolCall: ToolCallInfo = {
       id: 'tool-1',
@@ -455,33 +454,33 @@ describe('terminal snapshots', () => {
   });
 
   it('sets status to completed and adds done class', () => {
-    const state = createSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+    const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
 
-    (setIcon as Mock).mockClear();
+    vi.mocked(setIcon).mockClear();
     updateSubagentBlock(state, { ...state.info, result: 'All done', status: 'completed' });
 
     expect(state.info.status).toBe('completed');
     expect(state.info.result).toBe('All done');
-    expect((state.wrapperEl as any).hasClass('done')).toBe(true);
+    expect((state.wrapperEl).hasClass('done')).toBe(true);
     expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'check');
   });
 
   it('sets status to error and adds error class', () => {
-    const state = createSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+    const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
 
-    (setIcon as Mock).mockClear();
+    vi.mocked(setIcon).mockClear();
     updateSubagentBlock(state, { ...state.info, result: 'Something failed', status: 'error' });
 
     expect(state.info.status).toBe('error');
     expect(state.info.result).toBe('Something failed');
-    expect((state.wrapperEl as any).hasClass('error')).toBe(true);
+    expect((state.wrapperEl).hasClass('error')).toBe(true);
     expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'x');
-    const errorText = getTextByClass(state.contentEl as any, 'claudian-subagent-result-output')[0];
+    const errorText = getTextByClass(state.contentEl, 'claudian-subagent-result-output')[0];
     expect(errorText).toBe('Something failed');
   });
 
   it('shows result section text after a task with tools', () => {
-    const state = createSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+    const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
 
     // Add a tool call first to populate content
     updateSubagentBlock(state, { ...state.info, toolCalls: [...state.info.toolCalls, {
@@ -494,12 +493,12 @@ describe('terminal snapshots', () => {
 
     updateSubagentBlock(state, { ...state.info, result: 'Done', status: 'completed' });
 
-    const doneText = getTextByClass(state.contentEl as any, 'claudian-subagent-result-output')[0];
+    const doneText = getTextByClass(state.contentEl, 'claudian-subagent-result-output')[0];
     expect(doneText).toBe('Done');
   });
 
   it('does not restore a tool count badge after finalization', () => {
-    const state = createSubagentBlock(parentEl as any, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
+    const state = createSubagentBlock(parentEl, { id: 'task-1', status: 'running', toolCalls: [], isExpanded: false, ...{ description: 'Test task' } });
 
     updateSubagentBlock(state, { ...state.info, toolCalls: [...state.info.toolCalls, {
       id: 'tool-1',
@@ -518,7 +517,7 @@ describe('terminal snapshots', () => {
 
     updateSubagentBlock(state, { ...state.info, result: 'Done', status: 'completed' });
 
-    expect(getTextByClass(state.wrapperEl as any, 'claudian-subagent-count')).toEqual([]);
+    expect(getTextByClass(state.wrapperEl, 'claudian-subagent-count')).toEqual([]);
   });
 });
 
@@ -539,12 +538,12 @@ describe('renderStoredSubagent status variants', () => {
       isExpanded: false,
     };
 
-    (setIcon as Mock).mockClear();
-    const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
+    vi.mocked(setIcon).mockClear();
+    const wrapperEl = renderStoredSubagent(parentEl, subagent);
 
-    expect((wrapperEl as any).hasClass('done')).toBe(true);
+    expect((wrapperEl).hasClass('done')).toBe(true);
     expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'check');
-    const doneText = getTextByClass(wrapperEl as any, 'claudian-subagent-result-output')[0];
+    const doneText = getTextByClass(wrapperEl, 'claudian-subagent-result-output')[0];
     expect(doneText).toBe('DONE');
   });
 
@@ -557,12 +556,12 @@ describe('renderStoredSubagent status variants', () => {
       isExpanded: false,
     };
 
-    (setIcon as Mock).mockClear();
-    const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
+    vi.mocked(setIcon).mockClear();
+    const wrapperEl = renderStoredSubagent(parentEl, subagent);
 
-    expect((wrapperEl as any).hasClass('error')).toBe(true);
+    expect((wrapperEl).hasClass('error')).toBe(true);
     expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'x');
-    const errorText = getTextByClass(wrapperEl as any, 'claudian-subagent-result-output')[0];
+    const errorText = getTextByClass(wrapperEl, 'claudian-subagent-result-output')[0];
     expect(errorText).toBe('ERROR');
   });
 
@@ -578,11 +577,11 @@ describe('renderStoredSubagent status variants', () => {
       isExpanded: false,
     };
 
-    const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
+    const wrapperEl = renderStoredSubagent(parentEl, subagent);
 
     // Should not have done or error class
-    expect((wrapperEl as any).hasClass('done')).toBe(false);
-    expect((wrapperEl as any).hasClass('error')).toBe(false);
+    expect((wrapperEl).hasClass('done')).toBe(false);
+    expect((wrapperEl).hasClass('error')).toBe(false);
   });
 
   it('renders running subagent tool call with expanded-style result', () => {
@@ -603,10 +602,10 @@ describe('renderStoredSubagent status variants', () => {
       isExpanded: false,
     };
 
-    const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
+    const wrapperEl = renderStoredSubagent(parentEl, subagent);
     wrapperEl!.querySelector<HTMLElement>('.claudian-subagent-header')!.click();
     wrapperEl!.querySelector<HTMLElement>('.claudian-subagent-tool-header')!.click();
-    const contentEl = (wrapperEl as any).children[1]; // content area
+    const contentEl = (wrapperEl).children[1]; // content area
 
     // Should show result text
     const resultTexts = getTextByClass(contentEl, 'claudian-tool-line');
@@ -627,9 +626,9 @@ describe('renderStoredSubagent status variants', () => {
       isExpanded: false,
     };
 
-    const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
+    const wrapperEl = renderStoredSubagent(parentEl, subagent);
 
-    expect(getTextByClass(wrapperEl as any, 'claudian-subagent-count')).toEqual([]);
+    expect(getTextByClass(wrapperEl, 'claudian-subagent-count')).toEqual([]);
   });
 
   it('truncates long descriptions', () => {
@@ -642,9 +641,9 @@ describe('renderStoredSubagent status variants', () => {
       isExpanded: false,
     };
 
-    const wrapperEl = renderStoredSubagent(parentEl as any, subagent);
+    const wrapperEl = renderStoredSubagent(parentEl, subagent);
 
-    const labelTexts = getTextByClass(wrapperEl as any, 'claudian-subagent-label');
+    const labelTexts = getTextByClass(wrapperEl, 'claudian-subagent-label');
     expect(labelTexts[0]).toBe('A'.repeat(40) + '...');
   });
 });

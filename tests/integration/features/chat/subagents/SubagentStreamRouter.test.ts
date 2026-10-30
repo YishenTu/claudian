@@ -1,9 +1,8 @@
 /** @vitest-environment jsdom */
 import '@/providers';
 
-import type { Mock } from 'vitest';
-
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
+import type { SubagentInfo } from '@/core/types';
 import { ChatState } from '@/features/chat/state/ChatState';
 import {
   AsyncSubagentHistoryRecovery,
@@ -18,10 +17,10 @@ function createHarness() {
   const state = new ChatState({});
   const messagesEl = document.createElement('div');
   const subagentManager = Object.assign(new SubagentManager(() => undefined), {
-    handleAsyncSubagentCompletion: vi.fn().mockReturnValue(undefined),
-    getByTaskId: vi.fn().mockReturnValue(undefined),
-    refreshAsyncSubagent: vi.fn(),
-  }) as any;
+    handleAsyncSubagentCompletion: vi.fn<SubagentManager['handleAsyncSubagentCompletion']>().mockReturnValue(undefined),
+    getByTaskId: vi.fn<SubagentManager['getByTaskId']>().mockReturnValue(undefined),
+    refreshAsyncSubagent: vi.fn<SubagentManager['refreshAsyncSubagent']>(),
+  });
   const harness = {
     providerSessionId: 'session-1' as string | null,
     historyRecovery: undefined as unknown as AsyncSubagentHistoryRecoveryDeps,
@@ -67,7 +66,7 @@ describe('SubagentStreamRouter', () => {
 
   describe('onAsyncSubagentStateChange', () => {
     it('should update subagent in messages', () => {
-      const subagent = { id: 'task-1', description: 'test', status: 'completed', result: 'done', toolCalls: [] } as any;
+      const subagent: SubagentInfo = { id: 'task-1', description: 'test', status: 'completed', result: 'done', isExpanded: false, toolCalls: [] };
       harness.state.messages = [{
         id: 'a1',
         role: 'assistant',
@@ -78,9 +77,9 @@ describe('SubagentStreamRouter', () => {
           name: TOOL_SUBAGENT,
           input: { description: 'test' },
           status: 'running',
-          subagent: { id: 'task-1', description: 'test', status: 'running', toolCalls: [] },
+          subagent: { id: 'task-1', description: 'test', status: 'running', isExpanded: false, toolCalls: [] },
         }],
-      }] as any;
+      }];
 
       harness.router.onAsyncSubagentStateChange(subagent);
 
@@ -92,7 +91,7 @@ describe('SubagentStreamRouter', () => {
     });
 
     it('should not crash when subagent not found in messages', () => {
-      const subagent = { id: 'unknown', description: 'test', status: 'completed', toolCalls: [] } as any;
+      const subagent: SubagentInfo = { id: 'unknown', description: 'test', status: 'completed', isExpanded: false, toolCalls: [] };
       harness.state.messages = [{
         id: 'a1',
         role: 'assistant',
@@ -104,7 +103,7 @@ describe('SubagentStreamRouter', () => {
           input: { description: 'test' },
           status: 'running',
         }],
-      }] as any;
+      }];
 
       expect(() => harness.router.onAsyncSubagentStateChange(subagent)).not.toThrow();
       expect(harness.state.messages[0].toolCalls![0].status).toBe('running');
@@ -113,14 +112,14 @@ describe('SubagentStreamRouter', () => {
 
   describe('handleAsyncSubagentCompletion', () => {
     it('recovers transcript-backed async subagent tools and final result', async () => {
-      const completedSubagent = {
+      const completedSubagent: SubagentInfo = {
         agentId: 'agent-1',
         asyncStatus: 'completed',
         id: 'task-1',
         description: 'Background task',
         mode: 'async',
         status: 'completed',
-        toolCalls: [],
+        isExpanded: false, toolCalls: [],
       };
       const completion = {
         type: 'async_subagent_completion' as const,
@@ -132,14 +131,14 @@ describe('SubagentStreamRouter', () => {
       };
       harness.subagentManager.handleAsyncSubagentCompletion.mockReturnValueOnce(completedSubagent);
       harness.subagentManager.getByTaskId.mockReturnValue(completedSubagent);
-      (harness.historyRecovery.loadSubagentToolCalls as Mock).mockResolvedValueOnce([{
+      vi.mocked(harness.historyRecovery.loadSubagentToolCalls).mockResolvedValueOnce([{
         id: 'nested-tool',
         input: { path: 'README.md' },
         isExpanded: false,
         name: 'Read',
         status: 'completed',
       }]);
-      (harness.historyRecovery.loadSubagentFinalResult as Mock)
+      vi.mocked(harness.historyRecovery.loadSubagentFinalResult)
         .mockResolvedValueOnce('Recovered final result');
 
       await expect(harness.router.handleAsyncSubagentCompletion(completion)).resolves.toBe(true);
@@ -169,7 +168,7 @@ describe('SubagentStreamRouter', () => {
     });
 
     it('bounds final-result retries and fences a replaced provider session', async () => {
-      const completedSubagent = {
+      const completedSubagent: SubagentInfo = {
         agentId: 'agent-1',
         asyncStatus: 'completed',
         description: 'Background task',
@@ -177,11 +176,11 @@ describe('SubagentStreamRouter', () => {
         mode: 'async',
         result: 'Notification fallback',
         status: 'completed',
-        toolCalls: [],
+        isExpanded: false, toolCalls: [],
       };
       harness.subagentManager.handleAsyncSubagentCompletion.mockReturnValueOnce(completedSubagent);
       harness.subagentManager.getByTaskId.mockReturnValue(completedSubagent);
-      (harness.historyRecovery.loadSubagentFinalResult as Mock).mockResolvedValue(null);
+      vi.mocked(harness.historyRecovery.loadSubagentFinalResult).mockResolvedValue(null);
 
       await harness.router.handleAsyncSubagentCompletion({
         providerSessionId: 'session-1',
@@ -199,7 +198,7 @@ describe('SubagentStreamRouter', () => {
     });
 
     it('does not schedule transcript retries when the provider has no recovery service', async () => {
-      const completedSubagent = {
+      const completedSubagent: SubagentInfo = {
         agentId: 'agent-1',
         asyncStatus: 'completed',
         description: 'Background task',
@@ -207,12 +206,12 @@ describe('SubagentStreamRouter', () => {
         mode: 'async',
         result: 'Notification result',
         status: 'completed',
-        toolCalls: [],
+        isExpanded: false, toolCalls: [],
       };
       harness.subagentManager.handleAsyncSubagentCompletion.mockReturnValueOnce(completedSubagent);
       harness.subagentManager.getByTaskId.mockReturnValue(completedSubagent);
-      (harness.historyRecovery.loadSubagentToolCalls as Mock).mockResolvedValue(undefined);
-      (harness.historyRecovery.loadSubagentFinalResult as Mock).mockResolvedValue(undefined);
+      vi.mocked(harness.historyRecovery.loadSubagentToolCalls).mockResolvedValue(undefined);
+      vi.mocked(harness.historyRecovery.loadSubagentFinalResult).mockResolvedValue(undefined);
 
       await harness.router.handleAsyncSubagentCompletion({
         providerSessionId: 'session-1',

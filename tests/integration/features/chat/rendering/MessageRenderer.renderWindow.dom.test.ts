@@ -2,6 +2,7 @@
 import '@/providers';
 
 import { axe } from '@test/helpers/accessibility';
+import { createHarness as createExecutionHarness } from '@test/helpers/ChatExecutionHarness';
 import { createConversationPorts } from '@test/helpers/ConversationPorts';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
@@ -12,9 +13,11 @@ import { Component, MarkdownRenderer } from 'obsidian';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage } from '@/core/types';
 import { ConversationController } from '@/features/chat/conversation/ConversationController';
+import { LinkedContentController } from '@/features/chat/linked-content';
 import { NavigationSidebar } from '@/features/chat/navigation/NavigationSidebar';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { ChatState } from '@/features/chat/state/ChatState';
+import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 
 const start = testDate().getTime();
 
@@ -53,7 +56,7 @@ async function setup(providerId?: string, navigate: (id: string, target?: string
     return { top, bottom: top + 100 } as DOMRect;
   });
   const renderer = new MessageRenderer(
-    await createChatFeatureHost({ settings: { mediaFolder: '' } }), new Component() as any, messagesEl, undefined, undefined,
+    await createChatFeatureHost({ settings: { mediaFolder: '' } }), new Component(), messagesEl, undefined, undefined,
     providerId ? () => ProviderRegistry.getCapabilities(providerId) : undefined,
     { navigate, isBusy: () => false },
   );
@@ -182,16 +185,18 @@ it('returns to the reading position after cancelling a branch preview of a revea
     getConversationById: vi.fn().mockResolvedValue({ id: 'pi-chat', messages: history }),
     getConversationSummary: vi.fn().mockReturnValue(null), projects: createProjectsFake() });
   const { renderer, messagesEl } = (await setup('pi', (id, target) => controller.navigateBranch(id, target)));
+  const { coordinator, registry } = createExecutionHarness();
+  vi.spyOn(coordinator, 'supportsConversationBranches', 'get').mockReturnValue(true);
+  onTestFinished(async () => { await coordinator.dispose(); await registry.dispose(); });
   let welcomeEl: HTMLElement | null = null;
   const controller: ConversationController = new ConversationController({ plugin, state, renderer,
     ...createConversationPorts({ state, getInputEl: () => inputEl, getImageContextManager: () => null }),
-    subagentManager: { clear: vi.fn() },
-    getInputEl: () => inputEl, getMessagesEl: () => messagesEl,
-    getWelcomeEl: () => welcomeEl, setWelcomeEl: (el: HTMLElement) => { welcomeEl = el; },
-    getLinkedContentController: () => ({ lock: vi.fn() }),
-    getImageContextManager: () => null, clearQueuedMessage: vi.fn(),
-    getExecutionCoordinator: () => ({ supportsConversationBranches: true }),
-  } as any);
+    subagentManager: new SubagentManager(() => undefined),
+    getMessagesEl: () => messagesEl,
+    getWelcomeEl: () => welcomeEl, setWelcomeEl: (el: HTMLElement | null) => { welcomeEl = el; },
+    getLinkedContentController: () => new LinkedContentController({ app: plugin.app, getExcludedTags: () => [], getCachedVaultFiles: () => [], getCachedVaultFolders: () => [] }),
+    getExecutionCoordinator: () => coordinator,
+  });
   state.currentConversationId = 'pi-chat';
   await controller.loadActive();
   fireEvent.click(within(messagesEl).getByRole('button', { name: 'Show earlier messages' }));

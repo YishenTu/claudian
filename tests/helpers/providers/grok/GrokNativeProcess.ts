@@ -16,6 +16,8 @@ export class GrokNativeProcess {
   readonly forkCalls: Record<string, unknown>[] = [];
   readonly rewindCalls: Record<string, unknown>[] = [];
   shutdownCalls = 0;
+  readonly commandRequests: Record<string, unknown>[] = [];
+  commandsImplementation: () => unknown | Promise<unknown> = () => { throw new Error('Unexpected command discovery'); };
   loadImplementation = async (request: ACPLoadSessionRequest): Promise<unknown> => ({ sessionId: request.sessionId });
   modelImplementation = async (): Promise<unknown> => ({});
   promptImplementation = async (): Promise<Record<string, unknown>> => ({ stopReason: 'end_turn' });
@@ -27,6 +29,9 @@ export class GrokNativeProcess {
           protocolVersion: 1, agentCapabilities: { loadSession: true,
             _meta: { 'x.ai/hooks': { blockingEvents: ['pre_tool_use'], decisions: ['deny'] } } },
         };
+        case '_x.ai/commands/list':
+          this.commandRequests.push(params);
+          return this.commandsImplementation();
         case 'session/load':
           this.loadRequests.push(params as unknown as ACPLoadSessionRequest);
           return this.loadImplementation(params as unknown as ACPLoadSessionRequest);

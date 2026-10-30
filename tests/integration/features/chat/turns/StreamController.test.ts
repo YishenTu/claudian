@@ -19,7 +19,7 @@ import {
   TOOL_TODO_WRITE,
   TOOL_WAIT_AGENT,
 } from '@/core/tools/toolNames';
-import type { ChatMessage, ToolCallInfo } from '@/core/types';
+import type { ChatMessage, StreamChunk,ToolCallInfo, UsageInfo } from '@/core/types';
 import * as displayOnlyCodeFences from '@/features/chat/rendering/markdown/DisplayOnlyCodeFences';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { providerOutputEventToStreamChunk } from '@/features/chat/rendering/providerOutputChunks';
@@ -37,14 +37,11 @@ import * as markdownMath from '@/utils/markdownMath';
 const realRenderers: MessageRenderer[] = [];
 const components: Component[] = [];
 function observeRendering() {
-  for (const [module, names] of [
-    [mockedTools, ['renderToolCall', 'updateToolCallResult', 'refreshToolCallHeader']],
-    [mockedEdits, ['createWriteEditBlock', 'finalizeWriteEditBlock', 'updateWriteEditWithDiff']],
-    [mockedThinking, ['createThinkingBlock', 'finalizeThinkingBlock', 'cleanupThinkingBlock']],
-    [mockedSubagents, ['createSubagentBlock', 'updateSubagentBlock', 'createAsyncSubagentBlock', 'updateAsyncSubagentBlock']],
-  ] as const) {
-    for (const name of names) vi.spyOn(module as any, name);
-  }
+  for (const name of ['renderToolCall', 'updateToolCallResult', 'refreshToolCallHeader'] as const) vi.spyOn(mockedTools, name);
+  for (const name of ['createWriteEditBlock', 'finalizeWriteEditBlock', 'updateWriteEditWithDiff'] as const) vi.spyOn(mockedEdits, name);
+  for (const name of ['createThinkingBlock', 'finalizeThinkingBlock', 'cleanupThinkingBlock'] as const) vi.spyOn(mockedThinking, name);
+  for (const name of ['createSubagentBlock', 'updateSubagentBlock', 'createAsyncSubagentBlock', 'updateAsyncSubagentBlock'] as const) vi.spyOn(mockedSubagents, name);
+
 }
 
 function renderedTool(parent: HTMLElement, id: string, name: RegExp, expanded = false): HTMLElement {
@@ -126,7 +123,7 @@ function createTestMessage(): ChatMessage {
   };
 }
 
-function createMockUsage(overrides: Record<string, any> = {}) {
+function createMockUsage(overrides: Partial<UsageInfo> = {}) {
   return {
     model: 'model-a',
     inputTokens: 10,
@@ -318,7 +315,7 @@ describe('StreamController - Text Content', () => {
       '<div>\n```vega-lite\n{"mark": "bar"',
       '> <div>\n> ```vega-lite\n> {"mark": "bar"',
     ])('defers listed plugin fence languages until text finalization: %s', async content => {
-      (deps.plugin.settings as any).pluginRenderedFenceLanguages = ['vega-lite'];
+      Object.assign(deps.plugin.settings, { pluginRenderedFenceLanguages: ['vega-lite'] });
       deps.state.currentTextEl = document.body.createDiv();
       await controller.appendText(content);
       vi.advanceTimersByTime(16);
@@ -889,7 +886,7 @@ describe('StreamController - Text Content', () => {
       const msg = createTestMessage();
       const usage = createMockUsage();
 
-      await controller.handleStreamChunk({ type: 'usage', usage } as any, msg);
+      await controller.handleStreamChunk({ type: 'usage', usage }, msg);
 
       expect(deps.state.usage).toEqual(usage);
     });
@@ -980,7 +977,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('should not scroll when enableAutoScroll setting is false', async () => {
-      (deps.plugin.settings as any).enableAutoScroll = false;
+      Object.assign(deps.plugin.settings, { enableAutoScroll: false });
       const messagesEl = deps.getMessagesEl();
       Object.defineProperty(messagesEl, 'scrollHeight', { value: 1000, configurable: true });
       messagesEl.scrollTop = 0;
@@ -993,7 +990,7 @@ describe('StreamController - Text Content', () => {
       await Promise.resolve();
       expect(messagesEl.scrollTop).toBe(0);
 
-      (deps.plugin.settings as any).enableAutoScroll = true;
+      Object.assign(deps.plugin.settings, { enableAutoScroll: true });
       await controller.handleStreamChunk({ type: 'text', content: ' again' }, msg);
       await vi.advanceTimersByTimeAsync(200);
       expect(messagesEl.scrollTop).toBe(1000);
@@ -2717,7 +2714,7 @@ describe('StreamController - Text Content', () => {
           input: {},
           status: 'running',
           isExpanded: false,
-        } as any,
+        },
       ];
 
       await controller.handleStreamChunk(
@@ -2725,7 +2722,7 @@ describe('StreamController - Text Content', () => {
           type: 'tool_result',
           id: 'mcp-1',
           content: [{ type: 'text', text: 'Created project successfully' }],
-        } as any,
+        } as unknown as StreamChunk, // Deliberately exercises legacy structured content at the normalization boundary.
         msg,
       );
 

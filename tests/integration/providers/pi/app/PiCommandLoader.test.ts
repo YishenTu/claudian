@@ -1,3 +1,18 @@
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
+
+import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { PiCommandMetadataProbe } from '@/providers/pi/execution/PiCommandMetadataProbe';
+
+let host: ProviderHost;
+let probe: PiCommandMetadataProbe;
+const resolveCliPath = vi.fn<() => Promise<string | null>>(() => { throw new Error('Unexpected metadata discovery'); });
+beforeEach(async () => {
+  resolveCliPath.mockClear();
+  ({ host } = await createProviderHostFixture({ overrides: { getResolvedProviderCliPath: resolveCliPath } }));
+  probe = new PiCommandMetadataProbe(host.getRuntimeHost('pi'));
+});
+afterEach(async () => { await probe.dispose(); });
+
 import type { ProviderCommandLoaderContext } from '@/core/providers/types';
 import { PiCommandLoader } from '@/providers/pi/app/PiCommandLoader';
 
@@ -7,17 +22,14 @@ function createContext(
   return {
     allowIsolatedMetadataCreation: false,
     conversation: null,
-    plugin: {
-      workingDirectory: '/vault',
-    } as any,
+    plugin: host,
     ...overrides,
   };
 }
 
 describe('PiCommandLoader', () => {
   it('uses a ready command snapshot without starting a metadata probe', async () => {
-    const metadataProbe = { load: vi.fn() };
-    const loader = new PiCommandLoader(metadataProbe as any);
+    const loader = new PiCommandLoader(probe);
 
     await expect(loader.loadCommands(createContext({
       readyCommandSnapshot: [{
@@ -31,16 +43,15 @@ describe('PiCommandLoader', () => {
       items: [expect.objectContaining({ name: 'test' })],
       status: 'ready',
     });
-    expect(metadataProbe.load).not.toHaveBeenCalled();
+    expect(resolveCliPath).not.toHaveBeenCalled();
   });
 
   it('does not probe metadata unless isolated creation is allowed', async () => {
-    const metadataProbe = { load: vi.fn() };
-    const loader = new PiCommandLoader(metadataProbe as any);
+    const loader = new PiCommandLoader(probe);
 
     await expect(loader.loadCommands(createContext())).resolves.toMatchObject({
       status: 'requires-session',
     });
-    expect(metadataProbe.load).not.toHaveBeenCalled();
+    expect(resolveCliPath).not.toHaveBeenCalled();
   });
 });

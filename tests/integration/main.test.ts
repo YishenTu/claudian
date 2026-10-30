@@ -2,7 +2,7 @@ import { deferred } from '@test/helpers/ChatInputHarness';
 import { DEFAULT_CLAUDIAN_SETTINGS as DEFAULT_SETTINGS } from '@test/helpers/defaultSettings';
 import { grokEnvironmentHash, writeGrokCatalog } from '@test/helpers/providers/grokSettings';
 import { testClock } from '@test/helpers/testClock';
-import { Notice, TFile, TFolder } from 'obsidian';
+import { App, Notice, type PluginManifest, TFile, TFolder, WorkspaceLeaf } from 'obsidian';
 
 import type { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import { PinnedLinkedContentPathCoordinator } from '@/app/settings/PinnedLinkedContentPathCoordinator';
@@ -14,6 +14,7 @@ import type { ClaudianChatFeatureHost } from '@/composition/ClaudianFeatureHosts
 import type { ClaudianViews } from '@/composition/ClaudianViews';
 import { getDeviceSessionsPath } from '@/core/bootstrap/storagePaths';
 import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
+import { ProviderModelCatalogController } from '@/core/providers/models/ProviderModelCatalog';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -21,6 +22,7 @@ import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/Ru
 import { LoopbackSessionToolServer } from '@/core/session-tools/LoopbackSessionToolServer';
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
 import { type ClaudianSettings, type Conversation, type SessionMetadata, VIEW_TYPE_CLAUDIAN } from '@/core/types';
+import { ClaudianView } from '@/features/chat/ClaudianView';
 import { ConversationTitleGeneration } from '@/features/chat/conversation/ConversationTitleGeneration';
 import { resolveSessionMentions } from '@/features/chat/input/resolveSessionMentions';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
@@ -44,11 +46,6 @@ import {
 // Mock fs for ClaudianService
 vi.mock('fs');
 
-// The real probe spawns the developer's interactive login shell, which can outlast the test timeout.
-vi.mock('@/core/process/loginShellPath', () => ({
-  resolveLoginShellPath: async () => {},
-}));
-
 // Now import the plugin after mocking
 import type { Mock, MockInstance } from 'vitest';
 
@@ -56,11 +53,68 @@ import ClaudianPlugin from '@/main';
 
 
 
+function catalogWith(overrides: Partial<import('@/core/providers/models/ProviderModelCatalog').ProviderModelCatalog>) {
+  return Object.assign(new ProviderModelCatalogController({
+    providerName: 'Test',
+    store: {
+      read: () => ({ enabled: true, models: [], selectedIds: [], aliases: {} }),
+      write: async () => {}, notifyChatOptionsChanged: () => {},
+    },
+    discover: async () => ({ changed: false }),
+  }), overrides);
+}
+
 describe('ClaudianPlugin', () => {
   let plugin: ClaudianPlugin;
   let pluginInstances: ClaudianPlugin[];
-  let mockApp: any;
-  let mockManifest: any;
+  let mockApp: ReturnType<typeof createApp>;
+  let mockManifest: PluginManifest;
+
+  function createApp() {
+    const app = new App();
+    return Object.assign(app, {
+      vault: Object.assign(app.vault, {
+        on: vi.fn().mockReturnValue({ id: 'vault-event' }),
+        adapter: Object.assign(app.vault.adapter, {
+          basePath: '/test/vault',
+          exists: vi.fn<import('obsidian').DataAdapter['exists']>().mockResolvedValue(false),
+          read: vi.fn<import('obsidian').DataAdapter['read']>().mockResolvedValue(''),
+          write: vi.fn<import('obsidian').DataAdapter['write']>().mockResolvedValue(undefined),
+          remove: vi.fn<import('obsidian').DataAdapter['remove']>().mockResolvedValue(undefined),
+          mkdir: vi.fn<import('obsidian').DataAdapter['mkdir']>().mockResolvedValue(undefined),
+          list: vi.fn<import('obsidian').DataAdapter['list']>().mockResolvedValue({ files: [], folders: [] }),
+          stat: vi.fn<import('obsidian').DataAdapter['stat']>().mockResolvedValue(null),
+          rename: vi.fn<import('obsidian').DataAdapter['rename']>().mockResolvedValue(undefined),
+        }),
+      }),
+      workspace: Object.assign(app.workspace, {
+        layoutReady: true,
+        detachLeavesOfType: vi.fn(),
+        on: vi.fn().mockReturnValue({ id: 'workspace-event' }),
+        offref: vi.fn(),
+        trigger: vi.fn(),
+        onLayoutReady: vi.fn(),
+        getLeavesOfType: vi.fn().mockReturnValue([]),
+        getMostRecentLeaf: vi.fn().mockReturnValue(null),
+        getActiveViewOfType: vi.fn().mockReturnValue(null),
+        getRightLeaf: vi.fn().mockReturnValue({
+          setViewState: vi.fn().mockResolvedValue(undefined),
+        }),
+        getLeftLeaf: vi.fn().mockReturnValue({
+          setViewState: vi.fn().mockResolvedValue(undefined),
+        }),
+        getLeaf: vi.fn().mockReturnValue({
+          setViewState: vi.fn().mockResolvedValue(undefined),
+        }),
+        setActiveLeaf: vi.fn(),
+        revealLeaf: vi.fn(),
+      }),
+    });
+  }
+
+  function createUnopenedView<T extends Partial<ClaudianView>>(overrides: T) {
+    return Object.assign(new ClaudianView(new WorkspaceLeaf(), chatHostOf()), overrides);
+  }
 
   function createPlugin(): ClaudianPlugin {
     const instance = new ClaudianPlugin(mockApp, mockManifest);
@@ -118,8 +172,8 @@ describe('ClaudianPlugin', () => {
   }
 
   /** The runtime settings coordinator wired into the plugin's session metadata loader. */
-  function runtimeSettingsOf(target: ClaudianPlugin = plugin): any {
-    return (target as any).sessionMetadata.options.runtimeSettings;
+  function runtimeSettingsOf(target: ClaudianPlugin = plugin) {
+    return target['sessionMetadata']['options'].runtimeSettings;
   }
 
   function getConversationPersistence(
@@ -188,6 +242,8 @@ describe('ClaudianPlugin', () => {
   }
 
   beforeEach(() => {
+    // A relative SHELL means no login-shell executable is configured.
+    vi.stubEnv('SHELL', 'unconfigured-test-shell');
     pluginInstances = [];
     // Reset mocks
     vi.restoreAllMocks();
@@ -203,49 +259,12 @@ describe('ClaudianPlugin', () => {
       }]),
     ));
 
-    mockApp = {
-      vault: {
-        on: vi.fn().mockReturnValue({ id: 'vault-event' }),
-        adapter: {
-          basePath: '/test/vault',
-          exists: vi.fn().mockResolvedValue(false),
-          read: vi.fn().mockResolvedValue(''),
-          write: vi.fn().mockResolvedValue(undefined),
-          remove: vi.fn().mockResolvedValue(undefined),
-          mkdir: vi.fn().mockResolvedValue(undefined),
-          list: vi.fn().mockResolvedValue({ files: [], folders: [] }),
-          stat: vi.fn().mockResolvedValue(null),
-          rename: vi.fn().mockResolvedValue(undefined),
-        },
-      },
-      workspace: {
-        layoutReady: true,
-        detachLeavesOfType: vi.fn(),
-        on: vi.fn().mockReturnValue({ id: 'workspace-event' }),
-        offref: vi.fn(),
-        trigger: vi.fn(),
-        onLayoutReady: vi.fn(),
-        getLeavesOfType: vi.fn().mockReturnValue([]),
-        getMostRecentLeaf: vi.fn().mockReturnValue(null),
-        getActiveViewOfType: vi.fn().mockReturnValue(null),
-        getRightLeaf: vi.fn().mockReturnValue({
-          setViewState: vi.fn().mockResolvedValue(undefined),
-        }),
-        getLeftLeaf: vi.fn().mockReturnValue({
-          setViewState: vi.fn().mockResolvedValue(undefined),
-        }),
-        getLeaf: vi.fn().mockReturnValue({
-          setViewState: vi.fn().mockResolvedValue(undefined),
-        }),
-        setActiveLeaf: vi.fn(),
-        revealLeaf: vi.fn(),
-      },
-    };
+    mockApp = createApp();
 
     mockManifest = {
       id: 'claudian',
       name: 'Claudian',
-      version: '0.1.0',
+      version: '0.1.0', minAppVersion: '1.0.0', author: 'Test', description: '',
     };
 
     // Create plugin instance with mocked app
@@ -335,6 +354,7 @@ describe('ClaudianPlugin', () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     for (const instance of pluginInstances) {
       instance.onunload();
     }
@@ -352,10 +372,10 @@ describe('ClaudianPlugin', () => {
       plugin.settings.providerConfigs.claude = {
         ...plugin.settings.providerConfigs.claude, enabled, visibleModels: ['sonnet'], discoveredModels: [],
       };
-      ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: { refresh } as any });
+      ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: catalogWith({ refresh }) });
       expect(refresh).not.toHaveBeenCalled();
       for (const [ready] of mockApp.workspace.onLayoutReady.mock.calls) ready();
-      await (plugin as any).modelMetadataMigration;
+      await plugin['modelMetadataMigration'];
       expect(initialize.mock.calls.filter(([, id, reason]) => id === 'claude' && reason === 'model-metadata-migration'))
         .toHaveLength(enabled ? 1 : 0);
       expect(refresh).toHaveBeenCalledTimes(enabled ? 1 : 0);
@@ -372,7 +392,7 @@ describe('ClaudianPlugin', () => {
       for (const [ready] of mockApp.workspace.onLayoutReady.mock.calls) { ready(); ready(); }
       if (mode === 'before-timer') plugin.onunload();
       await new Promise(resolve => setTimeout(resolve, 5));
-      await (plugin as any).sessionInputCleanup;
+      await plugin['sessionInputCleanup'];
       expect(files.has(inputPath)).toBe(mode !== 'run');
     });
 
@@ -395,7 +415,7 @@ describe('ClaudianPlugin', () => {
       await deleting;
       plugin.onunload();
       let stopped = false;
-      const shutdown = (plugin as any).applicationShutdownPromise.then(() => { stopped = true; });
+      const shutdown = plugin['applicationShutdownPromise']!.then(() => { stopped = true; });
       try {
         await new Promise(resolve => setTimeout(resolve, 0));
         expect(stopped).toBe(false);
@@ -417,17 +437,17 @@ describe('ClaudianPlugin', () => {
       await plugin.onload();
       for (const [ready] of mockApp.workspace.onLayoutReady.mock.calls) ready();
       await new Promise(resolve => setTimeout(resolve, 5));
-      await (plugin as any).sessionInputCleanup;
+      await plugin['sessionInputCleanup'];
       expect(files.has(inputPath)).toBe(true);
       expect(Notice).toHaveBeenCalledWith('Failed to clean up obsolete session files; will retry next launch');
       plugin.onunload();
-      await (plugin as any).applicationShutdownPromise;
+      await plugin['applicationShutdownPromise'];
       mockApp.workspace.onLayoutReady.mockClear();
       const nextPlugin = createPlugin();
       await nextPlugin.onload();
       for (const [ready] of mockApp.workspace.onLayoutReady.mock.calls) ready();
       await new Promise(resolve => setTimeout(resolve, 5));
-      await (nextPlugin as any).sessionInputCleanup;
+      await nextPlugin['sessionInputCleanup'];
       expect(files.has(inputPath)).toBe(false);
     });
 
@@ -602,11 +622,11 @@ describe('ClaudianPlugin', () => {
         });
       const loadSourceSpy = mockMetadataSources(deferredMetadata);
       const notifyConversationListChanged = vi.fn();
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([{
+      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView({
         notifyConversationListChanged,
-      } as any]);
+      })]);
       const saveSpy = vi.spyOn(getConversationPersistence(plugin), 'saveMetadata');
-      await (plugin as any).sessionMetadata.loadRemaining();
+      await plugin['sessionMetadata']['loadRemaining']();
       expect(chatHostOf(plugin).getCachedConversation(deferredMetadata.id)?.selectedModel).toBe('claude-code/retired-model');
       expect(saveSpy).not.toHaveBeenCalled();
       expect(notifyConversationListChanged).toHaveBeenCalledTimes(1);
@@ -627,7 +647,7 @@ describe('ClaudianPlugin', () => {
       const recoverySpy = vi.spyOn(repository, 'recoverMissingSelectedModels')
         .mockResolvedValue([]);
 
-      await (plugin as any).sessionMetadata.loadRemaining();
+      await plugin['sessionMetadata']['loadRemaining']();
 
       expect(recoverySpy).toHaveBeenCalledTimes(1);
 
@@ -646,7 +666,7 @@ describe('ClaudianPlugin', () => {
         providerState: { threadId: 'thread-before-invalidation' },
       };
       await plugin.onload();
-      runtimeSettingsOf(plugin).pendingEnvironmentInvalidationGenerations.set('codex', 1);
+      runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].set('codex', 1);
       const scanSpy = vi.spyOn(SessionStorage.prototype, 'scan')
         .mockResolvedValue({
           records: deviceMetadataRecords(metadata),
@@ -678,7 +698,7 @@ describe('ClaudianPlugin', () => {
           persistedRecoverySources.push(conversations[0] ? repository.getSync(conversations[0].id)?.modelRecoverySource : undefined);
         });
 
-      await (plugin as any).sessionMetadata.loadRemaining();
+      await plugin['sessionMetadata']['loadRemaining']();
 
       expect(registeredSources).toContainEqual(expect.objectContaining({
         id: metadata.id,
@@ -752,7 +772,7 @@ describe('ClaudianPlugin', () => {
       );
 
       await plugin.onload();
-      await (plugin as any).sessionMetadata.loadRemaining();
+      await plugin['sessionMetadata']['loadRemaining']();
 
       const restored = chatHostOf(plugin).getCachedConversation(restoredMetadata.id);
       const deferred = chatHostOf(plugin).getCachedConversation(deferredMetadata.id);
@@ -818,7 +838,7 @@ describe('ClaudianPlugin', () => {
 
       try {
         await plugin.onload();
-        await (plugin as any).sessionMetadata.loadRemaining();
+        await plugin['sessionMetadata']['loadRemaining']();
       } finally {
         reconcileSpy.mockRestore();
         loadSpy.mockRestore();
@@ -880,7 +900,7 @@ describe('ClaudianPlugin', () => {
         });
       const loadSourceSpy = mockMetadataSources(firstMetadata, laterMetadata);
 
-      const load = (plugin as any).sessionMetadata.loadRemaining();
+      const load = plugin['sessionMetadata']['loadRemaining']();
       await firstBatchPublished;
       await plugin.providerHost.applyEnvironmentVariables(
         'provider:claude',
@@ -944,16 +964,16 @@ describe('ClaudianPlugin', () => {
             invalidMetadataCount: 0,
           };
         });
-      (plugin as any).sessionMetadata.pendingScan = false;
+      plugin['sessionMetadata']['pendingScan'] = false;
 
-      await (plugin as any).sessionMetadata.loadRemaining();
+      await plugin['sessionMetadata']['loadRemaining']();
 
       const persistedSettings = JSON.parse(files.get(settingsPath) ?? '{}');
       scanSpy.mockRestore();
 
       expect(persistedSettings.pendingProviderSessionInvalidations?.claude)
         .toBe(pendingGeneration);
-      expect((plugin as any).sessionMetadata.loadedAll).toBe(false);
+      expect(plugin['sessionMetadata']['loadedAll']).toBe(false);
     });
 
     it('does not persist a background metadata shell deleted before reconciliation', async () => {
@@ -990,7 +1010,7 @@ describe('ClaudianPlugin', () => {
       ).mockImplementation((conversations) => [...conversations]);
       const saveMetadataSpy = vi.spyOn(getConversationPersistence(plugin), 'saveMetadata');
 
-      const load = (plugin as any).sessionMetadata.loadRemaining();
+      const load = plugin['sessionMetadata']['loadRemaining']();
       await batchPublished;
       await chatHostOf(plugin).deleteConversation(backgroundMetadata.id);
       saveMetadataSpy.mockClear();
@@ -1029,7 +1049,7 @@ describe('ClaudianPlugin', () => {
       const loadSpy = vi.spyOn(SessionStorage.prototype, 'load')
         .mockResolvedValue(null);
 
-      await (plugin as any).sessionMetadata.loadRemaining();
+      await plugin['sessionMetadata']['loadRemaining']();
 
       expect(loadSpy).toHaveBeenCalledWith(tombstonedMetadata.id);
       expect(chatHostOf(plugin).getCachedConversation(tombstonedMetadata.id)).toBeNull();
@@ -1048,7 +1068,7 @@ describe('ClaudianPlugin', () => {
       };
 
       await plugin.onload();
-      const shell = (plugin as any).sessionMetadata.createShell(
+      const shell = plugin['sessionMetadata'].createShell(
         tombstonedMetadata,
       );
       repositoryOf(plugin).mergeMetadataConversations([shell]);
@@ -1064,7 +1084,7 @@ describe('ClaudianPlugin', () => {
       const loadSpy = vi.spyOn(SessionStorage.prototype, 'load')
         .mockResolvedValue(null);
 
-      await (plugin as any).sessionMetadata.loadRemaining();
+      await plugin['sessionMetadata']['loadRemaining']();
 
       expect(chatHostOf(plugin).getCachedConversation(tombstonedMetadata.id)).toBeNull();
 
@@ -1119,7 +1139,7 @@ describe('ClaudianPlugin', () => {
       const loadSourceSpy = mockMetadataSources(deferredMetadata);
 
       await restartedPlugin.onload();
-      await (restartedPlugin as any).sessionMetadata.loadRemaining();
+      await restartedPlugin['sessionMetadata']['loadRemaining']();
 
       const restartedConversation = chatHostOf(restartedPlugin).getCachedConversation(deferredMetadata.id);
       const persistedMetadata = JSON.parse(
@@ -1186,11 +1206,11 @@ describe('ClaudianPlugin', () => {
       const loadSourceSpy = mockMetadataSources(deferredMetadata);
       const saveMetadataSpy = vi.spyOn(getConversationPersistence(plugin), 'saveMetadata')
         .mockRejectedValueOnce(new Error('metadata write failed'));
-      (plugin as any).sessionMetadata.pendingScan = false;
+      plugin['sessionMetadata']['pendingScan'] = false;
 
       let loadError: unknown;
       try {
-        await (plugin as any).sessionMetadata.loadRemaining();
+        await plugin['sessionMetadata']['loadRemaining']();
       } catch (error) {
         loadError = error;
       }
@@ -1497,7 +1517,7 @@ describe('ClaudianPlugin', () => {
       );
 
       plugin.onunload();
-      await (plugin as any).applicationShutdownPromise;
+      await plugin['applicationShutdownPromise'];
 
       expect(disposeSpy).toHaveBeenCalledTimes(1);
     });
@@ -1537,7 +1557,7 @@ describe('ClaudianPlugin', () => {
         .mockImplementationOnce(() => new Promise<void>(resolve => { finishClose = resolve; }));
       let stopped = false;
       plugin.onunload();
-      const shutdown = (plugin as any).applicationShutdownPromise.then(() => { stopped = true; });
+      const shutdown = plugin['applicationShutdownPromise']!.then(() => { stopped = true; });
       try {
         await waitForCondition(() => disposeWorkspaces.mock.calls.length > 0);
         expect(close).not.toHaveBeenCalled();
@@ -1559,12 +1579,12 @@ describe('ClaudianPlugin', () => {
     it('releases workspaces and the endpoint when native archive cleanup fails', async () => {
       await plugin.onload();
       const failure = new Error('archive cleanup failed');
-      vi.spyOn((plugin as any).nativeSessionArchives, 'dispose').mockRejectedValueOnce(failure);
+      vi.spyOn(plugin['nativeSessionArchives'], 'dispose').mockRejectedValueOnce(failure);
       const disposeWorkspaces = vi.spyOn(ProviderWorkspaceRegistry, 'disposeInitialized');
       const close = vi.spyOn(LoopbackSessionToolServer.prototype, 'close');
 
       plugin.onunload();
-      await expect((plugin as any).applicationShutdownPromise).rejects.toBe(failure);
+      await expect(plugin['applicationShutdownPromise']).rejects.toBe(failure);
 
       expect(disposeWorkspaces).toHaveBeenCalledTimes(1);
       expect(close).toHaveBeenCalledTimes(1);
@@ -1618,7 +1638,7 @@ describe('ClaudianPlugin', () => {
       expect(disposeWorkspaces).not.toHaveBeenCalled();
       finishSession();
       await turn;
-      await (plugin as any).applicationShutdownPromise;
+      await plugin['applicationShutdownPromise'];
 
       expect(disposeExecution).toHaveBeenCalledTimes(1);
       expect(disposeWorkspaces).toHaveBeenCalledTimes(1);
@@ -1788,7 +1808,7 @@ describe('ClaudianPlugin', () => {
       );
 
       // The written content should include state fields
-      const writeCall = (mockApp.vault.adapter.write as Mock).mock.calls.find(
+      const writeCall = mockApp.vault.adapter.write.mock.calls.find(
         ([path]) => path === '.claudian/claudian-settings.json'
       );
       expect(writeCall).toBeDefined();
@@ -1811,12 +1831,12 @@ describe('ClaudianPlugin', () => {
         events.push('reconcile');
         return [];
       });
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([{
+      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView({
         refreshModelSelector: vi.fn(() => events.push('refresh')),
-      } as any]);
+      })]);
 
       chatHostOf(plugin).notifyProviderChatOptionsChanged('claude');
-      await (plugin as any).providerChatOptions.tail;
+      await plugin['providerChatOptions']['tail'];
 
       expect(events).toEqual(['reconcile', 'refresh']);
     });
@@ -1827,12 +1847,12 @@ describe('ClaudianPlugin', () => {
       vi.spyOn(repository, 'reconcileSelectedModels')
         .mockRejectedValue(new Error('disk full'));
       const refreshModelSelector = vi.fn();
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([{
+      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView({
         refreshModelSelector,
-      } as any]);
+      })]);
 
       chatHostOf(plugin).notifyProviderChatOptionsChanged('claude');
-      await (plugin as any).providerChatOptions.tail;
+      await plugin['providerChatOptions']['tail'];
 
       expect(refreshModelSelector).not.toHaveBeenCalled();
     });
@@ -1869,10 +1889,10 @@ describe('ClaudianPlugin', () => {
         events.push('reconcile');
         return [];
       });
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([{
+      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView({
         invalidateProviderCommandCaches: vi.fn(() => events.push('invalidate')),
         refreshModelSelector: vi.fn(() => events.push('refresh')),
-      } as any]);
+      })]);
 
       await plugin.providerHost.applyEnvironmentVariables(
         'provider:claude',
@@ -2039,7 +2059,7 @@ describe('ClaudianPlugin', () => {
           createCodexModelCatalogCommit(plugin.providerHost),
         );
         const writes = () => mockApp.vault.adapter.write.mock.calls
-          .filter(([path]: [string]) => path === settingsPath);
+          .filter(([path]) => path === settingsPath);
         return { coordinator, files, writes, writesBefore: writes().length };
       }
 
@@ -2093,14 +2113,14 @@ describe('ClaudianPlugin', () => {
         beforeTransition: () => markStale(),
       });
       ProviderWorkspaceRegistry.setServices('grok', {
-        modelCatalog: { markStale } as any,
+        modelCatalog: catalogWith({ markStale }),
       });
       const invalidateProviderCommandCaches = vi.fn();
       const refreshModelSelector = vi.fn();
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([{
+      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView({
         invalidateProviderCommandCaches,
         refreshModelSelector,
-      } as any]);
+      })]);
       const initialGeneration = plugin.executionLifecycleRegistry
         .getProviderGeneration('grok');
 
@@ -2136,7 +2156,7 @@ describe('ClaudianPlugin', () => {
 
     it('retains a committed invalidation generation when publication fails before invalidation', async () => {
       await plugin.onload();
-      (plugin as any).sessionMetadata.loadedAll = true;
+      plugin['sessionMetadata']['loadedAll'] = true;
       const conversation = await chatHostOf(plugin).createConversation({
         providerId: 'claude',
         sessionId: 'pre-invalidation-session',
@@ -2159,13 +2179,13 @@ describe('ClaudianPlugin', () => {
 
         const generation = plugin.settings.pendingProviderSessionInvalidations.claude;
         expect(generation).toEqual(expect.any(Number));
-        expect(runtimeSettingsOf(plugin).pendingEnvironmentInvalidationGenerations.get('claude'))
+        expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].get('claude'))
           .toBe(generation);
         expect(chatHostOf(plugin).getConversationSync(conversation.id)!.sessionId).toBe('pre-invalidation-session');
         const persistedFailureSettings = JSON.parse(
           [...mockApp.vault.adapter.write.mock.calls]
             .reverse()
-            .find(([path]: [string]) => path === '.claudian/claudian-settings.json')?.[1]
+            .find(([path]) => path === '.claudian/claudian-settings.json')?.[1]
             ?? '{}',
         );
         expect(persistedFailureSettings.pendingProviderSessionInvalidations?.claude)
@@ -2180,7 +2200,7 @@ describe('ClaudianPlugin', () => {
 
         expect(chatHostOf(plugin).getConversationSync(conversation.id)!.sessionId).toBeNull();
         expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-        expect(runtimeSettingsOf(plugin).pendingEnvironmentInvalidationGenerations.has('claude')).toBe(false);
+        expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].has('claude')).toBe(false);
         expect(invalidateSpy).toHaveBeenCalledTimes(2);
         expect(plugin.executionLifecycleRegistry.getProviderGeneration('claude'))
           .toBe(initialGeneration + 2);
@@ -2191,7 +2211,7 @@ describe('ClaudianPlugin', () => {
 
     it('keeps invalidation pending until every invalidated metadata write succeeds', async () => {
       await plugin.onload();
-      (plugin as any).sessionMetadata.loadedAll = true;
+      plugin['sessionMetadata']['loadedAll'] = true;
       const first = await chatHostOf(plugin).createConversation({
         providerId: 'claude',
         sessionId: 'partial-write-first',
@@ -2215,12 +2235,12 @@ describe('ClaudianPlugin', () => {
         expect(chatHostOf(plugin).getConversationSync(first.id)!.sessionId).toBeNull();
         expect(chatHostOf(plugin).getConversationSync(second.id)!.sessionId).toBeNull();
         expect(generation).toEqual(expect.any(Number));
-        expect(runtimeSettingsOf(plugin).pendingEnvironmentInvalidationGenerations.get('claude'))
+        expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].get('claude'))
           .toBe(generation);
         const persistedFailureSettings = JSON.parse(
           [...mockApp.vault.adapter.write.mock.calls]
             .reverse()
-            .find(([path]: [string]) => path === '.claudian/claudian-settings.json')?.[1]
+            .find(([path]) => path === '.claudian/claudian-settings.json')?.[1]
             ?? '{}',
         );
         expect(persistedFailureSettings.pendingProviderSessionInvalidations?.claude)
@@ -2237,7 +2257,7 @@ describe('ClaudianPlugin', () => {
           expect.objectContaining({ id: second.id, sessionId: null }),
         ]));
         expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-        expect(runtimeSettingsOf(plugin).pendingEnvironmentInvalidationGenerations.has('claude')).toBe(false);
+        expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].has('claude')).toBe(false);
       } finally {
         saveMetadataSpy.mockRestore();
       }
@@ -2374,7 +2394,7 @@ describe('ClaudianPlugin', () => {
         'ANTHROPIC_BASE_URL=https://failed.example.com',
       ).catch(error => error);
       await writeStarted;
-      const scan = (plugin as any).sessionMetadata.loadRemaining();
+      const scan = plugin['sessionMetadata']['loadRemaining']();
       await batchPublished;
       rejectWrite(writeError);
       expect(await apply).toBe(writeError);
@@ -2402,13 +2422,13 @@ describe('ClaudianPlugin', () => {
         resumeAtMessageId: 'deferred-resume-message',
       }));
       expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-      expect(runtimeSettingsOf(plugin).pendingEnvironmentInvalidationGenerations.has('claude')).toBe(false);
+      expect(runtimeSettingsOf(plugin)['pendingEnvironmentInvalidationGenerations'].has('claude')).toBe(false);
       expect(saveMetadataSpy).not.toHaveBeenCalledWith(expect.objectContaining({
         id: deferredMetadata.id,
         sessionId: null,
       }));
       expect(mockApp.vault.adapter.write.mock.calls.filter(
-        ([path]: [string]) => path === '.claudian/claudian-settings.json',
+        ([path]) => path === '.claudian/claudian-settings.json',
       )).toHaveLength(1);
 
       const invalidateSpy = vi.spyOn(
@@ -2483,7 +2503,7 @@ describe('ClaudianPlugin', () => {
 
     it('serializes overlapping environment invalidation writes', async () => {
       await plugin.onload();
-      (plugin as any).sessionMetadata.loadedAll = true;
+      plugin['sessionMetadata']['loadedAll'] = true;
       await chatHostOf(plugin).createConversation({ sessionId: 'overlapping-session' });
       let finishFirstWrite!: () => void;
       const firstWriteRelease = new Promise<void>((resolve) => {
@@ -2532,7 +2552,7 @@ describe('ClaudianPlugin', () => {
 
     it('flushes already-invalidated sessions after an earlier environment write fails', async () => {
       await plugin.onload();
-      (plugin as any).sessionMetadata.loadedAll = true;
+      plugin['sessionMetadata']['loadedAll'] = true;
       await chatHostOf(plugin).createConversation({ sessionId: 'failed-overlap-session' });
       const saveMetadataSpy = vi.spyOn(getConversationPersistence(plugin), 'saveMetadata')
         .mockRejectedValueOnce(new Error('metadata write failed'));
@@ -2562,12 +2582,12 @@ describe('ClaudianPlugin', () => {
       const initialGeneration = plugin.executionLifecycleRegistry
         .getProviderGeneration('claude');
 
-      const mockView = {
+      const mockView = createUnopenedView({
         getTabManager: vi.fn(),
         invalidateProviderCommandCaches: vi.fn(),
         refreshModelSelector: vi.fn(),
-      };
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([mockView as any]);
+      });
+      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView(mockView)]);
 
       // Change env but not in a way that affects model
       await plugin.providerHost.applyEnvironmentVariables('shared', 'SOME_VAR=value');
@@ -2594,8 +2614,8 @@ describe('ClaudianPlugin', () => {
       const first = createView();
       const second = createView();
       vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([
-        first.view as any,
-        second.view as any,
+        createUnopenedView(first.view),
+        createUnopenedView(second.view),
       ]);
 
       await plugin.providerHost.applyEnvironmentVariables('shared', 'SOME_VAR=value');
@@ -2621,12 +2641,12 @@ describe('ClaudianPlugin', () => {
         }],
       });
 
-      const mockView = {
+      const mockView = createUnopenedView({
         getTabManager: vi.fn(),
         invalidateProviderCommandCaches: vi.fn(),
         refreshModelSelector: vi.fn(),
-      };
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([mockView as any]);
+      });
+      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView(mockView)]);
 
       await plugin.providerHost.applyEnvironmentVariables('provider:claude', 'ANTHROPIC_MODEL=claude-sonnet-4-5');
 
@@ -2657,12 +2677,12 @@ describe('ClaudianPlugin', () => {
         .mockReturnValue({ changed: true, sessionPolicy: 'reload' });
       const stagePendingSpy = vi.spyOn(runtimeSettingsOf(plugin), 'stagePendingSessionInvalidations');
       const getTabManager = vi.fn();
-      const mockView = {
+      const mockView = createUnopenedView({
         getTabManager,
         invalidateProviderCommandCaches: vi.fn(),
         refreshModelSelector: vi.fn(),
-      };
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([mockView as any]);
+      });
+      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView(mockView)]);
 
       try {
         await plugin.providerHost.applyEnvironmentVariables(
@@ -2702,12 +2722,12 @@ describe('ClaudianPlugin', () => {
       const initialGeneration = plugin.executionLifecycleRegistry
         .getProviderGeneration('grok');
 
-      const mockView = {
+      const mockView = createUnopenedView({
         getTabManager: vi.fn(),
         invalidateProviderCommandCaches: vi.fn(),
         refreshModelSelector: vi.fn(),
-      };
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([mockView as any]);
+      });
+      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView(mockView)]);
 
       await plugin.providerHost.applyEnvironmentVariables(
         'provider:grok',
@@ -2724,12 +2744,12 @@ describe('ClaudianPlugin', () => {
       const conversation = await chatHostOf(plugin).createConversation({ providerId: 'grok' });
       const initialGeneration = plugin.executionLifecycleRegistry
         .getProviderGeneration('grok');
-      const mockView = {
+      const mockView = createUnopenedView({
         getTabManager: vi.fn(),
         invalidateProviderCommandCaches: vi.fn(),
         refreshModelSelector: vi.fn(),
-      };
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([mockView as any]);
+      });
+      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView(mockView)]);
 
       await plugin.providerHost.applyEnvironmentVariables(
         'provider:grok',
@@ -2770,7 +2790,7 @@ describe('ClaudianPlugin', () => {
       });
 
       await plugin.onload();
-      (plugin as any).sessionMetadata.loadedAll = false;
+      plugin['sessionMetadata']['loadedAll'] = false;
       const hostnameKey = getHostnameKey();
       await plugin.providerHost.applyProviderRuntimeSettings(['codex'], (settings) => {
         updateCodexProviderSettings(settings, {
@@ -2807,7 +2827,7 @@ describe('ClaudianPlugin', () => {
       const loadSourceSpy = mockMetadataSources(deferredMetadata);
 
       await restartedPlugin.onload();
-      await (restartedPlugin as any).sessionMetadata.loadRemaining();
+      await restartedPlugin['sessionMetadata']['loadRemaining']();
 
       const restartedConversation = chatHostOf(restartedPlugin).getCachedConversation(deferredMetadata.id);
       const persistedMetadata = JSON.parse(
@@ -2869,7 +2889,7 @@ describe('ClaudianPlugin', () => {
 
     it('finishes durable invalidation when a post-commit apply hook fails', async () => {
       await plugin.onload();
-      (plugin as any).sessionMetadata.loadedAll = true;
+      plugin['sessionMetadata']['loadedAll'] = true;
       const conversation = await chatHostOf(plugin).createConversation({
         providerId: 'codex',
         sessionId: 'post-commit-thread',
@@ -3009,10 +3029,10 @@ describe('ClaudianPlugin', () => {
       await plugin.onload();
 
       const startNewConversation = vi.fn().mockResolvedValue(undefined);
-      vi.spyOn(viewsOf(plugin), 'getView').mockReturnValue({
+      vi.spyOn(viewsOf(plugin), 'getView').mockReturnValue(createUnopenedView({
         getTabManager: vi.fn().mockReturnValue({}),
         startNewConversation,
-      } as any);
+      }));
 
       const command = getRegisteredCommand('new-tab');
       expect(command.name).toBe('New');
@@ -3025,12 +3045,12 @@ describe('ClaudianPlugin', () => {
     it('keeps replace and close tab commands out of dual mode', async () => {
       await plugin.onload();
 
-      vi.spyOn(viewsOf(plugin), 'getView').mockReturnValue({
+      vi.spyOn(viewsOf(plugin), 'getView').mockReturnValue(createUnopenedView({
         getCompactTabManager: () => null,
         getTabManager: vi.fn().mockReturnValue({
           getActiveTab: vi.fn().mockReturnValue({ state: { isStreaming: false } }),
         }),
-      } as any);
+      }));
 
       const replaceCommand = getRegisteredCommand('new-session');
       const closeCommand = getRegisteredCommand('close-current-tab');
@@ -3048,7 +3068,7 @@ describe('ClaudianPlugin', () => {
         renameActiveTab,
         getTabManager: vi.fn().mockReturnValue({}),
       };
-      vi.spyOn(viewsOf(plugin), 'getView').mockReturnValue(view as any);
+      vi.spyOn(viewsOf(plugin), 'getView').mockReturnValue(createUnopenedView(view));
       const command = getRegisteredCommand('rename-current-tab');
 
       expect(command.name).toBe('Rename current tab');
@@ -3067,17 +3087,17 @@ describe('ClaudianPlugin', () => {
 
       const createNewTab = vi.fn().mockResolvedValue(undefined);
       const focusActiveInput = vi.fn();
-      const mockView = {
+      const mockView = createUnopenedView({
         createNewTab,
         focusActiveInput,
-      };
+      });
 
       let viewOpened = false;
       vi.spyOn(viewsOf(plugin), 'activateView').mockImplementation(async () => {
         viewOpened = true;
       });
       vi.spyOn(viewsOf(plugin), 'getView').mockImplementation(() => (
-        viewOpened ? mockView as any : null
+        viewOpened ? mockView : null
       ));
 
       const command = getRegisteredCommand('new-tab');
@@ -3106,17 +3126,17 @@ describe('ClaudianPlugin', () => {
 
       const createNewTab = vi.fn().mockResolvedValue(undefined);
       const focusActiveInput = vi.fn();
-      const mockView = {
+      const mockView = createUnopenedView({
         createNewTab,
         focusActiveInput,
-      };
+      });
 
       let viewOpened = false;
       vi.spyOn(viewsOf(plugin), 'activateView').mockImplementation(async () => {
         viewOpened = true;
       });
       vi.spyOn(viewsOf(plugin), 'getView').mockImplementation(() => (
-        viewOpened ? mockView as any : null
+        viewOpened ? mockView : null
       ));
 
       const command = getRegisteredCommand('new-tab');
@@ -3134,13 +3154,13 @@ describe('ClaudianPlugin', () => {
     it('stays available regardless of the former tab limit', async () => {
       await plugin.onload();
 
-      const mockView = {
+      const mockView = createUnopenedView({
         getTabManager: vi.fn().mockReturnValue({
           canCreateTab: vi.fn().mockReturnValue(false),
         }),
-      };
+      });
 
-      vi.spyOn(viewsOf(plugin), 'getView').mockReturnValue(mockView as any);
+      vi.spyOn(viewsOf(plugin), 'getView').mockReturnValue(createUnopenedView(mockView));
 
       const command = getRegisteredCommand('new-tab');
 
@@ -3553,8 +3573,8 @@ describe('ClaudianPlugin', () => {
         notifyConversationListChanged: vi.fn(),
       };
       vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([
-        firstView as any,
-        secondView as any,
+        createUnopenedView(firstView),
+        createUnopenedView(secondView),
       ]);
 
       const conversation = await chatHostOf(plugin).createConversation();
@@ -3585,8 +3605,8 @@ describe('ClaudianPlugin', () => {
         }),
       };
       vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([
-        failingView as any,
-        healthyView as any,
+        createUnopenedView(failingView),
+        createUnopenedView(healthyView),
       ]);
 
       const conversation = await chatHostOf(plugin).createConversation({
@@ -3668,7 +3688,7 @@ describe('ClaudianPlugin', () => {
       expect(disposeWorkspaces).not.toHaveBeenCalled();
 
       releaseArchive();
-      await Promise.all([archive, (plugin as any).applicationShutdownPromise]);
+      await Promise.all([archive, plugin['applicationShutdownPromise']]);
       expect(disposeWorkspaces).toHaveBeenCalledTimes(1);
       expect(Notice).not.toHaveBeenCalledWith(expect.stringContaining('could not archive or restore'));
     });
@@ -3721,9 +3741,9 @@ describe('ClaudianPlugin', () => {
       const linked = await detachedLinkedContentSession();
       const second = await detachedLinkedContentSession();
       const view = { notifyConversationListChanged: vi.fn() };
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([view as any]);
+      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView(view)]);
       const listener = mockApp.vault.on.mock.calls.find((call: unknown[]) => call[0] === 'create')![1];
-      for (let index = 0; index < 20; index++) listener(new (TFile as any)(`note-${index}.md`));
+      for (let index = 0; index < 20; index++) listener(Object.assign(new TFile(), { path: `note-${index}.md` }));
       expect(linked.handleCreated).toHaveBeenCalledTimes(20);
       expect(second.handleCreated).toHaveBeenCalledTimes(20);
       expect(view.notifyConversationListChanged).not.toHaveBeenCalled();
@@ -3752,12 +3772,12 @@ describe('ClaudianPlugin', () => {
       await chatHostOf(plugin).setLinkedContentPinned('Notes/Old.md', true);
       await chatHostOf(plugin).setLinkedContentPinned('Projects/Old/Plan.md', true);
 
-      await (plugin as any).vaultContentEvents.handleRename(
-        new (TFile as any)('Notes/New.md'),
+      await plugin['vaultContentEvents'].handleRename(
+        Object.assign(new TFile(), { path: 'Notes/New.md' }),
         'Notes/Old.md',
       );
-      await (plugin as any).vaultContentEvents.handleRename(
-        new (TFolder as any)('Projects/New'),
+      await plugin['vaultContentEvents'].handleRename(
+        Object.assign(new TFolder(), { path: 'Projects/New' }),
         'Projects/Old',
       );
 
@@ -3800,8 +3820,8 @@ describe('ClaudianPlugin', () => {
       if (blocking) await waitForCondition(() => Boolean(releaseWrite));
       const creating = model.conversationController.createConversation(token, { providerId: 'claude' });
       if (!blocking) await waitForCondition(() => Boolean(releaseWrite));
-      const renaming = (plugin as any).vaultContentEvents.handleRename(
-        new (TFile as any)('Notes/New.md'), 'Notes/Old.md',
+      const renaming = plugin['vaultContentEvents'].handleRename(
+        Object.assign(new TFile(), { path: 'Notes/New.md' }), 'Notes/Old.md',
       );
       // A separate new file/conversation can reuse the old path after the Vault event.
       const laterCreation = host.createConversation({ linkedContentPath: 'Notes/Old.md' });
@@ -3826,11 +3846,11 @@ describe('ClaudianPlugin', () => {
       await chatHostOf(plugin).setLinkedContentPinned('Projects/Archive/One.md', true);
       await chatHostOf(plugin).setLinkedContentPinned('Projects/Archive/Two.md', true);
 
-      await (plugin as any).vaultContentEvents.handleDelete(
-        new (TFile as any)('Notes/Plan.md'),
+      await plugin['vaultContentEvents'].handleDelete(
+        Object.assign(new TFile(), { path: 'Notes/Plan.md' }),
       );
-      await (plugin as any).vaultContentEvents.handleDelete(
-        new (TFolder as any)('Projects/Archive'),
+      await plugin['vaultContentEvents'].handleDelete(
+        Object.assign(new TFolder(), { path: 'Projects/Archive' }),
       );
 
       expect(plugin.settings.pinnedLinkedContentPaths).toEqual([]);
@@ -3842,10 +3862,10 @@ describe('ClaudianPlugin', () => {
       const view = {
         notifyConversationListChanged: vi.fn(),
       };
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([view as any]);
+      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView(view)]);
 
-      await (plugin as any).vaultContentEvents.handleDelete(
-        new (TFile as any)('Notes/Unpinned.md'),
+      await plugin['vaultContentEvents'].handleDelete(
+        Object.assign(new TFile(), { path: 'Notes/Unpinned.md' }),
       );
 
       expect(linked.handleDeleted).toHaveBeenCalledWith(
@@ -3859,7 +3879,7 @@ describe('ClaudianPlugin', () => {
         (call: unknown[]) => call[0] === 'create',
       )?.[1];
       expect(createListener).toEqual(expect.any(Function));
-      createListener(new (TFile as any)('Notes/Unpinned.md'));
+      createListener(Object.assign(new TFile(), { path: 'Notes/Unpinned.md' }));
 
       expect(linked.handleCreated).toHaveBeenCalledWith('Notes/Unpinned.md');
       await new Promise(resolve => window.setTimeout(resolve, 75));
@@ -3870,10 +3890,10 @@ describe('ClaudianPlugin', () => {
       await plugin.onload();
       const conversation = await chatHostOf(plugin).createConversation({ linkedContentPath: 'Notes/Old.md' });
       const view = { handleLinkedContentRenamed: vi.fn(), notifyConversationListChanged: vi.fn() };
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([view as any]);
+      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView(view)]);
       vi.spyOn(PinnedLinkedContentPathCoordinator.prototype, 'rewritePaths')
         .mockRejectedValueOnce(new Error('settings unavailable'));
-      await expect((plugin as any).vaultContentEvents.handleRename(new (TFile as any)('Notes/New.md'), 'Notes/Old.md'))
+      await expect(plugin['vaultContentEvents'].handleRename(Object.assign(new TFile(), { path: 'Notes/New.md' }), 'Notes/Old.md'))
         .rejects.toThrow('settings unavailable');
       expect(chatHostOf(plugin).getConversationSync(conversation.id)?.linkedContentPath).toBe('Notes/New.md');
       await new Promise(resolve => window.setTimeout(resolve, 75));
@@ -3886,12 +3906,12 @@ describe('ClaudianPlugin', () => {
       const view = {
         notifyConversationListChanged: vi.fn(),
       };
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([view as any]);
+      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView(view)]);
       vi.spyOn(PinnedLinkedContentPathCoordinator.prototype, 'removePaths')
         .mockRejectedValueOnce(new Error('settings unavailable'));
 
-      await expect((plugin as any).vaultContentEvents.handleDelete(
-        new (TFile as any)('Notes/Unpinned.md'),
+      await expect(plugin['vaultContentEvents'].handleDelete(
+        Object.assign(new TFile(), { path: 'Notes/Unpinned.md' }),
       )).rejects.toThrow('settings unavailable');
 
       expect(linked.handleDeleted).toHaveBeenCalledWith(
@@ -3907,9 +3927,9 @@ describe('ClaudianPlugin', () => {
     it('keeps Linked content creation-only and routes Vault renames explicitly', async () => {
       await plugin.onload();
       const notifyConversationListChanged = vi.fn();
-      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([{
+      vi.spyOn(viewsOf(plugin), 'getAllViews').mockReturnValue([createUnopenedView({
         notifyConversationListChanged,
-      } as any]);
+      })]);
 
       const conv = await chatHostOf(plugin).createConversation({
         linkedContentPath: 'Projects/Initial.md',
@@ -3919,12 +3939,12 @@ describe('ClaudianPlugin', () => {
         .toBe('Projects/Initial.md');
       notifyConversationListChanged.mockClear();
 
-      await expect((chatHostOf(plugin).updateConversation as any)(conv.id, {
+      await expect((chatHostOf(plugin).updateConversation)(conv.id, {
         linkedContentPath: 'Projects/Updated.md',
-      })).rejects.toThrow('immutable fields');
+      } as unknown as Parameters<ClaudianChatFeatureHost['updateConversation']>[1])).rejects.toThrow('immutable fields');
 
-      await (plugin as any).vaultContentEvents.handleRename(
-        new (TFile as any)('Projects/Updated.md'), 'Projects/Initial.md',
+      await plugin['vaultContentEvents'].handleRename(
+        Object.assign(new TFile(), { path: 'Projects/Updated.md' }), 'Projects/Initial.md',
       );
       await new Promise(resolve => window.setTimeout(resolve, 75));
 
@@ -4042,7 +4062,7 @@ describe('ClaudianPlugin', () => {
       });
       mockMetadataSources(...sessions);
       await plugin.onload();
-      await (plugin as any).sessionMetadata.loadRemaining();
+      await plugin['sessionMetadata']['loadRemaining']();
       await new Promise(resolve => setImmediate(resolve));
       return files;
     }
@@ -4092,7 +4112,7 @@ describe('ClaudianPlugin', () => {
       const stalePath = `${getDeviceSessionsPath(getHostnameKey())}/stale-session.meta.json`;
       let releasePinWrite!: () => void;
       const pinWriteGate = new Promise<void>((resolve) => { releasePinWrite = resolve; });
-      const write = mockApp.vault.adapter.write.getMockImplementation();
+      const write = mockApp.vault.adapter.write.getMockImplementation()!;
       let isFirstStaleWrite = true;
       mockApp.vault.adapter.write.mockImplementation(async (path: string, content: string) => {
         if (path === stalePath && isFirstStaleWrite) {
@@ -4141,8 +4161,8 @@ describe('ClaudianPlugin', () => {
       });
 
       const updated = await chatHostOf(plugin).getConversationById(conv.id);
-      expect((updated?.providerState as any)?.previousProviderSessionIds).toEqual(['session-A']);
-      expect((updated?.providerState as any)?.providerSessionId).toBe('session-B');
+      expect((updated?.providerState)?.previousProviderSessionIds).toEqual(['session-A']);
+      expect((updated?.providerState)?.providerSessionId).toBe('session-B');
 
       // Further update should preserve previousProviderSessionIds
       await chatHostOf(plugin).updateConversation(conv.id, {
@@ -4150,7 +4170,7 @@ describe('ClaudianPlugin', () => {
       });
 
       const afterTitleUpdate = await chatHostOf(plugin).getConversationById(conv.id);
-      expect((afterTitleUpdate?.providerState as any)?.previousProviderSessionIds).toEqual(['session-A']);
+      expect((afterTitleUpdate?.providerState)?.previousProviderSessionIds).toEqual(['session-A']);
     });
 
     it('should handle empty previousProviderSessionIds array', async () => {
@@ -4165,7 +4185,7 @@ describe('ClaudianPlugin', () => {
       });
 
       const updated = await chatHostOf(plugin).getConversationById(conv.id);
-      expect((updated?.providerState as any)?.previousProviderSessionIds).toEqual([]);
+      expect((updated?.providerState)?.previousProviderSessionIds).toEqual([]);
     });
   });
 
@@ -4333,10 +4353,10 @@ describe('ClaudianPlugin', () => {
                   input: { file_path: 'README.md' },
                   status: 'completed',
                   result: 'content',
-                } as any,
+                },
               ],
               isExpanded: false,
-            } as any,
+            },
           },
         },
         messages: [
@@ -4352,11 +4372,11 @@ describe('ClaudianPlugin', () => {
                 input: { description: 'Do sub task' },
                 status: 'completed',
                 result: 'Task completed',
-              } as any,
+              },
             ],
             // Simulate partial persisted blocks that lost the task tool block.
-            contentBlocks: [{ type: 'text', content: 'Done' }] as any,
-          } as any,
+            contentBlocks: [{ type: 'text', content: 'Done' }],
+          },
         ],
       });
 
@@ -4409,7 +4429,7 @@ describe('ClaudianPlugin', () => {
               result: 'Short stale result',
               toolCalls: [],
               isExpanded: false,
-            } as any,
+            },
           },
         },
         messages: [
@@ -4425,10 +4445,10 @@ describe('ClaudianPlugin', () => {
                 input: { description: 'Do sub task', run_in_background: true },
                 status: 'completed',
                 result: 'Full SDK result from queue-operation',
-              } as any,
+              },
             ],
-            contentBlocks: [{ type: 'subagent', subagentId: 'task-merge-1', mode: 'async' }] as any,
-          } as any,
+            contentBlocks: [{ type: 'subagent', subagentId: 'task-merge-1', mode: 'async' }],
+          },
         ],
       });
 
@@ -4472,7 +4492,7 @@ describe('ClaudianPlugin', () => {
               toolCalls: [],
               isExpanded: false,
               agentId: 'agent-cache-richer',
-            } as any,
+            },
           },
         },
         messages: [],
@@ -4503,10 +4523,10 @@ describe('ClaudianPlugin', () => {
                   isExpanded: false,
                   agentId: 'agent-cache-richer',
                 },
-              } as any,
+              },
             ],
-            contentBlocks: [{ type: 'subagent', subagentId: 'task-merge-2', mode: 'async' }] as any,
-          } as any,
+            contentBlocks: [{ type: 'subagent', subagentId: 'task-merge-2', mode: 'async' }],
+          },
         ],
         skippedLines: 0,
       });
@@ -4538,7 +4558,7 @@ describe('ClaudianPlugin', () => {
               result: 'Recovered sync result',
               toolCalls: [],
               isExpanded: false,
-            } as any,
+            },
           },
         },
         messages: [
@@ -4554,10 +4574,10 @@ describe('ClaudianPlugin', () => {
                 input: { description: 'Do sync task' },
                 status: 'completed',
                 result: 'Sync result',
-              } as any,
+              },
             ],
-            contentBlocks: [{ type: 'subagent', subagentId: 'task-sync-1', mode: 'sync' }] as any,
-          } as any,
+            contentBlocks: [{ type: 'subagent', subagentId: 'task-sync-1', mode: 'sync' }],
+          },
         ],
       });
 
@@ -4592,7 +4612,7 @@ describe('ClaudianPlugin', () => {
               result: 'Still running',
               toolCalls: [],
               isExpanded: false,
-            } as any,
+            },
           },
         },
         messages: [],
@@ -4623,10 +4643,10 @@ describe('ClaudianPlugin', () => {
                   isExpanded: false,
                   agentId: 'agent-sdk-terminal',
                 },
-              } as any,
+              },
             ],
-            contentBlocks: [{ type: 'subagent', subagentId: 'task-async-sdk-terminal', mode: 'async' }] as any,
-          } as any,
+            contentBlocks: [{ type: 'subagent', subagentId: 'task-async-sdk-terminal', mode: 'async' }],
+          },
         ],
         skippedLines: 0,
       });
@@ -4661,7 +4681,7 @@ describe('ClaudianPlugin', () => {
               toolCalls: [],
               isExpanded: false,
               agentId: 'agent-cache-terminal',
-            } as any,
+            },
           },
         },
         messages: [],
@@ -4692,10 +4712,10 @@ describe('ClaudianPlugin', () => {
                   isExpanded: false,
                   agentId: 'agent-cache-terminal',
                 },
-              } as any,
+              },
             ],
-            contentBlocks: [{ type: 'subagent', subagentId: 'task-async-cache-terminal', mode: 'async' }] as any,
-          } as any,
+            contentBlocks: [{ type: 'subagent', subagentId: 'task-async-cache-terminal', mode: 'async' }],
+          },
         ],
         skippedLines: 0,
       });
@@ -4729,7 +4749,7 @@ describe('ClaudianPlugin', () => {
               result: 'Recovered async result',
               toolCalls: [],
               isExpanded: false,
-            } as any,
+            },
           },
         },
         messages: [
@@ -4745,10 +4765,10 @@ describe('ClaudianPlugin', () => {
                 input: { description: 'Do background task', run_in_background: true },
                 status: 'completed',
                 result: 'Task started',
-              } as any,
+              },
             ],
-            contentBlocks: [{ type: 'text', content: 'Started' }] as any,
-          } as any,
+            contentBlocks: [{ type: 'text', content: 'Started' }],
+          },
         ],
       });
 
@@ -4759,8 +4779,8 @@ describe('ClaudianPlugin', () => {
 
       const loaded = await chatHostOf(plugin).getConversationById(conv.id);
       const block = loaded?.messages[0].contentBlocks?.find(
-        (b: any) => b.type === 'subagent' && b.subagentId === 'task-async-1'
-      ) as any;
+        (b) => b.type === 'subagent' && b.subagentId === 'task-async-1'
+      );
 
       expect(loaded?.messages[0].toolCalls?.find(tc => tc.id === 'task-async-1')).toEqual(
         expect.objectContaining({
@@ -4797,7 +4817,7 @@ describe('ClaudianPlugin', () => {
               agentId: 'agent-a123',
               toolCalls: [],
               isExpanded: false,
-            } as any,
+            },
           },
         },
         messages: [
@@ -4813,10 +4833,10 @@ describe('ClaudianPlugin', () => {
                 input: { description: 'Do background task', run_in_background: true },
                 status: 'completed',
                 result: 'Task started',
-              } as any,
+              },
             ],
-            contentBlocks: [{ type: 'subagent', subagentId: 'task-async-tools', mode: 'async' }] as any,
-          } as any,
+            contentBlocks: [{ type: 'subagent', subagentId: 'task-async-tools', mode: 'async' }],
+          },
         ],
       });
 
@@ -4832,7 +4852,7 @@ describe('ClaudianPlugin', () => {
           status: 'completed',
           result: 'ok',
           isExpanded: false,
-        } as any,
+        },
       ]);
 
       const loaded = await chatHostOf(plugin).getConversationById(conv.id);
@@ -4876,7 +4896,7 @@ describe('ClaudianPlugin', () => {
               result: 'Running in background',
               toolCalls: [],
               isExpanded: false,
-            } as any,
+            },
           },
         },
         messages: [
@@ -4885,8 +4905,8 @@ describe('ClaudianPlugin', () => {
             role: 'assistant',
             content: 'Background work started',
             timestamp: 1000,
-            contentBlocks: [{ type: 'text', content: 'Background work started' }] as any,
-          } as any,
+            contentBlocks: [{ type: 'text', content: 'Background work started' }],
+          },
         ],
       });
 
@@ -4898,10 +4918,10 @@ describe('ClaudianPlugin', () => {
       const loaded = await chatHostOf(plugin).getConversationById(conv.id);
       const assistant = loaded?.messages.find(m => m.id === 'assistant-1');
       const block = assistant?.contentBlocks?.find(
-        (b: any) => b.type === 'subagent' && b.subagentId === 'task-async-orphan'
-      ) as any;
+        (b) => b.type === 'subagent' && b.subagentId === 'task-async-orphan'
+      );
 
-      expect(assistant?.toolCalls?.find((tc: any) => tc.id === 'task-async-orphan')).toEqual(
+      expect(assistant?.toolCalls?.find((tc) => tc.id === 'task-async-orphan')).toEqual(
         expect.objectContaining({
           id: 'task-async-orphan',
           name: TOOL_SUBAGENT,

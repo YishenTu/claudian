@@ -10,8 +10,9 @@ import pair from '@test/fixtures/providers/codex/turn-stats-pair.json';
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
-import { CodexNativeResponseError, CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
+import { type CodexNativeRequest, CodexNativeResponseError, CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
 import { parseCodexSessionContent } from '@test/helpers/providers/codex/parseCodexSessionContent';
+import spawn from 'cross-spawn';
 
 import type {
   ProviderExecutionEvent,
@@ -24,39 +25,25 @@ import { isSteerableExecutionSession } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ClaudianSettings } from '@/core/types';
 import { CodexConversationHistoryService } from '@/providers/codex/history/CodexConversationHistoryService';
-import { createCodexPathMapper } from '@/providers/codex/runtime/CodexPathMapper';
+import { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
+import { getCodexProviderSettings, updateCodexProviderSettings } from '@/providers/codex/settings';
 
 /** The backend resolves its runtime per session; tests pin one instance. */
 const fixedRuntime = (runtime: CodexAppServerRuntime) => (): CodexAppServerRuntime => runtime;
 type MutableTestHost = ProviderHost & { settings: ClaudianSettings };
 
-const nativeRequest = vi.fn();
-const nativeUnsubscribe = vi.fn().mockResolvedValue({ status: 'unsubscribed' });
-const mockResolveLaunchSpec = vi.fn();
+const nativeRequest = vi.fn<(method: string, params: CodexNativeRequest['params']) => unknown>();
+const nativeUnsubscribe = vi.fn<(params: CodexNativeRequest['params']) => Promise<{ status: string }>>().mockResolvedValue({ status: 'unsubscribed' });
+const resolveCliPath = vi.fn(async () => '/native/codex');
+let wslTarget = false;
+const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
 let transportDispose: MockInstance;
 let transportStart: MockInstance;
 
-const mockProcessStart = vi.fn();
-const mockProcessShutdown = vi.fn().mockResolvedValue(undefined);
+let mockProcessStart: MockInstance<CodexAppServerProcess['start']>;
+let mockProcessShutdown: MockInstance<CodexAppServerProcess['shutdown']>;
 const native = new CodexRuntimeHarness();
-vi.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
-  CodexAppServerProcess: vi.fn().mockImplementation(function () {
-    const process = native.createProcess();
-    const start = process.start.bind(process);
-    const shutdown = process.shutdown.bind(process);
-    vi.spyOn(process, 'start').mockImplementation(() => { start(); mockProcessStart(); });
-    vi.spyOn(process, 'shutdown').mockImplementation(async () => { await mockProcessShutdown(); await shutdown(); });
-    return process;
-  }),
-}));
-
-vi.mock('@/providers/codex/runtime/codexAppServerSupport', async () => {
-  const actual = (await vi.importActual<typeof import('@/providers/codex/runtime/codexAppServerSupport')>('@/providers/codex/runtime/codexAppServerSupport'));
-  return {
-    ...actual,
-    resolveCodexAppServerLaunchSpec: (...args: unknown[]) => mockResolveLaunchSpec(...args),
-  };
-});
+vi.mock('cross-spawn', () => ({ default: vi.fn(() => native.createProcess()) }));
 
 import type { MockInstance } from 'vitest';
 
@@ -79,7 +66,20 @@ afterEach(async () => {
   await Promise.all(runtimes.splice(0).map(runtime => runtime.dispose()));
   vi.restoreAllMocks();
   vi.useRealTimers();
+  Object.defineProperty(process, 'platform', originalPlatform);
 });
+
+function nativeImagePath(input: CodexNativeRequest['params']['input']): string {
+  const image = input?.[0];
+  if (image?.type !== 'localImage') throw new Error('Expected a native localImage input');
+  return image.path;
+}
+
+function latestSubagentUpdate(updates: ProviderSessionEvent[]) {
+  const update = updates.at(-1);
+  if (update?.type !== 'subagent_updated') throw new Error('Expected a subagent update');
+  return update;
+}
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -168,6 +168,7 @@ function createTurnResult(turnId: string) {
 
 async function createPlugin(): Promise<MutableTestHost> {
   const fixture = await createProviderHostFixture({ vault: sharedVault,
+    overrides: { workingDirectory: wslTarget ? 'C:\\vault' : '/vault', getResolvedProviderCliPath: resolveCliPath },
     settings: {
       model: TEST_CODEX_MODEL,
       effortLevel: 'medium',
@@ -179,6 +180,7 @@ async function createPlugin(): Promise<MutableTestHost> {
       providerConfigs: {
         codex: {
           enabled: true,
+          environmentVariables: `HOME=${sharedVault.root}\nUSERPROFILE=${sharedVault.root}`,
           discoveredModels: [{
             model: TEST_CODEX_MODEL,
             displayName: 'Test Codex',
@@ -198,6 +200,7 @@ async function createPlugin(): Promise<MutableTestHost> {
       },
     },
   });
+  if (wslTarget) updateCodexProviderSettings(fixture.settings, { installationMethod: 'wsl', wslDistroOverride: 'Ubuntu' });
   return fixture.host;
 }
 
@@ -221,7 +224,7 @@ function createSessionConfig(
   return {
     lifecycle: 'persistent',
     nativePersistence: 'enabled',
-    workingDirectory: '/vault',
+    workingDirectory: wslTarget ? 'C:\\vault' : '/vault',
     interactionPort: createInteractionPort(),
     ...overrides,
   };
@@ -358,7 +361,7 @@ function configureNativeTurn(
         userAgent: 'test',
         codexHome: '/tmp/.codex',
         platformFamily: 'unix',
-        platformOs: 'macos',
+        platformOs: wslTarget ? 'linux' : 'macos',
       };
     }
     if (method === 'thread/start') return createThreadResult(threadId);
@@ -376,7 +379,8 @@ async function createActiveSteerSession() {
   const runEvents = collectEvents(run.events, event => {
     if (event.type === 'turn_started' || event.type === 'execution_error') started.resolve(event);
   });
-  expect(await started.promise).toMatchObject({ type: 'turn_started', accepted: true });
+  const firstEvent = await started.promise;
+  expect(firstEvent).toMatchObject({ type: 'turn_started', accepted: true });
   if (!isSteerableExecutionSession(session)) throw new Error('Codex session should be steerable');
   return { run, session, runEvents };
 }
@@ -413,7 +417,7 @@ describe('CodexExecutionBackend', () => {
     let nativeSandbox: unknown;
     nativeRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
       if (method === 'initialize') return {
-        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
+        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: wslTarget ? 'linux' : 'macos',
       };
       // A loaded thread keeps its policy on resume; only thread/start derives one from the mode.
       if (method === 'thread/start') nativeSandbox = configuredSandboxFor(params.sandbox);
@@ -458,7 +462,7 @@ describe('CodexExecutionBackend', () => {
   it.each([undefined, 'user'])('does not run auto-review when the server returns reviewer %s', async reviewer => {
     nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') return {
-        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
+        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: wslTarget ? 'linux' : 'macos',
       };
       if (method === 'thread/start') return { ...createThreadResult('thread-no-review'), approvalsReviewer: reviewer };
       if (method === 'turn/start') {
@@ -481,7 +485,7 @@ describe('CodexExecutionBackend', () => {
     let turn = 0;
     nativeRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
       if (method === 'initialize') return {
-        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
+        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: wslTarget ? 'linux' : 'macos',
       };
       if (method === 'thread/start') return createThreadResult('thread-review-switch');
       if (method === 'turn/start') {
@@ -522,7 +526,7 @@ describe('CodexExecutionBackend', () => {
     let turn = 0;
     nativeRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
       if (method === 'initialize') return {
-        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
+        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: wslTarget ? 'linux' : 'macos',
       };
       if (method === 'thread/start') return {
         ...createThreadResult('thread-sandbox-switch'), sandbox: configuredSandboxFor(params.sandbox),
@@ -573,7 +577,7 @@ describe('CodexExecutionBackend', () => {
     let turn = 0;
     nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') return {
-        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
+        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: wslTarget ? 'linux' : 'macos',
       };
       if (method === 'thread/start') return createThreadResult('thread-late-override');
       if (method === 'config/read') return {
@@ -626,7 +630,7 @@ describe('CodexExecutionBackend', () => {
   it('sends the configured workspace-write sandbox when a fork child ignores the resume mode', async () => {
     nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') return {
-        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
+        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: wslTarget ? 'linux' : 'macos',
       };
       // thread/fork applies the config sandbox_mode, and resuming the loaded child keeps it.
       if (method === 'thread/fork' || method === 'thread/resume') return {
@@ -659,7 +663,7 @@ describe('CodexExecutionBackend', () => {
   it('falls back to saved Codex preferences, then current selections, for unset request fields', async () => {
     nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') return {
-        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
+        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: wslTarget ? 'linux' : 'macos',
       };
       if (method === 'thread/start') return createThreadResult('thread-fallbacks');
       if (method === 'turn/start') {
@@ -697,6 +701,11 @@ describe('CodexExecutionBackend', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    wslTarget = false;
+    // These protocol fixtures describe a macOS host; WSL rows select Windows explicitly.
+    Object.defineProperty(process, 'platform', { ...originalPlatform, value: 'darwin' });
+    mockProcessStart = vi.spyOn(CodexAppServerProcess.prototype, 'start');
+    mockProcessShutdown = vi.spyOn(CodexAppServerProcess.prototype, 'shutdown');
     nativeUnsubscribe.mockReset().mockResolvedValue({ status: 'unsubscribed' });
     nativeRequest.mockReset();
     transportDispose = vi.spyOn(CodexRPCTransport.prototype, 'dispose');
@@ -710,29 +719,7 @@ describe('CodexExecutionBackend', () => {
         : nativeRequest(request.method, request.params))());
       return true;
     };
-    mockResolveLaunchSpec.mockResolvedValue({
-      target: {
-        method: 'host-native',
-        platformFamily: 'unix',
-        platformOs: 'macos',
-      },
-      command: '/usr/local/bin/codex',
-      args: ['app-server', '--listen', 'stdio://'],
-      spawnCwd: '/vault',
-      targetCwd: '/vault',
-      env: { HOME: '/tmp' },
-      pathMapper: {
-        target: {
-          method: 'host-native',
-          platformFamily: 'unix',
-          platformOs: 'macos',
-        },
-        toTargetPath: (value: string) => value,
-        toHostPath: (value: string) => value,
-        mapTargetPathList: (values: string[]) => values,
-        canRepresentHostPath: () => true,
-      },
-    });
+
   });
 
   it('keeps parent output flowing after a child messages its parent', async () => {
@@ -787,7 +774,7 @@ describe('CodexExecutionBackend', () => {
         item: { type: 'subAgentActivity', id: 'a-message-b', kind: 'interacted', agentThreadId: 'b', agentPath: '/root/b' } });
       emitNotification('turn/started', { threadId: 'b', turn: { id: 'b-turn-2', status: 'inProgress', items: [], error: null } });
       await nativeRoundTrip();
-      const latestB = updates.filter(event => (event as any).subagent?.agentId === 'b').at(-1) as any;
+      const latestB = updates.filter(event => event.type === 'subagent_updated').filter(event => event.subagent.agentId === 'b').at(-1)!;
       expect(latestB.subagent).toEqual(expect.objectContaining({ id: 'spawn-b', status: 'running' }));
     } finally {
       await session.dispose();
@@ -798,14 +785,14 @@ describe('CodexExecutionBackend', () => {
     configureNativeTurn('parent', 'parent-turn', () => ({}));
     const baseRequest = nativeRequest.getMockImplementation()!;
     let answer = 'Ready.';
-    nativeRequest.mockImplementation((method: string, ...args: unknown[]) => {
+    nativeRequest.mockImplementation((method: string, params: CodexNativeRequest['params']) => {
       if (method === 'thread/read') return Promise.resolve({ thread: {
         ...createThreadResult('child', [{ id: 'child-turn', items: [
           { type: 'agentMessage', id: 'answer', phase: 'final_answer', text: answer },
         ] }]).thread,
         agentNickname: 'Bohr', model: TEST_CODEX_MODEL, reasoningEffort: 'high',
       } });
-      return baseRequest(method, ...args);
+      return baseRequest(method, params);
     });
     const session = createBackend(await createPlugin()).createSession(createSessionConfig());
     const updates: ProviderSessionEvent[] = [];
@@ -826,19 +813,19 @@ describe('CodexExecutionBackend', () => {
         type: 'custom_tool_call', call_id: 'clock-call', name: 'exec', input: 'const t = await tools.clock__curr_time({}); text(t.current_time);',
       } });
       await nativeRoundTrip();
-      expect((updates.at(-1) as any).subagent.toolCalls).toEqual([expect.objectContaining({ id: 'clock-call', status: 'running' })]);
+      expect(latestSubagentUpdate(updates).subagent.toolCalls).toEqual([expect.objectContaining({ id: 'clock-call', status: 'running' })]);
       emitNotification('rawResponseItem/completed', { threadId: 'child', turnId: 'child-turn', item: {
         type: 'custom_tool_call_output', call_id: 'clock-call', output: [{ type: 'input_text', text: 'Clock result' }],
       } });
       await nativeRoundTrip();
-      expect((updates.at(-1) as any).subagent.toolCalls).toEqual([expect.objectContaining({ id: 'clock-call', status: 'completed', result: 'Clock result' })]);
+      expect(latestSubagentUpdate(updates).subagent.toolCalls).toEqual([expect.objectContaining({ id: 'clock-call', status: 'completed', result: 'Clock result' })]);
       // A later canonical projection must update the already visible raw row.
       emitNotification('item/completed', { threadId: 'child', turnId: 'child-turn', item: {
         type: 'dynamicToolCall', id: 'canonical-clock', tool: 'clock__curr_time', arguments: {},
         status: 'completed', success: true, contentItems: [{ type: 'inputText', text: 'Clock result' }],
       } });
       await nativeRoundTrip();
-      expect((updates.at(-1) as any).subagent.toolCalls).toEqual([expect.objectContaining({ id: 'clock-call', status: 'completed', result: 'Clock result' })]);
+      expect(latestSubagentUpdate(updates).subagent.toolCalls).toEqual([expect.objectContaining({ id: 'clock-call', status: 'completed', result: 'Clock result' })]);
       emitNotification('rawResponseItem/completed', { threadId: 'child', turnId: 'child-turn', item: {
         type: 'function_call', call_id: 'command-call', name: 'exec_command', arguments: JSON.stringify({ cmd: 'echo child' }),
       } });
@@ -858,7 +845,7 @@ describe('CodexExecutionBackend', () => {
         ]),
       }) }));
       await nativeRoundTrip();
-      expect((updates.at(-1) as any).subagent.toolCalls).toHaveLength(2);
+      expect(latestSubagentUpdate(updates).subagent.toolCalls).toHaveLength(2);
       const firstResult = waitForSessionEvent(session, event => event.type === 'subagent_updated' && event.subagent.result === 'Ready.');
       activity('child-completed-1', 'completed');
       await firstResult;
@@ -881,8 +868,8 @@ describe('CodexExecutionBackend', () => {
       const startResult = createDeferred<ReturnType<typeof createTurnResult>>();
       configureNativeTurn('thread-image', 'turn-image', () => ({}));
       const transport = nativeRequest.getMockImplementation()!;
-      nativeRequest.mockImplementation((method: string, ...args: unknown[]) => (
-        method === 'turn/start' ? startResult.promise : transport(method, ...args)
+      nativeRequest.mockImplementation((method: string, params: CodexNativeRequest['params']) => (
+        method === 'turn/start' ? startResult.promise : transport(method, params)
       ));
       const session = createBackend(await createPlugin()).createSession(createSessionConfig());
       try {
@@ -891,7 +878,7 @@ describe('CodexExecutionBackend', () => {
         await native.waitForRequest('turn/start');
         const input = nativeRequest.mock.calls.find(([method]) => method === 'turn/start')![1].input;
         expect(input).toEqual([{ type: 'localImage', path: expect.any(String) }]);
-        const filePath = input[0].path;
+        const filePath = nativeImagePath(input);
         expect(readFileSync(filePath)).toEqual(Buffer.from('hello'));
 
         if (outcome === 'failure') {
@@ -930,7 +917,7 @@ describe('CodexExecutionBackend', () => {
       await native.waitForRequest('turn/start');
       const nativeInput = nativeRequest.mock.calls.find(([method]) => method === 'turn/start')?.[1].input;
       expect(nativeInput).toEqual([{ type: 'localImage', path: expect.any(String) }]);
-      filePath = nativeInput[0].path;
+      filePath = nativeImagePath(nativeInput);
       expect(Buffer.byteLength(basename(filePath!))).toBeLessThanOrEqual(255);
       expect(filePath).toMatch(/\.png$/);
       expect(readFileSync(filePath!)).toEqual(Buffer.from('hello'));
@@ -945,8 +932,8 @@ describe('CodexExecutionBackend', () => {
 
   it.each([false, true])('steers session references with target-visible paths (WSL: %s)', async wsl => {
     if (wsl) {
-      const launch = await mockResolveLaunchSpec();
-      mockResolveLaunchSpec.mockResolvedValue({ ...launch, pathMapper: createCodexPathMapper({ method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' }) });
+      wslTarget = true;
+      Object.defineProperty(process, 'platform', { ...originalPlatform, value: 'win32' });
     }
     configureNativeTurn('thread-reference', 'turn-reference', () => ({ turnId: 'turn-reference' }));
     const { run, session, runEvents } = await createActiveSteerSession();
@@ -969,7 +956,7 @@ describe('CodexExecutionBackend', () => {
       await native.waitForRequest('turn/steer');
       const input = nativeRequest.mock.calls.find(([method]) => method === 'turn/steer')![1].input;
       expect(input).toEqual([{ type: 'localImage', path: expect.any(String) }]);
-      const filePath = input[0].path;
+      const filePath = nativeImagePath(input);
       expect(readFileSync(filePath)).toEqual(Buffer.from('hello'));
       if (accepted) steerResult.resolve({ turnId: 'turn-image' });
       else steerResult.reject(new CodexNativeResponseError({ code: -32602, message: 'Rejected image' }));
@@ -1025,7 +1012,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start') return createThreadResult(threadId);
@@ -1096,7 +1083,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start') return createThreadResult(threadId);
@@ -1166,7 +1153,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start') return createThreadResult(threadId);
@@ -1246,7 +1233,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start') return createThreadResult(threadId);
@@ -1304,7 +1291,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start') return createThreadResult(threadId);
@@ -1355,7 +1342,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start') return createThreadResult(threadId);
@@ -1395,8 +1382,8 @@ describe('CodexExecutionBackend', () => {
 
   it.each([false, true])('sends escaped context using target-visible snapshot paths (WSL: %s)', async wsl => {
     if (wsl) {
-      const launch = await mockResolveLaunchSpec();
-      mockResolveLaunchSpec.mockResolvedValue({ ...launch, pathMapper: createCodexPathMapper({ method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' }) });
+      wslTarget = true;
+      Object.defineProperty(process, 'platform', { ...originalPlatform, value: 'win32' });
     }
     nativeRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
@@ -1404,7 +1391,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start') return createThreadResult('thread-context');
@@ -1479,7 +1466,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start') return createThreadResult('thread-linked-content');
@@ -1529,7 +1516,7 @@ describe('CodexExecutionBackend', () => {
             userAgent: 'test',
             codexHome: '/tmp/.codex',
             platformFamily: 'unix',
-            platformOs: 'macos',
+            platformOs: wslTarget ? 'linux' : 'macos',
           };
         }
         if (method === 'thread/start') return createThreadResult(threadId);
@@ -1558,7 +1545,7 @@ describe('CodexExecutionBackend', () => {
       const startParams = nativeRequest.mock.calls.find(
         ([method]) => method === 'thread/start',
       )?.[1];
-      expect(startParams.ephemeral).toBe(expectedEphemeral);
+      expect(startParams!.ephemeral).toBe(expectedEphemeral);
 
       await session.dispose();
     },
@@ -1614,8 +1601,8 @@ describe('CodexExecutionBackend', () => {
         input: [{ type: 'text', text: 'New question' }],
       })).events);
       const prompt = nativeRequest.mock.calls
-        .find(([method]) => method === 'turn/start')![1].input
-        .find((item: { type: string }) => item.type === 'text').text as string;
+        .find(([method]) => method === 'turn/start')![1].input!
+        .find(item => item.type === 'text')!.text;
       writeFileSync(newPath, rollout(newThreadId, prompt, 'New answer'));
       const snapshot = session.getSnapshot();
       await session.dispose();
@@ -1642,7 +1629,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start' || method === 'thread/resume') {
@@ -1706,7 +1693,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start' || method === 'thread/resume') return createThreadResult('thread-early-handoff');
@@ -1778,7 +1765,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start') return createThreadResult(threadId);
@@ -1836,7 +1823,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start') {
@@ -1920,7 +1907,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start') {
@@ -1975,7 +1962,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start') {
@@ -2047,7 +2034,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start') return threadStart.promise;
@@ -2103,7 +2090,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start') {
@@ -2295,7 +2282,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/fork') {
@@ -2438,7 +2425,7 @@ describe('CodexExecutionBackend', () => {
             userAgent: 'test',
             codexHome: '/tmp/.codex',
             platformFamily: 'unix',
-            platformOs: 'macos',
+            platformOs: wslTarget ? 'linux' : 'macos',
           };
         }
         if (method === 'thread/fork') {
@@ -2552,7 +2539,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/fork') {
@@ -2623,7 +2610,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/fork') {
@@ -2718,7 +2705,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/fork') {
@@ -2791,7 +2778,7 @@ describe('CodexExecutionBackend', () => {
             userAgent: 'test',
             codexHome: '/tmp/.codex',
             platformFamily: 'unix',
-            platformOs: 'macos',
+            platformOs: wslTarget ? 'linux' : 'macos',
           };
         }
         if (method === 'thread/read') return createThreadResult('thread-fork-target');
@@ -2897,7 +2884,7 @@ describe('CodexExecutionBackend', () => {
             userAgent: 'test',
             codexHome: '/tmp/.codex',
             platformFamily: 'unix',
-            platformOs: 'macos',
+            platformOs: wslTarget ? 'linux' : 'macos',
           };
         }
         if (method === 'thread/start') {
@@ -2946,7 +2933,7 @@ describe('CodexExecutionBackend', () => {
       const startParams = nativeRequest.mock.calls.find(
         call => call[0] === 'thread/start',
       )?.[1];
-      expect(startParams.dynamicTools).toBeUndefined();
+      expect(startParams!.dynamicTools).toBeUndefined();
       expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
       expect(session.getSnapshot().providerState?.sessionFilePath).toBeUndefined();
 
@@ -2961,7 +2948,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start') return createThreadResult('thread-allow-list');
@@ -2984,7 +2971,7 @@ describe('CodexExecutionBackend', () => {
       },
     )).events);
 
-    expect(mockResolveLaunchSpec).not.toHaveBeenCalled();
+    expect(resolveCliPath).not.toHaveBeenCalled();
     expect(mockProcessStart).not.toHaveBeenCalled();
     expect(nativeRequest).not.toHaveBeenCalled();
     expect(events).toEqual(expect.arrayContaining([
@@ -3011,7 +2998,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start') return createThreadResult('thread-cancel-race');
@@ -3079,16 +3066,16 @@ describe('CodexExecutionBackend', () => {
   });
 
   it.each([
-    'process start hook',
+    'native spawn',
     'transport start',
     'initialize',
   ] as const)(
     'cleans up exactly once when %s fails during app-server startup',
     async (failureBoundary) => {
       const failure = new Error(`Failed at ${failureBoundary}`);
-      // Internal seams: native start throws after spawning, or transport.start throws before reading.
-      if (failureBoundary === 'process start hook') {
-        mockProcessStart.mockImplementationOnce(() => {
+      // Native spawn can fail before a handle exists; transport can fail before reading it.
+      if (failureBoundary === 'native spawn') {
+        vi.mocked(spawn).mockImplementationOnce(() => {
           throw failure;
         });
       } else if (failureBoundary === 'transport start') {
@@ -3103,7 +3090,7 @@ describe('CodexExecutionBackend', () => {
             userAgent: 'test',
             codexHome: '/tmp/.codex',
             platformFamily: 'unix',
-            platformOs: 'macos',
+            platformOs: wslTarget ? 'linux' : 'macos',
           };
         }
         throw new Error(`Unexpected method: ${method}`);
@@ -3149,7 +3136,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start' || method === 'thread/resume') {
@@ -3210,15 +3197,16 @@ describe('CodexExecutionBackend', () => {
 
   it('rejects explicit High when the selected model does not advertise it', async () => {
     const plugin = await createPlugin();
-    const model = (plugin.settings.providerConfigs.codex!.discoveredModels as any[])[0];
-    model.supportedReasoningEfforts = [{ value: 'medium', description: '' }];
+    const models = getCodexProviderSettings(plugin.settings).discoveredModels;
+    models[0].supportedReasoningEfforts = [{ value: 'medium', description: '' }];
+    updateCodexProviderSettings(plugin.settings, { discoveredModels: models });
     const session = createBackend(plugin).createSession(createSessionConfig());
     const request = createRequest();
     const events = await collectEvents(session.execute({
       ...request, configuration: { ...request.configuration, reasoning: 'high' },
     }).events);
-    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error' }));
-    expect(nativeRequest.mock.calls.some(call => call[0] === 'turn/start')).toBe(false);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error', message: expect.stringContaining('does not support reasoning effort "high"') }));
+    expect(nativeRequest).not.toHaveBeenCalled();
     await session.dispose();
   });
 
@@ -3251,7 +3239,7 @@ describe('CodexExecutionBackend', () => {
           userAgent: 'test',
           codexHome: '/tmp/.codex',
           platformFamily: 'unix',
-          platformOs: 'macos',
+          platformOs: wslTarget ? 'linux' : 'macos',
         };
       }
       if (method === 'thread/start') return createThreadResult('thread-auxiliary-effort');
@@ -3383,7 +3371,7 @@ describe('CodexExecutionBackend', () => {
       },
     )).events);
 
-    expect(mockResolveLaunchSpec).not.toHaveBeenCalled();
+    expect(resolveCliPath).not.toHaveBeenCalled();
     expect(mockProcessStart).not.toHaveBeenCalled();
     expect(nativeRequest).not.toHaveBeenCalled();
     expect(events).toContainEqual(expect.objectContaining({
@@ -3418,7 +3406,7 @@ describe('CodexExecutionBackend', () => {
 
     const steering = session.steer(createImageRequest());
     await native.waitForRequest('turn/steer');
-    const filePath = nativeRequest.mock.calls.find(([method]) => method === 'turn/steer')![1].input[0].path;
+    const filePath = nativeImagePath(nativeRequest.mock.calls.find(([method]) => method === 'turn/steer')![1].input);
     expect(readFileSync(filePath)).toEqual(Buffer.from('hello'));
     const disposing = session.dispose();
     expect(existsSync(dirname(filePath))).toBe(true);

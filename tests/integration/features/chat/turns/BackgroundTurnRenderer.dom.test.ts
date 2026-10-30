@@ -5,7 +5,7 @@ import { axe } from '@test/helpers/accessibility';
 import { createFixture, deferred } from '@test/helpers/ChatInputHarness';
 import { createTabSession } from '@test/helpers/ConversationPorts';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
-import { enqueueTabSessionEvent } from '@test/helpers/features/chat/SessionEventsHarness';
+import { createTabMessageId } from '@test/helpers/features/chat/SessionEventsHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { useClaudeSessionFiles } from '@test/helpers/providers/claudeHistory';
 import { testClock, testDate } from '@test/helpers/testClock';
@@ -16,6 +16,7 @@ import { ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest } fro
 import type { ChatMessage, ImageAttachment } from '@/core/types';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { SessionEvents } from '@/features/chat/sessions/SessionEvents';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 import { BackgroundResponses } from '@/features/chat/turns/BackgroundResponses';
@@ -350,18 +351,18 @@ async function createBackgroundChat(withInput = false) {
   const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   const backend = new FakeSideBackend();
   let input: Awaited<ReturnType<typeof createFixture>> | undefined;
-  const coordinator = new ChatExecutionCoordinator({
+  const coordinator: ChatExecutionCoordinator = new ChatExecutionCoordinator({
     lifecycleRegistry, resolveBackend: () => backend,
     persistence: { persistExecutionSnapshot: async () => true, registerExecutionBinding: () => undefined,
       releaseExecutionBinding: () => undefined, assertConversationExecutionAuthority: async () => undefined,
       recordConversationActivity: async () => undefined },
-    interactionPort: {} as any, workingDirectory: '/vault', createId: () => 'binding',
+    interactionPort: { requestApproval: vi.fn(), askUserQuestion: vi.fn(), dismissInteraction: vi.fn() }, workingDirectory: '/vault', createId: () => 'binding',
     resolveMissingProviderSession: async () => 'not_found',
     onRequestedEvent: event => input?.controller.handleExecutionEvent(event),
-    onSessionEvent: (event, context) => enqueueTabSessionEvent(tab, plugin, event, context),
+    onSessionEvent: (event, context) => events.enqueue(event, context),
   });
   const tabSession = createTabSession({ id: 'tab', conversationId: 'conversation', draftModel: null,
-    providerId: 'claude', lifecycleState: 'ready' } as any, coordinator);
+    providerId: 'claude', lifecycleState: 'open' }, coordinator);
   const session = tabSession.runtime;
   const state = new ChatState({}, undefined, session.turns);
   const subagents = new SubagentManager(() => undefined);
@@ -377,10 +378,12 @@ async function createBackgroundChat(withInput = false) {
       hasImages: () => images.length > 0, setImages,
     }),
   }));
-  const tab = { state, renderer, session: tabSession, executionCoordinator: coordinator, lifecycleState: 'ready',
-    ui: { promptSuggestion: { discard() {} } },
-    dom: { contentEl: messagesEl }, services: { subagentManager: subagents },
-    controllers: { inputController: input?.controller, streamController: stream, conversationController: { save: async () => undefined } } } as any;
+  const events: SessionEvents = new SessionEvents({ state, renderer, stream, session, executionCoordinator: coordinator,
+    persistence: { save: async () => undefined, scheduleProgressSave: () => undefined },
+    createMessageId: createTabMessageId, updatePermissionMode: async () => undefined,
+    receiveSuggestion: () => undefined, discardSuggestion: () => undefined, canAcceptBackgroundWork: () => true,
+    claimBackgroundUserMessage: (nativeUserMessageId, inputId) => input?.controller.claimBackgroundUserMessage(nativeUserMessageId, inputId),
+  });
   return { messagesEl, renderer, state, stream, coordinator, session, backend, input, setImages, dispose: async () => {
     await coordinator.dispose(); await lifecycleRegistry.dispose();
     stream.dispose(); subagents.clear(); renderer.dispose();

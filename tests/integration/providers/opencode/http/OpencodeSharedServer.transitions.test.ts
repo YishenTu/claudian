@@ -160,7 +160,7 @@ it.each(['same instructions', 'changed instructions'])('keeps retired background
   const f = await createFixture();
   await f.workspace.metadataService.loadCatalog();
   const session = f.createSession();
-  const background: any[] = [];
+  const background: import('@/core/execution').ProviderSessionEvent[] = [];
   session.onEvent(event => background.push(event));
   let started!: () => void;
   const active = new Promise<void>(resolve => { started = resolve; });
@@ -205,7 +205,7 @@ it('cancelling a turn waiting on retired background work leaves that work draini
   const f = await createFixture();
   await f.workspace.metadataService.loadCatalog();
   const session = f.createSession();
-  const background: any[] = [];
+  const background: import('@/core/execution').ProviderSessionEvent[] = [];
   session.onEvent(event => background.push(event));
   let started!: () => void;
   const active = new Promise<void>(resolve => { started = resolve; });

@@ -5,6 +5,8 @@ import {
   TEST_CODEX_MODEL,
   TEST_CODEX_MODEL_LABEL,
 } from '@test/helpers/codexModels';
+import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -13,7 +15,7 @@ describe('ProviderRegistry', () => {
   beforeEach(() => {
     ProviderWorkspaceRegistry.clear();
     ProviderWorkspaceRegistry.setServices('claude', {
-    } as any);
+    });
     vi.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
       .mockResolvedValue(undefined);
   });
@@ -30,7 +32,7 @@ describe('ProviderRegistry', () => {
 
   it('throws when an unknown provider is requested', () => {
     expect(() => ProviderRegistry.getCapabilities(
-      'nonexistent' as any,
+      'nonexistent',
     )).toThrow('Provider "nonexistent" is not registered.');
   });
 
@@ -216,14 +218,14 @@ describe('ProviderRegistry', () => {
   });
 
   it('requires an explicit title model instead of selecting Claude automatically', async () => {
-    const service = ProviderRegistry.createTitleGenerationService({
-      settings: {
+    const service = ProviderRegistry.createTitleGenerationService((await createProviderHostFixture({
+      settings: { ...DEFAULT_CLAUDIAN_SETTINGS,
         titleGenerationModel: '',
         providerConfigs: {
           codex: { enabled: true },
         },
       },
-    } as any);
+    })).host);
     const callback = vi.fn();
 
     await service.generateTitle('conv-1', 'hello', callback);
@@ -236,8 +238,8 @@ describe('ProviderRegistry', () => {
   });
 
   it('does not select another provider when the title model is empty', async () => {
-    const service = ProviderRegistry.createTitleGenerationService({
-      settings: {
+    const service = ProviderRegistry.createTitleGenerationService((await createProviderHostFixture({
+      settings: { ...DEFAULT_CLAUDIAN_SETTINGS,
         settingsProvider: 'codex',
         titleGenerationModel: '',
         providerConfigs: {
@@ -245,7 +247,7 @@ describe('ProviderRegistry', () => {
           codex: { enabled: true },
         },
       },
-    } as any);
+    })).host);
 
     const callback = vi.fn();
     await service.generateTitle('conv-1', 'hello', callback);
@@ -258,8 +260,8 @@ describe('ProviderRegistry', () => {
   });
 
   it('rejects a disabled title selection before initializing its provider', async () => {
-    const service = ProviderRegistry.createTitleGenerationService({
-      settings: {
+    const service = ProviderRegistry.createTitleGenerationService((await createProviderHostFixture({
+      settings: { ...DEFAULT_CLAUDIAN_SETTINGS,
         titleGenerationModel: TEST_CODEX_MODEL,
         providerConfigs: {
           codex: {
@@ -268,7 +270,7 @@ describe('ProviderRegistry', () => {
           },
         },
       },
-    } as any);
+    })).host);
 
     const callback = vi.fn();
     await service.generateTitle('conv-1', 'hello', callback);
@@ -283,17 +285,18 @@ describe('ProviderRegistry', () => {
   it.each(['unknown-title-model', TEST_CODEX_MODEL])(
     'preserves an unavailable title selection without starting a provider: %s',
     async titleGenerationModel => {
-      const settings = {
+      const settings = { ...DEFAULT_CLAUDIAN_SETTINGS,
         titleGenerationModel,
         providerConfigs: {
           codex: { enabled: true, visibleModels: [], discoveredModels: TEST_CODEX_CATALOG },
         },
       };
       const callback = vi.fn();
-      const service = ProviderRegistry.createTitleGenerationService({ settings } as any);
+      const { host } = await createProviderHostFixture({ settings });
+      const service = ProviderRegistry.createTitleGenerationService(host);
       await service.generateTitle('conversation', 'hello', callback);
       expect(ProviderWorkspaceRegistry.ensureInitialized).not.toHaveBeenCalled();
-      expect(settings.titleGenerationModel).toBe(titleGenerationModel);
+      expect(host.settings.titleGenerationModel).toBe(titleGenerationModel);
       expect(callback).toHaveBeenCalledWith('conversation', {
         success: false,
         error: expect.stringContaining('Select an available title model'),
@@ -302,17 +305,18 @@ describe('ProviderRegistry', () => {
   );
 
   it('rechecks title availability after provider initialization', async () => {
-    const settings = {
+    const settings = { ...DEFAULT_CLAUDIAN_SETTINGS,
       titleGenerationModel: TEST_CODEX_MODEL,
       providerConfigs: {
         codex: { enabled: true, visibleModels: [TEST_CODEX_MODEL], discoveredModels: TEST_CODEX_CATALOG },
       },
     };
+    const fixture = await createProviderHostFixture({ settings });
     vi.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockImplementation(async () => {
-      settings.providerConfigs.codex.enabled = false;
+      fixture.settings.providerConfigs.codex!.enabled = false;
     });
     const createBackend = vi.spyOn(ProviderRegistry, 'createExecutionBackend');
-    const service = ProviderRegistry.createTitleGenerationService({ settings } as any);
+    const service = ProviderRegistry.createTitleGenerationService(fixture.host);
     const callback = vi.fn();
     await service.generateTitle('conversation', 'hello', callback);
     expect(createBackend).not.toHaveBeenCalled();

@@ -1,12 +1,19 @@
+import '@/providers';
+
 import { createConversationPorts, createTestSession } from '@test/helpers/ConversationPorts';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
+import { Component } from 'obsidian';
 
+import { ImageContextManager } from '@/features/chat/composer/ImageContextManager';
 import type { ConversationControllerDeps } from '@/features/chat/conversation/ConversationController';
+import { LinkedContentController } from '@/features/chat/linked-content';
+import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
 import { ChatState } from '@/features/chat/state/ChatState';
+import { SubagentManager } from '@/features/chat/subagents/SubagentManager';
 
-export type FixtureDeps = ConversationControllerDeps & { renderer: NonNullable<ConversationControllerDeps['renderer']>; session: ChatSessionRuntime; getInputEl: () => HTMLTextAreaElement; getImageContextManager: () => any };
+export type FixtureDeps = ConversationControllerDeps & { renderer: NonNullable<ConversationControllerDeps['renderer']>; session: ChatSessionRuntime; getInputEl: () => HTMLTextAreaElement; getImageContextManager: () => ImageContextManager };
 
 /** Conversation controller deps with real draft, session, and state owners. */
 export async function createConversationControllerDeps(
@@ -25,16 +32,10 @@ export async function createConversationControllerDeps(
   const inputEl = document.createElement('textarea');
   vi.spyOn(inputEl, 'focus');
   vi.spyOn(inputEl, 'dispatchEvent');
-  let welcomeEl: any = document.createElement('div');
+  let welcomeEl: HTMLElement | null = document.createElement('div');
   const messagesEl = document.createElement('div');
 
-  const linkedContentController = {
-    resetAutoDraft: vi.fn(),
-    lock: vi.fn(),
-  };
-
-  const deps = {
-    plugin: await createChatFeatureHost({
+  const plugin = await createChatFeatureHost({
       createConversation: vi.fn().mockResolvedValue({
         id: 'new-conv',
         title: 'New Conversation',
@@ -60,29 +61,29 @@ export async function createConversationControllerDeps(
         enableAutoTitleGeneration: true,
         permissionMode: 'yolo',
       },
-    }),
-    state,
-    renderer: {
-      renderMessages: vi.fn().mockReturnValue(document.createElement('div')),
-      refreshBranchButtons: vi.fn(),
-      refreshBranchButtonState: vi.fn(),
-      captureReadingAnchor: vi.fn(() => null),
-      restoreReadingAnchor: vi.fn(),
-    } as any,
-    subagentManager: {
-      clear: vi.fn(),
-    } as any,
+    });
+  const component = new Component();
+  const renderer = new MessageRenderer(plugin, component, messagesEl);
+  for (const method of ['renderMessages', 'refreshBranchButtons', 'refreshBranchButtonState', 'captureReadingAnchor', 'restoreReadingAnchor'] as const) vi.spyOn(renderer, method);
+  const subagentManager = new SubagentManager(() => undefined);
+  vi.spyOn(subagentManager, 'clear');
+  const linkedContentController = new LinkedContentController({ app: plugin.app, getExcludedTags: () => [], getCachedVaultFiles: () => [], getCachedVaultFolders: () => [] });
+  vi.spyOn(linkedContentController, 'resetAutoDraft');
+  vi.spyOn(linkedContentController, 'lock');
+  const images = new ImageContextManager(plugin.app.keymap, messagesEl, inputEl, {});
+  for (const method of ['clearImages', 'hasImages', 'getAttachedImages', 'setImages'] as const) vi.spyOn(images, method);
+  onTestFinished(() => { images.destroy(); linkedContentController.destroy(); subagentManager.clear(); renderer.dispose(); component.unload(); });
+  const deps: Omit<FixtureDeps, 'drafts'> = {
+    plugin, state, session,
+    renderer, subagentManager,
     getWelcomeEl: () => welcomeEl,
-    setWelcomeEl: (el: any) => { welcomeEl = el; },
-    getMessagesEl: () => messagesEl as any,
+    setWelcomeEl: (el: HTMLElement | null) => { welcomeEl = el; },
+    getMessagesEl: () => messagesEl,
     getInputEl: () => inputEl,
-    getLinkedContentController: () => linkedContentController as any,
-    getImageContextManager: () => ({
-      clearImages: vi.fn(),
-      hasImages: vi.fn().mockReturnValue(false), getAttachedImages: vi.fn().mockReturnValue([]), setImages: vi.fn(),
-    }) as any,
+    getLinkedContentController: () => linkedContentController,
+    getImageContextManager: () => images,
     getExecutionCoordinator: () => null,
     ...overrides,
-  } as unknown as FixtureDeps;
+  };
   return Object.assign(deps, createConversationPorts({ ...deps, session }));
 }

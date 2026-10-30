@@ -190,7 +190,7 @@ describe('conversation model resolution', () => {
       expect(resolveConversationModel(
         {},
         'claude',
-        { selectedModel: 'haiku' } as any,
+        { selectedModel: 'haiku' },
       )).toEqual({
         model: 'haiku',
         shouldPersist: false,
@@ -207,7 +207,7 @@ describe('conversation model resolution', () => {
       expect(resolveConversationModel(
         {},
         'claude',
-        { selectedModel: 'opus' } as any,
+        { selectedModel: 'opus' },
       )).toEqual({
         model: 'claude-code/claude-opus-enterprise',
         shouldPersist: true,
@@ -222,7 +222,7 @@ describe('conversation model resolution', () => {
       expect(resolveConversationModel(
         {},
         'claude',
-        { usage: { model: 'retired-claude-model' } } as any,
+        { usage: { model: 'retired-claude-model' } },
       )).toEqual({
         model: 'opus',
         shouldPersist: true,
@@ -234,7 +234,7 @@ describe('conversation model resolution', () => {
       expect(resolveConversationModel(
         {},
         'claude',
-        { selectedModel: 'retired-claude-model' } as any,
+        { selectedModel: 'retired-claude-model' },
       )).toEqual({
         model: 'retired-claude-model',
         shouldPersist: false,
@@ -250,7 +250,7 @@ describe('conversation model resolution', () => {
       expect(resolveConversationModel(
         {},
         'codex',
-        { selectedModel: 'codex/retired' } as any,
+        { selectedModel: 'codex/retired' },
       )).toEqual({
         model: 'codex/retired',
         shouldPersist: false,
@@ -262,7 +262,7 @@ describe('conversation model resolution', () => {
       expect(resolveConversationModel(
         {},
         'empty',
-        { selectedModel: 'empty/historical' } as any,
+        { selectedModel: 'empty/historical' },
       )).toEqual({
         model: 'empty/historical',
         shouldPersist: false,
@@ -276,7 +276,7 @@ describe('conversation model resolution', () => {
       expect(resolveConversationModel(
         {},
         'claude',
-        { selectedModel: 'retired-claude-model' } as any,
+        { selectedModel: 'retired-claude-model' },
       )).toEqual({
         model: 'retired-claude-model',
         shouldPersist: false,

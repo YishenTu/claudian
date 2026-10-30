@@ -468,7 +468,7 @@ describe('PiConversationHistoryService', () => {
     ].join('\n'));
     const service = new PiConversationHistoryService();
 
-    await expect((service.buildForkProviderState as any)(
+    await expect(service.buildForkProviderState(
       'active-session',
       'target-assistant',
       {

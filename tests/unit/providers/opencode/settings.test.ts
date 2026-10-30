@@ -1,3 +1,4 @@
+import { getProviderConfig } from '@/core/providers/providerConfig';
 import { opencodeModelPolicy } from '@/providers/opencode/OpencodeModelPolicy';
 import { projectOpencodeModelSettings } from '@/providers/opencode/settings';
 
@@ -378,7 +379,7 @@ describe('OpenCode settings normalization', () => {
     expect(next.cliPathsByHost).toEqual({
       'host-a': '/custom/opencode',
     });
-    expect((settings.providerConfigs as Record<string, any>).opencode.cliPathsByHost).toEqual({
+    expect(getProviderConfig(settings, 'opencode').cliPathsByHost).toEqual({
       'host-a': '/custom/opencode',
     });
   });
@@ -399,7 +400,7 @@ describe('OpenCode settings normalization', () => {
     const next = updateOpencodeProviderSettings(settings, snapshot);
 
     expect(next.cliPath).toBe('/legacy/opencode');
-    expect((settings.providerConfigs as Record<string, any>).opencode).toMatchObject({
+    expect(getProviderConfig(settings, 'opencode')).toMatchObject({
       cliPath: '/legacy/opencode',
       cliPathsByHost: {
         'host-b': '/other-host/opencode',
@@ -423,7 +424,7 @@ describe('OpenCode settings normalization', () => {
     });
 
     expect(next.cliPath).toBe('');
-    expect((settings.providerConfigs as Record<string, any>).opencode.cliPath).toBe('');
+    expect(getProviderConfig(settings, 'opencode').cliPath).toBe('');
 
     const cleared = updateOpencodeProviderSettings(settings, {
       cliPathsByHost: {},
@@ -431,7 +432,7 @@ describe('OpenCode settings normalization', () => {
 
     expect(cleared.cliPath).toBe('');
     expect(cleared.cliPathsByHost).toEqual({});
-    expect((settings.providerConfigs as Record<string, any>).opencode).toMatchObject({
+    expect(getProviderConfig(settings, 'opencode')).toMatchObject({
       cliPath: '',
       cliPathsByHost: {},
     });

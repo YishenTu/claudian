@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+import { ChildProcess } from 'node:child_process';
 import { Readable, Writable } from 'node:stream';
 
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
@@ -12,21 +12,22 @@ import { ACPSubprocess } from '@/providers/acp/ACPSubprocess';
 
 const mockSpawn = spawn as MockedFunction<typeof spawn>;
 
-function createMockProcess(): any {
-  const proc = new EventEmitter() as any;
-  proc.stdin = new Writable({ write: (_chunk, _encoding, callback) => callback() });
-  proc.stdout = new Readable({ read() {} });
-  proc.stderr = new Readable({ read() {} });
-  proc.exitCode = null;
-  proc.killed = false;
-  proc.pid = 12345;
+function createMockProcess() {
+  const proc = Object.assign(new ChildProcess(), {
+    stdin: new Writable({ write: (_chunk, _encoding, callback) => callback() }),
+    stdout: new Readable({ read() {} }),
+    stderr: new Readable({ read() {} }),
+    exitCode: null as number | null,
+    killed: false,
+    pid: 12345 as number | undefined,
+  });
   proc.kill = vi.fn(() => true);
   return proc;
 }
 
 describe('ACPSubprocess', () => {
   const originalPlatform = process.platform;
-  let proc: any;
+  let proc: ReturnType<typeof createMockProcess>;
 
   beforeEach(() => {
     vi.clearAllMocks();

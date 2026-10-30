@@ -1,4 +1,4 @@
-import { TFile, TFolder } from 'obsidian';
+import { App, TFile, TFolder } from 'obsidian';
 
 import { FileContextManager } from '@/features/chat/composer/FileContextManager';
 import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvider';
@@ -22,15 +22,11 @@ function createFolder(path: string): TFolder {
 }
 
 function createMockApp(entries: Array<TFile | TFolder> = []) {
-  return {
-    app: {
-      vault: {
-        adapter: { basePath: '/vault' },
-        getFiles: vi.fn(() => entries.filter((entry): entry is TFile => entry instanceof TFile)),
-        getAllLoadedFiles: vi.fn(() => entries),
-      },
-    } as never,
-  };
+  const app = new App();
+  app.vault.getFiles = vi.fn(() => entries.filter((entry): entry is TFile => entry instanceof TFile));
+  app.vault.getAllLoadedFiles = vi.fn(() => entries);
+  return { app };
+
 }
 
 describe('FileContextManager', () => {
@@ -75,12 +71,12 @@ describe('FileContextManager', () => {
     expect(first.getCachedVaultFolders()).toEqual([{ name: 'Projects', path: 'Projects' }]);
     expect(second.getCachedVaultFolders()).toEqual([{ name: 'Projects', path: 'Projects' }]);
     vi.runOnlyPendingTimers();
-    expect((app as any).vault.getFiles).toHaveBeenCalledTimes(1);
-    expect((app as any).vault.getAllLoadedFiles).toHaveBeenCalledTimes(1);
+    expect((app).vault.getFiles).toHaveBeenCalledTimes(1);
+    expect((app).vault.getAllLoadedFiles).toHaveBeenCalledTimes(1);
     first.destroy();
     data.markFilesDirty();
     expect(second.getCachedVaultFiles()).toEqual([note]);
-    expect((app as any).vault.getFiles).toHaveBeenCalledTimes(2);
+    expect((app).vault.getFiles).toHaveBeenCalledTimes(2);
     const source = second.getMentionSource();
     const items = await source.load(source.match('@Plan', 5)!, new AbortController().signal);
     expect(items.some(item => item.label === 'Notes/Plan.md')).toBe(true);

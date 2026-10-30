@@ -1,6 +1,7 @@
 import '@/providers';
 
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import type { Conversation } from '@/core/types';
@@ -31,7 +32,7 @@ describe('piSettingsReconciler', () => {
       };
       piSettingsReconciler.reconcileModelWithEnvironment(settings);
       for (const environment of [`${key}=/new\nPI_OFFLINE=1`, 'PI_OFFLINE=1']) {
-        (settings.providerConfigs as any).pi.environmentVariables = environment;
+        setProviderConfig(settings, 'pi', { ...getProviderConfig(settings, 'pi'), environmentVariables: environment });
         expect(piSettingsReconciler.reconcileModelWithEnvironment(settings))
           .toEqual({ changed: true, sessionPolicy: 'invalidate' });
       }
@@ -60,8 +61,8 @@ describe('piSettingsReconciler', () => {
       providerConfigs: { pi: toPiConfig(withSessionEnvironment(before)) },
     };
     piSettingsReconciler.reconcileModelWithEnvironment(settings);
-    (settings.providerConfigs as any).pi = {
-      ...(settings.providerConfigs as any).pi,
+    (settings.providerConfigs as Record<string, unknown>).pi = {
+      ...getProviderConfig(settings, 'pi'),
       ...toPiConfig(withSessionEnvironment(after)),
     };
 
@@ -85,10 +86,11 @@ describe('piSettingsReconciler', () => {
       },
     };
     piSettingsReconciler.reconcileModelWithEnvironment(settings);
-    const config = (settings.providerConfigs as any).pi;
+    const config = getProviderConfig(settings, 'pi');
     const runtimeFingerprint = config.environmentHash;
     delete config.sessionEnvironmentHash;
     config.cliPath = nextCliPath;
+    setProviderConfig(settings, 'pi', config);
 
     const result = piSettingsReconciler.reconcileModelWithEnvironment(settings);
 
@@ -143,7 +145,7 @@ describe('piSettingsReconciler', () => {
       }],
     });
     expect(claudeConversation.sessionId).toBe('claude-session');
-    const fingerprint = (settings.providerConfigs as any).pi.environmentHash;
+    const fingerprint = getProviderConfig(settings, 'pi').environmentHash;
     expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
     expect(fingerprint).not.toContain('/new');
   });
@@ -167,7 +169,7 @@ describe('piSettingsReconciler', () => {
       sessionInvalidationProviderIds: [],
     });
     expect(isVersionedRuntimeInputFingerprint(
-      (settings.providerConfigs as any).pi.environmentHash,
+      getProviderConfig(settings, 'pi').environmentHash,
     )).toBe(true);
   });
 

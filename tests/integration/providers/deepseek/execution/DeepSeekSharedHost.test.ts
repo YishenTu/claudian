@@ -4,13 +4,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
+import type { LaunchPatchEntry } from '@test/helpers/deepseek/LaunchPatch';
 import { nativeDefaults } from '@test/helpers/deepseek/NativeDefaults';
 import { childFollow, jobsOf, NativePeer, type NativePeerLifecycle, rootFollow } from '@test/helpers/deepseek/NativePeer';
+import { nativeRequest, nativeSessionId, requiredNativeString } from '@test/helpers/deepseek/NativeRequest';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { testDate } from '@test/helpers/testClock';
 import type { Mock } from 'vitest';
 
 import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderExecutionSession, ProviderInteractionPort, ProviderSessionConfig } from '@/core/execution';
+import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { SessionToolRoute,SessionToolRoutedCallHandler } from '@/core/session-tools/SessionToolEndpoint';
 import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSeekExecutionBackend';
@@ -56,22 +59,22 @@ beforeEach(async () => {
   };
   peer.onCall = (method, args) => {
     if (method === 'session/create') {
-      const named = args.request.sessionId as string | undefined;
-      const failure = activationFailures(named, args.request.agentPreset);
+      const named = nativeRequest(args).sessionId as string | undefined;
+      const failure = activationFailures(named, nativeRequest(args).agentPreset);
       if (failure) throw failure;
       // Native reuses a named session only while no turn has started: a fresh ephemeral identity, never a saved conversation.
       const id = named?.startsWith(DEEPSEEK_EPHEMERAL_PREFIX) ? named : named ? `minted-${created.length}` : ['alpha', 'beta', 'gamma'][created.length];
       activate(id);
-      return { sessionId: id, agentPreset: args.request.agentPreset };
+      return { sessionId: id, agentPreset: nativeRequest(args).agentPreset };
     }
-    if (method === 'commands/list' && !created.includes(args.agentId)) {
+    if (method === 'commands/list' && !created.includes(requiredNativeString(args.agentId))) {
       // Any call addressing a saved session resumes it.
-      const failure = activationFailures(args.agentId, undefined);
+      const failure = activationFailures(requiredNativeString(args.agentId), undefined);
       if (failure) throw failure;
-      activate(args.agentId);
+      activate(requiredNativeString(args.agentId));
     }
     if (method === 'job/kill') {
-      const sessionId = args.request.sessionId as string;
+      const sessionId = nativeRequest(args).sessionId as string;
       jobs[sessionId] = [];
       peer.send('job/list', { type: 'rows', jobs: [] }, jobsOf(sessionId));
       return { status: 'requested' };
@@ -124,9 +127,9 @@ async function run(session: ProviderExecutionSession, input: ProviderExecutionRe
   const events: ProviderExecutionEvent[] = [];
   const done = (async () => { for await (const event of execution.events) events.push(event); })();
   if (answer !== undefined) {
-    await until(() => peer.calls.some(c => c.method === 'session/prompt' && c.args.request.requestId === execution.executionId));
-    const prompt = peer.calls.find(c => c.method === 'session/prompt' && c.args.request.requestId === execution.executionId)!;
-    respond(prompt.args.request.sessionId, execution.executionId, answer);
+    await until(() => peer.calls.some(c => c.method === 'session/prompt' && nativeRequest(c.args).requestId === execution.executionId));
+    const prompt = peer.calls.find(c => c.method === 'session/prompt' && nativeRequest(c.args).requestId === execution.executionId)!;
+    respond(nativeSessionId(prompt.args), execution.executionId, answer);
   }
   await done;
   return events;
@@ -143,7 +146,7 @@ it('serves concurrent conversations and auxiliary tasks from one native process 
   expect(texts(mainEvents)).toBe('main answer');
   expect(texts(titleEvents)).toBe('title answer');
   expect(lifecycle.starts).toBe(1);
-  const creates = peer.calls.filter(c => c.method === 'session/create').map(c => c.args.request.agentPreset);
+  const creates = peer.calls.filter(c => c.method === 'session/create').map(c => nativeRequest(c.args).agentPreset);
   expect([...creates].sort()).toEqual(['claudian', 'claudian-passive']);
   const native = Object.fromEntries(creates.map((preset, index) => [preset, created[index]]));
   expect(lifecycle.prompts).toEqual(expect.arrayContaining([
@@ -158,9 +161,9 @@ it.each([true, false])('keeps an auxiliary task in native memory only when the e
   const main = open();
   expect(texts(await run(title, request('Title prompt', { kind: 'passive' }), 'title'))).toBe('title');
   expect(texts(await run(main, request('Main prompt'), 'main'))).toBe('main');
-  const creates = peer.calls.filter(c => c.method === 'session/create').map(c => c.args.request);
+  const creates = peer.calls.filter(c => c.method === 'session/create').map(c => nativeRequest(c.args));
   // The prefixed identity is what the bundled plugin keeps in memory; without it native stores the task as before.
-  const titleId = creates.find(r => r.agentPreset === 'claudian-passive').sessionId;
+  const titleId = creates.find(r => r.agentPreset === 'claudian-passive')!.sessionId;
   expect(/^claudian-ephemeral-[0-9a-f-]{36}$/.test(titleId ?? '')).toBe(ready);
   expect(titleId === undefined).toBe(!ready);
   expect(creates.find(r => r.agentPreset === 'claudian')).not.toHaveProperty('sessionId');
@@ -169,14 +172,14 @@ it.each([true, false])('keeps an auxiliary task in native memory only when the e
 it('ends an ephemeral auxiliary task with the process that held it instead of rebinding', async () => {
   const task = open(port(), undefined, 'ephemeral');
   await run(task, request('Inline edit prompt', { kind: 'read-only' }), 'first edit');
-  const [{ args: { request: { sessionId } } }] = peer.calls.filter(c => c.method === 'session/create');
+  const { sessionId } = nativeRequest(peer.calls.find(c => c.method === 'session/create')!.args);
   lifecycle.exit();
   await until(() => task.getStatus() === 'invalidated' && lifecycle.disposed === 1);
   const calls = peer.calls.length;
   const events = await run(task, request('Inline edit prompt', { kind: 'read-only' }));
   expect(events.at(-1)).toMatchObject({ type: 'execution_error', recoverable: true, message: expect.stringMatching(/temporary DeepSeek session ended when DeepSeek restarted/) });
   // Nothing native is touched for the lost session: no resume, projections, unarchive or prompt.
-  expect(peer.calls.slice(calls).filter(c => c.args?.request?.sessionId === sessionId || c.method === 'session/create')).toEqual([]);
+  expect(peer.calls.slice(calls).filter(c => (c.args.request && nativeRequest(c.args).sessionId === sessionId) || c.method === 'session/create')).toEqual([]);
   // An ordinary conversation still rebinds on the replacement process.
   expect(texts(await run(open(), request('Prompt'), 'served'))).toBe('served');
 });
@@ -186,9 +189,9 @@ it('ends an ephemeral auxiliary task with the process that held it instead of re
  * one model step of a native session at its current turn and returns the persona text.
  */
 async function nativePersona(artifacts: DeepSeekLaunchArtifacts) {
-  const patch = JSON.parse(await readFile(artifacts.patchPath, 'utf8'));
-  const row = patch.find((entry: any) => entry.insert).insert.find((entry: any) => entry.config?.id === 'claudian')
-    .config.plugins.find((plugin: any) => plugin.id === 'claudian-compatibility');
+  const patch: LaunchPatchEntry[] = JSON.parse(await readFile(artifacts.patchPath, 'utf8'));
+  const row = patch.find((entry) => entry.insert)!.insert!.find((entry) => entry.config?.id === 'claudian')!
+    .config.plugins.find((plugin) => plugin.id === 'claudian-compatibility')!;
   const script = String.raw`
     import { createInterface } from 'node:readline';
     const plugin = await import(process.argv[1]);
@@ -269,19 +272,21 @@ it('writes the Main Agent instructions verbatim into the session prompt and rewr
 });
 
 it('applies a changed code-mode preference on the next turn of the same conversation and preset', async () => {
-  const config = (host.settings as any).providerConfigs.deepseek;
+  const config = getProviderConfig(host.settings, 'deepseek');
   config.codeMode = true;
+  setProviderConfig(host.settings, 'deepseek', config);
   try {
     const session = open();
     await run(session, request('Prompt'), 'one');
     // The title task runs on its fixed auxiliary policy and never touches the chat preference.
     await run(open(), request('Title prompt', { kind: 'passive' }), 'title');
     config.codeMode = false;
+    setProviderConfig(host.settings, 'deepseek', config);
     await run(session, request('Prompt'), 'two');
     expect(lifecycle.codeModes).toEqual([{ enabled: true, promptsSent: 0 }, { enabled: false, promptsSent: 2 }]);
-    expect(peer.calls.filter(c => c.method === 'session/create').map(c => c.args.request.agentPreset)).toEqual(['claudian', 'claudian-passive']);
+    expect(peer.calls.filter(c => c.method === 'session/create').map(c => nativeRequest(c.args).agentPreset)).toEqual(['claudian', 'claudian-passive']);
     expect(lifecycle.starts).toBe(1);
-  } finally { delete config.codeMode; }
+  } finally { delete config.codeMode; setProviderConfig(host.settings, 'deepseek', config); }
 });
 
 it('routes each native interaction only to the conversation that owns the agent', async () => {
@@ -330,8 +335,9 @@ it('waits for a reloaded Host to release the writer, then names the other proces
 });
 
 it('points a chat preset that native cannot mount at the additional preset plugins setting', async () => {
-  const config = (host.settings as any).providerConfigs.deepseek;
+  const config = getProviderConfig(host.settings, 'deepseek');
   config.presetPlugins = '[{ "id": "nope", "name": "@example/missing" }]';
+  setProviderConfig(host.settings, 'deepseek', config);
   activationFailures = (_id, preset) => preset === 'claudian' ? new DeepSeekRemoteError('nope (@example/missing): never started', 'agent-preset/invalid') : undefined;
   try {
     const chat = open();
@@ -342,7 +348,7 @@ it('points a chat preset that native cannot mount at the additional preset plugi
     expect(peer.calls.some(c => c.method === 'session/prompt')).toBe(false);
     // Auxiliary tasks never mount the user's rows, so they keep working.
     expect(texts(await run(open(), request('Title prompt', { kind: 'passive' }), 'title'))).toBe('title');
-  } finally { delete config.presetPlugins; }
+  } finally { delete config.presetPlugins; setProviderConfig(host.settings, 'deepseek', config); }
 });
 
 it('stops a closed conversation\'s native work while other conversations keep the process', async () => {
@@ -354,7 +360,7 @@ it('stops a closed conversation\'s native work while other conversations keep th
   // Native refreshes job rows asynchronously after each turn; closing may land inside that window.
   const ordinaryOpen = peer.onOpen;
   peer.onOpen = (endpoint, args, send) => endpoint === 'job/list'
-    ? void setTimeout(() => send({ type: 'rows', jobs: jobs[args.request.sessionId] ?? [] }), 30)
+    ? void setTimeout(() => send({ type: 'rows', jobs: jobs[nativeSessionId(args)] ?? [] }), 30)
     : ordinaryOpen(endpoint, args, send);
   await run(alpha, request('Prompt'), 'job started');
   await run(beta, request('Prompt'), 'job started');
@@ -460,7 +466,7 @@ async function startSessionToolTurn(session: ProviderExecutionSession, nativeId:
   const execution = session.execute(input);
   const events: ProviderExecutionEvent[] = [];
   const done = (async () => { for await (const event of execution.events) events.push(event); })();
-  await until(() => peer.calls.some(call => call.method === 'session/prompt' && call.args.request.requestId === execution.executionId));
+  await until(() => peer.calls.some(call => call.method === 'session/prompt' && nativeRequest(call.args).requestId === execution.executionId));
   emit(nativeId, 'turn/start', { turn: seq });
   emit(nativeId, 'user/message', { source: { kind: 'user', rpcId: execution.executionId }, content: [{ type: 'text', text: 'hello' }] });
   emit(nativeId, 'tool/call', { callId: 'session-call', name: 'claudian_list_destinations', arguments: '{}' });
@@ -607,7 +613,7 @@ it('reconciles one root session-tool invocation that arrives before native claim
   const execution = session.execute(request('Prompt'));
   const events: ProviderExecutionEvent[] = [];
   const done = (async () => { for await (const event of execution.events) events.push(event); })();
-  await until(() => peer.calls.some(call => call.method === 'session/prompt' && call.args.request.requestId === execution.executionId));
+  await until(() => peer.calls.some(call => call.method === 'session/prompt' && nativeRequest(call.args).requestId === execution.executionId));
   const pending = endpoint.call('alpha');
   expect(list).not.toHaveBeenCalled();
   emit('alpha', 'turn/start', { turn: seq });
@@ -626,7 +632,7 @@ it.each(['native', 'request', 'session'] as const)('cancels a pending session-to
   const execution = session.execute(request('Prompt'));
   const events: ProviderExecutionEvent[] = [];
   const done = (async () => { for await (const event of execution.events) events.push(event); })();
-  await until(() => peer.calls.some(call => call.method === 'session/prompt' && call.args.request.requestId === execution.executionId));
+  await until(() => peer.calls.some(call => call.method === 'session/prompt' && nativeRequest(call.args).requestId === execution.executionId));
   const native = new AbortController();
   const pending = endpoint.call('alpha', 'claudian_list_destinations', {}, native.signal);
   let settled = false;
@@ -659,7 +665,7 @@ it('bounds ownership reconciliation and denies a call whose run native never cla
   const execution = session.execute(request('Prompt'));
   const events: ProviderExecutionEvent[] = [];
   const done = (async () => { for await (const event of execution.events) events.push(event); })();
-  await until(() => peer.calls.some(call => call.method === 'session/prompt' && call.args.request.requestId === execution.executionId));
+  await until(() => peer.calls.some(call => call.method === 'session/prompt' && nativeRequest(call.args).requestId === execution.executionId));
   vi.useFakeTimers({ toNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
   const pending = endpoint.call('alpha');
   let settled = false;
