@@ -1,0 +1,12 @@
+{
+  "name": "claudian-mutation-tools",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1"
+  },
+  "overrides": {
+    "qs": "6.16.1"
+  }
+}

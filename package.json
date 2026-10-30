@@ -25,7 +25,9 @@
     "test:coverage": "node scripts/run-vitest.js --coverage",
     "preversion": "bun install --frozen-lockfile",
     "version": "node scripts/sync-version.js && git add manifest.json",
-    "test:cross-platform": "node scripts/run-cross-platform-tests.js"
+    "test:cross-platform": "node scripts/run-cross-platform-tests.js",
+    "mutation": "node scripts/run-mutation.mjs",
+    "smoke:obsidian": "node scripts/run-obsidian-smoke.mjs"
   },
   "keywords": [
     "claude-code",

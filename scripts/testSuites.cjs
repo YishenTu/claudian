@@ -12,6 +12,8 @@ const scriptTests = [
   'scripts/ciTestSelection.test.mjs',
   'scripts/testDeclarations.test.mjs',
   'scripts/run-tests.test.mjs',
+  'scripts/run-mutation.test.mjs',
+  'scripts/run-obsidian-smoke.test.mjs',
 ];
 
 module.exports = { crossPlatformTests, fileConsumers, scriptTests };
