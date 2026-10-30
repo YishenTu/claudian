@@ -1,7 +1,8 @@
 import type { App } from 'obsidian';
-import { Modal, Notice, setIcon } from 'obsidian';
+import { Notice, setIcon } from 'obsidian';
 
 import { parseEnvironmentVariables } from '@/core/process/env';
+import { AccessibleModal } from '@/shared/modals/AccessibleModal';
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 
 import {
@@ -15,7 +16,7 @@ import { t } from '../../i18n/i18n';
 import { confirmDelete } from '../modals/ConfirmModal';
 import { formatContextLimit, parseContextLimit } from './contextLimit';
 
-export class EnvSnippetModal extends Modal {
+export class EnvSnippetModal extends AccessibleModal {
   plugin: ProviderHost;
   snippet: EnvSnippet | null;
   snippetScope: EnvironmentScope;

@@ -1,4 +1,4 @@
-import { type App, Modal } from 'obsidian';
+import { type App } from 'obsidian';
 
 import { commandNameFromPath } from '@/features/agent-skills/ClaudeCommandRepository';
 import {
@@ -10,6 +10,7 @@ import {
   type SkillSyncResult,
 } from '@/features/agent-skills/ClaudeSkillSync';
 import { t } from '@/i18n/i18n';
+import { AccessibleModal } from '@/shared/modals/AccessibleModal';
 
 type ItemChoice = 'apply' | 'replace' | 'skip';
 
@@ -74,7 +75,7 @@ function itemLabel(item: SkillSyncItem): string {
  * Preview → final confirmation → result. Nothing on disk changes until the
  * user confirms the link step.
  */
-export class SkillSyncModal extends Modal {
+export class SkillSyncModal extends AccessibleModal {
   private plan: SkillSyncPlan | null = null;
   private readonly drafts = new Map<string, ItemDraft>();
 

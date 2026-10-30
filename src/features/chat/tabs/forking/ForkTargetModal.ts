@@ -1,6 +1,7 @@
-import { type App, Modal } from 'obsidian';
+import { type App } from 'obsidian';
 
 import { t } from '@/i18n/i18n';
+import { AccessibleModal } from '@/shared/modals/AccessibleModal';
 
 export type ForkTarget = 'new-tab' | 'current-tab';
 
@@ -10,7 +11,7 @@ export function chooseForkTarget(app: App): Promise<ForkTarget | null> {
   });
 }
 
-class ForkTargetModal extends Modal {
+class ForkTargetModal extends AccessibleModal {
   private resolve: (target: ForkTarget | null) => void;
   private resolved = false;
 

@@ -1,8 +1,9 @@
-import { type App, Modal, Notice } from 'obsidian';
+import { type App, Notice } from 'obsidian';
 
 import { defaultProjectMemoryPath, normalizeProjectMemoryPath } from '@/core/path/ProjectMemoryPath';
 import { type ProjectCreateInput, ProjectMemoryPathTakenError, type ProjectRecord } from '@/core/types';
 import { t } from '@/i18n/i18n';
+import { AccessibleModal } from '@/shared/modals/AccessibleModal';
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 
 const MEMORY_PATH_ERROR_ID = 'claudian-project-memory-path-error';
@@ -20,7 +21,7 @@ export interface ProjectEditorOptions {
  * Edits a project's name, instructions and memory file path; instructions have no length limit. A new project's
  * path follows the name until the user edits the path.
  */
-export class ProjectEditorModal extends Modal {
+export class ProjectEditorModal extends AccessibleModal {
   private nameInput!: HTMLInputElement;
   private instructionsArea!: HTMLTextAreaElement;
   private memoryPathInput!: HTMLInputElement;

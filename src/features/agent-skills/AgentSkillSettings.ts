@@ -1,4 +1,4 @@
-import { type App, Modal, Notice, setIcon } from 'obsidian';
+import { type App, Notice, setIcon } from 'obsidian';
 
 import { extractFirstParagraph } from '@/core/commands/slashCommand';
 import {
@@ -23,6 +23,7 @@ import {
 } from '@/features/agent-skills/ClaudeCommandRepository';
 import { AgentSkillValidationError } from '@/features/agent-skills/validateAgentSkill';
 import { t } from '@/i18n/i18n';
+import { AccessibleModal } from '@/shared/modals/AccessibleModal';
 import { AccessibleSetting } from '@/shared/settings/AccessibleSetting';
 
 function errorMessage(error: unknown): string {
@@ -69,7 +70,7 @@ interface AgentSkillEditorOptions {
   successMessage(name: string): string;
 }
 
-class AgentSkillModal extends Modal {
+class AgentSkillModal extends AccessibleModal {
   private nameInput!: HTMLInputElement;
   private descriptionInput!: HTMLInputElement;
   private instructionsArea!: HTMLTextAreaElement;
@@ -187,7 +188,7 @@ interface AgentSkillDeleteOptions {
   successMessage: string;
 }
 
-class AgentSkillDeleteModal extends Modal {
+class AgentSkillDeleteModal extends AccessibleModal {
   constructor(app: App, private readonly options: AgentSkillDeleteOptions) {
     super(app);
   }

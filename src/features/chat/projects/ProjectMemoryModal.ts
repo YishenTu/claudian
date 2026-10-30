@@ -1,5 +1,5 @@
 import { parser } from '@lezer/markdown';
-import { type App, getFrontMatterInfo, MarkdownRenderer, Modal, Notice, setIcon } from 'obsidian';
+import { type App, getFrontMatterInfo, MarkdownRenderer, Notice, setIcon } from 'obsidian';
 
 import {
   ProjectMemoryConflictError,
@@ -10,6 +10,7 @@ import {
 } from '@/core/types';
 import { t } from '@/i18n/i18n';
 import { MarkdownRenderScope } from '@/shared/components/MarkdownRenderScope';
+import { AccessibleModal, setModalAccessibility } from '@/shared/modals/AccessibleModal';
 import { confirm } from '@/shared/modals/ConfirmModal';
 
 export interface ProjectMemoryModalOptions {
@@ -21,14 +22,12 @@ export interface ProjectMemoryModalOptions {
 const REFRESH_INTERVAL_MS = 2_000;
 const ATX_HEADING = /^ {0,3}#{1,6}(?:\s|$)/;
 
-let nextTitleId = 0;
-
 /**
  * Reads the project memory rendered as Markdown and edits it as plain text. The view follows the file while
  * it changes on disk; the user's unsaved text is never replaced without their choice. Saving compares against
  * the revision the user last accepted, so a change it has not seen ends in Reload or Overwrite.
  */
-export class ProjectMemoryModal extends Modal {
+export class ProjectMemoryModal extends AccessibleModal {
   private titleTextEl!: HTMLElement;
   private dirtyMarkEl!: HTMLElement;
   private modeButton!: HTMLButtonElement;
@@ -128,8 +127,7 @@ export class ProjectMemoryModal extends Modal {
       cls: 'claudian-project-memory-title-text',
       text: t('chat.projects.memory.title', { name: this.options.project.name }),
     });
-    this.titleTextEl.id = `claudian-project-memory-title-${++nextTitleId}`;
-    this.modalEl.setAttribute('aria-labelledby', this.titleTextEl.id);
+    setModalAccessibility(this.modalEl, this.titleTextEl);
     this.dirtyMarkEl = this.titleTextEl.createSpan({
       cls: 'claudian-project-memory-dirty',
       text: ' •',
