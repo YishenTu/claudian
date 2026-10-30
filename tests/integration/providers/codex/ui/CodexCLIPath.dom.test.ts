@@ -33,6 +33,18 @@ it('preserves spaces typed into the real Codex WSL CLI path until the final comm
     await waitFor(() => expect(getCodexProviderSettings(settings).cliPathsByHost[key]).toBe(path));
     expect(getCodexProviderSettings(await fixture.settingsStorage.load()).cliPathsByHost[key]).toBe(path);
     expect(input.value).toBe(path);
+    const method = within(container).getByRole('combobox', { name: 'Installation method' });
+    const distro = within(container).getByRole('textbox', { name: 'WSL distro override' }) as HTMLInputElement;
+    expect(distro.disabled).toBe(false);
+    fireEvent.change(method, { target: { value: 'native-windows' } });
+    await waitFor(() => expect(distro.disabled).toBe(true));
+    expect(getCodexProviderSettings(settings).installationMethod).toBe('native-windows');
+    fireEvent.change(method, { target: { value: 'wsl' } });
+    await waitFor(() => expect(distro.disabled).toBe(false));
+    fireEvent.input(distro, { target: { value: 'Debian' } });
+    await waitFor(() => expect(getCodexProviderSettings(settings).wslDistroOverride).toBe('Debian'));
+    expect((await axe(method.parentElement!)).violations).toEqual([]);
+    expect((await axe(distro.parentElement!)).violations).toEqual([]);
     expect((await axe(input.closest('.claudian-cli-installation')!)).violations).toEqual([]);
   } finally {
     Object.defineProperty(process, 'platform', platform);

@@ -22,6 +22,7 @@ import type {
   ProviderSessionEvent,
 } from '@/core/execution';
 import { isSteerableExecutionSession } from '@/core/execution';
+import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ClaudianSettings } from '@/core/types';
 import { CodexConversationHistoryService } from '@/providers/codex/history/CodexConversationHistoryService';

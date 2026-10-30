@@ -87,6 +87,7 @@ test('real dependency discovery retains native launch checks for shared process 
     'tests/integration/core/process/ManagedStdioProcess.test.ts',
     'tests/integration/core/process/ProcessProbe.test.ts',
     'tests/integration/core/process/cliBinaryLocator.test.ts',
+    'tests/integration/core/process/execution-target/WSLShellLaunch.test.ts',
     'tests/integration/core/process/loginShellPath.test.ts',
     'tests/integration/features/chat/tabs/forking/ForkSource.opencode-v2.test.ts',
     'tests/integration/features/chat/tabs/forking/ForkSource.opencode.test.ts',
@@ -242,6 +243,7 @@ for (const [name, selector] of [
             crossPlatformTests: ['tests/unit/providers/codex/history/CodexHistoryStore.test.ts'],
             crossPlatform: true,
             piWindows: false,
+            wslWindows: false,
           });
         });
       }
@@ -251,7 +253,7 @@ for (const [name, selector] of [
   test(`${name} selector retains full verification outside the known Codex fixture boundary`, () => {
     const full = {
       testFiles: null, scriptTests: null, crossPlatformTests: null,
-      crossPlatform: true, piWindows: true,
+      crossPlatform: true, piWindows: true, wslWindows: true,
     };
     for (const eventName of ['pull_request', 'push']) {
       for (const changes of [
@@ -447,4 +449,19 @@ test('local selection includes committed, staged, unstaged and untracked edits w
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('WSL native job follows shared dependencies and Codex users but skips unrelated UI', () => {
+  const wsl = 'tests/integration/core/process/execution-target/WSLExecution.windows.test.ts';
+  assert.equal(select([wsl]).wslWindows, true);
+  assert.equal(select(['src/core/process/execution-target/TargetLaunchSpec.ts'], [wsl]).wslWindows, true);
+  assert.equal(select(['src/providers/codex/runtime/CodexLaunchSpecBuilder.ts']).wslWindows, true);
+  assert.equal(select(['src/features/chat/ClaudianView.ts'], [panel]).wslWindows, false);
+  for (const file of [
+    'src/core/process/execution-target/types.ts',
+    'src/core/providers/settings/InstallationSettings.ts',
+    'src/shared/settings/ExecutionTargetSettings.ts',
+    'src/core/providers/cli/TargetCLIInstallationProbe.ts',
+  ]) assert.equal(select([file]).wslWindows, true, file);
+  assert.equal(selectRelatedCiTests({ changes: [{ status: 'M', path: 'src/core/process/execution-target/WSLEnvironment.ts' }] }).wslWindows, true);
 });

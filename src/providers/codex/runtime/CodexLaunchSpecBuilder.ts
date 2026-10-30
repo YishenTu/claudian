@@ -1,61 +1,36 @@
-import type { CodexProviderSettings } from '../config';
 import {
-  type CodexExecutionTargetSettings,
-  inferWslDistroFromWindowsPath,
-  resolveCodexExecutionTarget,
-} from './CodexExecutionTargetResolver';
-import type { CodexExecutionTarget, CodexLaunchSpec } from './codexLaunchTypes';
-import { createCodexPathMapper } from './CodexPathMapper';
+  type ExecutionTargetSettings,
+  resolveExecutionTarget,
+} from '@/core/process/execution-target/ExecutionTargetResolver';
+import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
+import type { ExecutionTarget, TargetLaunchSpec } from '@/core/process/execution-target/types';
+
+import type { CodexProviderSettings } from '../config';
+import { getCodexWSLForwardedEnvironment } from './codexWSLEnvironment';
 
 export interface BuildCodexLaunchSpecOptions {
-  codexSettings: CodexExecutionTargetSettings & Pick<CodexProviderSettings, 'responseVerbosity'>;
+  codexSettings: ExecutionTargetSettings & Pick<CodexProviderSettings, 'responseVerbosity' | 'environmentVariables'>;
   resolvedCliCommand: string | null;
+  environmentText?: string;
   cliArgs?: readonly string[];
   hostVaultPath: string | null;
   env: Record<string, string>;
-  executionTarget?: CodexExecutionTarget;
+  executionTarget?: ExecutionTarget;
   hostPlatform?: NodeJS.Platform;
-  resolveDefaultWslDistro?: () => string | undefined;
+  resolveDefaultWSLDistro?: () => string | undefined;
 }
 
 const CODEX_APP_SERVER_ARGS = Object.freeze(['app-server', '--listen', 'stdio://']);
 
 export function buildCodexLaunchSpec(
   options: BuildCodexLaunchSpecOptions,
-): CodexLaunchSpec {
-  const target = options.executionTarget ?? resolveCodexExecutionTarget({
-    codexSettings: options.codexSettings,
+): TargetLaunchSpec {
+  const target = options.executionTarget ?? resolveExecutionTarget({
+    settings: options.codexSettings,
     hostPlatform: options.hostPlatform,
     hostVaultPath: options.hostVaultPath,
-    resolveDefaultWslDistro: options.resolveDefaultWslDistro,
+    resolveDefaultWSLDistro: options.resolveDefaultWSLDistro,
   });
-
-  const pathMapper = createCodexPathMapper(target);
-  const spawnCwd = options.hostVaultPath ?? process.cwd();
-
-  const workspaceDistro = inferWslDistroFromWindowsPath(options.hostVaultPath);
-  if (
-    target.method === 'wsl'
-    && target.distroName
-    && workspaceDistro
-    && target.distroName.toLowerCase() !== workspaceDistro.toLowerCase()
-  ) {
-    throw new Error(
-      `WSL distro override "${target.distroName}" does not match workspace distro "${workspaceDistro}"`,
-    );
-  }
-
-  if (target.method === 'wsl' && !target.distroName) {
-    throw new Error(
-      'Unable to determine the WSL distro. Set WSL distro override or configure a default WSL distro.',
-    );
-  }
-
-  const targetCwd = pathMapper.toTargetPath(spawnCwd);
-
-  if (!targetCwd) {
-    throw new Error('WSL mode only supports Windows drive paths and \\\\wsl$ or \\\\wsl.localhost workspace paths');
-  }
 
   const resolvedCliCommand = options.resolvedCliCommand?.trim() || 'codex';
   const verbosity = options.codexSettings.responseVerbosity;
@@ -65,33 +40,9 @@ export function buildCodexLaunchSpec(
     ...CODEX_APP_SERVER_ARGS,
     ...(verbosity === 'default' ? [] : ['-c', `model_verbosity="${verbosity}"`]),
   ];
-  if (target.method === 'wsl') {
-    const args = [
-      ...(target.distroName ? ['--distribution', target.distroName] : []),
-      '--cd',
-      targetCwd,
-      resolvedCliCommand,
-      ...cliArgs,
-    ];
-
-    return {
-      target,
-      command: 'wsl.exe',
-      args,
-      spawnCwd,
-      targetCwd,
-      env: options.env,
-      pathMapper,
-    };
-  }
-
-  return {
-    target,
-    command: resolvedCliCommand,
-    args: [...cliArgs],
-    spawnCwd,
-    targetCwd,
-    env: options.env,
-    pathMapper,
-  };
+  return buildTargetLaunchSpec({
+    target, command: resolvedCliCommand, args: cliArgs,
+    hostCwd: options.hostVaultPath ?? process.cwd(), env: options.env,
+    forwardEnvironment: getCodexWSLForwardedEnvironment(options.env, options.environmentText ?? options.codexSettings.environmentVariables),
+  });
 }

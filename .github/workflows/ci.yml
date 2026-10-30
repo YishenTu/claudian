@@ -167,6 +167,7 @@ jobs:
       script-tests: ${{ steps.scope.outputs.script-tests }}
       cross-platform-tests: ${{ steps.scope.outputs.cross-platform-tests }}
       pi-windows: ${{ steps.scope.outputs.pi-windows }}
+      wsl-windows: ${{ steps.scope.outputs.wsl-windows }}
       has-tests: ${{ steps.scope.outputs.has-tests }}
       cross-platform: ${{ steps.scope.outputs.cross-platform }}
     steps:
@@ -274,6 +275,36 @@ jobs:
         if: runner.os == 'Windows' && needs.test-scope.outputs.pi-windows == 'true'
         run: npm run test:unit -- --maxWorkers=1 tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts
 
+  wsl-native:
+    needs: test-scope
+    if: needs.test-scope.outputs.wsl-windows == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      # WSL1 avoids a nested virtualization requirement on hosted runners.
+      # This verifies launch/filesystem/env mechanics, not WSL2 NAT networking.
+      - uses: Vampire/setup-wsl@v7
+        with:
+          distribution: Ubuntu-24.04
+          additional-packages: bash zsh csh tcsh fish
+          wsl-version: '1'
+          set-as-default: 'true'
+
+      - name: Install dependencies on Windows
+        run: npm ci
+
+      - name: Exercise native Windows to WSL execution
+        env:
+          CLAUDIAN_REQUIRE_WSL: '1'
+        run: npm run test:unit -- --maxWorkers=1 tests/integration/core/process/execution-target/WSLExecution.windows.test.ts
+
   build-artifacts:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -312,7 +343,7 @@ jobs:
           retention-days: 14
 
   build:
-    needs: [quality, test, build-artifacts]
+    needs: [quality, test, build-artifacts, test-scope, wsl-native]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -322,7 +353,14 @@ jobs:
           QUALITY_RESULT: ${{ needs.quality.result }}
           TEST_RESULT: ${{ needs.test.result }}
           BUILD_RESULT: ${{ needs.build-artifacts.result }}
+          WSL_RESULT: ${{ needs.wsl-native.result }}
+          WSL_REQUIRED: ${{ needs.test-scope.outputs.wsl-windows }}
         run: |
           test "$QUALITY_RESULT" = success
           test "$TEST_RESULT" = success
           test "$BUILD_RESULT" = success
+          if [ "$WSL_REQUIRED" = true ]; then
+            test "$WSL_RESULT" = success
+          else
+            test "$WSL_RESULT" = skipped
+          fi

@@ -1,11 +1,10 @@
+import { resolveExecutionTargetAsync } from '@/core/process/execution-target/ExecutionTargetResolver';
 import { CachedProviderCLIResolver } from '@/core/providers/cli/CachedProviderCLIResolver';
 import { getRuntimeEnvironmentText } from '@/core/providers/providerEnvironment';
 import type { ProviderCLIResolutionContext } from '@/core/providers/types';
 
 import { getCodexProviderSettings } from '../settings';
 import { findCodexBinaryPath, resolveCodexWSLCLIPath } from './CodexBinaryLocator';
-import { resolveCodexExecutionTargetAsync } from './CodexExecutionTargetResolver';
-import type { CodexExecutionTarget } from './codexLaunchTypes';
 
 export class CodexCLIResolver {
   private readonly resolver = new CachedProviderCLIResolver({
@@ -31,12 +30,12 @@ export class CodexCLIResolver {
     settings: Record<string, unknown>,
     context: ProviderCLIResolutionContext = {},
   ): string | null | Promise<string | null> {
-    const executionTarget = getCodexExecutionTargetFromContext(context);
+    const executionTarget = context.executionTarget;
     if (executionTarget) {
       return this.resolver.resolveFromSettings(settings, { ...executionTarget });
     }
 
-    return resolveCodexExecutionTargetAsync({ codexSettings: getCodexProviderSettings(settings) }).then((resolvedTarget) => (
+    return resolveExecutionTargetAsync({ settings: getCodexProviderSettings(settings) }).then((resolvedTarget) => (
       this.resolver.resolveFromSettings(settings, { ...resolvedTarget })
     ));
   }
@@ -44,23 +43,4 @@ export class CodexCLIResolver {
   reset(): void {
     this.resolver.reset();
   }
-}
-
-function isCodexExecutionTarget(value: unknown): value is CodexExecutionTarget {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const candidate = value as Partial<CodexExecutionTarget>;
-  return candidate.method === 'host-native'
-    || candidate.method === 'native-windows'
-    || candidate.method === 'wsl';
-}
-
-function getCodexExecutionTargetFromContext(
-  context: ProviderCLIResolutionContext,
-): CodexExecutionTarget | null {
-  return isCodexExecutionTarget(context.executionTarget)
-    ? context.executionTarget
-    : null;
 }

@@ -670,21 +670,8 @@
       }
     },
     "codex": {
-      "installationMethod": {
-        "name": "インストール方式",
-        "desc": "Windows で Claudian が Codex を起動する方法。ネイティブ Windows は Windows 実行ファイルパスを使い、WSL は選択したディストリビューション内で Linux CLI を起動します。",
-        "nativeWindows": "ネイティブ Windows",
-        "wsl": "WSL"
-      },
       "cliPath": {
-        "name": "Codex CLI パス",
-        "validation": {
-          "wslWindowsPath": "WSL モードでは Windows 実行ファイルパスではなく、Linux コマンドまたは Linux 絶対パスが必要です。"
-        }
-      },
-      "wslDistroOverride": {
-        "name": "WSL ディストリビューション上書き",
-        "desc": "任意の詳細上書き。空欄の場合、可能なら WSL ワークスペースパスから推測し、それ以外は既定の WSL ディストリビューションを使用します。"
+        "name": "Codex CLI パス"
       },
       "safeMode": {
         "workspaceWrite": "ワークスペース書き込み",
@@ -886,6 +873,19 @@
         "failed": "同期に失敗しました: {message}",
         "summary": "移動 {moved}、変換 {converted}、ゴミ箱 {trashed}、リンク削除 {unlinked}。"
       }
+    },
+    "executionTarget": {
+      "installationMethod": {
+        "name": "インストール方式",
+        "desc": "Windows で Claudian が {provider} を起動する方法。ネイティブ Windows は Windows 実行ファイルパスを使い、WSL は選択したディストリビューション内で Linux CLI を起動します。",
+        "nativeWindows": "ネイティブ Windows",
+        "wsl": "WSL"
+      },
+      "wslDistroOverride": {
+        "name": "WSL ディストリビューション上書き",
+        "desc": "任意の詳細上書き。空欄の場合、可能なら WSL ワークスペースパスから推測し、それ以外は既定の WSL ディストリビューションを使用します。"
+      },
+      "wslWindowsPath": "WSL モードでは Windows 実行ファイルパスではなく、Linux コマンドまたは Linux 絶対パスが必要です。"
     }
   }
 }

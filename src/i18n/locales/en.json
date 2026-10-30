@@ -670,21 +670,8 @@
       }
     },
     "codex": {
-      "installationMethod": {
-        "name": "Installation method",
-        "desc": "How Claudian should launch Codex on Windows. Native Windows uses a Windows executable path. WSL launches the Linux CLI inside a selected distro.",
-        "nativeWindows": "Native Windows",
-        "wsl": "WSL"
-      },
       "cliPath": {
-        "name": "Codex CLI path",
-        "validation": {
-          "wslWindowsPath": "WSL mode expects a Linux command or Linux absolute path, not a Windows executable path."
-        }
-      },
-      "wslDistroOverride": {
-        "name": "WSL distro override",
-        "desc": "Optional advanced override. Leave empty to infer the distro from a WSL workspace path when possible, otherwise use the default WSL distro."
+        "name": "Codex CLI path"
       },
       "safeMode": {
         "workspaceWrite": "Workspace write",
@@ -886,6 +873,19 @@
         "failed": "Sync failed: {message}",
         "summary": "Moved {moved}, converted {converted}, trashed {trashed}, removed {unlinked} link(s)."
       }
+    },
+    "executionTarget": {
+      "installationMethod": {
+        "name": "Installation method",
+        "desc": "How Claudian should launch {provider} on Windows. Native Windows uses a Windows executable path. WSL launches the Linux CLI inside a selected distro.",
+        "nativeWindows": "Native Windows",
+        "wsl": "WSL"
+      },
+      "wslDistroOverride": {
+        "name": "WSL distro override",
+        "desc": "Optional advanced override. Leave empty to infer the distro from a WSL workspace path when possible, otherwise use the default WSL distro."
+      },
+      "wslWindowsPath": "WSL mode expects a Linux command or Linux absolute path, not a Windows executable path."
     }
   }
 }

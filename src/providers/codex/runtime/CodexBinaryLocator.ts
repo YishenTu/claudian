@@ -3,19 +3,8 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { findBinaryInDirectories, findCLIBinaryPath, isExistingFile, parseCLIPathEntries } from '@/core/process/cliBinaryLocator';
-import { stripSurroundingQuotes } from '@/core/process/cliPath';
+import { isWindowsStyleCLIReference, stripSurroundingQuotes } from '@/core/process/cliPath';
 import { expandHomePath } from '@/utils/path';
-
-export function isWindowsStyleCLIReference(value: string | null | undefined): boolean {
-  const trimmed = (value ?? '').trim();
-  if (!trimmed) {
-    return false;
-  }
-
-  return /^[A-Za-z]:[\\/]/.test(trimmed)
-    || trimmed.startsWith('\\\\')
-    || /\.(?:exe|cmd|bat|ps1)$/i.test(trimmed);
-}
 
 export function findCodexBinaryPath(
   additionalPath?: string,

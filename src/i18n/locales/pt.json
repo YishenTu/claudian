@@ -670,21 +670,8 @@
       }
     },
     "codex": {
-      "installationMethod": {
-        "name": "Método de instalação",
-        "desc": "Como o Claudian deve iniciar o Codex no Windows. Windows nativo usa um caminho de executável do Windows. WSL inicia a CLI Linux dentro de uma distro selecionada.",
-        "nativeWindows": "Windows nativo",
-        "wsl": "WSL"
-      },
       "cliPath": {
-        "name": "Caminho do Codex CLI",
-        "validation": {
-          "wslWindowsPath": "O modo WSL espera um comando Linux ou caminho absoluto Linux, não um caminho de executável do Windows."
-        }
-      },
-      "wslDistroOverride": {
-        "name": "Substituição de distro WSL",
-        "desc": "Substituição avançada opcional. Deixe vazio para inferir a distro a partir de um caminho de workspace WSL quando possível; caso contrário, usa a distro WSL padrão."
+        "name": "Caminho do Codex CLI"
       },
       "safeMode": {
         "workspaceWrite": "Gravação no workspace",
@@ -886,6 +873,19 @@
         "failed": "Falha na sincronização: {message}",
         "summary": "Movidos {moved}, convertidos {converted}, na lixeira {trashed}, {unlinked} link(s) removido(s)."
       }
+    },
+    "executionTarget": {
+      "installationMethod": {
+        "name": "Método de instalação",
+        "desc": "Como o Claudian deve iniciar o {provider} no Windows. Windows nativo usa um caminho de executável do Windows. WSL inicia a CLI Linux dentro de uma distro selecionada.",
+        "nativeWindows": "Windows nativo",
+        "wsl": "WSL"
+      },
+      "wslDistroOverride": {
+        "name": "Substituição de distro WSL",
+        "desc": "Substituição avançada opcional. Deixe vazio para inferir a distro a partir de um caminho de workspace WSL quando possível; caso contrário, usa a distro WSL padrão."
+      },
+      "wslWindowsPath": "O modo WSL espera um comando Linux ou caminho absoluto Linux, não um caminho de executável do Windows."
     }
   }
 }

@@ -1,4 +1,5 @@
 import { parseEnvironmentVariables } from '@/core/process/env';
+import type { InstallationSettings } from '@/core/providers/settings/InstallationSettings';
 
 import { createRuntimeInputFingerprint } from '../../../core/providers/settings/RuntimeInputFingerprint';
 
@@ -15,10 +16,7 @@ export const CODEX_ENV_HASH_KEYS = [...LEGACY_CODEX_ENV_HASH_KEYS, 'PATH', ...NA
  */
 const SESSION_ENV_HASH_KEYS = ['OPENAI_BASE_URL', 'OPENAI_API_KEY', ...NATIVE_HOME_ENV_KEYS];
 
-export interface CodexInstallationInputs {
-  installationMethod: string;
-  wslDistroOverride: string;
-}
+export type CodexInstallationInputs = InstallationSettings;
 
 /** Keeps existing default-home fingerprints stable when no override is configured. */
 function withConfiguredHomeKeys(keys: readonly string[], environmentText: string): string[] {

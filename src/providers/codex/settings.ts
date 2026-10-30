@@ -1,4 +1,5 @@
 import { getInstallationKey } from '@/core/device/InstallationKey';
+import { updateInstallationSettings } from '@/core/providers/settings/InstallationSettings';
 
 import { selectModelMetadata } from '../../core/providers/models/selectedModelMetadata';
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
@@ -76,13 +77,7 @@ export function normalizeCodexStoredConfig(
     hostnameKey,
   } = getNormalizedCodexStoredConfigContext(context);
   const storedConfig = decodeCodexStoredConfig(originalConfig);
-  const installationMethodsByHost = { ...storedConfig.installationMethodsByHost };
-  const wslDistroOverridesByHost = { ...storedConfig.wslDistroOverridesByHost };
-
-  if (platform !== 'win32') {
-    delete installationMethodsByHost[hostnameKey];
-    delete wslDistroOverridesByHost[hostnameKey];
-  }
+  const { installationMethodsByHost, wslDistroOverridesByHost } = updateInstallationSettings(storedConfig, {}, hostnameKey, platform);
 
   const normalizedConfig: CodexProviderConfig & Record<string, unknown> = {
     ...originalConfig,

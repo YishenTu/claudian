@@ -8,11 +8,12 @@
 
 import { createHash } from 'node:crypto';
 
+import { resolveExecutionTargetAsync } from '@/core/process/execution-target/ExecutionTargetResolver';
+
 import type { ProviderRuntimeHost } from '../../../core/providers/ProviderRuntimeHost';
 import type { ProviderTransitionOwnerContext } from '../../../core/providers/types';
 import { decodeCodexConfig } from '../config';
 import { computeCodexEnvHash } from './codexEnvironmentHash';
-import { resolveCodexExecutionTargetAsync } from './CodexExecutionTargetResolver';
 
 const CATALOG_FINGERPRINT_VERSION = '2';
 
@@ -43,8 +44,8 @@ export async function computeCodexCatalogFingerprint(
   // Read before awaiting so the fingerprint describes one configuration.
   const envText = host.environmentText;
   const hostVaultPath = host.workingDirectory;
-  const executionTarget = await resolveCodexExecutionTargetAsync({
-    codexSettings: decodeCodexConfig(host.config),
+  const executionTarget = await resolveExecutionTargetAsync({
+    settings: decodeCodexConfig(host.config),
     hostVaultPath,
   });
   const resolvedCliCommand = await host.resolveCliPath({

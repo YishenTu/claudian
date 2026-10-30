@@ -1,8 +1,8 @@
-import type { CodexLaunchSpec } from '@/providers/codex/runtime/codexLaunchTypes';
-import { createCodexPathMapper } from '@/providers/codex/runtime/CodexPathMapper';
+import type { TargetLaunchSpec } from '@/core/process/execution-target/types';
+import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
 import { createCodexRuntimeContext } from '@/providers/codex/runtime/CodexRuntimeContext';
 
-function createLaunchSpec(overrides: Partial<CodexLaunchSpec> = {}): CodexLaunchSpec {
+function createLaunchSpec(overrides: Partial<TargetLaunchSpec> = {}): TargetLaunchSpec {
   const target = {
     method: 'wsl' as const,
     platformFamily: 'unix' as const,
@@ -17,12 +17,12 @@ function createLaunchSpec(overrides: Partial<CodexLaunchSpec> = {}): CodexLaunch
     spawnCwd: 'C:\\repo',
     targetCwd: '/home/user/repo',
     env: {},
-    pathMapper: createCodexPathMapper(target),
+    pathMapper: createExecutionPathMapper(target),
     ...overrides,
   };
 }
 
-function createHostLaunchSpec(overrides: Partial<CodexLaunchSpec> = {}): CodexLaunchSpec {
+function createHostLaunchSpec(overrides: Partial<TargetLaunchSpec> = {}): TargetLaunchSpec {
   const target = {
     method: 'host-native' as const,
     platformFamily: 'unix' as const,
@@ -36,7 +36,7 @@ function createHostLaunchSpec(overrides: Partial<CodexLaunchSpec> = {}): CodexLa
     spawnCwd: '/Users/test/repo',
     targetCwd: '/Users/test/repo',
     env: { HOME: '/Users/test' },
-    pathMapper: createCodexPathMapper(target),
+    pathMapper: createExecutionPathMapper(target),
     ...overrides,
   };
 }

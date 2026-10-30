@@ -1,3 +1,4 @@
+import { readWSLExec } from '@test/helpers/WSLLaunch';
 const actualModule0 = await import('child_process');
 import type { MockInstance } from 'vitest';
 
@@ -21,7 +22,7 @@ describe('buildCodexLaunchSpec', () => {
     execFileSyncSpy.mockRestore();
   });
 
-  it.each(['default', 'low', 'medium', 'high'])('applies %s verbosity only to app-server launches', (responseVerbosity) => {
+  it.each(['default', 'low', 'medium', 'high'])('applies %s verbosity only to app-server launches', async (responseVerbosity) => {
     const options = {
       codexSettings: getCodexProviderSettings({ providerConfigs: { codex: { responseVerbosity } } }),
       resolvedCliCommand: 'codex',
@@ -29,15 +30,27 @@ describe('buildCodexLaunchSpec', () => {
       env: {},
       hostPlatform: 'darwin' as const,
     };
-    expect(buildCodexLaunchSpec(options).args).toEqual([
+    expect((await buildCodexLaunchSpec(options)).args).toEqual([
       'app-server', '--listen', 'stdio://',
       ...(responseVerbosity === 'default' ? [] : ['-c', `model_verbosity="${responseVerbosity}"`]),
     ]);
-    expect(buildCodexLaunchSpec({ ...options, cliArgs: ['--version'] }).args).toEqual(['--version']);
+    expect((await buildCodexLaunchSpec({ ...options, cliArgs: ['--version'] })).args).toEqual(['--version']);
   });
 
-  it('builds a native Windows launch spec with a direct codex executable', () => {
-    const spec = buildCodexLaunchSpec({
+  it('forwards Codex and configured environment through WSLENV without forwarding host HOME or PATH', async () => {
+    const spec = await buildCodexLaunchSpec({
+      codexSettings: getCodexProviderSettings({ providerConfigs: { codex: { environmentVariables: 'CUSTOM_TOKEN=secret' } } }),
+      resolvedCliCommand: 'codex', hostVaultPath: 'C:\\repo',
+      env: { CUSTOM_TOKEN: 'secret', OPENAI_API_KEY: 'key', CODEX_HOME: 'C:\\codex home', HOME: 'C:\\Users\\me', PATH: 'C:\\Windows', WSLENV: 'EXISTING/u' },
+      executionTarget: { method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' },
+    });
+    expect(spec.env.WSLENV?.split(':')).toEqual(expect.arrayContaining(['EXISTING/u', 'CUSTOM_TOKEN', 'OPENAI_API_KEY', 'CODEX_HOME/p']));
+    expect(spec.env.WSLENV?.split(':')).not.toContain('HOME');
+    expect(spec.env.WSLENV?.split(':')).not.toContain('PATH');
+  });
+
+  it('builds a native Windows launch spec with a direct codex executable', async () => {
+    const spec = await buildCodexLaunchSpec({
       codexSettings: getCodexProviderSettings({
         providerConfigs: {
           codex: {
@@ -62,8 +75,8 @@ describe('buildCodexLaunchSpec', () => {
     });
   });
 
-  it('uses the same WSL shell and working directory for an auxiliary CLI command', () => {
-    const spec = buildCodexLaunchSpec({
+  it('uses the same WSL interpreter and working directory for an auxiliary CLI command', async () => {
+    const spec = await buildCodexLaunchSpec({
       codexSettings: getCodexProviderSettings({}),
       resolvedCliCommand: 'codex',
       cliArgs: ['--version'],
@@ -71,12 +84,12 @@ describe('buildCodexLaunchSpec', () => {
       env: {},
       executionTarget: { method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' },
     });
-    expect(spec.command).toBe('wsl.exe');
-    expect(spec.args).toEqual(['--distribution', 'Ubuntu', '--cd', '/mnt/c/repo', 'codex', '--version']);
+    expect(spec.command).toMatch(/(?:^|\\)wsl\.exe$/u);
+    expect(readWSLExec(spec).args.slice(3)).toEqual([ 'codex', '--version']);
   });
 
-  it('builds a WSL launch spec with translated cwd and distro targeting', () => {
-    const spec = buildCodexLaunchSpec({
+  it('builds a WSL launch spec with translated cwd and distro targeting', async () => {
+    const spec = await buildCodexLaunchSpec({
       codexSettings: getCodexProviderSettings({
         providerConfigs: {
           codex: {
@@ -91,12 +104,8 @@ describe('buildCodexLaunchSpec', () => {
       hostPlatform: 'win32',
     });
 
-    expect(spec.command).toBe('wsl.exe');
-    expect(spec.args).toEqual([
-      '--distribution',
-      'Ubuntu',
-      '--cd',
-      '/mnt/c/repo',
+    expect(spec.command).toMatch(/(?:^|\\)wsl\.exe$/u);
+    expect(readWSLExec(spec).args.slice(3)).toEqual([
       'codex',
       'app-server',
       '--listen',
@@ -111,23 +120,23 @@ describe('buildCodexLaunchSpec', () => {
     });
   });
 
-  it.each(['wsl$', 'wsl.localhost'])('launches vaults in the %s namespace using their own distro', (server) => {
+  it.each(['wsl$', 'wsl.localhost'])('launches vaults in the %s namespace using their own distro', async (server) => {
     const vault = `\\\\${server}\\Ubuntu\\home\\user\\vault`;
     const options = {
       codexSettings: getCodexProviderSettings({ providerConfigs: { codex: { installationMethodsByHost: { [getHostnameKey()]: 'wsl' } } } }),
       resolvedCliCommand: 'codex', hostVaultPath: vault, env: {}, hostPlatform: 'win32' as const,
-      resolveDefaultWslDistro: () => 'Debian',
+      resolveDefaultWSLDistro: () => 'Debian',
     };
-    const spec = buildCodexLaunchSpec(options);
-    expect(spec.args).toEqual(['--distribution', 'Ubuntu', '--cd', '/home/user/vault', 'codex', 'app-server', '--listen', 'stdio://']);
+    const spec = await buildCodexLaunchSpec(options);
+    expect(readWSLExec(spec).args.slice(3)).toEqual([ 'codex', 'app-server', '--listen', 'stdio://']);
     expect(spec.pathMapper.toTargetPath(`${vault}\\note.md`)).toBe('/home/user/vault/note.md');
     expect(() => buildCodexLaunchSpec({ ...options, executionTarget: {
       method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Debian',
     } })).toThrow('does not match workspace distro');
   });
 
-  it('uses the default WSL distro when no override is configured', () => {
-    const spec = buildCodexLaunchSpec({
+  it('uses the default WSL distro when no override is configured', async () => {
+    const spec = await buildCodexLaunchSpec({
       codexSettings: getCodexProviderSettings({
         providerConfigs: {
           codex: {
@@ -139,14 +148,10 @@ describe('buildCodexLaunchSpec', () => {
       hostVaultPath: 'C:\\repo',
       env: { OPENAI_API_KEY: 'sk-test' },
       hostPlatform: 'win32',
-      resolveDefaultWslDistro: () => 'Ubuntu',
+      resolveDefaultWSLDistro: () => 'Ubuntu',
     });
 
-    expect(spec.args).toEqual([
-      '--distribution',
-      'Ubuntu',
-      '--cd',
-      '/mnt/c/repo',
+    expect(readWSLExec(spec).args.slice(3)).toEqual([
       'codex',
       'app-server',
       '--listen',
@@ -158,7 +163,7 @@ describe('buildCodexLaunchSpec', () => {
     );
   });
 
-  it('uses the native WSL default when the injected resolver returns no distro', () => {
+  it('uses the native WSL default when the injected resolver returns no distro', async () => {
     execFileSyncSpy.mockReturnValue(Buffer.from(
       '  NAME              STATE           VERSION\r\n'
       + '* Ubuntu-24.04      Running         2\r\n'
@@ -166,7 +171,7 @@ describe('buildCodexLaunchSpec', () => {
       'utf16le',
     ));
 
-    const spec = buildCodexLaunchSpec({
+    const spec = await buildCodexLaunchSpec({
       codexSettings: getCodexProviderSettings({
         providerConfigs: {
           codex: {
@@ -178,15 +183,11 @@ describe('buildCodexLaunchSpec', () => {
       hostVaultPath: 'C:\\repo',
       env: {},
       hostPlatform: 'win32',
-      resolveDefaultWslDistro: () => undefined,
+      resolveDefaultWSLDistro: () => undefined,
     });
 
-    expect(spec.command).toBe('wsl.exe');
-    expect(spec.args).toEqual([
-      '--distribution',
-      'Ubuntu-24.04',
-      '--cd',
-      '/mnt/c/repo',
+    expect(spec.command).toMatch(/(?:^|\\)wsl\.exe$/u);
+    expect(readWSLExec(spec).args.slice(3)).toEqual([
       'codex',
       'app-server',
       '--listen',
@@ -198,7 +199,7 @@ describe('buildCodexLaunchSpec', () => {
     );
   });
 
-  it('fails fast when the native WSL list has no default distro', () => {
+  it('fails fast when the native WSL list has no default distro', async () => {
     execFileSyncSpy.mockReturnValue(Buffer.from(
       '  NAME              STATE           VERSION\r\n'
       + '  Ubuntu-24.04      Running         2\r\n'
@@ -223,7 +224,7 @@ describe('buildCodexLaunchSpec', () => {
     );
   });
 
-  it('fails fast when the workspace path cannot be represented inside WSL', () => {
+  it('fails fast when the workspace path cannot be represented inside WSL', async () => {
     expect(() => buildCodexLaunchSpec({
       codexSettings: getCodexProviderSettings({
         providerConfigs: {
@@ -240,7 +241,7 @@ describe('buildCodexLaunchSpec', () => {
     })).toThrow('WSL mode only supports Windows drive paths and \\\\wsl$ or \\\\wsl.localhost workspace paths');
   });
 
-  it('fails fast when the selected distro does not match a \\\\wsl$ workspace path', () => {
+  it('fails fast when the selected distro does not match a \\\\wsl$ workspace path', async () => {
     expect(() => buildCodexLaunchSpec({
       codexSettings: getCodexProviderSettings({
         providerConfigs: {
@@ -257,7 +258,7 @@ describe('buildCodexLaunchSpec', () => {
     })).toThrow('WSL distro override "Debian" does not match workspace distro "Ubuntu"');
   });
 
-  it('fails fast when WSL mode cannot determine a distro for transcript mapping', () => {
+  it('fails fast when WSL mode cannot determine a distro for transcript mapping', async () => {
     expect(() => buildCodexLaunchSpec({
       codexSettings: getCodexProviderSettings({
         providerConfigs: {
@@ -270,7 +271,7 @@ describe('buildCodexLaunchSpec', () => {
       hostVaultPath: 'C:\\repo',
       env: {},
       hostPlatform: 'win32',
-      resolveDefaultWslDistro: () => undefined,
+      resolveDefaultWSLDistro: () => undefined,
     })).toThrow(
       'Unable to determine the WSL distro. Set WSL distro override or configure a default WSL distro.',
     );

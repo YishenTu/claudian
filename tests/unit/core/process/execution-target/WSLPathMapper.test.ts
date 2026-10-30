@@ -1,9 +1,9 @@
-import type { CodexExecutionTarget } from '@/providers/codex/runtime/codexLaunchTypes';
-import { createCodexPathMapper } from '@/providers/codex/runtime/CodexPathMapper';
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
+import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
 
-describe('createCodexPathMapper', () => {
+describe('createExecutionPathMapper', () => {
   it('maps Windows drive paths into /mnt paths for WSL targets', () => {
-    const mapper = createCodexPathMapper({
+    const mapper = createExecutionPathMapper({
       method: 'wsl',
       platformFamily: 'unix',
       platformOs: 'linux',
@@ -15,7 +15,7 @@ describe('createCodexPathMapper', () => {
   });
 
   it('maps \\\\wsl$ paths into Linux paths for the selected distro', () => {
-    const mapper = createCodexPathMapper({
+    const mapper = createExecutionPathMapper({
       method: 'wsl',
       platformFamily: 'unix',
       platformOs: 'linux',
@@ -27,7 +27,7 @@ describe('createCodexPathMapper', () => {
   });
 
   it('rejects \\\\wsl$ paths from a different distro', () => {
-    const mapper = createCodexPathMapper({
+    const mapper = createExecutionPathMapper({
       method: 'wsl',
       platformFamily: 'unix',
       platformOs: 'linux',
@@ -38,12 +38,12 @@ describe('createCodexPathMapper', () => {
   });
 
   it('keeps host-native paths unchanged', () => {
-    const target: CodexExecutionTarget = {
+    const target: ExecutionTarget = {
       method: 'host-native',
       platformFamily: 'unix',
       platformOs: 'macos',
     };
-    const mapper = createCodexPathMapper(target);
+    const mapper = createExecutionPathMapper(target);
 
     expect(mapper.toTargetPath('/Users/example/repo')).toBe('/Users/example/repo');
     expect(mapper.toHostPath('/Users/example/repo')).toBe('/Users/example/repo');

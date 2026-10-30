@@ -1,3 +1,4 @@
+import { resolveCodexAppServerLaunchSpec } from '@/providers/codex/runtime/codexAppServerSupport';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 
@@ -39,10 +40,11 @@ describe('Codex CLI installation', () => {
   });
   afterEach(() => Object.defineProperty(process, 'platform', { value: platform }));
 
-  async function host(command = 'codex'): Promise<ProviderRuntimeHost> {
+  async function host(command = 'codex', environmentVariables = ''): Promise<ProviderRuntimeHost> {
     const fixture = await createProviderHostFixture({ vault: sharedVault,
       settings: {
         providerConfigs: { codex: {
+          environmentVariables,
           installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
           wslDistroOverridesByHost: { [getHostnameKey()]: 'Ubuntu' },
           cliPathsByHost: command === 'codex' ? {} : { [getHostnameKey()]: command },
@@ -53,38 +55,26 @@ describe('Codex CLI installation', () => {
     return fixture.host.getRuntimeHost('codex');
   }
 
-  it('resolves the real WSL binary before reading its version', async () => {
+  it.each([
+    { configuredHome: '/home/linux-user', configuredPath: '/opt/cli:/usr/bin', forwarded: true },
+    { configuredHome: 'C:\\Users\\me', configuredPath: 'C:\\tools', forwarded: false },
+  ])('uses the same configured environment for runtime and probe ($forwarded Linux HOME/PATH)', async ({ configuredHome, configuredPath, forwarded }) => {
+    const environmentText = `CUSTOM_TOKEN=secret\nCODEX_HOME=C:\\Codex Home\nOPENAI_API_KEY=test-key\nNODE_EXTRA_CA_CERTS=C:\\certs\\corp.pem\nTMPDIR=C:\\Temp\nSSL_CERT_DIR=C:\\certs;D:\\more\nSSL_CERT_FILE=/etc/ssl/cert.pem\nHOME=${configuredHome}\nPATH=${configuredPath}`;
+    const configuredHost = await host('codex', environmentText);
     vi.mocked(spawn)
       .mockImplementationOnce(() => respond('/home/me/.local/bin/codex\n') as never)
       .mockImplementationOnce(() => respond('codex-cli 0.154.0\n') as never);
-    expect(await inspectCodexInstallation(await host())).toEqual({
-      path: '/home/me/.local/bin/codex', version: '0.154.0', source: 'auto',
-    });
-    expect(vi.mocked(spawn).mock.calls.at(-1)?.slice(0, 2)).toEqual(['wsl.exe', [
-      '--distribution', 'Ubuntu', '--cd', '/mnt/c/vault', "'/home/me/.local/bin/codex'", '--version',
-    ]]);
-  });
-
-  it('looks up relative commands in the vault through the default WSL shell', async () => {
-    vi.mocked(spawn)
-      .mockImplementationOnce(() => respond('./my bin/codex\n') as never)
-      .mockImplementationOnce(() => respond('codex-cli 0.154.0\n') as never);
-    expect(await inspectCodexInstallation(await host('./my bin/codex'))).toEqual({
-      path: '/mnt/c/vault/my bin/codex', version: '0.154.0', source: 'custom',
-    });
-    const lookup = vi.mocked(spawn).mock.calls[0];
-    expect(lookup[0]).toBe('wsl.exe');
-    expect(lookup[2]).toMatchObject({ windowsVerbatimArguments: true, cwd: 'C:\\vault' });
-    expect(lookup[1]).toEqual([
-      '--distribution', 'Ubuntu', '--cd', '/mnt/c/vault', 'sh', '-c',
-      expect.stringMatching(/^'.*command -v.*'$/u),
-      'claudian-cli-probe', "'./my bin/codex'",
-    ]);
-  });
-
-  it('does not treat the WSL resolver command fallback as a detected binary', async () => {
-    vi.mocked(spawn).mockImplementationOnce(() => respond('', 1) as never);
-    expect(await inspectCodexInstallation(await host())).toEqual({ path: null, version: null, source: 'auto' });
+    await inspectCodexInstallation(configuredHost);
+    const launch = await resolveCodexAppServerLaunchSpec(configuredHost);
+    const forwardedKeys = launch.env.WSLENV.split(':');
+    expect(forwardedKeys).toEqual(expect.arrayContaining(['CUSTOM_TOKEN', 'CODEX_HOME/p', 'OPENAI_API_KEY', 'NODE_EXTRA_CA_CERTS/p', 'TMPDIR/p', 'SSL_CERT_DIR/pl', 'SSL_CERT_FILE']));
+    expect(forwardedKeys.includes('HOME')).toBe(forwarded);
+    expect(launch.env.PATH).toBe(configuredPath);
+    expect(forwardedKeys.includes('PATH')).toBe(forwarded);
+    for (const [, args, options] of vi.mocked(spawn).mock.calls) {
+      expect(options).toMatchObject({ env: launch.env, windowsVerbatimArguments: true });
+      expect(args!.join(' ')).not.toContain('secret');
+    }
   });
 });
 

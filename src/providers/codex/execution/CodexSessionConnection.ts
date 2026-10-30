@@ -1,7 +1,7 @@
 import type { ProviderSessionToolPort } from '@/core/execution';
+import type { TargetLaunchSpec } from '@/core/process/execution-target/types';
 import type { CodexAppServerConnection } from '@/providers/codex/runtime/CodexAppServerRuntime';
 import { CodexDynamicToolRegistry } from '@/providers/codex/runtime/CodexDynamicToolRegistry';
-import type { CodexLaunchSpec } from '@/providers/codex/runtime/codexLaunchTypes';
 import type { CodexRPCTransport } from '@/providers/codex/runtime/CodexRPCTransport';
 import type { CodexRuntimeContext } from '@/providers/codex/runtime/CodexRuntimeContext';
 import { createCodexSessionTools } from '@/providers/codex/runtime/CodexSessionTools';
@@ -50,7 +50,7 @@ export class CodexSessionConnection {
     return this.#dynamicToolRegistry;
   }
 
-  get pathMapper(): CodexLaunchSpec['pathMapper'] | undefined {
+  get pathMapper(): TargetLaunchSpec['pathMapper'] | undefined {
     return this.#connection?.launchSpec.pathMapper;
   }
 

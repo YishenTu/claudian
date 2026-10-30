@@ -2,11 +2,12 @@ import { access } from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { inferWSLDistroFromWindowsPath } from '@/core/process/execution-target/ExecutionTargetResolver';
+import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
+
 import type { ProviderHistoryEnvironment } from '../../../core/providers/types';
 import { isPathWithinRoot } from '../../../core/storage/pathContainment';
 import type { CodexProviderSettings } from '../config';
-import { inferWslDistroFromWindowsPath } from '../runtime/CodexExecutionTargetResolver';
-import { createCodexPathMapper } from '../runtime/CodexPathMapper';
 import { CodexHistoryDeadlineError, findCodexSessionFileAsync, runBeforeDeadline } from './CodexHistoryStore';
 
 export const CODEX_HISTORY_LOOKUP_TIMEOUT_MS = 10_000;
@@ -56,7 +57,7 @@ function getWslDistroConstraint(context: CodexHistoryPathContext): string | null
     return undefined;
   }
   return settings.wslDistroOverride
-    || inferWslDistroFromWindowsPath(context.vaultPath)
+    || inferWSLDistroFromWindowsPath(context.vaultPath)
     || null;
 }
 
@@ -86,15 +87,18 @@ function getTrustedSessionRoots(
   hints: Array<string | null | undefined> = [],
 ): string[] {
   const roots: string[] = [];
-  const configuredHome = context.environment.CODEX_HOME?.trim();
+  const linuxHome = context.environment.HOME?.trim();
+  const configuredHome = context.environment.CODEX_HOME?.trim()
+    || (getWslDistroConstraint(context) !== undefined && linuxHome?.startsWith('/')
+      ? path.posix.join(linuxHome, '.codex') : undefined);
   if (configuredHome && isAbsolutePath(configuredHome)) {
     roots.push(joinSessionsRoot(configuredHome));
     const distroConstraint = getWslDistroConstraint(context);
     if (distroConstraint !== undefined && path.posix.isAbsolute(configuredHome)) {
       const hintedDistro = hints
-        .map(hint => inferWslDistroFromWindowsPath(hint))
+        .map(hint => inferWSLDistroFromWindowsPath(hint))
         .find((distro): distro is string => !!distro);
-      const pathMapper = createCodexPathMapper({
+      const pathMapper = createExecutionPathMapper({
         distroName: distroConstraint || hintedDistro,
         method: 'wsl',
         platformFamily: 'unix',

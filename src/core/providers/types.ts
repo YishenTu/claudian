@@ -1,3 +1,5 @@
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
+
 import type {
   ProviderExecutionBackend,
   ProviderExecutionTransitionScope,
@@ -320,7 +322,7 @@ export interface ProviderTransitionOwnerContext {
 }
 
 export interface ProviderCLIResolutionContext extends ProviderTransitionOwnerContext {
-  executionTarget?: unknown;
+  executionTarget?: ExecutionTarget;
 }
 
 export interface ProviderCLIResolver {

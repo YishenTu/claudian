@@ -15,6 +15,8 @@ import { createCodexWorkspaceServices } from '@/providers/codex/app/CodexWorkspa
 import { CodexCommandCatalog } from '@/providers/codex/commands/CodexCommandCatalog';
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
 import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
+import { resolveCodexAppServerLaunchSpec } from '@/providers/codex/runtime/codexAppServerSupport';
+import { buildCodexLaunchSpec } from '@/providers/codex/runtime/CodexLaunchSpecBuilder';
 import { CodexModelDiscoveryService } from '@/providers/codex/runtime/CodexModelDiscoveryService';
 import { updateCodexProviderSettings } from '@/providers/codex/settings';
 import { CodexSkillListingService } from '@/providers/codex/skills/CodexSkillListingService';
@@ -168,6 +170,30 @@ describe('Codex shared runtime', () => {
     replacement.completeReconcile();
     await expect(restarted).resolves.toEqual([expect.objectContaining({ name: 'remote-skill' })]);
     await skills.dispose();
+  });
+
+  it('reuses the WSL server without probing shell state on acquisition', async () => {
+    const resolveLaunch = vi.mocked(resolveCodexAppServerLaunchSpec);
+    const previousResolve = resolveLaunch.getMockImplementation()!;
+    vi.mocked(spawn).mockClear();
+    resolveLaunch.mockImplementation(async () => buildCodexLaunchSpec({
+      codexSettings: decodeCodexConfig({}), resolvedCliCommand: 'codex', env: {}, hostVaultPath: 'C:\\vault',
+      executionTarget: { method: 'wsl', distroName: 'Ubuntu', platformFamily: 'unix', platformOs: 'linux' },
+    }));
+    const runtime = createRuntime();
+    try {
+      const first = await runtime.acquire({ readiness: 'initialized' });
+      const second = await runtime.acquire({ readiness: 'initialized' });
+      expect(second.connection.fingerprint === first.connection.fingerprint).toBe(true);
+      expect(second.connection).toBe(first.connection);
+      expect(mockProcesses).toHaveLength(1);
+      expect(spawn).not.toHaveBeenCalled();
+      await first.release();
+      await second.release();
+    } finally {
+      await runtime.dispose();
+      resolveLaunch.mockImplementation(previousResolve);
+    }
   });
 
   it('drains the old fingerprint while new consumers use its replacement', async () => {

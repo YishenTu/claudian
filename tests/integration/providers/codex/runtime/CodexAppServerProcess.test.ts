@@ -1,19 +1,23 @@
+import { readWSLExec } from '@test/helpers/WSLLaunch';
 import type { CodexNativeTestProcess} from '@test/helpers/providers/codex/CodexRuntimeHarness';
 import { CodexRuntimeHarness } from '@test/helpers/providers/codex/CodexRuntimeHarness';
+
+import { buildCodexLaunchSpec } from '@/providers/codex/runtime/CodexLaunchSpecBuilder';
+import { getCodexProviderSettings } from '@/providers/codex/settings';
 
 vi.mock('cross-spawn', () => ({ default: vi.fn() }));
 
 import spawn from 'cross-spawn';
 import type { MockedFunction } from 'vitest';
 
+import type { TargetLaunchSpec } from '@/core/process/execution-target/types';
 import { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
-import type { CodexLaunchSpec } from '@/providers/codex/runtime/codexLaunchTypes';
 
 
 
 const mockSpawn = spawn as MockedFunction<typeof spawn>;
 
-function createLaunchSpec(overrides: Partial<CodexLaunchSpec> = {}): CodexLaunchSpec {
+function createLaunchSpec(overrides: Partial<TargetLaunchSpec> = {}): TargetLaunchSpec {
   return {
     target: {
       method: 'host-native',
@@ -88,6 +92,21 @@ describe('CodexAppServerProcess', () => {
           windowsHide: true,
         }),
       );
+    });
+
+    it('preserves WSL quoting and forwarded environment at the runtime spawn boundary', async () => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      const spec = await buildCodexLaunchSpec({
+        codexSettings: getCodexProviderSettings({ providerConfigs: { codex: { responseVerbosity: 'high' } } }),
+        resolvedCliCommand: '/opt/my cli/codex', hostVaultPath: 'C:\\vault',
+        env: { OPENAI_API_KEY: 'secret' },
+        executionTarget: { method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' },
+      });
+      new CodexAppServerProcess(spec).start();
+      expect(mockSpawn).toHaveBeenCalledWith(expect.stringMatching(/(?:^|\\)wsl\.exe$/u), spec.args,
+        expect.objectContaining({ windowsVerbatimArguments: true, env: expect.objectContaining({ OPENAI_API_KEY: 'secret' }) }));
+      expect(readWSLExec(spec).args.slice(3)).toEqual(['/opt/my cli/codex', 'app-server', '--listen', 'stdio://', '-c', 'model_verbosity="high"']);
+
     });
 
     it('passes environment variables to the spawned process', () => {
