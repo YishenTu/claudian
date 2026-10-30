@@ -53,7 +53,8 @@ implements GrokExecutionNativeConnection {
 
   constructor(options: GrokExecutionNativeCreateOptions) {
     this.process = new ACPSubprocess({
-      args: ['agent', '--no-leader', 'stdio'],
+      args: options.args ?? ['agent', '--no-leader', 'stdio'],
+      windowsVerbatimArguments: options.windowsVerbatimArguments,
       command: options.command,
       cwd: options.cwd,
       env: options.env,

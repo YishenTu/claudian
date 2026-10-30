@@ -9,6 +9,7 @@ import { axe } from '@test/helpers/accessibility';
 import { controlChangeSettled } from '@test/helpers/ObsidianHost';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
+import { WSLProcessFixture } from '@test/helpers/WSLProcessFixture';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import spawn from 'cross-spawn';
 
@@ -28,6 +29,7 @@ let container: HTMLElement;
 let renderer: { dispose(): void } | undefined;
 let persist: ReturnType<typeof vi.fn<(settings: ClaudianSettings) => Promise<void>>>;
 let notify: ReturnType<typeof vi.fn<(providerId: string) => void>>;
+let publish: ReturnType<typeof vi.fn<() => void>>;
 
 function makeCatalog() {
   return {
@@ -46,7 +48,8 @@ beforeEach(async () => {
   globalThis.structuredClone ??= value => deserialize(serialize(value));
   persist = vi.fn(async () => undefined);
   notify = vi.fn();
-  fixture = await createProviderHostFixture({ beforePersist: persist });
+  publish = vi.fn();
+  fixture = await createProviderHostFixture({ beforePersist: persist, afterPublish: () => publish() });
   updateGrokProviderSettings(fixture.settings, {
     enabled: true, visibleModels: ['grok-4'], preferredReasoningByModel: { 'grok-4': 'medium' },
   });
@@ -247,4 +250,77 @@ it('renders only the Grok environment scope without skill or command sections', 
     expect(within(container).queryByText(name)).toBeNull();
   }
   expect((await axe(container, { runOnly: ['button-name', 'label', 'aria-valid-attr', 'aria-valid-attr-value'] })).violations).toEqual([]);
+});
+
+describe('Windows installation method', () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  let wsl: WSLProcessFixture;
+  beforeEach(() => {
+    wsl = new WSLProcessFixture();
+    wsl.binaries.set('grok', { path: '/home/me/.local/bin/grok', version: 'grok 1.2.3' });
+    vi.mocked(spawn).mockImplementation(wsl.spawn);
+    // A Windows vault, as the fixture's own `overrides` would supply it; WSL maps it to the Linux cwd.
+    Object.defineProperty(fixture.host, 'workingDirectory', { value: 'C:\\vault' });
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+  });
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', platform);
+    vi.mocked(spawn).mockImplementation(() => { throw new Error('Native CLI unavailable in settings test'); });
+  });
+
+  it.each([
+    ['native-windows', 'wsl', 'rejected'], ['wsl', 'native-windows', 'rejected'],
+    ['native-windows', 'wsl', 'accepted'], ['wsl', 'native-windows', 'accepted'],
+    ['native-windows', 'wsl', 'committed-error'], ['wsl', 'native-windows', 'committed-error'],
+  ] as const)('synchronizes %s → %s controls with settings after a %s save', async (initial, requested, outcome) => {
+    // Seed through the runtime path so the session-store baseline matches the initial target.
+    await fixture.host.applyProviderRuntimeSettings(['grok'], settings => {
+      updateGrokProviderSettings(settings, { installationMethod: initial, wslDistroOverride: 'Ubuntu' });
+    });
+    persist.mockClear();
+    if (outcome === 'rejected') persist.mockRejectedValueOnce(new Error('Disk full'));
+    if (outcome === 'committed-error') publish.mockImplementationOnce(() => { throw new Error('Runtime reset failed'); });
+    await render();
+    const method = within(container).getByRole('combobox', { name: 'Installation method' }) as HTMLSelectElement;
+    const distro = within(container).getByRole('textbox', { name: 'WSL distro override' }) as HTMLInputElement;
+    const cli = cliInput();
+    const card = cli.closest<HTMLElement>('.claudian-cli-installation')!;
+    expect(method.value).toBe(initial);
+    fireEvent.change(method, { target: { value: requested } });
+    const failure = await controlChangeSettled(method).then(() => null, (error: unknown) => error);
+    expect(failure instanceof Error ? failure.message : failure)
+      .toBe({ accepted: null, rejected: 'Disk full', 'committed-error': 'Runtime reset failed' }[outcome]);
+    // The method change is written once, with its session invalidation; the only other write completes that invalidation.
+    expect(persist.mock.calls.map(([settings]) => [
+      getGrokProviderSettings(settings).installationMethod, settings.pendingProviderSessionInvalidations.grok !== undefined,
+    ])).toEqual(outcome === 'rejected' ? [[requested, true]] : [[requested, true], [requested, false]]);
+    const expected = outcome === 'rejected' ? initial : requested;
+    expect(getGrokProviderSettings(fixture.settings).installationMethod).toBe(expected);
+    expect(getGrokProviderSettings(await fixture.settingsStorage.load()).installationMethod).toBe(expected);
+    expect(method.value).toBe(expected);
+    expect(distro.disabled).toBe(expected !== 'wsl');
+    expect(cli.placeholder).toBe(expected === 'wsl' ? 'grok' : 'C:\\Users\\you\\AppData\\Roaming\\npm\\grok.cmd');
+    fireEvent.input(cli, { target: { value: '/missing/linux/grok' } });
+    await waitFor(() => expect(cli.getAttribute('aria-invalid')).toBe(String(expected !== 'wsl')));
+    // Enter starts the save (disabling the field) only for a valid path; enabled again means it settled.
+    fireEvent.keyDown(cli, { key: 'Enter' });
+    await waitFor(() => expect(cli.disabled).toBe(false));
+    // WSL accepts a Linux path that does not exist on the Windows host; native Windows rejects it before saving.
+    const savedPath = expected === 'wsl' ? '/missing/linux/grok' : undefined;
+    expect(getGrokProviderSettings(fixture.settings).cliPathsByHost[fixture.storage.installationKey]).toBe(savedPath);
+    expect(getGrokProviderSettings(await fixture.settingsStorage.load()).cliPathsByHost[fixture.storage.installationKey]).toBe(savedPath);
+    expect((await axe(card)).violations).toEqual([]);
+  });
+
+  it('inspects the Grok CLI inside the selected distro', async () => {
+    updateGrokProviderSettings(fixture.settings, { installationMethod: 'wsl', wslDistroOverride: 'Ubuntu' });
+    await render();
+    const card = cliInput().closest<HTMLElement>('.claudian-cli-installation')!;
+    await waitFor(() => expect(within(card).getByText('/home/me/.local/bin/grok')).toBeTruthy());
+    expect(within(card).getByText('v1.2.3')).toBeTruthy();
+    // Model discovery also launches `grok` through WSL; only the installation probe is asserted here.
+    const probes = wsl.requests.filter(request => request.executable !== 'grok');
+    expect(probes.map(request => [request.executable, request.argv.at(-1)])).toEqual([['/bin/sh', 'grok'], ['/home/me/.local/bin/grok', '--version']]);
+    for (const request of probes) expect(request.args).toEqual(expect.arrayContaining(['--distribution', 'Ubuntu', '--cd', '/mnt/c/vault']));
+  });
 });

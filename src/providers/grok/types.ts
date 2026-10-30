@@ -1,6 +1,12 @@
 import * as path from 'path';
 
+import type { Conversation } from '@/core/types';
+
 export interface GrokProviderState {
+  /** The observed Linux store to which this native resume binding belongs. */
+  sessionStoreKey?: string;
+  historySessionId?: string;
+  historyResumeAt?: string;
   forkSource?: GrokForkSource;
   forkSourceSessionDirectory?: string;
   nativeConversationContextEstablished?: boolean;
@@ -26,6 +32,9 @@ export function parseGrokProviderState(value: unknown): GrokProviderState {
     : undefined;
   const sessionDirectory = parseAbsolutePath(record.sessionDirectory);
   return {
+    ...(normalizeOpaqueString(record.sessionStoreKey) ? { sessionStoreKey: normalizeOpaqueString(record.sessionStoreKey) } : {}),
+    ...(normalizeOpaqueString(record.historySessionId) ? { historySessionId: normalizeOpaqueString(record.historySessionId) } : {}),
+    ...(normalizeOpaqueString(record.historyResumeAt) ? { historyResumeAt: normalizeOpaqueString(record.historyResumeAt) } : {}),
     ...(forkSource ? { forkSource } : {}),
     ...(forkSourceSessionDirectory ? { forkSourceSessionDirectory } : {}),
     ...(nativeConversationContextEstablished !== undefined
@@ -62,4 +71,21 @@ function normalizeOpaqueString(value: unknown): string | undefined {
 
 function isAbsolutePath(value: string): boolean {
   return Boolean(value) && (path.posix.isAbsolute(value) || path.win32.isAbsolute(value));
+}
+
+/** Preserve a recovery-only history locator; it must never become a resume seed. */
+export function clearGrokResumeState(conversation: Pick<Conversation, 'sessionId' | 'providerState'>): boolean {
+  const state = parseGrokProviderState(conversation.providerState);
+  const sessionId = conversation.sessionId ?? state.forkSource?.sessionId;
+  if (!sessionId) return false;
+  const next: Record<string, unknown> = { ...conversation.providerState, historySessionId: sessionId, nativeConversationContextEstablished: false };
+  if (state.forkSource) {
+    Object.assign(next, { historyResumeAt: state.forkSource.resumeAt, sessionDirectory: state.forkSourceSessionDirectory });
+  }
+  delete next.sessionStoreKey;
+  delete next.forkSource;
+  delete next.forkSourceSessionDirectory;
+  conversation.sessionId = null;
+  conversation.providerState = next;
+  return true;
 }

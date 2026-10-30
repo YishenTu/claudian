@@ -62,7 +62,7 @@ describe('GrokSettingsReconciler', () => {
     );
   });
 
-  it('declares reload and preserves all conversation bindings', () => {
+  it('retires resume identity while retaining a history-only locator', () => {
     const grokConversation = {
       messages: [],
       providerId: 'grok',
@@ -71,10 +71,10 @@ describe('GrokSettingsReconciler', () => {
     } as unknown as Conversation;
 
     expect(grokSettingsReconciler.invalidateConversationSessions([grokConversation]))
-      .toEqual([]);
+      .toEqual([grokConversation]);
     expect(grokConversation).toEqual(expect.objectContaining({
-      providerState: { sessionDirectory: '/tmp/grok/session-1' },
-      sessionId: 'session-1',
+      providerState: { sessionDirectory: '/tmp/grok/session-1', historySessionId: 'session-1', nativeConversationContextEstablished: false },
+      sessionId: null,
     }));
   });
 
@@ -119,7 +119,6 @@ describe('GrokSettingsReconciler', () => {
     const result = grokSettingsReconciler.reconcileModelWithEnvironment(settings);
 
     expect(result).toEqual({ changed: true, sessionPolicy: 'reload' });
-    expect(grokSettingsReconciler.invalidateConversationSessions([grokConversation])).toEqual([]);
     expect(getGrokProviderSettings(settings).catalogsByHost).toEqual({
       [getInstallationKey()]: catalog('current-model'),
       'other-host': catalog('other-model'),
@@ -145,6 +144,7 @@ describe('GrokSettingsReconciler', () => {
     };
     setProviderConfig(settings, 'grok', { ...getProviderConfig(settings, 'grok'), environmentHash: grokEnvironmentHash(settings) });
 
+    expect(grokSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: true, sessionPolicy: 'reload' });
     expect(grokSettingsReconciler.reconcileModelWithEnvironment(settings)).toEqual({ changed: false });
     expect(getGrokProviderSettings(settings).currentCatalog).toEqual(catalog('current-model'));
   });
@@ -189,5 +189,32 @@ describe('GrokSettingsReconciler', () => {
         grok: 'grok-3',
       },
     });
+  });
+});
+
+describe('Grok session store transitions', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('reloads CLI changes but invalidates target, distro and store changes', () => {
+    vi.stubGlobal('process', { ...process, platform: 'win32' });
+    const settings = { providerConfigs: { grok: { enabled: true } as Record<string, unknown> } };
+    grokSettingsReconciler.reconcileModelWithEnvironment(settings);
+    settings.providerConfigs.grok.cliPath = 'C:\\new-grok.exe';
+    expect(grokSettingsReconciler.reconcileModelWithEnvironment(settings)).toMatchObject({ sessionPolicy: 'reload' });
+    settings.providerConfigs.grok.installationMethodsByHost = { [getInstallationKey()]: 'wsl' };
+    settings.providerConfigs.grok.wslDistroOverridesByHost = { [getInstallationKey()]: 'Ubuntu' };
+    expect(grokSettingsReconciler.reconcileModelWithEnvironment(settings)).toMatchObject({ sessionPolicy: 'invalidate' });
+    settings.providerConfigs.grok.wslDistroOverridesByHost = { [getInstallationKey()]: 'Debian' };
+    expect(grokSettingsReconciler.reconcileModelWithEnvironment(settings)).toMatchObject({ sessionPolicy: 'invalidate' });
+    settings.providerConfigs.grok.environmentVariables = 'GROK_HOME=/other-store';
+    expect(grokSettingsReconciler.reconcileModelWithEnvironment(settings)).toMatchObject({ sessionPolicy: 'invalidate' });
+  });
+});
+
+describe('Grok effective store selection', () => {
+  it('reloads a shadowed HOME change when GROK_HOME still selects the same store', () => {
+    const settings = { providerConfigs: { grok: { enabled: true, environmentVariables: 'GROK_HOME=/same-store\nHOME=/home/a' } } };
+    grokSettingsReconciler.reconcileModelWithEnvironment(settings);
+    settings.providerConfigs.grok.environmentVariables = 'GROK_HOME=/same-store\nHOME=/home/b';
+    expect(grokSettingsReconciler.reconcileModelWithEnvironment(settings)).toMatchObject({ changed: true, sessionPolicy: 'reload' });
   });
 });

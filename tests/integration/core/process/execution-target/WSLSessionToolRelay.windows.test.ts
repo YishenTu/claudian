@@ -1,4 +1,4 @@
-// @test-ci {"inputs":["src/core/session-tools/**","tests/{unit,integration}/core/session-tools/**"]}
+// @test-ci {"inputs":["src/{core/session-tools,providers/grok}/**","tests/{unit,integration}/{core/session-tools,providers/grok}/**"]}
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 

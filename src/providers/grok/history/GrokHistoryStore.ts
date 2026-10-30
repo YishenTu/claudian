@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 
+import type { ExecutionPathMapper } from '@/core/process/execution-target/types';
 import { decodeSessionMessage } from '@/core/session-tools/sessionMessageEnvelope';
 import { resolveToolDiffData } from '@/core/tools/toolDiff';
 import { extractACPDiffResultDetails } from '@/providers/acp/ACPToolResultNormalization';
@@ -15,6 +16,7 @@ import type {
   ToolCallInfo,
   ToolResultDetails,
 } from '../../../core/types';
+import { mapGrokNativePaths } from '../normalization/grokNativePaths';
 import {
   buildGrokToolProviderPayload,
   type GrokRawToolNameResolution,
@@ -99,6 +101,7 @@ export interface GrokHistoryLineConsumer<T> {
 export function createGrokHistoryParser(
   sessionId: string,
   resumeAt?: string,
+  pathMapper?: ExecutionPathMapper,
 ): GrokHistoryLineConsumer<ParsedGrokHistory> {
   let completedTurns: CompletedTurn[] = [];
   let pending: PendingTurn | null = null;
@@ -141,7 +144,7 @@ export function createGrokHistoryParser(
     if (readString(record.params.sessionId) !== sessionId) {
       return;
     }
-    const update = readRecord(record.params.update);
+    const update = mapGrokNativePaths(readRecord(record.params.update), pathMapper);
     if (!update) {
       return;
     }
@@ -391,8 +394,9 @@ export async function loadGrokHistory(
   sessionDirectory: string,
   sessionId: string,
   resumeAt?: string,
+  pathMapper?: ExecutionPathMapper,
 ): Promise<ParsedGrokHistory> {
-  return await readGrokUpdates(sessionDirectory, createGrokHistoryParser(sessionId, resumeAt))
+  return await readGrokUpdates(sessionDirectory, createGrokHistoryParser(sessionId, resumeAt, pathMapper))
     ?? { messages: [] };
 }
 

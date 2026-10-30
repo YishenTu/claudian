@@ -8,7 +8,10 @@ import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/captu
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 import { GrokNativeProcess } from '@test/helpers/providers/grok/GrokNativeProcess';
 import { writeGrokCatalog } from '@test/helpers/providers/grokSettings';
+import { grokWSLToolUpdates } from '@test/helpers/providers/grokWSLTools';
 import { testDate } from '@test/helpers/testClock';
+import { readWSLExec } from '@test/helpers/WSLLaunch';
+import { WSLProcessFixture } from '@test/helpers/WSLProcessFixture';
 import spawn from 'cross-spawn';
 
 import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderExecutionSession,
@@ -16,7 +19,7 @@ import type { ProviderExecutionEvent, ProviderExecutionRequest, ProviderExecutio
 import { isRewindableExecutionSession } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ClaudianSettings } from '@/core/types';
-import { GrokExecutionBackend } from '@/providers/grok/execution/GrokExecutionBackend';
+import { GrokExecutionBackend, type GrokExecutionBackendOptions } from '@/providers/grok/execution/GrokExecutionBackend';
 import { encodeGrokSessionCwd } from '@/providers/grok/history/GrokHistoryPathResolver';
 import { updateGrokProviderSettings } from '@/providers/grok/settings';
 
@@ -821,4 +824,154 @@ it('forks from provider-owned checkpoint metadata and loads the child with syste
     await session.dispose();
     await fs.rm(history.root, { recursive: true, force: true });
   }
+});
+
+describe('WSL installations', () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  let wsl: WSLProcessFixture;
+  beforeEach(() => { wsl = new WSLProcessFixture(); vi.stubEnv('SystemRoot', 'C:\\Windows'); });
+  afterEach(() => { Object.defineProperty(process, 'platform', platform); vi.unstubAllEnvs(); });
+
+  async function createWSLHost(): Promise<ProviderHost> {
+    const host = await createGrokHost();
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    updateGrokProviderSettings(host.settings, { installationMethod: 'wsl', wslDistroOverride: 'Ubuntu' });
+    return host;
+  }
+
+  /** wsl.exe runs the Grok CLI as the shared native peer; Linux probes go to the WSL process fixture. */
+  function createWSLBackend(host: ProviderHost, peers: GrokNativeProcess[], options: Omit<GrokExecutionBackendOptions, 'nativeFactory'> = {}) {
+    const launches: { command: string; args: string[]; windowsVerbatimArguments?: boolean }[] = [];
+    vi.mocked(spawn).mockImplementation((command, args = [], spawnOptions = {}) => {
+      if (readWSLExec({ args: [...args] }).args[3] !== 'grok') return wsl.spawn(command, args, spawnOptions);
+      launches.push({ command, args: [...args], windowsVerbatimArguments: spawnOptions.windowsVerbatimArguments });
+      const peer = peers[launches.length - 1];
+      if (!peer) throw new Error('Unexpected Grok launch');
+      return peer.child;
+    });
+    const backend = new GrokExecutionBackend(host.getRuntimeHost('grok'), options);
+    return {
+      launches,
+      createSession(config: ProviderSessionConfig) {
+        const session = backend.createSession(config);
+        sessions.push(session);
+        return session;
+      },
+    };
+  }
+
+  it.each(['new', 'load'] as const)('uses Linux cwd and a Windows interop stdio relay for WSL %s', async mode => {
+    wsl.environment = { HOME: '/home/test', GROK_HOME: '/home/test/.grok' };
+    const native = new GrokNativeProcess();
+    native.promptImplementation = async () => {
+      for (const update of grokWSLToolUpdates) native.emit(update, 'standard', undefined, mode === 'new' ? 'session-new' : 'session-existing');
+      return { stopReason: 'end_turn' };
+    };
+    const sessionTools = {
+      list: vi.fn(async () => ({ sessions: [] })),
+      send: vi.fn(async () => ({ sessionId: 'recipient', title: 'Review', provider: 'codex', status: 'queued' as const })),
+      read: vi.fn(),
+    };
+    const backend = createWSLBackend(await createWSLHost(), [native]);
+    const session = backend.createSession({
+      ...sessionConfig, workingDirectory: 'C:\\vault', sessionTools,
+      ...(mode === 'new' ? { resumeSeed: undefined } : {}),
+    });
+    const events = await collect(session.execute(executionRequest()).events);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'tool_started', input: expect.objectContaining({ path: 'C:\\vault\\notes' }) }));
+    expect(events).toContainEqual(expect.objectContaining({ type: 'tool_completed', resultDetails: expect.objectContaining({ diff: expect.objectContaining({ filePath: 'C:\\vault\\note.md' }) }) }));
+    const initial = mode === 'new' ? native.newRequests[0] : native.loadRequests[0];
+    expect(initial.cwd).toBe('/mnt/c/vault');
+    const [server] = initial.mcpServers;
+    if (!('command' in server)) throw new Error('Expected a stdio relay server');
+    expect(server).toMatchObject({ name: 'claudian_sessions', command: '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe' });
+    expect(server).not.toHaveProperty('url');
+    const routeId = server.env?.find(variable => variable.name === 'CLAUDIAN_SESSION_TOOL_ROUTE')?.value;
+    expect(routeId).toBeTruthy();
+    expect(JSON.stringify(server.args)).not.toContain(routeId);
+    expect(JSON.stringify(wsl.requests.map(request => [request.args, request.options.env]))).not.toContain(routeId);
+    expect(backend.launches).toHaveLength(1);
+    expect(backend.launches[0].windowsVerbatimArguments).toBe(true);
+    expect(backend.launches[0].args).toEqual(expect.arrayContaining(['--distribution', 'Ubuntu', '--cd', '/mnt/c/vault']));
+    expect(readWSLExec(backend.launches[0]).args.slice(-4)).toEqual(['grok', 'agent', '--no-leader', 'stdio']);
+  });
+
+  it('forks inside the distro with Linux cwds for the child and its source', async () => {
+    wsl.environment = { HOME: '/home/alice' };
+    const native = new GrokNativeProcess();
+    // The checkpoint index lives in the Linux store, which the test host cannot read through `\\wsl$`.
+    const backend = createWSLBackend(await createWSLHost(), [native], { resolvePromptIndex: async () => 2 });
+    const session = backend.createSession({ ...sessionConfig, workingDirectory: 'C:\\vault', resumeSeed: { providerState: {
+      forkSource: { resumeAt: 'assistant-source', sessionId: 'session-source' },
+      // A source directory whose cwd is not recorded in its path falls back to the launch cwd.
+      forkSourceSessionDirectory: '\\\\wsl$\\Ubuntu\\home\\alice\\.grok\\sessions\\unrecorded\\session-source',
+    } } });
+    await collect(session.execute(executionRequest()).events);
+    expect(native.forkCalls).toEqual([expect.objectContaining({
+      newCwd: '/mnt/c/vault', sourceCwd: '/mnt/c/vault', sourceSessionId: 'session-source', targetPromptIndex: 2,
+    })]);
+    expect(native.loadRequests).toEqual([expect.objectContaining({ cwd: '/mnt/c/vault', sessionId: 'session-forked' })]);
+  });
+
+  it('reports rewind files and conflicts as host paths', async () => {
+    wsl.environment = { HOME: '/home/alice' };
+    const native = new GrokNativeProcess();
+    native.rewindImplementation = async params => ({
+      success: true, targetPromptIndex: params.targetPromptIndex, mode: params.mode, error: null,
+      // Absolute Linux paths are the mapping premise (no native capture yet); relative paths stay literal.
+      cleanFiles: ['/mnt/c/vault/clean.md', 'relative.md'], revertedFiles: ['/home/alice/notes/reverted.md'],
+      conflicts: [{ conflictType: 'modified', path: '/mnt/c/vault/conflict.md' }],
+    });
+    const backend = createWSLBackend(await createWSLHost(), [native], { resolvePromptIndex: async () => 4 });
+    const session = backend.createSession({ ...sessionConfig, workingDirectory: 'C:\\vault', resumeSeed: {
+      providerSessionId: 'session-existing',
+      providerState: { sessionDirectory: '\\\\wsl$\\Ubuntu\\home\\alice\\.grok\\sessions\\%2Fmnt%2Fc%2Fvault\\session-existing' },
+    } });
+    if (!isRewindableExecutionSession(session)) throw new Error('Expected Grok rewind capability.');
+    await expect(session.previewRewind('user-target', 'assistant-target')).resolves.toEqual({
+      canRewind: true,
+      filesChanged: ['C:\\vault\\clean.md', 'relative.md', '\\\\wsl$\\Ubuntu\\home\\alice\\notes\\reverted.md'],
+      conflicts: [{ conflictType: 'modified', path: 'C:\\vault\\conflict.md' }],
+    });
+    expect(native.rewindCalls).toEqual([{ force: false, mode: 'conversation_only', sessionId: 'session-existing', targetPromptIndex: 4 }]);
+  });
+
+  it.each(['execute', 'previewRewind', 'rewind'] as const)('retires a changed WSL store before %s and resumes within the same store', async operation => {
+    const host = await createWSLHost();
+    const natives = [new GrokNativeProcess(), new GrokNativeProcess(), new GrokNativeProcess()];
+    // Rewind indexes come from the Linux store, which the test host cannot read through `\\wsl$`.
+    const options = { resolvePromptIndex: async () => 0 };
+    const config = { ...sessionConfig, workingDirectory: 'C:\\vault', resumeSeed: undefined };
+    wsl.environment = { HOME: '/home/alice' };
+    const first = createWSLBackend(host, [natives[0]], options).createSession(config);
+    await collect(first.execute(executionRequest()).events);
+    const original = first.getSnapshot();
+    await first.dispose();
+    wsl.environment = { HOME: '/home/bob' };
+    // The directory Windows resolved through `\\wsl$` on the run that created the checkpoint.
+    const sessionDirectory = '\\\\wsl$\\Ubuntu\\home\\alice\\.grok\\sessions\\%2Fmnt%2Fc%2Fvault\\session-new';
+    const second = createWSLBackend(host, [natives[1]], options).createSession({ ...config,
+      resumeSeed: { providerSessionId: original.providerSessionId, providerState: { ...original.providerState, sessionDirectory } },
+    });
+    if (!isRewindableExecutionSession(second)) throw new Error('Expected Grok rewind capability.');
+    const preview = operation === 'execute' ? undefined : await second[operation]('user-target', 'assistant-target');
+    expect(preview?.canRewind).toBe(operation === 'execute' ? undefined : false);
+    expect(natives[1].newRequests).toEqual([]);
+    expect(natives[1].loadRequests).toEqual([]);
+    expect(natives[1].rewindCalls).toEqual([]);
+    expect(second.getSnapshot().providerSessionId).toBe(operation === 'execute' ? original.providerSessionId : undefined);
+    expect(second.getSnapshot().providerState?.historySessionId).toBe(operation === 'execute' ? undefined : original.providerSessionId);
+    await collect(second.execute(executionRequest()).events);
+    expect(natives[1].loadRequests).toEqual([]);
+    expect(natives[1].newRequests).toHaveLength(1);
+    const changed = second.getSnapshot();
+    expect(changed.providerState?.sessionStoreKey).not.toBe(original.providerState?.sessionStoreKey);
+    await second.dispose();
+    const third = createWSLBackend(host, [natives[2]], options).createSession({ ...config,
+      resumeSeed: { providerSessionId: changed.providerSessionId, providerState: changed.providerState },
+    });
+    await collect(third.execute(executionRequest()).events);
+    expect(natives[2].newRequests).toEqual([]);
+    expect(natives[2].loadRequests).toHaveLength(1);
+  });
 });

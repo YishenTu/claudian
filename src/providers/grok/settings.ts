@@ -4,7 +4,6 @@ import {
   decodeGrokConfig,
   getGrokMigratedVisibleModelIds,
   type GrokProviderSettings,
-  type PersistedGrokProviderSettings,
   updateGrokConfig,
 } from './config';
 
@@ -18,7 +17,7 @@ export function getGrokProviderSettings(
 /** Writes Grok's configuration into the settings document. */
 export function updateGrokProviderSettings(
   settings: Record<string, unknown>,
-  updates: Partial<PersistedGrokProviderSettings>,
+  updates: Partial<GrokProviderSettings>,
 ): GrokProviderSettings {
   const config = getProviderConfig(settings, 'grok');
   const next = updateGrokConfig(config, getProviderSelectionInputs(settings, 'grok'), updates);

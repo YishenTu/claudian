@@ -1,3 +1,4 @@
+import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
 import { copyProviderHistoryState } from '@/core/providers/providerHistory';
 
 import { mergePersistedProviderState } from '../../../core/providers/providerState';
@@ -5,6 +6,7 @@ import type {
   ProviderConversationHistoryService,
   ProviderHistoryEnvironment,
   ProviderHistoryInput,
+  ProviderHistoryPathContext,
   ProviderHistoryResult,
   ProviderHistoryUpdate,
 } from '../../../core/providers/types';
@@ -12,10 +14,14 @@ import {
   buildPersistedGrokProviderState,
   parseGrokProviderState,
 } from '../types';
+import { resolveGrokHistoryEnvironment } from './GrokHistoryEnvironment';
 import { resolveGrokSessionDirectory } from './GrokHistoryPathResolver';
 import { loadGrokHistory } from './GrokHistoryStore';
 
 const GROK_PROVIDER_STATE_KEYS = [
+  'sessionStoreKey',
+  'historySessionId',
+  'historyResumeAt',
   'forkSource',
   'forkSourceSessionDirectory',
   'nativeConversationContextEstablished',
@@ -27,8 +33,10 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
   async hydrateConversationHistory(
     input: ProviderHistoryInput,
     vaultPath: string | null,
-    pathContext?: ProviderHistoryEnvironment,
+    pathContext?: ProviderHistoryEnvironment & Partial<ProviderHistoryPathContext>,
   ): Promise<ProviderHistoryUpdate> {
+    const historyContext = pathContext ? await resolveGrokHistoryEnvironment({ ...pathContext, vaultPath }) : undefined;
+    const pathMapper = historyContext?.target ? createExecutionPathMapper(historyContext.target) : undefined;
     const conversation = copyProviderHistoryState(input);
     const state = parseGrokProviderState(conversation.providerState);
     if (this.isPendingForkConversation(conversation)) {
@@ -40,7 +48,7 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
         state.forkSourceSessionDirectory,
         forkSource.sessionId,
         vaultPath,
-        pathContext,
+        historyContext!,
       );
       if (sourceSessionDirectory !== state.forkSourceSessionDirectory) {
         conversation.providerState = mergePersistedProviderState(
@@ -60,6 +68,7 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
         sourceSessionDirectory,
         forkSource.sessionId,
         forkSource.resumeAt,
+        pathMapper,
       );
       if (parsed.messages.length === 0) {
         return conversation;
@@ -68,7 +77,7 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
       return conversation;
     }
 
-    const sessionId = conversation.sessionId;
+    const sessionId = conversation.sessionId ?? state.historySessionId;
     if (!sessionId || !pathContext) {
       return conversation;
     }
@@ -76,9 +85,9 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
       state.sessionDirectory,
       sessionId,
       vaultPath,
-      pathContext,
+      historyContext!,
     );
-    if (sessionDirectory !== state.sessionDirectory) {
+    if (sessionDirectory !== state.sessionDirectory && (sessionDirectory || conversation.sessionId)) {
       conversation.providerState = mergePersistedProviderState(
         conversation.providerState,
         GROK_PROVIDER_STATE_KEYS,
@@ -93,13 +102,13 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
     }
 
 
-    const parsed = await loadGrokHistory(sessionDirectory, sessionId);
+    const parsed = await loadGrokHistory(sessionDirectory, sessionId, conversation.sessionId ? undefined : state.historyResumeAt, pathMapper);
     if (parsed.messages.length === 0) {
       return conversation;
     }
     conversation.messages = parsed.messages;
     const hydratedState = parseGrokProviderState(conversation.providerState);
-    if (hydratedState.nativeConversationContextEstablished === false) {
+    if (conversation.sessionId && hydratedState.nativeConversationContextEstablished === false) {
       conversation.providerState = mergePersistedProviderState(
         conversation.providerState,
         GROK_PROVIDER_STATE_KEYS,
@@ -153,6 +162,7 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
     const sourceState = parseGrokProviderState(sourceProviderState);
     return (buildPersistedGrokProviderState({
       forkSource: { resumeAt, sessionId: sourceSessionId },
+      ...(sourceState.sessionStoreKey ? { sessionStoreKey: sourceState.sessionStoreKey } : {}),
       ...(sourceState.sessionDirectory || sourceState.forkSourceSessionDirectory
         ? {
           forkSourceSessionDirectory: sourceState.sessionDirectory

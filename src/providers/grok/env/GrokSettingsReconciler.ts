@@ -1,38 +1,43 @@
+import { resolveExecutionTarget } from '@/core/process/execution-target/ExecutionTargetResolver';
+
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import {
   decodeGrokModelId,
   encodeGrokModelId,
 } from '../models';
-import { computeGrokRuntimeInputHash } from '../runtime/GrokRuntimeEnvironment';
+import { computeGrokRuntimeInputHash, computeGrokSessionEnvironmentHash } from '../runtime/GrokRuntimeEnvironment';
 import {
   getGrokProviderSettings,
   updateGrokProviderSettings
 } from '../settings';
-
-function computeGrokEnvironmentHash(settings: Record<string, unknown>): string {
-  return computeGrokRuntimeInputHash(
-    getGrokProviderSettings(settings),
-    getRuntimeEnvironmentText(settings, 'grok'),
-  );
-}
+import { clearGrokResumeState } from '../types';
 
 export const grokSettingsReconciler: ProviderSettingsReconciler = {
-  invalidateConversationSessions: () => [],
+  invalidateConversationSessions: conversations => conversations.filter(conversation => (
+    conversation.providerId === 'grok' && clearGrokResumeState(conversation)
+  )),
 
-  reconcileModelWithEnvironment(settings) {
+  reconcileModelWithEnvironment(settings, context) {
     if (!getGrokProviderSettings(settings).enabled) {
       return { changed: false };
     }
 
-    const environmentHash = computeGrokEnvironmentHash(settings);
-    if (getGrokProviderSettings(settings).environmentHash === environmentHash) {
+    const current = getGrokProviderSettings(settings);
+    const target = resolveExecutionTarget({ settings: current, hostVaultPath: context?.vaultPath });
+    const environmentText = getRuntimeEnvironmentText(settings, 'grok');
+    const environmentHash = computeGrokRuntimeInputHash(current, environmentText, target);
+    const sessionEnvironmentHash = computeGrokSessionEnvironmentHash(environmentText, target);
+    if (current.environmentHash === environmentHash && current.sessionEnvironmentHash === sessionEnvironmentHash) {
       return { changed: false };
     }
-
-    updateGrokProviderSettings(settings, { environmentHash });
-    // Grok sessions resume across environment changes.
-    return { changed: true, sessionPolicy: 'reload' };
+    // Existing native installations predate the scoped store fingerprint. Backfill
+    // without discarding their sessions. WSL is new and cannot resume that store.
+    const invalidate = current.sessionEnvironmentHash
+      ? current.sessionEnvironmentHash !== sessionEnvironmentHash
+      : target.method === 'wsl';
+    updateGrokProviderSettings(settings, { environmentHash, sessionEnvironmentHash });
+    return { changed: true, sessionPolicy: invalidate ? 'invalidate' : 'reload' };
   },
 
   normalizeModelVariantSettings(settings): boolean {

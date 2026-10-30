@@ -44,3 +44,16 @@ describe('Grok configuration through the runtime host', () => {
     expect(decodeGrokConfig(host.config, host.selection).modelAliases).toEqual(expected);
   });
 });
+
+describe('Grok installation settings', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('projects and updates only the current installation while retaining other devices', () => {
+    vi.stubGlobal('process', { ...process, platform: 'win32' });
+    const config: Record<string, unknown> = { installationMethodsByHost: { 'device:other': 'wsl' } };
+    const next = updateGrokConfig(config, { referencedModelIds: [] }, { installationMethod: 'wsl', wslDistroOverride: ' Ubuntu ' });
+    expect(next).toMatchObject({ installationMethod: 'wsl', wslDistroOverride: 'Ubuntu' });
+    expect(config.installationMethodsByHost).toEqual({ 'device:other': 'wsl', [getInstallationKey()]: 'wsl' });
+    expect(config).not.toHaveProperty('installationMethod');
+    expect(decodeGrokConfig(config, { referencedModelIds: [] }).wslDistroOverride).toBe('Ubuntu');
+  });
+});

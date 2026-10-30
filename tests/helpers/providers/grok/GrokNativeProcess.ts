@@ -21,6 +21,10 @@ export class GrokNativeProcess {
   loadImplementation = async (request: ACPLoadSessionRequest): Promise<unknown> => ({ sessionId: request.sessionId });
   modelImplementation = async (): Promise<unknown> => ({});
   promptImplementation = async (): Promise<Record<string, unknown>> => ({ stopReason: 'end_turn' });
+  rewindImplementation = async (params: Record<string, unknown>): Promise<Record<string, unknown>> => ({
+    success: true, targetPromptIndex: params.targetPromptIndex, mode: params.mode,
+    cleanFiles: ['note.md'], conflicts: [], error: null, revertedFiles: [],
+  });
 
   constructor() {
     this.child = createNativeRPCProcess(async (method, params) => {
@@ -52,18 +56,20 @@ export class GrokNativeProcess {
           return { newCwd: params.newCwd, newSessionId: 'session-forked', parentSessionId: params.sourceSessionId };
         case '_x.ai/rewind/execute':
           this.rewindCalls.push(params);
-          return { success: true, targetPromptIndex: params.targetPromptIndex, mode: params.mode,
-            cleanFiles: ['note.md'], conflicts: [], error: null, revertedFiles: [] };
+          return this.rewindImplementation(params);
         default: throw new Error('Unexpected native method: ' + method);
       }
     });
     this.child.on('exit', () => { this.shutdownCalls += 1; });
   }
 
-  emit(update: Record<string, unknown>, source: 'extension' | 'standard' = 'standard', metadata?: Record<string, unknown>): void {
+  emit(
+    update: Record<string, unknown>, source: 'extension' | 'standard' = 'standard',
+    metadata?: Record<string, unknown>, sessionId = 'session-existing',
+  ): void {
     this.child.stdout.push(JSON.stringify({ jsonrpc: '2.0',
       method: source === 'standard' ? 'session/update' : '_x.ai/session/update',
-      params: { sessionId: 'session-existing', update, ...(metadata ? { _meta: metadata } : {}) },
+      params: { sessionId, update, ...(metadata ? { _meta: metadata } : {}) },
     }) + '\n');
   }
 }

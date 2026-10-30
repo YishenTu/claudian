@@ -464,6 +464,10 @@ test('WSL native job follows shared dependencies and provider users but skips un
     // Type-only and sibling session-tool edges reach the relay through its declaration.
     'src/core/session-tools/SessionToolEndpoint.ts',
     'tests/integration/core/session-tools/WSLSessionToolRelay.test.ts',
+    // Grok launches the relay as its WSL MCP child.
+    'src/providers/grok/runtime/GrokExecutionContext.ts',
+    'src/providers/grok/types.ts',
+    'tests/integration/providers/grok/ui/GrokSettingsTab.dom.test.ts',
   ]) {
     const selection = select([file]);
     assert.equal(selection.wslWindows, true, file);

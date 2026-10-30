@@ -4,6 +4,8 @@ import { createHash } from 'node:crypto';
 import crossSpawn from 'cross-spawn';
 
 import { parseEnvironmentVariables } from '@/core/process/env';
+import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
+import type { ExecutionTarget } from '@/core/process/execution-target/types';
 import {
   resolveWindowsCmdShimSpawnSpec,
   terminateSpawnedProcess,
@@ -16,8 +18,8 @@ import {
   type GrokDiscoveredModel,
   normalizeGrokDiscoveredModels,
 } from '../models';
+import { type GrokExecutionContext,resolveGrokExecutionContext } from './GrokExecutionContext';
 import { GrokModelCatalogProbe, type GrokModelCatalogProbeLike } from './GrokModelCatalogProbe';
-import { buildGrokRuntimeEnv } from './GrokRuntimeEnvironment';
 
 const FINGERPRINT_VERSION = '1';
 const MODEL_COMMAND_TIMEOUT_MS = 20_000;
@@ -30,6 +32,7 @@ const ANSI_ESCAPE_SEQUENCE = new RegExp(
 );
 
 export interface GrokCatalogCommandRequest {
+  windowsVerbatimArguments?: boolean;
   args: string[];
   command: string;
   cwd: string;
@@ -76,15 +79,13 @@ export interface GrokModelDiscoveryServiceOptions {
 }
 
 export interface GrokCatalogFingerprintInputs {
+  target?: ExecutionTarget;
   command: string;
   environmentKeys: string[];
   version: string;
 }
 
-interface GrokResolvedCatalogCommandContext {
-  command: string;
-  cwd: string;
-  env: NodeJS.ProcessEnv;
+interface GrokResolvedCatalogCommandContext extends GrokExecutionContext {
   environmentKeys: string[];
 }
 
@@ -93,6 +94,7 @@ export function buildGrokCatalogFingerprint(inputs: GrokCatalogFingerprintInputs
     FINGERPRINT_VERSION,
     inputs.command.trim(),
     inputs.version.trim(),
+    inputs.target,
     Array.from(new Set(inputs.environmentKeys.map(key => key.trim()).filter(Boolean))).sort(),
   ];
   return `${FINGERPRINT_VERSION}:${createHash('sha256')
@@ -165,10 +167,10 @@ export class GrokModelDiscoveryService implements GrokModelDiscoveryServiceLike 
       const context = await this.#resolveCommandContext(ownerContext);
       const fingerprint = await this.#resolveFingerprint(context, signal);
       try {
+        const launch = buildTargetLaunchSpec({ ...context, args: ['agent', '--no-leader', 'stdio'] });
         const catalog = await this.probe.discover({
-          command: context.command,
-          cwd: context.cwd,
-          env: context.env,
+          ...launch,
+          cwd: launch.spawnCwd,
           signal,
           timeoutMs: this.options.modelCommandTimeoutMs ?? MODEL_COMMAND_TIMEOUT_MS,
           version: this.host.clientVersion ?? '0.0.0',
@@ -191,11 +193,10 @@ export class GrokModelDiscoveryService implements GrokModelDiscoveryServiceLike 
         }
         // Older runtimes may not expose the session-independent ACP catalog.
       }
+      const launch = buildTargetLaunchSpec({ ...context, args: ['models'] });
       const commandResult = await this.runner.run({
-        args: ['models'],
-        command: context.command,
-        cwd: context.cwd,
-        env: context.env,
+        ...launch,
+        cwd: launch.spawnCwd,
         signal,
         timeoutMs: this.options.modelCommandTimeoutMs ?? MODEL_COMMAND_TIMEOUT_MS,
       });
@@ -238,15 +239,8 @@ export class GrokModelDiscoveryService implements GrokModelDiscoveryServiceLike 
   async #resolveCommandContext(
     ownerContext?: ProviderTransitionOwnerContext,
   ): Promise<GrokResolvedCatalogCommandContext> {
-    const command = await this.host.resolveCliPath(ownerContext) ?? 'grok';
-    const environmentText = this.host.environmentText;
-    const configuredEnvironment = parseEnvironmentVariables(environmentText);
-    return {
-      command,
-      cwd: this.host.workingDirectory ?? process.cwd(),
-      env: buildGrokRuntimeEnv(environmentText, command),
-      environmentKeys: Object.keys(configuredEnvironment),
-    };
+    const context = await resolveGrokExecutionContext(this.host, undefined, ownerContext);
+    return { ...context, environmentKeys: Object.keys(parseEnvironmentVariables(this.host.environmentText)) };
   }
 
   async #resolveFingerprint(
@@ -255,11 +249,10 @@ export class GrokModelDiscoveryService implements GrokModelDiscoveryServiceLike 
   ): Promise<string> {
     let version = 'unavailable';
     try {
+      const launch = buildTargetLaunchSpec({ ...context, args: ['--version'] });
       const versionResult = await this.runner.run({
-        args: ['--version'],
-        command: context.command,
-        cwd: context.cwd,
-        env: context.env,
+        ...launch,
+        cwd: launch.spawnCwd,
         signal,
         timeoutMs: this.options.versionCommandTimeoutMs ?? VERSION_COMMAND_TIMEOUT_MS,
       });
@@ -275,6 +268,7 @@ export class GrokModelDiscoveryService implements GrokModelDiscoveryServiceLike 
     return buildGrokCatalogFingerprint({
       command: context.command,
       environmentKeys: context.environmentKeys,
+      target: context.target,
       version,
     });
   }
@@ -293,6 +287,7 @@ export class SpawnGrokCatalogCommandRunner implements GrokCatalogCommandRunner {
         env: request.env,
         stdio: ['ignore', 'pipe', 'ignore'],
         windowsHide: true,
+        windowsVerbatimArguments: request.windowsVerbatimArguments,
       });
       const chunks: Buffer[] = [];
       let byteLength = 0;

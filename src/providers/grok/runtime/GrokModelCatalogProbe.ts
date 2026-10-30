@@ -7,6 +7,8 @@ import {
 } from '../execution/GrokSessionModelMetadata';
 
 export interface GrokModelCatalogProbeRequest {
+  args?: string[];
+  windowsVerbatimArguments?: boolean;
   command: string;
   cwd: string;
   env: NodeJS.ProcessEnv;
@@ -24,7 +26,8 @@ export class GrokModelCatalogProbe implements GrokModelCatalogProbeLike {
   async discover(request: GrokModelCatalogProbeRequest): Promise<NormalizedGrokSessionModels> {
     request.signal?.throwIfAborted();
     const process = new ACPSubprocess({
-      args: ['agent', '--no-leader', 'stdio'],
+      args: request.args ?? ['agent', '--no-leader', 'stdio'],
+      windowsVerbatimArguments: request.windowsVerbatimArguments,
       command: request.command,
       cwd: request.cwd,
       env: request.env,
