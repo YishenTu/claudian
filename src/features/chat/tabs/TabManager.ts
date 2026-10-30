@@ -4,7 +4,7 @@ import { type AppTabManagerState, normalizeTabLabel } from '@/core/bootstrap/tab
 import type { ProviderId } from '@/core/providers/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import type { ChatSessionRuntime } from '@/features/chat/sessions/ChatSessionRuntime';
-import { type DraftSessionHold, SessionAlreadyAttached } from '@/features/chat/sessions/SessionRuntimePool';
+import { type DraftSessionHold, SessionAlreadyAttached, type SessionRevealOptions } from '@/features/chat/sessions/SessionRuntimePool';
 import type { TabBarItem, TabId, TabManagerInterface, TabManagerViewHost } from '@/features/chat/tabs/ChatTab';
 import { inheritedDraftSeed } from '@/features/chat/tabs/draftSeed';
 import type { ForkTargetHost } from '@/features/chat/tabs/forking/ForkTarget';
@@ -309,7 +309,7 @@ export class TabManager implements TabManagerInterface {
         ...(providerId !== undefined ? { providerId } : {}),
         lifecycleState,
         ...(draftSessionKey ? { draftSessionKey } : {}),
-        revealSession: isCurrent => this.revealTab(runtimeTabId, isCurrent),
+        revealSession: (isCurrent, options) => this.revealTab(runtimeTabId, isCurrent, options),
         ...createTabRuntimeCallbacks(this.runtimeCallbackHost, () => tab),
       });
 
@@ -453,11 +453,16 @@ export class TabManager implements TabManagerInterface {
     await this.activation.switchTo(tabId);
   }
 
-  private async revealTab(tabId: TabId, isCurrent: () => boolean = () => true): Promise<void> {
+  private async revealTab(tabId: TabId, isCurrent: () => boolean = () => true, options: SessionRevealOptions = {}): Promise<void> {
     const identity = this.membership.getIdentity(tabId);
     await revealWorkspaceLeaf(this.plugin.app.workspace, this.view.leaf);
+    if (!isCurrent()) return;
+    // Navigation joins teardown so it can choose another owner after attachment release.
+    // Duplicate-owner lookup during assembly must not join: it may itself be the close's successor.
+    if (options.awaitClose && this.membership.isCloseClaimed(tabId)) await this.closePolicy.drain();
     if (!isCurrent() || !identity || !this.membership.isTabAlive(identity)) return;
     await this.switchToTab(tabId);
+    if (options.awaitClose && this.membership.isCloseClaimed(tabId)) await this.closePolicy.drain();
   }
 
   /** Replaces presentation in place; the prior session stays independently owned by the pool. */
@@ -481,7 +486,7 @@ export class TabManager implements TabManagerInterface {
         plugin: this.plugin, containerEl: this.containerEl, component: this.view,
         mentionDataProvider: this.mentionDataProvider, initialState: identity, tabId: source.id,
         conversation: conversation ?? undefined,
-        revealSession: isCurrent => this.revealTab(source.id, isCurrent),
+        revealSession: (isCurrent, options) => this.revealTab(source.id, isCurrent, options),
         ...createTabRuntimeCallbacks(this.runtimeCallbackHost, () => target),
       });
       await target.session.runtime.model.hydrate();
@@ -722,6 +727,7 @@ export class TabManager implements TabManagerInterface {
       return;
     }
     await this.switchToTab(tabId);
+    if (this.membership.isCloseClaimed(tabId)) await this.closePolicy.drain();
   }
 
   /** Unloads an assembled narrow tab to its identity; its session keeps running unattached. */

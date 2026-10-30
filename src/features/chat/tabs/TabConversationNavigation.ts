@@ -130,7 +130,7 @@ export class TabConversationNavigation {
 
     const attachment = host.plugin.sessionRuntimes.getAttachment(conversationId);
     if (attachment) {
-      await attachment.owner.reveal(isCurrent);
+      await attachment.owner.reveal(isCurrent, { awaitClose: true });
       if (!isCurrent()) return true;
       if (host.plugin.sessionRuntimes.getAttachment(conversationId) === attachment) return true;
     }
