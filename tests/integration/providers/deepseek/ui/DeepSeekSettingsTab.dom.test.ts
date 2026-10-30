@@ -1,7 +1,6 @@
 // @test-ci {"native":true}
 /** @vitest-environment jsdom */
-const actualModule0 = await vi.importActual<typeof CLIProbe>('@/core/providers/cli/CLIInstallationProbe');
-const actualModule1 = await vi.importActual<typeof CLIProbe>('@/core/providers/cli/CLIInstallationProbe');
+const actualCLIProbe = await vi.importActual<typeof CLIProbe>('@/core/providers/cli/CLIInstallationProbe');
 import '@/providers';
 
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -28,6 +27,17 @@ const deviceKey = getInstallationKey();
 vi.mock('@/core/providers/cli/CLIInstallationProbe', () => ({
   probeCLIInstallation: vi.fn(async ({ path }: { path: string | null }) => ({ path, version: path ? '0.2.0-rc.2' : null, source: 'auto' })),
 }));
+
+/** Observe the real probe completion before starting the DOM-render assertion deadline. */
+function observeActualCLIProbe(): Promise<CLIProbe.CLIInstallation> {
+  return new Promise(resolve => {
+    vi.mocked(probeCLIInstallation).mockImplementationOnce(options => {
+      const pending = actualCLIProbe.probeCLIInstallation(options);
+      resolve(pending);
+      return pending;
+    });
+  });
+}
 
 async function createHost(deepseekEnabled: boolean) {
   const transitions: string[][] = [];
@@ -141,10 +151,10 @@ describe('DeepSeekSettingsTab', () => {
     for (const file of [cli, executable]) chmodSync(file, 0o700);
     writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', bin: { dsh: 'lib/bin.js' } }));
     writeFileSync(bin, `if (process.env.ELECTRON_RUN_AS_NODE !== '1' || process.argv[2] !== '--version') process.exit(9); console.log('dsh 0.2.0-rc.9');`);
-    const actual = actualModule0;
-    vi.mocked(probeCLIInstallation).mockImplementationOnce(actual.probeCLIInstallation);
+    const probeFinished = observeActualCLIProbe();
     try {
       const { ui, container } = await render(true, cli, app);
+      await probeFinished;
       await waitFor(() => expect(ui.getByText('Custom path')).toBeTruthy());
       expect(ui.getByText('v0.2.0-rc.9')).toBeTruthy();
       expect(() => readFileSync(log, 'utf8')).toThrow();
@@ -178,11 +188,11 @@ describe('DeepSeekSettingsTab', () => {
     if (kind === 'ps1') writeFileSync(command, '# PowerShell launcher boundary');
     for (const file of [command, cmdShim, executable]) chmodSync(file, 0o700);
     const probe = vi.spyOn(ProcessProbe, 'runProcessProbe').mockResolvedValue('dsh 0.2.0-rc.9');
-    const actual = actualModule1;
-    vi.mocked(probeCLIInstallation).mockImplementationOnce(actual.probeCLIInstallation);
+    const probeFinished = observeActualCLIProbe();
     Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
     try {
       const { ui } = await render(true, command, command);
+      await probeFinished;
       await waitFor(() => expect(ui.getByText('Custom path')).toBeTruthy());
       expect(ui.getByText('v0.2.0-rc.9')).toBeTruthy();
       const [spec] = probe.mock.calls[0];

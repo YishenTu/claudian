@@ -8,7 +8,7 @@ import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { triggerResize } from '@test/helpers/dom/ResizeObserver';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
-import { createSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
+import { createSessionRuntimePool, type RuntimePoolFixtureOptions } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
@@ -28,7 +28,7 @@ import { VaultMentionDataProvider } from '@/shared/mention/VaultMentionDataProvi
 
 afterEach(() => { ProviderWorkspaceRegistry.clear(); vi.restoreAllMocks(); document.body.replaceChildren(); });
 
-async function setup() {
+async function setup(poolOptions: RuntimePoolFixtureOptions = {}) {
   const app = new App();
   Object.assign(app.vault.adapter, { basePath: '/vault' });
   const backend = new FakeSideBackend();
@@ -45,7 +45,7 @@ async function setup() {
   let nativeHistory: Conversation['messages'] = [];
   const saves: ConversationMutablePatch[] = [];
   const statusChanges = vi.fn();
-  const pool = createSessionRuntimePool(() => plugin, { onChanged: statusChanges });
+  const pool = createSessionRuntimePool(() => plugin, { onChanged: statusChanges, ...poolOptions });
   const messaging = new SessionMessagingService({ getHost: () => plugin, getActiveConversationId: () => conversation.id, refreshModelControls: () => undefined });
   onTestFinished(() => messaging.dispose());
   const plugin = await createChatFeatureHost({
@@ -84,8 +84,7 @@ it('reattaches a held blank draft session, with its selections, to the next pres
   runtime.providerSelections.set('claude', { permissionMode: 'yolo', serviceTier: 'default' });
   const hold = h.pool.holdDraft(runtime);
   await destroyTab(first);
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise<void>(resolve => setImmediate(resolve));
   expect(runtime.isDisposed).toBe(false);
 
   const second = await createTabRuntime({
@@ -133,6 +132,92 @@ it('continues a requested response with no tab, then restores a pending approval
   expect(h.saves.at(-1)?.messages?.at(-1)?.contentBlocks).toEqual(second.state.messages.at(-1)?.contentBlocks);
   expect(native.cancelCalls).toBe(0);
   await destroyTab(second);
+});
+
+it('keeps a model when history release declines and releases unrelated unowned history', async () => {
+  const releases: string[] = [];
+  const h = await setup({ releaseHistory: async (id, canRelease) => {
+    if (!canRelease()) return false;
+    releases.push(id);
+    return id !== 'conversation';
+  } });
+  h.setNativeHistory([{ id: 'retained', role: 'assistant', content: 'Keep this transcript', timestamp: testDate().getTime() }]);
+  const first = await h.attach();
+  const runtime = first.session.runtime;
+  const model = runtime.model;
+  await h.pool.releaseUnownedHistory('conversation');
+  expect(releases).toEqual([]);
+  await h.pool.releaseUnownedHistory('unrelated');
+  expect(releases).toEqual(['unrelated']);
+  await destroyTab(first);
+  // Cleanup has returned false before the next user event can reattach this conversation.
+  await new Promise<void>(resolve => setImmediate(resolve));
+  expect(releases).toEqual(['unrelated', 'conversation']);
+  expect(runtime.peekModel === model).toBe(true);
+  const readHistory = vi.mocked(h.plugin.getConversationById);
+  readHistory.mockClear();
+  const second = await h.attach();
+  expect(second.session.runtime.model === model).toBe(true);
+  expect(second.dom.messagesEl.textContent).toContain('Keep this transcript');
+  expect(readHistory).not.toHaveBeenCalled();
+  await destroyTab(second);
+});
+
+it.each([false, true])('joins retired provider cleanup and drains other sessions (cleanup fails: %s)', async fails => {
+  const onError = vi.fn<(error: unknown) => void>();
+  const h = await setup({ onError });
+  const first = await h.attach();
+  await first.session.runtime.model.ensureExecutionInitialized();
+  const native = h.backend.latest;
+  const enteredCleanup = deferred<void>();
+  const releaseCleanup = deferred<void>();
+  const failure = new Error('Native cleanup failed');
+  const dispose = native.dispose.bind(native);
+  vi.spyOn(native, 'dispose').mockImplementation(async () => {
+    enteredCleanup.resolve();
+    await releaseCleanup.promise;
+    await dispose();
+    if (fails) throw failure;
+  });
+  await h.pool.retire('conversation');
+  await destroyTab(first);
+  await enteredCleanup.promise;
+  expect(h.pool.get('conversation')).toBeNull();
+  expect(h.pool.getAll()).not.toContain(first.session.runtime);
+  const other = h.pool.ensure({ conversationId: 'other', providerId: 'claude', draftModel: null });
+  const otherCancelled = deferred<void>();
+  const finishOther = deferred<void>();
+  const work = other.turns.run(async signal => {
+    signal.addEventListener('abort', () => otherCancelled.resolve(), { once: true });
+    await finishOther.promise;
+  });
+  let shutdownFinished = false;
+  const shutdown = h.pool.dispose();
+  const result = shutdown.then(
+    () => { shutdownFinished = true; return { error: null }; },
+    (error: unknown) => { shutdownFinished = true; return { error }; },
+  );
+  try {
+    await otherCancelled.promise;
+    finishOther.resolve();
+    await work;
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(shutdownFinished).toBe(false);
+  } finally {
+    finishOther.resolve();
+    releaseCleanup.resolve();
+    await work;
+  }
+  const { error } = await result;
+  expect(native.disposeCalls).toBe(1);
+  expect(other.isDisposed).toBe(true);
+  expect(h.pool.getAll()).toEqual([]);
+  const causes = (value: unknown): unknown[] => value instanceof AggregateError
+    ? value.errors.flatMap(causes) : value === null ? [] : [value];
+  expect(error instanceof AggregateError).toBe(fails);
+  expect(causes(error)).toEqual(fails ? [failure] : []);
+  expect(onError).toHaveBeenCalledTimes(Number(fails));
+  expect(onError.mock.calls.flatMap(([value]) => causes(value))).toEqual(fails ? [failure] : []);
 });
 
 it('opens a reattached conversation at its latest message after rendering it in a hidden presentation', async () => {
@@ -371,8 +456,14 @@ it('does not save a deleted conversation still attached when the plugin shuts do
   const h = (await setup());
   const tab = await h.attach();
   tab.state.messages = [{ id: 'unsaved', role: 'user', content: 'Unsaved message', timestamp: testDate().getTime() }];
+  const finish = deferred<void>();
+  const running = tab.session.runtime.turns.run(() => finish.promise);
   await h.pool.retire('conversation');
-  expect(h.pool.get('conversation')).toBe(tab.session.runtime);
+  finish.resolve();
+  await running;
+  expect(h.pool.get('conversation') === tab.session.runtime).toBe(true);
+  expect(tab.session.runtime.isDisposed).toBe(false);
+  expect(tab.session.runtime.peekModel).not.toBeNull();
 
   await h.pool.dispose();
 
@@ -474,10 +565,15 @@ it('persists a detached transcript whose background save failed before releasing
 it('publishes session status only when its list projection changes', async () => {
   const h = (await setup());
   const tab = await h.attach();
+  expect(tab.session.runtime.statusAttention).toBeNull();
+  h.statusChanges.mockClear();
+  const requested = h.backend.nextRequest(() => true);
   tab.controllers.drafts.restore('main', { content: 'Stream a reply' });
   const sending = tab.controllers.inputController.sendMessage();
-  await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+  await requested;
   expect(h.pool.isRunning('conversation')).toBe(true);
+  expect(tab.session.runtime.statusAttention).toBeNull();
+  expect(h.statusChanges).toHaveBeenCalled();
   const native = h.backend.latest;
   native.emitText('First chunk.');
   await waitFor(() => expect(tab.state.currentTextContent).toBe('First chunk.'));

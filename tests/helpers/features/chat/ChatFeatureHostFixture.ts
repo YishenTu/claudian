@@ -15,6 +15,7 @@ export type ChatFeatureHostOptions = ChatFeatureHostOverrides & (
 );
 
 /** A typed chat host; tests supply the app capabilities their behavior actually exercises. */
+// Do not spread returned hosts: use factory overrides to preserve unconfigured-capability access guards.
 export async function createChatFeatureHost({ fixture: existingFixture, settings, app, ...overrides }: ChatFeatureHostOptions = {}):
 Promise<ChatFeatureHost & { settings: ClaudianSettings }> {
   const fixture = existingFixture ?? await createFeatureHostFixture({ settings, app });
@@ -48,6 +49,14 @@ Promise<ChatFeatureHost & { settings: ClaudianSettings }> {
     getAllViews: () => [],
     findConversationAcrossViews: () => null,
   };
+  // Chai inspects even non-enumerable own properties; inherited defaults preserve access guards without masking diffs.
+  const defaults = Object.create(Object.getPrototypeOf(host));
+  for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(host))) {
+    if (!descriptor.get) continue;
+    Object.defineProperty(defaults, key, { ...descriptor, enumerable: false });
+    Reflect.deleteProperty(host, key);
+  }
+  Object.setPrototypeOf(host, defaults);
   // Preserve throwing defaults until a test explicitly supplies a capability.
   Object.defineProperties(host, Object.getOwnPropertyDescriptors(overrides));
   return host;

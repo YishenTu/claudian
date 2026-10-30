@@ -4,10 +4,10 @@ import { SessionRuntimePool } from '@/features/chat/sessions/SessionRuntimePool'
 
 const pools: SessionRuntimePool[] = [];
 
-interface RuntimePoolFixtureOptions {
-  onChanged?: () => void;
-  onSessionSettled?: (conversationId: string) => void;
-}
+export type RuntimePoolFixtureOptions = Partial<Pick<
+  ConstructorParameters<typeof SessionRuntimePool>[0],
+  'onChanged' | 'onSessionSettled' | 'releaseHistory' | 'onError' | 'retainedDetachedSessions'
+>>;
 
 /** Real session ownership for view fixtures; persistence remains their supplied application port. */
 export function createSessionRuntimePool(
@@ -16,10 +16,11 @@ export function createSessionRuntimePool(
 ): SessionRuntimePool {
   const pool = new SessionRuntimePool({
     createRuntime: identity => createChatSessionRuntime(getHost(), identity),
-    releaseHistory: async (_id, canRelease) => canRelease(),
+    releaseHistory: options.releaseHistory ?? (async (_id, canRelease) => canRelease()),
+    retainedDetachedSessions: options.retainedDetachedSessions,
     onChanged: options.onChanged ?? (() => undefined),
     ...(options.onSessionSettled ? { onSessionSettled: options.onSessionSettled } : {}),
-    onError: () => undefined,
+    onError: options.onError ?? (() => undefined),
   });
   pools.push(pool);
   return pool;

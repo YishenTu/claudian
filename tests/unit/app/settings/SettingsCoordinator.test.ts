@@ -5,8 +5,9 @@ import {
 
 describe('SettingsCoordinator', () => {
   it('serializes mutation closures over the latest in-memory settings', async () => {
-    const settings: Record<string, unknown> = { alpha: 0, beta: 0 };
+    const settings: Record<string, unknown> = { alpha: 0, beta: 0, obsolete: 'remove-me' };
     const persisted: Array<Record<string, unknown>> = [];
+    const queuedDrafts: Array<Record<string, unknown>> = [];
     const visibleDuringWrites: Array<Record<string, unknown>> = [];
     const coordinator = new SettingsCoordinator(settings, async (current) => {
       visibleDuringWrites.push({ ...coordinator.getCommittedSettings() });
@@ -15,20 +16,22 @@ describe('SettingsCoordinator', () => {
 
     const first = coordinator.mutate((current) => {
       current.alpha = 1;
+      delete current.obsolete;
     });
     const second = coordinator.mutate((current) => {
-      expect(current.alpha).toBe(1);
+      queuedDrafts.push({ ...current });
       current.beta = 2;
     });
     await Promise.all([first, second]);
 
-    expect(settings).toEqual({ alpha: 1, beta: 2 });
+    expect(settings).toStrictEqual({ alpha: 1, beta: 2 });
+    expect(queuedDrafts).toStrictEqual([{ alpha: 1, beta: 0 }]);
     expect(coordinator.getCommittedSettings()).toEqual(settings);
-    expect(visibleDuringWrites).toEqual([
-      { alpha: 0, beta: 0 },
+    expect(visibleDuringWrites).toStrictEqual([
+      { alpha: 0, beta: 0, obsolete: 'remove-me' },
       { alpha: 1, beta: 0 },
     ]);
-    expect(persisted).toEqual([
+    expect(persisted).toStrictEqual([
       { alpha: 1, beta: 0 },
       { alpha: 1, beta: 2 },
     ]);
@@ -99,34 +102,46 @@ describe('SettingsCoordinator', () => {
     expect(persist).not.toHaveBeenCalled();
   });
 
-  it('reports post-commit publication separately and keeps the durable state for queued work', async () => {
-    const publicationError = new Error('publication failed');
+  it.each([false, true])('reports post-commit publication separately and keeps the durable state for queued work (publisher rejects: %s)', async publisherRejects => {
+    const publicationError = new Error('commit callback failed');
+    const publisherError = new Error('publisher failed');
+    const aggregateCause = expect.objectContaining({ errors: [publicationError, publisherError] });
     const settings: Record<string, unknown> = { value: 'old' };
     const persisted: string[] = [];
+    const committedSnapshots: Array<Record<string, unknown>> = [];
+    const queuedDrafts: Array<Record<string, unknown>> = [];
+    const published: Array<Record<string, unknown>> = [];
     const coordinator = new SettingsCoordinator(settings, async current => {
       persisted.push(String(current.value));
+    }, async current => {
+      published.push({ ...current });
+      if (publisherRejects && current.value === 'durable') throw publisherError;
     });
 
     const first = coordinator.mutate(
       current => { current.value = 'durable'; },
-      () => {
-        expect(coordinator.getCommittedSettings()).toEqual({ value: 'durable' });
+      async () => {
+        committedSnapshots.push({ ...coordinator.getCommittedSettings() });
         throw publicationError;
       },
     );
     const second = coordinator.mutate(current => {
-      expect(current.value).toBe('durable');
+      queuedDrafts.push({ ...current });
       current.value = 'next';
     });
 
     await expect(first).rejects.toMatchObject({
-      cause: publicationError,
+      cause: publisherRejects ? aggregateCause : publicationError,
       committed: true,
       phase: 'post-commit',
     });
     await expect(first).rejects.toBeInstanceOf(SettingsPostCommitError);
+    await expect(first).rejects.toHaveProperty('cause', expect.any(publisherRejects ? AggregateError : Error));
     await expect(second).resolves.toBeUndefined();
 
+    expect(committedSnapshots).toEqual([{ value: 'durable' }]);
+    expect(queuedDrafts).toEqual([{ value: 'durable' }]);
+    expect(published).toEqual([{ value: 'durable' }, { value: 'next' }]);
     expect(settings).toEqual({ value: 'next' });
     expect(persisted).toEqual(['durable', 'next']);
   });

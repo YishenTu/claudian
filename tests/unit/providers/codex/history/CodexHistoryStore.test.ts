@@ -113,43 +113,26 @@ describe('CodexHistoryStore', () => {
 
   describe('parseCodexSessionFileAsync - simple session', () => {
 
-    it('should rebuild thinking text from persisted reasoning content blocks', () => {
-      const content = [
-        JSON.stringify({
-          timestamp: '2026-03-29T00:00:00.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'user',
-            content: [{ type: 'input_text', text: 'Explain this.' }],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-29T00:00:00.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'reasoning',
-            summary: [],
-            content: ['First thought', ' second thought'],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-29T00:00:00.002Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'output_text', text: 'Done.' }],
-          },
-        }),
-      ].join('\n');
-
-      const messages = parseCodexSessionContent(content);
+    it.each([
+      { source: 'content', reasoning: { summary: [], content: ['First thought', ' second thought'] }, completed: true },
+      { source: 'summary only', reasoning: { summary: [{ type: 'summary_text', text: 'First thought' }, { type: 'summary_text', text: ' second thought' }] }, completed: false },
+      { source: 'summary over raw content', reasoning: { summary: ['First thought', ' second thought'], content: ['Raw reasoning is not the displayed summary'], text: 'Fallback text' }, completed: false },
+    ])('rebuilds $source reasoning from a persisted transcript (completed: $completed)', ({ reasoning, completed }) => {
+      const records = [
+        { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Explain this.' }] } },
+        { type: 'response_item', payload: { type: 'reasoning', ...reasoning } },
+        ...(completed ? [{ type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Done.' }] } }] : []),
+      ];
+      const messages = parseCodexSessionContent(records.map((record, seconds) => JSON.stringify({
+        timestamp: testDate({ seconds }).toISOString(), ...record,
+      })).join('\n'));
 
       expect(messages).toHaveLength(2);
+      expect(messages[0]).toMatchObject({ role: 'user', content: 'Explain this.' });
+      expect(messages[1]).toMatchObject({ role: 'assistant', content: completed ? 'Done.' : '' });
       expect(messages[1].contentBlocks).toEqual([
         { type: 'thinking', content: 'First thought\n\nsecond thought' },
-        { type: 'text', content: 'Done.' },
+        ...(completed ? [{ type: 'text', content: 'Done.' }] : []),
       ]);
     });
 
@@ -253,10 +236,23 @@ describe('CodexHistoryStore', () => {
     });
 
     it('replays memory citations without exposing raw markup or duplicating assistant text', () => {
+      const baseEntries = [
+        { path: 'MEMORY.md', lineStart: 10, lineEnd: 12, note: 'Used project conventions' },
+        { path: 'notes/build.md', lineStart: 30, lineEnd: 35, note: 'Build instructions' },
+      ];
+      const differentGroups = [
+        [baseEntries[0], { ...baseEntries[1], path: 'notes/test.md' }],
+        [baseEntries[0], { ...baseEntries[1], lineStart: 31 }],
+        [baseEntries[0], { ...baseEntries[1], lineEnd: 36 }],
+        [baseEntries[0], { ...baseEntries[1], note: 'Updated build instructions' }],
+        [...baseEntries, { path: 'notes/deploy.md', lineStart: 1, lineEnd: 2, note: 'Deployment' }],
+      ];
+      const adjacentGroups = [baseEntries, baseEntries, ...differentGroups.flatMap(entries => [entries, baseEntries])];
       const citationMarkup = [
         '<oai-mem-citation>',
         '<citation_entries>',
         'MEMORY.md:10-12|note=[Used project conventions]',
+        'notes/build.md:30-35|note=[Build instructions]',
         '</citation_entries>',
         '<rollout_ids>',
         'thread-1',
@@ -265,29 +261,24 @@ describe('CodexHistoryStore', () => {
       ].join('\n');
       const content = [
         JSON.stringify({
-          timestamp: '2026-07-29T00:00:00.000Z',
+          timestamp: testDate({ seconds: 0 }).toISOString(),
           type: 'event_msg',
           payload: { type: 'task_started' },
         }),
         JSON.stringify({
-          timestamp: '2026-07-29T00:00:01.000Z',
+          timestamp: testDate({ seconds: 1 }).toISOString(),
           type: 'event_msg',
           payload: {
             type: 'agent_message',
             message: 'Answer',
             memory_citation: {
-              entries: [{
-                path: 'MEMORY.md',
-                lineStart: 10,
-                lineEnd: 12,
-                note: 'Used project conventions',
-              }],
+              entries: baseEntries,
               rolloutIds: ['thread-1'],
             },
           },
         }),
         JSON.stringify({
-          timestamp: '2026-07-29T00:00:01.001Z',
+          timestamp: testDate({ seconds: 2 }).toISOString(),
           type: 'response_item',
           payload: {
             type: 'message',
@@ -295,8 +286,12 @@ describe('CodexHistoryStore', () => {
             content: [{ type: 'output_text', text: `Answer\n${citationMarkup}` }],
           },
         }),
+        ...adjacentGroups.map((entries, index) => JSON.stringify({
+          timestamp: testDate({ seconds: 2 + (index + 1) / 100 }).toISOString(),
+          type: 'event_msg', payload: { type: 'agent_message', message: '', memory_citation: { entries } },
+        })),
         JSON.stringify({
-          timestamp: '2026-07-29T00:00:02.000Z',
+          timestamp: testDate({ seconds: 3 }).toISOString(),
           type: 'event_msg',
           payload: { type: 'task_complete' },
         }),
@@ -309,66 +304,41 @@ describe('CodexHistoryStore', () => {
       expect(assistantMessage?.content).not.toContain('oai-mem-citation');
       expect(assistantMessage?.contentBlocks).toEqual([
         { type: 'text', content: 'Answer' },
-        {
-          type: 'citations',
-          citations: {
-            kind: 'memory',
-            entries: [{
-              path: 'MEMORY.md',
-              lineStart: 10,
-              lineEnd: 12,
-              note: 'Used project conventions',
-            }],
-          },
-        },
+        ...[baseEntries, ...differentGroups.flatMap(entries => [entries, baseEntries])]
+          .map(entries => ({ type: 'citations', citations: { kind: 'memory', entries } })),
       ]);
     });
 
-    it('rehydrates user images from persisted input_image parts', () => {
-      const content = [
-        JSON.stringify({
-          timestamp: '2026-07-06T00:00:00.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'user',
-            content: [
-              { type: 'input_text', text: '<image name=[Image #1] path="/tmp/1-image-1.png">' },
-              { type: 'input_image', image_url: 'data:image/png;base64,aGVsbG8=' },
-              { type: 'input_text', text: '</image>' },
-              { type: 'input_text', text: 'What is in this image?' },
-            ],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-07-06T00:00:01.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'output_text', text: 'It says hello.' }],
-          },
-        }),
-      ].join('\n');
-
+    it.each([
+      { kind: 'text and string URL', visibleText: true, objectUrl: false },
+      { kind: 'image-only string URL', visibleText: false, objectUrl: false },
+      { kind: 'image-only object URL', visibleText: false, objectUrl: true },
+    ])('rehydrates user images from persisted input_image parts: $kind', ({ visibleText, objectUrl }) => {
+      const data = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jP9sAAAAASUVORK5CYII=';
+      const url = `data:image/png;base64,${data}`;
+      const records = [
+        { type: 'response_item', payload: { type: 'message', role: 'user', content: [
+          ...(visibleText ? [{ type: 'input_text', text: '<image name=[Image #1] path="/tmp/1-image-1.png">' }] : []),
+          { type: 'input_image', image_url: objectUrl ? { url } : url },
+          ...(visibleText ? [{ type: 'input_text', text: '</image>' }, { type: 'input_text', text: 'What is in this image?' }] : []),
+        ] } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'A single pixel.' }] } },
+      ];
+      const content = records.map((record, seconds) => JSON.stringify({
+        timestamp: testDate({ seconds }).toISOString(), ...record,
+      })).join('\n');
       const messages = parseCodexSessionContent(content);
 
+      expect(messages).toHaveLength(2);
       expect(messages[0]).toMatchObject({
-        content: 'What is in this image?',
-        images: [{
-          data: 'aGVsbG8=',
-          id: 'codex-img-turn-1-0',
-          mediaType: 'image/png',
-          name: 'image-1.png',
-          size: 5,
-          source: 'paste',
-        }],
-        role: 'user',
+        role: 'user', content: visibleText ? 'What is in this image?' : '',
+        images: [{ data, id: expect.any(String), mediaType: 'image/png', name: 'image-1.png', size: Buffer.from(data, 'base64').length, source: 'paste' }],
       });
+      expect(messages[0].images?.[0].id).toBeTruthy();
+      expect(parseCodexSessionContent(content)[0].images).toEqual(messages[0].images);
+      expect(messages[1]).toMatchObject({ role: 'assistant', content: 'A single pixel.' });
     });
   });
-
-
 
   describe('parseCodexSessionFileAsync - non-existent file', () => {
     it('should return empty array for missing files', async () => {
@@ -2155,33 +2125,31 @@ describe('CodexHistoryStore', () => {
       expect(messages[1]).toMatchObject({ role: 'assistant', content: 'Hi there!' });
     });
 
-    it('turn_aborted marks bubble as interrupted', () => {
-      const content = [
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.000Z',
-          type: 'event_msg',
-          payload: { type: 'task_started' },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:01.000Z',
-          type: 'event_msg',
-          payload: { type: 'agent_message', message: 'Working on it...' },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:02.000Z',
-          type: 'event_msg',
-          payload: { type: 'turn_aborted' },
-        }),
-      ].join('\n');
+    it('turn_aborted marks the last bubble as interrupted and clears duration across the turn', () => {
+      const records = [
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: 'interrupted-turn' } },
+        { type: 'event_msg', payload: { type: 'user_message', message: 'Investigate the build.' } },
+        { type: 'event_msg', payload: { type: 'agent_message', message: 'Reading the build notes.' } },
+        { type: 'event_msg', payload: { type: 'context_compacted' } },
+        { type: 'event_msg', payload: { type: 'agent_message', message: 'Checking the build command.' } },
+        { type: 'event_msg', payload: { type: 'turn_aborted' } },
+      ].map((record, seconds) => JSON.stringify({ timestamp: testDate({ seconds }).toISOString(), ...record }));
+      const beforeInterrupt = parseCodexSessionContent(records.slice(0, -1).join('\n'));
+      expect(beforeInterrupt.at(-1)?.durationSeconds).toBeGreaterThan(0);
 
-      const messages = parseCodexSessionContent(content);
-
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toMatchObject({
-        role: 'assistant',
-        content: 'Working on it...',
-        isInterrupt: true,
-      });
+      const messages = parseCodexSessionContent(records.join('\n'));
+      const assistants = messages.filter(message => message.role === 'assistant');
+      expect(assistants).toHaveLength(3);
+      expect(assistants[0]).toMatchObject({ content: 'Reading the build notes.' });
+      expect(assistants[1].contentBlocks).toEqual([{ type: 'context_compacted' }]);
+      expect(assistants[2]).toMatchObject({ content: 'Checking the build command.', isInterrupt: true });
+      expect(assistants[0].isInterrupt).not.toBe(true);
+      for (const message of assistants) {
+        expect(message.durationSeconds).toBeUndefined();
+        expect(message.completedAt).toBeUndefined();
+        expect(message.turnStats).toBeUndefined();
+        expect(message.assistantMessageId).toBeUndefined();
+      }
     });
 
     it('user_message reconstructs user ChatMessage from event_msg', () => {
@@ -2732,76 +2700,45 @@ describe('CodexHistoryStore', () => {
   });
 
   describe('parseCodexSessionTurns - turn-aware parsing', () => {
-    it('returns structured turns with stable turn IDs and messages', () => {
-      const content = [
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.000Z',
-          type: 'event_msg',
-          payload: { type: 'task_started', turn_id: 'uuid-turn-1' },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:00.500Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'user',
-            content: [{ type: 'input_text', text: 'First question' }],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:01.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'output_text', text: 'First answer' }],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:02.000Z',
-          type: 'event_msg',
-          payload: { type: 'task_complete', turn_id: 'uuid-turn-1' },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:03.000Z',
-          type: 'event_msg',
-          payload: { type: 'task_started', turn_id: 'uuid-turn-2' },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:03.500Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'user',
-            content: [{ type: 'input_text', text: 'Second question' }],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:04.000Z',
-          type: 'response_item',
-          payload: {
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'output_text', text: 'Second answer' }],
-          },
-        }),
-        JSON.stringify({
-          timestamp: '2026-03-27T00:00:05.000Z',
-          type: 'event_msg',
-          payload: { type: 'task_complete', turn_id: 'uuid-turn-2' },
-        }),
-      ].join('\n');
-
+    it('returns structured turns with stable unique message IDs and bubble grouping', () => {
+      const records = [
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: 'uuid-turn-1' } },
+        { type: 'event_msg', payload: { type: 'user_message', message: 'First question' } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'First answer' }] } },
+        { type: 'event_msg', payload: { type: 'context_compacted' } },
+        { type: 'event_msg', payload: { type: 'agent_message', message: 'More details' } },
+        { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'uuid-turn-1' } },
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: 'uuid-turn-2' } },
+        { type: 'event_msg', payload: { type: 'user_message', message: 'Second question' } },
+        { type: 'event_msg', payload: { type: 'turn_aborted' } },
+        { type: 'event_msg', payload: { type: 'task_started', turn_id: 'uuid-turn-3' } },
+        { type: 'event_msg', payload: { type: 'user_message', message: 'Follow-up question' } },
+        { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Follow-up answer' }] } },
+        { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'uuid-turn-3' } },
+      ];
+      const content = records.map((record, seconds) => JSON.stringify({
+        timestamp: testDate({ seconds }).toISOString(), ...record,
+      })).join('\n');
       const turns = parseCodexSessionTurns(content);
-
-      expect(turns).toHaveLength(2);
-      expect(turns[0].turnId).toBe('uuid-turn-1');
-      expect(turns[0].messages).toHaveLength(2);
-      expect(turns[0].messages[0].role).toBe('user');
-      expect(turns[0].messages[1].role).toBe('assistant');
-
-      expect(turns[1].turnId).toBe('uuid-turn-2');
-      expect(turns[1].messages).toHaveLength(2);
+      expect(turns.map(turn => turn.turnId)).toEqual(['uuid-turn-1', 'uuid-turn-2', 'uuid-turn-3']);
+      expect(turns.map(turn => turn.messages.map(message => [message.role, message.content]))).toEqual([
+        [['user', 'First question'], ['assistant', 'First answer'], ['assistant', ''], ['assistant', 'More details']],
+        [['user', 'Second question'], ['assistant', '']],
+        [['user', 'Follow-up question'], ['assistant', 'Follow-up answer']],
+      ]);
+      expect(turns[1].messages[1].isInterrupt).toBe(true);
+      const ids = turns.flatMap(turn => turn.messages.map(message => message.id));
+      expect(ids.every(id => id.length > 0)).toBe(true);
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(parseCodexSessionTurns(content).flatMap(turn => turn.messages.map(message => message.id))).toEqual(ids);
+      const bubbleGroups = turns.map(turn => {
+        const assistants = turn.messages.filter(message => message.role === 'assistant');
+        const group = assistants[0].turnId;
+        expect(group).toBeTruthy();
+        expect(assistants.every(message => message.turnId === group)).toBe(true);
+        return group;
+      });
+      expect(new Set(bubbleGroups).size).toBe(turns.length);
     });
 
     it('ignores retired records without losing modern messages in a mixed transcript', () => {

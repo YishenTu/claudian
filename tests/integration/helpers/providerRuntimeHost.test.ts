@@ -4,6 +4,7 @@ import { createFeatureHostFixture } from '@test/helpers/FeatureHostFixture';
 import { createChatFeatureHost } from '@test/helpers/features/chat/ChatFeatureHostFixture';
 import { createProviderHostFixture } from '@test/helpers/providerRuntimeHost';
 
+import { ChatModelSelectionCoordinator } from '@/app/settings/ChatModelSelectionCoordinator';
 import { CLAUDIAN_SETTINGS_PATH } from '@/core/bootstrap/storagePaths';
 
 it('publishes chat mutations through an existing feature fixture settings owner', async () => {
@@ -15,6 +16,19 @@ it('publishes chat mutations through an existing feature fixture settings owner'
   expect(fixture.providerHost.settings.locale).toBe('fr');
   expect(published).toHaveBeenCalledTimes(1);
   expect(JSON.parse(await fixture.vault.read(CLAUDIAN_SETTINGS_PATH)).locale).toBe('fr');
+});
+
+it('preserves assertion diagnostics while unsupported chat capabilities still throw on access', async () => {
+  const fixture = await createFeatureHostFixture();
+  const host = await createChatFeatureHost({ fixture });
+  const expectedRuntime = { plugin: { host } };
+  expect(() => expect(null).toBe(expectedRuntime)).toThrow('Object.is equality');
+  expect(() => host.conversationLifecycle).toThrow('Supply the ChatFeatureHost capability');
+
+  const selection = new ChatModelSelectionCoordinator(fixture.coordinator);
+  const configured = await createChatFeatureHost({ fixture, chatModelSelection: selection });
+  expect(Object.keys(configured)).toContain('chatModelSelection');
+  expect(configured.chatModelSelection).toBe(selection);
 });
 
 it('shares one durable settings transaction between the feature, provider and runtime hosts', async () => {
