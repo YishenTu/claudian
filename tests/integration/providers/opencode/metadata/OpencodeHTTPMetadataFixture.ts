@@ -117,7 +117,9 @@ if (process.argv.includes('--version')) {
   });
   server.listen(0, '127.0.0.1', async () => {
     const url = 'http://127.0.0.1:' + server.address().port;
-    fs.writeFileSync(process.env.ENDPOINT_FILE, url);
+    // Publish atomically: tests poll for this file and read it immediately.
+    fs.writeFileSync(process.env.ENDPOINT_FILE + '.tmp', url);
+    fs.renameSync(process.env.ENDPOINT_FILE + '.tmp', process.env.ENDPOINT_FILE);
     fs.writeFileSync(process.env.ENDPOINT_FILE + '.pid', String(process.pid));
     await waitForRelease('.ready-hold');
     setTimeout(() => process.stdout.write(JSON.stringify({ url: process.env.INVALID_READY === '1' ? 'https://example.com' : url }) + '\\n'), Number(process.env.READY_DELAY_MS || 0));

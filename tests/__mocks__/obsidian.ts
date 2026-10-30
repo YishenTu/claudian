@@ -1,4 +1,5 @@
 import { renderSettingDefinitions } from '@test/helpers/ObsidianSettingsDOM';
+import { createObsidianWorkspace } from '@test/helpers/ObsidianWorkspace';
 import type { MarkdownRenderer as ObsidianMarkdownRenderer, SettingDefinitionItem } from 'obsidian';
 
 // Pane selection is an Obsidian boundary; callers can provide its native decision.
@@ -189,6 +190,8 @@ export class App {
     },
   };
   workspace: any = {
+    // Obsidian always mounts the workspace container; DOM suites get one with real events.
+    ...(typeof document === 'undefined' ? {} : createObsidianWorkspace(document.createElement('div'))),
     getLeavesOfType: vi.fn().mockReturnValue([]),
     getRightLeaf: vi.fn().mockReturnValue({
       setViewState: vi.fn().mockResolvedValue(undefined),
