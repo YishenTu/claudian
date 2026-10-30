@@ -8,7 +8,8 @@ import { createFixture, request } from '@test/helpers/providers/opencode/Opencod
 import { type ProviderExecutionEvent } from '@/core/execution';
 
 it('uses HTTP for v2 commands, waits for execution completion, and answers native interactions', async () => {
-  const f = await createFixture();
+  // Native IDs remain authoritative when process clocks differ or the clock moves backward.
+  const f = await createFixture(false, undefined, 'NATIVE_CLOCK_OFFSET_MS=-60000');
   const { session, approvals, questions } = f;
   try {
     const events: ProviderExecutionEvent[] = [];
@@ -24,11 +25,11 @@ it('uses HTTP for v2 commands, waits for execution completion, and answers nativ
   } finally { await f.dispose(); }
 });
 
-it('reads turn statistics from the newest native page without fetching older history', async () => {
+it.each([0, -60_000])('reads turn statistics from the newest native page without fetching older history (native clock offset %i ms)', async clockOffset => {
   const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-http-history-')));
   const log = path.join(root, 'requests');
   // More earlier history than one native page can hold.
-  const f = await createFixture(false, undefined, `SEED_HISTORY=450\nREQUEST_LOG=${log}`);
+  const f = await createFixture(false, undefined, `SEED_HISTORY=450\nREQUEST_LOG=${log}\nNATIVE_CLOCK_OFFSET_MS=${clockOffset}`);
   try {
     const events: ProviderExecutionEvent[] = [];
     for await (const event of f.session.execute(request('stats')).events) events.push(event);
@@ -47,7 +48,7 @@ it.each([
 ] as const)('keeps native completion when %s while turn statistics load', async (_, environment, interrupt, stats, status) => {
   const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-http-history-')));
   const hold = path.join(root, 'history'), log = path.join(root, 'requests');
-  const f = await createFixture(false, undefined, `HOLD_HISTORY=${hold}\nREQUEST_LOG=${log}\n${environment}`);
+  const f = await createFixture(false, undefined, `HOLD_HISTORY=${hold}\nREQUEST_LOG=${log}\nNATIVE_CLOCK_OFFSET_MS=-60000\n${environment}`);
   try {
     const run = f.session.execute(request('stats'));
     const events: ProviderExecutionEvent[] = [];

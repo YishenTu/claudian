@@ -294,7 +294,7 @@ const handle = async (req, res, url, body, route) => {
   if (route.endsWith('/prompt') || route.endsWith('/command')) {
     releaseModel?.();
     if (body.text.includes('Old local history')) { res.writeHead(400).end(); return; }
-    const assistantMessageID = 'msg_assistant_' + (++turn), userMessage = { id: body.id ?? 'msg_user', type: 'user', time: { created: Date.now() } };
+    const assistantMessageID = 'msg_assistant_' + (++turn), userMessage = { id: body.id ?? 'msg_user', type: 'user', time: { created: Date.now() + Number(env.NATIVE_CLOCK_OFFSET_MS || 0) } };
     // Steering scenarios need client admission before their first steer-triggering output.
     const eventsReleased = body.text.startsWith('steer')
       ? new Promise(resolve => promptEventReleases.set(body.id, () => resolve(undefined))) : Promise.resolve();
