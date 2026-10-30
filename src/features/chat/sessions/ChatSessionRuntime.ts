@@ -4,6 +4,7 @@ import type { SessionMailbox } from '@/features/chat/session-messaging/SessionMa
 import type { SessionChange, SessionModel } from '@/features/chat/sessions/SessionModel';
 import type { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import { SessionAttention } from '@/features/chat/state/SessionAttention';
+import type { ResponseProgress } from '@/features/chat/state/types';
 import { type TurnCancelReason, TurnCoordinator } from '@/features/chat/turns/TurnCoordinator';
 
 export interface SessionIdentity {
@@ -13,6 +14,11 @@ export interface SessionIdentity {
   /** A held draft session to reattach, while it has no conversation to be found by. */
   draftSessionKey?: string;
 }
+
+/** What outside observers hear from the session as it happens; nothing is retained. */
+export type SessionSignal =
+  | { readonly type: 'progress'; readonly progress: ResponseProgress }
+  | { readonly type: 'interaction'; readonly interactionId: string; readonly pending: boolean };
 
 let nextSessionKey = 0;
 
@@ -31,6 +37,7 @@ export class ChatSessionRuntime {
   private childOwner: SideChatController | null = null;
   private lifetime: 'open' | 'closing' | 'disposed' = 'open';
   private readonly listeners = new Set<() => void>();
+  private readonly signalListeners = new Set<(signal: SessionSignal) => void>();
   private pendingBackgroundWork = 0;
   private readonly modelWork = new Set<Promise<unknown>>();
   private disposal: Promise<void> | null = null;
@@ -114,6 +121,16 @@ export class ChatSessionRuntime {
 
   notifyChanged(): void {
     for (const listener of this.listeners) listener();
+  }
+
+  /** Listeners run synchronously for every streamed chunk and must stay cheap. */
+  subscribeSignals(listener: (signal: SessionSignal) => void): () => void {
+    this.signalListeners.add(listener);
+    return () => this.signalListeners.delete(listener);
+  }
+
+  signal(signal: SessionSignal): void {
+    for (const listener of this.signalListeners) listener(signal);
   }
 
   /** Delivers a change to the attached presentation, if any, and to session observers once. */
@@ -308,6 +325,7 @@ export class ChatSessionRuntime {
     this.currentModel = null;
     this.lifetime = 'disposed';
     this.listeners.clear();
+    this.signalListeners.clear();
     const failures = results.filter(result => result.status === 'rejected');
     if (failures.length) throw new AggregateError(failures.map(result => result.reason as unknown), 'Failed to drain session');
   }

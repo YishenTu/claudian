@@ -367,7 +367,7 @@ export class MainTurnExecution {
         wasInvalidated = true;
       } else if (result.status === 'error' && result.error) {
         hadExecutionError = true;
-        await streamController.appendError(result.error.message);
+        await streamController.appendError(result.error.message, undefined, this.responseStream.active ?? assistantMsg);
       }
     } catch (error) {
       if (error instanceof ChatExecutionPreHandoffError) {
@@ -383,7 +383,7 @@ export class MainTurnExecution {
         hadExecutionError = true;
         shouldReportReviewableSettlement = true;
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-        await streamController.appendError(errorMsg);
+        await streamController.appendError(errorMsg, undefined, this.responseStream.active ?? assistantMsg);
         currentReviewableSettlementReporter =
           this.deps.captureReviewableSettlement?.('error') ?? null;
       }

@@ -21,6 +21,7 @@ import type { ClaudianSettings, Conversation, ConversationMutablePatch, ProjectR
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { createClaudianAPI } from '@/features/chat/session-messaging/ClaudianAPI';
 import { SessionMessagingService } from '@/features/chat/session-messaging/SessionMessagingService';
+import type { SessionSignal } from '@/features/chat/sessions/ChatSessionRuntime';
 import { getSessionSettingsSnapshot } from '@/features/chat/sessions/sessionSettings';
 
 function setup(options: { projects?: ProjectReader; members?: Record<string, string> } = {}) {
@@ -82,12 +83,17 @@ function setup(options: { projects?: ProjectReader; members?: Record<string, str
     },
   } as unknown as ChatFeatureHost;
   const settled: string[] = [];
-  const pool = installSessionRuntimePool(host, { onSessionSettled: id => settled.push(id) });
+  const signals: Array<{ sessionId: string; signal: SessionSignal }> = [];
+  const pool = installSessionRuntimePool(host, {
+    onSessionSettled: id => settled.push(id),
+    onSessionSignal: (sessionId, signal) => signals.push({ sessionId, signal: structuredClone(signal) }),
+  });
   const refreshModelControls = vi.fn();
+  const views = { openSession: vi.fn(async (_id: string, _options: { focus: boolean }) => undefined) };
   const service = new SessionMessagingService({ getHost: () => host, getActiveConversationId: () => 'sender', refreshModelControls });
   Object.assign(host, { bindSessionTools: (id: string) => service.bindSessionTools(id) });
   const binding = service.bindSessionTools('sender');
-  return { host, pool, service, binding, records, repository, backend, saves, record, refreshModelControls, settled };
+  return { host, pool, service, binding, records, repository, backend, saves, record, refreshModelControls, settled, signals, views };
 }
 const requestText = (request: ProviderExecutionRequest) => request.input.filter(block => block.type === 'text').map(block => block.text).join('');
 const signal = () => new AbortController().signal;
@@ -560,7 +566,7 @@ describe('outside-client API', () => {
     { label: 'notification after final text', finalText: 'The note is up to date.', isError: false, interrupted: false, trailingNotification: true, expected: 'The note is up to date.' },
   ])('reads the final answer after notification-split work: $label', async ({ finalText, isError, interrupted, trailingNotification, expected }) => {
     const h = setup();
-    const api = createClaudianAPI(h.service);
+    const api = createClaudianAPI(h.service, h.views);
     await api.send('recipient', { text: 'Inspect the note' });
     await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
     const native = h.backend.latest;
@@ -585,7 +591,7 @@ describe('outside-client API', () => {
 
   it('delivers client text as the user\'s own prompt, reports the active session, and reads the finished reply', async () => {
     const h = setup();
-    const api = createClaudianAPI(h.service);
+    const api = createClaudianAPI(h.service, h.views);
     expect(api.version).toBe(1);
     expect(api.getActiveSessionId()).toBe('sender');
     expect(await api.send('recipient', { text: 'What is next?' })).toBe('started');
@@ -609,7 +615,7 @@ describe('outside-client API', () => {
 
   it('reads no reply from a first turn that is still running after a steer', async () => {
     const h = setup();
-    const api = createClaudianAPI(h.service);
+    const api = createClaudianAPI(h.service, h.views);
     await api.send('recipient', { text: 'Inspect the note' });
     await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
     const native = h.backend.latest;
@@ -630,7 +636,7 @@ describe('outside-client API', () => {
 
   it('stops a running session through send without text, and requires text otherwise', async () => {
     const h = setup();
-    const api = createClaudianAPI(h.service);
+    const api = createClaudianAPI(h.service, h.views);
     await expect(api.send('recipient', {})).rejects.toThrow('"text" is required unless mode is "interrupt"');
     await expect(api.send('recipient', { mode: 'steer' })).rejects.toThrow('"text" is required unless mode is "interrupt"');
     await api.send('recipient', { text: 'Long task' });
@@ -641,5 +647,218 @@ describe('outside-client API', () => {
     await h.pool.get('recipient')!.turns.drain();
     await waitFor(() => expect(h.settled).toEqual(['recipient']));
     expect(await api.send('recipient', { mode: 'interrupt' })).toBe('idle');
+  });
+  it('lists sessions like the list tool, with live status and no caller row', async () => {
+    const h = setup();
+    const api = createClaudianAPI(h.service, h.views);
+    expect(await api.listSessions()).toEqual({ sessions: [
+      { sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'idle', active: false },
+      { sessionId: 'sender', title: 'Research', provider: 'claude', status: 'idle', active: true },
+    ] });
+    expect(await api.listSessions({ limit: 1 })).toEqual({ sessions: [
+      { sessionId: 'recipient', title: 'recipient', provider: 'claude', status: 'idle', active: false },
+    ], truncated: true });
+    await expect(api.listSessions({ limit: 0 })).rejects.toThrow('"limit" must be an integer from 1 to 200.');
+    await api.send('recipient', { text: 'Start' });
+    await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+    expect((await api.listSessions()).sessions[0]).toMatchObject({ sessionId: 'recipient', status: 'running' });
+    const native = h.backend.latest;
+    const question = native.config.interactionPort.askUserQuestion({
+      interactionId: 'q', sessionInstanceId: native.sessionInstanceId, turnId: native.activeTurnId, kind: 'question',
+      input: { questions: [{ question: 'Proceed?', options: [{ label: 'Yes', description: '' }] }] },
+    }, new AbortController().signal);
+    question.catch(() => undefined);
+    await waitFor(async () => expect((await api.listSessions()).sessions[0]).toMatchObject({ status: 'awaiting-user' }));
+    native.config.interactionPort.dismissInteraction('q', 'native-rejected');
+    await expect(question).rejects.toThrow('Provider interaction is stale');
+    native.complete();
+    await h.pool.get('recipient')!.turns.drain();
+  });
+
+  it('signals every streamed block as received: thinking and text with their position, tools by id', async () => {
+    const h = setup();
+    const api = createClaudianAPI(h.service, h.views);
+    await api.send('recipient', { text: 'Inspect the note' });
+    await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+    const native = h.backend.latest;
+    native.emitOutput({ type: 'thinking_delta', text: 'Plan' });
+    native.emitText('I will ');
+    native.emitText('look.');
+    native.emitOutput({ type: 'tool_started', toolCallId: 'inspect', toolScope: { kind: 'main' }, name: 'Read', input: { file_path: 'note.md' } });
+    native.emitOutput({ type: 'tool_completed', toolCallId: 'inspect', toolScope: { kind: 'main' }, content: 'Content.', isError: false });
+    native.emitText('Done.');
+    native.emitOutput({ type: 'notice', message: 'Rate limited', level: 'warning' });
+    native.complete();
+    await h.pool.get('recipient')!.turns.drain();
+    const progress = h.signals.filter(entry => entry.signal.type === 'progress');
+    expect(progress.every(entry => entry.sessionId === 'recipient')).toBe(true);
+    const messageId = (progress[0].signal as { progress: { messageId: string } }).progress.messageId;
+    expect(progress.map(entry => (entry.signal as { progress: unknown }).progress)).toEqual([
+      { kind: 'thinking', messageId, blockIndex: 0, text: 'Plan' },
+      { kind: 'text', messageId, blockIndex: 1, text: 'I will ' },
+      { kind: 'text', messageId, blockIndex: 1, text: 'I will look.' },
+      { kind: 'tool', messageId, toolId: 'inspect', toolName: 'Read', status: 'running' },
+      { kind: 'tool', messageId, toolId: 'inspect', toolName: 'Read', status: 'completed' },
+      { kind: 'text', messageId, blockIndex: 3, text: 'Done.' },
+      // Notices join the open text block exactly as the transcript shows them.
+      { kind: 'text', messageId, blockIndex: 3, text: 'Done.\n\n⚠️ **Warning:** Rate limited' },
+    ]);
+  });
+
+  it('signals a notice after thinking as a new text block, and a terminal execution error as text', async () => {
+    const h = setup();
+    const api = createClaudianAPI(h.service, h.views);
+    await api.send('recipient', { text: 'Inspect the note' });
+    await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+    const native = h.backend.latest;
+    native.emitOutput({ type: 'thinking_delta', text: 'Plan' });
+    native.emitOutput({ type: 'notice', message: 'Slow', level: 'info' });
+    native.emitText('Answer');
+    native.emitOutput({ type: 'execution_error', category: 'provider', message: 'Overloaded', recoverable: false });
+    await h.pool.get('recipient')!.turns.drain();
+    const progress = h.signals.filter(entry => entry.signal.type === 'progress')
+      .map(entry => (entry.signal as { progress: { kind: string; blockIndex?: number; text?: string } }).progress)
+      .map(({ kind, blockIndex, text }) => ({ kind, blockIndex, text }));
+    expect(progress).toEqual([
+      { kind: 'thinking', blockIndex: 0, text: 'Plan' },
+      { kind: 'text', blockIndex: 1, text: '\n\n⚠️ **Notice:** Slow' },
+      { kind: 'text', blockIndex: 1, text: '\n\n⚠️ **Notice:** SlowAnswer' },
+      { kind: 'text', blockIndex: 1, text: '\n\n⚠️ **Notice:** SlowAnswer\n\n**Error:** Overloaded' },
+    ]);
+  });
+
+  it('opens only existing, unarchived sessions, without moving focus unless asked', async () => {
+    const h = setup();
+    const api = createClaudianAPI(h.service, h.views);
+    await expect(api.openSession('archived')).rejects.toThrow('The session does not exist or is archived');
+    await expect(api.openSession('missing')).rejects.toThrow('The session does not exist or is archived');
+    expect(h.views.openSession).not.toHaveBeenCalled();
+    await api.openSession('recipient');
+    await api.openSession('recipient', { focus: true });
+    expect(h.views.openSession.mock.calls).toEqual([['recipient', { focus: false }], ['recipient', { focus: true }]]);
+  });
+
+  async function startWithInteractionPort(h: ReturnType<typeof setup>) {
+    const api = createClaudianAPI(h.service, h.views);
+    await api.send('recipient', { text: 'Start' });
+    await waitFor(() => expect(h.backend.sessions[0]?.requests).toHaveLength(1));
+    const native = h.backend.latest;
+    return { api, native, port: native.config.interactionPort };
+  }
+  const interactionSignals = (h: ReturnType<typeof setup>) => h.signals
+    .filter(entry => entry.signal.type === 'interaction')
+    .map(entry => ({ sessionId: entry.sessionId, ...(entry.signal as object) }));
+
+  it('exposes every approval option with its decision and answers with the chosen one', async () => {
+    const h = setup();
+    const { api, native, port } = await startWithInteractionPort(h);
+    const approval = port.requestApproval({
+      interactionId: 'approve', sessionInstanceId: native.sessionInstanceId, turnId: native.activeTurnId, kind: 'approval',
+      toolName: 'Bash', input: { command: 'ls' }, description: 'ls', blockedPath: '/outside',
+    }, new AbortController().signal);
+    approval.catch(() => undefined);
+    await waitFor(() => expect(api.getPendingInteractions('recipient')).toHaveLength(1));
+    const [pending] = api.getPendingInteractions('recipient');
+    expect(pending).toMatchObject({
+      interactionId: 'approve', kind: 'approval', toolName: 'Bash', description: 'ls', blockedPath: '/outside',
+    });
+    expect(pending.questions).toHaveLength(1);
+    expect(pending.questions[0]).toMatchObject({ multiSelect: false, isOther: false, isSecret: false });
+    expect(pending.questions[0].options.map(option => option.decision)).toEqual(['deny', 'allow', 'allow-always']);
+    const always = pending.questions[0].options.find(option => option.decision === 'allow-always')!;
+    const key = pending.questions[0].id ?? pending.questions[0].question;
+    await expect(api.answerInteraction('recipient', 'approve', { [key]: 'Not an option' })).rejects.toThrow();
+    expect(api.getPendingInteractions('recipient')).toHaveLength(1);
+    await api.answerInteraction('recipient', 'approve', { [key]: always.value });
+    expect(await approval).toEqual({ interactionId: 'approve', decision: 'allow-always' });
+    expect(api.getPendingInteractions('recipient')).toEqual([]);
+    expect(interactionSignals(h)).toEqual([
+      { sessionId: 'recipient', type: 'interaction', interactionId: 'approve', pending: true },
+      { sessionId: 'recipient', type: 'interaction', interactionId: 'approve', pending: false },
+    ]);
+    await expect(api.answerInteraction('recipient', 'approve', { [key]: always.value })).rejects.toThrow();
+    native.complete();
+    await h.pool.get('recipient')!.turns.drain();
+  });
+
+  it('answers a question with an option or custom text only where the question accepts it', async () => {
+    const h = setup();
+    const { api, native, port } = await startWithInteractionPort(h);
+    const question = port.askUserQuestion({
+      interactionId: 'ask', sessionInstanceId: native.sessionInstanceId, turnId: native.activeTurnId, kind: 'question',
+      input: { questions: [
+        { id: 'color', question: 'Which color?', header: 'Color', options: [{ label: 'Red', description: 'warm' }], isOther: true },
+        { question: 'Which sizes?', options: [{ label: 'S', description: '' }, { label: 'M', description: '' }], multiSelect: true },
+      ] },
+    }, new AbortController().signal);
+    question.catch(() => undefined);
+    await waitFor(() => expect(api.getPendingInteractions('recipient')).toHaveLength(1));
+    expect(api.getPendingInteractions('recipient')[0]).toEqual({
+      interactionId: 'ask', kind: 'question', questions: [
+        { id: 'color', header: 'Color', question: 'Which color?', multiSelect: false, isOther: true, isSecret: false,
+          options: [{ label: 'Red', value: 'Red', description: 'warm' }] },
+        { header: 'Q2', question: 'Which sizes?', multiSelect: true, isOther: false, isSecret: false,
+          options: [{ label: 'S', value: 'S', description: '' }, { label: 'M', value: 'M', description: '' }] },
+      ],
+    });
+    // Free text only where isOther allows it; every question needs an answer.
+    await expect(api.answerInteraction('recipient', 'ask', { color: 'Red', 'Which sizes?': ['XL'] })).rejects.toThrow();
+    await expect(api.answerInteraction('recipient', 'ask', { color: 'Red' })).rejects.toThrow();
+    await api.answerInteraction('recipient', 'ask', { color: 'Teal', 'Which sizes?': ['S', 'M'] });
+    expect(await question).toEqual({ interactionId: 'ask', answers: { color: 'Teal', 'Which sizes?': ['S', 'M'] } });
+    native.complete();
+    await h.pool.get('recipient')!.turns.drain();
+  });
+
+  it('answers an async question only once its reply is delivered as the next prompt', async () => {
+    const h = setup();
+    const { api, native } = await startWithInteractionPort(h);
+    native.emitOutput({ type: 'tool_started', toolCallId: 'ask-tool', toolScope: { kind: 'main' }, name: 'AskUserQuestion', input: {
+      replyMode: 'user-message', questions: [{ question: 'Which file?', options: [{ label: 'a.md', description: '' }], isOther: true }],
+    } });
+    native.emitOutput({ type: 'tool_completed', toolCallId: 'ask-tool', toolScope: { kind: 'main' }, content: 'Waiting for the user.', isError: false });
+    native.complete();
+    await h.pool.get('recipient')!.turns.drain();
+    await waitFor(() => expect(api.getPendingInteractions('recipient')).toHaveLength(1));
+    const [pending] = api.getPendingInteractions('recipient');
+    expect(pending).toMatchObject({ kind: 'question', questions: [{ question: 'Which file?', isOther: true }] });
+    // Claude formats no async reply: delivery fails, the request stays pending and can be retried.
+    await expect(api.answerInteraction('recipient', pending.interactionId, { 'Which file?': 'b.md' })).rejects.toThrow();
+    expect(api.getPendingInteractions('recipient')).toHaveLength(1);
+    expect(native.requests).toHaveLength(1);
+    vi.spyOn(ProviderRegistry, 'formatQuestionReply').mockImplementation((_provider, _tool, answers) => ({
+      content: `Answer: ${String(answers['Which file?'])}`, displayContent: '',
+    }));
+    let delivered = false;
+    const answering = api.answerInteraction('recipient', pending.interactionId, { 'Which file?': 'b.md' }).then(() => { delivered = native.requests.length === 2; });
+    // While the answer is being delivered, a second answer is refused.
+    await expect(api.answerInteraction('recipient', pending.interactionId, { 'Which file?': 'a.md' })).rejects.toThrow('is not awaiting an answer');
+    await answering;
+    expect(delivered).toBe(true);
+    expect(requestText(native.requests[1])).toContain('b.md');
+    expect(api.getPendingInteractions('recipient')).toEqual([]);
+    native.complete();
+    await h.pool.get('recipient')!.turns.drain();
+  });
+
+  it('signals an interaction settled when it is answered elsewhere', async () => {
+    const h = setup();
+    const { api, native, port } = await startWithInteractionPort(h);
+    const question = port.askUserQuestion({
+      interactionId: 'ask', sessionInstanceId: native.sessionInstanceId, turnId: native.activeTurnId, kind: 'question',
+      input: { questions: [{ question: 'Proceed?', options: [{ label: 'Yes', description: '' }] }] },
+    }, new AbortController().signal);
+    question.catch(() => undefined);
+    await waitFor(() => expect(api.getPendingInteractions('recipient')).toHaveLength(1));
+    port.dismissInteraction('ask', 'native-rejected');
+    await expect(question).rejects.toThrow('Provider interaction is stale');
+    expect(api.getPendingInteractions('recipient')).toEqual([]);
+    expect(interactionSignals(h)).toEqual([
+      { sessionId: 'recipient', type: 'interaction', interactionId: 'ask', pending: true },
+      { sessionId: 'recipient', type: 'interaction', interactionId: 'ask', pending: false },
+    ]);
+    expect(api.getPendingInteractions('missing')).toEqual([]);
+    native.complete();
+    await h.pool.get('recipient')!.turns.drain();
   });
 });
