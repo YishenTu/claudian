@@ -38,4 +38,3 @@ npm run typecheck && npm run lint && npm run test && npm run build && npm run ch
 ## Instruction maintenance
 
 - Keep non-obvious constraints at their narrowest common scope, with one authoritative home and explicit exceptions. Remove implementation inventories, generic advice, inherited duplicates, and retired decisions.
-- Each guide has a sibling `CLAUDE.md` containing only `@AGENTS.md`.
