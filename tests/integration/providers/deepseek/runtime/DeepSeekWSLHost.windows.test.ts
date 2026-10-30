@@ -1,8 +1,11 @@
+// @test-ci {"inputs":["src/providers/deepseek/**","tests/{unit,integration}/providers/deepseek/**","tests/fixtures/providers/deepseek/runtime/**"]}
+import type * as childProcess from 'node:child_process';
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
 import { hasNativeWSL } from '@test/helpers/WSLNativeTarget';
+import type crossSpawn from 'cross-spawn';
 
 import { resolveExecutionTargetAsync } from '@/core/process/execution-target/ExecutionTargetResolver';
 import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
@@ -12,6 +15,31 @@ import { LoopbackSessionToolServer } from '@/core/session-tools/LoopbackSessionT
 import { resolveDeepSeekExecutionContext } from '@/providers/deepseek/runtime/DeepSeekExecutionContext';
 import { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
 import { DeepSeekHostProcess } from '@/providers/deepseek/runtime/DeepSeekHostProcess';
+
+// Pass-through observers at the OS process boundary report discovery/launch outcomes when startup fails.
+const { spawned, observe } = vi.hoisted(() => {
+  const spawned: Array<{ args: readonly string[]; child: childProcess.ChildProcess; stderr: string }> = [];
+  const observe = (args: readonly string[], child: childProcess.ChildProcess): childProcess.ChildProcess => {
+    const entry = { args, child, stderr: '' };
+    child.stderr?.on('data', (chunk: Buffer) => { entry.stderr += chunk.toString(); });
+    spawned.push(entry);
+    return child;
+  };
+  return { spawned, observe };
+});
+vi.mock('cross-spawn', async importOriginal => {
+  const actual = (await importOriginal<{ default: typeof crossSpawn }>()).default;
+  return { default: (...args: Parameters<typeof crossSpawn>) => observe(args[1] ?? [], actual(...args)) };
+});
+vi.mock('node:child_process', async importOriginal => {
+  const actual = await importOriginal<typeof childProcess>();
+  return { ...actual, spawn: (...args: Parameters<typeof childProcess.spawn>) => observe(Array.isArray(args[1]) ? args[1] : [], actual.spawn(...args)) };
+});
+
+interface FixtureInspection {
+  relayHasCredentials: boolean; platform: string; cwd: string; executable: string; plugins: string[];
+  httpAuth: number; websocketAuth: number; promptFile: string; patchPath: string;
+}
 
 // CI uses WSL1. Run this same suite on a WSL2 NAT/mirrored workstation to qualify localhost forwarding.
 // Real dsh's authenticated profile and ephemeral storage semantics require separate manual verification.
@@ -46,7 +74,12 @@ describe.skipIf(!hasNativeWSL())('DeepSeek fixture Host in native WSL', { timeou
       });
       const execution = await resolveDeepSeekExecutionContext(target, hostCwd, env, '');
       host = new DeepSeekHost(async () => ({ cliPath, cwd: hostCwd, environment: env, execution }), async (options, signal) => {
-        started = await DeepSeekHostProcess.start(options, signal); return started;
+        const from = spawned.length;
+        try {
+          started = await DeepSeekHostProcess.start(options, signal); return started;
+        } catch (error) {
+          throw new Error(`DeepSeek WSL fixture startup failed: ${String(error)}; discovery/launch processes: ${JSON.stringify(spawned.slice(from).map(({ args, child, stderr }) => ({ args, code: child.exitCode, signal: child.signalCode, stderr })))}`, { cause: error });
+        }
       }, undefined, server);
       const lease = await host.attach();
       const calls: Array<{ caller: string; input: unknown }> = [];
@@ -62,7 +95,7 @@ describe.skipIf(!hasNativeWSL())('DeepSeek fixture Host in native WSL', { timeou
       await lease.writePrompt('root', 'literal {{prompt}} $HOME 中文');
       await lease.writeCodeMode(true);
       const withdraw = await started!.offerEphemeralFork('root', 7);
-      const info = await lease.client.call('fixture/inspect') as Record<string, any>;
+      const info = await lease.client.call('fixture/inspect') as FixtureInspection;
       expect(info).toMatchObject({ relayHasCredentials: false, platform: 'linux', cwd: mapper.toTargetPath(hostCwd),
         prompt: 'literal {{prompt}} $HOME 中文', presentation: ['both'], spill: 'Linux artifact', attachment: 'Linux artifact',
         forks: [{ parent: 'root', atSeq: 7 }],

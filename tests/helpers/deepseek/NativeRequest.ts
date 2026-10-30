@@ -8,6 +8,7 @@ export interface NativeRequest extends Record<string, unknown> {
   sessionId?: string;
   requestId?: string;
   agentPreset?: string;
+  cwd?: string;
   itemId?: string;
   attachmentId?: string;
   mode?: string;
@@ -21,7 +22,7 @@ export interface NativeRequest extends Record<string, unknown> {
 
 function isNativeRequest(value: unknown): value is NativeRequest {
   if (!isRecord(value)) return false;
-  for (const key of ['sessionId', 'requestId', 'agentPreset', 'itemId', 'attachmentId', 'mode', 'reasoningEffort']) {
+  for (const key of ['sessionId', 'requestId', 'agentPreset', 'cwd', 'itemId', 'attachmentId', 'mode', 'reasoningEffort']) {
     if (value[key] !== undefined && typeof value[key] !== 'string') return false;
   }
   for (const key of ['atSeq', 'beforeSeq', 'throughSeq']) {

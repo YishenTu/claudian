@@ -297,7 +297,6 @@ describe('native Host process', () => {
   });
 });
 
-
 it('runs the WSL CI fixture locally through real authenticated HTTP/WebSocket and the generated plugins', async () => {
   const root = await mkdtemp(join(tmpdir(), 'deepseek WSL fixture '));
   const home = join(root, 'home');

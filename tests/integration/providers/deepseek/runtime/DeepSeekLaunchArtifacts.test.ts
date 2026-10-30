@@ -1,12 +1,15 @@
 // @test-ci {"native":true}
 import { execFile, spawn } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as fsPromises from 'node:fs/promises';
 import { access, mkdir, mkdtemp, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
 import type { LaunchPatchEntry, LaunchPlugin } from '@test/helpers/deepseek/LaunchPatch';
+import { createWindowsHostFS } from '@test/helpers/WindowsHostFS';
 
 import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
 import { LoopbackSessionToolServer } from '@/core/session-tools/LoopbackSessionToolServer';
@@ -18,6 +21,8 @@ vi.mock('node:fs/promises', async () => {
   const actual = (await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises'));
   return { __esModule: true, ...actual, rename: vi.fn(actual.rename) };
 });
+// WindowsHostFS serves `C:\Temp` on POSIX hosts for the WSL launch.
+vi.mock('fs', async () => ({ ...await vi.importActual<typeof import('fs')>('fs') }));
 
 it('gives every preset the session prompt directory and its tool policy while keeping prompt text out of code', async () => {
   const root = await mkdtemp(join(tmpdir(), 'deepseek packaged # 文档 '));
@@ -292,7 +297,7 @@ it('keeps ephemeral sessions in process memory and out of every durable dsh stor
       import { pathToFileURL } from 'node:url';
       import { AsyncLocalStorage } from 'node:async_hooks';
       import { mkdir, readFile, writeFile } from 'node:fs/promises';
-      import { dirname, join, relative } from 'node:path';
+      import { dirname, join, sep } from 'node:path';
       const plugin = await import(pathToFileURL(process.argv[1]).href);
       const config = JSON.parse(process.argv[2]);
       const out = { backend: [], projcache: [], workspaces: [], global: [], spilled: [], errors: {} };
@@ -637,26 +642,25 @@ it.each(['http', 'relay'])('runs the sessions plugin over %s, forwarding caller 
   } finally { await endpoint.close(); await replacement.close(); await artifacts.dispose(); }
 });
 
-
-it('maps every nested launch path for Linux while retaining host files for mutations and disposal', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'deepseek target # '));
+// Windows hosts have a real C:\Temp; WindowsHostFS models it on POSIX hosts.
+it.skipIf(sep === '\\')('maps every nested launch path for Linux while retaining host files for mutations and disposal', async () => {
+  createWindowsHostFS({ fs, fsPromises });
+  await mkdir('C:\\Temp', { recursive: true });
   const mapper = createExecutionPathMapper({ method: 'wsl', distroName: 'Ubuntu', platformOs: 'linux', platformFamily: 'unix' });
-  // The filesystem boundary stands in for C:\Temp on non-Windows runners; target translation stays real.
-  const paths = { ...mapper, toTargetPath: (hostPath: string) => mapper.toTargetPath('C:\\Temp\\' + relative(root, hostPath).replaceAll('/', '\\')) };
-  const artifacts = await prepareDeepSeekLaunchArtifacts(root, [], undefined, paths);
+  const artifacts = await prepareDeepSeekLaunchArtifacts('C:\\Temp', [], undefined, mapper);
   try {
-    const patch = JSON.parse(await readFile(artifacts.patchPath, 'utf8'));
-    const rows = patch.flatMap((row: any) => row.insert ?? []);
-    const ephemeral = rows.find((row: any) => row.id === 'claudian-ephemeral');
-    const preset = rows.find((row: any) => row.config?.id === 'claudian');
-    const compatibility = preset.config.plugins.find((row: any) => row.id === 'claudian-compatibility');
-    const sessions = preset.config.plugins.find((row: any) => row.id === 'claudian-sessions');
+    const patch: LaunchPatchEntry[] = JSON.parse(await readFile(artifacts.patchPath, 'utf8'));
+    const rows = patch.flatMap(row => row.insert ?? []);
+    const ephemeral = rows.find(row => row.id === 'claudian-ephemeral')!;
+    const preset = rows.find(row => row.config?.id === 'claudian')!;
+    const compatibility = preset.config.plugins.find(row => row.id === 'claudian-compatibility')!;
+    const sessions = preset.config.plugins.find(row => row.id === 'claudian-sessions')!;
     for (const path of [rows[0].name, ephemeral.name, ...Object.values(ephemeral.config), ...Object.values(compatibility.config), sessions.config.endpointFile]) {
       expect(path).toMatch(/^\/mnt\/c\/Temp\/claudian-deepseek-/);
     }
     for (const row of [compatibility, sessions]) expect(row.name).toMatch(/^file:\/\/\/mnt\/c\/Temp\//);
-    expect(preset.config.plugins.map((row: any) => row.id)).toContain('tool-bash');
-    expect(preset.config.plugins.map((row: any) => row.id)).not.toContain('tool-pwsh');
+    expect(preset.config.plugins.map(row => row.id)).toContain('tool-bash');
+    expect(preset.config.plugins.map(row => row.id)).not.toContain('tool-pwsh');
     await artifacts.writePrompt('alpha', 'Linux prompt');
     await artifacts.writeCodeMode(true);
     const hostRoot = dirname(artifacts.patchPath);
@@ -668,5 +672,5 @@ it('maps every nested launch path for Linux while retaining host files for mutat
     await withdraw();
     await artifacts.dispose();
     await expect(access(artifacts.patchPath)).rejects.toThrow();
-  } finally { await artifacts.dispose(); await rm(root, { recursive: true, force: true }); }
+  } finally { await artifacts.dispose(); }
 });

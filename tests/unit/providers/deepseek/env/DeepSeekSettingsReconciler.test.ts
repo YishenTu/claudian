@@ -1,3 +1,4 @@
+import { getInstallationKey } from '@/core/device/InstallationKey';
 import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import type { Conversation } from '@/core/types';
@@ -76,12 +77,11 @@ describe('DeepSeekSettingsReconciler', () => {
   });
 });
 
-
 it('reloads on a vault-inferred WSL distro change even without an explicit distro override', () => {
   const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
   Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
   try {
-    const settings = { providerConfigs: { deepseek: { enabled: true, installationMethodsByHost: { 'device:current': 'wsl' } } } };
+    const settings = { providerConfigs: { deepseek: { enabled: true, installationMethodsByHost: { [getInstallationKey()]: 'wsl' } } } };
     const run = (distro: string) => deepseekSettingsReconciler.reconcileModelWithEnvironment(settings, { vaultPath: `\\\\wsl$\\${distro}\\home\\me\\vault` });
     expect(run('Ubuntu')).toEqual(changed);
     expect(run('Ubuntu')).toEqual(unchanged);

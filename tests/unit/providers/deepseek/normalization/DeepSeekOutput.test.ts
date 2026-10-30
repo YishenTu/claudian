@@ -262,7 +262,6 @@ describe('native ask_user_question results', () => {
   });
 });
 
-
 it('projects Linux tool inputs, applied diffs and code-mode calls before host file consumers see them', () => {
   const mapper = createExecutionPathMapper({ method: 'wsl', distroName: 'Ubuntu', platformFamily: 'unix', platformOs: 'linux' });
   const output = new DeepSeekOutput(event => events.push(event), path => mapper.toHostPath(path) ?? path);
