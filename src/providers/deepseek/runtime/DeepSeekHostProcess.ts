@@ -1,16 +1,20 @@
 import { access } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, posix } from 'node:path';
 
 import { findNodeExecutable, getEnhancedPath } from '@/core/process/env';
+import { buildTargetLaunchSpec } from '@/core/process/execution-target/TargetLaunchSpec';
 import { ManagedStdioProcess, type ManagedStdioProcessOptions } from '@/core/process/ManagedStdioProcess';
 import type { SessionToolRoute } from '@/core/session-tools/SessionToolEndpoint';
+import type { WSLSessionToolRelay } from '@/core/session-tools/WSLSessionToolRelay';
 
 import { DeepSeekRemoteClient } from '../remote/DeepSeekRemoteClient';
 import type { DeepSeekProfile } from '../types';
+import type { DeepSeekExecutionContext } from './DeepSeekExecutionContext';
 import { getDeepSeekHome } from './DeepSeekHome';
 import { getDeepSeekDesktopInstallation, resolveDeepSeekNodeEntry } from './DeepSeekInstallation';
 import { type DeepSeekLaunchArtifacts, prepareDeepSeekLaunchArtifacts } from './DeepSeekLaunchArtifacts';
 import type { DeepSeekPresetPlugin } from './DeepSeekPresetPlugins';
+import { DEEPSEEK_WSL_INSTALLATION_HELP, probeDeepSeekWSLInstallation } from './DeepSeekWSLInstallation';
 
 // Native MCP may spend 60 seconds in each discovery phase; retain a finite, cancellable startup budget.
 const STARTUP_TIMEOUT_MS = 180_000;
@@ -18,6 +22,8 @@ const STARTUP_TIMEOUT_MS = 180_000;
 const GRACEFUL_EXIT_TIMEOUT_MS = 6_000;
 
 export interface DeepSeekLaunchOptions {
+  readonly execution?: DeepSeekExecutionContext;
+  readonly sessionToolRelay?: WSLSessionToolRelay;
   readonly sessionToolRoute?: Pick<SessionToolRoute, 'url' | 'routeId'>;
   readonly cliPath: string;
   readonly cwd: string;
@@ -39,31 +45,61 @@ export class DeepSeekHostProcess {
 
   static async start(options: DeepSeekLaunchOptions, signal: AbortSignal): Promise<DeepSeekHostProcess> {
     signal.throwIfAborted();
-    const desktop = getDeepSeekDesktopInstallation(options.cliPath);
+    const execution = options.execution;
+    const wsl = execution?.target.method === 'wsl';
+    const desktop = wsl ? undefined : getDeepSeekDesktopInstallation(options.cliPath);
     const cliPath = desktop?.cliPath ?? options.cliPath;
     const profile = desktop ? 'desktop' : 'web';
-    const environment = { ...options.environment, PATH: getEnhancedPath(options.environment.PATH, isAbsolute(cliPath) ? cliPath : undefined) };
-    const profileDirectory = join(getDeepSeekHome(environment, options.cwd), 'profiles', profile);
+    const environment = { ...options.environment, ...(!wsl ? { PATH: getEnhancedPath(options.environment.PATH, isAbsolute(cliPath) ? cliPath : undefined) } : {}) };
+    const profileDirectory = wsl
+      ? execution.pathMapper.toHostPath(posix.join(execution.targetHome, 'profiles', 'web'))!
+      : join(getDeepSeekHome(environment, options.cwd), 'profiles', profile);
+    if (!profileDirectory) throw new Error('DeepSeek Web profile cannot be accessed in the selected WSL distro.');
     try { await access(join(profileDirectory, 'package.json')); } catch {
       throw new Error(desktop
         ? 'DeepSeek Desktop profile is unavailable. Open DeepSeek Harness Desktop and complete its setup first.'
-        : 'DeepSeek Web profile is unavailable. Configure the native dsh web runtime first.');
+        : wsl ? `DeepSeek Web profile is unavailable in WSL. ${DEEPSEEK_WSL_INSTALLATION_HELP}`
+          : 'DeepSeek Web profile is unavailable. Configure the native dsh web runtime first.');
     }
     // Desktop runs its own executable as Node, and npm dsh runs through Node on its package entry; no wrapper script or
     // Windows .cmd (which needs a shell) is spawned.
-    const entry = desktop ? undefined : resolveDeepSeekNodeEntry(cliPath);
-    const spec: ManagedStdioProcessOptions = {
+    const entry = desktop || wsl ? undefined : resolveDeepSeekNodeEntry(cliPath);
+    let spec: ManagedStdioProcessOptions = {
       cwd: options.cwd, directSpawn: true, killProcessTree: true,
       ...(desktop
         ? { command: desktop.executable, args: ['--expose-internals'], env: { ...environment, ELECTRON_RUN_AS_NODE: '1' } }
         : { command: entry ? findNodeExecutable(environment.PATH) ?? 'node' : cliPath, args: entry ? [entry] : [], env: environment }),
     };
-    const artifacts = await prepareDeepSeekLaunchArtifacts(undefined, options.presetPlugins, options.sessionToolRoute);
+    if (wsl) {
+      const env = Object.fromEntries(Object.entries(environment).filter((entry): entry is [string, string] => entry[1] !== undefined));
+      const launch = { target: execution.target, hostCwd: options.cwd, env, forwardEnvironment: execution.forwardEnvironment };
+      const installation = await probeDeepSeekWSLInstallation({ ...launch, command: cliPath, configuredPath: cliPath });
+      if (!installation.entryPath || !installation.nodePath) throw new Error(DEEPSEEK_WSL_INSTALLATION_HELP);
+      // Shared shell startup captures exported values in a temporary file. Send only credential-free launch metadata;
+      // the plugin adds URL/route credentials from the existing private endpoint file to its per-call descriptor env.
+      if (options.sessionToolRelay) {
+        const relay = options.sessionToolRelay;
+        env.CLAUDIAN_DEEPSEEK_SESSION_RELAY = JSON.stringify({ command: relay.command, args: relay.args, env: {
+          WSLENV: relay.env.WSLENV, CLAUDIAN_SESSION_TOOL_MODE: relay.env.CLAUDIAN_SESSION_TOOL_MODE,
+        } });
+      }
+      spec = { command: installation.nodePath, args: [installation.entryPath], env, cwd: options.cwd, directSpawn: true, killProcessTree: true };
+    }
+    const artifacts = await prepareDeepSeekLaunchArtifacts(undefined, options.presetPlugins, options.sessionToolRoute, execution?.pathMapper);
+    const patchPath = wsl ? execution.pathMapper.toTargetPath(artifacts.patchPath) : artifacts.patchPath;
+    if (!patchPath) { await artifacts.dispose(); throw new Error('DeepSeek launch patch is inaccessible inside WSL.'); }
+    const args = [...spec.args, ...(desktop
+      ? [artifacts.desktopRunnerPath, desktop.installAnchor, profileDirectory, patchPath]
+      : ['--profile', 'web', '--patch', patchPath, '--no-open', '--port', '0'])];
+    if (wsl) {
+      const launch = buildTargetLaunchSpec({
+        target: execution.target, hostCwd: options.cwd, command: spec.command, args,
+        env: Object.fromEntries(Object.entries(spec.env).filter((entry): entry is [string, string] => entry[1] !== undefined)), forwardEnvironment: [...execution.forwardEnvironment, { key: 'CLAUDIAN_DEEPSEEK_SESSION_RELAY' }],
+      });
+      spec = { ...spec, ...launch, cwd: launch.spawnCwd };
+    } else spec = { ...spec, args };
     const child = new ManagedStdioProcess({
       ...spec,
-      args: [...spec.args, ...(desktop
-        ? [artifacts.desktopRunnerPath, desktop.installAnchor, profileDirectory, artifacts.patchPath]
-        : ['--profile', 'web', '--patch', artifacts.patchPath, '--no-open', '--port', '0'])],
       stderrBufferLimit: 1,
     });
     let client: DeepSeekRemoteClient | undefined;
@@ -71,7 +107,10 @@ export class DeepSeekHostProcess {
     const startup = AbortSignal.any([signal, deadline]);
     try {
       const url = await readLaunchURL(child, startup);
-      client = await DeepSeekRemoteClient.open(url, startup);
+      try { client = await DeepSeekRemoteClient.open(url, startup); } catch (error) {
+        if (!wsl || signal.aborted) throw error;
+        throw new Error('Could not connect to DeepSeek inside WSL through localhost. Check that dsh is running in the selected distro; for WSL2 NAT, enable localhostForwarding in .wslconfig and restart WSL. Keep the native listener on loopback.', { cause: error });
+      }
       startup.throwIfAborted();
       if (!child.isAlive()) throw new Error('DeepSeek exited during authentication.');
       return new DeepSeekHostProcess(client, profile, child, artifacts);

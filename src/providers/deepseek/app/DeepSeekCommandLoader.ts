@@ -28,9 +28,9 @@ export function createDeepSeekCommandLoader(deepseek: DeepSeekHost): ProviderCom
       if (!allowIsolatedMetadataCreation || !cwd) return REQUIRES_SESSION;
       try {
         const saved = decodeDeepSeekState(conversation?.providerState);
-        const skills = await deepseek.read(async (reader, home) => {
-          const own = saved && !isSameDeepSeekHome(saved.home, home) ? undefined : conversation?.sessionId ?? saved?.pendingFork?.sessionId;
-          const sessionId = own ?? await findCatalogSession(reader, cwd);
+        const skills = await deepseek.read(async (reader, home, execution) => {
+          const own = saved && !isSameDeepSeekHome(saved.home, home, execution?.target.platformOs === 'linux' ? 'linux' : undefined) ? undefined : conversation?.sessionId ?? saved?.pendingFork?.sessionId;
+          const sessionId = own ?? await findCatalogSession(reader, execution?.targetCwd ?? cwd);
           return sessionId ? readDeepSeekSkills(reader, sessionId) : undefined;
         }, signal);
         return skills ? normalizeProviderCommandDiscoveryItems(skills) : REQUIRES_SESSION;

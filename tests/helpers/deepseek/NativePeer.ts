@@ -5,10 +5,12 @@ import type { AddressInfo } from 'node:net';
 import { WebSocket, WebSocketServer } from 'ws';
 
 import { DeepSeekRemoteClient } from '@/providers/deepseek/remote/DeepSeekRemoteClient';
+import type { DeepSeekExecutionContext } from '@/providers/deepseek/runtime/DeepSeekExecutionContext';
 import { DeepSeekHost } from '@/providers/deepseek/runtime/DeepSeekHost';
 import type { DeepSeekLaunchArtifacts } from '@/providers/deepseek/runtime/DeepSeekLaunchArtifacts';
 
 export interface NativePeerHostOptions {
+  readonly execution?: DeepSeekExecutionContext;
   readonly profile?: 'web' | 'desktop';
   readonly idleMs?: number;
   /** Runs before each process start; reject to simulate a failed launch. */
@@ -124,7 +126,7 @@ export class NativePeer {
   host(options: NativePeerHostOptions = {}): { deepseek: DeepSeekHost; lifecycle: NativePeerLifecycle } {
     const exits = new Set<() => void>();
     const lifecycle: NativePeerLifecycle = { starts: 0, disposed: 0, prompts: [], codeModes: [], ephemeralForks: [], exit: () => { for (const listener of [...exits]) listener(); } };
-    const deepseek = new DeepSeekHost(async () => ({ cliPath: '/bin/dsh', cwd: '/vault', environment: process.env }), async (_options, signal) => {
+    const deepseek = new DeepSeekHost(async () => ({ cliPath: '/bin/dsh', cwd: '/vault', environment: process.env, execution: options.execution }), async (_options, signal) => {
       lifecycle.starts++;
       await options.beforeStart?.(signal);
       const client = await this.connect();

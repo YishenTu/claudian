@@ -774,7 +774,8 @@
     },
     "deepseek": {
       "installation": {
-        "desc": "Автопоиск предпочитает dsh, затем ищет Desktop в macOS или Windows. Если установлены оба варианта, укажите путь к .app или папку установки в Windows для выбора Desktop. Сначала откройте Desktop и завершите настройку."
+        "desc": "Автопоиск предпочитает dsh, затем ищет Desktop в macOS или Windows. Если установлены оба варианта, укажите путь к .app или папку установки в Windows для выбора Desktop. Сначала откройте Desktop и завершите настройку.",
+        "wslDesc": "Для WSL нужны Linux-версия Node.js и npm dsh в выбранном дистрибутиве с настроенным штатным профилем Web. DeepSeek Harness Desktop не является установкой для WSL. Установите @deepseek-ai/dsh в дистрибутиве или выберите нативный Windows для использования Desktop."
       },
       "preset": "Пресет",
       "codeMode": {

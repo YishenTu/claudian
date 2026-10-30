@@ -28,5 +28,7 @@ export function projectDeepSeekModelSettings(settings: Record<string, unknown>):
     preferredReasoningByModel: selectModelMetadata(current.preferredReasoningByModel, selected),
   };
   delete config.discoveredModels;
+  delete config.installationMethod;
+  delete config.wslDistroOverride;
   return config;
 }

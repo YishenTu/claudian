@@ -460,6 +460,9 @@ test('WSL native job follows shared dependencies and provider users but skips un
   assert.equal(select([wsl]).wslWindows, true);
   const relay = 'tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts';
   assert.equal(select([relay]).wslWindows, true);
+  assert.equal(select(['tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts']).wslWindows, true);
+  assert.equal(select(['src/providers/deepseek/runtime/DeepSeekHostProcess.ts']).wslWindows, true);
+  assert.equal(select(['tests/fixtures/providers/deepseek/runtime/FakeDeepSeekWSLHost.mjs']).wslWindows, true);
   assert.equal(select(['tests/helpers/WSLNativeTarget.ts'], [relay]).wslWindows, true);
   for (const file of [
     'src/core/session-tools/sessionToolRelayCommand.ts',

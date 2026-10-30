@@ -51,6 +51,16 @@ describe('DeepSeek installation selection', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it('selects Linux dsh without treating a Windows Desktop install as a WSL installation', () => {
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    const config = settings('C:\\Users\\me\\AppData\\Local\\Programs\\DeepSeek Harness');
+    Object.assign(config.providerConfigs.deepseek, { installationMethodsByHost: { 'device:test': 'wsl' } });
+    expect(resolver.resolveFromSettings(config)).toBe('dsh');
+    config.providerConfigs.deepseek.cliPathsByHost['device:test'] = '/opt/DeepSeek Linux/bin/dsh';
+    expect(resolver.resolveFromSettings(config)).toBe('/opt/DeepSeek Linux/bin/dsh');
+    expect(findCLIBinaryPath).not.toHaveBeenCalled();
+  });
+
   it('discovers Desktop without a registered dsh command and notices removal and reinstall', () => {
     expect(resolver.resolveFromSettings(settings())).toBe(cli);
     rmSync(app, { recursive: true });

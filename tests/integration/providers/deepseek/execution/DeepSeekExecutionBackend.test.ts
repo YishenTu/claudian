@@ -15,6 +15,7 @@ import type { Mock } from 'vitest';
 
 import { isSteerableExecutionSession, type ProviderExecutionEvent, type ProviderExecutionRequest, type ProviderExecutionSession, type ProviderInteractionPort, type ProviderSessionConfig, type ProviderSessionEvent } from '@/core/execution';
 import { getProviderConfig, setProviderConfig } from '@/core/providers/providerConfig';
+import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ImageAttachment } from '@/core/types';
 import { DeepSeekExecutionBackend } from '@/providers/deepseek/execution/DeepSeekExecutionBackend';
@@ -1881,4 +1882,31 @@ it('fails the session recoverably when background Stop does not settle before it
   } finally { vi.useRealTimers(); }
   expect(peer.calls.filter(c => c.method === 'job/kill').length).toBeGreaterThanOrEqual(1);
   expect(lifecycle.disposed).toBe(0);
+});
+
+
+it('creates and resumes against the Linux cwd while keeping Linux store comparisons case-sensitive', async () => {
+  await deepseek.dispose();
+  const target = { method: 'wsl' as const, distroName: 'Ubuntu', platformFamily: 'unix' as const, platformOs: 'linux' as const };
+  const pathMapper = createExecutionPathMapper(target);
+  const home = pathMapper.toHostPath('/home/alice/.dsh')!;
+  ({ deepseek, lifecycle } = peer.host({ execution: { target, pathMapper, targetCwd: '/mnt/c/Vault', targetHome: '/home/alice/.dsh', home, forwardEnvironment: [] } }));
+  const nativeCall = peer.onCall;
+  peer.onCall = (method, args) => method === 'session/list'
+    ? { items: [{ sessionId: 'root', agentAvailable: true, running: false, cwd: '/mnt/c/Vault' }] }
+    : nativeCall(method, args);
+  create();
+  await completeRequest();
+  expect(peer.calls.find(call => call.method === 'session/create')?.args.request.cwd).toBe('/mnt/c/Vault');
+  const saved = session.getSnapshot().providerState;
+  await session.dispose();
+  create({ providerSessionId: 'root', providerState: saved });
+  await completeRequest('resume');
+  expect(peer.calls.filter(call => call.method === 'session/create')).toHaveLength(1);
+  expect(lifecycle.starts).toBe(1);
+  await session.dispose();
+  create({ providerSessionId: 'root', providerState: { ...saved, home: pathMapper.toHostPath('/home/Alice/.dsh')! } });
+  const failure: ProviderExecutionEvent[] = [];
+  await collect(session.execute(request()).events, failure);
+  expect(failure).toContainEqual(expect.objectContaining({ type: 'execution_error', message: expect.stringMatching(/different store/) }));
 });

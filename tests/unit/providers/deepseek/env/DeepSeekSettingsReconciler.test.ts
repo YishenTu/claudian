@@ -75,3 +75,16 @@ describe('DeepSeekSettingsReconciler', () => {
     }));
   });
 });
+
+
+it('reloads on a vault-inferred WSL distro change even without an explicit distro override', () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+  try {
+    const settings = { providerConfigs: { deepseek: { enabled: true, installationMethodsByHost: { 'device:current': 'wsl' } } } };
+    const run = (distro: string) => deepseekSettingsReconciler.reconcileModelWithEnvironment(settings, { vaultPath: `\\\\wsl$\\${distro}\\home\\me\\vault` });
+    expect(run('Ubuntu')).toEqual(changed);
+    expect(run('Ubuntu')).toEqual(unchanged);
+    expect(run('Debian')).toEqual(changed);
+  } finally { Object.defineProperty(process, 'platform', platform); }
+});

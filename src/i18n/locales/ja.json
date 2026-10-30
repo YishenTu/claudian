@@ -774,7 +774,8 @@
     },
     "deepseek": {
       "installation": {
-        "desc": "自動検出は dsh を優先し、次に macOS または Windows の Desktop を探します。両方がインストールされている場合、Desktop の .app パスまたは Windows のインストールフォルダーを入力すると選択できます。最初に Desktop を開いて初期設定を完了してください。"
+        "desc": "自動検出は dsh を優先し、次に macOS または Windows の Desktop を探します。両方がインストールされている場合、Desktop の .app パスまたは Windows のインストールフォルダーを入力すると選択できます。最初に Desktop を開いて初期設定を完了してください。",
+        "wslDesc": "WSL では、選択したディストリビューション内に Linux 版 Node.js と npm の dsh をインストールし、ネイティブの Web プロファイルを設定する必要があります。DeepSeek Harness Desktop は WSL のインストールとして使用できません。ディストリビューション内に @deepseek-ai/dsh をインストールするか、Desktop を使うにはネイティブ Windows を選択してください。"
       },
       "preset": "プリセット",
       "codeMode": {

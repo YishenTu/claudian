@@ -1,5 +1,6 @@
 import { testDate } from '@test/helpers/testClock';
 
+import { createExecutionPathMapper } from '@/core/process/execution-target/WSLPathMapper';
 import { DeepSeekOutput, type DeepSeekOutputEvent, DeepSeekReplayError } from '@/providers/deepseek/normalization/DeepSeekOutput';
 
 const now = testDate().getTime();
@@ -259,4 +260,16 @@ describe('native ask_user_question results', () => {
   ])('leaves $name unanswered', ({ text, isError }) => {
     expect(ask(text, isError)).not.toHaveProperty('resultDetails.resolvedAnswers');
   });
+});
+
+
+it('projects Linux tool inputs, applied diffs and code-mode calls before host file consumers see them', () => {
+  const mapper = createExecutionPathMapper({ method: 'wsl', distroName: 'Ubuntu', platformFamily: 'unix', platformOs: 'linux' });
+  const output = new DeepSeekOutput(event => events.push(event), path => mapper.toHostPath(path) ?? path);
+  output.record({ type: 'tool/call', seq: 1, data: { callId: 'edit', name: 'edit', arguments: { path: '/home/me/Vault/note.md' } } });
+  output.record({ type: 'tool/result', seq: 2, data: { message: { toolCallId: 'edit', content: [] }, meta: { diffs: [{ path: '/home/me/Vault/note.md', oldText: 'a', newText: 'b' }] } } });
+  output.record({ type: 'tool/ptc-dispatch-start', seq: 3, data: { rootCallId: 'code', subCallId: 'read', name: 'read', arguments: { path: '/mnt/c/Vault/note.md' } } });
+  expect(events.find(e => e.type === 'tool_started')).toMatchObject({ input: { file_path: '\\\\wsl$\\Ubuntu\\home\\me\\Vault\\note.md' } });
+  expect(events.find(e => e.type === 'tool_completed')).toMatchObject({ resultDetails: { diff: { filePath: '\\\\wsl$\\Ubuntu\\home\\me\\Vault\\note.md' } } });
+  expect(events.find(e => e.type === 'tool_output')).toMatchObject({ resultDetails: { scriptToolCalls: [{ input: { file_path: 'C:\\Vault\\note.md' } }] } });
 });

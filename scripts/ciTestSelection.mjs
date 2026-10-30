@@ -13,6 +13,7 @@ const docsTest = 'tests/unit/docs/Documentation.test.ts';
 const wslTests = [
   'tests/integration/core/process/execution-target/WSLExecution.windows.test.ts',
   'tests/integration/core/process/execution-target/WSLSessionToolRelay.windows.test.ts',
+  'tests/integration/providers/deepseek/runtime/DeepSeekWSLHost.windows.test.ts',
 ];
 const piTest = 'tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts';
 const isDocumentation = file => file.endsWith('.md') || file.startsWith('docs/');

@@ -1,3 +1,5 @@
+import { getInstallationKey } from '@/core/device/InstallationKey';
+import { isWindowsStyleCLIReference, stripSurroundingQuotes } from '@/core/process/cliPath';
 import { CachedProviderCLIResolver } from '@/core/providers/cli/CachedProviderCLIResolver';
 import { getRuntimeEnvironmentText } from '@/core/providers/providerEnvironment';
 
@@ -21,6 +23,18 @@ export class DeepSeekCLIResolver {
     shouldCache: () => false,
   });
 
-  resolveFromSettings(settings: Record<string, unknown>): string | null { return this.resolver.resolveFromSettings(settings); }
+  resolveFromSettings(settings: Record<string, unknown>): string | null {
+    const config = getDeepSeekProviderSettings(settings);
+    if (process.platform === 'win32' && config.installationMethod === 'wsl') return resolveDeepSeekWSLCLIPath(config);
+    return this.resolver.resolveFromSettings(settings);
+  }
   reset(): void { this.resolver.reset(); }
+}
+
+
+/** A host Desktop/npm locator cannot establish a Linux installation. Probe dsh inside the distro instead. */
+export function resolveDeepSeekWSLCLIPath(config: { cliPath: string; cliPathsByHost: Record<string, string> }): string {
+  return [config.cliPathsByHost[getInstallationKey()], config.cliPath]
+    .map(value => stripSurroundingQuotes((value ?? '').trim()))
+    .find(value => value && !isWindowsStyleCLIReference(value)) || 'dsh';
 }

@@ -72,3 +72,18 @@ describe('DeepSeek saved configuration contracts', () => {
     expect(() => decodeDeepSeekState({ ...desktop, profile: 'unknown' })).toThrow(/binding/);
   });
 });
+
+
+it('stores the WSL selection per installation and excludes derived controls from persistence', () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+  try {
+    const settings: Record<string, unknown> = {};
+    updateDeepSeekProviderSettings(settings, { installationMethod: 'wsl', wslDistroOverride: ' Ubuntu ' });
+    expect(getDeepSeekProviderSettings(settings)).toMatchObject({ installationMethod: 'wsl', wslDistroOverride: 'Ubuntu' });
+    const stored = projectDeepSeekModelSettings(settings);
+    expect(stored).toMatchObject({ installationMethodsByHost: { 'device:test': 'wsl' }, wslDistroOverridesByHost: { 'device:test': 'Ubuntu' } });
+    expect(stored).not.toHaveProperty('installationMethod');
+    expect(stored).not.toHaveProperty('wslDistroOverride');
+  } finally { Object.defineProperty(process, 'platform', platform); }
+});

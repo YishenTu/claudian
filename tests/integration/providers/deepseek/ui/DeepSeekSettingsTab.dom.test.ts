@@ -75,8 +75,9 @@ async function render(deepseekEnabled = true, resolvedPath: string | null = null
   return { ...fixture, cliResolver, context, container, ui: within(container) };
 }
 
+afterEach(() => { document.body.replaceChildren(); });
+
 describe('DeepSeekSettingsTab', () => {
-  afterEach(() => { document.body.replaceChildren(); });
 
   it('persists a return to the committed baseline after an earlier preset save finishes', async () => {
     const { host, persist, ui, container } = await render();
@@ -306,4 +307,34 @@ describe('DeepSeekSettingsTab', () => {
     expect(getDeepSeekProviderSettings(host.settings).enabled).toBe(true);
     expect(transitions).toEqual([['deepseek']]);
   });
+});
+
+
+it('switches to Linux WSL discovery with shared accessible settings and explains Desktop-only installations', async () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+  try {
+    const { host, ui, cliResolver, transitions, container } = render();
+    host.workingDirectory = '\\\\wsl$\\Ubuntu\\home\\me\\Vault';
+    const method = ui.getByRole('combobox', { name: 'Installation method' });
+    fireEvent.change(method, { target: { value: 'wsl' } });
+    await waitFor(() => expect(getDeepSeekProviderSettings(host.settings).installationMethod).toBe('wsl'));
+    await waitFor(() => expect(probeDeepSeekWSLInstallation).toHaveBeenCalledWith(expect.objectContaining({
+      target: expect.objectContaining({ method: 'wsl', distroName: 'Ubuntu' }), command: 'dsh',
+    })));
+    expect(transitions).toContainEqual(['deepseek']);
+    expect(cliResolver.reset).toHaveBeenCalled();
+    fireEvent.change(ui.getByRole('textbox', { name: 'Additional preset plugins' }), {
+      target: { value: '- id: tool-bash\n  name: custom-shell' },
+    });
+    expect(ui.getByRole('alert').textContent).toMatch(/already part of Claudian/);
+    expect(getDeepSeekProviderSettings(host.settings).presetPlugins).toBe('');
+    const distro = ui.getByRole('textbox', { name: 'WSL distro override' });
+    expect((distro as HTMLInputElement).disabled).toBe(false);
+    fireEvent.input(distro, { target: { value: 'Debian' } });
+    await waitFor(() => expect(getDeepSeekProviderSettings(host.settings).wslDistroOverride).toBe('Debian'));
+    fireEvent.click(ui.getByRole('button', { name: 'DeepSeek Harness installation' }));
+    expect(ui.getByText(/WSL requires Linux Node.js/).closest<HTMLElement>('[hidden]')).toBeNull();
+    expect(await axe(container)).toHaveNoViolations();
+  } finally { Object.defineProperty(process, 'platform', platform); }
 });

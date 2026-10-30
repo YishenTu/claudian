@@ -1,4 +1,5 @@
 import { parseEnvironmentVariables } from '@/core/process/env';
+import { resolveExecutionTargetAsync } from '@/core/process/execution-target/ExecutionTargetResolver';
 import type { ProviderModelCatalogController } from '@/core/providers/models/ProviderModelCatalog';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -7,7 +8,8 @@ import type { ProviderWorkspaceRegistration, ProviderWorkspaceServices } from '@
 import { DeepSeekCommandCatalog } from '../commands/DeepSeekCommandCatalog';
 import { decodeDeepSeekConfig } from '../config';
 import { DeepSeekSessionArchiveService } from '../history/DeepSeekSessionArchiveService';
-import { DeepSeekCLIResolver } from '../runtime/DeepSeekCLIResolver';
+import { DeepSeekCLIResolver, resolveDeepSeekWSLCLIPath } from '../runtime/DeepSeekCLIResolver';
+import { resolveDeepSeekExecutionContext } from '../runtime/DeepSeekExecutionContext';
 import { DeepSeekHost, type DeepSeekProcessFactory } from '../runtime/DeepSeekHost';
 import { DeepSeekHostProcess } from '../runtime/DeepSeekHostProcess';
 import { createDeepSeekModels } from '../runtime/DeepSeekModels';
@@ -26,11 +28,17 @@ export function createDeepSeekWorkspaceServices(host: ProviderHost, start: DeepS
   const runtimeHost = host.getRuntimeHost('deepseek');
   const cliResolver = new DeepSeekCLIResolver();
   const deepseek = new DeepSeekHost(async () => {
-    const cliPath = await runtimeHost.resolveCliPath();
+    const current = decodeDeepSeekConfig(runtimeHost.config);
+    const cwd = host.workingDirectory ?? process.cwd();
+    const target = await resolveExecutionTargetAsync({ settings: current, hostVaultPath: cwd });
+    const cliPath = target.method === 'wsl' ? resolveDeepSeekWSLCLIPath(current) : await runtimeHost.resolveCliPath();
     if (!cliPath) throw new Error('DeepSeek Harness was not found. Install and configure dsh or DeepSeek Harness Desktop, or set its path in settings.');
-    const environment = { ...process.env, ...parseEnvironmentVariables(runtimeHost.environmentText) };
-    const presetPlugins = parseDeepSeekPresetPlugins(decodeDeepSeekConfig(runtimeHost.config).presetPlugins);
-    return { cliPath, environment, cwd: host.workingDirectory ?? process.cwd(), presetPlugins };
+    const environmentText = runtimeHost.environmentText;
+    const environment = Object.fromEntries(Object.entries({ ...process.env, ...parseEnvironmentVariables(environmentText) })
+      .filter((entry): entry is [string, string] => entry[1] !== undefined));
+    const execution = await resolveDeepSeekExecutionContext(target, cwd, environment, environmentText);
+    const presetPlugins = parseDeepSeekPresetPlugins(current.presetPlugins, target.platformOs === 'linux' ? 'linux' : process.platform);
+    return { cliPath, environment, cwd, presetPlugins, execution };
   }, start, undefined, host.sessionToolEndpoint);
   const modelCatalog = createDeepSeekModels(runtimeHost, signal => deepseek.read(client => client.call('session/modelCatalog'), signal));
   const sessionArchive = new DeepSeekSessionArchiveService(deepseek);
