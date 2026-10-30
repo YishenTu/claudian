@@ -95,12 +95,12 @@ describe('CodexHistoryStore', () => {
         : new Promise<never>(() => {})));
       const lookup = findCodexSessionFileAsync('thread', root, 60_000, { pathExists, readDirectory });
 
-      await vi.waitFor(() => expect(readDirectory).toHaveBeenCalledWith(`${root}/newer`));
+      await vi.waitFor(() => expect(readDirectory).toHaveBeenCalledWith(path.join(root, 'newer')));
       await vi.advanceTimersByTimeAsync(60_000);
 
       await expect(lookup).resolves.toBeNull();
       // The expired lookup must not move on to the remaining directory.
-      expect(readDirectory).not.toHaveBeenCalledWith(`${root}/older`);
+      expect(readDirectory).not.toHaveBeenCalledWith(path.join(root, 'older'));
     } finally {
       vi.useRealTimers();
     }
