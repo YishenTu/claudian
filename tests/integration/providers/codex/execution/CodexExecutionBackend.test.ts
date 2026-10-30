@@ -1,4 +1,6 @@
 // @test-ci {"native":true}
+import { normalize } from 'node:path';
+
 import { capturedSelections } from '@test/helpers/capturedSelections';
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
@@ -98,7 +100,7 @@ it.each(['priority', 'default'])('correlates a persistent turn from native start
   expect(process.notifications).toContainEqual({ jsonrpc: '2.0', method: 'initialized' });
   const start = process.requests.find(rpc => rpc.method === 'thread/start')!.params;
   expect(start).toMatchObject({
-    cwd: '/vault', experimentalRawEvents: true, persistExtendedHistory: true,
+    cwd: normalize('/vault'), experimentalRawEvents: true, persistExtendedHistory: true,
     dynamicTools: [expect.objectContaining({ namespace: 'codex_app', name: 'load_workspace_dependencies' })],
   });
   expect(start.ephemeral).not.toBe(true);

@@ -4,7 +4,7 @@ const actualModule0 = await import('node:fs');
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, normalize } from 'node:path';
+import { basename, dirname, join, normalize, posix, sep } from 'node:path';
 
 import pair from '@test/fixtures/providers/codex/turn-stats-pair.json';
 import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
@@ -1609,7 +1609,8 @@ describe('CodexExecutionBackend', () => {
 
       expect(snapshot.providerState).toMatchObject({
         threadId: newThreadId,
-        sessionFilePath: newPath,
+        // This suite selects a macOS target even when its temporary files live on Windows.
+        sessionFilePath: posix.normalize(newPath.split(sep).join(posix.sep)),
         previousSegments: [{ threadId: oldThreadId, sessionFilePath: oldPath }],
       });
       const after = await history.hydrateConversationHistory({
