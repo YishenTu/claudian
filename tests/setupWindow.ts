@@ -192,6 +192,12 @@ if (globalThis.HTMLElement && !Reflect.has(globalThis.HTMLElement.prototype, 'se
   };
 }
 
+if (globalThis.HTMLElement && !Reflect.has(globalThis.HTMLElement.prototype, 'setCssProps')) {
+  globalThis.HTMLElement.prototype.setCssProps = function (props) {
+    for (const [name, value] of Object.entries(props)) this.style.setProperty(name, value);
+  };
+}
+
 if (globalThis.SVGElement && !Reflect.has(globalThis.SVGElement.prototype, 'createSvg')) {
   globalThis.SVGElement.prototype.createSvg = function (this: SVGElement, tag, info?, callback?) {
     const el = createSvg(tag, info, callback);

@@ -594,6 +594,10 @@
   border-inline-start: none;
 }
 
+.claudian-session-sidebar .claudian-history-item.active {
+  background: var(--claudian-session-background-active, var(--nav-item-background-active));
+}
+
 .claudian-session-sidebar .claudian-session-recency-divider {
   display: flex;
   align-items: center;

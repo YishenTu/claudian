@@ -1,5 +1,6 @@
 import { createProjectsFake } from '@test/helpers/features/chat/ProjectsFake';
 import { createMockEl } from '@test/helpers/MockElement';
+import { createObsidianWorkspace } from '@test/helpers/ObsidianWorkspace';
 import { testDate } from '@test/helpers/testClock';
 import { Menu, setIcon } from 'obsidian';
 import type { MockInstance } from 'vitest';
@@ -53,7 +54,10 @@ function createHarness(options: HarnessOptions = {}) {
     ...options.settings,
   };
   const plugin = {
-    app: { vault: { getAbstractFileByPath: vi.fn(() => null) } },
+    app: {
+      vault: { getAbstractFileByPath: vi.fn(() => null) },
+      workspace: createObsidianWorkspace(createMockEl()),
+    },
     settings,
     getConversationList: () => conversations,
     projects: createProjectsFake(),

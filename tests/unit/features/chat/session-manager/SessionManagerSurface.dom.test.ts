@@ -5,6 +5,7 @@ import '@/providers';
 import { axe } from '@test/helpers/accessibility';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
+import { createObsidianWorkspace } from '@test/helpers/ObsidianWorkspace';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { Menu, setIcon } from 'obsidian';
@@ -29,9 +30,6 @@ HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
 HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
 HTMLElement.prototype.hasClass = function (className) { return this.classList.contains(className); };
-HTMLElement.prototype.setCssProps = function (props) {
-  for (const [name, value] of Object.entries(props)) this.style.setProperty(name, value);
-};
 HTMLElement.prototype.toggleClass = function (classes, value) {
   for (const name of [classes].flat()) this.classList.toggle(name, value);
 };
@@ -53,8 +51,9 @@ function conversation(id: string, overrides: Partial<ConversationMeta> = {}): Co
 function createSurface() {
   // Active rows carry their own Archive action; an archived-only list keeps navigation names unique.
   const conversations = [conversation('archived', { isArchived: true })];
+  const workspace = createObsidianWorkspace(document.body);
   const plugin = {
-    app: { vault: { getAbstractFileByPath: () => null } },
+    app: { vault: { getAbstractFileByPath: () => null }, workspace },
     settings: { enableAutoTitleGeneration: false },
     getConversationList: () => conversations,
     projects: createProjectsFake(),
@@ -79,11 +78,33 @@ function createSurface() {
   const host = document.body.createDiv();
   surface.mountSidebar(host);
   surface.renderSidebar();
-  return { host, requestNew, surface };
+  return { host, requestNew, surface, workspace };
 }
 
 afterEach(() => {
   document.body.replaceChildren();
+});
+
+it('follows the left sidebar theme token through theme changes and releases its listener', () => {
+  const navigation = document.body.createDiv({ cls: 'mod-left-split' });
+  navigation.style.setProperty('--nav-item-background-active', 'rgba(100, 100, 100, 0.2)');
+  const { host, surface, workspace } = createSurface();
+  const background = () => host.style.getPropertyValue('--claudian-session-background-active');
+  try {
+    expect(background()).toBe('rgba(100, 100, 100, 0.2)');
+    navigation.style.setProperty('--nav-item-background-active', 'transparent');
+    workspace.trigger('css-change');
+    expect(background()).toBe('transparent');
+    navigation.style.setProperty('--nav-item-background-active', 'rgb(30, 30, 30)');
+    workspace.trigger('css-change');
+    expect(background()).toBe('rgb(30, 30, 30)');
+    navigation.remove();
+    workspace.trigger('css-change');
+    expect(background()).toBe('');
+  } finally {
+    surface.dispose();
+  }
+  expect(workspace.listenerCount()).toBe(0);
 });
 
 it.each(['editing query', 'list invalidation'])('preserves the search caret and selection while %s', async action => {
@@ -223,7 +244,10 @@ describe('projects section', () => {
       (value, previous) => publisher.publishSettings(value, previous),
     );
     const plugin = {
-      app: { vault: { getAbstractFileByPath: () => null } },
+      app: {
+        vault: { getAbstractFileByPath: () => null },
+        workspace: createObsidianWorkspace(document.body),
+      },
       settings,
       getConversationList: () => conversations,
       projects: createProjectsFake([

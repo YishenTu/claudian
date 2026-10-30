@@ -1,4 +1,5 @@
 import { createMockEl } from '@test/helpers/MockElement';
+import { createObsidianWorkspace } from '@test/helpers/ObsidianWorkspace';
 import { ItemView, Scope } from 'obsidian';
 
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
@@ -36,9 +37,9 @@ export function createClaudianView(options: ClaudianViewHarnessOptions = {}): an
         on: vi.fn((name: string) => ({ name })),
       },
       workspace: {
+        ...createObsidianWorkspace(createMockEl()),
         layoutReady: true,
         onLayoutReady: vi.fn((callback: () => void) => callback()),
-        on: vi.fn((name: string) => ({ name })),
         requestSaveLayout: Object.assign(vi.fn(), { run: vi.fn() }),
       },
       metadataCache: { on: vi.fn((name: string) => ({ name })) },

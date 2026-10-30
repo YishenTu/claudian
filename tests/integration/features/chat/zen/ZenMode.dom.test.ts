@@ -8,6 +8,7 @@ import { createClaudianView } from '@test/helpers/features/chat/ClaudianViewHarn
 import { installSessionRuntimePool } from '@test/helpers/features/chat/SessionRuntimePoolHarness';
 import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { FakeSideSession } from '@test/helpers/features/chat/SideChatSessionHarness';
+import { createObsidianWorkspace } from '@test/helpers/ObsidianWorkspace';
 import { modelCatalogCases } from '@test/helpers/providerModelCatalogs';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, screen, waitFor as waitForDOM, within } from '@testing-library/dom';
@@ -90,29 +91,16 @@ function createWorkspace() {
   const noteEditor = rootEl.createDiv({ cls: 'workspace-leaf' }).createEl('textarea', {
     attr: { 'aria-label': 'Note editor' },
   }) as HTMLTextAreaElement;
-  const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
   const leaves: Leaf[] = [];
   // Non-chat leaves sharing a sidebar's tab group, such as Outline.
   const otherLeaves: Leaf[] = [];
   const workspace = {
-    containerEl,
+    ...createObsidianWorkspace(containerEl),
     leftSplit,
     rightSplit,
     rootSplit,
     layoutReady: true,
     onLayoutReady: (callback: () => void) => callback(),
-    on(name: string, callback: (...args: unknown[]) => void) {
-      if (!listeners.has(name)) listeners.set(name, new Set());
-      listeners.get(name)!.add(callback);
-      return { name, callback };
-    },
-    offref(ref: { name: string; callback: (...args: unknown[]) => void }) {
-      listeners.get(ref.name)?.delete(ref.callback);
-    },
-    trigger(name: string, ...args: unknown[]) {
-      for (const listener of [...(listeners.get(name) ?? [])]) listener(...args);
-    },
-    listenerCount: () => [...listeners.values()].reduce((total, set) => total + set.size, 0),
     getLeavesOfType: () => leaves,
     iterateAllLeaves: (callback: (leaf: Leaf) => void) => [...leaves, ...otherLeaves].forEach(callback),
     getActiveViewOfType: vi.fn(),
@@ -272,7 +260,10 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
     layout.leaves.push(leaf);
     view.presentation.update();
     view.startZenModeSource();
-    cleanups.push(() => view.stopZenModeSource());
+    cleanups.push(() => {
+      view.stopZenModeSource();
+      view.sessions.dispose();
+    });
     return { view, tab, leaf, activeInputSlotEl, sideChatChipHostEl };
   };
 
@@ -1702,6 +1693,7 @@ it('releases every moved node and subscription on close and disposal', async () 
   expect(zenPanel()).not.toBeNull();
   zen.dispose();
   expect(zenPanel()).toBeNull();
+  view.sessions.dispose();
   expect(workspace.listenerCount()).toBe(0);
   expect(screen.queryByRole('region', { name: 'Claudian chat' })).toBeNull();
 });

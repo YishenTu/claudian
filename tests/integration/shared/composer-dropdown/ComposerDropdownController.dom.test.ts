@@ -12,9 +12,6 @@ import { MentionSource } from '@/shared/composer-dropdown/MentionSource';
 
 // jsdom has no layout or scrolling.
 Element.prototype.scrollIntoView = vi.fn();
-HTMLElement.prototype.setCssProps = function (props) {
-  for (const [name, value] of Object.entries(props)) this.style.setProperty(name, value);
-};
 
 function file(path: string, minutesAgo: number): TFile {
   const mtime = testDate({ minutes: -minutesAgo }).getTime();

@@ -1,4 +1,4 @@
-import { Menu, Notice, setIcon, TFile } from 'obsidian';
+import { type EventRef, Menu, Notice, setIcon, TFile } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ConversationMeta, SessionManagerOrganization, SessionManagerSort } from '@/core/types';
@@ -47,6 +47,7 @@ export class SessionSidebar {
   private searchFieldEl: HTMLElement | null = null;
   private searchInputEl: HTMLInputElement | null = null;
   private groupToggleButtonEl: HTMLElement | null = null;
+  private themeEvent: EventRef | null = null;
 
   private renderAbortController: AbortController | null = null;
   private dirty = true;
@@ -75,6 +76,8 @@ export class SessionSidebar {
     this.sidebarEl = sidebarEl;
     const trackEl = sidebarEl.createDiv({ cls: 'claudian-sidebar-surface-track' });
     this.surfaceEl = trackEl.createDiv({ cls: 'claudian-session-surface' });
+    this.syncThemeBackground();
+    this.themeEvent = this.deps.plugin.app.workspace.on('css-change', () => this.syncThemeBackground());
   }
 
   markDirty(): void {
@@ -147,8 +150,22 @@ export class SessionSidebar {
   }
 
   dispose(): void {
+    if (this.themeEvent) {
+      this.deps.plugin.app.workspace.offref(this.themeEvent);
+      this.themeEvent = null;
+    }
     this.clearSearchDismissHandlers();
     this.cancelRendering();
+  }
+
+  private syncThemeBackground(): void {
+    // Themes can scope the navigation token to the left sidebar instead of the document.
+    const navigation = this.deps.plugin.app.workspace.containerEl.querySelector<HTMLElement>(
+      '.mod-left-split, .workspace-drawer.mod-left',
+    );
+    const background = navigation?.ownerDocument.defaultView?.getComputedStyle(navigation)
+      .getPropertyValue('--nav-item-background-active').trim() ?? '';
+    this.sidebarEl?.setCssProps({ '--claudian-session-background-active': background });
   }
 
   private renderList(container: HTMLElement, signal: AbortSignal): void {

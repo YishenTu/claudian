@@ -3,6 +3,7 @@
 import { firePointer } from '@test/helpers/dom/pointer';
 import { createPopoutDocument } from '@test/helpers/dom/popoutDocument';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
+import { createObsidianWorkspace } from '@test/helpers/ObsidianWorkspace';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { Notice } from 'obsidian';
@@ -87,7 +88,10 @@ function setup(options: {
   ]);
   let saveResult: Promise<void> = Promise.resolve();
   const plugin = {
-    app: { vault: { getAbstractFileByPath: () => null } },
+    app: {
+      vault: { getAbstractFileByPath: () => null },
+      workspace: createObsidianWorkspace(document.body),
+    },
     settings: { enableAutoTitleGeneration: false, sessionManagerOrganization: 'list' } as Record<string, unknown>,
     mutateSettings: vi.fn(async (mutation: (settings: Record<string, unknown>) => void) => {
       const draft = structuredClone(plugin.settings);

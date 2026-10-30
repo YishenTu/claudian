@@ -2,6 +2,7 @@
 
 import { axe } from '@test/helpers/accessibility';
 import { createProjectsFake, projectRecord } from '@test/helpers/features/chat/ProjectsFake';
+import { createObsidianWorkspace } from '@test/helpers/ObsidianWorkspace';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { Notice } from 'obsidian';
@@ -61,7 +62,10 @@ function setup(conversations: ConversationMeta[] = [
     projectRecord({ id: 'empty', name: 'Empty', createdAt: testDate({ days: -2 }).getTime() }),
   ]);
   const plugin = {
-    app: { vault: { getAbstractFileByPath: () => null } },
+    app: {
+      vault: { getAbstractFileByPath: () => null },
+      workspace: createObsidianWorkspace(document.body),
+    },
     settings: { enableAutoTitleGeneration: false, sessionManagerOrganization: 'list' },
     mutateSettings: vi.fn(async (mutation: (settings: Record<string, unknown>) => void) => {
       mutation(plugin.settings);
